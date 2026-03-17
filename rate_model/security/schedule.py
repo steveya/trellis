@@ -2,6 +2,17 @@ import numpy as np
 from datetime import datetime
 from aenum import Enum
 
+
+def _add_months(dt: datetime, months: int) -> datetime:
+    """Add calendar months to a datetime, clamping the day to the new month's max."""
+    month = dt.month - 1 + months
+    year = dt.year + month // 12
+    month = month % 12 + 1
+    import calendar
+    day = min(dt.day, calendar.monthrange(year, month)[1])
+    return dt.replace(year=year, month=month, day=day)
+
+
 class Frequency(Enum):
     ANNUAL = 1
     SEMI_ANNUAL = 2
@@ -17,7 +28,8 @@ class Schedule:
         self.start_date = start_date
         self.end_date = end_date
         self.frequency = frequency
-        self.cashflow_dates = np.array([start_date + (end_date - start_date) * i / frequency.value for i in range(1, frequency.value + 1)])
+        months_per_period = 12 // frequency.value
+        self.cashflow_dates = np.array([_add_months(start_date, months_per_period * i) for i in range(1, frequency.value + 1)])
 
     def get_bracketing_dates(self, date):
         """
@@ -27,10 +39,13 @@ class Schedule:
             raise ValueError("Date is not in the schedule")
         else:
             bracketing_dates = []
+            months_per_period = 12 // self.frequency.value
             for i in range(1, self.frequency.value + 1):
-                if date <= self.start_date + (self.end_date - self.start_date) * i / self.frequency.value:
-                    bracketing_dates.append(self.start_date + (self.end_date - self.start_date) * (i - 1) / self.frequency.value)
-                    bracketing_dates.append(self.start_date + (self.end_date - self.start_date) * i / self.frequency.value)
+                upper = _add_months(self.start_date, months_per_period * i)
+                if date <= upper:
+                    lower = _add_months(self.start_date, months_per_period * (i - 1))
+                    bracketing_dates.append(lower)
+                    bracketing_dates.append(upper)
                     break
             return bracketing_dates
 
