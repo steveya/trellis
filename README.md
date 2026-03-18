@@ -1,3 +1,3 @@
-**Rate Model**
+# rate-model
 
-library to analyze default-free fixed-income securities
+Library to analyze default-free fixed-income securities.
