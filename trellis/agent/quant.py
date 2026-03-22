@@ -20,13 +20,50 @@ from trellis.core.capabilities import (
 
 @dataclass(frozen=True)
 class PricingPlan:
-    """The quant agent's output: method + data requirements."""
+    """The quant agent's output: method + data requirements + modeling constraints."""
 
     method: str                     # "analytical", "rate_tree", "monte_carlo", "pde", "fft"
     method_modules: list[str]       # specific imports the builder should use
     required_market_data: set[str]  # {"discount", "black_vol"}
     model_to_build: str | None      # None if library has it; description if custom needed
     reasoning: str                  # why this method was chosen
+    modeling_requirements: tuple[str, ...] = ()  # constraints the implementation must satisfy
+
+
+# ---------------------------------------------------------------------------
+# Modeling requirements — general principles for correct pricing
+# ---------------------------------------------------------------------------
+
+# Rate tree requirements (callable bonds, Bermudan swaptions, etc.)
+RATE_TREE_REQUIREMENTS = (
+    "CALIBRATION: The rate tree must be calibrated to reprice the input yield curve. "
+    "At each time step, solve for theta(t) so that the tree-implied zero-coupon bond "
+    "price matches curve.discount(T). Verify: tree_zcb(T) ≈ curve.discount(T) at key tenors.",
+
+    "DISCRETE CASHFLOWS: Bond coupons and other scheduled payments must be embedded at "
+    "their actual payment dates (mapped to the nearest tree step), NOT spread uniformly "
+    "across all steps. Uniform spreading introduces >10% pricing error.",
+
+    "EXERCISE LOGIC: The call/put decision at each node must compare the CONTINUATION "
+    "VALUE (discounted expected future value) against the exercise price. The continuation "
+    "value is computed from the tree's own discount factors, not the flat input rate.",
+)
+
+# Monte Carlo requirements
+MC_REQUIREMENTS = (
+    "CONVERGENCE: Use at least 10,000 paths. Verify that the standard error is <1% "
+    "of the price. If path-dependent, use at least 100 time steps per year.",
+
+    "DISCRETE OBSERVATIONS: For instruments with discrete fixing/observation dates "
+    "(Asian options, barriers), simulate paths that pass through those exact dates. "
+    "Do not interpolate between steps.",
+)
+
+# Copula requirements
+COPULA_REQUIREMENTS = (
+    "CALIBRATION: Default probabilities must be consistent with the input credit curve. "
+    "For each name: P(default by T) = 1 - S(T) where S(T) = credit_curve.survival_probability(T).",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -72,32 +109,32 @@ STATIC_PLANS: dict[str, PricingPlan] = {
     "callable_bond": PricingPlan(
         method="rate_tree",
         method_modules=[
-            "trellis.models.trees.binomial",
-            "trellis.models.trees.backward_induction",
+            "trellis.models.trees.lattice",
         ],
         required_market_data={"discount", "black_vol"},
         model_to_build=None,
-        reasoning="Early exercise requires backward induction on a rate tree.",
+        reasoning="Early exercise requires backward induction on a mean-reverting rate tree.",
+        modeling_requirements=RATE_TREE_REQUIREMENTS,
     ),
     "puttable_bond": PricingPlan(
         method="rate_tree",
         method_modules=[
-            "trellis.models.trees.binomial",
-            "trellis.models.trees.backward_induction",
+            "trellis.models.trees.lattice",
         ],
         required_market_data={"discount", "black_vol"},
         model_to_build=None,
-        reasoning="Early exercise requires backward induction on a rate tree.",
+        reasoning="Early exercise requires backward induction on a mean-reverting rate tree.",
+        modeling_requirements=RATE_TREE_REQUIREMENTS,
     ),
     "bermudan_swaption": PricingPlan(
         method="rate_tree",
         method_modules=[
-            "trellis.models.trees.binomial",
-            "trellis.models.trees.backward_induction",
+            "trellis.models.trees.lattice",
         ],
         required_market_data={"discount", "forward_rate", "black_vol"},
         model_to_build=None,
-        reasoning="Bermudan exercise dates require backward induction.",
+        reasoning="Bermudan exercise dates require backward induction on a rate tree.",
+        modeling_requirements=RATE_TREE_REQUIREMENTS,
     ),
     "barrier_option": PricingPlan(
         method="monte_carlo",
@@ -108,6 +145,7 @@ STATIC_PLANS: dict[str, PricingPlan] = {
         required_market_data={"discount", "black_vol"},
         model_to_build=None,
         reasoning="Path-dependent barrier monitoring needs simulation.",
+        modeling_requirements=MC_REQUIREMENTS,
     ),
     "asian_option": PricingPlan(
         method="monte_carlo",
@@ -118,6 +156,7 @@ STATIC_PLANS: dict[str, PricingPlan] = {
         required_market_data={"discount", "black_vol"},
         model_to_build=None,
         reasoning="Path-dependent averaging needs simulation.",
+        modeling_requirements=MC_REQUIREMENTS,
     ),
     "cdo": PricingPlan(
         method="copula",
@@ -128,6 +167,7 @@ STATIC_PLANS: dict[str, PricingPlan] = {
         required_market_data={"discount", "credit"},
         model_to_build=None,
         reasoning="Portfolio credit tranching uses copula for default correlation.",
+        modeling_requirements=COPULA_REQUIREMENTS,
     ),
     "nth_to_default": PricingPlan(
         method="copula",
@@ -137,6 +177,7 @@ STATIC_PLANS: dict[str, PricingPlan] = {
         required_market_data={"discount", "credit"},
         model_to_build=None,
         reasoning="Correlated defaults simulated via copula.",
+        modeling_requirements=COPULA_REQUIREMENTS,
     ),
     "mbs": PricingPlan(
         method="monte_carlo",

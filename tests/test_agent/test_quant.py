@@ -33,10 +33,11 @@ class TestStaticPlans:
     def test_callable_bond_uses_tree(self):
         plan = select_pricing_method("Callable bond with call schedule", "callable_bond")
         assert plan.method == "rate_tree"
-        assert "trellis.models.trees.binomial" in plan.method_modules
-        assert "trellis.models.trees.backward_induction" in plan.method_modules
+        assert "trellis.models.trees.lattice" in plan.method_modules
         assert "discount" in plan.required_market_data
         assert "black_vol" in plan.required_market_data
+        assert len(plan.modeling_requirements) > 0
+        assert any("CALIBRATION" in r for r in plan.modeling_requirements)
 
     def test_barrier_option_uses_mc(self):
         plan = select_pricing_method("Down-and-out call option", "barrier_option")

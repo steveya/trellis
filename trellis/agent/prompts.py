@@ -142,6 +142,11 @@ Modules to import and use:
 IMPORTANT: Follow the cookbook pattern above. Adapt it for this specific instrument
 but keep the same structure: imports, market data access, method invocation, return type.
 """
+        if pricing_plan.modeling_requirements:
+            method_guidance += "\n## MODELING REQUIREMENTS (you MUST satisfy all of these)\n"
+            for i, req in enumerate(pricing_plan.modeling_requirements, 1):
+                method_guidance += f"\n{i}. {req}\n"
+            method_guidance += "\nThese are not optional. Failure to satisfy them produces incorrect prices.\n"
 
     return f"""You are implementing the evaluate() method for `{spec_schema.class_name}` in the Trellis pricing library.
 
