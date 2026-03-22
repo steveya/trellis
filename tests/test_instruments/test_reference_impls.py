@@ -50,7 +50,7 @@ class TestCallableBond:
         )
         payoff = CallableBondPayoff(spec)
         result = payoff.evaluate(_ms())
-        assert isinstance(result, PresentValue)
+        assert isinstance(result, (int, float))
 
     def test_positive_price(self):
         from trellis.instruments.callable_bond import CallableBondPayoff, CallableBondSpec
@@ -100,7 +100,7 @@ class TestBarrierOption:
             expiry_date=date(2025, 11, 15), barrier_type="down_and_out",
         )
         result = BarrierOptionPayoff(spec).evaluate(_ms())
-        assert isinstance(result, PresentValue)
+        assert isinstance(result, (int, float))
 
     def test_positive_price(self):
         from trellis.instruments.barrier_option import BarrierOptionPayoff, BarrierOptionSpec
@@ -152,7 +152,7 @@ class TestNthToDefault:
             end_date=date(2029, 11, 15),
         )
         result = NthToDefaultPayoff(spec).evaluate(_ms(credit_hz=0.02))
-        assert isinstance(result, PresentValue)
+        assert isinstance(result, (int, float))
 
     def test_positive_protection_value(self):
         from trellis.instruments.nth_to_default import NthToDefaultPayoff, NthToDefaultSpec

@@ -13,7 +13,7 @@ import numpy as raw_np
 
 from trellis.core.date_utils import year_fraction
 from trellis.core.market_state import MarketState
-from trellis.core.payoff import PresentValue
+
 from trellis.core.types import DayCountConvention
 from trellis.models.monte_carlo.engine import MonteCarloEngine
 from trellis.models.processes.gbm import GBM
@@ -50,11 +50,11 @@ class BarrierOptionPayoff:
     def requirements(self) -> set[str]:
         return {"discount", "black_vol"}
 
-    def evaluate(self, market_state: MarketState) -> PresentValue:
+    def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
         T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)
         if T <= 0:
-            return PresentValue(0.0)
+            return 0.0
 
         r = float(market_state.discount.zero_rate(T))
         sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
@@ -91,4 +91,4 @@ class BarrierOptionPayoff:
             return payoffs * spec.notional / spec.spot
 
         result = engine.price(spec.spot, T, payoff_fn, discount_rate=r)
-        return PresentValue(result["price"])
+        return result["price"]

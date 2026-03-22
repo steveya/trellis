@@ -12,16 +12,16 @@ COOKBOOKS: dict[str, str] = {}
 # ---------------------------------------------------------------------------
 # Pattern 1: Analytical (Black76 on forward rates)
 # Used for: caps, floors, swaptions, European options on forwards
-# Returns: Cashflows (price_payoff handles discounting)
+# Returns: float (PV, discounted internally)
 # ---------------------------------------------------------------------------
 
 COOKBOOKS["analytical"] = '''\
 ## Cookbook: Analytical (Black76)
 Use this pattern for European options on forward rates.
+evaluate() returns the PV (float) — discount each period internally.
 
 ```python
 def evaluate(self, market_state):
-    from trellis.core.payoff import Cashflows
     from trellis.core.date_utils import generate_schedule, year_fraction
     from trellis.models.black import black76_call, black76_put
 
@@ -31,7 +31,7 @@ def evaluate(self, market_state):
     schedule = generate_schedule(spec.start_date, spec.end_date, spec.frequency)
     starts = [spec.start_date] + schedule[:-1]
 
-    cashflows = []
+    pv = 0.0
     for p_start, p_end in zip(starts, schedule):
         if p_end <= market_state.settlement:
             continue
@@ -45,9 +45,10 @@ def evaluate(self, market_state):
 
         # >>> INSTRUMENT-SPECIFIC: choose black76_call or black76_put <<<
         undiscounted = spec.notional * tau * black76_call(F, spec.strike, sigma, t_start)
-        cashflows.append((p_end, float(undiscounted)))
+        df = market_state.discount.discount(t_end)
+        pv += float(undiscounted) * float(df)
 
-    return Cashflows(cashflows)
+    return pv
 ```
 '''
 
@@ -64,7 +65,7 @@ The tree handles discounting — return PresentValue.
 
 ```python
 def evaluate(self, market_state):
-    from trellis.core.payoff import PresentValue
+    
     from trellis.core.date_utils import generate_schedule, year_fraction
     from trellis.models.trees.binomial import BinomialTree
     from trellis.models.trees.backward_induction import backward_induction
@@ -99,7 +100,7 @@ def evaluate(self, market_state):
         tree, payoff_at_node, r, "bermudan", exercise_steps, exercise_value
     )
 
-    return PresentValue(price)
+    return price
 ```
 '''
 
@@ -116,7 +117,7 @@ The MC engine computes the discounted expected payoff — return PresentValue.
 
 ```python
 def evaluate(self, market_state):
-    from trellis.core.payoff import PresentValue
+    
     from trellis.core.date_utils import year_fraction
     from trellis.models.monte_carlo.engine import MonteCarloEngine
     from trellis.models.processes.gbm import GBM
@@ -141,7 +142,7 @@ def evaluate(self, market_state):
         return np.maximum(S_T - spec.strike, 0) * spec.notional / spec.spot
 
     result = engine.price(spec.spot, T, payoff_fn, discount_rate=r)
-    return PresentValue(result["price"])
+    return result["price"]
 ```
 '''
 
@@ -157,7 +158,7 @@ Use this pattern for portfolio credit instruments.
 
 ```python
 def evaluate(self, market_state):
-    from trellis.core.payoff import PresentValue
+    
     from trellis.core.date_utils import year_fraction
     from trellis.models.copulas.factor import FactorCopula
     import numpy as np
@@ -185,7 +186,7 @@ def evaluate(self, market_state):
     df = float(market_state.discount.discount(T))
     tranche_pv = spec.notional * (tranche_el * df)
 
-    return PresentValue(tranche_pv)
+    return tranche_pv
 ```
 '''
 
@@ -201,7 +202,7 @@ Use this pattern for MBS, ABS, CLO tranching.
 
 ```python
 def evaluate(self, market_state):
-    from trellis.core.payoff import Cashflows
+    
     from trellis.core.date_utils import year_fraction
     from trellis.models.cashflow_engine.waterfall import Waterfall, Tranche
     from trellis.models.cashflow_engine.prepayment import PSA
@@ -250,7 +251,7 @@ def evaluate(self, market_state):
                 pay_date = add_months(market_state.settlement, i + 1)
                 cashflows.append((pay_date, total))
 
-    return Cashflows(cashflows)
+    return pv
 ```
 '''
 

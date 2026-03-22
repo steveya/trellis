@@ -173,7 +173,7 @@ class TestSessionPricePayoff:
         bond = _bond()
         result = s.price(bond, greeks=None)
         adapter = DeterministicCashflowPayoff(bond)
-        pv = s.price_payoff(adapter, day_count=bond.day_count)
+        pv = s.price_payoff(DeterministicCashflowPayoff(bond, day_count=bond.day_count))
         assert pv == pytest.approx(result.dirty_price, rel=1e-12)
 
     def test_price_payoff_with_scenario(self):

@@ -34,12 +34,8 @@ class ScenarioWeightedPayoff:
     def requirements(self) -> set[str]:
         return {"state_space"}
 
-    def evaluate(self, market_state: MarketState) -> list[tuple[date, float]]:
-        """Price inner payoff under each scenario, return weighted PV.
-
-        Returns a single cashflow ``(settlement, weighted_pv)`` so that
-        ``price_payoff`` discounts it by ``df(0) = 1.0``.
-        """
+    def evaluate(self, market_state: MarketState) -> float:
+        """Price inner payoff under each scenario, return weighted PV."""
         state_space = market_state.state_space
         weighted_pv = 0.0
 
@@ -51,7 +47,7 @@ class ScenarioWeightedPayoff:
             if missing:
                 raise MissingCapabilityError(missing, cond_ms.available_capabilities)
 
-            pv = _price_payoff(self._inner, cond_ms, day_count=self._day_count)
+            pv = self._inner.evaluate(cond_ms)
             weighted_pv += prob * pv
 
-        return [(market_state.settlement, weighted_pv)]
+        return weighted_pv

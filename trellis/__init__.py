@@ -8,7 +8,7 @@ from trellis.session import Session
 from trellis.pipeline import Pipeline
 from trellis.samples import sample_bond_10y, sample_book, sample_curve
 from trellis.core.market_state import MarketState, MissingCapabilityError
-from trellis.core.payoff import Payoff, DeterministicCashflowPayoff, Cashflows, PresentValue
+from trellis.core.payoff import Payoff, DeterministicCashflowPayoff
 from trellis.core.state_space import StateSpace
 from trellis.engine.payoff_pricer import price_payoff
 from trellis.curves.forward_curve import ForwardCurve
@@ -68,7 +68,7 @@ __all__ = [
     "Book", "BookResult", "Session", "Pipeline",
     "quickstart", "sample_bond_10y", "sample_book", "sample_curve",
     "MarketState", "MissingCapabilityError",
-    "Payoff", "DeterministicCashflowPayoff", "Cashflows", "PresentValue",
+    "Payoff", "DeterministicCashflowPayoff",
     "StateSpace", "price_payoff",
     "ForwardCurve",
     "black76_call", "black76_put",

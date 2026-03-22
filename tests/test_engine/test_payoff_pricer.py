@@ -86,30 +86,26 @@ class TestPayoffProtocol:
         adapter = DeterministicCashflowPayoff(_bond())
         assert adapter.requirements == {"discount"}
 
-    def test_evaluate_returns_cashflows(self):
-        from trellis.core.payoff import Cashflows
+    def test_evaluate_returns_float(self):
         adapter = DeterministicCashflowPayoff(_bond())
         ms = _market_state()
         result = adapter.evaluate(ms)
-        assert isinstance(result, Cashflows)
-        assert len(result.flows) > 0
-        for cf_date, amount in result.flows:
-            assert isinstance(cf_date, date)
-            assert isinstance(amount, float)
-            assert cf_date > SETTLE
+        assert isinstance(result, float)
+        assert result > 0
 
-    def test_evaluate_matches_bond_cashflows(self):
+    def test_evaluate_matches_manual_discount(self):
         bond = _bond()
-        adapter = DeterministicCashflowPayoff(bond)
+        adapter = DeterministicCashflowPayoff(bond, day_count=bond.day_count)
         ms = _market_state()
-        result = adapter.evaluate(ms)
-        bond_schedule = bond.cashflows(SETTLE)
-        assert len(result.flows) == len(bond_schedule.dates)
-        for (pf_date, pf_amt), b_date, b_amt in zip(
-            result.flows, bond_schedule.dates, bond_schedule.amounts
-        ):
-            assert pf_date == b_date
-            assert pf_amt == b_amt
+        pv = adapter.evaluate(ms)
+        # Manual discount
+        from trellis.core.date_utils import year_fraction
+        schedule = bond.cashflows(SETTLE)
+        manual_pv = sum(
+            amt * float(ms.discount.discount(year_fraction(SETTLE, d, bond.day_count)))
+            for d, amt in zip(schedule.dates, schedule.amounts)
+        )
+        assert pv == pytest.approx(manual_pv, rel=1e-10)
 
     def test_instrument_accessor(self):
         bond = _bond()
@@ -125,7 +121,7 @@ class TestPricePayoff:
     def test_basic_pricing(self):
         adapter = DeterministicCashflowPayoff(_bond())
         ms = _market_state()
-        pv = price_payoff(adapter, ms, day_count=DayCountConvention.ACT_ACT)
+        pv = price_payoff(DeterministicCashflowPayoff(_bond(), day_count=DayCountConvention.ACT_ACT), ms)
         assert 80 < pv < 120
 
     def test_missing_capability_raises(self):
@@ -150,19 +146,19 @@ class TestPricePayoff:
         expected = 100 * np.exp(-0.05 * 10)
         assert pv == pytest.approx(expected, rel=0.01)
 
-    def test_empty_cashflows_returns_zero(self):
-        """A payoff with no cashflows prices to zero."""
+    def test_zero_pv_payoff(self):
+        """A payoff returning 0.0 prices to zero."""
 
-        class EmptyPayoff:
+        class ZeroPayoff:
             @property
             def requirements(self):
                 return {"discount"}
 
             def evaluate(self, market_state):
-                return []
+                return 0.0
 
         ms = _market_state()
-        assert price_payoff(EmptyPayoff(), ms) == 0.0
+        assert price_payoff(ZeroPayoff(), ms) == 0.0
 
 
 # --- Round-trip tests: Bond via price_payoff must match price_instrument ---
@@ -177,7 +173,7 @@ class TestRoundTrip:
 
         adapter = DeterministicCashflowPayoff(bond)
         ms = MarketState(as_of=SETTLE, settlement=SETTLE, discount=curve)
-        pv_b = price_payoff(adapter, ms, day_count=bond.day_count)
+        pv_b = price_payoff(DeterministicCashflowPayoff(bond, day_count=bond.day_count), ms)
 
         assert pv_b == pytest.approx(result_a.dirty_price, rel=1e-12)
 
@@ -192,7 +188,7 @@ class TestRoundTrip:
 
         adapter = DeterministicCashflowPayoff(bond)
         ms = MarketState(as_of=SETTLE, settlement=SETTLE, discount=curve)
-        pv_b = price_payoff(adapter, ms, day_count=bond.day_count)
+        pv_b = price_payoff(DeterministicCashflowPayoff(bond, day_count=bond.day_count), ms)
 
         assert pv_b == pytest.approx(result_a.dirty_price, rel=1e-12)
 
@@ -207,7 +203,7 @@ class TestRoundTrip:
             result_a = price_instrument(bond, curve, SETTLE, greeks=None)
             adapter = DeterministicCashflowPayoff(bond)
             ms = MarketState(as_of=SETTLE, settlement=SETTLE, discount=curve)
-            pv_b = price_payoff(adapter, ms, day_count=bond.day_count)
+            pv_b = price_payoff(DeterministicCashflowPayoff(bond, day_count=bond.day_count), ms)
             assert pv_b == pytest.approx(result_a.dirty_price, rel=1e-12), (
                 f"Round-trip failed for {bond_fn.__name__}"
             )
@@ -218,18 +214,20 @@ class TestRoundTrip:
 
 class TestCustomPayoff:
 
-    def test_custom_payoff_implementation(self):
-        """A hand-rolled Payoff should also work with price_payoff."""
+    def test_custom_payoff_returns_float(self):
+        """A hand-rolled Payoff returning a float works with price_payoff."""
+        from trellis.core.date_utils import year_fraction
 
-        class SingleCashflow:
+        class SingleCashflowPayoff:
             @property
             def requirements(self):
                 return {"discount"}
 
             def evaluate(self, market_state):
-                return [(date(2025, 11, 15), 100.0)]
+                t = year_fraction(market_state.settlement, date(2025, 11, 15))
+                return 100.0 * market_state.discount.discount(t)
 
-        payoff = SingleCashflow()
+        payoff = SingleCashflowPayoff()
         assert isinstance(payoff, Payoff)
         ms = _market_state()
         pv = price_payoff(payoff, ms)
@@ -245,7 +243,7 @@ class TestCustomPayoff:
                 return {"discount", "black_vol"}
 
             def evaluate(self, market_state):
-                return []
+                return 0.0
 
         ms = _market_state()
         with pytest.raises(MissingCapabilityError) as exc_info:
@@ -253,72 +251,41 @@ class TestCustomPayoff:
         assert "black_vol" in exc_info.value.missing
 
 
-# --- PresentValue return type ---
+class TestEvaluateReturnsFloat:
 
+    def test_float_passthrough(self):
+        """evaluate() returns float → price_payoff returns it directly."""
 
-class TestPresentValueReturn:
-
-    def test_present_value_passthrough(self):
-        """A payoff returning PresentValue should not be discounted again."""
-        from trellis.core.payoff import PresentValue
-
-        class TreePayoff:
+        class DirectPayoff:
             @property
             def requirements(self):
                 return {"discount"}
 
             def evaluate(self, market_state):
-                return PresentValue(42.57)
+                return 42.57
 
         ms = _market_state()
-        pv = price_payoff(TreePayoff(), ms)
-        assert pv == 42.57
+        assert price_payoff(DirectPayoff(), ms) == 42.57
 
-    def test_cashflows_return_matches_list(self):
-        """Cashflows return type should produce same result as raw list."""
-        from trellis.core.payoff import Cashflows
+    def test_two_payoffs_same_result(self):
+        """Two payoffs computing the same thing should agree."""
+        from trellis.core.date_utils import year_fraction
 
-        class CfPayoff:
-            @property
-            def requirements(self):
-                return {"discount"}
-
-            def evaluate(self, market_state):
-                return Cashflows([(date(2025, 11, 15), 100.0)])
-
-        class ListPayoff:
-            @property
-            def requirements(self):
-                return {"discount"}
-
-            def evaluate(self, market_state):
-                return [(date(2025, 11, 15), 100.0)]
-
-        ms = _market_state()
-        pv_cf = price_payoff(CfPayoff(), ms)
-        pv_list = price_payoff(ListPayoff(), ms)
-        assert pv_cf == pytest.approx(pv_list, rel=1e-12)
-
-    def test_present_value_vs_manual_discount(self):
-        """PresentValue(X) should equal Cashflows([(settlement, X)]) discounted by df(0)=1."""
-        from trellis.core.payoff import Cashflows, PresentValue
-
-        target_pv = 95.0
-
-        class PVPayoff:
+        class PayoffA:
             @property
             def requirements(self):
                 return {"discount"}
             def evaluate(self, ms):
-                return PresentValue(target_pv)
+                t = year_fraction(ms.settlement, date(2025, 11, 15))
+                return 100.0 * ms.discount.discount(t)
 
-        class CfPayoff:
+        class PayoffB:
             @property
             def requirements(self):
                 return {"discount"}
             def evaluate(self, ms):
-                # Cashflow at settlement → df(0) = 1.0 → no discounting
-                return Cashflows([(ms.settlement, target_pv)])
+                t = year_fraction(ms.settlement, date(2025, 11, 15))
+                return 100.0 * ms.discount.discount(t)
 
         ms = _market_state()
-        assert price_payoff(PVPayoff(), ms) == price_payoff(CfPayoff(), ms)
+        assert price_payoff(PayoffA(), ms) == price_payoff(PayoffB(), ms)

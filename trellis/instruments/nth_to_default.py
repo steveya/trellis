@@ -13,7 +13,7 @@ import numpy as raw_np
 
 from trellis.core.date_utils import year_fraction
 from trellis.core.market_state import MarketState
-from trellis.core.payoff import PresentValue
+
 from trellis.core.types import DayCountConvention
 from trellis.models.copulas.gaussian import GaussianCopula
 
@@ -45,11 +45,11 @@ class NthToDefaultPayoff:
     def requirements(self) -> set[str]:
         return {"discount", "credit"}
 
-    def evaluate(self, market_state: MarketState) -> PresentValue:
+    def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
         T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
         if T <= 0:
-            return PresentValue(0.0)
+            return 0.0
 
         # Get hazard rate from credit curve (uniform for all names)
         lam = float(market_state.credit_curve.hazard_rate(T))
@@ -79,4 +79,4 @@ class NthToDefaultPayoff:
         # Expected discounted protection payment
         protection_pv = float(raw_np.mean(triggered)) * loss_given_default * df
 
-        return PresentValue(protection_pv)
+        return protection_pv

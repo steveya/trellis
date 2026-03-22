@@ -39,7 +39,7 @@ class SwaptionPayoff:
     def requirements(self) -> set[str]:
         return {"black_vol", "discount", "forward_rate"}
 
-    def evaluate(self, market_state: MarketState) -> list[tuple[date, float]]:
+    def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
         fwd_curve = market_state.forecast_forward_curve(spec.rate_index)
 
@@ -69,9 +69,4 @@ class SwaptionPayoff:
         else:
             black_value = black76_put(forward_swap_rate, spec.strike, sigma, T)
 
-        cashflows = []
-        for p_start, p_end in zip(starts, schedule):
-            tau = year_fraction(p_start, p_end, spec.day_count)
-            cashflows.append((p_end, spec.notional * tau * float(black_value)))
-
-        return cashflows
+        return spec.notional * annuity * float(black_value)

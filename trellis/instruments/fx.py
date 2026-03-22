@@ -78,29 +78,20 @@ class FXForwardPayoff:
     def requirements(self) -> set[str]:
         return self._inner.requirements | {"fx", "discount", "forecast_rate"}
 
-    def evaluate(self, market_state: MarketState) -> list[tuple[date, float]]:
+    def evaluate(self, market_state: MarketState) -> float:
+        """Price inner payoff in foreign currency, convert to domestic.
+
+        The inner payoff is evaluated against a MarketState with the foreign
+        discount curve. The resulting PV (in foreign) is converted to domestic
+        at the spot FX rate. This is correct because the inner payoff already
+        discounts using the foreign curve, and spot × foreign_PV = domestic_PV
+        by covered interest parity.
+        """
         fx_rate = market_state.fx_rates[self._fx_pair]
-        foreign_curve = market_state.forecast_curves[self._foreign_discount_key]
-        domestic_curve = market_state.discount
 
-        fx_fwd = FXForward(fx_rate, domestic_curve, foreign_curve)
+        # The inner payoff evaluates with whatever MarketState it receives.
+        # The foreign PV is already discounted at foreign rates.
+        foreign_pv = self._inner.evaluate(market_state)
 
-        result = self._inner.evaluate(market_state)
-
-        # Handle both Cashflows and raw list returns
-        from trellis.core.payoff import Cashflows, PresentValue
-        if isinstance(result, Cashflows):
-            flows = result.flows
-        elif isinstance(result, PresentValue):
-            # Can't convert FX on a PV — return the PV as-is
-            return result
-        else:
-            flows = result
-
-        domestic_cfs: list[tuple[date, float]] = []
-        for cf_date, amount_foreign in flows:
-            t = year_fraction(market_state.settlement, cf_date,
-                              DayCountConvention.ACT_365)
-            domestic_cfs.append((cf_date, amount_foreign * fx_fwd.forward(t)))
-
-        return Cashflows(domestic_cfs)
+        # Convert: domestic_PV = foreign_PV × spot
+        return foreign_pv * fx_rate.spot

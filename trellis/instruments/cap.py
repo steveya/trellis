@@ -21,22 +21,20 @@ class CapFloorSpec:
     end_date: date
     frequency: Frequency = Frequency.QUARTERLY
     day_count: DayCountConvention = DayCountConvention.ACT_360
-    rate_index: str | None = None  # forecast curve key for multi-curve
+    rate_index: str | None = None
 
 
-def _capfloor_cashflows(
+def _capfloor_pv(
     spec: CapFloorSpec,
     market_state: MarketState,
     pricing_fn,
-) -> list[tuple[date, float]]:
-    """Shared logic for cap and floor evaluation."""
+) -> float:
+    """Shared logic: sum discounted caplet/floorlet values."""
     schedule = generate_schedule(spec.start_date, spec.end_date, spec.frequency)
     period_starts = [spec.start_date] + schedule[:-1]
-    period_ends = schedule
 
-    cashflows: list[tuple[date, float]] = []
-
-    for p_start, p_end in zip(period_starts, period_ends):
+    pv = 0.0
+    for p_start, p_end in zip(period_starts, schedule):
         if p_end <= market_state.settlement:
             continue
 
@@ -52,16 +50,14 @@ def _capfloor_cashflows(
         sigma = market_state.vol_surface.black_vol(t_fix, spec.strike)
 
         undiscounted = spec.notional * tau * pricing_fn(F, spec.strike, sigma, t_fix)
-        cashflows.append((p_end, float(undiscounted)))
+        df = market_state.discount.discount(t_pay)
+        pv += float(undiscounted) * float(df)
 
-    return cashflows
+    return pv
 
 
 class CapPayoff:
-    """Interest rate cap as a Payoff.
-
-    Decomposes into caplets priced via Black76 call formula.
-    """
+    """Interest rate cap priced via Black76."""
 
     def __init__(self, spec: CapFloorSpec):
         self._spec = spec
@@ -74,15 +70,12 @@ class CapPayoff:
     def requirements(self) -> set[str]:
         return {"discount", "forward_rate", "black_vol"}
 
-    def evaluate(self, market_state: MarketState) -> list[tuple[date, float]]:
-        return _capfloor_cashflows(self._spec, market_state, black76_call)
+    def evaluate(self, market_state: MarketState) -> float:
+        return _capfloor_pv(self._spec, market_state, black76_call)
 
 
 class FloorPayoff:
-    """Interest rate floor as a Payoff.
-
-    Decomposes into floorlets priced via Black76 put formula.
-    """
+    """Interest rate floor priced via Black76."""
 
     def __init__(self, spec: CapFloorSpec):
         self._spec = spec
@@ -95,5 +88,5 @@ class FloorPayoff:
     def requirements(self) -> set[str]:
         return {"discount", "forward_rate", "black_vol"}
 
-    def evaluate(self, market_state: MarketState) -> list[tuple[date, float]]:
-        return _capfloor_cashflows(self._spec, market_state, black76_put)
+    def evaluate(self, market_state: MarketState) -> float:
+        return _capfloor_pv(self._spec, market_state, black76_put)

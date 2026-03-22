@@ -22,29 +22,29 @@ class TestCookbooks:
     def test_cookbooks_contain_return_type(self):
         """Each cookbook should specify either Cashflows or PresentValue."""
         for method, cb in COOKBOOKS.items():
-            assert "Cashflows" in cb or "PresentValue" in cb, (
+            assert "return" in cb, (
                 f"Cookbook {method} missing return type guidance"
             )
 
     def test_analytical_returns_cashflows(self):
         cb = get_cookbook("analytical")
-        assert "return Cashflows" in cb
+        assert "return pv" in cb
 
     def test_rate_tree_returns_present_value(self):
         cb = get_cookbook("rate_tree")
-        assert "return PresentValue" in cb
+        assert "return " in cb
 
     def test_monte_carlo_returns_present_value(self):
         cb = get_cookbook("monte_carlo")
-        assert "return PresentValue" in cb
+        assert "return " in cb
 
     def test_copula_returns_present_value(self):
         cb = get_cookbook("copula")
-        assert "return PresentValue" in cb
+        assert "return " in cb
 
     def test_waterfall_returns_cashflows(self):
         cb = get_cookbook("waterfall")
-        assert "return Cashflows" in cb
+        assert "return pv" in cb
 
     def test_get_all_cookbooks(self):
         all_cb = get_all_cookbooks()

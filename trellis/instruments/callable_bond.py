@@ -11,7 +11,7 @@ from datetime import date
 
 from trellis.core.date_utils import generate_schedule, year_fraction
 from trellis.core.market_state import MarketState
-from trellis.core.payoff import PresentValue
+
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.models.trees.binomial import BinomialTree
 from trellis.models.trees.backward_induction import backward_induction
@@ -50,11 +50,11 @@ class CallableBondPayoff:
     def requirements(self) -> set[str]:
         return {"discount", "black_vol"}
 
-    def evaluate(self, market_state: MarketState) -> PresentValue:
+    def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
         T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
         if T <= 0:
-            return PresentValue(0.0)
+            return 0.0
 
         r = float(market_state.discount.zero_rate(T / 2))
         sigma = float(market_state.vol_surface.black_vol(T / 2, r))
@@ -105,4 +105,4 @@ class CallableBondPayoff:
         # Combine: tree gives the embedded option-adjusted value
         # Total = min(straight_bond_pv, tree_price + coupon_pv)
         # The callable is worth less than or equal to the straight bond
-        return PresentValue(min(price, coupon_pv + float(market_state.discount.discount(T)) * spec.notional))
+        return min(price, coupon_pv + float(market_state.discount.discount(T)) * spec.notional)

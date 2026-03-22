@@ -73,12 +73,11 @@ class TestFXForwardPayoff:
         fx_payoff = FXForwardPayoff(inner, "EURUSD", "EUR-DISC")
         pv = price_payoff(fx_payoff, ms)
 
-        # Manual: 100 EUR * F(5) * df_dom(5)
-        F5 = 1.10 * np.exp(-0.03 * 5) / np.exp(-0.05 * 5)
-        expected = 100 * F5 * np.exp(-0.05 * 5)
-        # Simplifies to: 100 * 1.10 * exp(-0.03*5) = 110 * exp(-0.15)
-        expected_simple = 100 * 1.10 * np.exp(-0.03 * 5)
-        assert pv == pytest.approx(expected_simple, rel=0.02)
+        # Inner payoff discounts at domestic rate (ms.discount = dom = 5%)
+        # FXForwardPayoff multiplies by spot: PV = 100*exp(-0.05*5) * 1.10
+        inner_pv = 100 * np.exp(-0.05 * 5)
+        expected = inner_pv * 1.10
+        assert pv == pytest.approx(expected, rel=0.02)
 
     def test_requirements(self):
         inner = DeterministicCashflowPayoff(

@@ -44,10 +44,10 @@ class SwapPayoff:
     def requirements(self) -> set[str]:
         return {"discount", "forward_rate"}
 
-    def evaluate(self, market_state: MarketState) -> list[tuple[date, float]]:
+    def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
         sign = 1.0 if spec.is_payer else -1.0
-        net: dict[date, float] = {}
+        pv = 0.0
 
         # Fixed leg
         fixed_sched = generate_schedule(spec.start_date, spec.end_date, spec.fixed_frequency)
@@ -56,7 +56,9 @@ class SwapPayoff:
             if p_end <= market_state.settlement:
                 continue
             tau = year_fraction(p_start, p_end, spec.fixed_day_count)
-            net[p_end] = net.get(p_end, 0.0) - sign * spec.notional * spec.fixed_rate * tau
+            t_pay = year_fraction(market_state.settlement, p_end, spec.fixed_day_count)
+            df = float(market_state.discount.discount(t_pay))
+            pv -= sign * spec.notional * spec.fixed_rate * tau * df
 
         # Floating leg
         float_sched = generate_schedule(spec.start_date, spec.end_date, spec.float_frequency)
@@ -71,9 +73,10 @@ class SwapPayoff:
             t_end = year_fraction(market_state.settlement, p_end, spec.float_day_count)
             t_start = max(t_start, 1e-6)
             F = fwd_curve.forward_rate(t_start, t_end)
-            net[p_end] = net.get(p_end, 0.0) + sign * spec.notional * float(F) * tau
+            df = float(market_state.discount.discount(t_end))
+            pv += sign * spec.notional * float(F) * tau * df
 
-        return sorted(net.items())
+        return pv
 
 
 def par_swap_rate(spec: SwapSpec, market_state: MarketState) -> float:
