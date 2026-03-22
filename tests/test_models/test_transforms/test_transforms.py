@@ -108,7 +108,7 @@ class TestHestonFFT:
         heston = Heston(mu=r, kappa=2.0, theta=0.04, xi=0.3, rho=-0.7, v0=0.04)
 
         def char_fn(u):
-            return heston.characteristic_function(u, T) * raw_np.exp(1j * u * raw_np.log(S0))
+            return heston.characteristic_function(u, T, log_spot=raw_np.log(S0))
 
         heston_call = fft_price(char_fn, S0, K, T, r)
         # With v0=theta=0.04 (equiv sigma=0.20) and skew from rho=-0.7,

@@ -52,10 +52,21 @@ class Heston:
     def diffusion_v(self, s, v, t):
         return self.xi * np.sqrt(np.maximum(v, 0.0))
 
-    def characteristic_function(self, u, t):
-        """Heston characteristic function phi(u, t) for log-spot.
+    def characteristic_function(self, u, t, log_spot: float = 0.0):
+        """Heston characteristic function phi(u, t) = E[exp(i*u*log(S_T))].
 
-        Used by FFT and COS pricing methods.
+        Parameters
+        ----------
+        u : float or complex
+            Frequency parameter.
+        t : float
+            Time to expiry.
+        log_spot : float
+            log(S0). Include this when using with FFT/COS methods that expect
+            the CF of absolute log(S_T), not log-return log(S_T/S0).
+            Default 0.0 gives the CF of log-return.
+
+        Used by FFT (Carr-Madan) and COS pricing methods.
         """
         kappa, theta, xi, rho = self.kappa, self.theta, self.xi, self.rho
         v0 = self.v0
@@ -71,4 +82,4 @@ class Heston:
             (1 - np.exp(-d * t)) / (1 - g * np.exp(-d * t))
         )
 
-        return np.exp(C + D * v0 + 1j * u * self.mu * t)
+        return np.exp(C + D * v0 + 1j * u * (log_spot + self.mu * t))

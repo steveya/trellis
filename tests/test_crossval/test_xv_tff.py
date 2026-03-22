@@ -102,7 +102,6 @@ class TestBSCrossValTFF:
 
 class TestHestonCrossValTFF:
 
-    @pytest.mark.skip(reason="Heston characteristic function needs CF convention alignment with FFT pricer")
     def test_heston_call(self):
         """Trellis Heston FFT matches TFF Heston."""
         from trellis.models.processes.heston import Heston
@@ -112,9 +111,10 @@ class TestHestonCrossValTFF:
 
         # Trellis: FFT with Heston characteristic function
         heston = Heston(mu=r, kappa=kappa, theta=theta, xi=xi, rho=rho, v0=v0)
+        log_S0 = raw_np.log(S0)
 
         def char_fn(u):
-            return heston.characteristic_function(u, T)
+            return heston.characteristic_function(u, T, log_spot=log_S0)
 
         trellis_price = fft_price(char_fn, S0, K, T, r)
 
