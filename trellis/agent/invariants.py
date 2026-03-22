@@ -140,6 +140,43 @@ def check_rate_monotonicity(
     return failures
 
 
+def check_vol_sensitivity(
+    payoff_factory,
+    market_state_factory,
+    vol_low: float = 0.05,
+    vol_high: float = 0.40,
+    min_change_pct: float = 0.01,
+) -> list[str]:
+    """Price of an instrument with embedded optionality MUST change with vol.
+
+    Any instrument whose requirements include 'black_vol' has embedded
+    optionality. If the price doesn't change when vol changes, the model
+    is not capturing the option component (e.g., using a spot tree for a
+    rate derivative).
+
+    Parameters
+    ----------
+    min_change_pct : float
+        Minimum relative price change between vol_low and vol_high.
+        Default 1%.
+    """
+    failures = []
+    try:
+        p_low = price_payoff(payoff_factory(), market_state_factory(vol=vol_low))
+        p_high = price_payoff(payoff_factory(), market_state_factory(vol=vol_high))
+        base = max(abs(p_low), abs(p_high), 1.0)
+        change = abs(p_high - p_low) / base
+        if change < min_change_pct:
+            failures.append(
+                f"Vol sensitivity too low: price({vol_low:.0%})={p_low:.4f}, "
+                f"price({vol_high:.0%})={p_high:.4f}, change={change:.4%}. "
+                f"Instruments with embedded options must have non-zero vega."
+            )
+    except Exception as e:
+        failures.append(f"Vol sensitivity check failed: {e}")
+    return failures
+
+
 # ---------------------------------------------------------------------------
 # Scenario / bounding checks
 # ---------------------------------------------------------------------------
@@ -233,8 +270,11 @@ def run_invariant_suite(
         ms = market_state_factory(rate=0.05)
     all_failures.extend(check_non_negativity(payoff_factory(), ms))
 
-    # Vol monotonicity (option payoffs)
+    # Vol sensitivity — any instrument with embedded optionality must have non-zero vega
     if is_option:
+        all_failures.extend(
+            check_vol_sensitivity(payoff_factory, market_state_factory)
+        )
         all_failures.extend(
             check_vol_monotonicity(payoff_factory, market_state_factory)
         )

@@ -60,44 +60,53 @@ def evaluate(self, market_state):
 
 COOKBOOKS["rate_tree"] = '''\
 ## Cookbook: Rate Tree (backward induction)
-Use this pattern for instruments with early exercise decisions.
-The tree handles discounting — return PresentValue.
+Use this pattern for instruments with early exercise on interest rates
+(callable bonds, puttable bonds, Bermudan swaptions).
+
+IMPORTANT: For rate derivatives, use `build_rate_lattice` which creates a
+mean-reverting SHORT-RATE tree (Hull-White style). Do NOT use BinomialTree.crr
+— that is for equity/spot processes.
+
+The rate tree has rates at each node. Discount factors and bond prices are
+computed FROM those rates. Vol changes the rate dispersion, which changes
+call/exercise decisions.
 
 ```python
 def evaluate(self, market_state):
-    
     from trellis.core.date_utils import generate_schedule, year_fraction
-    from trellis.models.trees.binomial import BinomialTree
-    from trellis.models.trees.backward_induction import backward_induction
+    from trellis.models.trees.lattice import (
+        build_rate_lattice, lattice_backward_induction,
+    )
 
     spec = self._spec
     T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
-    r = float(market_state.discount.zero_rate(T / 2))
-    sigma = float(market_state.vol_surface.black_vol(T / 2, r))
+    if T <= 0:
+        return 0.0
+
+    r0 = float(market_state.discount.zero_rate(T / 2))
+    sigma = float(market_state.vol_surface.black_vol(T / 2, r0))
+    mean_reversion = 0.1  # typical HW mean reversion
 
     n_steps = min(200, max(50, int(T * 50)))
-    tree = BinomialTree.crr(r, T, n_steps, r, sigma)
+    lattice = build_rate_lattice(r0, sigma, mean_reversion, T, n_steps)
 
-    # >>> INSTRUMENT-SPECIFIC: define cashflows at each time step <<<
-    # Example: coupon bond pays coupon_rate * notional * dt at each step
+    # >>> INSTRUMENT-SPECIFIC: map exercise dates to step indices <<<
+    exercise_steps = []
     dt = T / n_steps
 
-    def payoff_at_node(step, node):
+    def payoff_at_node(step, node, lattice):
         \"\"\"Terminal payoff at maturity.\"\"\"
-        # >>> Fill in: bond notional + final coupon, option payoff, etc. <<<
-        return spec.notional  # example: return par at maturity
+        # >>> Fill in: bond value at maturity (notional + final coupon) <<<
+        return spec.notional
 
-    def exercise_value(step, node, tree):
-        \"\"\"Exercise value at a callable/puttable date.\"\"\"
-        # >>> Fill in: call price, put price, etc. <<<
-        return spec.notional  # example: callable at par
+    def exercise_value(step, node, lattice):
+        \"\"\"Exercise value: what the holder/issuer gets if exercising now.\"\"\"
+        # >>> Fill in: call price, put price <<<
+        return spec.notional
 
-    # Determine which steps allow exercise
-    # >>> INSTRUMENT-SPECIFIC: map call/put dates to step indices <<<
-    exercise_steps = []  # list of step indices
-
-    price = backward_induction(
-        tree, payoff_at_node, r, "bermudan", exercise_steps, exercise_value
+    price = lattice_backward_induction(
+        lattice, payoff_at_node, exercise_value,
+        exercise_type="bermudan", exercise_steps=exercise_steps,
     )
 
     return price
