@@ -32,6 +32,8 @@ bloomberg = ["blpapi>=3.19"]
 agent = ["anthropic>=0.40", "openai>=1.0"]
 pipeline = ["pandas>=1.5", "pyarrow>=10"]
 dev = ["pytest>=7.0", "pytest-cov"]
+crossval = ["QuantLib>=1.30", "financepy>=1.0", "rateslib>=2.0"]
+tfq = ["tf-quant-finance", "tensorflow>=2.15", "tf-keras"]
 
 [project.urls]
 Homepage = "https://github.com/steveya/trellis"
