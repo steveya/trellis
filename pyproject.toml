@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "trellis"
+version = "0.1.0"
+description = "AI-augmented, self-evolving quantitative pricing library"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [
+    {name = "Steve Yang", email = "steveya@gmail.com"},
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy>=1.24",
+    "autograd>=1.7",
+    "scipy>=1.10",
+]
+
+[project.optional-dependencies]
+data = ["requests>=2.28", "fredapi>=0.5"]
+bloomberg = ["blpapi>=3.19"]
+agent = ["anthropic>=0.40", "openai>=1.0"]
+pipeline = ["pandas>=1.5", "pyarrow>=10"]
+dev = ["pytest>=7.0", "pytest-cov"]
+
+[project.urls]
+Homepage = "https://github.com/steveya/trellis"
+
+[tool.setuptools.packages.find]
+include = ["trellis*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: tests that require ANTHROPIC_API_KEY and make real LLM calls",
+]
+addopts = "-m 'not integration'"

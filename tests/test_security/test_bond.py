@@ -1,7 +1,7 @@
 """Testing Bond and ParBond classes"""
 import numpy as np
 import pytest
-from rate_model.security.bond import Bond, ParBond
+from trellis.instruments.bond import Bond, ParBond
 
 
 # ---------------------------------------------------------------------------
