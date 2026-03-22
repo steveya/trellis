@@ -153,17 +153,17 @@ but keep the same structure: imports, market data access, method invocation, ret
 ## Your task
 Write ONLY the body of the `evaluate()` method. The signature is already defined:
 
-    def evaluate(self, market_state: MarketState) -> list[tuple[date, float]]:
+    def evaluate(self, market_state: MarketState) -> float:
 
 ## Spec fields available via self._spec
 {field_descs}
 {method_guidance}
 ## Conventions
-- Return undiscounted cashflows as list[tuple[date, float]]
-- External discounting is applied by price_payoff() — do NOT discount your final cashflows
+- evaluate() returns a FLOAT — the present value (PV) of the instrument
+- You MUST handle all discounting internally — use `market_state.discount.discount(t)`
 - For forward rates: `market_state.forecast_forward_curve(self._spec.rate_index)`
 - For vol: `market_state.vol_surface.black_vol(T, strike)`
-- For discount factors within evaluate (e.g. annuity): `market_state.discount.discount(t)`
+- For discount factors: `market_state.discount.discount(t)`
 - Schedule generation: `generate_schedule(start, end, freq)` returns list[date]
 - Year fractions: `year_fraction(date1, date2, day_count)`
 - Black76: `black76_call(F, K, sigma, T)`, `black76_put(F, K, sigma, T)` — undiscounted

@@ -437,7 +437,7 @@ class {spec_schema.class_name}:
     def requirements(self) -> set[str]:
         return {{{requirements_str}}}
 
-    def evaluate(self, market_state: MarketState) -> list[tuple[date, float]]:
+    def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
 {EVALUATE_SENTINEL}
 '''
