@@ -25,11 +25,19 @@ templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 # -- Options for HTML output -------------------------------------------------
-html_theme = 'sphinx_rtd_theme'
+html_theme = 'furo'
 html_static_path = ['_static']
 html_theme_options = {
-    'navigation_depth': 4,
-    'titles_only': False,
+    "light_css_variables": {
+        "color-brand-primary": "#2962FF",
+        "color-brand-content": "#2962FF",
+    },
+    "dark_css_variables": {
+        "color-brand-primary": "#82B1FF",
+        "color-brand-content": "#82B1FF",
+    },
+    "sidebar_hide_name": False,
+    "navigation_with_keys": True,
 }
 
 # -- Extension configuration -------------------------------------------------
