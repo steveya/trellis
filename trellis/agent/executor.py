@@ -252,13 +252,15 @@ def _validate_build(
         failures.append(f"Cannot instantiate payoff for validation: {e}")
         return failures
 
-    # Basic: non-negativity at a standard MarketState
+    # Basic: non-negativity and sanity at a standard MarketState
+    from trellis.agent.invariants import check_price_sanity
     ms = MarketState(
         as_of=settle, settlement=settle,
         discount=YieldCurve.flat(0.05),
         vol_surface=FlatVol(0.20),
     )
     failures.extend(check_non_negativity(test_payoff, ms))
+    failures.extend(check_price_sanity(test_payoff, ms))
 
     # Standard: bounding check (callable ≤ straight bond across rates)
     if validation in ("standard", "thorough"):
@@ -376,6 +378,22 @@ def _make_test_payoff(payoff_cls, spec_schema, settle: date):
         "start_date": settle,
         "end_date": date(2034, 11, 15),
         "is_payer": True,
+        "call_dates": "2027-11-15,2029-11-15,2031-11-15",
+        "put_dates": "2027-11-15,2029-11-15,2031-11-15",
+        "exercise_dates": "2027-11-15,2029-11-15,2031-11-15",
+        "call_price": 100.0,
+        "put_price": 100.0,
+        "call_schedule": "2027-11-15,2029-11-15,2031-11-15",
+        "barrier": 80.0,
+        "barrier_type": "down_and_out",
+        "option_type": "call",
+        "spot": 100.0,
+        "n_names": 5,
+        "n_th": 1,
+        "attachment": 0.03,
+        "detachment": 0.07,
+        "correlation": 0.3,
+        "recovery": 0.4,
     }
 
     for field in spec_schema.fields:

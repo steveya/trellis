@@ -41,6 +41,24 @@ def check_protocol_conformance(cls, market_state: MarketState) -> list[str]:
 # Price bounds
 # ---------------------------------------------------------------------------
 
+def check_price_sanity(payoff: Payoff, market_state: MarketState,
+                       max_multiple: float = 10.0) -> list[str]:
+    """Price must be within a sane range (not 100× notional)."""
+    failures = []
+    try:
+        pv = price_payoff(payoff, market_state)
+        # Heuristic: price shouldn't exceed max_multiple × 100 (typical notional)
+        if abs(pv) > max_multiple * 100:
+            failures.append(
+                f"Price sanity check failed: |PV| = {abs(pv):.2f}, which exceeds "
+                f"{max_multiple}× typical notional (100). The model likely has a "
+                f"unit conversion error (e.g., passing Black vol to a rate tree)."
+            )
+    except Exception as e:
+        failures.append(f"Price sanity check failed: {e}")
+    return failures
+
+
 def check_non_negativity(payoff: Payoff, market_state: MarketState) -> list[str]:
     """Price must be non-negative for option-like payoffs."""
     failures = []

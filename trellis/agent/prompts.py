@@ -142,6 +142,12 @@ Modules to import and use:
 IMPORTANT: Follow the cookbook pattern above. Adapt it for this specific instrument
 but keep the same structure: imports, market data access, method invocation, return type.
 """
+        # Data contracts — unit conventions and conversions
+        from trellis.agent.data_contract import format_contracts_for_prompt
+        contracts_text = format_contracts_for_prompt(pricing_plan.method)
+        if contracts_text:
+            method_guidance += "\n" + contracts_text
+
         if pricing_plan.modeling_requirements:
             method_guidance += "\n## MODELING REQUIREMENTS (you MUST satisfy all of these)\n"
             for i, req in enumerate(pricing_plan.modeling_requirements, 1):
