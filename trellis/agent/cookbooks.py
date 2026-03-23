@@ -100,17 +100,26 @@ def evaluate(self, market_state):
 
     def payoff_at_node(step, node, lattice):
         \"\"\"Terminal payoff at maturity.\"\"\"
-        # >>> Fill in: bond value at maturity (notional + final coupon) <<<
+        # >>> Fill in: bond notional + any final coupon <<<
         return spec.notional
+
+    def cashflow(step, node, lattice):
+        \"\"\"Intermediate cashflows at each step (e.g., coupons).\"\"\"
+        # >>> Fill in: coupon amount at this step (0 if no coupon) <<<
+        return 0.0
 
     def exercise_value(step, node, lattice):
-        \"\"\"Exercise value: what the holder/issuer gets if exercising now.\"\"\"
-        # >>> Fill in: call price, put price <<<
+        \"\"\"Exercise value: what is received upon exercise.\"\"\"
+        # >>> Fill in: call price + accrued coupon <<<
         return spec.notional
 
+    # For CALLABLE bonds: exercise_fn=min (issuer calls to minimize liability)
+    # For PUTTABLE bonds: exercise_fn=max (holder puts to maximize value)
     price = lattice_backward_induction(
         lattice, payoff_at_node, exercise_value,
         exercise_type="bermudan", exercise_steps=exercise_steps,
+        cashflow_at_node=cashflow,
+        exercise_fn=min,  # >>> INSTRUMENT-SPECIFIC: min for callable, max for puttable <<<
     )
 
     return price

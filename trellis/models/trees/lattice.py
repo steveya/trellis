@@ -103,6 +103,8 @@ def lattice_backward_induction(
     exercise_value=None,
     exercise_type: str = "european",
     exercise_steps: list[int] | None = None,
+    cashflow_at_node=None,
+    exercise_fn=None,
 ) -> float:
     """Generic backward induction on a RecombiningLattice.
 
@@ -117,12 +119,21 @@ def lattice_backward_induction(
         "european", "american", or "bermudan".
     exercise_steps : list[int] or None
         Steps where exercise is allowed (Bermudan only).
+    cashflow_at_node : callable(step, node, lattice) -> float, optional
+        Intermediate cashflows (e.g., coupons) received at each node.
+        Added to the continuation value during rollback.
+    exercise_fn : callable or None
+        How to combine continuation and exercise values.
+        Default: ``max`` (holder exercises to maximize value — puts, American options).
+        Use ``min`` for issuer-callable instruments (issuer calls to minimize liability).
 
     Returns
     -------
     float
         Price at root node (step=0, node=0).
     """
+    if exercise_fn is None:
+        exercise_fn = max
     n = lattice.n_steps
 
     # Terminal values
@@ -139,20 +150,25 @@ def lattice_backward_induction(
             probs = lattice.get_probabilities(i, j)
             children = lattice.child_indices(i, j)
 
-            # Continuation value
+            # Continuation value = discounted expected future value
             cont = df * sum(p * values[c] for p, c in zip(probs, children))
+
+            # Add intermediate cashflows (coupons, etc.) at this node
+            if cashflow_at_node is not None:
+                cont += cashflow_at_node(i, j, lattice)
+
             new_values[j] = cont
 
         # Exercise decisions
         if exercise_type == "american" and exercise_value is not None:
             for j in range(n_nodes_i):
                 ev = exercise_value(i, j, lattice)
-                new_values[j] = max(new_values[j], ev)
+                new_values[j] = exercise_fn(new_values[j], ev)
         elif exercise_type == "bermudan" and exercise_steps and i in exercise_steps:
             if exercise_value is not None:
                 for j in range(n_nodes_i):
                     ev = exercise_value(i, j, lattice)
-                    new_values[j] = max(new_values[j], ev)
+                    new_values[j] = exercise_fn(new_values[j], ev)
 
         values = new_values
 
@@ -259,18 +275,19 @@ def build_rate_lattice(
             alpha = fwd
             for _ in range(20):
                 # Current tree ZCB
+                # tree_zcb(i*dt) = sum_j AD_{i-1,j} * sum_b [p_b * exp(-r_child * dt)]
+                # AD prices already include discounting to step i-1
                 tree_zcb = 0.0
                 d_tree_zcb = 0.0  # derivative w.r.t. alpha
                 for j in range(i):
                     probs = lattice.get_probabilities(i - 1, j)
-                    df_node = lattice.get_discount(i - 1, j)
                     for b, p in enumerate(probs):
                         child = j + b
                         r_child = alpha + (2 * child - i) * dr
                         child_df = raw_np.exp(-r_child * dt)
-                        contrib = ad_prices[j] * p * df_node * child_df
+                        contrib = ad_prices[j] * p * child_df
                         tree_zcb += contrib
-                        d_tree_zcb -= contrib * dt  # d/dalpha of exp(-r*dt)
+                        d_tree_zcb -= contrib * dt
 
                 err = tree_zcb - market_df
                 if abs(err) < 1e-12:
