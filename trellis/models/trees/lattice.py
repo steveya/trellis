@@ -169,80 +169,162 @@ def build_rate_lattice(
     a: float,
     T: float,
     n_steps: int,
+    discount_curve=None,
     branching: int = 2,
 ) -> RecombiningLattice:
-    """Build a mean-reverting short-rate lattice (Hull-White style).
+    """Build a calibrated mean-reverting short-rate lattice (Hull-White).
 
-    dr = a(theta - r)dt + sigma dW
+    dr = a(theta(t) - r)dt + sigma dW
 
-    Calibrated so that the tree-implied discount factors match the
-    input curve (simplified: uses r0 as the flat rate for theta).
+    If ``discount_curve`` is provided, theta(t) is calibrated at each step
+    so that the tree reprices zero-coupon bonds from the input curve.
+    This is the standard Hull-White tree construction.
 
     Parameters
     ----------
     r0 : float
-        Initial short rate.
+        Initial short rate (typically curve.zero_rate(dt)).
     sigma : float
-        Rate volatility.
+        Hull-White rate volatility (absolute, NOT Black vol).
     a : float
         Mean reversion speed.
     T : float
         Time horizon.
     n_steps : int
         Number of steps.
+    discount_curve : DiscountCurve or None
+        If provided, calibrate theta(t) to reprice this curve.
+        If None, use constant theta = a * r0 (uncalibrated — for testing only).
     branching : int
         2 (binomial) or 3 (trinomial).
     """
     dt = T / n_steps
     lattice = RecombiningLattice(n_steps, dt, branching, state_dim=1)
+    dr = sigma * raw_np.sqrt(dt)
 
-    if branching == 2:
-        # Binomial HW: up/down with mean reversion
-        dr = sigma * raw_np.sqrt(dt)
-        for i in range(n_steps + 1):
-            for j in range(i + 1):
-                # Rate at node: r0 + (2*j - i) * dr, adjusted for mean reversion
-                r_node = r0 + (2 * j - i) * dr
-                # Simple mean reversion adjustment
-                reversion = a * (r0 - r_node) * dt * i / max(n_steps, 1)
-                r_node += reversion
-                lattice.set_state(i, j, r_node)
-                lattice.set_discount(i, j, raw_np.exp(-r_node * dt))
+    if branching != 2:
+        raise NotImplementedError("Calibrated trinomial tree not yet implemented")
 
-        # Probabilities: adjusted for mean reversion
-        for i in range(n_steps):
-            for j in range(i + 1):
-                r = lattice.get_state(i, j)
-                # Risk-neutral probabilities with mean-reversion adjustment
-                drift = a * (r0 - r) * dt
-                p_up = 0.5 + drift / (2 * dr) if dr > 0 else 0.5
-                p_up = max(0.01, min(0.99, p_up))
-                lattice.set_probabilities(i, j, [1 - p_up, p_up])
+    # Step 1: Build the tree structure (rates without theta calibration)
+    # Base rates: r_node = alpha_i + (2*j - i) * dr
+    # where alpha_i is a time-dependent shift calibrated to the curve.
+    alphas = raw_np.zeros(n_steps + 1)
+    alphas[0] = r0
 
-    elif branching == 3:
-        # Trinomial HW
-        dr = sigma * raw_np.sqrt(3 * dt)
-        for i in range(n_steps + 1):
-            for j in range(2 * i + 1):
-                offset = j - i
-                r_node = r0 + offset * dr
-                lattice.set_state(i, j, r_node)
-                lattice.set_discount(i, j, raw_np.exp(-r_node * dt))
+    # Step 2: Calibrate alpha_i (which encodes theta) at each step
+    # by matching the tree-implied ZCB price to the market ZCB price.
+    for i in range(n_steps + 1):
+        if i == 0:
+            # Root: just r0
+            lattice.set_state(0, 0, r0)
+            lattice.set_discount(0, 0, raw_np.exp(-r0 * dt))
+            lattice.set_probabilities(0, 0, [0.5, 0.5])  # initial guess
+            continue
 
-        for i in range(n_steps):
-            for j in range(2 * i + 1):
-                r = lattice.get_state(i, j)
-                drift = a * (r0 - r) * dt
-                # Standard trinomial probabilities
-                p_up = 0.5 * (sigma ** 2 * dt + drift ** 2) / (dr ** 2) + drift / (2 * dr)
-                p_dn = 0.5 * (sigma ** 2 * dt + drift ** 2) / (dr ** 2) - drift / (2 * dr)
-                p_mid = 1.0 - p_up - p_dn
-                p_up = max(0.01, min(0.98, p_up))
-                p_dn = max(0.01, min(0.98, p_dn))
-                p_mid = 1.0 - p_up - p_dn
-                lattice.set_probabilities(i, j, [p_dn, p_mid, p_up])
+        if discount_curve is not None and i > 0:
+            # Calibrate alpha_i so tree ZCB(i*dt) matches curve.discount(i*dt)
+            market_df = float(discount_curve.discount(i * dt))
+
+            # Arrow-Debreu prices at step i-1
+            if i == 1:
+                ad_prices = [1.0]  # single root node
+            else:
+                # Compute AD prices by forward induction
+                ad_prices = _forward_induction_ad(lattice, i - 1)
+
+            # Search for alpha_i that makes tree ZCB = market ZCB
+            # ZCB(i*dt) = sum over nodes at step i-1: AD_j * exp(-r_j * dt)
+            # where r_j depends on alpha_i
+            def zcb_error(alpha):
+                total = 0.0
+                for j in range(i):
+                    probs = lattice.get_probabilities(i - 1, j)
+                    df_node = lattice.get_discount(i - 1, j)
+                    for b, p in enumerate(probs):
+                        child = j + b  # for binomial: [j, j+1]
+                        r_child = alpha + (2 * child - i) * dr
+                        child_df = raw_np.exp(-r_child * dt)
+                        total += ad_prices[j] * p * df_node * child_df
+                return total
+
+            # Find alpha_i via bisection
+            # Start with the forward rate as initial guess
+            if discount_curve is not None:
+                fwd = -raw_np.log(float(discount_curve.discount((i + 0.5) * dt)) /
+                                   float(discount_curve.discount((i - 0.5) * dt))) / dt
+            else:
+                fwd = r0
+
+            # Simple Newton iteration
+            alpha = fwd
+            for _ in range(20):
+                # Current tree ZCB
+                tree_zcb = 0.0
+                d_tree_zcb = 0.0  # derivative w.r.t. alpha
+                for j in range(i):
+                    probs = lattice.get_probabilities(i - 1, j)
+                    df_node = lattice.get_discount(i - 1, j)
+                    for b, p in enumerate(probs):
+                        child = j + b
+                        r_child = alpha + (2 * child - i) * dr
+                        child_df = raw_np.exp(-r_child * dt)
+                        contrib = ad_prices[j] * p * df_node * child_df
+                        tree_zcb += contrib
+                        d_tree_zcb -= contrib * dt  # d/dalpha of exp(-r*dt)
+
+                err = tree_zcb - market_df
+                if abs(err) < 1e-12:
+                    break
+                if abs(d_tree_zcb) < 1e-15:
+                    break
+                alpha -= err / d_tree_zcb
+
+            alphas[i] = alpha
+        else:
+            alphas[i] = r0  # uncalibrated fallback
+
+        # Set states and discounts at step i
+        for j in range(i + 1):
+            r_node = alphas[i] + (2 * j - i) * dr
+            lattice.set_state(i, j, r_node)
+            lattice.set_discount(i, j, raw_np.exp(-r_node * dt))
+
+    # Step 3: Set probabilities (mean-reversion adjusted)
+    for i in range(n_steps):
+        for j in range(i + 1):
+            r = lattice.get_state(i, j)
+            target = alphas[min(i + 1, n_steps)]
+            drift = a * (target - r) * dt
+            p_up = 0.5 + drift / (2 * dr) if dr > 0 else 0.5
+            p_up = max(0.01, min(0.99, p_up))
+            lattice.set_probabilities(i, j, [1 - p_up, p_up])
 
     return lattice
+
+
+def _forward_induction_ad(lattice, target_step):
+    """Compute Arrow-Debreu prices at a given step via forward induction."""
+    # AD price at root = 1
+    ad = {(0, 0): 1.0}
+
+    for i in range(target_step):
+        new_ad = {}
+        for j in range(i + 1):
+            if (i, j) not in ad:
+                continue
+            price = ad[(i, j)]
+            df = lattice.get_discount(i, j)
+            probs = lattice.get_probabilities(i, j)
+            children = lattice.child_indices(i, j)
+            for b, (p, c) in enumerate(zip(probs, children)):
+                key = (i + 1, c)
+                new_ad[key] = new_ad.get(key, 0.0) + price * p * df
+        ad.update(new_ad)
+
+    # Extract prices at target_step
+    n_nodes = lattice.n_nodes(target_step)
+    result = [ad.get((target_step, j), 0.0) for j in range(n_nodes)]
+    return result
 
 
 def build_spot_lattice(

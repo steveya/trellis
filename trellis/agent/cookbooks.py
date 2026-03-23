@@ -84,11 +84,15 @@ def evaluate(self, market_state):
         return 0.0
 
     r0 = float(market_state.discount.zero_rate(T / 2))
-    sigma = float(market_state.vol_surface.black_vol(T / 2, r0))
+    # Convert Black vol to HW rate vol (see data contract)
+    black_vol = float(market_state.vol_surface.black_vol(T / 2, r0))
+    sigma_hw = black_vol * r0  # sigma_HW = sigma_Black * forward_rate
     mean_reversion = 0.1  # typical HW mean reversion
 
     n_steps = min(200, max(50, int(T * 50)))
-    lattice = build_rate_lattice(r0, sigma, mean_reversion, T, n_steps)
+    # MUST pass discount_curve for calibration — an uncalibrated tree is never correct
+    lattice = build_rate_lattice(r0, sigma_hw, mean_reversion, T, n_steps,
+                                  discount_curve=market_state.discount)
 
     # >>> INSTRUMENT-SPECIFIC: map exercise dates to step indices <<<
     exercise_steps = []
