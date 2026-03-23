@@ -300,7 +300,46 @@ def _validate_build(
         except Exception:
             pass  # Critic failure shouldn't block the build
 
+    # Thorough: run model validator (MRM-style)
+    if validation == "thorough":
+        try:
+            from trellis.agent.model_validator import validate_model
+
+            # Determine instrument type from description
+            itype = _extract_instrument_type(description)
+
+            report = validate_model(
+                payoff_factory=payoff_factory,
+                market_state_factory=ms_factory,
+                code=code,
+                instrument_type=itype,
+                method=spec_schema.requirements[0] if hasattr(spec_schema, 'requirements') else "unknown",
+                model=model,
+            )
+
+            for finding in report.findings:
+                if finding.severity in ("critical", "high"):
+                    failures.append(
+                        f"[MODEL VALIDATION {finding.severity.upper()}] {finding.id}: "
+                        f"{finding.description}\n"
+                        f"  Evidence: {finding.evidence}\n"
+                        f"  Remediation: {finding.remediation}"
+                    )
+        except Exception:
+            pass  # Model validation failure shouldn't block the build
+
     return failures
+
+
+def _extract_instrument_type(description: str) -> str:
+    """Extract instrument type keyword from a description."""
+    desc = description.lower()
+    for keyword in ["callable_bond", "callable bond", "puttable_bond", "bermudan_swaption",
+                     "barrier_option", "barrier option", "asian_option", "cdo",
+                     "nth_to_default", "swaption", "cap", "floor", "swap", "bond", "mbs"]:
+        if keyword.replace("_", " ") in desc or keyword in desc:
+            return keyword.replace(" ", "_")
+    return "unknown"
 
 
 def _make_test_payoff(payoff_cls, spec_schema, settle: date):
