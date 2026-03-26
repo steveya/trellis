@@ -1,0 +1,24 @@
+id: md_015
+title: Missing spot input in payoff
+severity: critical
+category: market_data
+status: candidate
+confidence: 0.4
+created: '2026-03-24T20:56:47.550282'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: The error message indicates that the required 'spot' capability is missing
+  when constructing the payoff.
+root_cause: The analytical method expected a 'spot' price input to build the payoff,
+  but only 'black_vol' and 'discount' were provided, reflecting incomplete market
+  data configuration.
+fix: Ensure that the 'spot' data is provided in the pricing model configuration or
+  modify the analytical method to handle scenarios where 'spot' is absent.
+validation: Discovered during build (attempt 0)

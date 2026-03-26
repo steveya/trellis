@@ -4,99 +4,109 @@ Models API
 Black76
 -------
 
-.. autofunction:: trellis.models.black.black76_call
-.. autofunction:: trellis.models.black.black76_put
+.. autofunction:: trellis.models.black76_call
+.. autofunction:: trellis.models.black76_put
 
 Volatility Surface
 ------------------
 
-.. autoclass:: trellis.models.vol_surface.FlatVol
+.. autoclass:: trellis.models.FlatVol
+   :members:
+
+.. autoclass:: trellis.models.GridVolSurface
    :members:
 
 Trees
 -----
 
-.. autoclass:: trellis.models.trees.binomial.BinomialTree
+.. autoclass:: trellis.models.trees.BinomialTree
    :members:
 
-.. autoclass:: trellis.models.trees.trinomial.TrinomialTree
+.. autoclass:: trellis.models.trees.TrinomialTree
    :members:
 
-.. autofunction:: trellis.models.trees.backward_induction.backward_induction
+.. autofunction:: trellis.models.trees.backward_induction
 
 Monte Carlo
 -----------
 
-.. autoclass:: trellis.models.monte_carlo.engine.MonteCarloEngine
+.. autoclass:: trellis.models.monte_carlo.MonteCarloEngine
    :members:
 
-.. autofunction:: trellis.models.monte_carlo.discretization.euler_maruyama
-.. autofunction:: trellis.models.monte_carlo.discretization.milstein
+.. autofunction:: trellis.models.monte_carlo.euler_maruyama
+.. autofunction:: trellis.models.monte_carlo.milstein
 .. autofunction:: trellis.models.monte_carlo.lsm.longstaff_schwartz
+
+QMC
+---
+
+.. autofunction:: trellis.models.qmc.sobol_normals
+.. autofunction:: trellis.models.qmc.brownian_bridge
 
 PDE Solvers
 -----------
 
-.. autofunction:: trellis.models.pde.crank_nicolson.crank_nicolson_1d
-.. autofunction:: trellis.models.pde.implicit_fd.implicit_fd_1d
-.. autofunction:: trellis.models.pde.psor.psor_1d
-.. autofunction:: trellis.models.pde.thomas.thomas_solve
-.. autoclass:: trellis.models.pde.grid.Grid
+.. autofunction:: trellis.models.pde.theta_method_1d
+.. autofunction:: trellis.models.pde.crank_nicolson_1d
+.. autofunction:: trellis.models.pde.implicit_fd_1d
+.. autofunction:: trellis.models.pde.psor_1d
+.. autofunction:: trellis.models.pde.thomas_solve
+.. autoclass:: trellis.models.pde.Grid
    :members:
 
 Transforms
 ----------
 
-.. autofunction:: trellis.models.transforms.fft_pricer.fft_price
-.. autofunction:: trellis.models.transforms.cos_method.cos_price
+.. autofunction:: trellis.models.transforms.fft_price
+.. autofunction:: trellis.models.transforms.cos_price
 
 Stochastic Processes
 --------------------
 
-.. autoclass:: trellis.models.processes.gbm.GBM
+.. autoclass:: trellis.models.processes.GBM
    :members:
-.. autoclass:: trellis.models.processes.vasicek.Vasicek
+.. autoclass:: trellis.models.processes.Vasicek
    :members:
-.. autoclass:: trellis.models.processes.cir.CIR
+.. autoclass:: trellis.models.processes.CIR
    :members:
-.. autoclass:: trellis.models.processes.hull_white.HullWhite
+.. autoclass:: trellis.models.processes.HullWhite
    :members:
-.. autoclass:: trellis.models.processes.heston.Heston
+.. autoclass:: trellis.models.processes.Heston
    :members:
-.. autoclass:: trellis.models.processes.sabr.SABRProcess
+.. autoclass:: trellis.models.processes.SABRProcess
    :members:
-.. autoclass:: trellis.models.processes.local_vol.LocalVol
+.. autoclass:: trellis.models.processes.LocalVol
    :members:
-.. autoclass:: trellis.models.processes.jump_diffusion.MertonJumpDiffusion
+.. autoclass:: trellis.models.processes.MertonJumpDiffusion
    :members:
 
 Copulas
 -------
 
-.. autoclass:: trellis.models.copulas.gaussian.GaussianCopula
+.. autoclass:: trellis.models.copulas.GaussianCopula
    :members:
-.. autoclass:: trellis.models.copulas.student_t.StudentTCopula
+.. autoclass:: trellis.models.copulas.StudentTCopula
    :members:
-.. autoclass:: trellis.models.copulas.factor.FactorCopula
+.. autoclass:: trellis.models.copulas.FactorCopula
    :members:
 
 Calibration
 -----------
 
-.. autofunction:: trellis.models.calibration.implied_vol.implied_vol
-.. autofunction:: trellis.models.calibration.implied_vol.implied_vol_jaeckel
-.. autofunction:: trellis.models.calibration.sabr_fit.calibrate_sabr
-.. autofunction:: trellis.models.calibration.local_vol.dupire_local_vol
+.. autofunction:: trellis.models.calibration.implied_vol
+.. autofunction:: trellis.models.calibration.implied_vol_jaeckel
+.. autofunction:: trellis.models.calibration.calibrate_sabr
+.. autofunction:: trellis.models.calibration.dupire_local_vol
 
 Cash Flow Engine
 ----------------
 
-.. autoclass:: trellis.models.cashflow_engine.waterfall.Waterfall
+.. autoclass:: trellis.models.cashflow_engine.Waterfall
    :members:
-.. autoclass:: trellis.models.cashflow_engine.waterfall.Tranche
+.. autoclass:: trellis.models.cashflow_engine.Tranche
    :members:
-.. autoclass:: trellis.models.cashflow_engine.prepayment.PSA
+.. autoclass:: trellis.models.cashflow_engine.PSA
    :members:
-.. autoclass:: trellis.models.cashflow_engine.prepayment.CPR
+.. autoclass:: trellis.models.cashflow_engine.CPR
    :members:
-.. autofunction:: trellis.models.cashflow_engine.amortization.level_pay
+.. autofunction:: trellis.models.cashflow_engine.level_pay

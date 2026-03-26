@@ -1,0 +1,24 @@
+id: con_007
+title: Use exact import paths
+severity: critical
+category: convention
+status: archived
+confidence: 0.4
+created: '2026-03-24T06:18:27.279931'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - discounting
+  - characteristic_function
+  instrument: []
+  error_signature: null
+symptom: The code raised an ImportError indicating 'No module named closed_form'.
+root_cause: This happened because the module path was guessed rather than defined
+  explicitly, leading to an incorrect import.
+fix: Ensure that all module imports use fully-qualified, explicit paths as per the
+  established code conventions to avoid guessing module names.
+validation: Discovered during build (attempt 0)
+archive_reason: Superseded by con_001 (authoritative import registry)

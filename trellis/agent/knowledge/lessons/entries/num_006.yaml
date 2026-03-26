@@ -1,0 +1,23 @@
+id: num_006
+title: Undefined MarketState causes build failure
+severity: critical
+category: numerical
+status: candidate
+confidence: 0.4
+created: '2026-03-24T12:56:57.587796'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: The pricing engine failed to build because the variable 'MarketState' was
+  not defined.
+root_cause: The code referenced MarketState without importing or declaring it, possibly
+  due to missing integration of a required market data component.
+fix: Ensure that MarketState is defined or correctly imported before it is used in
+  the Greeks engine implementation.
+validation: Discovered during build (attempt 0)

@@ -29,7 +29,16 @@ def _capfloor_pv(
     market_state: MarketState,
     pricing_fn,
 ) -> float:
-    """Shared logic: sum discounted caplet/floorlet values."""
+    """Return the sum of discounted Black-76 caplets or floorlets.
+
+    For each future accrual period ``[T_i, T_{i+1}]`` this computes
+
+    .. math::
+
+       PV_i = N \tau_i D(0, T_{i+1}) \operatorname{Black}(F_i, K, \sigma_i, T_i)
+
+    and sums the surviving periods after settlement.
+    """
     schedule = generate_schedule(spec.start_date, spec.end_date, spec.frequency)
     period_starts = [spec.start_date] + schedule[:-1]
 
@@ -57,36 +66,44 @@ def _capfloor_pv(
 
 
 class CapPayoff:
-    """Interest rate cap priced via Black76."""
+    """Interest rate cap priced as a strip of Black-76 caplets."""
 
     def __init__(self, spec: CapFloorSpec):
+        """Store the cap contract specification used for all future valuations."""
         self._spec = spec
 
     @property
     def spec(self) -> CapFloorSpec:
+        """Return the immutable contract specification."""
         return self._spec
 
     @property
     def requirements(self) -> set[str]:
+        """Declare the market inputs needed for cap valuation."""
         return {"discount", "forward_rate", "black_vol"}
 
     def evaluate(self, market_state: MarketState) -> float:
+        """Price the cap by summing Black-76 caplet present values."""
         return _capfloor_pv(self._spec, market_state, black76_call)
 
 
 class FloorPayoff:
-    """Interest rate floor priced via Black76."""
+    """Interest rate floor priced as a strip of Black-76 floorlets."""
 
     def __init__(self, spec: CapFloorSpec):
+        """Store the floor contract specification used for all future valuations."""
         self._spec = spec
 
     @property
     def spec(self) -> CapFloorSpec:
+        """Return the immutable contract specification."""
         return self._spec
 
     @property
     def requirements(self) -> set[str]:
+        """Declare the market inputs needed for floor valuation."""
         return {"discount", "forward_rate", "black_vol"}
 
     def evaluate(self, market_state: MarketState) -> float:
+        """Price the floor by summing Black-76 floorlet present values."""
         return _capfloor_pv(self._spec, market_state, black76_put)

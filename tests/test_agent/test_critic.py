@@ -79,6 +79,26 @@ class TestRunCriticTests:
         assert failures == []  # broken test code is skipped, not a failure
 
 
+def test_critique_includes_shared_knowledge(monkeypatch):
+    from trellis.agent.critic import critique
+
+    captured = {}
+
+    def fake_llm_generate_json(prompt, model=None):
+        captured["prompt"] = prompt
+        return []
+
+    monkeypatch.setattr("trellis.agent.critic.llm_generate_json", fake_llm_generate_json)
+    critique(
+        "def price():\n    return 0.0",
+        "Demo instrument",
+        knowledge_context="## Shared Failure Memory\n- Avoid double discounting.",
+    )
+
+    assert "Shared Failure Memory" in captured["prompt"]
+    assert "Avoid double discounting" in captured["prompt"]
+
+
 class TestInvariantExpanded:
 
     def test_bounded_by_reference_pass(self):

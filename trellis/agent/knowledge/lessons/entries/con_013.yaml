@@ -1,0 +1,25 @@
+id: con_013
+title: Undefined instrument class reference
+severity: critical
+category: convention
+status: candidate
+confidence: 0.4
+created: '2026-03-25T11:50:43.108639'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''European'' is not defined'
+root_cause: Code referenced an instrument/class symbol ('European') that doesn't exist
+  or wasn't imported; the implementation assumed an API or module symbol that isn't
+  available in the runtime.
+fix: Use the exact module import path or the correct class name as provided by the
+  codebase (or define the missing class/alias). Add a small import/availability check
+  and unit test that fails fast if the expected class or symbol is missing.
+validation: Discovered during build (attempt 0)

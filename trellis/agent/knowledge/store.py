@@ -1,0 +1,598 @@
+"""KnowledgeStore — unified facade over all knowledge tiers.
+
+Hot tier (loaded at init): principles, lesson index, feature taxonomy,
+decompositions, failure signatures.
+
+Warm tier (loaded per-task, cached): full lessons, cookbooks, data
+contracts, method requirements, benchmarks.
+
+Cold tier (on-demand): run traces, archived lessons.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from trellis.agent.knowledge.methods import normalize_method
+from trellis.agent.knowledge.schema import (
+    AppliesWhen,
+    BenchmarkCase,
+    BenchmarkSuite,
+    CookbookEntry,
+    DataContractEntry,
+    FailureSignature,
+    Feature,
+    Lesson,
+    LessonIndex,
+    LessonStatus,
+    MethodRequirements,
+    Principle,
+    ProductDecomposition,
+    RetrievalSpec,
+    Severity,
+)
+
+
+_KNOWLEDGE_DIR = Path(__file__).parent
+
+_SEVERITY_ORDER = {
+    Severity.CRITICAL: 0,
+    Severity.HIGH: 1,
+    Severity.MEDIUM: 2,
+    Severity.LOW: 3,
+}
+
+
+# ---------------------------------------------------------------------------
+# Feature expansion
+# ---------------------------------------------------------------------------
+
+def expand_features(
+    features: list[str],
+    taxonomy: dict[str, Feature],
+) -> list[str]:
+    """Transitively expand features via 'implies' chains.
+
+    [callable] → [callable, early_exercise, backward_induction]
+    Unknown features are kept as-is (no expansion, no error).
+    """
+    expanded: set[str] = set()
+    stack = list(features)
+    while stack:
+        fid = stack.pop()
+        if fid in expanded:
+            continue
+        expanded.add(fid)
+        feat = taxonomy.get(fid)
+        if feat and feat.implies:
+            stack.extend(feat.implies)
+    return sorted(expanded)
+
+
+# ---------------------------------------------------------------------------
+# KnowledgeStore
+# ---------------------------------------------------------------------------
+
+class KnowledgeStore:
+    """Singleton-style facade over the four knowledge stores."""
+
+    def __init__(self) -> None:
+        """Initialize hot-tier state and empty caches for warm-tier artifacts."""
+        # Hot tier
+        self._features: dict[str, Feature] = {}
+        self._decompositions: dict[str, ProductDecomposition] = {}
+        self._principles: list[Principle] = []
+        self._lesson_index: list[LessonIndex] = []
+        self._failure_signatures: list[FailureSignature] = []
+
+        # Warm tier (lazy, cached)
+        self._lessons_cache: dict[str, Lesson] = {}
+        self._cookbooks_cache: dict[str, CookbookEntry] | None = None
+        self._contracts_cache: dict[str, list[DataContractEntry]] | None = None
+        self._requirements_cache: dict[str, MethodRequirements] | None = None
+        self._benchmarks_cache: dict[str, BenchmarkSuite] | None = None
+        self._retrieval_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
+        self._retrieval_cache_hits = 0
+        self._retrieval_cache_misses = 0
+
+        self._load_hot_tier()
+
+    # --------------------------------------------------------------------- #
+    # Hot tier loading
+    # --------------------------------------------------------------------- #
+
+    def _load_hot_tier(self) -> None:
+        """Load the always-resident canonical knowledge files into memory."""
+        self._load_features()
+        self._load_decompositions()
+        self._load_principles()
+        self._load_lesson_index()
+        self._load_failure_signatures()
+
+    def _load_features(self) -> None:
+        """Load the feature taxonomy used for transitive retrieval expansion."""
+        path = _KNOWLEDGE_DIR / "canonical" / "features.yaml"
+        if not path.exists():
+            return
+        data = yaml.safe_load(path.read_text()) or {}
+        items = data if isinstance(data, list) else data.get("features", [])
+        for f in items:
+            self._features[f["id"]] = Feature(
+                id=f["id"],
+                description=f.get("description", ""),
+                implies=tuple(f.get("implies", [])),
+                method_hint=f.get("method_hint"),
+                market_data=tuple(f.get("market_data", [])),
+            )
+
+    def _load_decompositions(self) -> None:
+        """Load canonical product decompositions keyed by instrument type."""
+        path = _KNOWLEDGE_DIR / "canonical" / "decompositions.yaml"
+        if not path.exists():
+            return
+        data = yaml.safe_load(path.read_text()) or {}
+
+        # Support both list format and dict format
+        if isinstance(data, list):
+            items = [(entry["instrument"], entry) for entry in data]
+        elif isinstance(data, dict):
+            items = list(data.items())
+        else:
+            return
+
+        for key, entry in items:
+            self._decompositions[key] = ProductDecomposition(
+                instrument=key,
+                features=tuple(entry.get("features", [])),
+                method=normalize_method(entry.get("method", "")),
+                method_modules=tuple(entry.get("method_modules", [])),
+                required_market_data=frozenset(entry.get("required_market_data", [])),
+                modeling_requirements=tuple(entry.get("modeling_requirements", [])),
+                reasoning=entry.get("reasoning", ""),
+                notes=entry.get("notes", ""),
+                learned=entry.get("learned", False),
+            )
+
+    def _load_principles(self) -> None:
+        """Load high-level design principles used across all retrieval tasks."""
+        path = _KNOWLEDGE_DIR / "canonical" / "principles.yaml"
+        if not path.exists():
+            return
+        data = yaml.safe_load(path.read_text()) or []
+        for p in data:
+            self._principles.append(Principle(
+                id=p["id"],
+                rule=p["rule"],
+                derived_from=tuple(p.get("derived_from", [])),
+                category=p.get("category", ""),
+            ))
+
+    def _load_lesson_index(self) -> None:
+        """Load the lightweight lesson index used for fast relevance scoring."""
+        path = _KNOWLEDGE_DIR / "lessons" / "index.yaml"
+        if not path.exists():
+            return
+        data = yaml.safe_load(path.read_text()) or {}
+        for entry in data.get("entries", []):
+            aw = entry.get("applies_when", {})
+            self._lesson_index.append(LessonIndex(
+                id=entry["id"],
+                title=entry["title"],
+                severity=Severity(entry.get("severity", "low")),
+                category=entry.get("category", ""),
+                applies_when=AppliesWhen(
+                    method=tuple(normalize_method(m) for m in aw.get("method", [])),
+                    features=tuple(aw.get("features", [])),
+                    instrument=tuple(aw.get("instrument", [])),
+                    error_signature=aw.get("error_signature"),
+                ),
+                status=LessonStatus(entry.get("status", "promoted")),
+            ))
+
+    def _load_failure_signatures(self) -> None:
+        """Load regex-based failure signatures used to interpret execution errors."""
+        path = _KNOWLEDGE_DIR / "canonical" / "failure_signatures.yaml"
+        if not path.exists():
+            return
+        data = yaml.safe_load(path.read_text()) or []
+        for s in data:
+            self._failure_signatures.append(FailureSignature(
+                pattern=s.get("pattern", ""),
+                magnitude=s.get("magnitude", "unknown"),
+                category=s.get("category", "unknown"),
+                probable_causes=tuple(s.get("probable_causes", [])),
+                features=tuple(s.get("features", [])),
+                diagnostic_hint=s.get("diagnostic_hint", ""),
+            ))
+
+    # --------------------------------------------------------------------- #
+    # Main retrieval
+    # --------------------------------------------------------------------- #
+
+    def retrieve_for_task(self, spec: RetrievalSpec) -> dict[str, Any]:
+        """Main entry point: get all relevant knowledge for a task.
+
+        Features are the primary retrieval axis.  Lessons, benchmarks, and
+        failure signatures are matched via feature union.
+        """
+        cache_key = self._retrieval_cache_key(spec)
+        cached = self._retrieval_cache.get(cache_key)
+        if cached is not None:
+            self._retrieval_cache_hits += 1
+            return cached
+
+        self._retrieval_cache_misses += 1
+        expanded = expand_features(spec.features, self._features)
+        method = normalize_method(spec.method) if spec.method else None
+
+        result: dict[str, Any] = {
+            "principles": list(self._principles),
+            "decomposition": self._decompositions.get(spec.instrument) if spec.instrument else None,
+            "product_ir": getattr(spec, "product_ir", None),
+            "unresolved_primitives": tuple(spec.unresolved_primitives),
+            "lessons": self._query_lessons(expanded, spec, spec.max_lessons),
+            "cookbook": self._load_cookbook(method) if method else None,
+            "data_contracts": self._load_contracts(method) if method else [],
+            "method_requirements": self._load_requirements(method) if method else None,
+        }
+
+        if spec.include_benchmarks:
+            result["benchmarks"] = self._find_benchmarks(expanded, method or "")
+
+        if spec.error_signatures:
+            result["matched_signatures"] = self._match_signatures(spec.error_signatures)
+
+        self._retrieval_cache[cache_key] = result
+        return result
+
+    def retrieval_cache_stats(self) -> dict[str, int]:
+        """Return lightweight retrieval-cache statistics for testing and traces."""
+        return {
+            "hits": self._retrieval_cache_hits,
+            "misses": self._retrieval_cache_misses,
+            "size": len(self._retrieval_cache),
+        }
+
+    def clear_runtime_caches(self) -> None:
+        """Clear warm/runtime caches without reloading the hot tier from disk."""
+        self._lessons_cache.clear()
+        self._cookbooks_cache = None
+        self._contracts_cache = None
+        self._requirements_cache = None
+        self._benchmarks_cache = None
+        self._retrieval_cache.clear()
+        self._retrieval_cache_hits = 0
+        self._retrieval_cache_misses = 0
+
+    # --------------------------------------------------------------------- #
+    # Lesson retrieval (feature-based union)
+    # --------------------------------------------------------------------- #
+
+    def _query_lessons(
+        self,
+        expanded_features: list[str],
+        spec: RetrievalSpec,
+        max_n: int,
+    ) -> list[Lesson]:
+        """Rank indexed lessons by semantic relevance and hydrate the top matches."""
+        scored: list[tuple[float, LessonIndex]] = []
+        for idx in self._lesson_index:
+            if idx.status not in (LessonStatus.PROMOTED, LessonStatus.VALIDATED):
+                continue
+            score = self._relevance_score(idx, expanded_features, spec)
+            if score > 0:
+                scored.append((score, idx))
+
+        scored.sort(key=lambda x: (-x[0], _SEVERITY_ORDER.get(x[1].severity, 3)))
+
+        lessons: list[Lesson] = []
+        for _, idx_entry in scored[:max_n]:
+            lesson = self._load_lesson(idx_entry.id)
+            if lesson is not None:
+                lessons.append(lesson)
+        return lessons
+
+    @staticmethod
+    def _relevance_score(
+        idx: LessonIndex,
+        features: list[str],
+        spec: RetrievalSpec,
+    ) -> float:
+        """Compute a heuristic relevance score for one indexed lesson."""
+        score = 0.0
+        aw = idx.applies_when
+        method = normalize_method(spec.method) if spec.method else None
+
+        # Feature overlap — primary signal
+        if aw.features:
+            overlap = len(set(aw.features) & set(features))
+            score += overlap * 2.0
+
+        # Method match
+        if aw.method and method:
+            if method in aw.method:
+                score += 1.0
+            elif "any" in aw.method:
+                score += 0.5
+
+        # Instrument hint
+        if aw.instrument and spec.instrument:
+            if spec.instrument in aw.instrument:
+                score += 0.75
+
+        # Semantic bonuses from ProductIR-derived retrieval spec.
+        score += KnowledgeStore._semantic_bonus(idx, spec)
+
+        # Severity bonus
+        severity_bonus = {Severity.CRITICAL: 1.0, Severity.HIGH: 0.5}
+        score += severity_bonus.get(idx.severity, 0.0)
+
+        return score
+
+    @staticmethod
+    def _semantic_bonus(idx: LessonIndex, spec: RetrievalSpec) -> float:
+        """Add semantic boosts derived from exercise style, state dependence, and model family."""
+        score = 0.0
+        feature_set = set(idx.applies_when.features)
+
+        if spec.exercise_style in {"american", "bermudan", "issuer_call", "holder_put"}:
+            if "early_exercise" in feature_set:
+                score += 1.5
+            if spec.exercise_style == "issuer_call" and "callable" in feature_set:
+                score += 0.5
+            if spec.exercise_style == "holder_put" and "puttable" in feature_set:
+                score += 0.5
+
+        if spec.state_dependence == "path_dependent" and "path_dependent" in feature_set:
+            score += 1.0
+        if spec.state_dependence == "schedule_dependent" and "backward_induction" in feature_set:
+            score += 0.75
+
+        if spec.model_family == "interest_rate" and "mean_reversion" in feature_set:
+            score += 1.0
+        if spec.model_family == "stochastic_volatility" and "stochastic_vol" in feature_set:
+            score += 1.0
+
+        return score
+
+    def _load_lesson(self, lesson_id: str) -> Lesson | None:
+        """Load and cache one full lesson entry by identifier."""
+        if lesson_id in self._lessons_cache:
+            return self._lessons_cache[lesson_id]
+
+        path = _KNOWLEDGE_DIR / "lessons" / "entries" / f"{lesson_id}.yaml"
+        if not path.exists():
+            return None
+
+        data = yaml.safe_load(path.read_text())
+        if not data:
+            return None
+
+        aw = data.get("applies_when", {})
+        lesson = Lesson(
+            id=data["id"],
+            title=data["title"],
+            severity=Severity(data.get("severity", "low")),
+            category=data.get("category", ""),
+            applies_when=AppliesWhen(
+                method=tuple(normalize_method(m) for m in aw.get("method", [])),
+                features=tuple(aw.get("features", [])),
+                instrument=tuple(aw.get("instrument", [])),
+                error_signature=aw.get("error_signature"),
+            ),
+            symptom=data.get("symptom", ""),
+            root_cause=data.get("root_cause", data.get("explanation", "")),
+            fix=data.get("fix", ""),
+            validation=data.get("validation", ""),
+            confidence=data.get("confidence", 1.0),
+            status=LessonStatus(data.get("status", "promoted")),
+            version=data.get("version", ""),
+            created=data.get("created", ""),
+            source_trace=data.get("source_trace"),
+            supersedes=tuple(data.get("supersedes", [])),
+            derived_principle=data.get("derived_principle"),
+        )
+        self._lessons_cache[lesson_id] = lesson
+        return lesson
+
+    # --------------------------------------------------------------------- #
+    # Warm tier: cookbooks
+    # --------------------------------------------------------------------- #
+
+    def _load_cookbook(self, method: str) -> CookbookEntry | None:
+        """Load and cache cookbook templates keyed by normalized method name."""
+        if self._cookbooks_cache is None:
+            self._cookbooks_cache = {}
+            path = _KNOWLEDGE_DIR / "canonical" / "cookbooks.yaml"
+            if path.exists():
+                data = yaml.safe_load(path.read_text()) or {}
+                for key, entry in data.items():
+                    canonical = normalize_method(key)
+                    self._cookbooks_cache[canonical] = CookbookEntry(
+                        method=canonical,
+                        template=entry.get("template", ""),
+                        description=entry.get("description", ""),
+                        applicable_instruments=tuple(
+                            entry.get("applicable_instruments", [])
+                        ),
+                        version=entry.get("version", ""),
+                    )
+        return self._cookbooks_cache.get(normalize_method(method))
+
+    # --------------------------------------------------------------------- #
+    # Warm tier: data contracts
+    # --------------------------------------------------------------------- #
+
+    def _load_contracts(self, method: str) -> list[DataContractEntry]:
+        """Load and cache method-specific data contracts and conversion guidance."""
+        if self._contracts_cache is None:
+            self._contracts_cache = {}
+            path = _KNOWLEDGE_DIR / "canonical" / "data_contracts.yaml"
+            if path.exists():
+                data = yaml.safe_load(path.read_text()) or []
+                for entry in data:
+                    m = normalize_method(entry.get("method", ""))
+                    if m not in self._contracts_cache:
+                        self._contracts_cache[m] = []
+                    self._contracts_cache[m].append(DataContractEntry(
+                        name=entry.get("name", ""),
+                        method=m,
+                        source=entry.get("source", ""),
+                        convention=entry.get("convention", ""),
+                        typical_range=entry.get("typical_range", ""),
+                        model_expects=entry.get("model_expects", ""),
+                        conversion=entry.get("conversion", ""),
+                        model_range=entry.get("model_range", ""),
+                        warning=entry.get("warning", ""),
+                    ))
+        return self._contracts_cache.get(normalize_method(method), [])
+
+    # --------------------------------------------------------------------- #
+    # Warm tier: method requirements
+    # --------------------------------------------------------------------- #
+
+    def _load_requirements(self, method: str) -> MethodRequirements | None:
+        """Load and cache structural requirements for a pricing method family."""
+        if self._requirements_cache is None:
+            self._requirements_cache = {}
+            path = _KNOWLEDGE_DIR / "canonical" / "method_requirements.yaml"
+            if path.exists():
+                data = yaml.safe_load(path.read_text()) or {}
+                for m, reqs in data.items():
+                    canonical = normalize_method(m)
+                    self._requirements_cache[canonical] = MethodRequirements(
+                        method=canonical,
+                        requirements=tuple(reqs) if isinstance(reqs, list) else (),
+                    )
+        return self._requirements_cache.get(normalize_method(method))
+
+    # --------------------------------------------------------------------- #
+    # Warm tier: benchmarks
+    # --------------------------------------------------------------------- #
+
+    def _find_benchmarks(
+        self,
+        features: list[str],
+        method: str,
+    ) -> list[BenchmarkSuite]:
+        """Return benchmark suites that match the feature set or requested method."""
+        if self._benchmarks_cache is None:
+            self._benchmarks_cache = {}
+            reg_path = _KNOWLEDGE_DIR / "benchmarks" / "registry.yaml"
+            if reg_path.exists():
+                registry = yaml.safe_load(reg_path.read_text()) or []
+                for entry in registry:
+                    suite_path = _KNOWLEDGE_DIR / "benchmarks" / entry["file"]
+                    if suite_path.exists():
+                        suite_data = yaml.safe_load(suite_path.read_text()) or {}
+                        cases = tuple(
+                            BenchmarkCase(
+                                params=c.get("params", {}),
+                                reference=c["reference"],
+                                tolerance_pct=c.get("tolerance_pct", 2.0),
+                                tolerance_abs=c.get("tolerance_abs", 0.0),
+                                source=c.get("source", ""),
+                            )
+                            for c in suite_data.get("cases", [])
+                        )
+                        self._benchmarks_cache[entry["id"]] = BenchmarkSuite(
+                            id=entry["id"],
+                            title=entry["title"],
+                            features=tuple(entry.get("features", [])),
+                            method=normalize_method(entry.get("method", "")),
+                            source_citation=entry.get("source_citation", ""),
+                            cases=cases,
+                            setup=suite_data.get("setup", {}),
+                        )
+
+        results: list[BenchmarkSuite] = []
+        feature_set = set(features)
+        for suite in self._benchmarks_cache.values():
+            if set(suite.features) & feature_set:
+                results.append(suite)
+            elif suite.method == method:
+                results.append(suite)
+        return results
+
+    # --------------------------------------------------------------------- #
+    # Failure signature matching
+    # --------------------------------------------------------------------- #
+
+    def _match_signatures(
+        self,
+        error_messages: list[str],
+    ) -> list[FailureSignature]:
+        """Match raw execution errors against known regex failure signatures."""
+        matched: list[FailureSignature] = []
+        for sig in self._failure_signatures:
+            for msg in error_messages:
+                try:
+                    if re.search(sig.pattern, msg, re.IGNORECASE):
+                        matched.append(sig)
+                        break
+                except re.error:
+                    continue
+        return matched
+
+    # --------------------------------------------------------------------- #
+    # Decomposition persistence
+    # --------------------------------------------------------------------- #
+
+    def save_decomposition(self, decomp: ProductDecomposition) -> None:
+        """Cache a successful decomposition and persist to YAML."""
+        self._decompositions[decomp.instrument] = decomp
+
+        path = _KNOWLEDGE_DIR / "canonical" / "decompositions.yaml"
+        data: dict = {}
+        if path.exists():
+            data = yaml.safe_load(path.read_text()) or {}
+
+        data[decomp.instrument] = {
+            "features": list(decomp.features),
+            "method": normalize_method(decomp.method),
+            "method_modules": list(decomp.method_modules),
+            "required_market_data": sorted(decomp.required_market_data),
+            "modeling_requirements": list(decomp.modeling_requirements),
+            "reasoning": decomp.reasoning,
+            "notes": decomp.notes,
+            "learned": decomp.learned,
+        }
+
+        with open(path, "w") as f:
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False,
+                      allow_unicode=True)
+
+    # --------------------------------------------------------------------- #
+    # Reload
+    # --------------------------------------------------------------------- #
+
+    def reload(self) -> None:
+        """Reload all tiers (after migration or lesson capture)."""
+        self.clear_runtime_caches()
+        self._features.clear()
+        self._decompositions.clear()
+        self._principles.clear()
+        self._lesson_index.clear()
+        self._failure_signatures.clear()
+        self._load_hot_tier()
+
+    def _retrieval_cache_key(self, spec: RetrievalSpec) -> tuple[Any, ...]:
+        """Build a stable cache key for a retrieval spec."""
+        return (
+            normalize_method(spec.method) if spec.method else None,
+            tuple(spec.features),
+            spec.instrument,
+            spec.exercise_style,
+            spec.state_dependence,
+            spec.schedule_dependence,
+            spec.model_family,
+            tuple(spec.candidate_engine_families),
+            tuple(spec.unresolved_primitives),
+            tuple(spec.error_signatures),
+            spec.max_lessons,
+            spec.include_benchmarks,
+        )

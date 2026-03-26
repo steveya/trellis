@@ -1,0 +1,76 @@
+- name: volatility
+  method: rate_tree
+  source: market_state.vol_surface.black_vol(T, K)
+  convention: Black lognormal implied volatility (annualized)
+  typical_range: 0.10 to 0.60 (10% to 60%)
+  model_expects: Hull-White absolute rate volatility (sigma_HW)
+  conversion: 'sigma_HW = sigma_Black * forward_rate. Example: 0.20 * 0.05 = 0.01'
+  model_range: 0.003 to 0.030 (0.3% to 3%)
+  warning: NEVER pass Black vol directly to a rate tree. A Black vol of 0.20 means
+    the RATE moves ~20% in RELATIVE terms. For a 5% rate, the absolute move is 0.20
+    * 0.05 = 1% (0.01). Passing 0.20 directly makes rates range from -200% to +200%,
+    producing nonsensical prices.
+- name: volatility
+  method: analytical
+  source: market_state.vol_surface.black_vol(T, K)
+  convention: Black lognormal implied volatility (annualized)
+  typical_range: 0.10 to 0.60
+  model_expects: Black lognormal vol (same convention — no conversion needed)
+  conversion: None — use directly in black76_call(F, K, sigma, T)
+  model_range: 0.10 to 0.60
+  warning: ''
+- name: FX_DOMESTIC_FOREIGN_DISCOUNTING
+  method: analytical
+  source: market_state.discount.discount(T) for domestic discounting and market_state.forecast_curves[foreign_discount_key].discount(T) for the selected foreign curve; market_state.forward_curve is the bridged foreign-carry view of the same input
+  convention: Domestic and foreign expiry discount factors under covered interest parity
+  typical_range: df_domestic and df_foreign usually between 0.80 and 1.00
+  model_expects: spot FX plus df_domestic and df_foreign passed directly into garman_kohlhagen_call/put
+  conversion: forward = spot * df_foreign / df_domestic; pass spot, df_domestic, and df_foreign directly to Garman-Kohlhagen
+  model_range: discount factors remain positive and typically <= 1.00
+  warning: NEVER reuse the domestic curve for both currencies or infer the foreign discount factor from spot alone; the foreign curve must be selected explicitly.
+- name: volatility
+  method: monte_carlo
+  source: market_state.vol_surface.black_vol(T, K)
+  convention: Black lognormal implied volatility (annualized)
+  typical_range: 0.10 to 0.60
+  model_expects: GBM diffusion coefficient (sigma in dS/S = mu*dt + sigma*dW)
+  conversion: Use directly as sigma in GBM(mu=r, sigma=sigma_Black)
+  model_range: 0.10 to 0.60
+  warning: ''
+- name: volatility
+  method: qmc
+  source: market_state.vol_surface.black_vol(T, K)
+  convention: Black lognormal implied volatility (annualized)
+  typical_range: 0.10 to 0.60
+  model_expects: GBM diffusion coefficient (sigma in dS/S = mu*dt + sigma*dW)
+  conversion: Use directly as sigma in Sobol-driven GBM path construction
+  model_range: 0.10 to 0.60
+  warning: ''
+- name: discount_rate
+  method: any
+  source: market_state.discount.zero_rate(T)
+  convention: Continuously compounded zero rate
+  typical_range: 0.01 to 0.10 (1% to 10%)
+  model_expects: Continuously compounded rate
+  conversion: None — zero_rate() already returns CC rate
+  model_range: 0.01 to 0.10
+  warning: ''
+- name: VOL_BLACK_FOR_PDE
+  method: pde_solver
+  source: market_state.vol_surface.black_vol(T, K)
+  convention: Black lognormal implied vol (annualized)
+  typical_range: 0.10 to 0.60
+  model_expects: Black lognormal vol (same units — no conversion needed)
+  conversion: none — use directly as sigma in BlackScholesOperator or GBM diffusion
+  model_range: 0.10 to 0.60
+  warning: ''
+- name: VOL_FOR_FFT_HESTON
+  method: fft_pricing
+  source: Heston model parameters (v0, kappa, theta, sigma_v, rho)
+  convention: v0 is VARIANCE (not vol). v0=0.04 means 20% vol.
+  typical_range: 'v0: 0.01 to 0.16 (vol: 10% to 40%)'
+  model_expects: Heston variance v0, NOT Black implied vol
+  conversion: 'v0 = sigma_Black^2. Example: 20% vol → v0 = 0.04'
+  model_range: 'v0: 0.01 to 0.16'
+  warning: NEVER pass Black vol directly as v0. A Black vol of 0.20 is v0=0.04, NOT
+    v0=0.20.

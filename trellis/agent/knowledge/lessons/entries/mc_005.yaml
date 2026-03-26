@@ -1,0 +1,24 @@
+id: mc_005
+title: Missing simulation module
+severity: critical
+category: monte_carlo
+status: archived
+confidence: 0.4
+created: '2026-03-23T22:54:25.346229'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: ModuleNotFoundError for 'trellis.models.simulation' occurred during monte_carlo
+  pricing.
+root_cause: The pricing model code referenced a simulation module that does not exist
+  in the current installation, likely due to outdated or incorrect module paths.
+fix: Verify and update the module import paths or adjust the dependencies to match
+  the current structure of the pricing library.
+validation: Discovered during build (attempt 0)
+archive_reason: Superseded by con_001 (authoritative import registry)

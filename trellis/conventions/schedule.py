@@ -15,6 +15,7 @@ DateLike = Union[date, datetime]
 
 
 def _to_date(d: DateLike) -> date:
+    """Normalize ``date``/``datetime`` inputs to plain ``date`` objects."""
     if isinstance(d, datetime):
         return d.date()
     return d
@@ -31,6 +32,7 @@ def _add_months(dt: date, months: int) -> date:
 
 
 class StubType(Enum):
+    """Placement rule for irregular first or last coupon periods."""
     SHORT_FIRST = "short_first"
     SHORT_LAST = "short_last"
     LONG_FIRST = "long_first"
@@ -38,12 +40,14 @@ class StubType(Enum):
 
 
 class RollConvention(Enum):
+    """Month-roll rule applied when stepping a schedule by calendar months."""
     NONE = "none"
     EOM = "eom"
     IMM = "imm"
 
 
 def _is_eom(d: date) -> bool:
+    """Return whether ``d`` falls on the last calendar day of its month."""
     import calendar as _cal
     return d.day == _cal.monthrange(d.year, d.month)[1]
 
@@ -97,6 +101,7 @@ def generate_schedule(
 
 
 def _generate_forward(start: date, end: date, months: int, eom: bool) -> list[date]:
+    """Step forward in fixed month increments until the next date would exceed ``end``."""
     dates: list[date] = []
     i = 1
     while True:
@@ -111,6 +116,7 @@ def _generate_forward(start: date, end: date, months: int, eom: bool) -> list[da
 
 
 def _generate_backward(start: date, end: date, months: int, eom: bool) -> list[date]:
+    """Step backward from ``end`` in fixed month increments until crossing ``start``."""
     dates: list[date] = []
     i = 1
     while True:

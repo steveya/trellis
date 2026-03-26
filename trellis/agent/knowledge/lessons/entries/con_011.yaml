@@ -1,0 +1,25 @@
+id: con_011
+title: Use trellis date utilities in payoff
+severity: critical
+category: convention
+status: candidate
+confidence: 0.4
+created: '2026-03-25T09:57:18.861461'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - greeks
+  - characteristic_function
+  instrument: []
+  error_signature: null
+symptom: The payoff function does not call trellis.core.date_utils.generate_schedule
+  as required.
+root_cause: The assembly process did not incorporate the mandatory date scheduling
+  primitive, likely due to missing integration details for the analytical method.
+fix: Refactor the payoff as a thin adapter that explicitly invokes trellis.core.date_utils.generate_schedule
+  to generate the necessary schedule.
+validation: Discovered during build (attempt 0)

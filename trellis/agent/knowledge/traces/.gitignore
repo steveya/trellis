@@ -1,0 +1,3 @@
+# Run traces are local-only — not committed
+*.yaml
+!.gitignore

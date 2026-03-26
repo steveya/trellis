@@ -1,0 +1,35 @@
+id: num_013
+title: FFT Merton pricer failed due to LLM JSON serialization error
+severity: critical
+category: numerical
+status: candidate
+confidence: 0.4
+created: '2026-03-25T18:52:13.118872'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260325_185213_build_a_pricer_for:_merton_jump_diffusion_mc_vs_fft
+
+
+  implementation_target:_merton_fft
+
+  preferred_method_family:_fft_pricing
+
+
+  implementation_target:_merton_fft_fft_pricing.yaml'
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - jump_diffusion
+  - characteristic_function
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Build fails with 'Expecting value at line 1 column 1' indicating LLM returned
+  empty or non-JSON response instead of valid code JSON.
+root_cause: The LLM provider timed out or returned an empty body when asked to generate
+  the Merton jump-diffusion FFT pricer, likely due to prompt complexity or provider
+  instability causing a silent empty response.
+fix: Retry with a simpler, more focused prompt or break the task into smaller subtasks;
+  ensure the characteristic function for Merton jump-diffusion is provided explicitly
+  to reduce LLM reasoning load.
+validation: Discovered during build (attempt 0)

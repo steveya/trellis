@@ -100,6 +100,7 @@ Implementation
 .. autofunction:: trellis.models.calibration.sabr_fit.calibrate_sabr
 .. autofunction:: trellis.models.calibration.local_vol.dupire_local_vol
 .. autofunction:: trellis.curves.bootstrap.bootstrap_yield_curve
+   :no-index:
 
 References
 ----------

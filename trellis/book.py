@@ -25,6 +25,7 @@ class Book:
         instruments: list | dict[str, Instrument],
         notionals: dict[str, float] | None = None,
     ):
+        """Store instruments and optional notionals under stable position names."""
         if isinstance(instruments, dict):
             self._instruments = dict(instruments)
         else:
@@ -38,23 +39,29 @@ class Book:
     # ------------------------------------------------------------------
 
     def __getitem__(self, key: str) -> Instrument:
+        """Return the instrument stored under ``key``."""
         return self._instruments[key]
 
     def __iter__(self) -> Iterator[str]:
+        """Iterate over position names in insertion order."""
         return iter(self._instruments)
 
     def __len__(self) -> int:
+        """Return the number of positions in the book."""
         return len(self._instruments)
 
     @property
     def names(self) -> list[str]:
+        """Return all position names as a list."""
         return list(self._instruments.keys())
 
     @property
     def instruments(self) -> dict[str, Instrument]:
+        """Return a shallow copy of the underlying name-to-instrument mapping."""
         return dict(self._instruments)
 
     def notional(self, name: str) -> float:
+        """Return the stored notional for a position, defaulting to ``1.0``."""
         return self._notionals.get(name, 1.0)
 
     # ------------------------------------------------------------------
@@ -113,16 +120,20 @@ class BookResult:
     """
 
     def __init__(self, results: dict[str, PricingResult], book: Book):
+        """Bind per-position pricing results to the originating book definition."""
         self._results = results
         self._book = book
 
     def __getitem__(self, key: str) -> PricingResult:
+        """Return the pricing result for a named position."""
         return self._results[key]
 
     def __iter__(self) -> Iterator[str]:
+        """Iterate over position names with available pricing results."""
         return iter(self._results)
 
     def __len__(self) -> int:
+        """Return the number of priced positions."""
         return len(self._results)
 
     # ------------------------------------------------------------------

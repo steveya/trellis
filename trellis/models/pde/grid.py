@@ -24,6 +24,7 @@ class Grid:
 
     def __init__(self, x_min: float, x_max: float, n_x: int,
                  T: float, n_t: int, log_spacing: bool = False):
+        """Construct the spatial/time grids and derived spacings used by PDE solvers."""
         self.x_min = x_min
         self.x_max = x_max
         self.n_x = n_x

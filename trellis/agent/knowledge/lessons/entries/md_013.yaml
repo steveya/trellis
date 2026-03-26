@@ -1,0 +1,25 @@
+id: md_013
+title: Missing Discount and Yield Curves
+severity: critical
+category: market_data
+status: candidate
+confidence: 0.4
+created: '2026-03-24T20:55:29.788391'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - forward_rate
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: Pricer construction failed due to absent discount_curve and yield_curve capabilities.
+root_cause: The pricing model expected market data for discounting and yield curves
+  that were not provided. Additionally, the analytical method lacked clear modeling
+  requirements for these inputs.
+fix: Define and supply the necessary discount_curve and yield_curve objects, or update
+  the analytical model to handle cases where these inputs are missing.
+validation: Discovered during build (attempt 0)

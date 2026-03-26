@@ -1,0 +1,1833 @@
+- id: T01
+  title: 'ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical'
+  construct: lattice
+  new_component: jamshidian_decomposition
+  cross_validate:
+    internal:
+    - ho_lee_tree
+    - hull_white_tree
+    analytical: jamshidian
+    external:
+    - quantlib
+    - financepy
+  status: done
+- id: T02
+  title: 'Callable bond: BDT lognormal vs HW normal tree'
+  construct: lattice
+  new_component: bdt_calibration_via_generic_lattice
+  cross_validate:
+    internal:
+    - bdt_tree
+    - hull_white_tree
+    external:
+    - financepy
+    - quantlib
+  status: done
+- id: T03
+  title: Trinomial tree implementation and convergence
+  construct: lattice
+  new_component: trinomial_calibration
+  cross_validate:
+    internal:
+    - binomial_tree
+    - trinomial_tree
+    external:
+    - quantlib
+  blocked_by: L1
+  status: blocked
+- id: T04
+  title: Bermudan swaption on HW tree
+  construct: lattice
+  new_component: swap_valuation_on_tree
+  cross_validate:
+    internal:
+    - hw_tree_bermudan
+    - black76_european_lower_bound
+    external:
+    - quantlib
+    - financepy
+  status: done
+- id: T05
+  title: 'Puttable bond: exercise_fn=max and puttable-callable symmetry'
+  construct: lattice
+  new_component: null
+  cross_validate:
+    internal:
+    - puttable_tree
+    - callable_tree_symmetry
+    external:
+    - quantlib
+    - financepy
+  status: done
+- id: T06
+  title: 'CIR++ rate tree: positive rates via shifted CIR'
+  construct: lattice
+  new_component: cir_tree_model
+  cross_validate:
+    internal:
+    - cir_tree
+    - hull_white_tree
+    external:
+    - quantlib
+  status: done
+- id: T07
+  title: Two-factor Hull-White tree (2D lattice)
+  construct: lattice
+  new_component: two_factor_lattice
+  cross_validate:
+    internal:
+    - two_factor_hw
+    - one_factor_hw
+    external:
+    - quantlib
+  status: done
+- id: T08
+  title: 'Convertible bond: equity + credit on tree'
+  construct: lattice
+  new_component: hybrid_tree_equity_credit
+  cross_validate:
+    internal:
+    - equity_tree_with_credit
+    - pure_equity_tree
+    external:
+    - quantlib
+  status: done
+- id: T09
+  title: Step-up callable bond (varying coupon schedule)
+  construct: lattice
+  new_component: time_varying_cashflows_on_tree
+  cross_validate:
+    internal:
+    - hw_tree
+    - bdt_tree
+    external:
+    - financepy
+  status: done
+- id: T10
+  title: 'Tree convergence study: price oscillation and Richardson extrapolation'
+  construct: lattice
+  new_component: richardson_extrapolation
+  cross_validate:
+    internal:
+    - raw_tree
+    - extrapolated_tree
+    analytical: black_scholes
+  status: done
+- id: T11
+  title: Lattice Greeks via pathwise differentiation on tree
+  construct: lattice
+  new_component: tree_greeks_pathwise
+  cross_validate:
+    internal:
+    - pathwise_tree_greeks
+    - fd_bump_greeks
+    external:
+    - quantlib
+  status: done
+- id: T12
+  title: Range accrual note on rate tree
+  construct: lattice
+  new_component: path_dependent_on_tree
+  cross_validate:
+    internal:
+    - hw_tree
+    - mc_rate_simulation
+    external:
+    - quantlib
+  status: done
+- id: T13
+  title: 'European call: theta-method convergence order measurement'
+  construct: pde
+  new_component: convergence_order_diagnostic
+  cross_validate:
+    internal:
+    - theta_0.5
+    - theta_1.0
+    analytical: black_scholes
+    external:
+    - quantlib
+  status: pending
+- id: T14
+  title: 'American put: PSOR vs tree vs LSM three-way'
+  construct:
+  - pde
+  - lattice
+  - monte_carlo
+  new_component: null
+  cross_validate:
+    internal:
+    - psor_pde
+    - crr_tree
+    - lsm_mc
+    analytical: high_step_tree_2000
+    external:
+    - quantlib
+  status: pending
+- id: T15
+  title: 'CEV model: CEVOperator PDE vs CEV tree'
+  construct:
+  - pde
+  - lattice
+  new_component: cev_spot_lattice
+  cross_validate:
+    internal:
+    - cev_pde
+    - cev_tree
+    external:
+    - quantlib
+  status: pending
+- id: T16
+  title: 'Barrier call: PDE absorbing BC vs MC discrete monitoring'
+  construct:
+  - pde
+  - monte_carlo
+  new_component: pde_barrier_boundary_condition
+  cross_validate:
+    internal:
+    - pde_barrier
+    - mc_barrier
+    analytical: rubinstein
+    external:
+    - quantlib
+  status: pending
+- id: T17
+  title: 'Callable bond: HW rate PDE (PSOR) vs HW tree'
+  construct:
+  - pde
+  - lattice
+  new_component: hw_rate_pde_operator
+  cross_validate:
+    internal:
+    - hw_pde_psor
+    - hw_rate_tree
+    external:
+    - quantlib
+  status: pending
+- id: T18
+  title: Log-space PDE for rate instruments (avoid negative rates)
+  construct: pde
+  new_component: log_coordinate_transform
+  cross_validate:
+    internal:
+    - log_space_pde
+    - standard_pde
+    external:
+    - quantlib
+  status: pending
+- id: T19
+  title: Non-uniform grid (log-spaced) for PDE near-barrier accuracy
+  construct: pde
+  new_component: non_uniform_grid
+  cross_validate:
+    internal:
+    - log_grid_pde
+    - uniform_grid_pde
+    analytical: rubinstein
+  status: pending
+- id: T20
+  title: '2D PDE: Heston (S, V) via ADI splitting'
+  construct: pde
+  new_component: adi_2d_solver
+  cross_validate:
+    internal:
+    - heston_adi_pde
+    - heston_mc
+    external:
+    - quantlib
+  status: pending
+- id: T21
+  title: 'European put PDE: put-call parity verification'
+  construct: pde
+  new_component: null
+  cross_validate:
+    internal:
+    - call_pde
+    - put_pde_parity
+    analytical: black_scholes
+  status: pending
+- id: T22
+  title: Double barrier option via PDE
+  construct: pde
+  new_component: double_barrier_bc
+  cross_validate:
+    internal:
+    - pde_double_barrier
+    - mc_double_barrier
+    external:
+    - quantlib
+  status: pending
+- id: T23
+  title: Crank-Nicolson Rannacher smoothing for discontinuous payoffs
+  construct: pde
+  new_component: rannacher_timestepping
+  cross_validate:
+    internal:
+    - cn_rannacher
+    - cn_standard
+    analytical: black_scholes_digital
+  status: pending
+- id: T24
+  title: Finite element method (FEM) vs finite difference for European
+  construct: pde
+  new_component: fem_1d_solver
+  cross_validate:
+    internal:
+    - fem_solver
+    - fd_theta_method
+    analytical: black_scholes
+  status: pending
+- id: T25
+  title: 'GBM call: all 4 schemes convergence order'
+  construct: monte_carlo
+  new_component: convergence_order_measurement
+  cross_validate:
+    internal:
+    - euler
+    - milstein
+    - exact
+    - log_euler
+    analytical: black_scholes
+    external:
+    - quantlib
+  status: pending
+- id: T26
+  title: 'Variance reduction: antithetic + control variate + importance sampling'
+  construct: monte_carlo
+  new_component:
+  - control_variate_wrapper
+  - importance_sampling
+  cross_validate:
+    internal:
+    - plain_mc
+    - antithetic_mc
+    - control_variate_mc
+    analytical: black_scholes
+  status: pending
+- id: T27
+  title: LSM basis function shootout at σ=0.20 and σ=0.40
+  construct: monte_carlo
+  new_component: null
+  cross_validate:
+    internal:
+    - polynomial
+    - laguerre
+    - hermite
+    - chebyshev
+    analytical: high_step_tree_2000
+    external:
+    - quantlib
+  status: pending
+- id: T28
+  title: 'Heston MC: Euler vs QE scheme (Andersen 2008)'
+  construct: monte_carlo
+  new_component: qe_scheme
+  cross_validate:
+    internal:
+    - euler_heston
+    - qe_heston
+    analytical: heston_fft
+    external:
+    - quantlib
+  status: pending
+- id: T29
+  title: 'Asian option (arithmetic average): MC vs Turnbull-Wakeman'
+  construct: monte_carlo
+  new_component: path_dependent_payoff_protocol
+  cross_validate:
+    internal:
+    - mc_asian
+    - turnbull_wakeman_approx
+    external:
+    - quantlib
+  status: pending
+- id: T30
+  title: 'Lookback option: MC vs analytical (Goldman-Sosin-Gatto)'
+  construct: monte_carlo
+  new_component: running_extrema_tracking
+  cross_validate:
+    internal:
+    - mc_lookback
+    - gsg_analytical
+    external:
+    - quantlib
+  status: pending
+- id: T31
+  title: 'Quasi-Monte Carlo: Sobol vs pseudo-random convergence'
+  construct: monte_carlo
+  new_component: qmc_engine
+  cross_validate:
+    internal:
+    - sobol_mc
+    - pseudo_random_mc
+    analytical: black_scholes
+  status: pending
+- id: T32
+  title: Multi-level Monte Carlo (MLMC) for variance reduction
+  construct: monte_carlo
+  new_component: mlmc_engine
+  cross_validate:
+    internal:
+    - mlmc
+    - standard_mc
+    analytical: black_scholes
+  status: pending
+- id: T33
+  title: Merton jump-diffusion MC vs FFT
+  construct:
+  - monte_carlo
+  - transforms
+  new_component: jump_diffusion_scheme
+  cross_validate:
+    internal:
+    - merton_mc
+    - merton_fft
+    external:
+    - quantlib
+  status: pending
+- id: T34
+  title: SABR MC simulation vs Hagan implied vol
+  construct: monte_carlo
+  new_component: sabr_mc_discretization
+  cross_validate:
+    internal:
+    - sabr_mc
+    - sabr_hagan_analytical
+    external:
+    - quantlib
+  status: pending
+- id: T35
+  title: 'Basket option (2 assets): MC with Cholesky correlation'
+  construct: monte_carlo
+  new_component: multi_asset_mc
+  cross_validate:
+    internal:
+    - mc_basket
+    - mc_basket_antithetic
+    external:
+    - quantlib
+  status: pending
+- id: T36
+  title: 'Autocallable note: MC path-dependent with early redemption'
+  construct: monte_carlo
+  new_component: autocall_payoff_structure
+  cross_validate:
+    internal:
+    - mc_autocall
+    - mc_autocall_qmc
+    external:
+    - financepy
+  status: pending
+- id: T37
+  title: 'Variance swap: MC replication vs analytical (log contract)'
+  construct: monte_carlo
+  new_component: variance_swap_replication
+  cross_validate:
+    internal:
+    - mc_variance_swap
+    - log_contract_analytical
+    external:
+    - quantlib
+  status: pending
+- id: T38
+  title: 'CDS pricing: hazard rate MC vs survival prob analytical'
+  construct:
+  - monte_carlo
+  - credit
+  new_component: cds_pricing
+  cross_validate:
+    internal:
+    - mc_cds
+    - analytical_cds
+    external:
+    - quantlib
+    - financepy
+  status: pending
+- id: T39
+  title: 'FFT vs COS: GBM calls/puts across strikes and maturities'
+  construct: transforms
+  new_component: put_pricing_via_transforms
+  cross_validate:
+    internal:
+    - fft
+    - cos
+    analytical: black_scholes
+  status: pending
+- id: T40
+  title: 'Heston smile: FFT vs COS vs MC implied vol surface'
+  construct:
+  - transforms
+  - monte_carlo
+  new_component: implied_vol_surface_extraction
+  cross_validate:
+    internal:
+    - heston_fft
+    - heston_cos
+    - heston_mc
+    external:
+    - quantlib
+  status: pending
+- id: T41
+  title: 'Variance Gamma: COS vs MC'
+  construct:
+  - transforms
+  - monte_carlo
+  new_component: variance_gamma_char_fn
+  cross_validate:
+    internal:
+    - vg_cos
+    - vg_mc
+    analytical: madan_carr_chang_reference
+    external:
+    - financepy
+  status: pending
+- id: T42
+  title: COS adaptive truncation for extreme parameters
+  construct: transforms
+  new_component: cumulant_based_truncation
+  cross_validate:
+    internal:
+    - cos_adaptive
+    - cos_fixed
+    analytical: black_scholes
+  status: pending
+- id: T43
+  title: 'Merton jump-diffusion: FFT vs COS vs MC'
+  construct:
+  - transforms
+  - monte_carlo
+  new_component: merton_char_fn
+  cross_validate:
+    internal:
+    - merton_fft
+    - merton_cos
+    - merton_mc
+    external:
+    - quantlib
+  status: pending
+- id: T44
+  title: 'Bates model (Heston + jumps): FFT vs MC'
+  construct:
+  - transforms
+  - monte_carlo
+  new_component: bates_char_fn
+  cross_validate:
+    internal:
+    - bates_fft
+    - bates_mc
+    external:
+    - quantlib
+  status: pending
+- id: T45
+  title: CGMY / tempered stable process via COS
+  construct: transforms
+  new_component: cgmy_char_fn
+  cross_validate:
+    internal:
+    - cgmy_cos
+    - cgmy_mc
+    analytical: cgmy_reference_values
+  status: pending
+- id: T46
+  title: Digital option pricing via FFT and COS
+  construct: transforms
+  new_component: digital_payoff_coefficients
+  cross_validate:
+    internal:
+    - digital_fft
+    - digital_cos
+    analytical: bs_digital
+  status: pending
+- id: T47
+  title: Spread option via 2D FFT (Hurd-Zhou)
+  construct: transforms
+  new_component: multi_dim_fft
+  cross_validate:
+    internal:
+    - spread_fft_2d
+    - spread_mc
+    external:
+    - quantlib
+  status: pending
+- id: T48
+  title: 'Characteristic function registry: unify GBM/Heston/VG/Merton/Bates'
+  construct: transforms
+  new_component: char_fn_registry
+  cross_validate:
+    internal:
+    - all_cfs_at_u_eq_0
+    - all_cfs_reduce_to_gbm
+    analytical: cf_at_zero_equals_one
+  status: pending
+- id: T49
+  title: 'CDO tranche: Gaussian vs Student-t copula'
+  construct: copula
+  new_component: null
+  cross_validate:
+    internal:
+    - gaussian_copula
+    - student_t_copula
+    external:
+    - quantlib
+  status: pending
+- id: T50
+  title: 'Nth-to-default: MC correlated defaults vs semi-analytical'
+  construct:
+  - copula
+  - monte_carlo
+  new_component: null
+  cross_validate:
+    internal:
+    - mc_defaults
+    - factor_copula_analytical
+    external:
+    - financepy
+  status: pending
+- id: T51
+  title: 'CDS par spread: hazard rate bootstrap vs closed-form'
+  construct: credit
+  new_component: cds_bootstrap
+  cross_validate:
+    internal:
+    - bootstrapped_cds
+    - analytical_cds
+    external:
+    - quantlib
+    - financepy
+  status: pending
+- id: T52
+  title: 'CVA on interest rate swap: MC exposure simulation'
+  construct:
+  - credit
+  - monte_carlo
+  new_component: cva_exposure_engine
+  cross_validate:
+    internal:
+    - mc_cva
+    - analytical_cva_approx
+    external:
+    - quantlib
+  status: pending
+- id: T53
+  title: 'Multi-name portfolio loss distribution: recursive vs FFT vs MC'
+  construct:
+  - copula
+  - transforms
+  - monte_carlo
+  new_component: recursive_loss_distribution
+  cross_validate:
+    internal:
+    - recursive_method
+    - fft_loss
+    - mc_loss
+    external:
+    - quantlib
+  status: pending
+- id: T54
+  title: 'Wrong-way risk: correlated default and exposure'
+  construct:
+  - credit
+  - monte_carlo
+  new_component: wrong_way_risk_model
+  cross_validate:
+    internal:
+    - correlated_cva
+    - independent_cva
+    external:
+    - quantlib
+  status: pending
+- id: T55
+  title: 'Credit index option: Black on spread vs MC'
+  construct:
+  - credit
+  - monte_carlo
+  new_component: credit_index_option
+  cross_validate:
+    internal:
+    - black_on_spread
+    - mc_credit_index
+    external:
+    - quantlib
+  status: pending
+- id: T56
+  title: 'Vasicek bond pricing: tree vs analytical'
+  construct:
+  - lattice
+  - analytical
+  new_component: vasicek_bond_analytical
+  cross_validate:
+    internal:
+    - vasicek_tree
+    - vasicek_analytical
+    external:
+    - quantlib
+  status: pending
+- id: T57
+  title: 'CIR bond pricing: tree vs analytical'
+  construct:
+  - lattice
+  - analytical
+  new_component: cir_bond_analytical
+  cross_validate:
+    internal:
+    - cir_tree
+    - cir_analytical
+    external:
+    - quantlib
+  status: pending
+- id: T58
+  title: 'Kou double-exponential jump: FFT vs MC'
+  construct:
+  - transforms
+  - monte_carlo
+  new_component: kou_process
+  cross_validate:
+    internal:
+    - kou_fft
+    - kou_mc
+    analytical: kou_reference_values
+  status: pending
+- id: T59
+  title: 'Local volatility: Dupire PDE forward vs MC with local vol'
+  construct:
+  - pde
+  - monte_carlo
+  new_component: local_vol_mc_scheme
+  cross_validate:
+    internal:
+    - dupire_pde
+    - local_vol_mc
+    external:
+    - quantlib
+  status: pending
+- id: T60
+  title: 'Stochastic local vol (SLV): Heston + local vol mixing'
+  construct:
+  - monte_carlo
+  - calibration
+  new_component: slv_model
+  cross_validate:
+    internal:
+    - slv_mc
+    - heston_mc
+    external:
+    - quantlib
+  status: pending
+- id: T61
+  title: Mean-reverting commodity model (Schwartz 1-factor)
+  construct:
+  - monte_carlo
+  - lattice
+  new_component: schwartz_process
+  cross_validate:
+    internal:
+    - schwartz_mc
+    - schwartz_tree
+    analytical: schwartz_analytical
+  status: pending
+- id: T62
+  title: G2++ two-factor rate model
+  construct:
+  - lattice
+  - monte_carlo
+  new_component: g2pp_process
+  cross_validate:
+    internal:
+    - g2pp_mc
+    - g2pp_analytical_swaption
+    external:
+    - quantlib
+  status: pending
+- id: T63
+  title: 'SABR MC: dynamic vs static smile'
+  construct: monte_carlo
+  new_component: sabr_euler_scheme
+  cross_validate:
+    internal:
+    - sabr_mc_smile
+    - sabr_hagan_smile
+    external:
+    - quantlib
+  status: pending
+- id: T64
+  title: 'Hull-White with time-dependent vol: piecewise constant sigma(t)'
+  construct:
+  - lattice
+  - calibration
+  new_component: time_dependent_vol_tree
+  cross_validate:
+    internal:
+    - hw_piecewise_vol
+    - hw_constant_vol
+    external:
+    - quantlib
+  status: pending
+- id: T65
+  title: HW calibration to swaption volatilities
+  construct: calibration
+  new_component: hw_swaption_calibration
+  cross_validate:
+    internal:
+    - calibrated_hw_tree
+    - uncalibrated_hw_tree
+    external:
+    - quantlib
+    - financepy
+  status: pending
+- id: T66
+  title: SABR calibration to smile at multiple expiries
+  construct: calibration
+  new_component: sabr_surface_calibration
+  cross_validate:
+    internal:
+    - calibrated_sabr
+    - raw_sabr_guess
+    external:
+    - quantlib
+  status: pending
+- id: T67
+  title: Heston calibration to vanilla option surface
+  construct: calibration
+  new_component: heston_calibration
+  cross_validate:
+    internal:
+    - calibrated_heston_fft
+    - market_prices
+    external:
+    - quantlib
+  status: pending
+- id: T68
+  title: Local vol surface construction from market IVs
+  construct: calibration
+  new_component: local_vol_surface_builder
+  cross_validate:
+    internal:
+    - dupire_surface
+    - parametric_surface
+    external:
+    - quantlib
+  status: pending
+- id: T69
+  title: BDT calibration to yield vol term structure
+  construct:
+  - calibration
+  - lattice
+  new_component: bdt_vol_calibration
+  cross_validate:
+    internal:
+    - bdt_calibrated
+    - bdt_flat_vol
+    external:
+    - financepy
+  status: pending
+- id: T70
+  title: Bootstrap yield curve from swap rates
+  construct: calibration
+  new_component: null
+  cross_validate:
+    internal:
+    - bootstrap_trellis
+    - par_rate_recovery
+    external:
+    - quantlib
+    - financepy
+  status: pending
+- id: T71
+  title: CDS hazard rate bootstrap from spreads
+  construct:
+  - calibration
+  - credit
+  new_component: cds_hazard_bootstrap
+  cross_validate:
+    internal:
+    - bootstrapped_curve
+    - analytical_cds_spread
+    external:
+    - quantlib
+    - financepy
+  status: pending
+- id: T72
+  title: 'Implied vol surface: SVI parameterization'
+  construct: calibration
+  new_component: svi_parameterization
+  cross_validate:
+    internal:
+    - svi_fit
+    - raw_market_ivs
+    external:
+    - quantlib
+  status: pending
+- id: T73
+  title: 'European swaption: Black76 vs HW tree vs HW MC'
+  construct:
+  - analytical
+  - lattice
+  - monte_carlo
+  new_component: null
+  cross_validate:
+    internal:
+    - black76
+    - hw_tree
+    - hw_mc
+    external:
+    - quantlib
+    - financepy
+  status: pending
+- id: T74
+  title: 'European equity call: 5-way (tree, PDE, MC, FFT, COS)'
+  construct:
+  - lattice
+  - pde
+  - monte_carlo
+  - transforms
+  new_component: null
+  cross_validate:
+    internal:
+    - crr_tree
+    - bs_pde
+    - mc_exact
+    - fft
+    - cos
+    analytical: black_scholes
+  status: pending
+- id: T75
+  title: 'American put: tree vs PDE vs LSM at 3 vol levels'
+  construct:
+  - lattice
+  - pde
+  - monte_carlo
+  new_component: null
+  cross_validate:
+    internal:
+    - crr_tree
+    - psor_pde
+    - lsm_mc
+    analytical: high_step_tree_2000
+    external:
+    - quantlib
+  status: pending
+- id: T76
+  title: 'Heston European: analytical vs MC vs PDE vs FFT vs COS'
+  construct:
+  - analytical
+  - monte_carlo
+  - pde
+  - transforms
+  new_component: null
+  cross_validate:
+    internal:
+    - heston_analytical
+    - heston_mc
+    - heston_pde
+    - heston_fft
+    - heston_cos
+    external:
+    - quantlib
+  status: pending
+- id: T77
+  title: 'Cap/floor: Black76 vs HW tree vs MC rate simulation'
+  construct:
+  - analytical
+  - lattice
+  - monte_carlo
+  new_component: cap_on_tree
+  cross_validate:
+    internal:
+    - black76_cap
+    - hw_tree_cap
+    - mc_rate_cap
+    external:
+    - quantlib
+    - financepy
+  status: pending
+- id: T78
+  title: 'Barrier option: PDE vs MC vs tree vs analytical'
+  construct:
+  - pde
+  - monte_carlo
+  - lattice
+  - analytical
+  new_component: barrier_on_tree
+  cross_validate:
+    internal:
+    - pde_barrier
+    - mc_barrier
+    - tree_barrier
+    - rubinstein
+    external:
+    - quantlib
+  status: pending
+- id: T79
+  title: 'Convertible bond: tree vs MC vs PDE'
+  construct:
+  - lattice
+  - monte_carlo
+  - pde
+  new_component: convertible_pde
+  cross_validate:
+    internal:
+    - tree_convertible
+    - mc_convertible
+    - pde_convertible
+    external:
+    - quantlib
+  status: pending
+- id: T80
+  title: 'Bermudan swaption: tree vs LSM MC'
+  construct:
+  - lattice
+  - monte_carlo
+  new_component: bermudan_lsm
+  cross_validate:
+    internal:
+    - hw_tree_bermudan
+    - lsm_rate_mc
+    external:
+    - quantlib
+    - financepy
+  status: pending
+- id: T81
+  title: 'Bond Greeks: autograd vs FD vs analytical'
+  construct: analytics
+  new_component: null
+  cross_validate:
+    internal:
+    - autograd_engine
+    - fd_measures
+    - analytical_closed_form
+    external:
+    - quantlib
+  status: pending
+- id: T82
+  title: 'Callable bond full analytics: vega, OAS, duration, scenarios'
+  construct:
+  - analytics
+  - lattice
+  new_component: null
+  cross_validate:
+    internal:
+    - tree_bump_greeks
+    - straight_bond_greeks
+    external:
+    - quantlib
+  status: pending
+- id: T83
+  title: 'KRD: interpolation-aware bumping'
+  construct: analytics
+  new_component: interpolation_aware_bump
+  cross_validate:
+    internal:
+    - smart_krd
+    - naive_krd
+    analytical: krd_sum_equals_duration
+  blocked_by: L2
+  status: blocked
+- id: T84
+  title: 'Scenario analysis: parallel + twist + butterfly'
+  construct: analytics
+  new_component:
+  - twist_scenario
+  - butterfly_scenario
+  cross_validate:
+    internal:
+    - parallel
+    - twist
+    - butterfly
+    analytical: pnl_decomposition
+    external:
+    - quantlib
+  status: pending
+- id: T85
+  title: YTM solver for bonds
+  construct: analytics
+  new_component: ytm_solver
+  cross_validate:
+    internal:
+    - ytm_brentq
+    - ytm_newton
+    external:
+    - quantlib
+    - financepy
+  blocked_by: L9
+  status: blocked
+- id: T86
+  title: Theta (time decay) for options via tree and PDE
+  construct: analytics
+  new_component: theta_measure
+  cross_validate:
+    internal:
+    - tree_theta
+    - pde_theta
+    analytical: bs_theta
+  status: pending
+- id: T87
+  title: Rho (rate sensitivity) for equity options
+  construct: analytics
+  new_component: rho_measure
+  cross_validate:
+    internal:
+    - fd_rho
+    - tree_rho
+    analytical: bs_rho
+  status: pending
+- id: T88
+  title: 'Book P&L attribution: rate + spread + vol decomposition'
+  construct: analytics
+  new_component: pnl_attribution
+  cross_validate:
+    internal:
+    - full_reprice
+    - attribution_sum
+    analytical: attribution_identity
+  status: pending
+- id: T89
+  title: OAS duration (spread duration) for callable bonds
+  construct: analytics
+  new_component: oas_duration
+  cross_validate:
+    internal:
+    - oas_bump_duration
+    - modified_duration
+    external:
+    - quantlib
+  status: pending
+- id: T90
+  title: 'Vega surface: per-expiry per-strike vega bucketing'
+  construct: analytics
+  new_component: vega_bucketing
+  cross_validate:
+    internal:
+    - bucketed_vega
+    - total_vega
+    analytical: vega_sum_identity
+  status: pending
+- id: T94
+  title: 'FX market bridge: Garman-Kohlhagen vs MC with explicit domestic/foreign curve selection'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component:
+  - garman_kohlhagen_formula
+  - fx_market_bridge
+  market:
+    source: mock
+    as_of: 2024-11-15
+    discount_curve: usd_ois
+    forecast_curve: EUR-DISC
+    fx_rate: EURUSD
+  market_assertions:
+    requires:
+    - discount_curve
+    - forward_curve
+    - fx_rates
+    - spot
+    selected:
+      discount_curve: usd_ois
+      forecast_curve: EUR-DISC
+      fx_rate: EURUSD
+  cross_validate:
+    internal:
+    - gk_analytical
+    - mc_fx_option
+    external:
+    - quantlib
+  status: pending
+- id: T95
+  title: 'xVA framework: CVA + DVA + FVA on IR swap portfolio'
+  construct:
+  - credit
+  - monte_carlo
+  - analytics
+  new_component: xva_engine
+  cross_validate:
+    internal:
+    - mc_xva
+    - analytical_xva_approx
+    external:
+    - quantlib
+  status: pending
+- id: T96
+  title: 'Lookback option (fixed strike): MC vs Goldman-Sosin-Gatto analytical'
+  construct:
+  - monte_carlo
+  - analytical
+  new_component:
+  - lookback_payoff
+  - gsg_formula
+  cross_validate:
+    internal:
+    - mc_lookback
+    - gsg_analytical
+    external:
+    - quantlib
+    - financepy
+  status: pending
+- id: T97
+  title: 'Digital (cash-or-nothing) option: BS formula vs MC vs COS'
+  construct:
+  - analytical
+  - monte_carlo
+  - transforms
+  new_component:
+  - digital_payoff
+  - bs_digital_formula
+  cross_validate:
+    internal:
+    - bs_digital
+    - mc_digital
+    - cos_digital
+    external:
+    - quantlib
+    - financepy
+  status: pending
+- id: T98
+  title: 'Geometric Asian option: closed-form vs MC'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component: geometric_asian_formula
+  cross_validate:
+    internal:
+    - geometric_asian_analytical
+    - mc_geometric_asian
+    external:
+    - quantlib
+  status: pending
+- id: T99
+  title: 'Chooser option: Rubinstein formula vs MC'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component: chooser_formula
+  cross_validate:
+    internal:
+    - rubinstein_chooser
+    - mc_chooser
+    external:
+    - financepy
+  status: pending
+- id: T100
+  title: 'Compound option: Geske formula vs MC'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component: geske_formula
+  cross_validate:
+    internal:
+    - geske_compound
+    - mc_compound
+    external:
+    - financepy
+  status: pending
+- id: T101
+  title: 'Cliquet option: forward-start decomposition vs MC'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component: cliquet_payoff
+  cross_validate:
+    internal:
+    - forward_start_decomposition
+    - mc_cliquet
+    external:
+    - quantlib
+    - financepy
+  status: pending
+- id: T102
+  title: 'Rainbow option (best-of-two): Stulz formula vs MC'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component:
+  - stulz_formula
+  - multi_asset_payoff
+  cross_validate:
+    internal:
+    - stulz_rainbow
+    - mc_rainbow
+    external:
+    - financepy
+  status: pending
+- id: T103
+  title: 'Double barrier option: Ikeda-Kunitomo vs PDE vs MC'
+  construct:
+  - analytical
+  - pde
+  - monte_carlo
+  new_component:
+  - ikeda_kunitomo_formula
+  - double_barrier_pde_bc
+  cross_validate:
+    internal:
+    - ik_analytical
+    - pde_double_barrier
+    - mc_double_barrier
+    external:
+    - quantlib
+  status: pending
+- id: T104
+  title: 'Variance swap: log-contract replication vs MC realized var'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component:
+  - variance_swap_replication
+  - realized_variance_mc
+  cross_validate:
+    internal:
+    - log_contract_analytical
+    - mc_variance_swap
+    external:
+    - quantlib
+    - financepy
+  status: pending
+- id: T105
+  title: 'Quanto option: quanto-adjusted BS vs MC cross-currency'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component:
+  - quanto_adjustment
+  - cross_currency_mc
+  market:
+    source: mock
+    as_of: 2024-11-15
+    discount_curve: usd_ois
+    forecast_curve: EUR-DISC
+    fx_rate: EURUSD
+  market_assertions:
+    requires:
+    - discount_curve
+    - forward_curve
+    - fx_rates
+    - spot
+    selected:
+      discount_curve: usd_ois
+      forecast_curve: EUR-DISC
+      fx_rate: EURUSD
+  cross_validate:
+    internal:
+    - quanto_bs
+    - mc_quanto
+    external:
+    - quantlib
+  status: pending
+- id: T106
+  title: 'Forward start option: BS closed-form vs MC'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component: forward_start_formula
+  cross_validate:
+    internal:
+    - bs_forward_start
+    - mc_forward_start
+    external:
+    - quantlib
+    - financepy
+  status: pending
+- id: T107
+  title: 'Autocallable note: MC with barrier + coupon + early redemption'
+  construct: monte_carlo
+  new_component: autocallable_payoff_engine
+  cross_validate:
+    internal:
+    - mc_autocall
+    - mc_autocall_qmc
+    external:
+    - financepy
+  status: pending
+- id: T108
+  title: 'FX vanilla option: Garman-Kohlhagen vs MC'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component: garman_kohlhagen_formula
+  market:
+    source: mock
+    as_of: 2024-11-15
+    discount_curve: usd_ois
+    forecast_curve: EUR-DISC
+    fx_rate: EURUSD
+  market_assertions:
+    requires:
+    - discount_curve
+    - forward_curve
+    - fx_rates
+    - spot
+    selected:
+      discount_curve: usd_ois
+      forecast_curve: EUR-DISC
+      fx_rate: EURUSD
+  cross_validate:
+    internal:
+    - gk_analytical
+    - mc_fx_option
+    external:
+    - quantlib
+    - financepy
+  status: pending
+- id: T109
+  title: 'FX barrier option: analytical vs MC'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component: fx_barrier_analytical
+  cross_validate:
+    internal:
+    - fx_barrier_analytical
+    - mc_fx_barrier
+    external:
+    - financepy
+  status: pending
+- id: T110
+  title: 'FX digital (one-touch): Reiner-Rubinstein vs MC'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component: reiner_rubinstein_formula
+  cross_validate:
+    internal:
+    - rr_analytical
+    - mc_one_touch
+    external:
+    - financepy
+  status: pending
+- id: T111
+  title: 'FX double barrier: analytical vs PDE vs MC'
+  construct:
+  - analytical
+  - pde
+  - monte_carlo
+  new_component: fx_double_barrier
+  cross_validate:
+    internal:
+    - analytical_dbl_barrier
+    - pde_dbl_barrier
+    - mc_dbl_barrier
+    external:
+    - financepy
+  status: pending
+- id: T112
+  title: 'FX variance swap: replication vs MC'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component: fx_variance_swap
+  cross_validate:
+    internal:
+    - fx_replication
+    - fx_mc_var_swap
+    external:
+    - financepy
+  status: pending
+- id: T113
+  title: Gauss-Hermite quadrature for swaption pricing
+  construct: quadrature
+  new_component: gauss_hermite_integration
+  cross_validate:
+    internal:
+    - quadrature_swaption
+    - tree_swaption
+    external:
+    - quantlib
+  status: pending
+- id: T114
+  title: Gauss-Laguerre integration for Heston (alternative to FFT)
+  construct: quadrature
+  new_component: gauss_laguerre_integration
+  cross_validate:
+    internal:
+    - laguerre_heston
+    - fft_heston
+    external:
+    - quantlib
+  status: pending
+- id: T115
+  title: CONV method for Bermudan under Variance Gamma
+  construct:
+  - transforms
+  - lattice
+  new_component: conv_method
+  cross_validate:
+    internal:
+    - conv_bermudan
+    - mc_bermudan_vg
+    analytical: european_vg_cos
+  status: pending
+- id: T116
+  title: 'Rough Bergomi: hybrid simulation vs rough Heston semi-analytical'
+  construct: monte_carlo
+  new_component:
+  - rough_bergomi_process
+  - fractional_brownian_motion
+  cross_validate:
+    internal:
+    - rbergomi_mc
+    - rough_heston_semi
+    analytical: rbergomi_reference_values
+  status: pending
+- id: T117
+  title: 'Local-stochastic vol (LSV): 2D PDE vs MC with leverage function'
+  construct:
+  - pde
+  - monte_carlo
+  - calibration
+  new_component:
+  - lsv_model
+  - leverage_function_calibration
+  cross_validate:
+    internal:
+    - lsv_pde
+    - lsv_mc
+    external:
+    - quantlib
+  status: pending
+- id: T118
+  title: Chebyshev spectral method vs FD for European option
+  construct: pde
+  new_component: chebyshev_spectral_solver
+  cross_validate:
+    internal:
+    - spectral_solver
+    - fd_theta_method
+    analytical: black_scholes
+  status: pending
+- id: T119
+  title: 'NIG process: COS pricing vs MC'
+  construct:
+  - transforms
+  - monte_carlo
+  new_component:
+  - nig_process
+  - nig_char_fn
+  cross_validate:
+    internal:
+    - nig_cos
+    - nig_mc
+    analytical: nig_reference_values
+  status: pending
+- id: T120
+  title: 'Margrabe exchange option: closed-form vs 2D MC'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component:
+  - margrabe_formula
+  - two_asset_mc
+  cross_validate:
+    internal:
+    - margrabe_analytical
+    - mc_exchange
+    external:
+    - quantlib
+  status: pending
+- id: T121
+  title: 'Convertible bond: Tsiveriotis-Fernandes tree vs MC'
+  construct:
+  - lattice
+  - monte_carlo
+  new_component:
+  - tsiveriotis_fernandes
+  - convertible_tree
+  cross_validate:
+    internal:
+    - tf_tree
+    - mc_convertible
+    external:
+    - quantlib
+    - financepy
+  status: pending
+- id: T122
+  title: 'Inflation-linked bond: real yield curve pricing'
+  construct:
+  - analytical
+  - calibration
+  new_component:
+  - real_yield_curve
+  - inflation_bond
+  cross_validate:
+    internal:
+    - real_curve_pricing
+    - nominal_curve_with_breakeven
+    external:
+    - quantlib
+  status: pending
+- id: T123
+  title: 'CMS cap: convexity adjustment (Hagan) vs replication vs MC'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component:
+  - cms_convexity_adjustment
+  - cms_replication
+  cross_validate:
+    internal:
+    - hagan_cms
+    - replication_cms
+    - mc_cms
+    external:
+    - quantlib
+  status: pending
+- id: T124
+  title: 'CDS option: Black76 on spread vs MC'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component: cds_option_pricing
+  cross_validate:
+    internal:
+    - black76_cds_option
+    - mc_cds_option
+    external:
+    - quantlib
+    - financepy
+  status: pending
+- id: T125
+  title: 'Swing option: dynamic programming on tree vs LSM MC'
+  construct:
+  - lattice
+  - monte_carlo
+  new_component:
+  - dp_on_tree
+  - swing_payoff
+  cross_validate:
+    internal:
+    - dp_swing
+    - lsm_swing
+    external:
+    - quantlib
+  status: pending
+- id: T126
+  title: Spread option (Kirk approximation) vs 2D MC vs 2D FFT
+  construct:
+  - analytical
+  - monte_carlo
+  - transforms
+  new_component:
+  - kirk_approximation
+  - spread_option_2d
+  cross_validate:
+    internal:
+    - kirk_spread
+    - mc_spread_2d
+    - fft_spread_2d
+    external:
+    - quantlib
+  status: pending
+- id: E21
+  title: 'European equity call: 5-way (tree, PDE, MC, FFT, COS)'
+  construct:
+  - lattice
+  - pde
+  - monte_carlo
+  - transforms
+  new_component: null
+  market:
+    source: mock
+    as_of: 2024-11-15
+    discount_curve: usd_ois
+    vol_surface: usd_rates_smile
+    underlier_spot: SPX
+  market_assertions:
+    requires:
+    - discount_curve
+    - black_vol_surface
+    - spot
+    selected:
+      discount_curve: usd_ois
+      vol_surface: usd_rates_smile
+      underlier_spot: SPX
+  cross_validate:
+    internal:
+    - crr_tree
+    - bs_pde
+    - mc_exact
+    - fft
+    - cos
+    analytical: black_scholes
+  status: pending
+- id: E22
+  title: 'Cap/floor: Black caplet stack vs MC rate simulation'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component: null
+  market:
+    source: mock
+    as_of: 2024-11-15
+    discount_curve: usd_ois
+    forecast_curve: USD-SOFR-3M
+    vol_surface: usd_rates_smile
+  market_assertions:
+    requires:
+    - discount_curve
+    - forward_curve
+    - black_vol_surface
+    selected:
+      discount_curve: usd_ois
+      forecast_curve: USD-SOFR-3M
+      vol_surface: usd_rates_smile
+  cross_validate:
+    internal:
+    - mc_rate_cap
+    analytical: black76_cap
+  status: pending
+- id: E23
+  title: 'European equity call under local vol: PDE vs MC'
+  construct:
+  - pde
+  - monte_carlo
+  new_component: local_vol_equity_route
+  market:
+    source: mock
+    as_of: 2024-11-15
+    discount_curve: usd_ois
+    underlier_spot: SPX
+    local_vol_surface: spx_local_vol
+  market_assertions:
+    requires:
+    - discount_curve
+    - local_vol_surface
+    - spot
+    selected:
+      discount_curve: usd_ois
+      underlier_spot: SPX
+      local_vol_surface: spx_local_vol
+  cross_validate:
+    internal:
+    - local_vol_pde
+    - local_vol_mc
+  status: pending
+- id: E24
+  title: 'Merton jump-diffusion call: MC vs FFT'
+  construct:
+  - monte_carlo
+  - transforms
+  new_component: jump_diffusion_bridge
+  market:
+    source: mock
+    as_of: 2024-11-15
+    discount_curve: usd_ois
+    underlier_spot: SPX
+    jump_parameters: merton_equity
+  market_assertions:
+    requires:
+    - discount_curve
+    - jump_parameters
+    - spot
+    selected:
+      discount_curve: usd_ois
+      underlier_spot: SPX
+      jump_parameters: merton_equity
+  cross_validate:
+    internal:
+    - merton_mc
+    - merton_fft
+  status: pending
+- id: E25
+  title: 'FX option (EURUSD): GK analytical vs MC'
+  construct:
+  - analytical
+  - monte_carlo
+  new_component: garman_kohlhagen_adapter
+  market:
+    source: mock
+    as_of: 2024-11-15
+    discount_curve: usd_ois
+    forecast_curve: EUR-DISC
+    fx_rate: EURUSD
+  market_assertions:
+    requires:
+    - discount_curve
+    - forward_curve
+    - fx_rates
+    - spot
+    selected:
+      discount_curve: usd_ois
+      forecast_curve: EUR-DISC
+      fx_rate: EURUSD
+  cross_validate:
+    internal:
+    - gk_mc
+    analytical: garman_kohlhagen
+  status: pending
+- id: E26
+  title: 'Nth-to-default basket: Gaussian copula vs default-time MC'
+  construct:
+  - copula
+  - monte_carlo
+  new_component: default_time_mc
+  market:
+    source: mock
+    as_of: 2024-11-15
+    discount_curve: usd_ois
+    credit_curve: usd_ig
+  market_assertions:
+    requires:
+    - discount_curve
+    - credit_curve
+    selected:
+      discount_curve: usd_ois
+      credit_curve: usd_ig
+  cross_validate:
+    internal:
+    - gaussian_copula
+    - mc_default_times
+  status: pending
+- id: E27
+  title: 'American Asian barrier under Heston: PDE vs MC vs FFT should block honestly'
+  construct:
+  - pde
+  - monte_carlo
+  - transforms
+  new_component: null
+  market:
+    source: mock
+    as_of: 2024-11-15
+    discount_curve: usd_ois
+    vol_surface: usd_rates_smile
+    underlier_spot: SPX
+    model_parameters: heston_equity
+  market_assertions:
+    requires:
+    - discount_curve
+    - black_vol_surface
+    - model_parameters
+    - spot
+    selected:
+      discount_curve: usd_ois
+      vol_surface: usd_rates_smile
+      underlier_spot: SPX
+      model_parameters: heston_equity
+  cross_validate:
+    internal:
+    - american_pathdep_pde
+    - american_pathdep_mc
+    - american_pathdep_fft
+  status: pending
+- id: E28
+  title: 'European equity call: transform-family separation (FFT vs COS)'
+  construct:
+  - transforms
+  new_component: null
+  market:
+    source: mock
+    as_of: 2024-11-15
+    discount_curve: usd_ois
+    vol_surface: usd_rates_smile
+    underlier_spot: SPX
+  market_assertions:
+    requires:
+    - discount_curve
+    - black_vol_surface
+    - spot
+    selected:
+      discount_curve: usd_ois
+      vol_surface: usd_rates_smile
+      underlier_spot: SPX
+  cross_validate:
+    internal:
+    - fft
+    - cos
+    analytical: black_scholes
+  status: pending

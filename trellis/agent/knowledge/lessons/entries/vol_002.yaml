@@ -1,0 +1,29 @@
+id: vol_002
+title: Heston v0 vs sigma confusion
+severity: critical
+category: volatility
+status: promoted
+confidence: 1.0
+version: ''
+created: ''
+applies_when:
+  method:
+  - monte_carlo
+  - fft_pricing
+  features:
+  - stochastic_vol
+  instrument:
+  - equity_option
+  - barrier_option
+  error_signature: null
+symptom: Price far too low (by 50%+); implied vol from Heston price is ~4% when 20%
+  expected
+root_cause: 'Heston v0 is VARIANCE (0.04 = 20% vol). sigma = sqrt(v0). Passing v0=0.04
+  where vol is expected gives vol=4%.
+
+  '
+fix: 'Be explicit: sigma = sqrt(v0). When using Heston CF with FFT, spot drift should
+  be (r - q), not r alone if dividends exist.
+
+  '
+validation: ''

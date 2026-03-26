@@ -1,0 +1,37 @@
+id: num_008
+title: Undefined FFT symbol breaks analytical branch
+severity: high
+category: numerical
+status: candidate
+confidence: 0.4
+created: '2026-03-25T10:06:20.337246'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vanilla_european_payoff
+  - analytical
+  - backward_induction
+  - pde_grid
+  - monte_carlo
+  - characteristic_function
+  - cos_method
+  - fft_pricing
+  - greeks
+  - vol_surface_dependence
+  - continuous_dividend_yield
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''fft'' is not defined raised when selecting FFT/CFFT-based
+  pricing branch'
+root_cause: The pricer attempted to call an FFT/characteristic-function routine without
+  ensuring the symbol or module was defined or imported (no guard/fallback for missing
+  optional implementation).
+fix: Explicitly import or define the FFT/CF routine (e.g. numpy.fft or scipy.fftpack),
+  and add guarded dispatch so the analytical pricer falls back to a different method
+  or raises a clear error if the requested feature (fft_pricing/characteristic_function/COS)
+  is unavailable.
+validation: Discovered during build (attempt 0)

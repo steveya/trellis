@@ -23,15 +23,18 @@ class ScenarioWeightedPayoff:
         *,
         day_count: DayCountConvention = DayCountConvention.ACT_365,
     ):
+        """Store the inner payoff and day-count convention used by helper pricers."""
         self._inner = inner
         self._day_count = day_count
 
     @property
     def inner(self) -> Payoff:
+        """Return the wrapped payoff evaluated in each conditional state."""
         return self._inner
 
     @property
     def requirements(self) -> set[str]:
+        """Declare that scenario weighting requires a populated state space."""
         return {"state_space"}
 
     def evaluate(self, market_state: MarketState) -> float:

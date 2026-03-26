@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import numpy as raw_np
 
+from trellis.models._numba import NUMBA_AVAILABLE, maybe_njit
+
 
 class RecombiningLattice:
     """Generic N-dimensional recombining lattice.
@@ -31,6 +33,7 @@ class RecombiningLattice:
 
     def __init__(self, n_steps: int, dt: float, branching: int = 2,
                  state_dim: int = 1):
+        """Allocate state, probability, and discount storage for the full tree."""
         self.n_steps = n_steps
         self.dt = dt
         self.branching = branching
@@ -79,6 +82,7 @@ class RecombiningLattice:
             self._probs[step, node, b] = p
 
     def get_probabilities(self, step: int, node: int) -> list[float]:
+        """Return the outgoing transition probabilities from ``(step, node)``."""
         return [float(self._probs[step, node, b]) for b in range(self.branching)]
 
     def set_discount(self, step: int, node: int, df: float):
@@ -86,6 +90,7 @@ class RecombiningLattice:
         self._discounts[step, node] = df
 
     def get_discount(self, step: int, node: int) -> float:
+        """Return the one-step discount factor stored at ``(step, node)``."""
         return float(self._discounts[step, node])
 
     def child_indices(self, step: int, node: int) -> list[int]:
@@ -95,6 +100,192 @@ class RecombiningLattice:
         else:
             # Trinomial: down, mid, up relative to center
             return [node, node + 1, node + 2]
+
+
+@maybe_njit(cache=False)
+def _binomial_lattice_continuation_numba(
+    values: raw_np.ndarray,
+    discounts: raw_np.ndarray,
+    probs: raw_np.ndarray,
+) -> raw_np.ndarray:
+    """Return one discounted binomial lattice rollback step."""
+    out = raw_np.empty(len(discounts), dtype=values.dtype)
+    for j in range(len(discounts)):
+        out[j] = discounts[j] * (probs[j, 0] * values[j] + probs[j, 1] * values[j + 1])
+    return out
+
+
+@maybe_njit(cache=False)
+def _trinomial_lattice_continuation_numba(
+    values: raw_np.ndarray,
+    discounts: raw_np.ndarray,
+    probs: raw_np.ndarray,
+) -> raw_np.ndarray:
+    """Return one discounted trinomial lattice rollback step."""
+    out = raw_np.empty(len(discounts), dtype=values.dtype)
+    for j in range(len(discounts)):
+        out[j] = discounts[j] * (
+            probs[j, 0] * values[j]
+            + probs[j, 1] * values[j + 1]
+            + probs[j, 2] * values[j + 2]
+        )
+    return out
+
+
+@maybe_njit(cache=False)
+def _propagate_binomial_arrow_debreu_numba(
+    q_current: raw_np.ndarray,
+    discounts: raw_np.ndarray,
+    probs: raw_np.ndarray,
+) -> raw_np.ndarray:
+    """Propagate Arrow-Debreu prices forward through one binomial step."""
+    out = raw_np.zeros(len(q_current) + 1, dtype=q_current.dtype)
+    for j in range(len(q_current)):
+        weighted = q_current[j] * discounts[j]
+        out[j] += weighted * probs[j, 0]
+        out[j + 1] += weighted * probs[j, 1]
+    return out
+
+
+@maybe_njit(cache=False)
+def _propagate_trinomial_arrow_debreu_numba(
+    q_current: raw_np.ndarray,
+    discounts: raw_np.ndarray,
+    probs: raw_np.ndarray,
+) -> raw_np.ndarray:
+    """Propagate Arrow-Debreu prices forward through one trinomial step."""
+    out = raw_np.zeros(len(q_current) + 2, dtype=q_current.dtype)
+    for j in range(len(q_current)):
+        weighted = q_current[j] * discounts[j]
+        out[j] += weighted * probs[j, 0]
+        out[j + 1] += weighted * probs[j, 1]
+        out[j + 2] += weighted * probs[j, 2]
+    return out
+
+
+def _node_values(count: int, generator) -> raw_np.ndarray:
+    """Collect node values from a Python callback with minimal overhead."""
+    return raw_np.fromiter(generator, dtype=float, count=count)
+
+
+def _apply_exercise_rule(
+    continuation: raw_np.ndarray,
+    exercise: raw_np.ndarray,
+    exercise_fn,
+) -> raw_np.ndarray:
+    """Combine continuation and exercise values using the supplied rule."""
+    if exercise_fn is max:
+        return raw_np.maximum(continuation, exercise)
+    if exercise_fn is min:
+        return raw_np.minimum(continuation, exercise)
+    return raw_np.fromiter(
+        (exercise_fn(float(c), float(e)) for c, e in zip(continuation, exercise)),
+        dtype=float,
+        count=len(continuation),
+    )
+
+
+def _rollback_continuation(
+    values: raw_np.ndarray,
+    discounts: raw_np.ndarray,
+    probs: raw_np.ndarray,
+    branching: int,
+) -> raw_np.ndarray:
+    """Return one discounted rollback step for the chosen branching factor."""
+    if branching == 2:
+        if NUMBA_AVAILABLE:
+            return _binomial_lattice_continuation_numba(values, discounts, probs)
+        return discounts * (probs[:, 0] * values[:-1] + probs[:, 1] * values[1:])
+
+    if NUMBA_AVAILABLE:
+        return _trinomial_lattice_continuation_numba(values, discounts, probs)
+    return discounts * (
+        probs[:, 0] * values[:-2] + probs[:, 1] * values[1:-1] + probs[:, 2] * values[2:]
+    )
+
+
+def _propagate_arrow_debreu(
+    q_current: raw_np.ndarray,
+    discounts: raw_np.ndarray,
+    probs: raw_np.ndarray,
+    branching: int,
+) -> raw_np.ndarray:
+    """Propagate Arrow-Debreu state prices forward one time step."""
+    if branching == 2:
+        if NUMBA_AVAILABLE:
+            return _propagate_binomial_arrow_debreu_numba(q_current, discounts, probs)
+        weighted = q_current * discounts
+        out = raw_np.zeros(len(q_current) + 1, dtype=weighted.dtype)
+        out[:-1] += weighted * probs[:, 0]
+        out[1:] += weighted * probs[:, 1]
+        return out
+
+    if NUMBA_AVAILABLE:
+        return _propagate_trinomial_arrow_debreu_numba(q_current, discounts, probs)
+    weighted = q_current * discounts
+    out = raw_np.zeros(len(q_current) + 2, dtype=weighted.dtype)
+    out[:-2] += weighted * probs[:, 0]
+    out[1:-1] += weighted * probs[:, 1]
+    out[2:] += weighted * probs[:, 2]
+    return out
+
+
+def _step_displacements(step: int, n_nodes: int, displacement_fn, dr: float = 0.0) -> raw_np.ndarray:
+    """Evaluate the displacement function across one full lattice step."""
+    return _node_values(
+        n_nodes,
+        (displacement_fn(step, j, dr) for j in range(n_nodes)),
+    )
+
+
+def _check_standard_discount(discount_fn) -> bool:
+    """Check whether the supplied discount function matches exp(-r * dt)."""
+    try:
+        return (
+            abs(discount_fn(0.0, 1.0) - 1.0) < 1e-12
+            and abs(discount_fn(0.1, 0.25) - raw_np.exp(-0.025)) < 1e-12
+        )
+    except Exception:
+        return False
+
+
+def _check_lognormal_model(rate_fn) -> bool:
+    """Check whether the supplied rate function behaves like exp(phi + x)."""
+    try:
+        return (
+            abs(rate_fn(0.0, 0.0) - 1.0) < 1e-12
+            and abs(rate_fn(raw_np.log(2.0), 0.0) - 2.0) < 1e-12
+            and abs(rate_fn(0.0, raw_np.log(3.0)) - 3.0) < 1e-12
+        )
+    except Exception:
+        return False
+
+
+def _rate_array(phi: float, displacements: raw_np.ndarray, rate_fn, rate_mode: str) -> raw_np.ndarray:
+    """Evaluate node rates for one time step."""
+    if rate_mode == "normal":
+        return phi + displacements
+    if rate_mode == "lognormal":
+        return raw_np.exp(phi + displacements)
+    return _node_values(
+        len(displacements),
+        (rate_fn(phi, float(x)) for x in displacements),
+    )
+
+
+def _discount_array(
+    rates: raw_np.ndarray,
+    dt: float,
+    discount_fn,
+    standard_discount: bool,
+) -> raw_np.ndarray:
+    """Evaluate one-step node discount factors for one time step."""
+    if standard_discount:
+        return raw_np.exp(-rates * dt)
+    return _node_values(
+        len(rates),
+        (discount_fn(float(r), dt) for r in rates),
+    )
 
 
 def lattice_backward_induction(
@@ -135,44 +326,197 @@ def lattice_backward_induction(
     if exercise_fn is None:
         exercise_fn = max
     n = lattice.n_steps
+    branching = lattice.branching
+    exercise_set = {int(step) for step in (exercise_steps or [])}
 
     # Terminal values
     n_terminal = lattice.n_nodes(n)
-    values = raw_np.array([terminal_payoff(n, j, lattice) for j in range(n_terminal)])
+    values = _node_values(
+        n_terminal,
+        (terminal_payoff(n, j, lattice) for j in range(n_terminal)),
+    )
 
     # Roll back
     for i in range(n - 1, -1, -1):
         n_nodes_i = lattice.n_nodes(i)
-        new_values = raw_np.zeros(n_nodes_i)
+        discounts = lattice._discounts[i, :n_nodes_i]
+        probs = lattice._probs[i, :n_nodes_i, :branching]
+        new_values = _rollback_continuation(values, discounts, probs, branching)
 
-        for j in range(n_nodes_i):
-            df = lattice.get_discount(i, j)
-            probs = lattice.get_probabilities(i, j)
-            children = lattice.child_indices(i, j)
-
-            # Continuation value = discounted expected future value
-            cont = df * sum(p * values[c] for p, c in zip(probs, children))
-
-            # Add intermediate cashflows (coupons, etc.) at this node
-            if cashflow_at_node is not None:
-                cont += cashflow_at_node(i, j, lattice)
-
-            new_values[j] = cont
+        if cashflow_at_node is not None:
+            new_values = new_values + _node_values(
+                n_nodes_i,
+                (cashflow_at_node(i, j, lattice) for j in range(n_nodes_i)),
+            )
 
         # Exercise decisions
-        if exercise_type == "american" and exercise_value is not None:
-            for j in range(n_nodes_i):
-                ev = exercise_value(i, j, lattice)
-                new_values[j] = exercise_fn(new_values[j], ev)
-        elif exercise_type == "bermudan" and exercise_steps and i in exercise_steps:
-            if exercise_value is not None:
-                for j in range(n_nodes_i):
-                    ev = exercise_value(i, j, lattice)
-                    new_values[j] = exercise_fn(new_values[j], ev)
+        if exercise_value is not None and (
+            exercise_type == "american"
+            or (exercise_type == "bermudan" and i in exercise_set)
+        ):
+            exercise = _node_values(
+                n_nodes_i,
+                (exercise_value(i, j, lattice) for j in range(n_nodes_i)),
+            )
+            new_values = _apply_exercise_rule(new_values, exercise, exercise_fn)
 
         values = new_values
 
     return float(values[0])
+
+
+# ---------------------------------------------------------------------------
+# Universal analytical lattice calibration (Brigo-Mercurio framework)
+# ---------------------------------------------------------------------------
+
+def calibrate_lattice(
+    lattice: RecombiningLattice,
+    discount_curve,
+    displacement_fn,
+    rate_fn=None,
+    discount_fn=None,
+) -> list[float]:
+    r"""Analytically calibrate a recombining lattice to a discount curve.
+
+    This implements the universal analytical calibration from Brigo & Mercurio
+    (2006), Chapter 15.  It is the same method used by FinancePy and (in
+    iterative form) QuantLib.
+
+    **Mathematical framework**
+
+    The short rate at node (m, j) decomposes as:
+
+    .. math::
+        r(m, j) = \phi(m) + x(j)
+
+    where :math:`x(j)` is a *displacement* that depends only on the node index
+    (provided by ``displacement_fn``), and :math:`\phi(m)` is a time-dependent
+    drift chosen so that the tree exactly reprices zero-coupon bonds from the
+    input ``discount_curve``.
+
+    At each step *m* the drift is solved **analytically** (no Newton iteration):
+
+    .. math::
+        \phi(m) = \frac{1}{\Delta t} \ln\!\Bigl(
+            \frac{\displaystyle\sum_j Q(m,j)\,e^{-x(j)\,\Delta t}}
+                 {P^{\text{mkt}}(0,\,(m{+}1)\Delta t)}
+        \Bigr)
+
+    where :math:`Q(m,j)` are Arrow-Debreu state prices propagated forward:
+
+    .. math::
+        Q(m{+}1, k) = \sum_{j \to k} Q(m,j)\;p(j \to k)\;
+                       e^{-r(m,j)\,\Delta t}
+
+    Parameters
+    ----------
+    lattice : RecombiningLattice
+        Lattice with probabilities already set.
+    discount_curve
+        Must support ``discount_curve.discount(t) -> float``.
+    displacement_fn : callable(step: int, node: int, dr: float) -> float
+        Returns *x(j)* — the displacement at node *j* of step *m*.
+        For Hull-White binomial: ``lambda m, j, dr: (2*j - m) * dr``.
+    rate_fn : callable(phi, displacement) -> float, optional
+        Combines calibrated drift and displacement into the short rate.
+        Default: ``lambda phi, x: phi + x`` (normal/additive model).
+        For lognormal: ``lambda phi, x: exp(phi + x)``.
+    discount_fn : callable(rate, dt) -> float, optional
+        One-step discount factor. Default: ``lambda r, dt: exp(-r * dt)``.
+
+    Returns
+    -------
+    phis : list[float]
+        The calibrated drift at each step, length ``n_steps + 1``.
+    """
+    # Default rate_fn/discount_fn: normal (additive) model
+    if rate_fn is None:
+        rate_fn = lambda phi, x: phi + x
+    if discount_fn is None:
+        discount_fn = lambda r_val, dt_val: raw_np.exp(-r_val * dt_val)
+
+    # Detect if we can use the analytical shortcut (normal model only).
+    # For normal models: r = phi + x, so exp(-r*dt) = exp(-phi*dt)*exp(-x*dt)
+    # and phi factors out of the sum, giving a closed-form solution.
+    # For lognormal: r = exp(phi + x), no closed form — use Newton.
+    _is_normal = _check_normal_model(rate_fn)
+    _is_lognormal = _check_lognormal_model(rate_fn)
+    _standard_discount = _check_standard_discount(discount_fn)
+    rate_mode = "normal" if _is_normal else "lognormal" if _is_lognormal else "generic"
+
+    n = lattice.n_steps
+    dt = lattice.dt
+    dr = 0.0  # displacement_fn captures the actual dr via closure
+    branching = lattice.branching
+    states = lattice._states[:, :, 0]
+    discounts = lattice._discounts
+    probs = lattice._probs
+
+    phis = raw_np.zeros(n + 1, dtype=float)
+    Q_current = raw_np.array([1.0], dtype=float)  # Arrow-Debreu state prices at current step
+
+    # --- Calibrate phi at each step ---
+    for m in range(n + 1):
+        n_nodes_curr = lattice.n_nodes(m)
+        market_df = float(discount_curve.discount((m + 1) * dt))
+        displacements = _step_displacements(m, n_nodes_curr, displacement_fn, dr)
+
+        if _is_normal:
+            # Analytical: phi = (1/dt) * ln(sum_j Q_j * exp(-x_j*dt) / DF)
+            sum_qz = float(raw_np.dot(Q_current, raw_np.exp(-displacements * dt)))
+            if sum_qz > 0 and market_df > 0:
+                phis[m] = raw_np.log(sum_qz / market_df) / dt
+            else:
+                phis[m] = phis[m - 1] if m > 0 else 0.0
+        else:
+            # Newton iteration for non-normal models (e.g., lognormal)
+            # Solve: sum_j Q_j * discount_fn(rate_fn(phi, x_j), dt) = market_df
+            phi = phis[m - 1] if m > 0 else raw_np.log(max(float(
+                discount_curve.zero_rate(max(dt, 0.001))), 1e-10))
+            for _ in range(30):
+                rates = _rate_array(phi, displacements, rate_fn, rate_mode)
+                step_discounts = _discount_array(rates, dt, discount_fn, _standard_discount)
+                f_val = float(raw_np.dot(Q_current, step_discounts))
+                eps = 1e-8
+                rates_up = _rate_array(phi + eps, displacements, rate_fn, rate_mode)
+                step_discounts_up = _discount_array(
+                    rates_up, dt, discount_fn, _standard_discount,
+                )
+                f_deriv = float(raw_np.dot(Q_current, (step_discounts_up - step_discounts) / eps))
+                err = f_val - market_df
+                if abs(err) < 1e-12:
+                    break
+                if abs(f_deriv) < 1e-15:
+                    break
+                phi -= err / f_deriv
+            phis[m] = phi
+
+        # Set states and discounts at this step
+        r_nodes = _rate_array(float(phis[m]), displacements, rate_fn, rate_mode)
+        step_discounts = _discount_array(r_nodes, dt, discount_fn, _standard_discount)
+        states[m, :n_nodes_curr] = r_nodes
+        discounts[m, :n_nodes_curr] = step_discounts
+
+        # Propagate Arrow-Debreu prices to next step
+        if m < n:
+            Q_current = _propagate_arrow_debreu(
+                Q_current,
+                step_discounts,
+                probs[m, :n_nodes_curr, :branching],
+                branching,
+            )
+
+    return [float(phi) for phi in phis]
+
+
+def _check_normal_model(rate_fn) -> bool:
+    """Check if rate_fn is additive (phi + x) by testing linearity."""
+    try:
+        # If rate_fn(1, 2) == 3 and rate_fn(0, 1) == 1, it's additive
+        return (abs(rate_fn(1.0, 2.0) - 3.0) < 1e-10 and
+                abs(rate_fn(0.0, 1.0) - 1.0) < 1e-10)
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -188,18 +532,21 @@ def build_rate_lattice(
     discount_curve=None,
     branching: int = 2,
 ) -> RecombiningLattice:
-    """Build a calibrated mean-reverting short-rate lattice (Hull-White).
+    r"""Build a calibrated mean-reverting short-rate lattice (Hull-White).
 
-    dr = a(theta(t) - r)dt + sigma dW
+    Uses the Brigo-Mercurio analytical calibration framework via
+    :func:`calibrate_lattice`.  The short rate decomposes as:
 
-    If ``discount_curve`` is provided, theta(t) is calibrated at each step
-    so that the tree reprices zero-coupon bonds from the input curve.
-    This is the standard Hull-White tree construction.
+    .. math::
+        r(m, j) = \phi(m) + (2j - m)\,\sigma\sqrt{\Delta t}
+
+    where :math:`\phi(m)` is solved analytically at each step to reprice
+    zero-coupon bonds from the input ``discount_curve``.
 
     Parameters
     ----------
     r0 : float
-        Initial short rate (typically curve.zero_rate(dt)).
+        Initial short rate (typically ``curve.zero_rate(dt)``).
     sigma : float
         Hull-White rate volatility (absolute, NOT Black vol).
     a : float
@@ -209,139 +556,120 @@ def build_rate_lattice(
     n_steps : int
         Number of steps.
     discount_curve : DiscountCurve or None
-        If provided, calibrate theta(t) to reprice this curve.
-        If None, use constant theta = a * r0 (uncalibrated — for testing only).
+        If provided, calibrate to this curve (analytical, exact to machine
+        precision).  If None, use constant r0 at all nodes (for testing only).
     branching : int
         2 (binomial) or 3 (trinomial).
     """
     dt = T / n_steps
     lattice = RecombiningLattice(n_steps, dt, branching, state_dim=1)
     dr = sigma * raw_np.sqrt(dt)
+    probs = lattice._probs
+    states = lattice._states[:, :, 0]
+    discounts = lattice._discounts
 
-    if branching != 2:
-        raise NotImplementedError("Calibrated trinomial tree not yet implemented")
+    if branching not in (2, 3):
+        raise ValueError(f"branching must be 2 or 3, got {branching}")
 
-    # Step 1: Build the tree structure (rates without theta calibration)
-    # Base rates: r_node = alpha_i + (2*j - i) * dr
-    # where alpha_i is a time-dependent shift calibrated to the curve.
-    alphas = raw_np.zeros(n_steps + 1)
-    alphas[0] = r0
+    if branching == 2:
+        # --- Binomial (existing logic) ---
+        # Step 1: Set mean-reversion-adjusted probabilities
+        # In the HW binomial tree the displacement is symmetric:
+        #   x(m, j) = (2*j - m) * dr
+        # Probabilities encode mean reversion: p_up = 0.5 + a*(alpha - r)*dt/(2*dr)
+        # But we need rates to compute drift, so we do two passes:
+        #   Pass 1: equal probs → calibrate phi → get rates
+        #   Pass 2: recompute probs with mean-reversion drift
 
-    # Step 2: Calibrate alpha_i (which encodes theta) at each step
-    # by matching the tree-implied ZCB price to the market ZCB price.
-    for i in range(n_steps + 1):
-        if i == 0:
-            # Root: just r0
-            lattice.set_state(0, 0, r0)
-            lattice.set_discount(0, 0, raw_np.exp(-r0 * dt))
-            lattice.set_probabilities(0, 0, [0.5, 0.5])  # initial guess
-            continue
+        # --- Pass 1: equal probabilities, analytical calibration ---
+        for i in range(n_steps):
+            n_nodes_i = i + 1
+            probs[i, :n_nodes_i, 0] = 0.5
+            probs[i, :n_nodes_i, 1] = 0.5
 
-        if discount_curve is not None and i > 0:
-            # Calibrate alpha_i so tree ZCB(i*dt) matches curve.discount(i*dt)
-            market_df = float(discount_curve.discount(i * dt))
+        if discount_curve is not None:
+            # Hull-White normal displacement: x(m, j) = (2*j - m) * dr
+            def hw_displacement(m, j, _dr):
+                """Return the additive Hull-White displacement for a binomial node."""
+                return (2 * j - m) * dr
 
-            # Arrow-Debreu prices at step i-1
-            if i == 1:
-                ad_prices = [1.0]  # single root node
-            else:
-                # Compute AD prices by forward induction
-                ad_prices = _forward_induction_ad(lattice, i - 1)
+            phis = calibrate_lattice(lattice, discount_curve, hw_displacement)
 
-            # Search for alpha_i that makes tree ZCB = market ZCB
-            # ZCB(i*dt) = sum over nodes at step i-1: AD_j * exp(-r_j * dt)
-            # where r_j depends on alpha_i
-            def zcb_error(alpha):
-                total = 0.0
-                for j in range(i):
-                    probs = lattice.get_probabilities(i - 1, j)
-                    df_node = lattice.get_discount(i - 1, j)
-                    for b, p in enumerate(probs):
-                        child = j + b  # for binomial: [j, j+1]
-                        r_child = alpha + (2 * child - i) * dr
-                        child_df = raw_np.exp(-r_child * dt)
-                        total += ad_prices[j] * p * df_node * child_df
-                return total
+            # --- Pass 2: mean-reversion-adjusted probabilities ---
+            for i in range(n_steps):
+                n_nodes_i = i + 1
+                r_nodes = states[i, :n_nodes_i]
+                target = phis[min(i + 1, n_steps)]
+                drift = a * (target - r_nodes) * dt
+                p_up = 0.5 + drift / (2 * dr) if dr > 0 else raw_np.full(n_nodes_i, 0.5)
+                p_up = raw_np.clip(p_up, 0.01, 0.99)
+                probs[i, :n_nodes_i, 0] = 1.0 - p_up
+                probs[i, :n_nodes_i, 1] = p_up
 
-            # Find alpha_i via bisection
-            # Start with the forward rate as initial guess
-            if discount_curve is not None:
-                fwd = -raw_np.log(float(discount_curve.discount((i + 0.5) * dt)) /
-                                   float(discount_curve.discount((i - 0.5) * dt))) / dt
-            else:
-                fwd = r0
-
-            # Simple Newton iteration
-            alpha = fwd
-            for _ in range(20):
-                # Current tree ZCB
-                # tree_zcb(i*dt) = sum_j AD_{i-1,j} * sum_b [p_b * exp(-r_child * dt)]
-                # AD prices already include discounting to step i-1
-                tree_zcb = 0.0
-                d_tree_zcb = 0.0  # derivative w.r.t. alpha
-                for j in range(i):
-                    probs = lattice.get_probabilities(i - 1, j)
-                    for b, p in enumerate(probs):
-                        child = j + b
-                        r_child = alpha + (2 * child - i) * dr
-                        child_df = raw_np.exp(-r_child * dt)
-                        contrib = ad_prices[j] * p * child_df
-                        tree_zcb += contrib
-                        d_tree_zcb -= contrib * dt
-
-                err = tree_zcb - market_df
-                if abs(err) < 1e-12:
-                    break
-                if abs(d_tree_zcb) < 1e-15:
-                    break
-                alpha -= err / d_tree_zcb
-
-            alphas[i] = alpha
+            # --- Pass 3: re-calibrate with final probabilities ---
+            # The probability adjustment changes the AD prices, so we re-calibrate
+            # phi to maintain exact curve fitting.
+            phis = calibrate_lattice(lattice, discount_curve, hw_displacement)
         else:
-            alphas[i] = r0  # uncalibrated fallback
+            # Uncalibrated: use r0 as phi at all steps, but keep displacement structure
+            for i in range(n_steps + 1):
+                n_nodes_i = i + 1
+                offsets = 2.0 * raw_np.arange(n_nodes_i) - i
+                r_nodes = r0 + offsets * dr
+                states[i, :n_nodes_i] = r_nodes
+                discounts[i, :n_nodes_i] = raw_np.exp(-r_nodes * dt)
 
-        # Set states and discounts at step i
-        for j in range(i + 1):
-            r_node = alphas[i] + (2 * j - i) * dr
-            lattice.set_state(i, j, r_node)
-            lattice.set_discount(i, j, raw_np.exp(-r_node * dt))
+    else:
+        # --- Trinomial (branching == 3) ---
+        # Hull-White trinomial: step m has 2*m+1 nodes, j=0..2*m
+        # Displacement: x(m, j) = (j - m) * dr  (center node at j=m)
+        # Standard HW trinomial probabilities: [1/6, 2/3, 1/6] (equal probs)
+        # Mean-reversion adjusted:
+        #   p_up   = 1/6 + (a*(target-r)*dt) / (2*dr)
+        #   p_mid  = 2/3
+        #   p_down = 1/6 - (a*(target-r)*dt) / (2*dr)
 
-    # Step 3: Set probabilities (mean-reversion adjusted)
-    for i in range(n_steps):
-        for j in range(i + 1):
-            r = lattice.get_state(i, j)
-            target = alphas[min(i + 1, n_steps)]
-            drift = a * (target - r) * dt
-            p_up = 0.5 + drift / (2 * dr) if dr > 0 else 0.5
-            p_up = max(0.01, min(0.99, p_up))
-            lattice.set_probabilities(i, j, [1 - p_up, p_up])
+        # --- Pass 1: equal trinomial probabilities, analytical calibration ---
+        for i in range(n_steps):
+            n_nodes_i = 2 * i + 1
+            probs[i, :n_nodes_i, 0] = 1.0 / 6
+            probs[i, :n_nodes_i, 1] = 2.0 / 3
+            probs[i, :n_nodes_i, 2] = 1.0 / 6
+
+        def hw_tri_displacement(m, j, _dr):
+            """Return the additive Hull-White displacement for a trinomial node."""
+            return (j - m) * dr
+
+        if discount_curve is not None:
+            phis = calibrate_lattice(lattice, discount_curve, hw_tri_displacement)
+
+            # --- Pass 2: mean-reversion-adjusted probabilities ---
+            for i in range(n_steps):
+                n_nodes_i = 2 * i + 1
+                r_nodes = states[i, :n_nodes_i]
+                target = phis[min(i + 1, n_steps)]
+                drift = a * (target - r_nodes) * dt
+                half_drift = drift / (2 * dr) if dr > 0 else raw_np.zeros(n_nodes_i)
+                p_up = raw_np.clip(1.0 / 6 + half_drift, 0.01, 0.98)
+                p_down = raw_np.clip(1.0 / 6 - half_drift, 0.01, 0.98)
+                p_mid = raw_np.maximum(0.01, 1.0 - p_up - p_down)
+                total = p_up + p_mid + p_down
+                probs[i, :n_nodes_i, 0] = p_down / total
+                probs[i, :n_nodes_i, 1] = p_mid / total
+                probs[i, :n_nodes_i, 2] = p_up / total
+
+            # --- Pass 3: re-calibrate with final probabilities ---
+            phis = calibrate_lattice(lattice, discount_curve, hw_tri_displacement)
+        else:
+            # Uncalibrated: use r0 as phi at all steps
+            for i in range(n_steps + 1):
+                n_nodes_i = 2 * i + 1
+                offsets = raw_np.arange(n_nodes_i) - i
+                r_nodes = r0 + offsets * dr
+                states[i, :n_nodes_i] = r_nodes
+                discounts[i, :n_nodes_i] = raw_np.exp(-r_nodes * dt)
 
     return lattice
-
-
-def _forward_induction_ad(lattice, target_step):
-    """Compute Arrow-Debreu prices at a given step via forward induction."""
-    # AD price at root = 1
-    ad = {(0, 0): 1.0}
-
-    for i in range(target_step):
-        new_ad = {}
-        for j in range(i + 1):
-            if (i, j) not in ad:
-                continue
-            price = ad[(i, j)]
-            df = lattice.get_discount(i, j)
-            probs = lattice.get_probabilities(i, j)
-            children = lattice.child_indices(i, j)
-            for b, (p, c) in enumerate(zip(probs, children)):
-                key = (i + 1, c)
-                new_ad[key] = new_ad.get(key, 0.0) + price * p * df
-        ad.update(new_ad)
-
-    # Extract prices at target_step
-    n_nodes = lattice.n_nodes(target_step)
-    result = [ad.get((target_step, j), 0.0) for j in range(n_nodes)]
-    return result
 
 
 def build_spot_lattice(
@@ -361,15 +689,115 @@ def build_spot_lattice(
     p = (raw_np.exp(r * dt) - d) / (u - d)
 
     lattice = RecombiningLattice(n_steps, dt, branching=2, state_dim=1)
+    states = lattice._states[:, :, 0]
+    discounts = lattice._discounts
+    probs = lattice._probs
 
     for i in range(n_steps + 1):
-        for j in range(i + 1):
-            S = S0 * u ** j * d ** (i - j)
-            lattice.set_state(i, j, S)
-            lattice.set_discount(i, j, raw_np.exp(-r * dt))
+        n_nodes_i = i + 1
+        j = raw_np.arange(n_nodes_i)
+        s_nodes = S0 * (u ** j) * (d ** (i - j))
+        states[i, :n_nodes_i] = s_nodes
+        discounts[i, :n_nodes_i] = raw_np.exp(-r * dt)
 
     for i in range(n_steps):
-        for j in range(i + 1):
-            lattice.set_probabilities(i, j, [1 - p, p])
+        n_nodes_i = i + 1
+        probs[i, :n_nodes_i, 0] = 1.0 - p
+        probs[i, :n_nodes_i, 1] = p
+
+    return lattice
+
+
+def build_generic_lattice(
+    model,
+    r0: float,
+    sigma: float,
+    a: float,
+    T: float,
+    n_steps: int,
+    discount_curve=None,
+    branching: int = 2,
+) -> RecombiningLattice:
+    """Build a calibrated rate lattice from a TreeModel specification.
+
+    This is the universal entry point. The ``model`` object (from
+    ``trellis.models.trees.models``) defines the displacement, probability,
+    rate, and discount functions. The calibration adapts automatically:
+    analytical for normal models, Newton for lognormal.
+
+    Parameters
+    ----------
+    model : TreeModel
+        Model specification (e.g., HULL_WHITE, BLACK_DERMAN_TOY).
+    r0 : float
+        Initial short rate.
+    sigma : float
+        Volatility (interpretation depends on model.vol_type).
+    a : float
+        Mean reversion speed.
+    T : float
+        Time horizon.
+    n_steps : int
+        Number of time steps.
+    discount_curve
+        Discount curve for calibration. Required.
+    branching : int
+        2 (binomial) or 3 (trinomial).
+    """
+    if discount_curve is None:
+        raise ValueError("discount_curve is required for calibrated lattice building")
+    if branching not in (2, 3):
+        raise ValueError(f"branching must be 2 or 3, got {branching}")
+
+    dt = T / n_steps
+    lattice = RecombiningLattice(n_steps, dt, branching, state_dim=1)
+    dr = sigma * raw_np.sqrt(dt)
+    probs = lattice._probs
+
+    # Wrap displacement to capture dr in closure.
+    # For binomial: model's displacement_fn uses (2*j - m)*dr directly.
+    # For trinomial: j ranges 0..2*m, so the natural displacement is (j - m)*dr.
+    # We remap so the model's fn (written for binomial indexing) works for both.
+    _disp = model.displacement_fn
+
+    if branching == 2:
+        def displacement(m, j, _dr):
+            """Adapt the model displacement rule to the binomial node indexing."""
+            return _disp(m, j, dr)
+    else:
+        def displacement(m, j, _dr):
+            """Use the natural centered displacement for trinomial node indexing."""
+            # Trinomial displacement: (j - m) * dr
+            # Model's fn expects (2*j - m)*dr, but for trinomial the center is
+            # at j=m and spacing is dr (not 2*dr). Use direct formula.
+            return (j - m) * dr
+
+    # --- Pass 1: equal probabilities, calibrate ---
+    if branching == 2:
+        equal_probs = [0.5, 0.5]
+    else:
+        equal_probs = [1.0 / 6, 2.0 / 3, 1.0 / 6]
+
+    for i in range(n_steps):
+        n_nodes_i = lattice.n_nodes(i)
+        probs[i, :n_nodes_i, :branching] = equal_probs
+
+    phis = calibrate_lattice(
+        lattice, discount_curve, displacement,
+        rate_fn=model.rate_fn, discount_fn=model.discount_fn,
+    )
+
+    # --- Pass 2: model-specific probabilities ---
+    _prob_fn = model.probability_fn
+    for i in range(n_steps):
+        n_nodes_i = lattice.n_nodes(i)
+        for j in range(n_nodes_i):
+            probs[i, j, :branching] = _prob_fn(lattice, i, j, phis, a, dr)
+
+    # --- Pass 3: re-calibrate with final probabilities ---
+    phis = calibrate_lattice(
+        lattice, discount_curve, displacement,
+        rate_fn=model.rate_fn, discount_fn=model.discount_fn,
+    )
 
     return lattice

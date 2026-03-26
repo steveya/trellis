@@ -1,0 +1,51 @@
+id: con_001
+title: Use exact trellis import paths — never guess module names
+severity: critical
+category: convention
+status: promoted
+confidence: 1.0
+created: '2026-03-23T23:11:58.810549'
+version: ''
+source_trace: null
+applies_when:
+  method: []
+  features:
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: ModuleNotFoundError or ImportError on trellis modules
+root_cause: 'The agent invents module paths like ''pde_solver'', ''simulation'', ''pdesolvers''
+  that don''t exist. The actual module paths are:
+
+  - PDE: trellis.models.pde.theta_method (theta_method_1d, BlackScholesOperator)
+
+  - PDE: trellis.models.pde.operator (PDEOperator base)
+
+  - MC: trellis.models.monte_carlo.engine (MonteCarloEngine)
+
+  - MC: trellis.models.monte_carlo.lsm (LSM, LaguerreBasis)
+
+  - MC: trellis.models.monte_carlo.discretization (schemes)
+
+  - Trees: trellis.models.trees.lattice (build_rate_lattice, lattice_backward_induction)
+
+  - FFT: trellis.models.transforms.fft_pricer (fft_price)
+
+  - FFT: trellis.models.transforms.cos_method (cos_price)
+
+  - Processes: trellis.models.processes.gbm (GBM)
+
+  - Processes: trellis.models.processes.heston (HestonProcess)
+
+  - Processes: trellis.models.processes.hull_white (HullWhiteProcess)
+
+  - Black: trellis.models.black (black76_call, black76_put)
+
+  - Copulas: trellis.models.copulas.gaussian (GaussianCopula)
+
+  - Copulas: trellis.models.copulas.factor (FactorCopula)'
+fix: ALWAYS use the exact import paths listed above. NEVER guess or invent module
+  names. If unsure, use trellis.models.black for analytical, trellis.models.monte_carlo.engine
+  for MC, trellis.models.trees.lattice for trees, trellis.models.pde.theta_method
+  for PDE, trellis.models.transforms.cos_method for FFT/COS.
+validation: Import paths verified against actual library structure

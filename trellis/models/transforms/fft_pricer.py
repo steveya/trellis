@@ -51,6 +51,7 @@ def fft_price(
 
     # Modified characteristic function
     def psi(v):
+        """Return the Carr-Madan damped transform integrand on frequency grid ``v``."""
         cf = char_fn(v - (alpha + 1) * 1j)
         denom = alpha ** 2 + alpha - v ** 2 + 1j * (2 * alpha + 1) * v
         return raw_np.exp(-r * T) * cf / denom

@@ -1,0 +1,175 @@
+# API Map — quick reference for the Trellis library surface.
+#
+# This is the "hot start pack": small enough to always fit in context,
+# giving the agent immediate knowledge of key types, imports, and patterns.
+
+# ---------------------------------------------------------------------------
+# MarketState
+# ---------------------------------------------------------------------------
+market_state:
+  module: trellis.core.market_state
+  class: MarketState
+  frozen: true
+  fields:
+    as_of: "date — observation date for market data"
+    settlement: "date — cash settlement date"
+    discount: "DiscountCurve | None — OIS curve for discounting"
+    forward_curve: "ForwardCurve | None — auto-constructed from discount if not provided; FX tasks may bridge this from the selected foreign curve for carry/forward access"
+    vol_surface: "VolSurface | None — volatility surface for option pricing"
+    state_space: "StateSpace | None — discrete states with probabilities"
+    credit_curve: "CreditCurve | None — survival probability curve"
+    forecast_curves: "dict[str, DiscountCurve] | None — keyed by rate index or foreign discount key (e.g. 'USD-SOFR-3M', 'EUR-DISC')"
+    fx_rates: "dict[str, FXRate] | None — keyed by pair (e.g. 'EURUSD')"
+  accessors:
+    discount_factor: "market_state.discount.discount(T)"
+    zero_rate: "market_state.discount.zero_rate(T)"
+    forward_rate: "market_state.forward_curve.forward_rate(T1, T2)"
+    forecast_forward: "market_state.forecast_forward_curve(rate_index).forward_rate(T1, T2)"
+    black_vol: "market_state.vol_surface.black_vol(T, K)"
+    survival_prob: "market_state.credit_curve.survival_probability(T)"
+  capabilities:
+    - "discount → discount is not None"
+    - "forward_rate → forward_curve is not None (auto from discount)"
+    - "black_vol → vol_surface is not None"
+    - "state_space → state_space is not None"
+    - "credit → credit_curve is not None"
+    - "forecast_rate → forecast_curves is not None"
+    - "fx → fx_rates is not None"
+
+# ---------------------------------------------------------------------------
+# Payoff protocol
+# ---------------------------------------------------------------------------
+payoff:
+  module: trellis.core.payoff
+  protocol: Payoff
+  runtime_checkable: true
+  required_properties:
+    requirements: "set[str] — capability names needed from MarketState"
+  required_methods:
+    evaluate: "(market_state: MarketState) -> float — returns present value"
+  notes:
+    - "Each payoff handles its own discounting internally"
+    - "The returned float is the final PV"
+    - "DeterministicCashflowPayoff wraps any Instrument into Payoff"
+
+# ---------------------------------------------------------------------------
+# Model imports — trees
+# ---------------------------------------------------------------------------
+trees:
+  module: trellis.models.trees
+  key_imports:
+    - "from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction"
+    - "from trellis.models.trees import BinomialTree, TrinomialTree, backward_induction"
+  notes:
+    - "build_rate_lattice returns a calibrated rate lattice from a TreeModel specification such as Hull-White or Black-Derman-Toy"
+    - "lattice_backward_induction handles cashflow_at_node and exercise_fn"
+
+# ---------------------------------------------------------------------------
+# Model imports — Monte Carlo
+# ---------------------------------------------------------------------------
+monte_carlo:
+  module: trellis.models.monte_carlo
+  key_imports:
+    - "from trellis.models.monte_carlo.engine import MonteCarloEngine"
+    - "from trellis.models.monte_carlo.lsm import longstaff_schwartz, longstaff_schwartz_result"
+    - "from trellis.models.monte_carlo.early_exercise import EarlyExercisePolicyResult, LeastSquaresContinuationEstimator"
+    - "from trellis.models.monte_carlo.schemes import LaguerreBasis"
+    - "from trellis.models.monte_carlo import euler_maruyama, milstein, brownian_bridge"
+    - "from trellis.models.monte_carlo import antithetic, control_variate"
+    - "from trellis.models.processes.gbm import GBM"
+  notes:
+    - "For American/Bermudan Monte Carlo, simulate paths then call an approved early-exercise control primitive; Trellis currently implements longstaff_schwartz"
+    - "If the control primitive uses continuation regression, choose the estimator or basis explicitly; LaguerreBasis is optional, not mandatory"
+    - "Do not invent method='lsm' on MonteCarloEngine"
+
+qmc:
+  module: trellis.models.qmc
+  key_imports:
+    - "from trellis.models.qmc import sobol_normals, brownian_bridge"
+    - "from trellis.models.processes.gbm import GBM"
+  notes:
+    - "QMC is an accelerator family layered on Monte Carlo-style estimators"
+    - "Current support is Sobol-based normal draws and Brownian-bridge construction"
+
+# ---------------------------------------------------------------------------
+# Model imports — PDE / finite differences
+# ---------------------------------------------------------------------------
+pde:
+  module: trellis.models.pde
+  key_imports:
+    - "from trellis.models.pde import Grid"
+    - "from trellis.models.pde.theta_method import theta_method_1d"
+    - "from trellis.models.pde.operator import BlackScholesOperator"
+    - "from trellis.models.pde import psor_1d  # American options"
+    - "from trellis.models.pde import HullWhitePDEOperator"
+  notes:
+    - "Use theta_method_1d, NOT legacy crank_nicolson_1d or implicit_fd_1d"
+    - "theta=0.5 for Crank-Nicolson, theta=1.0 for fully implicit"
+
+# ---------------------------------------------------------------------------
+# Model imports — FFT / Fourier
+# ---------------------------------------------------------------------------
+fft:
+  module: trellis.models.transforms
+  key_imports:
+    - "from trellis.models.transforms import fft_price, cos_price"
+  notes:
+    - "fft_price expects CF of log(S_T) — include log(S0)"
+    - "cos_price expects CF of log(S_T/S0) — log-return only"
+
+# ---------------------------------------------------------------------------
+# Model imports — copulas
+# ---------------------------------------------------------------------------
+copulas:
+  module: trellis.models.copulas
+  key_imports:
+    - "from trellis.models.copulas import GaussianCopula, StudentTCopula, FactorCopula"
+
+# ---------------------------------------------------------------------------
+# Model imports — analytical
+# ---------------------------------------------------------------------------
+analytical:
+  module: trellis.models.analytical
+  key_imports:
+    - "from trellis.models.analytical import zcb_option_hw"
+
+# ---------------------------------------------------------------------------
+# Model imports — calibration
+# ---------------------------------------------------------------------------
+calibration:
+  module: trellis.models.calibration
+  key_imports:
+    - "from trellis.models.calibration import implied_vol, implied_vol_jaeckel"
+    - "from trellis.models.calibration import calibrate_sabr"
+    - "from trellis.models.calibration import dupire_local_vol"
+
+# ---------------------------------------------------------------------------
+# Common utilities
+# ---------------------------------------------------------------------------
+utilities:
+  black76:
+    module: trellis.models.black
+    imports:
+      - "from trellis.models.black import black76_call, black76_put"
+  garman_kohlhagen:
+    module: trellis.models.black
+    imports:
+      - "from trellis.models.black import garman_kohlhagen_call, garman_kohlhagen_put"
+  schedule:
+    module: trellis.conventions.schedule
+    imports:
+      - "from trellis.conventions import generate_schedule, RollConvention, StubType"
+  day_count:
+    module: trellis.conventions.day_count
+    imports:
+      - "from trellis.conventions import DayCountConvention, year_fraction"
+  vol_surface:
+    module: trellis.models.vol_surface
+    imports:
+      - "from trellis.models.vol_surface import VolSurface, FlatVol"
+  cashflow_engine:
+    module: trellis.models.cashflow_engine
+    imports:
+      - "from trellis.models.cashflow_engine import Waterfall, Tranche"
+      - "from trellis.models.cashflow_engine import PSA, CPR, RateDependent"
+      - "from trellis.models.cashflow_engine import level_pay, scheduled, custom"

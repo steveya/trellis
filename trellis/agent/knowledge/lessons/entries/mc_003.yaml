@@ -1,0 +1,26 @@
+id: mc_003
+title: MC payoff_fn must return (n_paths,) not (n_paths, n_steps+1)
+severity: critical
+category: monte_carlo
+status: promoted
+confidence: 1.0
+created: '2026-03-23T22:21:33.806399'
+version: trellis 0.6
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - path_dependent
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: MC engine returns wrong price or errors on shape mismatch
+root_cause: 'MonteCarloEngine.price() expects payoff_fn(paths) -> ndarray of shape
+  (n_paths,). For European options: use paths[:, -1] to get terminal values. For path-dependent:
+  reduce along the time axis. Returning paths-shaped output (n_paths, n_steps+1) causes
+  silent errors.'
+fix: 'payoff_fn for European: lambda paths: np.maximum(paths[:, -1] - K, 0). payoff_fn
+  for barrier: check paths against barrier, then use terminal. payoff_fn for Asian:
+  np.maximum(paths.mean(axis=1) - K, 0). Always return 1D array of shape (n_paths,).'
+validation: assert payoff_fn(paths).shape == (n_paths,)

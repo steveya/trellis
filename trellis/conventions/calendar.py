@@ -7,6 +7,7 @@ from enum import Enum
 
 
 class BusinessDayAdjustment(Enum):
+    """Standard business-day adjustment rules used in schedule generation."""
     UNADJUSTED = "unadjusted"
     FOLLOWING = "following"
     MODIFIED_FOLLOWING = "modified_following"
@@ -33,11 +34,13 @@ class Calendar:
         weekend_days: frozenset[int] = frozenset({5, 6}),
         holidays: frozenset[date] = frozenset(),
     ):
+        """Store the weekend mask and explicit holiday set for this calendar."""
         self.name = name
         self._weekend_days = weekend_days
         self._holidays = holidays
 
     def is_business_day(self, d: date) -> bool:
+        """Return whether ``d`` is not a weekend day and not a holiday."""
         return d.weekday() not in self._weekend_days and d not in self._holidays
 
     def adjust(
@@ -94,19 +97,23 @@ class Calendar:
 
     @property
     def holidays(self) -> frozenset[date]:
+        """Return the explicit holiday set carried by the calendar."""
         return self._holidays
 
     def _next_business_day(self, d: date) -> date:
+        """Walk forward until a business day is reached."""
         while not self.is_business_day(d):
             d += timedelta(days=1)
         return d
 
     def _prev_business_day(self, d: date) -> date:
+        """Walk backward until a business day is reached."""
         while not self.is_business_day(d):
             d -= timedelta(days=1)
         return d
 
     def __repr__(self) -> str:
+        """Return a compact representation with the calendar name."""
         return f"Calendar({self.name!r})"
 
 
@@ -115,6 +122,7 @@ class JointCalendar(Calendar):
     is a business day in ALL constituent calendars."""
 
     def __init__(self, *calendars: Calendar, name: str | None = None):
+        """Combine calendars by intersecting their business-day definitions."""
         combined_name = name or " + ".join(c.name for c in calendars)
         combined_weekends = frozenset().union(*(c._weekend_days for c in calendars))
         combined_holidays = frozenset().union(*(c._holidays for c in calendars))
@@ -126,6 +134,7 @@ class JointCalendar(Calendar):
 # ---------------------------------------------------------------------------
 
 def _build_calendar(name: str, holiday_module: str) -> Calendar:
+    """Load a holiday module and materialize a concrete ``Calendar``."""
     import importlib
     mod = importlib.import_module(f"trellis.conventions.holidays.{holiday_module}")
     return Calendar(name, holidays=mod.holidays())
@@ -136,6 +145,7 @@ _CALENDAR_CACHE: dict[str, Calendar] = {}
 
 
 def _get_calendar(name: str, module: str) -> Calendar:
+    """Return a cached built-in calendar singleton, creating it on demand."""
     if name not in _CALENDAR_CACHE:
         _CALENDAR_CACHE[name] = _build_calendar(name, module)
     return _CALENDAR_CACHE[name]
@@ -149,19 +159,23 @@ class _CalendarProxy:
     """Lazy proxy that builds the calendar on first access."""
 
     def __init__(self, name: str, module: str):
+        """Store the deferred calendar identity until first use."""
         self._name = name
         self._module = module
         self._calendar: Calendar | None = None
 
     def _resolve(self) -> Calendar:
+        """Build and cache the underlying concrete calendar on first access."""
         if self._calendar is None:
             self._calendar = _build_calendar(self._name, self._module)
         return self._calendar
 
     def __getattr__(self, attr):
+        """Delegate unknown attributes to the resolved concrete calendar."""
         return getattr(self._resolve(), attr)
 
     def __repr__(self):
+        """Return the same compact repr as the underlying calendar."""
         return f"Calendar({self._name!r})"
 
 

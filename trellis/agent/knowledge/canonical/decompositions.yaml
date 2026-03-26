@@ -1,0 +1,311 @@
+# Product Decompositions — instrument → feature mappings + pricing method.
+#
+# Migrated from quant.py STATIC_PLANS.  Each entry decomposes an instrument
+# into features (from features.yaml), selects a method, and records the
+# modeling constraints the implementation must satisfy.
+#
+# learned: false means hand-curated (not auto-discovered by the agent).
+
+# ---------------------------------------------------------------------------
+# Analytical instruments
+# ---------------------------------------------------------------------------
+
+- instrument: bond
+  features: [fixed_coupons, discounting]
+  method: analytical
+  method_modules: []
+  required_market_data: [discount]
+  modeling_requirements: []
+  reasoning: "Deterministic cashflows — discount each coupon and principal."
+  learned: false
+
+- instrument: swap
+  features: [fixed_coupons, floating_coupons, discounting]
+  method: analytical
+  method_modules: []
+  required_market_data: [discount, forward_rate]
+  modeling_requirements: []
+  reasoning: "Fixed and floating legs are deterministic given the forward curve."
+  learned: false
+
+- instrument: cap
+  features: [floating_coupons, vol_surface_dependence]
+  method: analytical
+  method_modules: [trellis.models.black]
+  required_market_data: [discount, forward_rate, black_vol]
+  modeling_requirements: []
+  reasoning: "Each caplet is a European option on a forward rate — use Black76."
+  learned: false
+
+- instrument: floor
+  features: [floating_coupons, vol_surface_dependence]
+  method: analytical
+  method_modules: [trellis.models.black]
+  required_market_data: [discount, forward_rate, black_vol]
+  modeling_requirements: []
+  reasoning: "Each floorlet is a European put on a forward rate — use Black76."
+  learned: false
+
+- instrument: swaption
+  features: [floating_coupons, vol_surface_dependence]
+  method: analytical
+  method_modules: [trellis.models.black]
+  required_market_data: [discount, forward_rate, black_vol]
+  modeling_requirements: []
+  reasoning: "European swaption — Black76 on the forward swap rate."
+  learned: false
+
+# ---------------------------------------------------------------------------
+# Rate tree instruments
+# ---------------------------------------------------------------------------
+
+- instrument: callable_bond
+  features: [callable, fixed_coupons, mean_reversion]
+  method: rate_tree
+  method_modules: [trellis.models.trees.lattice]
+  required_market_data: [discount, black_vol]
+  modeling_requirements:
+    - >-
+      CALIBRATION: The rate tree must be calibrated to reprice the input yield curve.
+      At each time step, solve for theta(t) so that the tree-implied zero-coupon bond
+      price matches curve.discount(T). Verify: tree_zcb(T) ≈ curve.discount(T) at key tenors.
+    - >-
+      DISCRETE CASHFLOWS: Bond coupons and other scheduled payments must be embedded at
+      their actual payment dates (mapped to the nearest tree step), NOT spread uniformly
+      across all steps. Uniform spreading introduces >10% pricing error.
+    - >-
+      EXERCISE LOGIC: The call/put decision at each node must compare the CONTINUATION
+      VALUE (discounted expected future value) against the exercise price. The continuation
+      value is computed from the tree's own discount factors, not the flat input rate.
+  reasoning: "Early exercise requires backward induction on a mean-reverting rate tree."
+  learned: false
+
+- instrument: puttable_bond
+  features: [puttable, fixed_coupons, mean_reversion]
+  method: rate_tree
+  method_modules: [trellis.models.trees.lattice]
+  required_market_data: [discount, black_vol]
+  modeling_requirements:
+    - >-
+      CALIBRATION: The rate tree must be calibrated to reprice the input yield curve.
+      At each time step, solve for theta(t) so that the tree-implied zero-coupon bond
+      price matches curve.discount(T). Verify: tree_zcb(T) ≈ curve.discount(T) at key tenors.
+    - >-
+      DISCRETE CASHFLOWS: Bond coupons and other scheduled payments must be embedded at
+      their actual payment dates (mapped to the nearest tree step), NOT spread uniformly
+      across all steps. Uniform spreading introduces >10% pricing error.
+    - >-
+      EXERCISE LOGIC: The call/put decision at each node must compare the CONTINUATION
+      VALUE (discounted expected future value) against the exercise price. The continuation
+      value is computed from the tree's own discount factors, not the flat input rate.
+  reasoning: "Early exercise requires backward induction on a mean-reverting rate tree."
+  learned: false
+
+- instrument: bermudan_swaption
+  features: [bermudan, floating_coupons, mean_reversion]
+  method: rate_tree
+  method_modules: [trellis.models.trees.lattice]
+  required_market_data: [discount, forward_rate, black_vol]
+  modeling_requirements:
+    - >-
+      CALIBRATION: The rate tree must be calibrated to reprice the input yield curve.
+      At each time step, solve for theta(t) so that the tree-implied zero-coupon bond
+      price matches curve.discount(T). Verify: tree_zcb(T) ≈ curve.discount(T) at key tenors.
+    - >-
+      DISCRETE CASHFLOWS: Bond coupons and other scheduled payments must be embedded at
+      their actual payment dates (mapped to the nearest tree step), NOT spread uniformly
+      across all steps. Uniform spreading introduces >10% pricing error.
+    - >-
+      EXERCISE LOGIC: The call/put decision at each node must compare the CONTINUATION
+      VALUE (discounted expected future value) against the exercise price. The continuation
+      value is computed from the tree's own discount factors, not the flat input rate.
+  reasoning: "Bermudan exercise dates require backward induction on a rate tree."
+  learned: false
+
+# ---------------------------------------------------------------------------
+# Monte Carlo instruments
+# ---------------------------------------------------------------------------
+
+- instrument: barrier_option
+  features: [barrier]
+  method: monte_carlo
+  method_modules:
+    - trellis.models.monte_carlo.engine
+    - trellis.models.processes.gbm
+  required_market_data: [discount, black_vol]
+  modeling_requirements:
+    - >-
+      CONVERGENCE: Use at least 10,000 paths. Verify that the standard error is <1%
+      of the price. If path-dependent, use at least 100 time steps per year.
+    - >-
+      DISCRETE OBSERVATIONS: For instruments with discrete fixing/observation dates
+      (Asian options, barriers), simulate paths that pass through those exact dates.
+      Do not interpolate between steps.
+  reasoning: "Path-dependent barrier monitoring needs simulation."
+  learned: false
+
+- instrument: asian_option
+  features: [asian]
+  method: monte_carlo
+  method_modules:
+    - trellis.models.monte_carlo.engine
+    - trellis.models.processes.gbm
+  required_market_data: [discount, black_vol]
+  modeling_requirements:
+    - >-
+      CONVERGENCE: Use at least 10,000 paths. Verify that the standard error is <1%
+      of the price. If path-dependent, use at least 100 time steps per year.
+    - >-
+      DISCRETE OBSERVATIONS: For instruments with discrete fixing/observation dates
+      (Asian options, barriers), simulate paths that pass through those exact dates.
+      Do not interpolate between steps.
+  reasoning: "Path-dependent averaging needs simulation."
+  learned: false
+
+- instrument: mbs
+  features: [amortization, prepayment, path_dependent]
+  method: monte_carlo
+  method_modules:
+    - trellis.models.monte_carlo.engine
+    - trellis.models.cashflow_engine.waterfall
+    - trellis.models.cashflow_engine.prepayment
+  required_market_data: [discount]
+  modeling_requirements:
+    - >-
+      CONVERGENCE: Use at least 10,000 paths. Verify that the standard error is <1%
+      of the price. If path-dependent, use at least 100 time steps per year.
+    - >-
+      DISCRETE OBSERVATIONS: For instruments with discrete fixing/observation dates
+      (Asian options, barriers), simulate paths that pass through those exact dates.
+      Do not interpolate between steps.
+  reasoning: "Rate-path-dependent prepayment needs MC + waterfall engine."
+  learned: false
+
+# ---------------------------------------------------------------------------
+# Copula instruments
+# ---------------------------------------------------------------------------
+
+- instrument: cdo
+  features: [credit_risk]
+  method: copula
+  method_modules:
+    - trellis.models.copulas.factor
+    - trellis.models.copulas.gaussian
+  required_market_data: [discount, credit]
+  modeling_requirements:
+    - >-
+      CALIBRATION: Default probabilities must be consistent with the input credit curve.
+      For each name: P(default by T) = 1 - S(T) where S(T) = credit_curve.survival_probability(T).
+  reasoning: "Portfolio credit tranching uses copula for default correlation."
+  learned: false
+
+- instrument: nth_to_default
+  features: [credit_risk]
+  method: copula
+  method_modules:
+    - trellis.models.copulas.gaussian
+  required_market_data: [discount, credit]
+  modeling_requirements:
+    - >-
+      CALIBRATION: Default probabilities must be consistent with the input credit curve.
+      For each name: P(default by T) = 1 - S(T) where S(T) = credit_curve.survival_probability(T).
+  reasoning: "Correlated defaults simulated via copula."
+  learned: false
+
+# ---------------------------------------------------------------------------
+# Additional instruments (for task coverage)
+# ---------------------------------------------------------------------------
+
+- instrument: american_option
+  features: [early_exercise, discounting]
+  method: monte_carlo
+  method_modules:
+    - trellis.models.monte_carlo.engine
+    - trellis.models.monte_carlo.lsm
+    - trellis.models.processes.gbm
+  required_market_data: [discount, black_vol]
+  modeling_requirements:
+    - >-
+      CONVERGENCE: Use at least 50,000 paths for LSM. Verify standard error <1%.
+    - >-
+      EXERCISE STRATEGY: Use Longstaff-Schwartz LSM with Laguerre basis for
+      high-vol regimes (sigma >= 0.40).
+  reasoning: "Early exercise needs LSM Monte Carlo or tree/PDE. MC is most general."
+  learned: false
+
+- instrument: american_put
+  features: [early_exercise, puttable, discounting]
+  method: monte_carlo
+  method_modules:
+    - trellis.models.monte_carlo.engine
+    - trellis.models.monte_carlo.lsm
+    - trellis.models.processes.gbm
+  required_market_data: [discount, black_vol]
+  modeling_requirements:
+    - >-
+      CONVERGENCE: Use at least 50,000 paths for LSM. Verify standard error <1%.
+    - >-
+      EXERCISE STRATEGY: Use Longstaff-Schwartz LSM with Laguerre basis for
+      high-vol regimes (sigma >= 0.40).
+  reasoning: "American put with early exercise — LSM Monte Carlo."
+  learned: false
+
+- instrument: european_option
+  features: [discounting, vol_surface_dependence]
+  method: analytical
+  method_modules:
+    - trellis.models.black
+  required_market_data: [discount, black_vol]
+  reasoning: "European option — closed-form Black-Scholes."
+  learned: false
+
+- instrument: heston_option
+  features: [stochastic_vol, discounting]
+  method: fft_pricing
+  method_modules:
+    - trellis.models.transforms.cos_method
+    - trellis.models.transforms.fft_pricer
+    - trellis.models.processes.heston
+  required_market_data: [discount, black_vol]
+  modeling_requirements:
+    - >-
+      CHARACTERISTIC FUNCTION: Heston CF uses log(S_T/S0) for COS, log(S_T) for FFT.
+      Do not mix conventions.
+    - >-
+      COS TRUNCATION: Center on first cumulant, width from second cumulant.
+      Default symmetric truncation can overflow for long maturities.
+  reasoning: "Heston model — use FFT/COS for efficient pricing via characteristic function."
+  learned: false
+
+- instrument: autocallable
+  features: [barrier, early_exercise, path_dependent, coupons, discounting]
+  method: monte_carlo
+  method_modules:
+    - trellis.models.monte_carlo.engine
+    - trellis.models.processes.gbm
+  required_market_data: [discount, black_vol]
+  modeling_requirements:
+    - >-
+      CONVERGENCE: Use at least 50,000 paths. Verify standard error <1%.
+    - >-
+      DISCRETE OBSERVATIONS: Simulate paths through exact observation dates.
+      Barrier and coupon conditions are checked at discrete dates only.
+    - >-
+      EARLY REDEMPTION: At each observation date, check if spot >= autocall barrier.
+      If triggered, pay redemption amount + accrued coupon and terminate.
+  reasoning: "Path-dependent with barrier monitoring and early redemption — MC required."
+  learned: false
+
+- instrument: variance_swap
+  features: [path_dependent, discounting, vol_surface_dependence]
+  method: monte_carlo
+  method_modules:
+    - trellis.models.monte_carlo.engine
+    - trellis.models.processes.gbm
+  required_market_data: [discount, black_vol]
+  modeling_requirements:
+    - >-
+      CONVERGENCE: Use at least 50,000 paths. Realized variance is sum of
+      (log(S_{t+1}/S_t))^2 — needs fine time grid for accuracy.
+  reasoning: "Variance swap payoff depends on realized variance — MC simulation."
+  learned: false

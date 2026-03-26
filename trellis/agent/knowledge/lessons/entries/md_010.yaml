@@ -1,0 +1,24 @@
+id: md_010
+title: Missing Market Data in LSM Pricing
+severity: critical
+category: market_data
+status: candidate
+confidence: 0.4
+created: '2026-03-24T20:49:11.880664'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - american
+  - early_exercise
+  instrument: []
+  error_signature: null
+symptom: Pricing model build fails due to missing market data capabilities.
+root_cause: The pricing model attempted to use capabilities such as 'black_vol_surface'
+  and 'discount_curve' but they were not provided, and the Monte Carlo engine does
+  not support the LSM method.
+fix: Provide the necessary market data inputs (black vol surface and discount curve)
+  and use the dedicated LSM module instead of MonteCarloEngine for LSM-based pricing.
+validation: Discovered during build (attempt 0)

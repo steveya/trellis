@@ -32,12 +32,14 @@ class FXForward:
     def __init__(self, fx_rate: FXRate,
                  domestic_curve: DiscountCurve,
                  foreign_curve: DiscountCurve):
+        """Store the spot FX quote and domestic/foreign discount curves."""
         self._fx_rate = fx_rate
         self._domestic_curve = domestic_curve
         self._foreign_curve = foreign_curve
 
     @property
     def spot(self) -> float:
+        """Return the current spot FX rate carried by the forward contract."""
         return self._fx_rate.spot
 
     def forward(self, t: float) -> float:
@@ -76,6 +78,7 @@ class FXForwardPayoff:
 
     @property
     def requirements(self) -> set[str]:
+        """Declare the inner payoff requirements plus FX/curve conversion inputs."""
         return self._inner.requirements | {"fx", "discount", "forecast_rate"}
 
     def evaluate(self, market_state: MarketState) -> float:

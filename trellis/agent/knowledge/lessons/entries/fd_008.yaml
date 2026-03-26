@@ -1,0 +1,40 @@
+id: fd_008
+title: Log-space PDE for rate instruments requires special boundary handling
+severity: critical
+category: finite_differences
+status: candidate
+confidence: 0.4
+created: '2026-03-25T18:40:42.208233'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260325_184042_build_a_pricer_for:_log_space_pde_for_rate_instruments_(avoid_negative_rates)
+
+
+  implementation_target:_standard_pde
+
+  preferred_method_family:_pde_solver
+
+
+  implementation_target:_standard_pde_pde_solver.yaml'
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - pde_grid
+  - mean_reversion
+  - forward_rate
+  instrument: []
+  error_signature: null
+symptom: Build fails with invalid JSON or empty response when attempting log-space
+  PDE transformation for interest rate instruments
+root_cause: The LLM model failed to generate valid code for log-space PDE transformation
+  of rate instruments, likely due to confusion between equity log-space PDEs (where
+  log-transform avoids negative prices) and rate instrument PDEs where the state variable
+  is an interest rate that can legitimately be near zero or negative, requiring different
+  boundary conditions and transformation strategies.
+fix: For rate instruments, use a shifted log-transform r' = log(r + shift) where shift
+  > 0 ensures positivity, or use a standard grid with reflecting/absorbing boundary
+  at r=0. Import from trellis.models.pde.theta_method and set up the PDE in the transformed
+  variable with appropriate drift and diffusion adjustments for the Jacobian of the
+  transformation.
+validation: Discovered during build (attempt 0)

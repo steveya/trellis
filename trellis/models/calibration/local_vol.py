@@ -36,6 +36,7 @@ def dupire_local_vol(
     spline = RectBivariateSpline(expiries, strikes, implied_vols)
 
     def local_vol(S, t):
+        """Evaluate Dupire local volatility at spot ``S`` and time ``t``."""
         t = max(t, 1e-6)
         K = S  # local vol evaluated at S=K
 

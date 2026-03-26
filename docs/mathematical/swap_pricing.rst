@@ -1,5 +1,5 @@
 Interest Rate Swap Pricing
-=========================
+==========================
 
 A fixed-for-floating interest rate swap exchanges fixed coupon payments
 for floating rate payments based on a reference index.
@@ -104,8 +104,10 @@ Implementation
 
 .. autoclass:: trellis.instruments.swap.SwapPayoff
    :members:
+   :no-index:
 
 .. autofunction:: trellis.instruments.swap.par_swap_rate
+   :no-index:
 
 References
 ----------

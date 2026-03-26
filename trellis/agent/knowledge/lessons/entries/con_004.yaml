@@ -1,0 +1,24 @@
+id: con_004
+title: Exact import paths
+severity: critical
+category: convention
+status: archived
+confidence: 0.4
+created: '2026-03-23T23:38:12.764285'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'The system reported an import error: ''cannot import name ACT_365 from trellis.core.types''.'
+root_cause: This issue arose because the module name was guessed rather than using
+  the precise, documented import path.
+fix: Correct the import path by referencing the official documentation to ensure the
+  exact module path is used.
+validation: Discovered during build (attempt 0)
+archive_reason: Superseded by con_001 (authoritative import registry)

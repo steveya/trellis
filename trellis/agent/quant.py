@@ -1,20 +1,29 @@
-"""Quant agent: selects pricing method and identifies data requirements.
+"""Quant agent: selects pricing methods from canonical decompositions.
 
-This agent makes the *financial* decision: given an instrument, which
-computational method is appropriate and what market data does it need?
-It does NOT write code — that's the builder agent's job.
+This layer should not maintain a second hand-written policy table. Canonical
+method selection lives in ``trellis.agent.knowledge.canonical.decompositions``;
+the quant agent converts those decompositions into ``PricingPlan`` objects for
+the build pipeline and falls back to LLM decomposition only for genuinely novel
+products.
 """
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import re
 
+from trellis.agent.knowledge import get_store
+from trellis.agent.knowledge.decompose import decompose, decompose_to_ir
+from trellis.agent.knowledge.methods import CANONICAL_METHODS, normalize_method
+from trellis.agent.sensitivity_support import (
+    SensitivitySupport,
+    normalize_requested_measures,
+    rank_sensitivity_support,
+    support_for_method,
+)
 from trellis.core.capabilities import (
-    MARKET_DATA,
-    METHODS,
-    _MARKET_DATA_NAMES,
     check_market_data,
+    normalize_market_data_requirements,
 )
 
 
@@ -22,278 +31,325 @@ from trellis.core.capabilities import (
 class PricingPlan:
     """The quant agent's output: method + data requirements + modeling constraints."""
 
-    method: str                     # "analytical", "rate_tree", "monte_carlo", "pde", "fft"
-    method_modules: list[str]       # specific imports the builder should use
-    required_market_data: set[str]  # {"discount", "black_vol"}
-    model_to_build: str | None      # None if library has it; description if custom needed
-    reasoning: str                  # why this method was chosen
-    modeling_requirements: tuple[str, ...] = ()  # constraints the implementation must satisfy
+    method: str
+    method_modules: list[str]
+    required_market_data: set[str]
+    model_to_build: str | None
+    reasoning: str
+    modeling_requirements: tuple[str, ...] = ()
+    sensitivity_support: SensitivitySupport | None = None
 
 
-# ---------------------------------------------------------------------------
-# Modeling requirements — general principles for correct pricing
-# ---------------------------------------------------------------------------
-
-# Rate tree requirements (callable bonds, Bermudan swaptions, etc.)
-RATE_TREE_REQUIREMENTS = (
-    "CALIBRATION: The rate tree must be calibrated to reprice the input yield curve. "
-    "At each time step, solve for theta(t) so that the tree-implied zero-coupon bond "
-    "price matches curve.discount(T). Verify: tree_zcb(T) ≈ curve.discount(T) at key tenors.",
-
-    "DISCRETE CASHFLOWS: Bond coupons and other scheduled payments must be embedded at "
-    "their actual payment dates (mapped to the nearest tree step), NOT spread uniformly "
-    "across all steps. Uniform spreading introduces >10% pricing error.",
-
-    "EXERCISE LOGIC: The call/put decision at each node must compare the CONTINUATION "
-    "VALUE (discounted expected future value) against the exercise price. The continuation "
-    "value is computed from the tree's own discount factors, not the flat input rate.",
-)
-
-# Monte Carlo requirements
-MC_REQUIREMENTS = (
-    "CONVERGENCE: Use at least 10,000 paths. Verify that the standard error is <1% "
-    "of the price. If path-dependent, use at least 100 time steps per year.",
-
-    "DISCRETE OBSERVATIONS: For instruments with discrete fixing/observation dates "
-    "(Asian options, barriers), simulate paths that pass through those exact dates. "
-    "Do not interpolate between steps.",
-)
-
-# Copula requirements
-COPULA_REQUIREMENTS = (
-    "CALIBRATION: Default probabilities must be consistent with the input credit curve. "
-    "For each name: P(default by T) = 1 - S(T) where S(T) = credit_curve.survival_probability(T).",
-)
+def _plan_from_decomposition(decomposition) -> PricingPlan:
+    """Convert a canonical product decomposition into a PricingPlan."""
+    method = normalize_method(decomposition.method)
+    return PricingPlan(
+        method=method,
+        method_modules=list(decomposition.method_modules),
+        required_market_data=normalize_market_data_requirements(
+            decomposition.required_market_data
+        ),
+        model_to_build=None,
+        reasoning=decomposition.reasoning,
+        modeling_requirements=tuple(decomposition.modeling_requirements),
+        sensitivity_support=support_for_method(method),
+    )
 
 
-# ---------------------------------------------------------------------------
-# Static rules for common instruments
-# ---------------------------------------------------------------------------
+def _load_static_plans() -> dict[str, PricingPlan]:
+    """Load static pricing plans from canonical decompositions.
 
-STATIC_PLANS: dict[str, PricingPlan] = {
-    "bond": PricingPlan(
-        method="analytical",
-        method_modules=[],
-        required_market_data={"discount"},
-        model_to_build=None,
-        reasoning="Deterministic cashflows — discount each coupon and principal.",
-    ),
-    "swap": PricingPlan(
-        method="analytical",
-        method_modules=[],
-        required_market_data={"discount", "forward_rate"},
-        model_to_build=None,
-        reasoning="Fixed and floating legs are deterministic given the forward curve.",
-    ),
-    "cap": PricingPlan(
-        method="analytical",
-        method_modules=["trellis.models.black"],
-        required_market_data={"discount", "forward_rate", "black_vol"},
-        model_to_build=None,
-        reasoning="Each caplet is a European option on a forward rate — use Black76.",
-    ),
-    "floor": PricingPlan(
-        method="analytical",
-        method_modules=["trellis.models.black"],
-        required_market_data={"discount", "forward_rate", "black_vol"},
-        model_to_build=None,
-        reasoning="Each floorlet is a European put on a forward rate — use Black76.",
-    ),
-    "swaption": PricingPlan(
-        method="analytical",
-        method_modules=["trellis.models.black"],
-        required_market_data={"discount", "forward_rate", "black_vol"},
-        model_to_build=None,
-        reasoning="European swaption — Black76 on the forward swap rate.",
-    ),
-    "callable_bond": PricingPlan(
-        method="rate_tree",
-        method_modules=[
-            "trellis.models.trees.lattice",
-        ],
-        required_market_data={"discount", "black_vol"},
-        model_to_build=None,
-        reasoning="Early exercise requires backward induction on a mean-reverting rate tree.",
-        modeling_requirements=RATE_TREE_REQUIREMENTS,
-    ),
-    "puttable_bond": PricingPlan(
-        method="rate_tree",
-        method_modules=[
-            "trellis.models.trees.lattice",
-        ],
-        required_market_data={"discount", "black_vol"},
-        model_to_build=None,
-        reasoning="Early exercise requires backward induction on a mean-reverting rate tree.",
-        modeling_requirements=RATE_TREE_REQUIREMENTS,
-    ),
-    "bermudan_swaption": PricingPlan(
-        method="rate_tree",
-        method_modules=[
-            "trellis.models.trees.lattice",
-        ],
-        required_market_data={"discount", "forward_rate", "black_vol"},
-        model_to_build=None,
-        reasoning="Bermudan exercise dates require backward induction on a rate tree.",
-        modeling_requirements=RATE_TREE_REQUIREMENTS,
-    ),
-    "barrier_option": PricingPlan(
-        method="monte_carlo",
-        method_modules=[
-            "trellis.models.monte_carlo.engine",
-            "trellis.models.processes.gbm",
-        ],
-        required_market_data={"discount", "black_vol"},
-        model_to_build=None,
-        reasoning="Path-dependent barrier monitoring needs simulation.",
-        modeling_requirements=MC_REQUIREMENTS,
-    ),
-    "asian_option": PricingPlan(
-        method="monte_carlo",
-        method_modules=[
-            "trellis.models.monte_carlo.engine",
-            "trellis.models.processes.gbm",
-        ],
-        required_market_data={"discount", "black_vol"},
-        model_to_build=None,
-        reasoning="Path-dependent averaging needs simulation.",
-        modeling_requirements=MC_REQUIREMENTS,
-    ),
-    "cdo": PricingPlan(
-        method="copula",
-        method_modules=[
-            "trellis.models.copulas.factor",
-            "trellis.models.copulas.gaussian",
-        ],
-        required_market_data={"discount", "credit"},
-        model_to_build=None,
-        reasoning="Portfolio credit tranching uses copula for default correlation.",
-        modeling_requirements=COPULA_REQUIREMENTS,
-    ),
-    "nth_to_default": PricingPlan(
-        method="copula",
-        method_modules=[
-            "trellis.models.copulas.gaussian",
-        ],
-        required_market_data={"discount", "credit"},
-        model_to_build=None,
-        reasoning="Correlated defaults simulated via copula.",
-        modeling_requirements=COPULA_REQUIREMENTS,
-    ),
-    "mbs": PricingPlan(
-        method="monte_carlo",
-        method_modules=[
-            "trellis.models.monte_carlo.engine",
-            "trellis.models.cashflow_engine.waterfall",
-            "trellis.models.cashflow_engine.prepayment",
-        ],
-        required_market_data={"discount"},
-        model_to_build=None,
-        reasoning="Rate-path-dependent prepayment needs MC + waterfall engine.",
-    ),
+    These are "static" only in the sense that they are repo-configured. The
+    source of truth remains the canonical YAML, not this Python module.
+    """
+    store = get_store()
+    return {
+        instrument: _plan_from_decomposition(decomposition)
+        for instrument, decomposition in store._decompositions.items()
+    }
+
+
+# Backward-compatible public constant used by tests and callers.
+STATIC_PLANS: dict[str, PricingPlan] = _load_static_plans()
+
+
+_DEFAULT_METHOD_MODULES = {
+    "analytical": ["trellis.models.black"],
+    "rate_tree": ["trellis.models.trees.lattice"],
+    "monte_carlo": ["trellis.models.monte_carlo.engine"],
+    "qmc": ["trellis.models.qmc"],
+    "fft_pricing": ["trellis.models.transforms.fft_pricer"],
+    "pde_solver": ["trellis.models.pde.theta_method"],
+    "copula": ["trellis.models.copulas.gaussian"],
+    "waterfall": ["trellis.models.cashflow_engine.waterfall"],
 }
 
-
-# ---------------------------------------------------------------------------
-# Quant agent
-# ---------------------------------------------------------------------------
 
 def select_pricing_method(
     instrument_description: str,
     instrument_type: str | None = None,
     model: str | None = None,
+    requested_measures: list[str] | tuple[str, ...] | None = None,
 ) -> PricingPlan:
     """Select the appropriate pricing method for an instrument.
 
-    Tries static rules first, falls back to LLM.
+    Uses canonical decompositions for known instruments, then falls back to the
+    decomposition workflow for unknown or composite products.
     """
-    # Normalize type
+    requested = normalize_requested_measures(requested_measures)
     if instrument_type:
-        itype = instrument_type.lower().replace(" ", "_").replace("-", "_")
+        key = _normalise_instrument_type(instrument_type)
+        if key in STATIC_PLANS and not requested:
+            return _apply_contextual_overrides(
+                STATIC_PLANS[key],
+                instrument_description,
+                instrument_type=instrument_type,
+            )
     else:
-        itype = _extract_type(instrument_description)
+        key = _extract_type(instrument_description)
+        if key in STATIC_PLANS and not requested:
+            return _apply_contextual_overrides(
+                STATIC_PLANS[key],
+                instrument_description,
+                instrument_type=instrument_type or key,
+            )
 
-    # Static lookup
-    if itype in STATIC_PLANS:
-        return STATIC_PLANS[itype]
+    if requested and key in STATIC_PLANS:
+        product_ir = decompose_to_ir(
+            instrument_description,
+            instrument_type=instrument_type or key,
+        )
+        return select_pricing_method_for_product_ir(
+            product_ir,
+            context_description=instrument_description,
+            requested_measures=requested,
+        )
 
-    # LLM fallback
-    return _select_via_llm(instrument_description, model)
+    decomposition = decompose(
+        instrument_description,
+        instrument_type=instrument_type,
+        model=model,
+    )
+    return _apply_contextual_overrides(
+        _plan_from_decomposition(decomposition),
+        instrument_description,
+        instrument_type=instrument_type,
+    )
+
+
+def select_pricing_method_for_product_ir(
+    product_ir,
+    *,
+    preferred_method: str | None = None,
+    requested_measures: list[str] | tuple[str, ...] | None = None,
+    context_description: str | None = None,
+) -> PricingPlan:
+    """Build a pricing plan directly from ``ProductIR`` semantics."""
+    store = get_store()
+    requested = normalize_requested_measures(requested_measures)
+    method = normalize_method(
+        preferred_method
+        or getattr(product_ir, "preferred_method", None)
+        or _method_from_candidates(
+            getattr(product_ir, "candidate_engine_families", ()),
+            requested_measures=requested,
+        ),
+    )
+    requirements_entry = store._load_requirements(method)
+    plan = PricingPlan(
+        method=method,
+        method_modules=list(_DEFAULT_METHOD_MODULES.get(method, ())),
+        required_market_data=normalize_market_data_requirements(
+            getattr(product_ir, "required_market_data", ()) or ()
+        ),
+        model_to_build=getattr(product_ir, "instrument", None),
+        reasoning="product_ir_compiler",
+        modeling_requirements=(
+            requirements_entry.requirements if requirements_entry is not None else ()
+        ),
+        sensitivity_support=support_for_method(method),
+    )
+    return _apply_contextual_overrides(
+        plan,
+        context_description,
+        instrument_type=getattr(product_ir, "instrument", None),
+    )
+
+
+def _normalise_instrument_type(text: str) -> str:
+    """Normalize an explicit instrument type key."""
+    return text.lower().strip().replace(" ", "_").replace("-", "_")
 
 
 def _extract_type(description: str) -> str:
-    """Extract instrument type keyword from description."""
+    """Extract an instrument type keyword from free-form text.
+
+    This is intentionally lightweight and only used as a fast path before the
+    richer decomposition flow. Longest-key matching avoids ``bond`` winning over
+    ``callable_bond``.
+    """
     desc = description.lower()
-    # Check longer keywords first to avoid partial matches
-    # (e.g. "callable_bond" before "bond", "bermudan_swaption" before "swaption")
-    sorted_keywords = sorted(STATIC_PLANS.keys(), key=len, reverse=True)
-    for keyword in sorted_keywords:
+    for keyword in sorted(STATIC_PLANS.keys(), key=len, reverse=True):
         if keyword.replace("_", " ") in desc or keyword in desc:
             return keyword
     return "unknown"
 
 
-def _select_via_llm(description: str, model: str | None = None) -> PricingPlan:
-    """Use LLM to select pricing method for unknown instruments."""
-    from trellis.agent.config import llm_generate_json, get_default_model
+def _method_from_candidates(
+    candidate_engine_families: tuple[str, ...] | list[str],
+    *,
+    requested_measures: tuple[str, ...] | list[str] | None = None,
+) -> str:
+    """Map candidate engine-family labels onto the canonical quant method name."""
+    mapping = {
+        "analytical": "analytical",
+        "lattice": "rate_tree",
+        "tree": "rate_tree",
+        "exercise": "monte_carlo",
+        "monte_carlo": "monte_carlo",
+        "transform": "fft_pricing",
+        "transforms": "fft_pricing",
+        "fft": "fft_pricing",
+        "pde": "pde_solver",
+    }
+    candidates = [
+        mapping[family]
+        for family in candidate_engine_families
+        if family in mapping
+    ]
+    if not candidates:
+        return "analytical"
+    if requested_measures:
+        best = max(
+            candidates,
+            key=lambda method: rank_sensitivity_support(
+                support_for_method(method),
+                requested_measures,
+            ),
+        )
+        return best
+    for method in candidates:
+        if method:
+            return method
+    return "analytical"
 
-    model = model or get_default_model()
 
-    method_info = "\n".join(
-        f"- {m.name}: {m.description} (requires: {list(m.requires_market_data)})"
-        for m in METHODS
+def known_methods() -> tuple[str, ...]:
+    """Return the canonical method-family labels understood by the quant agent."""
+    return tuple(sorted(CANONICAL_METHODS))
+
+
+def _apply_contextual_overrides(
+    plan: PricingPlan,
+    description: str | None,
+    *,
+    instrument_type: str | None = None,
+) -> PricingPlan:
+    """Apply conservative context-derived overrides without changing the core ontology."""
+    plan = _apply_local_vol_overrides(
+        plan,
+        description,
+        instrument_type=instrument_type,
+    )
+    if not _looks_like_fx_option(description, instrument_type=instrument_type):
+        return plan
+
+    required_market_data = normalize_market_data_requirements(
+        set(plan.required_market_data)
+        | {"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot"}
+    )
+    reasoning = plan.reasoning
+    fx_reason = "fx_vanilla_context_requires_garman_kohlhagen_inputs"
+    if fx_reason not in reasoning:
+        reasoning = f"{reasoning}; {fx_reason}" if reasoning else fx_reason
+    return replace(
+        plan,
+        required_market_data=required_market_data,
+        reasoning=reasoning,
     )
 
-    prompt = f"""You are a quantitative analyst selecting a pricing method.
 
-## Instrument
-{description}
+def _apply_local_vol_overrides(
+    plan: PricingPlan,
+    description: str | None,
+    *,
+    instrument_type: str | None = None,
+) -> PricingPlan:
+    """Narrow vanilla local-vol requests onto the supported MC/PDE substrate."""
+    if not _looks_like_local_vol_context(description, instrument_type=instrument_type):
+        return plan
 
-## Available computational methods
-{method_info}
+    method = plan.method
+    if method == "analytical":
+        method = "monte_carlo"
 
-## Available market data types
-{', '.join(c.name for c in MARKET_DATA)}
+    method_modules = list(_DEFAULT_METHOD_MODULES.get(method, plan.method_modules))
+    if method == "monte_carlo":
+        for module_path in (
+            "trellis.models.monte_carlo.local_vol",
+            "trellis.models.processes.local_vol",
+        ):
+            if module_path not in method_modules:
+                method_modules.append(module_path)
+    elif method == "pde_solver":
+        module_path = "trellis.models.processes.local_vol"
+        if module_path not in method_modules:
+            method_modules.append(module_path)
 
-## Rules
-- Deterministic cashflows (bonds, swaps) → "analytical" (no special method needed)
-- European options on forwards → "analytical" (Black76)
-- Early exercise (callable, puttable, Bermudan) → "rate_tree" (backward induction)
-- Path-dependent (barriers, Asian, lookback) → "monte_carlo"
-- Portfolio credit (CDO, nth-to-default) → "copula"
-- Stochastic vol options → "fft_pricing" (Heston characteristic function)
-- American options on equity → "monte_carlo" with LSM or "pde_solver" with PSOR
-- MBS/ABS → "monte_carlo" with waterfall engine
+    required_market_data = normalize_market_data_requirements(
+        (set(plan.required_market_data) - {"black_vol_surface"})
+        | {"discount_curve", "spot", "local_vol_surface"}
+    )
+    reasoning = plan.reasoning
+    local_vol_reason = "local_vol_context_requires_surface_driven_route"
+    if local_vol_reason not in reasoning:
+        reasoning = f"{reasoning}; {local_vol_reason}" if reasoning else local_vol_reason
+    return replace(
+        plan,
+        method=method,
+        method_modules=method_modules,
+        required_market_data=required_market_data,
+        reasoning=reasoning,
+        sensitivity_support=support_for_method(method),
+    )
 
-## Output
-Return a JSON object:
-{{
-    "method": "rate_tree" | "monte_carlo" | "pde_solver" | "fft_pricing" | "copula" | "analytical",
-    "method_modules": ["trellis.models.trees.binomial", ...],
-    "required_market_data": ["discount", "black_vol"],
-    "model_to_build": null or "description of custom model needed",
-    "reasoning": "one sentence explanation"
-}}
 
-Return ONLY the JSON object."""
+def _looks_like_fx_option(
+    description: str | None,
+    *,
+    instrument_type: str | None = None,
+) -> bool:
+    """Detect a vanilla FX-option context from the user-facing request text."""
+    if instrument_type == "fx_option":
+        return True
+    if not description:
+        return False
+    lower = description.lower()
+    if any(token in lower for token in ("fx option", "fx vanilla", "forex option", "garman-kohlhagen", "gk analytical")):
+        return True
+    return re.search(r"\b[A-Z]{6}\b", description) is not None
 
-    try:
-        data = llm_generate_json(prompt, model=model)
-    except Exception:
-        # Fallback: conservative default
-        return PricingPlan(
-            method="monte_carlo",
-            method_modules=["trellis.models.monte_carlo.engine"],
-            required_market_data={"discount", "black_vol"},
-            model_to_build=None,
-            reasoning="Fallback: Monte Carlo is the most general method.",
+
+def _looks_like_local_vol_context(
+    description: str | None,
+    *,
+    instrument_type: str | None = None,
+) -> bool:
+    """Detect a bounded vanilla local-vol request from user-facing text."""
+    if instrument_type == "local_vol_option":
+        return True
+    if not description:
+        return False
+    lower = description.lower()
+    return any(
+        token in lower
+        for token in (
+            "local vol",
+            "local volatility",
+            "dupire",
+            "local_vol_mc",
+            "local_vol_pde",
         )
-
-    return PricingPlan(
-        method=data.get("method", "monte_carlo"),
-        method_modules=data.get("method_modules", []),
-        required_market_data=set(data.get("required_market_data", ["discount"])),
-        model_to_build=data.get("model_to_build"),
-        reasoning=data.get("reasoning", ""),
     )
 
 

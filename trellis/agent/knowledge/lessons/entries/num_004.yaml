@@ -1,0 +1,25 @@
+id: num_004
+title: Undefined MarketState variable
+severity: critical
+category: numerical
+status: archived
+confidence: 0.4
+created: '2026-03-23T23:39:04.645150'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - characteristic_function
+  - cos_method
+  instrument: []
+  error_signature: null
+symptom: The pricing code fails with a NameError indicating MarketState is not defined.
+root_cause: The code references MarketState without importing or defining it, leading
+  to a runtime failure. This may happen if the module containing MarketState was not
+  included in the build or if there's a typo in its name.
+fix: Import or define MarketState appropriately in the pricing model code, ensuring
+  it integrates correctly with the pricing framework.
+validation: Discovered during build (attempt 0)
+archive_reason: Superseded by con_001 (authoritative import registry)

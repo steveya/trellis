@@ -12,8 +12,13 @@ from trellis.core.payoff import Payoff, DeterministicCashflowPayoff
 from trellis.core.state_space import StateSpace
 from trellis.engine.payoff_pricer import price_payoff
 from trellis.curves.forward_curve import ForwardCurve
-from trellis.models.black import black76_call, black76_put
-from trellis.models.vol_surface import VolSurface, FlatVol
+from trellis.models.black import (
+    black76_call,
+    black76_put,
+    garman_kohlhagen_call,
+    garman_kohlhagen_put,
+)
+from trellis.models.vol_surface import VolSurface, FlatVol, GridVolSurface
 from trellis.instruments.cap import CapPayoff, FloorPayoff, CapFloorSpec
 from trellis.instruments.scenario_weighted import ScenarioWeightedPayoff
 from trellis.conventions.calendar import (
@@ -72,7 +77,8 @@ __all__ = [
     "StateSpace", "price_payoff",
     "ForwardCurve",
     "black76_call", "black76_put",
-    "VolSurface", "FlatVol",
+    "garman_kohlhagen_call", "garman_kohlhagen_put",
+    "VolSurface", "FlatVol", "GridVolSurface",
     "CapPayoff", "FloorPayoff", "CapFloorSpec",
     "ScenarioWeightedPayoff",
     "Calendar", "BusinessDayAdjustment",

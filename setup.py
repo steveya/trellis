@@ -4,21 +4,22 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="rate-model",
+    name="trellis",
     version="0.1.0",
     author="Steve Yang",
     author_email="steveya@gmail.com",
-    description="Rate Model",
+    description="AI-augmented quantitative pricing library",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://steveya.github.io/rate-model/",
+    url="https://github.com/steveya/trellis",
     license="http://www.apache.org/licenses/LICENSE-2.0",
     packages=setuptools.find_packages(),
     include_package_data=True,
     python_requires=">=3.10",
     install_requires=[
-        "aenum",
-        "numpy",
+        "numpy>=1.24",
+        "autograd>=1.7",
+        "scipy>=1.10",
     ],
     extras_require={
         "test": ["pytest", "pytest-cov"],

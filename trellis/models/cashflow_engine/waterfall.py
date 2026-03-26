@@ -30,6 +30,7 @@ class Tranche:
     balance: float = 0.0  # remaining balance (set during run)
 
     def __post_init__(self):
+        """Initialize the running balance to notional when not explicitly supplied."""
         if self.balance == 0.0:
             self.balance = self.notional
 
@@ -47,6 +48,7 @@ class Waterfall:
     """
 
     def __init__(self, tranches: list[Tranche]):
+        """Sort tranches by subordination and initialize empty distribution history."""
         self.tranches = sorted(tranches, key=lambda t: t.subordination)
         self._history: list[dict] = []
 

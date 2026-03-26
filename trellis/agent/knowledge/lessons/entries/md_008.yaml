@@ -1,0 +1,24 @@
+id: md_008
+title: Missing Market Data Inputs
+severity: critical
+category: market_data
+status: candidate
+confidence: 0.4
+created: '2026-03-24T20:43:37.446142'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - pde_grid
+  instrument: []
+  error_signature: null
+symptom: Pricer build failed because required market data inputs were not provided.
+root_cause: The pricing model attempted to build a payoff without the necessary market
+  data capabilities (discount_curve, forward_rate_curve, volatility_surface), which
+  are required for accurate rate instrument valuation.
+fix: Ensure that the configuration includes discount_curve, forward_rate_curve, and
+  volatility_surface before initiating the payoff building process.
+validation: Discovered during build (attempt 0)

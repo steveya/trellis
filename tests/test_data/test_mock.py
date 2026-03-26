@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 
 from trellis.data.mock import MockDataProvider, SNAPSHOTS, _TENOR_GRID
-from trellis.data.resolver import resolve_curve
+from trellis.data.resolver import resolve_curve, resolve_market_snapshot
 
 
 class TestMockDataProvider:
@@ -84,6 +84,28 @@ class TestMockDataProvider:
         assert len(dates) == len(SNAPSHOTS)
         assert dates == sorted(dates)
 
+    def test_fetch_market_snapshot_returns_full_named_snapshot(self):
+        provider = MockDataProvider()
+        snapshot = provider.fetch_market_snapshot(date(2024, 11, 15))
+        assert snapshot.default_discount_curve == "usd_ois"
+        assert snapshot.default_vol_surface == "usd_rates_smile"
+        assert snapshot.default_credit_curve == "usd_ig"
+        assert snapshot.default_state_space == "macro_regime"
+        assert snapshot.default_underlier_spot == "SPX"
+        assert snapshot.default_local_vol_surface == "spx_local_vol"
+        assert snapshot.default_jump_parameters == "merton_equity"
+        assert snapshot.default_model_parameters == "heston_equity"
+        assert "EUR-DISC" in snapshot.forecast_curves
+        assert "USD-SOFR-3M" in snapshot.forecast_curves
+        assert "EURUSD" in snapshot.fx_rates
+        assert "macro_regime" in snapshot.state_spaces
+        assert "SPX" in snapshot.underlier_spots
+        assert "spx_local_vol" in snapshot.local_vol_surfaces
+        assert "merton_equity" in snapshot.jump_parameter_sets
+        assert "heston_equity" in snapshot.model_parameter_sets
+        assert snapshot.vol_surface().black_vol(1.0, 0.05) > 0
+        assert snapshot.credit_curve() is not None
+
 
 class TestResolverMockSource:
     """Integration: resolve_curve(source='mock') works without mocking."""
@@ -97,3 +119,16 @@ class TestResolverMockSource:
     def test_mock_source_latest(self):
         curve = resolve_curve(as_of="latest", source="mock")
         assert len(curve.tenors) == len(_TENOR_GRID)
+
+    def test_mock_source_returns_full_market_snapshot(self):
+        snapshot = resolve_market_snapshot(as_of=date(2024, 11, 15), source="mock")
+        assert snapshot.discount_curve() is not None
+        assert snapshot.vol_surface() is not None
+        assert snapshot.credit_curve() is not None
+        assert snapshot.state_space() is not None
+        assert "USD-SOFR-3M" in snapshot.forecast_curves
+        assert "EURUSD" in snapshot.fx_rates
+        assert snapshot.underlier_spot() == pytest.approx(snapshot.underlier_spots["SPX"])
+        assert snapshot.local_vol_surface() is not None
+        assert snapshot.jump_parameters() is not None
+        assert snapshot.model_parameters() is not None

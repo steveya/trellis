@@ -1,0 +1,36 @@
+id: num_015
+title: LLM provider returned empty response for COS method pricer
+severity: critical
+category: numerical
+status: candidate
+confidence: 0.4
+created: '2026-03-25T18:55:06.738404'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260325_185506_build_a_pricer_for:_cos_adaptive_truncation_for_extreme_parameters
+
+
+  implementation_target:_black_scholes
+
+  preferred_method_family:_analytical
+
+
+  implementation_target:_black_scholes_analytical.yaml'
+applies_when:
+  method:
+  - analytical
+  features:
+  - cos_method
+  - characteristic_function
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Build fails with 'Expecting value at line 1 column 1' JSON parse error after
+  all retries exhausted, resulting in empty final code.
+root_cause: The LLM provider (anthropic claude-sonnet-4-6) returned an empty or malformed
+  response when asked to generate a COS adaptive truncation pricer with extreme parameters,
+  likely due to response length limits or model-side filtering of complex numerical
+  code.
+fix: 'Decompose the COS adaptive truncation request into smaller subtasks: first generate
+  the characteristic function, then the truncation range logic, then the cosine series
+  summation, combining them in a final assembly step to avoid hitting response limits.'
+validation: Discovered during build (attempt 0)

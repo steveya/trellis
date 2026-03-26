@@ -22,6 +22,7 @@ KNOWN_GREEKS = frozenset({
 # ---------------------------------------------------------------------------
 
 class Frequency(Enum):
+    """Coupon or reset frequency expressed as payments per year."""
     ANNUAL = 1
     SEMI_ANNUAL = 2
     QUARTERLY = 4
@@ -33,6 +34,7 @@ class Frequency(Enum):
 # re-exported here for backward compatibility.  Lazy import via __getattr__
 # avoids a circular import (conventions.day_count imports Frequency from here).
 def __getattr__(name: str):
+    """Lazily expose backward-compatible symbols without creating import cycles."""
     if name == "DayCountConvention":
         from trellis.conventions.day_count import DayCountConvention
         globals()["DayCountConvention"] = DayCountConvention  # cache
@@ -71,9 +73,11 @@ class Instrument(Protocol):
     """Any priceable instrument."""
 
     def cashflows(self, settlement: date | None = None) -> CashflowSchedule:
+        """Return scheduled future cashflows, optionally filtered from ``settlement`` onward."""
         ...
 
     def price(self, curve: DiscountCurve, settlement: date | None = None) -> float:
+        """Return the model price under ``curve`` and optional ``settlement`` date."""
         ...
 
 

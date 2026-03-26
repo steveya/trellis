@@ -1,0 +1,25 @@
+id: num_007
+title: Analytical pricer returned empty response causing JSON parse failure
+severity: critical
+category: numerical
+status: candidate
+confidence: 0.4
+created: '2026-03-25T09:57:43.869468'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: 'JSON parse error ''Expecting value: line 1 column 1 (char 0)'' indicating
+  empty or missing response from pricer'
+root_cause: The analytical method had no modeling requirements specified and no cookbook
+  template, so the build produced an empty code body that returned no output, causing
+  the JSON parser to fail on an empty string.
+fix: Always ensure analytical pricers implement a complete evaluate() function that
+  returns a dict with at least a 'price' key; use Black-Scholes closed form for European
+  equity calls as the baseline analytical method.
+validation: Discovered during build (attempt 0)

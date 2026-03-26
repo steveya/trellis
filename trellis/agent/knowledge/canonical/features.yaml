@@ -1,0 +1,190 @@
+# Feature Taxonomy — the atoms from which instruments are composed.
+#
+# Each feature has:
+#   id:          unique identifier (snake_case)
+#   description: what this feature represents
+#   implies:     transitive dependencies (list of feature IDs)
+#   method_hint: suggested pricing method (optional, does not mandate)
+#   market_data: required market data capabilities (optional)
+#
+# Instruments are molecules: a set of feature IDs.
+# Retrieval is feature-based (union), not instrument-name lookup.
+
+# ---------------------------------------------------------------------------
+# Cashflow features
+# ---------------------------------------------------------------------------
+
+- id: fixed_coupons
+  description: "Deterministic fixed-rate coupon payments on a schedule"
+  implies: [coupons, discounting]
+
+- id: floating_coupons
+  description: "Coupon payments linked to a floating rate index (e.g. SOFR)"
+  implies: [coupons, discounting, forward_rate]
+  market_data: [forward_rate]
+
+- id: coupons
+  description: "Any scheduled coupon payments (fixed or floating)"
+  implies: [discounting]
+
+- id: range_condition
+  description: "Coupon accrual conditional on rate staying within a range"
+  implies: [floating_coupons, path_dependent]
+  method_hint: rate_tree
+
+- id: amortization
+  description: "Scheduled principal repayment over the life of the instrument"
+  implies: [discounting]
+
+- id: prepayment
+  description: "Borrower option to repay principal early (rate-path-dependent)"
+  implies: [amortization, path_dependent]
+  method_hint: monte_carlo
+
+# ---------------------------------------------------------------------------
+# Exercise features
+# ---------------------------------------------------------------------------
+
+- id: early_exercise
+  description: "Option to exercise before maturity (generic)"
+  implies: [backward_induction]
+  method_hint: rate_tree
+
+- id: callable
+  description: "Issuer right to redeem the instrument early (exercise_fn=min)"
+  implies: [early_exercise]
+  method_hint: rate_tree
+
+- id: puttable
+  description: "Holder right to sell the instrument back early (exercise_fn=max)"
+  implies: [early_exercise]
+  method_hint: rate_tree
+
+- id: bermudan
+  description: "Exercise allowed on a discrete set of dates"
+  implies: [early_exercise]
+  method_hint: rate_tree
+
+- id: american
+  description: "Exercise allowed continuously up to maturity"
+  implies: [early_exercise]
+  method_hint: monte_carlo
+
+# ---------------------------------------------------------------------------
+# Path-dependent features
+# ---------------------------------------------------------------------------
+
+- id: path_dependent
+  description: "Payoff depends on the entire path of the underlying, not just terminal value"
+  method_hint: monte_carlo
+
+- id: barrier
+  description: "Payoff activates or deactivates when underlying crosses a level"
+  implies: [path_dependent]
+  method_hint: monte_carlo
+
+- id: asian
+  description: "Payoff depends on the average of the underlying over a period"
+  implies: [path_dependent]
+  method_hint: monte_carlo
+
+- id: lookback
+  description: "Payoff depends on the extremum (max or min) of the underlying"
+  implies: [path_dependent]
+  method_hint: monte_carlo
+
+# ---------------------------------------------------------------------------
+# Model features
+# ---------------------------------------------------------------------------
+
+- id: backward_induction
+  description: "Pricing via backward recursion through a lattice or grid"
+
+- id: mean_reversion
+  description: "Short rate reverts to a long-run mean (Hull-White / BDT)"
+  implies: [backward_induction]
+  method_hint: rate_tree
+
+- id: stochastic_vol
+  description: "Volatility follows its own stochastic process (e.g. Heston)"
+  method_hint: monte_carlo
+
+- id: jump_diffusion
+  description: "Underlying has jump component (e.g. Merton, Kou)"
+  method_hint: fft_pricing
+
+- id: local_vol
+  description: "Volatility is a deterministic function of spot and time (Dupire)"
+  method_hint: pde_solver
+
+# ---------------------------------------------------------------------------
+# Volatility features
+# ---------------------------------------------------------------------------
+
+- id: vol_surface_dependence
+  description: "Pricing requires a volatility surface (strike/tenor grid)"
+  market_data: [black_vol]
+
+- id: delta_space_interpolation
+  description: "Vol surface interpolated in delta space rather than strike space"
+  implies: [vol_surface_dependence]
+
+# ---------------------------------------------------------------------------
+# Numerical / output features
+# ---------------------------------------------------------------------------
+
+- id: greeks
+  description: "Sensitivity measures (delta, gamma, vega, theta, rho)"
+
+- id: gamma
+  description: "Second-order price sensitivity to underlying — requires wider FD bumps"
+  implies: [greeks]
+
+- id: oas
+  description: "Option-adjusted spread computation via root-finding"
+  implies: [spread_computation]
+
+- id: spread_computation
+  description: "Iterative spread search (OAS, Z-spread, etc.)"
+
+# ---------------------------------------------------------------------------
+# Infrastructure features
+# ---------------------------------------------------------------------------
+
+- id: discounting
+  description: "Present-value computation using a discount curve"
+  market_data: [discount]
+
+- id: forward_rate
+  description: "Forward rate projection from a curve"
+  implies: [discounting]
+  market_data: [forward_rate]
+
+- id: credit_risk
+  description: "Default probability modeling (survival curves, copulas)"
+  market_data: [credit]
+  method_hint: copula
+
+# ---------------------------------------------------------------------------
+# Convention features
+# ---------------------------------------------------------------------------
+
+- id: act_act_isda
+  description: "ACT/ACT ISDA day count convention (year-boundary splitting)"
+
+- id: discrete_coupons
+  description: "Coupons placed at exact payment dates, not uniformly spread"
+  implies: [coupons]
+
+- id: characteristic_function
+  description: "Pricing via characteristic function (FFT or COS method)"
+  method_hint: fft_pricing
+
+- id: cos_method
+  description: "COS (Fang-Oosterlee) Fourier pricing with cosine expansion"
+  implies: [characteristic_function]
+  method_hint: fft_pricing
+
+- id: pde_grid
+  description: "Finite-difference grid for PDE-based pricing"
+  method_hint: pde_solver

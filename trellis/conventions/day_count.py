@@ -39,6 +39,7 @@ class DayCountConvention(Enum):
 
 
 def _to_date(d: DateLike) -> date:
+    """Normalize ``date``/``datetime`` inputs to plain ``date`` objects."""
     if isinstance(d, datetime):
         return d.date()
     return d
@@ -121,6 +122,11 @@ def year_fraction(
 # ---------------------------------------------------------------------------
 
 def _act_act_isda(d1: date, d2: date) -> float:
+    """Return the ISDA Actual/Actual year fraction by splitting across calendar years.
+
+    Each partial year contributes ``actual_days / days_in_that_year`` and any
+    full intervening years contribute ``1.0``.
+    """
     if d1.year == d2.year:
         days_in_year = 366 if _cal.isleap(d1.year) else 365
         return (d2 - d1).days / days_in_year
@@ -142,6 +148,7 @@ def _act_act_isda(d1: date, d2: date) -> float:
 
 
 def _thirty_360_us(d1: date, d2: date) -> float:
+    """Return the 30/360 US year fraction using the NASD end-of-month rule."""
     y1, m1, day1 = d1.year, d1.month, min(d1.day, 30)
     y2, m2, day2 = d2.year, d2.month, d2.day
     # US rule: d2 clamped to 30 only if d1 was clamped (d1.day >= 30)
@@ -153,12 +160,14 @@ def _thirty_360_us(d1: date, d2: date) -> float:
 
 
 def _thirty_e_360(d1: date, d2: date) -> float:
+    """Return the 30E/360 year fraction by clamping both day fields to 30."""
     y1, m1, day1 = d1.year, d1.month, min(d1.day, 30)
     y2, m2, day2 = d2.year, d2.month, min(d2.day, 30)
     return (360 * (y2 - y1) + 30 * (m2 - m1) + (day2 - day1)) / 360.0
 
 
 def _thirty_e_360_isda(d1: date, d2: date) -> float:
+    """Return the 30E/360 ISDA year fraction with special treatment for month-end dates."""
     y1, m1, day1 = d1.year, d1.month, d1.day
     y2, m2, day2 = d2.year, d2.month, d2.day
     if day1 == _cal.monthrange(y1, m1)[1]:

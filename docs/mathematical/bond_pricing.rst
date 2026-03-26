@@ -123,9 +123,11 @@ Implementation
 --------------
 
 .. autofunction:: trellis.engine.pricer.price_instrument
+   :no-index:
 
 .. autoclass:: trellis.instruments.bond.Bond
    :members:
+   :no-index:
 
 Numerical Example
 -----------------

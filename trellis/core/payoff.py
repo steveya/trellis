@@ -35,23 +35,38 @@ class Payoff(Protocol):
 class DeterministicCashflowPayoff:
     """Adapter: wraps any Instrument (e.g. Bond) into the Payoff protocol.
 
-    Discounts each cashflow using ``market_state.discount``.
+    Discounts each cashflow using ``market_state.discount``. This is the
+    bridge between instrument objects that expose dated cashflows and the
+    payoff protocol that expects a single present-value evaluation.
+
+    Mathematically, this computes
+
+    .. math::
+
+       PV = \sum_i CF_i \cdot D(t_i)
+
+    where ``CF_i`` are the future cashflows and ``D(t_i)`` are discount
+    factors from the session or market state.
     """
 
     def __init__(self, instrument: Instrument,
                  day_count: DayCountConvention = DayCountConvention.ACT_365):
+        """Wrap an instrument plus the day-count convention for discount timing."""
         self._instrument = instrument
         self._day_count = day_count
 
     @property
     def instrument(self) -> Instrument:
+        """Return the wrapped instrument object."""
         return self._instrument
 
     @property
     def requirements(self) -> set[str]:
-        return {"discount"}
+        """Declare that deterministic cashflow pricing needs a discount curve."""
+        return {"discount_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
+        """Discount each future cashflow date and sum the resulting PV."""
         schedule = self._instrument.cashflows(market_state.settlement)
         pv = 0.0
         for d, amt in zip(schedule.dates, schedule.amounts):
@@ -64,9 +79,11 @@ class DeterministicCashflowPayoff:
 class Cashflows:
     """Deprecated. evaluate() now returns float directly."""
     def __init__(self, flows):
+        """Store legacy raw cashflow tuples for backward compatibility only."""
         self.flows = flows
 
 class PresentValue:
     """Deprecated. evaluate() now returns float directly."""
     def __init__(self, pv):
+        """Store a legacy pre-discounted scalar PV for backward compatibility."""
         self.pv = pv

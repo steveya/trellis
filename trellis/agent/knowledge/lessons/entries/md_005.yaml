@@ -1,0 +1,24 @@
+id: md_005
+title: State Space Data Missing
+severity: critical
+category: market_data
+status: candidate
+confidence: 0.4
+created: '2026-03-24T06:59:24.011796'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - sparse_grid_quadrature
+  features:
+  - sparse_grid_quadrature
+  instrument: []
+  error_signature: null
+symptom: Pricer build halted due to absence of the 'state_space' market data.
+root_cause: The pricing model expected scenario-weighted inputs from a 'state_space'
+  dataset, but none was provided. This gap resulted from missing data contracts and
+  cookbook templates for 'sparse_grid_quadrature'.
+fix: Supply the required 'state_space' market data (e.g., using Session(state_space=StateSpace(states={...})))
+  and add input validation to check for mandatory data. Enhance documentation and
+  templates to prevent similar oversights.
+validation: Discovered during build (attempt 0)

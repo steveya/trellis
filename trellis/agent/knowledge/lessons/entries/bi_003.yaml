@@ -1,0 +1,33 @@
+id: bi_003
+title: Uniform coupon accrual biases callable bond pricing
+severity: high
+category: backward_induction
+status: promoted
+confidence: 1.0
+version: ''
+created: ''
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  - coupons
+  - early_exercise
+  instrument:
+  - callable_bond
+  - puttable_bond
+  error_signature: null
+symptom: 35-72bp vs QuantLib/FinancePy; tree straight bond price ≠ analytical PV of
+  discrete coupons
+root_cause: 'Uniform accrual (coupon_per_step = notional * coupon * dt) shifts effective
+  timing of cashflows, changing the exercise boundary. Continuation value at call
+  dates includes coupons not yet received.
+
+  '
+fix: 'Build a coupon_steps dict mapping tree step indices to actual coupon amounts
+  using generate_schedule(). cashflow_at_node returns the coupon only at those steps
+  (0 otherwise). Terminal payoff includes final coupon since cashflow_at_node is not
+  called at terminal step.
+
+  '
+validation: ''

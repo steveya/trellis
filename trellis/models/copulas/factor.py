@@ -21,6 +21,7 @@ class FactorCopula:
     """
 
     def __init__(self, n_names: int, correlation: float):
+        """Store the homogeneous portfolio size and one-factor correlation level."""
         self.n_names = n_names
         self.rho = correlation
 

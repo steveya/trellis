@@ -1,0 +1,22 @@
+id: md_001
+title: "Day count convention ACT/ACT ISDA fencepost error"
+severity: medium
+category: market_data
+status: promoted
+confidence: 1.0
+version: ""
+created: ""
+
+applies_when:
+  method: [any]
+  features: [act_act_isda]
+  instrument: [any]
+  error_signature: null
+
+symptom: "year_fraction(Jan 1, Jan 1 next year) returns 0.997 instead of 1.0"
+root_cause: >
+  ACT/ACT ISDA splits at year boundaries. Using Dec 31 instead of
+  Jan 1 next year as boundary causes an off-by-one in the split.
+fix: >
+  Use Jan 1 of the next year as the year boundary, not Dec 31.
+validation: ""

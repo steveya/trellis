@@ -1,0 +1,1042 @@
+settings:
+  max_prompt_entries: 7
+entries:
+- id: vol_001
+  title: "Black vol \u2260 Hull-White rate vol"
+  severity: critical
+  category: volatility
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - mean_reversion
+    - backward_induction
+    - vol_surface_dependence
+    instrument:
+    - callable_bond
+    - puttable_bond
+    - bermudan_swaption
+    - bond_option
+- id: vol_002
+  title: Heston v0 vs sigma confusion
+  severity: critical
+  category: volatility
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    - fft_pricing
+    features:
+    - stochastic_vol
+    instrument:
+    - equity_option
+    - barrier_option
+- id: cal_001
+  title: Uncalibrated rate tree
+  severity: critical
+  category: calibration
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    instrument:
+    - any
+- id: cal_002
+  title: Newton iteration accumulates errors in tree calibration
+  severity: high
+  category: calibration
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    instrument:
+    - any
+- id: cal_003
+  title: Probability-rate circular dependency
+  severity: medium
+  category: calibration
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - mean_reversion
+    - backward_induction
+    instrument:
+    - any
+- id: bi_001
+  title: Missing intermediate cashflows in tree
+  severity: critical
+  category: backward_induction
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - coupons
+    instrument:
+    - callable_bond
+    - puttable_bond
+    - coupon_bond
+- id: bi_002
+  title: Wrong exercise function for callable bonds
+  severity: critical
+  category: backward_induction
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    - pde_solver
+    features:
+    - backward_induction
+    - early_exercise
+    - callable
+    instrument:
+    - callable_bond
+- id: bi_003
+  title: Uniform coupon accrual biases callable bond pricing
+  severity: high
+  category: backward_induction
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - coupons
+    - early_exercise
+    instrument:
+    - callable_bond
+    - puttable_bond
+- id: bi_004
+  title: Exercise value must include accrued coupon at call dates
+  severity: high
+  category: backward_induction
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - coupons
+    - early_exercise
+    instrument:
+    - callable_bond
+    - puttable_bond
+- id: bi_005
+  title: 'Bermudan swaption swap convention: same underlying at all exercise dates'
+  severity: high
+  category: backward_induction
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    - monte_carlo
+    features:
+    - backward_induction
+    - early_exercise
+    - bermudan
+    - floating_coupons
+    instrument:
+    - bermudan_swaption
+- id: fd_001
+  title: Tree gamma requires wider bumps than delta
+  severity: medium
+  category: finite_differences
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - gamma
+    - greeks
+    instrument:
+    - any
+- id: fd_002
+  title: Old Crank-Nicolson implementation has coefficient bug
+  severity: high
+  category: finite_differences
+  status: promoted
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    instrument:
+    - any
+- id: mc_001
+  title: LSM high-vol bias with polynomial basis
+  severity: high
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - early_exercise
+    - stochastic_vol
+    instrument:
+    - american_option
+    - bermudan_swaption
+- id: mc_002
+  title: 'Characteristic function convention: log(S_T) vs log(S_T/S0)'
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - characteristic_function
+    instrument:
+    - any
+- id: md_001
+  title: Day count convention ACT/ACT ISDA fencepost error
+  severity: medium
+  category: market_data
+  status: promoted
+  applies_when:
+    method:
+    - any
+    features:
+    - act_act_isda
+    instrument:
+    - any
+- id: md_002
+  title: COS method overflow with wide truncation
+  severity: high
+  category: market_data
+  status: promoted
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - cos_method
+    instrument:
+    - any
+- id: cal_004
+  title: OAS must use fixed vol model during spread search
+  severity: high
+  category: calibration
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - oas
+    instrument:
+    - callable_bond
+    - puttable_bond
+- id: tst_001
+  title: Measure actual gap before setting test tolerance
+  severity: medium
+  category: testing
+  status: promoted
+  applies_when:
+    method:
+    - any
+    features: []
+    instrument:
+    - any
+- id: mc_003
+  title: MC payoff_fn must return (n_paths,) not (n_paths, n_steps+1)
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - path_dependent
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_004
+  title: "MonteCarloEngine does not support method='lsm' \u2014 use separate LSM module"
+  severity: high
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - early_exercise
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: num_001
+  title: Missing analytical model requirements
+  severity: critical
+  category: numerical
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_005
+  title: Missing simulation module
+  severity: critical
+  category: monte_carlo
+  status: archived
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    instrument: []
+    error_signature: null
+- id: num_002
+  title: Missing PDE solver dependency
+  severity: critical
+  category: numerical
+  status: archived
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_006
+  title: LSM Module Import Issue
+  severity: high
+  category: monte_carlo
+  status: archived
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - early_exercise
+    - american
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: mc_007
+  title: Missing Monte Carlo Process Module
+  severity: critical
+  category: monte_carlo
+  status: archived
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - stochastic_vol
+    - discounting
+    instrument: []
+    error_signature: null
+- id: fd_003
+  title: Missing pde_solver module import
+  severity: critical
+  category: finite_differences
+  status: archived
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - pde_grid
+    instrument: []
+    error_signature: null
+- id: num_003
+  title: 'Missing module: pde_solver'
+  severity: critical
+  category: numerical
+  status: archived
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - stochastic_vol
+    - discounting
+    instrument: []
+    error_signature: null
+- id: con_001
+  title: "Use exact trellis import paths \u2014 never guess module names"
+  severity: critical
+  category: convention
+  status: promoted
+  applies_when:
+    method: []
+    features:
+    - discounting
+    instrument: []
+    error_signature: null
+- id: con_002
+  title: Fix module dependency and parameter conventions
+  severity: critical
+  category: convention
+  status: archived
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - jump_diffusion
+    - characteristic_function
+    - cos_method
+    instrument: []
+    error_signature: null
+- id: md_003
+  title: Missing Credit Curve Data
+  severity: critical
+  category: market_data
+  status: archived
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
+    instrument: []
+    error_signature: null
+- id: fd_004
+  title: Missing 'pde_solver' Module
+  severity: critical
+  category: finite_differences
+  status: archived
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    instrument: []
+    error_signature: null
+- id: con_003
+  title: CF convention inconsistency
+  severity: critical
+  category: convention
+  status: candidate
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - characteristic_function
+    - cos_method
+    instrument: []
+    error_signature: null
+- id: con_004
+  title: Exact import paths
+  severity: critical
+  category: convention
+  status: archived
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_004
+  title: Undefined MarketState variable
+  severity: critical
+  category: numerical
+  status: archived
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - characteristic_function
+    - cos_method
+    instrument: []
+    error_signature: null
+- id: fd_005
+  title: Exact Import Path Required
+  severity: critical
+  category: finite_differences
+  status: archived
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - stochastic_vol
+    - discounting
+    instrument: []
+    error_signature: null
+- id: con_005
+  title: Exact Import Paths Required
+  severity: critical
+  category: convention
+  status: archived
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_008
+  title: Exact Module Import Paths
+  severity: critical
+  category: monte_carlo
+  status: archived
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - stochastic_vol
+    instrument: []
+    error_signature: null
+- id: md_004
+  title: Missing Credit Market Data
+  severity: critical
+  category: market_data
+  status: archived
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
+    instrument: []
+    error_signature: null
+- id: con_006
+  title: Incorrect module import path
+  severity: critical
+  category: convention
+  status: archived
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: con_007
+  title: Use exact import paths
+  severity: critical
+  category: convention
+  status: archived
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - characteristic_function
+    instrument: []
+    error_signature: null
+- id: md_005
+  title: State Space Data Missing
+  severity: critical
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - sparse_grid_quadrature
+    features:
+    - sparse_grid_quadrature
+    instrument: []
+    error_signature: null
+- id: con_008
+  title: Undefined MarketState in CDS Pricer
+  severity: critical
+  category: convention
+  status: candidate
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
+    instrument: []
+    error_signature: null
+- id: con_009
+  title: Use exact module import paths
+  severity: critical
+  category: convention
+  status: candidate
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - stochastic_vol
+    - discounting
+    instrument: []
+    error_signature: null
+- id: con_010
+  title: Exact module import naming
+  severity: critical
+  category: convention
+  status: candidate
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - stochastic_vol
+    - discounting
+    instrument: []
+    error_signature: null
+- id: num_005
+  title: Missing pricing module
+  severity: critical
+  category: numerical
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_006
+  title: Undefined MarketState causes build failure
+  severity: critical
+  category: numerical
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - greeks
+    instrument: []
+    error_signature: null
+- id: md_006
+  title: Missing required market data
+  severity: critical
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - auto_selector
+    features:
+    - forward_rate
+    instrument: []
+    error_signature: null
+- id: md_007
+  title: Missing FX Market Data
+  severity: critical
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_008
+  title: Missing Market Data Inputs
+  severity: critical
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - pde_grid
+    instrument: []
+    error_signature: null
+- id: fd_006
+  title: Missing local volatility capability
+  severity: critical
+  category: finite_differences
+  status: candidate
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - local_vol
+    - discounting
+    instrument: []
+    error_signature: null
+- id: md_009
+  title: Missing Option Market Data
+  severity: critical
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - option_payoff
+    - gbm_underlying
+    - path_independent
+    instrument: []
+    error_signature: null
+- id: md_010
+  title: Missing Market Data in LSM Pricing
+  severity: critical
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - american
+    - early_exercise
+    instrument: []
+    error_signature: null
+- id: md_011
+  title: Missing required pricing inputs
+  severity: critical
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - jump_diffusion
+    instrument: []
+    error_signature: null
+- id: md_012
+  title: Missing Payoff Parameters
+  severity: critical
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - characteristic_function
+    - cos_method
+    - discounting
+    instrument: []
+    error_signature: null
+- id: md_013
+  title: Missing Discount and Yield Curves
+  severity: critical
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - forward_rate
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: md_014
+  title: Missing spot data in pricer
+  severity: critical
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - multi_method
+    features:
+    - discounting
+    instrument: []
+    error_signature: null
+- id: md_015
+  title: Missing spot input in payoff
+  severity: critical
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - greeks
+    instrument: []
+    error_signature: null
+- id: con_011
+  title: Use trellis date utilities in payoff
+  severity: critical
+  category: convention
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - greeks
+    - characteristic_function
+    instrument: []
+    error_signature: null
+- id: num_007
+  title: Analytical pricer returned empty response causing JSON parse failure
+  severity: critical
+  category: numerical
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    instrument: []
+    error_signature: null
+- id: num_008
+  title: Undefined FFT symbol breaks analytical branch
+  severity: high
+  category: numerical
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vanilla_european_payoff
+    - analytical
+    - backward_induction
+    - pde_grid
+    - monte_carlo
+    - characteristic_function
+    - cos_method
+    - fft_pricing
+    - greeks
+    - vol_surface_dependence
+    - continuous_dividend_yield
+    instrument: []
+    error_signature: null
+- id: bi_006
+  title: Undefined tree import/name error
+  severity: critical
+  category: backward_induction
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    - backward_induction
+    instrument: []
+    error_signature: null
+- id: md_016
+  title: Empty response causes JSON parse failure in analytical pricer
+  severity: critical
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_009
+  title: Undefined tree constructor 'crr_tree'
+  severity: critical
+  category: numerical
+  status: candidate
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - discounting
+    - vol_surface_dependence
+    - backward_induction
+    instrument: []
+    error_signature: null
+- id: bi_007
+  title: Payoff must call lattice_backward_induction primitives
+  severity: critical
+  category: backward_induction
+  status: candidate
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - discounting
+    - vol_surface_dependence
+    - backward_induction
+    instrument: []
+    error_signature: null
+- id: mc_009
+  title: Missing Monte Carlo implementation symbol
+  severity: critical
+  category: monte_carlo
+  status: candidate
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: con_012
+  title: Undefined measure symbol 'physical'
+  severity: critical
+  category: convention
+  status: candidate
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - characteristic_function
+    - stochastic_vol
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_010
+  title: Undefined COS pricer symbol
+  severity: critical
+  category: numerical
+  status: candidate
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - vol_surface_dependence
+    - characteristic_function
+    - cos_method
+    instrument: []
+    error_signature: null
+- id: con_013
+  title: Undefined instrument class reference
+  severity: critical
+  category: convention
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_011
+  title: LLM provider returned empty response causing JSON parse failure
+  severity: critical
+  category: numerical
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - greeks
+    - discounting
+    instrument: []
+    error_signature: null
+- id: fd_007
+  title: Log-space PDE for rate instruments requires special grid setup
+  severity: critical
+  category: finite_differences
+  status: candidate
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - discounting
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: fd_008
+  title: Log-space PDE for rate instruments requires special boundary handling
+  severity: critical
+  category: finite_differences
+  status: candidate
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - pde_grid
+    - mean_reversion
+    - forward_rate
+    instrument: []
+    error_signature: null
+- id: fd_009
+  title: Crank-Nicolson Rannacher smoothing PDE build failed entirely
+  severity: critical
+  category: finite_differences
+  status: candidate
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - discounting
+    instrument: []
+    error_signature: null
+- id: fd_010
+  title: LLM JSON parse failure on Crank-Nicolson Rannacher PDE build
+  severity: critical
+  category: finite_differences
+  status: candidate
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - discounting
+    instrument: []
+    error_signature: null
+- id: num_012
+  title: LLM JSON parse failure causes complete build abort
+  severity: critical
+  category: numerical
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    instrument: []
+    error_signature: null
+- id: num_013
+  title: FFT Merton pricer failed due to LLM JSON serialization error
+  severity: critical
+  category: numerical
+  status: candidate
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - jump_diffusion
+    - characteristic_function
+    - discounting
+    instrument: []
+    error_signature: null
+- id: num_014
+  title: COS adaptive truncation LLM JSON parse failure on retry
+  severity: critical
+  category: numerical
+  status: candidate
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - cos_method
+    - characteristic_function
+    - discounting
+    instrument: []
+    error_signature: null
+- id: num_015
+  title: LLM provider returned empty response for COS method pricer
+  severity: critical
+  category: numerical
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - cos_method
+    - characteristic_function
+    - discounting
+    instrument: []
+    error_signature: null
+- id: md_017
+  title: LLM JSON serialization failure causes total build abort
+  severity: critical
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null

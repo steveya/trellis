@@ -1,0 +1,28 @@
+id: con_012
+title: Undefined measure symbol 'physical'
+severity: critical
+category: convention
+status: candidate
+confidence: 0.4
+created: '2026-03-25T11:44:56.388527'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - discounting
+  - characteristic_function
+  - stochastic_vol
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Runtime NameError: name ''physical'' is not defined when selecting the pricing
+  measure.'
+root_cause: A measure identifier (e.g., 'physical' vs 'risk_neutral') was referenced
+  but never defined or passed into the FFT pricer; additionally there is often confusion
+  about which measure the characteristic function should be built under.
+fix: Ensure a single, explicit measure flag is defined and propagated (use e.g. 'risk_neutral'
+  / 'Q' for pricing). Build the characteristic function under the risk-neutral measure
+  and make the variable name consistent or validate inputs before use.
+validation: Discovered during build (attempt 0)

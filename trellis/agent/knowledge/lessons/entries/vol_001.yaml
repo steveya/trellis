@@ -1,0 +1,32 @@
+id: vol_001
+title: Black vol ≠ Hull-White rate vol
+severity: critical
+category: volatility
+status: promoted
+confidence: 1.0
+version: ''
+created: ''
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - mean_reversion
+  - backward_induction
+  - vol_surface_dependence
+  instrument:
+  - callable_bond
+  - puttable_bond
+  - bermudan_swaption
+  - bond_option
+  error_signature: null
+symptom: Price is 10x+ too high or too low vs analytical benchmark
+root_cause: 'Black vol is RELATIVE (percentage of forward rate, e.g. 20%). Hull-White
+  sigma is ABSOLUTE (in rate units, e.g. 1%). sigma_HW = sigma_Black * forward_rate.
+  Passing 0.20 directly to a tree expecting 0.01 produces catastrophically wrong rates.
+
+  '
+fix: 'Convert: sigma_HW = sigma_Black * forward_rate. Forward rate ≈ curve.zero_rate(T/2)
+  as proxy. The data contract VOL_BLACK_TO_HW encodes this.
+
+  '
+validation: ''

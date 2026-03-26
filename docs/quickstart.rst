@@ -1,6 +1,14 @@
 Quickstart
 ==========
 
+Trellis supports two primary ways to get started:
+
+- ask for a price in natural language
+- work programmatically from a reproducible session
+
+The examples below default to package-level APIs and mock data unless a
+section is explicitly marked otherwise.
+
 Installation
 ------------
 
@@ -8,36 +16,44 @@ Installation
 
    pip install trellis
 
-   # With optional dependencies:
-   pip install trellis[agent]      # LLM agent (OpenAI/Anthropic)
-   pip install trellis[data]       # Live market data (FRED, Treasury.gov)
-   pip install trellis[crossval]   # Cross-validation (QuantLib, FinancePy)
+   # Optional runtime dependencies are installed separately today:
+   pip install openai              # or: pip install anthropic
+   pip install requests fredapi
 
-Your First Price
-----------------
+Natural Language First
+----------------------
+
+.. important::
+
+   ``trellis.ask(...)`` requires an installed provider client and a
+   configured provider API key such as ``OPENAI_API_KEY`` or
+   ``ANTHROPIC_API_KEY``.
+   Built payoffs for unsupported products are experimental and should be
+   validated before production use.
 
 .. code-block:: python
 
    import trellis
 
-   # Quickstart session with mock market data (no API keys needed)
+   result = trellis.ask("Price a 5-year SOFR cap at 4% on $10M")
+   print(f"Price: ${result.price:,.2f}")
+   print(f"Instrument: {result.payoff_class}")
+   print(f"Matched existing payoff: {result.matched_existing}")
+
+Offline First Price
+-------------------
+
+.. code-block:: python
+
+   import trellis
+
+   # Quickstart session with mock market data (no network, no API keys)
    s = trellis.quickstart()
 
-   # Price a bond
    bond = trellis.sample_bond_10y()
    result = s.price(bond)
    print(f"Clean price: {result.clean_price:.4f}")
    print(f"DV01: {result.greeks['dv01']:.6f}")
-
-Natural Language Pricing
-------------------------
-
-.. code-block:: python
-
-   # Requires OPENAI_API_KEY or ANTHROPIC_API_KEY in .env
-   result = trellis.ask("Price a 5-year interest rate cap at 4% on $10M")
-   print(f"Price: ${result.price:,.2f}")
-   print(f"Instrument: {result.payoff_class}")
 
 Working with Sessions
 ---------------------
@@ -65,6 +81,27 @@ Working with Sessions
    print(f"Base: {result.clean_price:.4f}")
    print(f"+100bp: {s_up.price(bond).clean_price:.4f}")
 
+Ask Against Your Own Session
+----------------------------
+
+.. code-block:: python
+
+   from trellis import Session, YieldCurve, FlatVol
+   from datetime import date
+
+   s = Session(
+       curve=YieldCurve.flat(0.045),
+       settlement=date(2024, 11, 15),
+       vol_surface=FlatVol(0.20),
+   )
+
+   result = s.ask(
+       "Price a 5-year payer swap at 4.5% on $25M SOFR",
+       measures=["price", "dv01"],
+   )
+   print(result.price)
+   print(result.analytics.dv01)
+
 Using the Payoff Framework
 --------------------------
 
@@ -72,7 +109,7 @@ Using the Payoff Framework
 
    from trellis import (
        Session, YieldCurve, FlatVol, MarketState,
-       CapPayoff, CapFloorSpec, price_payoff, Cashflows, PresentValue,
+       CapPayoff, CapFloorSpec, price_payoff,
    )
    from trellis.core.types import Frequency
    from datetime import date
@@ -93,3 +130,12 @@ Using the Payoff Framework
    )
    pv = price_payoff(cap, ms)
    print(f"Cap PV: ${pv:,.2f}")
+
+Next Steps
+----------
+
+- :doc:`tutorials/index` for end-to-end workflows
+- :doc:`user_guide/session` for immutable sessions and scenario analysis
+- :doc:`user_guide/pricing` for pricing modes and analytics
+- :doc:`quant/index` for pricing constructs, extensions, and knowledge maintenance
+- :doc:`developer/index` for the platform and agent runtime behind ``ask()``

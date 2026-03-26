@@ -9,6 +9,7 @@ from trellis.agent.quant import (
     STATIC_PLANS,
     check_data_availability,
     select_pricing_method,
+    select_pricing_method_for_product_ir,
 )
 from trellis.core.market_state import MarketState, MissingCapabilityError
 from trellis.curves.yield_curve import YieldCurve
@@ -23,19 +24,19 @@ class TestStaticPlans:
     def test_bond_is_analytical(self):
         plan = select_pricing_method("10Y Treasury bond", "bond")
         assert plan.method == "analytical"
-        assert "discount" in plan.required_market_data
+        assert "discount_curve" in plan.required_market_data
 
     def test_cap_is_analytical_black76(self):
         plan = select_pricing_method("5Y cap at 4%", "cap")
         assert plan.method == "analytical"
-        assert "black_vol" in plan.required_market_data
+        assert "black_vol_surface" in plan.required_market_data
 
     def test_callable_bond_uses_tree(self):
         plan = select_pricing_method("Callable bond with call schedule", "callable_bond")
         assert plan.method == "rate_tree"
         assert "trellis.models.trees.lattice" in plan.method_modules
-        assert "discount" in plan.required_market_data
-        assert "black_vol" in plan.required_market_data
+        assert "discount_curve" in plan.required_market_data
+        assert "black_vol_surface" in plan.required_market_data
         assert len(plan.modeling_requirements) > 0
         assert any("CALIBRATION" in r for r in plan.modeling_requirements)
 
@@ -46,7 +47,7 @@ class TestStaticPlans:
     def test_cdo_uses_copula(self):
         plan = select_pricing_method("CDO mezzanine tranche", "cdo")
         assert plan.method == "copula"
-        assert "credit" in plan.required_market_data
+        assert "credit_curve" in plan.required_market_data
 
     def test_mbs_uses_mc_with_waterfall(self):
         plan = select_pricing_method("Agency MBS passthrough", "mbs")
@@ -79,6 +80,32 @@ class TestMethodFromDescription:
         assert plan.method in ("analytical", "rate_tree", "monte_carlo", "pde_solver",
                                 "fft_pricing", "copula", "waterfall")
 
+    def test_fx_option_description_enriches_market_requirements(self):
+        plan = select_pricing_method(
+            "Price an FX option on EURUSD with Garman-Kohlhagen",
+            "european_option",
+        )
+        assert plan.method == "analytical"
+        assert "fx_rates" in plan.required_market_data
+        assert "forward_curve" in plan.required_market_data
+        assert "spot" in plan.required_market_data
+
+    def test_local_vol_description_switches_to_surface_driven_monte_carlo(self):
+        plan = select_pricing_method(
+            "European equity call under local vol: PDE vs MC",
+            "european_option",
+        )
+
+        assert plan.method == "monte_carlo"
+        assert "local_vol_surface" in plan.required_market_data
+        assert "spot" in plan.required_market_data
+        assert "black_vol_surface" not in plan.required_market_data
+        assert "trellis.models.monte_carlo.local_vol" in plan.method_modules
+
+    def test_static_plans_loaded_from_canonical_decompositions(self):
+        assert "heston_option" in STATIC_PLANS
+        assert STATIC_PLANS["heston_option"].method == "fft_pricing"
+
 
 class TestDataAvailability:
 
@@ -91,7 +118,7 @@ class TestDataAvailability:
         plan = PricingPlan(
             method="rate_tree",
             method_modules=[],
-            required_market_data={"discount", "black_vol"},
+            required_market_data={"discount_curve", "black_vol_surface"},
             model_to_build=None,
             reasoning="test",
         )
@@ -106,26 +133,26 @@ class TestDataAvailability:
         plan = PricingPlan(
             method="rate_tree",
             method_modules=[],
-            required_market_data={"discount", "black_vol"},
+            required_market_data={"discount_curve", "black_vol_surface"},
             model_to_build=None,
             reasoning="test",
         )
         errors = check_data_availability(plan, ms)
         assert len(errors) == 1
-        assert "black_vol" in errors[0]
+        assert "black_vol_surface" in errors[0]
 
     def test_missing_discount(self):
         ms = MarketState(as_of=SETTLE, settlement=SETTLE)
         plan = PricingPlan(
             method="analytical",
             method_modules=[],
-            required_market_data={"discount"},
+            required_market_data={"discount_curve"},
             model_to_build=None,
             reasoning="test",
         )
         errors = check_data_availability(plan, ms)
         assert len(errors) == 1
-        assert "discount" in errors[0]
+        assert "discount_curve" in errors[0]
 
     def test_missing_credit_for_cdo(self):
         ms = MarketState(
@@ -134,7 +161,31 @@ class TestDataAvailability:
         )
         plan = select_pricing_method("CDO tranche", "cdo")
         errors = check_data_availability(plan, ms)
-        assert any("credit" in e for e in errors)
+        assert any("credit_curve" in e for e in errors)
+
+    def test_alias_market_data_names_are_accepted(self):
+        ms = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.05),
+            vol_surface=FlatVol(0.20),
+            forecast_curves={"USD-SOFR-3M": YieldCurve.flat(0.051)},
+        )
+        plan = PricingPlan(
+            method="analytical",
+            method_modules=[],
+            required_market_data={
+                "discount_curve",
+                "yield_curve",
+                "risk_free_curve",
+                "forward_rate_curve",
+                "volatility_surface",
+                "black_vol_surface",
+            },
+            model_to_build=None,
+            reasoning="test",
+        )
+        assert check_data_availability(plan, ms) == []
 
 
 class TestPricingPlan:
@@ -147,3 +198,69 @@ class TestPricingPlan:
     def test_has_reasoning(self):
         for name, plan in STATIC_PLANS.items():
             assert plan.reasoning, f"Plan for {name} missing reasoning"
+
+    def test_product_ir_pricing_plan_includes_analytical_modeling_requirements(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "Build a pricer for: European equity call: 5-way (tree, PDE, MC, FFT, COS)",
+            instrument_type="european_option",
+        )
+        plan = select_pricing_method_for_product_ir(ir)
+
+        assert plan.method == "analytical"
+        assert "trellis.models.black" in plan.method_modules
+        assert "discount_curve" in plan.required_market_data
+        assert "black_vol_surface" in plan.required_market_data
+        assert plan.modeling_requirements
+        assert any("BLACK-SCHOLES" in requirement.upper() for requirement in plan.modeling_requirements)
+
+    def test_product_ir_sensitivity_request_prefers_rate_tree_for_callable_bond(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "Build a pricer for: Callable bond with 5% coupon and issuer call schedule",
+            instrument_type="callable_bond",
+        )
+        plan = select_pricing_method_for_product_ir(
+            ir,
+            requested_measures=["dv01", "duration"],
+        )
+
+        assert plan.method == "rate_tree"
+        assert plan.sensitivity_support is not None
+        assert plan.sensitivity_support.level == "bump_only"
+        assert "dv01" in plan.sensitivity_support.supported_measures
+
+    def test_product_ir_sensitivity_request_prefers_fft_over_monte_carlo_for_heston(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "Build a pricer for: European call under Heston stochastic volatility",
+            instrument_type="heston_option",
+        )
+        plan = select_pricing_method_for_product_ir(
+            ir,
+            requested_measures=["vega"],
+        )
+
+        assert plan.method == "fft_pricing"
+        assert plan.sensitivity_support is not None
+        assert plan.sensitivity_support.level == "bump_only"
+
+    def test_explicit_preferred_method_still_wins_over_sensitivity_bias(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "Build a pricer for: European call under Heston stochastic volatility",
+            instrument_type="heston_option",
+        )
+        plan = select_pricing_method_for_product_ir(
+            ir,
+            preferred_method="monte_carlo",
+            requested_measures=["vega"],
+        )
+
+        assert plan.method == "monte_carlo"
+        assert plan.sensitivity_support is not None
+        assert plan.sensitivity_support.level == "experimental"

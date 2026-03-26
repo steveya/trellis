@@ -1,0 +1,30 @@
+id: cal_003
+title: Probability-rate circular dependency
+severity: medium
+category: calibration
+status: promoted
+confidence: 1.0
+version: ''
+created: ''
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - mean_reversion
+  - backward_induction
+  instrument:
+  - any
+  error_signature: null
+symptom: Small bias (5-20bp) with strong mean reversion; single-pass calibration gives
+  slightly wrong ZCB prices when a > 0.2
+root_cause: 'Mean-reversion probabilities depend on rates, but rates depend on Arrow-Debreu
+  prices which depend on probabilities. A single-pass calibration doesn''t resolve
+  this circularity.
+
+  '
+fix: 'Two-pass: (1) calibrate with equal probs, (2) compute mean-reversion probs from
+  calibrated rates, (3) re-calibrate with final probs. Already implemented in build_rate_lattice()
+  and build_generic_lattice().
+
+  '
+validation: ''

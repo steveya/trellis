@@ -2,13 +2,18 @@
 
 import sys
 from datetime import date
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
+from trellis.agent.planner import FieldDef, SpecSchema
+from trellis.core.date_utils import year_fraction
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
 from trellis.engine.payoff_pricer import price_payoff
+from trellis.instruments.fx import FXRate
+from trellis.models.black import garman_kohlhagen_call
 from trellis.models.vol_surface import FlatVol
 
 
@@ -90,8 +95,194 @@ class SwaptionPayoff:
         return spec.notional * annuity * float(black_value)
 '''
 
+BAD_IMPORT_MODULE_CODE = MOCK_MODULE_CODE.replace(
+    "from trellis.models.black import black76_call, black76_put",
+    "from trellis.models.not_a_real_module import black76_call, black76_put",
+)
+
+UNAPPROVED_IMPORT_MODULE_CODE = MOCK_MODULE_CODE.replace(
+    "from trellis.models.black import black76_call, black76_put",
+    "from trellis.models.processes.heston import Heston",
+)
+
+AMERICAN_SPEC_SCHEMA = SpecSchema(
+    class_name="AmericanOptionPayoff",
+    spec_name="AmericanPutEquitySpec",
+    requirements=["discount", "black_vol"],
+    fields=[
+        FieldDef("spot", "float", "Current spot price"),
+        FieldDef("strike", "float", "Option strike price"),
+        FieldDef("expiry_date", "date", "Option expiry date"),
+        FieldDef("option_type", "str", "Option type", '"put"'),
+        FieldDef("exercise_style", "str", "Exercise style", '"american"'),
+    ],
+)
+
+BAD_AMERICAN_SEMANTIC_MODULE_CODE = '''\
+"""Agent-generated payoff: American put option on equity."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+from trellis.core.date_utils import generate_schedule, year_fraction
+from trellis.core.market_state import MarketState
+from trellis.core.types import DayCountConvention, Frequency
+from trellis.models.black import black76_call, black76_put
+
+
+@dataclass(frozen=True)
+class AmericanPutEquitySpec:
+    spot: float
+    strike: float
+    expiry_date: date
+    option_type: str = "put"
+    exercise_style: str = "american"
+
+
+class AmericanOptionPayoff:
+    def __init__(self, spec: AmericanPutEquitySpec):
+        self._spec = spec
+
+    @property
+    def spec(self) -> AmericanPutEquitySpec:
+        return self._spec
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"discount", "black_vol"}
+
+    def evaluate(self, market_state: MarketState) -> float:
+        import numpy as np
+        from trellis.models.monte_carlo.engine import MonteCarloEngine
+        from trellis.models.monte_carlo.schemes import LaguerreBasis
+        from trellis.models.processes.gbm import GBM
+
+        spec = self._spec
+        T = (spec.expiry_date - market_state.settlement).days / 365.25
+        if T <= 0:
+            return 0.0
+
+        r = float(market_state.discount.zero_rate(T))
+        sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
+        process = GBM(mu=r, sigma=sigma)
+        engine = MonteCarloEngine(process, n_paths=4096, n_steps=64, seed=42, method="lsm")
+
+        def payoff_fn(paths):
+            return np.maximum(spec.strike - paths, 0.0)
+
+        basis = LaguerreBasis()
+        _ = basis
+        return float(engine.price(spec.spot, T, payoff_fn, discount_rate=r)["price"])
+'''
+
+GOOD_AMERICAN_SEMANTIC_MODULE_CODE = '''\
+"""Agent-generated payoff: American put option on equity."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+from trellis.core.date_utils import year_fraction
+from trellis.core.differentiable import get_numpy
+from trellis.core.market_state import MarketState
+
+
+@dataclass(frozen=True)
+class AmericanPutEquitySpec:
+    spot: float
+    strike: float
+    expiry_date: date
+    option_type: str = "put"
+    exercise_style: str = "american"
+
+
+class AmericanOptionPayoff:
+    def __init__(self, spec: AmericanPutEquitySpec):
+        self._spec = spec
+
+    @property
+    def spec(self) -> AmericanPutEquitySpec:
+        return self._spec
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"discount", "black_vol"}
+
+    def evaluate(self, market_state: MarketState) -> float:
+        from trellis.models.monte_carlo.engine import MonteCarloEngine
+        from trellis.models.monte_carlo.lsm import longstaff_schwartz
+        from trellis.models.monte_carlo.schemes import LaguerreBasis
+        from trellis.models.processes.gbm import GBM
+
+        spec = self._spec
+        np = get_numpy()
+        T = year_fraction(market_state.settlement, spec.expiry_date)
+        if T <= 0:
+            return 0.0
+
+        r = float(market_state.discount.zero_rate(T))
+        sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
+        process = GBM(mu=r, sigma=sigma)
+        engine = MonteCarloEngine(process, n_paths=4096, n_steps=64, seed=42, method="exact")
+        paths = engine.simulate(spec.spot, T)
+        dt = T / engine.n_steps
+        exercise_dates = list(range(1, engine.n_steps + 1))
+        basis = LaguerreBasis()
+
+        def payoff_fn(spots):
+            return np.maximum(spec.strike - spots, 0.0)
+
+        return float(
+            longstaff_schwartz(
+                paths,
+                exercise_dates,
+                payoff_fn,
+                discount_rate=r,
+                dt=dt,
+                basis_fn=basis,
+            )
+        )
+'''
+
+ROOT = Path(__file__).resolve().parents[2]
+GOOD_BERMUDAN_RATE_TREE_MODULE_CODE = (
+    ROOT / "trellis" / "instruments" / "_agent" / "bermudanswaption.py"
+).read_text()
+
+BERMUDAN_SPEC_SCHEMA = SpecSchema(
+    class_name="BermudanSwaptionPayoff",
+    spec_name="BermudanSwaptionSpec",
+    requirements=["black_vol", "discount", "forward_rate"],
+    fields=[
+        FieldDef("notional", "float", "Swaption notional"),
+        FieldDef("strike", "float", "Fixed strike rate"),
+        FieldDef("exercise_dates", "str", "Comma-separated exercise dates"),
+        FieldDef("swap_end", "date", "Underlying swap end date"),
+        FieldDef("swap_frequency", "Frequency", "Swap payment frequency", "Frequency.SEMI_ANNUAL"),
+        FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_360"),
+        FieldDef("rate_index", "str | None", "Forecast curve key", "None"),
+        FieldDef("is_payer", "bool", "Payer or receiver swaption", "True"),
+    ],
+)
+
 
 class TestBuildLoop:
+
+    def _fx_market_state(self) -> MarketState:
+        dom = YieldCurve.flat(0.05)
+        fgn = YieldCurve.flat(0.03)
+        return MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=dom,
+            forecast_curves={"EUR-DISC": fgn},
+            fx_rates={"EURUSD": FXRate(spot=1.10, domestic="USD", foreign="EUR")},
+            spot=1.10,
+            vol_surface=FlatVol(0.18),
+        )
 
     @patch("trellis.agent.executor._generate_module")
     def test_build_payoff_with_mock(self, mock_gen_mod):
@@ -185,3 +376,296 @@ class TestBuildLoop:
             is_option=True,
         )
         assert passed, f"Invariant failures: {failures}"
+
+    @patch("trellis.agent.executor._generate_module")
+    def test_build_retries_after_invalid_imports(self, mock_gen_mod):
+        """Invalid Trellis imports are rejected before module write and retried."""
+        mock_gen_mod.side_effect = [BAD_IMPORT_MODULE_CODE, MOCK_MODULE_CODE]
+
+        from trellis.agent.executor import build_payoff
+
+        cls = build_payoff(
+            "European payer swaption",
+            {"discount", "forward_rate", "black_vol"},
+            force_rebuild=True,
+        )
+
+        assert cls.__name__ == "SwaptionPayoff"
+        assert mock_gen_mod.call_count == 2
+
+    @patch("trellis.agent.executor._generate_module")
+    def test_build_fails_on_unapproved_existing_module(self, mock_gen_mod):
+        """Existing but unapproved Trellis imports are rejected explicitly."""
+        mock_gen_mod.return_value = UNAPPROVED_IMPORT_MODULE_CODE
+
+        from trellis.agent.executor import build_payoff
+
+        with pytest.raises(RuntimeError, match="unapproved Trellis module"):
+            build_payoff(
+                "European payer swaption",
+                {"discount", "forward_rate", "black_vol"},
+                force_rebuild=True,
+                max_retries=2,
+            )
+
+    @patch("trellis.agent.executor._generate_module")
+    def test_build_records_platform_failure_on_code_generation_error(self, mock_gen_mod):
+        """Provider/code-generation failures should be recorded on the platform trace."""
+        mock_gen_mod.side_effect = RuntimeError("OpenAI text request failed after 1 attempts")
+
+        from trellis.agent import executor
+
+        events: list[tuple[str, dict | None]] = []
+        original_record_platform_event = executor._record_platform_event
+
+        def _tracking_record_platform_event(compiled_request, event, **kwargs):
+            events.append((event, kwargs.get("details")))
+            return original_record_platform_event(compiled_request, event, **kwargs)
+
+        with patch("trellis.agent.executor._record_platform_event", side_effect=_tracking_record_platform_event):
+            with pytest.raises(RuntimeError, match="OpenAI text request failed"):
+                executor.build_payoff(
+                    "European payer swaption",
+                    {"discount", "forward_rate", "black_vol"},
+                    force_rebuild=True,
+                    max_retries=1,
+                )
+
+        failure_events = [details for event, details in events if event == "builder_attempt_failed"]
+        assert failure_events
+        assert failure_events[-1]["reason"] == "code_generation"
+        assert failure_events[-1]["failure_count"] == 1
+
+    @patch("trellis.agent.executor._generate_module")
+    def test_build_reuses_existing_fx_analytical_module(self, mock_gen_mod):
+        """Vanilla FX analytical builds should reuse the deterministic adapter even on rebuilds."""
+        from trellis.agent.executor import build_payoff
+
+        payoff_cls = build_payoff(
+            "FX option (EURUSD): GK analytical vs MC",
+            force_rebuild=True,
+            validation="fast",
+            instrument_type="european_option",
+            preferred_method="analytical",
+        )
+
+        mod = sys.modules[payoff_cls.__module__]
+        spec_cls = mod.FXVanillaOptionSpec
+        spec = spec_cls(
+            notional=1_000_000,
+            strike=1.08,
+            expiry_date=date(2025, 11, 15),
+            fx_pair="EURUSD",
+            foreign_discount_key="EUR-DISC",
+        )
+        market_state = self._fx_market_state()
+        pv = price_payoff(payoff_cls(spec), market_state)
+        T = year_fraction(SETTLE, spec.expiry_date, spec.day_count)
+        expected = 1_000_000 * garman_kohlhagen_call(
+            1.10,
+            1.08,
+            0.18,
+            T,
+            market_state.discount.discount(T),
+            market_state.forecast_curves["EUR-DISC"].discount(T),
+        )
+
+        mock_gen_mod.assert_not_called()
+        assert payoff_cls.__name__ == "FXVanillaAnalyticalPayoff"
+        assert pv == pytest.approx(expected, rel=1e-10)
+
+    @patch("trellis.agent.executor._generate_module")
+    def test_build_reuses_existing_fx_monte_carlo_module(self, mock_gen_mod):
+        """Vanilla FX Monte Carlo builds should reuse the deterministic adapter even on rebuilds."""
+        from trellis.agent.executor import build_payoff
+
+        payoff_cls = build_payoff(
+            "FX option (EURUSD): GK analytical vs MC",
+            force_rebuild=True,
+            validation="fast",
+            instrument_type="european_option",
+            preferred_method="monte_carlo",
+        )
+
+        mod = sys.modules[payoff_cls.__module__]
+        spec_cls = mod.FXVanillaOptionSpec
+        spec = spec_cls(
+            notional=250_000,
+            strike=1.08,
+            expiry_date=date(2025, 11, 15),
+            fx_pair="EURUSD",
+            foreign_discount_key="EUR-DISC",
+            n_paths=15000,
+            n_steps=96,
+        )
+        market_state = self._fx_market_state()
+        pv = price_payoff(payoff_cls(spec), market_state)
+        T = year_fraction(SETTLE, spec.expiry_date, spec.day_count)
+        expected = 250_000 * garman_kohlhagen_call(
+            1.10,
+            1.08,
+            0.18,
+            T,
+            market_state.discount.discount(T),
+            market_state.forecast_curves["EUR-DISC"].discount(T),
+        )
+
+        mock_gen_mod.assert_not_called()
+        assert payoff_cls.__name__ == "FXVanillaMonteCarloPayoff"
+        assert pv == pytest.approx(expected, rel=0.06)
+
+    @patch("trellis.agent.executor._generate_module")
+    @patch("trellis.agent.executor._design_spec")
+    def test_build_retries_after_semantic_validation_failures(
+        self,
+        mock_design_spec,
+        mock_gen_mod,
+        tmp_path,
+    ):
+        """Semantically invalid code is rejected before module write and retried."""
+        mock_design_spec.return_value = AMERICAN_SPEC_SCHEMA
+        mock_gen_mod.side_effect = [
+            BAD_AMERICAN_SEMANTIC_MODULE_CODE,
+            GOOD_AMERICAN_SEMANTIC_MODULE_CODE,
+        ]
+
+        from trellis.agent.executor import build_payoff
+
+        target_path = tmp_path / "american_option_temp.py"
+
+        def _write_to_temp(_module_path, content):
+            target_path.write_text(content)
+            return target_path
+
+        with patch(
+            "trellis.agent.executor.write_module",
+            side_effect=_write_to_temp,
+        ) as mock_write_module:
+            cls = build_payoff(
+                "American put option on equity",
+                {"discount", "black_vol"},
+                instrument_type="american_option",
+                force_rebuild=True,
+                validation="fast",
+                max_retries=3,
+            )
+
+        assert cls.__name__ == "AmericanOptionPayoff"
+        assert mock_gen_mod.call_count == 2
+        assert mock_write_module.call_count == 1
+
+    @patch("trellis.agent.executor._generate_module")
+    @patch("trellis.agent.executor._design_spec")
+    def test_rebuilt_american_payoff_prices_plausibly(
+        self,
+        mock_design_spec,
+        mock_gen_mod,
+        tmp_path,
+    ):
+        """A rebuilt American payoff follows the LSM route and produces a sane price."""
+        mock_design_spec.return_value = AMERICAN_SPEC_SCHEMA
+        mock_gen_mod.return_value = GOOD_AMERICAN_SEMANTIC_MODULE_CODE
+
+        from trellis.agent.executor import build_payoff
+
+        target_path = tmp_path / "american_option_temp.py"
+
+        def _write_to_temp(_module_path, content):
+            target_path.write_text(content)
+            return target_path
+
+        with patch(
+            "trellis.agent.executor.write_module",
+            side_effect=_write_to_temp,
+        ):
+            payoff_cls = build_payoff(
+                "American put option on equity",
+                {"discount", "black_vol"},
+                instrument_type="american_option",
+                force_rebuild=True,
+                validation="fast",
+                max_retries=1,
+            )
+
+        mod = sys.modules[payoff_cls.__module__]
+        spec = mod.AmericanPutEquitySpec(
+            spot=100.0,
+            strike=100.0,
+            expiry_date=date(2025, 11, 15),
+        )
+        market_state = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.05),
+            vol_surface=FlatVol(0.20),
+        )
+
+        pv = price_payoff(payoff_cls(spec), market_state)
+        assert pv > 5.0
+        assert pv < 8.0
+
+    @patch("trellis.agent.executor._generate_module")
+    def test_build_aborts_when_primitive_plan_has_blockers(self, mock_gen_mod):
+        """Unsupported routes fail before code generation when primitive blockers are known."""
+        from trellis.agent.executor import build_payoff
+
+        with pytest.raises(RuntimeError, match="primitive planning blockers"):
+            build_payoff(
+                "American Asian barrier option under Heston with early exercise",
+                {"discount", "black_vol"},
+                force_rebuild=True,
+                validation="fast",
+                max_retries=1,
+            )
+
+        mock_gen_mod.assert_not_called()
+
+    @patch("trellis.agent.executor._generate_module")
+    @patch("trellis.agent.executor._design_spec")
+    def test_rebuilt_bermudan_rate_tree_payoff_prices_plausibly(
+        self,
+        mock_design_spec,
+        mock_gen_mod,
+        tmp_path,
+    ):
+        """A rebuilt Bermudan swaption follows the rate-tree route and prices near the task reference."""
+        mock_design_spec.return_value = BERMUDAN_SPEC_SCHEMA
+        mock_gen_mod.return_value = GOOD_BERMUDAN_RATE_TREE_MODULE_CODE
+
+        from trellis.agent.executor import build_payoff
+
+        target_path = tmp_path / "bermudan_swaption_temp.py"
+
+        def _write_to_temp(_module_path, content):
+            target_path.write_text(content)
+            return target_path
+
+        with patch(
+            "trellis.agent.executor.write_module",
+            side_effect=_write_to_temp,
+        ):
+            payoff_cls = build_payoff(
+                "Bermudan swaption: tree vs LSM MC",
+                {"discount", "forward_rate", "black_vol"},
+                instrument_type="bermudan_swaption",
+                force_rebuild=True,
+                validation="fast",
+                max_retries=1,
+            )
+
+        mod = sys.modules[payoff_cls.__module__]
+        spec = mod.BermudanSwaptionSpec(
+            notional=100.0,
+            strike=0.05,
+            exercise_dates="2025-11-15,2026-11-15,2027-11-15,2028-11-15,2029-11-15",
+            swap_end=date(2030, 11, 15),
+        )
+        market_state = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.05, max_tenor=31.0),
+            vol_surface=FlatVol(0.20),
+        )
+        pv = price_payoff(payoff_cls(spec), market_state)
+        assert pv > 1.0
+        assert pv < 4.0

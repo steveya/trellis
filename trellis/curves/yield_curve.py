@@ -20,6 +20,7 @@ class YieldCurve:
     """
 
     def __init__(self, tenors, rates):
+        """Store tenor and zero-rate grids for interpolation-based discounting."""
         self.tenors = np.asarray(tenors, dtype=float)
         self.rates = np.asarray(rates, dtype=float)
 

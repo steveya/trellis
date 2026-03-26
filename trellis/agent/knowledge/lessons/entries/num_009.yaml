@@ -1,0 +1,29 @@
+id: num_009
+title: Undefined tree constructor 'crr_tree'
+severity: critical
+category: numerical
+status: candidate
+confidence: 0.4
+created: '2026-03-25T11:28:00.085671'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - discounting
+  - vol_surface_dependence
+  - backward_induction
+  instrument: []
+  error_signature: null
+symptom: 'NameError raised with message containing "crr_tree" (e.g. NameError: name
+  ''crr_tree'' is not defined).'
+root_cause: The code referenced a symbol that doesn't exist in the available namespace
+  (wrong or missing import or incorrect constructor name), often caused by guessing
+  module/class names instead of using exact library API. This can also surface when
+  a local implementation file was not included or the expected class was renamed.
+fix: Use the exact import path and symbol name from the library documentation (or
+  include the correct implementation); verify the module exports the constructor before
+  using it. Add unit tests that import and instantiate the tree class before running
+  full pricing.
+validation: Discovered during build (attempt 0)

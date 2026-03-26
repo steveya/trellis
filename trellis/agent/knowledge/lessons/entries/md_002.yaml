@@ -1,0 +1,26 @@
+id: md_002
+title: COS method overflow with wide truncation
+severity: high
+category: market_data
+status: promoted
+confidence: 1.0
+version: ''
+created: ''
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - cos_method
+  instrument:
+  - any
+  error_signature: null
+symptom: NaN or Inf from COS method; RuntimeWarning about overflow in exp()
+root_cause: 'Default symmetric truncation [-L, L] may not contain the density when
+  there''s high drift or long maturity, causing overflow.
+
+  '
+fix: 'Center truncation on first cumulant: a = c1 - L*sqrt(c2), b = c1 + L*sqrt(c2)
+  where c1 = (r-q-0.5σ²)T, c2 = σ²T.
+
+  '
+validation: ''

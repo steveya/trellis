@@ -1,0 +1,25 @@
+id: fd_003
+title: Missing pde_solver module import
+severity: critical
+category: finite_differences
+status: archived
+confidence: 0.4
+created: '2026-03-23T23:02:37.397041'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - pde_grid
+  instrument: []
+  error_signature: null
+symptom: The system raised a ModuleNotFound error for 'trellis.models.pdesolvers'.
+root_cause: This happened because the pde_solver method was expected to be present
+  but was missing a proper module implementation or data contract, leading to unresolved
+  references during the build.
+fix: Implement the missing 'pde_solver' module with correct data contracts and ensure
+  import paths match the project's structure.
+validation: Discovered during build (attempt 0)
+archive_reason: Superseded by con_001 (authoritative import registry)

@@ -1,0 +1,58 @@
+- id: path_dependent_early_exercise_under_stochastic_vol
+  category: numerical_substrate_gap
+  primitive_kind: exercise_control
+  severity: critical
+  summary: >-
+    Trellis does not yet have a validated exercise/control primitive for
+    path-dependent early exercise under stochastic volatility.
+  target_package: trellis.models.exercise
+  suggested_modules:
+    - trellis.models.exercise.regression_control
+    - trellis.models.processes.heston
+  required_tests:
+    - tests/test_models/test_generalized_methods.py
+    - tests/test_tasks/test_t07_american_put_3way.py
+  docs_to_update:
+    - docs/api/models.rst
+    - docs/migration_notes.md
+  knowledge_files_to_update:
+    - trellis/agent/knowledge/canonical/cookbooks.yaml
+    - trellis/agent/knowledge/canonical/method_requirements.yaml
+    - trellis/agent/knowledge/canonical/api_map.yaml
+
+- id: path_dependent_early_exercise
+  category: numerical_substrate_gap
+  primitive_kind: exercise_control
+  severity: high
+  summary: >-
+    Trellis does not yet have a validated exercise/control primitive for
+    path-dependent early exercise in the selected model family.
+  target_package: trellis.models.exercise
+  suggested_modules:
+    - trellis.models.exercise.regression_control
+  required_tests:
+    - tests/test_models/test_generalized_methods.py
+  docs_to_update:
+    - docs/api/models.rst
+  knowledge_files_to_update:
+    - trellis/agent/knowledge/canonical/cookbooks.yaml
+    - trellis/agent/knowledge/canonical/method_requirements.yaml
+
+- id: exercise_under_stochastic_vol
+  category: numerical_substrate_gap
+  primitive_kind: exercise_control
+  severity: high
+  summary: >-
+    Trellis does not yet have a validated early-exercise primitive under
+    stochastic-volatility dynamics for this product family.
+  target_package: trellis.models.exercise
+  suggested_modules:
+    - trellis.models.exercise.regression_control
+    - trellis.models.processes.heston
+  required_tests:
+    - tests/test_models/test_generalized_methods.py
+  docs_to_update:
+    - docs/api/models.rst
+  knowledge_files_to_update:
+    - trellis/agent/knowledge/canonical/cookbooks.yaml
+    - trellis/agent/knowledge/canonical/method_requirements.yaml

@@ -36,10 +36,12 @@ class ValidationReport:
 
     @property
     def critical_findings(self) -> list[ValidationFinding]:
+        """Return the subset of findings marked ``critical``."""
         return [f for f in self.findings if f.severity == "critical"]
 
     @property
     def high_findings(self) -> list[ValidationFinding]:
+        """Return the subset of findings marked ``high``."""
         return [f for f in self.findings if f.severity == "high"]
 
     @property
@@ -48,6 +50,7 @@ class ValidationReport:
         return len(self.critical_findings) + len(self.high_findings) > 0
 
     def summary(self) -> str:
+        """Return a compact human-readable status line summarizing severities."""
         counts = {}
         for f in self.findings:
             counts[f.severity] = counts.get(f.severity, 0) + 1

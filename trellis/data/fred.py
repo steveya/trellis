@@ -33,11 +33,13 @@ class FredDataProvider(BaseDataProvider):
     """
 
     def __init__(self, api_key: str | None = None):
+        """Store the API key and initialize the on-disk response cache."""
         import os
         self.api_key = api_key or os.environ.get("FRED_API_KEY", "")
         self._cache = DiskCache()
 
     def fetch_yields(self, as_of: date | None = None) -> dict[float, float]:
+        """Fetch or cache Treasury constant-maturity yields from FRED."""
         as_of = as_of or date.today()
         cached = self._cache.get("fred_yields", as_of)
         if cached is not None:

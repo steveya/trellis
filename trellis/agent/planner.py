@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 
-from trellis.core.capabilities import analyze_gap
+from trellis.core.capabilities import analyze_gap, normalize_capability_name
 
 
 # ---------------------------------------------------------------------------
@@ -32,6 +33,7 @@ class SpecSchema:
 
 @dataclass(frozen=True)
 class BuildStep:
+    """One ordered engineering task in the deterministic build plan."""
     module_path: str
     description: str
     depends_on: tuple[str, ...] = ()
@@ -41,6 +43,7 @@ class BuildStep:
 
 @dataclass(frozen=True)
 class BuildPlan:
+    """Deterministic build plan plus gap-analysis context for one product."""
     steps: list[BuildStep]
     description: str
     payoff_class_name: str
@@ -159,6 +162,29 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
         ],
     ),
+    "basket_option": SpecSchema(
+        class_name="BasketOptionPayoff",
+        spec_name="BasketOptionSpec",
+        requirements=["discount", "spot"],
+        fields=[
+            FieldDef("notional", "float", "Notional / number of basket units"),
+            FieldDef("underliers", "str", "Comma-separated basket underlier names"),
+            FieldDef("spots", "str", "Comma-separated current spots aligned to underliers"),
+            FieldDef("strike", "float", "Basket strike"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("weights", "str | None", "Comma-separated basket weights aligned to underliers", "None"),
+            FieldDef("vols", "str | None", "Comma-separated volatilities aligned to underliers", "None"),
+            FieldDef("correlation", "str", "Correlation matrix encoded as semicolon-separated rows"),
+            FieldDef("dividend_yields", "str | None", "Comma-separated dividend yields aligned to underliers", "None"),
+            FieldDef("basket_style", "str", "Payoff style: 'weighted_sum', 'spread', 'best_of', or 'worst_of'", "'weighted_sum'"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("averaging_type", "str | None", "Optional averaging style: None, 'arithmetic', or 'geometric'", "None"),
+            FieldDef("n_observations", "int | None", "Optional number of observation dates for averaging or autocall logic", "None"),
+            FieldDef("barrier_level", "float | None", "Optional basket-level barrier", "None"),
+            FieldDef("barrier_direction", "str | None", "Optional barrier direction: 'up' or 'down'", "None"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+        ],
+    ),
     "cdo": SpecSchema(
         class_name="CDOTranchePayoff",
         spec_name="CDOTrancheSpec",
@@ -205,6 +231,81 @@ STATIC_SPECS: dict[str, SpecSchema] = {
     ),
 }
 
+SPECIALIZED_SPECS: dict[str, SpecSchema] = {
+    "fx_vanilla_analytical": SpecSchema(
+        class_name="FXVanillaAnalyticalPayoff",
+        spec_name="FXVanillaOptionSpec",
+        requirements=["discount", "forward_rate", "black_vol", "fx"],
+        fields=[
+            FieldDef("notional", "float", "Option notional in foreign units"),
+            FieldDef("strike", "float", "Strike in domestic currency per unit of foreign currency"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("fx_pair", "str", "FX quote key such as 'EURUSD'"),
+            FieldDef("foreign_discount_key", "str", "Foreign discount curve key such as 'EUR-DISC'"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+        ],
+    ),
+    "fx_vanilla_monte_carlo": SpecSchema(
+        class_name="FXVanillaMonteCarloPayoff",
+        spec_name="FXVanillaOptionSpec",
+        requirements=["discount", "forward_rate", "black_vol", "fx"],
+        fields=[
+            FieldDef("notional", "float", "Option notional in foreign units"),
+            FieldDef("strike", "float", "Strike in domestic currency per unit of foreign currency"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("fx_pair", "str", "FX quote key such as 'EURUSD'"),
+            FieldDef("foreign_discount_key", "str", "Foreign discount curve key such as 'EUR-DISC'"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+            FieldDef("n_paths", "int", "Number of Monte Carlo paths", "50000"),
+            FieldDef("n_steps", "int", "Number of Monte Carlo time steps", "252"),
+        ],
+    ),
+    "european_option_analytical": SpecSchema(
+        class_name="EuropeanOptionAnalyticalPayoff",
+        spec_name="EuropeanOptionSpec",
+        requirements=["discount", "black_vol"],
+        fields=[
+            FieldDef("notional", "float", "Notional / number of shares"),
+            FieldDef("spot", "float", "Current spot price"),
+            FieldDef("strike", "float", "Option strike price"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+        ],
+    ),
+    "european_option_monte_carlo": SpecSchema(
+        class_name="EuropeanOptionMonteCarloPayoff",
+        spec_name="EuropeanOptionSpec",
+        requirements=["discount", "black_vol"],
+        fields=[
+            FieldDef("notional", "float", "Notional / number of shares"),
+            FieldDef("spot", "float", "Current spot price"),
+            FieldDef("strike", "float", "Option strike price"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+            FieldDef("n_paths", "int", "Number of Monte Carlo paths", "50000"),
+            FieldDef("n_steps", "int", "Number of Monte Carlo time steps", "252"),
+        ],
+    ),
+    "european_local_vol_monte_carlo": SpecSchema(
+        class_name="EuropeanLocalVolMonteCarloPayoff",
+        spec_name="EuropeanLocalVolOptionSpec",
+        requirements=["discount", "spot", "local_vol"],
+        fields=[
+            FieldDef("notional", "float", "Notional / number of shares"),
+            FieldDef("strike", "float", "Option strike price"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+            FieldDef("n_paths", "int", "Number of Monte Carlo paths", "50000"),
+            FieldDef("n_steps", "int", "Number of Monte Carlo time steps", "252"),
+        ],
+    ),
+}
+
 
 # ---------------------------------------------------------------------------
 # Planning functions
@@ -213,10 +314,26 @@ STATIC_SPECS: dict[str, SpecSchema] = {
 def plan_build(
     payoff_description: str,
     requirements: set[str],
-    model: str = "o3-mini",
+    model: str = "gpt-5-mini",
+    instrument_type: str | None = None,
+    preferred_method: str | None = None,
 ) -> BuildPlan:
     """Create a build plan. Uses static specs for known instruments."""
-    satisfied, missing = analyze_gap(requirements)
+    normalized_by_requirement = {
+        requirement: normalize_capability_name(requirement)
+        for requirement in requirements
+    }
+    satisfied_canonical, missing_canonical = analyze_gap(requirements)
+    satisfied = {
+        requirement
+        for requirement, canonical in normalized_by_requirement.items()
+        if canonical in satisfied_canonical
+    }
+    missing = {
+        requirement
+        for requirement, canonical in normalized_by_requirement.items()
+        if canonical in missing_canonical
+    }
 
     if missing:
         raise NotImplementedError(
@@ -224,7 +341,14 @@ def plan_build(
             f"Available: {sorted(satisfied)}"
         )
 
-    return _plan_static(payoff_description, requirements, satisfied, missing)
+    return _plan_static(
+        payoff_description,
+        requirements,
+        satisfied,
+        missing,
+        instrument_type=instrument_type,
+        preferred_method=preferred_method,
+    )
 
 
 def _plan_static(
@@ -232,21 +356,38 @@ def _plan_static(
     requirements: set[str],
     satisfied: set[str],
     missing: set[str],
+    *,
+    instrument_type: str | None = None,
+    preferred_method: str | None = None,
 ) -> BuildPlan:
     """Static planning with deterministic spec schemas for known instruments."""
     desc_lower = description.lower()
+    normalized_requirements = {normalize_capability_name(requirement) for requirement in requirements}
     spec_schema = None
     class_name = None
     module = None
 
-    # Match against STATIC_SPECS — longer keys first to avoid partial matches
-    for key in sorted(STATIC_SPECS.keys(), key=len, reverse=True):
-        if key.replace("_", " ") in desc_lower or key in desc_lower:
-            spec_schema = STATIC_SPECS[key]
-            class_name = spec_schema.class_name
-            module_name = class_name.lower().replace("payoff", "")
-            module = f"instruments/_agent/{module_name}.py"
-            break
+    specialized = _select_specialized_spec(
+        description=description,
+        instrument_type=instrument_type,
+        normalized_requirements=normalized_requirements,
+        preferred_method=preferred_method,
+    )
+    if specialized is not None:
+        spec_schema = specialized
+        class_name = spec_schema.class_name
+        module_name = class_name.lower().replace("payoff", "")
+        module = f"instruments/_agent/{module_name}.py"
+
+    if spec_schema is None:
+        # Match against STATIC_SPECS — longer keys first to avoid partial matches
+        for key in sorted(STATIC_SPECS.keys(), key=len, reverse=True):
+            if key.replace("_", " ") in desc_lower or key in desc_lower:
+                spec_schema = STATIC_SPECS[key]
+                class_name = spec_schema.class_name
+                module_name = class_name.lower().replace("payoff", "")
+                module = f"instruments/_agent/{module_name}.py"
+                break
 
     if class_name is None:
         words = description.split()[:2]
@@ -271,3 +412,68 @@ def _plan_static(
         missing=frozenset(missing),
         spec_schema=spec_schema,
     )
+
+
+def _select_specialized_spec(
+    *,
+    description: str,
+    instrument_type: str | None,
+    normalized_requirements: set[str],
+    preferred_method: str | None,
+) -> SpecSchema | None:
+    """Return a route-aware deterministic schema for common vanilla option families."""
+    desc_lower = description.lower()
+    normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
+    method_hint = _infer_method_hint(desc_lower, preferred_method=preferred_method)
+
+    if _looks_like_fx_vanilla(description, desc_lower, normalized_requirements):
+        if method_hint == "monte_carlo":
+            return SPECIALIZED_SPECS["fx_vanilla_monte_carlo"]
+        return SPECIALIZED_SPECS["fx_vanilla_analytical"]
+
+    if "local vol" in desc_lower or "local_vol_surface" in normalized_requirements:
+        if normalized_instrument == "european_option" or "european" in desc_lower:
+            return SPECIALIZED_SPECS["european_local_vol_monte_carlo"]
+
+    if normalized_instrument == "european_option" or (
+        "european" in desc_lower and "option" in desc_lower
+    ):
+        if method_hint == "monte_carlo":
+            return SPECIALIZED_SPECS["european_option_monte_carlo"]
+        return SPECIALIZED_SPECS["european_option_analytical"]
+
+    return None
+
+
+def _looks_like_fx_vanilla(
+    description: str,
+    desc_lower: str,
+    normalized_requirements: set[str],
+) -> bool:
+    """Whether the build request clearly targets a vanilla FX option route."""
+    if {"fx_rates", "forward_curve"} <= normalized_requirements:
+        return True
+    fx_tokens = ("fx option", "fx vanilla", "forex option", "garman-kohlhagen", "garman kohlhagen")
+    if any(token in desc_lower for token in fx_tokens):
+        return True
+    return any(re.fullmatch(r"[A-Z]{6}", token) for token in re.findall(r"\b[A-Za-z]{6}\b", description))
+
+
+def _infer_method_hint(desc_lower: str, *, preferred_method: str | None = None) -> str | None:
+    """Infer the preferred route family from the build description."""
+    if preferred_method:
+        normalized = preferred_method.strip().lower().replace("-", "_").replace(" ", "_")
+        if normalized in {"monte_carlo", "mc"}:
+            return "monte_carlo"
+        if normalized in {"analytical", "garman_kohlhagen", "gk_analytical"}:
+            return "analytical"
+    preferred_match = re.search(r"preferred method family:\s*([a-zA-Z_]+)", desc_lower)
+    if preferred_match:
+        return preferred_match.group(1).strip().lower()
+    if "implementation target" in desc_lower and "mc" in desc_lower:
+        return "monte_carlo"
+    if "monte carlo" in desc_lower or " monte_carlo" in desc_lower:
+        return "monte_carlo"
+    if "analytical" in desc_lower or "garman_kohlhagen" in desc_lower:
+        return "analytical"
+    return None

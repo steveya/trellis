@@ -1,0 +1,120 @@
+E21:
+  outcome_class: compare_ready
+  required_mock_capabilities:
+    - discount_curve
+    - black_vol_surface
+    - spot
+  comparison_targets:
+    - crr_tree
+    - bs_pde
+    - mc_exact
+    - fft
+    - cos
+    - black_scholes
+  reference_target: black_scholes
+  forbidden_failure_patterns:
+    - MissingCapabilityError
+    - No yield data returned
+
+E22:
+  outcome_class: compare_ready
+  required_mock_capabilities:
+    - discount_curve
+    - forward_curve
+    - black_vol_surface
+  comparison_targets:
+    - mc_rate_cap
+    - black76_cap
+  reference_target: black76_cap
+  forbidden_failure_patterns:
+    - MissingCapabilityError
+
+E23:
+  outcome_class: honest_block
+  required_mock_capabilities:
+    - discount_curve
+    - local_vol_surface
+    - spot
+  comparison_targets:
+    - local_vol_pde
+    - local_vol_mc
+  expected_blocker_categories:
+    - missing_foundational_primitive
+    - unsupported_route
+  forbidden_failure_patterns:
+    - MissingCapabilityError
+
+E24:
+  outcome_class: honest_block
+  required_mock_capabilities:
+    - discount_curve
+    - jump_parameters
+    - spot
+  comparison_targets:
+    - merton_mc
+    - merton_fft
+  expected_blocker_categories:
+    - missing_foundational_primitive
+    - unsupported_route
+  forbidden_failure_patterns:
+    - MissingCapabilityError
+
+E25:
+  outcome_class: honest_block
+  required_mock_capabilities:
+    - discount_curve
+    - fx_rates
+  comparison_targets:
+    - gk_mc
+    - garman_kohlhagen
+  expected_blocker_categories:
+    - missing_foundational_primitive
+    - unsupported_route
+  forbidden_failure_patterns:
+    - MissingCapabilityError
+
+E26:
+  outcome_class: honest_block
+  required_mock_capabilities:
+    - credit_curve
+    - discount_curve
+  comparison_targets:
+    - gaussian_copula
+    - mc_default_times
+  expected_blocker_categories:
+    - missing_foundational_primitive
+    - unsupported_route
+  forbidden_failure_patterns:
+    - MissingCapabilityError
+
+E27:
+  outcome_class: honest_block
+  required_mock_capabilities:
+    - discount_curve
+    - black_vol_surface
+    - model_parameters
+    - spot
+  comparison_targets:
+    - american_pathdep_pde
+    - american_pathdep_mc
+    - american_pathdep_fft
+  expected_blocker_categories:
+    - unsupported_composite
+    - missing_foundational_primitive
+  forbidden_failure_patterns:
+    - MissingCapabilityError
+
+E28:
+  outcome_class: compare_ready
+  required_mock_capabilities:
+    - discount_curve
+    - black_vol_surface
+    - spot
+  comparison_targets:
+    - fft
+    - cos
+    - black_scholes
+  reference_target: black_scholes
+  must_keep_targets_distinct: true
+  forbidden_failure_patterns:
+    - MissingCapabilityError

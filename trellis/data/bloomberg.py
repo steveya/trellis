@@ -14,6 +14,7 @@ class BloombergDataProvider(BaseDataProvider):
     """
 
     def __init__(self):
+        """Validate that the optional Bloomberg SDK dependency is installed."""
         try:
             import blpapi  # type: ignore[import-untyped]
         except ImportError:
@@ -23,6 +24,7 @@ class BloombergDataProvider(BaseDataProvider):
             )
 
     def fetch_yields(self, as_of: date | None = None) -> dict[float, float]:
+        """Placeholder for Bloomberg yield retrieval; currently not implemented."""
         raise NotImplementedError(
             "Bloomberg integration is a placeholder — "
             "implement with your terminal's blpapi session."

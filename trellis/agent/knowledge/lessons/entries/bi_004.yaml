@@ -1,0 +1,33 @@
+id: bi_004
+title: Exercise value must include accrued coupon at call dates
+severity: high
+category: backward_induction
+status: promoted
+confidence: 1.0
+version: ''
+created: ''
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  - coupons
+  - early_exercise
+  instrument:
+  - callable_bond
+  - puttable_bond
+  error_signature: null
+symptom: 1-2 points below FinancePy/QuantLib; gap largest at low rates where call
+  option value is high
+root_cause: 'cashflow_at_node adds coupon to continuation BEFORE exercise decision.
+  If exercise_value = par only, then min(continuation+coupon, par) = par and the issuer
+  ''steals'' the coupon by calling. The correct comparison is min(continuation+coupon,
+  par+coupon).
+
+  '
+fix: 'exercise_value = call_price + coupon_at_step, where coupon_at_step is the discrete
+  coupon at that step from the coupon schedule (0 if the call date is not a coupon
+  date).
+
+  '
+validation: ''

@@ -28,6 +28,7 @@ class SABRProcess:
     """
 
     def __init__(self, alpha: float, beta: float, rho: float, nu: float):
+        """Store the alpha, beta, rho, and nu parameters of the SABR model."""
         self.alpha = alpha
         self.beta = beta
         self.rho = rho

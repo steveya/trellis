@@ -1,0 +1,27 @@
+id: cal_001
+title: Uncalibrated rate tree
+severity: critical
+category: calibration
+status: promoted
+confidence: 1.0
+version: ''
+created: ''
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  instrument:
+  - any
+  error_signature: null
+symptom: Price wrong by 5-50%; tree ZCB price ≠ curve.discount(T) by more than 1e-6
+root_cause: 'An uncalibrated tree uses arbitrary rates that don''t match the market
+  term structure. Every instrument priced on it will be wrong.
+
+  '
+fix: 'Always pass discount_curve to build_rate_lattice() or build_generic_lattice().
+  The analytical calibration is exact to machine precision — there is no reason to
+  skip it.
+
+  '
+validation: ''

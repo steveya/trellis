@@ -1,0 +1,24 @@
+id: con_003
+title: CF convention inconsistency
+severity: critical
+category: convention
+status: candidate
+confidence: 0.4
+created: '2026-03-23T23:31:28.585873'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - characteristic_function
+  - cos_method
+  instrument: []
+  error_signature: null
+symptom: Pricing outputs are inconsistent due to mismatched log conventions in the
+  characteristic function.
+root_cause: This issue arises when the characteristic function uses log(S_T) instead
+  of log(S_T/S0), leading to misinterpretation of the underlying asset dynamics.
+fix: Ensure a standardized convention by adjusting the characteristic function input
+  to consistently use log(S_T/S0) or document the choice clearly across the model.
+validation: Discovered during build (attempt 0)

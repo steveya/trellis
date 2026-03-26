@@ -10,7 +10,22 @@ np = get_numpy()
 
 
 class StochasticProcess(ABC):
-    """Base class for 1D stochastic processes: dX = mu(X,t)dt + sigma(X,t)dW."""
+    """Base class for stochastic processes.
+
+    Scalar processes use state vectors of shape ``(n_paths,)``. Vector-state
+    processes use ``(n_paths, state_dim)`` and may expose ``factor_dim``
+    independent Brownian drivers.
+    """
+
+    @property
+    def state_dim(self) -> int:
+        """Return the process state dimension."""
+        return 1
+
+    @property
+    def factor_dim(self) -> int:
+        """Return the number of independent Brownian factors."""
+        return self.state_dim
 
     @abstractmethod
     def drift(self, x: float, t: float) -> float:

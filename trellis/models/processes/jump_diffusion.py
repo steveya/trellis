@@ -27,6 +27,7 @@ class MertonJumpDiffusion(StochasticProcess):
 
     def __init__(self, mu: float, sigma: float, lam: float,
                  jump_mean: float, jump_vol: float):
+        """Store diffusion and jump parameters and precompute the jump compensator."""
         self.mu = mu
         self.sigma = sigma
         self.lam = lam
@@ -36,9 +37,11 @@ class MertonJumpDiffusion(StochasticProcess):
         self.k = np.exp(jump_mean + 0.5 * jump_vol ** 2) - 1
 
     def drift(self, x, t):
+        """Return the compensated drift ``(mu - lambda k) * S_t``."""
         return (self.mu - self.lam * self.k) * x
 
     def diffusion(self, x, t):
+        """Return the diffusion loading ``sigma * S_t``."""
         return self.sigma * x
 
     def sample_jump(self, dt: float, rng=None) -> float:

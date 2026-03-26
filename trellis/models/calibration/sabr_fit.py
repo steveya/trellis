@@ -38,6 +38,7 @@ def calibrate_sabr(
     market_vols = raw_np.asarray(market_vols)
 
     def objective(params):
+        """Return the squared-error objective for one SABR parameter vector."""
         alpha, rho, nu = params
         if alpha <= 0 or nu <= 0 or abs(rho) >= 1:
             return 1e10

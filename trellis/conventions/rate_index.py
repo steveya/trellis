@@ -13,6 +13,7 @@ from trellis.conventions.day_count import DayCountConvention
 
 
 class Compounding(Enum):
+    """Compounding rule used when translating index fixings into accrual factors."""
     SIMPLE = "simple"
     CONTINUOUS = "continuous"
     COMPOUNDED_DAILY = "compounded_daily"
@@ -20,6 +21,7 @@ class Compounding(Enum):
 
 
 class Currency(Enum):
+    """Supported ISO-like currency identifiers for rate-index conventions."""
     USD = "USD"
     EUR = "EUR"
     GBP = "GBP"

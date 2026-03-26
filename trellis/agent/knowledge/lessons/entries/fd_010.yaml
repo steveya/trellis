@@ -1,0 +1,34 @@
+id: fd_010
+title: LLM JSON parse failure on Crank-Nicolson Rannacher PDE build
+severity: critical
+category: finite_differences
+status: candidate
+confidence: 0.4
+created: '2026-03-25T18:42:20.013822'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260325_184220_build_a_pricer_for:_crank_nicolson_rannacher_smoothing_for_discontinuous_payoffs
+
+
+  implementation_target:_cn_standard
+
+  preferred_method_family:_pde_solver
+
+
+  implementation_target:_cn_standard_pde_solver.yaml'
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - pde_grid
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Build fails with 'Expecting value at line 1 column 1' JSON parse error from
+  LLM provider before any code is generated.
+root_cause: The LLM provider returned an empty or malformed response body, likely
+  due to prompt complexity or token limit issues when constructing a Crank-Nicolson
+  Rannacher smoothing PDE pricer with discontinuous payoffs.
+fix: Simplify the prompt or break the build into smaller sub-tasks; ensure the Rannacher
+  smoothing logic (initial fully-implicit steps before switching to CN) is described
+  concisely to avoid hitting token/response limits.
+validation: Discovered during build (attempt 0)

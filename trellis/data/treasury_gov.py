@@ -32,9 +32,11 @@ class TreasuryGovDataProvider(BaseDataProvider):
     """Fetch yields from fiscaldata.treasury.gov (no API key needed)."""
 
     def __init__(self):
+        """Initialize the on-disk response cache for Treasury.gov data."""
         self._cache = DiskCache()
 
     def fetch_yields(self, as_of: date | None = None) -> dict[float, float]:
+        """Fetch or cache Treasury average-interest-rate data from fiscaldata.gov."""
         as_of = as_of or date.today()
         cached = self._cache.get("treasury_gov_yields", as_of)
         if cached is not None:

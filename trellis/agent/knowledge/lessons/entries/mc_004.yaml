@@ -1,0 +1,26 @@
+id: mc_004
+title: MonteCarloEngine does not support method='lsm' — use separate LSM module
+severity: high
+category: monte_carlo
+status: promoted
+confidence: 1.0
+created: '2026-03-23T22:21:33.833693'
+version: trellis 0.6
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - early_exercise
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: MonteCarloEngine ignores 'lsm' method or raises error
+root_cause: MonteCarloEngine supports method='exact', 'euler', 'milstein', 'log_euler'
+  for path simulation schemes. LSM (Longstaff-Schwartz) is a separate pricing algorithm,
+  not a simulation scheme. For American options, simulate paths with MonteCarloEngine
+  then apply LSM regression separately.
+fix: 'For European: engine = MonteCarloEngine(process, n_paths=50000, method=''exact'');
+  result = engine.price(S0, T, payoff_fn, r). For American: simulate paths, then use
+  trellis.models.monte_carlo.lsm for optimal stopping via Longstaff-Schwartz regression.'
+validation: MonteCarloEngine accepts only simulation scheme methods

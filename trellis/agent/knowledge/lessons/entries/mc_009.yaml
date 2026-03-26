@@ -1,0 +1,27 @@
+id: mc_009
+title: Missing Monte Carlo implementation symbol
+severity: critical
+category: monte_carlo
+status: candidate
+confidence: 0.4
+created: '2026-03-25T11:42:24.826092'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''mc_exact'' is not defined'
+root_cause: The build attempted to instantiate an implementation target named 'mc_exact'
+  that does not exist or was not imported under that symbol (wrong module path or
+  missing implementation). The builder does not validate implementation-target existence
+  before use.
+fix: Provide and export a properly named 'mc_exact' implementation (or update the
+  builder mapping to the correct module/symbol). Add a pre-instantiation check and
+  unit test to ensure the chosen implementation target is defined; use exact import
+  paths rather than guessed names.
+validation: Discovered during build (attempt 0)

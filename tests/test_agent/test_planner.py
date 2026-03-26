@@ -73,6 +73,63 @@ class TestPlanStatic:
         assert plan.spec_schema is not None
         assert plan.spec_schema.class_name == "BarrierOptionPayoff"
 
+    def test_basket_option_has_spec(self):
+        plan = _plan_static(
+            "worst-of basket option on two equities",
+            {"discount", "spot"},
+            {"discount", "spot"},
+            set(),
+        )
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.class_name == "BasketOptionPayoff"
+
+    def test_fx_vanilla_description_gets_specialized_spec(self):
+        plan = _plan_static(
+            "Build a pricer for: FX option (EURUSD): GK analytical vs MC\n\nImplementation target: garman_kohlhagen\nPreferred method family: analytical",
+            {"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot"},
+            {"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot"},
+            set(),
+            instrument_type="european_option",
+        )
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.class_name == "FXVanillaAnalyticalPayoff"
+        assert plan.steps[0].module_path.endswith("fxvanillaanalytical.py")
+
+    def test_fx_vanilla_description_honors_preferred_method_for_monte_carlo_spec(self):
+        plan = _plan_static(
+            "Build a pricer for: FX option (EURUSD): GK analytical vs MC",
+            {"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot"},
+            {"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot"},
+            set(),
+            instrument_type="european_option",
+            preferred_method="monte_carlo",
+        )
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.class_name == "FXVanillaMonteCarloPayoff"
+        assert plan.steps[0].module_path.endswith("fxvanillamontecarlo.py")
+
+    def test_european_option_description_gets_specialized_spec(self):
+        plan = _plan_static(
+            "European call option on equity",
+            {"discount", "black_vol"},
+            {"discount", "black_vol"},
+            set(),
+            instrument_type="european_option",
+        )
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.class_name == "EuropeanOptionAnalyticalPayoff"
+
+    def test_local_vol_description_gets_deterministic_spec(self):
+        plan = _plan_static(
+            "Build a pricer for: European equity call under local vol: PDE vs MC",
+            {"discount_curve", "spot", "local_vol_surface"},
+            {"discount_curve", "spot", "local_vol_surface"},
+            set(),
+            instrument_type="european_option",
+        )
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.class_name == "EuropeanLocalVolMonteCarloPayoff"
+
 
 class TestPlanBuild:
 
@@ -88,6 +145,27 @@ class TestPlanBuild:
         assert isinstance(plan, BuildPlan)
         assert plan.spec_schema is not None
         assert plan.payoff_class_name == "SwaptionPayoff"
+
+    def test_fx_vanilla_route_uses_deterministic_spec_schema(self):
+        plan = plan_build(
+            "Build a pricer for: FX option (EURUSD): GK analytical vs MC\n\nImplementation target: garman_kohlhagen\nPreferred method family: analytical",
+            {"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot"},
+            instrument_type="european_option",
+        )
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.spec_name == "FXVanillaOptionSpec"
+        assert plan.payoff_class_name == "FXVanillaAnalyticalPayoff"
+
+    def test_fx_vanilla_route_uses_preferred_method_for_monte_carlo(self):
+        plan = plan_build(
+            "Build a pricer for: FX option (EURUSD): GK analytical vs MC",
+            {"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot"},
+            instrument_type="european_option",
+            preferred_method="monte_carlo",
+        )
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.spec_name == "FXVanillaOptionSpec"
+        assert plan.payoff_class_name == "FXVanillaMonteCarloPayoff"
 
     def test_plan_gap_analysis(self):
         plan = plan_build(

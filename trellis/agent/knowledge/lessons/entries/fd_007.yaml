@@ -1,0 +1,36 @@
+id: fd_007
+title: Log-space PDE for rate instruments requires special grid setup
+severity: critical
+category: finite_differences
+status: candidate
+confidence: 0.4
+created: '2026-03-25T18:39:35.040527'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260325_183935_build_a_pricer_for:_log_space_pde_for_rate_instruments_(avoid_negative_rates)
+
+
+  implementation_target:_log_space_pde
+
+  preferred_method_family:_pde_solver
+
+
+  implementation_target:_log_space_pde_pde_solver.yaml'
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - pde_grid
+  - discounting
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: Build fails with empty code output or JSON parse error when attempting log-space
+  PDE for rate instruments
+root_cause: The LLM failed to generate valid code for log-space PDE transformation
+  of rate instruments, likely because the log-transformation for interest rates (to
+  avoid negative rates) requires non-standard grid construction and boundary conditions
+  that differ from equity PDEs.
+fix: Use x = log(r) as the state variable, transform the PDE drift and diffusion terms
+  accordingly, and set absorbing or Neumann boundary conditions at the log-rate boundaries.
+  Ensure the grid maps back to positive rates via r = exp(x).
+validation: Discovered during build (attempt 0)

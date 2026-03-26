@@ -20,6 +20,7 @@ class AskResult:
     payoff_class: str
     matched_existing: bool          # True if we used an existing payoff
     details: dict | None = None     # instrument-specific details
+    analytics: object | None = None  # AnalyticsResult if measures were requested
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +92,7 @@ def match_payoff(term_sheet: TermSheet, settlement: date) -> tuple | None:
 
 
 def _match_bond(ts: TermSheet, p: dict, settlement: date):
+    """Map a parsed bond term sheet onto Trellis' deterministic cashflow bond payoff."""
     from trellis.instruments.bond import Bond
     from trellis.core.payoff import DeterministicCashflowPayoff
 
@@ -112,6 +114,7 @@ def _match_bond(ts: TermSheet, p: dict, settlement: date):
 
 
 def _match_cap(ts: TermSheet, p: dict, settlement: date, is_floor: bool):
+    """Map a parsed cap/floor term sheet onto the built-in Black-76 cap/floor payoff."""
     from trellis.instruments.cap import CapFloorSpec, CapPayoff, FloorPayoff
     from trellis.core.types import Frequency
 
@@ -143,6 +146,7 @@ def _match_cap(ts: TermSheet, p: dict, settlement: date, is_floor: bool):
 
 
 def _match_swap(ts: TermSheet, p: dict, settlement: date):
+    """Map a parsed swap term sheet onto the built-in fixed-vs-floating swap payoff."""
     from trellis.instruments.swap import SwapPayoff, SwapSpec
     from trellis.core.types import Frequency
 
@@ -199,6 +203,7 @@ def _match_swaption(ts: TermSheet, p: dict, settlement: date):
 def ask_session(
     description: str,
     session,
+    measures: list | None = None,
     model: str | None = None,
 ) -> AskResult:
     """Parse a natural-language description and price it.
@@ -218,24 +223,104 @@ def ask_session(
     """
     from trellis.engine.payoff_pricer import price_payoff
     from trellis.core.types import DayCountConvention
+    compiled_request = None
+    terminal_recorded = False
 
     # Step 1: Parse
     term_sheet = parse_term_sheet(description, session.settlement, model=model)
 
-    # Step 2: Match
-    match = match_payoff(term_sheet, session.settlement)
-
-    if match is not None:
-        payoff, requirements = match
-        # Step 3: Price
-        pv = session.price_payoff(payoff)
-        return AskResult(
-            price=pv,
-            term_sheet=term_sheet,
-            payoff_class=type(payoff).__name__,
-            matched_existing=True,
+    try:
+        from trellis.agent.platform_requests import (
+            compile_platform_request,
+            make_term_sheet_request,
         )
-    else:
+
+        request = make_term_sheet_request(
+            description=description,
+            term_sheet=term_sheet,
+            session=session,
+            measures=measures,
+            model=model,
+        )
+        compiled_request = compile_platform_request(request)
+        from trellis.agent.platform_traces import append_platform_trace_event
+
+        append_platform_trace_event(
+            compiled_request,
+            "request_compiled",
+            status="ok",
+            details={
+                "action": compiled_request.execution_plan.action,
+                "route_method": compiled_request.execution_plan.route_method,
+                "requires_build": compiled_request.execution_plan.requires_build,
+            },
+        )
+    except Exception:
+        compiled_request = None
+
+    try:
+        # Step 2: Match
+        match = match_payoff(term_sheet, session.settlement)
+
+        if (
+            compiled_request is not None
+            and compiled_request.execution_plan.action == "block"
+        ):
+            chunks = []
+            blocker_codes = []
+            if compiled_request.blocker_report is not None:
+                from trellis.agent.blocker_planning import render_blocker_report
+
+                blocker_codes = [
+                    blocker.id for blocker in compiled_request.blocker_report.blockers
+                ]
+                chunks.append(render_blocker_report(compiled_request.blocker_report))
+            if compiled_request.new_primitive_workflow is not None:
+                from trellis.agent.new_primitive_workflow import render_new_primitive_workflow
+
+                chunks.append(
+                    render_new_primitive_workflow(compiled_request.new_primitive_workflow)
+                )
+            from trellis.agent.platform_traces import record_platform_trace
+
+            record_platform_trace(
+                compiled_request,
+                success=False,
+                outcome="request_blocked",
+                details={"blocker_codes": blocker_codes},
+            )
+            terminal_recorded = True
+            raise RuntimeError(
+                "Request is blocked by missing foundational machinery:\n\n"
+                + "\n\n".join(chunks)
+            )
+
+        if match is not None:
+            payoff, requirements = match
+            # Step 3: Price (and optionally analyze)
+            pv = session.price_payoff(payoff)
+            analytics = session.analyze(payoff, measures=measures) if measures else None
+            try:
+                if compiled_request is not None:
+                    from trellis.agent.platform_traces import record_platform_trace
+
+                    record_platform_trace(
+                        compiled_request,
+                        success=True,
+                        outcome="ask_priced_existing",
+                        details={"payoff_class": type(payoff).__name__},
+                    )
+                    terminal_recorded = True
+            except Exception:
+                pass
+            return AskResult(
+                price=pv,
+                term_sheet=term_sheet,
+                payoff_class=type(payoff).__name__,
+                matched_existing=True,
+                analytics=analytics,
+            )
+
         # Step 3b: Quant agent selects method, then build and price
         from trellis.agent.executor import build_payoff
         from trellis.core.market_state import MarketState
@@ -251,32 +336,87 @@ def ask_session(
             fx_rates=session.fx_rates,
         )
 
+        try:
+            if compiled_request is not None:
+                from trellis.agent.platform_traces import append_platform_trace_event
+
+                append_platform_trace_event(
+                    compiled_request,
+                    "build_requested",
+                    status="info",
+                    details={"validation": "standard"},
+                )
+        except Exception:
+            pass
+
         payoff_cls = build_payoff(
             term_sheet.raw_description,
             requirements=None,  # let quant agent determine
             model=model,
             market_state=ms,
             instrument_type=term_sheet.instrument_type,
+            compiled_request=compiled_request,
         )
 
-        # Try to instantiate from parameters
+        # Try to instantiate the built payoff with test parameters
         from trellis.agent.executor import _make_test_payoff
         from trellis.agent.planner import plan_build
-        plan = plan_build(term_sheet.raw_description, requirements)
+        # Get requirements from the payoff class itself
+        reqs = set()
+        try:
+            dummy = payoff_cls.__new__(payoff_cls)
+            if hasattr(dummy, 'requirements'):
+                reqs = dummy.requirements
+        except Exception:
+            pass
+        reqs = reqs or _infer_requirements(term_sheet)
+
+        plan = plan_build(term_sheet.raw_description, reqs, model=model)
         spec_schema = plan.spec_schema
         if spec_schema:
             payoff = _make_test_payoff(payoff_cls, spec_schema, session.settlement)
         else:
-            # Fallback: the agent's spec should accept the parameters dict
             payoff = payoff_cls(term_sheet.parameters)
 
         pv = session.price_payoff(payoff)
+        analytics = session.analyze(payoff, measures=measures) if measures else None
+        try:
+            if compiled_request is not None:
+                from trellis.agent.platform_traces import record_platform_trace
+
+                record_platform_trace(
+                    compiled_request,
+                    success=True,
+                    outcome="ask_built_and_priced",
+                    details={"payoff_class": payoff_cls.__name__},
+                )
+                terminal_recorded = True
+        except Exception:
+            pass
         return AskResult(
             price=pv,
             term_sheet=term_sheet,
             payoff_class=payoff_cls.__name__,
             matched_existing=False,
+            analytics=analytics,
         )
+    except Exception as exc:
+        if compiled_request is not None and not terminal_recorded:
+            try:
+                from trellis.agent.platform_traces import record_platform_trace
+
+                record_platform_trace(
+                    compiled_request,
+                    success=False,
+                    outcome="ask_failed",
+                    details={
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    },
+                )
+            except Exception:
+                pass
+        raise
 
 
 def _infer_requirements(ts: TermSheet) -> set[str]:

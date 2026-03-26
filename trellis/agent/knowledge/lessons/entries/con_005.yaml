@@ -1,0 +1,23 @@
+id: con_005
+title: Exact Import Paths Required
+severity: critical
+category: convention
+status: archived
+confidence: 0.4
+created: '2026-03-23T23:46:45.249875'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: ModuleNotFound error occurred when trying to import an assumed module.
+root_cause: The code attempted to import 'trellis.models.trees.coxRossRubinstein'
+  based on an incorrect assumption about the package's structure.
+fix: Review the trellis documentation to determine the precise import path and update
+  the code accordingly.
+validation: Discovered during build (attempt 0)
+archive_reason: Superseded by con_001 (authoritative import registry)

@@ -1,0 +1,361 @@
+# Accumulated experience from building, testing, and debugging pricing models.
+#
+# Structure per entry:
+#   applies_when — structured conditions for filtering (method, instrument, feature)
+#   symptoms     — machine-checkable signs that this pitfall has occurred
+#   explanation  — natural language: WHY this happens (for LLM reasoning)
+#   fix          — natural language: HOW to fix it (for LLM code generation)
+#
+# The agent filters by applies_when, checks symptoms, then reads explanation/fix.
+
+# ---------------------------------------------------------------------------
+# VOLATILITY
+# ---------------------------------------------------------------------------
+
+- category: volatility
+  title: "Black vol ≠ Hull-White rate vol"
+  applies_when:
+    method: [rate_tree]
+    instrument: [callable_bond, puttable_bond, bermudan_swaption, bond_option]
+    has_feature: [vol_surface, hw_model]
+  symptoms:
+    - price_vs_benchmark: "off by 10x or more"
+    - observable: "tree terminal rates range from -200% to +200%"
+  explanation: >
+    Black vol is RELATIVE (percentage of forward rate, e.g. 20%).
+    Hull-White sigma is ABSOLUTE (in rate units, e.g. 1%).
+    sigma_HW = sigma_Black * forward_rate. Passing 0.20 directly to
+    a tree expecting 0.01 produces catastrophically wrong rates.
+  fix: >
+    Convert: sigma_HW = sigma_Black * forward_rate.
+    Forward rate ≈ curve.zero_rate(T/2) as proxy.
+    The data contract VOL_BLACK_TO_HW encodes this.
+
+- category: volatility
+  title: "Heston v0 vs sigma confusion"
+  applies_when:
+    method: [monte_carlo, fft_pricing]
+    instrument: [equity_option, barrier_option]
+    has_feature: [heston_model]
+  symptoms:
+    - price_vs_benchmark: "far too low (by 50%+)"
+    - observable: "implied vol from Heston price is ~4% when 20% expected"
+  explanation: >
+    Heston v0 is VARIANCE (0.04 = 20% vol). sigma = sqrt(v0).
+    Passing v0=0.04 where vol is expected gives vol=4%.
+  fix: >
+    Be explicit: sigma = sqrt(v0). When using Heston CF with FFT,
+    spot drift should be (r - q), not r alone if dividends exist.
+
+# ---------------------------------------------------------------------------
+# TREE CALIBRATION
+# ---------------------------------------------------------------------------
+
+- category: calibration
+  title: "Uncalibrated rate tree"
+  applies_when:
+    method: [rate_tree]
+    instrument: [any]
+    has_feature: [discount_curve]
+  symptoms:
+    - price_vs_benchmark: "wrong by 5-50%"
+    - observable: "tree ZCB price ≠ curve.discount(T) by more than 1e-6"
+  explanation: >
+    An uncalibrated tree uses arbitrary rates that don't match the market
+    term structure. Every instrument priced on it will be wrong.
+  fix: >
+    Always pass discount_curve to build_rate_lattice() or
+    build_generic_lattice(). The analytical calibration is exact
+    to machine precision — there is no reason to skip it.
+
+- category: calibration
+  title: "Newton iteration accumulates errors in tree calibration"
+  applies_when:
+    method: [rate_tree]
+    instrument: [any]
+    has_feature: [long_dated, many_steps]
+  symptoms:
+    - price_vs_benchmark: "drift grows with maturity (50-80bp at 10Y)"
+    - observable: "tree ZCB error at 10Y >> error at 1Y"
+  explanation: >
+    Each Newton iteration has finite tolerance (~1e-8). Arrow-Debreu state
+    prices at step m depend on all previous phi values, so small errors
+    compound through forward induction.
+  fix: >
+    Use the analytical formula:
+    phi(m) = (1/dt) * ln(sum_j Q(m,j) * exp(-x(j)*dt) / P(0,(m+1)*dt)).
+    Exact to machine precision at every step. Already implemented in
+    calibrate_lattice().
+
+- category: calibration
+  title: "Probability-rate circular dependency"
+  applies_when:
+    method: [rate_tree]
+    instrument: [any]
+    has_feature: [mean_reversion, hw_model]
+  symptoms:
+    - price_vs_benchmark: "small bias (5-20bp) with strong mean reversion"
+    - observable: "single-pass calibration gives slightly wrong ZCB prices when a > 0.2"
+  explanation: >
+    Mean-reversion probabilities depend on rates, but rates depend on
+    Arrow-Debreu prices which depend on probabilities. A single-pass
+    calibration doesn't resolve this circularity.
+  fix: >
+    Two-pass: (1) calibrate with equal probs, (2) compute mean-reversion
+    probs from calibrated rates, (3) re-calibrate with final probs.
+    Already implemented in build_rate_lattice() and build_generic_lattice().
+
+# ---------------------------------------------------------------------------
+# BACKWARD INDUCTION
+# ---------------------------------------------------------------------------
+
+- category: backward_induction
+  title: "Missing intermediate cashflows in tree"
+  applies_when:
+    method: [rate_tree]
+    instrument: [callable_bond, puttable_bond, coupon_bond]
+    has_feature: [coupons]
+  symptoms:
+    - price_vs_benchmark: "bond undervalued by 30-50%"
+    - observable: "tree straight bond ≈ exp(-r*T)*notional, ignoring coupons entirely"
+  explanation: >
+    A 10Y 5% bond has ~50% of its value in coupons. Without
+    cashflow_at_node, the tree only sees the terminal payoff.
+    Tree straight bond prices at ~61 instead of ~100.
+  fix: >
+    Pass cashflow_at_node to lattice_backward_induction(). Place discrete
+    coupons at actual payment dates using generate_schedule(), not uniform
+    accrual. Terminal payoff must include the final coupon since
+    cashflow_at_node is not called at the terminal step.
+
+- category: backward_induction
+  title: "Wrong exercise function for callable bonds"
+  applies_when:
+    method: [rate_tree, pde_solver]
+    instrument: [callable_bond]
+    has_feature: [early_exercise]
+  symptoms:
+    - price_vs_benchmark: "callable > straight bond"
+    - observable: "price increases with vol (should decrease for callable)"
+  explanation: >
+    max = holder exercises to maximize value (puts, American options).
+    min = issuer exercises to minimize liability (callable bonds).
+    Using max for a callable bond turns it into a puttable bond.
+  fix: >
+    exercise_fn=min for callable bonds, exercise_fn=max for puttable
+    bonds and American options.
+
+- category: backward_induction
+  title: "Uniform coupon accrual biases callable bond pricing"
+  applies_when:
+    method: [rate_tree]
+    instrument: [callable_bond, puttable_bond]
+    has_feature: [coupons, early_exercise]
+  symptoms:
+    - price_vs_benchmark: "35-72bp vs QuantLib/FinancePy"
+    - observable: "tree straight bond price ≠ analytical PV of discrete coupons"
+  explanation: >
+    Uniform accrual (coupon_per_step = notional * coupon * dt) shifts
+    effective timing of cashflows, changing the exercise boundary.
+    Continuation value at call dates includes coupons not yet received.
+  fix: >
+    Build a coupon_steps dict mapping tree step indices to actual coupon
+    amounts using generate_schedule(). cashflow_at_node returns the coupon
+    only at those steps (0 otherwise). Terminal payoff includes final
+    coupon since cashflow_at_node is not called at terminal step.
+
+- category: backward_induction
+  title: "Exercise value must include accrued coupon at call dates"
+  applies_when:
+    method: [rate_tree]
+    instrument: [callable_bond, puttable_bond]
+    has_feature: [coupons, early_exercise, discrete_coupons]
+  symptoms:
+    - price_vs_benchmark: "1-2 points below FinancePy/QuantLib"
+    - observable: "gap largest at low rates where call option value is high"
+  explanation: >
+    cashflow_at_node adds coupon to continuation BEFORE exercise decision.
+    If exercise_value = par only, then min(continuation+coupon, par) = par
+    and the issuer 'steals' the coupon by calling. The correct comparison
+    is min(continuation+coupon, par+coupon).
+  fix: >
+    exercise_value = call_price + coupon_at_step, where coupon_at_step
+    is the discrete coupon at that step from the coupon schedule
+    (0 if the call date is not a coupon date).
+
+# ---------------------------------------------------------------------------
+# FINITE DIFFERENCES / PDE
+# ---------------------------------------------------------------------------
+
+- category: finite_differences
+  title: "Tree gamma requires wider bumps than delta"
+  applies_when:
+    method: [rate_tree]
+    instrument: [any]
+    has_feature: [greeks, gamma]
+  symptoms:
+    - price_vs_benchmark: "gamma off by >50%"
+    - observable: "second-order FD oscillates with step count changes"
+  explanation: >
+    Gamma is a second derivative. Each tree price has O(1/n) error; the
+    second difference amplifies this by 1/dS². CRR trees also have
+    even/odd oscillation.
+  fix: >
+    Use dS = 2-5 for gamma (wider than delta). Use 500+ tree steps.
+    Average prices from n and n+1 step trees to cancel oscillation.
+
+- category: finite_differences
+  title: "Old Crank-Nicolson implementation has coefficient bug"
+  applies_when:
+    method: [pde_solver]
+    instrument: [any]
+    has_feature: [pde_grid]
+  symptoms:
+    - observable: "NaN or Inf in PDE solution"
+    - observable: "RuntimeWarning about overflow in thomas.py"
+  explanation: >
+    The old crank_nicolson_1d and implicit_fd_1d hardcode BS PDE
+    coefficients with a construction bug that causes overflow on
+    larger grids.
+  fix: >
+    Use theta_method_1d with BlackScholesOperator from
+    trellis.models.pde.operator. The new implementation separates the
+    PDE operator from time-stepping and correctly constructs coefficients.
+    theta=0.5 for CN, theta=1.0 for fully implicit.
+
+# ---------------------------------------------------------------------------
+# MONTE CARLO
+# ---------------------------------------------------------------------------
+
+- category: monte_carlo
+  title: "LSM high-vol bias with polynomial basis"
+  applies_when:
+    method: [monte_carlo]
+    instrument: [american_option, bermudan_swaption]
+    has_feature: [early_exercise, high_vol]
+  symptoms:
+    - price_vs_benchmark: "10-20% above tree reference at σ ≥ 0.40"
+    - observable: "bias grows with volatility, concentrated in OTM region"
+  explanation: >
+    At high vol, spot distribution is heavily right-skewed. Low-order
+    polynomials can't fit E[continuation|S] in the tails, overestimating
+    continuation for deep ITM paths and causing premature exercise.
+  fix: >
+    Use LaguerreBasis from trellis.models.monte_carlo.schemes — better
+    suited to positive reals. Available in BASIS_REGISTRY: polynomial,
+    laguerre, hermite, chebyshev.
+
+- category: monte_carlo
+  title: "Characteristic function convention: log(S_T) vs log(S_T/S0)"
+  applies_when:
+    method: [fft_pricing]
+    instrument: [any]
+    has_feature: [characteristic_function]
+  symptoms:
+    - price_vs_benchmark: "off by factor of ~S0*K (e.g., 10000 instead of 10)"
+    - observable: "COS price is O(S0*K) instead of O(sigma*S0*sqrt(T))"
+  explanation: >
+    FFT (Carr-Madan) expects CF of log(S_T) — includes log(S0).
+    COS (Fang-Oosterlee) expects CF of log-return log(S_T/S0).
+    Mixing them shifts the integration domain by log(S0).
+  fix: >
+    FFT: phi(u) = E[exp(i*u*log(S_T))] — include log(S0).
+    COS: phi(u) = E[exp(i*u*log(S_T/S0))] — log-return only.
+    Heston CF has log_spot parameter: log(S0) for FFT, 0 for COS.
+
+# ---------------------------------------------------------------------------
+# MARKET DATA
+# ---------------------------------------------------------------------------
+
+- category: market_data
+  title: "Day count convention ACT/ACT ISDA fencepost error"
+  applies_when:
+    method: [any]
+    instrument: [any]
+    has_feature: [act_act_isda]
+  symptoms:
+    - observable: "year_fraction(Jan 1, Jan 1 next year) returns 0.997 instead of 1.0"
+  explanation: >
+    ACT/ACT ISDA splits at year boundaries. Using Dec 31 instead of
+    Jan 1 next year as boundary causes an off-by-one in the split.
+  fix: >
+    Use Jan 1 of the next year as the year boundary, not Dec 31.
+
+- category: market_data
+  title: "COS method overflow with wide truncation"
+  applies_when:
+    method: [fft_pricing]
+    instrument: [any]
+    has_feature: [cos_method, long_dated]
+  symptoms:
+    - observable: "NaN or Inf from COS method"
+    - observable: "RuntimeWarning about overflow in exp()"
+  explanation: >
+    Default symmetric truncation [-L, L] may not contain the density
+    when there's high drift or long maturity, causing overflow.
+  fix: >
+    Center truncation on first cumulant: a = c1 - L*sqrt(c2),
+    b = c1 + L*sqrt(c2) where c1 = (r-q-0.5σ²)T, c2 = σ²T.
+
+- category: calibration
+  title: "OAS must use fixed vol model during spread search"
+  applies_when:
+    method: [rate_tree]
+    instrument: [callable_bond, puttable_bond]
+    has_feature: [oas, spread_computation]
+  symptoms:
+    - observable: "OAS solver fails at extreme spreads (negative rates → invalid sigma_HW)"
+    - observable: "OAS differs from QuantLib by more than 10bp"
+  explanation: >
+    When computing OAS, the discount curve shifts but the volatility model
+    should stay fixed (calibrated to the original curve). If sigma_HW is
+    recomputed as sigma_Black * shifted_forward_rate at each iteration,
+    the vol changes with the spread, producing inconsistent OAS. At extreme
+    negative spreads, the forward rate can go to zero, making sigma_HW = 0.
+  fix: >
+    Keep sigma_HW (or vol_surface) fixed during the OAS root-finding loop.
+    Only shift the discount curve. The vol model represents market-implied
+    optionality, which doesn't change with the credit spread.
+
+- category: backward_induction
+  title: "Bermudan swaption swap convention: same underlying at all exercise dates"
+  applies_when:
+    method: [rate_tree, monte_carlo]
+    instrument: [bermudan_swaption]
+    has_feature: [early_exercise]
+  symptoms:
+    - price_vs_benchmark: "Bermudan price 15-25% below QuantLib"
+    - observable: "European at last exercise matches perfectly but Bermudan diverges"
+  explanation: >
+    A Bermudan swaption gives the right to enter the SAME underlying swap at
+    any exercise date. The swap always runs from the first possible start date
+    to the final maturity. Exercising at year 3 means you get the remaining
+    cashflows of the year-1-to-10 swap from year 3 onward, NOT a fresh
+    year-3-to-8 swap. Computing a fresh swap at each exercise date undervalues
+    the Bermudan because the later exercise dates have shorter swaps with less
+    optionality.
+  fix: >
+    Define the swap once (start=first_exercise, end=first_exercise+tenor).
+    At each exercise step on the tree, compute the NPV of that same swap's
+    remaining cashflows (those after the current step). The swap value at
+    exercise step m is: sum of remaining fixed coupons discounted on tree
+    minus the floating leg value (which is notional at the next reset).
+
+- category: testing
+  title: "Measure actual gap before setting test tolerance"
+  applies_when:
+    method: [any]
+    instrument: [any]
+    has_feature: [cross_validation]
+  symptoms:
+    - observable: "Test tolerance is 10-100x wider than the actual gap"
+    - observable: "Tolerances like 50bp or 5% when actual agreement is <1bp"
+  explanation: >
+    When writing cross-validation tests, it's tempting to set a wide tolerance
+    to make the test pass. But loose tolerances hide real bugs — the callable
+    bond had a 72bp bug that a 100bp tolerance would have missed. Always
+    measure the actual gap first, then set tolerance to 2-3x the measured gap.
+  fix: >
+    Run the comparison first, print the actual difference, THEN set the
+    tolerance. Target: <1% of price or <5bp. If the gap is larger, it's a
+    real discrepancy to investigate, not a tolerance to widen.

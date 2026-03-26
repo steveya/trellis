@@ -44,6 +44,9 @@ Variance Reduction
 
 **Quasi-random (Sobol)**: low-discrepancy sequences give nearly :math:`O(N^{-1})` convergence.
 
+Canonical package surface: ``trellis.models.qmc`` re-exports Sobol normals and
+Brownian-bridge helpers while the estimator logic remains in ``trellis.models.monte_carlo``.
+
 Longstaff-Schwartz (LSM)
 -------------------------
 
@@ -58,6 +61,11 @@ Implementation
    :members:
 
 .. autofunction:: trellis.models.monte_carlo.lsm.longstaff_schwartz
+   :no-index:
+.. autofunction:: trellis.models.qmc.sobol_normals
+   :no-index:
+.. autofunction:: trellis.models.qmc.brownian_bridge
+   :no-index:
 
 References
 ----------

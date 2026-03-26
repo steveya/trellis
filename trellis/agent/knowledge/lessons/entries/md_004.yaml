@@ -1,0 +1,26 @@
+id: md_004
+title: Missing Credit Market Data
+severity: critical
+category: market_data
+status: archived
+confidence: 0.4
+created: '2026-03-23T23:57:15.334908'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - copula
+  features:
+  - credit_risk
+  instrument: []
+  error_signature: null
+symptom: The pricing model failed because the required 'credit' market data (credit
+  curve) was not provided.
+root_cause: The pricer expected a credit curve containing survival probabilities and
+  hazard rates, but the market data was missing, likely due to a missing data contract
+  or unit/convention mismatch for the 'copula' method.
+fix: Supply the necessary credit market data by using a proper credit curve input
+  such as Session(credit_curve=CreditCurve.flat(0.02)) to ensure correct data is available
+  for pricing.
+validation: Discovered during build (attempt 0)
+archive_reason: Infrastructure issue (missing market data), not knowledge gap

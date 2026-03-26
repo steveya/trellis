@@ -21,12 +21,14 @@ SETTLE = date(2024, 11, 15)
 
 @dataclass
 class ValidationResult:
+    """Aggregate outcome of invariant checks plus critic-authored test cases."""
     passed: bool
     invariant_failures: list[str]
     critic_failures: list[str]
 
     @property
     def all_failures(self) -> list[str]:
+        """Return invariant and critic failures concatenated into one list."""
         return self.invariant_failures + self.critic_failures
 
 

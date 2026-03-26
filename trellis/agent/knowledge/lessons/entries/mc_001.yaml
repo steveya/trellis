@@ -1,0 +1,30 @@
+id: mc_001
+title: LSM high-vol bias with polynomial basis
+severity: high
+category: monte_carlo
+status: promoted
+confidence: 1.0
+version: ''
+created: ''
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - early_exercise
+  - stochastic_vol
+  instrument:
+  - american_option
+  - bermudan_swaption
+  error_signature: null
+symptom: 10-20% above tree reference at σ ≥ 0.40; bias grows with volatility, concentrated
+  in OTM region
+root_cause: 'At high vol, spot distribution is heavily right-skewed. Low-order polynomials
+  can''t fit E[continuation|S] in the tails, overestimating continuation for deep
+  ITM paths and causing premature exercise.
+
+  '
+fix: 'Use LaguerreBasis from trellis.models.monte_carlo.schemes — better suited to
+  positive reals. Available in BASIS_REGISTRY: polynomial, laguerre, hermite, chebyshev.
+
+  '
+validation: ''

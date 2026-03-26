@@ -16,6 +16,7 @@ class CreditCurve:
     """
 
     def __init__(self, tenors, hazard_rates):
+        """Store tenor and hazard-rate grids for interpolation-based survival queries."""
         self.tenors = np.asarray(tenors, dtype=float)
         self.hazard_rates = np.asarray(hazard_rates, dtype=float)
 

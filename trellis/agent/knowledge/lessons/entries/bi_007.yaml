@@ -1,0 +1,31 @@
+id: bi_007
+title: Payoff must call lattice_backward_induction primitives
+severity: critical
+category: backward_induction
+status: candidate
+confidence: 0.4
+created: '2026-03-25T11:28:30.082940'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - discounting
+  - vol_surface_dependence
+  - backward_induction
+  instrument: []
+  error_signature: null
+symptom: assembly.required_primitive_missing referencing trellis.models.trees.lattice.lattice_backward_induction
+  was raised (generated code did not call the required lattice backward-induction
+  primitive).
+root_cause: The payoff/rollback was implemented outside of the required lattice primitives
+  (a custom aggregation wrapper or wrong API usage) so the assembly route's primitive
+  was never exercised; additionally the rate-tree calibration and node cashflow shaping
+  were not prepared in the expected form.
+fix: Rework the payoff as a thin adapter that constructs terminal node values and
+  then calls trellis.models.trees.lattice.lattice_backward_induction (passing transitions,
+  per-node discount factors and any exercise rule). Ensure the tree is properly calibrated
+  and intermediate cashflows are included in node values before the backward induction
+  call.
+validation: Discovered during build (attempt 0)

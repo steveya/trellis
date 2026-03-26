@@ -1,0 +1,30 @@
+id: bi_002
+title: Wrong exercise function for callable bonds
+severity: critical
+category: backward_induction
+status: promoted
+confidence: 1.0
+version: ''
+created: ''
+applies_when:
+  method:
+  - rate_tree
+  - pde_solver
+  features:
+  - backward_induction
+  - early_exercise
+  - callable
+  instrument:
+  - callable_bond
+  error_signature: null
+symptom: Callable > straight bond; price increases with vol (should decrease for callable)
+root_cause: 'max = holder exercises to maximize value (puts, American options). min
+  = issuer exercises to minimize liability (callable bonds). Using max for a callable
+  bond turns it into a puttable bond.
+
+  '
+fix: 'exercise_fn=min for callable bonds, exercise_fn=max for puttable bonds and American
+  options.
+
+  '
+validation: ''

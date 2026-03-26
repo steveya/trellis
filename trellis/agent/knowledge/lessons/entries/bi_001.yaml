@@ -1,0 +1,33 @@
+id: bi_001
+title: Missing intermediate cashflows in tree
+severity: critical
+category: backward_induction
+status: promoted
+confidence: 1.0
+version: ''
+created: ''
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  - coupons
+  instrument:
+  - callable_bond
+  - puttable_bond
+  - coupon_bond
+  error_signature: null
+symptom: Bond undervalued by 30-50%; tree straight bond ≈ exp(-r*T)*notional, ignoring
+  coupons entirely
+root_cause: 'A 10Y 5% bond has ~50% of its value in coupons. Without cashflow_at_node,
+  the tree only sees the terminal payoff. Tree straight bond prices at ~61 instead
+  of ~100.
+
+  '
+fix: 'Pass cashflow_at_node to lattice_backward_induction(). Place discrete coupons
+  at actual payment dates using generate_schedule(), not uniform accrual. Terminal
+  payoff must include the final coupon since cashflow_at_node is not called at the
+  terminal step.
+
+  '
+validation: ''

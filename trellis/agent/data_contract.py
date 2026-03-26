@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from trellis.agent.knowledge.methods import normalize_method
+
 
 @dataclass(frozen=True)
 class DataContract:
@@ -87,7 +89,8 @@ METHOD_CONTRACTS: dict[tuple[str, str], DataContract] = {
 
 def get_contracts_for_method(method: str) -> list[DataContract]:
     """Return all data contracts relevant to a pricing method."""
-    return [contract for (m, _), contract in METHOD_CONTRACTS.items() if m == method]
+    canonical = normalize_method(method)
+    return [contract for (m, _), contract in METHOD_CONTRACTS.items() if m == canonical]
 
 
 def format_contracts_for_prompt(method: str) -> str:

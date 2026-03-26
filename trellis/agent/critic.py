@@ -31,6 +31,7 @@ Your job is to find errors, not to praise. Be adversarial.
 
 ## Instrument description
 {description}
+{knowledge_section}
 
 ## What to look for
 1. **Discounting errors**: Is the code double-discounting or not discounting correctly?
@@ -74,6 +75,7 @@ Return ONLY the JSON array."""
 def critique(
     code: str,
     description: str,
+    knowledge_context: str = "",
     model: str | None = None,
 ) -> list[CriticConcern]:
     """Run the critic agent on generated code.
@@ -91,7 +93,15 @@ def critique(
     -------
     list[CriticConcern]
     """
-    prompt = CRITIC_PROMPT_TEMPLATE.format(code=code, description=description)
+    knowledge_section = ""
+    if knowledge_context.strip():
+        knowledge_section = f"\n## Shared Knowledge\n{knowledge_context}\n"
+
+    prompt = CRITIC_PROMPT_TEMPLATE.format(
+        code=code,
+        description=description,
+        knowledge_section=knowledge_section,
+    )
 
     try:
         data = llm_generate_json(prompt, model=model)

@@ -1,0 +1,33 @@
+id: num_012
+title: LLM JSON parse failure causes complete build abort
+severity: critical
+category: numerical
+status: candidate
+confidence: 0.4
+created: '2026-03-25T18:43:06.274992'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260325_184306_build_a_pricer_for:_crank_nicolson_rannacher_smoothing_for_discontinuous_payoffs
+
+
+  implementation_target:_black_scholes_digital
+
+  preferred_method_family:_analytical
+
+
+  implementation_target:_black_scholes_digital_analytical.yaml'
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: 'Build log shows ''returned invalid JSON response: Expecting value at line
+  1 column 1'' and all retries exhausted with empty final code.'
+root_cause: The LLM provider returned an empty or malformed response (possibly due
+  to content filtering, timeout, or model refusal) when asked to generate the pricing
+  model code, resulting in a JSON parse error at position 0.
+fix: Implement fallback to a simpler prompt or alternative model when primary LLM
+  returns empty response; also provide a pre-built analytical template for Black-Scholes
+  digital options that can be used directly without LLM generation.
+validation: Discovered during build (attempt 0)

@@ -5,6 +5,7 @@ Used by tree builders and simulation engines.
 """
 
 from trellis.models.processes.gbm import GBM
+from trellis.models.processes.correlated_gbm import CorrelatedGBM
 from trellis.models.processes.vasicek import Vasicek
 from trellis.models.processes.cir import CIR
 from trellis.models.processes.hull_white import HullWhite

@@ -68,6 +68,7 @@ Implementation
 
 .. autoclass:: trellis.curves.credit_curve.CreditCurve
    :members:
+   :no-index:
 
 Numerical Example
 -----------------

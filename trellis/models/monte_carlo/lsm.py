@@ -1,8 +1,94 @@
-"""Longstaff-Schwartz (LSM) method for American/Bermudan option pricing via MC."""
+"""Longstaff-Schwartz early-exercise policy for American/Bermudan MC pricing."""
 
 from __future__ import annotations
 
 import numpy as raw_np
+
+from trellis.models.monte_carlo.early_exercise import (
+    EarlyExerciseDiagnostics,
+    EarlyExercisePolicyResult,
+    default_continuation_estimator,
+    polynomial_basis,
+)
+
+
+def longstaff_schwartz_result(
+    paths: raw_np.ndarray,
+    exercise_dates: list[int],
+    payoff_fn,
+    discount_rate: float,
+    dt: float,
+    basis_fn=None,
+    continuation_estimator=None,
+) -> EarlyExercisePolicyResult:
+    """Run Longstaff-Schwartz and return the shared policy-result bundle."""
+    n_paths, n_steps_plus_1 = paths.shape
+    n_steps = n_steps_plus_1 - 1
+    df_step = raw_np.exp(-discount_rate * dt)
+    discount_powers = df_step ** raw_np.arange(n_steps + 1)
+    exercise_steps = sorted(
+        {
+            int(step) for step in exercise_dates
+            if 0 < int(step) <= n_steps
+        },
+        reverse=True,
+    )
+
+    if continuation_estimator is None:
+        continuation_estimator = default_continuation_estimator(
+            basis_fn=basis_fn or polynomial_basis
+        )
+
+    cashflows = raw_np.zeros(n_paths)
+    cashflow_time = raw_np.full(n_paths, n_steps, dtype=int)
+    regression_failures = 0
+
+    if n_steps in exercise_steps:
+        cashflows = raw_np.asarray(payoff_fn(paths[:, -1]), dtype=float)
+        cashflow_time[:] = n_steps
+
+    for step in exercise_steps:
+        if step >= n_steps:
+            continue
+
+        S = paths[:, step]
+        exercise = raw_np.asarray(payoff_fn(S), dtype=float)
+
+        itm_indices = raw_np.flatnonzero(exercise > 0.0)
+        if itm_indices.size == 0:
+            continue
+
+        S_itm = S[itm_indices]
+        exercise_itm = exercise[itm_indices]
+        steps_ahead = cashflow_time[itm_indices] - step
+        discounted_cf = cashflows[itm_indices] * discount_powers[steps_ahead]
+
+        continuation, failed = continuation_estimator.fit_predict(S_itm, discounted_cf)
+        regression_failures += int(failed)
+
+        exercise_now = exercise_itm > continuation
+        if not raw_np.any(exercise_now):
+            continue
+        ex_indices = itm_indices[exercise_now]
+
+        cashflows[ex_indices] = exercise_itm[exercise_now]
+        cashflow_time[ex_indices] = step
+
+    total_discount = discount_powers[cashflow_time]
+    price = float(raw_np.mean(cashflows * total_discount))
+    diagnostics = EarlyExerciseDiagnostics(
+        policy_class="longstaff_schwartz",
+        exercise_dates_count=len(exercise_steps),
+        exercised_paths_fraction=float(raw_np.mean(cashflow_time < n_steps)),
+        regression_failures=regression_failures,
+        estimator_name=getattr(continuation_estimator, "name", None),
+    )
+    return EarlyExercisePolicyResult(
+        policy_class="longstaff_schwartz",
+        price_lower=price,
+        price_upper=None,
+        diagnostics=diagnostics,
+    )
 
 
 def longstaff_schwartz(
@@ -12,88 +98,18 @@ def longstaff_schwartz(
     discount_rate: float,
     dt: float,
     basis_fn=None,
+    continuation_estimator=None,
 ) -> float:
-    """Longstaff-Schwartz least-squares Monte Carlo.
-
-    Parameters
-    ----------
-    paths : ndarray of shape (n_paths, n_steps + 1)
-        Simulated paths of the underlying.
-    exercise_dates : list[int]
-        Step indices where exercise is allowed.
-    payoff_fn : callable(S: ndarray) -> ndarray
-        Maps spot values to exercise payoffs. Shape: (n_paths,) -> (n_paths,).
-    discount_rate : float
-        Continuously compounded risk-free rate.
-    dt : float
-        Time step size.
-    basis_fn : callable(S: ndarray) -> ndarray, optional
-        Basis functions for regression. Default: polynomial (1, S, S^2).
-        Should return (n_paths, n_basis) array.
-
-    Returns
-    -------
-    float
-        Option price.
-    """
-    n_paths, n_steps_plus_1 = paths.shape
-    n_steps = n_steps_plus_1 - 1
-    df_step = raw_np.exp(-discount_rate * dt)
-
-    if basis_fn is None:
-        basis_fn = _polynomial_basis
-
-    # Cash flows and their timing
-    cashflows = raw_np.zeros(n_paths)
-    cashflow_time = raw_np.full(n_paths, n_steps)  # step index of cashflow
-
-    # Initialize with terminal payoff
-    if n_steps in exercise_dates:
-        cashflows = payoff_fn(paths[:, -1])
-        cashflow_time[:] = n_steps
-
-    # Backward iteration
-    for step in sorted(exercise_dates, reverse=True):
-        if step >= n_steps:
-            continue
-
-        S = paths[:, step]
-        exercise = payoff_fn(S)
-
-        # Only consider paths that are in-the-money
-        itm = exercise > 0
-        if not raw_np.any(itm):
-            continue
-
-        # Discount future cashflows to this step
-        steps_ahead = cashflow_time[itm] - step
-        discounted_cf = cashflows[itm] * df_step ** steps_ahead
-
-        # Regression: E[continuation | S] using basis functions
-        X = basis_fn(S[itm])
-        try:
-            coeffs = raw_np.linalg.lstsq(X, discounted_cf, rcond=None)[0]
-            continuation = X @ coeffs
-        except raw_np.linalg.LinAlgError:
-            continuation = discounted_cf
-
-        # Exercise if immediate payoff > continuation value
-        exercise_now = exercise[itm] > continuation
-        itm_indices = raw_np.where(itm)[0]
-        ex_indices = itm_indices[exercise_now]
-
-        cashflows[ex_indices] = exercise[ex_indices]
-        cashflow_time[ex_indices] = step
-
-    # Discount all cashflows to t=0
-    total_discount = df_step ** cashflow_time
-    price = float(raw_np.mean(cashflows * total_discount))
-    return price
-
-
-def _polynomial_basis(S: raw_np.ndarray) -> raw_np.ndarray:
-    """Default polynomial basis: 1, S, S^2."""
-    return raw_np.column_stack([raw_np.ones_like(S), S, S ** 2])
+    """Longstaff-Schwartz least-squares Monte Carlo lower-bound price."""
+    return longstaff_schwartz_result(
+        paths,
+        exercise_dates,
+        payoff_fn,
+        discount_rate,
+        dt,
+        basis_fn=basis_fn,
+        continuation_estimator=continuation_estimator,
+    ).price_lower
 
 
 def laguerre_basis(S: raw_np.ndarray) -> raw_np.ndarray:

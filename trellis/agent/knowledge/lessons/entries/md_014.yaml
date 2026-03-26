@@ -1,0 +1,23 @@
+id: md_014
+title: Missing spot data in pricer
+severity: critical
+category: market_data
+status: candidate
+confidence: 0.4
+created: '2026-03-24T20:56:18.738945'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - multi_method
+  features:
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: The pricing model failed when the required underlying 'spot' data was absent.
+root_cause: The multi_method implementation assumed that market data would provide
+  a 'spot' value, but the data contract was incomplete, resulting in a missing capability
+  during payoff computation.
+fix: Update the market data contract to include a 'spot' value and adjust the pricer
+  to validate its presence before computing payoffs.
+validation: Discovered during build (attempt 0)

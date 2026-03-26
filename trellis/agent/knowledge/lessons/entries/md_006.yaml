@@ -1,0 +1,25 @@
+id: md_006
+title: Missing required market data
+severity: critical
+category: market_data
+status: candidate
+confidence: 0.4
+created: '2026-03-24T15:12:26.690177'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - auto_selector
+  features:
+  - forward_rate
+  instrument: []
+  error_signature: null
+symptom: Errors indicate that 'forecast_rate', 'fx', and 'state_space' market data
+  are missing.
+root_cause: The pricing model failed because the required market data was not provided
+  in the Session; specifically, forecast curves, FX rates, and state-space definitions
+  were absent, leading to unit or convention mismatches.
+fix: 'Ensure that the Session object includes the forecast_curves (e.g., {''USD-SOFR-3M'':
+  sofr_curve}), state_space (e.g., StateSpace with defined states), and fx_rates (e.g.,
+  {''EURUSD'': FXRate(1.10, ''USD'', ''EUR'')}) before pricing.'
+validation: Discovered during build (attempt 0)

@@ -1,0 +1,28 @@
+id: con_002
+title: Fix module dependency and parameter conventions
+severity: critical
+category: convention
+status: archived
+confidence: 0.4
+created: '2026-03-23T23:15:10.334591'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - jump_diffusion
+  - characteristic_function
+  - cos_method
+  instrument: []
+  error_signature: null
+symptom: Encountered ModuleNotFoundError for 'pricing' and parameter mismatches in
+  characteristic function usage.
+root_cause: The pricing module dependency was missing and there was a lack of clear
+  reference for using the characteristic function (log(S_T) vs log(S_T/S0)) along
+  with no cookbook template for fft_pricing.
+fix: Ensure the 'pricing' module is imported or available in the environment and align
+  the characteristic function conventions consistent with reference implementations,
+  adding a reusable cookbook template for fft_pricing.
+validation: Discovered during build (attempt 0)
+archive_reason: Superseded by con_001 (authoritative import registry)

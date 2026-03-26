@@ -1,0 +1,28 @@
+id: num_010
+title: Undefined COS pricer symbol
+severity: critical
+category: numerical
+status: candidate
+confidence: 0.4
+created: '2026-03-25T11:47:42.446478'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - discounting
+  - vol_surface_dependence
+  - characteristic_function
+  - cos_method
+  instrument: []
+  error_signature: null
+symptom: 'Runtime error raised: NameError: name ''cos'' is not defined'
+root_cause: The implementation invoked a COS-pricing routine or symbol ('cos') that
+  was never imported or defined; there was no standardized entrypoint or factory for
+  FFT/COS pricers and imports used guessed module names.
+fix: Use exact module import paths or provide a local COS implementation/factory under
+  the expected name; add unit tests that import and call the FFT/COS entrypoint and
+  guard against missing symbols. Prefer explicit imports (from package.module import
+  CosPricer) or an internal fallback implementation.
+validation: Discovered during build (attempt 0)

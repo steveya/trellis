@@ -28,6 +28,7 @@ def implied_vol(
         ``"call"`` or ``"put"``.
     """
     def objective(sigma):
+        """Return the Black-Scholes pricing error at volatility ``sigma``."""
         return _bs_price(S, K, T, r, sigma, option_type) - market_price
 
     return brentq(objective, 1e-6, 5.0, xtol=tol)
@@ -77,6 +78,7 @@ def implied_vol_jaeckel(
 
 
 def _bs_price(S, K, T, r, sigma, option_type):
+    """Return the Black-Scholes call or put price used by the IV solvers."""
     d1 = (raw_np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * raw_np.sqrt(T))
     d2 = d1 - sigma * raw_np.sqrt(T)
     if option_type == "call":
@@ -86,5 +88,6 @@ def _bs_price(S, K, T, r, sigma, option_type):
 
 
 def _bs_vega(S, K, T, r, sigma):
+    """Return the Black-Scholes vega used by the Newton-style IV refinement."""
     d1 = (raw_np.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * raw_np.sqrt(T))
     return S * raw_np.sqrt(T) * norm.pdf(d1)

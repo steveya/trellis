@@ -1,0 +1,28 @@
+id: fd_001
+title: Tree gamma requires wider bumps than delta
+severity: medium
+category: finite_differences
+status: promoted
+confidence: 1.0
+version: ''
+created: ''
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  - gamma
+  - greeks
+  instrument:
+  - any
+  error_signature: null
+symptom: Gamma off by >50%; second-order FD oscillates with step count changes
+root_cause: 'Gamma is a second derivative. Each tree price has O(1/n) error; the second
+  difference amplifies this by 1/dS². CRR trees also have even/odd oscillation.
+
+  '
+fix: 'Use dS = 2-5 for gamma (wider than delta). Use 500+ tree steps. Average prices
+  from n and n+1 step trees to cancel oscillation.
+
+  '
+validation: ''

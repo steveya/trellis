@@ -4,6 +4,7 @@ import numpy as raw_np
 import pytest
 from scipy.stats import norm
 
+import trellis.models.pde.thomas as thomas_module
 from trellis.models.pde.thomas import thomas_solve
 from trellis.models.pde.grid import Grid
 from trellis.models.pde.crank_nicolson import crank_nicolson_1d
@@ -65,6 +66,22 @@ class TestThomasSolve:
         d = rng.standard_normal(n)
 
         # Build full matrix
+        A = raw_np.diag(b) + raw_np.diag(a, -1) + raw_np.diag(c, 1)
+        x_np = raw_np.linalg.solve(A, d)
+        x_thomas = thomas_solve(a, b, c, d)
+        raw_np.testing.assert_allclose(x_thomas, x_np, atol=1e-8)
+
+    def test_python_fallback_matches_numpy_solve(self, monkeypatch):
+        """Fallback path should remain correct when Numba is disabled."""
+        monkeypatch.setattr(thomas_module, "NUMBA_AVAILABLE", False)
+
+        n = 8
+        rng = raw_np.random.default_rng(11)
+        a = rng.standard_normal(n - 1)
+        b = rng.standard_normal(n) + 4.0
+        c = rng.standard_normal(n - 1)
+        d = rng.standard_normal(n)
+
         A = raw_np.diag(b) + raw_np.diag(a, -1) + raw_np.diag(c, 1)
         x_np = raw_np.linalg.solve(A, d)
         x_thomas = thomas_solve(a, b, c, d)

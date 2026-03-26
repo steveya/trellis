@@ -18,6 +18,7 @@ class PSA:
     """
 
     def __init__(self, speed: float = 1.0):
+        """Store the scalar PSA speed multiplier applied to the benchmark ramp."""
         self.speed = speed
 
     def cpr(self, month: int) -> float:
@@ -44,12 +45,15 @@ class CPR:
     """
 
     def __init__(self, rate: float):
+        """Store the constant annual CPR level used for every month."""
         self.rate = rate
 
     def cpr(self, month: int) -> float:
+        """Return the same annual CPR regardless of seasoning month."""
         return self.rate
 
     def smm(self, month: int) -> float:
+        """Convert the constant annual CPR into single-month mortality."""
         return 1 - (1 - self.rate) ** (1 / 12)
 
 
@@ -72,6 +76,7 @@ class RateDependent:
 
     def __init__(self, coupon: float, base_cpr: float = 0.06,
                  incentive_mult: float = 0.3, burnout: float = 0.01):
+        """Store refinance-incentive and burnout parameters for the prepayment curve."""
         self.coupon = coupon
         self.base_cpr = base_cpr
         self.incentive_mult = incentive_mult
@@ -84,5 +89,6 @@ class RateDependent:
         return self.base_cpr + self.incentive_mult * incentive * burnout_factor
 
     def smm(self, month: int, current_rate: float) -> float:
+        """Convert the rate-dependent annual CPR into a bounded monthly mortality."""
         annual = self.cpr(month, current_rate)
         return 1 - (1 - min(annual, 0.99)) ** (1 / 12)

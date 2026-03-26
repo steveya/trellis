@@ -35,17 +35,21 @@ class NthToDefaultPayoff:
     """Nth-to-default basket priced via Gaussian copula simulation."""
 
     def __init__(self, spec: NthToDefaultSpec):
+        """Store the basket-credit contract specification."""
         self._spec = spec
 
     @property
     def spec(self) -> NthToDefaultSpec:
+        """Return the immutable nth-to-default specification."""
         return self._spec
 
     @property
     def requirements(self) -> set[str]:
+        """Declare that basket-credit valuation needs discount and credit curves."""
         return {"discount", "credit"}
 
     def evaluate(self, market_state: MarketState) -> float:
+        """Estimate discounted protection PV from a Gaussian-copula default simulation."""
         spec = self._spec
         T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
         if T <= 0:

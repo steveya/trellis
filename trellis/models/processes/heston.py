@@ -33,6 +33,7 @@ class Heston:
 
     def __init__(self, mu: float, kappa: float, theta: float,
                  xi: float, rho: float, v0: float):
+        """Store the spot and variance dynamics parameters for the Heston model."""
         self.mu = mu
         self.kappa = kappa
         self.theta = theta
@@ -41,15 +42,19 @@ class Heston:
         self.v0 = v0
 
     def drift_s(self, s, v, t):
+        """Return the spot drift ``mu * S_t``."""
         return self.mu * s
 
     def diffusion_s(self, s, v, t):
+        """Return the spot diffusion loading ``sqrt(V_t) * S_t``."""
         return np.sqrt(np.maximum(v, 0.0)) * s
 
     def drift_v(self, s, v, t):
+        """Return the variance drift ``kappa * (theta - V_t)``."""
         return self.kappa * (self.theta - v)
 
     def diffusion_v(self, s, v, t):
+        """Return the variance diffusion loading ``xi * sqrt(max(V_t, 0))``."""
         return self.xi * np.sqrt(np.maximum(v, 0.0))
 
     def characteristic_function(self, u, t, log_spot: float = 0.0):

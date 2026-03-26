@@ -1,0 +1,27 @@
+id: num_011
+title: LLM provider returned empty response causing JSON parse failure
+severity: critical
+category: numerical
+status: candidate
+confidence: 0.4
+created: '2026-03-25T18:38:30.721608'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260325_183830_build_a_pricer_for:_extract:_greeks_engine_(unify_autograd,_fd,_aad)_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - greeks
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Build fails with 'Expecting value at line 1 column 1' on all retries, indicating
+  LLM returned empty or malformed response body.
+root_cause: The LLM provider (anthropic claude-sonnet-4-6) returned an empty or non-JSON
+  response, possibly due to content filtering, token limit, or API transient error.
+  The Greeks engine unification prompt (autograd + FD + AAD) may have been too complex
+  or triggered safety filters.
+fix: 'Break the Greeks engine unification into smaller subtasks: first build the base
+  pricer, then add each differentiation method (autograd, FD, AAD) separately. Reduce
+  prompt complexity and add explicit retry logic with exponential backoff.'
+validation: Discovered during build (attempt 0)

@@ -64,3 +64,8 @@ class TestQuickstart:
         result = s.price(trellis.sample_bond_10y())
         assert isinstance(result, PricingResult)
         assert result.clean_price > 0
+
+    def test_quickstart_sample_bond_prices(self):
+        s = trellis.quickstart()
+        result = s.price(trellis.sample_bond_10y())
+        assert result.clean_price > 0

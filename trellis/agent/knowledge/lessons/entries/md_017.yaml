@@ -1,0 +1,26 @@
+id: md_017
+title: LLM JSON serialization failure causes total build abort
+severity: critical
+category: market_data
+status: candidate
+confidence: 0.4
+created: '2026-03-26T09:51:00.568328'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260326_095100_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Build fails with 'Expecting value at line 1 column 1' before any pricing
+  code is executed, indicating empty or non-JSON LLM response.
+root_cause: The LLM provider returned an empty or malformed response instead of valid
+  JSON, exhausting all retries and preventing any code generation. This may be triggered
+  by prompt complexity, token limits, or transient provider issues.
+fix: Add fallback prompt simplification and retry with reduced context when JSON parse
+  fails at column 1; ensure the code generation prompt is within token limits and
+  does not include excessive retrieved lessons.
+validation: Discovered during build (attempt 0)

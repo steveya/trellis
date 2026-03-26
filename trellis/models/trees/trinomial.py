@@ -34,6 +34,7 @@ class TrinomialTree:
 
     def __init__(self, S0: float, T: float, n_steps: int,
                  u: float, d: float, pu: float, pm: float, pd: float):
+        """Store trinomial parameters and prebuild the recombining lattice values."""
         self.S0 = S0
         self.T = T
         self.n_steps = n_steps

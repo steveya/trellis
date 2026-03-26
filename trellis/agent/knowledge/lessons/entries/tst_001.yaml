@@ -1,0 +1,26 @@
+id: tst_001
+title: "Measure actual gap before setting test tolerance"
+severity: medium
+category: testing
+status: promoted
+confidence: 1.0
+version: ""
+created: ""
+
+applies_when:
+  method: [any]
+  features: []
+  instrument: [any]
+  error_signature: null
+
+symptom: "Test tolerance is 10-100x wider than the actual gap; tolerances like 50bp or 5% when actual agreement is <1bp"
+root_cause: >
+  When writing cross-validation tests, it's tempting to set a wide tolerance
+  to make the test pass. But loose tolerances hide real bugs — the callable
+  bond had a 72bp bug that a 100bp tolerance would have missed. Always
+  measure the actual gap first, then set tolerance to 2-3x the measured gap.
+fix: >
+  Run the comparison first, print the actual difference, THEN set the
+  tolerance. Target: <1% of price or <5bp. If the gap is larger, it's a
+  real discrepancy to investigate, not a tolerance to widen.
+validation: ""

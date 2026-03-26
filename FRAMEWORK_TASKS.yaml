@@ -1,0 +1,199 @@
+- id: T91
+  title: Adjoint algorithmic differentiation (AAD) for Greeks
+  construct: framework
+  new_component: aad_engine
+  cross_validate:
+    internal:
+    - aad_greeks
+    - fd_greeks
+    analytical: bs_greeks
+  status: pending
+- id: T92
+  title: GPU-accelerated MC via CuPy/JAX backend
+  construct: framework
+  new_component: gpu_mc_engine
+  cross_validate:
+    internal:
+    - gpu_mc
+    - cpu_mc
+    analytical: black_scholes
+  status: pending
+- id: T93
+  title: Sparse grid quadrature for high-dimensional integration
+  construct: framework
+  new_component: sparse_grid_quadrature
+  cross_validate:
+    internal:
+    - sparse_grid
+    - full_grid
+    analytical: gaussian_integral_reference
+  status: pending
+- id: E01
+  title: 'Extract: unified bump-and-reprice utility'
+  construct: framework
+  trigger_after:
+  - T13
+  - T14
+  - T81
+  - T82
+  status: pending
+- id: E02
+  title: 'Extract: rate PDE operator (HW/BDT/CIR)'
+  construct: framework
+  trigger_after:
+  - T17
+  - T18
+  status: pending
+- id: E03
+  title: 'Extract: multi-factor scheme protocol'
+  construct: framework
+  trigger_after:
+  - T28
+  - T35
+  status: pending
+- id: E04
+  title: 'Extract: characteristic function registry'
+  construct: framework
+  trigger_after:
+  - T39
+  - T40
+  - T41
+  - T43
+  - T44
+  - T45
+  - T48
+  status: pending
+- id: E05
+  title: 'Extract: path-dependent payoff protocol'
+  construct: framework
+  trigger_after:
+  - T29
+  - T30
+  - T36
+  status: pending
+- id: E06
+  title: 'Consolidate experience: distill into principles'
+  construct: experience
+  trigger_after: every_10_entries
+  status: pending
+- id: E07
+  title: 'Extract: credit engine (CDS, CVA, hazard rates)'
+  construct: framework
+  trigger_after:
+  - T38
+  - T51
+  - T52
+  status: pending
+- id: E08
+  title: 'Extract: calibration framework (objective + optimizer + constraints)'
+  construct: framework
+  trigger_after:
+  - T65
+  - T66
+  - T67
+  - T68
+  status: pending
+- id: E09
+  title: 'Extract: Greeks engine (unify autograd, FD, AAD)'
+  construct: framework
+  trigger_after:
+  - T81
+  - T86
+  - T87
+  - T91
+  status: pending
+- id: E10
+  title: 'Extract: multi-asset MC framework'
+  construct: framework
+  trigger_after:
+  - T35
+  - T47
+  status: pending
+- id: E11
+  title: 'Extract: exercise strategy protocol (American, Bermudan, autocall)'
+  construct: framework
+  trigger_after:
+  - T05
+  - T36
+  - T80
+  status: pending
+- id: E12
+  title: 'Extract: curve perturbation toolkit'
+  construct: framework
+  trigger_after:
+  - T83
+  - T84
+  - T88
+  status: pending
+- id: E13
+  title: 'Extract: process registry (all dynamics in one place)'
+  construct: framework
+  trigger_after:
+  - T56
+  - T57
+  - T58
+  - T61
+  - T62
+  status: pending
+- id: E14
+  title: 'Extract: payoff coefficient registry for COS/FFT'
+  construct: framework
+  trigger_after:
+  - T46
+  - T48
+  status: pending
+- id: E15
+  title: 'Consolidate LIMITATIONS.md: resolve completed, add new'
+  construct: infrastructure
+  trigger_after: every_10_tasks
+  status: pending
+- id: E16
+  title: 'Extract: closed-form formula registry (BS, GK, GSG, Geske, Rubinstein, Stulz,
+    Margrabe, Kirk)'
+  construct: framework
+  trigger_after:
+  - T96
+  - T97
+  - T98
+  - T99
+  - T100
+  - T102
+  - T105
+  - T120
+  - T126
+  status: pending
+- id: E17
+  title: 'Extract: FX pricing framework (GK base, barrier, digital, quanto adjustments)'
+  construct: framework
+  trigger_after:
+  - T108
+  - T109
+  - T110
+  - T111
+  - T112
+  status: pending
+- id: E18
+  title: 'Extract: quadrature integration framework'
+  construct: framework
+  trigger_after:
+  - T113
+  - T114
+  status: pending
+- id: E19
+  title: 'Extract: exotic payoff protocol (lookback, Asian, cliquet, autocall)'
+  construct: framework
+  trigger_after:
+  - T96
+  - T98
+  - T101
+  - T107
+  status: pending
+- id: E20
+  title: 'Extract: Levy process framework (VG, NIG, CGMY, Kou)'
+  construct: framework
+  trigger_after:
+  - T41
+  - T45
+  - T58
+  - T119
+  status: pending

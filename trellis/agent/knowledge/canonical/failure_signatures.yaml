@@ -1,0 +1,90 @@
+# Failure Signatures — error patterns for fast diagnostic retrieval.
+#
+# Migrated from test_resolution.py _DIAGNOSTIC_PATTERNS.
+# Each entry maps an observable error pattern to probable causes and
+# related features, enabling the agent to short-circuit diagnosis.
+
+# ---------------------------------------------------------------------------
+# Catastrophic errors (>10x off)
+# ---------------------------------------------------------------------------
+
+- pattern: "price_ratio > 10 or price_ratio < 0.1"
+  magnitude: catastrophic
+  category: unit_mismatch
+  probable_causes: [vol_001, vol_002, mc_002]
+  features: [vol_surface_dependence, characteristic_function]
+  diagnostic_hint: >-
+    Three most likely causes: (1) Vol unit mismatch — Black vol passed where HW sigma
+    expected (vol_001). (2) Tree not calibrated — discount_curve not passed (cal_001).
+    (3) CF convention mismatch — log(S_T) vs log(S_T/S0) in FFT/COS (mc_002).
+
+# ---------------------------------------------------------------------------
+# Bond priced too low
+# ---------------------------------------------------------------------------
+
+- pattern: "bond.*price.*(< ?70|6[0-9]|5[0-9])"
+  magnitude: significant
+  category: missing_cashflows
+  probable_causes: [bi_001]
+  features: [coupons, backward_induction]
+  diagnostic_hint: >-
+    Bond priced below ~70 usually means intermediate coupons are missing from the
+    tree rollback. A 10Y 5% bond has ~50% of its value in coupons. Without
+    cashflow_at_node, the tree only sees the terminal payoff.
+
+# ---------------------------------------------------------------------------
+# Callable > straight bond
+# ---------------------------------------------------------------------------
+
+- pattern: "callable.*(>|greater|exceeds).*straight"
+  magnitude: significant
+  category: wrong_exercise_fn
+  probable_causes: [bi_002]
+  features: [callable, early_exercise]
+  diagnostic_hint: >-
+    Callable bond priced above the straight bond means the exercise function is
+    wrong. Callable needs exercise_fn=min (issuer minimizes liability), not max
+    (which turns it into a puttable bond).
+
+# ---------------------------------------------------------------------------
+# Gamma / second derivative off
+# ---------------------------------------------------------------------------
+
+- pattern: "gamma.*(off|wrong|error|fail)"
+  magnitude: medium
+  category: finite_difference_bumps
+  probable_causes: [fd_001]
+  features: [gamma, greeks]
+  diagnostic_hint: >-
+    Gamma is a second derivative — FD noise is amplified by 1/dS^2. Use dS=2-5
+    (wider than delta bumps), 500+ tree steps, and average n and n+1 step trees
+    to cancel even/odd CRR oscillation.
+
+# ---------------------------------------------------------------------------
+# NaN or Inf
+# ---------------------------------------------------------------------------
+
+- pattern: "[Nn]a[Nn]|[Ii]nf|overflow"
+  magnitude: catastrophic
+  category: numerical_overflow
+  probable_causes: [fd_002, md_002]
+  features: [pde_grid, cos_method]
+  diagnostic_hint: >-
+    NaN/Inf usually comes from: (1) PDE solver overflow — use theta_method_1d with
+    BlackScholesOperator instead of legacy crank_nicolson_1d. (2) COS method truncation
+    domain too wide or not centered — use a = c1 - L*sqrt(c2), b = c1 + L*sqrt(c2).
+
+# ---------------------------------------------------------------------------
+# LSM bias at high vol
+# ---------------------------------------------------------------------------
+
+- pattern: "(lsm|longstaff).*(bias|high|above)"
+  magnitude: significant
+  category: lsm_basis
+  probable_causes: [mc_001]
+  features: [early_exercise, path_dependent]
+  diagnostic_hint: >-
+    LSM polynomial basis is inadequate at high vol (sigma >= 0.40). The heavily
+    right-skewed spot distribution causes overestimation of continuation value in
+    the tails. Consider a better continuation estimator or basis; LaguerreBasis
+    from trellis.models.monte_carlo.schemes is one common improvement.

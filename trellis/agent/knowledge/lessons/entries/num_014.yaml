@@ -1,0 +1,35 @@
+id: num_014
+title: COS adaptive truncation LLM JSON parse failure on retry
+severity: critical
+category: numerical
+status: candidate
+confidence: 0.4
+created: '2026-03-25T18:53:09.669608'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260325_185309_build_a_pricer_for:_cos_adaptive_truncation_for_extreme_parameters
+
+
+  implementation_target:_cos_adaptive
+
+  preferred_method_family:_fft_pricing
+
+
+  implementation_target:_cos_adaptive_fft_pricing.yaml'
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - cos_method
+  - characteristic_function
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Build fails with 'Expecting value at line 1 column 1' after all retries exhausted,
+  indicating LLM returned empty or non-JSON response.
+root_cause: The LLM provider returned an empty or malformed response body, likely
+  due to prompt complexity or token limit being exceeded when describing adaptive
+  truncation logic for extreme parameters in the COS method.
+fix: Simplify the prompt by breaking the COS adaptive truncation implementation into
+  smaller sub-tasks, or reduce prompt length by referencing existing COS truncation
+  patterns rather than describing them inline.
+validation: Discovered during build (attempt 0)

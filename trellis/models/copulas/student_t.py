@@ -17,6 +17,7 @@ class StudentTCopula:
     """
 
     def __init__(self, correlation_matrix: raw_np.ndarray, df: float = 5.0):
+        """Store the correlation structure and Student-t degrees of freedom."""
         self._corr = raw_np.asarray(correlation_matrix, dtype=float)
         self._chol = raw_np.linalg.cholesky(self._corr)
         self.n = self._corr.shape[0]
@@ -39,5 +40,6 @@ class StudentTCopula:
     def sample_default_times(
         self, hazard_rates: raw_np.ndarray, n_paths: int, rng=None,
     ) -> raw_np.ndarray:
+        """Map sampled copula uniforms into exponential default times."""
         U = self.sample_uniforms(n_paths, rng)
         return -raw_np.log(U) / hazard_rates[raw_np.newaxis, :]

@@ -1,0 +1,28 @@
+id: mc_006
+title: LSM Module Import Issue
+severity: high
+category: monte_carlo
+status: archived
+confidence: 0.4
+created: '2026-03-23T22:57:58.607574'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - early_exercise
+  - american
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: 'An import error (ModuleNotFoundError: No module named ''simulation'') was
+  reported during model build.'
+root_cause: The pricing model incorrectly attempts to use a 'simulation' module with
+  Monte Carlo LSM, while the proper LSM module should be used instead; additionally,
+  the MonteCarloEngine does not support method='lsm'.
+fix: Replace the reference to the 'simulation' module with the dedicated LSM module
+  and update the pricing engine to use the supported LSM framework for early exercise
+  American options.
+validation: Discovered during build (attempt 0)
+archive_reason: Superseded by con_001 (authoritative import registry)

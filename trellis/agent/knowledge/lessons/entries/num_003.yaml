@@ -1,0 +1,24 @@
+id: num_003
+title: 'Missing module: pde_solver'
+severity: critical
+category: numerical
+status: archived
+confidence: 0.4
+created: '2026-03-23T23:07:25.564032'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - stochastic_vol
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: The build failed with a 'No module named pde_solver' error.
+root_cause: The pricing model relies on the pde_solver module, which was not installed
+  or provided, likely due to missing reference implementations in the knowledge base.
+fix: Ensure the pde_solver module is available in the environment or update the dependency
+  management to include it.
+validation: Discovered during build (attempt 0)
+archive_reason: Superseded by con_001 (authoritative import registry)

@@ -1,0 +1,23 @@
+id: num_005
+title: Missing pricing module
+severity: critical
+category: numerical
+status: candidate
+confidence: 0.4
+created: '2026-03-24T12:48:38.508093'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The system threw a ModuleNotFoundError when trying to import 'pricing'.
+root_cause: The implementation relied on a non-existent 'pricing' module and there
+  were no defined modeling requirements for the 'analytical' method.
+fix: Ensure the 'pricing' module is present in the codebase and add clear, precise
+  modeling requirements for the 'analytical' method before building.
+validation: Discovered during build (attempt 0)

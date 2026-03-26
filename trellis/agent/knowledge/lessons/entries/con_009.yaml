@@ -1,0 +1,24 @@
+id: con_009
+title: Use exact module import paths
+severity: critical
+category: convention
+status: candidate
+confidence: 0.4
+created: '2026-03-24T12:37:47.056864'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - stochastic_vol
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: A module import error for 'HestonProcess' was raised, halting compilation.
+root_cause: The failure occurred because the import path for the Heston process was
+  assumed incorrectly, leading to a mismatch with the actual module structure in the
+  trellis library.
+fix: Adjust the import statement to use the exact, verified module path from the trellis
+  library, ensuring that module names and paths are correct.
+validation: Discovered during build (attempt 0)

@@ -1,0 +1,25 @@
+id: mc_008
+title: Exact Module Import Paths
+severity: critical
+category: monte_carlo
+status: archived
+confidence: 0.4
+created: '2026-03-23T23:54:24.154104'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - discounting
+  - stochastic_vol
+  instrument: []
+  error_signature: null
+symptom: A ModuleNotFoundError indicating 'trellis.models.monte_carlo.heston' was
+  not found.
+root_cause: This issue occurs because the import path was guessed rather than using
+  the exact module path provided in the library documentation.
+fix: Review the library documentation for the precise module import path and update
+  the code to import the correct module path.
+validation: Discovered during build (attempt 0)
+archive_reason: Superseded by con_001 (authoritative import registry)

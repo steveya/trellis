@@ -4,6 +4,7 @@ import numpy as raw_np
 import pytest
 
 from trellis.models.processes.gbm import GBM
+from trellis.models.processes.correlated_gbm import CorrelatedGBM
 from trellis.models.processes.vasicek import Vasicek
 from trellis.models.processes.cir import CIR
 from trellis.models.processes.hull_white import HullWhite
@@ -48,6 +49,60 @@ class TestGBM:
         gbm = GBM(mu=0.05, sigma=0.20)
         assert gbm.drift(100.0, 0) == pytest.approx(5.0)
         assert gbm.diffusion(100.0, 0) == pytest.approx(20.0)
+
+
+class TestCorrelatedGBM:
+    def test_drift_uses_dividend_adjusted_mu(self):
+        process = CorrelatedGBM(
+            mu=[0.05, 0.04],
+            sigma=[0.20, 0.25],
+            corr=[[1.0, 0.3], [0.3, 1.0]],
+            dividend_yield=[0.01, 0.02],
+        )
+        x = raw_np.array([[100.0, 80.0], [110.0, 90.0]])
+
+        drift = process.drift(x, 0.0)
+
+        raw_np.testing.assert_allclose(
+            drift,
+            x * raw_np.array([0.04, 0.02]),
+            atol=0.0,
+            rtol=0.0,
+        )
+
+    def test_diffusion_returns_factor_loadings(self):
+        process = CorrelatedGBM(
+            mu=[0.05, 0.04],
+            sigma=[0.20, 0.25],
+            corr=[[1.0, 0.5], [0.5, 1.0]],
+        )
+        x = raw_np.array([[100.0, 80.0]])
+
+        diffusion = process.diffusion(x, 0.0)
+
+        assert diffusion.shape == (1, 2, 2)
+        raw_np.testing.assert_allclose(
+            diffusion[0, :, 0],
+            raw_np.array([20.0, 10.0]),
+            atol=1e-12,
+            rtol=0.0,
+        )
+
+    def test_exact_sample_zero_shocks_matches_deterministic_growth(self):
+        process = CorrelatedGBM(
+            mu=[0.05, 0.04],
+            sigma=[0.20, 0.25],
+            corr=[[1.0, 0.2], [0.2, 1.0]],
+            dividend_yield=[0.01, 0.02],
+        )
+        x0 = raw_np.array([[100.0, 80.0]])
+        dt = 0.25
+        dw = raw_np.zeros((1, 2))
+
+        sampled = process.exact_sample(x0, 0.0, dt, dw)
+        expected = x0 * raw_np.exp((raw_np.array([0.04, 0.02]) - 0.5 * raw_np.array([0.20, 0.25]) ** 2) * dt)
+
+        raw_np.testing.assert_allclose(sampled, expected, atol=1e-12, rtol=0.0)
 
 
 # ---------------------------------------------------------------------------

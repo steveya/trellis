@@ -1,0 +1,28 @@
+id: mc_002
+title: 'Characteristic function convention: log(S_T) vs log(S_T/S0)'
+severity: critical
+category: monte_carlo
+status: promoted
+confidence: 1.0
+version: ''
+created: ''
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - characteristic_function
+  instrument:
+  - any
+  error_signature: null
+symptom: Price off by factor of ~S0*K (e.g., 10000 instead of 10); COS price is O(S0*K)
+  instead of O(sigma*S0*sqrt(T))
+root_cause: 'FFT (Carr-Madan) expects CF of log(S_T) — includes log(S0). COS (Fang-Oosterlee)
+  expects CF of log-return log(S_T/S0). Mixing them shifts the integration domain
+  by log(S0).
+
+  '
+fix: 'FFT: phi(u) = E[exp(i*u*log(S_T))] — include log(S0). COS: phi(u) = E[exp(i*u*log(S_T/S0))]
+  — log-return only. Heston CF has log_spot parameter: log(S0) for FFT, 0 for COS.
+
+  '
+validation: ''

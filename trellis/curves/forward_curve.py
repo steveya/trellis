@@ -15,6 +15,7 @@ class ForwardCurve:
     """
 
     def __init__(self, discount_curve: DiscountCurve):
+        """Store the underlying discount curve used to extract forwards."""
         self._curve = discount_curve
 
     def forward_rate(

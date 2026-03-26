@@ -1,0 +1,53 @@
+analytical:
+- 'BLACK-SCHOLES / BLACK CONSISTENCY: For European vanilla equity options, derive the forward from spot and discounting before calling Black-style kernels. With no dividends, F = S0 / discount_curve.discount(T); then PV = discount_curve.discount(T) * Black(F, K, sigma, T).'
+- 'GARMAN-KOHLHAGEN CONSISTENCY: For European vanilla FX options, use spot FX, domestic discounting, foreign discounting, and Black vol. Covered interest parity gives F = S0 * df_foreign / df_domestic; then PV = Garman-Kohlhagen(spot, K, sigma, T, df_domestic, df_foreign).'
+- 'MARKET DATA CONTRACT: Analytical pricing for European vanilla equity options requires discounting and Black vol. Spot is an instrument/spec input, not a separate MarketState capability unless the product explicitly sources it from a live market snapshot.'
+- 'FX MARKET DATA CONTRACT: Analytical FX pricing requires `market_state.discount` for domestic discounting, `market_state.forecast_curves[...]` for the selected foreign discount curve, `market_state.forward_curve` for bridged foreign-carry / routing context, `market_state.vol_surface` for Black vol, and `market_state.fx_rates` or `market_state.spot` for spot FX.'
+- 'OUTPUT CONTRACT: Analytical pricers must return a non-empty JSON-serializable structure only when a caller explicitly expects structured output; evaluate() itself must return a float present value.'
+rate_tree:
+- 'CALIBRATION: The rate tree must be calibrated to reprice the input yield curve.
+  At each time step, solve for theta(t) so that the tree-implied zero-coupon bond
+  price matches curve.discount(T). Verify: tree_zcb(T) ≈ curve.discount(T) at key
+  tenors.'
+- 'DISCRETE CASHFLOWS: Bond coupons and other scheduled payments must be embedded
+  at their actual payment dates (mapped to the nearest tree step), NOT spread uniformly
+  across all steps. Uniform spreading introduces >10% pricing error.'
+- 'EXERCISE LOGIC: The call/put decision at each node must compare the CONTINUATION
+  VALUE (discounted expected future value) against the exercise price. The continuation
+  value is computed from the tree''s own discount factors, not the flat input rate.'
+monte_carlo:
+- 'CONVERGENCE: Use at least 10,000 paths. Verify that the standard error is <1% of
+  the price. If path-dependent, use at least 100 time steps per year.'
+- 'DISCRETE OBSERVATIONS: For instruments with discrete fixing/observation dates (Asian
+  options, barriers), simulate paths that pass through those exact dates. Do not interpolate
+  between steps.'
+- 'EARLY EXERCISE: For American or Bermudan exercise in Monte Carlo, use an approved
+  optimal-stopping control primitive instead of inventing method="lsm" or treating
+  engine.price(...) as a substitute for early-exercise control. Trellis currently
+  implements longstaff_schwartz. Planned policy classes include tsitsiklis_van_roy,
+  primal_dual_mc, and stochastic_mesh. If the control primitive uses continuation
+  regression, the basis or estimator choice is explicit; LaguerreBasis is a common
+  option, not a mandatory route primitive.'
+qmc:
+- 'LOW-DISCREPANCY SAMPLING: Use Sobol paths in balanced batches, preferably with a power-of-two
+  path count such as 1024, 2048, or 4096. If you deviate, document the reason.'
+- 'HONEST SCOPE: QMC in Trellis currently accelerates Monte Carlo estimators through Sobol normal
+  draws and Brownian-bridge helpers. It is not a separate universal pricing engine.'
+- 'BIAS VS VARIANCE: QMC can reduce estimator variance, but it does NOT remove time-discretization
+  bias. Keep the same date coverage and step-count discipline required for ordinary Monte Carlo.'
+copula:
+- 'CALIBRATION: Default probabilities must be consistent with the input credit curve.
+  For each name: P(default by T) = 1 - S(T) where S(T) = credit_curve.survival_probability(T).'
+pde_solver:
+- 'GRID: Use at least 200 spatial points and 200+ time steps. For barrier options,
+  use non-uniform grid concentrated near the barrier.'
+- 'BOUNDARY CONDITIONS: Set V(0,t)=0 for calls, V(S_max,t)=S_max-K*exp(-r*(T-t)) for
+  calls. For puts: V(0,t)=K*exp(-r*(T-t)), V(S_max,t)=0.'
+- 'STABILITY: Crank-Nicolson (theta=0.5) is second-order but may oscillate near discontinuities.
+  Use Rannacher smoothing (2-4 implicit steps at start) for digital/barrier payoffs.'
+fft_pricing:
+- 'CHARACTERISTIC FUNCTION CONVENTION: COS method expects CF of log-return log(S_T/S0).
+  FFT (Carr-Madan) expects CF of log(S_T). Do NOT mix them.'
+- 'HESTON v0 IS VARIANCE: v0=0.04 means vol=20%. Do NOT pass vol directly as v0.'
+- 'COS TRUNCATION: Center on first cumulant c1, width L*sqrt(c2) where c2 is second
+  cumulant. Default symmetric [-L, L] can overflow for high drift or long maturity.'

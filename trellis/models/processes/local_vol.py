@@ -20,13 +20,16 @@ class LocalVol(StochasticProcess):
     """
 
     def __init__(self, mu: float, vol_fn):
+        """Store the drift and local-volatility function."""
         self.mu = mu
         self._vol_fn = vol_fn
 
     def drift(self, x, t):
+        """Return the local-vol drift term ``mu * S_t``."""
         return self.mu * x
 
     def diffusion(self, x, t):
+        """Return the local-vol diffusion term ``sigma_local(S_t, t) * S_t``."""
         return self._vol_fn(x, t) * x
 
     @classmethod

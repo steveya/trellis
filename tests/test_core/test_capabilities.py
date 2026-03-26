@@ -28,13 +28,23 @@ class TestDiscoverCapabilities:
     def test_market_data_includes_core(self):
         caps = discover_capabilities()
         names = {c.name for c in caps["market_data"]}
-        assert {"discount", "forward_rate", "black_vol", "credit",
-                "forecast_rate", "state_space", "fx"}.issubset(names)
+        assert {
+            "discount_curve",
+            "forward_curve",
+            "black_vol_surface",
+            "credit_curve",
+            "state_space",
+            "fx_rates",
+            "spot",
+            "local_vol_surface",
+            "jump_parameters",
+            "model_parameters",
+        }.issubset(names)
 
     def test_methods_include_phase7(self):
         caps = discover_capabilities()
         names = {c.name for c in caps["methods"]}
-        for name in ["rate_tree", "monte_carlo", "pde_solver",
+        for name in ["rate_tree", "monte_carlo", "qmc", "pde_solver",
                       "fft_pricing", "copula", "waterfall"]:
             assert name in names
 
@@ -47,22 +57,55 @@ class TestDiscoverCapabilities:
 class TestAnalyzeGap:
 
     def test_market_data_satisfied(self):
-        satisfied, missing = analyze_gap({"discount", "forward_rate"})
-        assert satisfied == {"discount", "forward_rate"}
+        satisfied, missing = analyze_gap({"discount_curve", "forward_curve"})
+        assert satisfied == {"discount_curve", "forward_curve"}
         assert missing == set()
 
     def test_methods_also_satisfied(self):
-        satisfied, missing = analyze_gap({"discount", "rate_tree", "monte_carlo"})
-        assert satisfied == {"discount", "rate_tree", "monte_carlo"}
+        satisfied, missing = analyze_gap({"discount_curve", "rate_tree", "monte_carlo"})
+        assert satisfied == {"discount_curve", "rate_tree", "monte_carlo"}
         assert missing == set()
 
     def test_truly_unknown_is_missing(self):
-        satisfied, missing = analyze_gap({"discount", "quantum_computing"})
+        satisfied, missing = analyze_gap({"discount_curve", "quantum_computing"})
         assert missing == {"quantum_computing"}
 
     def test_empty(self):
         satisfied, missing = analyze_gap(set())
         assert satisfied == set()
+        assert missing == set()
+
+    def test_aliases_and_extended_market_data_are_known(self):
+        satisfied, missing = analyze_gap({
+            "discount",
+            "forward_rate",
+            "black_vol",
+            "credit",
+            "forecast_rate",
+            "fx",
+            "discount_curve",
+            "yield_curve",
+            "risk_free_curve",
+            "forward_rate_curve",
+            "volatility_surface",
+            "black_vol_surface",
+            "spot",
+            "local_vol_surface",
+            "jump_parameters",
+            "model_parameters",
+        })
+        assert satisfied == {
+            "discount_curve",
+            "forward_curve",
+            "black_vol_surface",
+            "credit_curve",
+            "fx_rates",
+            "discount_curve",
+            "spot",
+            "local_vol_surface",
+            "jump_parameters",
+            "model_parameters",
+        }
         assert missing == set()
 
 
@@ -71,29 +114,50 @@ class TestCheckMarketData:
     def test_all_present(self):
         ms = MarketState(as_of=SETTLE, settlement=SETTLE,
                          discount=YieldCurve.flat(0.05), vol_surface=FlatVol(0.20))
-        errors = check_market_data({"discount", "black_vol"}, ms)
+        errors = check_market_data({"discount_curve", "black_vol_surface"}, ms)
         assert errors == []
 
     def test_missing_vol(self):
         ms = MarketState(as_of=SETTLE, settlement=SETTLE,
                          discount=YieldCurve.flat(0.05))
-        errors = check_market_data({"discount", "black_vol"}, ms)
+        errors = check_market_data({"discount_curve", "black_vol_surface"}, ms)
         assert len(errors) == 1
-        assert "black_vol" in errors[0]
+        assert "black_vol_surface" in errors[0]
         assert "FlatVol" in errors[0]
 
     def test_missing_discount(self):
         ms = MarketState(as_of=SETTLE, settlement=SETTLE)
-        errors = check_market_data({"discount"}, ms)
+        errors = check_market_data({"discount_curve"}, ms)
         assert len(errors) == 1
-        assert "discount" in errors[0]
+        assert "discount_curve" in errors[0]
         assert "YieldCurve" in errors[0]
 
     def test_method_not_checked_as_market_data(self):
         ms = MarketState(as_of=SETTLE, settlement=SETTLE,
                          discount=YieldCurve.flat(0.05))
         # rate_tree is a method, not market data — should not appear in errors
-        errors = check_market_data({"discount", "rate_tree"}, ms)
+        errors = check_market_data({"discount_curve", "rate_tree"}, ms)
+        assert errors == []
+
+    def test_aliases_resolve_against_runtime_capabilities(self):
+        ms = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.05),
+            vol_surface=FlatVol(0.20),
+            forecast_curves={"USD-SOFR-3M": YieldCurve.flat(0.051)},
+        )
+        errors = check_market_data(
+            {
+                "discount_curve",
+                "yield_curve",
+                "risk_free_curve",
+                "forward_rate_curve",
+                "volatility_surface",
+                "black_vol_surface",
+            },
+            ms,
+        )
         assert errors == []
 
 
@@ -114,7 +178,7 @@ class TestPricePayoffErrors:
         with pytest.raises(MissingCapabilityError) as exc_info:
             price_payoff(cap, ms)
         msg = str(exc_info.value)
-        assert "black_vol" in msg
+        assert "black_vol_surface" in msg
         assert "FlatVol" in msg
 
     def test_missing_discount_gives_helpful_error(self):
@@ -129,7 +193,7 @@ class TestPricePayoffErrors:
         with pytest.raises(MissingCapabilityError) as exc_info:
             price_payoff(payoff, ms)
         msg = str(exc_info.value)
-        assert "discount" in msg
+        assert "discount_curve" in msg
         assert "YieldCurve" in msg
 
 
@@ -143,3 +207,8 @@ class TestCapabilitySummary:
     def test_methods_show_required_market_data(self):
         summary = capability_summary()
         assert "Requires market data" in summary
+
+    def test_qmc_summary_mentions_accelerator_role(self):
+        summary = capability_summary()
+        assert "qmc" in summary
+        assert "Sobol" in summary or "low-discrepancy" in summary

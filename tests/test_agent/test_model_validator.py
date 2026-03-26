@@ -1,6 +1,7 @@
 """Tests for the model validation agent."""
 
 from datetime import date
+from types import SimpleNamespace
 
 import pytest
 
@@ -122,3 +123,169 @@ class TestBenchmarkValidation:
         assert isinstance(findings, list)
         if findings:
             assert findings[0].category == "benchmark"
+
+
+def test_llm_conceptual_review_includes_shared_knowledge(monkeypatch):
+    from trellis.agent.model_validator import _llm_conceptual_review
+
+    captured = {}
+
+    monkeypatch.setattr(
+        "trellis.agent.config.get_default_model",
+        lambda: "fake-model",
+    )
+
+    def fake_llm_generate_json(prompt, model=None):
+        captured["prompt"] = prompt
+        return []
+
+    monkeypatch.setattr("trellis.agent.config.llm_generate_json", fake_llm_generate_json)
+
+    findings = _llm_conceptual_review(
+        code="def price():\n    return 0.0",
+        instrument_type="callable_bond",
+        method="rate_tree",
+        knowledge_context="## Shared Review Principles\n- Check calibration first.",
+        model="fake-model",
+    )
+
+    assert findings == []
+    assert "Shared Review Principles" in captured["prompt"]
+    assert "Check calibration first." in captured["prompt"]
+
+
+def test_determine_review_policy_skips_llm_for_low_risk_supported_vanilla():
+    from trellis.agent.review_policy import determine_review_policy
+
+    policy = determine_review_policy(
+        validation="thorough",
+        method="analytical",
+        product_ir=SimpleNamespace(
+            instrument="european_option",
+            payoff_traits=(),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            schedule_dependence=False,
+            model_family="equity_diffusion",
+            unresolved_primitives=(),
+            supported=True,
+        ),
+    )
+
+    assert policy.risk_level == "low"
+    assert policy.run_critic is False
+    assert policy.run_model_validator_llm is False
+    assert policy.critic_reason == "low_risk_supported_vanilla_analytical"
+
+
+def test_determine_review_policy_keeps_llm_for_high_risk_route():
+    from trellis.agent.review_policy import determine_review_policy
+
+    policy = determine_review_policy(
+        validation="thorough",
+        method="rate_tree",
+        product_ir=SimpleNamespace(
+            instrument="callable_bond",
+            payoff_traits=("callable",),
+            exercise_style="issuer_call",
+            state_dependence="schedule_dependent",
+            schedule_dependence=True,
+            model_family="interest_rate",
+            unresolved_primitives=(),
+            supported=True,
+        ),
+    )
+
+    assert policy.risk_level == "high"
+    assert policy.run_critic is True
+    assert policy.run_model_validator_llm is True
+
+
+def test_validate_model_skips_llm_review_for_low_risk_route(monkeypatch):
+    from trellis.agent.model_validator import validate_model
+
+    monkeypatch.setattr(
+        "trellis.agent.model_validator.check_sensitivity_signs",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.model_validator.check_benchmark",
+        lambda *args, **kwargs: [],
+    )
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("LLM review should be skipped")
+
+    monkeypatch.setattr(
+        "trellis.agent.model_validator._llm_conceptual_review",
+        fail_if_called,
+    )
+
+    report = validate_model(
+        payoff_factory=lambda: object(),
+        market_state_factory=lambda rate, vol: object(),
+        code="def price():\n    return 1.0",
+        instrument_type="european_option",
+        method="analytical",
+        product_ir=SimpleNamespace(
+            instrument="european_option",
+            payoff_traits=(),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            schedule_dependence=False,
+            model_family="equity_diffusion",
+            unresolved_primitives=(),
+            supported=True,
+        ),
+    )
+
+    assert report.findings == []
+    assert report.approved is True
+
+
+def test_validate_model_runs_llm_review_for_high_risk_route(monkeypatch):
+    from trellis.agent.model_validator import validate_model
+
+    monkeypatch.setattr(
+        "trellis.agent.model_validator.check_sensitivity_signs",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.model_validator.check_benchmark",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.model_validator._llm_conceptual_review",
+        lambda *args, **kwargs: [
+            ValidationFinding(
+                id="MV-L001",
+                severity="high",
+                category="conceptual",
+                description="Need deeper review",
+                evidence="high-risk callable route",
+                remediation="keep LLM review enabled",
+            )
+        ],
+    )
+
+    report = validate_model(
+        payoff_factory=lambda: object(),
+        market_state_factory=lambda rate, vol: object(),
+        code="def price():\n    return 1.0",
+        instrument_type="callable_bond",
+        method="rate_tree",
+        product_ir=SimpleNamespace(
+            instrument="callable_bond",
+            payoff_traits=("callable",),
+            exercise_style="issuer_call",
+            state_dependence="schedule_dependent",
+            schedule_dependence=True,
+            model_family="interest_rate",
+            unresolved_primitives=(),
+            supported=True,
+        ),
+    )
+
+    assert len(report.findings) == 1
+    assert report.findings[0].id == "MV-L001"
+    assert report.approved is False

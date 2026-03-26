@@ -1,0 +1,24 @@
+id: num_002
+title: Missing PDE solver dependency
+severity: critical
+category: numerical
+status: archived
+confidence: 0.4
+created: '2026-03-23T22:56:12.874835'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Encountered 'No module named "pdesolvers"' error during model build.
+root_cause: The analytical pricing method requires a PDE solver module that was not
+  installed or specified due to missing modeling requirements.
+fix: Install the missing 'pdesolvers' module or adjust the analytical implementation
+  to not depend on it, while also providing detailed modeling guidelines for the method.
+validation: Discovered during build (attempt 0)
+archive_reason: Superseded by con_001 (authoritative import registry)

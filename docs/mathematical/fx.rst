@@ -53,9 +53,11 @@ Implementation
 
 .. autoclass:: trellis.instruments.fx.FXForward
    :members:
+   :no-index:
 
 .. autoclass:: trellis.instruments.fx.FXForwardPayoff
    :members:
+   :no-index:
 
 Numerical Example
 -----------------

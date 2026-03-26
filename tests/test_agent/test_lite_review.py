@@ -1,0 +1,450 @@
+"""Tests for the deterministic lite-reviewer."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+
+def test_lite_review_rejects_hardcoded_market_inputs_for_required_capabilities():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.black import black76_call
+
+def price(market_state):
+    T = 1.0
+    r = 0.05
+    sigma = 0.2
+    return black76_call(100.0, 100.0, sigma, T) * r
+"""
+
+    plan = GenerationPlan(
+        method="analytical",
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.black",),
+        approved_modules=("trellis.models.black",),
+        symbols_to_reuse=("black76_call",),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="analytical_black76",
+            engine_family="analytical",
+            primitives=(),
+            adapters=(),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.black"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.hardcoded_discount_curve" in issue_codes
+    assert "lite.hardcoded_black_vol_surface" in issue_codes
+
+
+def test_lite_review_accepts_market_state_sourced_inputs():
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+def price(market_state):
+    T = 1.0
+    r = float(market_state.discount.zero_rate(T))
+    sigma = float(market_state.vol_surface.black_vol(T, 100.0))
+    return r + sigma
+"""
+
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.black"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(source, pricing_plan=pricing_plan)
+
+    assert report.ok
+
+
+def test_lite_review_rejects_analytical_black76_without_discount_access():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.black import black76_call
+
+def price(spec, market_state):
+    T = 1.0
+    sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
+    return black76_call(spec.spot, spec.strike, sigma, T)
+"""
+
+    plan = GenerationPlan(
+        method="analytical",
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.black",),
+        approved_modules=("trellis.models.black",),
+        symbols_to_reuse=("black76_call",),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="analytical_black76",
+            engine_family="analytical",
+            primitives=(),
+            adapters=("map_spot_discount_and_vol_to_forward_black76",),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.black"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.analytical_discount_access_missing" in issue_codes
+
+
+def test_lite_review_rejects_analytical_black76_without_vol_surface_access():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.black import black76_call
+
+def price(spec, market_state):
+    T = 1.0
+    df = float(market_state.discount.discount(T))
+    sigma = spec.vol
+    forward = spec.spot / df
+    return df * black76_call(forward, spec.strike, sigma, T)
+"""
+
+    plan = GenerationPlan(
+        method="analytical",
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.black",),
+        approved_modules=("trellis.models.black",),
+        symbols_to_reuse=("black76_call",),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="analytical_black76",
+            engine_family="analytical",
+            primitives=(),
+            adapters=("map_spot_discount_and_vol_to_forward_black76",),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.black"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.analytical_vol_surface_access_missing" in issue_codes
+
+
+def test_lite_review_rejects_garman_kohlhagen_without_foreign_curve_access():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.black import garman_kohlhagen_call
+
+def price(spec, market_state):
+    T = 1.0
+    df_domestic = float(market_state.discount.discount(T))
+    sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
+    spot = float(market_state.fx_rates[spec.fx_pair].spot)
+    return garman_kohlhagen_call(spot, spec.strike, sigma, T, df_domestic, 0.97)
+"""
+
+    plan = GenerationPlan(
+        method="analytical",
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.black",),
+        approved_modules=("trellis.models.black",),
+        symbols_to_reuse=("garman_kohlhagen_call",),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="analytical_garman_kohlhagen",
+            engine_family="analytical",
+            primitives=(),
+            adapters=("map_fx_spot_and_curves_to_garman_kohlhagen_inputs",),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.black"],
+        required_market_data={"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.fx_analytical_forward_curve_access_missing" in issue_codes
+
+
+def test_lite_review_rejects_monte_carlo_route_without_market_access():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.monte_carlo.engine import MonteCarloEngine
+from trellis.models.processes.gbm import GBM
+
+def price(spec, market_state):
+    process = GBM(mu=0.05, sigma=0.2)
+    engine = MonteCarloEngine(process, n_paths=2000, n_steps=32, method="exact")
+    return float(engine.price(spec.spot, 1.0, lambda paths: paths[:, -1], discount_rate=0.05)["price"])
+"""
+
+    plan = GenerationPlan(
+        method="monte_carlo",
+        instrument_type="barrier_option",
+        inspected_modules=("trellis.models.monte_carlo.engine",),
+        approved_modules=("trellis.models.monte_carlo.engine", "trellis.models.processes.gbm"),
+        symbols_to_reuse=("MonteCarloEngine", "GBM"),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="monte_carlo_paths",
+            engine_family="monte_carlo",
+            primitives=(),
+            adapters=("build_payoff_vector_from_paths",),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.monte_carlo.engine"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="barrier_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.monte_carlo_discount_access_missing" in issue_codes
+    assert "lite.monte_carlo_vol_surface_access_missing" in issue_codes
+
+
+def test_lite_review_rejects_rate_tree_route_without_market_access():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction
+
+def price(spec, market_state):
+    lattice = build_rate_lattice(r0=0.05, sigma=0.2, dt=0.5, n_steps=10)
+    return lattice_backward_induction(lattice, terminal_values=[100.0] * 11)
+"""
+
+    plan = GenerationPlan(
+        method="rate_tree",
+        instrument_type="callable_bond",
+        inspected_modules=("trellis.models.trees.lattice",),
+        approved_modules=("trellis.models.trees.lattice",),
+        symbols_to_reuse=("build_rate_lattice", "lattice_backward_induction"),
+        proposed_tests=("tests/test_agent/test_callable_bond.py",),
+        primitive_plan=PrimitivePlan(
+            route="exercise_lattice",
+            engine_family="lattice",
+            primitives=(),
+            adapters=("map_cashflows_and_exercise_dates_to_tree_steps",),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="rate_tree",
+        method_modules=["trellis.models.trees.lattice"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="callable_bond",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.rate_tree_discount_access_missing" in issue_codes
+    assert "lite.rate_tree_vol_surface_access_missing" in issue_codes
+
+
+def test_lite_review_rejects_local_vol_monte_carlo_without_surface_access():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.monte_carlo.local_vol import local_vol_european_vanilla_price
+
+def price(spec, market_state):
+    discount_curve = market_state.discount
+    spot = market_state.spot
+    return local_vol_european_vanilla_price(
+        spot=spot,
+        strike=spec.strike,
+        maturity=1.0,
+        discount_curve=discount_curve,
+        local_vol_surface=lambda s, t: 0.2,
+        option_type="call",
+    )
+"""
+
+    plan = GenerationPlan(
+        method="monte_carlo",
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.monte_carlo.local_vol",),
+        approved_modules=(
+            "trellis.models.monte_carlo.local_vol",
+            "trellis.models.processes.local_vol",
+            "trellis.models.monte_carlo.engine",
+        ),
+        symbols_to_reuse=("local_vol_european_vanilla_price", "LocalVol", "MonteCarloEngine"),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="local_vol_monte_carlo",
+            engine_family="monte_carlo",
+            primitives=(),
+            adapters=("map_market_state_local_vol_surface_spot_and_discount_into_local_vol_mc_inputs",),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.monte_carlo.local_vol", "trellis.models.processes.local_vol"],
+        required_market_data={"discount_curve", "spot", "local_vol_surface"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.local_vol_monte_carlo_surface_access_missing" in issue_codes
+
+
+def test_builder_prompt_surface_uses_semantic_repair_for_lite_review():
+    from trellis.agent.executor import _builder_prompt_surface_for_attempt
+
+    surface = _builder_prompt_surface_for_attempt(
+        attempt_number=2,
+        retry_reason="lite_review",
+    )
+
+    assert surface == "semantic_repair"
+
+
+def test_validate_build_skips_llm_reviewer_stages_after_deterministic_failures(monkeypatch):
+    from trellis.agent.executor import _validate_build
+    from trellis.agent.quant import PricingPlan
+
+    class DummyPayoff:
+        pass
+
+    spec_schema = SimpleNamespace(class_name="DummyPayoff", requirements=["analytical"], fields=[])
+
+    monkeypatch.setattr(
+        "trellis.agent.executor._make_test_payoff",
+        lambda *args, **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_non_negativity",
+        lambda *args, **kwargs: ["deterministic gate failure"],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_price_sanity",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_bounded_by_reference",
+        lambda *args, **kwargs: [],
+    )
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("LLM-backed reviewer stage should be skipped")
+
+    monkeypatch.setattr("trellis.agent.critic.critique", fail_if_called)
+    monkeypatch.setattr("trellis.agent.model_validator.validate_model", fail_if_called)
+
+    failures = _validate_build(
+        DummyPayoff,
+        code="def evaluate(self, market_state):\n    return -1.0\n",
+        description="European call option on equity",
+        spec_schema=spec_schema,
+        validation="thorough",
+        pricing_plan=PricingPlan(
+            method="rate_tree",
+            method_modules=["trellis.models.trees.lattice"],
+            required_market_data={"discount_curve"},
+            model_to_build="european_option",
+            reasoning="test",
+        ),
+        product_ir=SimpleNamespace(
+            instrument="callable_bond",
+            payoff_traits=("callable",),
+            exercise_style="issuer_call",
+            state_dependence="schedule_dependent",
+            schedule_dependence=True,
+            model_family="interest_rate",
+            unresolved_primitives=(),
+            supported=True,
+        ),
+        attempt_number=1,
+    )
+
+    assert failures == ["deterministic gate failure"]

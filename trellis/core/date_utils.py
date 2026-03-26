@@ -12,6 +12,7 @@ DateLike = Union[date, datetime]
 
 
 def _to_date(d: DateLike) -> date:
+    """Normalize ``date``/``datetime`` inputs to plain ``date`` objects."""
     if isinstance(d, datetime):
         return d.date()
     return d

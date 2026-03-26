@@ -1,0 +1,24 @@
+id: md_012
+title: Missing Payoff Parameters
+severity: critical
+category: market_data
+status: candidate
+confidence: 0.4
+created: '2026-03-24T20:54:51.912578'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - characteristic_function
+  - cos_method
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: The pricing model build failed because essential payoff parameters were missing.
+root_cause: The payoff constructor expected 'model_parameters' and 'risk_free_curve',
+  but only 'discount' was provided, leading to a failure in model instantiation.
+fix: Provide the missing capabilities ('model_parameters' and 'risk_free_curve') when
+  building the pricer to ensure all required inputs are available.
+validation: Discovered during build (attempt 0)

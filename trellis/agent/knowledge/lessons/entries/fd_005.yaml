@@ -1,0 +1,24 @@
+id: fd_005
+title: Exact Import Path Required
+severity: critical
+category: finite_differences
+status: archived
+confidence: 0.4
+created: '2026-03-23T23:42:31.929362'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - stochastic_vol
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: An ImportError occurred stating 'No module named finitedifference'.
+root_cause: The code attempted to import a module using an incorrect or guessed path
+  instead of the documented exact path.
+fix: Reference the official module documentation to use the precise import path (e.g.,
+  using the exact trellis import paths) rather than arbitrarily guessing module names.
+validation: Discovered during build (attempt 0)
+archive_reason: Superseded by con_001 (authoritative import registry)

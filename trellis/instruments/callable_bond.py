@@ -13,8 +13,7 @@ from trellis.core.date_utils import generate_schedule, year_fraction
 from trellis.core.market_state import MarketState
 
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.trees.binomial import BinomialTree
-from trellis.models.trees.backward_induction import backward_induction
+from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction
 
 
 @dataclass(frozen=True)
@@ -32,7 +31,7 @@ class CallableBondSpec:
 
 
 class CallableBondPayoff:
-    """Callable bond priced via backward induction on a binomial tree.
+    """Callable bond priced via backward induction on a calibrated rate lattice.
 
     The issuer can call (redeem) the bond at par on specified dates.
     This is a Bermudan exercise problem — the issuer exercises when
@@ -40,27 +39,36 @@ class CallableBondPayoff:
     """
 
     def __init__(self, spec: CallableBondSpec):
+        """Store the callable-bond terms used for all future tree valuations."""
         self._spec = spec
 
     @property
     def spec(self) -> CallableBondSpec:
+        """Return the immutable callable-bond specification."""
         return self._spec
 
     @property
     def requirements(self) -> set[str]:
+        """Declare that callable-bond valuation needs discount and rate-vol inputs."""
         return {"discount", "black_vol"}
 
     def evaluate(self, market_state: MarketState) -> float:
+        """Price the bond on a calibrated short-rate tree and cap it by straight-bond PV."""
         spec = self._spec
         T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
         if T <= 0:
             return 0.0
 
-        r = float(market_state.discount.zero_rate(T / 2))
-        sigma = float(market_state.vol_surface.black_vol(T / 2, r))
+        # Get initial short rate using half-maturity (as proxy for forward rate)
+        r0 = float(market_state.discount.zero_rate(T / 2))
+        # Get Black vol and convert to Hull-White absolute rate vol
+        black_vol = float(market_state.vol_surface.black_vol(T / 2, r0))
+        sigma_hw = black_vol * r0
+        mean_reversion = 0.1  # typical Hull-White mean reversion
 
         n_steps = min(200, max(50, int(T * 50)))
-        tree = BinomialTree.crr(r, T, n_steps, r, sigma)
+        lattice = build_rate_lattice(r0, sigma_hw, mean_reversion, T, n_steps,
+                                     discount_curve=market_state.discount)
         dt = T / n_steps
 
         # Map call dates to tree step indices
@@ -71,25 +79,30 @@ class CallableBondPayoff:
             if 0 < step < n_steps:
                 exercise_steps.append(step)
 
-        # Coupon per step (simplified: spread evenly)
+        # Use uniform coupon accrual per step for the tree
         coupon_per_step = spec.notional * spec.coupon * dt
 
-        def payoff_at_node(step, node):
+        def payoff_at_node(step, node, lattice):
             """Terminal payoff: final coupon + notional."""
             return spec.notional + coupon_per_step
 
-        def exercise_value(step, node, tree):
+        def exercise_value(step, node, lattice):
             """Issuer calls at call_price (plus accrued coupon)."""
             return spec.call_price + coupon_per_step
 
-        price = backward_induction(
-            tree, payoff_at_node, r, "bermudan",
-            exercise_steps, exercise_value,
+        def cashflow(step, node, lattice):
+            """Intermediate coupon cashflows at each tree step."""
+            return coupon_per_step
+
+        # exercise_fn=min: issuer calls to MINIMIZE liability (callable bond)
+        tree_price = lattice_backward_induction(
+            lattice, payoff_at_node, exercise_value,
+            exercise_type="bermudan", exercise_steps=exercise_steps,
+            cashflow_at_node=cashflow,
+            exercise_fn=min,
         )
 
-        # Add PV of intermediate coupons (simplified: coupon stream as annuity)
-        # The tree price captures the optionality; we add the coupon stream PV
-        # This is an approximation — a full implementation would embed coupons in the tree
+        # Compute PV of discrete coupon cashflows using the actual payment schedule
         coupon_pv = 0.0
         schedule = generate_schedule(spec.start_date, spec.end_date, spec.frequency)
         starts = [spec.start_date] + schedule[:-1]
@@ -102,7 +115,8 @@ class CallableBondPayoff:
                 market_state.discount.discount(t_pay)
             )
 
-        # Combine: tree gives the embedded option-adjusted value
-        # Total = min(straight_bond_pv, tree_price + coupon_pv)
-        # The callable is worth less than or equal to the straight bond
-        return min(price, coupon_pv + float(market_state.discount.discount(T)) * spec.notional)
+        # Straight bond PV: discounted principal plus PV of coupons
+        straight_bond_pv = coupon_pv + float(market_state.discount.discount(T)) * spec.notional
+
+        # The callable bond cannot be worth more than a straight bond
+        return min(tree_price, straight_bond_pv)

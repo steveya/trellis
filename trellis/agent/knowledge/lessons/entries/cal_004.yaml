@@ -1,0 +1,27 @@
+id: cal_004
+title: "OAS must use fixed vol model during spread search"
+severity: high
+category: calibration
+status: promoted
+confidence: 1.0
+version: ""
+created: ""
+
+applies_when:
+  method: [rate_tree]
+  features: [backward_induction, oas]
+  instrument: [callable_bond, puttable_bond]
+  error_signature: null
+
+symptom: "OAS solver fails at extreme spreads (negative rates → invalid sigma_HW); OAS differs from QuantLib by more than 10bp"
+root_cause: >
+  When computing OAS, the discount curve shifts but the volatility model
+  should stay fixed (calibrated to the original curve). If sigma_HW is
+  recomputed as sigma_Black * shifted_forward_rate at each iteration,
+  the vol changes with the spread, producing inconsistent OAS. At extreme
+  negative spreads, the forward rate can go to zero, making sigma_HW = 0.
+fix: >
+  Keep sigma_HW (or vol_surface) fixed during the OAS root-finding loop.
+  Only shift the discount curve. The vol model represents market-implied
+  optionality, which doesn't change with the credit spread.
+validation: ""

@@ -16,6 +16,7 @@ class GaussianCopula:
     """
 
     def __init__(self, correlation_matrix: raw_np.ndarray):
+        """Store the correlation matrix and its Cholesky factor."""
         self._corr = raw_np.asarray(correlation_matrix, dtype=float)
         self._chol = raw_np.linalg.cholesky(self._corr)
         self.n = self._corr.shape[0]

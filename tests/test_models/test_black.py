@@ -1,9 +1,14 @@
-"""Tests for Black76 option pricing formulas."""
+"""Tests for Black76 and Garman-Kohlhagen option pricing formulas."""
 
 import pytest
 from scipy.stats import norm
 
-from trellis.models.black import black76_call, black76_put
+from trellis.models.black import (
+    black76_call,
+    black76_put,
+    garman_kohlhagen_call,
+    garman_kohlhagen_put,
+)
 
 
 class TestBlack76Call:
@@ -91,3 +96,56 @@ class TestPutCallParity:
             assert call - put == pytest.approx(F - K, abs=1e-10), (
                 f"Parity failed for F={F}, K={K}, σ={sigma}, T={T}"
             )
+
+
+class TestGarmanKohlhagen:
+
+    def test_matches_black76_on_fx_forward(self):
+        spot = 1.10
+        strike = 1.05
+        sigma = 0.18
+        T = 1.25
+        df_domestic = 0.94
+        df_foreign = 0.97
+
+        forward = spot * df_foreign / df_domestic
+        expected = df_domestic * black76_call(forward, strike, sigma, T)
+
+        result = garman_kohlhagen_call(
+            spot,
+            strike,
+            sigma,
+            T,
+            df_domestic,
+            df_foreign,
+        )
+
+        assert result == pytest.approx(expected, abs=1e-10)
+
+    def test_put_call_parity(self):
+        spot = 1.10
+        strike = 1.05
+        sigma = 0.22
+        T = 2.0
+        df_domestic = 0.91
+        df_foreign = 0.96
+
+        call = garman_kohlhagen_call(spot, strike, sigma, T, df_domestic, df_foreign)
+        put = garman_kohlhagen_put(spot, strike, sigma, T, df_domestic, df_foreign)
+
+        assert call - put == pytest.approx(
+            spot * df_foreign - strike * df_domestic,
+            abs=1e-10,
+        )
+
+    def test_zero_vol_reduces_to_discounted_intrinsic(self):
+        spot = 1.10
+        strike = 1.05
+        df_domestic = 0.95
+        df_foreign = 0.98
+
+        call = garman_kohlhagen_call(spot, strike, 0.0, 1.0, df_domestic, df_foreign)
+        put = garman_kohlhagen_put(spot, strike, 0.0, 1.0, df_domestic, df_foreign)
+
+        assert call == pytest.approx(max(spot * df_foreign - strike * df_domestic, 0.0))
+        assert put == pytest.approx(max(strike * df_domestic - spot * df_foreign, 0.0))

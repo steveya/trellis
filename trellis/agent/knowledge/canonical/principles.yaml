@@ -1,0 +1,56 @@
+# Principles — distilled rules derived from multiple lessons.
+#
+# These are always injected into agent prompts (hot tier).
+# Each principle compresses several lessons into one actionable rule.
+
+- id: P1
+  rule: "Always calibrate rate trees to the discount curve before pricing"
+  derived_from: [cal_001, cal_002, cal_003]
+  category: calibration
+
+- id: P2
+  rule: "Callable bonds need exercise_fn=min, discrete coupons, and exercise=par+coupon"
+  derived_from: [bi_002, bi_003, bi_004]
+  category: backward_induction
+
+- id: P3
+  rule: "Convert vol units at the boundary between market data and model"
+  derived_from: [vol_001, vol_002, mc_002]
+  category: volatility
+
+- id: P4
+  rule: >-
+    Monte Carlo: use ≥10k paths, verify SE <1% of price, use Laguerre basis
+    at high vol (σ ≥ 0.40) to avoid LSM polynomial bias
+  derived_from: [mc_001, mc_002]
+  category: monte_carlo
+
+- id: P5
+  rule: >-
+    Numerical stability: use theta_method_1d with BlackScholesOperator (not legacy
+    crank_nicolson_1d), center COS truncation on first cumulant to prevent overflow
+  derived_from: [fd_001, fd_002, md_002]
+  category: numerical
+
+- id: P6
+  rule: >-
+    Cross-validation: measure the actual gap first, then set tolerance to 2-3x
+    the measured gap — never wider than 1% of price or 5bp
+  derived_from: [tst_001]
+  category: testing
+
+- id: P7
+  rule: >-
+    Bermudan swaption: all exercise dates enter the SAME underlying swap
+    (start=first_exercise, end=first_exercise+tenor) — do not create a fresh
+    shorter swap at each exercise date
+  derived_from: [bi_005]
+  category: backward_induction
+
+- id: P8
+  rule: >-
+    OAS computation: keep sigma_HW (vol model) fixed during the spread
+    root-finding loop — only shift the discount curve, never recompute vol
+    from the shifted forward rate
+  derived_from: [cal_004]
+  category: calibration

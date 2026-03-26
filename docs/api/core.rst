@@ -4,41 +4,41 @@ Core API
 Payoff Protocol
 ---------------
 
-.. autoclass:: trellis.core.payoff.Payoff
+.. autoclass:: trellis.core.Payoff
    :members:
 
-.. autoclass:: trellis.core.payoff.Cashflows
+.. autoclass:: trellis.core.Cashflows
    :members:
 
-.. autoclass:: trellis.core.payoff.PresentValue
+.. autoclass:: trellis.core.PresentValue
    :members:
 
-.. autoclass:: trellis.core.payoff.DeterministicCashflowPayoff
+.. autoclass:: trellis.core.DeterministicCashflowPayoff
    :members:
 
 MarketState
 -----------
 
-.. autoclass:: trellis.core.market_state.MarketState
+.. autoclass:: trellis.core.MarketState
    :members:
 
-.. autoclass:: trellis.core.market_state.MissingCapabilityError
+.. autoclass:: trellis.core.MissingCapabilityError
    :members:
 
 Types
 -----
 
-.. autoclass:: trellis.core.types.Frequency
+.. autoclass:: trellis.core.Frequency
    :members:
    :undoc-members:
 
-.. autoclass:: trellis.core.types.PricingResult
+.. autoclass:: trellis.core.PricingResult
    :members:
 
 Capabilities
 ------------
 
-.. autofunction:: trellis.core.capabilities.discover_capabilities
-.. autofunction:: trellis.core.capabilities.analyze_gap
-.. autofunction:: trellis.core.capabilities.check_market_data
-.. autofunction:: trellis.core.capabilities.capability_summary
+.. autofunction:: trellis.core.discover_capabilities
+.. autofunction:: trellis.core.analyze_gap
+.. autofunction:: trellis.core.check_market_data
+.. autofunction:: trellis.core.capability_summary

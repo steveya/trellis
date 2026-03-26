@@ -66,6 +66,7 @@ def parse_term_sheet(
 
 
 def _build_parse_prompt(description: str, settlement: date) -> str:
+    """Build the extraction prompt used by the term-sheet parser LLM call."""
     return f"""You are parsing a financial instrument description into structured data.
 
 ## Description

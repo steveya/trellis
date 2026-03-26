@@ -16,6 +16,7 @@ from trellis.core.market_state import MarketState
 
 from trellis.core.types import DayCountConvention
 from trellis.models.monte_carlo.engine import MonteCarloEngine
+from trellis.models.monte_carlo.path_state import barrier_payoff
 from trellis.models.processes.gbm import GBM
 
 
@@ -40,17 +41,21 @@ class BarrierOptionPayoff:
     """
 
     def __init__(self, spec: BarrierOptionSpec):
+        """Store the barrier-option contract specification."""
         self._spec = spec
 
     @property
     def spec(self) -> BarrierOptionSpec:
+        """Return the immutable barrier-option specification."""
         return self._spec
 
     @property
     def requirements(self) -> set[str]:
+        """Declare that barrier-option valuation needs discounting and Black vol."""
         return {"discount", "black_vol"}
 
     def evaluate(self, market_state: MarketState) -> float:
+        """Price the option by Monte Carlo path simulation with barrier state tracking."""
         spec = self._spec
         T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)
         if T <= 0:
@@ -64,31 +69,23 @@ class BarrierOptionPayoff:
             process, n_paths=50000, n_steps=252, seed=42, method="exact",
         )
 
-        barrier = spec.barrier
-        barrier_type = spec.barrier_type
-
-        def payoff_fn(paths):
-            S_T = paths[:, -1]
-
-            # Check barrier breach
-            if "down" in barrier_type:
-                breached = raw_np.any(paths <= barrier, axis=1)
-            else:  # up
-                breached = raw_np.any(paths >= barrier, axis=1)
-
-            # Vanilla payoff
+        def terminal_payoff(terminal):
             if spec.option_type == "call":
-                vanilla = raw_np.maximum(S_T - spec.strike, 0)
-            else:
-                vanilla = raw_np.maximum(spec.strike - S_T, 0)
+                return raw_np.maximum(terminal - spec.strike, 0.0)
+            return raw_np.maximum(spec.strike - terminal, 0.0)
 
-            # Apply barrier logic
-            if "out" in barrier_type:
-                payoffs = raw_np.where(breached, 0.0, vanilla)
-            else:  # "in"
-                payoffs = raw_np.where(breached, vanilla, 0.0)
-
-            return payoffs * spec.notional / spec.spot
-
-        result = engine.price(spec.spot, T, payoff_fn, discount_rate=r)
+        result = engine.price(
+            spec.spot,
+            T,
+            barrier_payoff(
+                barrier=spec.barrier,
+                direction="down" if "down" in spec.barrier_type else "up",
+                knock="out" if "out" in spec.barrier_type else "in",
+                terminal_payoff_fn=terminal_payoff,
+                scale=spec.notional / spec.spot,
+                name=f"{spec.barrier_type}_{spec.option_type}_barrier_payoff",
+            ),
+            discount_rate=r,
+            return_paths=False,
+        )
         return result["price"]

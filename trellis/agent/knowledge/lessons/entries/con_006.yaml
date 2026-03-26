@@ -1,0 +1,26 @@
+id: con_006
+title: Incorrect module import path
+severity: critical
+category: convention
+status: archived
+confidence: 0.4
+created: '2026-03-24T05:50:12.424940'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: Build fails with error 'No module named "interest_rate"'.
+root_cause: The code used an incorrect or guessed module name instead of using the
+  documented exact import paths, compounded by missing modeling requirements for the
+  analytical method.
+fix: Update the import statement to use the exact module path as specified in the
+  documentation and ensure that all necessary modeling requirements for the 'analytical'
+  pricer are implemented.
+validation: Discovered during build (attempt 0)
+archive_reason: Superseded by con_001 (authoritative import registry)

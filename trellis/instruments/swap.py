@@ -34,17 +34,21 @@ class SwapPayoff:
     """
 
     def __init__(self, spec: SwapSpec):
+        """Store the fixed/floating swap contract specification."""
         self._spec = spec
 
     @property
     def spec(self) -> SwapSpec:
+        """Return the immutable swap specification."""
         return self._spec
 
     @property
     def requirements(self) -> set[str]:
+        """Declare that swap valuation needs discounting and forward-rate curves."""
         return {"discount", "forward_rate"}
 
     def evaluate(self, market_state: MarketState) -> float:
+        """Value the fixed and floating legs period by period and return their net PV."""
         spec = self._spec
         sign = 1.0 if spec.is_payer else -1.0
         pv = 0.0

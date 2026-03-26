@@ -1,0 +1,25 @@
+id: md_009
+title: Missing Option Market Data
+severity: critical
+category: market_data
+status: candidate
+confidence: 0.4
+created: '2026-03-24T20:48:29.993555'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - option_payoff
+  - gbm_underlying
+  - path_independent
+  instrument: []
+  error_signature: null
+symptom: The pricing engine failed because required market data fields (maturity,
+  risk_free_rate, spot, strike, volatility) were missing.
+root_cause: The model builder did not supply the essential payoff parameters needed
+  for the GBM call pricing, causing a missing capability error during construction.
+fix: Ensure that all required market data inputs (maturity, risk_free_rate, spot,
+  strike, volatility) are provided when building the pricer.
+validation: Discovered during build (attempt 0)

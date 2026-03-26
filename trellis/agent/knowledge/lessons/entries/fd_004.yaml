@@ -1,0 +1,24 @@
+id: fd_004
+title: Missing 'pde_solver' Module
+severity: critical
+category: finite_differences
+status: archived
+confidence: 0.4
+created: '2026-03-23T23:31:03.094919'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - pde_grid
+  instrument: []
+  error_signature: null
+symptom: The system raised a ModuleNotFoundError indicating no module named 'pde_solver'.
+root_cause: The pricing model attempted to use a non-existent 'pde_solver' module
+  because there was no cookbook template or predefined data contracts for its implementation.
+fix: Implement or correctly import the 'pde_solver' module, define the necessary data
+  contracts, and update the cookbook with a standard evaluate() pattern to ensure
+  consistency.
+validation: Discovered during build (attempt 0)
+archive_reason: Superseded by con_001 (authoritative import registry)

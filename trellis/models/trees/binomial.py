@@ -32,6 +32,7 @@ class BinomialTree:
 
     def __init__(self, S0: float, T: float, n_steps: int,
                  u: float, d: float, p: float):
+        """Store CRR-style binomial parameters and prebuild the recombining tree."""
         self.S0 = S0
         self.T = T
         self.n_steps = n_steps

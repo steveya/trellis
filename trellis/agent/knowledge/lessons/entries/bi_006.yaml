@@ -1,0 +1,26 @@
+id: bi_006
+title: Undefined tree import/name error
+severity: critical
+category: backward_induction
+status: candidate
+confidence: 0.4
+created: '2026-03-25T10:16:56.690038'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  - backward_induction
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''tree'' is not defined when selecting the tree pricer method'
+root_cause: The code referenced a 'tree' symbol without importing the correct module
+  or using the exact implementation path (incorrect/guessed import name). The integration
+  assumed a global name that doesn't exist in the runtime.
+fix: Use the exact module/import path for the tree/backward-induction implementation
+  (or include a local implementation), and add a guard that fails with a clear message
+  if the method is unavailable. Add unit tests that import and call each pricer method.
+validation: Discovered during build (attempt 0)

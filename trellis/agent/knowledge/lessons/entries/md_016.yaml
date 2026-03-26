@@ -1,0 +1,27 @@
+id: md_016
+title: Empty response causes JSON parse failure in analytical pricer
+severity: critical
+category: market_data
+status: candidate
+confidence: 0.4
+created: '2026-03-25T10:23:37.995130'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'JSONDecodeError ''Expecting value: line 1 column 1 (char 0)'' when building
+  analytical pricer with vol_surface_dependence feature'
+root_cause: The build pipeline returned an empty string instead of valid JSON, likely
+  because the analytical method with vol_surface_dependence requires fetching implied
+  vol from a surface but no vol surface data was provided or the surface lookup returned
+  empty/null.
+fix: Ensure vol surface is populated before calling the analytical pricer; add a fallback
+  to flat vol if surface lookup returns empty, and validate that the response body
+  is non-empty before JSON parsing.
+validation: Discovered during build (attempt 0)

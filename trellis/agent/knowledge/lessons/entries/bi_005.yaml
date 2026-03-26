@@ -1,0 +1,38 @@
+id: bi_005
+title: 'Bermudan swaption swap convention: same underlying at all exercise dates'
+severity: high
+category: backward_induction
+status: promoted
+confidence: 1.0
+version: ''
+created: ''
+applies_when:
+  method:
+  - rate_tree
+  - monte_carlo
+  features:
+  - backward_induction
+  - early_exercise
+  - bermudan
+  - floating_coupons
+  instrument:
+  - bermudan_swaption
+  error_signature: null
+symptom: Bermudan price 15-25% below QuantLib; European at last exercise matches perfectly
+  but Bermudan diverges
+root_cause: 'A Bermudan swaption gives the right to enter the SAME underlying swap
+  at any exercise date. The swap always runs from the first possible start date to
+  the final maturity. Exercising at year 3 means you get the remaining cashflows of
+  the year-1-to-10 swap from year 3 onward, NOT a fresh year-3-to-8 swap. Computing
+  a fresh swap at each exercise date undervalues the Bermudan because the later exercise
+  dates have shorter swaps with less optionality.
+
+  '
+fix: 'Define the swap once (start=first_exercise, end=first_exercise+tenor). At each
+  exercise step on the tree, compute the NPV of that same swap''s remaining cashflows
+  (those after the current step). The swap value at exercise step m is: sum of remaining
+  fixed coupons discounted on tree minus the floating leg value (which is notional
+  at the next reset).
+
+  '
+validation: ''

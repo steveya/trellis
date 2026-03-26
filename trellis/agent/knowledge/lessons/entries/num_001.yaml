@@ -1,0 +1,25 @@
+id: num_001
+title: Missing analytical model requirements
+severity: critical
+category: numerical
+status: candidate
+confidence: 0.4
+created: '2026-03-23T22:51:51.301996'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The system failed with an error 'No module named pde_solver' during the pricing
+  model build.
+root_cause: The analytical pricing method was not provided with a proper modeling
+  template, causing the system to inadvertently rely on numerical PDE components such
+  as the pde_solver.
+fix: Define and implement the necessary analytical modeling requirements, removing
+  any unnecessary numerical dependencies.
+validation: Discovered during build (attempt 0)

@@ -1,0 +1,34 @@
+id: fd_009
+title: Crank-Nicolson Rannacher smoothing PDE build failed entirely
+severity: critical
+category: finite_differences
+status: candidate
+confidence: 0.4
+created: '2026-03-25T18:41:34.214199'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260325_184134_build_a_pricer_for:_crank_nicolson_rannacher_smoothing_for_discontinuous_payoffs
+
+
+  implementation_target:_cn_rannacher
+
+  preferred_method_family:_pde_solver
+
+
+  implementation_target:_cn_rannacher_pde_solver.yaml'
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - pde_grid
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Build returns empty code and LLM returns invalid JSON, indicating complete
+  generation failure for CN Rannacher smoothing implementation.
+root_cause: The LLM had insufficient concrete knowledge of the trellis PDE module
+  API (theta_method) to generate valid code for Crank-Nicolson with Rannacher smoothing
+  for discontinuous payoffs, causing malformed output.
+fix: Provide explicit cookbook template showing how to use trellis.models.pde.theta_method
+  with theta=0.5 for CN steps and theta=1.0 for initial fully-implicit smoothing steps,
+  including grid setup and payoff initialization for discontinuous payoffs.
+validation: Discovered during build (attempt 0)

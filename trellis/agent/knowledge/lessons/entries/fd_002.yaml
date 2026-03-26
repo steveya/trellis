@@ -1,0 +1,27 @@
+id: fd_002
+title: Old Crank-Nicolson implementation has coefficient bug
+severity: high
+category: finite_differences
+status: promoted
+confidence: 1.0
+version: ''
+created: ''
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - pde_grid
+  instrument:
+  - any
+  error_signature: null
+symptom: NaN or Inf in PDE solution; RuntimeWarning about overflow in thomas.py
+root_cause: 'The old crank_nicolson_1d and implicit_fd_1d hardcode BS PDE coefficients
+  with a construction bug that causes overflow on larger grids.
+
+  '
+fix: 'Use theta_method_1d with BlackScholesOperator from trellis.models.pde.operator.
+  The new implementation separates the PDE operator from time-stepping and correctly
+  constructs coefficients. theta=0.5 for CN, theta=1.0 for fully implicit.
+
+  '
+validation: ''

@@ -1,0 +1,29 @@
+id: cal_002
+title: Newton iteration accumulates errors in tree calibration
+severity: high
+category: calibration
+status: promoted
+confidence: 1.0
+version: ''
+created: ''
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  instrument:
+  - any
+  error_signature: null
+symptom: Drift grows with maturity (50-80bp at 10Y); tree ZCB error at 10Y >> error
+  at 1Y
+root_cause: 'Each Newton iteration has finite tolerance (~1e-8). Arrow-Debreu state
+  prices at step m depend on all previous phi values, so small errors compound through
+  forward induction.
+
+  '
+fix: 'Use the analytical formula: phi(m) = (1/dt) * ln(sum_j Q(m,j) * exp(-x(j)*dt)
+  / P(0,(m+1)*dt)). Exact to machine precision at every step. Already implemented
+  in calibrate_lattice().
+
+  '
+validation: ''

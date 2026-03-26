@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 
+from trellis.agent.review_policy import determine_review_policy
 from trellis.agent.validation_report import ValidationFinding, ValidationReport
 from trellis.agent.validation_tests import (
     check_benchmark,
@@ -28,7 +29,10 @@ def validate_model(
     code: str,
     instrument_type: str,
     method: str,
+    knowledge_context: str = "",
     model: str | None = None,
+    product_ir=None,
+    run_llm_review: bool | None = None,
 ) -> ValidationReport:
     """Run full model validation — automated tests + LLM review.
 
@@ -64,8 +68,23 @@ def validate_model(
     report.findings.extend(benchmark_findings)
 
     # 3. LLM-based conceptual review
-    llm_findings = _llm_conceptual_review(code, instrument_type, method, model)
-    report.findings.extend(llm_findings)
+    if run_llm_review is None:
+        policy = determine_review_policy(
+            validation="thorough",
+            method=method,
+            instrument_type=instrument_type,
+            product_ir=product_ir,
+        )
+        run_llm_review = policy.run_model_validator_llm
+    if run_llm_review:
+        llm_findings = _llm_conceptual_review(
+            code,
+            instrument_type,
+            method,
+            knowledge_context=knowledge_context,
+            model=model,
+        )
+        report.findings.extend(llm_findings)
 
     # Set approval status
     report.approved = not report.has_blockers
@@ -73,16 +92,52 @@ def validate_model(
     return report
 
 
+def validate_model_for_request(
+    compiled_request,
+    payoff_factory,
+    market_state_factory,
+    code: str,
+    knowledge_context: str = "",
+    model: str | None = None,
+) -> ValidationReport:
+    """Validate a model using the canonical compiled-request context."""
+    instrument = (
+        getattr(compiled_request.product_ir, "instrument", None)
+        or compiled_request.request.instrument_type
+        or "unknown"
+    )
+    method = (
+        compiled_request.execution_plan.route_method
+        or getattr(compiled_request.pricing_plan, "method", None)
+        or "unknown"
+    )
+    return validate_model(
+        payoff_factory=payoff_factory,
+        market_state_factory=market_state_factory,
+        code=code,
+        instrument_type=instrument,
+        method=method,
+        knowledge_context=knowledge_context,
+        model=model,
+        product_ir=compiled_request.product_ir,
+    )
+
+
 def _llm_conceptual_review(
     code: str,
     instrument_type: str,
     method: str,
+    knowledge_context: str = "",
     model: str | None = None,
 ) -> list[ValidationFinding]:
     """LLM-based model validation — conceptual soundness review."""
     from trellis.agent.config import llm_generate_json, get_default_model
 
     model = model or get_default_model()
+
+    knowledge_section = ""
+    if knowledge_context.strip():
+        knowledge_section = f"\n## Shared Knowledge\n{knowledge_context}\n"
 
     prompt = f"""You are a model validation analyst at a quantitative finance firm.
 Your role is to independently assess whether a pricing model is conceptually
@@ -93,6 +148,7 @@ You are reviewing MODEL quality.
 
 ## Instrument type: {instrument_type}
 ## Pricing method: {method}
+{knowledge_section}
 
 ## Code to validate
 ```python

@@ -37,6 +37,7 @@ class Bond:
         issue_date: date | None = None,
         day_count: DayCountConvention = DayCountConvention.ACT_ACT,
     ):
+        """Store either legacy period-based or modern date-based bond parameters."""
         self.notional = face if face is not None else notional
         self.coupon_rate = coupon
         self.maturity = maturity
@@ -130,6 +131,7 @@ class ParBond(Bond):
     """A bond initialised at par (convenience wrapper)."""
 
     def __init__(self, notional: float, maturity: int, frequency: int, coupon_rate: float):
+        """Create a par bond by forwarding par coupon terms to ``Bond``."""
         super().__init__(notional, coupon_rate, maturity, frequency)
 
 

@@ -18,11 +18,20 @@ extensions = [
     'sphinx.ext.viewcode',
     'sphinx.ext.intersphinx',
     'sphinx_autodoc_typehints',
-    'myst_parser',
+    'myst_nb',
 ]
 
 templates_path = ['_templates']
-exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
+exclude_patterns = [
+    '_build',
+    'Thumbs.db',
+    '.DS_Store',
+    'refactor_*.md',
+    '*workstream.md',
+    'agent/evals.md',
+    'agent/policy_live_knowledge.md',
+    'agent/workflow_diagrams.md',
+]
 
 # -- Options for HTML output -------------------------------------------------
 html_theme = 'furo'
@@ -60,8 +69,9 @@ intersphinx_mapping = {
 # Source suffix
 source_suffix = {
     '.rst': 'restructuredtext',
-    '.md': 'markdown',
 }
+
+nb_execution_mode = 'off'
 
 # Suppress warnings for missing imports in autodoc
 autodoc_mock_imports = ['anthropic', 'openai', 'fredapi', 'requests', 'blpapi']

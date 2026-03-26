@@ -1,0 +1,23 @@
+id: md_011
+title: Missing required pricing inputs
+severity: critical
+category: market_data
+status: candidate
+confidence: 0.4
+created: '2026-03-24T20:50:52.612399'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - jump_diffusion
+  instrument: []
+  error_signature: null
+symptom: The pricer failed to execute due to missing discount_curve, jump_parameters,
+  risk_free_rate, and underlying_price.
+root_cause: The model did not receive essential market data and jump diffusion parameters
+  needed to build an appropriate payoff structure.
+fix: Ensure that the discount curve, jump parameters, risk-free rate, and underlying
+  price are provided before invoking the fft_pricing method.
+validation: Discovered during build (attempt 0)

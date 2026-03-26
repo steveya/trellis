@@ -24,20 +24,25 @@ class CIR(StochasticProcess):
     """
 
     def __init__(self, a: float, b: float, sigma: float):
+        """Store the mean-reversion and volatility parameters of the short-rate model."""
         self.a = a
         self.b = b
         self.sigma = sigma
 
     def drift(self, x, t):
+        """Return the mean-reverting drift ``a (b - x)``."""
         return self.a * (self.b - x)
 
     def diffusion(self, x, t):
+        """Return the square-root diffusion term ``sigma * sqrt(max(x, 0))``."""
         return self.sigma * np.sqrt(np.maximum(x, 0.0))
 
     def exact_mean(self, x, t, dt):
+        """Return the conditional CIR mean over horizon ``dt``."""
         return x * np.exp(-self.a * dt) + self.b * (1 - np.exp(-self.a * dt))
 
     def exact_variance(self, x, t, dt):
+        """Return the conditional CIR variance over horizon ``dt``."""
         e = np.exp(-self.a * dt)
         return (x * self.sigma ** 2 * e / self.a * (1 - e)
                 + self.b * self.sigma ** 2 / (2 * self.a) * (1 - e) ** 2)

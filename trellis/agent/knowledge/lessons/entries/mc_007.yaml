@@ -1,0 +1,27 @@
+id: mc_007
+title: Missing Monte Carlo Process Module
+severity: critical
+category: monte_carlo
+status: archived
+confidence: 0.4
+created: '2026-03-23T23:00:06.204749'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - stochastic_vol
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: A ModuleNotFoundError triggered the build failure due to 'trellis.models.monte_carlo.processes'
+  being unimportable.
+root_cause: The pricing model assumed the existence of a Monte Carlo processes module
+  which was not present, compounded by the absence of a cookbook template and explicit
+  data contracts for the fft_pricing method.
+fix: Implement the missing Monte Carlo processes module and integrate it with the
+  pricing model; also, establish a cookbook template and clear data contracts for
+  the fft_pricing method to avoid unit or convention mismatches.
+validation: Discovered during build (attempt 0)
+archive_reason: Superseded by con_001 (authoritative import registry)
