@@ -1,0 +1,32 @@
+category: monte_carlo
+title: MC payoff must use required primitives
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-29T13:00:52.141285'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_130053_nth_to_default_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - credit_risk
+  - coupons
+  - fixed_coupons
+  - discounting
+  - path_dependent
+  - spread_computation
+  - maturity_settlement
+  instrument: []
+  error_signature: null
+symptom: 'Assembly runtime error: generated payoff function did not call trellis.core.differentiable.get_numpy.'
+root_cause: The generated Monte‑Carlo payoff was implemented as ordinary numpy/opaque
+  operations and did not adapt to the selected assembly's required semantic primitive
+  (trellis.core.differentiable.get_numpy). The payoff also risked returning the wrong
+  shape (e.g. (n_paths, n_steps+1)).
+fix: Rebuild the payoff as a thin adapter that calls trellis.core.differentiable.get_numpy
+  to obtain numpy arrays, perform all pathwise computations in numpy, and ensure the
+  payoff returns a 1D array of shape (n_paths,). Follow other assembly constraints
+  (no banned imports, correct output shape).
+validation: Discovered during build (attempt 3)
+id: mc_045

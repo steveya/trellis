@@ -8,6 +8,7 @@ import pytest
 from trellis.curves.bootstrap import (
     BootstrapInstrument,
     bootstrap,
+    bootstrap_named_yield_curves,
     bootstrap_yield_curve,
 )
 from trellis.curves.yield_curve import YieldCurve
@@ -124,6 +125,25 @@ class TestBootstrapYieldCurve:
         assert float(curve.discount(0.5)) > float(curve.discount(1.0))
         # And positive
         assert float(curve.discount(1.0)) > 0
+
+
+class TestBootstrapNamedYieldCurves:
+
+    def test_bootstraps_multiple_named_curve_sets(self):
+        curve_sets = {
+            "usd_ois_boot": [
+                BootstrapInstrument(tenor=1.0, quote=0.05, instrument_type="deposit"),
+            ],
+            "eur_ois_boot": [
+                BootstrapInstrument(tenor=1.0, quote=0.03, instrument_type="deposit"),
+            ],
+        }
+
+        curves = bootstrap_named_yield_curves(curve_sets)
+
+        assert set(curves) == {"usd_ois_boot", "eur_ois_boot"}
+        assert float(curves["usd_ois_boot"].discount(1.0)) == pytest.approx(1.0 / 1.05)
+        assert float(curves["eur_ois_boot"].discount(1.0)) == pytest.approx(1.0 / 1.03)
 
 
 class TestBootstrapFutures:

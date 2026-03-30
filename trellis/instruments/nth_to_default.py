@@ -1,7 +1,10 @@
-"""Nth-to-default basket — reference implementation using copula.
+"""Nth-to-default credit basket priced via copula simulation.
 
-This is the hand-coded reference for copula-based pricing patterns.
-The agent uses this as a template for other portfolio credit instruments.
+An nth-to-default basket is a credit derivative that pays out when the
+nth entity in a group defaults. For example, a 1st-to-default basket on
+5 companies pays the holder a loss amount when any one company defaults.
+Pricing requires modeling correlated defaults, which is done here using
+a Gaussian copula (a standard model for multi-name credit products).
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ from trellis.models.copulas.gaussian import GaussianCopula
 
 @dataclass(frozen=True)
 class NthToDefaultSpec:
-    """Specification for an nth-to-default basket."""
+    """Contract terms for an nth-to-default credit basket."""
 
     notional: float
     n_names: int
@@ -32,7 +35,7 @@ class NthToDefaultSpec:
 
 
 class NthToDefaultPayoff:
-    """Nth-to-default basket priced via Gaussian copula simulation."""
+    """Prices an nth-to-default basket by simulating correlated defaults."""
 
     def __init__(self, spec: NthToDefaultSpec):
         """Store the basket-credit contract specification."""
@@ -45,11 +48,11 @@ class NthToDefaultPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        """Declare that basket-credit valuation needs discount and credit curves."""
+        """Needs a discount curve and a credit curve (for default probabilities)."""
         return {"discount", "credit"}
 
     def evaluate(self, market_state: MarketState) -> float:
-        """Estimate discounted protection PV from a Gaussian-copula default simulation."""
+        """Simulate correlated defaults and compute the expected discounted loss payment."""
         spec = self._spec
         T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
         if T <= 0:

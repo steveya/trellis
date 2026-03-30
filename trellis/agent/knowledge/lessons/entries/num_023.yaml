@@ -1,0 +1,27 @@
+category: numerical
+title: Use exact PDE grid imports
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T22:45:06.661575'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_224507_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - pde_grid
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Importing `Grid` from `trellis.models.pde` raises an import error at build
+  time.
+root_cause: The implementation guessed a package-level export that does not exist.
+  The PDE grid type lives behind a different exact trellis import path, so the payoff
+  assembly fails before numerical evaluation starts.
+fix: Use only verified trellis import paths for PDE components and import the grid
+  from its actual defining module. Add a small import smoke test before wiring the
+  payoff so missing exports are caught immediately.
+validation: Discovered during build (attempt 3)
+id: num_023

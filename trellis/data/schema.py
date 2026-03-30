@@ -62,6 +62,7 @@ class MarketSnapshot:
     default_local_vol_surface: str | None = None
     default_jump_parameters: str | None = None
     default_model_parameters: str | None = None
+    provenance: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self):
         """Freeze all mapping fields so snapshots remain immutable and shareable."""
@@ -84,6 +85,7 @@ class MarketSnapshot:
             _freeze_parameter_mapping(self.model_parameter_sets),
         )
         object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+        object.__setattr__(self, "provenance", _freeze_mapping(self.provenance))
 
     def discount_curve(self, name: str | None = None):
         """Return a selected discount curve, if available."""
@@ -175,17 +177,41 @@ class MarketSnapshot:
         """Compile the snapshot into a runtime MarketState."""
         from trellis.curves.forward_curve import ForwardCurve
 
+        selected_curve_names: dict[str, str] = {}
+
+        selected_discount_curve_name, selected_discount_curve = self._select_named_mapping_entry(
+            self.discount_curves,
+            explicit_name=discount_curve,
+            default_name=self.default_discount_curve,
+            kind="discount curve",
+        )
+        if selected_discount_curve_name is not None:
+            selected_curve_names["discount_curve"] = selected_discount_curve_name
+
         selected_forecast_curves = dict(self.forecast_curves) or None
         selected_forward_curve = None
         if forecast_curve is not None:
-            forecast_discount = self._select_mapping_entry(
+            selected_forecast_curve_name, forecast_discount = self._select_named_mapping_entry(
                 self.forecast_curves,
                 explicit_name=forecast_curve,
                 default_name=None,
                 kind="forecast curve",
             )
-            selected_forecast_curves = {forecast_curve: forecast_discount}
+            if selected_forecast_curve_name is not None:
+                selected_curve_names["forecast_curve"] = selected_forecast_curve_name
+                selected_forecast_curves = {selected_forecast_curve_name: forecast_discount}
             selected_forward_curve = ForwardCurve(forecast_discount)
+        elif len(self.forecast_curves) == 1:
+            selected_curve_names["forecast_curve"] = next(iter(self.forecast_curves))
+
+        selected_credit_curve_name, selected_credit_curve = self._select_named_mapping_entry(
+            self.credit_curves,
+            explicit_name=credit_curve,
+            default_name=self.default_credit_curve,
+            kind="credit curve",
+        )
+        if selected_credit_curve_name is not None:
+            selected_curve_names["credit_curve"] = selected_credit_curve_name
 
         selected_fx_rates = dict(self.fx_rates) or None
         selected_spot = self.underlier_spot(underlier_spot)
@@ -205,11 +231,12 @@ class MarketSnapshot:
         base_state = MarketState(
             as_of=self.as_of,
             settlement=settlement,
-            discount=self.discount_curve(discount_curve),
+            discount=selected_discount_curve,
             forward_curve=selected_forward_curve,
             vol_surface=self.vol_surface(vol_surface),
-            credit_curve=self.credit_curve(credit_curve),
+            credit_curve=selected_credit_curve,
             forecast_curves=selected_forecast_curves,
+            selected_curve_names=selected_curve_names or None,
             fx_rates=selected_fx_rates,
             spot=selected_spot,
             underlier_spots=selected_underlier_spots,
@@ -231,6 +258,7 @@ class MarketSnapshot:
                 {key: dict(value) for key, value in self.model_parameter_sets.items()}
                 or None
             ),
+            market_provenance=dict(self.provenance) or None,
         )
         selected_state_space = self.state_space(state_space)
         if callable(selected_state_space):
@@ -248,16 +276,34 @@ class MarketSnapshot:
         kind: str,
     ):
         """Resolve one named/default mapping entry, raising on ambiguous selections."""
+        _, value = MarketSnapshot._select_named_mapping_entry(
+            mapping,
+            explicit_name=explicit_name,
+            default_name=default_name,
+            kind=kind,
+        )
+        return value
+
+    @staticmethod
+    def _select_named_mapping_entry(
+        mapping: Mapping[str, object],
+        *,
+        explicit_name: str | None,
+        default_name: str | None,
+        kind: str,
+    ) -> tuple[str | None, object | None]:
+        """Resolve one named/default mapping entry and return its selected name."""
         if explicit_name is not None:
             if explicit_name not in mapping:
                 raise ValueError(f"Unknown {kind}: {explicit_name}")
-            return mapping[explicit_name]
+            return explicit_name, mapping[explicit_name]
         if not mapping:
-            return None
+            return None, None
         if default_name is not None:
             if default_name not in mapping:
                 raise ValueError(f"Unknown default {kind}: {default_name}")
-            return mapping[default_name]
+            return default_name, mapping[default_name]
         if len(mapping) == 1:
-            return next(iter(mapping.values()))
+            name, value = next(iter(mapping.items()))
+            return name, value
         raise ValueError(f"Multiple {kind}s available; set a default {kind} name")

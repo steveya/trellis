@@ -1,0 +1,35 @@
+category: monte_carlo
+title: Undefined identifier in dataclass defaults
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:25:06.133154'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_232507_build_a_pricer_for:_gbm_call:_all_4_schemes_convergence_order
+
+
+  implementation_target:_exact
+
+  preferred_method_family:_monte_carlo
+
+
+  implementation_target:_exact_monte_carlo.yaml'
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - greeks
+  - maturity_settlement
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''monte_carlo'' is not defined (raised at module import
+  / dataclass definition).'
+root_cause: Dataclass field default values used bare identifiers (monte_carlo, exact)
+  instead of string literals or imported constants, causing a NameError during module
+  import. The code attempted to reference names that do not exist in the module scope.
+fix: 'Replace bare identifiers with string literals (e.g. method_family: str = "monte_carlo",
+  implementation_target: str = "exact") or import/define the constants before using
+  them as defaults; run a quick static import/test to catch such NameErrors early.'
+validation: Discovered during build (attempt 2)
+id: mc_041

@@ -70,8 +70,8 @@ def _settings() -> dict[str, Any]:
     load_env()
     api_key = os.environ.get("LINEAR_API_KEY", "").strip()
     team_ref = (
-        os.environ.get("LINEAR_REQUEST_AUDIT_TEAM_ID", "").strip()
-        or os.environ.get("LINEAR_TEAM_ID", "").strip()
+        os.environ.get("LINEAR_TEAM_ID", "").strip()
+        or os.environ.get("LINEAR_REQUEST_AUDIT_TEAM_ID", "").strip()
     )
     return {
         "enabled": bool(api_key and team_ref),

@@ -1,0 +1,920 @@
+{
+  "baseline": {
+    "failure_buckets": {
+      "success": 3
+    },
+    "promotion_discipline": {
+      "captured_lessons": 0,
+      "cookbook_candidates": 0,
+      "knowledge_traces": 7,
+      "promotion_candidates": 0,
+      "successful_tasks": 3,
+      "successful_tasks_with_shared_context": 3,
+      "successful_tasks_without_reusable_artifacts": [],
+      "tasks_with_attribution": 3
+    },
+    "retry_recovery": {
+      "first_attempt_successes": 3,
+      "successful_after_retry": 0
+    },
+    "reviewer_signals": {
+      "reviewer_agent_counts": {},
+      "tasks_recovered_after_review": 0,
+      "tasks_with_multi_reviewer_issues": 0,
+      "tasks_with_reviewer_issues": 0
+    },
+    "shared_knowledge": {
+      "tasks_with_lessons": 3,
+      "tasks_with_shared_context": 3
+    },
+    "token_usage": {
+      "by_provider": {},
+      "by_stage": {},
+      "call_count": 0,
+      "calls_with_usage": 0,
+      "calls_without_usage": 0,
+      "completion_tokens": 0,
+      "prompt_tokens": 0,
+      "total_tokens": 0
+    },
+    "totals": {
+      "avg_attempts": 0.0,
+      "failures": 0,
+      "successes": 3,
+      "tasks": 3
+    }
+  },
+  "baseline_mode": "reuse",
+  "benchmark_name": "analytical_support_reliability",
+  "candidate": {
+    "failure_buckets": {
+      "comparison_insufficient_results": 3
+    },
+    "promotion_discipline": {
+      "captured_lessons": 0,
+      "cookbook_candidates": 0,
+      "knowledge_traces": 0,
+      "promotion_candidates": 0,
+      "successful_tasks": 0,
+      "successful_tasks_with_shared_context": 0,
+      "successful_tasks_without_reusable_artifacts": [],
+      "tasks_with_attribution": 0
+    },
+    "retry_recovery": {
+      "first_attempt_successes": 0,
+      "successful_after_retry": 0
+    },
+    "reviewer_signals": {
+      "reviewer_agent_counts": {},
+      "tasks_recovered_after_review": 0,
+      "tasks_with_multi_reviewer_issues": 0,
+      "tasks_with_reviewer_issues": 0
+    },
+    "shared_knowledge": {
+      "tasks_with_lessons": 3,
+      "tasks_with_shared_context": 3
+    },
+    "token_usage": {
+      "by_provider": {
+        "openai": {
+          "call_count": 28,
+          "calls_with_usage": 28,
+          "calls_without_usage": 0,
+          "completion_tokens": 32893,
+          "prompt_tokens": 196502,
+          "total_tokens": 229395
+        }
+      },
+      "by_stage": {
+        "code_generation": {
+          "call_count": 21,
+          "calls_with_usage": 21,
+          "calls_without_usage": 0,
+          "completion_tokens": 14425,
+          "prompt_tokens": 186661,
+          "total_tokens": 201086
+        },
+        "reflection": {
+          "call_count": 7,
+          "calls_with_usage": 7,
+          "calls_without_usage": 0,
+          "completion_tokens": 18468,
+          "prompt_tokens": 9841,
+          "total_tokens": 28309
+        }
+      },
+      "call_count": 28,
+      "calls_with_usage": 28,
+      "calls_without_usage": 0,
+      "completion_tokens": 32893,
+      "prompt_tokens": 196502,
+      "total_tokens": 229395
+    },
+    "totals": {
+      "avg_attempts": 7.0,
+      "failures": 3,
+      "successes": 0,
+      "tasks": 3
+    }
+  },
+  "candidate_mode": "fresh-build",
+  "comparison": {
+    "baseline": {
+      "failure_buckets": {
+        "success": 3
+      },
+      "promotion_discipline": {
+        "captured_lessons": 0,
+        "cookbook_candidates": 0,
+        "knowledge_traces": 7,
+        "promotion_candidates": 0,
+        "successful_tasks": 3,
+        "successful_tasks_with_shared_context": 3,
+        "successful_tasks_without_reusable_artifacts": [],
+        "tasks_with_attribution": 3
+      },
+      "retry_recovery": {
+        "first_attempt_successes": 3,
+        "successful_after_retry": 0
+      },
+      "reviewer_signals": {
+        "reviewer_agent_counts": {},
+        "tasks_recovered_after_review": 0,
+        "tasks_with_multi_reviewer_issues": 0,
+        "tasks_with_reviewer_issues": 0
+      },
+      "shared_knowledge": {
+        "tasks_with_lessons": 3,
+        "tasks_with_shared_context": 3
+      },
+      "token_usage": {
+        "by_provider": {},
+        "by_stage": {},
+        "call_count": 0,
+        "calls_with_usage": 0,
+        "calls_without_usage": 0,
+        "completion_tokens": 0,
+        "prompt_tokens": 0,
+        "total_tokens": 0
+      },
+      "totals": {
+        "avg_attempts": 0.0,
+        "failures": 0,
+        "successes": 3,
+        "tasks": 3
+      }
+    },
+    "candidate": {
+      "failure_buckets": {
+        "comparison_insufficient_results": 3
+      },
+      "promotion_discipline": {
+        "captured_lessons": 0,
+        "cookbook_candidates": 0,
+        "knowledge_traces": 0,
+        "promotion_candidates": 0,
+        "successful_tasks": 0,
+        "successful_tasks_with_shared_context": 0,
+        "successful_tasks_without_reusable_artifacts": [],
+        "tasks_with_attribution": 0
+      },
+      "retry_recovery": {
+        "first_attempt_successes": 0,
+        "successful_after_retry": 0
+      },
+      "reviewer_signals": {
+        "reviewer_agent_counts": {},
+        "tasks_recovered_after_review": 0,
+        "tasks_with_multi_reviewer_issues": 0,
+        "tasks_with_reviewer_issues": 0
+      },
+      "shared_knowledge": {
+        "tasks_with_lessons": 3,
+        "tasks_with_shared_context": 3
+      },
+      "token_usage": {
+        "by_provider": {
+          "openai": {
+            "call_count": 28,
+            "calls_with_usage": 28,
+            "calls_without_usage": 0,
+            "completion_tokens": 32893,
+            "prompt_tokens": 196502,
+            "total_tokens": 229395
+          }
+        },
+        "by_stage": {
+          "code_generation": {
+            "call_count": 21,
+            "calls_with_usage": 21,
+            "calls_without_usage": 0,
+            "completion_tokens": 14425,
+            "prompt_tokens": 186661,
+            "total_tokens": 201086
+          },
+          "reflection": {
+            "call_count": 7,
+            "calls_with_usage": 7,
+            "calls_without_usage": 0,
+            "completion_tokens": 18468,
+            "prompt_tokens": 9841,
+            "total_tokens": 28309
+          }
+        },
+        "call_count": 28,
+        "calls_with_usage": 28,
+        "calls_without_usage": 0,
+        "completion_tokens": 32893,
+        "prompt_tokens": 196502,
+        "total_tokens": 229395
+      },
+      "totals": {
+        "avg_attempts": 7.0,
+        "failures": 3,
+        "successes": 0,
+        "tasks": 3
+      }
+    },
+    "failure_bucket_deltas": {
+      "comparison_insufficient_results": 3,
+      "success": -3
+    },
+    "promotion_discipline_delta": {
+      "captured_lessons": 0,
+      "cookbook_candidates": 0,
+      "knowledge_traces": -7,
+      "promotion_candidates": 0,
+      "successful_tasks": -3,
+      "successful_tasks_with_shared_context": -3,
+      "successful_tasks_without_reusable_artifacts": 0,
+      "tasks_with_attribution": -3
+    },
+    "retry_recovery_delta": {
+      "first_attempt_successes": -3,
+      "successful_after_retry": 0
+    },
+    "reviewer_signal_delta": {
+      "reviewer_agent_counts": {},
+      "tasks_recovered_after_review": 0,
+      "tasks_with_multi_reviewer_issues": 0,
+      "tasks_with_reviewer_issues": 0
+    },
+    "shared_knowledge_delta": {
+      "tasks_with_lessons": 0,
+      "tasks_with_shared_context": 0
+    },
+    "task_transitions": {
+      "by_task": {
+        "E22": {
+          "baseline": "success",
+          "candidate": "comparison_insufficient_results",
+          "transition": "regressed"
+        },
+        "E25": {
+          "baseline": "success",
+          "candidate": "comparison_insufficient_results",
+          "transition": "regressed"
+        },
+        "T97": {
+          "baseline": "success",
+          "candidate": "comparison_insufficient_results",
+          "transition": "regressed"
+        }
+      },
+      "improved": 0,
+      "regressed": 3,
+      "unchanged": 0
+    }
+  },
+  "created_at": "2026-03-28T15:34:32.421877+00:00",
+  "json_path": "/Users/steveyang/Projects/steveya/trellis/docs/benchmarks/analytical_support_reliability.json",
+  "knowledge_capture": {
+    "follow_up_suggestions": [
+      {
+        "bucket": "comparison_insufficient_results",
+        "count": 3,
+        "suggestion": "Check the comparison-task cross-validation wiring for the fresh-build path."
+      }
+    ],
+    "knowledge_gap_counts": {},
+    "successful_tasks_without_reusable_artifacts": [],
+    "task_rows": [
+      {
+        "baseline": {
+          "artifacts": {
+            "analytical_trace_paths": 0,
+            "analytical_trace_text_paths": 0,
+            "cookbook_candidate_paths": 0,
+            "knowledge_gap_log_paths": 0,
+            "knowledge_trace_paths": 3,
+            "platform_request_ids": 3,
+            "platform_trace_paths": 3,
+            "promotion_candidate_paths": 0
+          },
+          "attempts": 0,
+          "cookbook_enriched": false,
+          "failures": [],
+          "gap_confidence": 1.0,
+          "knowledge_gaps": [],
+          "knowledge_summary_keys": [
+            "cookbook_methods",
+            "data_contracts",
+            "lesson_ids",
+            "lesson_titles",
+            "principle_ids",
+            "unresolved_primitives"
+          ],
+          "knowledge_trace_saved": [],
+          "lesson_ids": [
+            "con_001",
+            "con_014",
+            "mc_003",
+            "mc_016",
+            "mc_017",
+            "mc_018",
+            "mc_020",
+            "sem_002",
+            "vol_001"
+          ],
+          "mode": "reuse",
+          "preferred_method": null,
+          "present": true,
+          "promotion_candidate_saved": [],
+          "reference_target": null,
+          "success": true,
+          "token_usage_total": 0
+        },
+        "candidate": {
+          "artifacts": {
+            "analytical_trace_paths": 0,
+            "analytical_trace_text_paths": 0,
+            "cookbook_candidate_paths": 0,
+            "knowledge_gap_log_paths": 1,
+            "knowledge_trace_paths": 3,
+            "platform_request_ids": 3,
+            "platform_trace_paths": 3,
+            "promotion_candidate_paths": 0
+          },
+          "attempts": 9,
+          "cookbook_enriched": false,
+          "failures": [],
+          "gap_confidence": 1.0,
+          "knowledge_gaps": [],
+          "knowledge_summary_keys": [
+            "cookbook_methods",
+            "data_contracts",
+            "lesson_ids",
+            "lesson_titles",
+            "principle_ids",
+            "unresolved_primitives"
+          ],
+          "knowledge_trace_saved": [],
+          "lesson_ids": [
+            "con_001",
+            "con_014",
+            "mc_003",
+            "mc_016",
+            "mc_017",
+            "mc_018",
+            "mc_020",
+            "sem_002",
+            "vol_001",
+            "vol_003",
+            "mc_023",
+            "vol_004"
+          ],
+          "mode": "fresh-build",
+          "preferred_method": null,
+          "present": true,
+          "promotion_candidate_saved": [],
+          "reference_target": null,
+          "success": false,
+          "token_usage_total": 107657
+        },
+        "task_id": "T97",
+        "title": "Digital (cash-or-nothing) option: BS formula vs MC vs COS",
+        "transition": {
+          "baseline": "success",
+          "candidate": "comparison_insufficient_results",
+          "transition": "regressed"
+        }
+      },
+      {
+        "baseline": {
+          "artifacts": {
+            "analytical_trace_paths": 0,
+            "analytical_trace_text_paths": 0,
+            "cookbook_candidate_paths": 0,
+            "knowledge_gap_log_paths": 0,
+            "knowledge_trace_paths": 2,
+            "platform_request_ids": 2,
+            "platform_trace_paths": 2,
+            "promotion_candidate_paths": 0
+          },
+          "attempts": 0,
+          "cookbook_enriched": false,
+          "failures": [],
+          "gap_confidence": 1.0,
+          "knowledge_gaps": [],
+          "knowledge_summary_keys": [
+            "cookbook_methods",
+            "data_contracts",
+            "lesson_ids",
+            "lesson_titles",
+            "principle_ids",
+            "unresolved_primitives"
+          ],
+          "knowledge_trace_saved": [],
+          "lesson_ids": [
+            "bi_001",
+            "bi_003",
+            "bi_004",
+            "bi_005",
+            "cal_003",
+            "con_014",
+            "sem_002",
+            "vol_001"
+          ],
+          "mode": "reuse",
+          "preferred_method": null,
+          "present": true,
+          "promotion_candidate_saved": [],
+          "reference_target": null,
+          "success": true,
+          "token_usage_total": 0
+        },
+        "candidate": {
+          "artifacts": {
+            "analytical_trace_paths": 0,
+            "analytical_trace_text_paths": 0,
+            "cookbook_candidate_paths": 0,
+            "knowledge_gap_log_paths": 1,
+            "knowledge_trace_paths": 2,
+            "platform_request_ids": 2,
+            "platform_trace_paths": 2,
+            "promotion_candidate_paths": 0
+          },
+          "attempts": 6,
+          "cookbook_enriched": false,
+          "failures": [],
+          "gap_confidence": 1.0,
+          "knowledge_gaps": [],
+          "knowledge_summary_keys": [
+            "cookbook_methods",
+            "data_contracts",
+            "lesson_ids",
+            "lesson_titles",
+            "principle_ids",
+            "unresolved_primitives"
+          ],
+          "knowledge_trace_saved": [],
+          "lesson_ids": [
+            "bi_001",
+            "bi_003",
+            "bi_004",
+            "bi_005",
+            "cal_003",
+            "con_014",
+            "sem_002",
+            "vol_001",
+            "mc_024",
+            "num_021"
+          ],
+          "mode": "fresh-build",
+          "preferred_method": null,
+          "present": true,
+          "promotion_candidate_saved": [],
+          "reference_target": null,
+          "success": false,
+          "token_usage_total": 64720
+        },
+        "task_id": "E22",
+        "title": "Cap/floor: Black caplet stack vs MC rate simulation",
+        "transition": {
+          "baseline": "success",
+          "candidate": "comparison_insufficient_results",
+          "transition": "regressed"
+        }
+      },
+      {
+        "baseline": {
+          "artifacts": {
+            "analytical_trace_paths": 0,
+            "analytical_trace_text_paths": 0,
+            "cookbook_candidate_paths": 0,
+            "knowledge_gap_log_paths": 0,
+            "knowledge_trace_paths": 2,
+            "platform_request_ids": 2,
+            "platform_trace_paths": 2,
+            "promotion_candidate_paths": 0
+          },
+          "attempts": 0,
+          "cookbook_enriched": false,
+          "failures": [],
+          "gap_confidence": 1.0,
+          "knowledge_gaps": [],
+          "knowledge_summary_keys": [
+            "cookbook_methods",
+            "data_contracts",
+            "lesson_ids",
+            "lesson_titles",
+            "principle_ids",
+            "unresolved_primitives"
+          ],
+          "knowledge_trace_saved": [],
+          "lesson_ids": [
+            "con_001",
+            "con_014",
+            "mc_003",
+            "mc_016",
+            "mc_017",
+            "mc_018",
+            "mc_020",
+            "sem_002",
+            "vol_001"
+          ],
+          "mode": "reuse",
+          "preferred_method": null,
+          "present": true,
+          "promotion_candidate_saved": [],
+          "reference_target": null,
+          "success": true,
+          "token_usage_total": 0
+        },
+        "candidate": {
+          "artifacts": {
+            "analytical_trace_paths": 0,
+            "analytical_trace_text_paths": 0,
+            "cookbook_candidate_paths": 0,
+            "knowledge_gap_log_paths": 1,
+            "knowledge_trace_paths": 2,
+            "platform_request_ids": 2,
+            "platform_trace_paths": 2,
+            "promotion_candidate_paths": 0
+          },
+          "attempts": 6,
+          "cookbook_enriched": false,
+          "failures": [],
+          "gap_confidence": 1.0,
+          "knowledge_gaps": [],
+          "knowledge_summary_keys": [
+            "cookbook_methods",
+            "data_contracts",
+            "lesson_ids",
+            "lesson_titles",
+            "principle_ids",
+            "unresolved_primitives"
+          ],
+          "knowledge_trace_saved": [],
+          "lesson_ids": [
+            "con_001",
+            "con_014",
+            "mc_003",
+            "mc_016",
+            "mc_017",
+            "mc_018",
+            "mc_020",
+            "sem_002",
+            "vol_001",
+            "mc_025",
+            "num_022"
+          ],
+          "mode": "fresh-build",
+          "preferred_method": null,
+          "present": true,
+          "promotion_candidate_saved": [],
+          "reference_target": null,
+          "success": false,
+          "token_usage_total": 57018
+        },
+        "task_id": "E25",
+        "title": "FX option (EURUSD): GK analytical vs MC",
+        "transition": {
+          "baseline": "success",
+          "candidate": "comparison_insufficient_results",
+          "transition": "regressed"
+        }
+      }
+    ],
+    "tasks_with_cookbooks": [],
+    "tasks_with_lessons": [
+      "E22",
+      "E25",
+      "T97"
+    ],
+    "tasks_with_promotion_candidates": []
+  },
+  "notes": [
+    "Fresh-build benchmarking uses the same representative tranche as the reuse baseline.",
+    "The report records lesson capture, cookbook enrichment, promotion candidates, and failure buckets."
+  ],
+  "task_ids": [
+    "T97",
+    "E22",
+    "E25"
+  ],
+  "task_titles": {
+    "E22": "Cap/floor: Black caplet stack vs MC rate simulation",
+    "E25": "FX option (EURUSD): GK analytical vs MC",
+    "T97": "Digital (cash-or-nothing) option: BS formula vs MC vs COS"
+  },
+  "tasks": [
+    {
+      "baseline": {
+        "artifacts": {
+          "analytical_trace_paths": 0,
+          "analytical_trace_text_paths": 0,
+          "cookbook_candidate_paths": 0,
+          "knowledge_gap_log_paths": 0,
+          "knowledge_trace_paths": 3,
+          "platform_request_ids": 3,
+          "platform_trace_paths": 3,
+          "promotion_candidate_paths": 0
+        },
+        "attempts": 0,
+        "cookbook_enriched": false,
+        "failures": [],
+        "gap_confidence": 1.0,
+        "knowledge_gaps": [],
+        "knowledge_summary_keys": [
+          "cookbook_methods",
+          "data_contracts",
+          "lesson_ids",
+          "lesson_titles",
+          "principle_ids",
+          "unresolved_primitives"
+        ],
+        "knowledge_trace_saved": [],
+        "lesson_ids": [
+          "con_001",
+          "con_014",
+          "mc_003",
+          "mc_016",
+          "mc_017",
+          "mc_018",
+          "mc_020",
+          "sem_002",
+          "vol_001"
+        ],
+        "mode": "reuse",
+        "preferred_method": null,
+        "present": true,
+        "promotion_candidate_saved": [],
+        "reference_target": null,
+        "success": true,
+        "token_usage_total": 0
+      },
+      "candidate": {
+        "artifacts": {
+          "analytical_trace_paths": 0,
+          "analytical_trace_text_paths": 0,
+          "cookbook_candidate_paths": 0,
+          "knowledge_gap_log_paths": 1,
+          "knowledge_trace_paths": 3,
+          "platform_request_ids": 3,
+          "platform_trace_paths": 3,
+          "promotion_candidate_paths": 0
+        },
+        "attempts": 9,
+        "cookbook_enriched": false,
+        "failures": [],
+        "gap_confidence": 1.0,
+        "knowledge_gaps": [],
+        "knowledge_summary_keys": [
+          "cookbook_methods",
+          "data_contracts",
+          "lesson_ids",
+          "lesson_titles",
+          "principle_ids",
+          "unresolved_primitives"
+        ],
+        "knowledge_trace_saved": [],
+        "lesson_ids": [
+          "con_001",
+          "con_014",
+          "mc_003",
+          "mc_016",
+          "mc_017",
+          "mc_018",
+          "mc_020",
+          "sem_002",
+          "vol_001",
+          "vol_003",
+          "mc_023",
+          "vol_004"
+        ],
+        "mode": "fresh-build",
+        "preferred_method": null,
+        "present": true,
+        "promotion_candidate_saved": [],
+        "reference_target": null,
+        "success": false,
+        "token_usage_total": 107657
+      },
+      "task_id": "T97",
+      "title": "Digital (cash-or-nothing) option: BS formula vs MC vs COS",
+      "transition": {
+        "baseline": "success",
+        "candidate": "comparison_insufficient_results",
+        "transition": "regressed"
+      }
+    },
+    {
+      "baseline": {
+        "artifacts": {
+          "analytical_trace_paths": 0,
+          "analytical_trace_text_paths": 0,
+          "cookbook_candidate_paths": 0,
+          "knowledge_gap_log_paths": 0,
+          "knowledge_trace_paths": 2,
+          "platform_request_ids": 2,
+          "platform_trace_paths": 2,
+          "promotion_candidate_paths": 0
+        },
+        "attempts": 0,
+        "cookbook_enriched": false,
+        "failures": [],
+        "gap_confidence": 1.0,
+        "knowledge_gaps": [],
+        "knowledge_summary_keys": [
+          "cookbook_methods",
+          "data_contracts",
+          "lesson_ids",
+          "lesson_titles",
+          "principle_ids",
+          "unresolved_primitives"
+        ],
+        "knowledge_trace_saved": [],
+        "lesson_ids": [
+          "bi_001",
+          "bi_003",
+          "bi_004",
+          "bi_005",
+          "cal_003",
+          "con_014",
+          "sem_002",
+          "vol_001"
+        ],
+        "mode": "reuse",
+        "preferred_method": null,
+        "present": true,
+        "promotion_candidate_saved": [],
+        "reference_target": null,
+        "success": true,
+        "token_usage_total": 0
+      },
+      "candidate": {
+        "artifacts": {
+          "analytical_trace_paths": 0,
+          "analytical_trace_text_paths": 0,
+          "cookbook_candidate_paths": 0,
+          "knowledge_gap_log_paths": 1,
+          "knowledge_trace_paths": 2,
+          "platform_request_ids": 2,
+          "platform_trace_paths": 2,
+          "promotion_candidate_paths": 0
+        },
+        "attempts": 6,
+        "cookbook_enriched": false,
+        "failures": [],
+        "gap_confidence": 1.0,
+        "knowledge_gaps": [],
+        "knowledge_summary_keys": [
+          "cookbook_methods",
+          "data_contracts",
+          "lesson_ids",
+          "lesson_titles",
+          "principle_ids",
+          "unresolved_primitives"
+        ],
+        "knowledge_trace_saved": [],
+        "lesson_ids": [
+          "bi_001",
+          "bi_003",
+          "bi_004",
+          "bi_005",
+          "cal_003",
+          "con_014",
+          "sem_002",
+          "vol_001",
+          "mc_024",
+          "num_021"
+        ],
+        "mode": "fresh-build",
+        "preferred_method": null,
+        "present": true,
+        "promotion_candidate_saved": [],
+        "reference_target": null,
+        "success": false,
+        "token_usage_total": 64720
+      },
+      "task_id": "E22",
+      "title": "Cap/floor: Black caplet stack vs MC rate simulation",
+      "transition": {
+        "baseline": "success",
+        "candidate": "comparison_insufficient_results",
+        "transition": "regressed"
+      }
+    },
+    {
+      "baseline": {
+        "artifacts": {
+          "analytical_trace_paths": 0,
+          "analytical_trace_text_paths": 0,
+          "cookbook_candidate_paths": 0,
+          "knowledge_gap_log_paths": 0,
+          "knowledge_trace_paths": 2,
+          "platform_request_ids": 2,
+          "platform_trace_paths": 2,
+          "promotion_candidate_paths": 0
+        },
+        "attempts": 0,
+        "cookbook_enriched": false,
+        "failures": [],
+        "gap_confidence": 1.0,
+        "knowledge_gaps": [],
+        "knowledge_summary_keys": [
+          "cookbook_methods",
+          "data_contracts",
+          "lesson_ids",
+          "lesson_titles",
+          "principle_ids",
+          "unresolved_primitives"
+        ],
+        "knowledge_trace_saved": [],
+        "lesson_ids": [
+          "con_001",
+          "con_014",
+          "mc_003",
+          "mc_016",
+          "mc_017",
+          "mc_018",
+          "mc_020",
+          "sem_002",
+          "vol_001"
+        ],
+        "mode": "reuse",
+        "preferred_method": null,
+        "present": true,
+        "promotion_candidate_saved": [],
+        "reference_target": null,
+        "success": true,
+        "token_usage_total": 0
+      },
+      "candidate": {
+        "artifacts": {
+          "analytical_trace_paths": 0,
+          "analytical_trace_text_paths": 0,
+          "cookbook_candidate_paths": 0,
+          "knowledge_gap_log_paths": 1,
+          "knowledge_trace_paths": 2,
+          "platform_request_ids": 2,
+          "platform_trace_paths": 2,
+          "promotion_candidate_paths": 0
+        },
+        "attempts": 6,
+        "cookbook_enriched": false,
+        "failures": [],
+        "gap_confidence": 1.0,
+        "knowledge_gaps": [],
+        "knowledge_summary_keys": [
+          "cookbook_methods",
+          "data_contracts",
+          "lesson_ids",
+          "lesson_titles",
+          "principle_ids",
+          "unresolved_primitives"
+        ],
+        "knowledge_trace_saved": [],
+        "lesson_ids": [
+          "con_001",
+          "con_014",
+          "mc_003",
+          "mc_016",
+          "mc_017",
+          "mc_018",
+          "mc_020",
+          "sem_002",
+          "vol_001",
+          "mc_025",
+          "num_022"
+        ],
+        "mode": "fresh-build",
+        "preferred_method": null,
+        "present": true,
+        "promotion_candidate_saved": [],
+        "reference_target": null,
+        "success": false,
+        "token_usage_total": 57018
+      },
+      "task_id": "E25",
+      "title": "FX option (EURUSD): GK analytical vs MC",
+      "transition": {
+        "baseline": "success",
+        "candidate": "comparison_insufficient_results",
+        "transition": "regressed"
+      }
+    }
+  ],
+  "text_path": "/Users/steveyang/Projects/steveya/trellis/docs/benchmarks/analytical_support_reliability.md"
+}

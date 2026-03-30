@@ -19,9 +19,11 @@ def check_calibration(
     tenors: list[float] = (1.0, 2.0, 5.0, 10.0),
     tol: float = 0.005,
 ) -> list[ValidationFinding]:
-    """Check if the model reprices zero-coupon bonds at key tenors.
+    """Check that the model reproduces known zero-coupon bond prices at standard maturities.
 
-    This catches: uncalibrated trees, wrong discount factors, drift errors.
+    A zero-coupon bond pays 1 at maturity with no coupons; its price equals
+    the discount factor. If the model cannot match these, its interest-rate
+    calibration is wrong.
     """
     findings = []
     discount = market_state.discount
@@ -46,10 +48,11 @@ def check_sensitivity_signs(
     market_state_factory,
     instrument_type: str = "unknown",
 ) -> list[ValidationFinding]:
-    """Check that Greeks have the correct sign.
+    """Check that price sensitivities (Greeks) have the correct sign.
 
-    Every instrument with embedded options must have non-zero vega.
-    Bonds must have negative rate sensitivity.
+    Greeks are partial derivatives of price with respect to market inputs.
+    For example, bond prices must decrease when rates rise, and instruments
+    with embedded options must have non-zero sensitivity to volatility (vega).
     """
     findings = []
     finding_id = 1

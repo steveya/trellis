@@ -1,0 +1,32 @@
+category: monte_carlo
+title: MC payoff must use market_state.discount
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-29T12:39:44.524232'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_123945_nth_to_default_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - credit_risk
+  - discounting
+  - coupons
+  - fixed_coupons
+  - spread_computation
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: Engine error lite.monte_carlo_discount_access_missing (no market_state.discount
+  access) and module compile SyntaxError reported.
+root_cause: The generated Monte Carlo payoff did not call the required market_state.discount
+  API (so the MC harness could not detect discount-curve usage) and the agent-produced
+  module contained a Python indentation/syntax error preventing compilation. Additionally,
+  the payoff shape requirement (1D per-path PV) was not respected in prior attempts.
+fix: Implement the MC payoff to explicitly call market_state.discount.discount(time)
+  for all discounting and return a 1D numpy array of per-path present values. Run
+  a quick syntax/lint pass on generated code to eliminate indentation/SyntaxError
+  issues before submission.
+validation: Discovered during build (attempt 3)
+id: mc_044

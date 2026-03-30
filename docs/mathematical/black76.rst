@@ -40,6 +40,42 @@ Put-Call Parity
 
 This holds exactly for undiscounted prices.
 
+FX Vanilla as Basis Assembly
+----------------------------
+
+The Garman-Kohlhagen FX European formula is the same Black76 basis
+decomposition after a forward bridge.
+
+Let:
+
+.. math::
+
+   F = S \cdot \frac{D_f}{D_d}
+
+where :math:`S` is the spot FX quote, :math:`D_d` is the domestic discount
+factor, and :math:`D_f` is the foreign discount factor. The domestic-currency
+call PV is:
+
+.. math::
+
+   V_{\text{call}} = D_d \cdot \left(F N(d_1) - K N(d_2)\right)
+
+and the put is:
+
+.. math::
+
+   V_{\text{put}} = D_d \cdot \left(K N(-d_2) - F N(-d_1)\right)
+
+Equivalently, the route can be assembled from the terminal basis claims:
+
+.. math::
+
+   V_{\text{call}} = D_d \cdot \text{terminal\_vanilla\_from\_basis}
+   (\text{call}, \text{asset}, \text{cash}, K)
+
+where :math:`\text{asset}` and :math:`\text{cash}` are the Black76
+asset-or-nothing and cash-or-nothing basis claims evaluated on the forward.
+
 Special Cases
 -------------
 
@@ -113,6 +149,13 @@ The forward swap rate is:
 
 Implementation
 --------------
+
+The implementation uses autograd-compatible primitives, so the same closed-form
+expressions can supply both prices and Greeks. Zero-volatility and zero-expiry
+cases fall back to intrinsic value without introducing scalarized trace breaks.
+These functions are the raw analytical kernels used by higher-level adapters;
+the adapters resolve market inputs, then call into the kernel without adding
+their own differentiation logic.
 
 .. autofunction:: trellis.models.black.black76_call
 .. autofunction:: trellis.models.black.black76_put

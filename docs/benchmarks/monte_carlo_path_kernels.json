@@ -1,0 +1,140 @@
+[
+  {
+    "label": "gbm_exact_1024",
+    "method": "exact",
+    "n_paths": 1024,
+    "n_steps": 64,
+    "state_dim": 1,
+    "factor_dim": 1,
+    "repeats": 3,
+    "warmups": 1,
+    "mean_seconds": 0.001036,
+    "min_seconds": 0.000973,
+    "max_seconds": 0.001124,
+    "paths_per_second": 988218.242,
+    "sample_shape": [
+      1024,
+      65
+    ],
+    "notes": [
+      "scalar_state",
+      "exact_transition"
+    ]
+  },
+  {
+    "label": "gbm_exact_4096",
+    "method": "exact",
+    "n_paths": 4096,
+    "n_steps": 64,
+    "state_dim": 1,
+    "factor_dim": 1,
+    "repeats": 3,
+    "warmups": 1,
+    "mean_seconds": 0.003854,
+    "min_seconds": 0.003699,
+    "max_seconds": 0.004009,
+    "paths_per_second": 1062822.518,
+    "sample_shape": [
+      4096,
+      65
+    ],
+    "notes": [
+      "scalar_state",
+      "exact_transition"
+    ]
+  },
+  {
+    "label": "gbm_exact_16384",
+    "method": "exact",
+    "n_paths": 16384,
+    "n_steps": 64,
+    "state_dim": 1,
+    "factor_dim": 1,
+    "repeats": 3,
+    "warmups": 1,
+    "mean_seconds": 0.01571,
+    "min_seconds": 0.014796,
+    "max_seconds": 0.017494,
+    "paths_per_second": 1042933.965,
+    "sample_shape": [
+      16384,
+      65
+    ],
+    "notes": [
+      "scalar_state",
+      "exact_transition"
+    ]
+  },
+  {
+    "label": "correlated_gbm_exact_1024",
+    "method": "exact",
+    "n_paths": 1024,
+    "n_steps": 64,
+    "state_dim": 3,
+    "factor_dim": 3,
+    "repeats": 3,
+    "warmups": 1,
+    "mean_seconds": 0.004821,
+    "min_seconds": 0.004774,
+    "max_seconds": 0.004867,
+    "paths_per_second": 212404.667,
+    "sample_shape": [
+      1024,
+      65,
+      3
+    ],
+    "notes": [
+      "vector_state",
+      "exact_transition",
+      "batched_path_kernel"
+    ]
+  },
+  {
+    "label": "correlated_gbm_exact_4096",
+    "method": "exact",
+    "n_paths": 4096,
+    "n_steps": 64,
+    "state_dim": 3,
+    "factor_dim": 3,
+    "repeats": 3,
+    "warmups": 1,
+    "mean_seconds": 0.01923,
+    "min_seconds": 0.018144,
+    "max_seconds": 0.020957,
+    "paths_per_second": 213001.753,
+    "sample_shape": [
+      4096,
+      65,
+      3
+    ],
+    "notes": [
+      "vector_state",
+      "exact_transition",
+      "batched_path_kernel"
+    ]
+  },
+  {
+    "label": "correlated_gbm_exact_16384",
+    "method": "exact",
+    "n_paths": 16384,
+    "n_steps": 64,
+    "state_dim": 3,
+    "factor_dim": 3,
+    "repeats": 3,
+    "warmups": 1,
+    "mean_seconds": 0.070744,
+    "min_seconds": 0.07024,
+    "max_seconds": 0.071481,
+    "paths_per_second": 231596.658,
+    "sample_shape": [
+      16384,
+      65,
+      3
+    ],
+    "notes": [
+      "vector_state",
+      "exact_transition",
+      "batched_path_kernel"
+    ]
+  }
+]

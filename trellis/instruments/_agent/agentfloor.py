@@ -1,4 +1,9 @@
-"""Agent-generated payoff: Build a pricer for: Cap/floor: Black76 vs HW tree vs MC rate simulation."""
+"""Agent-generated payoff: Build a pricer for: Cap/floor: Black caplet stack vs MC rate simulation
+
+Implementation target: black76_cap
+Preferred method family: analytical
+
+Implementation target: black76_cap."""
 
 from __future__ import annotations
 
@@ -11,9 +16,15 @@ from trellis.core.types import DayCountConvention, Frequency
 from trellis.models.black import black76_call, black76_put
 
 
+
 @dataclass(frozen=True)
 class AgentFloorSpec:
-    """Specification for Build a pricer for: Cap/floor: Black76 vs HW tree vs MC rate simulation."""
+    """Specification for Build a pricer for: Cap/floor: Black caplet stack vs MC rate simulation
+
+Implementation target: black76_cap
+Preferred method family: analytical
+
+Implementation target: black76_cap."""
     notional: float
     strike: float
     start_date: date
@@ -24,44 +35,69 @@ class AgentFloorSpec:
 
 
 class AgentFloorPayoff:
-    """Build a pricer for: Cap/floor: Black76 vs HW tree vs MC rate simulation."""
+    """Build a pricer for: Cap/floor: Black caplet stack vs MC rate simulation
+
+Implementation target: black76_cap
+Preferred method family: analytical
+
+Implementation target: black76_cap."""
 
     def __init__(self, spec: AgentFloorSpec):
-        """Store the generated floor specification."""
         self._spec = spec
 
     @property
     def spec(self) -> AgentFloorSpec:
-        """Return the immutable generated floor specification."""
         return self._spec
 
     @property
     def requirements(self) -> set[str]:
-        """Declare the discount, forward-rate, and vol inputs used by the payoff."""
         return {"black_vol", "discount", "forward_rate"}
 
     def evaluate(self, market_state: MarketState) -> float:
-        """Price the generated floor as a discounted strip of Black-76 floorlets."""
         spec = self._spec
-        fwd_curve = market_state.forecast_forward_curve(spec.rate_index)
         schedule = generate_schedule(spec.start_date, spec.end_date, spec.frequency)
-        period_starts = [spec.start_date] + schedule[:-1]
+        if not schedule:
+            return 0.0
 
-        pv = 0.0
-        for p_start, p_end in zip(period_starts, schedule):
-            if p_end <= market_state.settlement:
+        try:
+            forward_curve = (
+                market_state.forecast_forward_curve(spec.rate_index)
+                if spec.rate_index is not None
+                else market_state.forecast_forward_curve()
+            )
+        except Exception:
+            forward_curve = getattr(market_state, "forward_curve", None)
+
+        total_pv = 0.0
+        prev_date = spec.start_date
+
+        for pay_date in schedule:
+            accrual = year_fraction(prev_date, pay_date, spec.day_count)
+            if accrual <= 0.0:
+                prev_date = pay_date
                 continue
 
-            tau = year_fraction(p_start, p_end, spec.day_count)
-            t_fix = year_fraction(market_state.settlement, p_start, spec.day_count)
-            t_pay = year_fraction(market_state.settlement, p_end, spec.day_count)
-            t_fix = max(t_fix, 1e-6)
+            t = max(year_fraction(spec.start_date, pay_date, spec.day_count), 0.0)
 
-            F = fwd_curve.forward_rate(t_fix, t_pay)
-            sigma = market_state.vol_surface.black_vol(t_fix, spec.strike)
+            if forward_curve is not None and hasattr(forward_curve, "forward_rate"):
+                try:
+                    fwd = forward_curve.forward_rate(prev_date, pay_date)
+                except TypeError:
+                    fwd = forward_curve.forward_rate(t)
+            elif forward_curve is not None and hasattr(forward_curve, "rate"):
+                fwd = forward_curve.rate(t)
+            else:
+                raise ValueError("MarketState does not provide a usable forward rate curve")
 
-            undiscounted = spec.notional * tau * black76_put(F, spec.strike, sigma, t_fix)
-            df = market_state.discount.discount(t_pay)
-            pv += float(undiscounted) * float(df)
+            df = market_state.discount.discount(t)
+            vol = market_state.vol_surface.black_vol(t, spec.strike)
 
-        return pv
+            if fwd >= spec.strike:
+                undiscounted = black76_call(fwd, spec.strike, vol, t)
+            else:
+                undiscounted = black76_put(fwd, spec.strike, vol, t)
+
+            total_pv += spec.notional * accrual * df * undiscounted
+            prev_date = pay_date
+
+        return float(total_pv)

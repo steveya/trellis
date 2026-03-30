@@ -1,0 +1,680 @@
+# Canonical route registry — seed routes transcribed from codegen_guardrails.py
+# Phase 8 deterministic route table.  Each route is a self-contained declaration
+# of match conditions, primitives, adapters, notes, and market-data access.
+#
+# Status values: promoted (live), validated (prompt-eligible), candidate (gap-only), archived
+# Confidence: 1.0 for canonical seed routes; discovered routes start at 0.5
+
+routes:
+
+  # -----------------------------------------------------------------------
+  # Quanto routes (instrument-specific overrides, highest precedence)
+  # -----------------------------------------------------------------------
+
+  - id: quanto_adjustment_analytical
+    engine_family: analytical
+    route_family: analytical
+    status: promoted
+    confidence: 1.0
+    match:
+      methods: [analytical]
+      instruments: [quanto_option]
+    primitives:
+      - module: trellis.models.resolution.quanto
+        symbol: resolve_quanto_inputs
+        role: market_binding
+      - module: trellis.models.black
+        symbol: black76_call
+        role: pricing_kernel
+      - module: trellis.models.black
+        symbol: black76_put
+        role: pricing_kernel
+      - module: trellis.models.analytical.quanto
+        symbol: price_quanto_option_analytical
+        role: route_helper
+    adapters:
+      - reuse_shared_quanto_market_binding
+      - apply_quanto_adjustment_terms
+      - reuse_shared_quanto_analytical_route_helper
+    notes:
+      - "Quanto analytical routing should preserve domestic payout semantics instead of degrading to vanilla FX pricing."
+      - "Resolve shared market inputs first, then price through the checked-in quanto analytical helper."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        black_vol_surface: [market_state.vol_surface]
+
+  - id: correlated_gbm_monte_carlo
+    engine_family: monte_carlo
+    route_family: monte_carlo
+    status: promoted
+    confidence: 1.0
+    match:
+      methods: [monte_carlo, qmc]
+      instruments: [quanto_option]
+    primitives:
+      - module: trellis.models.resolution.quanto
+        symbol: resolve_quanto_inputs
+        role: market_binding
+      - module: trellis.models.monte_carlo.quanto
+        symbol: price_quanto_option_monte_carlo
+        role: route_helper
+    adapters:
+      - reuse_shared_quanto_market_binding
+      - reuse_shared_quanto_mc_route_helper
+    notes:
+      - "Quanto Monte Carlo routing should use the checked-in joint underlier/FX helper instead of rebuilding process, engine, and discount glue ad hoc."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        black_vol_surface: [market_state.vol_surface]
+
+  # -----------------------------------------------------------------------
+  # Credit routes (instrument-specific overrides)
+  # -----------------------------------------------------------------------
+
+  - id: credit_default_swap_analytical
+    engine_family: analytical
+    route_family: credit_default_swap
+    status: promoted
+    confidence: 1.0
+    match:
+      methods: [analytical]
+      instruments: [cds, nth_to_default]
+    primitives:
+      - module: trellis.core.date_utils
+        symbol: generate_schedule
+        role: schedule_builder
+        required: false
+      - module: trellis.core.date_utils
+        symbol: year_fraction
+        role: time_measure
+    adapters:
+      - use_credit_curve_survival_probability_thin_adapter
+      - declare_credit_curve_and_discount_curve_requirements
+    notes:
+      - "For nth-to-default analytical pricing, compute a single maturity T = year_fraction(settlement, end_date, day_count). Use market_state.credit_curve.survival_probability(T) for the default probability. Return ONLY the protection leg PV — do NOT subtract a premium/fee leg."
+      - "NTD analytical pattern: p_def = 1 - survival_probability(T); p_nth = max(0, 1 - sum(comb(n,j)*p_def^j*(1-p_def)^(n-j) for j in range(n_th))); df = discount(T); return p_nth * (1 - recovery) * notional * df"
+      - "generate_schedule is NOT required — NTD analytical uses a single maturity year fraction, not a coupon schedule."
+      - "Do not import or reuse Black76 call/put primitives for credit-default pricing."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        credit_curve: [market_state.credit_curve]
+
+  - id: credit_default_swap_monte_carlo
+    engine_family: monte_carlo
+    route_family: credit_default_swap
+    status: promoted
+    confidence: 1.0
+    match:
+      methods: [monte_carlo, qmc]
+      instruments: [cds, nth_to_default]
+    primitives:
+      - module: trellis.core.date_utils
+        symbol: generate_schedule
+        role: schedule_builder
+        required: false
+      - module: trellis.core.date_utils
+        symbol: year_fraction
+        role: time_measure
+      - module: trellis.core.differentiable
+        symbol: get_numpy
+        role: array_backend
+      - module: trellis.models.copulas.gaussian
+        symbol: GaussianCopula
+        role: default_time_sampler
+        required: false
+      - module: trellis.models.monte_carlo.engine
+        symbol: MonteCarloEngine
+        role: path_simulation
+        required: false
+        excluded: true
+    adapters:
+      - use_credit_curve_hazard_rate_or_survival_probability
+      - declare_credit_curve_and_discount_curve_requirements
+    notes:
+      - "For nth-to-default (NTD) Monte Carlo pricing, use GaussianCopula.sample_default_times() from trellis.models.copulas.gaussian — do NOT use MonteCarloEngine. MonteCarloEngine requires an SDE process and is for equity/rate path simulation."
+      - "NTD copula pattern: T=year_fraction(...); lam=market_state.credit_curve.hazard_rate(T); hazard_rates=np.full(n_names, lam); corr=np.full((n,n), correlation); np.fill_diagonal(corr,1.0); copula=GaussianCopula(corr); default_times=copula.sample_default_times(hazard_rates, 50000, rng); triggered=np.sum(default_times<=T,axis=1)>=n_th; return float(np.mean(triggered))*(1-recovery)*notional*df"
+      - "Use `market_state.discount.discount(t)` directly for discount factor. Use `market_state.credit_curve.hazard_rate(T)` for hazard rate or `market_state.credit_curve.survival_probability(t)` for survival probability."
+      - "The requirements property must return {'discount', 'credit'} — NOT 'credit_curve' or 'discount_curve'."
+      - "Do not route CDS/NTD through Black76, equity GBM option logic, or a generic vanilla path kernel."
+      - "generate_schedule is NOT required for NTD copula MC — use year_fraction(settlement, end_date, day_count) to get a single maturity T."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        credit_curve: [market_state.credit_curve]
+
+  # -----------------------------------------------------------------------
+  # Basket routes (instrument/payoff-specific override)
+  # -----------------------------------------------------------------------
+
+  - id: correlated_basket_monte_carlo
+    engine_family: monte_carlo
+    route_family: monte_carlo
+    status: promoted
+    confidence: 1.0
+    score_hints:
+      payoff_family_bonus: {basket_path_payoff: 2.0}
+      non_european_penalty: -1.5
+    match:
+      methods: [monte_carlo, qmc]
+      instruments: [basket_option]
+      payoff_family: [basket_path_payoff]
+      payoff_traits: [ranked_observation]
+    primitives:
+      - module: trellis.models.resolution.basket_semantics
+        symbol: resolve_basket_semantics
+        role: market_binding
+      - module: trellis.models.monte_carlo.semantic_basket
+        symbol: price_ranked_observation_basket_monte_carlo
+        role: route_helper
+    adapters:
+      - reuse_shared_basket_market_binding
+      - reuse_shared_basket_mc_route_helper
+    notes:
+      - "Basket Monte Carlo routing should use generic basket semantics and snapshot-based state instead of a product-specific mountain-range branch."
+      - "The generated basket adapter must require a real `black_vol_surface` plus discounting and spot inputs; do not treat basket pricing as discount-curve only."
+      - "Parse `spec.underlyings` into a Python list of ticker strings and `spec.observation_dates` into `date` objects before basket resolution; do not pass raw comma-separated strings into the resolver."
+      - "Bind the market state with `resolve_basket_semantics(...)`, then delegate straight to `price_ranked_observation_basket_monte_carlo(...)` through a thin adapter; do not import process primitives directly in the generated adapter."
+      - "Use `resolved.constituent_spots` as the multi-asset initial state for the Monte Carlo helper; do not reshape or index the raw `MarketState` as if it were a path tensor."
+      - "Build `RankedObservationBasketSpec` with `constituents` and `option_type`; do not pass `basket_assets`, `asset_names`, `underlyings`, `is_call`, or `start_date` into the shared spec."
+      - "Reuse `RankedObservationBasketSpec` and `RankedObservationBasketMonteCarloPayoff` from `trellis.models.monte_carlo.semantic_basket`, import only `trellis.models.resolution.basket_semantics` and `trellis.models.monte_carlo.semantic_basket` for the basket adapter, and do not invent extra `trellis.models.*` basket or payoff subpackages."
+      - "Do not introduce a bespoke basket spec name such as `HimalayaBasketSpec` or reimplement rank/remove/aggregate logic inline."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        black_vol_surface: [market_state.vol_surface]
+        spot: [market_state.spot, market_state.underlier_spots]
+
+  # -----------------------------------------------------------------------
+  # Monte Carlo routes (method-level)
+  # -----------------------------------------------------------------------
+
+  - id: exercise_monte_carlo
+    engine_family: exercise
+    route_family: exercise
+    status: promoted
+    confidence: 1.0
+    score_hints:
+      exercise_match_bonus: 2.0
+      exercise_match_styles: [american, bermudan]
+    match:
+      methods: [monte_carlo, qmc]
+      exercise: [american, bermudan]
+    # NOTE: _route_components calls early_exercise_policy at import time.
+    # The notes below are static captures of the policy summaries.
+    primitives:
+      - module: trellis.models.processes.gbm
+        symbol: GBM
+        role: state_process
+      - module: trellis.models.monte_carlo.engine
+        symbol: MonteCarloEngine
+        role: path_simulation
+      - module: trellis.models.monte_carlo.lsm
+        symbol: longstaff_schwartz
+        role: exercise_control
+        required: false
+      - module: trellis.models.monte_carlo.tv_regression
+        symbol: tsitsiklis_van_roy
+        role: exercise_control
+        required: false
+      - module: trellis.models.monte_carlo.primal_dual
+        symbol: primal_dual_mc
+        role: exercise_control
+        required: false
+      - module: trellis.models.monte_carlo.stochastic_mesh
+        symbol: stochastic_mesh
+        role: exercise_control
+        required: false
+    adapters:
+      - derive_exercise_dates_from_schedule_or_time_grid
+      - build_spot_to_exercise_payoff_callback
+      - select_continuation_estimator_or_basis
+    notes:
+      - "Use an approved early-exercise control primitive instead of inventing new engine modes."
+      - "The implemented primitive is `longstaff_schwartz`; do not rename it to `lsm_mc` or a `method=\"lsm\"` engine mode."
+      - "Regression basis choice is a continuation-estimator detail, not a required route primitive."
+    # NOTE: early_exercise_policy summaries are dynamic; render at runtime from
+    # trellis.agent.early_exercise_policy if needed in prompt.
+    dynamic_notes:
+      - source: trellis.agent.early_exercise_policy
+        function: render_early_exercise_policy_summary
+        template: "Approved policy classes: {result}."
+      - source: trellis.agent.early_exercise_policy
+        function: render_implemented_early_exercise_policy_summary
+        template: "Implemented today: {result}."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        black_vol_surface: [market_state.vol_surface]
+
+  - id: monte_carlo_paths
+    engine_family: monte_carlo
+    route_family: monte_carlo
+    status: promoted
+    confidence: 1.0
+    score_hints:
+      non_european_penalty: -2.0
+      penalize_when_market_data: {local_vol_surface: -3.0}
+    match:
+      methods: [monte_carlo]
+      exclude_instruments: [quanto_option, cds, nth_to_default, basket_option]
+    primitives:
+      - module: trellis.models.processes.gbm
+        symbol: GBM
+        role: state_process
+      - module: trellis.models.monte_carlo.engine
+        symbol: MonteCarloEngine
+        role: path_simulation
+    adapters:
+      - build_payoff_vector_from_paths
+    notes:
+      - "Prefer existing MC simulation helpers over bespoke path loops."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        black_vol_surface: [market_state.vol_surface]
+
+  - id: local_vol_monte_carlo
+    engine_family: monte_carlo
+    route_family: monte_carlo
+    status: promoted
+    confidence: 1.0
+    score_hints:
+      bonus_when_market_data: {local_vol_surface: 3.0, spot: 1.0}
+    match:
+      methods: [monte_carlo]
+      required_market_data: [local_vol_surface]
+    primitives:
+      - module: trellis.models.processes.local_vol
+        symbol: LocalVol
+        role: state_process
+      - module: trellis.models.monte_carlo.engine
+        symbol: MonteCarloEngine
+        role: path_simulation
+      - module: trellis.models.monte_carlo.local_vol
+        symbol: local_vol_european_vanilla_price
+        role: pricing_kernel
+    adapters:
+      - map_market_state_local_vol_surface_spot_and_discount_into_local_vol_mc_inputs
+      - derive_option_type_strike_and_expiry_for_vanilla_equity_option
+    notes:
+      - "For vanilla equity local-vol requests, prefer the reusable local-vol Monte Carlo helper over bespoke path loops."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        local_vol_surface: [market_state.local_vol_surface, market_state.local_vol_surfaces]
+        spot: [market_state.spot, market_state.underlier_spots]
+
+  - id: qmc_sobol_paths
+    engine_family: qmc
+    route_family: qmc
+    status: promoted
+    confidence: 1.0
+    match:
+      methods: [qmc]
+      exclude_instruments: [quanto_option, cds, nth_to_default, basket_option]
+    primitives:
+      - module: trellis.models.qmc
+        symbol: sobol_normals
+        role: low_discrepancy_sampler
+      - module: trellis.models.qmc
+        symbol: brownian_bridge
+        role: path_construction
+        required: false
+      - module: trellis.models.processes.gbm
+        symbol: GBM
+        role: state_process
+    adapters:
+      - assemble_mc_style_estimator_on_sobol_paths
+    notes:
+      - "QMC in Trellis accelerates MC-style estimators rather than replacing them."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        black_vol_surface: [market_state.vol_surface]
+
+  # -----------------------------------------------------------------------
+  # Rate tree routes
+  # -----------------------------------------------------------------------
+
+  - id: exercise_lattice
+    engine_family: lattice
+    route_family: lattice
+    status: promoted
+    confidence: 1.0
+    score_hints:
+      exercise_match_bonus: 2.0
+      exercise_match_styles: [american, bermudan, issuer_call, holder_put]
+      vanilla_exercise_bonus: 1.5
+      vanilla_exercise_payoff: vanilla_option
+      vanilla_exercise_styles: [american, bermudan]
+      schedule_dependence_bonus: 1.0
+    match:
+      methods: [rate_tree]
+      exercise: [american, bermudan, issuer_call, holder_put]
+    conditional_route_family:
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [american, bermudan]
+          model_family: equity_diffusion
+        route_family: equity_tree
+      - when:
+          exercise_style: [issuer_call, holder_put, bermudan]
+          model_family: interest_rate
+        route_family: rate_lattice
+      - when: default
+        route_family: lattice
+    conditional_primitives:
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [american, bermudan]
+        primitives:
+          - module: trellis.models.trees.binomial
+            symbol: BinomialTree
+            role: tree_builder
+          - module: trellis.models.trees.backward_induction
+            symbol: backward_induction
+            role: backward_induction
+        adapters:
+          - map_spot_to_tree_steps
+        notes:
+          - "For American and Bermudan equity options, import `BinomialTree` from `trellis.models.trees.binomial` and `backward_induction` from `trellis.models.trees.backward_induction`."
+          - "Build the tree with `BinomialTree.crr(...)` and call `backward_induction(..., exercise_type=\"american\"|\"bermudan\")`."
+          - "Do not invent `crr_tree`, `AMERICAN`, or a `method=\"lsm\"` fallback on the tree route."
+          - "Keep the tree branch thin and use the checked-in binomial helpers directly."
+      - when: default
+        primitives:
+          - module: trellis.models.trees.lattice
+            symbol: build_rate_lattice
+            role: lattice_builder
+          - module: trellis.models.trees.lattice
+            symbol: lattice_backward_induction
+            role: backward_induction
+        adapters:
+          - map_cashflows_and_exercise_dates_to_tree_steps
+          - select_exercise_fn_for_issuer_or_holder
+        notes:
+          - "Use lattice_backward_induction with schedule-aware exercise steps for callable, puttable, and Bermudan products."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        black_vol_surface: [market_state.vol_surface]
+
+  - id: rate_tree_backward_induction
+    engine_family: lattice
+    route_family: rate_lattice
+    status: promoted
+    confidence: 1.0
+    score_hints:
+      non_european_penalty: -2.0
+    match:
+      methods: [rate_tree]
+    primitives:
+      - module: trellis.models.trees.lattice
+        symbol: build_rate_lattice
+        role: lattice_builder
+      - module: trellis.models.trees.lattice
+        symbol: lattice_backward_induction
+        role: backward_induction
+    adapters:
+      - map_cashflows_and_exercise_dates_to_tree_steps
+    notes:
+      - "Use calibrated rate-tree primitives for scheduled early-exercise products."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        black_vol_surface: [market_state.vol_surface]
+
+  # -----------------------------------------------------------------------
+  # Analytical routes (fallback)
+  # -----------------------------------------------------------------------
+
+  - id: analytical_black76
+    engine_family: analytical
+    route_family: analytical
+    status: promoted
+    confidence: 1.0
+    score_hints:
+      payoff_family_bonus: {swaption: 1.0, vanilla_option: 1.0}
+      non_european_penalty: -4.0
+    match:
+      methods: [analytical]
+      exclude_instruments: [quanto_option, cds, nth_to_default]
+      exclude_required_market_data: [fx_rates]
+    conditional_primitives:
+      - when:
+          payoff_family: vanilla_option
+        primitives:
+          - module: trellis.models.black
+            symbol: black76_call
+            role: pricing_kernel
+          - module: trellis.models.black
+            symbol: black76_put
+            role: pricing_kernel
+          - module: trellis.models.black
+            symbol: black76_asset_or_nothing_call
+            role: pricing_kernel
+            required: false
+          - module: trellis.models.black
+            symbol: black76_asset_or_nothing_put
+            role: pricing_kernel
+            required: false
+          - module: trellis.models.black
+            symbol: black76_cash_or_nothing_call
+            role: pricing_kernel
+            required: false
+          - module: trellis.models.black
+            symbol: black76_cash_or_nothing_put
+            role: pricing_kernel
+            required: false
+          - module: trellis.models.analytical
+            symbol: terminal_vanilla_from_basis
+            role: assembly_helper
+            required: false
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: time_measure
+        adapters:
+          - map_spot_discount_and_vol_to_forward_black76
+        notes:
+          - "For European vanilla equity options, derive the forward from spot and discounting before calling Black-style kernels."
+          - "When the payoff decomposes exactly, assemble vanilla prices from asset-or-nothing and cash-or-nothing basis claims instead of re-deriving the closed form."
+          - "For cash-or-nothing digital options, use the Black76 digital helpers directly instead of a vanilla call/put approximation."
+      - when: default
+        primitives:
+          - module: trellis.models.black
+            symbol: black76_call
+            role: pricing_kernel
+          - module: trellis.models.black
+            symbol: black76_put
+            role: pricing_kernel
+          - module: trellis.models.black
+            symbol: black76_asset_or_nothing_call
+            role: pricing_kernel
+            required: false
+          - module: trellis.models.black
+            symbol: black76_asset_or_nothing_put
+            role: pricing_kernel
+            required: false
+          - module: trellis.models.black
+            symbol: black76_cash_or_nothing_call
+            role: pricing_kernel
+            required: false
+          - module: trellis.models.black
+            symbol: black76_cash_or_nothing_put
+            role: pricing_kernel
+            required: false
+          - module: trellis.models.analytical
+            symbol: terminal_vanilla_from_basis
+            role: assembly_helper
+            required: false
+          - module: trellis.core.date_utils
+            symbol: generate_schedule
+            role: schedule_builder
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: time_measure
+        adapters:
+          - extract_forward_and_annuity_from_market_state
+        notes:
+          - "Prefer thin orchestration around existing analytical kernels."
+          - "Terminal vanilla payoffs should be assembled from asset-or-nothing and cash-or-nothing basis claims when the decomposition is exact."
+          - "For cash-or-nothing digital options, use the Black76 digital helpers directly instead of a vanilla call/put approximation."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        black_vol_surface: [market_state.vol_surface]
+
+  - id: analytical_garman_kohlhagen
+    engine_family: analytical
+    route_family: analytical
+    status: promoted
+    confidence: 1.0
+    score_hints:
+      payoff_family_bonus: {vanilla_option: 1.0}
+      non_european_penalty: -4.0
+    match:
+      methods: [analytical]
+      exclude_instruments: [quanto_option, cds, nth_to_default]
+      required_market_data: [fx_rates, forward_curve]
+    primitives:
+      - module: trellis.models.black
+        symbol: black76_asset_or_nothing_call
+        role: pricing_kernel
+      - module: trellis.models.black
+        symbol: black76_asset_or_nothing_put
+        role: pricing_kernel
+      - module: trellis.models.black
+        symbol: black76_cash_or_nothing_call
+        role: pricing_kernel
+      - module: trellis.models.black
+        symbol: black76_cash_or_nothing_put
+        role: pricing_kernel
+      - module: trellis.models.analytical
+        symbol: terminal_vanilla_from_basis
+        role: assembly_helper
+      - module: trellis.core.date_utils
+        symbol: year_fraction
+        role: time_measure
+    adapters:
+      - map_fx_spot_and_curves_to_garman_kohlhagen_inputs
+    notes:
+      - "For European vanilla FX options, assemble the terminal payoff from Black76 asset-or-nothing and cash-or-nothing basis claims after mapping spot FX and domestic/foreign curves to a forward."
+      - "Treat Garman-Kohlhagen as the model identity and a compatibility surface; keep the generated route thin and basis-assembled."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        forward_curve: [market_state.forward_curve, market_state.forecast_curves]
+        black_vol_surface: [market_state.vol_surface]
+        spot: [market_state.spot, market_state.underlier_spots, market_state.fx_rates]
+
+  # -----------------------------------------------------------------------
+  # Transform routes
+  # -----------------------------------------------------------------------
+
+  - id: transform_fft
+    engine_family: fft_pricing
+    route_family: fft_pricing
+    status: promoted
+    confidence: 1.0
+    match:
+      methods: [fft_pricing]
+    primitives:
+      - module: trellis.models.transforms.fft_pricer
+        symbol: fft_price
+        role: transform_pricer
+      - module: trellis.models.transforms.cos_method
+        symbol: cos_price
+        role: transform_pricer
+        required: false
+    adapters:
+      - build_vector_safe_characteristic_function
+    notes:
+      - "Characteristic functions must be array-safe for transform pricing."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        black_vol_surface: [market_state.vol_surface]
+
+  # -----------------------------------------------------------------------
+  # PDE routes
+  # -----------------------------------------------------------------------
+
+  - id: pde_theta_1d
+    engine_family: pde_solver
+    route_family: pde_solver
+    status: promoted
+    confidence: 1.0
+    match:
+      methods: [pde_solver]
+    primitives:
+      - module: trellis.models.pde.grid
+        symbol: Grid
+        role: grid
+      - module: trellis.models.pde.operator
+        symbol: BlackScholesOperator
+        role: spatial_operator
+      - module: trellis.models.pde.theta_method
+        symbol: theta_method_1d
+        role: time_stepping
+    adapters:
+      - define_operator_boundary_terminal_conditions
+    notes:
+      - "Construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray before calling `theta_method_1d(grid, operator, terminal_condition, theta=...)`."
+      - "Use `BlackScholesOperator(sigma_fn, r_fn)` with callable inputs; do not invent `log_grid_pde` or `uniform_grid_pde` helper names."
+      - "For American puts, pass `exercise_values` and `exercise_fn=max` instead of a bare `AMERICAN` constant or a `psor_pde` alias."
+      - "For barrier or digital payoffs, keep `lower_bc_fn` / `upper_bc_fn` callables explicit and use `rannacher_timesteps` to smooth the first backward steps."
+      - "Do not pass a callable terminal payoff into `theta_method_1d`; the solver expects an ndarray and will copy it internally."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        black_vol_surface: [market_state.vol_surface]
+
+  # -----------------------------------------------------------------------
+  # Copula routes
+  # -----------------------------------------------------------------------
+
+  - id: copula_loss_distribution
+    engine_family: copula
+    route_family: copula
+    status: promoted
+    confidence: 1.0
+    match:
+      methods: [copula]
+    primitives:
+      - module: trellis.models.copulas.factor
+        symbol: FactorCopula
+        role: loss_distribution
+    adapters:
+      - map_credit_curve_to_marginal_default_probabilities
+    notes: []
+    market_data_access:
+      required:
+        credit_curve: [market_state.credit_curve]
+
+  # -----------------------------------------------------------------------
+  # Waterfall routes
+  # -----------------------------------------------------------------------
+
+  - id: waterfall_cashflows
+    engine_family: waterfall
+    route_family: waterfall
+    status: promoted
+    confidence: 1.0
+    match:
+      methods: [waterfall]
+    primitives:
+      - module: trellis.models.cashflow_engine.waterfall
+        symbol: Waterfall
+        role: cashflow_engine
+      - module: trellis.models.cashflow_engine.waterfall
+        symbol: Tranche
+        role: cashflow_engine
+    adapters:
+      - map_collateral_cashflows_into_structure
+    notes: []
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]

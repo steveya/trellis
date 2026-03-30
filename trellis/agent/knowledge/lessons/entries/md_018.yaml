@@ -1,0 +1,36 @@
+id: md_018
+title: Missing valuation_date in ResolvedQuantoInputs
+severity: critical
+category: market_data
+status: validated
+confidence: 0.6
+created: '2026-03-26T19:57:49.344414'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260326_195749_quanto_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - monte_carlo
+  - discounting
+  - forward_rate
+  - vol_surface_dependence
+  - stochastic_vol
+  - greeks
+  - gamma
+  - quanto_adjustment
+  - multi_asset_correlation
+  - fx_process
+  - measure_selection
+  instrument: []
+  error_signature: null
+symptom: Trace contains "'ResolvedQuantoInputs' object has no attribute 'valuation_date'"
+  or generated pricing code contains a literal hardcoded 'discount_rate = 0.0'.
+root_cause: The generated payoff code assumed a resolver return type and attribute
+  layout that don't match the actual resolver API, and it hardcoded a discount rate
+  instead of reading the discount curve from MarketState. This mismatch leads to AttributeError
+  at runtime and incorrect discounting.
+fix: Use the correct resolver call or read valuation_date and curve objects directly
+  from MarketState; validate the resolved object for required attributes and extract
+  discount factors from the market state's discount curve rather than hardcoding rates.
+validation: Discovered during build (attempt 3)

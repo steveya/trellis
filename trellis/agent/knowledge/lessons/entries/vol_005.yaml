@@ -1,0 +1,30 @@
+category: volatility
+title: Unit and vol-surface convention mismatch
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-29T00:01:36.759979'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_000137_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument:
+  - european_option
+  error_signature: null
+symptom: Absolute PV > 10 × notional or analytical route did not read market_state.vol_surface
+  for volatility.
+root_cause: The analytical route used the wrong volatility source or unit convention
+  in at least one generated branch, so the pricer either failed to read market_state.vol_surface
+  or treated vol/discount inputs with inconsistent units. The runtime contract also
+  needs the payoff adapter to request black_vol and discount explicitly so the builder
+  does not fall back to a stale API.
+fix: Always guard market_state.vol_surface and market_state.discount, read implied
+  vol from market_state.vol_surface.black_vol(T, strike) (or the route-specific tenor/strike
+  key), keep vol in decimal units, convert discount inputs to discount factors consistently,
+  and multiply the final option value by notional after a PV sanity check.
+validation: Discovered during build (attempt 3)
+id: vol_005

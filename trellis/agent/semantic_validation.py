@@ -30,7 +30,12 @@ class SemanticIssue:
 
 @dataclass(frozen=True)
 class SemanticSignals:
-    """Static semantic fingerprint extracted from generated code."""
+    """Key structural facts extracted from generated code by static analysis.
+
+    Captures which pricing engines, Monte Carlo methods, exercise-control
+    primitives, and other patterns appear in the code so that downstream
+    validators can check consistency without running the code.
+    """
 
     engine_families: tuple[str, ...]
     resolved_calls: tuple[str, ...]
@@ -103,7 +108,7 @@ class _SemanticVisitor(ast.NodeVisitor):
         for alias in node.names:
             local = alias.asname or alias.name
             self.aliases[local] = f"{node.module}.{alias.name}"
-            self._record_engine_family(node.module)
+            self._record_engine_family(node.module, alias.name)
             if alias.name == "LaguerreBasis":
                 self.laguerre_import_modules.append(node.module)
         self.generic_visit(node)
@@ -173,14 +178,27 @@ class _SemanticVisitor(ast.NodeVisitor):
 
         self.generic_visit(node)
 
-    def _record_engine_family(self, module_name: str) -> None:
-        """Map imported module paths onto the coarse pricing-engine taxonomy."""
+    def _record_engine_family(self, module_name: str, symbol_name: str | None = None) -> None:
+        """Map imported module paths onto the exact route-family taxonomy when possible."""
         if module_name.startswith("trellis.models.black"):
             self.engine_families.add("analytical")
         elif module_name.startswith("trellis.models.transforms"):
             self.engine_families.add("fft_pricing")
-        elif module_name.startswith("trellis.models.trees"):
-            self.engine_families.add("lattice")
+        elif module_name.startswith("trellis.models.trees.binomial"):
+            self.engine_families.add("equity_tree")
+        elif module_name.startswith("trellis.models.trees.backward_induction"):
+            self.engine_families.add("equity_tree")
+        elif module_name.startswith("trellis.models.trees.trinomial"):
+            self.engine_families.add("equity_tree")
+        elif module_name.startswith("trellis.models.trees.lattice"):
+            self.engine_families.add("rate_lattice")
+        elif module_name == "trellis.models.trees":
+            if symbol_name in {"BinomialTree", "TrinomialTree", "backward_induction"}:
+                self.engine_families.add("equity_tree")
+            elif symbol_name in {"build_rate_lattice", "lattice_backward_induction", "RecombiningLattice"}:
+                self.engine_families.add("rate_lattice")
+            else:
+                self.engine_families.update({"equity_tree", "rate_lattice"})
         elif module_name.startswith("trellis.models.pde"):
             self.engine_families.add("pde_solver")
         elif module_name.startswith("trellis.models.copulas"):
@@ -246,7 +264,8 @@ def validate_semantics(
             ),
         ))
 
-    if primitive_plan is not None and not primitive_plan.blockers:
+    thin_adapter_calls = any(call.startswith("trellis.instruments.") for call in signals.resolved_calls)
+    if primitive_plan is not None and not primitive_plan.blockers and not thin_adapter_calls:
         missing_primitives = [
             f"{primitive.module}.{primitive.symbol}"
             for primitive in primitive_plan.primitives
@@ -261,6 +280,23 @@ def validate_semantics(
                     "selected assembly route: "
                     + ", ".join(missing_primitives)
                     + ". Rebuild the payoff as a thin adapter around those primitives."
+                ),
+            ))
+
+        excluded_primitives = [
+            f"{primitive.module}.{primitive.symbol}"
+            for primitive in primitive_plan.primitives
+            if primitive.excluded
+            and f"{primitive.module}.{primitive.symbol}" in signals.resolved_calls
+        ]
+        if excluded_primitives:
+            issues.append(SemanticIssue(
+                code="assembly.excluded_primitive_used",
+                message=(
+                    "Generated code called a primitive that is explicitly excluded "
+                    "from the selected assembly route: "
+                    + ", ".join(excluded_primitives)
+                    + ". This primitive is incompatible with this route's engine family."
                 ),
             ))
 
@@ -285,12 +321,16 @@ def validate_semantics(
             ),
         ))
 
-    if product_ir is not None and product_ir.exercise_style in {
+    if (
+        not thin_adapter_calls
+        and product_ir is not None
+        and product_ir.exercise_style in {
         "american",
         "bermudan",
         "issuer_call",
         "holder_put",
-    }:
+    }
+    ):
         if (
             ("monte_carlo" in signals.engine_families or (generation_plan and generation_plan.method == "monte_carlo"))
             and not signals.exercise_control_primitives
@@ -312,7 +352,11 @@ def validate_semantics(
         call.endswith("lattice_backward_induction")
         for call in signals.resolved_calls
     )
-    if product_ir is not None and product_ir.exercise_style in {"bermudan", "issuer_call", "holder_put"}:
+    if (
+        not thin_adapter_calls
+        and product_ir is not None
+        and product_ir.exercise_style in {"bermudan", "issuer_call", "holder_put"}
+    ):
         lattice_expected = uses_lattice_backward_induction
         if generation_plan is not None and generation_plan.primitive_plan is not None:
             lattice_expected = lattice_expected or generation_plan.primitive_plan.route == "exercise_lattice"
@@ -368,6 +412,7 @@ def validate_semantics(
 
     if product_ir is not None and signals.engine_families:
         allowed = set(product_ir.candidate_engine_families)
+        allowed.update(getattr(product_ir, "route_families", ()))
         if generation_plan is not None:
             allowed.add(_plan_method_to_ir_family(generation_plan.method))
         if allowed and not set(signals.engine_families).intersection(allowed):

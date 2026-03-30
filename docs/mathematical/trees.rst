@@ -5,6 +5,11 @@ Binomial trees discretize the underlying process into up/down moves at each
 time step. Combined with backward induction, they price European, American,
 and Bermudan options.
 
+For smooth payoffs, the simple spot-tree path can also be made autograd-safe:
+``BinomialTree`` and ``TrinomialTree`` now build their node grids with
+autograd-aware numpy, and ``backward_induction(..., differentiable=True)``
+keeps the rollback traceable for gradient extraction.
+
 Spot-Price Trees (CRR)
 ----------------------
 

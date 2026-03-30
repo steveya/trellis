@@ -1,0 +1,35 @@
+category: finite_differences
+title: PDE price blow-up from unit/scale mismatch
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-29T00:00:14.649971'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_000015_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - vol_surface_dependence
+  - pde_grid
+  instrument:
+  - european_option
+  error_signature: null
+symptom: 'Final PV magnitude far exceeds expected scale (machine-check: |PV| > 10
+  × notional) or the PDE route returns a boundary-like price instead of the spot price.'
+root_cause: 'The generated PDE branch called theta_method_1d with the obsolete operator/s_grid/t_grid/boundary_conditions
+  signature and then read the wrong element of the result instead of interpolating
+  the returned solution over grid.x. The actual API is theta_method_1d(grid, operator,
+  terminal_condition, theta=..., lower_bc_fn=..., upper_bc_fn=...), and it returns
+  the full solution vector at t=0.
+
+  '
+fix: 'Build Grid(x_min=0.0, x_max=S_max, n_x=n_x, T=T, n_t=n_t), construct BlackScholesOperator(lambda
+  s, t: sigma, lambda t: r), call theta_method_1d(grid, op, terminal, theta=0.5, lower_bc_fn=...,
+  upper_bc_fn=...), then interpolate the returned vector with np.interp(spec.spot,
+  grid.x, V) before multiplying by notional.
+
+  '
+validation: Discovered during build (attempt 3)
+id: fd_031

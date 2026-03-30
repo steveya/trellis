@@ -1,0 +1,32 @@
+category: semantic
+title: _semantic_extension_decision_mock_inputs_concept_vanilla_option_conc
+severity: medium
+status: validated
+confidence: 0.68
+created: '2026-03-29T22:34:18.742871'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/semantic_extensions/aed0b780cfffc6a1.yaml
+applies_when:
+  method:
+  - mock_inputs
+  features:
+  - underlier_structure
+  - payoff_rule
+  - settlement_rule
+  - discount_curve
+  - market_parameter_source
+  - semantic_contract_lesson
+  - mock_discount_curve_provider
+  - mock_market_parameter_provider
+  instrument:
+  - european_option
+  error_signature: null
+symptom: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing market inputs: discount_curve, market_parameter_source; missing knowledge
+  artifacts: semantic_contract_lesson; mock inputs can likely bridge the gap'
+root_cause: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing market inputs: discount_curve, market_parameter_source; missing knowledge
+  artifacts: semantic_contract_lesson; mock inputs can likely bridge the gap'
+fix: Keep the canonical concept and surface the compatibility name as a thin wrapper.
+validation: Repeated semantic extension trace `aed0b780cfffc6a1`
+id: sem_013

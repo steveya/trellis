@@ -1,0 +1,31 @@
+id: mc_024
+title: Date vs float comparison in smoke test
+severity: critical
+category: monte_carlo
+status: validated
+confidence: 0.6
+created: '2026-03-28T11:32:15.269980'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_113215_cap_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  - forward_rate
+  - discounting
+  - coupons
+  instrument: []
+  error_signature: null
+symptom: 'TypeError: ''>='' not supported between instances of ''float'' and ''datetime.date''
+  during market-state smoke test'
+root_cause: 'The payoff used inconsistent time representations: schedule dates (datetime.date)
+  were compared or combined with numeric time values (floats/year-fractions) from
+  the MarketState, causing a type-comparison error. The payoff also lacked explicit
+  input validation and normalization of times before the smoke test.'
+fix: 'Normalize time representations before any comparisons: convert schedule dates
+  to numeric times (year fractions) consistent with MarketState APIs or use date-based
+  MarketState accessors; add input validation and explicit casting for market data
+  and ensure MC payoff returns a (n_paths,) array.'
+validation: Discovered during build (attempt 3)

@@ -1,0 +1,41 @@
+id: con_014
+title: Bootstrap with pinned interpreter and explicit shell before pricing
+severity: critical
+category: convention
+status: promoted
+confidence: 1.0
+created: '2026-03-28T13:48:56'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_090059_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  - analytical
+  - rate_tree
+  - pde_solver
+  - fft_pricing
+  features:
+  - discounting
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Pricing scripts or generated modules fail before the actual valuation step
+  because the build launched with the wrong interpreter, the wrong shell defaults,
+  or a missing or incorrect import path.
+root_cause: The final script runner trusted ambient `python` or `python3` and shell
+  defaults instead of the repo-pinned Miniforge interpreter, explicit shell invocation,
+  and repo workdir. That caused bootstrap failures such as import errors, wrong-shell
+  launches, and syntax problems to appear before pricing ever started.
+fix: Always launch the final pricing script with the pinned interpreter, an explicit
+  shell, and the repo workdir; run an import and compile smoke test before any pricing
+  call; and treat `ModuleNotFoundError`, `ImportError`, `SyntaxError`, and interpreter
+  or shell mismatches as bootstrap defects that must be fixed first.
+validation: Observed during the QUA-284 proving run and its retry loop; use this lesson
+  as the first bootstrap check before any derivative pricing run.

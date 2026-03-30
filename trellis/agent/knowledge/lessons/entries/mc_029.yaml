@@ -1,0 +1,34 @@
+id: mc_029
+title: Do not import unapproved correlated_gbm module in payoff
+severity: critical
+category: monte_carlo
+status: validated
+confidence: 0.6
+created: '2026-03-28T14:44:24.251551'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_144424_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  - forward_rate
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Build fails with 'unapproved Trellis module trellis.models.processes.correlated_gbm'
+  error on the import line inside evaluate().
+root_cause: The payoff's evaluate() method attempted to import trellis.models.processes.correlated_gbm
+  directly, which is not on the approved module list even though prior lessons indicated
+  it should be used as a thin adapter.
+fix: Remove the direct import of trellis.models.processes.correlated_gbm from evaluate();
+  instead rely only on approved modules listed in the generation plan such as trellis.models.monte_carlo.engine
+  and trellis.models.processes.gbm for path simulation.
+validation: Discovered during build (attempt 3)

@@ -1,0 +1,44 @@
+category: convention
+title: Day-count mismatch in payoff evaluation
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:17:40.986751'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_231741_build_a_pricer_for:_crank_nicolson_rannacher_smoothing_for_discontinuous_payoffs
+
+
+  implementation_target:_black_scholes_digital
+
+  preferred_method_family:_analytical
+
+
+  implementation_target:_black_scholes_digital_analytical.yaml'
+applies_when:
+  method:
+  - analytical
+  features:
+  - pde_grid
+  - discontinuous_payoff
+  - digital_cash_or_nothing
+  - theta_method_1d
+  - rannacher_smoothing
+  - black_scholes_operator
+  - discounting
+  - vol_surface_dependence
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'Market-state smoke test failed: year fraction computed with DayCountConvention.ACT_365F
+  produced an unexpected value (e.g. <= 0 or different from test expectation).'
+root_cause: The payoff implementation hard-coded or used an external day-count routine
+  inconsistent with the MarketState contract (and/or test harness) leading to wrong
+  time-to-expiry and incorrect payoff branching. The code also did not declare or
+  require the market-state fields it relied on, so missing or mismatched MarketState
+  fields were not detected earlier.
+fix: Use the MarketState's official API for day-counts / year-fractions (or read the
+  market_state.day_count convention) instead of a hard-coded DayCountConvention; validate
+  t>=0 and declare explicit requirements (discount factors, spot/forward, vol surface)
+  so smoke tests catch missing/mismatched inputs early.
+validation: Discovered during build (attempt 3)
+id: con_019

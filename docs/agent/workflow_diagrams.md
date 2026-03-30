@@ -135,6 +135,12 @@ flowchart LR
     H --> A
 ```
 
+## Terminology
+
+This document uses "product semantics" and "semantic validation" as defined
+in [docs/glossary.md](../glossary.md).  All other uses of "semantic" in this
+document refer to one of those two concepts.
+
 ## Component Roles
 
 - `cookbook`: positive construction pattern from canonical policy.
@@ -194,7 +200,7 @@ validation instead of relying on prompt text alone.
 
 ### Structured User-Defined Product Flow
 
-This is the user-facing structured-semantics view.
+This is the user-facing structured product-semantics view.
 
 It shows:
 
@@ -350,7 +356,7 @@ Today:
 
 That means:
 
-- prompt guidance is now semantic and route-aware
+- prompt guidance is now product-semantic and route-aware
 - output checking rejects both fake imports and route/primitive mismatches
 - blocked routes fail before code generation instead of producing speculative modules
 

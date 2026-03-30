@@ -1,4 +1,9 @@
-"""Monte Carlo pricing engine."""
+"""Monte Carlo simulation engine for option pricing.
+
+Generates random price paths from a stochastic process, then uses those
+paths to estimate the present value of a derivative. Supports barrier
+monitoring, variance reduction, and multiple discretization schemes.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +11,7 @@ import math
 
 import numpy as raw_np
 
+from trellis.core.differentiable import get_numpy
 import trellis.models.monte_carlo.discretization as mc_discretization
 from trellis.models.monte_carlo.discretization import (
     _build_exact_evaluator,
@@ -21,19 +27,21 @@ from trellis.models.monte_carlo.path_state import (
     _materialize_initial_cross_section,
 )
 
+np = get_numpy()
+
 
 def _state_dim(process) -> int:
-    """Return the process state dimension."""
+    """Number of variables tracked per path (e.g. 1 for GBM, 2 for Heston)."""
     return int(getattr(process, "state_dim", 1))
 
 
 def _factor_dim(process) -> int:
-    """Return the number of independent Gaussian factors."""
+    """Number of independent random drivers (Brownian motions) per step."""
     return int(getattr(process, "factor_dim", _state_dim(process)))
 
 
 def _coerce_initial_paths(x0, n_paths: int, state_dim: int) -> raw_np.ndarray:
-    """Broadcast the initial state across the simulated path set."""
+    """Expand a scalar or vector starting value into an array of shape (n_paths,) or (n_paths, state_dim)."""
     if state_dim == 1:
         return raw_np.full(n_paths, float(x0), dtype=float)
 
@@ -46,7 +54,7 @@ def _coerce_initial_paths(x0, n_paths: int, state_dim: int) -> raw_np.ndarray:
 
 
 def _allocate_paths(n_paths: int, n_steps: int, initial_values: raw_np.ndarray) -> raw_np.ndarray:
-    """Allocate a path tensor matching the state dimensionality."""
+    """Allocate the output array for simulated paths, pre-filled with initial values at step 0."""
     if initial_values.ndim == 1:
         paths = raw_np.empty((n_paths, n_steps + 1), dtype=float)
     else:
@@ -72,6 +80,22 @@ def _apply_diffusion(sig, dw, sqrt_dt: float) -> raw_np.ndarray:
 
     if sig_arr.ndim == 3 and dw_arr.ndim == 2:
         return sqrt_dt * raw_np.einsum("nij,nj->ni", sig_arr, dw_arr)
+
+    raise ValueError(
+        "diffusion output must match the state shape or provide (n_paths, state_dim, factor_dim) loadings",
+    )
+
+
+def _apply_diffusion_differentiable(sig, dw, sqrt_dt):
+    """Apply diffusion loading using autograd-compatible operations (no raw numpy)."""
+    sig_arr = sig
+    dw_arr = dw
+
+    if sig_arr.shape == dw_arr.shape:
+        return sig_arr * sqrt_dt * dw_arr
+
+    if sig_arr.ndim == 3 and dw_arr.ndim == 2:
+        return sqrt_dt * np.einsum("nij,nj->ni", sig_arr, dw_arr)
 
     raise ValueError(
         "diffusion output must match the state shape or provide (n_paths, state_dim, factor_dim) loadings",
@@ -332,10 +356,18 @@ class MonteCarloEngine:
             self.process, x0, T, self.n_steps, self.n_paths, self.rng,
         )
 
-    def simulate_with_shocks(self, x0, T: float, shocks) -> raw_np.ndarray:
-        """Generate paths from externally supplied standard-normal shocks."""
+    def simulate_with_shocks(self, x0, T: float, shocks, *, differentiable: bool = False) -> raw_np.ndarray:
+        """Generate paths from externally supplied standard-normal shocks.
+
+        When ``differentiable=True``, the path tensor stays inside the autograd
+        trace and the caller is responsible for supplying fixed shocks.
+        """
         factor_dim = _factor_dim(self.process)
         shock_tensor = _coerce_shock_tensor(shocks, self.n_paths, self.n_steps, factor_dim)
+        if differentiable:
+            if _state_dim(self.process) == 1:
+                return self._simulate_scalar_with_shocks_differentiable(x0, T, shock_tensor)
+            return self._simulate_vector_with_shocks_differentiable(x0, T, shock_tensor)
         if _state_dim(self.process) == 1:
             return self._simulate_scalar_with_shocks(x0, T, shock_tensor)
         return self._simulate_vector_with_shocks(x0, T, shock_tensor)
@@ -408,6 +440,73 @@ class MonteCarloEngine:
             paths[:, i + 1] = x
 
         return paths
+
+    def _simulate_scalar_with_shocks_differentiable(self, x0, T: float, shocks) -> raw_np.ndarray:
+        """Generate scalar-state paths from explicit shocks without scalarizing."""
+        dt = T / self.n_steps
+        sqrt_dt = np.sqrt(dt)
+        x = np.ones(self.n_paths) * x0
+        columns = [x]
+
+        scheme_name = getattr(self.scheme, "name", None) if self.scheme is not None else None
+        method = scheme_name or self.method
+        if method not in {"exact", "euler", "milstein"}:
+            raise NotImplementedError(
+                "differentiable Monte Carlo only supports exact, euler, and milstein methods",
+            )
+
+        for i in range(self.n_steps):
+            t = i * dt
+            dw = shocks[:, i]
+            if method == "exact":
+                x = self.process.exact_sample(x, t, dt, dw)
+            elif method == "milstein":
+                eps = getattr(self.scheme, "eps", 1e-6)
+                mu = self.process.drift(x, t)
+                sig = self.process.diffusion(x, t)
+                sig_up = self.process.diffusion(x + eps, t)
+                dsig_dx = (sig_up - sig) / eps
+                x = x + mu * dt + sig * sqrt_dt * dw + 0.5 * sig * dsig_dx * (dw ** 2 - 1.0) * dt
+            else:
+                mu = self.process.drift(x, t)
+                sig = self.process.diffusion(x, t)
+                x = x + mu * dt + sig * sqrt_dt * dw
+            columns.append(x)
+
+        return np.stack(columns, axis=1)
+
+    def _simulate_vector_with_shocks_differentiable(self, x0, T: float, shocks) -> raw_np.ndarray:
+        """Generate vector-state paths from explicit shocks without scalarizing."""
+        dt = T / self.n_steps
+        sqrt_dt = np.sqrt(dt)
+        state_dim = _state_dim(self.process)
+        initial = x0
+        if getattr(initial, "ndim", 0) == 0:
+            initial = np.ones(state_dim) * initial
+        if initial.shape != (state_dim,):
+            raise ValueError(f"x0 must be scalar or shape ({state_dim},) for a {state_dim}D process")
+        x = np.ones((self.n_paths, 1)) * initial
+        columns = [x]
+
+        scheme_name = getattr(self.scheme, "name", None) if self.scheme is not None else None
+        method = scheme_name or self.method
+        if method not in {"exact", "euler"}:
+            raise NotImplementedError(
+                "differentiable vector Monte Carlo only supports exact and euler methods",
+            )
+
+        for i in range(self.n_steps):
+            t = i * dt
+            dw = shocks[:, i]
+            if method == "exact":
+                x = self.process.exact_sample(x, t, dt, dw)
+            else:
+                mu = self.process.drift(x, t)
+                sig = self.process.diffusion(x, t)
+                x = x + mu * dt + _apply_diffusion_differentiable(sig, dw, sqrt_dt)
+            columns.append(x)
+
+        return np.stack(columns, axis=1)
 
     def _simulate_state_with_custom_scheme(
         self,
@@ -737,8 +836,15 @@ class MonteCarloEngine:
         *,
         storage_policy: str | MonteCarloPathRequirement = "auto",
         return_paths: bool = True,
+        shocks=None,
+        differentiable: bool = False,
     ) -> dict:
-        """Price a derivative via Monte Carlo."""
+        """Price a derivative via Monte Carlo.
+
+        ``shocks=...`` forces a deterministic pathwise evaluation path.  When
+        ``differentiable=True``, both the simulated paths and the sample mean
+        remain autograd-traceable.
+        """
         path_state = None
         paths = None
 
@@ -746,7 +852,19 @@ class MonteCarloEngine:
         declared_requirement = _payoff_path_requirement(payoff_fn)
         state_evaluator = getattr(payoff_fn, "evaluate_state", None)
 
-        if (
+        if differentiable and (
+            explicit_requirement is not None
+            or declared_requirement is not None
+            or callable(state_evaluator)
+        ):
+            raise NotImplementedError(
+                "differentiable Monte Carlo currently requires a plain path payoff callable",
+            )
+
+        if shocks is not None:
+            paths = self.simulate_with_shocks(x0, T, shocks, differentiable=differentiable)
+            payoffs = payoff_fn(paths)
+        elif (
             not return_paths
             and callable(state_evaluator)
             and (explicit_requirement is not None or declared_requirement is not None)
@@ -755,14 +873,22 @@ class MonteCarloEngine:
             path_state = self.simulate_state(x0, T, requirement)
             payoffs = raw_np.asarray(state_evaluator(path_state), dtype=float)
         else:
+            if differentiable:
+                raise ValueError("differentiable=True requires explicit shocks for deterministic pathwise gradients")
             paths = self.simulate(x0, T)
             payoffs = raw_np.asarray(payoff_fn(paths), dtype=float)
 
-        df = raw_np.exp(-discount_rate * T)
-        discounted = df * payoffs
-
-        price = float(raw_np.mean(discounted))
-        std_error = float(raw_np.std(discounted) / raw_np.sqrt(len(discounted)))
+        if differentiable:
+            df = np.exp(-discount_rate * T)
+            discounted = df * payoffs
+            price = np.mean(discounted)
+            std_error = np.std(discounted) / np.sqrt(len(discounted))
+        else:
+            payoffs = raw_np.asarray(payoffs, dtype=float)
+            df = raw_np.exp(-discount_rate * T)
+            discounted = df * payoffs
+            price = float(raw_np.mean(discounted))
+            std_error = float(raw_np.std(discounted) / raw_np.sqrt(len(discounted)))
 
         return {
             "price": price,

@@ -1,0 +1,834 @@
+{
+  "context": {
+    "class_name": "CDSPricingPayoff",
+    "generation_plan": {
+      "approved_modules": [
+        "trellis.core.date_utils",
+        "trellis.core.differentiable",
+        "trellis.core.market_state",
+        "trellis.core.payoff",
+        "trellis.core.types",
+        "trellis.models.analytical",
+        "trellis.models.analytical.barrier",
+        "trellis.models.analytical.jamshidian",
+        "trellis.models.analytical.quanto",
+        "trellis.models.analytical.support.cross_asset",
+        "trellis.models.analytical.support.discounting",
+        "trellis.models.analytical.support.forwards",
+        "trellis.models.analytical.support.payoffs",
+        "trellis.models.black"
+      ],
+      "inspected_modules": [
+        "trellis.models.black"
+      ],
+      "instruction_resolution": {
+        "conflict_count": 0,
+        "conflicts": [],
+        "dropped_instruction_count": 0,
+        "dropped_instructions": [],
+        "effective_instruction_count": 5,
+        "effective_instructions": [
+          {
+            "conflict_policy": "prefer_newer",
+            "created_at": "",
+            "id": "credit_default_swap_analytical:schedule-builder",
+            "instruction_type": "route_hint",
+            "precedence_rank": 90,
+            "rationale": "Schedule construction is a shared route capability, not payoff-body glue.",
+            "scope_features": [],
+            "scope_instruments": [
+              "nth_to_default"
+            ],
+            "scope_methods": [
+              "analytical"
+            ],
+            "scope_modules": [
+              "trellis.core.date_utils"
+            ],
+            "scope_routes": [
+              "credit_default_swap_analytical"
+            ],
+            "source_id": "credit_default_swap_analytical:schedule-builder",
+            "source_kind": "route_card",
+            "source_revision": "",
+            "statement": "Use `trellis.core.date_utils.generate_schedule` to build ordered dates before pricing.",
+            "status": "active",
+            "supersedes": [],
+            "title": "Use the shared schedule builder",
+            "updated_at": ""
+          },
+          {
+            "conflict_policy": "prefer_newer",
+            "created_at": "",
+            "id": "credit_default_swap_analytical:schedule-body",
+            "instruction_type": "route_hint",
+            "precedence_rank": 85,
+            "rationale": "Route plans should delegate date construction to the shared primitive.",
+            "scope_features": [],
+            "scope_instruments": [
+              "nth_to_default"
+            ],
+            "scope_methods": [
+              "analytical"
+            ],
+            "scope_modules": [],
+            "scope_routes": [
+              "credit_default_swap_analytical"
+            ],
+            "source_id": "credit_default_swap_analytical:schedule-body",
+            "source_kind": "route_card",
+            "source_revision": "",
+            "statement": "Do not hard-code observation or payment grids inside the payoff body.",
+            "status": "active",
+            "supersedes": [],
+            "title": "Avoid hard-coded schedule grids",
+            "updated_at": ""
+          },
+          {
+            "conflict_policy": "prefer_newer",
+            "created_at": "",
+            "id": "credit_default_swap_analytical:note:2",
+            "instruction_type": "route_hint",
+            "precedence_rank": 48,
+            "rationale": "Route notes are retained as structured guidance and resolved by precedence.",
+            "scope_features": [],
+            "scope_instruments": [
+              "nth_to_default"
+            ],
+            "scope_methods": [
+              "analytical"
+            ],
+            "scope_modules": [],
+            "scope_routes": [
+              "credit_default_swap_analytical"
+            ],
+            "source_id": "credit_default_swap_analytical:note:2",
+            "source_kind": "route_card",
+            "source_revision": "",
+            "statement": "Do not import or reuse Black76 call/put primitives for credit-default pricing.",
+            "status": "active",
+            "supersedes": [],
+            "title": "Route note 2",
+            "updated_at": ""
+          },
+          {
+            "conflict_policy": "prefer_newer",
+            "created_at": "",
+            "id": "credit_default_swap_analytical:note:1",
+            "instruction_type": "historical_note",
+            "precedence_rank": 49,
+            "rationale": "Route notes are retained as structured guidance and resolved by precedence.",
+            "scope_features": [],
+            "scope_instruments": [
+              "nth_to_default"
+            ],
+            "scope_methods": [
+              "analytical"
+            ],
+            "scope_modules": [],
+            "scope_routes": [
+              "credit_default_swap_analytical"
+            ],
+            "source_id": "credit_default_swap_analytical:note:1",
+            "source_kind": "route_card",
+            "source_revision": "",
+            "statement": "For CDS and nth-to-default analytical pricing, build the premium leg and protection leg directly from `market_state.credit_curve` survival probabilities.",
+            "status": "active",
+            "supersedes": [],
+            "title": "Route note 1",
+            "updated_at": ""
+          },
+          {
+            "conflict_policy": "prefer_newer",
+            "created_at": "",
+            "id": "credit_default_swap_analytical:note:3",
+            "instruction_type": "historical_note",
+            "precedence_rank": 47,
+            "rationale": "Route notes are retained as structured guidance and resolved by precedence.",
+            "scope_features": [],
+            "scope_instruments": [
+              "nth_to_default"
+            ],
+            "scope_methods": [
+              "analytical"
+            ],
+            "scope_modules": [],
+            "scope_routes": [
+              "credit_default_swap_analytical"
+            ],
+            "source_id": "credit_default_swap_analytical:note:3",
+            "source_kind": "route_card",
+            "source_revision": "",
+            "statement": "Keep the adapter thin: schedule generation, year fractions, survival probabilities, discounting, and leg aggregation only.",
+            "status": "active",
+            "supersedes": [],
+            "title": "Route note 3",
+            "updated_at": ""
+          }
+        ],
+        "route": "credit_default_swap_analytical"
+      },
+      "instrument_type": "nth_to_default",
+      "method": "analytical",
+      "primitive_plan": {
+        "engine_family": "analytical",
+        "route": "credit_default_swap_analytical",
+        "route_family": "credit_default_swap",
+        "score": 4.5
+      },
+      "proposed_tests": [
+        "tests/test_agent/test_build_loop.py"
+      ],
+      "repo_revision": "2204f054d09cfaa88de56326480925626f4ca2b3",
+      "symbols_to_reuse": [
+        "CashflowSchedule",
+        "Cashflows",
+        "DataProvider",
+        "DayCountConvention",
+        "DeterministicCashflowPayoff",
+        "DiscountCurve",
+        "Frequency",
+        "Instrument",
+        "MarketState",
+        "MissingCapabilityError",
+        "MonteCarloPathPayoff",
+        "Payoff",
+        "PresentValue",
+        "PricingResult",
+        "QuantoAnalyticalSpecLike",
+        "ResolvedBarrierInputs",
+        "ResolvedInputPayoff",
+        "ResolvedJamshidianInputs",
+        "add_months",
+        "asset_or_nothing_intrinsic",
+        "barrier_image_raw",
+        "barrier_option_price",
+        "barrier_regime_selector_raw",
+        "black76_asset_or_nothing_call",
+        "black76_asset_or_nothing_put",
+        "black76_call",
+        "black76_cash_or_nothing_call",
+        "black76_cash_or_nothing_put",
+        "black76_put",
+        "call_put_parity_gap",
+        "cash_or_nothing_intrinsic",
+        "continuous_rate_from_simple_rate",
+        "discount_factor_from_zero_rate",
+        "discounted_value",
+        "down_and_in_call",
+        "down_and_in_call_raw",
+        "down_and_out_call",
+        "down_and_out_call_raw",
+        "effective_covariance_term",
+        "exchange_option_effective_vol",
+        "foreign_to_domestic_forward_bridge",
+        "forward_discount_ratio",
+        "forward_from_carry_rate",
+        "forward_from_discount_factors",
+        "forward_from_dividend_yield",
+        "garman_kohlhagen_call",
+        "garman_kohlhagen_put",
+        "generate_schedule",
+        "get_accrual_fraction",
+        "get_bracketing_dates",
+        "get_numpy",
+        "gradient",
+        "hessian",
+        "implied_zero_rate",
+        "normalized_option_type",
+        "price_quanto_option_analytical",
+        "price_quanto_option_raw",
+        "quanto_adjusted_forward",
+        "rebate_raw",
+        "safe_time_fraction",
+        "simple_rate_from_discount_factor",
+        "terminal_intrinsic",
+        "terminal_vanilla_from_basis",
+        "vanilla_call_raw",
+        "year_fraction",
+        "zcb_option_hw",
+        "zcb_option_hw_raw"
+      ],
+      "uncertainty_flags": []
+    },
+    "route_card": "## Structured Route Card\n- Method family: `analytical`\n- Instrument type: `nth_to_default`\n- Route: `credit_default_swap_analytical`\n- Engine family: `analytical`\n- Route family: `credit_default_swap`\n- Required primitives:\n  - `trellis.core.date_utils.generate_schedule` (schedule_builder)\n  - `trellis.core.date_utils.year_fraction` (time_measure)\n- Resolved instructions:\n  - [route_hint] Use `trellis.core.date_utils.generate_schedule` to build ordered dates before pricing.\n  - [route_hint] Do not hard-code observation or payment grids inside the payoff body.\n  - [route_hint] Do not import or reuse Black76 call/put primitives for credit-default pricing.\n  - [historical_note] For CDS and nth-to-default analytical pricing, build the premium leg and protection leg directly from `market_state.credit_curve` survival probabilities.\n  - [historical_note] Keep the adapter thin: schedule generation, year fractions, survival probabilities, discounting, and leg aggregation only.\n- Schedule construction:\n  - [route_hint] Use `trellis.core.date_utils.generate_schedule` to build ordered dates before pricing.\n  - [route_hint] Do not hard-code observation or payment grids inside the payoff body.\n  - [historical_note] Keep the adapter thin: schedule generation, year fractions, survival probabilities, discounting, and leg aggregation only.\n- Required adapters:\n  - `use_credit_curve_survival_probability_thin_adapter`\n  - `declare_credit_curve_and_discount_curve_requirements`\n- Primary modules to inspect/reuse:\n  - `trellis.models.black`\n- Post-build test targets:\n  - `tests/test_agent/test_build_loop.py`\n- Instruction precedence: follow the approved modules, primitives, and route helper in this card. If older guidance conflicts, treat it as stale and obey this plan.\n- Use approved Trellis imports only. Prefer thin adapters over bespoke numerical kernels.",
+    "route_plan": "## Structured Generation Plan\n- Method family: `analytical`\n- Instrument type: `nth_to_default`\n- Repo revision: `2204f054d09cfaa88de56326480925626f4ca2b3`\n- Inspected modules:\n  - `trellis.models.black`\n- Approved Trellis modules for imports:\n  - `trellis.core.date_utils`\n  - `trellis.core.differentiable`\n  - `trellis.core.market_state`\n  - `trellis.core.payoff`\n  - `trellis.core.types`\n  - `trellis.models.analytical`\n  - `trellis.models.analytical.barrier`\n  - `trellis.models.analytical.jamshidian`\n  - `trellis.models.analytical.quanto`\n  - `trellis.models.analytical.support.cross_asset`\n  - `trellis.models.analytical.support.discounting`\n  - `trellis.models.analytical.support.forwards`\n  - `trellis.models.analytical.support.payoffs`\n  - `trellis.models.black`\n- Public symbols available from the approved modules:\n  - `CashflowSchedule`\n  - `Cashflows`\n  - `DataProvider`\n  - `DayCountConvention`\n  - `DeterministicCashflowPayoff`\n  - `DiscountCurve`\n  - `Frequency`\n  - `Instrument`\n  - `MarketState`\n  - `MissingCapabilityError`\n  - `MonteCarloPathPayoff`\n  - `Payoff`\n  - `PresentValue`\n  - `PricingResult`\n  - `QuantoAnalyticalSpecLike`\n  - `ResolvedBarrierInputs`\n  - `ResolvedInputPayoff`\n  - `ResolvedJamshidianInputs`\n  - `add_months`\n  - `asset_or_nothing_intrinsic`\n  - `barrier_image_raw`\n  - `barrier_option_price`\n  - `barrier_regime_selector_raw`\n  - `black76_asset_or_nothing_call`\n  - `black76_asset_or_nothing_put`\n  - `black76_call`\n  - `black76_cash_or_nothing_call`\n  - `black76_cash_or_nothing_put`\n  - `black76_put`\n  - `call_put_parity_gap`\n  - `cash_or_nothing_intrinsic`\n  - `continuous_rate_from_simple_rate`\n  - `discount_factor_from_zero_rate`\n  - `discounted_value`\n  - `down_and_in_call`\n  - `down_and_in_call_raw`\n  - `down_and_out_call`\n  - `down_and_out_call_raw`\n  - `effective_covariance_term`\n  - `exchange_option_effective_vol`\n  - `foreign_to_domestic_forward_bridge`\n  - `forward_discount_ratio`\n  - `forward_from_carry_rate`\n  - `forward_from_discount_factors`\n  - `forward_from_dividend_yield`\n  - `garman_kohlhagen_call`\n  - `garman_kohlhagen_put`\n  - `generate_schedule`\n  - `get_accrual_fraction`\n  - `get_bracketing_dates`\n  - `get_numpy`\n  - `gradient`\n  - `hessian`\n  - `implied_zero_rate`\n  - `normalized_option_type`\n  - `price_quanto_option_analytical`\n  - `price_quanto_option_raw`\n  - `quanto_adjusted_forward`\n  - `rebate_raw`\n  - `safe_time_fraction`\n  - `simple_rate_from_discount_factor`\n  - `terminal_intrinsic`\n  - `terminal_vanilla_from_basis`\n  - `vanilla_call_raw`\n  - `year_fraction`\n  - `zcb_option_hw`\n  - `zcb_option_hw_raw`\n- Tests to run after generation:\n  - `tests/test_agent/test_build_loop.py`\n- Primitive route:\n  - Route: `credit_default_swap_analytical`\n  - Engine family: `analytical`\n  - Route family: `credit_default_swap`\n  - Route score: `4.50`\n  - Selected primitives:\n    - `trellis.core.date_utils.generate_schedule` (schedule_builder)\n    - `trellis.core.date_utils.year_fraction` (time_measure)\n  - Resolved instructions:\n    - [route_hint] Use `trellis.core.date_utils.generate_schedule` to build ordered dates before pricing.\n    - [route_hint] Do not hard-code observation or payment grids inside the payoff body.\n    - [route_hint] Do not import or reuse Black76 call/put primitives for credit-default pricing.\n    - [historical_note] For CDS and nth-to-default analytical pricing, build the premium leg and protection leg directly from `market_state.credit_curve` survival probabilities.\n    - [historical_note] Keep the adapter thin: schedule generation, year fractions, survival probabilities, discounting, and leg aggregation only.\n  - Schedule construction:\n    - [route_hint] Use `trellis.core.date_utils.generate_schedule` to build ordered dates before pricing.\n    - [route_hint] Do not hard-code observation or payment grids inside the payoff body.\n    - [historical_note] Keep the adapter thin: schedule generation, year fractions, survival probabilities, discounting, and leg aggregation only.\n  - Required adapters:\n    - `use_credit_curve_survival_probability_thin_adapter`\n    - `declare_credit_curve_and_discount_curve_requirements`\n  - Instruction precedence: follow the approved modules, primitives, and route helper in this plan. If older guidance conflicts, treat it as stale and obey this plan.\n- Every `trellis.*` import in the generated code MUST come from the approved module list above.\n- If you need functionality outside the approved list, say so explicitly instead of inventing an import.",
+    "selected_curve_names": {
+      "credit_curve": "usd_ig",
+      "discount_curve": "usd_ois"
+    },
+    "spec_name": "CDSPricingSpec"
+  },
+  "created_at": "2026-03-29T16:57:08.886704+00:00",
+  "issue_id": null,
+  "json_path": "/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/analytical/executor_build_20260329165643_bec7eec2.json",
+  "route": {
+    "family": "credit_default_swap",
+    "model": "analytical",
+    "name": "credit_default_swap_analytical"
+  },
+  "status": "ok",
+  "steps": [
+    {
+      "id": "executor_build_20260329165643_bec7eec2:root",
+      "inputs": {
+        "issue_id": null,
+        "model": "analytical",
+        "route_family": "credit_default_swap",
+        "route_name": "credit_default_swap_analytical",
+        "task_id": "executor_build_20260329165643_bec7eec2"
+      },
+      "kind": "trace",
+      "label": "Analytical build",
+      "notes": [
+        "The trace mirrors the deterministic GenerationPlan used to assemble the route."
+      ],
+      "outputs": {
+        "route": {
+          "family": "credit_default_swap",
+          "model": "analytical",
+          "name": "credit_default_swap_analytical"
+        },
+        "status": "ok"
+      },
+      "parent_id": null,
+      "status": "ok"
+    },
+    {
+      "id": "executor_build_20260329165643_bec7eec2:semantic_resolution",
+      "inputs": {
+        "approved_modules": [
+          "trellis.core.date_utils",
+          "trellis.core.differentiable",
+          "trellis.core.market_state",
+          "trellis.core.payoff",
+          "trellis.core.types",
+          "trellis.models.analytical",
+          "trellis.models.analytical.barrier",
+          "trellis.models.analytical.jamshidian",
+          "trellis.models.analytical.quanto",
+          "trellis.models.analytical.support.cross_asset",
+          "trellis.models.analytical.support.discounting",
+          "trellis.models.analytical.support.forwards",
+          "trellis.models.analytical.support.payoffs",
+          "trellis.models.black"
+        ],
+        "inspected_modules": [
+          "trellis.models.black"
+        ],
+        "instrument_type": "nth_to_default",
+        "method": "analytical",
+        "repo_revision": "2204f054d09cfaa88de56326480925626f4ca2b3",
+        "symbols_to_reuse": [
+          "CashflowSchedule",
+          "Cashflows",
+          "DataProvider",
+          "DayCountConvention",
+          "DeterministicCashflowPayoff",
+          "DiscountCurve",
+          "Frequency",
+          "Instrument",
+          "MarketState",
+          "MissingCapabilityError",
+          "MonteCarloPathPayoff",
+          "Payoff",
+          "PresentValue",
+          "PricingResult",
+          "QuantoAnalyticalSpecLike",
+          "ResolvedBarrierInputs",
+          "ResolvedInputPayoff",
+          "ResolvedJamshidianInputs",
+          "add_months",
+          "asset_or_nothing_intrinsic",
+          "barrier_image_raw",
+          "barrier_option_price",
+          "barrier_regime_selector_raw",
+          "black76_asset_or_nothing_call",
+          "black76_asset_or_nothing_put",
+          "black76_call",
+          "black76_cash_or_nothing_call",
+          "black76_cash_or_nothing_put",
+          "black76_put",
+          "call_put_parity_gap",
+          "cash_or_nothing_intrinsic",
+          "continuous_rate_from_simple_rate",
+          "discount_factor_from_zero_rate",
+          "discounted_value",
+          "down_and_in_call",
+          "down_and_in_call_raw",
+          "down_and_out_call",
+          "down_and_out_call_raw",
+          "effective_covariance_term",
+          "exchange_option_effective_vol"
+        ],
+        "uncertainty_flags": []
+      },
+      "kind": "semantic_resolution",
+      "label": "Resolve contract and route",
+      "notes": [
+        "Record the semantic contract that drives route selection, not just the final code path."
+      ],
+      "outputs": {
+        "instruction_resolution": {
+          "conflict_count": 0,
+          "conflicts": [],
+          "dropped_instruction_count": 0,
+          "dropped_instructions": [],
+          "effective_instruction_count": 5,
+          "effective_instructions": [
+            {
+              "conflict_policy": "prefer_newer",
+              "created_at": "",
+              "id": "credit_default_swap_analytical:schedule-builder",
+              "instruction_type": "route_hint",
+              "precedence_rank": 90,
+              "rationale": "Schedule construction is a shared route capability, not payoff-body glue.",
+              "scope_features": [],
+              "scope_instruments": [
+                "nth_to_default"
+              ],
+              "scope_methods": [
+                "analytical"
+              ],
+              "scope_modules": [
+                "trellis.core.date_utils"
+              ],
+              "scope_routes": [
+                "credit_default_swap_analytical"
+              ],
+              "source_id": "credit_default_swap_analytical:schedule-builder",
+              "source_kind": "route_card",
+              "source_revision": "",
+              "statement": "Use `trellis.core.date_utils.generate_schedule` to build ordered dates before pricing.",
+              "status": "active",
+              "supersedes": [],
+              "title": "Use the shared schedule builder",
+              "updated_at": ""
+            },
+            {
+              "conflict_policy": "prefer_newer",
+              "created_at": "",
+              "id": "credit_default_swap_analytical:schedule-body",
+              "instruction_type": "route_hint",
+              "precedence_rank": 85,
+              "rationale": "Route plans should delegate date construction to the shared primitive.",
+              "scope_features": [],
+              "scope_instruments": [
+                "nth_to_default"
+              ],
+              "scope_methods": [
+                "analytical"
+              ],
+              "scope_modules": [],
+              "scope_routes": [
+                "credit_default_swap_analytical"
+              ],
+              "source_id": "credit_default_swap_analytical:schedule-body",
+              "source_kind": "route_card",
+              "source_revision": "",
+              "statement": "Do not hard-code observation or payment grids inside the payoff body.",
+              "status": "active",
+              "supersedes": [],
+              "title": "Avoid hard-coded schedule grids",
+              "updated_at": ""
+            },
+            {
+              "conflict_policy": "prefer_newer",
+              "created_at": "",
+              "id": "credit_default_swap_analytical:note:2",
+              "instruction_type": "route_hint",
+              "precedence_rank": 48,
+              "rationale": "Route notes are retained as structured guidance and resolved by precedence.",
+              "scope_features": [],
+              "scope_instruments": [
+                "nth_to_default"
+              ],
+              "scope_methods": [
+                "analytical"
+              ],
+              "scope_modules": [],
+              "scope_routes": [
+                "credit_default_swap_analytical"
+              ],
+              "source_id": "credit_default_swap_analytical:note:2",
+              "source_kind": "route_card",
+              "source_revision": "",
+              "statement": "Do not import or reuse Black76 call/put primitives for credit-default pricing.",
+              "status": "active",
+              "supersedes": [],
+              "title": "Route note 2",
+              "updated_at": ""
+            },
+            {
+              "conflict_policy": "prefer_newer",
+              "created_at": "",
+              "id": "credit_default_swap_analytical:note:1",
+              "instruction_type": "historical_note",
+              "precedence_rank": 49,
+              "rationale": "Route notes are retained as structured guidance and resolved by precedence.",
+              "scope_features": [],
+              "scope_instruments": [
+                "nth_to_default"
+              ],
+              "scope_methods": [
+                "analytical"
+              ],
+              "scope_modules": [],
+              "scope_routes": [
+                "credit_default_swap_analytical"
+              ],
+              "source_id": "credit_default_swap_analytical:note:1",
+              "source_kind": "route_card",
+              "source_revision": "",
+              "statement": "For CDS and nth-to-default analytical pricing, build the premium leg and protection leg directly from `market_state.credit_curve` survival probabilities.",
+              "status": "active",
+              "supersedes": [],
+              "title": "Route note 1",
+              "updated_at": ""
+            },
+            {
+              "conflict_policy": "prefer_newer",
+              "created_at": "",
+              "id": "credit_default_swap_analytical:note:3",
+              "instruction_type": "historical_note",
+              "precedence_rank": 47,
+              "rationale": "Route notes are retained as structured guidance and resolved by precedence.",
+              "scope_features": [],
+              "scope_instruments": [
+                "nth_to_default"
+              ],
+              "scope_methods": [
+                "analytical"
+              ],
+              "scope_modules": [],
+              "scope_routes": [
+                "credit_default_swap_analytical"
+              ],
+              "source_id": "credit_default_swap_analytical:note:3",
+              "source_kind": "route_card",
+              "source_revision": "",
+              "statement": "Keep the adapter thin: schedule generation, year fractions, survival probabilities, discounting, and leg aggregation only.",
+              "status": "active",
+              "supersedes": [],
+              "title": "Route note 3",
+              "updated_at": ""
+            }
+          ],
+          "route": "credit_default_swap_analytical"
+        },
+        "model": "analytical",
+        "primitive_plan_score": 4.5,
+        "route_family": "credit_default_swap",
+        "route_name": "credit_default_swap_analytical"
+      },
+      "parent_id": "executor_build_20260329165643_bec7eec2:root",
+      "status": "ok"
+    },
+    {
+      "id": "executor_build_20260329165643_bec7eec2:instruction_lifecycle",
+      "inputs": {
+        "conflict_count": 0,
+        "dropped_instruction_count": 0,
+        "effective_instruction_count": 5,
+        "route": "credit_default_swap_analytical"
+      },
+      "kind": "instruction_lifecycle",
+      "label": "Resolve route guidance lifecycle",
+      "notes": [
+        "List the effective, dropped, and conflicting route guidance records so replay consumers can see what actually governed the build."
+      ],
+      "outputs": {
+        "instruction_resolution": {
+          "conflict_count": 0,
+          "conflicts": [],
+          "dropped_instruction_count": 0,
+          "dropped_instructions": [],
+          "effective_instruction_count": 5,
+          "effective_instructions": [
+            {
+              "conflict_policy": "prefer_newer",
+              "created_at": "",
+              "id": "credit_default_swap_analytical:schedule-builder",
+              "instruction_type": "route_hint",
+              "precedence_rank": 90,
+              "rationale": "Schedule construction is a shared route capability, not payoff-body glue.",
+              "scope_features": [],
+              "scope_instruments": [
+                "nth_to_default"
+              ],
+              "scope_methods": [
+                "analytical"
+              ],
+              "scope_modules": [
+                "trellis.core.date_utils"
+              ],
+              "scope_routes": [
+                "credit_default_swap_analytical"
+              ],
+              "source_id": "credit_default_swap_analytical:schedule-builder",
+              "source_kind": "route_card",
+              "source_revision": "",
+              "statement": "Use `trellis.core.date_utils.generate_schedule` to build ordered dates before pricing.",
+              "status": "active",
+              "supersedes": [],
+              "title": "Use the shared schedule builder",
+              "updated_at": ""
+            },
+            {
+              "conflict_policy": "prefer_newer",
+              "created_at": "",
+              "id": "credit_default_swap_analytical:schedule-body",
+              "instruction_type": "route_hint",
+              "precedence_rank": 85,
+              "rationale": "Route plans should delegate date construction to the shared primitive.",
+              "scope_features": [],
+              "scope_instruments": [
+                "nth_to_default"
+              ],
+              "scope_methods": [
+                "analytical"
+              ],
+              "scope_modules": [],
+              "scope_routes": [
+                "credit_default_swap_analytical"
+              ],
+              "source_id": "credit_default_swap_analytical:schedule-body",
+              "source_kind": "route_card",
+              "source_revision": "",
+              "statement": "Do not hard-code observation or payment grids inside the payoff body.",
+              "status": "active",
+              "supersedes": [],
+              "title": "Avoid hard-coded schedule grids",
+              "updated_at": ""
+            },
+            {
+              "conflict_policy": "prefer_newer",
+              "created_at": "",
+              "id": "credit_default_swap_analytical:note:2",
+              "instruction_type": "route_hint",
+              "precedence_rank": 48,
+              "rationale": "Route notes are retained as structured guidance and resolved by precedence.",
+              "scope_features": [],
+              "scope_instruments": [
+                "nth_to_default"
+              ],
+              "scope_methods": [
+                "analytical"
+              ],
+              "scope_modules": [],
+              "scope_routes": [
+                "credit_default_swap_analytical"
+              ],
+              "source_id": "credit_default_swap_analytical:note:2",
+              "source_kind": "route_card",
+              "source_revision": "",
+              "statement": "Do not import or reuse Black76 call/put primitives for credit-default pricing.",
+              "status": "active",
+              "supersedes": [],
+              "title": "Route note 2",
+              "updated_at": ""
+            },
+            {
+              "conflict_policy": "prefer_newer",
+              "created_at": "",
+              "id": "credit_default_swap_analytical:note:1",
+              "instruction_type": "historical_note",
+              "precedence_rank": 49,
+              "rationale": "Route notes are retained as structured guidance and resolved by precedence.",
+              "scope_features": [],
+              "scope_instruments": [
+                "nth_to_default"
+              ],
+              "scope_methods": [
+                "analytical"
+              ],
+              "scope_modules": [],
+              "scope_routes": [
+                "credit_default_swap_analytical"
+              ],
+              "source_id": "credit_default_swap_analytical:note:1",
+              "source_kind": "route_card",
+              "source_revision": "",
+              "statement": "For CDS and nth-to-default analytical pricing, build the premium leg and protection leg directly from `market_state.credit_curve` survival probabilities.",
+              "status": "active",
+              "supersedes": [],
+              "title": "Route note 1",
+              "updated_at": ""
+            },
+            {
+              "conflict_policy": "prefer_newer",
+              "created_at": "",
+              "id": "credit_default_swap_analytical:note:3",
+              "instruction_type": "historical_note",
+              "precedence_rank": 47,
+              "rationale": "Route notes are retained as structured guidance and resolved by precedence.",
+              "scope_features": [],
+              "scope_instruments": [
+                "nth_to_default"
+              ],
+              "scope_methods": [
+                "analytical"
+              ],
+              "scope_modules": [],
+              "scope_routes": [
+                "credit_default_swap_analytical"
+              ],
+              "source_id": "credit_default_swap_analytical:note:3",
+              "source_kind": "route_card",
+              "source_revision": "",
+              "statement": "Keep the adapter thin: schedule generation, year fractions, survival probabilities, discounting, and leg aggregation only.",
+              "status": "active",
+              "supersedes": [],
+              "title": "Route note 3",
+              "updated_at": ""
+            }
+          ],
+          "route": "credit_default_swap_analytical"
+        }
+      },
+      "parent_id": "executor_build_20260329165643_bec7eec2:root",
+      "status": "ok"
+    },
+    {
+      "id": "executor_build_20260329165643_bec7eec2:decomposition",
+      "inputs": {
+        "adapters": [
+          "use_credit_curve_survival_probability_thin_adapter",
+          "declare_credit_curve_and_discount_curve_requirements"
+        ],
+        "blockers": [],
+        "notes": [
+          "For CDS and nth-to-default analytical pricing, build the premium leg and protection leg directly from `market_state.credit_curve` survival probabilities.",
+          "Do not import or reuse Black76 call/put primitives for credit-default pricing.",
+          "Keep the adapter thin: schedule generation, year fractions, survival probabilities, discounting, and leg aggregation only."
+        ],
+        "primitives": [
+          {
+            "module": "trellis.core.date_utils",
+            "required": true,
+            "role": "schedule_builder",
+            "symbol": "generate_schedule"
+          },
+          {
+            "module": "trellis.core.date_utils",
+            "required": true,
+            "role": "time_measure",
+            "symbol": "year_fraction"
+          }
+        ]
+      },
+      "kind": "decomposition",
+      "label": "Select reusable kernels",
+      "notes": [
+        "Capture the reusable valuation components and any exact basis-claim assembly."
+      ],
+      "outputs": {
+        "reuse_decision": "route_local",
+        "selected_primitives": [
+          {
+            "module": "trellis.core.date_utils",
+            "required": true,
+            "role": "schedule_builder",
+            "symbol": "generate_schedule"
+          },
+          {
+            "module": "trellis.core.date_utils",
+            "required": true,
+            "role": "time_measure",
+            "symbol": "year_fraction"
+          }
+        ]
+      },
+      "parent_id": "executor_build_20260329165643_bec7eec2:root",
+      "status": "ok"
+    },
+    {
+      "id": "executor_build_20260329165643_bec7eec2:assembly",
+      "inputs": {
+        "adapters": [
+          "use_credit_curve_survival_probability_thin_adapter",
+          "declare_credit_curve_and_discount_curve_requirements"
+        ],
+        "approved_modules": [
+          "trellis.core.date_utils",
+          "trellis.core.differentiable",
+          "trellis.core.market_state",
+          "trellis.core.payoff",
+          "trellis.core.types",
+          "trellis.models.analytical",
+          "trellis.models.analytical.barrier",
+          "trellis.models.analytical.jamshidian",
+          "trellis.models.analytical.quanto",
+          "trellis.models.analytical.support.cross_asset",
+          "trellis.models.analytical.support.discounting",
+          "trellis.models.analytical.support.forwards",
+          "trellis.models.analytical.support.payoffs",
+          "trellis.models.black"
+        ],
+        "route_helper": null
+      },
+      "kind": "assembly",
+      "label": "Assemble route from kernels",
+      "notes": [
+        "Prefer thin orchestration around existing analytical kernels and route helpers."
+      ],
+      "outputs": {
+        "assembly_card": "## Structured Route Card\n- Method family: `analytical`\n- Instrument type: `nth_to_default`\n- Route: `credit_default_swap_analytical`\n- Engine family: `analytical`\n- Route family: `credit_default_swap`\n- Required primitives:\n  - `trellis.core.date_utils.generate_schedule` (schedule_builder)\n  - `trellis.core.date_utils.year_fraction` (time_measure)\n- Resolved instructions:\n  - [route_hint] Use `trellis.core.date_utils.generate_schedule` to build ordered dates before pricing.\n  - [route_hint] Do not hard-code observation or payment grids inside the payoff body.\n  - [route_hint] Do not import or reuse Black76 call/put primitives for credit-default pricing.\n  - [historical_note] For CDS and nth-to-default analytical pricing, build the premium leg and protection leg directly from `market_state.credit_curve` survival probabilities.\n  - [historical_note] Keep the adapter thin: schedule generation, year fractions, survival probabilities, discounting, and leg aggregation only.\n- Schedule construction:\n  - [route_hint] Use `trellis.core.date_utils.generate_schedule` to build ordered dates before pricing.\n  - [route_hint] Do not hard-code observation or payment grids inside the payoff body.\n  - [historical_note] Keep the adapter thin: schedule generation, year fractions, survival probabilities, discounting, and leg aggregation only.\n- Required adapters:\n  - `use_credit_curve_survival_probability_thin_adapter`\n  - `declare_credit_curve_and_discount_curve_requirements`\n- Primary modules to inspect/reuse:\n  - `trellis.models.black`\n- Post-build test targets:\n  - `tests/test_agent/test_build_loop.py`\n- Instruction precedence: follow the approved modules, primitives, and route helper in this card. If older guidance conflicts, treat it as stale and obey this plan.\n- Use approved Trellis imports only. Prefer thin adapters over bespoke numerical kernels.",
+        "helper_modules": [
+          "trellis.core.date_utils",
+          "trellis.core.date_utils"
+        ],
+        "route_helper": null
+      },
+      "parent_id": "executor_build_20260329165643_bec7eec2:root",
+      "status": "ok"
+    },
+    {
+      "id": "executor_build_20260329165643_bec7eec2:validation",
+      "inputs": {
+        "blockers": [],
+        "proposed_tests": [
+          "tests/test_agent/test_build_loop.py"
+        ],
+        "uncertainty_flags": [],
+        "validation": null
+      },
+      "kind": "validation",
+      "label": "Validate route and fallbacks",
+      "notes": [
+        "Record proposed tests, blocker state, and any fallback or reuse notes."
+      ],
+      "outputs": {
+        "blocker_report_present": false,
+        "new_primitive_workflow_present": false,
+        "validation_state": "planned"
+      },
+      "parent_id": "executor_build_20260329165643_bec7eec2:root",
+      "status": "ok"
+    },
+    {
+      "id": "executor_build_20260329165643_bec7eec2:output",
+      "inputs": {
+        "model": "analytical",
+        "route": "credit_default_swap_analytical"
+      },
+      "kind": "output",
+      "label": "Final analytical artifact",
+      "notes": [
+        "Persist both the machine-readable trace and the text rendering from the same source of truth."
+      ],
+      "outputs": {
+        "route_card": "## Structured Route Card\n- Method family: `analytical`\n- Instrument type: `nth_to_default`\n- Route: `credit_default_swap_analytical`\n- Engine family: `analytical`\n- Route family: `credit_default_swap`\n- Required primitives:\n  - `trellis.core.date_utils.generate_schedule` (schedule_builder)\n  - `trellis.core.date_utils.year_fraction` (time_measure)\n- Resolved instructions:\n  - [route_hint] Use `trellis.core.date_utils.generate_schedule` to build ordered dates before pricing.\n  - [route_hint] Do not hard-code observation or payment grids inside the payoff body.\n  - [route_hint] Do not import or reuse Black76 call/put primitives for credit-default pricing.\n  - [historical_note] For CDS and nth-to-default analytical pricing, build the premium leg and protection leg directly from `market_state.credit_curve` survival probabilities.\n  - [historical_note] Keep the adapter thin: schedule generation, year fractions, survival probabilities, discounting, and leg aggregation only.\n- Schedule construction:\n  - [route_hint] Use `trellis.core.date_utils.generate_schedule` to build ordered dates before pricing.\n  - [route_hint] Do not hard-code observation or payment grids inside the payoff body.\n  - [historical_note] Keep the adapter thin: schedule generation, year fractions, survival probabilities, discounting, and leg aggregation only.\n- Required adapters:\n  - `use_credit_curve_survival_probability_thin_adapter`\n  - `declare_credit_curve_and_discount_curve_requirements`\n- Primary modules to inspect/reuse:\n  - `trellis.models.black`\n- Post-build test targets:\n  - `tests/test_agent/test_build_loop.py`\n- Instruction precedence: follow the approved modules, primitives, and route helper in this card. If older guidance conflicts, treat it as stale and obey this plan.\n- Use approved Trellis imports only. Prefer thin adapters over bespoke numerical kernels.",
+        "route_plan": "## Structured Generation Plan\n- Method family: `analytical`\n- Instrument type: `nth_to_default`\n- Repo revision: `2204f054d09cfaa88de56326480925626f4ca2b3`\n- Inspected modules:\n  - `trellis.models.black`\n- Approved Trellis modules for imports:\n  - `trellis.core.date_utils`\n  - `trellis.core.differentiable`\n  - `trellis.core.market_state`\n  - `trellis.core.payoff`\n  - `trellis.core.types`\n  - `trellis.models.analytical`\n  - `trellis.models.analytical.barrier`\n  - `trellis.models.analytical.jamshidian`\n  - `trellis.models.analytical.quanto`\n  - `trellis.models.analytical.support.cross_asset`\n  - `trellis.models.analytical.support.discounting`\n  - `trellis.models.analytical.support.forwards`\n  - `trellis.models.analytical.support.payoffs`\n  - `trellis.models.black`\n- Public symbols available from the approved modules:\n  - `CashflowSchedule`\n  - `Cashflows`\n  - `DataProvider`\n  - `DayCountConvention`\n  - `DeterministicCashflowPayoff`\n  - `DiscountCurve`\n  - `Frequency`\n  - `Instrument`\n  - `MarketState`\n  - `MissingCapabilityError`\n  - `MonteCarloPathPayoff`\n  - `Payoff`\n  - `PresentValue`\n  - `PricingResult`\n  - `QuantoAnalyticalSpecLike`\n  - `ResolvedBarrierInputs`\n  - `ResolvedInputPayoff`\n  - `ResolvedJamshidianInputs`\n  - `add_months`\n  - `asset_or_nothing_intrinsic`\n  - `barrier_image_raw`\n  - `barrier_option_price`\n  - `barrier_regime_selector_raw`\n  - `black76_asset_or_nothing_call`\n  - `black76_asset_or_nothing_put`\n  - `black76_call`\n  - `black76_cash_or_nothing_call`\n  - `black76_cash_or_nothing_put`\n  - `black76_put`\n  - `call_put_parity_gap`\n  - `cash_or_nothing_intrinsic`\n  - `continuous_rate_from_simple_rate`\n  - `discount_factor_from_zero_rate`\n  - `discounted_value`\n  - `down_and_in_call`\n  - `down_and_in_call_raw`\n  - `down_and_out_call`\n  - `down_and_out_call_raw`\n  - `effective_covariance_term`\n  - `exchange_option_effective_vol`\n  - `foreign_to_domestic_forward_bridge`\n  - `forward_discount_ratio`\n  - `forward_from_carry_rate`\n  - `forward_from_discount_factors`\n  - `forward_from_dividend_yield`\n  - `garman_kohlhagen_call`\n  - `garman_kohlhagen_put`\n  - `generate_schedule`\n  - `get_accrual_fraction`\n  - `get_bracketing_dates`\n  - `get_numpy`\n  - `gradient`\n  - `hessian`\n  - `implied_zero_rate`\n  - `normalized_option_type`\n  - `price_quanto_option_analytical`\n  - `price_quanto_option_raw`\n  - `quanto_adjusted_forward`\n  - `rebate_raw`\n  - `safe_time_fraction`\n  - `simple_rate_from_discount_factor`\n  - `terminal_intrinsic`\n  - `terminal_vanilla_from_basis`\n  - `vanilla_call_raw`\n  - `year_fraction`\n  - `zcb_option_hw`\n  - `zcb_option_hw_raw`\n- Tests to run after generation:\n  - `tests/test_agent/test_build_loop.py`\n- Primitive route:\n  - Route: `credit_default_swap_analytical`\n  - Engine family: `analytical`\n  - Route family: `credit_default_swap`\n  - Route score: `4.50`\n  - Selected primitives:\n    - `trellis.core.date_utils.generate_schedule` (schedule_builder)\n    - `trellis.core.date_utils.year_fraction` (time_measure)\n  - Resolved instructions:\n    - [route_hint] Use `trellis.core.date_utils.generate_schedule` to build ordered dates before pricing.\n    - [route_hint] Do not hard-code observation or payment grids inside the payoff body.\n    - [route_hint] Do not import or reuse Black76 call/put primitives for credit-default pricing.\n    - [historical_note] For CDS and nth-to-default analytical pricing, build the premium leg and protection leg directly from `market_state.credit_curve` survival probabilities.\n    - [historical_note] Keep the adapter thin: schedule generation, year fractions, survival probabilities, discounting, and leg aggregation only.\n  - Schedule construction:\n    - [route_hint] Use `trellis.core.date_utils.generate_schedule` to build ordered dates before pricing.\n    - [route_hint] Do not hard-code observation or payment grids inside the payoff body.\n    - [historical_note] Keep the adapter thin: schedule generation, year fractions, survival probabilities, discounting, and leg aggregation only.\n  - Required adapters:\n    - `use_credit_curve_survival_probability_thin_adapter`\n    - `declare_credit_curve_and_discount_curve_requirements`\n  - Instruction precedence: follow the approved modules, primitives, and route helper in this plan. If older guidance conflicts, treat it as stale and obey this plan.\n- Every `trellis.*` import in the generated code MUST come from the approved module list above.\n- If you need functionality outside the approved list, say so explicitly instead of inventing an import.",
+        "trace_type": "analytical"
+      },
+      "parent_id": "executor_build_20260329165643_bec7eec2:root",
+      "status": "ok"
+    }
+  ],
+  "task_id": "executor_build_20260329165643_bec7eec2",
+  "text_path": "/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/analytical/executor_build_20260329165643_bec7eec2.md",
+  "trace_id": "executor_build_20260329165643_bec7eec2",
+  "trace_type": "analytical",
+  "updated_at": "2026-03-29T16:57:09.051780+00:00"
+}

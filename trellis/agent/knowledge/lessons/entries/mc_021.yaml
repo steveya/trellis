@@ -1,0 +1,32 @@
+id: mc_021
+title: CorrelatedGBM requires 'mu' not 'mus' keyword argument
+severity: critical
+category: monte_carlo
+status: promoted
+confidence: 1.0
+created: '2026-03-28T10:30:51.711846'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_103051_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: 'TypeError: CorrelatedGBM.__init__() got an unexpected keyword argument ''mus''
+  is raised at model instantiation.'
+root_cause: The CorrelatedGBM thin adapter expects the drift parameter as 'mu' (singular)
+  or a positional argument, not 'mus' (plural). Passing 'mus' causes an immediate
+  keyword argument rejection before any simulation runs.
+fix: Replace 'mus=...' with 'mu=...' when constructing CorrelatedGBM, or consult the
+  adapter signature to confirm the exact parameter name before use.
+validation: Discovered during build (attempt 3) and reproduced in the fresh QUA-284
+  replay on 2026-03-28

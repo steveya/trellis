@@ -1,74 +1,4 @@
-settings:
-  max_prompt_entries: 7
 entries:
-- id: vol_001
-  title: "Black vol \u2260 Hull-White rate vol"
-  severity: critical
-  category: volatility
-  status: promoted
-  applies_when:
-    method:
-    - rate_tree
-    features:
-    - mean_reversion
-    - backward_induction
-    - vol_surface_dependence
-    instrument:
-    - callable_bond
-    - puttable_bond
-    - bermudan_swaption
-    - bond_option
-- id: vol_002
-  title: Heston v0 vs sigma confusion
-  severity: critical
-  category: volatility
-  status: promoted
-  applies_when:
-    method:
-    - monte_carlo
-    - fft_pricing
-    features:
-    - stochastic_vol
-    instrument:
-    - equity_option
-    - barrier_option
-- id: cal_001
-  title: Uncalibrated rate tree
-  severity: critical
-  category: calibration
-  status: promoted
-  applies_when:
-    method:
-    - rate_tree
-    features:
-    - backward_induction
-    instrument:
-    - any
-- id: cal_002
-  title: Newton iteration accumulates errors in tree calibration
-  severity: high
-  category: calibration
-  status: promoted
-  applies_when:
-    method:
-    - rate_tree
-    features:
-    - backward_induction
-    instrument:
-    - any
-- id: cal_003
-  title: Probability-rate circular dependency
-  severity: medium
-  category: calibration
-  status: promoted
-  applies_when:
-    method:
-    - rate_tree
-    features:
-    - mean_reversion
-    - backward_induction
-    instrument:
-    - any
 - id: bi_001
   title: Missing intermediate cashflows in tree
   severity: critical
@@ -84,6 +14,7 @@ entries:
     - callable_bond
     - puttable_bond
     - coupon_bond
+    error_signature: null
 - id: bi_002
   title: Wrong exercise function for callable bonds
   severity: critical
@@ -99,6 +30,7 @@ entries:
     - callable
     instrument:
     - callable_bond
+    error_signature: null
 - id: bi_003
   title: Uniform coupon accrual biases callable bond pricing
   severity: high
@@ -114,6 +46,7 @@ entries:
     instrument:
     - callable_bond
     - puttable_bond
+    error_signature: null
 - id: bi_004
   title: Exercise value must include accrued coupon at call dates
   severity: high
@@ -129,6 +62,7 @@ entries:
     instrument:
     - callable_bond
     - puttable_bond
+    error_signature: null
 - id: bi_005
   title: 'Bermudan swaption swap convention: same underlying at all exercise dates'
   severity: high
@@ -145,82 +79,75 @@ entries:
     - floating_coupons
     instrument:
     - bermudan_swaption
-- id: fd_001
-  title: Tree gamma requires wider bumps than delta
-  severity: medium
-  category: finite_differences
+    error_signature: null
+- id: bi_006
+  title: Undefined tree import/name error
+  severity: critical
+  category: backward_induction
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    - backward_induction
+    instrument: []
+    error_signature: null
+- id: bi_007
+  title: Payoff must call lattice_backward_induction primitives
+  severity: critical
+  category: backward_induction
+  status: validated
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - discounting
+    - vol_surface_dependence
+    - backward_induction
+    instrument: []
+    error_signature: null
+- id: cal_001
+  title: Uncalibrated rate tree
+  severity: critical
+  category: calibration
   status: promoted
   applies_when:
     method:
     - rate_tree
     features:
     - backward_induction
-    - gamma
-    - greeks
     instrument:
     - any
-- id: fd_002
-  title: Old Crank-Nicolson implementation has coefficient bug
+    error_signature: null
+- id: cal_002
+  title: Newton iteration accumulates errors in tree calibration
   severity: high
-  category: finite_differences
+  category: calibration
   status: promoted
   applies_when:
     method:
-    - pde_solver
+    - rate_tree
     features:
-    - pde_grid
+    - backward_induction
     instrument:
     - any
-- id: mc_001
-  title: LSM high-vol bias with polynomial basis
-  severity: high
-  category: monte_carlo
-  status: promoted
-  applies_when:
-    method:
-    - monte_carlo
-    features:
-    - early_exercise
-    - stochastic_vol
-    instrument:
-    - american_option
-    - bermudan_swaption
-- id: mc_002
-  title: 'Characteristic function convention: log(S_T) vs log(S_T/S0)'
-  severity: critical
-  category: monte_carlo
-  status: promoted
-  applies_when:
-    method:
-    - fft_pricing
-    features:
-    - characteristic_function
-    instrument:
-    - any
-- id: md_001
-  title: Day count convention ACT/ACT ISDA fencepost error
+    error_signature: null
+- id: cal_003
+  title: Probability-rate circular dependency
   severity: medium
-  category: market_data
+  category: calibration
   status: promoted
   applies_when:
     method:
-    - any
+    - rate_tree
     features:
-    - act_act_isda
+    - mean_reversion
+    - backward_induction
     instrument:
     - any
-- id: md_002
-  title: COS method overflow with wide truncation
-  severity: high
-  category: market_data
-  status: promoted
-  applies_when:
-    method:
-    - fft_pricing
-    features:
-    - cos_method
-    instrument:
-    - any
+    error_signature: null
 - id: cal_004
   title: OAS must use fixed vol model during spread search
   severity: high
@@ -235,17 +162,1031 @@ entries:
     instrument:
     - callable_bond
     - puttable_bond
-- id: tst_001
-  title: Measure actual gap before setting test tolerance
-  severity: medium
-  category: testing
+    error_signature: null
+- id: con_001
+  title: Use exact trellis import paths — never guess module names
+  severity: critical
+  category: convention
+  status: promoted
+  applies_when:
+    method: []
+    features:
+    - discounting
+    instrument: []
+    error_signature: null
+- id: con_002
+  title: Fix module dependency and parameter conventions
+  severity: critical
+  category: convention
+  status: archived
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - jump_diffusion
+    - characteristic_function
+    - cos_method
+    instrument: []
+    error_signature: null
+- id: con_003
+  title: CF convention inconsistency
+  severity: critical
+  category: convention
+  status: candidate
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - characteristic_function
+    - cos_method
+    instrument: []
+    error_signature: null
+- id: con_004
+  title: Exact import paths
+  severity: critical
+  category: convention
+  status: archived
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: con_005
+  title: Exact Import Paths Required
+  severity: critical
+  category: convention
+  status: archived
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    instrument: []
+    error_signature: null
+- id: con_006
+  title: Incorrect module import path
+  severity: critical
+  category: convention
+  status: archived
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: con_007
+  title: Use exact import paths
+  severity: critical
+  category: convention
+  status: archived
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - characteristic_function
+    instrument: []
+    error_signature: null
+- id: con_008
+  title: Undefined MarketState in CDS Pricer
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
+    instrument: []
+    error_signature: null
+- id: con_009
+  title: Use exact module import paths
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - stochastic_vol
+    - discounting
+    instrument: []
+    error_signature: null
+- id: con_010
+  title: Exact module import naming
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - stochastic_vol
+    - discounting
+    instrument: []
+    error_signature: null
+- id: con_011
+  title: Use trellis date utilities in payoff
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - greeks
+    - characteristic_function
+    instrument: []
+    error_signature: null
+- id: con_012
+  title: Undefined measure symbol 'physical'
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - characteristic_function
+    - stochastic_vol
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: con_013
+  title: Undefined instrument class reference
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: con_014
+  title: Bootstrap with pinned interpreter and explicit shell before pricing
+  severity: critical
+  category: convention
   status: promoted
   applies_when:
     method:
-    - any
-    features: []
+    - monte_carlo
+    - analytical
+    - rate_tree
+    - pde_solver
+    - fft_pricing
+    features:
+    - discounting
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: con_015
+  title: Do not import from trellis.conventions.schedule or day_count
+  severity: critical
+  category: convention
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - path_dependent
+    - multi_asset
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    instrument: []
+    error_signature: null
+- id: con_016
+  title: ACT_365F market state mismatch
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - greeks
+    instrument: []
+    error_signature: null
+- id: con_017
+  title: Undefined identifiers in spec dataclass
+  severity: high
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - american
+    - early_exercise
+    - puttable
+    - discounting
+    - backward_induction
+    - finite_differences
+    instrument: []
+    error_signature: null
+- id: con_018
+  title: Missing required date-schedule primitive usage
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - barrier
+    - path_dependent
+    - pde_grid
+    - discounting
+    - vol_surface_dependence
+    - greeks
+    instrument: []
+    error_signature: null
+- id: con_019
+  title: Day-count mismatch in payoff evaluation
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - pde_grid
+    - discontinuous_payoff
+    - digital_cash_or_nothing
+    - theta_method_1d
+    - rannacher_smoothing
+    - black_scholes_operator
+    - discounting
+    - vol_surface_dependence
+    - greeks
+    instrument: []
+    error_signature: null
+- id: con_020
+  title: Undefined symbol used in spec defaults
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - forward_rate
+    - vol_surface_dependence
+    - greeks
+    - pde_grid
+    instrument: []
+    error_signature: null
+- id: con_021
+  title: Unit and import convention errors
+  severity: critical
+  category: convention
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: con_022
+  title: Missing required primitive payoff adapter
+  severity: critical
+  category: convention
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: con_023
+  title: Unit conversion mismatch in pricing inputs
+  severity: critical
+  category: convention
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: con_024
+  title: Unit conversion causes huge PV
+  severity: critical
+  category: convention
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    - maturity_settlement
+    instrument:
+    - european_option
+    error_signature: null
+- id: con_025
+  title: Unit conversion causing PV sanity failure
+  severity: critical
+  category: convention
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    - maturity_settlement
+    instrument:
+    - european_option
+    error_signature: null
+- id: con_026
+  title: Missing primitive payoff adapter
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - early_exercise
+    - puttable
+    - discounting
+    instrument: []
+    error_signature: null
+- id: con_027
+  title: Undefined identifiers in spec defaults
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    instrument: []
+    error_signature: null
+- id: con_028
+  title: Undefined exercise-style constant in spec
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - american
+    - early_exercise
+    - puttable
+    - discounting
+    - greeks
+    - pde_grid
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: con_029
+  title: Missing payoff adapter using schedule primitive
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - barrier
+    - path_dependent
+    - pde_grid
+    - monte_carlo
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: con_030
+  title: Missing thin payoff adapter
+  severity: critical
+  category: convention
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - pde_grid
+    - discontinuous_payoff
+    - rannacher_timestepping
+    - pde_solver
+    - black_scholes_digital
+    - greeks
+    instrument: []
+    error_signature: null
+- id: con_031
+  title: NthToDefaultPayoff analytical must use Gaussian copula integration, not independent
+    binomial
+  severity: critical
+  category: contract
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - credit_basket
+    instrument:
+    - nth_to_default
+    - cds
+    error_signature: comparison_failed
+- id: fd_001
+  title: Tree gamma requires wider bumps than delta
+  severity: medium
+  category: finite_differences
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - gamma
+    - greeks
     instrument:
     - any
+    error_signature: null
+- id: fd_002
+  title: Old Crank-Nicolson implementation has coefficient bug
+  severity: high
+  category: finite_differences
+  status: promoted
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    instrument:
+    - any
+    error_signature: null
+- id: fd_003
+  title: Missing pde_solver module import
+  severity: critical
+  category: finite_differences
+  status: archived
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - pde_grid
+    instrument: []
+    error_signature: null
+- id: fd_004
+  title: Missing 'pde_solver' Module
+  severity: critical
+  category: finite_differences
+  status: archived
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    instrument: []
+    error_signature: null
+- id: fd_005
+  title: Exact Import Path Required
+  severity: critical
+  category: finite_differences
+  status: archived
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - stochastic_vol
+    - discounting
+    instrument: []
+    error_signature: null
+- id: fd_006
+  title: Missing local volatility capability
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - local_vol
+    - discounting
+    instrument: []
+    error_signature: null
+- id: fd_007
+  title: Log-space PDE for rate instruments requires special grid setup
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - discounting
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: fd_008
+  title: Log-space PDE for rate instruments requires special boundary handling
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - pde_grid
+    - mean_reversion
+    - forward_rate
+    instrument: []
+    error_signature: null
+- id: fd_009
+  title: Crank-Nicolson Rannacher smoothing PDE build failed entirely
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - discounting
+    instrument: []
+    error_signature: null
+- id: fd_010
+  title: LLM JSON parse failure on Crank-Nicolson Rannacher PDE build
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - discounting
+    instrument: []
+    error_signature: null
+- id: fd_011
+  title: Use exact PDE import paths
+  severity: critical
+  category: finite_differences
+  status: promoted
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - vol_surface_dependence
+    - pde_grid
+    instrument: []
+    error_signature: null
+- id: fd_012
+  title: Undefined boundary condition symbol
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - barrier
+    - path_dependent
+    - pde_grid
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: fd_013
+  title: Incorrect PDE API import (Grid not exported)
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - barrier
+    - pde_grid
+    - path_dependent
+    - vol_surface_dependence
+    - discounting
+    - backward_induction
+    - greeks
+    instrument: []
+    error_signature: null
+- id: fd_014
+  title: Undefined symbol in dataclass defaults
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - barrier
+    - pde_grid
+    - path_dependent
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: fd_015
+  title: Unit conversion causes extreme PV
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - vol_surface_dependence
+    - pde_grid
+    - greeks
+    instrument: []
+    error_signature: null
+- id: fd_016
+  title: Incorrect PDE imports and malformed code
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - vol_surface_dependence
+    - pde_grid
+    instrument: []
+    error_signature: null
+- id: fd_017
+  title: Undefined 'auto' default sentinel
+  severity: high
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - theta_method
+    - crank_nicolson
+    - rannacher_smoothing
+    - discontinuous_payoff
+    - black_scholes_operator
+    - discounting
+    - greeks
+    instrument: []
+    error_signature: null
+- id: fd_018
+  title: PDE payoff must wrap required primitives
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - discounting
+    - vol_surface_dependence
+    - local_vol
+    - greeks
+    - fem_solver
+    instrument: []
+    error_signature: null
+- id: fd_019
+  title: 'Undefined symbol: fd_theta_method'
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - discounting
+    - vol_surface_dependence
+    - greeks
+    - pde_solver
+    - fd_theta_method
+    - finite_element_method
+    instrument: []
+    error_signature: null
+- id: fd_020
+  title: PDE Grid ctor missing discretization parameters
+  severity: critical
+  category: finite_differences
+  status: promoted
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - pde_grid
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: fd_021
+  title: Unit/scale mismatch broke PDE price
+  severity: critical
+  category: finite_differences
+  status: promoted
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - vol_surface_dependence
+    - pde_grid
+    - greeks
+    instrument: []
+    error_signature: null
+- id: fd_022
+  title: PDE price unit/scale mismatch
+  severity: critical
+  category: finite_differences
+  status: promoted
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - vol_surface_dependence
+    - pde_grid
+    instrument: []
+    error_signature: null
+- id: fd_023
+  title: Missing PDE grid discretization parameter
+  severity: critical
+  category: finite_differences
+  status: promoted
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - pde_grid
+    - vol_surface_dependence
+    - delta_space_interpolation
+    - greeks
+    instrument: []
+    error_signature: null
+- id: fd_024
+  title: PDE Grid constructor missing parameters
+  severity: critical
+  category: finite_differences
+  status: promoted
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - pde_grid
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: fd_025
+  title: PDE Grid ctor missing n_t
+  severity: critical
+  category: finite_differences
+  status: promoted
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: fd_026
+  title: Generated module syntax/constructor mismatch
+  severity: critical
+  category: finite_differences
+  status: promoted
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - vol_surface_dependence
+    - pde_grid
+    - backward_induction
+    instrument: []
+    error_signature: null
+- id: fd_027
+  title: PDE grid integer discretization error
+  severity: critical
+  category: finite_differences
+  status: promoted
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - pde_grid
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: fd_028
+  title: Unit/scale mismatch in PDE pricer
+  severity: critical
+  category: finite_differences
+  status: promoted
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - vol_surface_dependence
+    - pde_grid
+    - greeks
+    instrument: []
+    error_signature: null
+- id: fd_029
+  title: PDE unit/scale mismatch
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: fd_030
+  title: BlackScholesOperator constructor mismatch
+  severity: critical
+  category: finite_differences
+  status: promoted
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - vol_surface_dependence
+    - pde_grid
+    instrument:
+    - european_option
+    error_signature: null
+- id: fd_031
+  title: PDE price blow-up from unit/scale mismatch
+  severity: critical
+  category: finite_differences
+  status: promoted
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - vol_surface_dependence
+    - pde_grid
+    instrument:
+    - european_option
+    error_signature: null
+- id: fd_032
+  title: NameError from unquoted/undefined identifiers
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - barrier
+    - pde_grid
+    - path_dependent
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: fd_033
+  title: Undefined boundary-condition identifier
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - barrier
+    - pde_grid
+    - path_dependent
+    - vol_surface_dependence
+    - greeks
+    instrument: []
+    error_signature: null
+- id: fd_034
+  title: PDE grid time-step too small
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - discontinuous_payoff
+    - theta_method_crank_nicolson
+    - rannacher_smoothing
+    - black_scholes_operator
+    - discounting
+    - greeks
+    instrument: []
+    error_signature: null
+- id: fd_035
+  title: Missing/incorrect PDE Grid import and params
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - vol_surface_dependence
+    - pde_solver
+    - greeks
+    instrument: []
+    error_signature: null
+- id: fd_036
+  title: Undefined boundary token 'dirichlet'
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - vol_surface_dependence
+    - discontinuous_payoff
+    - theta_method
+    - rannacher_timestepping
+    - greeks
+    instrument: []
+    error_signature: null
+- id: mc_001
+  title: LSM high-vol bias with polynomial basis
+  severity: high
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - early_exercise
+    - stochastic_vol
+    instrument:
+    - american_option
+    - bermudan_swaption
+    error_signature: null
+- id: mc_002
+  title: 'Characteristic function convention: log(S_T) vs log(S_T/S0)'
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - characteristic_function
+    instrument:
+    - any
+    error_signature: null
 - id: mc_003
   title: MC payoff_fn must return (n_paths,) not (n_paths, n_steps+1)
   severity: critical
@@ -260,7 +1201,7 @@ entries:
     instrument: []
     error_signature: null
 - id: mc_004
-  title: "MonteCarloEngine does not support method='lsm' \u2014 use separate LSM module"
+  title: MonteCarloEngine does not support method='lsm' — use separate LSM module
   severity: high
   category: monte_carlo
   status: promoted
@@ -270,19 +1211,6 @@ entries:
     features:
     - early_exercise
     - path_dependent
-    instrument: []
-    error_signature: null
-- id: num_001
-  title: Missing analytical model requirements
-  severity: critical
-  category: numerical
-  status: candidate
-  applies_when:
-    method:
-    - analytical
-    features:
-    - discounting
-    - vol_surface_dependence
     instrument: []
     error_signature: null
 - id: mc_005
@@ -295,19 +1223,6 @@ entries:
     - monte_carlo
     features:
     - discounting
-    instrument: []
-    error_signature: null
-- id: num_002
-  title: Missing PDE solver dependency
-  severity: critical
-  category: numerical
-  status: archived
-  applies_when:
-    method:
-    - analytical
-    features:
-    - discounting
-    - vol_surface_dependence
     instrument: []
     error_signature: null
 - id: mc_006
@@ -337,145 +1252,6 @@ entries:
     - discounting
     instrument: []
     error_signature: null
-- id: fd_003
-  title: Missing pde_solver module import
-  severity: critical
-  category: finite_differences
-  status: archived
-  applies_when:
-    method:
-    - pde_solver
-    features:
-    - discounting
-    - pde_grid
-    instrument: []
-    error_signature: null
-- id: num_003
-  title: 'Missing module: pde_solver'
-  severity: critical
-  category: numerical
-  status: archived
-  applies_when:
-    method:
-    - fft_pricing
-    features:
-    - stochastic_vol
-    - discounting
-    instrument: []
-    error_signature: null
-- id: con_001
-  title: "Use exact trellis import paths \u2014 never guess module names"
-  severity: critical
-  category: convention
-  status: promoted
-  applies_when:
-    method: []
-    features:
-    - discounting
-    instrument: []
-    error_signature: null
-- id: con_002
-  title: Fix module dependency and parameter conventions
-  severity: critical
-  category: convention
-  status: archived
-  applies_when:
-    method:
-    - fft_pricing
-    features:
-    - jump_diffusion
-    - characteristic_function
-    - cos_method
-    instrument: []
-    error_signature: null
-- id: md_003
-  title: Missing Credit Curve Data
-  severity: critical
-  category: market_data
-  status: archived
-  applies_when:
-    method:
-    - copula
-    features:
-    - credit_risk
-    instrument: []
-    error_signature: null
-- id: fd_004
-  title: Missing 'pde_solver' Module
-  severity: critical
-  category: finite_differences
-  status: archived
-  applies_when:
-    method:
-    - pde_solver
-    features:
-    - pde_grid
-    instrument: []
-    error_signature: null
-- id: con_003
-  title: CF convention inconsistency
-  severity: critical
-  category: convention
-  status: candidate
-  applies_when:
-    method:
-    - fft_pricing
-    features:
-    - characteristic_function
-    - cos_method
-    instrument: []
-    error_signature: null
-- id: con_004
-  title: Exact import paths
-  severity: critical
-  category: convention
-  status: archived
-  applies_when:
-    method:
-    - analytical
-    features:
-    - discounting
-    - vol_surface_dependence
-    instrument: []
-    error_signature: null
-- id: num_004
-  title: Undefined MarketState variable
-  severity: critical
-  category: numerical
-  status: archived
-  applies_when:
-    method:
-    - fft_pricing
-    features:
-    - characteristic_function
-    - cos_method
-    instrument: []
-    error_signature: null
-- id: fd_005
-  title: Exact Import Path Required
-  severity: critical
-  category: finite_differences
-  status: archived
-  applies_when:
-    method:
-    - fft_pricing
-    features:
-    - stochastic_vol
-    - discounting
-    instrument: []
-    error_signature: null
-- id: con_005
-  title: Exact Import Paths Required
-  severity: critical
-  category: convention
-  status: archived
-  applies_when:
-    method:
-    - monte_carlo
-    features:
-    - discounting
-    instrument: []
-    error_signature: null
 - id: mc_008
   title: Exact Module Import Paths
   severity: critical
@@ -487,6 +1263,813 @@ entries:
     features:
     - discounting
     - stochastic_vol
+    instrument: []
+    error_signature: null
+- id: mc_009
+  title: Missing Monte Carlo implementation symbol
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_010
+  title: Unexpected indent in generated module
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - forward_rate
+    - greeks
+    - vol_surface_dependence
+    - correlation
+    - quanto
+    - cross_currency
+    - european_option
+    instrument: []
+    error_signature: null
+- id: mc_011
+  title: Payoff shape / indentation bug in MC generator
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - forward_rate
+    - vol_surface_dependence
+    - delta_space_interpolation
+    - greeks
+    - quanto_adjustment
+    - cross_currency_pricing
+    instrument: []
+    error_signature: null
+- id: mc_012
+  title: Syntax & API errors in MC quanto pricer
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - forward_rate
+    - greeks
+    - quanto_adjustment
+    - fx_volatility
+    - cross_currency_correlation
+    - foreign_discounting
+    instrument: []
+    error_signature: null
+- id: mc_013
+  title: Himalaya payoff must wrap GBM and MonteCarloEngine primitives
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_014
+  title: Himalaya basket must delegate to price_ranked_observation_basket_monte_carlo
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_015
+  title: CorrelatedGBM requires 'spot_prices' not 'spots' keyword
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_016
+  title: Superseded - Himalaya payoff CorrelatedGBM guidance
+  severity: critical
+  category: monte_carlo
+  status: archived
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    - greeks
+    instrument: []
+    error_signature: null
+- id: mc_017
+  title: Ranked-observation basket must delegate to required semantic primitives
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_018
+  title: Superseded - Himalaya payoff indexed-path CorrelatedGBM guidance
+  severity: critical
+  category: monte_carlo
+  status: archived
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_019
+  title: Himalaya payoff must wrap CorrelatedGBM as thin adapter
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_020
+  title: Himalaya pricer must parse constituent names before basket resolution
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_021
+  title: CorrelatedGBM requires 'mu' not 'mus' keyword argument
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_022
+  title: Himalaya pricer syntax error prevents module compilation
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_023
+  title: Zero vega from MC payoff
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    - greeks
+    instrument: []
+    error_signature: null
+- id: mc_024
+  title: Date vs float comparison in smoke test
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    - forward_rate
+    - discounting
+    - coupons
+    instrument: []
+    error_signature: null
+- id: mc_025
+  title: ForwardCurve discount API mismatch
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: mc_026
+  title: Himalaya pricer must not import unapproved Trellis modules
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - path_dependent
+    - discounting
+    - discrete_coupons
+    instrument: []
+    error_signature: null
+- id: mc_027
+  title: Unapproved correlated_gbm module path blocks Himalaya build
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    - greeks
+    instrument: []
+    error_signature: null
+- id: mc_028
+  title: Use approved GBM module, not correlated_gbm path
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    - discrete_coupons
+    instrument: []
+    error_signature: null
+- id: mc_029
+  title: Do not import unapproved correlated_gbm module in payoff
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    - forward_rate
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_030
+  title: RankedObservationBasketSpec does not accept start_date
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_031
+  title: RankedObservationBasketSpec does not accept asset_names argument
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: mc_032
+  title: RankedObservationBasketSpec uses constituents and option_type
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: mc_033
+  title: Himalaya pricer code was truncated before completion
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    - forward_rate
+    instrument: []
+    error_signature: null
+- id: mc_034
+  title: Ranked basket pricing requires a real vol_surface
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - path_dependent
+    - discounting
+    - black_vol_surface
+    instrument: []
+    error_signature: null
+- id: mc_035
+  title: MarketState shape mismatch in Himalaya payoff evaluate
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - path_dependent
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_036
+  title: Analytical Himalaya pricer must wrap required primitives explicitly
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - ranked_observation
+    - multi_asset
+    - discounting
+    - path_dependent
+    - locked_returns
+    - remove_selected
+    - remaining_selection
+    instrument: []
+    error_signature: null
+- id: mc_037
+  title: Undefined regression-basis symbol in dataclass
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - american
+    - early_exercise
+    - puttable
+    - discounting
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: mc_038
+  title: Undefined identifier in spec defaults
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - barrier
+    - path_dependent
+    - discounting
+    - vol_surface_dependence
+    - greeks
+    instrument: []
+    error_signature: null
+- id: mc_039
+  title: Undefined symbol used as dataclass default
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - vanilla_european_call
+    - gbm_process
+    - euler_scheme
+    - discounting
+    - greeks
+    instrument: []
+    error_signature: null
+- id: mc_040
+  title: Undefined identifier used for scheme/defaults
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - greeks
+    - european_vanilla_option
+    - path_independent
+    - monte_carlo_scheme_milstein
+    instrument: []
+    error_signature: null
+- id: mc_041
+  title: Undefined identifier in dataclass defaults
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - greeks
+    - maturity_settlement
+    instrument: []
+    error_signature: null
+- id: mc_042
+  title: Undefined basis function 'laguerre'
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - american
+    - early_exercise
+    - puttable
+    - discounting
+    - path_dependent
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_043
+  title: Undefined names and missing vol-surface access
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - barrier
+    - path_dependent
+    - vol_surface_dependence
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_044
+  title: MC payoff must use market_state.discount
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - discounting
+    - coupons
+    - fixed_coupons
+    - spread_computation
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: mc_045
+  title: MC payoff must use required primitives
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - coupons
+    - fixed_coupons
+    - discounting
+    - path_dependent
+    - spread_computation
+    - maturity_settlement
+    instrument: []
+    error_signature: null
+- id: mc_046
+  title: CDS/NTD Monte Carlo must use GaussianCopula, not MonteCarloEngine
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - credit_basket
+    - copula
+    instrument:
+    - nth_to_default
+    - cds
+    error_signature: 'MonteCarloEngine.__init__() missing 1 required positional argument:
+      ''process'''
+- id: mc_047
+  title: MC CDS engine-family mismatch
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - discounting
+    - spread_computation
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: mc_048
+  title: MC payoff missing required primitives
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - discounting
+    - coupons
+    - fixed_coupons
+    - path_dependent
+    - maturity_settlement
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: mc_049
+  title: Ignored required date schedule primitive
+  severity: high
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_050
+  title: Unexpected indent in generated Python code
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_051
+  title: Unexpected Python indentation
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_052
+  title: Unexpected indent in analytical code
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: md_001
+  title: Day count convention ACT/ACT ISDA fencepost error
+  severity: medium
+  category: market_data
+  status: promoted
+  applies_when:
+    method:
+    - any
+    features:
+    - act_act_isda
+    instrument:
+    - any
+    error_signature: null
+- id: md_002
+  title: COS method overflow with wide truncation
+  severity: high
+  category: market_data
+  status: promoted
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - cos_method
+    instrument:
+    - any
+    error_signature: null
+- id: md_003
+  title: Missing Credit Curve Data
+  severity: critical
+  category: market_data
+  status: archived
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
     instrument: []
     error_signature: null
 - id: md_004
@@ -501,32 +2084,6 @@ entries:
     - credit_risk
     instrument: []
     error_signature: null
-- id: con_006
-  title: Incorrect module import path
-  severity: critical
-  category: convention
-  status: archived
-  applies_when:
-    method:
-    - analytical
-    features:
-    - discounting
-    - mean_reversion
-    instrument: []
-    error_signature: null
-- id: con_007
-  title: Use exact import paths
-  severity: critical
-  category: convention
-  status: archived
-  applies_when:
-    method:
-    - fft_pricing
-    features:
-    - discounting
-    - characteristic_function
-    instrument: []
-    error_signature: null
 - id: md_005
   title: State Space Data Missing
   severity: critical
@@ -537,69 +2094,6 @@ entries:
     - sparse_grid_quadrature
     features:
     - sparse_grid_quadrature
-    instrument: []
-    error_signature: null
-- id: con_008
-  title: Undefined MarketState in CDS Pricer
-  severity: critical
-  category: convention
-  status: candidate
-  applies_when:
-    method:
-    - copula
-    features:
-    - credit_risk
-    instrument: []
-    error_signature: null
-- id: con_009
-  title: Use exact module import paths
-  severity: critical
-  category: convention
-  status: candidate
-  applies_when:
-    method:
-    - fft_pricing
-    features:
-    - stochastic_vol
-    - discounting
-    instrument: []
-    error_signature: null
-- id: con_010
-  title: Exact module import naming
-  severity: critical
-  category: convention
-  status: candidate
-  applies_when:
-    method:
-    - fft_pricing
-    features:
-    - stochastic_vol
-    - discounting
-    instrument: []
-    error_signature: null
-- id: num_005
-  title: Missing pricing module
-  severity: critical
-  category: numerical
-  status: candidate
-  applies_when:
-    method:
-    - analytical
-    features:
-    - discounting
-    - vol_surface_dependence
-    instrument: []
-    error_signature: null
-- id: num_006
-  title: Undefined MarketState causes build failure
-  severity: critical
-  category: numerical
-  status: candidate
-  applies_when:
-    method:
-    - analytical
-    features:
-    - greeks
     instrument: []
     error_signature: null
 - id: md_006
@@ -618,7 +2112,7 @@ entries:
   title: Missing FX Market Data
   severity: critical
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -631,27 +2125,13 @@ entries:
   title: Missing Market Data Inputs
   severity: critical
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - pde_solver
     features:
     - discounting
     - pde_grid
-    instrument: []
-    error_signature: null
-- id: fd_006
-  title: Missing local volatility capability
-  severity: critical
-  category: finite_differences
-  status: candidate
-  applies_when:
-    method:
-    - pde_solver
-    features:
-    - pde_grid
-    - local_vol
-    - discounting
     instrument: []
     error_signature: null
 - id: md_009
@@ -697,7 +2177,7 @@ entries:
   title: Missing Payoff Parameters
   severity: critical
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - fft_pricing
@@ -711,7 +2191,7 @@ entries:
   title: Missing Discount and Yield Curves
   severity: critical
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -725,7 +2205,7 @@ entries:
   title: Missing spot data in pricer
   severity: critical
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - multi_method
@@ -745,25 +2225,410 @@ entries:
     - greeks
     instrument: []
     error_signature: null
-- id: con_011
-  title: Use trellis date utilities in payoff
+- id: md_016
+  title: Empty response causes JSON parse failure in analytical pricer
   severity: critical
-  category: convention
-  status: candidate
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_017
+  title: LLM JSON serialization failure causes total build abort
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_018
+  title: Missing valuation_date in ResolvedQuantoInputs
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - monte_carlo
+    - discounting
+    - forward_rate
+    - vol_surface_dependence
+    - stochastic_vol
+    - greeks
+    - gamma
+    - quanto_adjustment
+    - multi_asset_correlation
+    - fx_process
+    - measure_selection
+    instrument: []
+    error_signature: null
+- id: md_019
+  title: Resolve strike from spec
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - callable
+    - puttable
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: md_020
+  title: MarketState date fields must be real date objects not strings
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_021
+  title: resolve_basket_semantics does not accept 'underlyings' kwarg
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_022
+  title: ResolvedBasketSemantics has no 'spots' attribute
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_023
+  title: ResolvedBasketSemantics missing rates attribute access
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    - forward_rate
+    - vol_surface_dependence
+    - greeks
+    instrument: []
+    error_signature: null
+- id: md_024
+  title: ResolvedBasketSemantics object missing dividends attribute
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - multi_asset
+    - path_dependent
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - discounting
+    - vol_surface_dependence
+    - delta_space_interpolation
+    instrument: []
+    error_signature: null
+- id: md_025
+  title: None market state guard
+  severity: critical
+  category: market_data
+  status: validated
   applies_when:
     method:
     - analytical
     features:
     - discounting
     - greeks
+    - gamma
+    instrument: []
+    error_signature: null
+- id: md_026
+  title: Discount/vol convention mismatch
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_027
+  title: Missing CDS contract specification
+  severity: critical
+  category: market_data
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - discounting
+    - coupons
+    - fixed_coupons
+    - spread_computation
+    - maturity_settlement
+    - act_act_isda
+    instrument: []
+    error_signature: null
+- id: md_028
+  title: Missing credit curve and validation
+  severity: critical
+  category: market_data
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - discounting
+    - coupons
+    - maturity_settlement
+    - spread_computation
+    - fixed_coupons
+    instrument: []
+    error_signature: null
+- id: md_029
+  title: Missing required credit_curve input
+  severity: critical
+  category: market_data
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - discounting
+    - coupons
+    - fixed_coupons
+    - maturity_settlement
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: md_030
+  title: Missing credit curve causes pricing failure
+  severity: critical
+  category: market_data
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - discounting
+    - coupons
+    - maturity_settlement
+    instrument: []
+    error_signature: null
+- id: md_031
+  title: Missing credit_curve causes CDS pricing failure
+  severity: critical
+  category: market_data
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - discounting
+    - coupons
+    - maturity_settlement
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: md_032
+  title: Missing credit curve input
+  severity: critical
+  category: market_data
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - discounting
+    - spread_computation
+    - maturity_settlement
+    instrument: []
+    error_signature: null
+- id: md_033
+  title: Missing credit_curve and CDS spec
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - discounting
+    - coupons
+    - fixed_coupons
+    - maturity_settlement
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: md_034
+  title: Missing credit curve validation
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - spread_computation
+    - maturity_settlement
+    - coupons
+    instrument: []
+    error_signature: null
+- id: num_001
+  title: Missing analytical model requirements
+  severity: critical
+  category: numerical
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_002
+  title: Missing PDE solver dependency
+  severity: critical
+  category: numerical
+  status: archived
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_003
+  title: 'Missing module: pde_solver'
+  severity: critical
+  category: numerical
+  status: archived
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - stochastic_vol
+    - discounting
+    instrument: []
+    error_signature: null
+- id: num_004
+  title: Undefined MarketState variable
+  severity: critical
+  category: numerical
+  status: archived
+  applies_when:
+    method:
+    - fft_pricing
+    features:
     - characteristic_function
+    - cos_method
+    instrument: []
+    error_signature: null
+- id: num_005
+  title: Missing pricing module
+  severity: critical
+  category: numerical
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_006
+  title: Undefined MarketState causes build failure
+  severity: critical
+  category: numerical
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - greeks
     instrument: []
     error_signature: null
 - id: num_007
   title: Analytical pricer returned empty response causing JSON parse failure
   severity: critical
   category: numerical
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -775,7 +2640,7 @@ entries:
   title: Undefined FFT symbol breaks analytical branch
   severity: high
   category: numerical
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -794,38 +2659,11 @@ entries:
     - continuous_dividend_yield
     instrument: []
     error_signature: null
-- id: bi_006
-  title: Undefined tree import/name error
-  severity: critical
-  category: backward_induction
-  status: candidate
-  applies_when:
-    method:
-    - analytical
-    features:
-    - discounting
-    - vol_surface_dependence
-    - backward_induction
-    instrument: []
-    error_signature: null
-- id: md_016
-  title: Empty response causes JSON parse failure in analytical pricer
-  severity: critical
-  category: market_data
-  status: candidate
-  applies_when:
-    method:
-    - analytical
-    features:
-    - discounting
-    - vol_surface_dependence
-    instrument: []
-    error_signature: null
 - id: num_009
   title: Undefined tree constructor 'crr_tree'
   severity: critical
   category: numerical
-  status: candidate
+  status: validated
   applies_when:
     method:
     - rate_tree
@@ -833,55 +2671,13 @@ entries:
     - discounting
     - vol_surface_dependence
     - backward_induction
-    instrument: []
-    error_signature: null
-- id: bi_007
-  title: Payoff must call lattice_backward_induction primitives
-  severity: critical
-  category: backward_induction
-  status: candidate
-  applies_when:
-    method:
-    - rate_tree
-    features:
-    - discounting
-    - vol_surface_dependence
-    - backward_induction
-    instrument: []
-    error_signature: null
-- id: mc_009
-  title: Missing Monte Carlo implementation symbol
-  severity: critical
-  category: monte_carlo
-  status: candidate
-  applies_when:
-    method:
-    - monte_carlo
-    features:
-    - discounting
-    - vol_surface_dependence
-    instrument: []
-    error_signature: null
-- id: con_012
-  title: Undefined measure symbol 'physical'
-  severity: critical
-  category: convention
-  status: candidate
-  applies_when:
-    method:
-    - fft_pricing
-    features:
-    - discounting
-    - characteristic_function
-    - stochastic_vol
-    - vol_surface_dependence
     instrument: []
     error_signature: null
 - id: num_010
   title: Undefined COS pricer symbol
   severity: critical
   category: numerical
-  status: candidate
+  status: validated
   applies_when:
     method:
     - fft_pricing
@@ -892,24 +2688,11 @@ entries:
     - cos_method
     instrument: []
     error_signature: null
-- id: con_013
-  title: Undefined instrument class reference
-  severity: critical
-  category: convention
-  status: candidate
-  applies_when:
-    method:
-    - analytical
-    features:
-    - discounting
-    - vol_surface_dependence
-    instrument: []
-    error_signature: null
 - id: num_011
   title: LLM provider returned empty response causing JSON parse failure
   severity: critical
   category: numerical
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -918,66 +2701,11 @@ entries:
     - discounting
     instrument: []
     error_signature: null
-- id: fd_007
-  title: Log-space PDE for rate instruments requires special grid setup
-  severity: critical
-  category: finite_differences
-  status: candidate
-  applies_when:
-    method:
-    - pde_solver
-    features:
-    - pde_grid
-    - discounting
-    - mean_reversion
-    instrument: []
-    error_signature: null
-- id: fd_008
-  title: Log-space PDE for rate instruments requires special boundary handling
-  severity: critical
-  category: finite_differences
-  status: candidate
-  applies_when:
-    method:
-    - pde_solver
-    features:
-    - discounting
-    - pde_grid
-    - mean_reversion
-    - forward_rate
-    instrument: []
-    error_signature: null
-- id: fd_009
-  title: Crank-Nicolson Rannacher smoothing PDE build failed entirely
-  severity: critical
-  category: finite_differences
-  status: candidate
-  applies_when:
-    method:
-    - pde_solver
-    features:
-    - pde_grid
-    - discounting
-    instrument: []
-    error_signature: null
-- id: fd_010
-  title: LLM JSON parse failure on Crank-Nicolson Rannacher PDE build
-  severity: critical
-  category: finite_differences
-  status: candidate
-  applies_when:
-    method:
-    - pde_solver
-    features:
-    - pde_grid
-    - discounting
-    instrument: []
-    error_signature: null
 - id: num_012
   title: LLM JSON parse failure causes complete build abort
   severity: critical
   category: numerical
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -989,7 +2717,7 @@ entries:
   title: FFT Merton pricer failed due to LLM JSON serialization error
   severity: critical
   category: numerical
-  status: candidate
+  status: validated
   applies_when:
     method:
     - fft_pricing
@@ -1003,7 +2731,7 @@ entries:
   title: COS adaptive truncation LLM JSON parse failure on retry
   severity: critical
   category: numerical
-  status: candidate
+  status: validated
   applies_when:
     method:
     - fft_pricing
@@ -1017,7 +2745,7 @@ entries:
   title: LLM provider returned empty response for COS method pricer
   severity: critical
   category: numerical
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -1027,11 +2755,72 @@ entries:
     - discounting
     instrument: []
     error_signature: null
-- id: md_017
-  title: LLM JSON serialization failure causes total build abort
+- id: num_016
+  title: Generated code indentation error
   severity: critical
-  category: market_data
-  status: candidate
+  category: numerical
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - forward_rate
+    - greeks
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_017
+  title: Wall-clock valuation and syntax generation errors
+  severity: critical
+  category: numerical
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - forward_rate
+    - vol_surface_dependence
+    - greeks
+    - quanto_adjustment
+    - cross_currency_settlement
+    instrument: []
+    error_signature: null
+- id: num_018
+  title: Indentation broke module build
+  severity: critical
+  category: numerical
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - characteristic_function
+    - discounting
+    - forward_rate
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_019
+  title: Generated code had Python SyntaxError
+  severity: critical
+  category: numerical
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    - greeks
+    instrument: []
+    error_signature: null
+- id: num_020
+  title: Generated code had invalid indentation
+  severity: critical
+  category: numerical
+  status: validated
   applies_when:
     method:
     - analytical
@@ -1040,3 +2829,498 @@ entries:
     - vol_surface_dependence
     instrument: []
     error_signature: null
+- id: num_021
+  title: Missing primitive adapter
+  severity: critical
+  category: numerical
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    - discounting
+    - forward_rate
+    - coupons
+    instrument: []
+    error_signature: null
+- id: num_022
+  title: Missing required primitive calls
+  severity: critical
+  category: numerical
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_023
+  title: Use exact PDE grid imports
+  severity: critical
+  category: numerical
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - pde_grid
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_024
+  title: Fix Black-Scholes discounting
+  severity: critical
+  category: numerical
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_025
+  title: Undefined interpolation method
+  severity: critical
+  category: numerical
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - greeks
+    instrument: []
+    error_signature: null
+- id: num_026
+  title: Undefined method token 'three_way'
+  severity: high
+  category: numerical
+  status: validated
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - american
+    - early_exercise
+    - puttable
+    - discounting
+    - backward_induction
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_027
+  title: PV sanity failure from unit mismatch
+  severity: critical
+  category: numerical
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_028
+  title: Undefined method identifier breaks build
+  severity: critical
+  category: numerical
+  status: validated
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - american
+    - early_exercise
+    - puttable
+    - discounting
+    - backward_induction
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_029
+  title: Undefined method identifier in spec default
+  severity: high
+  category: numerical
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - barrier
+    - path_dependent
+    - vol_surface_dependence
+    - pde_grid
+    - discounting
+    - greeks
+    instrument: []
+    error_signature: null
+- id: sem_001
+  title: Ranked-observation basket stays semantic and family-free
+  severity: high
+  category: semantic_contract
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - path_dependent
+    instrument:
+    - basket_path_payoff
+    error_signature: null
+- id: sem_002
+  title: Underspecified requests need a required-input plan before pricing
+  severity: high
+  category: semantic_contract
+  status: promoted
+  applies_when:
+    method:
+    - any
+    features:
+    - discounting
+    - path_dependent
+    - multi_asset
+    - vol_surface_dependence
+    - early_exercise
+    - forward_rate
+    instrument:
+    - any
+    error_signature: null
+- id: sem_003
+  title: _semantic_extension_decision_new_primitive_fields_underlier_structur
+  severity: medium
+  category: semantic
+  status: validated
+  applies_when:
+    method:
+    - new_primitive
+    features:
+    - underlier_structure
+    - payoff_rule
+    - settlement_rule
+    - observation_schedule
+    - selection_scope
+    - selection_operator
+    - lock_rule
+    - aggregation_rule
+    - generate_schedule
+    - path_state_accumulator
+    - semantic_contract_lesson
+    - trellis.core.date_utils.generate_schedule
+    - trellis.models.monte_carlo.event_state
+    - trellis.models.monte_carlo.basket_state
+    - trellis.models.monte_carlo.ranked_observation_payoffs
+    instrument:
+    - structured_note
+    error_signature: null
+- id: sem_004
+  title: _semantic_extension_decision_knowledge_artifact_fields_underlier_str
+  severity: medium
+  category: semantic
+  status: validated
+  applies_when:
+    method:
+    - knowledge_artifact
+    features:
+    - underlier_structure
+    - payoff_rule
+    - settlement_rule
+    - semantic_contract_lesson
+    instrument: []
+    error_signature: null
+- id: sem_005
+  title: _semantic_extension_decision_mock_inputs_fields_underlier_structure_
+  severity: medium
+  category: semantic
+  status: validated
+  applies_when:
+    method:
+    - mock_inputs
+    features:
+    - underlier_structure
+    - payoff_rule
+    - settlement_rule
+    - discount_curve
+    - market_parameter_source
+    - semantic_contract_lesson
+    - mock_discount_curve_provider
+    - mock_market_parameter_provider
+    instrument:
+    - european_option
+    error_signature: null
+- id: sem_006
+  title: _semantic_extension_decision_new_primitive_concept_kind_introduce_ne
+  severity: medium
+  category: semantic
+  status: validated
+  applies_when:
+    method:
+    - new_primitive
+    features:
+    - underlier_structure
+    - payoff_rule
+    - settlement_rule
+    - observation_schedule
+    - selection_scope
+    - selection_operator
+    - lock_rule
+    - aggregation_rule
+    - generate_schedule
+    - path_state_accumulator
+    - semantic_contract_lesson
+    - trellis.core.date_utils.generate_schedule
+    - trellis.models.monte_carlo.event_state
+    - trellis.models.monte_carlo.basket_state
+    - trellis.models.monte_carlo.ranked_observation_payoffs
+    instrument:
+    - structured_note
+    error_signature: null
+- id: sem_007
+  title: _semantic_extension_decision_knowledge_artifact_concept_vanilla_opti
+  severity: medium
+  category: semantic
+  status: validated
+  applies_when:
+    method:
+    - knowledge_artifact
+    features:
+    - underlier_structure
+    - payoff_rule
+    - settlement_rule
+    - semantic_contract_lesson
+    instrument:
+    - european_option
+    error_signature: null
+- id: sem_008
+  title: _semantic_extension_decision_new_primitive_concept_vanilla_option_co
+  severity: medium
+  category: semantic
+  status: validated
+  applies_when:
+    method:
+    - new_primitive
+    features:
+    - underlier_structure
+    - payoff_rule
+    - settlement_rule
+    - selection_scope
+    - selection_operator
+    - lock_rule
+    - aggregation_rule
+    - path_state_accumulator
+    - semantic_contract_lesson
+    - trellis.models.monte_carlo.event_state
+    - trellis.models.monte_carlo.basket_state
+    - trellis.models.monte_carlo.ranked_observation_payoffs
+    instrument:
+    - barrier_option
+    error_signature: null
+- id: sem_009
+  title: _semantic_extension_decision_new_primitive_concept_payoff_concept_ki
+  severity: medium
+  category: semantic
+  status: validated
+  applies_when:
+    method:
+    - new_primitive
+    features:
+    - selection_scope
+    - selection_operator
+    - lock_rule
+    - aggregation_rule
+    - path_state_accumulator
+    - trellis.models.monte_carlo.event_state
+    - trellis.models.monte_carlo.basket_state
+    - trellis.models.monte_carlo.ranked_observation_payoffs
+    instrument: []
+    error_signature: null
+- id: sem_010
+  title: _semantic_extension_decision_knowledge_artifact_concept_kind_introdu
+  severity: medium
+  category: semantic
+  status: validated
+  applies_when:
+    method:
+    - knowledge_artifact
+    features:
+    - underlier_structure
+    - payoff_rule
+    - settlement_rule
+    - semantic_contract_lesson
+    instrument:
+    - american_put
+    error_signature: null
+- id: sem_011
+  title: _semantic_extension_decision_mock_inputs_concept_kind_introduce_new_
+  severity: medium
+  category: semantic
+  status: validated
+  applies_when:
+    method:
+    - mock_inputs
+    features:
+    - discount_curve
+    - credit_curve
+    - instrument_specific_lesson
+    - mock_discount_curve_provider
+    instrument:
+    - nth_to_default
+    error_signature: null
+- id: sem_012
+  title: _semantic_extension_decision_new_primitive_concept_callable_bond_con
+  severity: medium
+  category: semantic
+  status: validated
+  applies_when:
+    method:
+    - new_primitive
+    features:
+    - underlier_structure
+    - payoff_rule
+    - settlement_rule
+    - observation_schedule
+    - generate_schedule
+    - semantic_contract_lesson
+    - trellis.core.date_utils.generate_schedule
+    instrument:
+    - callable_bond
+    error_signature: null
+- id: sem_013
+  title: _semantic_extension_decision_mock_inputs_concept_vanilla_option_conc
+  severity: medium
+  category: semantic
+  status: validated
+  applies_when:
+    method:
+    - mock_inputs
+    features:
+    - underlier_structure
+    - payoff_rule
+    - settlement_rule
+    - discount_curve
+    - market_parameter_source
+    - semantic_contract_lesson
+    - mock_discount_curve_provider
+    - mock_market_parameter_provider
+    instrument:
+    - european_option
+    error_signature: null
+- id: tst_001
+  title: Measure actual gap before setting test tolerance
+  severity: medium
+  category: testing
+  status: promoted
+  applies_when:
+    method:
+    - any
+    features: []
+    instrument:
+    - any
+    error_signature: null
+- id: vol_001
+  title: Black vol ≠ Hull-White rate vol
+  severity: critical
+  category: volatility
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - mean_reversion
+    - backward_induction
+    - vol_surface_dependence
+    instrument:
+    - callable_bond
+    - puttable_bond
+    - bermudan_swaption
+    - bond_option
+    error_signature: null
+- id: vol_002
+  title: Heston v0 vs sigma confusion
+  severity: critical
+  category: volatility
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    - fft_pricing
+    features:
+    - stochastic_vol
+    instrument:
+    - equity_option
+    - barrier_option
+    error_signature: null
+- id: vol_003
+  title: Unit/vol surface mismatch causing huge PV
+  severity: critical
+  category: volatility
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: vol_004
+  title: Zero vega from mis-specified digital payoff
+  severity: critical
+  category: volatility
+  status: validated
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - characteristic_function
+    - cos_method
+    - vol_surface_dependence
+    - greeks
+    instrument: []
+    error_signature: null
+- id: vol_005
+  title: Unit and vol-surface convention mismatch
+  severity: critical
+  category: volatility
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument:
+    - european_option
+    error_signature: null
+- id: vol_006
+  title: Zero vega in CDS payoff
+  severity: critical
+  category: volatility
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - greeks
+    - vol_surface_dependence
+    - stochastic_vol
+    - spread_computation
+    - discounting
+    instrument: []
+    error_signature: null
+settings:
+  max_prompt_entries: 7

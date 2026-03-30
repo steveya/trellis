@@ -1,4 +1,9 @@
-"""Interest rate swap payoff — fixed-for-floating."""
+"""Interest rate swap: exchange fixed-rate payments for floating-rate payments.
+
+A swap lets two parties exchange interest payments. One pays a fixed rate,
+the other pays a rate that resets periodically to the market rate. The
+present value is the difference between the two payment streams.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +17,11 @@ from trellis.core.types import DayCountConvention, Frequency
 
 @dataclass(frozen=True)
 class SwapSpec:
-    """Specification for a fixed-for-floating interest rate swap."""
+    """Contract terms for an interest rate swap.
+
+    A payer swap (is_payer=True) means you pay the fixed rate and receive
+    the floating market rate. A receiver swap is the opposite.
+    """
 
     notional: float
     fixed_rate: float
@@ -44,11 +53,11 @@ class SwapPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        """Declare that swap valuation needs discounting and forward-rate curves."""
+        """Swap pricing needs a discount curve and a forward rate curve."""
         return {"discount", "forward_rate"}
 
     def evaluate(self, market_state: MarketState) -> float:
-        """Value the fixed and floating legs period by period and return their net PV."""
+        """Compute the net present value: floating payments minus fixed payments (for a payer)."""
         spec = self._spec
         sign = 1.0 if spec.is_payer else -1.0
         pv = 0.0
@@ -84,9 +93,10 @@ class SwapPayoff:
 
 
 def par_swap_rate(spec: SwapSpec, market_state: MarketState) -> float:
-    """Compute the par swap rate (fixed rate making PV = 0).
+    """Find the fixed rate that makes the swap worth zero today.
 
-    par_rate = sum(df_i * F_i * tau_float_i) / sum(df_j * tau_fixed_j)
+    This is the market-implied fair rate: the fixed rate at which the present
+    value of fixed payments exactly equals the present value of floating payments.
     """
     fwd_curve = market_state.forecast_forward_curve(spec.rate_index)
 

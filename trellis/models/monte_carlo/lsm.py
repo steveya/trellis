@@ -1,4 +1,9 @@
-"""Longstaff-Schwartz early-exercise policy for American/Bermudan MC pricing."""
+"""Longstaff-Schwartz algorithm for pricing American/Bermudan options via Monte Carlo.
+
+Works backward through exercise dates: at each date, regresses discounted
+future cashflows against current state to decide whether exercising now
+beats holding. Returns a lower-bound price estimate.
+"""
 
 from __future__ import annotations
 

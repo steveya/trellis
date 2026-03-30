@@ -1,3 +1,17 @@
+"""Agent-generated payoff: Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical
+
+Construct methods: monte_carlo
+Comparison targets: mc_cds (monte_carlo), analytical_cds (analytical)
+Cross-validation harness:
+  internal targets: mc_cds, analytical_cds
+  external targets: quantlib, financepy
+New component: cds_pricing
+
+Implementation target: analytical_cds
+Preferred method family: analytical
+
+Implementation target: analytical_cds."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -9,96 +23,114 @@ from trellis.core.types import DayCountConvention, Frequency
 from trellis.models.black import black76_call, black76_put
 
 
+
 @dataclass(frozen=True)
-class EuropeanLocalVolCallSpec:
-    """Specification for Build a pricer for: European equity call under local vol: PDE vs MC
+class CDSPricingSpec:
+    """Specification for Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical
 
-Implementation target: local_vol_mc
-Preferred method family: monte_carlo
+Construct methods: monte_carlo
+Comparison targets: mc_cds (monte_carlo), analytical_cds (analytical)
+Cross-validation harness:
+  internal targets: mc_cds, analytical_cds
+  external targets: quantlib, financepy
+New component: cds_pricing
 
-Implementation target: local_vol_mc."""
-    strike: float
-    expiry_date: date
+Implementation target: analytical_cds
+Preferred method family: analytical
+
+Implementation target: analytical_cds."""
     notional: float
-    is_call: bool = True
-    n_paths: int = 100000
-    n_steps: int = 252
-    antithetic: bool = True
-    control_variate: bool = True
-    use_qmc: bool = False
-    seed: int = 42
-    dividend_yield: float = 0.0
-    local_vol_surface_source: str | None = auto
-    pricing_method: str = monte_carlo
-    output_paths: bool = False
+    strike: float
+    start_date: date
+    end_date: date
+    day_count: DayCountConvention
+    frequency: Frequency
+    rate_index: str | None
+    valuation_date: date
+    recovery_rate: float = 0.4
+    is_payer: bool = True
+    include_accrued: bool = True
+    settlement_days: int = 3
+    pricing_model: str = 'analytical_cds'
+    component: str = 'cds_pricing'
 
 
-class EuropeanLocalVolCallPayoff:
-    """Build a pricer for: European equity call under local vol: PDE vs MC
+class CDSPayoff:
+    """Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical
 
-Implementation target: local_vol_mc
-Preferred method family: monte_carlo
+Construct methods: monte_carlo
+Comparison targets: mc_cds (monte_carlo), analytical_cds (analytical)
+Cross-validation harness:
+  internal targets: mc_cds, analytical_cds
+  external targets: quantlib, financepy
+New component: cds_pricing
 
-Implementation target: local_vol_mc."""
+Implementation target: analytical_cds
+Preferred method family: analytical
 
-    def __init__(self, spec: EuropeanLocalVolCallSpec):
+Implementation target: analytical_cds."""
+
+    def __init__(self, spec: CDSPricingSpec):
         self._spec = spec
 
     @property
-    def spec(self) -> EuropeanLocalVolCallSpec:
+    def spec(self) -> CDSPricingSpec:
         return self._spec
 
     @property
     def requirements(self) -> set[str]:
-        return {"black_vol_surface", "discount_curve"}
+        return {"credit_curve", "discount_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
+        credit_curve = market_state.credit_curve
+        discount_curve = market_state.discount
+        if credit_curve is None:
+            raise ValueError("CDSPayoff requires a credit_curve in MarketState")
+        if discount_curve is None:
+            raise ValueError("CDSPayoff requires a discount curve in MarketState")
 
-        from trellis.core.differentiable import get_numpy
-        from trellis.models.monte_carlo.engine import MonteCarloEngine
-        from trellis.models.processes.gbm import GBM
+        schedule = generate_schedule(spec.start_date, spec.end_date, spec.frequency)
+        period_starts = [spec.start_date] + schedule[:-1]
 
-        np = get_numpy()
+        premium_leg = 0.0
+        protection_leg = 0.0
 
-        # Time to expiry in years
-        T = year_fraction(market_state.settlement, spec.expiry_date)
-        if T <= 0:
-            return 0.0
+        prev_survival = credit_curve.survival_probability(
+            year_fraction(market_state.settlement, spec.start_date, spec.day_count)
+        ) if spec.start_date > market_state.settlement else 1.0
 
-        # Risk-free rate (continuous) and dividend yield
-        r = float(market_state.discount.zero_rate(T))
-        q = float(spec.dividend_yield)
+        for p_start, p_end in zip(period_starts, schedule):
+            if p_end <= market_state.settlement:
+                continue
 
-        # Spot and Black implied vol
-        S0 = float(market_state.spot)
-        sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
+            accrual = year_fraction(p_start, p_end, spec.day_count)
+            t_start = year_fraction(market_state.settlement, p_start, spec.day_count)
+            t_end = year_fraction(market_state.settlement, p_end, spec.day_count)
 
-        # Enforce modelling requirements: sufficient paths and time steps
-        n_paths = int(max(spec.n_paths, 10000))
-        n_steps = int(max(spec.n_steps, max(1, int(T * 100))))  # >=100 steps per year
+            if t_end < 0.0:
+                continue
 
-        # Use GBM under risk-neutral drift (r - q)
-        process = GBM(mu=(r - q), sigma=sigma)
+            surv_start = credit_curve.survival_probability(max(t_start, 0.0))
+            surv_end = credit_curve.survival_probability(max(t_end, 0.0))
+            df_end = discount_curve.discount(max(t_end, 0.0))
 
-        engine = MonteCarloEngine(
-            process,
-            n_paths=n_paths,
-            n_steps=n_steps,
-            seed=spec.seed,
-            method="exact",
-        )
+            premium_leg += spec.notional * spec.strike * accrual * df_end * surv_end
 
-        strike = spec.strike
+            default_prob = max(surv_start - surv_end, 0.0)
+            protection_leg += spec.notional * (1.0 - spec.recovery_rate) * df_end * default_prob
 
-        def payoff_fn(paths):
-            """Return 1D array of payoffs for each simulated path (undiscounted)."""
-            S_T = paths[:, -1]
-            if spec.is_call:
-                payoffs = np.maximum(S_T - strike, 0.0)
-            else:
-                payoffs = np.maximum(strike - S_T, 0.0)
-            return payoffs * spec.notional
+            if spec.include_accrued:
+                protection_leg += (
+                    spec.notional
+                    * spec.strike
+                    * 0.5
+                    * accrual
+                    * df_end
+                    * default_prob
+                )
 
-        result = engine.price(S0, T, payoff_fn, discount_rate=r)
-        return float(result["price"])
+            prev_survival = surv_end
+
+        pv = protection_leg - premium_leg if spec.is_payer else premium_leg - protection_leg
+        return float(pv)

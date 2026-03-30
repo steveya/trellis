@@ -1,8 +1,8 @@
-"""Term sheet parsing: natural language → structured instrument description.
+"""Parse a natural-language instrument description into a structured TermSheet.
 
-The TermSheet is semi-structured: a few universal fields + a free-form
-parameters dict. This handles the fact that term sheets are wildly different
-across instrument classes (a cap vs an nth-to-default vs an autocallable).
+The TermSheet has a handful of universal fields (instrument type, notional,
+currency) plus a free-form parameters dict for everything instrument-specific,
+since the fields of a cap differ completely from those of an autocallable.
 """
 
 from __future__ import annotations
@@ -13,11 +13,7 @@ from datetime import date
 
 @dataclass
 class TermSheet:
-    """Semi-structured instrument description.
-
-    Universal fields capture what every instrument has.
-    The ``parameters`` dict holds everything instrument-specific.
-    """
+    """Parsed instrument description with common fields and a free-form parameters dict."""
 
     instrument_type: str              # "cap", "swaption", "bond", "swap", etc.
     notional: float = 100.0
@@ -78,7 +74,7 @@ def _build_parse_prompt(description: str, settlement: date) -> str:
 ## Output format
 Return a JSON object:
 {{
-    "instrument_type": "cap" | "floor" | "swaption" | "swap" | "bond" | "callable_bond" | "cds" | "fx_forward" | other,
+    "instrument_type": "cap" | "floor" | "swaption" | "swap" | "bond" | "callable_bond" | "cds" | "fx_forward" | "basket_option" | other,
     "notional": 1000000,
     "currency": "USD",
     "parameters": {{
@@ -92,7 +88,16 @@ Return a JSON object:
         //   day_count ("ACT_360", "ACT_365", "THIRTY_360"),
         //   is_payer (true/false),
         //   call_schedule (list of {{"date": "YYYY-MM-DD", "price": 100.0}}),
-        //   maturity (integer years, if applicable)
+        //   maturity (integer years, if applicable),
+        //   constituents (basket underlier names),
+        //   observation_dates (ordered list of ISO dates),
+        //   selection_operator ("best_of_remaining"),
+        //   selection_scope ("remaining_constituents"),
+        //   selection_count (integer, typically 1),
+        //   lock_rule ("remove_selected"),
+        //   aggregation_rule ("average_locked_returns"),
+        //   correlation_matrix (nested list of pairwise correlations),
+        //   correlation_matrix_key (lookup key for model_parameters)
     }}
 }}
 
@@ -104,5 +109,6 @@ Return a JSON object:
 - If a rate index is mentioned (SOFR, LIBOR, EURIBOR, SONIA), include it
 - For swaptions: extract both expiry and underlying swap dates
 - For callable bonds: extract the call schedule
+- For ranked-observation basket payoffs: extract the ordered observation schedule, basket constituents, and correlation inputs; keep the selection semantics explicit and family-name-free
 
 Return ONLY the JSON object, no other text."""

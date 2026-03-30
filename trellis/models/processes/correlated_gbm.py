@@ -25,11 +25,60 @@ class CorrelatedGBM(StochasticProcess):
 
     def __init__(
         self,
-        mu,
-        sigma,
-        corr,
+        mu=None,
+        sigma=None,
+        corr=None,
         dividend_yield=None,
+        *,
+        mu1=None,
+        sigma1=None,
+        mu2=None,
+        sigma2=None,
+        rho=None,
+        spot_prices=None,
+        spots=None,
+        vols=None,
+        corr_matrix=None,
+        correlation=None,
+        rates=None,
+        dividends=None,
+        div_yields=None,
     ):
+        """Initialize the process with canonical or generated alias keywords.
+
+        The canonical signature is ``mu``, ``sigma``, ``corr``, and
+        ``dividend_yield``. Generated route code has historically used several
+        alias names for the same concepts, so we normalize them here instead of
+        forcing every adapter to special-case the constructor call.
+        """
+        shorthand_args = (mu1, sigma1, mu2, sigma2, rho)
+        if mu is None and sigma is None and corr is None and any(arg is not None for arg in shorthand_args):
+            if not all(arg is not None for arg in shorthand_args):
+                raise ValueError(
+                    "CorrelatedGBM two-asset shorthand requires mu1, sigma1, mu2, sigma2, and rho together",
+                )
+            mu = [mu1, mu2]
+            sigma = [sigma1, sigma2]
+            corr = [[1.0, rho], [rho, 1.0]]
+
+        if mu is None and rates is not None:
+            mu = rates
+        if sigma is None and vols is not None:
+            sigma = vols
+        if corr is None:
+            corr = corr_matrix if corr_matrix is not None else correlation
+        if dividend_yield is None:
+            dividend_yield = div_yields if div_yields is not None else dividends
+
+        # ``spot_prices`` and ``spots`` are intentionally accepted as aliases
+        # for generated route code, but they do not affect the process
+        # parameters directly. The pricing route uses them to carry the initial
+        # state separately.
+        _ = spot_prices if spot_prices is not None else spots
+
+        if mu is None or sigma is None or corr is None:
+            raise TypeError("CorrelatedGBM requires either mu/sigma/corr or the full two-asset shorthand")
+
         mu_arr = raw_np.asarray(mu, dtype=float)
         sigma_arr = raw_np.asarray(sigma, dtype=float)
 
@@ -99,4 +148,3 @@ class CorrelatedGBM(StochasticProcess):
         drift_term = (self._effective_mu - 0.5 * self.sigma ** 2) * dt
         diffusion_term = self.sigma * raw_np.sqrt(dt) * correlated
         return x_arr * raw_np.exp(drift_term + diffusion_term)
-

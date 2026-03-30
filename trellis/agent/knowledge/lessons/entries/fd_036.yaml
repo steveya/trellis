@@ -1,0 +1,32 @@
+category: finite_differences
+title: Undefined boundary token 'dirichlet'
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-29T09:44:44.075668'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - pde_grid
+  - vol_surface_dependence
+  - discontinuous_payoff
+  - theta_method
+  - rannacher_timestepping
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''dirichlet'' is not defined raised when constructing pricer
+  specification (e.g., default boundary_low/boundary_high set to dirichlet).'
+root_cause: The code used an unqualified symbol 'dirichlet' as a default for boundary
+  condition parameters instead of a string token or imported callable/constant; this
+  triggers a NameError at import/instantiation time. Additionally the PDE-grid/boundary
+  API expectations (token vs callable) were not verified.
+fix: Use the exact expected representation for boundary conditions (e.g., the string
+  'dirichlet' or the boundary function/object provided by the PDE framework) or import
+  the symbol from the correct module; validate constructor signatures and types for
+  boundary arguments.
+validation: Discovered during build (attempt 1)
+id: fd_036

@@ -1,0 +1,29 @@
+category: convention
+title: Unit and import convention errors
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T23:33:56.739009'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_233357_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'PV sanity check triggered: |PV| far exceeds expected scale (e.g., |PV|=9995.24
+  for notional=100) or module build failed with a SyntaxError during import/compilation.'
+root_cause: Mismatch between the runtime expectations for market-data units/interfaces
+  (discount factors vs zero rates, vol conventions, forward vs spot) or a wrong API/import
+  path led to a unit/scale error causing enormous PVs; additionally, incorrect code
+  formatting or using guessed import paths produced a SyntaxError and blocked module
+  creation.
+fix: Use the exact model/import API names and normalize market inputs to the expected
+  units (explicitly derive discount factor, forward, and vol conventions), add an
+  early PV sanity check (compare |PV| to scaled notional) and pin the interpreter/lint
+  the code to catch indentation/SyntaxErrors before pricing.
+validation: Discovered during build (attempt 3)
+id: con_021

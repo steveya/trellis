@@ -1,0 +1,25 @@
+id: sem_004
+title: _semantic_extension_decision_knowledge_artifact_fields_underlier_str
+severity: medium
+category: semantic
+status: validated
+confidence: 0.6
+created: '2026-03-28T14:43:35.262532'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/semantic_extensions/40aadbb93750f81f.yaml
+applies_when:
+  method:
+  - knowledge_artifact
+  features:
+  - underlier_structure
+  - payoff_rule
+  - settlement_rule
+  - semantic_contract_lesson
+  instrument: []
+  error_signature: null
+symptom: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing knowledge artifacts: semantic_contract_lesson'
+root_cause: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing knowledge artifacts: semantic_contract_lesson'
+fix: Capture the shape as a lesson or cookbook entry and retrain retrieval.
+validation: Repeated semantic extension trace `40aadbb93750f81f`

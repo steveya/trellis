@@ -1,0 +1,30 @@
+category: market_data
+title: Missing credit curve causes pricing failure
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-29T13:03:09.282908'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_130310_nth_to_default_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - discounting
+  - coupons
+  - maturity_settlement
+  instrument: []
+  error_signature: null
+symptom: 'Runtime error message: "Missing market data: [''credit_curve'']" (or pricing
+  aborted with credit_curve not found).'
+root_cause: The analytical CDS pricer assumed a credit_curve object (with survival
+  probabilities and/or hazard rates) in the session/market state but did not validate
+  its presence; additionally the generated module contained a syntax error that prevented
+  fallback diagnostics. Missing input validation allowed the code to run until a hard
+  failure.
+fix: Validate required market data up-front and fail fast with a clear message instructing
+  how to construct/provide a credit_curve (e.g., Session(credit_curve=CreditCurve.flat(0.02))).
+  Add CI lint/syntax checks to catch indentation/syntax errors before runtime.
+validation: Discovered during build (attempt 3)
+id: md_030

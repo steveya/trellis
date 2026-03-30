@@ -93,6 +93,35 @@
   implies: [path_dependent]
   method_hint: monte_carlo
 
+- id: multi_asset
+  description: "Payoff depends on multiple underliers jointly"
+  method_hint: monte_carlo
+
+- id: ranked_observation
+  description: "At each observation date, rank the remaining constituents and select the best or worst remaining name"
+  implies: [multi_asset, path_dependent]
+  method_hint: monte_carlo
+  market_data: [spot, black_vol_surface, correlation]
+
+- id: remaining_selection
+  description: "Selection is made from the constituents that have not yet been removed"
+  implies: [ranked_observation]
+  method_hint: monte_carlo
+
+- id: remove_selected
+  description: "Selected constituents are removed from future consideration after each observation"
+  implies: [remaining_selection]
+  method_hint: monte_carlo
+
+- id: locked_returns
+  description: "Selected simple returns are locked into state for later aggregation"
+  implies: [remove_selected]
+  method_hint: monte_carlo
+
+- id: maturity_settlement
+  description: "Settlement occurs once at maturity"
+  method_hint: monte_carlo
+
 # ---------------------------------------------------------------------------
 # Model features
 # ---------------------------------------------------------------------------

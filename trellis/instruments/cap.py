@@ -1,4 +1,10 @@
-"""Cap and Floor payoffs — decomposed into caplets/floorlets via Black76."""
+"""Interest rate caps and floors.
+
+A cap protects against rising interest rates: it pays the holder whenever
+the floating rate exceeds a strike rate. A floor protects against falling
+rates. Each is priced as a series of individual period options (caplets or
+floorlets) using the Black-76 formula for interest rate options.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +19,7 @@ from trellis.models.black import black76_call, black76_put
 
 @dataclass(frozen=True)
 class CapFloorSpec:
-    """Specification for a cap or floor."""
+    """Contract terms for an interest rate cap or floor."""
 
     notional: float
     strike: float
@@ -60,13 +66,17 @@ def _capfloor_pv(
 
         undiscounted = spec.notional * tau * pricing_fn(F, spec.strike, sigma, t_fix)
         df = market_state.discount.discount(t_pay)
-        pv += float(undiscounted) * float(df)
+        pv += undiscounted * df
 
     return pv
 
 
 class CapPayoff:
-    """Interest rate cap priced as a strip of Black-76 caplets."""
+    """Interest rate cap: pays out when the floating rate exceeds the strike.
+
+    Priced as a sum of per-period caplets, each valued with the Black-76
+    option pricing formula.
+    """
 
     def __init__(self, spec: CapFloorSpec):
         """Store the cap contract specification used for all future valuations."""
@@ -79,16 +89,20 @@ class CapPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        """Declare the market inputs needed for cap valuation."""
+        """Cap pricing needs discount, forward rate, and volatility curves."""
         return {"discount", "forward_rate", "black_vol"}
 
     def evaluate(self, market_state: MarketState) -> float:
-        """Price the cap by summing Black-76 caplet present values."""
+        """Sum the present values of all caplets to get the cap price."""
         return _capfloor_pv(self._spec, market_state, black76_call)
 
 
 class FloorPayoff:
-    """Interest rate floor priced as a strip of Black-76 floorlets."""
+    """Interest rate floor: pays out when the floating rate falls below the strike.
+
+    Priced as a sum of per-period floorlets, each valued with the Black-76
+    option pricing formula.
+    """
 
     def __init__(self, spec: CapFloorSpec):
         """Store the floor contract specification used for all future valuations."""
@@ -101,9 +115,9 @@ class FloorPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        """Declare the market inputs needed for floor valuation."""
+        """Floor pricing needs discount, forward rate, and volatility curves."""
         return {"discount", "forward_rate", "black_vol"}
 
     def evaluate(self, market_state: MarketState) -> float:
-        """Price the floor by summing Black-76 floorlet present values."""
+        """Sum the present values of all floorlets to get the floor price."""
         return _capfloor_pv(self._spec, market_state, black76_put)

@@ -1,0 +1,93 @@
+---
+title: Semantic DSL — Layer Dependencies and Ticket Map
+---
+graph TD
+    %% ── Layer 1: Request Normalization ──
+    subgraph L1["Layer 1 — Request Normalization"]
+        IR["ProductIR<br/><i>decompose.py, schema.py</i>"]
+        FT["Feature Taxonomy<br/><i>canonical/features.yaml</i>"]
+        DEC["Decompositions<br/><i>canonical/decompositions.yaml</i>"]
+        SC["SemanticContract<br/><i>semantic_contracts.py</i>"]
+    end
+
+    %% ── Layer 2: Deterministic Validation ──
+    subgraph L2["Layer 2 — Deterministic Validation"]
+        GAP["Gap Check<br/><i>gap_check.py</i>"]
+        VAL_RULES["Validator Rules<br/><b>QUA-286</b>"]
+    end
+
+    %% ── Layer 3: Compiler & Route Blueprinting ──
+    subgraph L3["Layer 3 — Compiler & Route Blueprint"]
+        QNT["Quant / Method Selection<br/><i>quant.py</i>"]
+        PLN["Planner / SpecSchema<br/><i>planner.py</i>"]
+        CMP["Compiler<br/><b>QUA-287</b><br/><i>family_contract_compiler.py</i>"]
+        GEN["GenerationPlan<br/><i>codegen_guardrails.py</i>"]
+    end
+
+    %% ── Layer 4: Route Guidance & Instruction Policy ──
+    subgraph L4["Layer 4 — Route Guidance"]
+        INST["InstructionRecord / Policy<br/><b>QUA-374</b>"]
+        CORR["Correlation Source Policy<br/><b>QUA-351</b>"]
+        MKT["Market Param Provenance<br/><b>QUA-353</b>"]
+        SCHED["Schedule-Builder Primitives<br/><b>QUA-373</b>"]
+    end
+
+    %% ── Layer 5: Novelty & Learning Loop ──
+    subgraph L5["Layer 5 — Novelty & Learning"]
+        DIAG["Gap Classification<br/><b>QUA-375, QUA-376</b>"]
+        PROP["Primitive / Input Proposal<br/><b>QUA-377</b>"]
+        PROM["Lesson Promotion<br/><b>QUA-378, QUA-388</b>"]
+        REFL["Reflect<br/><i>reflect.py</i>"]
+    end
+
+    %% ── Cross-cutting: Taxonomy & Governance ──
+    subgraph GOV["Governance"]
+        TAX["Concept Taxonomy Policy<br/><b>QUA-387</b>"]
+        ESC["Agent Escalation / Ownership<br/><b>QUA-379</b>"]
+    end
+
+    %% ── Data flow edges ──
+    IR -->|"ProductIR"| GAP
+    FT -->|"feature set"| IR
+    DEC -->|"static lookup"| IR
+    SC -->|"semantic fields"| IR
+
+    GAP -->|"confidence + gaps"| QNT
+    VAL_RULES -->|"validation suite"| GAP
+
+    QNT -->|"PricingPlan"| PLN
+    PLN -->|"BuildPlan"| CMP
+    CMP -->|"GenerationPlan"| GEN
+
+    INST -->|"resolved instructions"| CMP
+    CORR -->|"correlation contracts"| CMP
+    MKT -->|"provenance metadata"| CMP
+    SCHED -->|"schedule primitives"| CMP
+
+    GEN -->|"build result"| DIAG
+    DIAG -->|"gap type"| PROP
+    PROP -->|"candidate lesson"| PROM
+    PROM -->|"promoted lesson"| FT
+    REFL -->|"attribution + lessons"| PROM
+
+    %% ── Governance touches ──
+    TAX -.->|"canonical vs. provisional boundary"| FT
+    TAX -.->|"extension policy"| PROM
+    ESC -.->|"role ownership"| DIAG
+    ESC -.->|"role ownership"| PROP
+    ESC -.->|"role ownership"| PROM
+
+    %% ── Ticket dependency edges ──
+    VAL_RULES -->|"blocks"| CMP
+    CMP -->|"enables"| DIAG
+
+    %% ── Styling ──
+    classDef implemented fill:#d4edda,stroke:#28a745,color:#000
+    classDef partial fill:#fff3cd,stroke:#ffc107,color:#000
+    classDef open fill:#f8d7da,stroke:#dc3545,color:#000
+    classDef governance fill:#d1ecf1,stroke:#17a2b8,color:#000
+
+    class IR,FT,DEC,GAP,QNT,PLN,GEN,REFL implemented
+    class SC,CMP,INST,DIAG,PROP,PROM partial
+    class VAL_RULES,CORR,MKT,SCHED open
+    class TAX,ESC governance

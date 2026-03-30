@@ -1,0 +1,32 @@
+id: num_017
+title: Wall-clock valuation and syntax generation errors
+severity: critical
+category: numerical
+status: validated
+confidence: 0.6
+created: '2026-03-26T19:56:39.003347'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260326_195639_quanto_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - forward_rate
+  - vol_surface_dependence
+  - greeks
+  - quanto_adjustment
+  - cross_currency_settlement
+  instrument: []
+  error_signature: null
+symptom: Generated module fails to import or raise runtime error (e.g. SyntaxError)
+  and contains a direct call to date.today in code.
+root_cause: The code generator emitted wall-clock references (date.today) instead
+  of deriving valuation date from MarketState/resolved inputs, and produced inconsistent
+  indentation/formatting leading to a SyntaxError. These stem from missing enforced
+  templates for valuation-time plumbing and missing post-generation syntax validation.
+fix: Always derive valuation date/time from MarketState or resolver outputs (never
+  use date.today) and run a parse/lint step on generated code to catch indentation
+  or syntax issues before use. Use canonical resolve_* input helpers and a small code-emission
+  test to ensure generated modules import cleanly.
+validation: Discovered during build (attempt 3)

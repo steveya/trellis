@@ -17,6 +17,7 @@ os.environ.setdefault("LLM_PROVIDER", "openai")
 
 from trellis.agent.config import load_env
 from trellis.agent.task_runtime import benchmark_existing_task, build_market_state, load_tasks
+from trellis.cli_paths import resolve_repo_path
 
 load_env()
 
@@ -40,8 +41,9 @@ def main(argv: list[str]) -> int:
         return 1
 
     market_state = build_market_state()
-    output_file = args.output or ROOT / (
-        f"task_benchmarks_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    output_file = resolve_repo_path(
+        args.output,
+        ROOT / f"task_benchmarks_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
     )
 
     results = []

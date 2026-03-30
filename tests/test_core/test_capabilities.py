@@ -160,6 +160,15 @@ class TestCheckMarketData:
         )
         assert errors == []
 
+    def test_market_state_exposes_valuation_date_alias(self):
+        ms = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.05),
+        )
+
+        assert ms.valuation_date == SETTLE
+
 
 class TestPricePayoffErrors:
 
@@ -212,3 +221,8 @@ class TestCapabilitySummary:
         summary = capability_summary()
         assert "qmc" in summary
         assert "Sobol" in summary or "low-discrepancy" in summary
+
+    def test_pde_summary_uses_current_theta_method_signature(self):
+        summary = capability_summary()
+        assert "theta_method_1d(grid, op, terminal, theta=0.5)" in summary
+        assert "sigma_fn, r_fn, payoff" not in summary

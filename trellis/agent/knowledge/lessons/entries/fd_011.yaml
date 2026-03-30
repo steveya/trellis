@@ -1,0 +1,25 @@
+category: finite_differences
+title: Use exact PDE import paths
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T22:45:29.275238'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_224529_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - vol_surface_dependence
+  - pde_grid
+  instrument: []
+  error_signature: null
+symptom: ImportError shows `Grid` and `theta_method_1d` are not exported by `trellis.models.pde`.
+root_cause: The implementation guessed PDE module exports instead of using the exact
+  supported import paths. The build then failed before any pricing logic could run.
+fix: Inspect the actual trellis PDE package structure and import the grid/operator/solver
+  objects from their real modules. Keep the solver call isolated so module-path errors
+  are caught immediately during validation.
+validation: Discovered during build (attempt 3)
+id: fd_011

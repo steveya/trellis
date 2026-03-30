@@ -1,0 +1,43 @@
+category: monte_carlo
+title: CDS/NTD Monte Carlo must use GaussianCopula, not MonteCarloEngine
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-30T08:20:55.517523'
+version: '2'
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260330_082056_nth_to_default_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - credit_risk
+  - credit_basket
+  - copula
+  instrument:
+  - nth_to_default
+  - cds
+  error_signature: 'MonteCarloEngine.__init__() missing 1 required positional argument:
+    ''process'''
+symptom: 'TypeError: MonteCarloEngine.__init__() missing 1 required positional argument:
+  ''process'''
+root_cause: MonteCarloEngine is for SDE path simulation (GBM, Hull-White, etc.) and
+  always requires an explicit process object. For credit default swap (CDS) and nth-to-default
+  (NTD) basket pricing, default times are simulated directly using GaussianCopula,
+  not MonteCarloEngine.
+fix: "Use GaussianCopula.sample_default_times() from trellis.models.copulas.gaussian.\
+  \ Do NOT use MonteCarloEngine for credit products.\nCanonical NTD Monte Carlo pattern\
+  \ (see trellis/instruments/nth_to_default.py):\n\n  from trellis.models.copulas.gaussian\
+  \ import GaussianCopula\n  from trellis.core.date_utils import year_fraction\n \
+  \ import numpy as raw_np\n\n  T = year_fraction(market_state.settlement, spec.end_date,\
+  \ spec.day_count)\n  lam = float(market_state.credit_curve.hazard_rate(T))\n  hazard_rates\
+  \ = raw_np.full(spec.n_names, lam)\n\n  corr = raw_np.full((spec.n_names, spec.n_names),\
+  \ spec.correlation)\n  raw_np.fill_diagonal(corr, 1.0)\n  copula = GaussianCopula(corr)\n\
+  \n  rng = raw_np.random.default_rng(42)\n  default_times = copula.sample_default_times(hazard_rates,\
+  \ 50000, rng)\n\n  defaults_in_period = raw_np.sum(default_times <= T, axis=1)\n\
+  \  triggered = defaults_in_period >= spec.n_th\n  df = float(market_state.discount.discount(T))\n\
+  \  return float(raw_np.mean(triggered)) * (1 - spec.recovery) * spec.notional *\
+  \ df\n\nThe requirements property must return {\"discount\", \"credit\"} (NOT \"\
+  credit_curve\" or \"discount_curve\"). market_state.credit_curve.hazard_rate(T)\
+  \ gives the flat hazard rate lambda."
+validation: Verified against reference NthToDefaultPayoff in trellis/instruments/nth_to_default.py
+id: mc_046

@@ -1,4 +1,9 @@
-"""Base class for stochastic processes."""
+"""Base class for random processes used in Monte Carlo simulation.
+
+A stochastic process defines how a price (or set of prices) evolves
+randomly over time. Subclasses specify the drift (expected direction)
+and diffusion (randomness magnitude) at each point.
+"""
 
 from __future__ import annotations
 
@@ -10,11 +15,15 @@ np = get_numpy()
 
 
 class StochasticProcess(ABC):
-    """Base class for stochastic processes.
+    """Base class for random processes driven by Brownian motion.
 
-    Scalar processes use state vectors of shape ``(n_paths,)``. Vector-state
-    processes use ``(n_paths, state_dim)`` and may expose ``factor_dim``
-    independent Brownian drivers.
+    A scalar process (e.g. GBM) tracks one value per path — state arrays
+    have shape (n_paths,). A multi-dimensional process (e.g. Heston with
+    price + variance) uses shape (n_paths, state_dim).
+
+    Subclasses must implement drift(x, t) and diffusion(x, t). They may
+    also override exact_sample() for processes with known closed-form
+    transitions (faster and more accurate than discretization).
     """
 
     @property
@@ -29,12 +38,12 @@ class StochasticProcess(ABC):
 
     @abstractmethod
     def drift(self, x: float, t: float) -> float:
-        """Return mu(x, t)."""
+        """Expected rate of change at state x and time t."""
         ...
 
     @abstractmethod
     def diffusion(self, x: float, t: float) -> float:
-        """Return sigma(x, t)."""
+        """Volatility (randomness magnitude) at state x and time t."""
         ...
 
     def exact_sample(self, x: float, t: float, dt: float, dw: float) -> float:

@@ -1,0 +1,30 @@
+category: monte_carlo
+title: Undefined names and missing vol-surface access
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-29T08:34:55.908163'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_083456_barrier_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - barrier
+  - path_dependent
+  - vol_surface_dependence
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: 'Runtime NameError for bare identifiers (e.g. ''discrete'') and static analyzer
+  error: monte_carlo route did not access market_state.vol_surface.'
+root_cause: Dataclass defaults used undefined bare names instead of literals/enums,
+  and the Monte Carlo evaluate() omitted using market_state.vol_surface for implied
+  vol lookup. Additionally the MC payoff shape and engine/process API expectations
+  were not respected.
+fix: Use quoted strings or well-defined enums/constants for dataclass defaults (e.g.
+  'discrete'), and fetch volatility via market_state.vol_surface (e.g. market_state.vol_surface.get_implied_vol(...)).
+  Ensure payoff_fn returns a 1-D array of shape (n_paths,) and follow the MonteCarloEngine
+  / GBM API signatures.
+validation: Discovered during build (attempt 3)
+id: mc_043

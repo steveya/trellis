@@ -1,0 +1,32 @@
+category: semantic
+title: _semantic_extension_decision_new_primitive_concept_callable_bond_con
+severity: medium
+status: validated
+confidence: 0.75
+created: '2026-03-29T22:32:35.935415'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/semantic_extensions/f65c49915637750f.yaml
+applies_when:
+  method:
+  - new_primitive
+  features:
+  - underlier_structure
+  - payoff_rule
+  - settlement_rule
+  - observation_schedule
+  - generate_schedule
+  - semantic_contract_lesson
+  - trellis.core.date_utils.generate_schedule
+  instrument:
+  - callable_bond
+  error_signature: null
+symptom: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule,
+  observation_schedule; missing runtime primitives: generate_schedule; missing knowledge
+  artifacts: semantic_contract_lesson; mock inputs can likely bridge the gap'
+root_cause: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule,
+  observation_schedule; missing runtime primitives: generate_schedule; missing knowledge
+  artifacts: semantic_contract_lesson; mock inputs can likely bridge the gap'
+fix: Extend the existing semantic concept with the missing attribute and keep the
+  wrapper thin.
+validation: Repeated semantic extension trace `f65c49915637750f`
+id: sem_012

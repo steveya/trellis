@@ -1,0 +1,32 @@
+id: mc_028
+title: Use approved GBM module, not correlated_gbm path
+severity: critical
+category: monte_carlo
+status: validated
+confidence: 0.6
+created: '2026-03-28T12:19:46.736445'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_121946_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  - discrete_coupons
+  instrument: []
+  error_signature: null
+symptom: Build fails with 'unapproved Trellis module trellis.models.processes.correlated_gbm'
+  error on every attempt.
+root_cause: The agent repeatedly imported `trellis.models.processes.correlated_gbm`
+  which is not on the approved module list, despite a lesson explicitly stating to
+  use the CorrelatedGBM thin adapter directly via an inspected path.
+fix: Import CorrelatedGBM only from the approved module path (e.g. `trellis.models.processes.gbm`
+  or the inspected adapter listed in the generation plan), never from `trellis.models.processes.correlated_gbm`.
+validation: Discovered during build (attempt 3)

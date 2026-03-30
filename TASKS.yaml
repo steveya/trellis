@@ -1114,16 +1114,21 @@
     discount_curve: usd_ois
     forecast_curve: EUR-DISC
     fx_rate: EURUSD
+    underlier_spot: SPX
+    model_parameters: heston_equity
   market_assertions:
     requires:
     - discount_curve
     - forward_curve
     - fx_rates
     - spot
+    - model_parameters
     selected:
       discount_curve: usd_ois
       forecast_curve: EUR-DISC
       fx_rate: EURUSD
+      underlier_spot: SPX
+      model_parameters: heston_equity
   cross_validate:
     internal:
     - gk_analytical

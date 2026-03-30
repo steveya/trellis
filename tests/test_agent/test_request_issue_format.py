@@ -22,6 +22,15 @@ def test_issue_format_includes_task_and_target_context():
             "task_title": "European equity call under local vol: PDE vs MC",
             "comparison_target": "local_vol_pde",
             "preferred_method": "pde_solver",
+            "semantic_role_ownership": {
+                "selected_stage": "route_assembly",
+                "selected_role": "quant",
+                "trigger_condition": "pricing_plan_selection",
+                "artifact_kind": "GenerationPlan",
+                "executed": True,
+                "fail_closed": False,
+                "scope": "bounded_semantic_to_pricing_assembly",
+            },
         },
     )
     compiled = SimpleNamespace(request=request)
@@ -53,8 +62,12 @@ def test_issue_format_includes_task_and_target_context():
     assert "local_vol_pde" in title
     assert "pde_solver" in title
     assert "- task: `E23` — European equity call under local vol: PDE vs MC" in body
+    assert "## Ownership" in body
+    assert "- selected_role: `quant`" in body
+    assert "- trigger_condition: `pricing_plan_selection`" in body
     assert "- trigger_event: `request_failed`" in body
     assert "- comparison_target: `local_vol_pde`" in body
     assert "- failure_count: `2`" in body
     assert "- task: `E23` — European equity call under local vol: PDE vs MC" in comment
     assert "- route_method: `pde_solver`" in comment
+    assert "- ownership_role: `quant`" in comment

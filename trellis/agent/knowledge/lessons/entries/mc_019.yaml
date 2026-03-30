@@ -1,0 +1,33 @@
+id: mc_019
+title: Himalaya payoff must wrap CorrelatedGBM as thin adapter
+severity: critical
+category: monte_carlo
+status: validated
+confidence: 0.6
+created: '2026-03-28T09:35:48.354298'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_093548_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Build fails with assembly.required_primitive_missing because generated code
+  imports CorrelatedGBM but never instantiates or calls it inside the payoff function.
+root_cause: The agent generates boilerplate class structure and imports CorrelatedGBM
+  but then writes path simulation logic from scratch instead of delegating to CorrelatedGBM,
+  so the primitive check fails even though the import is present.
+fix: The payoff_fn must instantiate CorrelatedGBM with spots, vols, and correlation
+  matrix, call its simulate() method to get (n_paths, n_steps, n_assets) paths, then
+  index those paths at each observation date to implement the ranked-removal logic
+  and return a (n_paths,) payoff array.
+validation: Discovered during build (attempt 3)

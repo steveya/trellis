@@ -15,7 +15,7 @@ from trellis.core.capabilities import analyze_gap, normalize_capability_name
 
 @dataclass(frozen=True)
 class FieldDef:
-    """A single field in a spec dataclass."""
+    """One field definition for a payoff specification (name, type, description, optional default)."""
     name: str
     type: str  # "float", "int", "str", "bool", "date", "str | None", "Frequency", "DayCountConvention"
     description: str
@@ -24,7 +24,7 @@ class FieldDef:
 
 @dataclass(frozen=True)
 class SpecSchema:
-    """Schema for a payoff spec dataclass — deterministic, no LLM ambiguity."""
+    """Complete field schema for a payoff specification class, used to generate code without LLM involvement."""
     class_name: str
     spec_name: str
     requirements: list[str]
@@ -229,6 +229,20 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("is_payer", "bool", "True=payer, False=receiver", "True"),
         ],
     ),
+    "cds": SpecSchema(
+        class_name="CDSPayoff",
+        spec_name="CDSSpec",
+        requirements=["discount", "credit"],
+        fields=[
+            FieldDef("notional", "float", "Protection notional"),
+            FieldDef("spread", "float", "CDS spread (decimal, e.g. 0.01 = 100bps)"),
+            FieldDef("recovery", "float", "Recovery rate", "0.4"),
+            FieldDef("start_date", "date", "Protection start date"),
+            FieldDef("end_date", "date", "Protection end date"),
+            FieldDef("frequency", "Frequency", "Premium payment frequency", "Frequency.QUARTERLY"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_360"),
+        ],
+    ),
 }
 
 SPECIALIZED_SPECS: dict[str, SpecSchema] = {
@@ -257,6 +271,40 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
             FieldDef("fx_pair", "str", "FX quote key such as 'EURUSD'"),
             FieldDef("foreign_discount_key", "str", "Foreign discount curve key such as 'EUR-DISC'"),
             FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+            FieldDef("n_paths", "int", "Number of Monte Carlo paths", "50000"),
+            FieldDef("n_steps", "int", "Number of Monte Carlo time steps", "252"),
+        ],
+    ),
+    "quanto_option_analytical": SpecSchema(
+        class_name="QuantoOptionAnalyticalPayoff",
+        spec_name="QuantoOptionSpec",
+        requirements=["discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot", "model_parameters"],
+        fields=[
+            FieldDef("notional", "float", "Option notional in foreign-underlier units"),
+            FieldDef("strike", "float", "Strike in payout currency terms"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("fx_pair", "str", "FX quote key such as 'EURUSD'"),
+            FieldDef("underlier_currency", "str", "Currency of the underlying asset", "'EUR'"),
+            FieldDef("domestic_currency", "str", "Payout currency", "'USD'"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("quanto_correlation_key", "str | None", "Key or alias for the underlier/FX correlation input", "None"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+        ],
+    ),
+    "quanto_option_monte_carlo": SpecSchema(
+        class_name="QuantoOptionMonteCarloPayoff",
+        spec_name="QuantoOptionSpec",
+        requirements=["discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot", "model_parameters"],
+        fields=[
+            FieldDef("notional", "float", "Option notional in foreign-underlier units"),
+            FieldDef("strike", "float", "Strike in payout currency terms"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("fx_pair", "str", "FX quote key such as 'EURUSD'"),
+            FieldDef("underlier_currency", "str", "Currency of the underlying asset", "'EUR'"),
+            FieldDef("domestic_currency", "str", "Payout currency", "'USD'"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("quanto_correlation_key", "str | None", "Key or alias for the underlier/FX correlation input", "None"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
             FieldDef("n_paths", "int", "Number of Monte Carlo paths", "50000"),
             FieldDef("n_steps", "int", "Number of Monte Carlo time steps", "252"),
@@ -317,6 +365,7 @@ def plan_build(
     model: str = "gpt-5-mini",
     instrument_type: str | None = None,
     preferred_method: str | None = None,
+    spec_schema_hint: str | None = None,
 ) -> BuildPlan:
     """Create a build plan. Uses static specs for known instruments."""
     normalized_by_requirement = {
@@ -348,6 +397,7 @@ def plan_build(
         missing,
         instrument_type=instrument_type,
         preferred_method=preferred_method,
+        spec_schema_hint=spec_schema_hint,
     )
 
 
@@ -359,6 +409,7 @@ def _plan_static(
     *,
     instrument_type: str | None = None,
     preferred_method: str | None = None,
+    spec_schema_hint: str | None = None,
 ) -> BuildPlan:
     """Static planning with deterministic spec schemas for known instruments."""
     desc_lower = description.lower()
@@ -367,17 +418,41 @@ def _plan_static(
     class_name = None
     module = None
 
-    specialized = _select_specialized_spec(
-        description=description,
-        instrument_type=instrument_type,
-        normalized_requirements=normalized_requirements,
-        preferred_method=preferred_method,
-    )
-    if specialized is not None:
-        spec_schema = specialized
-        class_name = spec_schema.class_name
-        module_name = class_name.lower().replace("payoff", "")
-        module = f"instruments/_agent/{module_name}.py"
+    # Contract-declared spec hint takes priority over regex matching
+    if spec_schema_hint:
+        _hint_lower = spec_schema_hint.lower().replace(" ", "_")
+        if _hint_lower in SPECIALIZED_SPECS:
+            spec_schema = SPECIALIZED_SPECS[_hint_lower]
+            class_name = spec_schema.class_name
+            module_name = class_name.lower().replace("payoff", "")
+            module = f"instruments/_agent/{module_name}.py"
+        elif _hint_lower in STATIC_SPECS:
+            spec_schema = STATIC_SPECS[_hint_lower]
+            class_name = spec_schema.class_name
+            module_name = class_name.lower().replace("payoff", "")
+            module = f"instruments/_agent/{module_name}.py"
+
+    if spec_schema is None:
+        specialized = _select_specialized_spec(
+            description=description,
+            instrument_type=instrument_type,
+            normalized_requirements=normalized_requirements,
+            preferred_method=preferred_method,
+        )
+        if specialized is not None:
+            spec_schema = specialized
+            class_name = spec_schema.class_name
+            module_name = class_name.lower().replace("payoff", "")
+            module = f"instruments/_agent/{module_name}.py"
+
+    if spec_schema is None and instrument_type:
+        # Direct lookup by normalized instrument type (more reliable than text search)
+        norm = instrument_type.lower().replace(" ", "_")
+        if norm in STATIC_SPECS:
+            spec_schema = STATIC_SPECS[norm]
+            class_name = spec_schema.class_name
+            module_name = class_name.lower().replace("payoff", "")
+            module = f"instruments/_agent/{module_name}.py"
 
     if spec_schema is None:
         # Match against STATIC_SPECS — longer keys first to avoid partial matches
@@ -425,6 +500,11 @@ def _select_specialized_spec(
     desc_lower = description.lower()
     normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
     method_hint = _infer_method_hint(desc_lower, preferred_method=preferred_method)
+
+    if normalized_instrument == "quanto_option" or "quanto" in desc_lower:
+        if method_hint == "monte_carlo":
+            return SPECIALIZED_SPECS["quanto_option_monte_carlo"]
+        return SPECIALIZED_SPECS["quanto_option_analytical"]
 
     if _looks_like_fx_vanilla(description, desc_lower, normalized_requirements):
         if method_hint == "monte_carlo":

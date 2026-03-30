@@ -1,0 +1,29 @@
+id: mc_025
+title: ForwardCurve discount API mismatch
+severity: critical
+category: monte_carlo
+status: validated
+confidence: 0.6
+created: '2026-03-28T11:33:56.032717'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_113356_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: '''ForwardCurve'' object has no attribute ''discount'' raised during payoff
+  evaluation'
+root_cause: The payoff implementation assumed a specific ForwardCurve/MarketState
+  API (a .discount(...) method) which does not exist; different environments expose
+  discount factors via different method/property names. The payoff code did not probe
+  for or adapt to the available API.
+fix: Use canonical MarketState accessors or add a small adapter/fallback that tries
+  the common method names (discount, discount_factor, get_discount_factor, __call__),
+  and include a unit/smoke test that exercises discount lookup before running full
+  Monte Carlo.
+validation: Discovered during build (attempt 3)

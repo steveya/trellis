@@ -220,6 +220,33 @@ class TestCapGreeks:
         vega_fd = (pv_up - pv_dn) / 0.0002
         assert vega_fd > 0
 
+    def test_cap_vega_measure_uses_autodiff_for_flat_vol(self, monkeypatch):
+        """The Vega measure should route flat-vol inputs through autograd."""
+        from trellis.analytics import measures as measures_mod
+
+        called = {"gradient": 0}
+
+        def fake_gradient(fn, argnum=0):
+            called["gradient"] += 1
+
+            def _grad(vol):
+                return 7.0
+
+            return _grad
+
+        monkeypatch.setattr(measures_mod, "gradient", fake_gradient)
+
+        ms = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.05),
+            vol_surface=FlatVol(0.20),
+        )
+        vega = measures_mod.Vega().compute(CapPayoff(self._cap_spec()), ms)
+
+        assert called["gradient"] == 1
+        assert vega == pytest.approx(0.07)
+
     def test_cap_floor_parity_greeks(self):
         """Cap DV01 - Floor DV01 ≈ Swap DV01."""
         ms_up = MarketState(as_of=SETTLE, settlement=SETTLE,

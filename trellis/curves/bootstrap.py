@@ -176,3 +176,22 @@ def bootstrap_yield_curve(instruments: list[BootstrapInstrument], **kwargs):
     from trellis.curves.yield_curve import YieldCurve
     tenors, rates = bootstrap(instruments, **kwargs)
     return YieldCurve(tenors, rates)
+
+
+def bootstrap_named_yield_curves(
+    curve_sets: dict[str, list[BootstrapInstrument]],
+    **kwargs,
+) -> dict[str, object]:
+    """Bootstrap multiple named yield curves from named instrument sets.
+
+    Parameters
+    ----------
+    curve_sets : dict[str, list[BootstrapInstrument]]
+        Mapping from curve name to bootstrap instrument set.
+    **kwargs
+        Forwarded to :func:`bootstrap_yield_curve` for each named curve.
+    """
+    return {
+        name: bootstrap_yield_curve(instruments, **kwargs)
+        for name, instruments in curve_sets.items()
+    }

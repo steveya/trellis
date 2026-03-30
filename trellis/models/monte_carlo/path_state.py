@@ -1,4 +1,9 @@
-"""Explicit path-state contracts for reduced-storage Monte Carlo pricing."""
+"""Data structures for tracking what the Monte Carlo engine records per path.
+
+Instead of storing every time step of every path (expensive), payoffs
+can declare exactly what they need: full paths, snapshots at specific
+steps, barrier-crossing flags, or custom running statistics.
+"""
 
 from __future__ import annotations
 
@@ -29,7 +34,14 @@ def _materialize_initial_cross_section(
 
 @dataclass(frozen=True)
 class BarrierMonitor:
-    """Describe one pathwise barrier-hit statistic to track during simulation."""
+    """Specification for tracking whether simulated paths cross a price level.
+
+    Attributes:
+        name: Identifier for this monitor (e.g. "knock_out").
+        level: The barrier price level.
+        direction: "up" if the barrier is above spot, "down" if below.
+        observation_steps: Which time steps to check (empty = check all steps).
+    """
 
     name: str
     level: float
@@ -46,7 +58,12 @@ class BarrierMonitor:
 
 @dataclass(frozen=True)
 class PathReducer:
-    """Pure accumulator that updates reduced path statistics during simulation."""
+    """A running statistic computed incrementally as paths are simulated.
+
+    Instead of storing the full path, a PathReducer maintains a summary
+    (e.g. running max, running average) that is updated at each time step
+    via init_fn (called once at step 0) and update_fn (called at each step).
+    """
 
     name: str
     init_fn: Callable[[raw_np.ndarray, int], raw_np.ndarray]

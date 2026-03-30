@@ -1,0 +1,30 @@
+category: finite_differences
+title: Missing/incorrect PDE Grid import and params
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-29T09:43:27.270578'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - pde_grid
+  - vol_surface_dependence
+  - pde_solver
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'Build error: module ''trellis.models.pde'' does not export ''Grid'' (e.g.
+  ImportError/AttributeError referencing Grid).'
+root_cause: The implementation referenced a PDE Grid symbol and constructor that do
+  not match the library's public API (wrong import path and/or wrong constructor signature),
+  and also omitted required discretization / unit conventions for the PDE grid and
+  payoff identifiers.
+fix: Use the exact, exported Grid class/path from the trellis PDE package and call
+  it with the required discretization parameters (grid_min, grid_max, grid_size, spacing/transform,
+  time steps). Also validate payoff/boundary identifier names and unit conventions
+  (spot/strike/time/vol) against the library docs before wiring the solver.
+validation: Discovered during build (attempt 3)
+id: fd_035

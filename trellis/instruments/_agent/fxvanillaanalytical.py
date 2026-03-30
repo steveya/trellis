@@ -8,7 +8,13 @@ from datetime import date
 from trellis.core.date_utils import year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
-from trellis.models.black import garman_kohlhagen_call, garman_kohlhagen_put
+from trellis.models.analytical import terminal_vanilla_from_basis
+from trellis.models.black import (
+    black76_asset_or_nothing_call,
+    black76_asset_or_nothing_put,
+    black76_cash_or_nothing_call,
+    black76_cash_or_nothing_put,
+)
 
 
 @dataclass(frozen=True)
@@ -51,7 +57,7 @@ def _resolve_fx_inputs(market_state: MarketState, spec: FXVanillaOptionSpec):
 
 
 class FXVanillaAnalyticalPayoff:
-    """Deterministic thin adapter over the Garman-Kohlhagen library kernel."""
+    """Deterministic thin adapter over the Garman-Kohlhagen basis assembly."""
 
     def __init__(self, spec: FXVanillaOptionSpec):
         self._spec = spec
@@ -67,16 +73,22 @@ class FXVanillaAnalyticalPayoff:
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
         spot, T, domestic_df, foreign_df = _resolve_fx_inputs(market_state, spec)
-        if T <= 0:
-            intrinsic = max(spot - spec.strike, 0.0) if spec.option_type.lower() == "call" else max(spec.strike - spot, 0.0)
-            return float(spec.notional) * float(intrinsic)
-
-        sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
         option_type = spec.option_type.lower()
+        sigma = 0.0 if T <= 0 else float(market_state.vol_surface.black_vol(T, spec.strike))
+        forward = spot * foreign_df / domestic_df
         if option_type == "call":
-            price = garman_kohlhagen_call(spot, spec.strike, sigma, T, domestic_df, foreign_df)
+            asset = black76_asset_or_nothing_call(forward, spec.strike, sigma, T)
+            cash = black76_cash_or_nothing_call(forward, spec.strike, sigma, T)
         elif option_type == "put":
-            price = garman_kohlhagen_put(spot, spec.strike, sigma, T, domestic_df, foreign_df)
+            asset = black76_asset_or_nothing_put(forward, spec.strike, sigma, T)
+            cash = black76_cash_or_nothing_put(forward, spec.strike, sigma, T)
         else:
             raise ValueError(f"Unsupported option_type {spec.option_type!r}; expected 'call' or 'put'")
+
+        price = domestic_df * terminal_vanilla_from_basis(
+            option_type,
+            asset_value=asset,
+            cash_value=cash,
+            strike=spec.strike,
+        )
         return float(spec.notional) * float(price)

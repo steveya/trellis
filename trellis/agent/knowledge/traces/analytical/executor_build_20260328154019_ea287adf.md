@@ -1,0 +1,344 @@
+# Analytical Trace: `executor_build_20260328154019_ea287adf`
+- Trace type: `analytical`
+- Route family: `rate_tree`
+- Route name: `exercise_lattice`
+- Model: `lattice`
+- Status: `ok`
+- Created at: `2026-03-28T15:40:20.188942+00:00`
+- Updated at: `2026-03-28T15:40:20.341210+00:00`
+- Task ID: `executor_build_20260328154019_ea287adf`
+
+## Context
+- `class_name`: 'BermudanSwaptionPayoff'
+- `generation_plan`: {'method': 'rate_tree', 'instrument_type': 'bermudan_swaption', 'inspected_modules': ['trellis.models.trees.lattice'], 'approved_modules': ['trellis.core.date_utils', 'trellis.core.differentiable', 'trellis.core.market_state', 'trellis.core.payoff', 'trellis.core.types', 'trellis.models.black', 'trellis.models.trees.backward_induction', 'trellis.models.trees.binomial', 'trellis.models.trees.lattice', 'trellis.models.trees.models', 'trellis.models.trees.trinomial'], 'symbols_to_reuse': ['BinomialTree', 'CashflowSchedule', 'Cashflows', 'DataProvider', 'DayCountConvention', 'DeterministicCashflowPayoff', 'DiscountCurve', 'Frequency', 'Instrument', 'MarketState', 'MissingCapabilityError', 'MonteCarloPathPayoff', 'Payoff', 'PresentValue', 'PricingResult', 'RecombiningLattice', 'ResolvedInputPayoff', 'TreeModel', 'TrinomialTree', 'add_months', 'backward_induction', 'bdt_displacement', 'bdt_mean_reversion_probabilities', 'black76_asset_or_nothing_call', 'black76_asset_or_nothing_put', 'black76_call', 'black76_cash_or_nothing_call', 'black76_cash_or_nothing_put', 'black76_put', 'build_generic_lattice', 'build_rate_lattice', 'build_spot_lattice', 'calibrate_lattice', 'equal_probabilities', 'garman_kohlhagen_call', 'garman_kohlhagen_put', 'generate_schedule', 'get_accrual_fraction', 'get_bracketing_dates', 'get_numpy', 'gradient', 'hessian', 'ho_lee_displacement', 'hw_displacement', 'hw_mean_reversion_probabilities', 'lattice_backward_induction', 'lognormal_rate', 'normal_rate', 'shifted_lognormal_rate', 'standard_discount', 'year_fraction'], 'proposed_tests': ['tests/test_agent/test_build_loop.py', 'tests/test_agent/test_callable_bond.py', 'tests/test_tasks/test_t04_bermudan_swaption.py'], 'uncertainty_flags': [], 'repo_revision': '2204f054d09cfaa88de56326480925626f4ca2b3', 'primitive_plan': {'route': 'exercise_lattice', 'engine_family': 'lattice', 'score': 7.5}}
+- `route_card`: '## Structured Route Card\n- Method family: `rate_tree`\n- Instrument type: `bermudan_swaption`\n- Route: `exercise_lattice`\n- Engine family: `lattice`\n- Required primitives:\n  - `trellis.models.trees.lattice.build_rate_lattice` (lattice_builder)\n  - `trellis.models.trees.lattice.lattice_backward_induction` (backward_induction)\n- Required adapters:\n  - `map_cashflows_and_exercise_dates_to_tree_steps`\n  - `select_exercise_fn_for_issuer_or_holder`\n- Route notes:\n  - Use lattice_backward_induction with schedule-aware exercise steps for callable, puttable, and Bermudan products.\n- Primary modules to inspect/reuse:\n  - `trellis.models.trees.lattice`\n- Post-build test targets:\n  - `tests/test_agent/test_build_loop.py`\n  - `tests/test_agent/test_callable_bond.py`\n  - `tests/test_tasks/test_t04_bermudan_swaption.py`\n- Use approved Trellis imports only. Prefer thin adapters over bespoke numerical kernels.'
+- `route_plan`: '## Structured Generation Plan\n- Method family: `rate_tree`\n- Instrument type: `bermudan_swaption`\n- Repo revision: `2204f054d09cfaa88de56326480925626f4ca2b3`\n- Inspected modules:\n  - `trellis.models.trees.lattice`\n- Approved Trellis modules for imports:\n  - `trellis.core.date_utils`\n  - `trellis.core.differentiable`\n  - `trellis.core.market_state`\n  - `trellis.core.payoff`\n  - `trellis.core.types`\n  - `trellis.models.black`\n  - `trellis.models.trees.backward_induction`\n  - `trellis.models.trees.binomial`\n  - `trellis.models.trees.lattice`\n  - `trellis.models.trees.models`\n  - `trellis.models.trees.trinomial`\n- Public symbols available from the approved modules:\n  - `BinomialTree`\n  - `CashflowSchedule`\n  - `Cashflows`\n  - `DataProvider`\n  - `DayCountConvention`\n  - `DeterministicCashflowPayoff`\n  - `DiscountCurve`\n  - `Frequency`\n  - `Instrument`\n  - `MarketState`\n  - `MissingCapabilityError`\n  - `MonteCarloPathPayoff`\n  - `Payoff`\n  - `PresentValue`\n  - `PricingResult`\n  - `RecombiningLattice`\n  - `ResolvedInputPayoff`\n  - `TreeModel`\n  - `TrinomialTree`\n  - `add_months`\n  - `backward_induction`\n  - `bdt_displacement`\n  - `bdt_mean_reversion_probabilities`\n  - `black76_asset_or_nothing_call`\n  - `black76_asset_or_nothing_put`\n  - `black76_call`\n  - `black76_cash_or_nothing_call`\n  - `black76_cash_or_nothing_put`\n  - `black76_put`\n  - `build_generic_lattice`\n  - `build_rate_lattice`\n  - `build_spot_lattice`\n  - `calibrate_lattice`\n  - `equal_probabilities`\n  - `garman_kohlhagen_call`\n  - `garman_kohlhagen_put`\n  - `generate_schedule`\n  - `get_accrual_fraction`\n  - `get_bracketing_dates`\n  - `get_numpy`\n  - `gradient`\n  - `hessian`\n  - `ho_lee_displacement`\n  - `hw_displacement`\n  - `hw_mean_reversion_probabilities`\n  - `lattice_backward_induction`\n  - `lognormal_rate`\n  - `normal_rate`\n  - `shifted_lognormal_rate`\n  - `standard_discount`\n  - `year_fraction`\n- Tests to run after generation:\n  - `tests/test_agent/test_build_loop.py`\n  - `tests/test_agent/test_callable_bond.py`\n  - `tests/test_tasks/test_t04_bermudan_swaption.py`\n- Primitive route:\n  - Route: `exercise_lattice`\n  - Engine family: `lattice`\n  - Route score: `7.50`\n  - Selected primitives:\n    - `trellis.models.trees.lattice.build_rate_lattice` (lattice_builder)\n    - `trellis.models.trees.lattice.lattice_backward_induction` (backward_induction)\n  - Required adapters:\n    - `map_cashflows_and_exercise_dates_to_tree_steps`\n    - `select_exercise_fn_for_issuer_or_holder`\n  - Route notes:\n    - Use lattice_backward_induction with schedule-aware exercise steps for callable, puttable, and Bermudan products.\n- Every `trellis.*` import in the generated code MUST come from the approved module list above.\n- If you need functionality outside the approved list, say so explicitly instead of inventing an import.'
+- `spec_name`: 'BermudanSwaptionSpec'
+
+## Steps
+- **trace** `executor_build_20260328154019_ea287adf:root`
+  - Label: Analytical build
+  - Status: `ok`
+  - Notes:
+    - The trace mirrors the deterministic GenerationPlan used to assemble the route.
+  - Inputs:
+    - `issue_id`: None
+    - `model`: lattice
+    - `route_family`: rate_tree
+    - `route_name`: exercise_lattice
+    - `task_id`: executor_build_20260328154019_ea287adf
+  - Outputs:
+    - `route`: {
+  "family": "rate_tree",
+  "model": "lattice",
+  "name": "exercise_lattice"
+}
+    - `status`: ok
+  - **semantic_resolution** `executor_build_20260328154019_ea287adf:semantic_resolution`
+    - Label: Resolve contract and route
+    - Status: `ok`
+    - Parent: `executor_build_20260328154019_ea287adf:root`
+    - Notes:
+      - Record the semantic contract that drives route selection, not just the final code path.
+    - Inputs:
+      - `approved_modules`: [
+  "trellis.core.date_utils",
+  "trellis.core.differentiable",
+  "trellis.core.market_state",
+  "trellis.core.payoff",
+  "trellis.core.types",
+  "trellis.models.black",
+  "trellis.models.trees.backward_induction",
+  "trellis.models.trees.binomial",
+  "trellis.models.trees.lattice",
+  "trellis.models.trees.models",
+  "trellis.models.trees.trinomial"
+]
+      - `inspected_modules`: [
+  "trellis.models.trees.lattice"
+]
+      - `instrument_type`: bermudan_swaption
+      - `method`: rate_tree
+      - `repo_revision`: 2204f054d09cfaa88de56326480925626f4ca2b3
+      - `symbols_to_reuse`: [
+  "BinomialTree",
+  "CashflowSchedule",
+  "Cashflows",
+  "DataProvider",
+  "DayCountConvention",
+  "DeterministicCashflowPayoff",
+  "DiscountCurve",
+  "Frequency",
+  "Instrument",
+  "MarketState",
+  "MissingCapabilityError",
+  "MonteCarloPathPayoff",
+  "Payoff",
+  "PresentValue",
+  "PricingResult",
+  "RecombiningLattice",
+  "ResolvedInputPayoff",
+  "TreeModel",
+  "TrinomialTree",
+  "add_months",
+  "backward_induction",
+  "bdt_displacement",
+  "bdt_mean_reversion_probabilities",
+  "black76_asset_or_nothing_call",
+  "black76_asset_or_nothing_put",
+  "black76_call",
+  "black76_cash_or_nothing_call",
+  "black76_cash_or_nothing_put",
+  "black76_put",
+  "build_generic_lattice",
+  "build_rate_lattice",
+  "build_spot_lattice",
+  "calibrate_lattice",
+  "equal_probabilities",
+  "garman_kohlhagen_call",
+  "garman_kohlhagen_put",
+  "generate_schedule",
+  "get_accrual_fraction",
+  "get_bracketing_dates",
+  "get_numpy"
+]
+      - `uncertainty_flags`: []
+    - Outputs:
+      - `model`: lattice
+      - `primitive_plan_score`: 7.5
+      - `route_family`: rate_tree
+      - `route_name`: exercise_lattice
+  - **decomposition** `executor_build_20260328154019_ea287adf:decomposition`
+    - Label: Select reusable kernels
+    - Status: `ok`
+    - Parent: `executor_build_20260328154019_ea287adf:root`
+    - Notes:
+      - Capture the reusable valuation components and any exact basis-claim assembly.
+    - Inputs:
+      - `adapters`: [
+  "map_cashflows_and_exercise_dates_to_tree_steps",
+  "select_exercise_fn_for_issuer_or_holder"
+]
+      - `blockers`: []
+      - `notes`: [
+  "Use lattice_backward_induction with schedule-aware exercise steps for callable, puttable, and Bermudan products."
+]
+      - `primitives`: [
+  {
+    "module": "trellis.models.trees.lattice",
+    "required": true,
+    "role": "lattice_builder",
+    "symbol": "build_rate_lattice"
+  },
+  {
+    "module": "trellis.models.trees.lattice",
+    "required": true,
+    "role": "backward_induction",
+    "symbol": "lattice_backward_induction"
+  }
+]
+    - Outputs:
+      - `reuse_decision`: route_local
+      - `selected_primitives`: [
+  {
+    "module": "trellis.models.trees.lattice",
+    "required": true,
+    "role": "lattice_builder",
+    "symbol": "build_rate_lattice"
+  },
+  {
+    "module": "trellis.models.trees.lattice",
+    "required": true,
+    "role": "backward_induction",
+    "symbol": "lattice_backward_induction"
+  }
+]
+  - **assembly** `executor_build_20260328154019_ea287adf:assembly`
+    - Label: Assemble route from kernels
+    - Status: `ok`
+    - Parent: `executor_build_20260328154019_ea287adf:root`
+    - Notes:
+      - Prefer thin orchestration around existing analytical kernels and route helpers.
+    - Inputs:
+      - `adapters`: [
+  "map_cashflows_and_exercise_dates_to_tree_steps",
+  "select_exercise_fn_for_issuer_or_holder"
+]
+      - `approved_modules`: [
+  "trellis.core.date_utils",
+  "trellis.core.differentiable",
+  "trellis.core.market_state",
+  "trellis.core.payoff",
+  "trellis.core.types",
+  "trellis.models.black",
+  "trellis.models.trees.backward_induction",
+  "trellis.models.trees.binomial",
+  "trellis.models.trees.lattice",
+  "trellis.models.trees.models",
+  "trellis.models.trees.trinomial"
+]
+      - `route_helper`: None
+    - Outputs:
+      - `assembly_card`: ## Structured Route Card
+- Method family: `rate_tree`
+- Instrument type: `bermudan_swaption`
+- Route: `exercise_lattice`
+- Engine family: `lattice`
+- Required primitives:
+  - `trellis.models.trees.lattice.build_rate_lattice` (lattice_builder)
+  - `trellis.models.trees.lattice.lattice_backward_induction` (backward_induction)
+- Required adapters:
+  - `map_cashflows_and_exercise_dates_to_tree_steps`
+  - `select_exercise_fn_for_issuer_or_holder`
+- Route notes:
+  - Use lattice_backward_induction with schedule-aware exercise steps for callable, puttable, and Bermudan products.
+- Primary modules to inspect/reuse:
+  - `trellis.models.trees.lattice`
+- Post-build test targets:
+  - `tests/test_agent/test_build_loop.py`
+  - `tests/test_agent/test_callable_bond.py`
+  - `tests/test_tasks/test_t04_bermudan_swaption.py`
+- Use approved Trellis imports only. Prefer thin adapters over bespoke numerical kernels.
+      - `helper_modules`: [
+  "trellis.models.trees.lattice",
+  "trellis.models.trees.lattice"
+]
+      - `route_helper`: None
+  - **validation** `executor_build_20260328154019_ea287adf:validation`
+    - Label: Validate route and fallbacks
+    - Status: `ok`
+    - Parent: `executor_build_20260328154019_ea287adf:root`
+    - Notes:
+      - Record proposed tests, blocker state, and any fallback or reuse notes.
+    - Inputs:
+      - `blockers`: []
+      - `proposed_tests`: [
+  "tests/test_agent/test_build_loop.py",
+  "tests/test_agent/test_callable_bond.py",
+  "tests/test_tasks/test_t04_bermudan_swaption.py"
+]
+      - `uncertainty_flags`: []
+      - `validation`: None
+    - Outputs:
+      - `blocker_report_present`: False
+      - `new_primitive_workflow_present`: False
+      - `validation_state`: planned
+  - **output** `executor_build_20260328154019_ea287adf:output`
+    - Label: Final analytical artifact
+    - Status: `ok`
+    - Parent: `executor_build_20260328154019_ea287adf:root`
+    - Notes:
+      - Persist both the machine-readable trace and the text rendering from the same source of truth.
+    - Inputs:
+      - `model`: lattice
+      - `route`: exercise_lattice
+    - Outputs:
+      - `route_card`: ## Structured Route Card
+- Method family: `rate_tree`
+- Instrument type: `bermudan_swaption`
+- Route: `exercise_lattice`
+- Engine family: `lattice`
+- Required primitives:
+  - `trellis.models.trees.lattice.build_rate_lattice` (lattice_builder)
+  - `trellis.models.trees.lattice.lattice_backward_induction` (backward_induction)
+- Required adapters:
+  - `map_cashflows_and_exercise_dates_to_tree_steps`
+  - `select_exercise_fn_for_issuer_or_holder`
+- Route notes:
+  - Use lattice_backward_induction with schedule-aware exercise steps for callable, puttable, and Bermudan products.
+- Primary modules to inspect/reuse:
+  - `trellis.models.trees.lattice`
+- Post-build test targets:
+  - `tests/test_agent/test_build_loop.py`
+  - `tests/test_agent/test_callable_bond.py`
+  - `tests/test_tasks/test_t04_bermudan_swaption.py`
+- Use approved Trellis imports only. Prefer thin adapters over bespoke numerical kernels.
+      - `route_plan`: ## Structured Generation Plan
+- Method family: `rate_tree`
+- Instrument type: `bermudan_swaption`
+- Repo revision: `2204f054d09cfaa88de56326480925626f4ca2b3`
+- Inspected modules:
+  - `trellis.models.trees.lattice`
+- Approved Trellis modules for imports:
+  - `trellis.core.date_utils`
+  - `trellis.core.differentiable`
+  - `trellis.core.market_state`
+  - `trellis.core.payoff`
+  - `trellis.core.types`
+  - `trellis.models.black`
+  - `trellis.models.trees.backward_induction`
+  - `trellis.models.trees.binomial`
+  - `trellis.models.trees.lattice`
+  - `trellis.models.trees.models`
+  - `trellis.models.trees.trinomial`
+- Public symbols available from the approved modules:
+  - `BinomialTree`
+  - `CashflowSchedule`
+  - `Cashflows`
+  - `DataProvider`
+  - `DayCountConvention`
+  - `DeterministicCashflowPayoff`
+  - `DiscountCurve`
+  - `Frequency`
+  - `Instrument`
+  - `MarketState`
+  - `MissingCapabilityError`
+  - `MonteCarloPathPayoff`
+  - `Payoff`
+  - `PresentValue`
+  - `PricingResult`
+  - `RecombiningLattice`
+  - `ResolvedInputPayoff`
+  - `TreeModel`
+  - `TrinomialTree`
+  - `add_months`
+  - `backward_induction`
+  - `bdt_displacement`
+  - `bdt_mean_reversion_probabilities`
+  - `black76_asset_or_nothing_call`
+  - `black76_asset_or_nothing_put`
+  - `black76_call`
+  - `black76_cash_or_nothing_call`
+  - `black76_cash_or_nothing_put`
+  - `black76_put`
+  - `build_generic_lattice`
+  - `build_rate_lattice`
+  - `build_spot_lattice`
+  - `calibrate_lattice`
+  - `equal_probabilities`
+  - `garman_kohlhagen_call`
+  - `garman_kohlhagen_put`
+  - `generate_schedule`
+  - `get_accrual_fraction`
+  - `get_bracketing_dates`
+  - `get_numpy`
+  - `gradient`
+  - `hessian`
+  - `ho_lee_displacement`
+  - `hw_displacement`
+  - `hw_mean_reversion_probabilities`
+  - `lattice_backward_induction`
+  - `lognormal_rate`
+  - `normal_rate`
+  - `shifted_lognormal_rate`
+  - `standard_discount`
+  - `year_fraction`
+- Tests to run after generation:
+  - `tests/test_agent/test_build_loop.py`
+  - `tests/test_agent/test_callable_bond.py`
+  - `tests/test_tasks/test_t04_bermudan_swaption.py`
+- Primitive route:
+  - Route: `exercise_lattice`
+  - Engine family: `lattice`
+  - Route score: `7.50`
+  - Selected primitives:
+    - `trellis.models.trees.lattice.build_rate_lattice` (lattice_builder)
+    - `trellis.models.trees.lattice.lattice_backward_induction` (backward_induction)
+  - Required adapters:
+    - `map_cashflows_and_exercise_dates_to_tree_steps`
+    - `select_exercise_fn_for_issuer_or_holder`
+  - Route notes:
+    - Use lattice_backward_induction with schedule-aware exercise steps for callable, puttable, and Bermudan products.
+- Every `trellis.*` import in the generated code MUST come from the approved module list above.
+- If you need functionality outside the approved list, say so explicitly instead of inventing an import.
+      - `trace_type`: analytical

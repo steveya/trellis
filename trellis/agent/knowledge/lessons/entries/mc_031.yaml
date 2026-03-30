@@ -1,0 +1,31 @@
+id: mc_031
+title: RankedObservationBasketSpec does not accept asset_names argument
+severity: critical
+category: monte_carlo
+status: promoted
+confidence: 1.0
+created: '2026-03-28T14:54:28.143423'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_145428_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: 'Build fails with: RankedObservationBasketSpec.__init__() got an unexpected
+  keyword argument ''asset_names'''
+root_cause: RankedObservationBasketSpec does not expose an 'asset_names' constructor
+  parameter; asset identity is resolved through a different mechanism (likely constituent
+  indices or a separate resolution step) rather than being passed directly by name.
+fix: Do not pass 'asset_names' to RankedObservationBasketSpec. Parse constituent names
+  first, resolve them to the required internal representation, and supply only the
+  arguments the spec actually accepts.
+validation: Discovered during build (attempt 3)

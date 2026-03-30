@@ -21,13 +21,20 @@
   warning: ''
 - name: FX_DOMESTIC_FOREIGN_DISCOUNTING
   method: analytical
-  source: market_state.discount.discount(T) for domestic discounting and market_state.forecast_curves[foreign_discount_key].discount(T) for the selected foreign curve; market_state.forward_curve is the bridged foreign-carry view of the same input
-  convention: Domestic and foreign expiry discount factors under covered interest parity
+  source: market_state.discount.discount(T) for domestic discounting and market_state.forecast_curves[foreign_discount_key].discount(T)
+    for the selected foreign curve; market_state.forward_curve is the bridged foreign-carry
+    view of the same input
+  convention: Domestic and foreign expiry discount factors under covered interest
+    parity
   typical_range: df_domestic and df_foreign usually between 0.80 and 1.00
-  model_expects: spot FX plus df_domestic and df_foreign passed directly into garman_kohlhagen_call/put
-  conversion: forward = spot * df_foreign / df_domestic; pass spot, df_domestic, and df_foreign directly to Garman-Kohlhagen
+  model_expects: spot FX plus df_domestic and df_foreign assembled into Garman-Kohlhagen
+    or explicit Black76 basis claims
+  conversion: forward = spot * df_foreign / df_domestic; then either evaluate the
+    Garman-Kohlhagen basis-assembled FX vanilla path directly or assemble the payoff
+    explicitly from Black76 asset-or-nothing and cash-or-nothing basis claims
   model_range: discount factors remain positive and typically <= 1.00
-  warning: NEVER reuse the domestic curve for both currencies or infer the foreign discount factor from spot alone; the foreign curve must be selected explicitly.
+  warning: NEVER reuse the domestic curve for both currencies or infer the foreign
+    discount factor from spot alone; the foreign curve must be selected explicitly.
 - name: volatility
   method: monte_carlo
   source: market_state.vol_surface.black_vol(T, K)
@@ -74,3 +81,16 @@
   model_range: 'v0: 0.01 to 0.16'
   warning: NEVER pass Black vol directly as v0. A Black vol of 0.20 is v0=0.04, NOT
     v0=0.20.
+- name: RATE_OPTION_TARGET_PRICE
+  method: calibration
+  source: quoted cap/floor or swaption price under the selected multi-curve environment
+  convention: Present value or quoted price in the same convention used by the pricing
+    route
+  typical_range: positive price, instrument-dependent
+  model_expects: exact instrument spec plus discount/forecast curve provenance and
+    a flat Black volatility solve
+  conversion: use the quote directly as target_price; the calibrator solves for the
+    flat Black volatility implied by that quote
+  model_range: non-negative
+  warning: keep the discount curve, forecast curve, and rate_index roles explicit;
+    do not mix swaption and caplet conventions.

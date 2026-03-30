@@ -1,0 +1,44 @@
+category: contract
+title: NthToDefaultPayoff analytical must use Gaussian copula integration, not independent
+  binomial
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-30'
+version: '3'
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - credit_basket
+  instrument:
+  - nth_to_default
+  - cds
+  error_signature: comparison_failed
+symptom: Analytical NTD price deviates >5% from MC copula price because analytical
+  used independent binomial formula while MC used GaussianCopula with correlation.
+root_cause: NthToDefaultSpec has a correlation field. The MC approach uses GaussianCopula
+  with equicorrelation. The analytical must use the SAME model — Gaussian copula conditional
+  independence — not the simpler independent binomial formula. The independent binomial
+  (rho=0) will diverge from the copula MC whenever spec.correlation > 0.
+fix: "Use the Gaussian copula conditional independence formula (integrate over common\
+  \ factor Z). This is the analytical counterpart of the GaussianCopula MC.\n\nfrom\
+  \ math import comb\nfrom scipy import integrate\nfrom scipy.stats import norm\n\n\
+  T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)\nif T\
+  \ <= 0: return 0.0\np_def = max(0.0, 1.0 - float(market_state.credit_curve.survival_probability(T)))\n\
+  n = int(spec.n_names)\nn_th = int(spec.n_th)\nrho = float(spec.correlation)\n\n\
+  if rho <= 1e-8:\n    p_nth = 1.0 - sum(comb(n,j)*p_def**j*(1-p_def)**(n-j) for j\
+  \ in range(n_th))\nelse:\n    p_thr = norm.ppf(max(1e-9, min(1-1e-9, p_def)))\n\
+  \    sq_rho = rho**0.5\n    sq_1mr = (1-rho)**0.5\n    def integrand(z):\n     \
+  \   pc = norm.cdf((p_thr - sq_rho*z)/sq_1mr)\n        pk = 1.0 - sum(comb(n,j)*pc**j*(1-pc)**(n-j)\
+  \ for j in range(n_th))\n        return pk * norm.pdf(z)\n    p_nth, _ = integrate.quad(integrand,\
+  \ -8, 8)\n    p_nth = max(0.0, min(1.0, p_nth))\n\ndf = float(market_state.discount.discount(T))\n\
+  return p_nth * (1 - spec.recovery) * spec.notional * df\n\nReturn ONLY the protection\
+  \ leg — do NOT subtract a premium/fee leg.\nNthToDefaultSpec has NO coupon_rate\
+  \ or spread field.\nImport: from scipy import integrate; from scipy.stats import\
+  \ norm; from math import comb\n"
+validation: Verified — Gaussian copula analytical integrates to the same value as
+  GaussianCopula MC (within MC noise <2%) when using the same rho.
+id: con_031

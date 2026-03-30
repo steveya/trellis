@@ -1,0 +1,31 @@
+category: finite_differences
+title: Generated module syntax/constructor mismatch
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T23:39:49.508774'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_233950_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - vol_surface_dependence
+  - pde_grid
+  - backward_induction
+  instrument: []
+  error_signature: null
+symptom: 'Automated build fails with SyntaxError: unexpected indent (module import
+  fails) or runtime AttributeError due to missing PDE grid constructor parameters.'
+root_cause: Code-generation produced incorrectly indented/structured payoff or auxiliary
+  functions and omitted required PDE grid/discretization constructor parameters (and/or
+  boundary handling). The generated module therefore does not compile or does not
+  create a valid grid object.
+fix: Validate generated source with a pinned Python interpreter and a syntax/lint
+  check before import; use canonical PDE solver templates that include explicit grid
+  discretization params, boundary-condition helpers, and unit-consistent scaling;
+  add small compile-and-smoke tests that import the module and run evaluate() with
+  a trivial market.
+validation: Discovered during build (attempt 3)
+id: fd_026

@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 from trellis.agent.framework_runtime import run_framework_task
 from trellis.agent.task_runtime import load_framework_tasks
+from trellis.cli_paths import resolve_repo_path
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -56,11 +57,14 @@ if __name__ == "__main__":
     args = _parse_args(sys.argv[1:])
     if not args.ids or args.ids[0] == "all":
         tasks = load_framework_tasks(status=None)
-        output_file = args.output or str(ROOT / "framework_task_results_all.json")
+        output_file = resolve_repo_path(args.output, ROOT / "framework_task_results_all.json")
     elif len(args.ids) == 2:
         tasks = load_framework_tasks(args.ids[0], args.ids[1], status=None)
         safe_name = f"{args.ids[0]}_{args.ids[1]}".lower()
-        output_file = args.output or str(ROOT / f"framework_task_results_{safe_name}.json")
+        output_file = resolve_repo_path(
+            args.output,
+            ROOT / f"framework_task_results_{safe_name}.json",
+        )
     else:
         print(f"Usage: {sys.argv[0]} [start_id end_id | all]")
         raise SystemExit(1)

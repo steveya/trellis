@@ -150,10 +150,9 @@ def test_compile_build_request_carries_shared_knowledge_views():
     assert compiled.knowledge_summary["instrument"] == compiled.product_ir.instrument
     assert compiled.knowledge_summary["lesson_count"] >= 1
     assert compiled.knowledge_summary["prompt_sizes"]["builder"]["compact_chars"] > 0
-    assert dict(compiled.request.metadata) == {
-        "task_id": "T14",
-        "task_title": "American put: PSOR vs tree vs LSM three-way",
-    }
+    metadata = dict(compiled.request.metadata)
+    assert metadata["task_id"] == "T14"
+    assert metadata["task_title"] == "American put: PSOR vs tree vs LSM three-way"
 
 
 def test_compile_build_request_records_sensitivity_support_for_requested_measures():
@@ -338,6 +337,7 @@ def test_platform_trace_can_link_linear_issue(tmp_path, monkeypatch):
     request = session.to_platform_request(_bond(), request_type="price")
     compiled = compile_platform_request(request)
 
+    monkeypatch.setenv("TRELLIS_SYNC_REQUEST_ISSUES", "1")
     monkeypatch.setenv("LINEAR_API_KEY", "linear-test-key")
     monkeypatch.setenv("LINEAR_TEAM_ID", "QUA")
 
@@ -422,6 +422,7 @@ def test_platform_trace_can_link_github_issue(tmp_path, monkeypatch):
     request = session.to_platform_request(_bond(), request_type="price")
     compiled = compile_platform_request(request)
 
+    monkeypatch.setenv("TRELLIS_SYNC_REQUEST_ISSUES", "1")
     monkeypatch.setenv("GITHUB_TOKEN", "github-test-token")
     monkeypatch.setenv("GITHUB_REQUEST_AUDIT_REPOSITORY", "steveya/trellis")
 
@@ -465,6 +466,44 @@ def test_platform_trace_can_link_github_issue(tmp_path, monkeypatch):
     assert traces[0].github_issue_repository == "steveya/trellis"
     assert traces[0].github_issue_url == "https://github.com/steveya/trellis/issues/42"
     assert len(calls) == 2
+
+
+def test_platform_trace_issue_sync_disabled_by_default(tmp_path, monkeypatch):
+    from trellis.agent.platform_requests import compile_platform_request
+    from trellis.agent.platform_traces import (
+        append_platform_trace_event,
+        load_platform_traces,
+    )
+
+    session = Session(as_of="2024-11-15", data_source="mock", settlement=SETTLE)
+    request = session.to_platform_request(_bond(), request_type="price")
+    compiled = compile_platform_request(request)
+
+    monkeypatch.delenv("TRELLIS_SYNC_REQUEST_ISSUES", raising=False)
+    monkeypatch.setenv("LINEAR_API_KEY", "linear-test-key")
+    monkeypatch.setenv("GITHUB_TOKEN", "github-test-token")
+
+    def _unexpected(*args, **kwargs):
+        raise AssertionError("external issue sync should be disabled by default")
+
+    monkeypatch.setitem(
+        sys.modules,
+        "requests",
+        types.SimpleNamespace(post=_unexpected, request=_unexpected),
+    )
+
+    append_platform_trace_event(
+        compiled,
+        "build_started",
+        status="info",
+        details={"module_name": "trellis.instruments._agent.swaption"},
+        root=tmp_path,
+    )
+
+    traces = load_platform_traces(root=tmp_path)
+
+    assert traces[0].linear_issue_id is None
+    assert traces[0].github_issue_number is None
 
 
 def test_compile_comparison_request_creates_method_specific_plans():

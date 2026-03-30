@@ -1,0 +1,33 @@
+category: monte_carlo
+title: MC payoff missing required primitives
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-30T08:41:40.806065'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260330_084141_nth_to_default_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - credit_risk
+  - discounting
+  - coupons
+  - fixed_coupons
+  - path_dependent
+  - maturity_settlement
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: 'Assembly failure: generated payoff code did not call trellis.core.date_utils.generate_schedule
+  (assembly.required_primitive_missing).'
+root_cause: The payoff implementation was written as a standalone routine and did
+  not act as a thin adapter around required primitives (date utilities and market-state
+  discount access). It also did not follow engine-family expectations for CDS Monte
+  Carlo (e.g., GaussianCopula and market_state.discount usage).
+fix: Rebuild the payoff as a thin adapter that calls trellis.core.date_utils.generate_schedule
+  for schedule creation and uses market_state.discount for discounting; ensure the
+  MC CDS route uses the GaussianCopula kernel and matches the Monte Carlo engine-family
+  primitives.
+validation: Discovered during build (attempt 3)
+id: mc_048

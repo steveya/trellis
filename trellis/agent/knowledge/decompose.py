@@ -116,11 +116,13 @@ def decompose_to_ir(
     *,
     store: KnowledgeStore | None = None,
 ) -> ProductIR:
-    """Deterministically decompose a product description into ``ProductIR``.
+    """Decompose a product description into a structured ``ProductIR`` without calling an LLM.
 
-    This path is intentionally model-free for known and composite products. It
-    prefers canonical static decompositions and falls back to conservative,
-    rule-based trait extraction for unsupported composites.
+    For known instruments (e.g. "callable bond"), returns the canonical
+    static decomposition from YAML.  For novel or composite products that
+    have no static entry, falls back to keyword-based trait extraction
+    that avoids guessing -- it only assigns traits it can identify with
+    certainty from the text, leaving unknowns as unresolved primitives.
     """
     if store is None:
         from trellis.agent.knowledge import get_store
@@ -200,6 +202,17 @@ def build_product_ir(
         if model_family is None
         else model_family
     )
+    resolved_payoff_family = (
+        _payoff_family_for(normalized_instrument, normalized_traits, description)
+        if not payoff_family
+        else payoff_family
+    )
+    resolved_route_families = _route_families_for(
+        normalized_instrument,
+        resolved_payoff_family,
+        resolved_exercise_style,
+        resolved_model_family,
+    )
     resolved_engine_families = tuple(candidate_engine_families or _candidate_engine_families_for(
         preferred_method or "",
         resolved_exercise_style,
@@ -240,6 +253,7 @@ def build_product_ir(
         schedule_dependence=resolved_schedule_dependence,
         model_family=resolved_model_family,
         candidate_engine_families=resolved_engine_families,
+        route_families=resolved_route_families,
         required_market_data=resolved_required_market_data,
         reusable_primitives=resolved_reusable_primitives,
         unresolved_primitives=resolved_unresolved_primitives,
@@ -261,6 +275,8 @@ def retrieval_spec_from_ir(
     features.update(_retrieval_features_from_exercise(ir.exercise_style))
     features.update(_retrieval_features_from_state(ir.state_dependence))
     features.update(_retrieval_features_from_model(ir.model_family))
+    if normalize_method(preferred_method or "") == "pde_solver":
+        features.add("pde_grid")
 
     return RetrievalSpec(
         method=normalize_method(preferred_method) if preferred_method else None,
@@ -305,7 +321,10 @@ def _match_static_decomposition(
 def _infer_instrument(description: str, instrument_type: str | None) -> str | None:
     """Infer the most specific supported instrument key from text."""
     if instrument_type:
-        return _normalise(instrument_type)
+        normalized = _normalise(instrument_type)
+        if normalized in {"credit_default_swap"}:
+            normalized = "cds"
+        return normalized
 
     desc = _normalise(description)
     patterns = [
@@ -318,6 +337,7 @@ def _infer_instrument(description: str, instrument_type: str | None) -> str | No
         ("asian_option", ("asian_option", "asian option")),
         ("heston_option", ("heston_option", "heston option", "heston")),
         ("variance_swap", ("variance_swap", "variance swap")),
+        ("cds", ("cds", "credit default swap", "credit_default_swap")),
         ("nth_to_default", ("nth_to_default", "nth-to-default", "nth to default")),
         ("swaption", ("swaption",)),
         ("cap", ("cap",)),
@@ -363,6 +383,12 @@ def _product_ir_from_decomposition(
     schedule_dependence = _schedule_dependence_for(instrument, payoff_traits)
     state_dependence = _state_dependence_for(payoff_traits, schedule_dependence)
     model_family = _model_family_for(instrument, payoff_traits, decomposition.method, description)
+    route_families = _route_families_for(
+        instrument,
+        _payoff_family_for(instrument, payoff_traits, description),
+        exercise_style,
+        model_family,
+    )
     candidate_engine_families = _candidate_engine_families_for(
         decomposition.method,
         exercise_style,
@@ -378,6 +404,7 @@ def _product_ir_from_decomposition(
         schedule_dependence=schedule_dependence,
         model_family=model_family,
         candidate_engine_families=candidate_engine_families,
+        route_families=route_families,
         required_market_data=frozenset(
             normalize_market_data_requirements(decomposition.required_market_data)
         ),
@@ -399,6 +426,12 @@ def _infer_composite_ir(
     state_dependence = _state_dependence_for(payoff_traits, schedule_dependence)
     model_family = _model_family_for(instrument or "", payoff_traits, "", description)
     exercise_style = _exercise_style_for(instrument or "", payoff_traits, description)
+    route_families = _route_families_for(
+        instrument or "",
+        _payoff_family_for(instrument or "", payoff_traits, description),
+        exercise_style,
+        model_family,
+    )
     candidate_engine_families = _candidate_engine_families_for(
         "",
         exercise_style,
@@ -422,6 +455,7 @@ def _infer_composite_ir(
         schedule_dependence=schedule_dependence,
         model_family=model_family,
         candidate_engine_families=candidate_engine_families,
+        route_families=route_families,
         required_market_data=required_market_data,
         reusable_primitives=_reusable_primitives_for(payoff_traits, model_family),
         unresolved_primitives=unresolved_primitives,
@@ -490,6 +524,8 @@ def _payoff_family_for(
 ) -> str:
     """Map an instrument/trait set onto a stable payoff-family label."""
     product_traits = {"asian", "barrier", "lookback", "callable", "puttable"}
+    if instrument in {"basket_option", "ranked_observation_basket"}:
+        return "basket_path_payoff"
     if len(product_traits.intersection(payoff_traits)) >= 2:
         return "composite_option"
     if instrument in {"swaption", "bermudan_swaption"}:
@@ -618,6 +654,33 @@ def _candidate_engine_families_for(
     if model_family == "stochastic_volatility" and "monte_carlo" not in families:
         families.append("monte_carlo")
     return tuple(families)
+
+
+def _route_families_for(
+    instrument: str,
+    payoff_family: str,
+    exercise_style: str,
+    model_family: str,
+) -> tuple[str, ...]:
+    """Return the exact route-family labels that remain semantically valid."""
+    families: list[str] = []
+    if instrument == "nth_to_default":
+        families.append("credit_default_swap")
+    if (
+        payoff_family == "vanilla_option"
+        and exercise_style in {"american", "bermudan"}
+        and model_family == "equity_diffusion"
+    ):
+        families.append("equity_tree")
+    if (
+        instrument in {"callable_bond", "puttable_bond", "bermudan_swaption"}
+        or (
+            exercise_style in {"issuer_call", "holder_put", "bermudan"}
+            and model_family == "interest_rate"
+        )
+    ):
+        families.append("rate_lattice")
+    return tuple(dict.fromkeys(families))
 
 
 def _market_data_for_traits(

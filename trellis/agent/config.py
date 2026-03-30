@@ -22,7 +22,7 @@ STAGE_DEFAULT_MODEL = {
     "openai": {
         "decomposition": "gpt-5-mini",
         "spec_design": "gpt-5-mini",
-        "code_generation": "gpt-5-mini",
+        "code_generation": "gpt-5.4-mini",
         "critic": "gpt-5-mini",
         "model_validator": "gpt-5",
         "reflection": "gpt-5-mini",
@@ -65,7 +65,11 @@ _LLM_USAGE_METADATA: ContextVar[dict[str, Any] | None] = ContextVar(
 
 
 class TokenBudgetExceeded(RuntimeError):
-    """Raised when an active LLM usage scope exceeds the configured budget."""
+    """Raised when cumulative LLM token usage in a tracked scope exceeds the configured limit.
+
+    The agent wraps build stages in token-tracking scopes; this exception
+    halts the pipeline early to prevent runaway API costs.
+    """
 
 
 def load_env():
@@ -147,6 +151,13 @@ def get_task_token_budget() -> int | None:
 def get_batch_token_budget() -> int | None:
     """Return the configured per-batch token budget, if any."""
     return _int_env("TRELLIS_BATCH_TOKEN_BUDGET")
+
+
+def issue_tracker_sync_enabled() -> bool:
+    """Return whether external request-issue sync should run."""
+    load_env()
+    raw = os.environ.get("TRELLIS_SYNC_REQUEST_ISSUES", "")
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def current_llm_usage_records() -> list[dict[str, Any]]:
@@ -276,6 +287,7 @@ def llm_generate(prompt: str, model: str | None = None) -> str:
         response_kind="text",
         prompt=prompt,
         usage=usage,
+        response_text=text,
     )
     return normalized
 
@@ -298,6 +310,7 @@ def llm_generate_json(prompt: str, model: str | None = None) -> dict:
         response_kind="json",
         prompt=prompt,
         usage=usage,
+        response_text=text,
     )
     return _parse_llm_json_response(text, provider=provider, model=model)
 
@@ -577,6 +590,9 @@ def _llm_response_preview(text: str, limit: int = 240) -> str:
     return normalized[: limit - 3] + "..."
 
 
+AUDIT_LLM_PROMPTS = os.environ.get("TRELLIS_AUDIT_LLM_PROMPTS", "0") == "1"
+
+
 def _record_llm_usage(
     *,
     provider: str,
@@ -584,6 +600,7 @@ def _record_llm_usage(
     response_kind: str,
     prompt: str,
     usage: dict[str, int | None] | None,
+    response_text: str | None = None,
 ) -> None:
     """Append one LLM usage record into the active session and stage collectors."""
     record = {
@@ -599,6 +616,10 @@ def _record_llm_usage(
     metadata = _LLM_USAGE_METADATA.get()
     if metadata:
         record["metadata"] = dict(metadata)
+    if AUDIT_LLM_PROMPTS:
+        record["prompt_text"] = prompt
+        if response_text is not None:
+            record["response_text"] = response_text
 
     session_records = _LLM_USAGE_SESSION.get()
     if session_records is not None:

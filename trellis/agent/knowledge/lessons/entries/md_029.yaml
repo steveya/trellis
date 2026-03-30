@@ -1,0 +1,31 @@
+category: market_data
+title: Missing required credit_curve input
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-29T12:57:49.611465'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_125750_nth_to_default_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - discounting
+  - coupons
+  - fixed_coupons
+  - maturity_settlement
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: 'Pricing failed with error: Missing market data: [''credit_curve'']'
+root_cause: The analytical pricer assumed a CreditCurve (survival probabilities /
+  hazard rates) was available but performed no pre-flight validation; additionally
+  the agent-produced module contained a syntax/indentation error that prevented a
+  runnable implementation.
+fix: Require and validate both credit_curve and discount_curve before pricing (fail-fast
+  with a clear message); provide an example Session(credit_curve=CreditCurve.flat(0.02))
+  and fix code syntax/indentation; add unit tests that exercise missing-market-data
+  paths.
+validation: Discovered during build (attempt 3)
+id: md_029

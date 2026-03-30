@@ -1,7 +1,9 @@
-"""Barrier option — reference implementation using Monte Carlo.
+"""Barrier option priced via Monte Carlo simulation.
 
-This is the hand-coded reference for MC-based pricing patterns.
-The agent uses this as a template for other path-dependent instruments.
+A barrier option is like a vanilla option but with an extra rule: if the
+underlying price crosses a barrier level during the option's life, the option
+either activates (knock-in) or is cancelled (knock-out). Because the barrier
+can be hit at any time, pricing requires simulating full price paths.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from trellis.models.processes.gbm import GBM
 
 @dataclass(frozen=True)
 class BarrierOptionSpec:
-    """Specification for a barrier option."""
+    """Contract terms for a barrier option (strike, barrier level, type)."""
 
     notional: float
     spot: float
@@ -37,7 +39,9 @@ class BarrierOptionSpec:
 class BarrierOptionPayoff:
     """Barrier option priced via Monte Carlo simulation.
 
-    Monitors the barrier continuously (approximated by discrete steps).
+    Simulates many random price paths and checks at each step whether
+    the barrier has been crossed. Continuous monitoring is approximated
+    by checking at each discrete time step (252 steps per year by default).
     """
 
     def __init__(self, spec: BarrierOptionSpec):
@@ -51,11 +55,11 @@ class BarrierOptionPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        """Declare that barrier-option valuation needs discounting and Black vol."""
+        """Needs a discount curve and a volatility surface."""
         return {"discount", "black_vol"}
 
     def evaluate(self, market_state: MarketState) -> float:
-        """Price the option by Monte Carlo path simulation with barrier state tracking."""
+        """Simulate price paths, track barrier crossings, and average the surviving payoffs."""
         spec = self._spec
         T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)
         if T <= 0:

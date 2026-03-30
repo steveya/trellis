@@ -1,0 +1,36 @@
+category: convention
+title: ACT_365F market state mismatch
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T22:46:31.334223'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_224632_build_a_pricer_for:_krd:_interpolation_aware_bumping
+
+
+  implementation_target:_naive_krd
+
+  preferred_method_family:_analytical
+
+
+  implementation_target:_naive_krd_analytical.yaml'
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: The build fails during the actual market state smoke test with an ACT_365F
+  convention error.
+root_cause: The pricer is using a day-count or schedule path that does not match the
+  market state's supported convention contract. In this case, the implementation likely
+  assumes ACT_365F is always available instead of binding to the exact convention
+  expected by the runtime market state.
+fix: Use only the exact trellis-supported market-state and day-count APIs, and verify
+  the convention against the smoke-test fixture before evaluating. If the target instrument
+  is convention-sensitive, propagate the convention from the market state or spec
+  rather than hardcoding ACT_365F.
+validation: Discovered during build (attempt 3)
+id: con_016

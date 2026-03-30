@@ -1,0 +1,32 @@
+id: sem_001
+title: Ranked-observation basket stays semantic and family-free
+severity: high
+category: semantic_contract
+status: promoted
+confidence: 1.0
+version: ''
+created: ''
+source_trace: ''
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - path_dependent
+  instrument:
+  - basket_path_payoff
+  error_signature: null
+symptom: A basket-style request reaches pricing, but later stages reintroduce a named
+  mountain-range branch or skip the shared basket substrate.
+root_cause: The system conflated semantic understanding with route selection. The
+  product shape must be drafted into a generic semantic contract first; method choice
+  and numerical pricing come later.
+fix: Draft to the ranked-observation basket semantic contract, validate the ordered
+  observation schedule and selection scope deterministically, then compile through
+  the shared basket resolver and Monte Carlo helper.
+validation: tests/test_agent/test_semantic_contracts.py, tests/test_agent/test_platform_requests.py,
+  tests/test_agent/test_knowledge_store.py

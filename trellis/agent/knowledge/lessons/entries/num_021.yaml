@@ -1,0 +1,29 @@
+id: num_021
+title: Missing primitive adapter
+severity: critical
+category: numerical
+status: validated
+confidence: 0.6
+created: '2026-03-28T11:32:47.076946'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_113247_cap_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  - discounting
+  - forward_rate
+  - coupons
+  instrument: []
+  error_signature: null
+symptom: Generated payoff code did not call trellis.models.black.black76_call primitive.
+root_cause: The payoff was implemented from first principles instead of as a thin
+  adapter that imports and calls the required trellis.models.black.black76_call primitive;
+  exact import paths and the expected primitive-based contract were not followed.
+fix: Refactor the payoff to import trellis.models.black.black76_call and compute each
+  caplet price by supplying per-period forward, strike, accrual (year fraction), discount
+  factor and the vol retrieved from the black vol surface; return the aggregated PV
+  in the runtime-expected shape.
+validation: Discovered during build (attempt 3)

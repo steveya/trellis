@@ -1,0 +1,31 @@
+category: monte_carlo
+title: Unexpected Python indentation
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-03-30T09:20:35.061610'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: The analytical implementation failed because of an unexpected indent (SyntaxError)
+  in the generated Python module.
+root_cause: This happens when code generation produces inconsistent or incorrect indentation
+  (mixing tabs/spaces or an extra indent level); the mental-model failure is treating
+  indentation as cosmetic rather than syntactic in Python.
+fix: Fix by normalizing indentation (use spaces consistently), remove the stray indent,
+  and run a linter/autoformatter (e.g., Black) before executing.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: analytical_cds\nPreferred method\
+  \ family: analytical\n\nImplementation target: analytical_cds"
+id: mc_051

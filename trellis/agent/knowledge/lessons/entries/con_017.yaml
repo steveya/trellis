@@ -1,0 +1,30 @@
+category: convention
+title: Undefined identifiers in spec dataclass
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:02:15.957642'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_230216_american_put_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - american
+  - early_exercise
+  - puttable
+  - discounting
+  - backward_induction
+  - finite_differences
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''analytical'' is not defined during model build.'
+root_cause: The dataclass and code use bare identifiers (e.g. analytical, polynomial,
+  three-way) instead of string literals, Enums, or well-defined constants; those names
+  do not exist in the module scope and raise NameError at runtime.
+fix: Use quoted strings or defined Enum/constants for method/config fields (or import
+  the symbols), add validation on dataclass construction to catch invalid values,
+  and add a small smoke test that imports and constructs the spec to catch NameError/ImportError
+  early.
+validation: Discovered during build (attempt 3)
+id: con_017

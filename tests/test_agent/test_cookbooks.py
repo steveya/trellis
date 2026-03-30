@@ -10,6 +10,7 @@ class TestCookbooks:
     def test_all_method_families_have_cookbooks(self):
         expected = {
             "analytical",
+            "calibration",
             "rate_tree",
             "monte_carlo",
             "qmc",
@@ -43,8 +44,9 @@ class TestCookbooks:
 
     def test_analytical_cookbook_includes_fx_garman_kohlhagen_pattern(self):
         cb = get_cookbook("analytical")
-        assert "garman_kohlhagen_call" in cb
-        assert "garman_kohlhagen_put" in cb
+        assert "terminal_vanilla_from_basis" in cb
+        assert "black76_asset_or_nothing_call" in cb
+        assert "black76_cash_or_nothing_call" in cb
         assert "market_state.fx_rates" in cb
         assert "df_domestic" in cb
         assert "df_foreign" in cb
@@ -95,6 +97,16 @@ class TestCookbooks:
         assert "approved early-exercise control primitive" in cb
         assert "LaguerreBasis" in cb
         assert 'method="lsm"' in cb
+        assert "lsm_mc" in cb
+
+    def test_pde_cookbook_uses_current_import_paths_and_rannacher_note(self):
+        cb = get_cookbook("pde_solver")
+        assert "from trellis.models.pde.grid import Grid" in cb
+        assert "from trellis.models.pde.theta_method import theta_method_1d" in cb
+        assert "from trellis.models.pde.operator import BlackScholesOperator" in cb
+        assert "rannacher_timesteps" in cb
+        assert "log_grid_pde" not in cb
+        assert "uniform_grid_pde" not in cb
 
     def test_rate_tree_cookbook_includes_schedule_exercise_guidance(self):
         cb = get_cookbook("rate_tree")

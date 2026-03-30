@@ -1,0 +1,32 @@
+id: mc_012
+title: Syntax & API errors in MC quanto pricer
+severity: critical
+category: monte_carlo
+status: validated
+confidence: 0.6
+created: '2026-03-26T19:37:36.634230'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260326_193736_quanto_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - forward_rate
+  - greeks
+  - quanto_adjustment
+  - fx_volatility
+  - cross_currency_correlation
+  - foreign_discounting
+  instrument: []
+  error_signature: null
+symptom: Module import fails with SyntaxError (unexpected indent) or incomplete import
+  token; Monte Carlo payoff returns wrong array shape.
+root_cause: The generated module contained a truncated/invalid import statement and
+  stray indentation, and the implementation assumed incorrect MonteCarlo engine APIs
+  (e.g. wrong payoff array shape and guessed trellis import paths).
+fix: Produce complete, syntactically valid source (no truncated lines or unexpected
+  indents), use exact trellis import paths, and implement the MC payoff to return
+  a 1-D array of terminal payoffs of shape (n_paths,). Add a quick compile/import
+  smoke-test and a unit that checks payoff.shape == (n_paths,).
+validation: Discovered during build (attempt 2)

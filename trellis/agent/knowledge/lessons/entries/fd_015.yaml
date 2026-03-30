@@ -1,0 +1,29 @@
+category: finite_differences
+title: Unit conversion causes extreme PV
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:12:09.519935'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_231210_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - vol_surface_dependence
+  - pde_grid
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'Price sanity check triggered: |PV| > 10 * typical_notional (e.g., |PV| =
+  9995.24 > 1000)'
+root_cause: Market-data / model-input unit mismatch (most commonly a volatility expressed
+  in percent vs decimal, or a rate/discount representation mismatch) caused the PDE
+  operator to receive parameters off by orders of magnitude.
+fix: Normalize and validate market data before passing to the PDE (convert vol from
+  percent->decimal, convert rates to the operator's expected form or supply discount
+  factors), add assertive checks on ranges and shapes, and run a small-price sanity
+  test before accepting results.
+validation: Discovered during build (attempt 3)
+id: fd_015

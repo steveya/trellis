@@ -1,0 +1,33 @@
+id: vol_004
+title: Zero vega from mis-specified digital payoff
+severity: critical
+category: volatility
+status: validated
+confidence: 0.6
+created: '2026-03-28T11:31:36.081599'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_113136_european_option_fft_pricing.yaml
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - discounting
+  - characteristic_function
+  - cos_method
+  - vol_surface_dependence
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: Price is identical for large vol bumps (e.g., price(vol=5%) == price(vol=40%),
+  relative change ~0.0%).
+root_cause: 'The COS/FFT route priced a deterministic or incorrectly transformed payoff
+  (or used the wrong measure/forward), so the result became independent of implied
+  volatility. Typical causes: wrong payoff coefficients for cash-or-nothing, using
+  spot where forward/Black‑76 should be used, or applying a vanilla payoff formula
+  instead of the indicator payoff.'
+fix: 'Implement the cash‑or‑nothing payoff correctly in the COS/FFT pipeline: compute
+  COS coefficients for the indicator payoff, evaluate using the characteristic function
+  appropriate to the chosen measure (Black‑76/forward if using discount curve), apply
+  discounting, and validate vega via finite‑difference vol bumps. Add unit tests that
+  assert non‑zero vega.'
+validation: Discovered during build (attempt 3)

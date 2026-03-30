@@ -1,0 +1,30 @@
+category: finite_differences
+title: Undefined symbol in dataclass defaults
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:11:22.352553'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_231123_barrier_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - barrier
+  - pde_grid
+  - path_dependent
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Module import/runtime fails with NameError: name ''absorbing'' is not defined
+  (or similar NameError for rubinstein/analytical).'
+root_cause: Literal bare identifiers were used as default values in the dataclass
+  (e.g. absorbing, rubinstein, analytical) but those names are not defined or imported
+  in the module namespace. This causes immediate NameError at import time before any
+  logic runs.
+fix: Use string literals or defined constants/Enums for dataclass defaults (e.g. boundary_condition='absorbing',
+  method='rubinstein') or import/declare the identifiers; add unit-test or static
+  check to catch undefined names at import time.
+validation: Discovered during build (attempt 2)
+id: fd_014

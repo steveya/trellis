@@ -1,0 +1,30 @@
+category: convention
+title: Missing required date-schedule primitive usage
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:05:13.870588'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_230514_barrier_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - barrier
+  - path_dependent
+  - pde_grid
+  - discounting
+  - vol_surface_dependence
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'assembly.required_primitive_missing: Generated code did not use required
+  primitives: trellis.core.date_utils.generate_schedule.'
+root_cause: The payoff/pricer generation created bespoke schedule or date logic instead
+  of delegating to the canonical trellis primitives (generate_schedule / year_fraction),
+  so the assembly contract was not satisfied and imports/identifiers were inconsistent.
+fix: Make payoff/pricer code a thin adapter that calls trellis.core.date_utils.generate_schedule
+  and year_fraction for all monitoring and time calculations; follow the expected
+  payoff shape and primitive signatures (e.g., MC payoff returns (n_paths,) ).
+validation: Discovered during build (attempt 3)
+id: con_018

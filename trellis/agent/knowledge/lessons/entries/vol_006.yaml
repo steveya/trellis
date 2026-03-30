@@ -1,0 +1,32 @@
+category: volatility
+title: Zero vega in CDS payoff
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-30T08:43:36.551720'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260330_084337_nth_to_default_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - greeks
+  - vol_surface_dependence
+  - stochastic_vol
+  - spread_computation
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Price unchanged when volatility is bumped widely (e.g., price(vol=5%) ==
+  price(vol=40%) within tolerance).
+root_cause: The constructed analytical payoff and/or pricing route has no dependence
+  on market volatility (no vol surface, no stochastic hazard/spread, or missing option-like
+  term), so vega is identically zero; additionally the CDS/credit inputs (credit_curve,
+  vol_surface) were missing or not wired into the analytic formula.
+fix: 'Ensure volatility enters the pricing: supply and validate a credit/spread volatility
+  surface or adopt a stochastic-hazard analytical model (or add the option-like component)
+  and implement analytic or bump-and-reprice vega; add explicit validation that credit_curve
+  and vol_surface inputs are present for methods that require them.'
+validation: Discovered during build (attempt 3)
+id: vol_006

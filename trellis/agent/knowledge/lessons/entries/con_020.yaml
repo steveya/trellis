@@ -1,0 +1,38 @@
+category: convention
+title: Undefined symbol used in spec defaults
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:21:31.912786'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_232132_build_a_pricer_for:_finite_element_method_(fem)_vs_finite_difference_for_european
+
+
+  implementation_target:_black_scholes
+
+  preferred_method_family:_analytical
+
+
+  implementation_target:_black_scholes_analytical.yaml'
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - forward_rate
+  - vol_surface_dependence
+  - greeks
+  - pde_grid
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''black_scholes'' is not defined during dataclass instantiation
+  or module import'
+root_cause: The dataclass and code used bare Python identifiers (e.g., black_scholes,
+  analytical, European) that were not defined or imported, and the agent guessed Trellis
+  module names instead of using exact import paths. This caused immediate runtime
+  NameError and prevented the pricer build from completing.
+fix: Use string literals or properly imported constants for specification defaults,
+  add input validation to catch undefined names early, and use exact Trellis import
+  paths (verify available symbols before use).
+validation: Discovered during build (attempt 3)
+id: con_020

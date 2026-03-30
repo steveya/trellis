@@ -39,6 +39,18 @@ def test_retrieve_for_product_ir_surfaces_ir_summary_and_unresolved_primitives()
     assert "path_dependent_early_exercise_under_stochastic_vol" in text
 
 
+def test_retrieve_for_product_ir_surfaces_exact_route_families():
+    from trellis.agent.knowledge import format_knowledge_for_prompt, retrieve_for_product_ir
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    ir = decompose_to_ir("Callable bond with semiannual coupon and call schedule")
+    knowledge = retrieve_for_product_ir(ir, preferred_method="rate_tree")
+
+    text = format_knowledge_for_prompt(knowledge)
+    assert "Exact route families" in text
+    assert "rate_lattice" in text
+
+
 def test_ir_native_retrieval_ranks_early_exercise_lessons_for_american_put():
     from trellis.agent.knowledge import retrieve_for_product_ir
     from trellis.agent.knowledge.decompose import decompose_to_ir

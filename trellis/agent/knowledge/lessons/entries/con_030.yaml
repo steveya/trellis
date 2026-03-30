@@ -1,0 +1,30 @@
+category: convention
+title: Missing thin payoff adapter
+severity: critical
+status: candidate
+confidence: 0.4
+created: '2026-03-29T09:46:27.512072'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - pde_grid
+  - discontinuous_payoff
+  - rannacher_timestepping
+  - pde_solver
+  - black_scholes_digital
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'Build failed with error: "Generated code did not use the required primitives:
+  trellis.models.black.black76_call, trellis.models.black.black76_put".'
+root_cause: The generated payoff implementation reimplemented option logic instead
+  of delegating to the required trellis.models.black primitives (thin adapter contract).
+  The build harness enforces use of these primitives by name/shape.
+fix: Replace the custom payoff with a thin adapter that directly calls trellis.models.black.black76_call
+  / black76_put (and the cash-or-nothing variants for digitals), ensuring correct
+  input units and adding a unit test that asserts the expected primitive is invoked.
+validation: Discovered during build (attempt 3)
+id: con_030

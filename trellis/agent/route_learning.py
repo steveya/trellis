@@ -262,6 +262,8 @@ def learned_route_decision(
 
 def extract_route_feature_map(candidate: PrimitivePlan, product_ir) -> dict[str, float]:
     """Extract a stable numeric feature map for route learning."""
+    route_family = getattr(candidate, "route_family", "") or candidate.engine_family
+    route_families = set(getattr(product_ir, "route_families", ()) or ())
     feature_map: dict[str, float] = {
         "bias": 1.0,
         "blocker_count": float(len(candidate.blockers)),
@@ -269,9 +271,11 @@ def extract_route_feature_map(candidate: PrimitivePlan, product_ir) -> dict[str,
         "schedule_dependence": 1.0 if product_ir.schedule_dependence else 0.0,
         "has_unresolved_primitives": 1.0 if product_ir.unresolved_primitives else 0.0,
         "engine_family_matches_ir": 1.0 if candidate.engine_family in product_ir.candidate_engine_families else 0.0,
+        "route_family_matches_ir": 1.0 if route_family in route_families else 0.0,
     }
     feature_map[f"route:{candidate.route}"] = 1.0
     feature_map[f"engine_family:{candidate.engine_family}"] = 1.0
+    feature_map[f"route_family:{route_family}"] = 1.0
     feature_map[f"exercise:{product_ir.exercise_style}"] = 1.0
     feature_map[f"state:{product_ir.state_dependence}"] = 1.0
     feature_map[f"model:{product_ir.model_family}"] = 1.0

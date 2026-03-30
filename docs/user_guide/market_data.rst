@@ -53,6 +53,28 @@ The mock provider ships 4 historical snapshots (no network needed):
 - 2023-10-15: Peak rates, inverted curve (~4.5-5.3%)
 - 2024-11-15: Easing cycle (~4.2-4.6%)
 
+Resolved market snapshots keep a ``provenance`` payload alongside the market
+objects so replay and calibration traces can tell whether a curve came from a
+direct quote, a resolver merge, or a bootstrap input bundle.
+
+Mock snapshots also expose the synthetic-prior family, seed, and parameter set
+used to build the embedded regime bundle, so proving and replay runs can show
+exactly which prior was sampled.
+
+Correlation Sources
+-------------------
+
+Basket and quanto routes do not treat correlation as an unstated constant.
+The resolved source can be:
+
+- an explicit matrix or scalar
+- an empirical estimate from observed path data
+- an implied source tied to liquid market inputs
+- a synthetic prior for mock, stress, or proving runs
+
+The trace keeps the source kind, sample size, estimator, seed, and any
+regularization that was needed before pricing.
+
 Multi-Curve
 -----------
 

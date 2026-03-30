@@ -12,10 +12,10 @@ from trellis.core.types import DayCountConvention, DiscountCurve
 
 @dataclass(frozen=True)
 class FXRate:
-    """Spot FX rate.
+    """Spot FX rate between two currencies.
 
-    Convention: 1 unit of foreign buys ``spot`` units of domestic.
-    E.g., EURUSD = 1.10 means 1 EUR = 1.10 USD.
+    Convention: 1 unit of foreign = ``spot`` units of domestic.
+    Example: EURUSD = 1.10 means 1 EUR = 1.10 USD (domestic=USD, foreign=EUR).
     """
 
     spot: float
@@ -24,9 +24,11 @@ class FXRate:
 
 
 class FXForward:
-    """FX forward rate via covered interest rate parity.
+    """FX forward rate derived from spot rate and interest rate differentials.
 
-    F(t) = S * df_foreign(t) / df_domestic(t)
+    The forward rate at time t equals spot * (foreign discount / domestic discount).
+    This follows from covered interest rate parity: you can replicate a forward
+    by borrowing in one currency and lending in the other.
     """
 
     def __init__(self, fx_rate: FXRate,
@@ -39,11 +41,11 @@ class FXForward:
 
     @property
     def spot(self) -> float:
-        """Return the current spot FX rate carried by the forward contract."""
+        """Return the spot FX rate used as the base for forward calculations."""
         return self._fx_rate.spot
 
     def forward(self, t: float) -> float:
-        """FX forward rate at time t years."""
+        """FX forward rate at time t years from now."""
         return (self._fx_rate.spot
                 * self._foreign_curve.discount(t)
                 / self._domestic_curve.discount(t))
@@ -54,10 +56,10 @@ class FXForward:
 
 
 class FXForwardPayoff:
-    """Wraps a foreign-currency payoff, converting to domestic via FX forward.
+    """Wraps a foreign-currency payoff and converts its value to domestic currency.
 
-    Each cashflow ``(date, amount_foreign)`` becomes
-    ``(date, amount_foreign * F(t))`` where F(t) is the CIP forward rate.
+    Evaluates the inner payoff (which prices in foreign currency), then
+    multiplies by the spot FX rate to get the domestic-currency present value.
     """
 
     def __init__(self, inner, fx_pair: str, foreign_discount_key: str):
@@ -78,7 +80,7 @@ class FXForwardPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        """Declare the inner payoff requirements plus FX/curve conversion inputs."""
+        """Needs everything the inner payoff needs, plus FX rates and curves."""
         return self._inner.requirements | {"fx", "discount", "forecast_rate"}
 
     def evaluate(self, market_state: MarketState) -> float:

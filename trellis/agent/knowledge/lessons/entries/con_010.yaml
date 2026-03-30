@@ -2,8 +2,8 @@ id: con_010
 title: Exact module import naming
 severity: critical
 category: convention
-status: candidate
-confidence: 0.4
+status: validated
+confidence: 0.6
 created: '2026-03-24T12:44:06.042263'
 version: ''
 source_trace: null

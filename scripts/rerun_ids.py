@@ -28,6 +28,12 @@ for i, task in enumerate(tasks):
     print(f"[{i+1}/{len(tasks)}] {task['id']}: {task['title'][:50]}", flush=True)
     result = run_task(task, ms)
     results.append(result)
+    diagnosis_headline = result.get("task_diagnosis_headline")
+    diagnosis_packet_path = result.get("task_diagnosis_packet_path")
+    if diagnosis_headline:
+        print(f"  diagnosis: {diagnosis_headline}", flush=True)
+    if diagnosis_packet_path:
+        print(f"  packet: {diagnosis_packet_path}", flush=True)
     with open(output_file, "w") as f:
         json.dump(results, f, indent=2, default=str)
 

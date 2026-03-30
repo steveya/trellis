@@ -1,0 +1,32 @@
+id: mc_015
+title: CorrelatedGBM requires 'spot_prices' not 'spots' keyword
+severity: critical
+category: monte_carlo
+status: validated
+confidence: 0.6
+created: '2026-03-28T09:10:21.242675'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_091021_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Instantiating CorrelatedGBM raises TypeError: unexpected keyword argument
+  ''spots'' during smoke test.'
+root_cause: The CorrelatedGBM constructor expects the keyword argument 'spot_prices'
+  (or positional array) for initial spot levels, not 'spots'. Passing the wrong keyword
+  name causes an immediate TypeError before any simulation runs.
+fix: Replace 'spots=...' with 'spot_prices=...' when constructing CorrelatedGBM, or
+  inspect the class signature with help(CorrelatedGBM) before use.
+validation: Discovered during build (attempt 2)

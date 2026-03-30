@@ -1,0 +1,32 @@
+category: finite_differences
+title: BlackScholesOperator constructor mismatch
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T23:49:15.711816'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_234916_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - vol_surface_dependence
+  - pde_grid
+  instrument:
+  - european_option
+  error_signature: null
+symptom: 'TypeError: BlackScholesOperator.__init__() got an unexpected keyword argument
+  ''r''.'
+root_cause: The generated code treated the PDE operator as if it accepted scalar 'r'
+  and 'sigma' keywords, but trellis.models.pde.operator.BlackScholesOperator actually
+  expects callables '(sigma_fn, r_fn)'. The mismatch caused constructor failure during
+  module build.
+fix: 'Import BlackScholesOperator from trellis.models.pde.operator and pass callables,
+  for example BlackScholesOperator(lambda s, t: sigma, lambda t: r). Add a signature
+  smoke test or cookbook template to lock the constructor shape and keep the solver
+  path aligned with the real API.
+
+  '
+validation: Discovered during build (attempt 3)
+id: fd_030

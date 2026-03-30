@@ -42,6 +42,18 @@ As of `MD4`, Trellis also has a full simulated snapshot path via
 - synthetic local-vol surfaces
 - synthetic jump/model-parameter packs
 
+Those mock snapshots now carry explicit synthetic-prior provenance, including
+the prior family, a stable seed, and the parameterization used to build the
+regime bundle.
+
+Basket and quanto correlation now follow the same provenance discipline:
+
+- explicit correlation matrices and scalar correlation inputs are traced as
+  explicit sources
+- correlation estimated from historical paths is traced as empirical input
+- implied and synthetic correlation sources retain their source family, sample
+  size, estimator, seed, and any regularization performed before pricing
+
 That simulated provider is the current stand-in for missing live connectors.
 
 ## MD1
@@ -236,6 +248,7 @@ Goal:
 Planned outputs:
 
 - source and timestamp provenance
+- source-kind labels for direct quotes vs bootstrapped inputs
 - stale/missing-data warnings
 - snapshot-level caching
 - deterministic golden market fixtures for tests

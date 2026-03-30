@@ -1,0 +1,30 @@
+category: monte_carlo
+title: Unexpected indent in analytical code
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-03-30T09:40:43.339076'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Code contained incorrect indentation causing a SyntaxError during module
+  import.
+root_cause: Python requires consistent indentation; the developer overlooked formatting
+  and didn't run a parser/linter, so a stray indent made the module invalid.
+fix: Fix the indentation (or run an auto-formatter/linter) and re-run import/tests
+  to ensure the module compiles cleanly.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: analytical_cds\nPreferred method\
+  \ family: analytical\n\nImplementation target: analytical_cds"
+id: mc_052

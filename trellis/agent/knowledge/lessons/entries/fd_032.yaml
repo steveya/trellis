@@ -1,0 +1,31 @@
+category: finite_differences
+title: NameError from unquoted/undefined identifiers
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-29T08:33:49.740204'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_083350_barrier_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - barrier
+  - pde_grid
+  - path_dependent
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Python raises NameError: name ''pde_barrier'' is not defined during module
+  import or pricer construction.'
+root_cause: Dataclass fields and defaults used bare identifiers (e.g. pde_barrier,
+  pde_solver, european) that are not defined or imported; these expressions are evaluated
+  at import time producing a NameError. Additionally, missing/incorrect PDE grid ctor
+  parameters and API mismatches amplify the failure.
+fix: Replace bare identifiers with quoted string literals or import the named constants/enums;
+  verify dataclass defaults do not reference undefined names and supply required PDE
+  grid discretization params. Add a small import-time unit test that instantiates
+  the spec to catch NameError.
+validation: Discovered during build (attempt 2)
+id: fd_032

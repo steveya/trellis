@@ -1,0 +1,38 @@
+category: monte_carlo
+title: Undefined symbol used as dataclass default
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:22:35.638316'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_232236_build_a_pricer_for:_gbm_call:_all_4_schemes_convergence_order
+
+
+  implementation_target:_euler
+
+  preferred_method_family:_monte_carlo
+
+
+  implementation_target:_euler_monte_carlo.yaml'
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - vanilla_european_call
+  - gbm_process
+  - euler_scheme
+  - discounting
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''euler'' is not defined raised at module import / class
+  definition time.'
+root_cause: Dataclass fields used bare Python identifiers (e.g. euler, monte_carlo)
+  instead of string literals, Enums, or imported constants; those identifiers are
+  not defined when the class is created, causing an immediate NameError. Additionally,
+  evaluate-time assumptions (e.g. market_state.as_of exists) were not guarded.
+fix: 'Use string literals or defined constants/Enum for defaults (e.g. scheme: str
+  = ''euler''), or import the intended symbols; validate/guard accesses to market_state
+  attributes before using them.'
+validation: Discovered during build (attempt 1)
+id: mc_039

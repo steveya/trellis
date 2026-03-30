@@ -2,8 +2,8 @@ id: con_011
 title: Use trellis date utilities in payoff
 severity: critical
 category: convention
-status: candidate
-confidence: 0.4
+status: validated
+confidence: 0.6
 created: '2026-03-25T09:57:18.861461'
 version: ''
 source_trace: null

@@ -1,0 +1,31 @@
+category: convention
+title: Undefined exercise-style constant in spec
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-29T09:21:25.811488'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_092126_american_put_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - american
+  - early_exercise
+  - puttable
+  - discounting
+  - greeks
+  - pde_grid
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''AMERICAN'' is not defined raised at dataclass construction
+  or module import'
+root_cause: The dataclass default used an undefined symbol (AMERICAN) instead of a
+  defined constant, enum member, or literal string; module-level name resolution failed
+  at import time.
+fix: Use a quoted literal (e.g. 'AMERICAN'), import or define the AMERICAN constant/enum
+  before use, or use a validated Enum type for exercise_style; add static checks or
+  unit tests to catch unresolved names.
+validation: Discovered during build (attempt 1)
+id: con_028

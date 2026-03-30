@@ -253,6 +253,34 @@ class TestThetaMethod:
         for i in range(1, len(errors)):
             assert errors[i] < errors[i - 1] + 0.01
 
+    def test_rannacher_smoothing_handles_discontinuous_digital_payoff(self):
+        from trellis.models.black import black76_cash_or_nothing_call
+        from trellis.models.pde.grid import Grid
+        from trellis.models.pde.operator import BlackScholesOperator
+        from trellis.models.pde.theta_method import theta_method_1d
+
+        S_max = 4 * S0
+        n = 400
+        grid = Grid(x_min=0.0, x_max=S_max, n_x=n, T=T, n_t=n)
+        op = BlackScholesOperator(lambda s, t: sigma, lambda t: r)
+        terminal = raw_np.where(grid.x >= K, 1.0, 0.0)
+
+        V = theta_method_1d(
+            grid,
+            op,
+            terminal,
+            theta=0.5,
+            lower_bc_fn=lambda t: 0.0,
+            upper_bc_fn=lambda t: raw_np.exp(-r * (T - t)),
+            rannacher_timesteps=2,
+        )
+        price = _interp_grid(V, grid.x, S0)
+        df = raw_np.exp(-r * T)
+        forward = S0 / df
+        expected = float(df * black76_cash_or_nothing_call(forward, K, sigma, T))
+
+        assert price == pytest.approx(expected, rel=0.02)
+
 
 # ===================================================================
 # 2. MC SCHEMES

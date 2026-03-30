@@ -53,7 +53,13 @@ def generate_schedule(start: DateLike, end: DateLike,
 
 def get_bracketing_dates(start: DateLike, end: DateLike,
                          frequency: Frequency, query: DateLike) -> tuple[date, date]:
-    """Return (period_start, period_end) containing *query*."""
+    """Find the coupon period that contains the query date.
+
+    Divides the range [start, end] into equal periods based on frequency,
+    then returns the (period_start, period_end) pair surrounding query.
+
+    Raises ValueError if query is outside [start, end].
+    """
     start_d, end_d, query_d = _to_date(start), _to_date(end), _to_date(query)
     if query_d < start_d or query_d > end_d:
         raise ValueError("Date is not in the schedule")
@@ -68,7 +74,11 @@ def get_bracketing_dates(start: DateLike, end: DateLike,
 
 def get_accrual_fraction(start: DateLike, end: DateLike,
                          frequency: Frequency, query: DateLike) -> float:
-    """Return the accrual fraction for the period containing *query*."""
+    """Return how far through its coupon period the query date is (0.0 to 1.0).
+
+    For example, if a semi-annual bond's current period runs Jan 1 - Jul 1
+    and query is Apr 1, the result is roughly 0.5 (halfway through).
+    """
     lower, upper = get_bracketing_dates(start, end, frequency, query)
     return (query if isinstance(query, datetime) else datetime.combine(query, datetime.min.time())).__sub__(
         datetime.combine(lower, datetime.min.time())

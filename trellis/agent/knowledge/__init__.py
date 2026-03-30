@@ -35,6 +35,18 @@ from trellis.agent.knowledge.retrieval import (
     format_review_knowledge_for_prompt,
     summarize_knowledge_for_trace,
 )
+from trellis.agent.knowledge.import_registry import (
+    get_package_map,
+    get_repo_facts,
+    get_repo_revision,
+    get_symbol_map,
+    get_test_map,
+    suggest_tests_for_symbol,
+)
+from trellis.agent.knowledge.api_map import (
+    format_api_map_for_prompt,
+    get_api_map,
+)
 
 
 # Module-level singleton — hot tier loads at first access
@@ -157,6 +169,14 @@ def build_with_knowledge(
 
 __all__ = [
     "get_store",
+    "get_repo_revision",
+    "get_symbol_map",
+    "get_package_map",
+    "get_test_map",
+    "get_repo_facts",
+    "suggest_tests_for_symbol",
+    "get_api_map",
+    "format_api_map_for_prompt",
     "retrieve_for_task",
     "retrieve_for_product_ir",
     "build_shared_knowledge_payload",

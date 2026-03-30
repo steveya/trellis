@@ -1,0 +1,32 @@
+id: mc_030
+title: RankedObservationBasketSpec does not accept start_date
+severity: critical
+category: monte_carlo
+status: promoted
+confidence: 1.0
+created: '2026-03-28T14:49:46.691963'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_144947_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Build fails with `RankedObservationBasketSpec.__init__() got an unexpected
+  keyword argument 'start_date'` during market-state smoke test.
+root_cause: The agent passed `start_date` to `RankedObservationBasketSpec` even though
+  that dataclass does not declare that field; the constructor only accepts the fields
+  it explicitly defines (e.g. observation_dates, num_assets, notional, etc.).
+fix: Remove `start_date` from the kwargs passed to `RankedObservationBasketSpec`;
+  if a reference date is needed, derive it from the first observation date or pass
+  it separately to the pricing function rather than the spec constructor.
+validation: Discovered during build (attempt 3)

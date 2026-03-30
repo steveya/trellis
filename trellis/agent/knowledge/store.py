@@ -45,7 +45,20 @@ _SEVERITY_ORDER = {
     Severity.MEDIUM: 2,
     Severity.LOW: 3,
 }
-
+_BASKET_SUPERSEDED_MARKERS = (
+    "trellis.models.processes.correlated_gbm",
+    "correlatedgbm as thin adapter",
+    "wrap correlatedgbm",
+    "imports correlatedgbm",
+    "import correlatedgbm",
+    "correlated_gbm module path",
+    "unapproved correlated_gbm",
+)
+_BASKET_HELPER_MARKERS = (
+    "resolve_basket_semantics",
+    "price_ranked_observation_basket_monte_carlo",
+    "semantic basket helper",
+)
 
 # ---------------------------------------------------------------------------
 # Feature expansion
@@ -55,10 +68,16 @@ def expand_features(
     features: list[str],
     taxonomy: dict[str, Feature],
 ) -> list[str]:
-    """Transitively expand features via 'implies' chains.
+    """Transitively expand a list of feature IDs by following 'implies' links.
 
-    [callable] → [callable, early_exercise, backward_induction]
-    Unknown features are kept as-is (no expansion, no error).
+    Each feature in the taxonomy may declare that it implies other features.
+    For example, 'callable' implies 'early_exercise', which in turn implies
+    'backward_induction'.  This function walks those chains and returns the
+    full set of features that apply.
+
+    Example: [callable] -> [backward_induction, callable, early_exercise]
+
+    Features not found in the taxonomy are kept as-is (no expansion, no error).
     """
     expanded: set[str] = set()
     stack = list(features)
@@ -71,6 +90,69 @@ def expand_features(
         if feat and feat.implies:
             stack.extend(feat.implies)
     return sorted(expanded)
+
+
+def identify_superseded_basket_lesson_ids(*, root: Path | None = None) -> list[str]:
+    """Return basket lessons that should be treated as superseded guidance."""
+    knowledge_root = Path(root) if root is not None else _KNOWLEDGE_DIR
+    entries_dir = knowledge_root / "lessons" / "entries"
+    if not entries_dir.exists():
+        return []
+
+    superseded: list[str] = []
+    for path in sorted(entries_dir.glob("*.yaml")):
+        try:
+            data = yaml.safe_load(path.read_text()) or {}
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        if str(data.get("category") or "").strip() != "monte_carlo":
+            continue
+        status = str(data.get("status") or "").strip().lower()
+        if status not in {"promoted", "validated", "archived"}:
+            continue
+
+        applies_when = data.get("applies_when") or {}
+        if not isinstance(applies_when, dict):
+            applies_when = {}
+        features = {str(feature).strip() for feature in applies_when.get("features", []) if str(feature).strip()}
+        if "ranked_observation" not in features and "multi_asset" not in features:
+            continue
+
+        title = str(data.get("title") or "").strip().lower()
+        if status == "archived" or title.startswith("superseded -"):
+            lesson_id = str(data.get("id") or "").strip()
+            if lesson_id:
+                superseded.append(lesson_id)
+            continue
+
+        text = " ".join(
+            str(data.get(field) or "")
+            for field in ("title", "symptom", "root_cause", "fix", "validation")
+        ).lower()
+        normalized_text = text.replace("`", "").replace("-", " ")
+        if any(marker in normalized_text for marker in _BASKET_HELPER_MARKERS):
+            continue
+        has_correlated_gbm = "correlatedgbm" in normalized_text or "correlated_gbm" in normalized_text
+        has_direct_guidance = any(
+            marker in normalized_text
+            for marker in (
+                "direct",
+                "import",
+                "wrap",
+                "module path",
+                "unapproved",
+                "path",
+                "delegate",
+            )
+        )
+        if has_correlated_gbm and has_direct_guidance:
+            lesson_id = str(data.get("id") or "").strip()
+            if lesson_id:
+                superseded.append(lesson_id)
+
+    return sorted(set(superseded))
 
 
 # ---------------------------------------------------------------------------
@@ -96,6 +178,7 @@ class KnowledgeStore:
         self._requirements_cache: dict[str, MethodRequirements] | None = None
         self._benchmarks_cache: dict[str, BenchmarkSuite] | None = None
         self._retrieval_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
+        self._basket_superseded_lesson_ids_cache: list[str] | None = None
         self._retrieval_cache_hits = 0
         self._retrieval_cache_misses = 0
 
@@ -209,6 +292,14 @@ class KnowledgeStore:
                 diagnostic_hint=s.get("diagnostic_hint", ""),
             ))
 
+    def _basket_superseded_lesson_ids(self) -> list[str]:
+        """Return the basket lessons that should be suppressed as stale guidance."""
+        if self._basket_superseded_lesson_ids_cache is None:
+            self._basket_superseded_lesson_ids_cache = identify_superseded_basket_lesson_ids(
+                root=_KNOWLEDGE_DIR,
+            )
+        return list(self._basket_superseded_lesson_ids_cache)
+
     # --------------------------------------------------------------------- #
     # Main retrieval
     # --------------------------------------------------------------------- #
@@ -228,13 +319,23 @@ class KnowledgeStore:
         self._retrieval_cache_misses += 1
         expanded = expand_features(spec.features, self._features)
         method = normalize_method(spec.method) if spec.method else None
+        basket_superseded_ids = set()
+        if spec.instrument == "basket_path_payoff" or (
+            "ranked_observation" in expanded and "multi_asset" in expanded
+        ):
+            basket_superseded_ids = set(self._basket_superseded_lesson_ids())
 
         result: dict[str, Any] = {
             "principles": list(self._principles),
             "decomposition": self._decompositions.get(spec.instrument) if spec.instrument else None,
             "product_ir": getattr(spec, "product_ir", None),
             "unresolved_primitives": tuple(spec.unresolved_primitives),
-            "lessons": self._query_lessons(expanded, spec, spec.max_lessons),
+            "lessons": self._query_lessons(
+                expanded,
+                spec,
+                spec.max_lessons,
+                basket_superseded_ids=basket_superseded_ids,
+            ),
             "cookbook": self._load_cookbook(method) if method else None,
             "data_contracts": self._load_contracts(method) if method else [],
             "method_requirements": self._load_requirements(method) if method else None,
@@ -265,6 +366,7 @@ class KnowledgeStore:
         self._requirements_cache = None
         self._benchmarks_cache = None
         self._retrieval_cache.clear()
+        self._basket_superseded_lesson_ids_cache = None
         self._retrieval_cache_hits = 0
         self._retrieval_cache_misses = 0
 
@@ -277,23 +379,47 @@ class KnowledgeStore:
         expanded_features: list[str],
         spec: RetrievalSpec,
         max_n: int,
+        *,
+        basket_superseded_ids: set[str] | None = None,
     ) -> list[Lesson]:
-        """Rank indexed lessons by semantic relevance and hydrate the top matches."""
-        scored: list[tuple[float, LessonIndex]] = []
+        """Score all indexed lessons against the current task and load the top matches.
+
+        Scoring uses feature overlap, method match, instrument hint, and
+        severity to rank lessons.  Only promoted or validated lessons are
+        considered.  Lessons that are superseded by any other active lesson
+        are suppressed before ranking.  The top ``max_n`` entries are loaded
+        from disk (hydrated) and returned.
+        """
+        basket_superseded_ids = basket_superseded_ids or set()
+        hydrated: list[tuple[LessonIndex, Lesson]] = []
         for idx in self._lesson_index:
             if idx.status not in (LessonStatus.PROMOTED, LessonStatus.VALIDATED):
                 continue
+            if idx.id in basket_superseded_ids:
+                continue
+            lesson = self._load_lesson(idx.id)
+            if lesson is not None:
+                hydrated.append((idx, lesson))
+
+        superseded_ids = {
+            superseded_id
+            for _, lesson in hydrated
+            for superseded_id in lesson.supersedes
+        }
+
+        scored: list[tuple[float, LessonIndex, Lesson]] = []
+        for idx, lesson in hydrated:
+            if idx.id in superseded_ids:
+                continue
             score = self._relevance_score(idx, expanded_features, spec)
             if score > 0:
-                scored.append((score, idx))
+                scored.append((score, idx, lesson))
 
         scored.sort(key=lambda x: (-x[0], _SEVERITY_ORDER.get(x[1].severity, 3)))
 
         lessons: list[Lesson] = []
-        for _, idx_entry in scored[:max_n]:
-            lesson = self._load_lesson(idx_entry.id)
-            if lesson is not None:
-                lessons.append(lesson)
+        for _, _, lesson in scored[:max_n]:
+            lessons.append(lesson)
         return lessons
 
     @staticmethod
@@ -302,7 +428,14 @@ class KnowledgeStore:
         features: list[str],
         spec: RetrievalSpec,
     ) -> float:
-        """Compute a heuristic relevance score for one indexed lesson."""
+        """Compute a heuristic relevance score for one indexed lesson.
+
+        The score sums weighted signals: feature overlap with the current
+        task (strongest signal, +2 per overlapping feature), method match
+        (+1 exact, +0.5 wildcard), instrument hint (+0.75), exercise/state/
+        model bonuses from ProductIR fields, and severity bonus (+1 critical,
+        +0.5 high).  A score of 0 means no relevance.
+        """
         score = 0.0
         aw = idx.applies_when
         method = normalize_method(spec.method) if spec.method else None
@@ -315,9 +448,9 @@ class KnowledgeStore:
         # Method match
         if aw.method and method:
             if method in aw.method:
-                score += 1.0
+                score += 5.0
             elif "any" in aw.method:
-                score += 0.5
+                score += 0.25
 
         # Instrument hint
         if aw.instrument and spec.instrument:
@@ -456,7 +589,16 @@ class KnowledgeStore:
     # --------------------------------------------------------------------- #
 
     def _load_requirements(self, method: str) -> MethodRequirements | None:
-        """Load and cache structural requirements for a pricing method family."""
+        """Load and cache structural requirements for a pricing method family.
+
+        The YAML structure supports two formats:
+        - flat list: ``method: [req1, req2, ...]``
+        - contract-keyed dict: ``method: {common: [...], contract_a: [...], ...}``
+
+        The contract-keyed format (used by the analytical family) is flattened
+        into a single requirements tuple so downstream code sees no structural
+        change.  The contract labels are preserved in the requirement text.
+        """
         if self._requirements_cache is None:
             self._requirements_cache = {}
             path = _KNOWLEDGE_DIR / "canonical" / "method_requirements.yaml"
@@ -464,9 +606,24 @@ class KnowledgeStore:
                 data = yaml.safe_load(path.read_text()) or {}
                 for m, reqs in data.items():
                     canonical = normalize_method(m)
+                    if isinstance(reqs, list):
+                        flat = tuple(reqs)
+                    elif isinstance(reqs, dict):
+                        # Contract-keyed: flatten common first, then each contract
+                        parts: list[str] = []
+                        common = reqs.get("common")
+                        if isinstance(common, list):
+                            parts.extend(common)
+                        for key, sub_reqs in reqs.items():
+                            if key == "common" or not isinstance(sub_reqs, list):
+                                continue
+                            parts.extend(sub_reqs)
+                        flat = tuple(parts)
+                    else:
+                        flat = ()
                     self._requirements_cache[canonical] = MethodRequirements(
                         method=canonical,
-                        requirements=tuple(reqs) if isinstance(reqs, list) else (),
+                        requirements=flat,
                     )
         return self._requirements_cache.get(normalize_method(method))
 
@@ -565,6 +722,28 @@ class KnowledgeStore:
         with open(path, "w") as f:
             yaml.dump(data, f, default_flow_style=False, sort_keys=False,
                       allow_unicode=True)
+        self.clear_runtime_caches()
+
+    # --------------------------------------------------------------------- #
+    # Audit helpers
+    # --------------------------------------------------------------------- #
+
+    def compute_knowledge_hash(self) -> str:
+        """SHA-256 fingerprint of canonical knowledge state.
+
+        Hashes the contents of all canonical YAML files plus the promoted
+        lesson count to produce a short fingerprint. Changes to any canonical
+        artifact or lesson promotion will change the hash.
+        """
+        import hashlib
+
+        h = hashlib.sha256()
+        canonical_dir = _KNOWLEDGE_DIR / "canonical"
+        if canonical_dir.exists():
+            for path in sorted(canonical_dir.glob("*.yaml")):
+                h.update(path.read_bytes())
+        h.update(str(len(self._lesson_index)).encode())
+        return h.hexdigest()[:16]
 
     # --------------------------------------------------------------------- #
     # Reload

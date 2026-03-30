@@ -1,13 +1,13 @@
-"""Two-tier experience system: index for fast filtering, full entries on demand.
+"""Legacy experience system (superseded by trellis.agent.knowledge).
 
-Tier 1 (index.yaml): lightweight — id, title, severity, applies_when.
-    Loaded always. Used to select which lessons to inject.
+Loads past build failures and lessons learned from YAML files so they can
+be injected into LLM prompts to avoid repeating the same mistakes.
 
-Tier 2 (experience.yaml): full entries — symptoms, explanation, fix.
-    Loaded on demand. Only the top-N by severity are injected into prompts.
+Two tiers:
+  - index.yaml: lightweight summaries used to pick which lessons apply.
+  - experience.yaml: full entries with symptoms, explanations, and fixes.
 
-Principles (in index.yaml): distilled rules derived from multiple entries.
-    Always injected — they're short and high-value.
+Kept for backward compatibility; new code should use the knowledge store.
 """
 
 from __future__ import annotations

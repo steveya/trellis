@@ -1,0 +1,29 @@
+category: market_data
+title: Missing credit_curve causes CDS pricing failure
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-29T13:14:17.107669'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_131418_nth_to_default_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - discounting
+  - coupons
+  - maturity_settlement
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: 'Pricing run fails with RuntimeError/ValueError: Missing market data: [''credit_curve'']'
+root_cause: The analytical CDS pricer assumes a populated credit_curve (survival probabilities
+  or hazard rates) in the MarketState/Session but the harness did not supply it; inputs
+  and API contract for required market data were not validated or documented.
+fix: Validate presence of required market data at pricer entry and provide clear errors;
+  supply a CreditCurve (e.g. CreditCurve.flat(hazard)) in the MarketState/Session
+  before calling the analytical pricer and ensure unit conventions (hazard vs survival)
+  are explicit.
+validation: Discovered during build (attempt 3)
+id: md_031

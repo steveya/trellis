@@ -34,6 +34,15 @@ class LessonStatus(str, Enum):
     ARCHIVED = "archived"       # Superseded or merged
 
 
+class AdapterLifecycleStatus(str, Enum):
+    """Lifecycle state for checked-in adapters and fresh-build replacements."""
+
+    FRESH = "fresh"             # Current validated adapter or fresh replacement
+    STALE = "stale"             # Older than the validated replacement
+    DEPRECATED = "deprecated"   # Kept only for compatibility
+    ARCHIVED = "archived"       # Removed from normal retrieval
+
+
 # ---------------------------------------------------------------------------
 # Feature taxonomy
 # ---------------------------------------------------------------------------
@@ -87,10 +96,45 @@ class ProductIR:
     schedule_dependence: bool = False
     model_family: str = "generic"
     candidate_engine_families: tuple[str, ...] = ()
+    route_families: tuple[str, ...] = ()   # exact route-family labels used by planner/validator
     required_market_data: frozenset[str] = frozenset()
     reusable_primitives: tuple[str, ...] = ()
     unresolved_primitives: tuple[str, ...] = ()
     supported: bool = True
+
+
+# ---------------------------------------------------------------------------
+# Build gate
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class BuildGateThresholds:
+    """Configurable thresholds for the build gate checkpoint.
+
+    Controls when the pipeline blocks, narrows routes, or proceeds.
+    """
+
+    block_below: float = 0.3           # confidence < this → block
+    narrow_below: float = 0.55         # confidence < this → narrow_route
+    max_unresolved_conflicts: int = 0  # any conflicts → clarify
+    require_promoted_route: bool = False  # if True, no promoted route → block
+
+
+@dataclass(frozen=True)
+class BuildGateDecision:
+    """Result of a build gate evaluation.
+
+    Emitted between validation (Layer 2) and compilation (Layer 3)
+    to prevent wasted LLM round-trips on doomed builds.
+    """
+
+    decision: str          # "proceed" | "narrow_route" | "clarify" | "block"
+    reason: str            # human-readable explanation
+    gap_confidence: float  # from GapReport
+    unresolved_conflicts: tuple[str, ...] = ()   # conflict summaries
+    missing_required_inputs: tuple[str, ...] = ()  # missing market inputs
+    suggested_fallback_route: str | None = None
+    gate_source: str = ""  # "pre_flight" or "pre_generation"
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +191,20 @@ class Lesson:
     derived_principle: str | None = None
 
 
+@dataclass(frozen=True)
+class AdapterLifecycleRecord:
+    """Lifecycle metadata for an adapter family or fresh-build replacement."""
+
+    adapter_id: str
+    status: AdapterLifecycleStatus
+    module_path: str
+    validated_against_repo_revision: str = ""
+    supersedes: tuple[str, ...] = ()
+    replacement: str = ""
+    reason: str = ""
+    code_hash: str = ""
+
+
 # ---------------------------------------------------------------------------
 # Canonical knowledge (Store A)
 # ---------------------------------------------------------------------------
@@ -193,6 +251,196 @@ class MethodRequirements:
 
     method: str
     requirements: tuple[str, ...]
+
+
+# ---------------------------------------------------------------------------
+# Structured memory / repo state
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class PolicyRule:
+    """A stable policy statement that should be treated as always-on guidance."""
+
+    id: str
+    rule: str
+    scope: tuple[str, ...] = ()
+    rationale: str = ""
+    priority: int = 0
+
+
+@dataclass(frozen=True)
+class WorkflowTemplate:
+    """A reusable workflow skeleton for build, review, or repair flows."""
+
+    id: str
+    name: str
+    steps: tuple[str, ...] = ()
+    inputs: tuple[str, ...] = ()
+    outputs: tuple[str, ...] = ()
+    notes: str = ""
+
+
+@dataclass(frozen=True)
+class FailureCase:
+    """A normalized failure example extracted from a trace or task run."""
+
+    id: str
+    failure_type: str
+    signature: str
+    description: str = ""
+    task_id: str = ""
+    trace_path: str | None = None
+    repo_revision: str = ""
+    details: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RepairRecipe:
+    """A reusable repair pattern distilled from successful recovery."""
+
+    id: str
+    failure_type: str
+    recipe: str
+    prerequisites: tuple[str, ...] = ()
+    validation: tuple[str, ...] = ()
+    scope: tuple[str, ...] = ()
+    reusable: bool = True
+
+
+@dataclass(frozen=True)
+class EvalSpec:
+    """An explicit evaluation definition for a benchmark or task tranche."""
+
+    id: str
+    title: str
+    description: str = ""
+    benchmark_ids: tuple[str, ...] = ()
+    grader_ids: tuple[str, ...] = ()
+    hard_gates: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class GraderSpec:
+    """A single deterministic grader and the signals it cares about."""
+
+    id: str
+    category: str
+    description: str = ""
+    hard: bool = True
+    applies_to: tuple[str, ...] = ()
+    signals: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class TrajectoryExample:
+    """A compact execution trajectory that can be reused as memory."""
+
+    id: str
+    task_id: str
+    repo_revision: str
+    outcome: str
+    steps: tuple[str, ...] = ()
+    lessons: tuple[str, ...] = ()
+    trace_path: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class RepoFact:
+    """A live repository fact keyed by revision."""
+
+    kind: str
+    key: str
+    value: str
+    repo_revision: str
+    source_path: str | None = None
+    confidence: float = 1.0
+
+
+@dataclass(frozen=True)
+class SymbolMap:
+    """Revision-scoped map of modules to exported public symbols."""
+
+    repo_revision: str
+    module_to_symbols: dict[str, tuple[str, ...]]
+    symbol_to_modules: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PackageMap:
+    """Revision-scoped map of package roots to the modules they contain."""
+
+    repo_revision: str
+    package_to_modules: dict[str, tuple[str, ...]]
+    module_to_package: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class TestMap:
+    """Revision-scoped map of test directories and likely test targets."""
+
+    repo_revision: str
+    directory_to_tests: dict[str, tuple[str, ...]]
+    symbol_to_tests: dict[str, tuple[str, ...]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ToolContract:
+    """A structured contract for a platform or agent tool."""
+
+    name: str
+    inputs: tuple[str, ...] = ()
+    outputs: tuple[str, ...] = ()
+    guarantees: tuple[str, ...] = ()
+    notes: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Instruction lifecycle / route guidance
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class InstructionConflict:
+    """A conflict between two or more instruction records."""
+
+    reason: str
+    conflicting_ids: tuple[str, ...] = ()
+    winner_id: str | None = None
+
+
+@dataclass(frozen=True)
+class InstructionRecord:
+    """A versioned route guidance record with explicit scope and precedence."""
+
+    id: str
+    title: str
+    instruction_type: str
+    status: str = "active"
+    source_kind: str = "canonical"
+    source_id: str = ""
+    source_revision: str = ""
+    scope_methods: tuple[str, ...] = ()
+    scope_instruments: tuple[str, ...] = ()
+    scope_routes: tuple[str, ...] = ()
+    scope_modules: tuple[str, ...] = ()
+    scope_features: tuple[str, ...] = ()
+    precedence_rank: int = 0
+    supersedes: tuple[str, ...] = ()
+    conflict_policy: str = "prefer_newer"
+    statement: str = ""
+    rationale: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+
+
+@dataclass(frozen=True)
+class ResolvedInstructionSet:
+    """The precedence-resolved instruction set for one route."""
+
+    route: str
+    effective_instructions: tuple[InstructionRecord, ...] = ()
+    dropped_instructions: tuple[InstructionRecord, ...] = ()
+    conflicts: tuple[InstructionConflict, ...] = ()
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,28 @@
+id: mc_034
+title: Ranked basket pricing requires a real vol_surface
+severity: critical
+category: monte_carlo
+status: promoted
+confidence: 1.0
+created: '2026-03-28T15:08:00.000000'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_150628_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - path_dependent
+  - discounting
+  - black_vol_surface
+  instrument: []
+  error_signature: null
+symptom: 'Build fails with: market_state.vol_surface is required for basket pricing.'
+root_cause: The generated basket adapter or its requirements list omitted the black vol-surface capability, so the runtime market state did not include a concrete vol_surface object before calling the shared basket Monte Carlo helper.
+fix: Require and wire a real vol_surface into the basket pricing path before calling price_ranked_observation_basket_monte_carlo(); the adapter requirements should include black_vol_surface, and the market snapshot must materialize a concrete vol_surface object.
+validation: Discovered during build replay on the Himalaya proving run after fixing the constructor contract.

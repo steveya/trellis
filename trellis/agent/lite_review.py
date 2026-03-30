@@ -30,73 +30,9 @@ _SUSPICIOUS_LITERAL_NAMES = {
     "local_vol_surface": {"local_vol", "sigma_local", "local_vol_surface", "local_sigma"},
 }
 
-_ROUTE_REQUIRED_ACCESSES = {
-    "analytical_black76": {
-        "discount_curve": ("market_state.discount",),
-        "black_vol_surface": ("market_state.vol_surface",),
-    },
-    "analytical_garman_kohlhagen": {
-        "discount_curve": ("market_state.discount",),
-        "forward_curve": ("market_state.forward_curve", "market_state.forecast_curves"),
-        "black_vol_surface": ("market_state.vol_surface",),
-        "spot": ("market_state.spot", "market_state.underlier_spots", "market_state.fx_rates"),
-    },
-    "monte_carlo_paths": {
-        "discount_curve": ("market_state.discount",),
-        "black_vol_surface": ("market_state.vol_surface",),
-    },
-    "exercise_monte_carlo": {
-        "discount_curve": ("market_state.discount",),
-        "black_vol_surface": ("market_state.vol_surface",),
-    },
-    "local_vol_monte_carlo": {
-        "discount_curve": ("market_state.discount",),
-        "local_vol_surface": ("market_state.local_vol_surface", "market_state.local_vol_surfaces"),
-        "spot": ("market_state.spot", "market_state.underlier_spots"),
-    },
-    "rate_tree_backward_induction": {
-        "discount_curve": ("market_state.discount",),
-        "black_vol_surface": ("market_state.vol_surface",),
-    },
-    "exercise_lattice": {
-        "discount_curve": ("market_state.discount",),
-        "black_vol_surface": ("market_state.vol_surface",),
-    },
-}
-
-_ROUTE_ACCESS_ERROR_CODES = {
-    "analytical_black76": {
-        "discount_curve": "lite.analytical_discount_access_missing",
-        "black_vol_surface": "lite.analytical_vol_surface_access_missing",
-    },
-    "analytical_garman_kohlhagen": {
-        "discount_curve": "lite.fx_analytical_discount_access_missing",
-        "forward_curve": "lite.fx_analytical_forward_curve_access_missing",
-        "black_vol_surface": "lite.fx_analytical_vol_surface_access_missing",
-        "spot": "lite.fx_analytical_spot_access_missing",
-    },
-    "monte_carlo_paths": {
-        "discount_curve": "lite.monte_carlo_discount_access_missing",
-        "black_vol_surface": "lite.monte_carlo_vol_surface_access_missing",
-    },
-    "exercise_monte_carlo": {
-        "discount_curve": "lite.monte_carlo_discount_access_missing",
-        "black_vol_surface": "lite.monte_carlo_vol_surface_access_missing",
-    },
-    "local_vol_monte_carlo": {
-        "discount_curve": "lite.local_vol_monte_carlo_discount_access_missing",
-        "local_vol_surface": "lite.local_vol_monte_carlo_surface_access_missing",
-        "spot": "lite.local_vol_monte_carlo_spot_access_missing",
-    },
-    "rate_tree_backward_induction": {
-        "discount_curve": "lite.rate_tree_discount_access_missing",
-        "black_vol_surface": "lite.rate_tree_vol_surface_access_missing",
-    },
-    "exercise_lattice": {
-        "discount_curve": "lite.rate_tree_discount_access_missing",
-        "black_vol_surface": "lite.rate_tree_vol_surface_access_missing",
-    },
-}
+# Legacy _ROUTE_REQUIRED_ACCESSES and _ROUTE_ACCESS_ERROR_CODES removed.
+# Market-data access requirements are now sourced from the route registry
+# (routes.yaml market_data_access field) via _route_required_accesses_for().
 
 
 @dataclass(frozen=True)
@@ -113,6 +49,7 @@ class LiteReviewSignals:
 
     market_state_accesses: tuple[str, ...]
     literal_assignments: tuple[str, ...]
+    wall_clock_calls: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -137,6 +74,7 @@ class _LiteReviewVisitor(ast.NodeVisitor):
     def __init__(self) -> None:
         self.market_state_accesses: set[str] = set()
         self.literal_assignments: list[str] = []
+        self.wall_clock_calls: set[str] = set()
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
         chain = _resolve_attribute_chain(node)
@@ -159,6 +97,9 @@ class _LiteReviewVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
+        call_name = _resolve_call_name(node.func)
+        if call_name in {"date.today", "datetime.today", "datetime.now"}:
+            self.wall_clock_calls.add(call_name)
         for keyword in node.keywords:
             if keyword.arg is None:
                 continue
@@ -185,7 +126,11 @@ def review_generated_code(
         )
         return LiteReviewReport(
             issues=(issue,),
-            signals=LiteReviewSignals(market_state_accesses=(), literal_assignments=()),
+            signals=LiteReviewSignals(
+                market_state_accesses=(),
+                literal_assignments=(),
+                wall_clock_calls=(),
+            ),
         )
 
     visitor = _LiteReviewVisitor()
@@ -193,6 +138,7 @@ def review_generated_code(
     signals = LiteReviewSignals(
         market_state_accesses=tuple(sorted(visitor.market_state_accesses)),
         literal_assignments=tuple(visitor.literal_assignments),
+        wall_clock_calls=tuple(sorted(visitor.wall_clock_calls)),
     )
 
     required_market_data = set()
@@ -218,6 +164,17 @@ def review_generated_code(
             generation_plan=generation_plan,
         )
     )
+    if signals.wall_clock_calls:
+        issues.append(
+            LiteReviewIssue(
+                code="lite.wall_clock_valuation_date",
+                message=(
+                    "Generated code uses wall-clock time via "
+                    + ", ".join(f"`{call}`" for call in signals.wall_clock_calls)
+                    + ". Derive valuation time from `market_state` or shared resolver outputs instead."
+                ),
+            )
+        )
 
     return LiteReviewReport(issues=tuple(issues), signals=signals)
 
@@ -274,6 +231,15 @@ def _resolve_attribute_chain(node: ast.AST) -> str:
     return ".".join(reversed(parts))
 
 
+def _resolve_call_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _resolve_call_name(node.value)
+        return f"{base}.{node.attr}" if base else node.attr
+    return ""
+
+
 def _numeric_literal(node: ast.AST | None) -> str | None:
     if node is None:
         return None
@@ -305,7 +271,7 @@ def _route_specific_issues(
     if route == "analytical_garman_kohlhagen" and "map_fx_spot_and_curves_to_garman_kohlhagen_inputs" not in adapters:
         return tuple(issues)
 
-    required_accesses = _ROUTE_REQUIRED_ACCESSES.get(route, {})
+    required_accesses = _route_required_accesses_for(route)
     for capability, prefixes in required_accesses.items():
         if capability not in required_market_data:
             continue
@@ -313,15 +279,29 @@ def _route_specific_issues(
             continue
         issues.append(
             LiteReviewIssue(
-                code=_ROUTE_ACCESS_ERROR_CODES.get(route, {}).get(
-                    capability,
-                    f"lite.{route}_{capability}_access_missing",
-                ),
+                code=f"lite.{route}_{capability}_access_missing",
                 message=_route_access_message(route, capability),
             )
         )
 
     return tuple(issues)
+
+
+def _route_required_accesses_for(route: str | None) -> dict[str, tuple[str, ...]]:
+    """Return required market-state access patterns for a route.
+
+    Reads from the route registry's ``market_data_access.required`` field.
+    """
+    if route is None:
+        return {}
+    try:
+        from trellis.agent.route_registry import find_route_by_id
+        spec = find_route_by_id(route)
+        if spec is not None and spec.market_data_access.required:
+            return dict(spec.market_data_access.required)
+    except Exception:
+        pass
+    return {}
 
 
 def _has_market_state_access(signals: LiteReviewSignals, prefix: str) -> bool:

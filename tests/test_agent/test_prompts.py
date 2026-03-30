@@ -3,6 +3,15 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 
+def test_system_prompt_mentions_api_map_navigation():
+    from trellis.agent.prompts import system_prompt
+
+    prompt = system_prompt()
+    assert "inspect_api_map" in prompt
+    assert "API map" in prompt or "API Map" in prompt
+    assert "find_symbol" in prompt
+
+
 def test_evaluate_prompt_fallback_uses_unified_shared_knowledge(monkeypatch):
     from trellis.agent.prompts import evaluate_prompt
     from trellis.agent.quant import PricingPlan
@@ -44,6 +53,35 @@ def test_evaluate_prompt_fallback_uses_unified_shared_knowledge(monkeypatch):
     assert captured["compact"] is True
     assert "## Shared Knowledge" in prompt
     assert "Use shared retrieval." in prompt
+
+
+def test_evaluate_prompt_renders_selection_basis_and_assumptions():
+    from trellis.agent.prompts import evaluate_prompt
+    from trellis.agent.quant import PricingPlan
+
+    prompt = evaluate_prompt(
+        skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
+        spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
+        reference_sources={},
+        pricing_plan=PricingPlan(
+            method="analytical",
+            method_modules=["trellis.models.black"],
+            required_market_data={"discount_curve"},
+            model_to_build="european_option",
+            reasoning="Known vanilla route.",
+            selection_reason="simplest_valid_default",
+            assumption_summary=(
+                "simplest_valid_assumption_set",
+                "closed_form_or_quasi_closed_form_route",
+                "no_path_sampling_required",
+            ),
+        ),
+        knowledge_context="",
+    )
+
+    assert "Selection basis and assumptions:" in prompt
+    assert "simplest_valid_default" in prompt
+    assert "closed_form_or_quasi_closed_form_route" in prompt
 
 
 def test_executor_knowledge_context_escalates_after_first_attempt(monkeypatch):
@@ -181,6 +219,447 @@ def test_evaluate_prompt_compact_surface_uses_route_card_and_truncated_reference
     assert "[truncated reference]" in prompt
 
 
+def test_evaluate_prompt_compact_surface_mentions_black76_basis_helpers():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.prompts import evaluate_prompt
+    from trellis.agent.quant import PricingPlan
+
+    plan = GenerationPlan(
+        method="analytical",
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.black",),
+        approved_modules=("trellis.models.black", "trellis.core.date_utils"),
+        symbols_to_reuse=(
+            "black76_call",
+            "black76_put",
+            "black76_asset_or_nothing_call",
+            "black76_asset_or_nothing_put",
+            "black76_cash_or_nothing_call",
+            "black76_cash_or_nothing_put",
+            "terminal_vanilla_from_basis",
+        ),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="analytical_black76",
+            engine_family="analytical",
+            primitives=(
+                PrimitiveRef("trellis.models.black", "black76_call", "pricing_kernel"),
+                PrimitiveRef("trellis.models.black", "black76_put", "pricing_kernel"),
+                PrimitiveRef("trellis.models.black", "black76_asset_or_nothing_call", "pricing_kernel", required=False),
+                PrimitiveRef("trellis.models.black", "black76_asset_or_nothing_put", "pricing_kernel", required=False),
+                PrimitiveRef("trellis.models.analytical", "terminal_vanilla_from_basis", "assembly_helper", required=False),
+            ),
+            adapters=("map_spot_to_forward",),
+            blockers=(),
+        ),
+    )
+
+    prompt = evaluate_prompt(
+        skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
+        spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
+        reference_sources={"Black helper": "x" * 2000},
+        pricing_plan=PricingPlan(
+            method="analytical",
+            method_modules=["trellis.models.black"],
+            required_market_data={"discount_curve"},
+            model_to_build="european_option",
+            reasoning="Known digital route.",
+        ),
+        knowledge_context="## Shared Knowledge\n- Compact route",
+        generation_plan=plan,
+        prompt_surface="compact",
+    )
+
+    assert "black76_cash_or_nothing_call" in prompt
+    assert "black76_asset_or_nothing_call" in prompt
+    assert "terminal_vanilla_from_basis" in prompt
+    assert "basis claims" in prompt
+
+
+def test_evaluate_prompt_compact_surface_mentions_fx_basis_helpers():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.prompts import evaluate_prompt
+    from trellis.agent.quant import PricingPlan
+
+    plan = GenerationPlan(
+        method="analytical",
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.black", "trellis.models.analytical"),
+        approved_modules=("trellis.models.black", "trellis.models.analytical", "trellis.core.date_utils"),
+        symbols_to_reuse=(
+            "black76_asset_or_nothing_call",
+            "black76_asset_or_nothing_put",
+            "black76_cash_or_nothing_call",
+            "black76_cash_or_nothing_put",
+            "terminal_vanilla_from_basis",
+        ),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="analytical_garman_kohlhagen",
+            engine_family="analytical",
+            primitives=(
+                PrimitiveRef("trellis.models.black", "black76_asset_or_nothing_call", "pricing_kernel"),
+                PrimitiveRef("trellis.models.black", "black76_asset_or_nothing_put", "pricing_kernel"),
+                PrimitiveRef("trellis.models.black", "black76_cash_or_nothing_call", "pricing_kernel"),
+                PrimitiveRef("trellis.models.black", "black76_cash_or_nothing_put", "pricing_kernel"),
+                PrimitiveRef("trellis.models.analytical", "terminal_vanilla_from_basis", "assembly_helper"),
+            ),
+            adapters=("map_fx_spot_and_curves_to_garman_kohlhagen_inputs",),
+            blockers=(),
+        ),
+    )
+
+    prompt = evaluate_prompt(
+        skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
+        spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
+        reference_sources={"FX helper": "x" * 1500},
+        pricing_plan=PricingPlan(
+            method="analytical",
+            method_modules=["trellis.models.black", "trellis.models.analytical"],
+            required_market_data={"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot"},
+            model_to_build="european_option",
+            reasoning="FX vanilla route.",
+        ),
+        knowledge_context="## Shared Knowledge\n- FX compact route",
+        generation_plan=plan,
+        prompt_surface="compact",
+    )
+
+    assert "black76_asset_or_nothing_call" in prompt
+    assert "black76_cash_or_nothing_call" in prompt
+    assert "terminal_vanilla_from_basis" in prompt
+    assert "Garman-Kohlhagen" in prompt
+    assert "basis claims" in prompt
+
+
+def test_evaluate_prompt_compact_surface_mentions_current_pde_contract():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.prompts import evaluate_prompt
+    from trellis.agent.quant import PricingPlan
+
+    plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="pde_solver",
+            method_modules=["trellis.models.pde.theta_method"],
+            required_market_data={"discount_curve", "black_vol"},
+            model_to_build="european_option",
+            reasoning="PDE route.",
+        ),
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.pde.theta_method",),
+    )
+
+    prompt = evaluate_prompt(
+        skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
+        spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
+        reference_sources={"PDE helper": "x" * 1500},
+        pricing_plan=PricingPlan(
+            method="pde_solver",
+            method_modules=["trellis.models.pde.theta_method"],
+            required_market_data={"discount_curve", "black_vol"},
+            model_to_build="european_option",
+            reasoning="PDE route.",
+        ),
+        knowledge_context="## Shared Knowledge\n- PDE route",
+        generation_plan=plan,
+        prompt_surface="compact",
+    )
+
+    assert "## Structured Route Card" in prompt
+    assert "trellis.models.pde.grid" in prompt
+    assert "trellis.models.pde.operator" in prompt
+    assert "Construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray" in prompt
+    assert "Do not pass a callable terminal payoff into `theta_method_1d`" in prompt
+    assert "Import Repair Card" not in prompt
+
+
+def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+    from trellis.agent.prompts import evaluate_prompt
+    from trellis.agent.quant import PricingPlan
+
+    product_ir = decompose_to_ir(
+        "CDS pricing: hazard rate MC vs survival prob analytical",
+        instrument_type="cds",
+    )
+    plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="analytical",
+            method_modules=["trellis.core.date_utils"],
+            required_market_data={"discount_curve", "credit_curve"},
+            model_to_build="nth_to_default",
+            reasoning="CDS route.",
+        ),
+        instrument_type="cds",
+        inspected_modules=("trellis.core.date_utils",),
+        product_ir=product_ir,
+    )
+
+    prompt = evaluate_prompt(
+        skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
+        spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
+        reference_sources={"CDS helper": "x" * 1500},
+        pricing_plan=PricingPlan(
+            method="analytical",
+            method_modules=["trellis.core.date_utils"],
+            required_market_data={"discount_curve", "credit_curve"},
+            model_to_build="nth_to_default",
+            reasoning="CDS route.",
+        ),
+        knowledge_context="## Shared Knowledge\n- CDS compact route",
+        generation_plan=plan,
+        prompt_surface="compact",
+    )
+
+    assert "credit_curve" in prompt
+    assert "survival probability" in prompt.lower() or "survival_probability" in prompt
+    assert "CDS / nth-to-default Monte Carlo routes" in prompt or "CDS / nth-to-default analytical routes" in prompt
+    assert "explicit payment/default schedule" in prompt
+    assert "market_state.discount.discount(t)" in prompt
+
+
+def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule_loop():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+    from trellis.agent.prompts import evaluate_prompt
+    from trellis.agent.quant import PricingPlan
+
+    product_ir = decompose_to_ir(
+        "CDS pricing: hazard rate MC vs survival prob analytical",
+        instrument_type="cds",
+    )
+    plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="monte_carlo",
+            method_modules=["trellis.core.date_utils", "trellis.core.differentiable"],
+            required_market_data={"discount_curve", "credit_curve"},
+            model_to_build="nth_to_default",
+            reasoning="CDS route.",
+        ),
+        instrument_type="cds",
+        inspected_modules=("trellis.core.date_utils", "trellis.core.differentiable"),
+        product_ir=product_ir,
+    )
+
+    prompt = evaluate_prompt(
+        skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
+        spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
+        reference_sources={"CDS helper": "x" * 1500},
+        pricing_plan=PricingPlan(
+            method="monte_carlo",
+            method_modules=["trellis.core.date_utils", "trellis.core.differentiable"],
+            required_market_data={"discount_curve", "credit_curve"},
+            model_to_build="nth_to_default",
+            reasoning="CDS route.",
+        ),
+        knowledge_context="## Shared Knowledge\n- CDS compact route",
+        generation_plan=plan,
+        prompt_surface="compact",
+    )
+
+    assert "get_numpy" in prompt
+    assert "np = get_numpy()" in prompt
+    assert "explicit payment/default schedule" in prompt
+    assert "hazard_rate" in prompt or "survival_probability" in prompt
+    assert "market_state.discount.discount(t)" in prompt
+
+
+def test_evaluate_prompt_american_tree_surface_mentions_binomial_tree_and_longstaff_schwartz():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.prompts import evaluate_prompt
+    from trellis.agent.quant import PricingPlan
+
+    plan = GenerationPlan(
+        method="rate_tree",
+        instrument_type="american_option",
+        inspected_modules=(
+            "trellis.models.trees.binomial",
+            "trellis.models.trees.backward_induction",
+            "trellis.models.monte_carlo.engine",
+        ),
+        approved_modules=(
+            "trellis.models.trees.binomial",
+            "trellis.models.trees.backward_induction",
+            "trellis.models.monte_carlo.engine",
+        ),
+        symbols_to_reuse=("BinomialTree", "backward_induction", "longstaff_schwartz"),
+        proposed_tests=("tests/test_tasks/test_t07_american_put_3way.py",),
+        primitive_plan=PrimitivePlan(
+            route="exercise_lattice",
+            engine_family="tree",
+            route_family="equity_tree",
+            primitives=(
+                PrimitiveRef("trellis.models.trees.binomial", "BinomialTree", "tree_builder"),
+                PrimitiveRef(
+                    "trellis.models.trees.backward_induction",
+                    "backward_induction",
+                    "backward_induction",
+                ),
+            ),
+            adapters=("map_spot_to_tree_steps",),
+            blockers=(),
+            notes=(
+                "For American and Bermudan equity options, use `BinomialTree.crr(...)` and `backward_induction(..., exercise_type=\"american\"|\"bermudan\")`.",
+                "Do not invent `crr_tree`, `AMERICAN`, or a `method=\"lsm\"` fallback on the tree route.",
+            ),
+        ),
+    )
+
+    prompt = evaluate_prompt(
+        skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
+        spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
+        reference_sources={},
+        pricing_plan=PricingPlan(
+            method="rate_tree",
+            method_modules=[
+                "trellis.models.trees.binomial",
+                "trellis.models.trees.backward_induction",
+            ],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="american_option",
+            reasoning="American equity tree route.",
+        ),
+        knowledge_context="## Shared Knowledge\n- American tree route",
+        generation_plan=plan,
+        prompt_surface="compact",
+    )
+
+    assert "BinomialTree" in prompt
+    assert "backward_induction" in prompt
+    assert "trellis.models.trees.binomial" in prompt
+    assert "trellis.models.trees.backward_induction" in prompt
+    assert "Route family: `equity_tree`" in prompt
+    assert 'exercise_type="american"' in prompt
+    assert "longstaff_schwartz" in prompt
+
+
+def test_evaluate_prompt_american_pde_surface_mentions_exercise_values_and_rannacher():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.prompts import evaluate_prompt
+    from trellis.agent.quant import PricingPlan
+
+    plan = GenerationPlan(
+        method="pde_solver",
+        instrument_type="american_option",
+        inspected_modules=(
+            "trellis.models.pde.grid",
+            "trellis.models.pde.operator",
+            "trellis.models.pde.theta_method",
+        ),
+        approved_modules=(
+            "trellis.models.pde.grid",
+            "trellis.models.pde.operator",
+            "trellis.models.pde.theta_method",
+        ),
+        symbols_to_reuse=("Grid", "BlackScholesOperator", "theta_method_1d"),
+        proposed_tests=("tests/test_tasks/test_t07_american_put_3way.py",),
+        primitive_plan=PrimitivePlan(
+            route="pde_theta_1d",
+            engine_family="pde_solver",
+            primitives=(
+                PrimitiveRef("trellis.models.pde.grid", "Grid", "grid"),
+                PrimitiveRef("trellis.models.pde.operator", "BlackScholesOperator", "spatial_operator"),
+                PrimitiveRef("trellis.models.pde.theta_method", "theta_method_1d", "time_stepping"),
+            ),
+            adapters=("define_operator_boundary_terminal_conditions",),
+            blockers=(),
+            notes=(
+                "Construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray before calling `theta_method_1d(grid, operator, terminal_condition, theta=...)`.",
+                "Use `BlackScholesOperator(sigma_fn, r_fn)` with callable inputs; do not invent `log_grid_pde` or `uniform_grid_pde` helper names.",
+                "For American puts, pass `exercise_values` and `exercise_fn=max` instead of a bare `AMERICAN` constant or a `psor_pde` alias.",
+                "For barrier or digital payoffs, keep `lower_bc_fn` / `upper_bc_fn` callables explicit and use `rannacher_timesteps` to smooth the first backward steps.",
+            ),
+        ),
+    )
+
+    prompt = evaluate_prompt(
+        skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
+        spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
+        reference_sources={},
+        pricing_plan=PricingPlan(
+            method="pde_solver",
+            method_modules=["trellis.models.pde.theta_method"],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="american_option",
+            reasoning="American equity PDE route.",
+        ),
+        knowledge_context="## Shared Knowledge\n- American PDE route",
+        generation_plan=plan,
+        prompt_surface="compact",
+    )
+
+    assert "exercise_values" in prompt
+    assert "exercise_fn=max" in prompt
+    assert "rannacher_timesteps" in prompt
+    assert "trellis.models.pde.grid" in prompt
+    assert "trellis.models.pde.operator" in prompt
+
+
+def test_evaluate_prompt_barrier_pde_surface_mentions_grid_operator_and_rannacher():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.prompts import evaluate_prompt
+    from trellis.agent.quant import PricingPlan
+
+    plan = GenerationPlan(
+        method="pde_solver",
+        instrument_type="barrier_option",
+        inspected_modules=(
+            "trellis.models.pde.grid",
+            "trellis.models.pde.operator",
+            "trellis.models.pde.theta_method",
+        ),
+        approved_modules=(
+            "trellis.models.pde.grid",
+            "trellis.models.pde.operator",
+            "trellis.models.pde.theta_method",
+        ),
+        symbols_to_reuse=("Grid", "BlackScholesOperator", "theta_method_1d"),
+        proposed_tests=("tests/test_tasks/test_t09_barrier.py",),
+        primitive_plan=PrimitivePlan(
+            route="pde_theta_1d",
+            engine_family="pde_solver",
+            primitives=(
+                PrimitiveRef("trellis.models.pde.grid", "Grid", "grid"),
+                PrimitiveRef("trellis.models.pde.operator", "BlackScholesOperator", "spatial_operator"),
+                PrimitiveRef("trellis.models.pde.theta_method", "theta_method_1d", "time_stepping"),
+            ),
+            adapters=("define_operator_boundary_terminal_conditions",),
+            blockers=(),
+            notes=(
+                "Construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray before calling `theta_method_1d(grid, operator, terminal_condition, theta=...)`.",
+                "Use `BlackScholesOperator(sigma_fn, r_fn)` with callable inputs; do not invent `log_grid_pde` or `uniform_grid_pde` helper names.",
+                "For barrier or digital payoffs, keep `lower_bc_fn` / `upper_bc_fn` callables explicit and use `rannacher_timesteps` to smooth the first backward steps.",
+            ),
+        ),
+    )
+
+    prompt = evaluate_prompt(
+        skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
+        spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
+        reference_sources={},
+        pricing_plan=PricingPlan(
+            method="pde_solver",
+            method_modules=["trellis.models.pde.theta_method"],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="barrier_option",
+            reasoning="Barrier PDE route.",
+        ),
+        knowledge_context="## Shared Knowledge\n- Barrier PDE route",
+        generation_plan=plan,
+        prompt_surface="compact",
+    )
+
+    assert "Grid" in prompt
+    assert "BlackScholesOperator" in prompt
+    assert "theta_method_1d" in prompt
+    assert "rannacher_timesteps" in prompt
+    assert "trellis.models.pde.grid" in prompt
+    assert "trellis.models.pde.operator" in prompt
+    assert "lower_bc_fn" in prompt
+    assert "upper_bc_fn" in prompt
+
+
 def test_evaluate_prompt_import_repair_surface_uses_import_card_without_references():
     from trellis.agent.codegen_guardrails import GenerationPlan
     from trellis.agent.prompts import evaluate_prompt
@@ -267,6 +746,159 @@ def test_evaluate_prompt_expanded_surface_uses_full_generation_plan():
     assert "## Structured Generation Plan" in prompt
 
 
+def test_evaluate_prompt_quanto_analytical_surface_includes_resolution_guidance():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.prompts import evaluate_prompt
+    from trellis.agent.quant import PricingPlan
+
+    plan = GenerationPlan(
+        method="analytical",
+        instrument_type="quanto_option",
+        inspected_modules=(
+            "trellis.models.black",
+            "trellis.models.resolution.quanto",
+            "trellis.models.analytical.quanto",
+        ),
+        approved_modules=(
+            "trellis.models.black",
+            "trellis.models.resolution.quanto",
+            "trellis.models.analytical.quanto",
+        ),
+        symbols_to_reuse=("black76_call", "resolve_quanto_inputs", "price_quanto_option_analytical"),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="quanto_adjustment_analytical",
+            engine_family="analytical",
+            primitives=(
+                PrimitiveRef("trellis.models.black", "black76_call", "pricing_kernel"),
+                PrimitiveRef(
+                    "trellis.models.resolution.quanto",
+                    "resolve_quanto_inputs",
+                    "market_binding",
+                ),
+                PrimitiveRef(
+                    "trellis.models.analytical.quanto",
+                    "price_quanto_option_analytical",
+                    "route_helper",
+                ),
+            ),
+            adapters=("reuse_shared_quanto_market_binding",),
+            blockers=(),
+        ),
+    )
+
+    prompt = evaluate_prompt(
+        skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
+        spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
+        reference_sources={
+            "Quanto helper": "def resolve_quanto_inputs(...):\n    pass\n",
+            "Quanto analytical helper": "def price_quanto_option_analytical(...):\n    pass\n",
+        },
+        pricing_plan=PricingPlan(
+            method="analytical",
+            method_modules=[
+                "trellis.models.black",
+                "trellis.models.resolution.quanto",
+                "trellis.models.analytical.quanto",
+            ],
+            required_market_data={"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot", "model_parameters"},
+            model_to_build="quanto_option",
+            reasoning="family_blueprint:quanto_option",
+        ),
+        knowledge_context="## Shared Knowledge\n- Quanto analytical route",
+        generation_plan=plan,
+        prompt_surface="compact",
+    )
+
+    assert "resolve_quanto_inputs" in prompt
+    assert "price_quanto_option_analytical" in prompt
+    assert "Do not reimplement spot / FX / curve / correlation lookup" in prompt
+    assert "Do not reimplement the quanto-adjusted analytical pricing body" in prompt
+    assert "quanto-adjusted forward" in prompt
+    assert "trellis.models.analytical.support" in prompt
+    assert "normalized_option_type" in prompt
+    assert "discounted_value" in prompt
+
+
+def test_evaluate_prompt_quanto_monte_carlo_surface_includes_joint_state_guidance():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.prompts import evaluate_prompt
+    from trellis.agent.quant import PricingPlan
+
+    plan = GenerationPlan(
+        method="monte_carlo",
+        instrument_type="quanto_option",
+        inspected_modules=(
+            "trellis.models.monte_carlo.engine",
+            "trellis.models.monte_carlo.quanto",
+            "trellis.models.processes.correlated_gbm",
+            "trellis.models.resolution.quanto",
+        ),
+        approved_modules=(
+            "trellis.models.monte_carlo.engine",
+            "trellis.models.monte_carlo.quanto",
+            "trellis.models.processes.correlated_gbm",
+            "trellis.models.resolution.quanto",
+        ),
+        symbols_to_reuse=(
+            "MonteCarloEngine",
+            "CorrelatedGBM",
+            "resolve_quanto_inputs",
+            "price_quanto_option_monte_carlo",
+        ),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="correlated_gbm_monte_carlo",
+            engine_family="monte_carlo",
+            primitives=(
+                PrimitiveRef("trellis.models.processes.correlated_gbm", "CorrelatedGBM", "state_process"),
+                PrimitiveRef("trellis.models.monte_carlo.engine", "MonteCarloEngine", "path_simulation"),
+                PrimitiveRef(
+                    "trellis.models.resolution.quanto",
+                    "resolve_quanto_inputs",
+                    "market_binding",
+                ),
+                PrimitiveRef(
+                    "trellis.models.monte_carlo.quanto",
+                    "price_quanto_option_monte_carlo",
+                    "route_helper",
+                ),
+            ),
+            adapters=("reuse_shared_quanto_market_binding", "reuse_shared_quanto_mc_route_helper"),
+            blockers=(),
+        ),
+    )
+
+    prompt = evaluate_prompt(
+        skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
+        spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
+        reference_sources={
+            "Quanto helper": "def resolve_quanto_inputs(...):\n    pass\n",
+            "Quanto MC helper": "def price_quanto_option_monte_carlo(...):\n    pass\n",
+        },
+        pricing_plan=PricingPlan(
+            method="monte_carlo",
+            method_modules=[
+                "trellis.models.monte_carlo.engine",
+                "trellis.models.monte_carlo.quanto",
+                "trellis.models.processes.correlated_gbm",
+                "trellis.models.resolution.quanto",
+            ],
+            required_market_data={"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot", "model_parameters"},
+            model_to_build="quanto_option",
+            reasoning="family_blueprint:quanto_option",
+        ),
+        knowledge_context="## Shared Knowledge\n- Quanto MC route",
+        generation_plan=plan,
+        prompt_surface="compact",
+    )
+
+    assert "price_quanto_option_monte_carlo" in prompt
+    assert "np.array([resolved.spot, resolved.fx_spot]" in prompt
+    assert "Do not seed a multi-asset correlated GBM" in prompt
+    assert "Do not reimplement process / engine / payoff / discount wiring" in prompt
+
+
 def test_evaluate_prompt_compact_surface_trims_fx_reference_budget():
     from trellis.agent.prompts import evaluate_prompt
     from trellis.agent.quant import PricingPlan
@@ -312,3 +944,17 @@ def test_prompt_mentions_approved_early_exercise_policy_classes():
     assert "primal_dual_mc" in prompt
     assert "stochastic_mesh" in prompt
     assert "## Structured Route Card" not in prompt
+
+
+def test_prompt_warns_against_wall_clock_dates():
+    from trellis.agent.prompts import evaluate_prompt
+
+    prompt = evaluate_prompt(
+        skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
+        spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
+        reference_sources={},
+        knowledge_context="",
+        prompt_surface="compact",
+    )
+
+    assert "Never use wall-clock dates such as `date.today()`" in prompt

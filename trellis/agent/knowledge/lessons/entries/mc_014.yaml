@@ -1,0 +1,36 @@
+id: mc_014
+title: Himalaya basket must delegate to price_ranked_observation_basket_monte_carlo
+severity: critical
+category: monte_carlo
+status: validated
+confidence: 0.6
+created: '2026-03-28T08:53:12.217907'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_085312_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Build fails with assembly.required_primitive_missing because the generated
+  payoff class does not call price_ranked_observation_basket_monte_carlo from trellis.models.monte_carlo.semantic_basket.
+root_cause: The agent generated a custom payoff class with manual simulation logic
+  instead of acting as a thin adapter around the required semantic primitive. The
+  assembly route explicitly requires price_ranked_observation_basket_monte_carlo to
+  be invoked, and any code that reimplements the logic independently will fail the
+  primitive-usage check.
+fix: 'Structure the evaluate() method as a thin adapter: import price_ranked_observation_basket_monte_carlo
+  and call it with the resolved underlyings, observation dates, market state, and
+  correlation, returning its result directly without reimplementing ranked-selection
+  or path simulation.'
+validation: Discovered during build (attempt 1)

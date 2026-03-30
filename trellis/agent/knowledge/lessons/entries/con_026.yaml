@@ -1,0 +1,29 @@
+category: convention
+title: Missing primitive payoff adapter
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-29T08:32:06.915818'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_083207_american_put_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - early_exercise
+  - puttable
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Build fails with assembly.required_primitive_missing referencing trellis.models.black.black76_call
+  and the generated payoff does not call the required primitive.
+root_cause: The generated payoff implemented standalone logic instead of a thin adapter
+  that invokes the required primitive(s) (e.g. trellis.models.black.black76_call/black76_put)
+  with the exact expected signature and units. This mismatch also commonly co-occurs
+  with unit/discounting conventions not aligned with the primitive.
+fix: Reimplement the payoff as a thin adapter that calls the specified primitive(s)
+  with the exact parameter names, units and discounting conventions expected by the
+  assembly; add unit tests that assert assembly-level primitive usage and that unit
+  conversions/discount factors match the primitive's contract.
+validation: Discovered during build (attempt 3)
+id: con_026

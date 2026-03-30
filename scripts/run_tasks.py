@@ -24,8 +24,12 @@ os.environ.setdefault("LLM_PROVIDER", "openai")
 
 from trellis.agent.config import get_batch_token_budget, load_env
 from trellis.agent.evals import summarize_task_results
-from trellis.agent.task_run_store import TASK_RUN_LATEST_INDEX, TASK_RUN_LATEST_ROOT
+from trellis.agent.task_run_store import (
+    TASK_RUN_LATEST_INDEX,
+    TASK_RUN_LATEST_ROOT,
+)
 from trellis.agent.task_runtime import build_market_state, load_tasks, run_task
+from trellis.cli_paths import resolve_repo_path
 
 load_env()
 
@@ -39,6 +43,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Reuse existing generated modules when present instead of forcing rebuilds.",
     )
+    parser.add_argument(
+        "--fresh-build",
+        action="store_true",
+        help="Bypass deterministic supported-route reuse so tasks exercise live code generation.",
+    )
     parser.add_argument("--validation", default="standard")
     parser.add_argument("--output")
     return parser.parse_args(argv)
@@ -50,6 +59,7 @@ def run_block(
     *,
     model: str = "gpt-5-mini",
     force_rebuild: bool = True,
+    fresh_build: bool = False,
     validation: str = "standard",
 ):
     """Run a block of tasks and save results incrementally."""
@@ -62,6 +72,7 @@ def run_block(
     print(f"# Running {len(tasks)} tasks → {output_file}")
     print(f"# Model: {model}")
     print(f"# Force rebuild: {force_rebuild}")
+    print(f"# Fresh build: {fresh_build}")
     print(f"# Validation: {validation}")
     print(f"# Started: {datetime.now().isoformat()}")
     print(f"{'#' * 60}")
@@ -72,7 +83,8 @@ def run_block(
             task,
             market_state,
             model=model,
-            force_rebuild=force_rebuild,
+            force_rebuild=(force_rebuild or fresh_build),
+            fresh_build=fresh_build,
             validation=validation,
         )
         results.append(result)
@@ -116,6 +128,7 @@ def run_block(
     print(f"  Summary saved to: {summary_path}")
     print(f"  Latest task runs: {TASK_RUN_LATEST_ROOT}")
     print(f"  Latest task index: {TASK_RUN_LATEST_INDEX}")
+    print(f"  Latest diagnosis packets: {TASK_RUN_LATEST_ROOT.parent / 'diagnostics' / 'latest'}")
     print(f"{'=' * 60}")
 
 
@@ -124,11 +137,11 @@ if __name__ == "__main__":
 
     if not args.ids or args.ids[0] == "all":
         tasks = load_tasks()
-        output_file = args.output or str(ROOT / "task_results_all.json")
+        output_file = resolve_repo_path(args.output, ROOT / "task_results_all.json")
     elif len(args.ids) == 2:
         tasks = load_tasks(args.ids[0], args.ids[1])
         safe_name = f"{args.ids[0]}_{args.ids[1]}".lower()
-        output_file = args.output or str(ROOT / f"task_results_{safe_name}.json")
+        output_file = resolve_repo_path(args.output, ROOT / f"task_results_{safe_name}.json")
     else:
         print(f"Usage: {sys.argv[0]} [--reuse] [--model MODEL] [start_id end_id | all]")
         sys.exit(1)
@@ -138,5 +151,6 @@ if __name__ == "__main__":
         output_file,
         model=args.model,
         force_rebuild=not args.reuse,
+        fresh_build=args.fresh_build,
         validation=args.validation,
     )

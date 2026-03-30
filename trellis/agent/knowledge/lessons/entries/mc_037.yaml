@@ -1,0 +1,31 @@
+category: monte_carlo
+title: Undefined regression-basis symbol in dataclass
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:01:09.636831'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_230110_american_put_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - american
+  - early_exercise
+  - puttable
+  - discounting
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''polynomial'' is not defined raised at module import /
+  dataclass construction.'
+root_cause: The code generator placed a bare identifier (polynomial) as a default
+  value for the regression basis instead of a string literal or an imported/defined
+  symbol; dataclass defaults are evaluated at import time so the missing name causes
+  an immediate failure.
+fix: Replace the bare identifier with a safe default (e.g. the string 'polynomial'),
+  or set the default to None and validate/resolve it in __post_init__; alternatively
+  ensure the symbol is defined or imported before use. Add a unit test that imports
+  the module to catch NameError at build time.
+validation: Discovered during build (attempt 1)
+id: mc_037

@@ -12,6 +12,13 @@ def test_find_symbol_tool_returns_matches():
     assert any(match["module"] == "trellis.models.pde.theta_method" for match in payload)
 
 
+def test_inspect_api_map_tool_returns_navigation_card():
+    payload = _handle_tool_call("inspect_api_map", {})
+    assert "API Map" in payload
+    assert "MarketState" in payload
+    assert "trellis.models.monte_carlo" in payload
+
+
 def test_list_exports_tool_returns_public_exports():
     payload = json.loads(_handle_tool_call(
         "list_exports",

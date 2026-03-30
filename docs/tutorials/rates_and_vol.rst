@@ -76,7 +76,8 @@ Some public analytics are intentionally documented with caveats:
 
 - tenor bumps are currently exact-tenor only, so key-rate style analyses
   on sparse curves need care
-- vega analytics assume a flat volatility surface
+- Vega now uses autograd for ``FlatVol`` inputs, but smile surfaces still fall
+  back to a scalar proxy rather than a full surface-aware sensitivity map
 
 Related Reading
 ---------------

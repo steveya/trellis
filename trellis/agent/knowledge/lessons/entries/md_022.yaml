@@ -1,0 +1,36 @@
+id: md_022
+title: ResolvedBasketSemantics has no 'spots' attribute
+severity: critical
+category: market_data
+status: validated
+confidence: 0.6
+created: '2026-03-28T09:04:03.640585'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_090403_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'AttributeError: ''ResolvedBasketSemantics'' object has no attribute ''spots''
+  raised during MC payoff smoke test.'
+root_cause: The code attempts to access `.spots` on a `ResolvedBasketSemantics` object,
+  but the correct attribute name for spot prices in that object is different (e.g.,
+  `.spot_prices`, `.spot_map`, or spots are accessed via the `MarketState` directly
+  per ticker). The basket semantics resolver returns a structured object whose spot
+  data is not exposed as `.spots`.
+fix: Access spot prices directly from `MarketState` using `market_state.spot(ticker)`
+  for each underlying, or use the correct attribute on `ResolvedBasketSemantics` (e.g.,
+  `.spot_map` or `.initial_spots`). Do not rely on a `.spots` shortcut attribute that
+  does not exist on that object.
+validation: Discovered during build (attempt 2)

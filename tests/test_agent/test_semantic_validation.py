@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from trellis.agent.codegen_guardrails import build_generation_plan
 from trellis.agent.knowledge.decompose import decompose_to_ir
 from trellis.agent.quant import PricingPlan
@@ -125,6 +127,21 @@ def price_from_paths(paths):
 """
 
 
+EQUITY_TREE_SOURCE = """\
+from __future__ import annotations
+
+from trellis.models.trees.binomial import BinomialTree
+from trellis.models.trees.backward_induction import backward_induction
+"""
+
+
+RATE_LATTICE_SOURCE = """\
+from __future__ import annotations
+
+from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction
+"""
+
+
 def _artifact(name: str) -> str:
     return (AGENT_ARTIFACTS / name).read_text()
 
@@ -166,14 +183,31 @@ def test_extracts_transform_usage_and_scalar_math():
     assert "char_fn" in signals.scalar_math_functions
 
 
-def test_extracts_lattice_exercise_contract_from_callable_artifact():
+def test_extracts_lattice_exercise_contract_from_rate_lattice_artifact():
     from trellis.agent.semantic_validation import extract_semantic_signals
 
-    signals = extract_semantic_signals(_artifact("callablebond.py"))
+    signals = extract_semantic_signals(_artifact("bermudanswaption.py"))
 
+    assert "rate_lattice" in signals.engine_families
     assert "bermudan" in signals.lattice_exercise_types
     assert signals.lattice_has_exercise_steps
-    assert "min" in signals.lattice_exercise_functions
+    assert "max" in signals.lattice_exercise_functions
+
+
+def test_extracts_equity_tree_engine_family_from_binomial_tree_imports():
+    from trellis.agent.semantic_validation import extract_semantic_signals
+
+    signals = extract_semantic_signals(EQUITY_TREE_SOURCE)
+
+    assert signals.engine_families == ("equity_tree",)
+
+
+def test_extracts_rate_lattice_engine_family_from_rate_lattice_imports():
+    from trellis.agent.semantic_validation import extract_semantic_signals
+
+    signals = extract_semantic_signals(RATE_LATTICE_SOURCE)
+
+    assert signals.engine_families == ("rate_lattice",)
 
 
 def test_rejects_current_american_agent_artifact():
@@ -228,6 +262,42 @@ def test_rejects_scalar_transform_char_fn():
     assert "transform.scalar_char_fn" in issue_codes
 
 
+@pytest.mark.parametrize(
+    "description,expected_missing_field",
+    [
+        ("Finite element method (FEM) vs finite difference for European", "semantic_product_shape"),
+        (
+            "Crank-Nicolson Rannacher smoothing for discontinuous payoffs\n\nImplementation target: black_scholes_digital",
+            "semantic_product_shape",
+        ),
+    ],
+)
+def test_classify_semantic_gap_treats_vanilla_option_words_as_shape_cues(
+    description: str,
+    expected_missing_field: str,
+):
+    from trellis.agent.semantic_contract_validation import classify_semantic_gap
+
+    report = classify_semantic_gap(description)
+
+    assert expected_missing_field not in report.missing_contract_fields
+    assert report.requires_clarification is False
+
+
+def test_classify_semantic_gap_treats_cds_as_credit_request():
+    from trellis.agent.semantic_contract_validation import classify_semantic_gap
+
+    report = classify_semantic_gap(
+        "CDS pricing: hazard rate MC vs survival prob analytical",
+        instrument_type="cds",
+    )
+
+    assert report.requires_clarification is False
+    assert "semantic_product_shape" not in report.missing_contract_fields
+    assert "discount_curve" in report.missing_market_inputs
+    assert "credit_curve" in report.missing_market_inputs
+
+
 def test_accepts_fixed_t39_transform_artifact():
     from trellis.agent.semantic_validation import validate_semantics
 
@@ -241,7 +311,7 @@ def test_accepts_fixed_t39_transform_artifact():
     assert report.ok
 
 
-def test_rejects_callable_lattice_with_holder_objective():
+def test_callable_adapter_does_not_claim_lattice_objective():
     from trellis.agent.semantic_validation import validate_semantics
 
     report = validate_semantics(
@@ -252,8 +322,7 @@ def test_rejects_callable_lattice_with_holder_objective():
         ),
     )
 
-    issue_codes = {issue.code for issue in report.issues}
-    assert "lattice.exercise_objective_mismatch" in issue_codes
+    assert report.ok
 
 
 def test_rejects_bermudan_lattice_with_issuer_objective():

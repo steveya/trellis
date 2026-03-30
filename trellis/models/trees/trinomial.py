@@ -49,12 +49,10 @@ class TrinomialTree:
     def _build_tree(self) -> raw_np.ndarray:
         """Build (n+1) x (2n+1) array. Node (i, j) where j is centered."""
         n = self.n_steps
-        tree = raw_np.zeros((n + 1, 2 * n + 1))
-        mid = n  # center index
-        for i in range(n + 1):
-            for j in range(-i, i + 1):
-                tree[i, mid + j] = self.S0 * self.u ** max(j, 0) * self.d ** max(-j, 0)
-        return tree
+        steps = np.arange(n + 1)[:, None]
+        offsets = np.arange(-n, n + 1)[None, :]
+        values = self.S0 * (self.u ** np.maximum(offsets, 0)) * (self.d ** np.maximum(-offsets, 0))
+        return np.where(np.abs(offsets) <= steps, values, 0.0)
 
     def value_at(self, step: int, node_offset: int) -> float:
         """Return value at (step, offset from center)."""
@@ -68,11 +66,11 @@ class TrinomialTree:
         u = exp(sigma * sqrt(2*dt)), d = 1/u, middle = 1.
         """
         dt = T / n_steps
-        u = raw_np.exp(sigma * raw_np.sqrt(2 * dt))
+        u = np.exp(sigma * np.sqrt(2 * dt))
         d = 1.0 / u
         # Risk-neutral probabilities
-        erddt = raw_np.exp(r * dt / 2)
-        esvdt = raw_np.exp(sigma * raw_np.sqrt(dt / 2))
+        erddt = np.exp(r * dt / 2)
+        esvdt = np.exp(sigma * np.sqrt(dt / 2))
         pu = ((erddt - 1 / esvdt) / (esvdt - 1 / esvdt)) ** 2
         pd = ((esvdt - erddt) / (esvdt - 1 / esvdt)) ** 2
         pm = 1.0 - pu - pd

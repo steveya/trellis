@@ -1,0 +1,26 @@
+category: semantic
+title: _semantic_extension_decision_knowledge_artifact_concept_vanilla_opti
+severity: medium
+status: validated
+confidence: 0.6
+created: '2026-03-28T22:47:59.985515'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/semantic_extensions/9682190fa334f0cd.yaml
+applies_when:
+  method:
+  - knowledge_artifact
+  features:
+  - underlier_structure
+  - payoff_rule
+  - settlement_rule
+  - semantic_contract_lesson
+  instrument:
+  - european_option
+  error_signature: null
+symptom: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing knowledge artifacts: semantic_contract_lesson'
+root_cause: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing knowledge artifacts: semantic_contract_lesson'
+fix: Keep the canonical concept and surface the compatibility name as a thin wrapper.
+validation: Repeated semantic extension trace `9682190fa334f0cd`
+id: sem_007

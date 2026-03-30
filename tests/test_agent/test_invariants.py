@@ -47,6 +47,27 @@ class TestNonNegativity:
         failures = check_non_negativity(_cap_factory(), _ms_factory())
         assert failures == []
 
+    def test_non_negativity_can_return_structured_diagnostics(self):
+        class NegativePayoff:
+            @property
+            def requirements(self):
+                return {"discount"}
+
+            def evaluate(self, market_state):
+                return -2.5
+
+        failures = check_non_negativity(
+            NegativePayoff(),
+            _ms_factory(),
+            return_diagnostics=True,
+        )
+
+        assert len(failures) == 1
+        failure = failures[0]
+        assert failure.check == "check_non_negativity"
+        assert failure.actual == pytest.approx(-2.5)
+        assert "available_capabilities" in failure.context
+
 
 class TestVolMonotonicity:
 

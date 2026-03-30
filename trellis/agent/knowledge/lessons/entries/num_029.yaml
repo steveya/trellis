@@ -1,0 +1,32 @@
+category: numerical
+title: Undefined method identifier in spec default
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-03-29T08:36:29.297101'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_083630_barrier_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - barrier
+  - path_dependent
+  - vol_surface_dependence
+  - pde_grid
+  - discounting
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'Runtime NameError: name ''analytical'' is not defined when constructing
+  the instrument/spec.'
+root_cause: A Python identifier (analytical) was used as a default value in the dataclass
+  instead of a string, enum, or an imported constant; the symbol was never defined
+  or imported. This is a simple namespace/typing bug that surfaces at import/instantiation
+  time.
+fix: 'Use a quoted string literal, a defined enum/constant, or import the symbol before
+  using it as a default (e.g. pricing_method: str = ''analytical'' or pricing_method:
+  PricingMethod.ANALYTICAL). Add static linting and unit tests that import and instantiate
+  specs to catch these errors early.'
+validation: Discovered during build (attempt 2)
+id: num_029

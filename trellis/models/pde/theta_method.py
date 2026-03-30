@@ -95,6 +95,7 @@ def theta_method_1d(
     upper_bc_fn=None,
     exercise_values: raw_np.ndarray | None = None,
     exercise_fn=None,
+    rannacher_timesteps: int = 0,
     omega: float = 1.2,
     psor_max_iter: int = 1000,
     psor_tol: float = 1e-8,
@@ -120,6 +121,10 @@ def theta_method_1d(
     exercise_fn : callable or None
         How to combine continuation and exercise. Default: ``max``
         (American option holder maximizes). Use ``min`` for callable bonds.
+    rannacher_timesteps : int
+        Number of initial backward time steps to solve with fully implicit
+        stepping before switching back to the requested ``theta``. This is a
+        simple Rannacher smoothing layer for discontinuous terminal payoffs.
     omega : float
         SOR relaxation parameter (only used when exercise_values is set).
     psor_max_iter, psor_tol : int, float
@@ -132,6 +137,7 @@ def theta_method_1d(
     """
     if exercise_fn is None:
         exercise_fn = max
+    rannacher_timesteps = max(int(rannacher_timesteps), 0)
 
     S = grid.x
     n_x = grid.n_x
@@ -143,6 +149,8 @@ def theta_method_1d(
 
     for step in range(n_t - 1, -1, -1):
         t = step * dt
+        steps_from_maturity = n_t - step
+        step_theta = 1.0 if 0 < rannacher_timesteps and steps_from_maturity <= rannacher_timesteps else theta
 
         # Get operator coefficients: L*dt tridiagonal
         a, b, c = operator.coefficients(S, t, dt)
@@ -154,12 +162,12 @@ def theta_method_1d(
         if exercise_values is not None:
             # PSOR: solve LCP via projected SOR
             V = _psor_step(
-                V, a, b, c, theta, V_lower, V_upper, n_int,
+                V, a, b, c, step_theta, V_lower, V_upper, n_int,
                 exercise_values, exercise_fn, omega, psor_max_iter, psor_tol,
             )
         else:
             # Standard theta-method: solve tridiagonal system
-            V = _theta_step(V, a, b, c, theta, V_lower, V_upper, n_int)
+            V = _theta_step(V, a, b, c, step_theta, V_lower, V_upper, n_int)
 
     return V
 

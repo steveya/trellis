@@ -64,6 +64,7 @@ def test_grade_generation_plan_accepts_inspected_plan():
     report = grade_generation_plan(_plan())
     assert report["inspection_evidence_present"].passed
     assert report["test_selection"].passed
+    assert report["test_scope"].passed
 
 
 def test_grade_generation_plan_flags_missing_inspection():
@@ -96,9 +97,10 @@ def evaluate(settlement, expiry, start, end, freq, day_count):
     if schedule:
         return black76_call(0.05, 0.04, 0.2, t)
     return black76_put(0.05, 0.04, 0.2, t)
-"""
+    """
     report = grade_generated_module(source, _plan())
     assert report["import_correctness"].passed
+    assert report["import_correctness"].blocking is False
     assert report["semantic_validity"].passed
 
 
@@ -110,6 +112,7 @@ def test_grade_generated_module_flags_semantic_invalidity():
         _plan(method="monte_carlo", instrument_type="american_option"),
     )
     assert not report["semantic_validity"].passed
+    assert report["semantic_validity"].blocking
     assert any(
         "mc.invalid_method_mode" in detail for detail in report["semantic_validity"].details
     )
@@ -121,7 +124,26 @@ def test_grade_generated_module_flags_unsupported_claims():
     claims = ["supports_bsde", "supports_quantization", "analytical"]
     report = grade_eval_claims(claims)
     assert not report["unsupported_claims"].passed
+    assert report["unsupported_claims"].blocking
     assert "supports_bsde" in report["unsupported_claims"].details[0]
+
+
+def test_grade_generation_plan_flags_unknown_test_scope():
+    from trellis.agent.codegen_guardrails import GenerationPlan
+    from trellis.agent.evals import grade_generation_plan
+
+    plan = GenerationPlan(
+        method="analytical",
+        instrument_type="swaption",
+        inspected_modules=("trellis.models.black",),
+        approved_modules=("trellis.models.black",),
+        symbols_to_reuse=("black76_call",),
+        proposed_tests=("tests/not_a_real_test.py",),
+    )
+
+    report = grade_generation_plan(plan)
+    assert not report["test_scope"].passed
+    assert report["test_scope"].blocking
 
 
 def test_load_stress_task_manifest():
@@ -321,11 +343,18 @@ def test_summarize_promotion_discipline_flags_success_without_reusable_artifacts
             "reflection": {"cookbook_candidate_saved": "/tmp/candidate.yaml"},
             "knowledge_summary": {"lesson_ids": ["num_011"]},
         },
+        {
+            "task_id": "T3",
+            "success": True,
+            "reflection": {"promotion_candidate_saved": "/tmp/promotion.yaml"},
+            "knowledge_summary": {},
+        },
     ])
 
-    assert summary["successful_tasks"] == 2
+    assert summary["successful_tasks"] == 3
     assert summary["successful_tasks_with_shared_context"] == 1
     assert summary["cookbook_candidates"] == 1
+    assert summary["promotion_candidates"] == 1
     assert summary["successful_tasks_without_reusable_artifacts"] == ["T1"]
 
 

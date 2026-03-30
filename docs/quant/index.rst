@@ -20,6 +20,7 @@ Core Quant Topics
    :maxdepth: 1
 
    pricing_stack
+   differentiable_pricing
    extending_trellis
    knowledge_maintenance
 
@@ -42,4 +43,3 @@ Mathematical And Computational Reference
    ../mathematical/copulas
    ../mathematical/calibration
    ../mathematical/cashflow_engine
-

@@ -1,0 +1,28 @@
+category: convention
+title: Missing required primitive payoff adapter
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T23:41:05.182230'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_234106_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Generated code did not call the required primitives trellis.models.black.black76_call
+  or trellis.models.black.black76_put.
+root_cause: The payoff was implemented as a custom evaluation that never invoked the
+  assembly-mandated black-76 primitives; the system expects a thin adapter around
+  those primitives with the exact import/usage conventions. Mismatch in API/primitive
+  contract (names, inputs, units) caused assembly validation to fail.
+fix: Rebuild the payoff as a thin adapter that imports and calls trellis.models.black.black76_call
+  / black76_put with the correct argument order and units, then apply discounting
+  and notional scaling; ensure vol lookup and discount curve calls match the expected
+  MarketState interfaces.
+validation: Discovered during build (attempt 3)
+id: con_022

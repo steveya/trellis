@@ -1,0 +1,33 @@
+id: mc_010
+title: Unexpected indent in generated module
+severity: critical
+category: monte_carlo
+status: validated
+confidence: 0.6
+created: '2026-03-26T18:28:10.443173'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260326_182810_quanto_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - forward_rate
+  - greeks
+  - vol_surface_dependence
+  - correlation
+  - quanto
+  - cross_currency
+  - european_option
+  instrument: []
+  error_signature: null
+symptom: 'Python import fails with SyntaxError: unexpected indent at a specific line
+  in the generated module.'
+root_cause: The code generator emitted inconsistent or stray indentation (e.g., leftover
+  indented block or mixed tabs/spaces) or truncated/partial import statements that
+  left the following lines indented incorrectly.
+fix: Add an automated post-generation syntax/lint/import check (flake8/black and try
+  importing the module). Ensure the generator emits consistent indentation (prefer
+  4 spaces), and validate that all import and block constructs are complete before
+  writing the file.
+validation: Discovered during build (attempt 3)

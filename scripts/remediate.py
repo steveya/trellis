@@ -21,8 +21,103 @@ def load_all_results() -> list[dict]:
     results = []
     for f in sorted(ROOT.glob("task_results_*.json")):
         with open(f) as fh:
-            results.extend(json.load(fh))
+            payload = json.load(fh)
+        results.extend(_extract_result_records(payload))
     return results
+
+
+def _extract_result_records(payload) -> list[dict]:
+    """Normalize task result payloads into a flat list of result dicts.
+
+    Historical task result files are lists of result dictionaries. Newer
+    summary/index files may store a mapping of task ids to records that contain
+    the actual result under a nested ``result`` key. We keep only the concrete
+    result records and ignore summary-only objects.
+    """
+    if isinstance(payload, list):
+        records = []
+        for item in payload:
+            if _is_result_record(item):
+                records.append(item)
+                continue
+            if isinstance(item, dict):
+                nested = item.get("result")
+            else:
+                nested = None
+            if _is_result_record(nested):
+                records.append(nested)
+        return records
+
+    if isinstance(payload, dict):
+        if _is_result_record(payload):
+            return [payload]
+        nested = payload.get("result")
+        if _is_result_record(nested):
+            return [nested]
+
+        records = []
+        for value in payload.values():
+            if _is_result_record(value):
+                records.append(value)
+                continue
+            nested = value.get("result") if isinstance(value, dict) else None
+            if _is_result_record(nested):
+                records.append(nested)
+        return records
+
+    return []
+
+
+def _is_result_record(payload) -> bool:
+    """Return True when the payload looks like a concrete task result record."""
+    return isinstance(payload, dict) and "task_id" in payload and "success" in payload
+
+
+def _failure_text(result: dict) -> str:
+    """Flatten the most relevant top-level and nested failure text for analysis."""
+    parts: list[str] = []
+
+    def add(value, *, prefix: str | None = None) -> None:
+        if isinstance(value, str):
+            text = value.strip()
+            if text:
+                parts.append(f"{prefix}: {text}" if prefix else text)
+            return
+        if isinstance(value, dict):
+            text = json.dumps(value, default=str, sort_keys=True)
+            if text and text != "{}":
+                parts.append(f"{prefix}: {text}" if prefix else text)
+            return
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                add(item, prefix=prefix)
+
+    add(result.get("error"))
+    add(result.get("failures"))
+    add(result.get("blocker_details"))
+
+    cross_validation = result.get("cross_validation") or {}
+    if isinstance(cross_validation, dict):
+        status = str(cross_validation.get("status") or "").strip()
+        if status and status != "passed":
+            parts.append(f"cross_validation status: {status}")
+
+    method_results = result.get("method_results") or {}
+    if isinstance(method_results, dict):
+        for method_id, payload in method_results.items():
+            if not isinstance(payload, dict):
+                continue
+            prefix = str(method_id)
+            add(payload.get("error"), prefix=prefix)
+            add(payload.get("failures"), prefix=prefix)
+            add(payload.get("blocker_details"), prefix=prefix)
+            method_cross_validation = payload.get("cross_validation") or {}
+            if isinstance(method_cross_validation, dict):
+                status = str(method_cross_validation.get("status") or "").strip()
+                if status and status != "passed":
+                    parts.append(f"{prefix}: cross_validation status: {status}")
+
+    return "\n".join(parts)
 
 
 def analyze_failures(results: list[dict]) -> dict:
@@ -31,26 +126,83 @@ def analyze_failures(results: list[dict]) -> dict:
 
     categories = {
         "import_hallucination": [],    # Wrong import paths
+        "missing_market_data": [],      # Missing task or market-data capability
         "missing_cookbook": [],         # No cookbook for method
         "missing_decomposition": [],   # LLM decomposition fell through
         "implementation_gap": [],      # Library doesn't support feature
         "validation_failure": [],      # Code ran but produced wrong results
+        "llm_response": [],            # LLM returned invalid or unusable output
+        "timeout": [],                 # Model or tool timed out
+        "rate_limit": [],              # Upstream provider quota/rate limit
+        "comparison_failure": [],      # Comparison task could not produce enough results
         "other": [],
     }
 
     for r in failures:
-        err = r.get("failures", [""])[0]
+        err = _failure_text(r)
         gaps = r.get("knowledge_gaps", [])
         conf = r.get("gap_confidence", 1.0)
+        text = err.lower()
 
-        if "No module named" in err or "ImportError" in err:
+        if any(
+            pattern in text
+            for pattern in (
+                "no module named",
+                "importerror",
+                "cannot import name",
+                "cannot find module",
+            )
+        ):
             categories["import_hallucination"].append(r)
+        elif any(
+            pattern in text
+            for pattern in (
+                "missing market data",
+                "missingcapabilityerror",
+                "cannot build payoff",
+                "missing capabilities",
+                "unknown forecast curve",
+                "unknown fx rate",
+            )
+        ):
+            categories["missing_market_data"].append(r)
         elif any("cookbook" in g.lower() for g in gaps):
             categories["missing_cookbook"].append(r)
         elif conf < 0.3:
             categories["missing_decomposition"].append(r)
-        elif "validation" in err.lower() or "assert" in err.lower():
+        elif any(pattern in text for pattern in ("timeout", "exceeded 30.0s", "timed out")):
+            categories["timeout"].append(r)
+        elif any(pattern in text for pattern in ("429", "quota", "rate limit")):
+            categories["rate_limit"].append(r)
+        elif any(
+            pattern in text
+            for pattern in (
+                "assembly.required_primitive_missing",
+                "missing required primitive",
+                "syntaxerror",
+                "name '",
+                "name \"",
+                "is not defined",
+            )
+        ):
+            categories["implementation_gap"].append(r)
+        elif "llm provider" in text or any(
+            pattern in text
+            for pattern in (
+                "invalid json",
+                "empty response",
+                "expecting value: line 1 column 1",
+                "unexpected end of json input",
+            )
+        ):
+            categories["llm_response"].append(r)
+        elif "validation" in text or "assert" in text:
             categories["validation_failure"].append(r)
+        elif (
+            (r.get("comparison_task") or (r.get("cross_validation") or {}).get("status"))
+            and (r.get("cross_validation") or {}).get("status") not in {None, "", "passed"}
+        ):
+            categories["comparison_failure"].append(r)
         else:
             categories["other"].append(r)
 
@@ -85,8 +237,9 @@ def fix_import_knowledge():
             "root_cause": (
                 "The agent invents module paths like 'pde_solver', 'simulation', "
                 "'pdesolvers' that don't exist. The actual module paths are:\n"
-                "- PDE: trellis.models.pde.theta_method (theta_method_1d, BlackScholesOperator)\n"
-                "- PDE: trellis.models.pde.operator (PDEOperator base)\n"
+                "- PDE: trellis.models.pde.theta_method (theta_method_1d)\n"
+                "- PDE: trellis.models.pde.operator (BlackScholesOperator, CEVOperator, PDEOperator, HeatOperator)\n"
+                "- PDE: trellis.models.pde.grid (Grid)\n"
                 "- MC: trellis.models.monte_carlo.engine (MonteCarloEngine)\n"
                 "- MC: trellis.models.monte_carlo.lsm (LSM, LaguerreBasis)\n"
                 "- MC: trellis.models.monte_carlo.discretization (schemes)\n"
@@ -106,7 +259,9 @@ def fix_import_knowledge():
                 "If unsure, use trellis.models.black for analytical, "
                 "trellis.models.monte_carlo.engine for MC, "
                 "trellis.models.trees.lattice for trees, "
-                "trellis.models.pde.theta_method for PDE, "
+                "trellis.models.pde.theta_method for the time-stepping solver, "
+                "trellis.models.pde.operator for PDE operators, "
+                "trellis.models.pde.grid for PDE grids, "
                 "trellis.models.transforms.cos_method for FFT/COS."
             ),
             "method": None,  # applies to ALL methods
@@ -153,8 +308,9 @@ Use this pattern for European/American options via PDE.
 ```python
 def evaluate(self, market_state):
     from trellis.core.date_utils import year_fraction
-    from trellis.models.pde.theta_method import theta_method_1d
+    from trellis.models.pde.grid import Grid
     from trellis.models.pde.operator import BlackScholesOperator
+    from trellis.models.pde.theta_method import theta_method_1d
     import numpy as np
 
     spec = self._spec
@@ -162,25 +318,31 @@ def evaluate(self, market_state):
     r = float(market_state.discount.zero_rate(T))
     sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
 
-    # Grid: S from 0 to ~4*spot
+    # Grid: S from 0 to ~4*spot, with explicit x_min and n_t.
     S_max = 4.0 * spec.spot
-    n_S = 200
-    n_t = max(200, int(T * 252))
+    n_x = 201
+    n_t = max(200, int(round(T * 252)))
 
     # Terminal payoff
-    S_grid = np.linspace(0, S_max, n_S + 1)
-    # >>> INSTRUMENT-SPECIFIC: define terminal payoff <<<
-    payoff = np.maximum(S_grid - spec.strike, 0)  # call example
+    grid = Grid(x_min=0.0, x_max=S_max, n_x=n_x, T=T, n_t=n_t)
+    terminal = np.maximum(grid.x - spec.strike, 0.0)
 
     # PDE operator
-    op = BlackScholesOperator(r=r, sigma=sigma)
+    op = BlackScholesOperator(lambda s, t: sigma, lambda t: r)
 
     # Solve: theta=0.5 for Crank-Nicolson, theta=1.0 for fully implicit
-    V = theta_method_1d(op, payoff, S_grid, T, n_t, theta=0.5)
+    V = theta_method_1d(
+        grid,
+        op,
+        terminal,
+        theta=0.5,
+        lower_bc_fn=lambda t: 0.0,
+        upper_bc_fn=lambda t: S_max - spec.strike * np.exp(-r * (T - t)),
+    )
 
     # Interpolate to get price at spot
-    price = float(np.interp(spec.spot, S_grid, V))
-    return price
+    price = float(np.interp(spec.spot, grid.x, V))
+    return price * spec.notional
 ```
 """,
             "description": "Finite difference PDE solver using theta-method (Crank-Nicolson or implicit)",

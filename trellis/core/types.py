@@ -1,4 +1,9 @@
-"""Core protocols, enums, and data structures for Trellis."""
+"""Core protocols, enums, and data structures shared across Trellis.
+
+Defines the fundamental types that most other modules depend on:
+frequency enums, day count conventions, the DiscountCurve and Instrument
+protocols, and simple data containers like CashflowSchedule and PricingResult.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +16,11 @@ from typing import Protocol, runtime_checkable
 # Greek specification types
 # ---------------------------------------------------------------------------
 
-GreeksSpec = None | list[str] | str  # None=price only, "all", or list of names
+# What risk sensitivities to compute alongside the price.
+#   None       — price only, no sensitivities
+#   "all"      — every known sensitivity (dv01, duration, convexity, etc.)
+#   list[str]  — specific sensitivities by name (e.g. ["dv01", "duration"])
+GreeksSpec = None | list[str] | str
 KNOWN_GREEKS = frozenset({
     "dv01", "duration", "modified_duration", "convexity", "key_rate_durations",
 })
@@ -48,14 +57,29 @@ def __getattr__(name: str):
 
 @dataclass
 class CashflowSchedule:
-    """A sequence of cashflow dates and amounts."""
+    """Paired lists of payment dates and dollar amounts.
+
+    dates[i] and amounts[i] describe the same cashflow. Both lists must
+    have equal length and dates should be in ascending order.
+    """
     dates: list[date]
     amounts: list[float]
 
 
 @dataclass
 class PricingResult:
-    """Container for pricing output."""
+    """Full pricing output for a bond or similar instrument.
+
+    Attributes:
+        clean_price: Price excluding interest accrued since the last coupon.
+        dirty_price: Price including accrued interest (what you actually pay).
+        accrued_interest: Interest accumulated since the last coupon date.
+        ytm: Yield to maturity (annualized return if held to maturity), or
+            None if not computed.
+        greeks: Risk sensitivities keyed by name (e.g. {"dv01": 0.045}).
+        curve_sensitivities: Sensitivity of price to each curve tenor
+            (e.g. {"1Y": -0.02, "5Y": -0.08}).
+    """
     clean_price: float
     dirty_price: float
     accrued_interest: float
@@ -83,7 +107,11 @@ class Instrument(Protocol):
 
 @runtime_checkable
 class DiscountCurve(Protocol):
-    """Anything that can produce discount factors."""
+    """Protocol for curves that convert future values to present values.
+
+    A discount factor D(t) answers: "what is $1 received at time t worth today?"
+    For example, D(1.0) = 0.95 means $1 in one year is worth $0.95 now.
+    """
 
     def discount(self, t: float) -> float:
         """Return the discount factor for time *t* (in years)."""

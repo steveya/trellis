@@ -58,9 +58,12 @@ class CPR:
 
 
 class RateDependent:
-    """Rate-dependent prepayment model (simplified Richard-Roll style).
+    """Prepayment model where borrowers prepay faster when rates drop.
 
-    CPR increases as rates fall below the coupon rate (refinancing incentive).
+    Inspired by the Richard-Roll framework: when market rates fall below
+    the mortgage coupon rate, borrowers refinance (increasing prepayment).
+    Also includes a burnout effect where prepayment slows over time as
+    the most rate-sensitive borrowers have already refinanced.
 
     Parameters
     ----------

@@ -31,6 +31,12 @@ def test_build_route_training_rows_emits_proceed_and_block_decisions():
         for row in rows
     )
     assert any(
+        row.instrument == "callable_bond"
+        and row.route == "exercise_lattice"
+        and row.feature_map["route_family_matches_ir"] == 1.0
+        for row in rows
+    )
+    assert any(
         row.instrument == "barrier_option"
         and row.decision == "block"
         for row in rows

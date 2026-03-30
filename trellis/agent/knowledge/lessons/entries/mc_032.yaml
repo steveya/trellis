@@ -1,0 +1,26 @@
+id: mc_032
+title: RankedObservationBasketSpec uses constituents and option_type
+severity: critical
+category: monte_carlo
+status: promoted
+confidence: 1.0
+created: '2026-03-28T15:15:00.000000'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_151500_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: 'Build fails with: RankedObservationBasketSpec.__init__() got an unexpected keyword argument ''basket_assets'' or ''underlyings'' or ''is_call''.'
+root_cause: The generated adapter was still using legacy basket-spec field names from older Himalaya scaffolding. The shared RankedObservationBasketSpec contract expects a normalized constituents string plus option_type, not basket_assets/underlyings/is_call aliases.
+fix: Pass constituent names via the constituents field, observation dates as a normalized string or the accepted observation_dates field, and use option_type="call"/"put". Do not send basket_assets, underlyings, or is_call into RankedObservationBasketSpec.
+validation: Discovered during build replay on the Himalaya proving run after removing older conflicting basket lessons.

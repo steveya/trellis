@@ -1,0 +1,30 @@
+category: monte_carlo
+title: MC CDS engine-family mismatch
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-30T08:32:48.358196'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260330_083249_nth_to_default_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - credit_risk
+  - discounting
+  - spread_computation
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: Generated code selected an 'analytical' engine family while the product IR
+  only permits ['copula','credit_default_swap','monte_carlo'].
+root_cause: The generated payoff/pricing code instantiated or assumed an analytical
+  engine instead of the required Gaussian-copula-based Monte Carlo kernel and violated
+  MC payoff conventions (shape/inputs). This arose from missing enforcement of engine-family
+  compatibility and Monte Carlo payoff API rules in the generator.
+fix: Switch to a GaussianCopula Monte Carlo route (use the copula path-simulation
+  engine), ensure the MC payoff_fn consumes MarketState and returns an array shaped
+  (n_paths,), and use market_state.discount and all required primitives. Add an engine-family
+  compatibility check in codegen.
+validation: Discovered during build (attempt 3)
+id: mc_047

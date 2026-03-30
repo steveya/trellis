@@ -1,0 +1,29 @@
+category: finite_differences
+title: PDE price unit/scale mismatch
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T23:32:40.988329'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_233241_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - vol_surface_dependence
+  - pde_grid
+  instrument: []
+  error_signature: null
+symptom: 'Automated PV sanity check failed: |PV| exceeds 10× typical notional (e.g.
+  |PV| = 9995.24 > 1000).'
+root_cause: 'A unit or scale mismatch between market inputs and the PDE solver (common
+  examples: passing vol as % vs decimal, passing a rate where a discount factor is
+  expected, or incorrect asset-price scaling on the grid). The solver then returns
+  an unreasonably large PV.'
+fix: Enforce and document explicit unit conventions (vols as decimals, consistent
+  zero-rate vs discount-factor usage), scale the PDE spatial variable (log-spot vs
+  spot) consistently, and add defensive sanity checks (spot/strike/vol ranges and
+  PV magnitude) before returning a price.
+validation: Discovered during build (attempt 3)
+id: fd_022

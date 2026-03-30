@@ -1,0 +1,32 @@
+category: market_data
+title: Missing credit_curve and CDS spec
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-30T08:34:54.488252'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260330_083455_nth_to_default_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - discounting
+  - coupons
+  - fixed_coupons
+  - maturity_settlement
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: Pricing run failed with missing 'credit_curve' input and/or returned an invalid
+  (negative) price.
+root_cause: The pricer assumed availability and shape of credit_curve (hazard or survival)
+  and a fully specified CDS contract but these were not provided or validated; additionally
+  the agent-generated code contained a syntax error that prevented a correct module
+  from being produced.
+fix: Require and validate credit_curve and discount_curve inputs and full CDS contract
+  fields (payment schedule, coupon, notional, recovery, start/end dates) before pricing;
+  fix the syntax error and implement survival<->hazard conversion consistently and
+  unit-test both protection and premium leg calculations to prevent negative prices.
+validation: Discovered during build (attempt 3)
+id: md_033

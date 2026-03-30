@@ -1,0 +1,31 @@
+category: finite_differences
+title: Unit/scale mismatch in PDE pricer
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T23:43:07.120495'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_234308_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - vol_surface_dependence
+  - pde_grid
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: '|PV| exceeds 10× typical notional (e.g. |PV| > 1000 for notional=100)'
+root_cause: Input/internal unit or scale mismatch (e.g., passing vol/rates in wrong
+  units, forgetting to apply notional or discount correctly, or mis-specified PDE
+  grid scaling) causes the finite-difference solver to produce prices with an incorrect
+  magnitude. Missing input validation and PDE-grid scaling/construction checks let
+  the bug pass undetected.
+fix: Enforce and validate unit conventions at entry (annualized vol, underlying/strike
+  in same currency units, discount factors vs continuous rates), validate PDE grid
+  discretization and scale, and add a sanity-check that asserts the resulting PV is
+  within a realistic multiple of notional before returning. Fail early with clear
+  error messages if units/scale appear inconsistent.
+validation: Discovered during build (attempt 3)
+id: fd_028

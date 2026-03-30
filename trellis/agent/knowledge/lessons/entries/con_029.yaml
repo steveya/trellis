@@ -1,0 +1,32 @@
+category: convention
+title: Missing payoff adapter using schedule primitive
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-29T09:25:59.788063'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_092600_barrier_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - barrier
+  - path_dependent
+  - pde_grid
+  - monte_carlo
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Build error: generated code did not call trellis.core.date_utils.generate_schedule
+  (assembly primitive not used).'
+root_cause: The generated payoff implementation did not follow the assembly contract
+  requiring a thin adapter that invokes specified primitives (generate_schedule, year_fraction),
+  so the assembly validator rejected it. The generator produced a standalone payoff
+  rather than wiring to the required primitives and signatures.
+fix: Rebuild the payoff as a thin adapter that directly calls trellis.core.date_utils.generate_schedule
+  (and year_fraction) to produce monitoring dates/times and then delegates valuation
+  to the analytical pricer; ensure imports and function signatures match the assembly
+  primitive names exactly.
+validation: Discovered during build (attempt 3)
+id: con_029

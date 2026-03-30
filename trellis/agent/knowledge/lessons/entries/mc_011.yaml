@@ -1,0 +1,33 @@
+id: mc_011
+title: Payoff shape / indentation bug in MC generator
+severity: critical
+category: monte_carlo
+status: validated
+confidence: 0.6
+created: '2026-03-26T18:38:57.820008'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260326_183857_quanto_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - forward_rate
+  - vol_surface_dependence
+  - delta_space_interpolation
+  - greeks
+  - quanto_adjustment
+  - cross_currency_pricing
+  instrument: []
+  error_signature: null
+symptom: 'Code generation failed with SyntaxError: unexpected indent (e.g. ''unexpected
+  indent at line 62, column 16'') or downstream assertion that payoff has wrong shape.'
+root_cause: 'The code-emission step produced a mis-indented block while unpacking
+  joint simulation arrays and did not enforce the Monte Carlo payoff shape contract
+  (payoff must be 1-D: (n_paths,)). This happened because there was insufficient guard
+  logic for array shapes and no post-generation syntactic/shape validation.'
+fix: Ensure generated Python maintains consistent indentation and formatting; validate
+  joint-path shapes and always reduce payoffs to a 1-D array (n_paths,) before returning;
+  add unit checks that assert valid imports and payoff shape. Also use exact library
+  import paths and small compile/syntax checks on generated modules.
+validation: Discovered during build (attempt 3)

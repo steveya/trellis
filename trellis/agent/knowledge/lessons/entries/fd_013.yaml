@@ -1,0 +1,35 @@
+category: finite_differences
+title: Incorrect PDE API import (Grid not exported)
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:07:38.997683'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_230739_barrier_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - barrier
+  - pde_grid
+  - path_dependent
+  - vol_surface_dependence
+  - discounting
+  - backward_induction
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'ImportError / AttributeError: ''Grid'' is not exported by trellis.models.pde
+  (or module has no attribute ''Grid'').'
+root_cause: The pricer attempted to import or reference a symbol (Grid) that is not
+  part of the public API of trellis.models.pde; additionally the spec contained literal
+  unquoted identifiers and malformed defaults which would cause name errors. This
+  mismatch between assumed library exports and the actual library surface caused the
+  build to fail.
+fix: Inspect the actual exported symbols in trellis.models.pde (e.g. via help() or
+  module.__all__), and replace the non-exported 'Grid' usage with the correct factory/function/class
+  provided by the module (or implement a local grid builder). Also correct spec field
+  defaults (quote string literals) and validate names with a small import/unit test
+  before full build.
+validation: Discovered during build (attempt 3)
+id: fd_013

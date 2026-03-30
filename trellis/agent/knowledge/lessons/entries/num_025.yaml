@@ -1,0 +1,34 @@
+category: numerical
+title: Undefined interpolation method
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T22:46:06.805307'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_224607_build_a_pricer_for:_krd:_interpolation_aware_bumping
+
+
+  implementation_target:_smart_krd
+
+  preferred_method_family:_analytical
+
+
+  implementation_target:_smart_krd_analytical.yaml'
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'Module compilation fails with NameError: name ''linear'' is not defined
+  at spec construction time.'
+root_cause: The code references an interpolation sentinel/enum value (`linear`) that
+  was never imported or defined in the module. This turns a configuration default
+  into an immediate runtime failure before evaluation can begin.
+fix: Import the correct interpolation constant from the exact trellis path, or replace
+  the default with a safe literal like 'linear' if the API expects a string. Avoid
+  guessing module names and ensure all spec defaults are defined symbols or primitives.
+validation: Discovered during build (attempt 2)
+id: num_025

@@ -1,0 +1,29 @@
+category: finite_differences
+title: Undefined boundary condition symbol
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:03:08.694503'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_230309_barrier_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - barrier
+  - path_dependent
+  - pde_grid
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''absorbing'' is not defined when constructing the BarrierCallSpec
+  (or assigning pde_boundary_condition).'
+root_cause: The code used an undefined Python name 'absorbing' instead of a string
+  literal or an imported/defined constant for the PDE boundary condition. There was
+  no validation or unit test to catch the NameError before build.
+fix: Use a quoted string (e.g. 'absorbing') or import/define the boundary-condition
+  constant from the PDE module; add a small input validation that boundary-condition
+  values belong to the allowed set.
+validation: Discovered during build (attempt 1)
+id: fd_012

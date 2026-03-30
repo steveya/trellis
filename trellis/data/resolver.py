@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from trellis.curves.bootstrap import BootstrapInstrument, bootstrap_named_yield_curves
 from trellis.curves.yield_curve import YieldCurve
 from trellis.data.schema import MarketSnapshot
 
@@ -49,11 +50,44 @@ def _provider_for_source(source: str):
             warnings.warn(
                 "requests not installed; falling back to mock data",
                 stacklevel=2,
-            )
+                )
             from trellis.data.mock import MockDataProvider
 
             return MockDataProvider()
     raise ValueError(f"Unknown data source: {source!r}")
+
+
+def _bootstrap_input_summary(
+    instruments: list[BootstrapInstrument],
+) -> list[dict[str, object]]:
+    """Return a deterministic, JSON-friendly summary of bootstrap inputs."""
+    return [
+        {
+            "tenor": float(inst.tenor),
+            "quote": float(inst.quote),
+            "instrument_type": inst.instrument_type,
+        }
+        for inst in sorted(
+            instruments,
+            key=lambda inst: (float(inst.tenor), inst.instrument_type, float(inst.quote)),
+        )
+    ]
+
+
+def _market_provenance(
+    source: str,
+    as_of: date,
+    *,
+    source_kind: str,
+    source_ref: str,
+) -> dict[str, object]:
+    """Build the canonical provenance payload for a resolved market snapshot."""
+    return {
+        "source": source,
+        "as_of": as_of.isoformat(),
+        "source_kind": source_kind,
+        "source_ref": source_ref,
+    }
 
 
 def resolve_market_snapshot(
@@ -64,6 +98,8 @@ def resolve_market_snapshot(
     vol_surfaces: dict | None = None,
     default_vol_surface: str | None = None,
     forecast_curves: dict | None = None,
+    discount_curve_bootstraps: dict | None = None,
+    forecast_curve_bootstraps: dict | None = None,
     credit_curve=None,
     fx_rates: dict | None = None,
     state_space=None,
@@ -105,10 +141,13 @@ def resolve_market_snapshot(
     if model_parameters is not None and model_parameter_sets is not None:
         raise ValueError("Pass either model_parameters= or model_parameter_sets=, not both")
 
+    used_provider_snapshot = False
     try:
         base_snapshot = provider.fetch_market_snapshot(resolved_date)
     except NotImplementedError:
         base_snapshot = None
+    else:
+        used_provider_snapshot = isinstance(base_snapshot, MarketSnapshot)
     if not isinstance(base_snapshot, MarketSnapshot):
         base_snapshot = None
 
@@ -124,6 +163,12 @@ def resolve_market_snapshot(
             source=source,
             discount_curves={"discount": discount_curve},
             default_discount_curve="discount",
+            provenance=_market_provenance(
+                source,
+                resolved_date,
+                source_kind="synthetic_snapshot" if source == "mock" else "direct_quote",
+                source_ref="fetch_yields",
+            ),
         )
 
     if not base_snapshot.discount_curves:
@@ -152,9 +197,84 @@ def resolve_market_snapshot(
     resolved_default_local_vol_surface = base_snapshot.default_local_vol_surface
     resolved_default_jump_parameters = base_snapshot.default_jump_parameters
     resolved_default_model_parameters = base_snapshot.default_model_parameters
+    resolved_provenance = dict(base_snapshot.provenance or {})
+    if not resolved_provenance:
+        resolved_provenance = _market_provenance(
+            base_snapshot.source,
+            base_snapshot.as_of,
+            source_kind=(
+                "synthetic_snapshot"
+                if source == "mock"
+                else ("provider_snapshot" if used_provider_snapshot else "direct_quote")
+            ),
+            source_ref=(
+                "fetch_market_snapshot" if used_provider_snapshot else "fetch_yields"
+            ),
+        )
+    else:
+        resolved_provenance.setdefault("source", base_snapshot.source)
+        resolved_provenance.setdefault("as_of", base_snapshot.as_of.isoformat())
+        resolved_provenance.setdefault(
+            "source_ref",
+            "fetch_market_snapshot" if used_provider_snapshot else "fetch_yields",
+        )
+        if "source_kind" not in resolved_provenance:
+            resolved_provenance["source_kind"] = (
+                "synthetic_snapshot"
+                if source == "mock"
+                else ("provider_snapshot" if used_provider_snapshot else "direct_quote")
+            )
+
+    bootstrap_inputs = dict(resolved_provenance.get("bootstrap_inputs") or {})
+    explicit_inputs_present = any(
+        value is not None
+        for value in (
+            forecast_curves,
+            credit_curve,
+            fx_rates,
+            state_space,
+            state_spaces,
+            underlier_spots,
+            vol_surface,
+            vol_surfaces,
+            local_vol_surface,
+            local_vol_surfaces,
+            jump_parameters,
+            jump_parameter_sets,
+            model_parameters,
+            model_parameter_sets,
+        )
+    )
 
     if forecast_curves:
         resolved_forecast_curves.update(forecast_curves)
+    if discount_curve_bootstraps:
+        bootstrapped_discount_curves = bootstrap_named_yield_curves(discount_curve_bootstraps)
+        overlap = set(bootstrapped_discount_curves) & set(base_snapshot.discount_curves)
+        if overlap:
+            raise ValueError(
+                f"Duplicate discount curve sources: {sorted(overlap)}"
+            )
+        resolved_discount_curves = dict(base_snapshot.discount_curves)
+        resolved_discount_curves.update(bootstrapped_discount_curves)
+        bootstrap_inputs.setdefault("discount_curves", {})
+        for name, instruments in discount_curve_bootstraps.items():
+            bootstrap_inputs["discount_curves"][name] = _bootstrap_input_summary(instruments)
+    else:
+        resolved_discount_curves = dict(base_snapshot.discount_curves)
+
+    if forecast_curve_bootstraps:
+        bootstrapped_forecast_curves = bootstrap_named_yield_curves(forecast_curve_bootstraps)
+        overlap = set(bootstrapped_forecast_curves) & set(resolved_forecast_curves)
+        if overlap:
+            raise ValueError(
+                f"Duplicate forecast curve sources: {sorted(overlap)}"
+            )
+        resolved_forecast_curves.update(bootstrapped_forecast_curves)
+        bootstrap_inputs.setdefault("forecast_curves", {})
+        for name, instruments in forecast_curve_bootstraps.items():
+            bootstrap_inputs["forecast_curves"][name] = _bootstrap_input_summary(instruments)
+
     if fx_rates:
         resolved_fx_rates.update(fx_rates)
     if state_spaces is not None:
@@ -238,10 +358,18 @@ def resolve_market_snapshot(
         )
         resolved_model_parameter_sets[resolved_default_model_parameters] = dict(model_parameters)
 
+    if bootstrap_inputs:
+        resolved_provenance["bootstrap_inputs"] = bootstrap_inputs
+    if bootstrap_inputs or explicit_inputs_present:
+        current_kind = str(resolved_provenance.get("source_kind") or "")
+        if current_kind != "mixed":
+            resolved_provenance["source_kind"] = "mixed"
+        resolved_provenance["source_ref"] = "resolver.merged_snapshot"
+
     return MarketSnapshot(
         as_of=base_snapshot.as_of,
         source=base_snapshot.source,
-        discount_curves=dict(base_snapshot.discount_curves),
+        discount_curves=resolved_discount_curves,
         forecast_curves=resolved_forecast_curves,
         vol_surfaces=resolved_vol_surfaces,
         credit_curves=resolved_credit_curves,
@@ -252,7 +380,8 @@ def resolve_market_snapshot(
         jump_parameter_sets=resolved_jump_parameter_sets,
         model_parameter_sets=resolved_model_parameter_sets,
         metadata=resolved_metadata,
-        default_discount_curve=base_snapshot.default_discount_curve,
+        default_discount_curve=base_snapshot.default_discount_curve
+        or (next(iter(resolved_discount_curves)) if len(resolved_discount_curves) == 1 else None),
         default_vol_surface=resolved_default_vol_surface,
         default_credit_curve=resolved_default_credit_curve,
         default_state_space=resolved_default_state_space,
@@ -260,6 +389,7 @@ def resolve_market_snapshot(
         default_local_vol_surface=resolved_default_local_vol_surface,
         default_jump_parameters=resolved_default_jump_parameters,
         default_model_parameters=resolved_default_model_parameters,
+        provenance=resolved_provenance,
     )
 
 

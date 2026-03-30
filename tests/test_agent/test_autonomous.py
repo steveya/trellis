@@ -4,6 +4,13 @@ from importlib import import_module
 from types import SimpleNamespace
 
 
+def test_generated_module_code_text_handles_structured_results():
+    from trellis.agent.knowledge.autonomous import _generated_module_code_text
+
+    assert _generated_module_code_text("print('ok')") == "print('ok')"
+    assert _generated_module_code_text(SimpleNamespace(code="print('ok')")) == "print('ok')"
+
+
 def test_build_with_knowledge_respects_preferred_method(monkeypatch):
     from trellis.agent.knowledge.gap_check import GapReport
     from trellis.agent.knowledge.schema import ProductDecomposition
@@ -88,6 +95,8 @@ def test_build_with_knowledge_preserves_platform_trace_metadata(monkeypatch):
                 "knowledge_summary": {"lesson_ids": ["mc_007"]},
                 "platform_trace_path": "/tmp/platform_trace.yaml",
                 "platform_request_id": "executor_build_20260325_deadbeef",
+                "analytical_trace_path": "/tmp/analytical_trace.json",
+                "analytical_trace_text_path": "/tmp/analytical_trace.md",
             },
         ),
     )
@@ -105,6 +114,8 @@ def test_build_with_knowledge_preserves_platform_trace_metadata(monkeypatch):
     assert result.knowledge_summary == {"lesson_ids": ["mc_007"]}
     assert result.platform_trace_path == "/tmp/platform_trace.yaml"
     assert result.platform_request_id == "executor_build_20260325_deadbeef"
+    assert result.analytical_trace_path == "/tmp/analytical_trace.json"
+    assert result.analytical_trace_text_path == "/tmp/analytical_trace.md"
 
 
 def test_build_with_knowledge_forwards_request_metadata(monkeypatch):
@@ -193,6 +204,8 @@ def test_build_with_knowledge_preserves_platform_trace_metadata_on_failure(monke
                 "knowledge_summary": {"lesson_ids": ["mc_007"]},
                 "platform_trace_path": "/tmp/blocked_trace.yaml",
                 "platform_request_id": "executor_build_20260325_blocked",
+                "analytical_trace_path": "/tmp/blocked_analytical_trace.json",
+                "analytical_trace_text_path": "/tmp/blocked_analytical_trace.md",
                 "blocker_details": {"blocker_codes": ["missing_symbol:demo"]},
             },
             cause=RuntimeError("blocked for missing primitive"),
@@ -217,6 +230,8 @@ def test_build_with_knowledge_preserves_platform_trace_metadata_on_failure(monke
     assert result.knowledge_summary == {"lesson_ids": ["mc_007"]}
     assert result.platform_trace_path == "/tmp/blocked_trace.yaml"
     assert result.platform_request_id == "executor_build_20260325_blocked"
+    assert result.analytical_trace_path == "/tmp/blocked_analytical_trace.json"
+    assert result.analytical_trace_text_path == "/tmp/blocked_analytical_trace.md"
     assert result.blocker_details == {"blocker_codes": ["missing_symbol:demo"]}
 
 

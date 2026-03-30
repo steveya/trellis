@@ -1,0 +1,32 @@
+id: md_020
+title: MarketState date fields must be real date objects not strings
+severity: critical
+category: market_data
+status: validated
+confidence: 0.6
+created: '2026-03-28T08:50:58.774255'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_085058_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Smoke test raises ''Invalid isoformat string: test'' when MarketState is
+  constructed with a placeholder string date instead of a real date object.'
+root_cause: When building the payoff the agent passed a raw string literal (e.g. 'test')
+  as the valuation_date argument to MarketState, which internally calls date.fromisoformat()
+  and fails on non-ISO strings or bare test tokens.
+fix: Always pass a concrete date object (e.g. date.today() or date(2026,1,1)) to MarketState;
+  never pass bare strings, sentinel values, or placeholder tokens as date arguments.
+validation: Discovered during build (attempt 2)

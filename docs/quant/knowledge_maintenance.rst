@@ -20,7 +20,8 @@ The canonical files are split by responsibility:
 - ``canonical/data_contracts.yaml``: input conventions and conversions
 - ``canonical/method_requirements.yaml``: modeling constraints that must hold
 - ``canonical/failure_signatures.yaml``: regex-driven failure interpretation
-- ``lessons/index.yaml`` and ``lessons/entries/*.yaml``: promoted, candidate, and archived lessons
+- ``lessons/entries/*.yaml``: canonical lesson entries
+- ``lessons/index.yaml``: generated hot-tier cache rebuilt from the entry files
 - ``traces/``: cold-store build traces and platform audit traces
 
 Lesson Lifecycle
@@ -33,8 +34,31 @@ The promotion pipeline in ``trellis.agent.knowledge.promotion`` is explicit:
 3. ``promote_lesson(...)`` moves it to ``promoted`` when confidence reaches at least ``0.8``.
 4. ``archive_lesson(...)`` retires stale or superseded knowledge without deleting history.
 
+The lesson index is generated from the entry files after each mutation, so
+``lessons/index.yaml`` should be treated as a cache artifact rather than a
+manual edit target. Retrieval also suppresses lessons that are marked as
+``supersedes`` by newer entries.
+
+Replay and reflection traces now persist a ``lesson_contract`` validation
+report plus a ``lesson_promotion_outcome`` field, so a task run can show the
+contract that was accepted or rejected before promotion.
+
 That lifecycle is important for quant maintenance because low-confidence lessons
 should not quietly become production guidance.
+
+Adapter Freshness And Supersession
+----------------------------------
+
+Fresh-build adapters under ``trellis/instruments/_agent/_fresh`` are now treated
+as a lifecycle signal rather than a one-off diff. Promotion review and adoption
+artifacts carry both the raw drift snapshot and the resolved stage so stale
+adapters can move through ``stale`` → ``deprecated`` → ``archived`` without
+losing the underlying replacement path.
+
+Normal retrieval warns on active stale/deprecated adapters and filters archived
+ones out of the prompt path. Basket cleanup follows the same pattern: the
+runtime records which basket lessons are treated as superseded, but the
+canonical lesson-index mutation remains a separate maintenance step.
 
 Cookbooks, Memory, And Experience
 ---------------------------------
@@ -74,4 +98,3 @@ Related Reading
 - :doc:`extending_trellis`
 - :doc:`../developer/audit_and_observability`
 - :doc:`../developer/task_and_eval_loops`
-

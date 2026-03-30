@@ -4,8 +4,17 @@ from __future__ import annotations
 
 TOOLS = [
     {
+        "name": "inspect_api_map",
+        "description": "Inspect the compact API navigation map before broad tree exploration.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
         "name": "inspect_library",
-        "description": "Inspect the trellis library structure: list all modules, classes, and function signatures.",
+        "description": "Inspect the full trellis library structure when the API map is not enough.",
         "input_schema": {
             "type": "object",
             "properties": {},

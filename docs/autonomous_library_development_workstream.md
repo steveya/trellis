@@ -71,10 +71,184 @@ The concrete handoff note is:
 
 - [phase_contract_synthesis_quanto_himalaya_handoff.md](phase_contract_synthesis_quanto_himalaya_handoff.md)
 
-Initial proving families:
+Checked-in implementation plans for this tranche:
+
+- [phase_c0_contract_synthesis_implementation_plan.md](phase_c0_contract_synthesis_implementation_plan.md)
+- [phase_c0_quanto_contract_plan.md](phase_c0_quanto_contract_plan.md)
+- [phase_c0_himalaya_contract_plan.md](phase_c0_himalaya_contract_plan.md)
+- [phase_c0_glue_surface_sweep.md](phase_c0_glue_surface_sweep.md)
+- [phase_c1_analytical_support_plan.md](phase_c1_analytical_support_plan.md)
+- [phase_c2_family_name_free_semantic_synthesis_plan.md](phase_c2_family_name_free_semantic_synthesis_plan.md)
+
+Recommended execution order:
+
+- `C0.1` shared contract schema, validator, templates, and compiler
+- `C0.2` quanto family path tied to `T105`
+- `C0.3` future Himalaya runtime-request path for term-sheet requests
+
+Current checked-in family template:
 
 - `quanto`
+
+Reserved next family request case:
+
 - `Himalaya`
+
+Current checked-in progress:
+
+- `C0.1` shared family-contract substrate is implemented.
+- `C0.2` core quanto routing is implemented through task/runtime detection,
+  planner specialization, platform-request compilation, quant blueprint
+  selection, and family-aware validation-bundle selection.
+- `C0.2` now also respects `preferred_method` on the quanto family path, so
+  `T105`-style analytical and Monte Carlo comparison targets compile into
+  distinct routes instead of collapsing to the default analytical branch.
+- `C0.2` now also promotes the repeated `T105` quanto failures into checked-in
+  deterministic analytical and Monte Carlo route adapters, so the executor can
+  reuse known-good family-specific code instead of regenerating the same route.
+- `T105` now succeeds end-to-end against the checked-in quanto contract path,
+  with reused analytical and Monte Carlo adapters and comparison passing inside
+  tolerance.
+- a `fresh_build` proving mode now exists on the task/build path, so `T105`
+  can exercise live code generation without deterministic route reuse.
+- shared quanto input resolution now lives in
+  `trellis.models.resolution.quanto`, so generated routes can call a stable
+  helper instead of reimplementing market binding from scratch.
+- the public payoff surface now includes a small resolved-input adapter base
+  plus a Monte Carlo path-adapter base in `trellis.core.payoff`, and the
+  checked-in quanto analytical / MC routes now use those scaffolds instead of
+  duplicating expiry, simulation, and aggregation glue.
+- deterministic validation now preserves structured failure diagnostics through
+  invariant execution and bundle execution, so repair prompts can include the
+  failing check name, actual value, exception text, and compact input context
+  instead of only flat failure strings.
+- `_generate_module` now validates expected module structure before accepting
+  builder output and can recover import-plus-`def evaluate(...)` repair
+  fragments back into the deterministic skeleton, which restored fresh-build
+  `T105` success after MC repair snippets had started failing with syntax and
+  fragment-shape errors.
+- fresh-build candidates now write to isolated scratch modules under
+  `_agent/_fresh`, so proving runs no longer overwrite checked-in deterministic
+  routes.
+- successful fresh-build comparison runs now also snapshot method-level
+  promotion candidates under `trellis/agent/knowledge/traces/promotion_candidates`,
+  preserving the generated code plus cross-validation evidence without
+  automatically overwriting the checked-in deterministic route.
+- promotion candidates can now be reviewed through an explicit deterministic
+  gate, which writes decision artifacts under
+  `trellis/agent/knowledge/traces/promotion_reviews` and computes the
+  recommended checked-in route path without auto-adopting the generated code.
+- approved reviews can now flow through a separate adoption gate, including a
+  dry-run mode and persisted adoption artifacts under
+  `trellis/agent/knowledge/traces/promotion_adoptions`, so route replacement is
+  explicit and auditable rather than folded into candidate review.
+- generated payoffs now face an actual-market smoke gate before they count as a
+  successful build, which is meant to catch task-market-state failures earlier
+  than comparison pricing.
+- Phase 1 of the glue-surface follow-on plan is now implemented: the shared
+  quanto resolver contract in `trellis.models.resolution.quanto` is now the
+  authoritative analytical market-input surface, including valuation-date and
+  correlation aliases that generated routes can rely on instead of probing
+  fallback market-state fields.
+- Phase 2 of the glue-surface follow-on plan is now implemented: the quanto
+  analytical pricing body now lives in `trellis.models.analytical.quanto`, and
+  the checked-in analytical adapter delegates to that shared helper rather than
+  open-coding the quanto-adjusted Black route.
+- Phase 3 of the glue-surface follow-on plan is now implemented: the quanto
+  Monte Carlo route glue now lives in `trellis.models.monte_carlo.quanto`,
+  including the shared joint-process builder, initial-state builder, engine
+  defaults, terminal payoff mapping, and route-level pricing helper.
+- Phase 4 of the glue-surface follow-on plan is now implemented in the builder
+  path: `_generate_skeleton()` now emits family-aware quanto route scaffolds,
+  `_reference_modules()` includes the checked-in Monte Carlo helper surface, and
+  prompt guidance now tells the model to call shared route helpers instead of
+  rebuilding process / engine / payoff / discount glue ad hoc.
+- the latest `T105 --fresh-build` benchmark confirms the Phase 3/4 effect:
+  `mc_quanto` now succeeds on the first live-generation attempt, while the
+  remaining overall failure was narrowed to an analytical syntax-emission issue
+  rather than the old Monte Carlo route-glue problem.
+- the analytical fresh-build syntax hardening step is now implemented:
+  malformed full-module analytical output can be recovered by extracting a valid
+  `evaluate()` body back into the deterministic family scaffold instead of only
+  attempting generic fragment recovery.
+- Phase 5 reliability benchmarking for the quanto proving ground is now also
+  complete enough for the current tranche:
+  - `T105 --fresh-build --model gpt-5.4-mini` now succeeds in
+    `task_runs/history/T105/20260326T211522397021.json`
+  - `T105 --fresh-build --model gpt-5-mini` now succeeds in
+    `task_runs/history/T105/20260326T211610323555.json`
+  - both successful fresh-build runs emitted promotion candidates, and the
+    latest candidate set cleared deterministic review and dry-run adoption
+    gates
+- remaining follow-on work is no longer the narrow `T105` autonomous loop.
+  It is broader analytical substrate work, later runtime market-binding
+  behavior beyond mock proving-ground fixtures, and future runtime-authored
+  family contracts for requests such as Himalaya.
+- the next checked-in follow-on plan is now `C1` analytical support substrate,
+  which turns analytical implementation into composition over resolved inputs
+  plus reusable subproblem kernels rather than freehand Trellis-specific
+  formula glue.
+- the first `C1` implementation slice is now checked in:
+  - `trellis.models.analytical.support` now exposes foundational discounting,
+    forward, payoff-transform, and cross-asset helpers
+  - `trellis.models.analytical.quanto` now reuses that support surface more
+    explicitly
+  - analytical `quanto` prompt guidance now steers fresh-build routes toward
+    `trellis.models.analytical.support`
+  - deterministic regressions cover the support layer in
+    `tests/test_models/test_analytical_support.py`
+- the next `C1` support slice is now also implemented:
+  - time/rate normalization helpers are checked in
+  - cross-asset covariance and forward-bridge helpers are checked in
+  - `quanto_adjusted_forward` now composes those smaller helpers
+  - the deterministic `T105` route still succeeds after the change
+- unsupported semantic requests now emit a structured `semantic_gap` report
+  on fallback compilation paths, which is the first gate in the novel-request
+  extension loop (`QUA-376`)
+- the next analytical TODO slice is now:
+  - add explicit autodiff regression tests for `trellis.models.black` and the
+    quanto analytical route
+  - refactor `trellis.models.analytical.jamshidian` into a pure resolved-input
+    kernel plus a thin adapter
+  - formalize a traced analytical entrypoint such as `evaluate_raw(...)` or
+    `price_raw(...)` on resolved-input adapters, while keeping `evaluate()`
+    float-returning for the public payoff boundary
+  - update the analytical docs to distinguish traced kernels from adapter
+    boundaries
+  - defer `barrier.py` until there is a concrete gradient consumer
+- the earlier non-blocking critic-path warning
+  `name 'get_model_for_stage' is not defined` is now resolved in
+  `trellis/agent/executor.py`; the remaining critic concern is stage latency,
+  not missing stage-helper wiring.
+- the next architectural branch beyond named-family proving work is now also
+  documented: `C2` family-name-free semantic product synthesis, whose goal is
+  to let an agent synthesize mountain-range-style products from reusable
+  semantics without explicit runtime product-name branches such as
+  `himalaya_option`.
+- the first C2 slice is now checked in: the semantic ranked-observation
+  basket contract schema, deterministic validator/compiler, and request
+  drafting hooks now exist, so Himalaya-style requests can compile into
+  family-name-free semantic metadata instead of a named-family branch.
+- the next C2 tranche is also checked in: the generic basket-state resolver,
+  ranked-observation state helpers, state-aware Monte Carlo payoff helpers,
+  and correlated-basket route selection now exist without a mountain-range
+  product-id branch in the runtime path.
+- the representative-derivative onboarding and regression slices are now also
+  checked in: quanto, callable bond, vanilla option, and swaption all compile
+  through the semantic path, while the regression matrix keeps basket-specific
+  modules and named-family ids from leaking into those routes.
+- the roadmap now keeps three layers separate:
+  - semantic understanding: draft the product into a generic contract
+  - method arbitration: choose and explain the pricing route plus assumptions
+  - numerical pricing: execute the reusable analytical/tree/MC substrate
+- `QUA-334` is the docs/knowledge hardening step that keeps the roadmap,
+  knowledge store, and import registry aligned with the checked-in substrate.
+- runtime task runs now preserve a replayable runtime contract payload with
+  snapshot references, evaluation tags, and trace identifiers so eval traces
+  remain tied to the semantic request and mock snapshot that produced them.
+- the first arbitrary-derivative proving run is documented in
+  `docs/qua-284-arbitrary-derivative-proving-run.md`, including the stored task
+  record, the semantic trace, and the deterministic mock pricing output
 
 ## Milestone Overview
 

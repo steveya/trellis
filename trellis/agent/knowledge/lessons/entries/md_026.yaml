@@ -1,0 +1,28 @@
+category: market_data
+title: Discount/vol convention mismatch
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:13:35.538683'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_231336_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Abs(PV) exceeds threshold: |PV| > 10×notional (e.g., |PV| = 9995.24 > 10×100).'
+root_cause: 'Model and market-data conventions were inconsistent: the pricer consumed
+  a discount/vol value in a different unit/semantic than provided (e.g., a zero-rate
+  was used where a discount factor was expected, or vol type was mismatched between
+  Black76 vs Black‑Scholes).'
+fix: 'Normalize and validate market-data conventions before use: explicitly obtain/convert
+  a discount factor (or convert zero rates -> factor), confirm vol-surface convention
+  (Black/lognormal vs Bachelier/normal and units), compute forward vs spot according
+  to the model (Black76 vs Black‑Scholes), and add automated sanity checks (e.g.,
+  put-call parity and reasonable PV bounds) before returning prices.'
+validation: Discovered during build (attempt 3)
+id: md_026

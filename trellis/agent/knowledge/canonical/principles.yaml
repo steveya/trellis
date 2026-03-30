@@ -54,3 +54,29 @@
     from the shifted forward rate
   derived_from: [cal_004]
   category: calibration
+
+- id: P9
+  rule: >-
+    Separate semantic understanding, method arbitration, and numerical pricing:
+    draft the contract first, choose and explain the method second, and only
+    then call the pricing kernel.
+  derived_from: [sem_001]
+  category: semantic
+
+- id: P10
+  rule: >-
+    Bootstrap before pricing: launch with the repo-pinned Python and an
+    explicit shell/workdir, validate imports and module compilation first, and
+    treat interpreter mismatches, shell-launch failures, ModuleNotFoundError,
+    ImportError, and SyntaxError as setup defects, not pricing failures.
+  derived_from: [con_001, con_014, mc_012, mc_019, mc_020, num_020]
+  category: bootstrap
+
+- id: P11
+  rule: >-
+    Partial requests are normal: draft the semantic contract first, infer the
+    required-input checklist from the product IR and method requirements, and
+    let the LLM or a mock input provider fill only the missing market-data and
+    convention gaps. Never guess silently.
+  derived_from: [sem_001, md_006, md_010, md_012, mc_020]
+  category: semantic

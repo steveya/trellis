@@ -2,8 +2,8 @@ id: fd_007
 title: Log-space PDE for rate instruments requires special grid setup
 severity: critical
 category: finite_differences
-status: candidate
-confidence: 0.4
+status: validated
+confidence: 0.6
 created: '2026-03-25T18:39:35.040527'
 version: ''
 source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260325_183935_build_a_pricer_for:_log_space_pde_for_rate_instruments_(avoid_negative_rates)

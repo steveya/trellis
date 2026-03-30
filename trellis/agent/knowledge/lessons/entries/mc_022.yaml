@@ -1,0 +1,33 @@
+id: mc_022
+title: Himalaya pricer syntax error prevents module compilation
+severity: critical
+category: monte_carlo
+status: promoted
+confidence: 0.95
+created: '2026-03-28T10:39:11.972483'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_103912_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: SyntaxError at line 18 with unclosed parenthesis, and MarketState positive-definiteness
+  failure on first attempt, causing all 3 build retries to fail.
+root_cause: The agent embedded markdown code-fence syntax (triple backtick blocks)
+  inside the Python source string, and truncated the requirements property string
+  literal mid-token, producing an unclosed parenthesis SyntaxError. Additionally the
+  correlation matrix supplied to CorrelatedGBM was not guaranteed positive-definite.
+fix: Strip all markdown fences before emitting Python source; complete all string
+  literals and method bodies; validate and regularise the correlation matrix (e.g.
+  nearest positive-definite projection) before passing it to CorrelatedGBM.
+validation: Discovered during build (attempt 3) and reproduced in the fresh 2026-03-28 replay; the same markdown-fence SyntaxError and non-positive-definite correlation failure recur before a valid module is emitted.

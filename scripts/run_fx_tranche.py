@@ -28,6 +28,7 @@ from trellis.agent.config import load_env
 from trellis.agent.evals import compare_task_runs, render_shared_memory_report, summarize_task_results
 from trellis.agent.task_run_store import load_latest_task_run
 from trellis.agent.task_runtime import build_market_state, load_tasks, run_task
+from trellis.cli_paths import resolve_repo_path
 
 
 DEFAULT_FX_TASK_IDS = ("E25", "T105", "T108")
@@ -123,8 +124,11 @@ def run_fx_tranche(
 
 if __name__ == "__main__":
     args = _parse_args(sys.argv[1:])
-    output_file = args.output or str(ROOT / "task_results_fx_tranche.json")
-    report_output = args.report_output or str(ROOT / "task_results_fx_tranche_report.json")
+    output_file = resolve_repo_path(args.output, ROOT / "task_results_fx_tranche.json")
+    report_output = resolve_repo_path(
+        args.report_output,
+        ROOT / "task_results_fx_tranche_report.json",
+    )
     run_fx_tranche(
         model=args.model,
         validation=args.validation,

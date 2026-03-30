@@ -61,6 +61,22 @@ def build_issue_body(
     if preferred_method:
         lines.append(f"- preferred_method: `{preferred_method}`")
 
+    semantic_role_ownership = _metadata_value(compiled_request, trace, "semantic_role_ownership")
+    if isinstance(semantic_role_ownership, Mapping) and semantic_role_ownership:
+        lines.extend(["", "## Ownership"])
+        lines.append(
+            f"- selected_stage: `{semantic_role_ownership.get('selected_stage', '')}`"
+        )
+        lines.append(
+            f"- selected_role: `{semantic_role_ownership.get('selected_role', '')}`"
+        )
+        lines.append(
+            f"- trigger_condition: `{semantic_role_ownership.get('trigger_condition', '')}`"
+        )
+        lines.append(
+            f"- artifact_kind: `{semantic_role_ownership.get('artifact_kind', '')}`"
+        )
+
     route_method = trace.get("route_method")
     if route_method:
         lines.append(f"- route_method: `{route_method}`")
@@ -126,6 +142,21 @@ def build_event_comment(
     route_method = trace.get("route_method") or _metadata_value(None, trace, "preferred_method")
     if route_method:
         lines.append(f"- route_method: `{route_method}`")
+
+    semantic_role_ownership = _metadata_value(None, trace, "semantic_role_ownership")
+    if isinstance(semantic_role_ownership, Mapping) and semantic_role_ownership:
+        lines.append(
+            f"- ownership_stage: `{semantic_role_ownership.get('selected_stage', '')}`"
+        )
+        lines.append(
+            f"- ownership_role: `{semantic_role_ownership.get('selected_role', '')}`"
+        )
+        lines.append(
+            f"- ownership_trigger: `{semantic_role_ownership.get('trigger_condition', '')}`"
+        )
+        lines.append(
+            f"- ownership_artifact: `{semantic_role_ownership.get('artifact_kind', '')}`"
+        )
 
     details = event_record.get("details") or {}
     for key in sorted(details):

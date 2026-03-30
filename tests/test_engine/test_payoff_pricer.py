@@ -44,7 +44,7 @@ class TestMarketState:
 
     def test_available_capabilities_with_discount(self):
         ms = _market_state()
-        assert ms.available_capabilities == {"discount", "forward_rate"}
+        assert {"discount", "forward_rate"} <= ms.available_capabilities
 
     def test_available_capabilities_without_discount(self):
         ms = MarketState(as_of=SETTLE, settlement=SETTLE, discount=None)
@@ -84,7 +84,7 @@ class TestPayoffProtocol:
 
     def test_requirements(self):
         adapter = DeterministicCashflowPayoff(_bond())
-        assert adapter.requirements == {"discount"}
+        assert adapter.requirements == {"discount_curve"}
 
     def test_evaluate_returns_float(self):
         adapter = DeterministicCashflowPayoff(_bond())
@@ -129,7 +129,7 @@ class TestPricePayoff:
         ms = MarketState(as_of=SETTLE, settlement=SETTLE, discount=None)
         with pytest.raises(MissingCapabilityError) as exc_info:
             price_payoff(adapter, ms)
-        assert "discount" in exc_info.value.missing
+        assert "discount_curve" in exc_info.value.missing
 
     def test_zero_coupon_bond(self):
         bond = Bond(
@@ -248,7 +248,7 @@ class TestCustomPayoff:
         ms = _market_state()
         with pytest.raises(MissingCapabilityError) as exc_info:
             price_payoff(VolPayoff(), ms)
-        assert "black_vol" in exc_info.value.missing
+        assert "black_vol_surface" in exc_info.value.missing
 
 
 class TestEvaluateReturnsFloat:

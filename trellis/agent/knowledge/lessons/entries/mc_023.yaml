@@ -1,0 +1,29 @@
+id: mc_023
+title: Zero vega from MC payoff
+severity: critical
+category: monte_carlo
+status: validated
+confidence: 0.6
+created: '2026-03-28T11:31:02.771346'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_113102_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: Price is unchanged when varying implied volatility across the surface (e.g.
+  price(vol=5%) == price(vol=40%) within tolerance).
+root_cause: 'The Monte Carlo payoff or integration with the path generator ignored
+  terminal randomness or the volatility input (common causes: payoff consumes the
+  whole path shape instead of terminal S_T, returns an array with shape (n_paths,
+  n_steps+1), or the process was constructed with a fixed spot/vol so paths are deterministic).'
+fix: Ensure the payoff function consumes terminal simulated prices and returns a 1-D
+  array of length n_paths (shape (n_paths,)), pass the vol surface into the GBM/process
+  correctly so volatility affects path generation, and reprice under bumped vol surfaces
+  to validate non-zero vega.
+validation: Discovered during build (attempt 3)

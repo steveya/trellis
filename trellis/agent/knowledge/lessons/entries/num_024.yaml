@@ -1,0 +1,28 @@
+category: numerical
+title: Fix Black-Scholes discounting
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T22:45:46.260122'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_224546_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Model PV is orders of magnitude too large, e.g. |PV| exceeds 10x notional
+  during a sanity check.
+root_cause: The analytical pricer used a Black-76-style forward transformation and/or
+  omitted proper discounting, causing spot/forward or volatility/unit mismatches in
+  a Black-Scholes target. This produces inflated prices when the model is meant to
+  use Black-Scholes spot dynamics with discounting.
+fix: Use the correct Black-Scholes closed form for the target, with spot price input,
+  strike, time to expiry, volatility, and explicit discount factor. Ensure the vol
+  surface is queried in the right units and the discounted PV is computed directly
+  rather than via an incorrect forward conversion.
+validation: Discovered during build (attempt 3)
+id: num_024

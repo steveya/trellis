@@ -46,6 +46,14 @@ _OPTION_LIKE_INSTRUMENTS = {
     "swaption",
 }
 
+# Credit instruments price from survival probabilities / hazard rates, not vol.
+# Vol sensitivity checks are not meaningful and will always produce false failures.
+_CREDIT_INSTRUMENTS = {
+    "credit_default_swap",
+    "nth_to_default",
+    "cds",
+}
+
 
 @dataclass(frozen=True)
 class PrimitiveLookupResult:
@@ -228,9 +236,12 @@ def select_invariant_pack(
     payoff_traits = set(getattr(product_ir, "payoff_traits", ()) or ())
 
     if (
-        normalized_instrument in _OPTION_LIKE_INSTRUMENTS
-        or normalized_method in {"analytical", "monte_carlo", "qmc", "pde_solver", "fft_pricing"}
-        or {"callable", "puttable", "bermudan", "american"} & payoff_traits
+        normalized_instrument not in _CREDIT_INSTRUMENTS
+        and (
+            normalized_instrument in _OPTION_LIKE_INSTRUMENTS
+            or normalized_method in {"analytical", "monte_carlo", "qmc", "pde_solver", "fft_pricing"}
+            or {"callable", "puttable", "bermudan", "american"} & payoff_traits
+        )
     ):
         checks.extend(["check_vol_sensitivity", "check_vol_monotonicity"])
 

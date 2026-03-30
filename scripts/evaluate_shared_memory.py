@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from trellis.agent.evals import compare_task_runs, render_shared_memory_report
+from trellis.cli_paths import resolve_repo_path
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -38,16 +39,17 @@ def _load_results(path: str) -> list[dict]:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv or sys.argv[1:])
 
-    baseline = _load_results(args.baseline)
-    candidate = _load_results(args.candidate)
+    baseline = _load_results(resolve_repo_path(args.baseline))
+    candidate = _load_results(resolve_repo_path(args.candidate))
     report = compare_task_runs(baseline, candidate)
 
     print(render_shared_memory_report(report))
 
     if args.output:
-        with open(args.output, "w") as handle:
+        output_path = resolve_repo_path(args.output)
+        with open(output_path, "w") as handle:
             json.dump(report, handle, indent=2, default=str)
-        print(f"\nFull report saved to: {args.output}")
+        print(f"\nFull report saved to: {output_path}")
 
     return 0
 

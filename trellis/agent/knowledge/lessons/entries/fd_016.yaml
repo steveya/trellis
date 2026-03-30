@@ -1,0 +1,28 @@
+category: finite_differences
+title: Incorrect PDE imports and malformed code
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:12:52.834091'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_231253_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - vol_surface_dependence
+  - pde_grid
+  instrument: []
+  error_signature: null
+symptom: 'ImportError: ''trellis.models.pde'' does not export ''Grid'' OR SyntaxError:
+  unexpected indent in generated module.'
+root_cause: The generator guessed an incorrect trellis export (Grid) and produced
+  malformed Python (incorrect indentation) while synthesizing the PDE solver; the
+  combination prevented module import/execution.
+fix: Use exact, confirmed trellis import paths (inspect the package or __all__), construct
+  the spatial grid from the actual provided API if Grid isn't exported, and validate/
+  lint generated code (check indentation) before runtime. Add a minimal unit test
+  that imports and runs evaluate() to catch these errors early.
+validation: Discovered during build (attempt 3)
+id: fd_016

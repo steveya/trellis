@@ -1,0 +1,31 @@
+id: con_015
+title: Do not import from trellis.conventions.schedule or day_count
+severity: critical
+category: convention
+status: promoted
+confidence: 1.0
+created: '2026-03-28T14:51:54.852855'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_145155_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - path_dependent
+  - multi_asset
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Build fails with 'unknown Trellis module trellis.conventions.schedule' or
+  'trellis.conventions.day_count' at import time.
+root_cause: The modules trellis.conventions.schedule and trellis.conventions.day_count
+  do not exist in the Trellis runtime; their equivalents are trellis.core.date_utils.generate_schedule
+  and trellis.core.date_utils.year_fraction.
+fix: Replace any import of trellis.conventions.schedule or trellis.conventions.day_count
+  with imports from trellis.core.date_utils (generate_schedule and year_fraction respectively).
+validation: Discovered during build (attempt 3)

@@ -89,13 +89,15 @@ The second-order sensitivity to yield changes:
 
    \text{Convexity} = \frac{1}{P} \frac{\partial^2 P}{\partial y^2}
 
-Computed via finite differences (autograd second derivatives are fragile):
+Computed via autograd second derivatives when the payoff path is differentiable,
+with finite-difference fallback only for nonsmooth routes:
 
 .. math::
 
-   \text{Convexity} \approx \frac{P(y + \Delta y) + P(y - \Delta y) - 2P(y)}{P \cdot (\Delta y)^2}
+   \text{Convexity} \approx \frac{1}{P} \frac{\partial^2 P}{\partial y^2}
 
-with :math:`\Delta y = 10^{-4}`.
+For forward-only routes, the fallback central-difference approximation uses
+:math:`\Delta y = 10^{-4}`.
 
 **Price approximation with convexity:**
 

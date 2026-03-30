@@ -1,0 +1,30 @@
+category: finite_differences
+title: Unit/scale mismatch broke PDE price
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T23:30:20.827093'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_233021_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - vol_surface_dependence
+  - pde_grid
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'Automated sanity check: |PV| > 10× typical_notional (e.g., |PV| = 9995.24
+  for notional 100).'
+root_cause: One or more market inputs were in the wrong units or scale (e.g., vol
+  given in percent instead of decimal, discount curve provided as rates vs discount
+  factors, or notional applied twice). The PDE routine consumed the mis-scaled inputs
+  without conversion, producing an enormous PV.
+fix: 'Enforce and convert canonical units before solving: convert vol from % to decimal,
+  convert zero/rates to discount factors (or vice versa) as expected by the PDE operator,
+  and ensure notional is applied exactly once. Add input validation asserts and a
+  price-sanity check early to fail fast.'
+validation: Discovered during build (attempt 3)
+id: fd_021

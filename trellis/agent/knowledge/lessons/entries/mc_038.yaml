@@ -1,0 +1,31 @@
+category: monte_carlo
+title: Undefined identifier in spec defaults
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:04:04.640121'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_230405_barrier_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - barrier
+  - path_dependent
+  - discounting
+  - vol_surface_dependence
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''mc_barrier'' is not defined (or similar undefined name)
+  during module/class construction'
+root_cause: The dataclass/spec contains default values that reference Python identifiers
+  (e.g. mc_barrier, monte_carlo) instead of using strings or defined constants, causing
+  NameError when the module is parsed; additionally, the generated evaluate() contained
+  typos (e.g. year_fractio) and other unresolved imports.
+fix: Use string literals or well-defined enum/constants for implementation/method
+  fields (e.g. implementation='mc_barrier', method_family='monte_carlo'), validate
+  all imported names and utility function spellings, and run a quick syntax/name-check
+  before attempting a full build.
+validation: Discovered during build (attempt 1)
+id: mc_038

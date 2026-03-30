@@ -1,0 +1,36 @@
+id: mc_017
+title: Ranked-observation basket must delegate to required semantic primitives
+severity: critical
+category: monte_carlo
+status: promoted
+confidence: 1.0
+created: '2026-03-28T09:29:04.012876'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_092904_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Build fails with assembly.required_primitive_missing because generated code
+  does not call trellis.models.resolution.basket_semantics.resolve_basket_semantics
+  and trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo.
+root_cause: The agent generated a hand-rolled payoff class instead of acting as a
+  thin adapter around the two required primitives mandated by the assembly route.
+  The code-generation loop needs the exact adapter signature, not an inferred approximation,
+  so the shared helper calls must be visible in the payoff module.
+fix: The payoff module must import and call resolve_basket_semantics to build basket
+  config, then pass it directly to price_ranked_observation_basket_monte_carlo; no
+  hand-rolled simulation loop, no direct `trellis.models.processes.correlated_gbm`
+  import, and no bespoke payoff class body is permitted.
+validation: Discovered during build (attempt 3); promoted after adding exact adapter
+  guidance

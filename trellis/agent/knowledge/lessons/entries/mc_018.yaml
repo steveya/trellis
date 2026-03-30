@@ -1,0 +1,32 @@
+id: mc_018
+title: Superseded - Himalaya payoff indexed-path CorrelatedGBM guidance
+severity: critical
+category: monte_carlo
+status: archived
+confidence: 1.0
+created: '2026-03-28T09:32:15.328186'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_093215_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: This lesson was superseded after the basket proving run moved to the shared
+  semantic-basket helper route.
+root_cause: The direct `CorrelatedGBM` path was replaced by a shared helper that
+  owns the correlated basket process, path simulation, and ranked-observation assembly.
+fix: Delegate to `resolve_basket_semantics(...)` and
+  `price_ranked_observation_basket_monte_carlo(...)` instead of constructing or
+  importing `trellis.models.processes.correlated_gbm` in the generated adapter.
+validation: Discovered during build (attempt 3); promoted after adding the direct
+  indexed-path recipe

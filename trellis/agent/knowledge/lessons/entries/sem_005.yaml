@@ -1,0 +1,33 @@
+id: sem_005
+title: _semantic_extension_decision_mock_inputs_fields_underlier_structure_
+severity: medium
+category: semantic
+status: validated
+confidence: 0.68
+created: '2026-03-28T14:45:53.190299'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/semantic_extensions/3f68f8652f8ebc30.yaml
+applies_when:
+  method:
+  - mock_inputs
+  features:
+  - underlier_structure
+  - payoff_rule
+  - settlement_rule
+  - discount_curve
+  - market_parameter_source
+  - semantic_contract_lesson
+  - mock_discount_curve_provider
+  - mock_market_parameter_provider
+  instrument:
+  - european_option
+  error_signature: null
+symptom: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing market inputs: discount_curve, market_parameter_source; missing knowledge
+  artifacts: semantic_contract_lesson; mock inputs can likely bridge the gap'
+root_cause: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing market inputs: discount_curve, market_parameter_source; missing knowledge
+  artifacts: semantic_contract_lesson; mock inputs can likely bridge the gap'
+fix: Synthesize a mock or empirical market-input source for mock_discount_curve_provider
+  before pricing.
+validation: Repeated semantic extension trace `3f68f8652f8ebc30`

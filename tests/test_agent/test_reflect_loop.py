@@ -153,6 +153,9 @@ def test_closed_loop_failure_captures_lesson_and_next_gap_check_retrieves_it(mon
     )
 
     assert actions["lesson_captured"] is not None
+    assert actions["lesson_contract"] is not None
+    assert actions["lesson_contract"]["valid"] is True
+    assert actions["lesson_promotion_outcome"] == "promoted"
     assert actions["knowledge_trace_saved"] is not None
 
     monkeypatch.setattr(knowledge_pkg, "_store", None)
@@ -167,6 +170,11 @@ def test_closed_loop_failure_captures_lesson_and_next_gap_check_retrieves_it(mon
     lesson_path = knowledge_root / "lessons" / "entries" / f"{actions['lesson_captured']}.yaml"
     lesson_data = yaml.safe_load(lesson_path.read_text())
     assert lesson_data["source_trace"] == actions["knowledge_trace_saved"]
+
+    trace_path = Path(actions["knowledge_trace_saved"])
+    trace_data = yaml.safe_load(trace_path.read_text())
+    assert trace_data["diagnosis"]["lesson_contract"]["valid"] is True
+    assert trace_data["diagnosis"]["lesson_promotion_outcome"] == "promoted"
 
 
 def test_reflect_trace_records_agent_observations(monkeypatch, tmp_path):

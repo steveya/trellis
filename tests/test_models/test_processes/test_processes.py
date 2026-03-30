@@ -52,6 +52,58 @@ class TestGBM:
 
 
 class TestCorrelatedGBM:
+    def test_two_asset_shorthand_constructor_matches_array_form(self):
+        shorthand = CorrelatedGBM(
+            mu1=0.05,
+            sigma1=0.20,
+            mu2=0.03,
+            sigma2=0.15,
+            rho=0.35,
+        )
+        explicit = CorrelatedGBM(
+            mu=[0.05, 0.03],
+            sigma=[0.20, 0.15],
+            corr=[[1.0, 0.35], [0.35, 1.0]],
+        )
+
+        raw_np.testing.assert_allclose(shorthand.mu, explicit.mu, atol=0.0, rtol=0.0)
+        raw_np.testing.assert_allclose(shorthand.sigma, explicit.sigma, atol=0.0, rtol=0.0)
+        raw_np.testing.assert_allclose(shorthand.corr, explicit.corr, atol=0.0, rtol=0.0)
+
+    def test_generated_alias_constructor_matches_explicit_form(self):
+        alias = CorrelatedGBM(
+            spots=[100.0, 80.0],
+            rates=[0.05, 0.04],
+            vols=[0.20, 0.25],
+            correlation=[[1.0, 0.3], [0.3, 1.0]],
+            div_yields=[0.01, 0.02],
+        )
+        explicit = CorrelatedGBM(
+            mu=[0.05, 0.04],
+            sigma=[0.20, 0.25],
+            corr=[[1.0, 0.3], [0.3, 1.0]],
+            dividend_yield=[0.01, 0.02],
+        )
+
+        raw_np.testing.assert_allclose(alias.mu, explicit.mu, atol=0.0, rtol=0.0)
+        raw_np.testing.assert_allclose(alias.sigma, explicit.sigma, atol=0.0, rtol=0.0)
+        raw_np.testing.assert_allclose(alias.corr, explicit.corr, atol=0.0, rtol=0.0)
+        raw_np.testing.assert_allclose(alias.dividend_yield, explicit.dividend_yield, atol=0.0, rtol=0.0)
+
+    def test_spot_prices_alias_is_accepted(self):
+        process = CorrelatedGBM(
+            spot_prices=[100.0, 80.0],
+            rates=[0.05, 0.04],
+            vols=[0.20, 0.25],
+            corr_matrix=[[1.0, 0.3], [0.3, 1.0]],
+            dividends=[0.01, 0.02],
+        )
+
+        raw_np.testing.assert_allclose(process.mu, raw_np.array([0.05, 0.04]), atol=0.0, rtol=0.0)
+        raw_np.testing.assert_allclose(process.sigma, raw_np.array([0.20, 0.25]), atol=0.0, rtol=0.0)
+        raw_np.testing.assert_allclose(process.corr, raw_np.array([[1.0, 0.3], [0.3, 1.0]]), atol=0.0, rtol=0.0)
+        raw_np.testing.assert_allclose(process.dividend_yield, raw_np.array([0.01, 0.02]), atol=0.0, rtol=0.0)
+
     def test_drift_uses_dividend_adjusted_mu(self):
         process = CorrelatedGBM(
             mu=[0.05, 0.04],

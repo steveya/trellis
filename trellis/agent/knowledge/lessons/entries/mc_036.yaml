@@ -1,0 +1,33 @@
+id: mc_036
+title: Analytical Himalaya pricer must wrap required primitives explicitly
+severity: critical
+category: monte_carlo
+status: validated
+confidence: 0.6
+created: '2026-03-28T15:16:49.135160'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_151649_basket_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - ranked_observation
+  - multi_asset
+  - discounting
+  - path_dependent
+  - locked_returns
+  - remove_selected
+  - remaining_selection
+  instrument: []
+  error_signature: null
+symptom: Build fails with assembly.required_primitive_missing because generated evaluate()
+  does not call black76_call, black76_put, or generate_schedule.
+root_cause: The agent selected the analytical route (canonical_decomposition) which
+  mandates use of black76_call, black76_put, and generate_schedule as required primitives,
+  but the generated code diverged into other imports and never invoked those three
+  functions, triggering the assembly validator.
+fix: 'Structure the Himalaya evaluate() as a thin adapter: always call generate_schedule
+  to produce observation dates, then call black76_call or black76_put for each observation
+  period''s contribution, and aggregate results; do not import or call any substitute
+  pricing functions.'
+validation: Discovered during build (attempt 3)

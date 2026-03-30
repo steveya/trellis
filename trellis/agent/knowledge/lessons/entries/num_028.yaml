@@ -1,0 +1,30 @@
+category: numerical
+title: Undefined method identifier breaks build
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-29T08:29:55.528668'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_082956_american_put_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - american
+  - early_exercise
+  - puttable
+  - discounting
+  - backward_induction
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''crr_tree'' is not defined'
+root_cause: The dataclass default and later code used the bare identifier crr_tree
+  instead of a string constant or an imported symbol; the name was never defined or
+  imported in the module. This is a simple namespace / typing mistake that prevented
+  module import and execution.
+fix: Use a quoted method name (e.g. 'crr_tree') or import/define the crr_tree symbol
+  before using it; add a small validation step that checks spec.method is a valid
+  string/member and raise a clear error early.
+validation: Discovered during build (attempt 2)
+id: num_028

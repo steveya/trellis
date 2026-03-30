@@ -29,6 +29,7 @@ from trellis.agent.evals import (
     summarize_task_results,
 )
 from trellis.agent.task_runtime import build_market_state, load_tasks, run_task
+from trellis.cli_paths import resolve_repo_path
 
 load_env()
 
@@ -73,7 +74,10 @@ def main(argv: list[str]) -> int:
             preflight_failed = True
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = Path(args.output or ROOT / f"task_results_stress_connector_{timestamp}.json")
+    output_path = resolve_repo_path(
+        args.output,
+        ROOT / f"task_results_stress_connector_{timestamp}.json",
+    )
     summary_path = output_path.with_name(f"{output_path.stem}_summary.json")
 
     if preflight_failed:

@@ -5,6 +5,11 @@ Monte Carlo Methods
 
    V_0 = e^{-rT} \cdot \frac{1}{N} \sum_{k=1}^{N} f(S_T^{(k)})
 
+When you need gradients, Trellis can run the same path generator in a
+pathwise/autograd mode by supplying explicit shocks to
+``MonteCarloEngine.simulate_with_shocks(..., differentiable=True)`` and using
+an autograd-aware payoff callable.
+
 SDE Discretization
 ------------------
 

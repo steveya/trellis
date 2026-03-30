@@ -1,0 +1,40 @@
+category: finite_differences
+title: 'Undefined symbol: fd_theta_method'
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:20:17.457426'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_232018_build_a_pricer_for:_finite_element_method_(fem)_vs_finite_difference_for_european
+
+
+  implementation_target:_fd_theta_method
+
+  preferred_method_family:_pde_solver
+
+
+  implementation_target:_fd_theta_method_pde_solver.yaml'
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - pde_grid
+  - discounting
+  - vol_surface_dependence
+  - greeks
+  - pde_solver
+  - fd_theta_method
+  - finite_element_method
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''fd_theta_method'' is not defined (raised at module/class
+  default or import site).'
+root_cause: The code used an undefined identifier (fd_theta_method and unquoted boundary
+  identifiers) as defaults instead of importing the symbol or using a string/config
+  key; the module attempted to reference a name that was never defined or imported.
+fix: Use the exact Trellis import path for the theta solver (e.g. import theta_method_1d
+  from trellis.models.pde.theta_method) or set solver/boundary defaults to string
+  keys and validate/resolve them at runtime; add unit tests that import and instantiate
+  the spec to catch NameError during import time.
+validation: Discovered during build (attempt 2)
+id: fd_019

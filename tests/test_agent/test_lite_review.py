@@ -79,6 +79,32 @@ def price(market_state):
     assert report.ok
 
 
+def test_lite_review_rejects_wall_clock_valuation_date():
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from datetime import date
+
+def price(spec, market_state):
+    T = (spec.expiry_date - date.today()).days / 365.0
+    return float(T)
+"""
+
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.black"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(source, pricing_plan=pricing_plan)
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.wall_clock_valuation_date" in issue_codes
+
+
 def test_lite_review_rejects_analytical_black76_without_discount_access():
     from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan
     from trellis.agent.lite_review import review_generated_code
@@ -123,7 +149,7 @@ def price(spec, market_state):
     )
 
     issue_codes = {issue.code for issue in report.issues}
-    assert "lite.analytical_discount_access_missing" in issue_codes
+    assert "lite.analytical_black76_discount_curve_access_missing" in issue_codes
 
 
 def test_lite_review_rejects_analytical_black76_without_vol_surface_access():
@@ -172,7 +198,7 @@ def price(spec, market_state):
     )
 
     issue_codes = {issue.code for issue in report.issues}
-    assert "lite.analytical_vol_surface_access_missing" in issue_codes
+    assert "lite.analytical_black76_black_vol_surface_access_missing" in issue_codes
 
 
 def test_lite_review_rejects_garman_kohlhagen_without_foreign_curve_access():
@@ -221,7 +247,7 @@ def price(spec, market_state):
     )
 
     issue_codes = {issue.code for issue in report.issues}
-    assert "lite.fx_analytical_forward_curve_access_missing" in issue_codes
+    assert "lite.analytical_garman_kohlhagen_forward_curve_access_missing" in issue_codes
 
 
 def test_lite_review_rejects_monte_carlo_route_without_market_access():
@@ -269,8 +295,8 @@ def price(spec, market_state):
     )
 
     issue_codes = {issue.code for issue in report.issues}
-    assert "lite.monte_carlo_discount_access_missing" in issue_codes
-    assert "lite.monte_carlo_vol_surface_access_missing" in issue_codes
+    assert "lite.monte_carlo_paths_discount_curve_access_missing" in issue_codes
+    assert "lite.monte_carlo_paths_black_vol_surface_access_missing" in issue_codes
 
 
 def test_lite_review_rejects_rate_tree_route_without_market_access():
@@ -316,8 +342,8 @@ def price(spec, market_state):
     )
 
     issue_codes = {issue.code for issue in report.issues}
-    assert "lite.rate_tree_discount_access_missing" in issue_codes
-    assert "lite.rate_tree_vol_surface_access_missing" in issue_codes
+    assert "lite.exercise_lattice_discount_curve_access_missing" in issue_codes
+    assert "lite.exercise_lattice_black_vol_surface_access_missing" in issue_codes
 
 
 def test_lite_review_rejects_local_vol_monte_carlo_without_surface_access():
@@ -375,7 +401,7 @@ def price(spec, market_state):
     )
 
     issue_codes = {issue.code for issue in report.issues}
-    assert "lite.local_vol_monte_carlo_surface_access_missing" in issue_codes
+    assert "lite.local_vol_monte_carlo_local_vol_surface_access_missing" in issue_codes
 
 
 def test_builder_prompt_surface_uses_semantic_repair_for_lite_review():
@@ -448,3 +474,122 @@ def test_validate_build_skips_llm_reviewer_stages_after_deterministic_failures(m
     )
 
     assert failures == ["deterministic gate failure"]
+
+
+def test_validate_build_uses_quanto_family_validation_bundle(monkeypatch):
+    from trellis.agent.executor import _validate_build
+    from trellis.agent.platform_requests import compile_build_request
+
+    class DummyPayoff:
+        pass
+
+    compiled = compile_build_request(
+        "Quanto option on SAP settled in USD",
+        instrument_type="quanto_option",
+    )
+
+    spec_schema = SimpleNamespace(
+        class_name="QuantoOptionAnalyticalPayoff",
+        spec_name="QuantoOptionSpec",
+        requirements=["discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot", "model_parameters"],
+        fields=[],
+    )
+    events: list[tuple[str, dict]] = []
+
+    monkeypatch.setattr(
+        "trellis.agent.executor._make_test_payoff",
+        lambda *args, **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.executor._record_platform_event",
+        lambda compiled_request, event, **kwargs: events.append((event, kwargs.get("details", {}))),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_non_negativity",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_price_sanity",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_quanto_required_inputs",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_quanto_cross_currency_semantics",
+        lambda *args, **kwargs: [],
+    )
+
+    failures = _validate_build(
+        DummyPayoff,
+        code="def evaluate(self, market_state):\n    return 0.0\n",
+        description="Quanto option on SAP settled in USD",
+        spec_schema=spec_schema,
+        validation="fast",
+        compiled_request=compiled,
+        pricing_plan=compiled.pricing_plan,
+        product_ir=compiled.product_ir,
+        attempt_number=1,
+    )
+
+    assert failures == []
+    selected = next(details for event, details in events if event == "validation_bundle_selected")
+    assert selected["bundle_id"] == "analytical:quanto_option"
+    assert "check_quanto_required_inputs" in selected["checks"]
+    assert "check_quanto_cross_currency_semantics" in selected["checks"]
+
+
+def test_validate_build_supports_quanto_monte_carlo_market_inputs():
+    from trellis.agent.executor import _validate_build
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.planner import SPECIALIZED_SPECS
+    from trellis.instruments._agent.quantooptionmontecarlo import QuantoOptionMonteCarloPayoff
+
+    compiled = compile_build_request(
+        "Quanto option: quanto-adjusted BS vs MC cross-currency",
+        instrument_type="quanto_option",
+        preferred_method="monte_carlo",
+    )
+
+    failures = _validate_build(
+        QuantoOptionMonteCarloPayoff,
+        code="def evaluate(self, market_state):\n    return 0.0\n",
+        description="Quanto option: quanto-adjusted BS vs MC cross-currency",
+        spec_schema=SPECIALIZED_SPECS["quanto_option_monte_carlo"],
+        validation="fast",
+        compiled_request=compiled,
+        pricing_plan=compiled.pricing_plan,
+        product_ir=compiled.product_ir,
+        attempt_number=1,
+    )
+
+    assert failures == []
+
+
+def test_format_validation_failure_feedback_includes_structured_diagnostics():
+    from trellis.agent.executor import _format_validation_failure_feedback
+    from trellis.agent.invariants import InvariantFailure
+
+    feedback = _format_validation_failure_feedback(
+        failures=["Price is negative: -2.000000"],
+        failure_details=[
+            InvariantFailure(
+                check="check_non_negativity",
+                message="Price is negative: -2.000000",
+                actual=-2.0,
+                exception_type="ValueError",
+                exception_message="missing FX quote",
+                context={
+                    "spot": 100.0,
+                    "fx_pairs": ("EURUSD",),
+                    "model_parameter_keys": ("quanto_correlation",),
+                },
+            )
+        ],
+    )
+
+    assert "check_non_negativity" in feedback
+    assert "Actual: -2.0" in feedback
+    assert "ValueError: missing FX quote" in feedback
+    assert "spot=100.0" in feedback

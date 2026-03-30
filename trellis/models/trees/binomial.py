@@ -48,11 +48,10 @@ class BinomialTree:
     def _build_tree(self) -> raw_np.ndarray:
         """Build (n+1) x (n+1) array of node values."""
         n = self.n_steps
-        tree = raw_np.zeros((n + 1, n + 1))
-        for i in range(n + 1):
-            for j in range(i + 1):
-                tree[i, j] = self.S0 * self.u ** j * self.d ** (i - j)
-        return tree
+        steps = np.arange(n + 1)[:, None]
+        nodes = np.arange(n + 1)[None, :]
+        values = self.S0 * (self.u ** nodes) * (self.d ** (steps - nodes))
+        return np.where(nodes <= steps, values, 0.0)
 
     def value_at(self, step: int, node: int) -> float:
         """Return the process value at tree node (step, node)."""
@@ -71,9 +70,9 @@ class BinomialTree:
         u = exp(sigma * sqrt(dt)), d = 1/u, p = (exp(r*dt) - d) / (u - d).
         """
         dt = T / n_steps
-        u = raw_np.exp(sigma * raw_np.sqrt(dt))
+        u = np.exp(sigma * np.sqrt(dt))
         d = 1.0 / u
-        p = (raw_np.exp(r * dt) - d) / (u - d)
+        p = (np.exp(r * dt) - d) / (u - d)
         return cls(S0, T, n_steps, u, d, p)
 
     @classmethod
@@ -84,8 +83,8 @@ class BinomialTree:
         p = 0.5, u and d chosen to match first two moments.
         """
         dt = T / n_steps
-        u = raw_np.exp((r - 0.5 * sigma ** 2) * dt + sigma * raw_np.sqrt(dt))
-        d = raw_np.exp((r - 0.5 * sigma ** 2) * dt - sigma * raw_np.sqrt(dt))
+        u = np.exp((r - 0.5 * sigma ** 2) * dt + sigma * np.sqrt(dt))
+        d = np.exp((r - 0.5 * sigma ** 2) * dt - sigma * np.sqrt(dt))
         return cls(S0, T, n_steps, u, d, 0.5)
 
     @classmethod

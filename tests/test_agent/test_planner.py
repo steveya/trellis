@@ -130,6 +130,18 @@ class TestPlanStatic:
         assert plan.spec_schema is not None
         assert plan.spec_schema.class_name == "EuropeanLocalVolMonteCarloPayoff"
 
+    def test_quanto_option_description_gets_specialized_spec(self):
+        plan = _plan_static(
+            "Build a pricer for: Quanto option on SAP settled in USD",
+            {"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot", "model_parameters"},
+            {"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot", "model_parameters"},
+            set(),
+            instrument_type="quanto_option",
+            preferred_method="analytical",
+        )
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.class_name == "QuantoOptionAnalyticalPayoff"
+        assert plan.steps[0].module_path.endswith("quantooptionanalytical.py")
 
 class TestPlanBuild:
 

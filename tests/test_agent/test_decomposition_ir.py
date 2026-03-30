@@ -70,6 +70,7 @@ class TestProductIR:
         assert ir.state_dependence == "schedule_dependent"
         assert ir.model_family == "interest_rate"
         assert set(ir.candidate_engine_families) >= {"lattice", "exercise"}
+        assert "rate_lattice" in ir.route_families
         assert ir.supported is True
 
     def test_ir_for_bermudan_swaption(self):
@@ -83,6 +84,7 @@ class TestProductIR:
         assert ir.exercise_style == "bermudan"
         assert ir.state_dependence == "schedule_dependent"
         assert set(ir.candidate_engine_families) >= {"lattice", "exercise"}
+        assert "rate_lattice" in ir.route_families
         assert ir.supported is True
 
     def test_ir_for_american_put(self):
@@ -97,6 +99,7 @@ class TestProductIR:
         assert ir.schedule_dependence is False
         assert ir.model_family == "equity_diffusion"
         assert set(ir.candidate_engine_families) >= {"monte_carlo", "exercise"}
+        assert "equity_tree" in ir.route_families
         assert ir.supported is True
 
     def test_ir_normalizes_american_option_alias(self):
@@ -107,6 +110,7 @@ class TestProductIR:
         assert ir.instrument == "american_option"
         assert ir.exercise_style == "american"
         assert "exercise" in ir.candidate_engine_families
+        assert "equity_tree" in ir.route_families
 
     def test_ir_reports_unresolved_composite_under_heston(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir

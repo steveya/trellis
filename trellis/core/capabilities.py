@@ -1,7 +1,13 @@
-"""Capability inventory: market data vs computational methods.
+"""Registry of what the library can do, split into two categories.
 
-Market data capabilities require populated MarketState fields.
-Computational method capabilities are always available (library code).
+Market data capabilities (e.g. discount_curve, vol_surface) require
+the user to supply data via MarketState or Session.
+
+Computational method capabilities (e.g. monte_carlo, rate_tree) are
+always available because they are built-in library code.
+
+This module also provides helpers to check whether a payoff's requirements
+are satisfiable and to generate human-readable summaries.
 """
 
 from __future__ import annotations
@@ -193,9 +199,21 @@ METHODS: list[MethodCapability] = [
             "trellis.models.pde.psor",
         ),
         example_usage=(
-            "from trellis.models.pde import theta_method_1d, Grid\n"
-            "grid = Grid(0, 300, 200, T, 200)\n"
-            "V = theta_method_1d(grid, sigma_fn, r_fn, payoff, theta=0.5)"
+            "import numpy as np\n"
+            "from trellis.models.pde.grid import Grid\n"
+            "from trellis.models.pde.theta_method import theta_method_1d\n"
+            "from trellis.models.pde.operator import BlackScholesOperator\n"
+            "grid = Grid(x_min=0.0, x_max=300.0, n_x=200, T=T, n_t=200)\n"
+            "terminal = np.maximum(grid.x - K, 0.0)\n"
+            "op = BlackScholesOperator(lambda s, t: sigma, lambda t: r)\n"
+            "V = theta_method_1d(\n"
+            "    grid,\n"
+            "    op,\n"
+            "    terminal,\n"
+            "    theta=0.5,\n"
+            "    lower_bc_fn=lambda t: 0.0,\n"
+            "    upper_bc_fn=lambda t: 300.0 - K * np.exp(-r * (T - t)),\n"
+            ")"
         ),
         requires_market_data=("discount_curve",),
     ),
@@ -272,8 +290,8 @@ CAPABILITIES = MARKET_DATA  # type: ignore
 _KNOWN_NAMES = _ALL_NAMES | frozenset(_MARKET_DATA_ALIASES)
 
 
-def discover_capabilities() -> dict:
-    """Return the full capability inventory, split by type."""
+def discover_capabilities() -> dict[str, list]:
+    """Return all capabilities as {"market_data": [...], "methods": [...]}."""
     return {
         "market_data": list(MARKET_DATA),
         "methods": list(METHODS),
@@ -281,10 +299,12 @@ def discover_capabilities() -> dict:
 
 
 def analyze_gap(requirements: set[str]) -> tuple[set[str], set[str]]:
-    """Check which requirements are satisfiable.
+    """Split requirements into ones the library supports and ones it does not.
 
-    Returns ``(satisfied, missing)`` where *missing* means the library
-    doesn't have the capability at all (not just missing market data).
+    Returns:
+        (satisfied, missing) — *satisfied* are names the library recognizes
+        (either as market data or computational methods). *missing* are names
+        the library has never heard of.
     """
     normalized_requirements = {normalize_capability_name(requirement) for requirement in requirements}
     satisfied = {requirement for requirement in normalized_requirements if requirement in _ALL_NAMES}
@@ -293,14 +313,20 @@ def analyze_gap(requirements: set[str]) -> tuple[set[str], set[str]]:
 
 
 def normalize_capability_name(requirement: str) -> str:
-    """Normalize a market-data capability name to the canonical vocabulary."""
+    """Map an alias to its canonical name (e.g. "discount" -> "discount_curve").
+
+    Returns the input unchanged if it is already canonical or unrecognized.
+    """
     if requirement in _METHOD_NAMES or requirement in _MARKET_DATA_NAMES:
         return requirement
     return _MARKET_DATA_ALIASES.get(requirement, requirement)
 
 
 def normalize_market_data_requirements(requirements: set[str] | frozenset[str] | tuple[str, ...]) -> set[str]:
-    """Normalize a market-data requirement collection to canonical names."""
+    """Normalize requirement names and keep only the market-data ones.
+
+    Method names and unrecognized names are silently dropped.
+    """
     normalized = set()
     for requirement in requirements:
         canonical = normalize_capability_name(requirement)
@@ -310,7 +336,10 @@ def normalize_market_data_requirements(requirements: set[str] | frozenset[str] |
 
 
 def _capability_for_requirement(requirement: str) -> MarketDataCapability | None:
-    """Return the market-data capability record matching a normalized requirement name."""
+    """Look up the MarketDataCapability for a requirement name.
+
+    Returns None if the name does not correspond to a market-data capability.
+    """
     canonical = normalize_capability_name(requirement)
     if canonical not in _MARKET_DATA_NAMES:
         return None
@@ -323,7 +352,8 @@ def check_market_data(
 ) -> list[str]:
     """Check which required market data fields are missing from MarketState.
 
-    Returns a list of user-friendly error messages. Empty list = all good.
+    Returns a list of human-readable error messages describing each missing
+    field and how to provide it. An empty list means everything is satisfied.
     """
     errors = []
     available = market_state.available_capabilities
@@ -347,10 +377,12 @@ def capability_summary(
     *,
     include_methods: bool = True,
 ) -> str:
-    """Formatted summary for injection into LLM prompts.
+    """Build a Markdown summary of available capabilities.
 
-    When *requirements* is provided, only the relevant market-data capabilities
-    are rendered. This keeps schema-design prompts smaller and focused.
+    Used to give the LLM agent context about what market data and methods
+    exist. When *requirements* is provided, only matching market-data
+    entries are included (to keep prompts focused). Set *include_methods*
+    to False to omit the computational methods section.
     """
     lines = ["## Market Data (from MarketState)\n"]
     normalized_requirements = (

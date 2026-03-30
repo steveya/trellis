@@ -1,0 +1,30 @@
+category: market_data
+title: Missing credit curve input
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-30T08:22:41.497799'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260330_082242_nth_to_default_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - discounting
+  - spread_computation
+  - maturity_settlement
+  instrument: []
+  error_signature: null
+symptom: 'Pricing fails with error: Missing market data: [''credit_curve''] (or runtime
+  SyntaxError from generated code).'
+root_cause: The analytic pricer expects a credit_curve (survival/hazard data) but
+  the session/market state did not provide it, and the generator lacked a pre-flight
+  validation step; additionally the generated module contained a syntax/indentation
+  error that prevented compilation.
+fix: Require and validate market inputs before pricing (e.g., assert market_state.credit_curve
+  present, or provide Session(credit_curve=CreditCurve.flat(0.02))). Add a compile/lint
+  step for generated code and unit tests that exercise the pricer with a canonical
+  credit_curve to catch syntax and unit-convention issues early.
+validation: Discovered during build (attempt 3)
+id: md_032

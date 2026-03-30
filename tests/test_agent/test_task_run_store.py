@@ -31,6 +31,18 @@ def test_persist_task_run_record_writes_latest_and_enriches_traces(tmp_path):
                 "task_id": "T104",
                 "task_title": "FFT vs COS comparison",
                 "comparison_target": "fft",
+                "semantic_role_ownership": {
+                    "selected_stage": "route_assembly",
+                    "selected_role": "quant",
+                    "trigger_condition": "pricing_plan_selection",
+                    "artifact_kind": "GenerationPlan",
+                },
+            },
+            "semantic_role_ownership": {
+                "selected_stage": "route_assembly",
+                "selected_role": "quant",
+                "trigger_condition": "pricing_plan_selection",
+                "artifact_kind": "GenerationPlan",
             },
             "token_usage": {
                 "call_count": 2,
@@ -76,6 +88,18 @@ def test_persist_task_run_record_writes_latest_and_enriches_traces(tmp_path):
                 "task_id": "T104",
                 "task_title": "FFT vs COS comparison",
                 "comparison_target": "black_scholes",
+                "semantic_role_ownership": {
+                    "selected_stage": "route_assembly",
+                    "selected_role": "quant",
+                    "trigger_condition": "pricing_plan_selection",
+                    "artifact_kind": "GenerationPlan",
+                },
+            },
+            "semantic_role_ownership": {
+                "selected_stage": "route_assembly",
+                "selected_role": "quant",
+                "trigger_condition": "pricing_plan_selection",
+                "artifact_kind": "GenerationPlan",
             },
             "events": [
                 {
@@ -170,10 +194,15 @@ def test_persist_task_run_record_writes_latest_and_enriches_traces(tmp_path):
     assert Path(persisted["history_path"]).exists()
     assert Path(persisted["latest_path"]).exists()
     assert Path(persisted["latest_index_path"]).exists()
+    assert Path(persisted["diagnosis_packet_path"]).exists()
+    assert Path(persisted["diagnosis_dossier_path"]).exists()
+    assert Path(persisted["latest_diagnosis_packet_path"]).exists()
+    assert Path(persisted["latest_diagnosis_dossier_path"]).exists()
     assert latest["task_id"] == "T104"
     assert latest["summary"]["comparison_status"] == "failed"
     assert latest["summary"]["prices"]["fft"] == 10.12
     assert latest["method_runs"]["fft"]["trace_summary"]["linear_issue"]["identifier"] == "QUA-99"
+    assert latest["method_runs"]["fft"]["trace_summary"]["semantic_role_ownership"]["selected_role"] == "quant"
     assert latest["method_runs"]["fft"]["issue_refs"]["github"]["number"] == 77
     assert latest["method_runs"]["fft"]["token_usage"]["total_tokens"] == 250
     assert latest["trace_summaries"][0]["token_usage"]["total_tokens"] == 250
@@ -181,6 +210,11 @@ def test_persist_task_run_record_writes_latest_and_enriches_traces(tmp_path):
     assert latest["workflow"]["status"] == "failed"
     assert latest["workflow"]["linked_issues"]["linear"][0]["identifier"] == "QUA-99"
     assert latest["workflow"]["latest_trace"]["request_id"] == "executor_build_fft"
+    assert Path(latest["storage"]["diagnosis_history_packet_path"]).parent.name == "T104"
+    assert Path(latest["storage"]["diagnosis_history_packet_path"]).suffix == ".json"
+    assert latest["storage"]["diagnosis_latest_packet_path"].endswith("/task_runs/diagnostics/latest/T104.json")
+    assert latest["result"]["learning"]["knowledge_outcome"] == "no_new_knowledge"
+    assert latest["learning"]["knowledge_outcome"] == "no_new_knowledge"
 
 
 def test_persist_task_run_record_treats_terminal_result_as_not_running_even_with_running_trace(tmp_path):
@@ -289,6 +323,171 @@ def test_persist_task_run_record_supports_framework_task_contract(tmp_path):
     assert latest["issue_refs"]["linear"][0]["identifier"] == "QUA-101"
     assert latest["summary"]["framework_outcome"] == "extraction_candidate"
     assert latest["learning"]["reusable_artifact_count"] == 0
+    assert latest["learning"]["knowledge_outcome"] == "no_new_knowledge"
+    assert "without new reusable knowledge" in latest["learning"]["knowledge_outcome_reason"]
     assert direct["storage"]["latest_path"].endswith("/task_runs/latest/E17.json")
     assert len(records) == 1
     assert records[0]["task_id"] == "E17"
+
+
+def test_persist_task_run_record_retains_runtime_contract_metadata(tmp_path):
+    from trellis.agent.task_run_store import load_task_run_record, persist_task_run_record
+
+    task = {
+        "id": "T998",
+        "title": "Himalaya ranked observation basket",
+        "construct": ["monte_carlo"],
+    }
+    result = {
+        "task_id": "T998",
+        "title": task["title"],
+        "success": True,
+        "start_time": "2026-03-27T20:45:00",
+        "runtime_contract": {
+            "task_id": "T998",
+            "task_title": task["title"],
+            "description": "Build a pricer for: Himalaya ranked observation basket",
+            "instrument_type": "basket_option",
+            "semantic_contract_id": "ranked_observation_basket",
+            "snapshot_reference": {
+                "source": "mock",
+                "as_of": "2024-11-15",
+                "selected_components": {
+                    "discount_curve": "usd_ois",
+                    "forecast_curve": "USD-SOFR-3M",
+                },
+                "selected_curve_names": {
+                    "discount_curve": "usd_ois",
+                    "forecast_curve": "USD-SOFR-3M",
+                },
+            },
+            "evaluation_tags": [
+                "task_runtime",
+                "construct:monte_carlo",
+                "market:mock",
+            ],
+            "selected_curve_names": {
+                "discount_curve": "usd_ois",
+                "forecast_curve": "USD-SOFR-3M",
+            },
+            "trace_identifier": "executor_build_20260327_deadbeef",
+            "trace_path": "/tmp/executor_build_20260327_deadbeef.yaml",
+        },
+        "market_context": {
+            "source": "mock",
+            "as_of": "2024-11-15",
+            "selected_components": {
+                "discount_curve": "usd_ois",
+                "forecast_curve": "USD-SOFR-3M",
+            },
+            "selected_curve_names": {
+                "discount_curve": "usd_ois",
+                "forecast_curve": "USD-SOFR-3M",
+            },
+        },
+        "reflection": {},
+    }
+
+    persisted = persist_task_run_record(
+        task,
+        result,
+        root=tmp_path,
+        persisted_at=datetime(2026, 3, 27, 20, 46, tzinfo=timezone.utc),
+    )
+
+    latest = load_task_run_record(persisted["latest_path"])
+
+    assert latest["result"]["runtime_contract"]["trace_identifier"] == "executor_build_20260327_deadbeef"
+    assert latest["result"]["runtime_contract"]["snapshot_reference"]["source"] == "mock"
+    assert latest["result"]["runtime_contract"]["selected_curve_names"] == {
+        "discount_curve": "usd_ois",
+        "forecast_curve": "USD-SOFR-3M",
+    }
+    assert latest["result"]["runtime_contract"]["evaluation_tags"] == [
+        "task_runtime",
+        "construct:monte_carlo",
+        "market:mock",
+    ]
+    assert latest["market"]["selected_curve_names"] == {
+        "discount_curve": "usd_ois",
+        "forecast_curve": "USD-SOFR-3M",
+    }
+
+
+def test_collect_trace_summaries_reads_analytical_trace_json(tmp_path):
+    import json
+
+    from trellis.agent.task_run_store import _collect_trace_summaries
+
+    trace_path = tmp_path / "analytical_trace.json"
+    trace_path.write_text(
+        json.dumps(
+            {
+                "trace_id": "trace_black76",
+                "trace_type": "analytical",
+                "status": "ok",
+                "route": {
+                    "family": "analytical",
+                    "name": "analytical_black76",
+                    "model": "black76",
+                },
+                "updated_at": "2026-03-28T00:00:00Z",
+                "steps": [
+                    {
+                        "id": "trace_black76:root",
+                        "kind": "trace",
+                        "label": "Analytical build",
+                        "status": "ok",
+                        "parent_id": None,
+                        "inputs": {},
+                        "outputs": {},
+                        "notes": [],
+                    }
+                ],
+                "context": {
+                    "route_card": "Black76 route card",
+                    "selected_curve_names": {
+                        "discount_curve": "usd_ois",
+                    },
+                    "generation_plan": {
+                        "method": "analytical",
+                        "instrument_type": "swaption",
+                        "instruction_resolution": {
+                            "route": "analytical_black76",
+                            "effective_instruction_count": 1,
+                            "dropped_instruction_count": 0,
+                            "conflict_count": 0,
+                            "effective_instructions": [
+                                {
+                                    "id": "analytical_black76:route-helper",
+                                    "instruction_type": "hard_constraint",
+                                }
+                            ],
+                            "dropped_instructions": [],
+                            "conflicts": [],
+                        },
+                    },
+                },
+            },
+            indent=2,
+        )
+    )
+
+    summaries = _collect_trace_summaries(
+        {
+            "artifacts": {
+                "analytical_trace_paths": [str(trace_path)],
+            }
+        }
+    )
+
+    assert len(summaries) == 1
+    summary = summaries[0]
+    assert summary["trace_kind"] == "analytical"
+    assert summary["request_id"] == "trace_black76"
+    assert summary["route_method"] == "analytical"
+    assert summary["action"] == "analytical_black76"
+    assert summary["selected_curve_names"] == {"discount_curve": "usd_ois"}
+    assert summary["instruction_resolution"]["route"] == "analytical_black76"
+    assert summary["instruction_resolution_effective_count"] == 1
+    assert summary["instruction_resolution_conflict_count"] == 0

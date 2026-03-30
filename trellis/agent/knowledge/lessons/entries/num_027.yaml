@@ -1,0 +1,29 @@
+category: numerical
+title: PV sanity failure from unit mismatch
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T23:30:57.604328'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_233058_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Price sanity check failed: abs(PV) > 10 * typical_notional (e.g., |PV| =
+  9995.24 > 10×100).'
+root_cause: 'Inputs and pricing API were mismatched (wrong convention: forward vs
+  spot, Black76 vs BSM vs Bachelier, discount application), producing huge PVs; additionally
+  the generated module contained a syntax/indentation error that prevented a valid
+  build.'
+fix: Enforce and validate exact input conventions (spot vs forward, discount factor
+  vs rate, vol type lognormal vs normal), compute forward and apply discount correctly
+  before calling the chosen Black/BSM routine, add runtime sanity checks (PV bounds,
+  non-negative T, vol sensible ranges) and fix the code-generation formatting and
+  exact import paths.
+validation: Discovered during build (attempt 3)
+id: num_027

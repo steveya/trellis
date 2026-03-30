@@ -1,4 +1,4 @@
-"""Persistence helpers for rich per-task run records."""
+"""Save and load detailed run records (inputs, outputs, timing, errors) for each pricing task."""
 
 from __future__ import annotations
 
@@ -8,6 +8,12 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import yaml
+
+from trellis.agent.task_diagnostics import (
+    DIAGNOSIS_HISTORY_ROOT,
+    DIAGNOSIS_LATEST_ROOT,
+    save_task_diagnosis_artifacts,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,7 +30,7 @@ def persist_task_run_record(
     root: Path = ROOT,
     persisted_at: datetime | None = None,
 ) -> dict[str, str]:
-    """Persist one rich task-run record to history and latest locations."""
+    """Write a full task-run record to both the history archive and the latest-result snapshot."""
     persisted_at = persisted_at or datetime.now(timezone.utc)
     record = build_task_run_record(task, result, persisted_at=persisted_at)
 
@@ -36,6 +42,22 @@ def persist_task_run_record(
 
     history_path = history_root / f"{record['run_id']}.json"
     latest_path = latest_root / f"{task['id']}.json"
+    diagnosis_history_packet_path = (
+        root / DIAGNOSIS_HISTORY_ROOT.relative_to(ROOT) / str(task["id"]) / f"{record['run_id']}.json"
+    )
+    diagnosis_history_dossier_path = diagnosis_history_packet_path.with_suffix(".md")
+    diagnosis_latest_packet_path = root / DIAGNOSIS_LATEST_ROOT.relative_to(ROOT) / f"{task['id']}.json"
+    diagnosis_latest_dossier_path = diagnosis_latest_packet_path.with_suffix(".md")
+
+    record["storage"] = {
+        "history_path": str(history_path),
+        "latest_path": str(latest_path),
+        "latest_index_path": str(latest_index_path),
+        "diagnosis_history_packet_path": str(diagnosis_history_packet_path),
+        "diagnosis_history_dossier_path": str(diagnosis_history_dossier_path),
+        "diagnosis_latest_packet_path": str(diagnosis_latest_packet_path),
+        "diagnosis_latest_dossier_path": str(diagnosis_latest_dossier_path),
+    }
 
     history_path.write_text(json.dumps(record, indent=2, default=str))
     latest_path.write_text(json.dumps(record, indent=2, default=str))
@@ -44,15 +66,47 @@ def persist_task_run_record(
     latest_index[str(task["id"])] = record
     latest_index_path.write_text(json.dumps(latest_index, indent=2, default=str))
 
+    diagnosis = None
+    diagnosis_error: str | None = None
+    try:
+        diagnosis = save_task_diagnosis_artifacts(record, root=root)
+    except Exception as exc:
+        diagnosis_error = str(exc)[:200]
+
     return {
         "history_path": str(history_path),
         "latest_path": str(latest_path),
         "latest_index_path": str(latest_index_path),
+        "diagnosis_packet_path": str(
+            diagnosis.packet_path if diagnosis is not None else diagnosis_history_packet_path
+        ),
+        "diagnosis_dossier_path": str(
+            diagnosis.dossier_path if diagnosis is not None else diagnosis_history_dossier_path
+        ),
+        "latest_diagnosis_packet_path": str(
+            diagnosis.latest_packet_path if diagnosis is not None else diagnosis_latest_packet_path
+        ),
+        "latest_diagnosis_dossier_path": str(
+            diagnosis.latest_dossier_path if diagnosis is not None else diagnosis_latest_dossier_path
+        ),
+        "diagnosis_headline": str(
+            diagnosis.packet.get("outcome", {}).get("headline") if diagnosis is not None else ""
+        ),
+        "diagnosis_failure_bucket": str(
+            diagnosis.packet.get("outcome", {}).get("failure_bucket") if diagnosis is not None else ""
+        ),
+        "diagnosis_decision_stage": str(
+            diagnosis.packet.get("outcome", {}).get("decision_stage") if diagnosis is not None else ""
+        ),
+        "diagnosis_next_action": str(
+            diagnosis.packet.get("outcome", {}).get("next_action") if diagnosis is not None else ""
+        ),
+        "diagnosis_persist_error": diagnosis_error or "",
     }
 
 
 def load_latest_task_run(task_id: str, *, root: Path = ROOT) -> dict[str, Any] | None:
-    """Load one latest task-run record by task identifier."""
+    """Load the most recent run record for a single task, or None if it has never been run."""
     index = _load_json_mapping(root / "task_results_latest.json")
     record = index.get(str(task_id))
     if not isinstance(record, dict):
@@ -91,7 +145,9 @@ def build_task_run_record(
     issue_refs = _aggregate_issue_refs(traces)
     run_id = _run_id(result, persisted_at)
     framework = dict(result.get("framework_result") or {})
-    learning = _learning_summary(result, task_kind=task_kind)
+    learning = summarize_task_learning(result, task_kind=task_kind)
+    result_with_learning = dict(result)
+    result_with_learning["learning"] = learning
     if task_kind == "framework":
         issue_refs = _merge_issue_refs(issue_refs, framework.get("related_issue_refs") or {})
     workflow = _workflow_summary(
@@ -108,7 +164,7 @@ def build_task_run_record(
         "run_id": run_id,
         "persisted_at": persisted_at.astimezone(timezone.utc).isoformat(),
         "task": _task_snapshot(task),
-        "result": result,
+        "result": result_with_learning,
         "comparison": {
             "task": bool(result.get("comparison_task")),
             "targets": list(result.get("comparison_targets") or []),
@@ -205,8 +261,11 @@ def _collect_trace_summaries(result: dict[str, Any]) -> list[dict[str, Any]]:
     paths = []
     artifacts = result.get("artifacts") or {}
     paths.extend(artifacts.get("platform_trace_paths") or [])
+    paths.extend(artifacts.get("analytical_trace_paths") or [])
     if result.get("platform_trace_path"):
         paths.append(result["platform_trace_path"])
+    if result.get("analytical_trace_path"):
+        paths.append(result["analytical_trace_path"])
 
     seen: set[str] = set()
     summaries: list[dict[str, Any]] = []
@@ -230,15 +289,70 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
             "exists": False,
         }
 
+    if trace_path.suffix.lower() == ".json":
+        data = json.loads(trace_path.read_text()) or {}
+        steps = list(data.get("steps") or [])
+        latest_step = steps[-1] if steps else {}
+        route = data.get("route") or {}
+        context = data.get("context") or {}
+        generation_plan = context.get("generation_plan") or {}
+        instruction_resolution = generation_plan.get("instruction_resolution") or {}
+        selected_curve_names = dict(context.get("selected_curve_names") or {})
+        return {
+            "path": str(trace_path),
+            "exists": True,
+            "trace_kind": data.get("trace_type", "analytical"),
+            "request_id": data.get("trace_id"),
+            "status": data.get("status"),
+            "outcome": data.get("status"),
+            "action": route.get("name"),
+            "route_method": route.get("family"),
+            "updated_at": data.get("updated_at"),
+            "latest_event": latest_step.get("kind"),
+            "latest_event_status": latest_step.get("status"),
+            "latest_event_details": {
+                "label": latest_step.get("label"),
+                "notes": latest_step.get("notes") or [],
+            },
+            "selected_curve_names": selected_curve_names,
+            "instruction_resolution": instruction_resolution,
+            "instruction_resolution_effective_count": len(
+                instruction_resolution.get("effective_instructions") or []
+            ),
+            "instruction_resolution_dropped_count": len(
+                instruction_resolution.get("dropped_instructions") or []
+            ),
+            "instruction_resolution_conflict_count": len(
+                instruction_resolution.get("conflicts") or []
+            ),
+            "token_usage": data.get("token_usage") or {},
+            "request_metadata": context,
+            "linear_issue": None,
+            "github_issue": None,
+            "step_count": len(steps),
+        }
+
     data = yaml.safe_load(trace_path.read_text()) or {}
     events = list(data.get("events") or [])
     latest_event = events[-1] if events else {}
     linear = data.get("linear_issue") or {}
     github = data.get("github_issue") or {}
     metadata = data.get("request_metadata") or {}
+    semantic_role_ownership = (
+        data.get("semantic_role_ownership")
+        or metadata.get("semantic_role_ownership")
+        or {}
+    )
+    selected_curve_names = dict(
+        metadata.get("selected_curve_names")
+        or (metadata.get("runtime_contract") or {}).get("selected_curve_names")
+        or (metadata.get("runtime_contract") or {}).get("snapshot_reference", {}).get("selected_curve_names")
+        or {}
+    )
     return {
         "path": str(trace_path),
         "exists": True,
+        "trace_kind": "platform",
         "request_id": data.get("request_id"),
         "status": data.get("status"),
         "outcome": data.get("outcome"),
@@ -248,6 +362,12 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
         "latest_event": latest_event.get("event"),
         "latest_event_status": latest_event.get("status"),
         "latest_event_details": latest_event.get("details") or {},
+        "selected_curve_names": selected_curve_names,
+        "semantic_role_ownership": semantic_role_ownership,
+        "semantic_role_ownership_stage": semantic_role_ownership.get("selected_stage"),
+        "semantic_role_ownership_role": semantic_role_ownership.get("selected_role"),
+        "semantic_role_ownership_trigger": semantic_role_ownership.get("trigger_condition"),
+        "semantic_role_ownership_artifact": semantic_role_ownership.get("artifact_kind"),
         "token_usage": data.get("token_usage") or {},
         "request_metadata": metadata,
         "linear_issue": linear if linear else None,
@@ -383,7 +503,7 @@ def _framework_workflow_summary(
     }
 
 
-def _learning_summary(
+def summarize_task_learning(
     result: dict[str, Any],
     *,
     task_kind: str,
@@ -399,27 +519,106 @@ def _learning_summary(
         captured_ids = [item for item in lesson_captured if isinstance(item, str)]
     else:
         captured_ids = []
+    lesson_contract_reports = _lesson_contract_reports(reflection.get("lesson_contract"))
+    lesson_contract_errors = _unique_strings(
+        error
+        for report in lesson_contract_reports
+        for error in (report.get("errors") or [])
+        if isinstance(error, str)
+    )
+    lesson_contract_warnings = _unique_strings(
+        warning
+        for report in lesson_contract_reports
+        for warning in (report.get("warnings") or [])
+        if isinstance(warning, str)
+    )
+    lesson_promotion_outcomes = _string_list(reflection.get("lesson_promotion_outcome"))
+    if lesson_contract_reports:
+        if all(bool(report.get("valid")) for report in lesson_contract_reports):
+            lesson_contract_outcome = "validated"
+        elif any(bool(report.get("valid")) for report in lesson_contract_reports):
+            lesson_contract_outcome = "mixed"
+        else:
+            lesson_contract_outcome = "rejected"
+    else:
+        lesson_contract_outcome = "not_attempted"
     lesson_ids = list(knowledge_summary.get("lesson_ids") or [])
     lesson_titles = list(knowledge_summary.get("lesson_titles") or [])
     cookbook_paths = list(artifacts.get("cookbook_candidate_paths") or [])
+    promotion_candidate_paths = list(artifacts.get("promotion_candidate_paths") or [])
     knowledge_trace_paths = list(artifacts.get("knowledge_trace_paths") or [])
     knowledge_gap_paths = list(artifacts.get("knowledge_gap_log_paths") or [])
+    method_results = result.get("method_results") or {}
+    successful_method_results = False
+    if isinstance(method_results, Mapping):
+        successful_method_results = any(
+            bool(payload.get("success"))
+            for payload in method_results.values()
+            if isinstance(payload, Mapping)
+        )
+    reusable_artifact_count = (
+        len(captured_ids)
+        + len(cookbook_paths)
+        + len(promotion_candidate_paths)
+        + len(knowledge_trace_paths)
+        + len(knowledge_gap_paths)
+    )
+    if reusable_artifact_count > 0:
+        knowledge_outcome = "captured_knowledge"
+        if captured_ids:
+            knowledge_outcome_reason = (
+                f"captured {len(captured_ids)} lesson(s) and related reusable artifacts"
+            )
+        elif cookbook_paths:
+            knowledge_outcome_reason = (
+                f"captured cookbook artifacts ({len(cookbook_paths)})"
+            )
+        elif promotion_candidate_paths:
+            knowledge_outcome_reason = (
+                f"captured promotion candidates ({len(promotion_candidate_paths)})"
+            )
+        elif knowledge_trace_paths:
+            knowledge_outcome_reason = (
+                f"captured knowledge trace artifacts ({len(knowledge_trace_paths)})"
+            )
+        else:
+            knowledge_outcome_reason = (
+                f"captured knowledge-gap artifacts ({len(knowledge_gap_paths)})"
+            )
+    elif bool(result.get("success")) or successful_method_results:
+        knowledge_outcome = "no_new_knowledge"
+        if successful_method_results and not bool(result.get("success")):
+            knowledge_outcome_reason = (
+                "one or more method builds succeeded without capturing new reusable knowledge artifacts"
+            )
+        else:
+            knowledge_outcome_reason = (
+                "task succeeded without new reusable knowledge artifacts"
+            )
+    else:
+        knowledge_outcome = "blocked_without_learning"
+        knowledge_outcome_reason = "task failed before any reusable learning artifact was captured"
 
     return {
         "task_kind": task_kind,
         "retrieved_lesson_ids": lesson_ids,
         "retrieved_lesson_titles": lesson_titles,
         "captured_lesson_ids": captured_ids,
+        "lesson_contract_reports": lesson_contract_reports,
+        "lesson_contract_count": len(lesson_contract_reports),
+        "lesson_contract_outcome": lesson_contract_outcome,
+        "lesson_contract_errors": lesson_contract_errors,
+        "lesson_contract_warnings": lesson_contract_warnings,
+        "lesson_promotion_outcomes": lesson_promotion_outcomes,
         "lessons_attributed": int(reflection.get("lessons_attributed") or 0),
         "cookbook_enriched": bool(reflection.get("cookbook_enriched")),
         "cookbook_candidate_paths": cookbook_paths,
+        "promotion_candidate_paths": promotion_candidate_paths,
         "knowledge_trace_paths": knowledge_trace_paths,
         "knowledge_gap_log_paths": knowledge_gap_paths,
-        "reusable_artifact_count": (
-            len(captured_ids)
-            + len(cookbook_paths)
-            + len(knowledge_trace_paths)
-        ),
+        "reusable_artifact_count": reusable_artifact_count,
+        "knowledge_outcome": knowledge_outcome,
+        "knowledge_outcome_reason": knowledge_outcome_reason,
     }
 
 
@@ -428,6 +627,57 @@ def _latest_trace(traces: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not dated:
         return traces[-1] if traces else None
     return max(dated, key=lambda trace: str(trace.get("updated_at")))
+
+
+def _lesson_contract_reports(value: Any) -> list[dict[str, Any]]:
+    """Normalize contract reports from a reflection payload."""
+    if isinstance(value, Mapping):
+        if "valid" in value and "normalized_payload" in value:
+            return [dict(value)]
+        reports: list[dict[str, Any]] = []
+        for item in value.values():
+            if isinstance(item, Mapping) and "valid" in item and "normalized_payload" in item:
+                reports.append(dict(item))
+        return reports
+    if isinstance(value, list):
+        return [
+            dict(item)
+            for item in value
+            if isinstance(item, Mapping) and "valid" in item and "normalized_payload" in item
+        ]
+    if isinstance(value, tuple):
+        return [
+            dict(item)
+            for item in value
+            if isinstance(item, Mapping) and "valid" in item and "normalized_payload" in item
+        ]
+    return []
+
+
+def _string_list(value: Any) -> list[str]:
+    """Normalize a scalar or sequence into a list of strings."""
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, list):
+        return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+    if isinstance(value, tuple):
+        return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+    return []
+
+
+def _unique_strings(values) -> list[str]:
+    """Deduplicate string values while preserving order."""
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            value = str(value)
+        text = value.strip()
+        if text and text not in seen:
+            seen.add(text)
+            ordered.append(text)
+    return ordered
 
 
 def _load_json_mapping(path: Path) -> dict[str, Any]:
@@ -464,6 +714,32 @@ def _attach_storage_paths(record: dict[str, Any], *, task_id: str, root: Path) -
     normalized.setdefault("task_kind", infer_task_kind(normalized.get("task"), normalized.get("result")))
     storage = dict(normalized.get("storage") or {})
     storage.setdefault("latest_path", str(root / "task_runs" / "latest" / f"{task_id}.json"))
+    storage.setdefault("latest_index_path", str(root / "task_results_latest.json"))
+    run_id = str(normalized.get("run_id") or "").strip()
+    if run_id:
+        storage.setdefault(
+            "diagnosis_history_packet_path",
+            str(root / "task_runs" / "diagnostics" / "history" / str(task_id) / f"{run_id}.json"),
+        )
+        storage.setdefault(
+            "diagnosis_history_dossier_path",
+            str(
+                root
+                / "task_runs"
+                / "diagnostics"
+                / "history"
+                / str(task_id)
+                / f"{run_id}.md"
+            ),
+        )
+    storage.setdefault(
+        "diagnosis_latest_packet_path",
+        str(root / "task_runs" / "diagnostics" / "latest" / f"{task_id}.json"),
+    )
+    storage.setdefault(
+        "diagnosis_latest_dossier_path",
+        str(root / "task_runs" / "diagnostics" / "latest" / f"{task_id}.md"),
+    )
     normalized["storage"] = storage
     return normalized
 

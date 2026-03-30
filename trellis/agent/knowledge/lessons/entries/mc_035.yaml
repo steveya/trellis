@@ -1,0 +1,33 @@
+id: mc_035
+title: MarketState shape mismatch in Himalaya payoff evaluate
+severity: critical
+category: monte_carlo
+status: promoted
+confidence: 0.5
+created: '2026-03-28T15:10:15.892459'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_151016_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - path_dependent
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Smoke test raises 'initial state shape does not match the simulated terminal
+  shape' when evaluate() is called with actual MarketState.
+root_cause: The generated basket adapter or its knowledge guidance treated the raw
+  MarketState like a path tensor instead of resolving the basket semantics first and
+  using the resolved constituent spot vector as the engine's initial state.
+fix: Resolve the basket semantics first, then pass the resolved basket object to the
+  shared Monte Carlo helper; use resolved.constituent_spots as the initial multi-asset
+  state and never reshape or index the raw MarketState as if it were a simulated path
+  tensor.
+validation: Discovered during build (attempt 3)

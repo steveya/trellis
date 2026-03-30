@@ -1,0 +1,42 @@
+id: sem_003
+title: _semantic_extension_decision_new_primitive_fields_underlier_structur
+severity: medium
+category: semantic
+status: validated
+confidence: 0.75
+created: '2026-03-28T13:45:13.086781'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/semantic_extensions/955bc89dcf1f4d2c.yaml
+applies_when:
+  method:
+  - new_primitive
+  features:
+  - underlier_structure
+  - payoff_rule
+  - settlement_rule
+  - observation_schedule
+  - selection_scope
+  - selection_operator
+  - lock_rule
+  - aggregation_rule
+  - generate_schedule
+  - path_state_accumulator
+  - semantic_contract_lesson
+  - trellis.core.date_utils.generate_schedule
+  - trellis.models.monte_carlo.event_state
+  - trellis.models.monte_carlo.basket_state
+  - trellis.models.monte_carlo.ranked_observation_payoffs
+  instrument:
+  - structured_note
+  error_signature: null
+symptom: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule,
+  observation_schedule, selection_scope, selection_operator, lock_rule, aggregation_rule;
+  missing runtime primitives: generate_schedule, path_state_accumulator; missing knowledge
+  artifacts: semantic_contract_lesson; mock inputs can likely bridge the gap'
+root_cause: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule,
+  observation_schedule, selection_scope, selection_operator, lock_rule, aggregation_rule;
+  missing runtime primitives: generate_schedule, path_state_accumulator; missing knowledge
+  artifacts: semantic_contract_lesson; mock inputs can likely bridge the gap'
+fix: Reuse the shared runtime primitive surface and add only the missing thin adapter
+  around trellis.core.date_utils.generate_schedule.
+validation: Repeated semantic extension trace `955bc89dcf1f4d2c`

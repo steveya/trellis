@@ -1,0 +1,31 @@
+category: convention
+title: Unit conversion causing PV sanity failure
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T23:49:58.110055'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_234959_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  - maturity_settlement
+  instrument:
+  - european_option
+  error_signature: null
+symptom: 'PV sanity check failed: |PV| = 9995.24 which exceeds 10.0× typical notional
+  (100).'
+root_cause: Inputs used inconsistent conventions (e.g., passing a rate where a discount
+  factor or a mis-scaled volatility was expected) and the payoff adapter mapping was
+  missing/incorrect; additionally a syntax/indentation error prevented a valid module
+  build. These lead to huge, implausible PVs and a failed build.
+fix: Enforce explicit unit and convention conversions (vol in per-sqrt-year decimals,
+  know whether the pricing primitive expects forward or spot, use discount factors
+  vs zero rates) and register a correct payoff adapter that validates inputs. Also
+  fix code syntax/indentation and add upfront sanity checks (e.g., PV within a multiple
+  of notional) to catch unit mistakes early.
+validation: Discovered during build (attempt 3)
+id: con_025

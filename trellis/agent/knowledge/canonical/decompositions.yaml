@@ -162,6 +162,33 @@
   reasoning: "Path-dependent averaging needs simulation."
   learned: false
 
+- instrument: basket_path_payoff
+  features:
+    - ranked_observation
+    - remaining_selection
+    - remove_selected
+    - locked_returns
+    - maturity_settlement
+    - multi_asset
+    - path_dependent
+    - discounting
+  method: monte_carlo
+  method_modules:
+    - trellis.models.resolution.basket_semantics
+    - trellis.models.monte_carlo.semantic_basket
+  required_market_data: [discount, spot, black_vol, correlation]
+  modeling_requirements:
+    - >-
+      OBSERVATION SCHEDULE: ranked-selection payoffs need ordered observation
+      dates; do not collapse the state machine into a single terminal payoff.
+    - >-
+      CORRELATED PATHS: bind the market state once, then delegate to the shared
+      semantic basket helper; do not import or assemble a bespoke correlated GBM
+      process in the generated adapter.
+  reasoning: "Ranked selection over a multi-asset path-dependent basket is best handled by shared semantic basket binding and a thin helper wrapper."
+  notes: "Canonical family-name-free basket proving case; route by semantic contract, not a mountain-range product name."
+  learned: false
+
 - instrument: mbs
   features: [amortization, prepayment, path_dependent]
   method: monte_carlo
@@ -210,6 +237,27 @@
       CALIBRATION: Default probabilities must be consistent with the input credit curve.
       For each name: P(default by T) = 1 - S(T) where S(T) = credit_curve.survival_probability(T).
   reasoning: "Correlated defaults simulated via copula."
+  learned: false
+
+- instrument: cds
+  features: [credit_risk, fixed_coupons, discounting]
+  method: analytical
+  method_modules: []
+  required_market_data: [discount, credit]
+  modeling_requirements:
+    - >-
+      CREDIT-SURVIVAL: Price premium leg as sum of
+      (spread * notional * accrual * survival(t) * df(t)) over payment schedule.
+      Protection leg = (1-recovery) * notional * sum of (default_prob(t) * df(t))
+      where default_prob(t) = survival(t_prev) - survival(t).
+      Use market_state.credit_curve.survival_probability(t) and
+      market_state.discount.discount(t) directly.
+    - >-
+      MC ALTERNATIVE: For Monte Carlo route, sample default times from
+      credit_curve hazard rates: tau = -ln(U) / lambda. Per path, if
+      tau < maturity, protection pays (1-recovery)*notional discounted to tau,
+      premium accrues to tau. Return shape (n_paths,).
+  reasoning: "Single-name CDS: both analytical (survival curve) and MC (hazard rate simulation) routes share credit curve primitives."
   learned: false
 
 # ---------------------------------------------------------------------------

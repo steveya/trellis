@@ -59,6 +59,12 @@ class PlatformTrace:
     requires_build: bool = False
     blocker_codes: tuple[str, ...] = ()
     knowledge_summary: dict[str, Any] | None = None
+    simulation_identity: dict[str, Any] | None = None
+    simulation_seed: int | None = None
+    sample_source: dict[str, Any] | None = None
+    sample_indexing: dict[str, Any] | None = None
+    simulation_stream_id: str | None = None
+    semantic_role_ownership: dict[str, Any] | None = None
     details: dict[str, Any] | None = None
     events: tuple[PlatformTraceEvent, ...] = ()
     linear_issue_id: str | None = None
@@ -100,6 +106,12 @@ def ensure_platform_trace(
             "requires_build",
             "blocker_codes",
             "knowledge_summary",
+            "simulation_identity",
+            "simulation_seed",
+            "sample_source",
+            "sample_indexing",
+            "simulation_stream_id",
+            "semantic_role_ownership",
             "request_metadata",
         ):
             trace[key] = base[key]
@@ -223,6 +235,12 @@ def load_platform_traces(*, root: Path | None = None) -> list[PlatformTrace]:
                 requires_build=bool(data.get("requires_build")),
                 blocker_codes=tuple(data.get("blocker_codes", [])),
                 knowledge_summary=data.get("knowledge_summary") or {},
+                simulation_identity=data.get("simulation_identity") or {},
+                simulation_seed=data.get("simulation_seed"),
+                sample_source=data.get("sample_source") or {},
+                sample_indexing=data.get("sample_indexing") or {},
+                simulation_stream_id=data.get("simulation_stream_id"),
+                semantic_role_ownership=data.get("semantic_role_ownership") or {},
                 details=data.get("details") or {},
                 events=tuple(
                     PlatformTraceEvent(
@@ -264,6 +282,31 @@ def _base_trace_dict(compiled_request) -> dict[str, Any]:
     now = _now_utc()
     request = compiled_request.request
     execution_plan = compiled_request.execution_plan
+    request_metadata = dict(request.metadata or {})
+    runtime_contract = dict(request_metadata.get("runtime_contract") or {})
+    simulation_identity = dict(
+        runtime_contract.get("simulation_identity")
+        or request_metadata.get("simulation_identity")
+        or {}
+    )
+    def _first_present(*values):
+        for value in values:
+            if value is not None:
+                return value
+        return None
+
+    sample_source = dict(
+        simulation_identity.get("sample_source")
+        or runtime_contract.get("sample_source")
+        or request_metadata.get("sample_source")
+        or {}
+    )
+    sample_indexing = dict(
+        simulation_identity.get("sample_indexing")
+        or runtime_contract.get("sample_indexing")
+        or request_metadata.get("sample_indexing")
+        or {}
+    )
     return {
         "request_id": request.request_id,
         "request_type": request.request_type,
@@ -287,7 +330,23 @@ def _base_trace_dict(compiled_request) -> dict[str, Any]:
         "requires_build": bool(getattr(execution_plan, "requires_build", False)),
         "blocker_codes": blocker_codes,
         "knowledge_summary": dict(getattr(compiled_request, "knowledge_summary", {}) or {}),
-        "request_metadata": dict(request.metadata or {}),
+        "simulation_identity": simulation_identity,
+        "simulation_seed": _first_present(
+            simulation_identity.get("seed"),
+            runtime_contract.get("simulation_seed"),
+            request_metadata.get("simulation_seed"),
+        ),
+        "sample_source": sample_source,
+        "sample_indexing": sample_indexing,
+        "simulation_stream_id": _first_present(
+            simulation_identity.get("simulation_stream_id"),
+            runtime_contract.get("simulation_stream_id"),
+            request_metadata.get("simulation_stream_id"),
+        ),
+        "semantic_role_ownership": dict(
+            request_metadata.get("semantic_role_ownership") or {}
+        ),
+        "request_metadata": request_metadata,
         "token_usage": {},
     }
 
@@ -303,7 +362,27 @@ def _load_trace_dict(path: Path) -> dict[str, Any]:
 def _write_trace_dict(path: Path, trace: dict[str, Any]) -> None:
     """Persist a trace dictionary to YAML using stable readable formatting."""
     with open(path, "w") as fh:
-        yaml.dump(trace, fh, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        yaml.safe_dump(
+            _normalize_yaml_value(trace),
+            fh,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True,
+        )
+
+
+def _normalize_yaml_value(value: Any) -> Any:
+    """Convert tuples and nested containers into safe YAML-friendly values."""
+    if isinstance(value, dict):
+        return {
+            str(key): _normalize_yaml_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, tuple):
+        return [_normalize_yaml_value(item) for item in value]
+    if isinstance(value, list):
+        return [_normalize_yaml_value(item) for item in value]
+    return value
 
 
 def _merge_details(
@@ -344,6 +423,11 @@ def _sync_issue_trackers(
     event_record: dict[str, Any],
 ) -> dict[str, dict[str, Any]]:
     """Best-effort sync to external issue trackers and return any discovered refs."""
+    from trellis.agent.config import issue_tracker_sync_enabled
+
+    if not issue_tracker_sync_enabled():
+        return {}
+
     refs: dict[str, dict[str, Any]] = {}
 
     try:

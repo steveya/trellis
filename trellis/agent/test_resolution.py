@@ -194,9 +194,12 @@ def record_lesson(lesson: Lesson) -> None:
     append_lesson({
         "category": lesson.category,
         "title": lesson.title,
-        "mistake": lesson.mistake,
-        "why": lesson.why,
-        "detect": lesson.detect,
+        "symptoms": [
+            symptom
+            for symptom in (lesson.mistake, lesson.detect)
+            if str(symptom).strip()
+        ],
+        "explanation": lesson.why,
         "fix": lesson.fix,
     })
 

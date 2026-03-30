@@ -1,0 +1,206 @@
+"""Compiler for validated family contracts.
+
+.. deprecated::
+    Family contracts are being unified into the semantic-contract pipeline.
+    New code should use ``family_template_as_semantic_contract`` from
+    ``trellis.agent.family_contract_templates`` and compile through
+    ``compile_semantic_contract`` instead.  This module is retained for
+    backward compatibility and will be removed in a future cleanup pass.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from types import MappingProxyType
+from typing import Mapping
+
+from trellis.agent.family_contract_validation import validate_family_contract
+from trellis.agent.sensitivity_support import (
+    normalize_requested_measures,
+    rank_sensitivity_support,
+    support_for_method,
+)
+from trellis.agent.knowledge.decompose import build_product_ir
+
+
+def _freeze_mapping(mapping: Mapping[str, object] | None) -> Mapping[str, object]:
+    """Convert a mutable dict (or None) into a read-only MappingProxyType for use in frozen dataclasses."""
+    return MappingProxyType(dict(mapping or {}))
+
+
+@dataclass(frozen=True)
+class FamilyImplementationBlueprint:
+    """Deterministic blueprint emitted from a validated family contract."""
+
+    family_id: str
+    contract: object
+    product_ir: object
+    preferred_method: str
+    candidate_methods: tuple[str, ...]
+    required_market_data: tuple[str, ...]
+    derivable_market_data: tuple[str, ...]
+    connector_binding_hints: Mapping[str, object] = field(default_factory=dict)
+    estimation_hints: Mapping[str, object] = field(default_factory=dict)
+    spec_schema_hint: str | None = None
+    primitive_routes: tuple[str, ...] = ()
+    adapter_steps: tuple[str, ...] = ()
+    validation_bundle_hint: str | None = None
+    target_modules: tuple[str, ...] = ()
+    proving_tasks: tuple[str, ...] = ()
+    unsupported_paths: tuple[str, ...] = ()
+
+    def __post_init__(self):
+        """Freeze mapping metadata for stable traces and tests."""
+        object.__setattr__(self, "connector_binding_hints", _freeze_mapping(self.connector_binding_hints))
+        object.__setattr__(self, "estimation_hints", _freeze_mapping(self.estimation_hints))
+
+
+def compile_family_contract(
+    spec,
+    *,
+    requested_measures: tuple[str, ...] | list[str] | None = None,
+) -> FamilyImplementationBlueprint:
+    """Compile a validated family contract into a deterministic blueprint."""
+    report = validate_family_contract(spec)
+    if not report.ok or report.normalized_contract is None:
+        joined = "; ".join(report.errors) or "unknown validation error"
+        raise ValueError(f"Cannot compile invalid family contract: {joined}")
+
+    contract = report.normalized_contract
+    preferred_method = _select_preferred_method(contract, requested_measures=requested_measures)
+    product_ir = build_product_ir(
+        description=contract.description or contract.family_id,
+        instrument=contract.product.instrument,
+        payoff_family=contract.product.payoff_family,
+        payoff_traits=contract.product.payoff_traits,
+        exercise_style=contract.product.exercise_style,
+        state_dependence=contract.product.state_dependence,
+        schedule_dependence=contract.product.schedule_dependence,
+        model_family=contract.product.model_family,
+        candidate_engine_families=_engine_families_from_methods(contract.methods.candidate_methods),
+        required_market_data=frozenset(_required_capabilities(contract)),
+        reusable_primitives=contract.blueprint.target_modules,
+        supported=not bool(contract.blueprint.blocked_by),
+        preferred_method=preferred_method,
+    )
+    return FamilyImplementationBlueprint(
+        family_id=contract.family_id,
+        contract=contract,
+        product_ir=product_ir,
+        preferred_method=preferred_method,
+        candidate_methods=tuple(contract.methods.candidate_methods),
+        required_market_data=tuple(item.input_id for item in contract.market_data.required_inputs),
+        derivable_market_data=tuple(contract.market_data.derivable_inputs),
+        connector_binding_hints=_connector_binding_hints(contract),
+        estimation_hints=_estimation_hints(contract),
+        spec_schema_hint=_spec_schema_hint(contract, preferred_method),
+        primitive_routes=_primitive_routes(contract),
+        adapter_steps=tuple(contract.blueprint.adapter_obligations),
+        validation_bundle_hint=contract.validation.bundle_hints[0] if contract.validation.bundle_hints else None,
+        target_modules=tuple(contract.blueprint.target_modules),
+        proving_tasks=tuple(contract.blueprint.proving_tasks),
+        unsupported_paths=tuple(
+            dict.fromkeys((*contract.methods.unsupported_variants, *contract.blueprint.blocked_by))
+        ),
+    )
+
+
+def _select_preferred_method(contract, *, requested_measures=None) -> str:
+    """Select the preferred method using the current sensitivity policy."""
+    requested = normalize_requested_measures(requested_measures)
+    if not requested:
+        if contract.methods.preferred_method:
+            return contract.methods.preferred_method
+        if contract.methods.reference_methods:
+            return contract.methods.reference_methods[0]
+        if contract.methods.production_methods:
+            return contract.methods.production_methods[0]
+        return contract.methods.candidate_methods[0]
+
+    ranked = max(
+        enumerate(contract.methods.candidate_methods),
+        key=lambda item: (
+            rank_sensitivity_support(
+                support_for_method(item[1]),
+                requested,
+            ),
+            -item[0],
+        ),
+    )
+    return ranked[1]
+
+
+def _required_capabilities(contract) -> tuple[str, ...]:
+    """Return canonical MarketState capabilities required by the contract."""
+    capabilities: list[str] = []
+    for item in contract.market_data.required_inputs:
+        if item.capability and item.capability not in capabilities:
+            capabilities.append(item.capability)
+    return tuple(capabilities)
+
+
+def _connector_binding_hints(contract) -> dict[str, object]:
+    """Return per-input binding hints for runtime connector resolution."""
+    return {
+        item.input_id: {
+            "capability": item.capability,
+            "aliases": list(item.aliases),
+            "connector_hint": item.connector_hint,
+            "allowed_provenance": list(item.allowed_provenance),
+        }
+        for item in (*contract.market_data.required_inputs, *contract.market_data.optional_inputs)
+    }
+
+
+def _estimation_hints(contract) -> dict[str, object]:
+    """Return estimation and provenance policy hints."""
+    return {
+        "derivable_inputs": list(contract.market_data.derivable_inputs),
+        "estimation_policy": list(contract.market_data.estimation_policy),
+        "provenance_requirements": list(contract.market_data.provenance_requirements),
+        "missing_data_error_policy": list(contract.market_data.missing_data_error_policy),
+    }
+
+
+def _spec_schema_hint(contract, preferred_method: str) -> str | None:
+    """Select the most relevant spec-schema hint for the chosen method."""
+    hints = contract.blueprint.spec_schema_hints
+    if not hints:
+        return None
+    for hint in hints:
+        lowered = hint.lower()
+        if preferred_method == "analytical" and "analytical" in lowered:
+            return hint
+        if preferred_method == "monte_carlo" and "montecarlo" in lowered:
+            return hint
+    return hints[0]
+
+
+def _primitive_routes(contract) -> tuple[str, ...]:
+    """Return the deterministic primitive-route hints for the contract."""
+    routes = list(contract.blueprint.primitive_families)
+    if contract.family_id == "quanto_option":
+        for route in ("quanto_adjustment_analytical", "correlated_gbm_monte_carlo"):
+            if route not in routes:
+                routes.append(route)
+    return tuple(routes)
+
+
+def _engine_families_from_methods(methods: tuple[str, ...]) -> tuple[str, ...]:
+    """Map method families onto ProductIR engine-family hints."""
+    mapping = {
+        "analytical": ("analytical",),
+        "rate_tree": ("lattice",),
+        "monte_carlo": ("monte_carlo",),
+        "qmc": ("qmc",),
+        "pde_solver": ("pde",),
+        "fft_pricing": ("transforms",),
+        "copula": ("copula",),
+        "waterfall": ("cashflow",),
+    }
+    families: list[str] = []
+    for method in methods:
+        for family in mapping.get(method, ()):
+            if family not in families:
+                families.append(family)
+    return tuple(families)

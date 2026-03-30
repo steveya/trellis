@@ -1,0 +1,36 @@
+id: mc_026
+title: Himalaya pricer must not import unapproved Trellis modules
+severity: critical
+category: monte_carlo
+status: validated
+confidence: 0.6
+created: '2026-03-28T11:59:15.422154'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_115915_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - path_dependent
+  - discounting
+  - discrete_coupons
+  instrument: []
+  error_signature: null
+symptom: Build fails with 'unapproved Trellis module' or 'unknown Trellis module'
+  errors referencing trellis.models.monte_carlo, trellis.models.multi_asset, trellis.models.ranked_observation,
+  or trellis.models.payoff_aggregation.
+root_cause: The agent hallucinated non-existent Trellis module paths (trellis.models.monte_carlo,
+  trellis.models.multi_asset, trellis.models.ranked_observation, trellis.models.payoff_aggregation)
+  instead of using only the approved thin adapters such as trellis.models.processes.correlated_gbm
+  and the core primitives.
+fix: 'Import only approved modules: use the CorrelatedGBM thin adapter directly from
+  trellis.models.processes.correlated_gbm for path simulation, implement ranked observation
+  and removal logic inline in evaluate(), and never import trellis.models.monte_carlo,
+  trellis.models.multi_asset, trellis.models.ranked_observation, or trellis.models.payoff_aggregation.'
+validation: Discovered during build (attempt 3)

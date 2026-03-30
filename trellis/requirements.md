@@ -13,7 +13,7 @@
 - Day count: ACT/ACT for Treasury bonds, ACT/360 for money market
 - Year fractions: Use `trellis.core.date_utils.year_fraction()`
 - Interpolation: Linear on zero rates, log-linear on discount factors
-- Greeks: Compute via `autograd.grad` where possible; finite-difference fallback for second order
+- Greeks: Compute via `autograd.grad` where possible; rate sensitivities prefer autodiff and fall back to finite differences when a payoff path is not differentiable
 
 ## Module Layout
 

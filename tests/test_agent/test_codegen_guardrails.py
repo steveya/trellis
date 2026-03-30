@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from trellis.agent.codegen_guardrails import (
     build_generation_plan,
+    render_generation_route_card,
+    sanitize_generated_source,
     validate_generated_imports,
 )
+from trellis.agent.platform_requests import compile_build_request
 from trellis.agent.quant import PricingPlan
 
 
@@ -45,6 +48,10 @@ def test_generation_plan_includes_common_modules_and_targets():
     assert "trellis.core.market_state" in plan.approved_modules
     assert "trellis.models.black" in plan.approved_modules
     assert "tests/test_agent/test_build_loop.py" in plan.proposed_tests
+    assert plan.repo_revision
+    assert plan.symbol_map is not None
+    assert plan.package_map is not None
+    assert plan.test_map is not None
 
 
 def test_validate_generated_imports_accepts_valid_code():
@@ -81,3 +88,212 @@ def test_qmc_generation_plan_approves_qmc_family_modules():
     assert "trellis.models.qmc" in plan.approved_modules
     assert "sobol_normals" in plan.symbols_to_reuse
     assert "brownian_bridge" in plan.symbols_to_reuse
+
+
+def test_basket_route_card_calls_helper_directly():
+    description = (
+        "Price a Himalaya-style basket on AAPL, MSFT, NVDA, and AMZN. "
+        "Observe monthly on 2026-04-01, 2026-05-01, and 2026-06-01. "
+        "At each observation, choose the best performer among the remaining names, remove it, "
+        "lock that simple return, and settle the average locked returns once at maturity. "
+        "Use discount curve, spot, vol surface, and correlation."
+    )
+    compiled = compile_build_request(
+        description,
+        instrument_type="basket_option",
+        model="claude-sonnet-4-6",
+    )
+
+    card = render_generation_route_card(compiled.generation_plan)
+
+    assert "correlated_basket_monte_carlo" in card
+    assert "Parse `spec.underlyings` into a Python list of ticker strings" in card
+    assert "resolve_basket_semantics" in card
+    assert "price_ranked_observation_basket_monte_carlo" in card
+    assert "RankedObservationBasketSpec" in card
+    assert "Bind the market state with `resolve_basket_semantics(...)`" in card
+    assert "delegate straight to `price_ranked_observation_basket_monte_carlo(...)` through a thin adapter" in card
+    assert "import only `trellis.models.resolution.basket_semantics` and `trellis.models.monte_carlo.semantic_basket`" in card
+    assert "do not import process primitives directly" in card
+    assert "Do not introduce a bespoke basket spec name such as `HimalayaBasketSpec` or reimplement rank/remove/aggregate logic inline." in card
+    assert "CorrelatedGBM" not in card
+    assert "trellis.models.processes.correlated_gbm" not in card
+    assert "trellis.models.basket" not in card
+    assert "trellis.models.ranked_observation" not in card
+    assert "trellis.models.payoff" not in card
+
+
+def test_schedule_dependent_route_card_mentions_shared_schedule_builder():
+    plan = _analytical_plan()
+    card = render_generation_route_card(plan)
+
+    assert "generate_schedule" in card
+    assert "Schedule construction:" in card
+    assert "Do not hard-code observation or payment grids inside the payoff body." in card
+    assert "Instruction precedence: follow the approved modules, primitives, and route helper in this card." in card
+
+
+def test_pde_route_card_mentions_terminal_array_contract():
+    pricing_plan = PricingPlan(
+        method="pde_solver",
+        method_modules=["trellis.models.pde.theta_method"],
+        required_market_data={"discount", "black_vol"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.pde.theta_method",),
+    )
+
+    card = render_generation_route_card(plan)
+
+    assert "Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)" in card
+    assert "BlackScholesOperator(sigma_fn, r_fn)" in card
+    assert "Do not pass a callable terminal payoff into `theta_method_1d`" in card
+    assert "rannacher_timesteps" in card
+
+
+def test_american_option_route_card_mentions_binomial_tree():
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="rate_tree",
+        method_modules=["trellis.models.trees"],
+        required_market_data={"discount", "black_vol"},
+        model_to_build="american_option",
+        reasoning="test",
+    )
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="american_option",
+        inspected_modules=("trellis.models.trees",),
+        product_ir=decompose_to_ir("American put option on equity", instrument_type="american_option"),
+    )
+
+    card = render_generation_route_card(plan)
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "exercise_lattice"
+    assert plan.primitive_plan.engine_family == "tree"
+    assert plan.primitive_plan.route_family == "equity_tree"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
+    assert {"BinomialTree", "backward_induction"} <= primitive_symbols
+    assert {"trellis.models.trees.binomial", "trellis.models.trees.backward_induction"} <= primitive_modules
+    assert "build_rate_lattice" not in primitive_symbols
+    assert "BinomialTree.crr" in card
+    assert "lsm_mc" not in card
+
+
+def test_barrier_option_route_card_mentions_grid_operator_and_rannacher():
+    pricing_plan = PricingPlan(
+        method="pde_solver",
+        method_modules=["trellis.models.pde.theta_method"],
+        required_market_data={"discount", "black_vol"},
+        model_to_build="barrier_option",
+        reasoning="test",
+    )
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="barrier_option",
+        inspected_modules=(
+            "trellis.models.pde.grid",
+            "trellis.models.pde.operator",
+            "trellis.models.pde.theta_method",
+        ),
+    )
+
+    card = render_generation_route_card(plan)
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "pde_theta_1d"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert {"Grid", "BlackScholesOperator", "theta_method_1d"} <= primitive_symbols
+    assert "rannacher_timesteps" in card
+
+
+def test_cds_monte_carlo_route_uses_credit_default_swap_assembly():
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.monte_carlo.engine"],
+        required_market_data={"discount", "credit_curve"},
+        model_to_build="nth_to_default",
+        reasoning="test",
+    )
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="nth_to_default",
+        inspected_modules=("trellis.models.monte_carlo.engine",),
+        product_ir=decompose_to_ir(
+            "CDS pricing: hazard rate MC vs survival prob analytical",
+            instrument_type="nth_to_default",
+        ),
+    )
+
+    card = render_generation_route_card(plan)
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "credit_default_swap_monte_carlo"
+    assert plan.primitive_plan.route_family == "credit_default_swap"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert {"generate_schedule", "year_fraction", "get_numpy"} <= primitive_symbols
+    assert "market_state.discount.discount(t)" in card
+    assert "market_state.credit_curve.survival_probability(t)" in card
+
+
+def test_sanitize_generated_source_strips_single_outer_fence():
+    source = """\
+```python
+from trellis.core.market_state import MarketState
+
+class Demo:
+    pass
+```
+"""
+
+    report = sanitize_generated_source(source)
+
+    assert report.ok
+    assert report.source_status == "sanitized"
+    assert report.fence_removed
+    assert report.fence_language == "python"
+    assert report.fence_count == 2
+    assert report.raw_source == source
+    assert report.sanitized_source == "from trellis.core.market_state import MarketState\n\nclass Demo:\n    pass"
+
+
+def test_sanitize_generated_source_accepts_raw_python_without_fences():
+    source = """\
+        from trellis.core.market_state import MarketState
+
+        class Demo:
+            pass
+    """
+
+    report = sanitize_generated_source(source)
+
+    assert report.ok
+    assert report.source_status == "accepted"
+    assert not report.fence_removed
+    assert report.fence_count == 0
+    assert report.sanitized_source == "from trellis.core.market_state import MarketState\n\nclass Demo:\n    pass"
+
+
+def test_sanitize_generated_source_rejects_ambiguous_fences():
+    source = """\
+Here is the code:
+```python
+class Demo:
+    pass
+```
+"""
+
+    report = sanitize_generated_source(source)
+
+    assert not report.ok
+    assert report.source_status == "rejected"
+    assert "markdown fences" in report.errors[0]

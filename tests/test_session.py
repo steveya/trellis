@@ -55,6 +55,7 @@ class TestSessionPricing:
         r = s.price(_bond())
         assert isinstance(r, PricingResult)
         assert 80 < r.clean_price < 120
+        assert r.curve_sensitivities
 
     def test_greeks_none_returns_empty(self):
         s = Session(curve=_curve(), settlement=SETTLE)
@@ -79,6 +80,20 @@ class TestSessionPricing:
         g = s.greeks(_bond())
         assert "dv01" in g
         assert g["dv01"] > 0
+
+    def test_analyze_uses_autodiff_curve_sensitivities(self):
+        from trellis.core.payoff import DeterministicCashflowPayoff
+
+        curve = YieldCurve([1.0, 2.0, 5.0, 10.0], [0.04, 0.042, 0.045, 0.047])
+        s = Session(curve=curve, settlement=SETTLE)
+        result = s.analyze(
+            DeterministicCashflowPayoff(_bond()),
+            measures=["price", "dv01", "duration", "convexity", "key_rate_durations"],
+        )
+        assert result.price > 0
+        assert result.dv01 > 0
+        assert result.convexity > 0
+        assert sum(result.key_rate_durations.values()) == pytest.approx(result.duration, rel=0.05)
 
     def test_price_failure_records_platform_trace(self):
         s = Session(as_of="2024-11-15", data_source="mock", settlement=SETTLE)
@@ -188,10 +203,17 @@ class TestSessionMarketData:
     def test_mock_source_loads_full_snapshot_context(self):
         s = Session(as_of="2024-11-15", data_source="mock")
         assert s.market_snapshot is not None
+        assert s.market_snapshot.provenance["source_kind"] == "synthetic_snapshot"
         assert s.vol_surface is not None
         assert s.credit_curve is not None
         assert "USD-SOFR-3M" in s.forecast_curves
         assert "EURUSD" in s.fx_rates
+
+    def test_explicit_curve_session_records_market_provenance(self):
+        s = Session(curve=_curve(), settlement=SETTLE)
+        assert s.market_snapshot is not None
+        assert s.market_snapshot.provenance["source_kind"] == "explicit_input"
+        assert s.market_snapshot.provenance["source_ref"] == "Session(curve=...)"
 
     def test_mock_source_can_price_cap_without_manual_vol_surface(self):
         from trellis.instruments.cap import CapFloorSpec, CapPayoff

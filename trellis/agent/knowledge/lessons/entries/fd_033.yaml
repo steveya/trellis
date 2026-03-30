@@ -1,0 +1,31 @@
+category: finite_differences
+title: Undefined boundary-condition identifier
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-29T08:38:49.564845'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_083850_barrier_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - barrier
+  - pde_grid
+  - path_dependent
+  - vol_surface_dependence
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'NameError raised: name ''dirichlet'' is not defined during pricer construction
+  or evaluation.'
+root_cause: The dataclass and code used an undefined identifier (dirichlet) and other
+  unresolved names (e.g. uniform_grid_pde) as defaults instead of importing/declaring
+  them or using literal/string identifiers. This causes immediate NameError at import/instantiation
+  time.
+fix: Replace undefined identifiers with explicit imports or well-known string/enum
+  values (e.g. import Dirichlet boundary class or use 'dirichlet' string), and ensure
+  implementation constants (e.g. 'uniform_grid_pde') are defined or passed as strings;
+  add a small import-time unit test to catch NameError.
+validation: Discovered during build (attempt 2)
+id: fd_033

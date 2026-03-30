@@ -1,0 +1,26 @@
+category: semantic
+title: _semantic_extension_decision_knowledge_artifact_concept_kind_introdu
+severity: medium
+status: validated
+confidence: 0.6
+created: '2026-03-29T09:16:48.374108'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/semantic_extensions/1574fbc8ba312224.yaml
+applies_when:
+  method:
+  - knowledge_artifact
+  features:
+  - underlier_structure
+  - payoff_rule
+  - settlement_rule
+  - semantic_contract_lesson
+  instrument:
+  - american_put
+  error_signature: null
+symptom: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing knowledge artifacts: semantic_contract_lesson'
+root_cause: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing knowledge artifacts: semantic_contract_lesson'
+fix: Define the smallest new semantic concept before adding any wrapper or route helper.
+validation: Repeated semantic extension trace `1574fbc8ba312224`
+id: sem_010

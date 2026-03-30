@@ -1,0 +1,36 @@
+id: md_024
+title: ResolvedBasketSemantics object missing dividends attribute
+severity: critical
+category: market_data
+status: validated
+confidence: 0.6
+created: '2026-03-28T09:08:33.319683'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_090833_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  - vol_surface_dependence
+  - delta_space_interpolation
+  instrument: []
+  error_signature: null
+symptom: 'AttributeError: ''ResolvedBasketSemantics'' object has no attribute ''dividends''
+  raised during Monte Carlo payoff construction for a multi-asset ranked-observation
+  basket.'
+root_cause: The resolve_basket_semantics helper returns a ResolvedBasketSemantics
+  dataclass that does not expose a 'dividends' field; the payoff code (or semantic_basket
+  module) attempted to access .dividends on it, which does not exist in that object's
+  interface.
+fix: Access dividend yields through the MarketState directly (e.g. market_state.get_dividend_yield(ticker))
+  rather than through ResolvedBasketSemantics, or pass dividend yields explicitly
+  as a separate dict keyed by underlying name before constructing the payoff.
+validation: Discovered during build (attempt 2)

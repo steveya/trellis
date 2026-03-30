@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from trellis.agent.knowledge.schema import (
+    AdapterLifecycleStatus,
     CookbookEntry,
     DataContractEntry,
     FailureSignature,
@@ -14,6 +15,14 @@ from trellis.agent.knowledge.schema import (
     ProductDecomposition,
     ProductIR,
 )
+from trellis.agent.knowledge.promotion import (
+    detect_adapter_lifecycle_records,
+    format_adapter_lifecycle_warnings,
+    resolve_adapter_lifecycle_records,
+    summarize_adapter_lifecycle_records,
+)
+from trellis.agent.knowledge.store import identify_superseded_basket_lesson_ids
+from trellis.agent.knowledge.api_map import format_api_map_for_prompt
 
 _COMPACT_LIMITS = {
     "builder": {
@@ -54,15 +63,94 @@ _DISTILLED_LIMITS = {
 }
 
 
-def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = False) -> str:
-    """Format a retrieve_for_task() result as markdown for LLM consumption.
+def _adapter_lifecycle_warnings(*, compact: bool) -> str:
+    """Load warning-only stale adapter findings for prompt rendering."""
+    try:
+        records = resolve_adapter_lifecycle_records(detect_adapter_lifecycle_records())
+        active_records = [
+            record
+            for record in records
+            if record.status != AdapterLifecycleStatus.ARCHIVED
+        ]
+        return format_adapter_lifecycle_warnings(active_records, compact=compact)
+    except Exception:
+        return ""
 
-    This replaces the scattered formatting in prompts.py, experience.py,
-    data_contract.py, and cookbooks.py with a single, consistent output.
+
+def _adapter_lifecycle_summary() -> dict[str, Any]:
+    """Summarize stale adapter findings for trace payloads."""
+    try:
+        records = resolve_adapter_lifecycle_records(detect_adapter_lifecycle_records())
+    except Exception:
+        return {
+            "stale_adapter_count": 0,
+            "stale_adapter_ids": [],
+            "deprecated_adapter_count": 0,
+            "deprecated_adapter_ids": [],
+            "archived_adapter_count": 0,
+            "archived_adapter_ids": [],
+            "fresh_replacements": [],
+            "adapter_lifecycle": {
+                "summary": {
+                    "status_counts": {
+                        "fresh": 0,
+                        "stale": 0,
+                        "deprecated": 0,
+                        "archived": 0,
+                    },
+                    "stale_adapter_count": 0,
+                    "stale_adapter_ids": [],
+                    "deprecated_adapter_count": 0,
+                    "deprecated_adapter_ids": [],
+                    "archived_adapter_count": 0,
+                    "archived_adapter_ids": [],
+                    "fresh_adapter_count": 0,
+                    "fresh_adapter_ids": [],
+                    "fresh_replacements": [],
+                    "records": [],
+                },
+                "records": [],
+            },
+        }
+    summary = summarize_adapter_lifecycle_records(records)
+    return {
+        "stale_adapter_count": summary["stale_adapter_count"],
+        "stale_adapter_ids": summary["stale_adapter_ids"],
+        "deprecated_adapter_count": summary["deprecated_adapter_count"],
+        "deprecated_adapter_ids": summary["deprecated_adapter_ids"],
+        "archived_adapter_count": summary["archived_adapter_count"],
+        "archived_adapter_ids": summary["archived_adapter_ids"],
+        "fresh_replacements": summary["fresh_replacements"],
+        "adapter_lifecycle": {
+            "summary": summary,
+            "records": summary["records"],
+        },
+    }
+
+
+def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = False) -> str:
+    """Format a ``retrieve_for_task()`` result dict as a single markdown string.
+
+    The output is structured as numbered sections in this order:
+    API map, import registry, adapter freshness warnings, principles,
+    cookbook template, product semantics, data contracts, modeling
+    requirements, lessons (ranked), product notes, unresolved primitives,
+    and matched failure signatures.
+
+    When ``compact=True``, each section is truncated to fit within the
+    limits defined in ``_COMPACT_LIMITS`` (fewer items, shorter templates).
     """
     sections: list[str] = []
 
-    # 0. Import registry (always first — eliminates hallucination)
+    # 0. API map (small family-level orientation before the full registry)
+    try:
+        api_map = format_api_map_for_prompt(compact=compact)
+        if api_map:
+            sections.append(api_map)
+    except Exception:
+        pass
+
+    # 1. Import registry (always included — eliminates hallucination)
     try:
         from trellis.agent.knowledge.import_registry import get_import_registry
         registry = get_import_registry()
@@ -77,7 +165,11 @@ def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = Fa
     except Exception:
         pass
 
-    # 1. Principles (always first — hot tier)
+    adapter_warnings = _adapter_lifecycle_warnings(compact=compact)
+    if adapter_warnings:
+        sections.append(adapter_warnings)
+
+    # 2. Principles (always first — hot tier)
     principles: list[Principle] = knowledge.get("principles", [])
     if principles:
         lines = ["## Key Principles\n"]
@@ -89,7 +181,7 @@ def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = Fa
             lines.append(omission)
         sections.append("\n".join(lines))
 
-    # 2. Pricing method + cookbook
+    # 3. Pricing method + cookbook
     cookbook: CookbookEntry | None = knowledge.get("cookbook")
     if cookbook:
         template = cookbook.template
@@ -105,7 +197,7 @@ def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = Fa
             f"{template}"
         )
 
-    # 2b. Product semantics from ProductIR
+    # 3b. Product semantics from ProductIR
     product_ir: ProductIR | None = knowledge.get("product_ir")
     if product_ir is not None:
         lines = [
@@ -127,9 +219,14 @@ def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = Fa
                 "- Candidate engine families: "
                 + ", ".join(f"`{family}`" for family in product_ir.candidate_engine_families)
             )
+        if getattr(product_ir, "route_families", ()):
+            lines.append(
+                "- Exact route families: "
+                + ", ".join(f"`{family}`" for family in product_ir.route_families)
+            )
         sections.append("\n".join(lines))
 
-    # 3. Data contracts
+    # 4. Data contracts
     contracts: list[DataContractEntry] = knowledge.get("data_contracts", [])
     if contracts:
         lines = ["## DATA CONTRACTS (input conventions)\n"]
@@ -150,7 +247,7 @@ def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = Fa
             lines.append(omission)
         sections.append("\n".join(lines))
 
-    # 4. Method requirements
+    # 5. Method requirements
     reqs: MethodRequirements | None = knowledge.get("method_requirements")
     if reqs and reqs.requirements:
         lines = ["## MODELING REQUIREMENTS (you MUST satisfy all of these)\n"]
@@ -163,7 +260,7 @@ def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = Fa
         lines.append("These are not optional. Failure to satisfy them produces incorrect prices.")
         sections.append("\n".join(lines))
 
-    # 5. Lessons (ranked by relevance + severity)
+    # 6. Lessons (ranked by relevance + severity)
     lessons: list[Lesson] = knowledge.get("lessons", [])
     if lessons:
         lines = ["## Lessons (ranked by relevance)\n"]
@@ -182,7 +279,7 @@ def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = Fa
             lines.append(omission)
         sections.append("\n".join(lines))
 
-    # 6. Decomposition notes (for novel/composite products)
+    # 7. Decomposition notes (for novel/composite products)
     decomp: ProductDecomposition | None = knowledge.get("decomposition")
     if decomp and decomp.notes:
         sections.append(
@@ -204,7 +301,7 @@ def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = Fa
             lines.append(omission)
         sections.append("\n".join(lines))
 
-    # 7. Matched failure signatures (during retry loop)
+    # 8. Matched failure signatures (during retry loop)
     sigs: list[FailureSignature] = knowledge.get("matched_signatures", [])
     if sigs:
         lines = ["## KNOWN FAILURE PATTERNS MATCHING YOUR ERRORS\n"]
@@ -243,6 +340,23 @@ def summarize_knowledge_for_trace(knowledge: dict[str, Any]) -> dict[str, Any]:
         "requirement_method": reqs.method if reqs else None,
         "unresolved_primitives": list(unresolved_primitives),
     }
+    summary.update(_adapter_lifecycle_summary())
+
+    basket_instrument = False
+    if product_ir is not None:
+        basket_instrument = product_ir.instrument == "basket_path_payoff"
+    elif decomposition is not None:
+        basket_instrument = decomposition.instrument == "basket_path_payoff"
+    if not basket_instrument:
+        basket_instrument = any(
+            "ranked_observation"
+            in getattr(getattr(lesson, "applies_when", None), "features", ())
+            for lesson in lessons
+        )
+    if basket_instrument:
+        superseded_ids = identify_superseded_basket_lesson_ids()
+        summary["superseded_lesson_ids"] = superseded_ids
+        summary["superseded_lesson_count"] = len(superseded_ids)
 
     if product_ir is not None:
         summary.update(
@@ -251,6 +365,7 @@ def summarize_knowledge_for_trace(knowledge: dict[str, Any]) -> dict[str, Any]:
                 "payoff_family": product_ir.payoff_family,
                 "exercise_style": product_ir.exercise_style,
                 "model_family": product_ir.model_family,
+                "route_families": list(getattr(product_ir, "route_families", ()) or ()),
             }
         )
     elif decomposition is not None:
@@ -272,7 +387,15 @@ def format_review_knowledge_for_prompt(
     audience: str = "reviewer",
     compact: bool = False,
 ) -> str:
-    """Format shared knowledge for critic / arbiter / model-validator prompts."""
+    """Format shared knowledge as markdown for review-stage LLM prompts.
+
+    Args:
+        knowledge: The dict returned by ``retrieve_for_task()``.
+        audience: Label for the review role (e.g. "reviewer", "arbiter",
+            "model_validator").  Used as a heading prefix in the requirements
+            section so the LLM knows which perspective to adopt.
+        compact: When True, truncate each section per ``_COMPACT_LIMITS``.
+    """
     sections: list[str] = []
 
     principles: list[Principle] = knowledge.get("principles", [])
@@ -329,6 +452,10 @@ def format_review_knowledge_for_prompt(
             lines.append(omission)
         sections.append("\n".join(lines))
 
+    adapter_warnings = _adapter_lifecycle_warnings(compact=compact)
+    if adapter_warnings:
+        sections.append(adapter_warnings)
+
     sigs: list[FailureSignature] = knowledge.get("matched_signatures", [])
     if sigs:
         lines = ["## Known Failure Patterns\n"]
@@ -342,8 +469,19 @@ def format_review_knowledge_for_prompt(
 
 
 def format_decomposition_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = False) -> str:
-    """Format shared knowledge for decomposition / routing prompts."""
+    """Format shared knowledge for decomposition / routing prompts.
+
+    The API map is surfaced first so route selection starts from the compact
+    family-level navigation layer before the broader routing context.
+    """
     sections: list[str] = []
+
+    try:
+        api_map = format_api_map_for_prompt(compact=compact)
+        if api_map:
+            sections.append(api_map)
+    except Exception:
+        pass
 
     principles: list[Principle] = knowledge.get("principles", [])
     if principles:
@@ -368,6 +506,10 @@ def format_decomposition_knowledge_for_prompt(knowledge: dict[str, Any], *, comp
         if omission:
             lines.append(omission)
         sections.append("\n".join(lines))
+
+    adapter_warnings = _adapter_lifecycle_warnings(compact=compact)
+    if adapter_warnings:
+        sections.append(adapter_warnings)
 
     decomp: ProductDecomposition | None = knowledge.get("decomposition")
     if decomp and decomp.notes:
@@ -396,7 +538,11 @@ def format_distilled_knowledge_for_prompt(
 
     if audience == "builder":
         limits = _DISTILLED_LIMITS["builder"]
-        lines = ["## Distilled Build Memory\n"]
+        lines = []
+        api_map = format_api_map_for_prompt(compact=True)
+        if api_map:
+            lines.append(api_map)
+        lines.append("## Distilled Build Memory\n")
         if product_ir is not None:
             lines.append(
                 f"- Product: `{product_ir.instrument}` / `{product_ir.payoff_family}` / "
@@ -419,6 +565,13 @@ def format_distilled_knowledge_for_prompt(
                 "- Open primitive gaps: "
                 + ", ".join(f"`{primitive}`" for primitive in _take_limited(list(unresolved_primitives), 3))
             )
+        adapter_summary = _adapter_lifecycle_summary()
+        stale_ids = adapter_summary["stale_adapter_ids"]
+        if stale_ids:
+            lines.append(
+                "- Stale adapters: "
+                + ", ".join(f"`{adapter_id}`" for adapter_id in _take_limited(stale_ids, 3))
+            )
         sections.append("\n".join(lines))
 
     elif audience == "review":
@@ -436,17 +589,33 @@ def format_distilled_knowledge_for_prompt(
             lines.append("- Known failure traps:")
             for lesson in _take_limited(lessons, limits["lessons"]):
                 lines.append(f"  - `{lesson.title}` -> {lesson.root_cause.strip()}")
+        adapter_summary = _adapter_lifecycle_summary()
+        stale_ids = adapter_summary["stale_adapter_ids"]
+        if stale_ids:
+            lines.append(
+                "- Stale adapters: "
+                + ", ".join(f"`{adapter_id}`" for adapter_id in _take_limited(stale_ids, 3))
+            )
         sections.append("\n".join(lines))
 
     elif audience == "routing":
         limits = _DISTILLED_LIMITS["routing"]
-        lines = ["## Distilled Routing Memory\n"]
+        lines = []
+        api_map = format_api_map_for_prompt(compact=True)
+        if api_map:
+            lines.append(api_map)
+        lines.append("## Distilled Routing Memory\n")
         if product_ir is not None:
             lines.append(
                 "- Route cues: "
                 f"`{product_ir.instrument}`, `{product_ir.model_family}`, "
                 + ", ".join(f"`{family}`" for family in product_ir.candidate_engine_families[:4])
             )
+            if getattr(product_ir, "route_families", ()):
+                lines.append(
+                    "- Exact route families: "
+                    + ", ".join(f"`{family}`" for family in product_ir.route_families[:4])
+                )
         if principles:
             lines.append("- Routing principles:")
             for principle in _take_limited(principles, limits["principles"]):
@@ -455,6 +624,13 @@ def format_distilled_knowledge_for_prompt(
             lines.append("- Similar-product lessons:")
             for lesson in _take_limited(lessons, limits["lessons"]):
                 lines.append(f"  - `{lesson.title}` -> {lesson.fix.strip()}")
+        adapter_summary = _adapter_lifecycle_summary()
+        stale_ids = adapter_summary["stale_adapter_ids"]
+        if stale_ids:
+            lines.append(
+                "- Stale adapters: "
+                + ", ".join(f"`{adapter_id}`" for adapter_id in _take_limited(stale_ids, 3))
+            )
         sections.append("\n".join(lines))
     else:
         raise ValueError(f"Unsupported distilled-knowledge audience: {audience}")

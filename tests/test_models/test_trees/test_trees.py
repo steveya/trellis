@@ -4,9 +4,12 @@ import numpy as raw_np
 import pytest
 from scipy.stats import norm
 
+from trellis.core.differentiable import gradient, get_numpy
 from trellis.models.trees.binomial import BinomialTree
 from trellis.models.trees.trinomial import TrinomialTree
 from trellis.models.trees.backward_induction import backward_induction
+
+np = get_numpy()
 
 
 def bs_call(S, K, T, r, sigma):
@@ -89,6 +92,31 @@ class TestBackwardInductionEuropeanCall:
         price = backward_induction(tree, payoff, discount_rate=r, exercise_type="european")
         bs_ref = bs_put(S0, K, T, r, sigma)
         assert price == pytest.approx(bs_ref, rel=0.01)
+
+
+class TestBackwardInductionDifferentiable:
+    def test_binomial_forward_price_has_unit_spot_delta(self):
+        """Differentiable tree rollback should preserve a linear payoff exactly."""
+        S0, r, sigma, T = 100.0, 0.05, 0.20, 1.0
+        n_steps = 200
+
+        def price_from_spot(spot):
+            tree = BinomialTree.crr(spot, T, n_steps, r, sigma)
+
+            def payoff(step, node):
+                return tree.value_at(n_steps, node)
+
+            return backward_induction(
+                tree,
+                payoff,
+                discount_rate=r,
+                exercise_type="european",
+                differentiable=True,
+            )
+
+        delta = gradient(price_from_spot)(S0)
+        assert price_from_spot(S0) == pytest.approx(S0, rel=1e-12, abs=1e-12)
+        assert delta == pytest.approx(1.0, rel=1e-12, abs=1e-12)
 
 
 # ---------------------------------------------------------------------------

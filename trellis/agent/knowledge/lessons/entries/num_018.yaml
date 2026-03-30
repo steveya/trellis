@@ -1,0 +1,28 @@
+id: num_018
+title: Indentation broke module build
+severity: critical
+category: numerical
+status: validated
+confidence: 0.6
+created: '2026-03-26T21:07:34.592913'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260326_210734_quanto_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - characteristic_function
+  - discounting
+  - forward_rate
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Build fails with SyntaxError: unexpected indent at a specific line and column
+  during module import/validation.'
+root_cause: The generated module contained malformed Python indentation, which prevents
+  parsing before any pricing logic can run. This is typically caused by template assembly
+  or pasted blocks that shift indentation levels incorrectly.
+fix: Reformat the generated source so every block has consistent indentation and no
+  stray leading spaces. Validate the module with a syntax check before returning it,
+  especially around nested functions, conditionals, and class methods.
+validation: Discovered during build (attempt 1)

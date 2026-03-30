@@ -1,14 +1,26 @@
 """Tests for Black76 and Garman-Kohlhagen option pricing formulas."""
 
+import math
+
 import pytest
 from scipy.stats import norm
 
+from trellis.core.differentiable import gradient
 from trellis.models.black import (
     black76_call,
+    black76_asset_or_nothing_call,
+    black76_asset_or_nothing_put,
+    black76_cash_or_nothing_call,
+    black76_cash_or_nothing_put,
     black76_put,
     garman_kohlhagen_call,
     garman_kohlhagen_put,
 )
+from trellis.models.analytical import terminal_vanilla_from_basis
+
+
+def _finite_difference(fn, x, eps=1e-6):
+    return (fn(x + eps) - fn(x - eps)) / (2.0 * eps)
 
 
 class TestBlack76Call:
@@ -63,6 +75,25 @@ class TestBlack76Call:
             for K in [0.01, 0.05, 0.10]:
                 assert black76_call(F, K, 0.20, 1.0) >= 0
 
+    def test_autodiff_vega_matches_closed_form(self):
+        """Autograd on Black76 call recovers the analytical vega."""
+        F, K, sigma, T = 0.05, 0.05, 0.20, 1.0
+        d1 = (0.0 + 0.5 * sigma ** 2 * T) / (sigma * T ** 0.5)
+        expected = F * T ** 0.5 * norm.pdf(d1)
+
+        autodiff_vega = gradient(lambda vol: black76_call(F, K, vol, T))(sigma)
+
+        assert autodiff_vega == pytest.approx(expected, rel=1e-10)
+
+    def test_autodiff_vega_matches_finite_difference(self):
+        """Autograd on Black76 call matches finite-difference vega."""
+        F, K, sigma, T = 0.05, 0.05, 0.20, 1.0
+
+        autodiff_vega = gradient(lambda vol: black76_call(F, K, vol, T))(sigma)
+        fd_vega = _finite_difference(lambda vol: black76_call(F, K, vol, T), sigma)
+
+        assert autodiff_vega == pytest.approx(fd_vega, rel=1e-6, abs=1e-8)
+
 
 class TestBlack76Put:
 
@@ -78,6 +109,64 @@ class TestBlack76Put:
     def test_zero_vol_otm(self):
         result = black76_put(0.06, 0.05, 0.0, 1.0)
         assert result == pytest.approx(0.0, abs=1e-10)
+
+
+class TestBlack76CashOrNothing:
+
+    def test_atm_call_matches_closed_form(self):
+        F, K, sigma, T = 0.05, 0.05, 0.20, 1.0
+        d1 = (0 + 0.5 * 0.04) / 0.20
+        d2 = d1 - 0.20
+        expected = norm.cdf(d2)
+        result = black76_cash_or_nothing_call(F, K, sigma, T)
+        assert result == pytest.approx(expected, abs=1e-10)
+
+    def test_zero_vol_intrinsic(self):
+        assert black76_cash_or_nothing_call(0.06, 0.05, 0.0, 1.0) == pytest.approx(1.0)
+        assert black76_cash_or_nothing_call(0.04, 0.05, 0.0, 1.0) == pytest.approx(0.0)
+        assert black76_cash_or_nothing_put(0.04, 0.05, 0.0, 1.0) == pytest.approx(1.0)
+        assert black76_cash_or_nothing_put(0.06, 0.05, 0.0, 1.0) == pytest.approx(0.0)
+
+    def test_autodiff_vega_matches_finite_difference(self):
+        F, K, sigma, T = 0.05, 0.05, 0.20, 1.0
+
+        autodiff_vega = gradient(lambda vol: black76_cash_or_nothing_call(F, K, vol, T))(sigma)
+        fd_vega = _finite_difference(
+            lambda vol: black76_cash_or_nothing_call(F, K, vol, T),
+            sigma,
+        )
+
+        assert autodiff_vega == pytest.approx(fd_vega, rel=1e-6, abs=1e-8)
+        assert abs(autodiff_vega) > 0.0
+
+
+class TestBlack76AssetOrNothing:
+
+    def test_atm_call_matches_closed_form(self):
+        F, K, sigma, T = 0.05, 0.05, 0.20, 1.0
+        d1 = (0 + 0.5 * 0.04) / 0.20
+        expected = F * norm.cdf(d1)
+        result = black76_asset_or_nothing_call(F, K, sigma, T)
+        assert result == pytest.approx(expected, abs=1e-10)
+
+    def test_zero_vol_intrinsic(self):
+        assert black76_asset_or_nothing_call(0.06, 0.05, 0.0, 1.0) == pytest.approx(0.06)
+        assert black76_asset_or_nothing_call(0.04, 0.05, 0.0, 1.0) == pytest.approx(0.0)
+        assert black76_asset_or_nothing_put(0.04, 0.05, 0.0, 1.0) == pytest.approx(0.04)
+        assert black76_asset_or_nothing_put(0.06, 0.05, 0.0, 1.0) == pytest.approx(0.0)
+
+    def test_autodiff_vega_matches_finite_difference(self):
+        F, K, sigma, T = 0.05, 0.05, 0.20, 1.0
+
+        autodiff_vega = gradient(
+            lambda vol: black76_asset_or_nothing_call(F, K, vol, T)
+        )(sigma)
+        fd_vega = _finite_difference(
+            lambda vol: black76_asset_or_nothing_call(F, K, vol, T),
+            sigma,
+        )
+
+        assert autodiff_vega == pytest.approx(fd_vega, rel=1e-6, abs=1e-8)
 
 
 class TestPutCallParity:
@@ -96,6 +185,20 @@ class TestPutCallParity:
             assert call - put == pytest.approx(F - K, abs=1e-10), (
                 f"Parity failed for F={F}, K={K}, σ={sigma}, T={T}"
             )
+
+    def test_call_assembles_from_basis_claims(self):
+        F, K, sigma, T = 0.05, 0.05, 0.20, 1.0
+        expected_call = (
+            black76_asset_or_nothing_call(F, K, sigma, T)
+            - K * black76_cash_or_nothing_call(F, K, sigma, T)
+        )
+        expected_put = (
+            K * black76_cash_or_nothing_put(F, K, sigma, T)
+            - black76_asset_or_nothing_put(F, K, sigma, T)
+        )
+
+        assert black76_call(F, K, sigma, T) == pytest.approx(expected_call, abs=1e-10)
+        assert black76_put(F, K, sigma, T) == pytest.approx(expected_put, abs=1e-10)
 
 
 class TestGarmanKohlhagen:
@@ -121,6 +224,40 @@ class TestGarmanKohlhagen:
         )
 
         assert result == pytest.approx(expected, abs=1e-10)
+
+    def test_explicit_basis_assembly_matches_wrapper(self):
+        spot = 1.10
+        strike = 1.05
+        sigma = 0.18
+        T = 1.25
+        df_domestic = 0.94
+        df_foreign = 0.97
+
+        forward = spot * df_foreign / df_domestic
+        call_asset = black76_asset_or_nothing_call(forward, strike, sigma, T)
+        call_cash = black76_cash_or_nothing_call(forward, strike, sigma, T)
+        put_asset = black76_asset_or_nothing_put(forward, strike, sigma, T)
+        put_cash = black76_cash_or_nothing_put(forward, strike, sigma, T)
+
+        expected_call = df_domestic * terminal_vanilla_from_basis(
+            "call",
+            asset_value=call_asset,
+            cash_value=call_cash,
+            strike=strike,
+        )
+        expected_put = df_domestic * terminal_vanilla_from_basis(
+            "put",
+            asset_value=put_asset,
+            cash_value=put_cash,
+            strike=strike,
+        )
+
+        assert garman_kohlhagen_call(
+            spot, strike, sigma, T, df_domestic, df_foreign
+        ) == pytest.approx(expected_call, abs=1e-10)
+        assert garman_kohlhagen_put(
+            spot, strike, sigma, T, df_domestic, df_foreign
+        ) == pytest.approx(expected_put, abs=1e-10)
 
     def test_put_call_parity(self):
         spot = 1.10
@@ -149,3 +286,62 @@ class TestGarmanKohlhagen:
 
         assert call == pytest.approx(max(spot * df_foreign - strike * df_domestic, 0.0))
         assert put == pytest.approx(max(strike * df_domestic - spot * df_foreign, 0.0))
+
+    def test_autodiff_delta_matches_closed_form(self):
+        """Autograd on Garman-Kohlhagen call recovers the spot delta."""
+        spot = 1.10
+        strike = 1.05
+        sigma = 0.22
+        T = 2.0
+        df_domestic = 0.91
+        df_foreign = 0.96
+
+        forward = spot * df_foreign / df_domestic
+        d1 = (math.log(forward / strike) + 0.5 * sigma ** 2 * T) / (sigma * T ** 0.5)
+        expected = df_foreign * norm.cdf(d1)
+
+        autodiff_delta = gradient(
+            lambda s: garman_kohlhagen_call(
+                s,
+                strike,
+                sigma,
+                T,
+                df_domestic,
+                df_foreign,
+            )
+        )(spot)
+
+        assert autodiff_delta == pytest.approx(expected, rel=1e-10)
+
+    def test_autodiff_delta_matches_finite_difference(self):
+        """Autograd on Garman-Kohlhagen call matches finite-difference delta."""
+        spot = 1.10
+        strike = 1.05
+        sigma = 0.22
+        T = 2.0
+        df_domestic = 0.91
+        df_foreign = 0.96
+
+        autodiff_delta = gradient(
+            lambda s: garman_kohlhagen_call(
+                s,
+                strike,
+                sigma,
+                T,
+                df_domestic,
+                df_foreign,
+            )
+        )(spot)
+        fd_delta = _finite_difference(
+            lambda s: garman_kohlhagen_call(
+                s,
+                strike,
+                sigma,
+                T,
+                df_domestic,
+                df_foreign,
+            ),
+            spot,
+        )
+
+        assert autodiff_delta == pytest.approx(fd_delta, rel=1e-6, abs=1e-8)

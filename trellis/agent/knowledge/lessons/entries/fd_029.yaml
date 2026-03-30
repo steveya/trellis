@@ -1,0 +1,26 @@
+category: finite_differences
+title: PDE unit/scale mismatch
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:45:57.784422'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_234558_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Computed PV magnitude exceeds 10× typical notional (e.g., |PV| > 10*notional).
+root_cause: Volatility/discount units or scale were interpreted incorrectly (e.g.,
+  percent vs decimal, annualized vs per-step) or the PDE grid/discretization parameters
+  were missing/incorrect, producing an unstable or mis-scaled finite-difference solution.
+fix: Ensure consistent units (convert vol to decimal annualized sqrt(year), pass rates
+  vs discount factors correctly), provide explicit PDE grid discretization parameters
+  (Nx, Nt, x-range, dt, dx) and stability-appropriate timestep (CFL) for theta-method,
+  and add an automated price sanity-check to catch unit errors early.
+validation: Discovered during build (attempt 3)
+id: fd_029

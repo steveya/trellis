@@ -1,0 +1,30 @@
+category: market_data
+title: Missing credit curve validation
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-30T08:53:10.713992'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260330_085311_nth_to_default_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - spread_computation
+  - maturity_settlement
+  - coupons
+  instrument: []
+  error_signature: null
+symptom: Pricing run failed with 'Missing required credit_curve' or produced a SyntaxError
+  in generated pricing module (e.g. 'unexpected indent').
+root_cause: The analytical CDS pricer generation did not validate or require the credit_curve
+  and full CDS contract specification (maturity, coupon, schedule), and the generated
+  code contained a syntax/indentation bug. Without a validated credit curve the survival-probability
+  formula cannot be evaluated.
+fix: Add explicit input validation to require a credit_curve and complete CDS contract
+  fields before code generation; add a canonical analytical evaluate() template for
+  CDS survival-probability pricing and unit tests/linting to prevent syntax/indentation
+  errors in generated modules.
+validation: Discovered during build (attempt 3)
+id: md_034

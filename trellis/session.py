@@ -125,6 +125,12 @@ class Session:
                 default_discount_curve="discount",
                 default_vol_surface="default" if vol_surface is not None else None,
                 default_credit_curve="default" if credit_curve is not None else None,
+                provenance={
+                    "source": "explicit",
+                    "source_kind": "explicit_input",
+                    "source_ref": "Session(curve=...)",
+                    "as_of": _resolve_as_of(as_of, settlement).isoformat(),
+                },
             )
             discount_curve = "discount"
             vol_surface_name = "default" if vol_surface is not None else None
@@ -575,6 +581,7 @@ class Session:
             # Single payoff
             ms = self._build_market_state()
             ctx = dict(kwargs)
+            ctx.setdefault("_cache", {})
             data = {}
             for m in resolved:
                 data[m.name] = m.compute(instrument, ms, **ctx)
@@ -599,6 +606,7 @@ class Session:
         for name in book:
             payoff = book[name]
             ctx = dict(kwargs)
+            ctx.setdefault("_cache", {})
             data = {}
             for m in measures:
                 data[m.name] = m.compute(payoff, ms, **ctx)

@@ -2,8 +2,8 @@ id: num_008
 title: Undefined FFT symbol breaks analytical branch
 severity: high
 category: numerical
-status: candidate
-confidence: 0.4
+status: validated
+confidence: 0.6
 created: '2026-03-25T10:06:20.337246'
 version: ''
 source_trace: null

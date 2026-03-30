@@ -1,19 +1,29 @@
-"""Reusable helpers for task reruns and offline task benchmarking."""
+"""Helpers for running pricing tasks without an LLM and benchmarking results.
+
+Loads task definitions from TASKS.yaml, resolves their generated payoff
+modules, and runs them against market data to measure correctness and timing.
+"""
 
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
 from dataclasses import MISSING, dataclass, fields, is_dataclass, replace
 from datetime import date, datetime
 from importlib import import_module
 from pathlib import Path
 from statistics import mean, median
 from time import perf_counter, time
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
+
+_log = logging.getLogger(__name__)
 
 from trellis.agent.executor import _make_test_payoff, _try_import_existing
 from trellis.agent.knowledge.methods import is_known_method, normalize_method
 from trellis.agent.planner import FieldDef, SpecSchema
 from trellis.agent.planner import plan_build
+from trellis.agent.platform_requests import compile_build_request
 from trellis.agent.quant import select_pricing_method
 
 
@@ -49,9 +59,63 @@ _GENERIC_TITLE_STOPWORDS = {
 }
 
 
+def _selected_curve_names_from_market_state(market_state) -> dict[str, str]:
+    """Return resolved curve-name provenance from a compiled market state."""
+    names = getattr(market_state, "selected_curve_names", None)
+    if not isinstance(names, dict):
+        return {}
+    return {
+        str(key): str(value)
+        for key, value in names.items()
+        if value is not None
+    }
+
+
+def _task_requires_credit_curve(task: dict) -> bool:
+    """Return True when the task contract needs a credit curve to be usable."""
+    construct_methods = set(_task_construct_methods(task))
+    if "credit" in construct_methods:
+        return True
+    if task_to_instrument_type(task) == "nth_to_default":
+        return True
+    title = " ".join(
+        part for part in (
+            str(task.get("title") or ""),
+            str(task.get("description") or ""),
+        )
+        if part
+    ).lower()
+    return "cds" in title
+
+
+def _inject_default_credit_curve_for_task(task: dict, market_state):
+    """Attach a default credit curve when the task contract requires one."""
+    if getattr(market_state, "credit_curve", None) is not None:
+        return market_state
+    if not _task_requires_credit_curve(task):
+        return market_state
+
+    from trellis.curves.credit_curve import CreditCurve
+
+    selected_curve_names = dict(getattr(market_state, "selected_curve_names", None) or {})
+    selected_curve_names["credit_curve"] = "default_flat_credit_curve_2pct"
+    market_provenance = dict(getattr(market_state, "market_provenance", None) or {})
+    market_provenance["credit_curve"] = {
+        "source": "runtime_default",
+        "hazard_rate": 0.02,
+        "reason": "credit task without explicit market spec",
+    }
+    return replace(
+        market_state,
+        credit_curve=CreditCurve.flat(0.02),
+        selected_curve_names=selected_curve_names,
+        market_provenance=market_provenance,
+    )
+
+
 @dataclass(frozen=True)
 class PreparedTask:
-    """Offline-ready task metadata backed by an existing generated module."""
+    """A task that can be priced without an LLM because its payoff module already exists."""
 
     task_id: str
     title: str
@@ -60,11 +124,12 @@ class PreparedTask:
     requirements: set[str]
     payoff_cls: type
     spec_schema: object
+    compiled_request: object | None = None
 
 
 @dataclass(frozen=True)
 class ComparisonBuildTarget:
-    """One concrete build target within a comparison task."""
+    """One pricing method to build and evaluate when a task compares multiple methods side by side."""
 
     target_id: str
     preferred_method: str
@@ -73,7 +138,7 @@ class ComparisonBuildTarget:
 
 @dataclass(frozen=True)
 class TaskContractError(ValueError):
-    """Structured error for tasks that do not fit the pricing-task runner."""
+    """Raised when a task definition is incompatible with the automated pricing runner."""
 
     code: str
     message: str
@@ -205,12 +270,17 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
     snapshot = build_market_snapshot_for_task(task)
     if snapshot is None:
         market_state = fallback_market_state if fallback_market_state is not None else build_market_state()
+        market_state = _inject_default_credit_curve_for_task(task, market_state)
+        selected_curve_names = _selected_curve_names_from_market_state(market_state)
+        market_provenance = dict(getattr(market_state, "market_provenance", None) or {})
         return market_state, {
             "source": "default",
             "as_of": getattr(market_state, "as_of", None).isoformat() if getattr(market_state, "as_of", None) else None,
             "selected_components": {},
+            "selected_curve_names": selected_curve_names,
             "available_capabilities": sorted(getattr(market_state, "available_capabilities", ())),
             "metadata": {},
+            "provenance": market_provenance,
         }
 
     market_spec = task.get("market") or {}
@@ -233,13 +303,27 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
         jump_parameters=selected_components.get("jump_parameters"),
         model_parameters=selected_components.get("model_parameters"),
     )
+    had_credit_curve_before = getattr(market_state, "credit_curve", None) is not None
+    market_state = _inject_default_credit_curve_for_task(task, market_state)
+    selected_curve_names = _selected_curve_names_from_market_state(market_state)
+    # Add credit_curve to selected_components only when it was runtime-injected for
+    # this task (i.e. the task is a credit task and the snapshot had no credit_curve).
+    # When the snapshot already had a credit_curve it is part of the snapshot's
+    # ambient capabilities, not a task-specific selection.
+    if not had_credit_curve_before and getattr(market_state, "credit_curve", None) is not None:
+        selected_components["credit_curve"] = market_state.credit_curve
+    market_provenance = dict(
+        getattr(market_state, "market_provenance", None) or getattr(snapshot, "provenance", None) or {}
+    )
 
     market_context = {
         "source": snapshot.source,
         "as_of": snapshot.as_of.isoformat(),
         "selected_components": selected_components,
+        "selected_curve_names": selected_curve_names,
         "available_capabilities": sorted(market_state.available_capabilities),
         "metadata": dict(snapshot.metadata),
+        "provenance": market_provenance,
     }
     _validate_task_market_assertions(task, market_context)
     return market_state, market_context
@@ -247,13 +331,99 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
 
 def task_to_description(task: dict) -> str:
     """Convert a ``TASKS.yaml`` entry into a pricing-build request string."""
-    return f"Build a pricer for: {task['title']}"
+    description = f"Build a pricer for: {task['title']}"
+    extra = str(task.get("description") or "").strip()
+    if extra:
+        return f"{description}\n\n{extra}"
+    return description
+
+
+def _bootstrap_ranked_observation_basket_description(task: dict) -> str | None:
+    """Return the canonical proving-case prompt for sparse basket tasks."""
+    if str(task.get("description") or "").strip():
+        return None
+
+    title = " ".join(
+        part for part in (
+            str(task.get("title") or ""),
+            str(task.get("description") or ""),
+        )
+        if part
+    ).lower()
+    if not any(
+        cue in title
+        for cue in (
+            "himalaya",
+            "ranked observation basket",
+            "ranked observation",
+            "remaining constituents",
+        )
+    ):
+        return None
+
+    return (
+        "Build a pricer for: Himalaya ranked observation basket\n\n"
+        "AAPL, MSFT, and NVDA with observation dates 2025-01-15, "
+        "2025-02-15, 2025-03-15. At each observation choose the best "
+        "performer among remaining constituents, remove it, lock the "
+        "simple return, and settle the average locked returns at maturity."
+    )
+
+
+def _effective_task_description(task: dict) -> str:
+    """Return the task description after applying any canonical bootstrap prompt."""
+    description = _bootstrap_ranked_observation_basket_description(task) or task_to_description(task)
+    context_lines: list[str] = []
+
+    construct_methods = _task_construct_methods(task)
+    if construct_methods:
+        context_lines.append(f"Construct methods: {', '.join(construct_methods)}")
+
+    comparison_targets = _task_comparison_targets(task, construct_methods)
+    if comparison_targets:
+        target_lines: list[str] = []
+        for target in comparison_targets:
+            if target.preferred_method:
+                target_lines.append(f"{target.target_id} ({target.preferred_method})")
+            else:
+                target_lines.append(target.target_id)
+        context_lines.append(f"Comparison targets: {', '.join(target_lines)}")
+
+    cross_validate = task.get("cross_validate") or {}
+    internal_targets = [str(target) for target in (cross_validate.get("internal") or ())]
+    analytical_target = cross_validate.get("analytical")
+    external_targets = [str(target) for target in (cross_validate.get("external") or ())]
+    if internal_targets or analytical_target or external_targets:
+        context_lines.append("Cross-validation harness:")
+        if internal_targets:
+            context_lines.append(f"  internal targets: {', '.join(internal_targets)}")
+        if analytical_target:
+            context_lines.append(f"  analytical benchmark: {analytical_target}")
+        if external_targets:
+            context_lines.append(f"  external targets: {', '.join(external_targets)}")
+
+    new_component = str(task.get("new_component") or "").strip()
+    if new_component:
+        context_lines.append(f"New component: {new_component}")
+
+    if not context_lines:
+        return description
+    return f"{description}\n\n" + "\n".join(context_lines)
 
 
 def task_to_instrument_type(task: dict) -> str | None:
     """Heuristically resolve the most likely instrument type for a task."""
-    title = task["title"].lower()
+    title = " ".join(
+        part for part in (
+            str(task.get("title") or ""),
+            str(task.get("description") or ""),
+        )
+        if part
+    ).lower()
     mappings = [
+        ("himalaya", "basket_option"),
+        ("ranked observation", "basket_option"),
+        ("remaining constituents", "basket_option"),
         ("american put", "american_put"),
         ("american option", "american_option"),
         ("worst-of", "basket_option"),
@@ -280,7 +450,7 @@ def task_to_instrument_type(task: dict) -> str | None:
         ("heston", "heston_option"),
         ("cev", "european_option"),
         ("cdo", "cdo"),
-        ("cds", "nth_to_default"),
+        ("cds", "credit_default_swap"),
         ("nth-to-default", "nth_to_default"),
         ("swaption", "swaption"),
         ("cap", "cap"),
@@ -293,8 +463,12 @@ def task_to_instrument_type(task: dict) -> str | None:
         ("chooser", "european_option"),
         ("cliquet", "autocallable"),
         ("double barrier", "barrier_option"),
-        ("quanto", "european_option"),
+        ("quanto", "quanto_option"),
         ("forward start", "european_option"),
+        ("vanilla option", "european_option"),
+        ("vanilla", "european_option"),
+        ("american", "american_option"),
+        ("european", "european_option"),
         ("fx", "european_option"),
         ("swap", "swap"),
         ("bond", "bond"),
@@ -305,12 +479,247 @@ def task_to_instrument_type(task: dict) -> str | None:
     return None
 
 
+def task_to_semantic_contract(task: dict):
+    """Draft the canonical semantic contract for a semantic basket request, if any."""
+    from trellis.agent.semantic_contracts import draft_semantic_contract
+
+    try:
+        return draft_semantic_contract(
+            _effective_task_description(task),
+            instrument_type=task_to_instrument_type(task),
+        )
+    except ValueError:
+        return None
+
+
+def _runtime_snapshot_reference(market_context: dict[str, Any]) -> dict[str, Any]:
+    """Return a stable snapshot reference for runtime replay metadata."""
+    return {
+        "source": market_context.get("source"),
+        "as_of": market_context.get("as_of"),
+        "selected_components": dict(market_context.get("selected_components") or {}),
+        "selected_curve_names": dict(market_context.get("selected_curve_names") or {}),
+        "available_capabilities": list(market_context.get("available_capabilities") or ()),
+        "metadata": dict(market_context.get("metadata") or {}),
+    }
+
+
+def _explicit_simulation_seed(task: dict, market_context: dict[str, Any]) -> tuple[int | None, str]:
+    """Return an explicit simulation seed if the task or market metadata provided one."""
+    metadata = dict(market_context.get("metadata") or {})
+    seed_candidates = (
+        ("task.simulation_seed", task.get("simulation_seed")),
+        ("task.seed", task.get("seed")),
+        ("market.metadata.simulation_seed", metadata.get("simulation_seed")),
+        ("market.metadata.seed", metadata.get("seed")),
+    )
+    for source, value in seed_candidates:
+        if value is None or value == "":
+            continue
+        try:
+            return int(value), source
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid simulation seed from {source}: {value!r}") from exc
+    return None, ""
+
+
+def _stable_seed(payload: dict[str, Any]) -> int:
+    """Derive a deterministic non-negative simulation seed from stable metadata."""
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return int.from_bytes(hashlib.blake2s(encoded, digest_size=8).digest(), "big")
+
+
+def _runtime_simulation_identity(
+    task: dict,
+    *,
+    semantic_contract,
+    market_context: dict[str, Any],
+) -> dict[str, Any]:
+    """Return deterministic Monte Carlo replay metadata for the current task slice."""
+    snapshot_reference = _runtime_snapshot_reference(market_context)
+    evaluation_tags = _runtime_evaluation_tags(
+        task,
+        semantic_contract=semantic_contract,
+        market_context=market_context,
+    )
+    semantic_id = getattr(getattr(semantic_contract, "product", None), "semantic_id", None)
+    base_payload = {
+        "task_id": task["id"],
+        "task_title": task["title"],
+        "description": task_to_description(task),
+        "instrument_type": task_to_instrument_type(task),
+        "semantic_contract_id": semantic_id,
+        "snapshot_reference": snapshot_reference,
+        "evaluation_tags": evaluation_tags,
+    }
+    explicit_seed, seed_source = _explicit_simulation_seed(task, market_context)
+    if explicit_seed is None:
+        explicit_seed = _stable_seed(base_payload)
+        seed_source = "derived_from_request_and_snapshot"
+    stream_digest = hashlib.blake2s(
+        json.dumps(
+            {**base_payload, "seed": explicit_seed},
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode("utf-8"),
+        digest_size=8,
+    ).hexdigest()
+    sample_source = {
+        "kind": "market_snapshot",
+        "source": snapshot_reference.get("source"),
+        "as_of": snapshot_reference.get("as_of"),
+        "snapshot_reference": snapshot_reference,
+    }
+    sample_indexing = {
+        "kind": "path_index",
+        "ordering": "simulation_generation_order",
+        "start": 0,
+    }
+    return {
+        "seed": explicit_seed,
+        "seed_source": seed_source,
+        "sample_source": sample_source,
+        "sample_indexing": sample_indexing,
+        "simulation_stream_id": f"{task['id']}:{stream_digest}",
+        "replay_key": f"{task['id']}:{stream_digest}",
+    }
+
+
+def _runtime_evaluation_tags(
+    task: dict,
+    *,
+    semantic_contract,
+    market_context: dict[str, Any],
+) -> tuple[str, ...]:
+    """Return deterministic tags that identify one runtime/eval slice."""
+    tags: list[str] = ["task_runtime"]
+    construct = task.get("construct")
+    if isinstance(construct, (list, tuple)):
+        construct_text = ",".join(
+            str(item).strip().lower()
+            for item in construct
+            if str(item).strip()
+        )
+    else:
+        construct_text = str(construct or "").strip().lower()
+    if construct_text:
+        tags.append(f"construct:{construct_text}")
+    source = str(market_context.get("source") or "").strip().lower()
+    if source:
+        tags.append(f"market:{source}")
+    if task.get("cross_validate"):
+        tags.append("comparison")
+    if semantic_contract is not None:
+        tags.append("semantic_contract")
+        semantic_id = getattr(getattr(semantic_contract, "product", None), "semantic_id", None)
+        if semantic_id:
+            tags.append(f"semantic:{semantic_id}")
+    return tuple(dict.fromkeys(tags))
+
+
+def _runtime_contract_metadata(
+    task: dict,
+    *,
+    description: str,
+    instrument_type: str | None,
+    semantic_contract,
+    market_context: dict[str, Any],
+    trace_identifier: str | None = None,
+    trace_path: str | None = None,
+) -> dict[str, Any]:
+    """Build the runtime contract payload carried through request and result metadata."""
+    from trellis.agent.semantic_contracts import semantic_contract_summary
+
+    summary = semantic_contract_summary(semantic_contract) if semantic_contract is not None else None
+    simulation_identity = _runtime_simulation_identity(
+        task,
+        semantic_contract=semantic_contract,
+        market_context=market_context,
+    )
+    runtime_contract: dict[str, Any] = {
+        "task_id": task["id"],
+        "task_title": task["title"],
+        "description": description,
+        "instrument_type": instrument_type,
+        "semantic_contract": summary,
+        "semantic_contract_id": getattr(getattr(semantic_contract, "product", None), "semantic_id", None),
+        "snapshot_reference": _runtime_snapshot_reference(market_context),
+        "selected_curve_names": dict(market_context.get("selected_curve_names") or {}),
+        "market_provenance": dict(market_context.get("provenance") or {}),
+        "evaluation_tags": _runtime_evaluation_tags(
+            task,
+            semantic_contract=semantic_contract,
+            market_context=market_context,
+        ),
+        "simulation_identity": simulation_identity,
+        "simulation_seed": simulation_identity["seed"],
+        "sample_source": simulation_identity["sample_source"],
+        "sample_indexing": simulation_identity["sample_indexing"],
+        "simulation_stream_id": simulation_identity["simulation_stream_id"],
+        "replay_key": simulation_identity["replay_key"],
+    }
+    if trace_identifier is not None:
+        runtime_contract["trace_identifier"] = trace_identifier
+    if trace_path is not None:
+        runtime_contract["trace_path"] = trace_path
+    return runtime_contract
+
+
+def _trace_observability(trace_path: str | None) -> dict[str, Any]:
+    """Extract replay-relevant guardrail status from a persisted platform trace."""
+    if not trace_path:
+        return {}
+
+    path = Path(trace_path)
+    if not path.exists():
+        return {"trace_path": str(path)}
+
+    try:
+        import yaml
+
+        trace = yaml.safe_load(path.read_text()) or {}
+    except Exception:
+        return {"trace_path": str(path)}
+
+    observability: dict[str, Any] = {
+        "trace_path": str(path),
+        "trace_status": trace.get("status"),
+        "trace_outcome": trace.get("outcome"),
+    }
+    details = dict(trace.get("details") or {})
+    candidates: list[dict[str, Any]] = [details]
+    for item in trace.get("events", []):
+        if not isinstance(item, dict):
+            continue
+        candidates.append(item)
+        nested_details = item.get("details")
+        if isinstance(nested_details, dict):
+            candidates.append(nested_details)
+    for candidate in candidates:
+        source_sanitization = candidate.get("source_sanitization")
+        if isinstance(source_sanitization, dict):
+            observability["source_sanitization"] = source_sanitization
+            observability["source_status"] = source_sanitization.get("source_status")
+        parse_status = candidate.get("parse_status")
+        if parse_status:
+            observability["parse_status"] = parse_status
+        correlation_preflight = candidate.get("correlation_preflight")
+        if isinstance(correlation_preflight, dict):
+            observability["correlation_preflight"] = correlation_preflight
+            observability["correlation_status"] = correlation_preflight.get(
+                "correlation_status"
+            )
+    return observability
+
+
 def run_task(
     task: dict,
     market_state,
     *,
     model: str = "gpt-5-mini",
     force_rebuild: bool = True,
+    fresh_build: bool = False,
     validation: str = "standard",
     max_retries: int = 3,
     build_fn: Callable[..., Any] | None = None,
@@ -320,7 +729,7 @@ def run_task(
     price_fn: Callable[[Any, Any], float] | None = None,
 ) -> dict:
     """Execute one task through the knowledge-aware build pipeline."""
-    from trellis.agent.task_run_store import persist_task_run_record
+    from trellis.agent.task_run_store import persist_task_run_record, summarize_task_learning
 
     if build_fn is None:
         from trellis.agent.knowledge.autonomous import build_with_knowledge
@@ -328,8 +737,9 @@ def run_task(
         build_fn = build_with_knowledge
 
     task_id = task["id"]
-    description = task_to_description(task)
+    description = _effective_task_description(task)
     instrument_type = task_to_instrument_type(task)
+    semantic_contract = task_to_semantic_contract(task)
     construct_methods = _task_construct_methods(task)
     comparison_targets = _task_comparison_targets(task, construct_methods)
     comparison_task = len(comparison_targets) > 1
@@ -342,10 +752,6 @@ def run_task(
     print(f"{'=' * 60}")
 
     t0 = timer()
-    base_request_metadata = {
-        "task_id": task_id,
-        "task_title": task["title"],
-    }
     result_data = {
         "task_id": task_id,
         "title": task["title"],
@@ -356,12 +762,30 @@ def run_task(
         "comparison_targets": [target.target_id for target in comparison_targets],
         "cross_validate": task.get("cross_validate"),
         "new_component": task.get("new_component"),
+        "semantic_contract_id": getattr(getattr(semantic_contract, "product", None), "semantic_id", None),
     }
 
     try:
         _validate_task_contract(task, instrument_type, construct_methods)
         market_state, market_context = build_market_state_for_task(task, market_state)
+        runtime_contract = _runtime_contract_metadata(
+            task,
+            description=description,
+            instrument_type=instrument_type,
+            semantic_contract=semantic_contract,
+            market_context=market_context,
+        )
+        base_request_metadata = {
+            "task_id": task_id,
+            "task_title": task["title"],
+            "runtime_contract": runtime_contract,
+        }
+        if semantic_contract is not None:
+            from trellis.agent.semantic_contracts import semantic_contract_summary
+
+            base_request_metadata["semantic_contract"] = semantic_contract_summary(semantic_contract)
         result_data["market_context"] = market_context
+        result_data["runtime_contract"] = runtime_contract
         if comparison_task:
             method_results = {}
             live_results = {}
@@ -381,6 +805,7 @@ def run_task(
                     "max_retries": max_retries,
                     "validation": validation,
                     "force_rebuild": force_rebuild,
+                    "fresh_build": fresh_build,
                 }
                 result = build_fn(**build_kwargs)
                 live_results[target.target_id] = result
@@ -388,6 +813,7 @@ def run_task(
                     result,
                     preferred_method=target.preferred_method,
                     reference_target=target.is_reference,
+                    task_kind="pricing",
                 )
 
             elapsed = timer() - t0
@@ -399,6 +825,16 @@ def run_task(
                 payload["reflection"].get("lesson_captured")
                 for payload in method_results.values()
                 if payload["reflection"].get("lesson_captured")
+            ]
+            lesson_contracts = [
+                payload["reflection"].get("lesson_contract")
+                for payload in method_results.values()
+                if payload["reflection"].get("lesson_contract") is not None
+            ]
+            lesson_promotion_outcomes = [
+                payload["reflection"].get("lesson_promotion_outcome")
+                for payload in method_results.values()
+                if payload["reflection"].get("lesson_promotion_outcome") is not None
             ]
             all_gaps = sorted({
                 gap
@@ -413,6 +849,45 @@ def run_task(
                 payoff_factory=payoff_factory,
                 price_fn=price_fn,
             )
+            _write_benchmark_sidecars(method_results, cross_validation)
+            promotion_candidates: dict[str, str] = {}
+            if (
+                fresh_build
+                and all(payload["success"] for payload in method_results.values())
+                and cross_validation["status"] == "passed"
+            ):
+                promotion_candidates = _record_promotion_candidates(
+                    task=task,
+                    instrument_type=instrument_type,
+                    market_context=market_context,
+                    live_results=live_results,
+                    method_results=method_results,
+                    cross_validation=cross_validation,
+                )
+                for target_id, candidate_path in promotion_candidates.items():
+                    payload = method_results.get(target_id)
+                    if not payload or not candidate_path:
+                        continue
+                    payload.setdefault("reflection", {})["promotion_candidate_saved"] = candidate_path
+                    payload["artifacts"] = _artifacts_from_payload(payload)
+
+            reflection_payload = {
+                "lesson_captured": lesson_ids,
+                "lesson_contract": lesson_contracts,
+                "lesson_promotion_outcome": lesson_promotion_outcomes,
+                "cookbook_enriched": any(
+                    payload["reflection"].get("cookbook_enriched")
+                    for payload in method_results.values()
+                ),
+                "method_reflections": {
+                    method: payload["reflection"]
+                    for method, payload in method_results.items()
+                },
+            }
+            if promotion_candidates:
+                reflection_payload["promotion_candidate_saved"] = _unique_strings(
+                    promotion_candidates.values()
+                )
             result_data.update({
                 "success": (
                     all(payload["success"] for payload in method_results.values())
@@ -433,19 +908,14 @@ def run_task(
                     for payload in method_results.values()
                 ),
                 "preferred_method": None,
-                "reflection": {
-                    "lesson_captured": lesson_ids,
-                    "cookbook_enriched": any(
-                        payload["reflection"].get("cookbook_enriched")
-                        for payload in method_results.values()
-                    ),
-                    "method_reflections": {
-                        method: payload["reflection"]
-                        for method, payload in method_results.items()
-                    },
-                },
+                "reflection": reflection_payload,
                 "cross_validation": cross_validation,
             })
+            result_data["learning"] = summarize_task_learning(
+                result_data,
+                task_kind="pricing",
+            )
+            result_data["failures"] = _aggregate_failures(result_data)
         else:
             preferred_method = construct_methods[0] if construct_methods else None
             build_kwargs = {
@@ -464,6 +934,7 @@ def run_task(
                 "max_retries": max_retries,
                 "validation": validation,
                 "force_rebuild": force_rebuild,
+                "fresh_build": fresh_build,
             }
             if preferred_method is not None:
                 build_kwargs["preferred_method"] = preferred_method
@@ -471,11 +942,22 @@ def run_task(
                 build_kwargs["comparison_target"] = comparison_targets[0].target_id
             result = build_fn(**build_kwargs)
             elapsed = timer() - t0
+            runtime_contract_result = dict(runtime_contract)
+            runtime_contract_result["trace_identifier"] = getattr(result, "platform_request_id", None)
+            runtime_contract_result["trace_path"] = getattr(result, "platform_trace_path", None)
+            runtime_contract_result["analytical_trace_path"] = getattr(result, "analytical_trace_path", None)
+            runtime_contract_result["analytical_trace_text_path"] = getattr(result, "analytical_trace_text_path", None)
             result_data.update({
                 **_build_result_payload(result, preferred_method=preferred_method),
                 "elapsed_seconds": round(elapsed, 1),
                 "preferred_method": preferred_method,
+                "runtime_contract": runtime_contract_result,
             })
+            result_data["learning"] = summarize_task_learning(
+                result_data,
+                task_kind="pricing",
+            )
+            result_data["failures"] = _aggregate_failures(result_data)
         status = "OK" if result_data.get("success") else "FAIL"
         print(
             f"  [{status}] {elapsed:.1f}s, attempts={result_data.get('attempts', 0)}, "
@@ -510,6 +992,15 @@ def run_task(
         result_data["task_run_history_path"] = persisted["history_path"]
         result_data["task_run_latest_path"] = persisted["latest_path"]
         result_data["task_run_latest_index_path"] = persisted["latest_index_path"]
+        result_data["task_diagnosis_packet_path"] = persisted.get("diagnosis_packet_path")
+        result_data["task_diagnosis_dossier_path"] = persisted.get("diagnosis_dossier_path")
+        result_data["task_diagnosis_latest_packet_path"] = persisted.get("latest_diagnosis_packet_path")
+        result_data["task_diagnosis_latest_dossier_path"] = persisted.get("latest_diagnosis_dossier_path")
+        result_data["task_diagnosis_headline"] = persisted.get("diagnosis_headline")
+        result_data["task_diagnosis_failure_bucket"] = persisted.get("diagnosis_failure_bucket")
+        result_data["task_diagnosis_decision_stage"] = persisted.get("diagnosis_decision_stage")
+        result_data["task_diagnosis_next_action"] = persisted.get("diagnosis_next_action")
+        result_data["task_diagnosis_persist_error"] = persisted.get("diagnosis_persist_error")
     except Exception as exc:
         result_data["task_run_persist_error"] = str(exc)[:200]
 
@@ -539,6 +1030,15 @@ def _validate_task_market_assertions(
         if actual != expected:
             errors.append(
                 f"selected component mismatch for {key}: expected {expected!r}, got {actual!r}"
+            )
+
+    selected_curve_names = assertions.get("selected_curve_names") or {}
+    actual_curve_names = market_context.get("selected_curve_names", {})
+    for key, expected in selected_curve_names.items():
+        actual = actual_curve_names.get(key)
+        if actual != expected:
+            errors.append(
+                f"selected curve name mismatch for {key}: expected {expected!r}, got {actual!r}"
             )
 
     if errors:
@@ -691,8 +1191,11 @@ def _build_result_payload(
     *,
     preferred_method: str | None = None,
     reference_target: bool = False,
+    task_kind: str = "pricing",
 ) -> dict[str, Any]:
     """Project a BuildResult-like object into a stable task result payload."""
+    from trellis.agent.task_run_store import summarize_task_learning
+
     payload = {
         "success": result.success,
         "attempts": result.attempts,
@@ -708,16 +1211,24 @@ def _build_result_payload(
         "token_usage_summary": dict(getattr(result, "token_usage_summary", {}) or {}),
         "platform_trace_path": getattr(result, "platform_trace_path", None),
         "platform_request_id": getattr(result, "platform_request_id", None),
+        "analytical_trace_path": getattr(result, "analytical_trace_path", None),
+        "analytical_trace_text_path": getattr(result, "analytical_trace_text_path", None),
+        "build_observability": _trace_observability(
+            getattr(result, "platform_trace_path", None)
+        ),
         "blocker_details": getattr(result, "blocker_details", None),
-        "reflection": {
-            key: value for key, value in result.reflection.items()
-            if key in (
-                "lessons_attributed",
-                "lesson_captured",
-                "gaps_identified",
-                "cookbook_enriched",
-                "cookbook_candidate_saved",
-                "knowledge_trace_saved",
+                "reflection": {
+                    key: value for key, value in result.reflection.items()
+                    if key in (
+                        "lessons_attributed",
+                        "lesson_captured",
+                        "lesson_contract",
+                        "lesson_promotion_outcome",
+                        "gaps_identified",
+                        "cookbook_enriched",
+                        "cookbook_candidate_saved",
+                        "promotion_candidate_saved",
+                        "knowledge_trace_saved",
                 "knowledge_gap_log_saved",
                 "decomposition_saved",
                 "distill_run",
@@ -725,7 +1236,59 @@ def _build_result_payload(
         },
     }
     payload["artifacts"] = _artifacts_from_payload(payload)
+    payload["learning"] = summarize_task_learning(payload, task_kind=task_kind)
     return payload
+
+
+def _aggregate_failures(result: Mapping[str, Any]) -> list[str]:
+    """Collect failure messages from the top-level result and nested method runs."""
+    failures: list[str] = []
+
+    def _append(value: Any, *, prefix: str | None = None) -> None:
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return
+            failures.append(f"{prefix}: {text}" if prefix else text)
+            return
+        if isinstance(value, Mapping):
+            text = json.dumps(value, default=str, sort_keys=True)
+            if text and text != "{}":
+                failures.append(f"{prefix}: {text}" if prefix else text)
+            return
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                _append(item, prefix=prefix)
+
+    _append(result.get("error"))
+    _append(result.get("failures"))
+    _append(result.get("blocker_details"))
+
+    cross_validation = result.get("cross_validation")
+    if isinstance(cross_validation, Mapping):
+        status = str(cross_validation.get("status") or "").strip()
+        if status and status != "passed":
+            failures.append(f"cross_validation status: {status}")
+
+    method_results = result.get("method_results")
+    if isinstance(method_results, Mapping):
+        for method_id, payload in method_results.items():
+            if not isinstance(payload, Mapping):
+                continue
+            prefix = str(method_id)
+            _append(payload.get("error"), prefix=prefix)
+            _append(payload.get("failures"), prefix=prefix)
+            _append(payload.get("blocker_details"), prefix=prefix)
+            method_cross_validation = payload.get("cross_validation")
+            if isinstance(method_cross_validation, Mapping):
+                status = str(method_cross_validation.get("status") or "").strip()
+                if status and status != "passed":
+                    failures.append(f"{prefix}: cross_validation status: {status}")
+
+    unique = _unique_strings(failures)
+    if not unique and not bool(result.get("success")):
+        return ["failure details unavailable"]
+    return unique
 
 
 def _artifacts_from_payload(payload: dict[str, Any]) -> dict[str, list[str]]:
@@ -734,8 +1297,14 @@ def _artifacts_from_payload(payload: dict[str, Any]) -> dict[str, list[str]]:
     return {
         "platform_request_ids": _unique_strings([payload.get("platform_request_id")]),
         "platform_trace_paths": _unique_strings([payload.get("platform_trace_path")]),
+        "analytical_trace_paths": _unique_strings([payload.get("analytical_trace_path")]),
+        "analytical_trace_text_paths": _unique_strings(
+            [payload.get("analytical_trace_text_path")]
+        ),
+        "audit_record_paths": _unique_strings([payload.get("audit_record_path")]),
         "knowledge_trace_paths": _unique_strings([reflection.get("knowledge_trace_saved")]),
         "cookbook_candidate_paths": _unique_strings([reflection.get("cookbook_candidate_saved")]),
+        "promotion_candidate_paths": _unique_strings([reflection.get("promotion_candidate_saved")]),
         "knowledge_gap_log_paths": _unique_strings([reflection.get("knowledge_gap_log_saved")]),
     }
 
@@ -751,6 +1320,18 @@ def _aggregate_artifacts(method_payloads: dict[str, dict[str, Any]]) -> dict[str
             payload.get("artifacts", {}).get("platform_trace_paths", ())
             for payload in method_payloads.values()
         ),
+        "analytical_trace_paths": _unique_strings(
+            payload.get("artifacts", {}).get("analytical_trace_paths", ())
+            for payload in method_payloads.values()
+        ),
+        "analytical_trace_text_paths": _unique_strings(
+            payload.get("artifacts", {}).get("analytical_trace_text_paths", ())
+            for payload in method_payloads.values()
+        ),
+        "audit_record_paths": _unique_strings(
+            payload.get("artifacts", {}).get("audit_record_paths", ())
+            for payload in method_payloads.values()
+        ),
         "knowledge_trace_paths": _unique_strings(
             payload.get("artifacts", {}).get("knowledge_trace_paths", ())
             for payload in method_payloads.values()
@@ -759,11 +1340,93 @@ def _aggregate_artifacts(method_payloads: dict[str, dict[str, Any]]) -> dict[str
             payload.get("artifacts", {}).get("cookbook_candidate_paths", ())
             for payload in method_payloads.values()
         ),
+        "promotion_candidate_paths": _unique_strings(
+            payload.get("artifacts", {}).get("promotion_candidate_paths", ())
+            for payload in method_payloads.values()
+        ),
         "knowledge_gap_log_paths": _unique_strings(
             payload.get("artifacts", {}).get("knowledge_gap_log_paths", ())
             for payload in method_payloads.values()
         ),
     }
+
+
+def _write_benchmark_sidecars(
+    method_results: dict[str, dict[str, Any]],
+    cross_validation: dict[str, Any],
+) -> None:
+    """Write benchmark sidecars alongside audit records after cross-validation. Non-blocking."""
+    try:
+        from pathlib import Path
+        from trellis.agent.model_audit import write_benchmark_sidecar
+
+        for payload in method_results.values():
+            artifacts = dict(payload.get("artifacts") or {})
+            for audit_path_str in artifacts.get("audit_record_paths") or []:
+                if not audit_path_str:
+                    continue
+                audit_path = Path(audit_path_str)
+                if not audit_path.exists():
+                    continue
+                try:
+                    write_benchmark_sidecar(
+                        audit_path,
+                        comparison_status=str(cross_validation.get("status") or "unknown"),
+                        prices=dict(cross_validation.get("prices") or {}),
+                        deviations_pct=dict(cross_validation.get("deviations_pct") or {}),
+                        reference_targets=list(
+                            filter(None, [cross_validation.get("reference_target")])
+                        ),
+                    )
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
+def _record_promotion_candidates(
+    *,
+    task: dict[str, Any],
+    instrument_type: str | None,
+    market_context: dict[str, Any],
+    live_results: dict[str, Any],
+    method_results: dict[str, dict[str, Any]],
+    cross_validation: dict[str, Any],
+) -> dict[str, str]:
+    """Persist successful fresh-build comparison routes as promotion candidates."""
+    from trellis.agent.knowledge.promotion import record_promotion_candidate
+
+    candidate_paths: dict[str, str] = {}
+    for target_id, payload in method_results.items():
+        live_result = live_results.get(target_id)
+        if live_result is None or not payload.get("success"):
+            continue
+        code = str(getattr(live_result, "code", "") or "").strip()
+        if not code:
+            continue
+        payoff_cls = getattr(live_result, "payoff_cls", None)
+        try:
+            path = record_promotion_candidate(
+                task_id=str(task.get("id") or ""),
+                task_title=str(task.get("title") or ""),
+                instrument_type=instrument_type,
+                comparison_target=target_id,
+                preferred_method=payload.get("preferred_method"),
+                payoff_class=getattr(payoff_cls, "__name__", None),
+                module_path=getattr(payoff_cls, "__module__", None),
+                code=code,
+                attempts=int(getattr(live_result, "attempts", payload.get("attempts", 0)) or 0),
+                platform_request_id=payload.get("platform_request_id"),
+                platform_trace_path=payload.get("platform_trace_path"),
+                market_context=dict(market_context or {}),
+                cross_validation=dict(cross_validation or {}),
+                reference_target=bool(payload.get("reference_target")),
+            )
+        except Exception:
+            continue
+        if path:
+            candidate_paths[target_id] = path
+    return candidate_paths
 
 
 def _aggregate_knowledge_summaries(method_payloads: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -944,6 +1607,31 @@ def _cross_validate_comparison_task(
     }
 
 
+def _check_compiled_for_ambiguity(compiled: object | None, task: dict) -> None:
+    """Log a WARNING if semantic analysis flagged this description as ambiguous.
+
+    Does not raise — the cached payoff is still valid.  The task description
+    should be clarified so future builds produce the correct instrument.
+    """
+    if compiled is None:
+        return
+    try:
+        request = getattr(compiled, "request", None)
+        metadata = getattr(request, "metadata", {}) or {}
+        gap = metadata.get("semantic_gap") or {}
+        if gap.get("requires_clarification"):
+            summary = gap.get("summary", "ambiguous instrument type")
+            _log.warning(
+                "Task %s (%s) has an ambiguous description: %s. "
+                "The cached payoff will be used, but the task description should be clarified.",
+                task.get("id"),
+                task.get("title"),
+                summary,
+            )
+    except Exception as exc:
+        _log.debug("_check_compiled_for_ambiguity: could not read metadata: %s", exc)
+
+
 def prepare_existing_task(task: dict, *, model: str = "gpt-5-mini") -> PreparedTask:
     """Resolve a task to an existing generated payoff class without rebuilding."""
     description = task_to_description(task)
@@ -974,13 +1662,43 @@ def prepare_existing_task(task: dict, *, model: str = "gpt-5-mini") -> PreparedT
             requirements=set(),
             payoff_cls=generic_payoff_cls,
             spec_schema=generic_schema,
+            compiled_request=None,
         )
 
-    pricing_plan = select_pricing_method(
-        description,
-        instrument_type=instrument_type,
-        model=model,
-    )
+    # Use compile_build_request for all instrument types so semantic
+    # analysis (concept resolution, gap classification, ambiguity
+    # detection) runs on the batch path — not just the NLP path.
+    # Falls back to select_pricing_method only on expected registry/plan
+    # misses; unexpected errors (RuntimeError, ImportError, …) propagate.
+    try:
+        compiled = compile_build_request(
+            description,
+            instrument_type=instrument_type,
+            model=model,
+        )
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        _log.warning(
+            "compile_build_request degraded for task %s (%s): %s — "
+            "falling back to select_pricing_method",
+            task.get("id"),
+            instrument_type,
+            exc,
+        )
+        compiled = None
+
+    if compiled is not None:
+        pricing_plan = compiled.pricing_plan  # AttributeError here is a bug — propagate
+        _check_compiled_for_ambiguity(compiled, task)
+    else:
+        pricing_plan = select_pricing_method(
+            description,
+            instrument_type=instrument_type,
+            model=model,
+        )
+    if pricing_plan is None:
+        raise ValueError(
+            f"Could not determine a pricing plan for {task['id']} ({instrument_type})"
+        )
     preferred_method = getattr(pricing_plan, "method", None)
     try:
         plan = plan_build(
@@ -1023,6 +1741,7 @@ def prepare_existing_task(task: dict, *, model: str = "gpt-5-mini") -> PreparedT
         requirements=set(pricing_plan.required_market_data),
         payoff_cls=payoff_cls,
         spec_schema=spec_schema,
+        compiled_request=compiled,
     )
 
 

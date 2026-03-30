@@ -6,6 +6,7 @@ import numpy as raw_np
 import pytest
 from scipy.stats import norm
 
+from trellis.core.differentiable import gradient, get_numpy
 import trellis.models.monte_carlo.discretization as mc_discretization
 import trellis.models.monte_carlo.engine as mc_engine_module
 from trellis.models.processes.gbm import GBM
@@ -33,6 +34,7 @@ from trellis.models.monte_carlo.variance_reduction import (
 )
 
 mc_bridge_module = importlib.import_module("trellis.models.monte_carlo.brownian_bridge")
+np = get_numpy()
 
 
 def bs_call(S, K, T, r, sigma):
@@ -473,6 +475,35 @@ class TestMonteCarloEngine:
         paths_b = engine.simulate_with_shocks(x0, 1.0, shocks)
 
         raw_np.testing.assert_allclose(paths_a, paths_b, atol=0.0, rtol=0.0)
+
+    def test_explicit_shocks_pathwise_pricing_is_differentiable(self):
+        """Explicit shocks should make a pathwise MC price deterministic and differentiable."""
+        S0, K, r, sigma, T = 100.0, 100.0, 0.05, 0.20, 1.0
+        gbm = GBM(mu=r, sigma=sigma)
+        engine = MonteCarloEngine(gbm, n_paths=512, n_steps=16, seed=37, method="exact")
+        shocks = raw_np.random.default_rng(41).standard_normal((engine.n_paths, engine.n_steps))
+
+        def payoff(paths):
+            return np.maximum(paths[:, -1] - K, 0.0)
+
+        paths_diff = engine.simulate_with_shocks(S0, T, shocks, differentiable=True)
+        paths_plain = engine.simulate_with_shocks(S0, T, shocks)
+        raw_np.testing.assert_allclose(paths_diff, paths_plain, atol=0.0, rtol=0.0)
+
+        def price_from_spot(spot):
+            return engine.price(
+                spot,
+                T,
+                payoff,
+                discount_rate=r,
+                shocks=shocks,
+                differentiable=True,
+            )["price"]
+
+        autodiff_delta = gradient(price_from_spot)(S0)
+        eps = 1e-4
+        fd_delta = (price_from_spot(S0 + eps) - price_from_spot(S0 - eps)) / (2 * eps)
+        assert autodiff_delta == pytest.approx(fd_delta, rel=1e-5, abs=1e-5)
 
 
 class TestLocalVolMonteCarlo:

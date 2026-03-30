@@ -1,7 +1,9 @@
-"""Callable bond — reference implementation using backward induction on a tree.
+"""Callable bond: a bond the issuer can redeem early on specified dates.
 
-This is the hand-coded reference for tree-based pricing patterns.
-The agent uses this as a template for other early-exercise instruments.
+Priced using backward induction on a calibrated interest rate tree.
+At each call date, the issuer exercises (redeems at par) if the bond's
+continuation value exceeds the call price — this is a Bermudan-style
+exercise problem (exercise allowed on specific dates, not every day).
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_in
 
 @dataclass(frozen=True)
 class CallableBondSpec:
-    """Specification for a callable bond."""
+    """Contract terms for a callable bond (coupon, maturity, call schedule)."""
 
     notional: float
     coupon: float
@@ -31,11 +33,12 @@ class CallableBondSpec:
 
 
 class CallableBondPayoff:
-    """Callable bond priced via backward induction on a calibrated rate lattice.
+    """Callable bond priced on an interest rate tree.
 
-    The issuer can call (redeem) the bond at par on specified dates.
-    This is a Bermudan exercise problem — the issuer exercises when
-    the continuation value exceeds the call price.
+    Builds a Hull-White rate tree calibrated to the discount curve, then
+    works backward from maturity. At each call date, the issuer redeems
+    the bond if doing so is cheaper than letting it continue — this caps
+    the bond value below the straight (non-callable) bond price.
     """
 
     def __init__(self, spec: CallableBondSpec):
@@ -49,11 +52,11 @@ class CallableBondPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        """Declare that callable-bond valuation needs discount and rate-vol inputs."""
+        """Needs a discount curve and an interest rate volatility surface."""
         return {"discount", "black_vol"}
 
     def evaluate(self, market_state: MarketState) -> float:
-        """Price the bond on a calibrated short-rate tree and cap it by straight-bond PV."""
+        """Build a rate tree, run backward induction, and cap at the straight bond value."""
         spec = self._spec
         T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
         if T <= 0:
@@ -83,15 +86,15 @@ class CallableBondPayoff:
         coupon_per_step = spec.notional * spec.coupon * dt
 
         def payoff_at_node(step, node, lattice):
-            """Terminal payoff: final coupon + notional."""
+            """At maturity the holder receives the last coupon plus face value."""
             return spec.notional + coupon_per_step
 
         def exercise_value(step, node, lattice):
-            """Issuer calls at call_price (plus accrued coupon)."""
+            """What the issuer pays to redeem early (call price + accrued coupon)."""
             return spec.call_price + coupon_per_step
 
         def cashflow(step, node, lattice):
-            """Intermediate coupon cashflows at each tree step."""
+            """Coupon payment received at each intermediate time step."""
             return coupon_per_step
 
         # exercise_fn=min: issuer calls to MINIMIZE liability (callable bond)

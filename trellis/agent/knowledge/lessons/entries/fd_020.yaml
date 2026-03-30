@@ -1,0 +1,29 @@
+category: finite_differences
+title: PDE Grid ctor missing discretization parameters
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T23:29:42.955088'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_232943_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - pde_grid
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'TypeError: Grid.__init__() missing 4 required positional arguments: ''x_max'',
+  ''n_x'', ''T'', and ''n_t''.'
+root_cause: The PDE workflow called the Grid constructor without supplying the required
+  discretization parameters (spatial and temporal extents/resolution). This typically
+  happens when the evaluate() routine assumes implicit defaults or when instrument/market
+  inputs needed to build the grid (e.g. maturity) are underspecified or not validated.
+fix: Explicitly compute and pass Grid(x_max, n_x, T, n_t) using the instrument expiry
+  and chosen discretization settings, and validate that market_state contains discount
+  and vol_surface before building the grid. Provide sensible defaults or configuration
+  hooks for x_max, n_x, and n_t, and surface/curve lookup adapters.
+validation: Discovered during build (attempt 3)
+id: fd_020

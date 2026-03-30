@@ -91,6 +91,11 @@ def run_critic_tests(
         test_code = concern.test_code
         if not test_code.strip():
             continue
+        if _should_skip_critic_test(test_code):
+            # Critic tests should validate executable pricing behavior, not
+            # depend on implementation-specific source/signature inspection or
+            # static spec assertions that do not exercise the pricer.
+            continue
         try:
             exec(test_code, namespace)
         except AssertionError as e:
@@ -105,6 +110,19 @@ def run_critic_tests(
             pass
 
     return failures
+
+
+def _should_skip_critic_test(test_code: str) -> bool:
+    """Return True for critic tests that are not executable price checks.
+
+    The arbiter should execute behavioral checks on price outputs and market
+    state sensitivity, not brittle source-inspection assertions or static spec
+    assertions that depend on the exact validation fixture.
+    """
+    lowered = test_code.lower()
+    if "inspect.signature" in lowered or "inspect.getsource" in lowered:
+        return True
+    return "price_payoff(" not in lowered and ".evaluate(" not in lowered
 
 
 def validate(

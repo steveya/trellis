@@ -2,8 +2,8 @@ id: num_013
 title: FFT Merton pricer failed due to LLM JSON serialization error
 severity: critical
 category: numerical
-status: candidate
-confidence: 0.4
+status: validated
+confidence: 0.6
 created: '2026-03-25T18:52:13.118872'
 version: ''
 source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260325_185213_build_a_pricer_for:_merton_jump_diffusion_mc_vs_fft

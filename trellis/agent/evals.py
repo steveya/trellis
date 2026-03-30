@@ -16,6 +16,8 @@ import yaml
 from trellis.agent.codegen_guardrails import GenerationPlan, validate_generated_imports
 from trellis.agent.knowledge.decompose import decompose_to_ir
 from trellis.agent.knowledge.methods import CANONICAL_METHODS, normalize_method
+from trellis.agent.knowledge.import_registry import get_test_map
+from trellis.agent.knowledge.schema import EvalSpec, GraderSpec
 from trellis.agent.semantic_validation import validate_semantics
 from trellis.agent.task_runtime import (
     _task_comparison_targets,
@@ -35,6 +37,68 @@ class GradeResult:
 
     passed: bool
     details: tuple[str, ...] = ()
+    blocking: bool = False
+
+
+DEFAULT_GRADER_SPECS: tuple[GraderSpec, ...] = (
+    GraderSpec(
+        id="inspection_evidence_present",
+        category="repo_inspection",
+        description="Generated plans must show inspected and approved modules.",
+        hard=True,
+        applies_to=("generation_plan",),
+        signals=("inspected_modules", "approved_modules"),
+    ),
+    GraderSpec(
+        id="test_selection",
+        category="test_scope",
+        description="Generated plans must include the expected regression tests.",
+        hard=True,
+        applies_to=("generation_plan",),
+        signals=("proposed_tests",),
+    ),
+    GraderSpec(
+        id="test_scope",
+        category="test_scope",
+        description="Generated plans must point at real tests in the repo.",
+        hard=True,
+        applies_to=("generation_plan",),
+        signals=("proposed_tests",),
+    ),
+    GraderSpec(
+        id="import_correctness",
+        category="imports",
+        description="Generated code must only import approved Trellis modules and exported symbols.",
+        hard=True,
+        applies_to=("generated_module",),
+        signals=("trellis_imports",),
+    ),
+    GraderSpec(
+        id="semantic_validity",
+        category="semantics",
+        description="Generated code must match the intended product semantics.",
+        hard=True,
+        applies_to=("generated_module",),
+        signals=("semantic_contracts",),
+    ),
+    GraderSpec(
+        id="unsupported_claims",
+        category="capability_claims",
+        description="Free-form capability claims must stay within canonical method support.",
+        hard=True,
+        applies_to=("claims",),
+        signals=("claimed_capabilities",),
+    ),
+)
+
+DEFAULT_EVAL_SPEC = EvalSpec(
+    id="agent_codegen_guardrails",
+    title="Agent code-generation guardrails",
+    description="Deterministic validation surface for import, symbol, claim, and test-scope failures.",
+    grader_ids=tuple(spec.id for spec in DEFAULT_GRADER_SPECS),
+    hard_gates=tuple(spec.id for spec in DEFAULT_GRADER_SPECS if spec.hard),
+    benchmark_ids=("stress_tasks",),
+)
 
 
 def grade_generation_plan(plan: GenerationPlan) -> dict[str, GradeResult]:
@@ -49,7 +113,7 @@ def grade_generation_plan(plan: GenerationPlan) -> dict[str, GradeResult]:
             details.append("generation plan has no inspected modules")
         if not plan.approved_modules:
             details.append("generation plan has no approved modules")
-        results["inspection_evidence_present"] = GradeResult(False, tuple(details))
+        results["inspection_evidence_present"] = GradeResult(False, tuple(details), blocking=True)
 
     expected_tests = tuple(_expected_tests(plan))
     missing = tuple(test for test in expected_tests if test not in plan.proposed_tests)
@@ -57,9 +121,12 @@ def grade_generation_plan(plan: GenerationPlan) -> dict[str, GradeResult]:
         results["test_selection"] = GradeResult(
             False,
             tuple(f"missing expected test target: {target}" for target in missing),
+            blocking=True,
         )
     else:
         results["test_selection"] = GradeResult(True)
+
+    results["test_scope"] = _grade_test_scope(plan)
 
     return results
 
@@ -85,10 +152,12 @@ def grade_generated_module(source: str, plan: GenerationPlan) -> dict[str, Grade
         "import_correctness": GradeResult(
             import_report.ok,
             import_report.errors,
+            blocking=not import_report.ok,
         ),
         "semantic_validity": GradeResult(
             semantic_report.ok,
             semantic_report.errors,
+            blocking=not semantic_report.ok,
         ),
     }
 
@@ -105,6 +174,7 @@ def grade_eval_claims(claims: list[str] | tuple[str, ...]) -> dict[str, GradeRes
         "unsupported_claims": GradeResult(
             not unsupported,
             tuple(unsupported),
+            blocking=bool(unsupported),
         )
     }
 
@@ -426,6 +496,7 @@ def summarize_promotion_discipline(results: list[Mapping[str, Any]]) -> dict[str
     captured_lesson_ids: set[str] = set()
     cookbook_candidate_paths: set[str] = set()
     knowledge_trace_paths: set[str] = set()
+    promotion_candidate_paths: set[str] = set()
     attributed_successes = 0
     successes_with_shared_context = 0
     successes_without_reusable_artifacts: list[str] = []
@@ -453,6 +524,20 @@ def summarize_promotion_discipline(results: list[Mapping[str, Any]]) -> dict[str
             if isinstance(cookbook_candidate, str) and cookbook_candidate.strip():
                 cookbook_candidate_paths.add(cookbook_candidate.strip())
                 reusable = True
+            elif isinstance(cookbook_candidate, list):
+                for item in cookbook_candidate:
+                    if isinstance(item, str) and item.strip():
+                        cookbook_candidate_paths.add(item.strip())
+                        reusable = True
+            promotion_candidate = reflection.get("promotion_candidate_saved")
+            if isinstance(promotion_candidate, str) and promotion_candidate.strip():
+                promotion_candidate_paths.add(promotion_candidate.strip())
+                reusable = True
+            elif isinstance(promotion_candidate, list):
+                for item in promotion_candidate:
+                    if isinstance(item, str) and item.strip():
+                        promotion_candidate_paths.add(item.strip())
+                        reusable = True
             knowledge_trace = reflection.get("knowledge_trace_saved")
             if isinstance(knowledge_trace, str) and knowledge_trace.strip():
                 knowledge_trace_paths.add(knowledge_trace.strip())
@@ -470,6 +555,7 @@ def summarize_promotion_discipline(results: list[Mapping[str, Any]]) -> dict[str
         "captured_lessons": len(captured_lesson_ids),
         "tasks_with_attribution": attributed_successes,
         "cookbook_candidates": len(cookbook_candidate_paths),
+        "promotion_candidates": len(promotion_candidate_paths),
         "knowledge_traces": len(knowledge_trace_paths),
         "successful_tasks_without_reusable_artifacts": successes_without_reusable_artifacts,
     }
@@ -642,6 +728,27 @@ def _expected_tests(plan: GenerationPlan) -> list[str]:
     if plan.instrument_type == "callable_bond":
         expected.append("tests/test_agent/test_callable_bond.py")
     return expected
+
+
+def _grade_test_scope(plan: GenerationPlan) -> GradeResult:
+    """Grade whether proposed tests point at real, in-repo test targets."""
+    test_map = get_test_map()
+    known_tests = {
+        test_path
+        for tests in test_map.directory_to_tests.values()
+        for test_path in tests
+    }
+    invalid = tuple(
+        target for target in plan.proposed_tests
+        if target not in known_tests
+    )
+    if invalid:
+        return GradeResult(
+            False,
+            tuple(f"unknown or out-of-repo test target: {target}" for target in invalid),
+            blocking=True,
+        )
+    return GradeResult(True)
 
 
 def _stress_result_text(result: Mapping[str, Any]) -> str:

@@ -29,7 +29,12 @@ from trellis.core.capabilities import (
 
 @dataclass(frozen=True)
 class PricingPlan:
-    """The quant agent's output: method + data requirements + modeling constraints."""
+    """Output of the quant agent's method selection step.
+
+    Contains the chosen pricing method (e.g. 'analytical', 'monte_carlo'),
+    the modules that implement it, the market data it needs, and any
+    modeling constraints or assumptions.
+    """
 
     method: str
     method_modules: list[str]
@@ -38,11 +43,180 @@ class PricingPlan:
     reasoning: str
     modeling_requirements: tuple[str, ...] = ()
     sensitivity_support: SensitivitySupport | None = None
+    selection_reason: str = ""
+    assumption_summary: tuple[str, ...] = ()
+
+
+_DEFAULT_METHOD_MODULES = {
+    "analytical": ["trellis.models.black"],
+    "rate_tree": ["trellis.models.trees.lattice"],
+    "monte_carlo": ["trellis.models.monte_carlo.engine"],
+    "qmc": ["trellis.models.qmc"],
+    "fft_pricing": ["trellis.models.transforms.fft_pricer"],
+    "pde_solver": ["trellis.models.pde.theta_method"],
+    "copula": ["trellis.models.copulas.gaussian"],
+    "waterfall": ["trellis.models.cashflow_engine.waterfall"],
+}
+
+# Legacy _FAMILY_BLUEPRINT_ROUTE_MODULES removed.
+# Route → module mappings are now sourced from the route registry
+# via route_registry.get_route_modules().
+
+_METHOD_PRIORITY_ORDER = {
+    "analytical": 0,
+    "rate_tree": 1,
+    "pde_solver": 2,
+    "fft_pricing": 3,
+    "monte_carlo": 4,
+    "qmc": 5,
+    "copula": 6,
+    "waterfall": 7,
+}
+
+_METHOD_ASSUMPTION_SUMMARIES = {
+    "analytical": (
+        "simplest_valid_assumption_set",
+        "closed_form_or_quasi_closed_form_route",
+        "no_path_sampling_required",
+    ),
+    "rate_tree": (
+        "simplest_valid_assumption_set",
+        "discrete_time_lattice_route",
+        "exercise_and_cashflow_discretization_acceptable",
+    ),
+    "pde_solver": (
+        "simplest_valid_assumption_set",
+        "finite_difference_discretization_route",
+        "boundary_conditions_required",
+    ),
+    "fft_pricing": (
+        "simplest_valid_assumption_set",
+        "transform_route_available",
+        "characteristic_function_route_available",
+    ),
+    "monte_carlo": (
+        "simplest_valid_assumption_set",
+        "simulation_based_valuation_route",
+        "path_sampling_required",
+    ),
+    "qmc": (
+        "simplest_valid_assumption_set",
+        "low_discrepancy_simulation_route",
+        "path_sampling_required",
+    ),
+    "copula": (
+        "simplest_valid_assumption_set",
+        "dependence_modeling_route",
+        "correlation_or_copula_structure_required",
+    ),
+    "waterfall": (
+        "simplest_valid_assumption_set",
+        "cashflow_waterfall_route",
+        "cashflow_schedule_required",
+    ),
+}
+
+
+def _merge_unique_strings(*groups: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+    """Merge string collections while preserving order and dropping duplicates."""
+    merged: list[str] = []
+    for group in groups:
+        for value in group or ():
+            text = str(value).strip()
+            if text and text not in merged:
+                merged.append(text)
+    return tuple(merged)
+
+
+def _method_priority(method: str) -> int:
+    """Return the default simplicity/latency rank for a method family."""
+    return _METHOD_PRIORITY_ORDER.get(normalize_method(method), len(_METHOD_PRIORITY_ORDER))
+
+
+def _assumption_summary_for_method(
+    method: str,
+    *,
+    candidate_methods: tuple[str, ...] | list[str] | None = None,
+    product_ir=None,
+    context_tags: tuple[str, ...] | list[str] | None = None,
+) -> tuple[str, ...]:
+    """Return the stable assumption basis for one selected pricing method."""
+    normalized_method = normalize_method(method)
+    assumptions = list(
+        _METHOD_ASSUMPTION_SUMMARIES.get(
+            normalized_method,
+            ("simplest_valid_assumption_set",),
+        )
+    )
+    if candidate_methods and len(tuple(candidate_methods)) > 1:
+        assumptions.append("multiple_valid_methods_available")
+    if product_ir is not None:
+        if getattr(product_ir, "multi_asset", False):
+            assumptions.append("multi_asset_context")
+        if getattr(product_ir, "schedule_dependence", False):
+            assumptions.append("schedule_dependent_product")
+        if getattr(product_ir, "state_dependence", "") == "path_dependent":
+            assumptions.append("path_dependent_product")
+        if getattr(product_ir, "exercise_style", "") in {"american", "bermudan"}:
+            assumptions.append("early_exercise_sensitive_product")
+    if context_tags:
+        assumptions.extend(context_tags)
+    return _merge_unique_strings(assumptions)
+
+
+def _selection_reason_for_method(
+    *,
+    explicit_preference: bool = False,
+    requested_measures: tuple[str, ...] | list[str] | None = None,
+    candidate_methods: tuple[str, ...] | list[str] | None = None,
+    source: str = "product_ir",
+) -> str:
+    """Return the canonical explanation label for one pricing-method choice."""
+    if explicit_preference:
+        return "explicit_preference"
+    if requested_measures:
+        return "measure_priority"
+    candidate_count = len(tuple(candidate_methods or ()))
+    if source == "family_blueprint":
+        return "canonical_family_default"
+    if candidate_count > 1:
+        return "simplest_valid_default"
+    if candidate_count == 1:
+        return "canonical_method"
+    return "fallback_default"
+
+
+def _candidate_methods_from_engine_families(
+    candidate_engine_families: tuple[str, ...] | list[str],
+) -> tuple[str, ...]:
+    """Map candidate engine-family labels onto canonical method names."""
+    mapping = {
+        "analytical": "analytical",
+        "lattice": "rate_tree",
+        "tree": "rate_tree",
+        "exercise": "monte_carlo",
+        "monte_carlo": "monte_carlo",
+        "transform": "fft_pricing",
+        "transforms": "fft_pricing",
+        "fft": "fft_pricing",
+        "pde": "pde_solver",
+        "copula": "copula",
+        "waterfall": "waterfall",
+        "qmc": "qmc",
+    }
+    candidates: list[str] = []
+    for family in candidate_engine_families or ():
+        method = mapping.get(family)
+        if method and method not in candidates:
+            candidates.append(method)
+    return tuple(candidates)
 
 
 def _plan_from_decomposition(decomposition) -> PricingPlan:
     """Convert a canonical product decomposition into a PricingPlan."""
     method = normalize_method(decomposition.method)
+    selection_reason = "canonical_decomposition"
+    assumption_summary = _assumption_summary_for_method(method)
     return PricingPlan(
         method=method,
         method_modules=list(decomposition.method_modules),
@@ -53,6 +227,8 @@ def _plan_from_decomposition(decomposition) -> PricingPlan:
         reasoning=decomposition.reasoning,
         modeling_requirements=tuple(decomposition.modeling_requirements),
         sensitivity_support=support_for_method(method),
+        selection_reason=selection_reason,
+        assumption_summary=assumption_summary,
     )
 
 
@@ -71,18 +247,6 @@ def _load_static_plans() -> dict[str, PricingPlan]:
 
 # Backward-compatible public constant used by tests and callers.
 STATIC_PLANS: dict[str, PricingPlan] = _load_static_plans()
-
-
-_DEFAULT_METHOD_MODULES = {
-    "analytical": ["trellis.models.black"],
-    "rate_tree": ["trellis.models.trees.lattice"],
-    "monte_carlo": ["trellis.models.monte_carlo.engine"],
-    "qmc": ["trellis.models.qmc"],
-    "fft_pricing": ["trellis.models.transforms.fft_pricer"],
-    "pde_solver": ["trellis.models.pde.theta_method"],
-    "copula": ["trellis.models.copulas.gaussian"],
-    "waterfall": ["trellis.models.cashflow_engine.waterfall"],
-}
 
 
 def select_pricing_method(
@@ -137,23 +301,86 @@ def select_pricing_method(
     )
 
 
+def select_pricing_method_for_family_blueprint(
+    blueprint,
+    *,
+    preferred_method: str | None = None,
+) -> PricingPlan:
+    """Build a pricing plan directly from a compiled family blueprint.
+
+    This is now a thin wrapper around ``select_pricing_method_for_product_ir``
+    with ``source="family_blueprint"`` for backward compatibility.  New code
+    should prefer the product_ir path directly.
+    """
+    candidate_methods = tuple(normalize_method(method) for method in blueprint.candidate_methods)
+    method = normalize_method(preferred_method or blueprint.preferred_method)
+    if method not in blueprint.candidate_methods:
+        raise ValueError(
+            f"Method `{method}` is not a candidate for family `{blueprint.family_id}`."
+        )
+    selection_reason = _selection_reason_for_method(
+        explicit_preference=preferred_method is not None,
+        candidate_methods=candidate_methods,
+        source="family_blueprint",
+    )
+    assumption_summary = _assumption_summary_for_method(
+        method,
+        candidate_methods=candidate_methods,
+        product_ir=getattr(blueprint, "product_ir", None),
+    )
+    return PricingPlan(
+        method=method,
+        method_modules=_method_modules_for_family_blueprint(blueprint, method),
+        required_market_data=normalize_market_data_requirements(
+            getattr(blueprint.product_ir, "required_market_data", ()) or ()
+        ),
+        model_to_build=getattr(blueprint.product_ir, "instrument", None),
+        reasoning=f"family_blueprint:{blueprint.family_id}",
+        sensitivity_support=support_for_method(method),
+        selection_reason=selection_reason,
+        assumption_summary=assumption_summary,
+    )
+
+
 def select_pricing_method_for_product_ir(
     product_ir,
     *,
     preferred_method: str | None = None,
     requested_measures: list[str] | tuple[str, ...] | None = None,
     context_description: str | None = None,
+    source: str = "product_ir",
 ) -> PricingPlan:
-    """Build a pricing plan directly from ``ProductIR`` semantics."""
+    """Build a pricing plan directly from ``ProductIR`` semantics.
+
+    Parameters
+    ----------
+    source:
+        Label for the selection-reason trace.  Callers from the unified
+        semantic pipeline pass ``"family_blueprint"`` so that existing
+        reason labels stay stable during the family-to-semantic migration.
+    """
     store = get_store()
     requested = normalize_requested_measures(requested_measures)
-    method = normalize_method(
-        preferred_method
-        or getattr(product_ir, "preferred_method", None)
-        or _method_from_candidates(
-            getattr(product_ir, "candidate_engine_families", ()),
+    candidate_methods = _candidate_methods_from_engine_families(
+        getattr(product_ir, "candidate_engine_families", ())
+    )
+    if preferred_method:
+        method = normalize_method(preferred_method)
+    else:
+        method = _choose_method_from_candidates(
+            candidate_methods,
             requested_measures=requested,
-        ),
+        )
+    selection_reason = _selection_reason_for_method(
+        explicit_preference=preferred_method is not None,
+        requested_measures=requested,
+        candidate_methods=candidate_methods,
+        source=source,
+    )
+    assumption_summary = _assumption_summary_for_method(
+        method,
+        candidate_methods=candidate_methods,
+        product_ir=product_ir,
     )
     requirements_entry = store._load_requirements(method)
     plan = PricingPlan(
@@ -168,6 +395,8 @@ def select_pricing_method_for_product_ir(
             requirements_entry.requirements if requirements_entry is not None else ()
         ),
         sensitivity_support=support_for_method(method),
+        selection_reason=selection_reason,
+        assumption_summary=assumption_summary,
     )
     return _apply_contextual_overrides(
         plan,
@@ -200,43 +429,59 @@ def _method_from_candidates(
     *,
     requested_measures: tuple[str, ...] | list[str] | None = None,
 ) -> str:
-    """Map candidate engine-family labels onto the canonical quant method name."""
-    mapping = {
-        "analytical": "analytical",
-        "lattice": "rate_tree",
-        "tree": "rate_tree",
-        "exercise": "monte_carlo",
-        "monte_carlo": "monte_carlo",
-        "transform": "fft_pricing",
-        "transforms": "fft_pricing",
-        "fft": "fft_pricing",
-        "pde": "pde_solver",
-    }
-    candidates = [
-        mapping[family]
-        for family in candidate_engine_families
-        if family in mapping
-    ]
-    if not candidates:
+    """Backward-compatible wrapper for candidate-method selection."""
+    return _choose_method_from_candidates(
+        _candidate_methods_from_engine_families(candidate_engine_families),
+        requested_measures=requested_measures,
+    )
+
+
+def _choose_method_from_candidates(
+    candidates: tuple[str, ...] | list[str],
+    *,
+    requested_measures: tuple[str, ...] | list[str] | None = None,
+) -> str:
+    """Choose the simplest valid method, or the method best aligned with requests."""
+    candidate_methods = tuple(normalize_method(method) for method in candidates if normalize_method(method))
+    if not candidate_methods:
         return "analytical"
-    if requested_measures:
-        best = max(
-            candidates,
-            key=lambda method: rank_sensitivity_support(
-                support_for_method(method),
-                requested_measures,
+    requested = normalize_requested_measures(requested_measures)
+    if requested:
+        ranked = sorted(
+            candidate_methods,
+            key=lambda method: (
+                rank_sensitivity_support(
+                    support_for_method(method),
+                    requested,
+                )[:3],
+                -_method_priority(method),
             ),
+            reverse=True,
         )
-        return best
-    for method in candidates:
-        if method:
-            return method
-    return "analytical"
+        return ranked[0]
+    ranked = sorted(candidate_methods, key=_method_priority)
+    return ranked[0] if ranked else "analytical"
 
 
 def known_methods() -> tuple[str, ...]:
     """Return the canonical method-family labels understood by the quant agent."""
     return tuple(sorted(CANONICAL_METHODS))
+
+
+def _method_modules_for_family_blueprint(blueprint, method: str) -> list[str]:
+    """Return method modules enriched by deterministic family-route hints.
+
+    Reads route → module mappings from the route registry.
+    """
+    from trellis.agent.route_registry import get_route_modules
+
+    modules = list(_DEFAULT_METHOD_MODULES.get(method, ()))
+    for route in getattr(blueprint, "primitive_routes", ()) or ():
+        registry_modules = get_route_modules(route)
+        for module in registry_modules:
+            if module not in modules:
+                modules.append(module)
+    return modules
 
 
 def _apply_contextual_overrides(
@@ -262,11 +507,27 @@ def _apply_contextual_overrides(
     fx_reason = "fx_vanilla_context_requires_garman_kohlhagen_inputs"
     if fx_reason not in reasoning:
         reasoning = f"{reasoning}; {fx_reason}" if reasoning else fx_reason
+    selection_reason = _append_selection_reason(plan.selection_reason, "fx_context_override")
+    assumption_summary = _merge_unique_strings(
+        plan.assumption_summary,
+        ("fx_cross_currency_context", "garman_kohlhagen_or_equivalent_context"),
+    )
     return replace(
         plan,
         required_market_data=required_market_data,
         reasoning=reasoning,
+        selection_reason=selection_reason,
+        assumption_summary=assumption_summary,
     )
+
+
+def _append_selection_reason(existing: str, note: str) -> str:
+    """Append a compact explanation note while preserving the prior label."""
+    if not existing:
+        return note
+    if note in existing:
+        return existing
+    return f"{existing}; {note}"
 
 
 def _apply_local_vol_overrides(
@@ -304,6 +565,25 @@ def _apply_local_vol_overrides(
     local_vol_reason = "local_vol_context_requires_surface_driven_route"
     if local_vol_reason not in reasoning:
         reasoning = f"{reasoning}; {local_vol_reason}" if reasoning else local_vol_reason
+    selection_reason = _append_selection_reason(plan.selection_reason, "local_vol_context_override")
+    preserved_context_tags = tuple(
+        tag
+        for tag in plan.assumption_summary
+        if tag in {
+            "multiple_valid_methods_available",
+            "multi_asset_context",
+            "schedule_dependent_product",
+            "path_dependent_product",
+            "early_exercise_sensitive_product",
+        }
+    )
+    assumption_summary = _merge_unique_strings(
+        _assumption_summary_for_method(
+            method,
+            context_tags=("local_vol_surface_driven_context",),
+        ),
+        preserved_context_tags,
+    )
     return replace(
         plan,
         method=method,
@@ -311,6 +591,8 @@ def _apply_local_vol_overrides(
         required_market_data=required_market_data,
         reasoning=reasoning,
         sensitivity_support=support_for_method(method),
+        selection_reason=selection_reason,
+        assumption_summary=assumption_summary,
     )
 
 

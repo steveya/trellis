@@ -43,6 +43,24 @@ For instruments beyond bonds, use the ``Payoff`` protocol:
                      discount=curve, vol_surface=FlatVol(0.20))
    pv = price_payoff(cap, ms)
 
+FX Vanilla Options
+------------------
+
+FX vanillas are priced by resolving spot FX, domestic discounting, foreign
+discounting, and Black volatility, then assembling the terminal payoff from
+Black76 basis claims. Trellis keeps that decomposition explicit in the
+analytical route, so the same route can be reused for pricing and Greeks.
+
+Rates Calibration
+-----------------
+
+Cap/floor and swaption quotes use the same explicit multi-curve discipline.
+The calibration helpers in ``trellis.models.calibration.rates`` solve for a
+flat Black volatility against the selected discount and forecast curves, and
+the returned calibration result keeps the selected curve names plus any caller
+labels for the volatility or correlation source. That makes the calibration run
+replayable without re-resolving market data.
+
 Return Types
 ~~~~~~~~~~~~
 
@@ -70,6 +88,22 @@ Greeks are computed via automatic differentiation (autograd):
    result = s.price(bond, greeks=["dv01", "duration"])
    # or skip Greeks entirely:
    result = s.price(bond, greeks=None)
+
+Trace Artifacts
+---------------
+
+When a request goes through the build loop, Trellis records a machine-readable analytical trace plus a Markdown rendering of the same build steps. The task result and persisted task-run record keep the trace paths even for reused analytical routes, so you can inspect route selection, decomposition, validation, fallback decisions, and cache/reuse behavior after the run.
+
+For multi-curve market data, the compiled ``MarketState`` also remembers which
+named curve was selected for the runtime path, so the trace can show both the
+available curve set and the exact curve contract that was used to price the
+request. That selection provenance is also repeated in the runtime contract and
+task-run record so replay tools can explain the chosen discount, forecast, or
+credit curve without re-resolving market data.
+
+If the curves were bootstrapped from rate instruments, that source-selection
+step is still preserved: the snapshot holds the named bootstrapped curves and
+the runtime state records which one was actually used.
 
 Missing Data Errors
 -------------------

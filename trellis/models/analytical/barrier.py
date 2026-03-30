@@ -1,7 +1,13 @@
-"""Analytical (closed-form) pricing for European barrier options.
+"""Closed-form pricing for European barrier options.
 
-Implements the Reiner-Rubinstein (1991) formulas for single-barrier
-European options under Black-Scholes assumptions with continuous monitoring.
+A barrier option is like a standard option but with an extra condition:
+if the underlying price crosses a specified barrier level, the option
+either activates ("knock-in") or is cancelled ("knock-out").
+
+This module implements the Reiner-Rubinstein (1991) analytical formulas
+for down-and-out / down-and-in calls and puts. The functions are split
+into small building blocks (vanilla price, image term, rebate) that
+support automatic differentiation.
 
 Reference:
     Reiner, E. and Rubinstein, M. (1991), "Breaking Down the Barriers",
@@ -13,26 +19,117 @@ Reference:
 
 from __future__ import annotations
 
-import numpy as np
-from scipy.stats import norm
+from dataclasses import dataclass
+
+from autograd.scipy.stats import norm
+
+from trellis.core.differentiable import get_numpy
+
+np = get_numpy()
+
+
+@dataclass(frozen=True)
+class ResolvedBarrierInputs:
+    """Pre-extracted market data needed for barrier option pricing."""
+
+    spot: float
+    strike: float
+    barrier: float
+    rate: float
+    sigma: float
+    T: float
+    rebate: float = 0.0
 
 
 def _bs_call(S: float, K: float, r: float, sigma: float, T: float) -> float:
     """Black-Scholes European call price."""
-    if T <= 0 or sigma <= 0:
-        return max(S - K, 0.0)
-    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-    d2 = d1 - sigma * np.sqrt(T)
-    return float(S * norm.cdf(d1) - K * np.exp(-r * T) * norm.cdf(d2))
+    sigma_safe = np.where(sigma > 0.0, sigma, 1.0)
+    T_safe = np.where(T > 0.0, T, 1.0)
+    sigma_sqrt_T = sigma_safe * np.sqrt(T_safe)
+    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / sigma_sqrt_T
+    d2 = d1 - sigma_sqrt_T
+    price = S * norm.cdf(d1) - K * np.exp(-r * T_safe) * norm.cdf(d2)
+    valid = (sigma > 0.0) & (T > 0.0)
+    return np.where(valid, price, np.maximum(S - K, 0.0))
 
 
 def _bs_put(S: float, K: float, r: float, sigma: float, T: float) -> float:
     """Black-Scholes European put price."""
-    if T <= 0 or sigma <= 0:
-        return max(K - S, 0.0)
-    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-    d2 = d1 - sigma * np.sqrt(T)
-    return float(K * np.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1))
+    sigma_safe = np.where(sigma > 0.0, sigma, 1.0)
+    T_safe = np.where(T > 0.0, T, 1.0)
+    sigma_sqrt_T = sigma_safe * np.sqrt(T_safe)
+    d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / sigma_sqrt_T
+    d2 = d1 - sigma_sqrt_T
+    price = K * np.exp(-r * T_safe) * norm.cdf(-d2) - S * norm.cdf(-d1)
+    valid = (sigma > 0.0) & (T > 0.0)
+    return np.where(valid, price, np.maximum(K - S, 0.0))
+
+
+def vanilla_call_raw(resolved: ResolvedBarrierInputs) -> float:
+    """Standard Black-Scholes call price (building block for barrier formulas)."""
+    return _bs_call(
+        resolved.spot,
+        resolved.strike,
+        resolved.rate,
+        resolved.sigma,
+        resolved.T,
+    )
+
+
+def barrier_image_raw(resolved: ResolvedBarrierInputs) -> float:
+    """Reflection-principle correction term for the down-and-out barrier.
+
+    This "image" term accounts for paths that would have crossed the barrier.
+    Subtracting it from the vanilla price removes the value of those paths.
+    """
+    sqrt_T = np.sqrt(resolved.T)
+    sig2 = resolved.sigma**2
+    lam = (resolved.rate + 0.5 * sig2) / sig2
+    y = (
+        np.log(resolved.barrier**2 / (resolved.spot * resolved.strike))
+        / (resolved.sigma * sqrt_T)
+        + lam * resolved.sigma * sqrt_T
+    )
+    y2 = y - resolved.sigma * sqrt_T
+    return (
+        resolved.spot * (resolved.barrier / resolved.spot) ** (2 * lam) * norm.cdf(y)
+        - resolved.strike
+        * np.exp(-resolved.rate * resolved.T)
+        * (resolved.barrier / resolved.spot) ** (2 * lam - 2) * norm.cdf(y2)
+    )
+
+
+def rebate_raw(resolved: ResolvedBarrierInputs) -> float:
+    """Return the rebate paid if the barrier is hit.
+
+    Currently returns the rebate field from resolved inputs (typically 0).
+    Kept as a separate function for extensibility.
+    """
+    return resolved.rebate
+
+
+def barrier_regime_selector_raw(resolved: ResolvedBarrierInputs) -> float:
+    """Compute the down-and-out call price: vanilla - image + rebate.
+
+    Only valid when strike > barrier and rebate is zero.
+    """
+    if resolved.rebate != 0.0:
+        raise ValueError("The raw T09 barrier kernel only supports zero rebate.")
+    if resolved.strike <= resolved.barrier:
+        raise ValueError("The raw T09 barrier kernel only supports K > B.")
+    return vanilla_call_raw(resolved) - barrier_image_raw(resolved) + rebate_raw(
+        resolved
+    )
+
+
+def down_and_out_call_raw(resolved: ResolvedBarrierInputs) -> float:
+    """Analytical price of a down-and-out call option."""
+    return barrier_regime_selector_raw(resolved)
+
+
+def down_and_in_call_raw(resolved: ResolvedBarrierInputs) -> float:
+    """Analytical price of a down-and-in call (vanilla minus down-and-out)."""
+    return barrier_image_raw(resolved) + rebate_raw(resolved)
 
 
 def barrier_option_price(
@@ -77,21 +174,26 @@ def barrier_option_price(
     if T <= 0:
         return 0.0
 
+    if barrier_type == "down_and_out" and option_type == "call":
+        return down_and_out_call(S, K, B, r, sigma, T, rebate=rebate)
+    if barrier_type == "down_and_in" and option_type == "call":
+        return down_and_in_call(S, K, B, r, sigma, T, rebate=rebate)
+
     # Check if barrier already breached
     if "down" in barrier_type and S <= B:
         if "out" in barrier_type:
             return rebate
         elif option_type == "call":
-            return _bs_call(S, K, r, sigma, T)
+            return float(_bs_call(S, K, r, sigma, T))
         else:
-            return _bs_put(S, K, r, sigma, T)
+            return float(_bs_put(S, K, r, sigma, T))
     if "up" in barrier_type and S >= B:
         if "out" in barrier_type:
             return rebate
         elif option_type == "call":
-            return _bs_call(S, K, r, sigma, T)
+            return float(_bs_call(S, K, r, sigma, T))
         else:
-            return _bs_put(S, K, r, sigma, T)
+            return float(_bs_put(S, K, r, sigma, T))
 
     sqrtT = np.sqrt(T)
     sig2 = sigma**2
@@ -190,7 +292,7 @@ def barrier_option_price(
     return float(max(price + E, 0.0))
 
 
-def down_and_out_call(
+def _legacy_down_and_out_call(
     S: float, K: float, B: float, r: float, sigma: float, T: float,
     rebate: float = 0.0,
 ) -> float:
@@ -210,7 +312,6 @@ def down_and_out_call(
 
     # Use the direct analytical formula (simpler and well-tested for K >= B)
     sig2 = sigma**2
-    alpha = 0.5 - r / sig2
     # Exponent: 2*(r/sig2 - 0.5) = 2*r/sig2 - 1
     # (B/S)^(2*lambda - 2) where lambda = (r + 0.5*sig2)/sig2
 
@@ -240,7 +341,7 @@ def down_and_out_call(
     return float(max(price, 0.0))
 
 
-def down_and_in_call(
+def _legacy_down_and_in_call(
     S: float, K: float, B: float, r: float, sigma: float, T: float,
     rebate: float = 0.0,
 ) -> float:
@@ -249,7 +350,75 @@ def down_and_in_call(
     By in-out parity: C_di = C_bs - C_do.
     """
     if S <= B:
-        return _bs_call(S, K, r, sigma, T)
+        return float(_bs_call(S, K, r, sigma, T))
     vanilla = _bs_call(S, K, r, sigma, T)
-    do = down_and_out_call(S, K, B, r, sigma, T, rebate=0.0)
+    do = _legacy_down_and_out_call(S, K, B, r, sigma, T, rebate=0.0)
     return float(max(vanilla - do, 0.0))
+
+
+def down_and_out_call(
+    S: float, K: float, B: float, r: float, sigma: float, T: float,
+    rebate: float = 0.0,
+) -> float:
+    """Price a down-and-out European call.
+
+    The zero-rebate, K>B T09 branch is assembled from the route-local raw
+    kernels. Other branches fall back to the legacy closed-form implementation.
+    """
+    if T <= 0:
+        return 0.0
+    if S <= B:
+        return rebate
+    if rebate == 0.0 and K > B:
+        resolved = ResolvedBarrierInputs(
+            spot=S,
+            strike=K,
+            barrier=B,
+            rate=r,
+            sigma=sigma,
+            T=T,
+            rebate=rebate,
+        )
+        return float(down_and_out_call_raw(resolved))
+    return _legacy_down_and_out_call(S, K, B, r, sigma, T, rebate=rebate)
+
+
+def down_and_in_call(
+    S: float, K: float, B: float, r: float, sigma: float, T: float,
+    rebate: float = 0.0,
+) -> float:
+    """Price a down-and-in European call.
+
+    The T09 branch is the barrier image term from the route-local raw kernel
+    pack. Other branches fall back to the legacy parity-based implementation.
+    """
+    if T <= 0:
+        return 0.0
+    if S <= B:
+        return float(_bs_call(S, K, r, sigma, T))
+    if rebate == 0.0 and K > B:
+        resolved = ResolvedBarrierInputs(
+            spot=S,
+            strike=K,
+            barrier=B,
+            rate=r,
+            sigma=sigma,
+            T=T,
+            rebate=rebate,
+        )
+        return float(down_and_in_call_raw(resolved))
+    return _legacy_down_and_in_call(S, K, B, r, sigma, T, rebate=rebate)
+
+
+__all__ = [
+    "ResolvedBarrierInputs",
+    "barrier_image_raw",
+    "barrier_option_price",
+    "barrier_regime_selector_raw",
+    "down_and_in_call",
+    "down_and_in_call_raw",
+    "down_and_out_call",
+    "down_and_out_call_raw",
+    "rebate_raw",
+    "vanilla_call_raw",
+]

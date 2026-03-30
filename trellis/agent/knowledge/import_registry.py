@@ -9,20 +9,44 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable
+import subprocess
+from pathlib import Path
 
-_REGISTRY_CACHE: str | None = None
-_REGISTRY_DATA_CACHE: dict[str, tuple[str, ...]] | None = None
-_SYMBOL_INDEX_CACHE: dict[str, tuple[str, ...]] | None = None
+from trellis.agent.knowledge.schema import PackageMap, RepoFact, SymbolMap, TestMap
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+_REGISTRY_CACHE: dict[str, str] = {}
+_REGISTRY_DATA_CACHE: dict[str, dict[str, tuple[str, ...]]] = {}
+_SYMBOL_INDEX_CACHE: dict[str, dict[str, tuple[str, ...]]] = {}
+_PACKAGE_MAP_CACHE: dict[str, PackageMap] = {}
+_TEST_MAP_CACHE: dict[str, TestMap] = {}
+_REPO_FACTS_CACHE: dict[str, tuple[RepoFact, ...]] = {}
 
 
 def get_import_registry() -> str:
     """Return the compact import registry for prompt injection."""
-    global _REGISTRY_CACHE
-    if _REGISTRY_CACHE is not None:
-        return _REGISTRY_CACHE
+    revision = get_repo_revision()
+    cached = _REGISTRY_CACHE.get(revision)
+    if cached is not None:
+        return cached
 
-    _REGISTRY_CACHE = _format_registry(get_registry_snapshot())
-    return _REGISTRY_CACHE
+    formatted = _format_registry(get_registry_snapshot())
+    _REGISTRY_CACHE[revision] = formatted
+    return formatted
+
+
+def get_repo_revision() -> str:
+    """Return the current git revision used to key live repo facts."""
+    try:
+        revision = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=_REPO_ROOT,
+            text=True,
+        ).strip()
+        return revision or "unknown"
+    except Exception:
+        return "unknown"
 
 
 def get_registry_snapshot() -> dict[str, tuple[str, ...]]:
@@ -30,19 +54,116 @@ def get_registry_snapshot() -> dict[str, tuple[str, ...]]:
 
     The returned mapping is module path -> exported public symbols.
     """
-    global _REGISTRY_DATA_CACHE
-    if _REGISTRY_DATA_CACHE is not None:
-        return _REGISTRY_DATA_CACHE
+    revision = get_repo_revision()
+    cached = _REGISTRY_DATA_CACHE.get(revision)
+    if cached is not None:
+        return cached
 
     try:
         live_registry = _build_registry_data_from_introspection()
-        _REGISTRY_DATA_CACHE = _merge_registry_snapshots(
+        snapshot = _merge_registry_snapshots(
             live_registry,
             _parse_static_registry(_STATIC_REGISTRY),
         )
     except Exception:
-        _REGISTRY_DATA_CACHE = _parse_static_registry(_STATIC_REGISTRY)
-    return _REGISTRY_DATA_CACHE
+        snapshot = _parse_static_registry(_STATIC_REGISTRY)
+    _REGISTRY_DATA_CACHE[revision] = snapshot
+    return snapshot
+
+
+def get_symbol_map() -> SymbolMap:
+    """Return the live symbol map keyed by repo revision."""
+    revision = get_repo_revision()
+    snapshot = get_registry_snapshot()
+    cached = _SYMBOL_INDEX_CACHE.get(revision)
+    if cached is not None:
+        return SymbolMap(
+            repo_revision=revision,
+            module_to_symbols=snapshot,
+            symbol_to_modules=cached,
+        )
+
+    symbol_to_modules = _build_symbol_index(snapshot)
+    _SYMBOL_INDEX_CACHE[revision] = symbol_to_modules
+    return SymbolMap(
+        repo_revision=revision,
+        module_to_symbols=snapshot,
+        symbol_to_modules=symbol_to_modules,
+    )
+
+
+def get_package_map() -> PackageMap:
+    """Return a revision-keyed package-to-module map."""
+    revision = get_repo_revision()
+    cached = _PACKAGE_MAP_CACHE.get(revision)
+    if cached is not None:
+        return cached
+
+    package_to_modules, module_to_package = _build_package_map(get_registry_snapshot())
+    package_map = PackageMap(
+        repo_revision=revision,
+        package_to_modules=package_to_modules,
+        module_to_package=module_to_package,
+    )
+    _PACKAGE_MAP_CACHE[revision] = package_map
+    return package_map
+
+
+def get_test_map() -> TestMap:
+    """Return a revision-keyed map of test directories and likely test targets."""
+    revision = get_repo_revision()
+    cached = _TEST_MAP_CACHE.get(revision)
+    if cached is not None:
+        return cached
+
+    directory_to_tests, symbol_to_tests = _build_test_map()
+    test_map = TestMap(
+        repo_revision=revision,
+        directory_to_tests=directory_to_tests,
+        symbol_to_tests=symbol_to_tests,
+    )
+    _TEST_MAP_CACHE[revision] = test_map
+    return test_map
+
+
+def get_repo_facts() -> tuple[RepoFact, ...]:
+    """Return a compact set of live repo facts for prompt-time validation."""
+    revision = get_repo_revision()
+    cached = _REPO_FACTS_CACHE.get(revision)
+    if cached is not None:
+        return cached
+
+    symbol_map = get_symbol_map()
+    package_map = get_package_map()
+    test_map = get_test_map()
+    facts = (
+        RepoFact(
+            kind="revision",
+            key="git_commit",
+            value=revision,
+            repo_revision=revision,
+        ),
+        RepoFact(
+            kind="symbol_map",
+            key="module_count",
+            value=str(len(symbol_map.module_to_symbols)),
+            repo_revision=revision,
+        ),
+        RepoFact(
+            kind="package_map",
+            key="package_count",
+            value=str(len(package_map.package_to_modules)),
+            repo_revision=revision,
+        ),
+        RepoFact(
+            kind="test_map",
+            key="directory_count",
+            value=str(len(test_map.directory_to_tests)),
+            repo_revision=revision,
+        ),
+    )
+    _REPO_FACTS_CACHE[revision] = facts
+    return facts
 
 
 def list_module_exports(module_path: str) -> tuple[str, ...]:
@@ -57,17 +178,8 @@ def module_exists(module_path: str) -> bool:
 
 def find_symbol_modules(symbol: str) -> tuple[str, ...]:
     """Return every registry module exporting ``symbol``."""
-    global _SYMBOL_INDEX_CACHE
-    if _SYMBOL_INDEX_CACHE is None:
-        index: dict[str, list[str]] = defaultdict(list)
-        for module_path, exports in get_registry_snapshot().items():
-            for exported in exports:
-                index[exported].append(module_path)
-        _SYMBOL_INDEX_CACHE = {
-            name: tuple(sorted(paths))
-            for name, paths in index.items()
-        }
-    return _SYMBOL_INDEX_CACHE.get(symbol, ())
+    index = _get_symbol_index()
+    return index.get(symbol, ())
 
 
 def resolve_import_candidates(symbols: Iterable[str]) -> dict[str, tuple[str, ...]]:
@@ -76,6 +188,19 @@ def resolve_import_candidates(symbols: Iterable[str]) -> dict[str, tuple[str, ..
         symbol: find_symbol_modules(symbol)
         for symbol in sorted(set(symbols))
     }
+
+
+def suggest_tests_for_symbol(symbol: str) -> tuple[str, ...]:
+    """Return likely test targets for a symbol, module, or package token."""
+    token = symbol.split(".")[-1].replace("_", "").lower()
+    test_map = get_test_map()
+    matches: list[str] = []
+    for directory, tests in test_map.directory_to_tests.items():
+        for test_path in tests:
+            stem = Path(test_path).stem.lower().replace("_", "")
+            if token and token in stem:
+                matches.append(test_path)
+    return tuple(dict.fromkeys(sorted(matches)))
 
 
 def is_valid_import(module_path: str, symbol: str | None = None) -> bool:
@@ -91,9 +216,13 @@ def is_valid_import(module_path: str, symbol: str | None = None) -> bool:
 def reset_registry_cache() -> None:
     """Clear registry caches for tests."""
     global _REGISTRY_CACHE, _REGISTRY_DATA_CACHE, _SYMBOL_INDEX_CACHE
-    _REGISTRY_CACHE = None
-    _REGISTRY_DATA_CACHE = None
-    _SYMBOL_INDEX_CACHE = None
+    global _PACKAGE_MAP_CACHE, _TEST_MAP_CACHE, _REPO_FACTS_CACHE
+    _REGISTRY_CACHE = {}
+    _REGISTRY_DATA_CACHE = {}
+    _SYMBOL_INDEX_CACHE = {}
+    _PACKAGE_MAP_CACHE = {}
+    _TEST_MAP_CACHE = {}
+    _REPO_FACTS_CACHE = {}
 
 
 def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
@@ -167,6 +296,80 @@ def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
             registry[mod_path] = tuple(sorted(symbols))
 
     return dict(sorted(registry.items()))
+
+
+def _build_symbol_index(registry: dict[str, tuple[str, ...]]) -> dict[str, tuple[str, ...]]:
+    """Invert the registry into symbol -> module candidates."""
+    index: dict[str, list[str]] = defaultdict(list)
+    for module_path, exports in registry.items():
+        for exported in exports:
+            index[exported].append(module_path)
+    return {
+        name: tuple(sorted(paths))
+        for name, paths in index.items()
+    }
+
+
+def _get_symbol_index() -> dict[str, tuple[str, ...]]:
+    """Return the revision-keyed symbol index."""
+    revision = get_repo_revision()
+    cached = _SYMBOL_INDEX_CACHE.get(revision)
+    if cached is not None:
+        return cached
+    index = _build_symbol_index(get_registry_snapshot())
+    _SYMBOL_INDEX_CACHE[revision] = index
+    return index
+
+
+def _build_package_map(
+    registry: dict[str, tuple[str, ...]],
+) -> tuple[dict[str, tuple[str, ...]], dict[str, str]]:
+    """Group live modules into stable package roots."""
+    package_to_modules: dict[str, list[str]] = defaultdict(list)
+    module_to_package: dict[str, str] = {}
+    for module_path in sorted(registry):
+        package = _module_package_root(module_path)
+        package_to_modules[package].append(module_path)
+        module_to_package[module_path] = package
+    return (
+        {package: tuple(sorted(modules)) for package, modules in package_to_modules.items()},
+        module_to_package,
+    )
+
+
+def _module_package_root(module_path: str) -> str:
+    """Return the coarse package root for a module path."""
+    parts = module_path.split(".")
+    if len(parts) <= 2:
+        return module_path
+    return ".".join(parts[:2])
+
+
+def _build_test_map() -> tuple[dict[str, tuple[str, ...]], dict[str, tuple[str, ...]]]:
+    """Build revision-scoped test-directory and symbol-hint maps."""
+    tests_root = _REPO_ROOT / "tests"
+    directory_to_tests: dict[str, list[str]] = defaultdict(list)
+    symbol_to_tests: dict[str, set[str]] = defaultdict(set)
+    if not tests_root.exists():
+        return {}, {}
+
+    for path in sorted(tests_root.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        rel_path = path.relative_to(_REPO_ROOT).as_posix()
+        rel_dir = path.parent.relative_to(_REPO_ROOT).as_posix()
+        directory_to_tests[rel_dir].append(rel_path)
+
+        stem = path.stem.lower()
+        token = stem[5:] if stem.startswith("test_") else stem
+        token = token.replace("_", "")
+        if token:
+            symbol_to_tests[token].add(rel_path)
+
+    return (
+        {directory: tuple(sorted(paths)) for directory, paths in directory_to_tests.items()},
+        {symbol: tuple(sorted(paths)) for symbol, paths in symbol_to_tests.items()},
+    )
 
 
 def _parse_static_registry(registry_text: str) -> dict[str, tuple[str, ...]]:
@@ -247,6 +450,8 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Models — Analytical"].append(line)
         elif "trellis.models.analytical" in mod:
             groups["Models — Analytical"].append(line)
+        elif "trellis.models.resolution" in mod:
+            groups["Models — Analytical"].append(line)
         elif "trellis.models.trees" in mod:
             groups["Models — Trees"].append(line)
         elif "trellis.models.monte_carlo" in mod:
@@ -295,9 +500,12 @@ from trellis.curves.forward_curve import ForwardCurve
 from trellis.curves.credit_curve import CreditCurve
 
 ### Models — Analytical
-from trellis.models.black import black76_call, black76_put
+from trellis.models.black import black76_call, black76_put, black76_asset_or_nothing_call, black76_asset_or_nothing_put, black76_cash_or_nothing_call, black76_cash_or_nothing_put
+from trellis.models.analytical import terminal_vanilla_from_basis
 from trellis.models.analytical.jamshidian import zcb_option_hw
 from trellis.models.analytical.barrier import barrier_option_price, down_and_out_call, down_and_in_call
+from trellis.models.resolution.quanto import ResolvedQuantoInputs, resolve_quanto_correlation, resolve_quanto_foreign_curve, resolve_quanto_inputs, resolve_quanto_underlier_spot
+from trellis.models.resolution.basket_semantics import ResolvedBasketSemantics, resolve_basket_semantics
 
 ### Models — Trees
 from trellis.models.trees.lattice import build_rate_lattice, build_spot_lattice, lattice_backward_induction, build_generic_lattice, calibrate_lattice
@@ -306,12 +514,16 @@ from trellis.models.trees.backward_induction import backward_induction
 
 ### Models — Monte Carlo
 from trellis.models.monte_carlo.engine import MonteCarloEngine
+from trellis.models.monte_carlo.basket_state import build_basket_path_requirement, evaluate_ranked_observation_basket_paths, evaluate_ranked_observation_basket_state, observation_step_indices
+from trellis.models.monte_carlo.profiling import MonteCarloPathKernelBenchmark, benchmark_path_kernel
 from trellis.models.monte_carlo.lsm import longstaff_schwartz, laguerre_basis
 from trellis.models.monte_carlo.primal_dual import primal_dual_mc, primal_dual_mc_result
 from trellis.models.monte_carlo.stochastic_mesh import stochastic_mesh, stochastic_mesh_result
 from trellis.models.monte_carlo.discretization import euler_maruyama, milstein, exact_simulation
 from trellis.models.monte_carlo.variance_reduction import antithetic, control_variate, sobol_normals
 from trellis.models.monte_carlo.schemes import Euler, Milstein, Exact, LogEuler, LaguerreBasis, PolynomialBasis
+from trellis.models.monte_carlo.ranked_observation_payoffs import build_ranked_observation_basket_initial_state, build_ranked_observation_basket_process, build_ranked_observation_basket_state_payoff, price_ranked_observation_basket_monte_carlo, recommended_ranked_observation_basket_mc_engine_kwargs, terminal_ranked_observation_basket_payoff
+from trellis.models.monte_carlo.semantic_basket import RankedObservationBasketMonteCarloPayoff, RankedObservationBasketSpec
 
 ### Models — QMC
 from trellis.models.qmc import brownian_bridge, sobol_normals
@@ -346,6 +558,7 @@ from trellis.models.copulas.student_t import StudentTCopula
 ### Models — Calibration
 from trellis.models.calibration.implied_vol import implied_vol, implied_vol_jaeckel
 from trellis.models.calibration.local_vol import dupire_local_vol
+from trellis.models.calibration.rates import RatesCalibrationResult, calibrate_cap_floor_black_vol, calibrate_swaption_black_vol, swaption_terms
 from trellis.models.calibration.sabr_fit import calibrate_sabr
 
 ### Models — Cashflow Engine

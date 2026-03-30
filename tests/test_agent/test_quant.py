@@ -1,6 +1,7 @@
 """Tests for the quant agent: method selection and data availability checking."""
 
 from datetime import date
+from types import SimpleNamespace
 
 import pytest
 
@@ -9,6 +10,7 @@ from trellis.agent.quant import (
     STATIC_PLANS,
     check_data_availability,
     select_pricing_method,
+    select_pricing_method_for_family_blueprint,
     select_pricing_method_for_product_ir,
 )
 from trellis.core.market_state import MarketState, MissingCapabilityError
@@ -86,6 +88,9 @@ class TestMethodFromDescription:
             "european_option",
         )
         assert plan.method == "analytical"
+        assert plan.selection_reason.endswith("fx_context_override")
+        assert "fx_cross_currency_context" in plan.assumption_summary
+        assert "garman_kohlhagen_or_equivalent_context" in plan.assumption_summary
         assert "fx_rates" in plan.required_market_data
         assert "forward_curve" in plan.required_market_data
         assert "spot" in plan.required_market_data
@@ -97,6 +102,11 @@ class TestMethodFromDescription:
         )
 
         assert plan.method == "monte_carlo"
+        assert plan.selection_reason.endswith("local_vol_context_override")
+        assert "local_vol_surface_driven_context" in plan.assumption_summary
+        assert "simulation_based_valuation_route" in plan.assumption_summary
+        assert "path_sampling_required" in plan.assumption_summary
+        assert "closed_form_or_quasi_closed_form_route" not in plan.assumption_summary
         assert "local_vol_surface" in plan.required_market_data
         assert "spot" in plan.required_market_data
         assert "black_vol_surface" not in plan.required_market_data
@@ -215,6 +225,28 @@ class TestPricingPlan:
         assert plan.modeling_requirements
         assert any("BLACK-SCHOLES" in requirement.upper() for requirement in plan.modeling_requirements)
 
+    def test_product_ir_multiple_valid_candidates_prefers_simplest_valid_default(self):
+        product_ir = SimpleNamespace(
+            instrument="synthetic_option",
+            required_market_data={"discount_curve", "black_vol_surface"},
+            candidate_engine_families=("pde", "monte_carlo", "tree", "analytical"),
+            multi_asset=False,
+            schedule_dependence=False,
+            state_dependence="static",
+            exercise_style="",
+        )
+
+        plan = select_pricing_method_for_product_ir(product_ir)
+
+        assert plan.method == "analytical"
+        assert plan.selection_reason == "simplest_valid_default"
+        assert plan.assumption_summary[:3] == (
+            "simplest_valid_assumption_set",
+            "closed_form_or_quasi_closed_form_route",
+            "no_path_sampling_required",
+        )
+        assert "multiple_valid_methods_available" in plan.assumption_summary
+
     def test_product_ir_sensitivity_request_prefers_rate_tree_for_callable_bond(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir
 
@@ -264,3 +296,33 @@ class TestPricingPlan:
         assert plan.method == "monte_carlo"
         assert plan.sensitivity_support is not None
         assert plan.sensitivity_support.level == "experimental"
+
+    def test_family_blueprint_quant_plan_preserves_quanto_routes(self):
+        from trellis.agent.family_contract_compiler import compile_family_contract
+        from trellis.agent.family_contract_templates import get_family_contract_template
+
+        blueprint = compile_family_contract(get_family_contract_template("quanto_option"))
+
+        analytical_plan = select_pricing_method_for_family_blueprint(blueprint)
+
+        assert analytical_plan.method == "analytical"
+        assert analytical_plan.reasoning == "family_blueprint:quanto_option"
+        assert analytical_plan.selection_reason == "canonical_family_default"
+        assert "simplest_valid_assumption_set" in analytical_plan.assumption_summary
+        assert "discount_curve" in analytical_plan.required_market_data
+        assert "forward_curve" in analytical_plan.required_market_data
+        assert "fx_rates" in analytical_plan.required_market_data
+        assert "model_parameters" in analytical_plan.required_market_data
+        assert "trellis.models.black" in analytical_plan.method_modules
+
+        monte_carlo_plan = select_pricing_method_for_family_blueprint(
+            blueprint,
+            preferred_method="monte_carlo",
+        )
+
+        assert monte_carlo_plan.method == "monte_carlo"
+        assert "trellis.models.monte_carlo.engine" in monte_carlo_plan.method_modules
+        # Route registry sources primitives from correlated_gbm_monte_carlo route:
+        # resolution.quanto + monte_carlo.quanto (not processes.correlated_gbm)
+        assert "trellis.models.resolution.quanto" in monte_carlo_plan.method_modules
+        assert "trellis.models.monte_carlo.quanto" in monte_carlo_plan.method_modules

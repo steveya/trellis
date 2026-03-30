@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import ast
 import json
-from dataclasses import asdict
+import subprocess
+import time
+from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Mapping
 from types import SimpleNamespace
 
 from trellis.agent.codegen_guardrails import (
+    GeneratedSourceSanitizationReport,
     build_generation_plan,
+    render_generation_route_card,
+    sanitize_generated_source,
     validate_generated_imports,
 )
 from trellis.agent.blocker_planning import render_blocker_report
@@ -24,10 +30,12 @@ from trellis.agent.introspection import (
     search_tests,
 )
 from trellis.agent.prompts import system_prompt
+from trellis.agent.analytical_traces import emit_analytical_trace_from_generation_plan
 from trellis.agent.semantic_validation import validate_semantics
 from trellis.agent.tools import TOOLS
 from trellis.agent.builder import write_module, run_tests
 from trellis.agent.knowledge.import_registry import resolve_import_candidates
+from trellis.agent.knowledge.api_map import format_api_map_for_prompt
 
 
 # Sentinel in the skeleton that gets replaced by the LLM-generated body.
@@ -36,11 +44,71 @@ EVALUATE_SENTINEL = '        raise NotImplementedError("evaluate not yet impleme
 _DETERMINISTIC_SUPPORTED_ROUTE_MODULES = frozenset({
     "instruments/_agent/fxvanillaanalytical.py",
     "instruments/_agent/fxvanillamontecarlo.py",
+    "instruments/_agent/quantooptionanalytical.py",
+    "instruments/_agent/quantooptionmontecarlo.py",
 })
+
+_REPO_REVISION: str | None = None
+
+
+def _get_repo_revision() -> str:
+    """Return the current git commit SHA (first 16 chars) or 'unknown'. Cached."""
+    global _REPO_REVISION
+    if _REPO_REVISION is not None:
+        return _REPO_REVISION
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+            cwd=Path(__file__).parent.parent.parent,
+        )
+        if result.returncode == 0:
+            _REPO_REVISION = result.stdout.strip()[:16]
+            return _REPO_REVISION
+    except Exception:
+        pass
+    _REPO_REVISION = "unknown"
+    return _REPO_REVISION
+
+
+@dataclass(frozen=True)
+class GeneratedModuleResult:
+    """Successful generated source plus its sanitation report."""
+
+    raw_code: str
+    sanitized_code: str
+    code: str
+    source_report: GeneratedSourceSanitizationReport
+
+
+class GeneratedModuleSourceError(RuntimeError):
+    """Raised when generated source cannot be sanitized for execution."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        source_report: GeneratedSourceSanitizationReport,
+    ) -> None:
+        super().__init__(message)
+        self.source_report = source_report
+
+
+def _render_spec_default_value(field_type: str, default: str) -> str:
+    """Render a spec default using valid Python syntax for the declared field type."""
+    normalized_type = field_type.replace(" ", "").lower()
+    if "str" in normalized_type:
+        if default == "None":
+            return "None"
+        return repr(default)
+    return default
 
 
 def _handle_tool_call(name: str, input_data: dict) -> str:
     """Dispatch a tool call from the LLM agent."""
+    if name == "inspect_api_map":
+        return format_api_map_for_prompt(compact=True)
+
     if name == "inspect_library":
         tree = get_package_tree()
         return json.dumps(tree, indent=2, default=str)
@@ -337,11 +405,223 @@ def _append_agent_observation(
     build_meta.setdefault("agent_observations", []).append(observation)
 
 
+def _semantic_role_ownership_details(
+    *,
+    stage: str,
+    compiled_request=None,
+    trigger_condition: str | None = None,
+    artifact_kind: str | None = None,
+    review_policy=None,
+    executed: bool | None = None,
+) -> dict[str, object]:
+    """Build a compact role-ownership summary for a trace event."""
+    from trellis.agent.semantic_escalation import semantic_role_ownership_summary
+
+    request = getattr(compiled_request, "request", None)
+    metadata = getattr(request, "metadata", None)
+    semantic_gap = None
+    semantic_extension = None
+    if isinstance(metadata, Mapping):
+        semantic_gap = metadata.get("semantic_gap")
+        semantic_extension = metadata.get("semantic_extension")
+
+    summary = semantic_role_ownership_summary(
+        stage=stage,
+        semantic_gap=semantic_gap if isinstance(semantic_gap, Mapping) else None,
+        semantic_extension=semantic_extension if isinstance(semantic_extension, Mapping) else None,
+        semantic_contract=bool(getattr(compiled_request, "semantic_contract", None)),
+        review_policy=review_policy,
+        trigger_condition=trigger_condition,
+        artifact_kind=artifact_kind,
+        executed=executed,
+    )
+    return {
+        "ownership_stage": summary.get("selected_stage", stage),
+        "owner_role": summary.get("selected_role", ""),
+        "ownership_trigger_condition": summary.get("trigger_condition", ""),
+        "ownership_artifact_kind": summary.get("artifact_kind", ""),
+        "ownership_scope": summary.get("scope", ""),
+        "ownership_executed": summary.get("executed", False),
+        "ownership_summary": summary.get("summary", ""),
+    }
+
+
+def _emit_analytical_trace_metadata(
+    *,
+    build_meta: dict | None,
+    generation_plan,
+    compiled_request,
+    spec_schema,
+    market_state=None,
+):
+    """Persist analytical trace metadata into build tracking state."""
+    selected_curve_names = dict(
+        getattr(market_state, "selected_curve_names", None) or {}
+    )
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    route_family = (
+        getattr(primitive_plan, "route_family", None)
+        if primitive_plan is not None
+        else None
+    ) or getattr(generation_plan, "method", None)
+    analytical_trace = emit_analytical_trace_from_generation_plan(
+        generation_plan,
+        trace_id=getattr(getattr(compiled_request, "request", None), "request_id", None),
+        task_id=getattr(getattr(compiled_request, "request", None), "request_id", None),
+        issue_id=getattr(compiled_request, "linear_issue_identifier", None),
+        route_family=route_family,
+        model=getattr(primitive_plan, "engine_family", None) or getattr(generation_plan, "method", None),
+        context={
+            "spec_name": getattr(spec_schema, "spec_name", None),
+            "class_name": getattr(spec_schema, "class_name", None),
+            "route_card": render_generation_route_card(generation_plan),
+            "selected_curve_names": selected_curve_names,
+        },
+    )
+    if build_meta is not None:
+        build_meta["analytical_trace_id"] = analytical_trace.trace.trace_id
+        build_meta["analytical_trace_path"] = str(analytical_trace.json_path)
+        build_meta["analytical_trace_text_path"] = str(analytical_trace.text_path)
+    return analytical_trace
+
+
 def _finalizes_in_executor(compiled_request) -> bool:
     """Standalone build requests terminate inside the executor."""
     if compiled_request is None:
         return False
     return getattr(compiled_request.request, "request_type", None) == "build"
+
+
+def _semantic_clarification_blocker_details(compiled_request) -> dict[str, object] | None:
+    """Return structured details when the compiled request still needs clarification."""
+    request = getattr(compiled_request, "request", None)
+    metadata = getattr(request, "metadata", None)
+    if not isinstance(metadata, Mapping):
+        return None
+
+    semantic_gap = metadata.get("semantic_gap")
+    semantic_extension = metadata.get("semantic_extension")
+    semantic_gap_data = dict(semantic_gap) if isinstance(semantic_gap, Mapping) else None
+    semantic_extension_data = (
+        dict(semantic_extension) if isinstance(semantic_extension, Mapping) else None
+    )
+    requires_clarification = bool(
+        semantic_gap_data and semantic_gap_data.get("requires_clarification")
+    )
+    clarification_decision = bool(
+        semantic_extension_data and semantic_extension_data.get("decision") == "clarification"
+    )
+    if not (requires_clarification or clarification_decision):
+        return None
+
+    summary = ""
+    if semantic_extension_data and semantic_extension_data.get("summary"):
+        summary = str(semantic_extension_data["summary"])
+    elif semantic_gap_data and semantic_gap_data.get("summary"):
+        summary = str(semantic_gap_data["summary"])
+
+    return {
+        "reason": "semantic_clarification_required",
+        "summary": summary,
+        "semantic_gap": semantic_gap_data,
+        "semantic_extension": semantic_extension_data,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Audit record writer (non-blocking helper called at build success)
+# ---------------------------------------------------------------------------
+
+def _write_build_audit_record(
+    *,
+    compiled_request,
+    model: str | None,
+    pricing_plan,
+    instrument_type: str | None,
+    spec_schema,
+    output_module_path: str,
+    code: str,
+    market_state,
+    attempt_number: int,
+    gate_results: list,
+    build_start_time: float,
+) -> "Path | None":
+    """Write a ModelAuditRecord at build success. Non-blocking — exceptions are swallowed."""
+    path_out: Path | None = None
+    try:
+        from trellis.agent.model_audit import build_audit_record, write_model_audit_record, ValidationGateResult
+        from trellis.agent.knowledge.store import KnowledgeStore
+
+        request = getattr(compiled_request, "request", None)
+        run_id = getattr(request, "request_id", None) or datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+        task_id = "standalone"
+
+        market_summary = {}
+        if market_state is not None:
+            try:
+                market_summary = market_state.summarize_for_audit()
+            except Exception:
+                pass
+
+        pricing_plan_summary = {
+            "method": getattr(pricing_plan, "method", ""),
+            "required_market_data": sorted(getattr(pricing_plan, "required_market_data", [])),
+            "method_modules": list(getattr(pricing_plan, "method_modules", [])),
+            "selection_reason": getattr(pricing_plan, "selection_reason", ""),
+            "modeling_requirements": list(getattr(pricing_plan, "modeling_requirements", [])),
+        }
+
+        spec_dict = {
+            "class_name": getattr(spec_schema, "class_name", ""),
+            "spec_name": getattr(spec_schema, "spec_name", ""),
+            "requirements": list(getattr(spec_schema, "requirements", [])),
+            "fields": [getattr(f, "name", str(f)) for f in getattr(spec_schema, "fields", [])],
+        }
+
+        knowledge_hash = "unknown"
+        try:
+            knowledge_hash = KnowledgeStore.instance().compute_knowledge_hash()
+        except Exception:
+            pass
+
+        # Convert flat tuples to ValidationGateResult objects
+        vgr_list = []
+        for entry in gate_results:
+            if len(entry) == 3:
+                gate, passed, issues = entry
+                details: dict = {}
+            else:
+                gate, passed, issues, details = entry
+            vgr_list.append(ValidationGateResult(
+                gate=gate,
+                passed=passed,
+                issues=tuple(str(i) for i in issues),
+                details=dict(details),
+            ))
+
+        audit_rec = build_audit_record(
+            task_id=task_id,
+            run_id=run_id,
+            method=getattr(pricing_plan, "method", "unknown"),
+            instrument_type=instrument_type or "",
+            source_code=code,
+            spec_schema_dict=spec_dict,
+            class_name=getattr(spec_schema, "class_name", ""),
+            module_path=output_module_path,
+            repo_revision=_get_repo_revision(),
+            llm_model_id=model or "",
+            knowledge_hash=knowledge_hash,
+            market_state_summary=market_summary,
+            pricing_plan_summary=pricing_plan_summary,
+            validation_gates=vgr_list,
+            attempt_number=attempt_number,
+            total_attempts=attempt_number,
+            wall_clock_seconds=time.time() - build_start_time,
+        )
+        path_out = write_model_audit_record(audit_rec)
+    except Exception:
+        pass  # audit write is best-effort and must never block a successful build
+    return path_out
 
 
 # ---------------------------------------------------------------------------
@@ -354,6 +634,7 @@ def build_payoff(
     model: str | None = None,
     max_retries: int = 3,
     force_rebuild: bool = False,
+    fresh_build: bool = False,
     validation: str = "standard",
     market_state=None,
     instrument_type: str | None = None,
@@ -361,6 +642,7 @@ def build_payoff(
     request_metadata: Mapping[str, object] | None = None,
     compiled_request=None,
     build_meta: dict | None = None,
+    gap_report=None,
 ) -> type:
     """Build a Payoff class via the multi-agent pipeline.
 
@@ -415,6 +697,24 @@ def build_payoff(
     else:
         product_ir = compiled_request.product_ir
 
+    if compiled_request is not None:
+        clarification_blocker = _semantic_clarification_blocker_details(compiled_request)
+        if clarification_blocker is not None:
+            if build_meta is not None:
+                build_meta["blocker_details"] = clarification_blocker
+            _record_platform_event(
+                compiled_request,
+                "request_blocked" if _finalizes_in_executor(compiled_request) else "build_blocked",
+                status="error",
+                success=False if _finalizes_in_executor(compiled_request) else None,
+                outcome="request_blocked" if _finalizes_in_executor(compiled_request) else None,
+                details=clarification_blocker,
+            )
+            raise RuntimeError(
+                "Cannot generate payoff because the semantic request still requires clarification: "
+                + clarification_blocker.get("summary", "unsupported request")
+            )
+
     if build_meta is not None and compiled_request is not None:
         build_meta.setdefault(
             "knowledge_summary",
@@ -442,7 +742,15 @@ def build_payoff(
         "quant_selected_method",
         status="ok",
         details={
+            **_semantic_role_ownership_details(
+                stage="primitive_proposal",
+                compiled_request=compiled_request,
+                trigger_condition=pricing_plan.selection_reason or "pricing_plan_selection",
+                artifact_kind="PricingPlan",
+            ),
             "method": pricing_plan.method,
+            "selection_reason": pricing_plan.selection_reason,
+            "assumption_summary": list(pricing_plan.assumption_summary),
             "required_market_data": sorted(pricing_plan.required_market_data),
             "sensitivity_support": (
                 pricing_plan.sensitivity_support.to_dict()
@@ -457,9 +765,17 @@ def build_payoff(
         "decision",
         f"Selected pricing method `{pricing_plan.method}`",
         details={
+            "semantic_role_ownership": _semantic_role_ownership_details(
+                stage="primitive_proposal",
+                compiled_request=compiled_request,
+                trigger_condition=pricing_plan.selection_reason or "pricing_plan_selection",
+                artifact_kind="PricingPlan",
+            ),
             "required_market_data": sorted(pricing_plan.required_market_data),
             "method_modules": list(pricing_plan.method_modules),
             "reasoning": pricing_plan.reasoning,
+            "selection_reason": pricing_plan.selection_reason,
+            "assumption_summary": list(pricing_plan.assumption_summary),
             "sensitivity_support": (
                 pricing_plan.sensitivity_support.to_dict()
                 if pricing_plan.sensitivity_support is not None
@@ -494,18 +810,33 @@ def build_payoff(
         requirements = pricing_plan.required_market_data
 
     # Step 3: Plan (spec schema + module path)
+    # Extract spec_schema_hint from compiled request blueprint if available
+    _spec_hint = None
+    for _bp_attr in ("semantic_blueprint", "family_blueprint"):
+        _bp = getattr(compiled_request, _bp_attr, None) if compiled_request is not None else None
+        if _bp is not None:
+            _spec_hint = getattr(_bp, "spec_schema_hint", None)
+            if _spec_hint:
+                break
     plan = plan_build(
         payoff_description,
         requirements,
         model=model,
         instrument_type=instrument_type or getattr(product_ir, "instrument", None),
         preferred_method=pricing_plan.method,
+        spec_schema_hint=_spec_hint,
     )
     _record_platform_event(
         compiled_request,
         "planner_completed",
         status="ok",
         details={
+            **_semantic_role_ownership_details(
+                stage="route_assembly",
+                compiled_request=compiled_request,
+                trigger_condition=pricing_plan.selection_reason or "pricing_plan_selection",
+                artifact_kind="GenerationPlan",
+            ),
             "module_path": plan.steps[0].module_path if plan.steps else "",
             "spec_name": plan.spec_schema.spec_name if plan.spec_schema is not None else "",
             "class_name": plan.spec_schema.class_name if plan.spec_schema is not None else "",
@@ -516,7 +847,7 @@ def build_payoff(
     existing = _try_import_existing(plan)
     reuse_reason = None
     if existing is not None:
-        if _is_deterministic_supported_route(plan):
+        if _is_deterministic_supported_route(plan) and not fresh_build:
             reuse_reason = "deterministic_supported_route"
         elif not force_rebuild:
             reuse_reason = "cached_generated_module"
@@ -531,7 +862,39 @@ def build_payoff(
                 "reason": reuse_reason,
             },
         )
+        generation_plan = (
+            compiled_request.generation_plan if compiled_request is not None else None
+        ) or build_generation_plan(
+            pricing_plan=pricing_plan,
+            instrument_type=instrument_type,
+            inspected_modules=tuple(
+                module_path
+                for module_path, _ in _reference_modules(
+                    pricing_plan,
+                    instrument_type=instrument_type or getattr(product_ir, "instrument", None),
+                )
+            ),
+            product_ir=product_ir,
+        )
+        _emit_analytical_trace_metadata(
+            build_meta=build_meta,
+            generation_plan=generation_plan,
+            compiled_request=compiled_request,
+            spec_schema=getattr(plan, "spec_schema", None),
+            market_state=market_state,
+        )
         return existing
+    if existing is not None and _is_deterministic_supported_route(plan) and fresh_build:
+        _record_platform_event(
+            compiled_request,
+            "existing_generated_module_bypassed",
+            status="info",
+            details={
+                "module_path": plan.steps[0].module_path if plan.steps else "",
+                "class_name": getattr(existing, "__name__", type(existing).__name__),
+                "reason": "fresh_build",
+            },
+        )
 
     # Step 4: Design spec
     if plan.spec_schema is not None:
@@ -559,49 +922,127 @@ def build_payoff(
                 "description_chars": len(payoff_description),
             },
         )
-        try:
-            with llm_usage_stage("spec_design", metadata={"model": stage_model}) as usage_records:
-                spec_schema = _design_spec(payoff_description, requirements, stage_model)
-            _record_platform_event(
-                compiled_request,
-                "spec_design_completed",
-                status="ok",
-                details={
-                    "model": stage_model,
-                    "spec_name": spec_schema.spec_name,
-                    "class_name": spec_schema.class_name,
-                    "field_count": len(spec_schema.fields),
-                    "token_usage": summarize_llm_usage(usage_records),
-                },
-            )
-        except Exception as exc:
-            _record_platform_event(
-                compiled_request,
-                "spec_design_failed",
-                status="error",
-                details={
-                    "model": stage_model,
-                    "error_type": type(exc).__name__,
-                    "error": str(exc),
-                },
-            )
-            raise
+        import time as _time
+
+        _SPEC_DESIGN_MAX_RETRIES = 2
+        _last_spec_exc = None
+        for _spec_attempt in range(_SPEC_DESIGN_MAX_RETRIES + 1):
+            try:
+                with llm_usage_stage("spec_design", metadata={"model": stage_model}) as usage_records:
+                    spec_schema = _design_spec(payoff_description, requirements, stage_model)
+                _record_platform_event(
+                    compiled_request,
+                    "spec_design_completed",
+                    status="ok",
+                    details={
+                        "model": stage_model,
+                        "spec_name": spec_schema.spec_name,
+                        "class_name": spec_schema.class_name,
+                        "field_count": len(spec_schema.fields),
+                        "token_usage": summarize_llm_usage(usage_records),
+                        "attempt": _spec_attempt + 1,
+                    },
+                )
+                _last_spec_exc = None
+                break
+            except Exception as exc:
+                _last_spec_exc = exc
+                if _spec_attempt < _SPEC_DESIGN_MAX_RETRIES:
+                    _backoff = 0.5 * (2 ** _spec_attempt)
+                    _record_platform_event(
+                        compiled_request,
+                        "spec_design_retry",
+                        status="warning",
+                        details={
+                            "model": stage_model,
+                            "attempt": _spec_attempt + 1,
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                            "backoff_seconds": _backoff,
+                        },
+                    )
+                    _time.sleep(_backoff)
+                else:
+                    _record_platform_event(
+                        compiled_request,
+                        "spec_design_failed",
+                        status="error",
+                        details={
+                            "model": stage_model,
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                            "attempts": _SPEC_DESIGN_MAX_RETRIES + 1,
+                        },
+                    )
+        if _last_spec_exc is not None:
+            raise _last_spec_exc
         enforce_llm_token_budget(stage="spec_design")
 
-    # Step 5: Generate skeleton
-    skeleton = _generate_skeleton(spec_schema, payoff_description)
-
-    # Step 6-9: Generate code with method guidance, validate, retry
-    reference_modules = _reference_modules(pricing_plan)
-    reference_sources = _gather_references(reference_modules)
     generation_plan = (
         compiled_request.generation_plan if compiled_request is not None else None
     ) or build_generation_plan(
         pricing_plan=pricing_plan,
         instrument_type=instrument_type,
-        inspected_modules=tuple(module_path for module_path, _ in reference_modules),
+        inspected_modules=tuple(
+            module_path
+            for module_path, _ in _reference_modules(
+                pricing_plan,
+                instrument_type=instrument_type or getattr(product_ir, "instrument", None),
+            )
+        ),
         product_ir=product_ir,
     )
+    _emit_analytical_trace_metadata(
+        build_meta=build_meta,
+        generation_plan=generation_plan,
+        compiled_request=compiled_request,
+        spec_schema=spec_schema,
+        market_state=market_state,
+    )
+
+    # Step 4b: Pre-generation build gate
+    from trellis.agent.build_gate import evaluate_pre_generation_gate
+    _pre_gen_gate = evaluate_pre_generation_gate(gap_report, generation_plan)
+    if build_meta is not None:
+        from dataclasses import asdict as _gate_asdict
+        build_meta["build_gate_decision"] = _gate_asdict(_pre_gen_gate)
+    if _pre_gen_gate.decision == "block":
+        _record_platform_event(
+            compiled_request,
+            "build_gate_blocked",
+            status="error",
+            success=False,
+            details={"gate_decision": _pre_gen_gate.decision, "reason": _pre_gen_gate.reason},
+        )
+        raise RuntimeError(
+            f"Build gate blocked pre-generation: {_pre_gen_gate.reason}"
+        )
+    if _pre_gen_gate.decision == "clarify":
+        _record_platform_event(
+            compiled_request,
+            "build_gate_clarify",
+            status="error",
+            success=False,
+            details={"gate_decision": _pre_gen_gate.decision, "reason": _pre_gen_gate.reason},
+        )
+        raise RuntimeError(
+            f"Build gate requires clarification: {_pre_gen_gate.reason}"
+        )
+
+    # Step 5: Generate skeleton
+    skeleton = _generate_skeleton(
+        spec_schema,
+        payoff_description,
+        pricing_plan=pricing_plan,
+        generation_plan=generation_plan,
+    )
+
+    # Step 6-9: Generate code with method guidance, validate, retry
+    reference_modules = _reference_modules(
+        pricing_plan,
+        instrument_type=instrument_type or getattr(product_ir, "instrument", None),
+    )
+    reference_sources = _gather_references(reference_modules)
     if generation_plan.primitive_plan is not None and generation_plan.primitive_plan.blockers:
         blocker_details = {
             "blockers": list(generation_plan.primitive_plan.blockers),
@@ -646,7 +1087,10 @@ def build_payoff(
 
     ensure_agent_package()
     step = plan.steps[0]
-    module_name = f"trellis.{step.module_path.replace('/', '.').replace('.py', '')}"
+    output_module_path = step.module_path
+    if fresh_build and _is_deterministic_supported_route(plan):
+        output_module_path = _fresh_build_module_path(step.module_path)
+    module_name = f"trellis.{output_module_path.replace('/', '.').replace('.py', '')}"
     _record_platform_event(
         compiled_request,
         "build_started",
@@ -670,8 +1114,10 @@ def build_payoff(
     payoff_cls = None
     previous_failures = []
     retry_reason = None
+    build_start_time = time.time()
     for attempt in range(max_retries):
         attempt_number = attempt + 1
+        _attempt_gate_results: list = []
         prompt_surface = _builder_prompt_surface_for_attempt(
             attempt_number=attempt_number,
             retry_reason=retry_reason,
@@ -697,12 +1143,13 @@ def build_payoff(
             },
         )
         stage_model = get_model_for_stage("code_generation", model)
+        generated_module: GeneratedModuleResult | None = None
         try:
             with llm_usage_stage(
                 "code_generation",
                 metadata={"attempt": attempt_number, "model": stage_model},
             ) as usage_records:
-                code = _generate_module(
+                generated_module = _generate_module(
                     skeleton, spec_schema, reference_sources, stage_model, 1,
                     extra_context=validation_feedback,
                     pricing_plan=pricing_plan,
@@ -710,8 +1157,20 @@ def build_payoff(
                     generation_plan=generation_plan,
                     prompt_surface=prompt_surface,
                 )
+                if isinstance(generated_module, str):
+                    source_report = sanitize_generated_source(generated_module)
+                    generated_module = GeneratedModuleResult(
+                        raw_code=generated_module,
+                        sanitized_code=source_report.sanitized_source,
+                        code=source_report.sanitized_source.expandtabs(4),
+                        source_report=source_report,
+                    )
+                code = generated_module.code
         except Exception as exc:
+            failure_text = f"attempt {attempt_number}: {type(exc).__name__}: {exc}"
             generation_token_usage = summarize_llm_usage(locals().get("usage_records"))
+            previous_failures.append(failure_text)
+            source_report = getattr(exc, "source_report", None)
             _record_platform_event(
                 compiled_request,
                 "builder_attempt_failed",
@@ -723,10 +1182,25 @@ def build_payoff(
                     "failure_count": 1,
                     "error_type": type(exc).__name__,
                     "error": str(exc),
+                    "parse_status": (
+                        "parse_failed"
+                        if type(exc).__name__ in {"SyntaxError", "GeneratedModuleSourceError"}
+                        else "failed"
+                    ),
+                    "source_sanitization": asdict(source_report)
+                    if source_report is not None
+                    else None,
                     "token_usage": generation_token_usage,
                 },
             )
-            raise
+            validation_feedback = (
+                "\n\n## CODE GENERATION FAILURE (your previous module could not be produced):\n"
+                f"- {failure_text}\n\n"
+                "Regenerate the full module from the canonical scaffold. Keep the route-local raw kernel/adaptor split, "
+                "use only approved Trellis imports, and return valid Python that compiles on the first pass."
+            )
+            retry_reason = "code_generation"
+            continue
         generation_token_usage = summarize_llm_usage(usage_records)
         enforce_llm_token_budget(stage="code_generation")
         _record_platform_event(
@@ -739,6 +1213,10 @@ def build_payoff(
                 "knowledge_surface": knowledge_surface,
                 "retry_reason": retry_reason,
                 "knowledge_context_chars": len(knowledge_text),
+                "parse_status": "compiled",
+                "source_sanitization": asdict(generated_module.source_report)
+                if generated_module is not None
+                else None,
                 "token_usage": generation_token_usage,
             },
         )
@@ -765,6 +1243,7 @@ def build_payoff(
             )
             retry_reason = "import_validation"
             continue
+        _attempt_gate_results.append(("import", True, ()))
 
         semantic_report = validate_semantics(
             code,
@@ -792,6 +1271,44 @@ def build_payoff(
             )
             retry_reason = "semantic_validation"
             continue
+        _attempt_gate_results.append(("semantic", True, ()))
+
+        # Gate 3b: Semantic validators (market data, parameter binding, algorithm contract)
+        from trellis.agent.semantic_validators import validate_generated_semantics
+        semantic_ext_report = validate_generated_semantics(
+            code, generation_plan,
+        )
+        if semantic_ext_report.findings:
+            _record_platform_event(
+                compiled_request,
+                "semantic_validators_completed",
+                status="warning" if semantic_ext_report.ok else "error",
+                details={
+                    "attempt": attempt_number,
+                    "finding_count": len(semantic_ext_report.findings),
+                    "mode": semantic_ext_report.mode,
+                    "findings": [
+                        {"validator": f.validator, "severity": f.severity, "category": f.category}
+                        for f in semantic_ext_report.findings[:10]
+                    ],
+                },
+            )
+        if not semantic_ext_report.ok:
+            # Truncate feedback to 150 tokens (~600 chars) to preserve prompt budget
+            finding_lines = [
+                f"- [{f.severity}] {f.message}" for f in semantic_ext_report.errors[:5]
+            ]
+            feedback_text = "\n".join(finding_lines)[:600]
+            failures = [f.message for f in semantic_ext_report.errors]
+            previous_failures = failures
+            validation_feedback = (
+                "\n\n## SEMANTIC CONTRACT FAILURES (your previous code had these issues):\n"
+                + feedback_text
+                + "\n\nFix the above semantic issues in your implementation."
+            )
+            retry_reason = "semantic_validation"
+            continue
+        _attempt_gate_results.append(("semantic_validators", True, ()))
 
         from trellis.agent.lite_review import review_generated_code
 
@@ -842,10 +1359,39 @@ def build_payoff(
             )
             retry_reason = "lite_review"
             continue
+        _attempt_gate_results.append(("lite_review", True, tuple(
+            issue.code for issue in lite_review_report.issues
+        )))
 
-        file_path = write_module(step.module_path, code)
+        file_path = write_module(output_module_path, code)
         mod = dynamic_import(file_path, module_name)
         payoff_cls = getattr(mod, spec_schema.class_name)
+
+        actual_market_failures = _smoke_test_actual_market_state(
+            payoff_cls,
+            spec_schema,
+            market_state,
+        )
+        if actual_market_failures:
+            failures = actual_market_failures
+            previous_failures = failures
+            _record_platform_event(
+                compiled_request,
+                "builder_attempt_failed",
+                status="error",
+                details={
+                    "attempt": attempt_number,
+                    "reason": "actual_market_smoke",
+                    "failure_count": len(failures),
+                },
+            )
+            validation_feedback = (
+                "\n\n## ACTUAL MARKET SMOKE FAILURES (your previous code had these issues):\n"
+                + "\n".join(f"- {failure}" for failure in failures)
+                + "\n\nThe generated payoff must also run against the real task market_state, not just synthetic validation fixtures."
+            )
+            retry_reason = "validation"
+            continue
 
         if validation == "fast":
             _record_platform_event(
@@ -862,9 +1408,24 @@ def build_payoff(
                 outcome="build_completed" if _finalizes_in_executor(compiled_request) else None,
                 details={"attempts": attempt_number},
             )
+            _audit_path = _write_build_audit_record(
+                compiled_request=compiled_request,
+                model=model,
+                pricing_plan=pricing_plan,
+                instrument_type=instrument_type,
+                spec_schema=spec_schema,
+                output_module_path=output_module_path,
+                code=code,
+                market_state=market_state,
+                attempt_number=attempt_number,
+                gate_results=_attempt_gate_results,
+                build_start_time=build_start_time,
+            )
+            if build_meta is not None and _audit_path is not None:
+                build_meta["audit_record_path"] = str(_audit_path)
             return payoff_cls
 
-        failures = _validate_build(
+        failures, failure_details = _validate_build(
             payoff_cls, code, payoff_description, spec_schema,
             validation=validation,
             model=model,
@@ -873,6 +1434,8 @@ def build_payoff(
             product_ir=product_ir,
             build_meta=build_meta,
             attempt_number=attempt_number,
+            return_failure_details=True,
+            gate_results_out=_attempt_gate_results,
         )
 
         if not failures:
@@ -895,6 +1458,21 @@ def build_payoff(
                 outcome="build_completed" if _finalizes_in_executor(compiled_request) else None,
                 details={"attempts": attempt_number},
             )
+            _audit_path = _write_build_audit_record(
+                compiled_request=compiled_request,
+                model=model,
+                pricing_plan=pricing_plan,
+                instrument_type=instrument_type,
+                spec_schema=spec_schema,
+                output_module_path=output_module_path,
+                code=code,
+                market_state=market_state,
+                attempt_number=attempt_number,
+                gate_results=_attempt_gate_results,
+                build_start_time=build_start_time,
+            )
+            if build_meta is not None and _audit_path is not None:
+                build_meta["audit_record_path"] = str(_audit_path)
             return payoff_cls
 
         # Diagnose failures and enrich feedback for next attempt
@@ -902,29 +1480,29 @@ def build_payoff(
         previous_failures = failures
         _record_platform_event(
             compiled_request,
-            "builder_attempt_failed",
-            status="error",
-            details={
-                "attempt": attempt_number,
-                "reason": "validation",
-                "failure_count": len(failures),
-            },
-        )
+                "builder_attempt_failed",
+                status="error",
+                details={
+                    "attempt": attempt_number,
+                    "reason": "validation",
+                    "failure_count": len(failures),
+                    "failure_details": [asdict(detail) for detail in failure_details],
+                    "parse_status": "compiled" if generated_module is not None else "unknown",
+                    "source_sanitization": asdict(generated_module.source_report)
+                    if generated_module is not None
+                    else None,
+                },
+            )
 
         # Record run trace (cold storage)
         _record_trace(instrument_type, pricing_plan, payoff_description,
                       attempt, code, failures)
 
-        validation_feedback = (
-            "\n\n## VALIDATION FAILURES (your previous code had these issues):\n"
-            + "\n".join(f"- {f}" for f in failures)
-            + diagnosis_text
-            + "\n\nFix ALL of the above issues in your implementation."
-        )
+        validation_feedback = _format_validation_failure_feedback(
+            failures=failures,
+            failure_details=failure_details,
+        ) + diagnosis_text + "\n\nFix ALL of the above issues in your implementation."
         retry_reason = "validation"
-
-    if payoff_cls is not None:
-        return payoff_cls
 
     failure_text = "; ".join(previous_failures) if previous_failures else "unknown build failure"
     _record_platform_event(
@@ -955,9 +1533,17 @@ def _validate_build(
     product_ir=None,
     build_meta: dict | None = None,
     attempt_number: int | None = None,
-) -> list[str]:
-    """Run validation checks on a built payoff. Returns list of failures."""
+    return_failure_details: bool = False,
+    gate_results_out: list | None = None,
+) -> list[str] | tuple[list[str], tuple[object, ...]]:
+    """Run validation checks on a built payoff."""
     from trellis.agent.review_policy import determine_review_policy
+    from trellis.agent.config import (
+        enforce_llm_token_budget,
+        get_model_for_stage,
+        llm_usage_stage,
+        summarize_llm_usage,
+    )
     from trellis.agent.validation_bundles import (
         execute_validation_bundle,
         select_validation_bundle,
@@ -970,7 +1556,15 @@ def _validate_build(
 
     settle = date(2024, 11, 15)
     failures = []
-    itype = _extract_instrument_type(description)
+    failure_details: list[object] = []
+    compiled_instrument = None
+    if compiled_request is not None:
+        compiled_instrument = getattr(getattr(compiled_request, "request", None), "instrument_type", None)
+    itype = (
+        compiled_instrument
+        or getattr(product_ir, "instrument", None)
+        or _extract_instrument_type(description)
+    )
     required_market_data = set(getattr(pricing_plan, "required_market_data", ()) or ())
     review_policy = determine_review_policy(
         validation=validation,
@@ -986,6 +1580,8 @@ def _validate_build(
         test_payoff = _make_test_payoff(payoff_cls, spec_schema, settle)
     except Exception as e:
         failures.append(f"Cannot instantiate payoff for validation: {e}")
+        if return_failure_details:
+            return failures, tuple()
         return failures
 
     def payoff_factory():
@@ -1002,24 +1598,57 @@ def _validate_build(
         """Build the straight-bond reference payoff used for bounding checks."""
         return DeterministicCashflowPayoff(bond)
 
-    def _build_validation_market_state(rate=0.05, vol=0.20):
-        """Create a simple market state matching the plan's capability contract."""
+    def _build_validation_market_state(rate=0.05, vol=0.20, corr=0.35, extra_requirements=None):
+        """Create a simple market state matching the plan's capability contract.
+
+        Uses the union of the plan's ``required_market_data`` and any
+        ``extra_requirements`` supplied by the caller (e.g. the payoff's own
+        ``requirements`` property discovered post-instantiation).
+        """
+        effective_requirements = set(required_market_data)
+        if extra_requirements:
+            # Map capability aliases used by payoff.requirements to the plan keys
+            _alias_map = {
+                "credit": "credit_curve",
+                "vol": "black_vol_surface",
+                "local_vol": "local_vol_surface",
+                "fx": "fx_rates",
+            }
+            for req in extra_requirements:
+                effective_requirements.add(_alias_map.get(req, req))
+
         discount_curve = YieldCurve.flat(rate)
         payload = {
             "as_of": settle,
             "settlement": settle,
             "discount": discount_curve,
         }
-        if "forward_curve" in required_market_data:
+        if "forward_curve" in effective_requirements:
             from trellis.curves.forward_curve import ForwardCurve
 
+            foreign_curve = YieldCurve.flat(max(rate - 0.02, 0.005))
+            payload["forecast_curves"] = {
+                "EUR-DISC": foreign_curve,
+                "EUR": foreign_curve,
+            }
             payload["forward_curve"] = ForwardCurve(discount_curve)
-        if "black_vol_surface" in required_market_data:
+        if "black_vol_surface" in effective_requirements:
             payload["vol_surface"] = FlatVol(vol)
-        if "spot" in required_market_data:
+        if "fx_rates" in effective_requirements:
+            from trellis.instruments.fx import FXRate
+
+            payload["fx_rates"] = {
+                "EURUSD": FXRate(spot=1.10, domestic="USD", foreign="EUR"),
+            }
+        if "spot" in effective_requirements:
             payload["spot"] = 100.0
-            payload["underlier_spots"] = {"SPX": 100.0}
-        if "local_vol_surface" in required_market_data:
+            payload["underlier_spots"] = {
+                "SPX": 100.0,
+                "NDX": 101.5,
+                "RUT": 98.5,
+                "EUR": 100.0,
+            }
+        if "local_vol_surface" in effective_requirements:
             def local_vol_surface(spot, time, level=vol):
                 from trellis.core.differentiable import get_numpy
 
@@ -1034,18 +1663,40 @@ def _validate_build(
             payload["local_vol_surfaces"] = {"spx_local_vol": local_vol_surface}
             payload.setdefault("spot", 100.0)
             payload.setdefault("underlier_spots", {"SPX": 100.0})
+        if "credit_curve" in effective_requirements:
+            from trellis.curves.credit_curve import CreditCurve
+
+            payload["credit_curve"] = CreditCurve.flat(0.02)
+        if "model_parameters" in effective_requirements:
+            payload["model_parameters"] = {"quanto_correlation": corr}
         return MarketState(**payload)
 
+    # Build the initial market state from the plan's required_market_data.
+    # After the payoff is instantiated, rebuild using its declared requirements
+    # so the validation state always covers what the payoff actually needs.
     ms = _build_validation_market_state()
+    if test_payoff is not None:
+        try:
+            payoff_reqs = set(getattr(test_payoff, "requirements", set()) or set())
+            ms = _build_validation_market_state(extra_requirements=payoff_reqs)
+        except Exception:
+            pass  # fall back to plan-derived market state
 
-    def ms_factory(rate=0.05, vol=0.20):
+    def ms_factory(rate=0.05, vol=0.20, corr=0.35):
         """Create simple market states for invariant checks."""
-        return _build_validation_market_state(rate=rate, vol=vol)
+        payoff_reqs: set[str] = set()
+        try:
+            payoff_reqs = set(getattr(test_payoff, "requirements", set()) or set())
+        except Exception:
+            pass
+        return _build_validation_market_state(rate=rate, vol=vol, corr=corr, extra_requirements=payoff_reqs)
 
     validation_bundle = select_validation_bundle(
         instrument_type=itype,
         method=(pricing_plan.method if pricing_plan is not None else "unknown"),
         product_ir=product_ir,
+        family_blueprint=getattr(compiled_request, "family_blueprint", None),
+        semantic_blueprint=getattr(compiled_request, "semantic_blueprint", None),
     )
     _record_platform_event(
         compiled_request,
@@ -1069,6 +1720,7 @@ def _validate_build(
         reference_factory=reference_factory,
     )
     failures.extend(bundle_execution.failures)
+    failure_details.extend(bundle_execution.failure_details)
     _record_platform_event(
         compiled_request,
         "validation_bundle_executed",
@@ -1078,8 +1730,14 @@ def _validate_build(
             "executed_checks": list(bundle_execution.executed_checks),
             "skipped_checks": list(bundle_execution.skipped_checks),
             "failure_count": len(bundle_execution.failures),
+            "failure_details": [asdict(detail) for detail in bundle_execution.failure_details],
         },
     )
+
+    if gate_results_out is not None:
+        gate_results_out.append(("bundle", not bool(bundle_execution.failures), tuple(
+            bundle_execution.failures
+        ), {"bundle_id": validation_bundle.bundle_id}))
 
     deterministic_gate_failed = bool(failures)
     deterministic_gate_reason = (
@@ -1150,6 +1808,9 @@ def _validate_build(
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(f"Critic validation error (non-blocking): {e}")
+        if gate_results_out is not None:
+            _critic_fails = locals().get("critic_failures", [])
+            gate_results_out.append(("critic", not bool(_critic_fails), tuple(_critic_fails[:3])))
     elif validation in ("standard", "thorough"):
         _record_platform_event(
             compiled_request,
@@ -1212,6 +1873,14 @@ def _validate_build(
                     "model_validator_llm_review_skipped",
                     status="info",
                     details={
+                        **_semantic_role_ownership_details(
+                            stage="payoff_model_validation",
+                            compiled_request=compiled_request,
+                            trigger_condition=review_policy.model_validator_reason,
+                            artifact_kind="ValidationReport",
+                            review_policy=review_policy,
+                            executed=False,
+                        ),
                         "risk_level": review_policy.risk_level,
                         "reason": review_policy.model_validator_reason,
                     },
@@ -1258,6 +1927,17 @@ def _validate_build(
                 "model_validator_completed",
                 status="ok" if not blocker_findings else "error",
                 details={
+                    **_semantic_role_ownership_details(
+                        stage="payoff_model_validation",
+                        compiled_request=compiled_request,
+                        trigger_condition=(
+                            review_policy.model_validator_reason
+                            or "validation_risk_gate"
+                        ),
+                        artifact_kind="ValidationReport",
+                        review_policy=review_policy,
+                        executed=review_policy.run_model_validator_llm,
+                    ),
                     "finding_count": len(report.findings),
                     "blocker_count": len(blocker_findings),
                     "approved": report.approved,
@@ -1275,6 +1955,13 @@ def _validate_build(
         except Exception as e:
             import logging
             logging.getLogger(__name__).warning(f"Model validation error (non-blocking): {e}")
+        if gate_results_out is not None:
+            _mv_blockers = locals().get("blocker_findings", [])
+            _mv_issues = tuple(
+                f"[{f.severity.upper()}] {f.id}: {f.description}"
+                for f in _mv_blockers
+            )
+            gate_results_out.append(("model_validator", not bool(_mv_issues), _mv_issues))
     elif validation == "thorough":
         _record_platform_event(
             compiled_request,
@@ -1287,6 +1974,8 @@ def _validate_build(
             },
         )
 
+    if return_failure_details:
+        return failures, tuple(failure_details)
     return failures
 
 
@@ -1318,6 +2007,8 @@ def _make_test_payoff(payoff_cls, spec_schema, settle: date):
         raise RuntimeError(f"Cannot find {spec_schema.spec_name} in loaded modules")
 
     # Build kwargs from field definitions with test defaults
+    from trellis.core.types import DayCountConvention, Frequency
+
     kwargs = {}
     type_defaults = {
         "float": 100.0,
@@ -1326,14 +2017,17 @@ def _make_test_payoff(payoff_cls, spec_schema, settle: date):
         "bool": True,
         "date": date(2034, 11, 15),
         "str | None": None,
-        "Frequency": None,  # use dataclass default
-        "DayCountConvention": None,  # use dataclass default
+        "Frequency": Frequency.SEMI_ANNUAL,
+        "DayCountConvention": DayCountConvention.ACT_360,
     }
     # More specific field-name defaults
     name_defaults = {
         "notional": 100.0,
         "coupon": 0.05,
         "strike": 0.05,
+        "underlyings": "AAPL,MSFT,NVDA",
+        "constituents": "AAPL,MSFT,NVDA",
+        "observation_dates": "2026-04-01,2026-05-01,2026-06-01",
         "expiry_date": date(2025, 11, 15),
         "swap_start": date(2025, 11, 15),
         "swap_end": date(2034, 11, 15),
@@ -1359,6 +2053,28 @@ def _make_test_payoff(payoff_cls, spec_schema, settle: date):
         "correlation": 0.3,
         "recovery": 0.4,
     }
+    has_spot_field = any(
+        field.name in {"spot", "s0", "underlier_spot"} for field in spec_schema.fields
+    )
+    has_strike_field = any(field.name == "strike" for field in spec_schema.fields)
+    if spec_schema.spec_name == "FXVanillaOptionSpec":
+        name_defaults["notional"] = 10.0
+        name_defaults["strike"] = 1.08
+        name_defaults["spot"] = 1.10
+    elif spec_schema.spec_name == "QuantoOptionSpec":
+        name_defaults["notional"] = 10.0
+        name_defaults["strike"] = 100.0
+        name_defaults["spot"] = 100.0
+        name_defaults["underlier_currency"] = "SPX"
+        name_defaults["domestic_currency"] = "USD"
+        name_defaults["fx_pair"] = "EURUSD"
+        name_defaults["quanto_correlation_key"] = None
+    elif has_spot_field and has_strike_field:
+        # Spot-based option specs should be instantiated near-the-money so the
+        # smoke tests exercise a representative valuation instead of a deeply
+        # in-the-money payoff created by the generic rate-like strike default.
+        name_defaults["notional"] = 10.0
+        name_defaults["strike"] = name_defaults["spot"]
 
     for field in spec_schema.fields:
         if field.name in name_defaults:
@@ -1376,6 +2092,25 @@ def _make_test_payoff(payoff_cls, spec_schema, settle: date):
                           for f in spec_schema.fields if f.default is None})
 
     return payoff_cls(spec)
+
+
+def _smoke_test_actual_market_state(
+    payoff_cls,
+    spec_schema,
+    market_state,
+) -> list[str]:
+    """Run a lightweight pricing smoke test against the actual task market state."""
+    if market_state is None:
+        return []
+    from trellis.engine.payoff_pricer import price_payoff
+
+    settle = getattr(market_state, "settlement", date(2024, 11, 15))
+    try:
+        payoff = _make_test_payoff(payoff_cls, spec_schema, settle)
+        price_payoff(payoff, market_state)
+    except Exception as exc:
+        return [f"Actual market state smoke test failed: {exc}"]
+    return []
 
 
 def _design_spec(
@@ -1411,8 +2146,25 @@ def _design_spec(
     )
 
 
-def _generate_skeleton(spec_schema, description: str) -> str:
+def _generate_skeleton(
+    spec_schema,
+    description: str,
+    *,
+    pricing_plan=None,
+    generation_plan=None,
+) -> str:
     """Deterministically generate the full module skeleton from the spec schema."""
+    instrument_type = (
+        getattr(generation_plan, "instrument_type", None)
+        or getattr(pricing_plan, "model_to_build", None)
+        or ""
+    ).strip().lower().replace(" ", "_")
+    method = (
+        getattr(generation_plan, "method", None)
+        or getattr(pricing_plan, "method", None)
+        or ""
+    ).strip().lower().replace(" ", "_")
+
     required = [f for f in spec_schema.fields if f.default is None]
     optional = [f for f in spec_schema.fields if f.default is not None]
     field_lines = []
@@ -1420,10 +2172,32 @@ def _generate_skeleton(spec_schema, description: str) -> str:
         if f.default is None:
             field_lines.append(f"    {f.name}: {f.type}")
         else:
-            field_lines.append(f"    {f.name}: {f.type} = {f.default}")
+            rendered_default = _render_spec_default_value(f.type, f.default)
+            field_lines.append(f"    {f.name}: {f.type} = {rendered_default}")
     fields_block = "\n".join(field_lines)
 
     requirements_str = ", ".join(f'"{r}"' for r in sorted(spec_schema.requirements))
+    extra_imports = ""
+    evaluate_preamble = "        spec = self._spec\n"
+
+    if instrument_type == "quanto_option" and method == "analytical":
+        extra_imports = (
+            "from trellis.models.analytical.quanto import price_quanto_option_analytical\n"
+            "from trellis.models.resolution.quanto import resolve_quanto_inputs\n"
+        )
+        evaluate_preamble += (
+            "        resolved = resolve_quanto_inputs(market_state, spec)\n"
+            "        # return float(price_quanto_option_analytical(spec, resolved))\n"
+        )
+    elif instrument_type == "quanto_option" and method == "monte_carlo":
+        extra_imports = (
+            "from trellis.models.monte_carlo.quanto import price_quanto_option_monte_carlo\n"
+            "from trellis.models.resolution.quanto import resolve_quanto_inputs\n"
+        )
+        evaluate_preamble += (
+            "        resolved = resolve_quanto_inputs(market_state, spec)\n"
+            "        # return float(price_quanto_option_monte_carlo(spec, resolved))\n"
+        )
 
     return f'''"""Agent-generated payoff: {description}."""
 
@@ -1436,6 +2210,7 @@ from trellis.core.date_utils import generate_schedule, year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.models.black import black76_call, black76_put
+{extra_imports}
 
 
 @dataclass(frozen=True)
@@ -1459,8 +2234,7 @@ class {spec_schema.class_name}:
         return {{{requirements_str}}}
 
     def evaluate(self, market_state: MarketState) -> float:
-        spec = self._spec
-{EVALUATE_SENTINEL}
+{evaluate_preamble}{EVALUATE_SENTINEL}
 '''
 
 
@@ -1475,7 +2249,7 @@ def _generate_module(
     knowledge_context: str = "",
     generation_plan=None,
     prompt_surface: str = "expanded",
-) -> str:
+) -> GeneratedModuleResult:
     """LLM call #2: generate the complete module with evaluate() filled in."""
     from trellis.agent.config import llm_generate
     from trellis.agent.prompts import evaluate_prompt
@@ -1489,6 +2263,7 @@ def _generate_module(
         prompt += extra_context
 
     last_error = ""
+    last_code = ""
     for attempt in range(max_retries):
         if attempt > 0:
             full_prompt = prompt + f"\n\n## Previous attempt had error:\n{last_error}\nFix the code."
@@ -1496,26 +2271,71 @@ def _generate_module(
             full_prompt = prompt
 
         try:
-            code = llm_generate(full_prompt, model=model)
+            raw_code = llm_generate(full_prompt, model=model)
+            last_code = raw_code
 
-            # Strip markdown fences
-            if code.startswith("```python"):
-                code = code[len("```python"):].strip()
-            if code.startswith("```"):
-                code = code[3:].strip()
-            if code.endswith("```"):
-                code = code[:-3].strip()
+            source_report = sanitize_generated_source(raw_code)
+            if not source_report.ok:
+                raise GeneratedModuleSourceError(
+                    "; ".join(source_report.errors),
+                    source_report=source_report,
+                )
 
-            code = code.expandtabs(4)
+            sanitized_code = source_report.sanitized_source
+            code = sanitized_code.expandtabs(4)
             if not code.strip():
                 raise RuntimeError("LLM returned empty module body")
-            compile(code, "<agent>", "exec")
-            return code
+            if not _module_has_expected_structure(code, spec_schema):
+                recovered = _recover_generated_module_from_module_like_source(
+                    code,
+                    skeleton=skeleton,
+                    spec_schema=spec_schema,
+                )
+                if recovered is None:
+                    recovered = _recover_generated_module_from_fragment(
+                        code,
+                        skeleton=skeleton,
+                        spec_schema=spec_schema,
+                    )
+                if recovered is not None:
+                    code = recovered
+            try:
+                ast.parse(code)
+            except SyntaxError:
+                recovered = _recover_generated_module_from_module_like_source(
+                    code,
+                    skeleton=skeleton,
+                    spec_schema=spec_schema,
+                )
+                if recovered is None:
+                    recovered = _recover_generated_module_from_fragment(
+                        code,
+                        skeleton=skeleton,
+                        spec_schema=spec_schema,
+                    )
+                if recovered is None:
+                    raise
+                code = recovered
+                ast.parse(code)
+            if not _module_has_expected_structure(code, spec_schema):
+                raise RuntimeError(
+                    "LLM returned code without the expected spec/payoff module structure."
+                )
+            return GeneratedModuleResult(
+                raw_code=raw_code,
+                sanitized_code=sanitized_code,
+                code=code,
+                source_report=source_report,
+            )
         except SyntaxError as e:
-            last_error = str(e)
+            last_error = _format_code_generation_error(
+                e,
+                code=last_code,
+                error_type="SyntaxError",
+            )
             if attempt >= max_retries - 1:
                 raise RuntimeError(
-                    f"Agent failed to produce valid module after {max_retries} attempts"
+                    f"Agent failed to produce valid module after {max_retries} attempts: {last_error}"
                 ) from e
         except RuntimeError as e:
             last_error = str(e)
@@ -1525,6 +2345,38 @@ def _generate_module(
                 ) from e
 
     raise RuntimeError("Unreachable")
+
+
+def _format_code_generation_error(exc: SyntaxError, *, code: str, error_type: str) -> str:
+    """Render actionable syntax/code-generation errors with a short code preview."""
+    line_no = getattr(exc, "lineno", None)
+    offset = getattr(exc, "offset", None)
+    msg = getattr(exc, "msg", str(exc))
+    preview = _code_preview_for_error(code, line_no=line_no)
+    location = ""
+    if line_no is not None:
+        location = f" at line {line_no}"
+        if offset is not None:
+            location += f", column {offset}"
+    return f"{error_type}{location}: {msg}\nCode preview:\n{preview}"
+
+
+def _code_preview_for_error(code: str, *, line_no: int | None, context: int = 2) -> str:
+    """Return a short numbered preview around the failing source line."""
+    lines = (code or "").splitlines()
+    if not lines:
+        return "<no code returned>"
+    if line_no is None:
+        preview_lines = lines[: min(len(lines), 5)]
+        start = 1
+    else:
+        start = max(1, line_no - context)
+        end = min(len(lines), line_no + context)
+        preview_lines = lines[start - 1:end]
+    return "\n".join(
+        f"{start + index:>4}: {line}"
+        for index, line in enumerate(preview_lines)
+    )
 
 
 def _normalize_indent(code: str, target: int = 8) -> str:
@@ -1550,6 +2402,169 @@ def _combine_skeleton_and_body(skeleton: str, evaluate_body: str) -> str:
     if EVALUATE_SENTINEL not in skeleton:
         raise ValueError("Skeleton does not contain evaluate sentinel")
     return skeleton.replace(EVALUATE_SENTINEL, evaluate_body)
+
+
+def _inject_top_level_imports(skeleton: str, import_lines: list[str]) -> str:
+    """Insert additional top-level imports into the skeleton header without duplicates."""
+    normalized_imports = []
+    existing_imports = {
+        line.strip()
+        for line in skeleton.splitlines()
+        if line.strip().startswith(("import ", "from "))
+    }
+    for line in import_lines:
+        stripped = line.strip()
+        if stripped.startswith("from __future__ import"):
+            continue
+        if stripped and stripped not in existing_imports:
+            normalized_imports.append(stripped)
+            existing_imports.add(stripped)
+    if not normalized_imports:
+        return skeleton
+
+    lines = skeleton.splitlines()
+    insert_at = 0
+    for index, line in enumerate(lines):
+        if line.strip().startswith(("import ", "from ")):
+            insert_at = index + 1
+    lines[insert_at:insert_at] = normalized_imports
+    updated = "\n".join(lines)
+    if skeleton.endswith("\n"):
+        updated += "\n"
+    return updated
+
+
+def _recover_generated_module_from_fragment(
+    code: str,
+    *,
+    skeleton: str,
+    spec_schema,
+) -> str | None:
+    """Recover a full module when repair output degenerates to imports plus evaluate-body lines."""
+    if EVALUATE_SENTINEL not in skeleton or _module_has_expected_structure(code, spec_schema):
+        return None
+
+    import_lines: list[str] = []
+    body_lines: list[str] = []
+    for line in code.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            body_lines.append("")
+            continue
+        if not line.startswith((" ", "\t")) and stripped.startswith(("import ", "from ")):
+            import_lines.append(stripped)
+            continue
+        body_lines.append(line)
+
+    body_text = _extract_fragment_body(body_lines)
+    if not body_text.strip():
+        return None
+
+    return _combine_skeleton_and_body(
+        _inject_top_level_imports(skeleton, import_lines),
+        _normalize_indent(body_text, target=8),
+    )
+
+
+def _recover_generated_module_from_module_like_source(
+    code: str,
+    *,
+    skeleton: str,
+    spec_schema,
+) -> str | None:
+    """Recover by extracting a valid evaluate() body from malformed full-module output."""
+    if EVALUATE_SENTINEL not in skeleton:
+        return None
+
+    if spec_schema.class_name not in code and "def evaluate(" not in code:
+        return None
+
+    body_text = _extract_evaluate_body_from_module_text(code)
+    if not body_text.strip():
+        return None
+
+    import_lines = [
+        line.strip()
+        for line in code.splitlines()
+        if line.strip() and not line.startswith((" ", "\t")) and line.strip().startswith(("import ", "from "))
+    ]
+
+    return _combine_skeleton_and_body(
+        _inject_top_level_imports(skeleton, import_lines),
+        _normalize_indent(body_text, target=8),
+    )
+
+
+def _module_has_expected_structure(code: str, spec_schema) -> bool:
+    """Whether the generated code defines the expected spec and payoff classes."""
+    import ast
+
+    try:
+        module = ast.parse(code)
+    except SyntaxError:
+        return False
+
+    class_names = {
+        node.name
+        for node in module.body
+        if isinstance(node, ast.ClassDef)
+    }
+    return (
+        spec_schema.spec_name in class_names
+        and spec_schema.class_name in class_names
+    )
+
+
+def _extract_fragment_body(body_lines: list[str]) -> str:
+    """Normalize repair fragments into the body expected by the skeleton evaluate()."""
+    import textwrap
+
+    body_text = "\n".join(body_lines).strip("\n")
+    if not body_text.strip():
+        return ""
+
+    dedented = textwrap.dedent(body_text)
+    dedented_lines = dedented.splitlines()
+    while dedented_lines and not dedented_lines[0].strip():
+        dedented_lines.pop(0)
+    if not dedented_lines:
+        return ""
+
+    first_line = dedented_lines[0].strip()
+    if first_line.startswith("def evaluate(") or first_line.startswith("async def evaluate("):
+        function_body = textwrap.dedent("\n".join(dedented_lines[1:])).strip("\n")
+        return function_body
+    return dedented
+
+
+def _extract_evaluate_body_from_module_text(code: str) -> str:
+    """Extract the evaluate() body from module-like source text without parsing."""
+    import textwrap
+
+    lines = code.splitlines()
+    start_index = None
+    function_indent = 0
+    for index, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith("def evaluate(") or stripped.startswith("async def evaluate("):
+            start_index = index + 1
+            function_indent = len(line) - len(stripped)
+            break
+    if start_index is None:
+        return ""
+
+    body_lines: list[str] = []
+    for line in lines[start_index:]:
+        stripped = line.strip()
+        current_indent = len(line) - len(line.lstrip())
+        if stripped and current_indent <= function_indent:
+            break
+        body_lines.append(line)
+
+    if not body_lines:
+        return ""
+
+    return textwrap.dedent("\n".join(body_lines)).strip("\n")
 
 
 def _try_import_existing(plan) -> type | None:
@@ -1580,7 +2595,16 @@ def _is_deterministic_supported_route(plan) -> bool:
     )
 
 
-def _reference_modules(pricing_plan=None) -> tuple[tuple[str, str], ...]:
+def _fresh_build_module_path(module_path: str) -> str:
+    """Map a deterministic route path to an isolated scratch module for proving runs."""
+    path = Path(module_path)
+    return str(path.parent / "_fresh" / path.name)
+
+
+def _reference_modules(
+    pricing_plan=None,
+    instrument_type: str | None = None,
+) -> tuple[tuple[str, str], ...]:
     """Select authoritative reference modules for prompt grounding."""
     from trellis.agent.knowledge.methods import normalize_method
 
@@ -1611,6 +2635,9 @@ def _reference_modules(pricing_plan=None) -> tuple[tuple[str, str], ...]:
             modules.append(("trellis.models.copulas", "Copula package exports"))
         elif method == "pde_solver":
             modules.append(("trellis.models.pde", "PDE package exports"))
+            modules.append(("trellis.models.pde.theta_method", "Theta-method solver reference"))
+            modules.append(("trellis.models.pde.grid", "PDE grid reference"))
+            modules.append(("trellis.models.pde.operator", "PDE operator reference"))
         elif method == "fft_pricing":
             modules.append(("trellis.models.transforms", "Transform package exports"))
             modules.append(("trellis.models.processes.heston", "Heston process reference"))
@@ -1620,6 +2647,18 @@ def _reference_modules(pricing_plan=None) -> tuple[tuple[str, str], ...]:
             modules.append(("trellis.instruments.cap", "CapPayoff (analytical reference)"))
     else:
         modules.append(("trellis.instruments.cap", "CapPayoff (analytical reference)"))
+
+    normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
+    if normalized_instrument == "quanto_option":
+        modules.append(
+            ("trellis.models.resolution.quanto", "Quanto input-resolution helpers")
+        )
+        modules.append(
+            ("trellis.models.analytical.quanto", "Quanto analytical route helpers")
+        )
+        modules.append(
+            ("trellis.models.monte_carlo.quanto", "Quanto Monte Carlo route helpers")
+        )
 
     deduped: list[tuple[str, str]] = []
     seen: set[str] = set()
@@ -1697,6 +2736,46 @@ def _diagnose_and_enrich(failures: list[str]) -> str:
     return ""
 
 
+def _format_validation_failure_feedback(
+    *,
+    failures: list[str],
+    failure_details: tuple[object, ...] | list[object] | None = None,
+) -> str:
+    """Render machine-readable validation details into builder repair guidance."""
+    lines = ["\n\n## VALIDATION FAILURES (your previous code had these issues):"]
+    if not failure_details:
+        lines.extend(f"- {failure}" for failure in failures)
+        return "\n".join(lines) + "\n"
+
+    for detail in failure_details:
+        check = getattr(detail, "check", "unknown_check")
+        message = getattr(detail, "message", str(detail))
+        lines.append(f"- [{check}] {message}")
+        actual = getattr(detail, "actual", None)
+        if actual is not None:
+            lines.append(f"  Actual: {actual}")
+        expected = getattr(detail, "expected", None)
+        if expected is not None:
+            lines.append(f"  Expected: {expected}")
+        exception_type = getattr(detail, "exception_type", None)
+        exception_message = getattr(detail, "exception_message", None)
+        if exception_type or exception_message:
+            exception_text = (
+                f"{exception_type}: {exception_message}"
+                if exception_type and exception_message
+                else str(exception_type or exception_message)
+            )
+            lines.append(f"  Exception: {exception_text}")
+        context = getattr(detail, "context", None) or {}
+        if context:
+            context_parts = []
+            for key in sorted(context):
+                value = context[key]
+                context_parts.append(f"{key}={value}")
+            lines.append(f"  Context: {', '.join(context_parts)}")
+    return "\n".join(lines) + "\n"
+
+
 def _record_resolved_failures(
     failures: list[str],
     description: str,
@@ -1708,14 +2787,10 @@ def _record_resolved_failures(
     This records the experience into experience.py so the builder agent
     never repeats the same mistake in future builds.
     """
-    import logging
-    logger = logging.getLogger(__name__)
+    from trellis.agent.config import llm_generate_json
+    from trellis.agent.test_resolution import Lesson, record_lesson
 
-    try:
-        from trellis.agent.config import llm_generate_json
-        from trellis.agent.test_resolution import Lesson, record_lesson
-
-        prompt = f"""You fixed these validation failures for a {description}
+    prompt = f"""You fixed these validation failures for a {description}
 ({pricing_plan.method if pricing_plan else 'unknown'} method):
 
 {chr(10).join(f'- {f}' for f in failures)}
@@ -1732,42 +2807,67 @@ Distill ONE concise lesson learned. Return JSON:
 
 Only return JSON, no markdown."""
 
-        data = llm_generate_json(prompt, model=model)
-        required = {"category", "title", "mistake", "why", "detect", "fix"}
-        missing = required - set(data.keys())
-        if missing:
-            logger.warning(f"LLM lesson output missing fields: {missing}")
-            return
+    data = llm_generate_json(prompt, model=model)
+    required = {"category", "title", "mistake", "why", "detect", "fix"}
+    missing = required - set(data.keys())
+    if missing:
+        raise RuntimeError(f"LLM lesson output missing fields: {sorted(missing)}")
 
-        lesson = Lesson(**data)
+    lesson = Lesson(**data)
+    try:
         record_lesson(lesson)
+    except Exception as exc:
+        raise RuntimeError(f"Lesson recording failed for {lesson.title!r}") from exc
 
-        # Also capture into the knowledge system with feature tags
-        try:
-            from trellis.agent.knowledge.promotion import capture_lesson as kn_capture
-            from trellis.agent.knowledge.decompose import decompose as kn_decompose
-            features = []
-            try:
-                decomp = kn_decompose(description, instrument_type=None)
-                features = list(decomp.features)
-            except Exception:
-                pass
-            kn_capture(
-                category=data.get("category", "unknown"),
-                title=data.get("title", ""),
-                severity="high",
-                symptom=data.get("mistake", data.get("detect", "")),
-                root_cause=data.get("why", ""),
-                fix=data.get("fix", ""),
-                validation=f"Resolved during build of {description}",
-                method=pricing_plan.method if pricing_plan else None,
-                features=features,
-                confidence=0.5,
-            )
-        except Exception as e:
-            logger.warning(f"Knowledge capture failed (non-blocking): {e}")
-    except Exception as e:
-        logger.warning(f"Lesson recording failed (non-blocking): {e}")
+    # Also capture into the knowledge system with feature tags.
+    from trellis.agent.knowledge.decompose import decompose as kn_decompose
+    from trellis.agent.knowledge.promotion import (
+        build_lesson_payload,
+        capture_lesson as kn_capture,
+        validate_lesson_payload,
+    )
+
+    features = []
+    try:
+        decomp = kn_decompose(description, instrument_type=None)
+        features = list(decomp.features)
+    except Exception:
+        pass
+
+    lesson_payload = build_lesson_payload(
+        category=data.get("category", "unknown"),
+        title=data.get("title", ""),
+        severity="high",
+        symptom=data.get("mistake", data.get("detect", "")),
+        root_cause=data.get("why", ""),
+        fix=data.get("fix", ""),
+        validation=f"Resolved during build of {description}",
+        method=pricing_plan.method if pricing_plan else None,
+        features=features,
+        confidence=0.5,
+    )
+    lesson_contract = validate_lesson_payload(lesson_payload)
+    if not lesson_contract.valid:
+        raise RuntimeError(
+            "Knowledge lesson payload failed validation: "
+            + "; ".join(lesson_contract.errors)
+        )
+
+    try:
+        kn_capture(
+            category=data.get("category", "unknown"),
+            title=data.get("title", ""),
+            severity="high",
+            symptom=data.get("mistake", data.get("detect", "")),
+            root_cause=data.get("why", ""),
+            fix=data.get("fix", ""),
+            validation=f"Resolved during build of {description}",
+            method=pricing_plan.method if pricing_plan else None,
+            features=features,
+            confidence=0.5,
+        )
+    except Exception as exc:
+        raise RuntimeError(f"Knowledge capture failed for {lesson.title!r}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -1992,7 +3092,15 @@ def _record_trace(
             instrument=instrument_type or "unknown",
             method=pricing_plan.method if pricing_plan else "unknown",
             description=description,
-            pricing_plan={"method": pricing_plan.method} if pricing_plan else {},
+            pricing_plan=(
+                {
+                    "method": pricing_plan.method,
+                    "selection_reason": pricing_plan.selection_reason,
+                    "assumption_summary": list(pricing_plan.assumption_summary),
+                }
+                if pricing_plan
+                else {}
+            ),
             attempt=attempt,
             code=code,
             validation_failures=failures,

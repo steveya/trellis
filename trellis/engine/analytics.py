@@ -1,4 +1,10 @@
-"""Greek computation via autodiff."""
+"""Risk sensitivity (Greek) computation via automatic differentiation.
+
+Greeks measure how a bond's price changes when interest rates move.
+This module uses autograd to differentiate the pricing function with
+respect to the curve rates, giving exact sensitivities without
+finite-difference approximation.
+"""
 
 from __future__ import annotations
 
@@ -61,14 +67,14 @@ def compute_greeks(
         if need_all or "modified_duration" in need:
             greeks["modified_duration"] = dur
 
-    # Convexity via finite difference
+    # Convexity via the second derivative of a parallel rate shift.
     if need_all or "convexity" in need:
-        bump = 1e-4
-        rates_up = rates + bump
-        rates_dn = rates - bump
-        p_up = float(price_fn(rates_up))
-        p_dn = float(price_fn(rates_dn))
-        greeks["convexity"] = (p_up + p_dn - 2 * price) / (price * bump ** 2)
+        def shifted_price(shift):
+            return price_fn(rates + shift)
+
+        second_derivative = gradient(gradient(shifted_price, 0), 0)
+        d2p_dy2 = float(second_derivative(0.0))
+        greeks["convexity"] = 0.0 if price == 0 else d2p_dy2 / price
 
     # Key-rate durations
     if tenors is not None and (need_all or "key_rate_durations" in need):

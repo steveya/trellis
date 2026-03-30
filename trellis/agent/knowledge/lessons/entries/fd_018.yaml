@@ -1,0 +1,40 @@
+category: finite_differences
+title: PDE payoff must wrap required primitives
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:19:01.878847'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_231902_build_a_pricer_for:_finite_element_method_(fem)_vs_finite_difference_for_european
+
+
+  implementation_target:_fem_solver
+
+  preferred_method_family:_pde_solver
+
+
+  implementation_target:_fem_solver_pde_solver.yaml'
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - pde_grid
+  - discounting
+  - vol_surface_dependence
+  - local_vol
+  - greeks
+  - fem_solver
+  instrument: []
+  error_signature: null
+symptom: Build logs contain assembly.required_primitive_missing and/or engine.family_incompatible_with_ir
+  errors.
+root_cause: Generated payoff code did not call the exact PDE solver primitives required
+  by the selected assembly route (theta_method_1d) and instead referenced/used analytical
+  routines, causing an engine-family mismatch. The adapter layer between product IR
+  and solver primitives was underspecified or incorrect.
+fix: Rebuild the payoff as a thin adapter that imports and calls the exact primitives
+  from trellis.models.pde.theta_method.theta_method_1d (grid construction, assembler,
+  theta-stepper, boundary-condition helpers) and avoid using analytical engines; ensure
+  the code declares it uses the 'pde_solver' engine family.
+validation: Discovered during build (attempt 3)
+id: fd_018

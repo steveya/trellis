@@ -1,0 +1,27 @@
+id: num_022
+title: Missing required primitive calls
+severity: critical
+category: numerical
+status: validated
+confidence: 0.6
+created: '2026-03-28T11:34:31.889800'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_113432_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Generated payoff code did not call trellis.models.black.garman_kohlhagen_call
+  or trellis.models.black.garman_kohlhagen_put.
+root_cause: The payoff implementation reimplemented pricing logic (or used wrong primitives)
+  instead of acting as a thin adapter around the required garman_kohlhagen primitives;
+  exact trellis import paths and required primitive usage were not followed.
+fix: Refactor the payoff to be a thin adapter that imports and delegates to trellis.models.black.garman_kohlhagen_call
+  or trellis.models.black.garman_kohlhagen_put with the correct arguments and exact
+  import paths; ensure the adapter consumes the MarketState fields the primitive expects
+  and returns a scalar price.
+validation: Discovered during build (attempt 3)

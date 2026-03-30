@@ -2,8 +2,8 @@ id: num_014
 title: COS adaptive truncation LLM JSON parse failure on retry
 severity: critical
 category: numerical
-status: candidate
-confidence: 0.4
+status: validated
+confidence: 0.6
 created: '2026-03-25T18:53:09.669608'
 version: ''
 source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260325_185309_build_a_pricer_for:_cos_adaptive_truncation_for_extreme_parameters

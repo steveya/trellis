@@ -59,11 +59,34 @@ def test_generate_module_retries_after_empty_response(monkeypatch):
         calls["count"] += 1
         if calls["count"] == 1:
             return "   "
-        return "def ok():\n    return 1\n"
+        return """\
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class FooSpec:
+    spot: float
+
+
+class Foo:
+    def __init__(self, spec: FooSpec):
+        self._spec = spec
+
+    @property
+    def spec(self) -> FooSpec:
+        return self._spec
+
+    @property
+    def requirements(self) -> set[str]:
+        return set()
+
+    def evaluate(self, market_state):
+        return 1.0
+"""
 
     monkeypatch.setattr("trellis.agent.config.llm_generate", fake_llm_generate)
 
-    code = _generate_module(
+    result = _generate_module(
         skeleton="",
         spec_schema=SpecSchema(
             class_name="Foo",
@@ -76,7 +99,8 @@ def test_generate_module_retries_after_empty_response(monkeypatch):
         max_retries=2,
     )
 
-    assert code == "def ok():\n    return 1\n"
+    assert "class FooSpec" in result.code
+    assert "class Foo" in result.code
     assert calls["count"] == 2
 
 
@@ -297,7 +321,7 @@ def test_get_model_for_stage_uses_tiered_default_for_openai(monkeypatch):
     monkeypatch.setattr("trellis.agent.config.get_provider", lambda: "openai")
 
     assert get_model_for_stage("decomposition", "gpt-5-mini") == "gpt-5-mini"
-    assert get_model_for_stage("code_generation", "gpt-5-mini") == "gpt-5-mini"
+    assert get_model_for_stage("code_generation", "gpt-5-mini") == "gpt-5.4-mini"
     assert get_model_for_stage("model_validator", "gpt-5-mini") == "gpt-5"
 
 

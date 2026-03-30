@@ -20,6 +20,16 @@ Core Developer Topics
    hosting_and_configuration
    audit_and_observability
    task_and_eval_loops
+   task_diagnostics
+
+Implementation Journey Notes
+----------------------------
+
+.. toctree::
+   :maxdepth: 1
+
+   implementation_journey_knowledge_system
+   implementation_journey_route_family_handoff
 
 Agent Architecture Reference
 ----------------------------
@@ -31,4 +41,3 @@ Agent Architecture Reference
    ../agent/quant_agent
    ../agent/builder_agent
    ../agent/critic_agent
-

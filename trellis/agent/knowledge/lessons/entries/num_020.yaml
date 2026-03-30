@@ -1,0 +1,28 @@
+id: num_020
+title: Generated code had invalid indentation
+severity: critical
+category: numerical
+status: validated
+confidence: 0.6
+created: '2026-03-27T21:07:26.366666'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260327_210726_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Module import fails with SyntaxError: unexpected indent (e.g. ''SyntaxError
+  at line 59, column 16: unexpected indent'').'
+root_cause: The code generator emitted Python with inconsistent/misaligned indentation
+  (mixed tabs/spaces or stray indents) and lacked a post-generation compile/import
+  validation step; additionally imports were guessed rather than using exact library
+  import paths, increasing likelihood of broken code.
+fix: Enforce a canonical indentation style (4 spaces), run an automatic linter/compile
+  (python -m py_compile) after code generation and before deploying; validate imports
+  against the canonical trellis module paths and add an automated unit that attempts
+  to import the generated module.
+validation: Discovered during build (attempt 1)

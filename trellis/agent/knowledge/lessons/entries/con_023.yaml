@@ -1,0 +1,28 @@
+category: convention
+title: Unit conversion mismatch in pricing inputs
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T23:43:51.034048'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_234351_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Computed PV magnitude exceeds expected scale (e.g., |PV| > 10 × typical notional,
+  such as |PV| = 9995.24 for notional 100).
+root_cause: Input units or conventions were inconsistent (vols in percent vs decimal,
+  rates vs discount factors, or wrong model like Black76 vs Black‑Scholes), and the
+  payoff adapter did not normalize/validate those inputs before calling the analytical
+  routine.
+fix: 'Normalize and validate all model inputs before pricing: ensure volatility is
+  annualized decimal, convert discount factors to rates (or supply forward) matching
+  the chosen closed‑form formula, and implement a payoff adapter that maps instrument
+  spec -> (S, K, T, df/forward, sigma). Add PV scale sanity checks and unit tests.'
+validation: Discovered during build (attempt 3)
+id: con_023

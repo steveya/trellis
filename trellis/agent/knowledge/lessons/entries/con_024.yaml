@@ -1,0 +1,29 @@
+category: convention
+title: Unit conversion causes huge PV
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T23:47:11.504695'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_234712_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  - maturity_settlement
+  instrument:
+  - european_option
+  error_signature: null
+symptom: 'Price sanity check failed: |PV| = 9995.24, which exceeds 10.0× typical notional
+  (100).'
+root_cause: A unit/convention mismatch between inputs (vol, rates, notional) and the
+  pricing primitive produced an inflated PV; additionally, generated code contained
+  an indentation SyntaxError that prevented a valid module build.
+fix: Enforce and document input conventions (vol as decimal, discount curve vs zero
+  rate semantics, notional scaling), derive r from discount factors via r = -ln(df)/T
+  or use forward/Black76 consistently, add unit/conversion assertions and PV sanity
+  checks, and fix the code syntax/indentation.
+validation: Discovered during build (attempt 3)
+id: con_024

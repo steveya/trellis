@@ -1,4 +1,10 @@
-"""Shared contracts for Monte Carlo early-exercise policy classes."""
+"""Contracts for early-exercise pricing in Monte Carlo simulations.
+
+American and Bermudan options can be exercised before expiry. Pricing
+them via Monte Carlo requires estimating whether it is better to exercise
+now or continue holding. This module defines the shared interfaces and
+helpers used by early-exercise policies (e.g. Longstaff-Schwartz).
+"""
 
 from __future__ import annotations
 
@@ -35,14 +41,22 @@ class EarlyExercisePolicyResult:
 
 
 class ContinuationEstimator(Protocol):
-    """Protocol for continuation-value estimators used in stopping policies."""
+    """Protocol for estimating the value of continuing to hold (not exercising).
+
+    Used at each exercise date: given the current states and future cashflows,
+    estimate what each path is worth if the holder does NOT exercise now.
+    """
 
     def fit_predict(
         self,
         states: raw_np.ndarray,
         discounted_cashflows: raw_np.ndarray,
     ) -> tuple[raw_np.ndarray, bool]:
-        """Return continuation estimates plus a failure flag."""
+        """Estimate continuation value for each path.
+
+        Returns (estimates, failed) where failed is True if the regression
+        could not be solved (e.g. singular matrix).
+        """
         ...
 
     @property
@@ -83,7 +97,11 @@ def _fit_three_basis_regression(
     discounted_cashflows: raw_np.ndarray,
     workspace: _ThreeBasisRegressionWorkspace,
 ) -> tuple[raw_np.ndarray, bool]:
-    """Fit a three-column regression [1, b1, b2] and predict on the same states."""
+    """Regress discounted future cashflows on [1, basis_1, basis_2] and return fitted values.
+
+    Used to estimate continuation value: the constant + two basis functions
+    (typically S and S^2) approximate what the option is worth if not exercised.
+    """
     y = raw_np.asarray(discounted_cashflows, dtype=float)
     n = len(y)
     if n == 0:

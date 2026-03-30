@@ -1,0 +1,34 @@
+id: md_021
+title: resolve_basket_semantics does not accept 'underlyings' kwarg
+severity: critical
+category: market_data
+status: validated
+confidence: 0.6
+created: '2026-03-28T08:58:41.571714'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_085841_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Build fails with: TypeError: resolve_basket_semantics() got an unexpected
+  keyword argument ''underlyings'''
+root_cause: The agent inferred the signature of resolve_basket_semantics() incorrectly,
+  passing 'underlyings' as a keyword argument when the function does not accept that
+  parameter name. The correct interface uses positional arguments or a different keyword
+  (e.g., 'assets' or 'tickers').
+fix: Do not call resolve_basket_semantics() with 'underlyings=...' — instead use price_ranked_observation_basket_monte_carlo()
+  directly with the correct positional/keyword arguments, or inspect the actual function
+  signature before calling resolve_basket_semantics().
+validation: Discovered during build (attempt 2)

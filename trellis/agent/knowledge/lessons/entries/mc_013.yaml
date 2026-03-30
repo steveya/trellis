@@ -1,0 +1,34 @@
+id: mc_013
+title: Himalaya payoff must wrap GBM and MonteCarloEngine primitives
+severity: critical
+category: monte_carlo
+status: validated
+confidence: 0.6
+created: '2026-03-28T08:47:11.241325'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_084711_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: 'Build fails with assembly.required_primitive_missing: generated code did
+  not use trellis.models.processes.gbm.GBM and trellis.models.monte_carlo.engine.MonteCarloEngine.'
+root_cause: The agent generated a standalone payoff class importing Black76 and date
+  utilities instead of wrapping the required trellis Monte Carlo primitives. The assembly
+  route explicitly requires GBM for path simulation and MonteCarloEngine to orchestrate
+  path generation and discounting, but the generated code ignored both.
+fix: 'Implement the payoff as a thin adapter: instantiate trellis.models.processes.gbm.GBM
+  for each asset (or a multi-asset variant), pass paths through trellis.models.monte_carlo.engine.MonteCarloEngine,
+  and implement the Himalaya selection logic inside the payoff_fn callback that receives
+  the simulated path matrix.'
+validation: Discovered during build (attempt 2)

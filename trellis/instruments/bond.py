@@ -19,10 +19,13 @@ np = get_numpy()
 
 
 class Bond:
-    """Fixed-rate bond.
+    """Fixed-rate bond that pays periodic coupons and returns principal at maturity.
 
-    Supports both the legacy (notional, coupon, maturity-in-years, frequency-int)
-    interface and the new date-based interface.
+    Has two construction modes:
+    - Period-based (older): pass maturity as integer years, frequency as int.
+      Used by get_cashflows(), get_price(), get_duration(), get_convexity().
+    - Date-based (preferred): pass maturity_date, issue_date. Used by
+      cashflows() and price(curve).
     """
 
     def __init__(
@@ -37,7 +40,7 @@ class Bond:
         issue_date: date | None = None,
         day_count: DayCountConvention = DayCountConvention.ACT_ACT,
     ):
-        """Store either legacy period-based or modern date-based bond parameters."""
+        """Initialize bond terms. See class docstring for the two construction modes."""
         self.notional = face if face is not None else notional
         self.coupon_rate = coupon
         self.maturity = maturity
@@ -51,7 +54,7 @@ class Bond:
     # ------------------------------------------------------------------
 
     def get_cashflows(self):
-        """Return numpy array of cashflows (legacy, period-based)."""
+        """Return array of all cashflow amounts (coupons + final principal). Period-based mode."""
         n_periods = self.maturity * self.frequency
         coupon_payment = self.notional * self.coupon_rate / self.frequency
         # Build without in-place mutation for autograd compatibility
@@ -62,14 +65,14 @@ class Bond:
         return coupons + principal
 
     def get_price(self, rates):
-        """Price using flat per-period rates (legacy interface)."""
+        """Discount cashflows using a vector of per-period rates. Period-based mode."""
         cashflows = self.get_cashflows()
         n = self.maturity * self.frequency
         discount_factors = np.exp(-rates[:n] / self.frequency)
         return np.dot(cashflows, discount_factors)
 
     def get_duration(self, rates):
-        """Macaulay duration in periods (legacy interface)."""
+        """Macaulay duration in periods (weighted-average time to cashflows). Period-based mode."""
         cashflows = self.get_cashflows()
         n = self.maturity * self.frequency
         periods = np.arange(1, n + 1, dtype=float)
@@ -77,7 +80,7 @@ class Bond:
         return np.dot(periods, cashflows * discount_factors) / self.get_price(rates)
 
     def get_convexity(self, rates):
-        """Convexity in periods (legacy interface)."""
+        """Convexity in periods (second-order price sensitivity to rates). Period-based mode."""
         cashflows = self.get_cashflows()
         n = self.maturity * self.frequency
         periods = np.arange(1, n + 1, dtype=float)
@@ -89,7 +92,7 @@ class Bond:
     # ------------------------------------------------------------------
 
     def cashflows(self, settlement: date | None = None) -> CashflowSchedule:
-        """Generate dated cashflow schedule."""
+        """Return the list of (date, amount) pairs for all future coupons and principal."""
         if self.maturity_date is None:
             raise ValueError("maturity_date required for dated cashflow schedule")
         issue = self.issue_date or _infer_issue(self.maturity_date, self.maturity, self.frequency)
@@ -117,7 +120,7 @@ class Bond:
         return CashflowSchedule(dates=dates, amounts=amounts)
 
     def price(self, curve: DiscountCurve, settlement: date | None = None) -> float:
-        """Price the bond off a discount curve."""
+        """Compute the present value by discounting each future cashflow using the curve."""
         settlement = settlement or date.today()
         schedule = self.cashflows(settlement)
         pv = 0.0
@@ -131,7 +134,7 @@ class ParBond(Bond):
     """A bond initialised at par (convenience wrapper)."""
 
     def __init__(self, notional: float, maturity: int, frequency: int, coupon_rate: float):
-        """Create a par bond by forwarding par coupon terms to ``Bond``."""
+        """Create a bond priced at par (face value) with the given coupon rate."""
         super().__init__(notional, coupon_rate, maturity, frequency)
 
 

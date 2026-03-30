@@ -1,4 +1,8 @@
-"""Pricing orchestration: instrument + curve → PricingResult."""
+"""High-level pricing: given a bond and a yield curve, produce a full PricingResult.
+
+Combines the price calculation with risk sensitivities (Greeks) computed
+via automatic differentiation through the pricing function.
+"""
 
 from __future__ import annotations
 
@@ -55,7 +59,7 @@ def price_instrument(
         computed_greeks: dict = {}
     else:
         def _price_from_rates(rates_vec):
-            """Price as a function of the curve's rate vector (for autodiff)."""
+            """Price as a function of the curve's rate vector (enables automatic differentiation)."""
             from trellis.curves.interpolation import linear_interp
             pv = np.array(0.0)
             for t, amt in zip(times, cf_amounts):
@@ -74,11 +78,12 @@ def price_instrument(
         accrued_interest=accrued,
         ytm=None,  # TODO: solve for YTM
         greeks=computed_greeks,
+        curve_sensitivities=computed_greeks.get("key_rate_durations", {}) if computed_greeks else {},
     )
 
 
 def _accrued_interest(bond: Bond, settlement: date) -> float:
-    """Compute accrued interest from last coupon date to settlement."""
+    """Compute interest earned since the last coupon payment up to the settlement date."""
     if bond.coupon_rate == 0.0:
         return 0.0
     if bond.maturity_date is None:

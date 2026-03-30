@@ -32,6 +32,8 @@ class TestKnowledgeStore:
         assert "P1" in ids
         assert "P2" in ids
         assert "P3" in ids
+        assert "P10" in ids
+        assert "P11" in ids
 
     def test_feature_expansion_callable(self):
         from trellis.agent.knowledge.store import expand_features, KnowledgeStore
@@ -123,6 +125,40 @@ class TestKnowledgeStore:
         assert k["cookbook"] is not None
         assert k["data_contracts"]
 
+    def test_retrieve_analytical_cds_includes_credit_curve_guidance(self):
+        from trellis.agent.knowledge import retrieve_for_task
+
+        k = retrieve_for_task(
+            "analytical",
+            features=["credit", "spread"],
+            instrument="nth_to_default",
+        )
+
+        assert k["decomposition"] is not None
+        assert k["decomposition"].instrument == "nth_to_default"
+        assert k["cookbook"] is not None
+        template = k["cookbook"].template
+        assert "Credit default swap / nth-to-default" in template
+        assert "survival_probability" in template
+        assert "credit_curve" in template
+
+    def test_retrieve_monte_carlo_cds_includes_hazard_rate_guidance(self):
+        from trellis.agent.knowledge import retrieve_for_task
+
+        k = retrieve_for_task(
+            "monte_carlo",
+            features=["credit", "spread"],
+            instrument="nth_to_default",
+        )
+
+        assert k["decomposition"] is not None
+        assert k["decomposition"].instrument == "nth_to_default"
+        assert k["cookbook"] is not None
+        template = k["cookbook"].template
+        assert "Credit default swap / nth-to-default" in template
+        assert "hazard_rate" in template
+        assert "credit_curve" in template
+
     def test_retrieve_qmc(self):
         from trellis.agent.knowledge import retrieve_for_task
         k = retrieve_for_task(
@@ -174,22 +210,129 @@ class TestKnowledgeStore:
                 "fx_rates",
                 "spot",
             },
-            reusable_primitives=("garman_kohlhagen_call", "garman_kohlhagen_put"),
+            reusable_primitives=(
+                "black76_asset_or_nothing_call",
+                "black76_cash_or_nothing_call",
+                "terminal_vanilla_from_basis",
+            ),
             supported=True,
             preferred_method="analytical",
         )
         k = retrieve_for_product_ir(ir, preferred_method="analytical")
 
         assert k["cookbook"] is not None
-        assert "garman_kohlhagen_call" in k["cookbook"].template
+        assert "terminal_vanilla_from_basis" in k["cookbook"].template
         assert k["data_contracts"]
         contract_names = {contract.name for contract in k["data_contracts"]}
         assert "FX_DOMESTIC_FOREIGN_DISCOUNTING" in contract_names
         assert k["method_requirements"] is not None
         requirements_text = "\n".join(k["method_requirements"].requirements)
         assert "GARMAN-KOHLHAGEN" in requirements_text
+        assert "Black76 asset-or-nothing" in requirements_text or "Black76 asset-or-nothing" in k["cookbook"].template
         assert "fx_rates" in requirements_text
         assert "forward_curve" in requirements_text
+
+    def test_retrieve_ranked_observation_basket_includes_semantic_basket_guidance(self):
+        from trellis.agent.knowledge import retrieve_for_product_ir
+        from trellis.agent.knowledge.retrieval import build_shared_knowledge_payload
+        from trellis.agent.knowledge.import_registry import get_import_registry
+        from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+        from trellis.agent.semantic_contracts import make_ranked_observation_basket_contract
+
+        contract = make_ranked_observation_basket_contract(
+            description="Himalaya-style ranked observation basket on AAPL, MSFT, and NVDA",
+            constituents=("AAPL", "MSFT", "NVDA"),
+            observation_schedule=("2025-01-15", "2025-02-15", "2025-03-15"),
+        )
+        compiled = compile_semantic_contract(contract)
+        k = retrieve_for_product_ir(compiled.product_ir, preferred_method="monte_carlo")
+
+        assert k["decomposition"] is not None
+        assert k["decomposition"].instrument == "basket_path_payoff"
+        assert k["cookbook"] is not None
+        assert "resolve_basket_semantics" in k["cookbook"].template
+        assert "price_ranked_observation_basket_monte_carlo" in k["cookbook"].template
+        assert k["lessons"]
+        assert any("ranked-observation basket" in lesson.title.lower() for lesson in k["lessons"])
+        assert any(
+            "semantic understanding" in principle.rule.lower()
+            for principle in k["principles"]
+        )
+
+        payload = build_shared_knowledge_payload(k)
+        superseded_ids = payload["summary"].get("superseded_lesson_ids", [])
+        assert {"mc_016", "mc_018"}.issubset(set(superseded_ids))
+        assert "mc_021" not in superseded_ids
+
+        registry = get_import_registry()
+        assert "trellis.models.resolution.basket_semantics" in registry
+        assert "trellis.models.monte_carlo.semantic_basket" in registry
+
+    def test_retrieve_basket_bootstrap_guidance_includes_launch_contract(self):
+        from trellis.agent.knowledge import retrieve_for_task
+
+        k = retrieve_for_task(
+            "monte_carlo",
+            features=[
+                "discounting",
+                "multi_asset",
+                "path_dependent",
+                "ranked_observation",
+                "remaining_selection",
+                "remove_selected",
+                "locked_returns",
+                "maturity_settlement",
+                "vol_surface_dependence",
+            ],
+            instrument="basket_option",
+            max_lessons=20,
+        )
+
+        lesson_ids = [lesson.id for lesson in k["lessons"]]
+        assert "con_014" in lesson_ids
+        assert any("pinned interpreter" in lesson.title.lower() for lesson in k["lessons"])
+
+    def test_retrieve_partial_request_includes_required_input_plan(self):
+        from trellis.agent.knowledge import retrieve_for_task
+
+        k = retrieve_for_task(
+            "monte_carlo",
+            features=[
+                "discounting",
+                "path_dependent",
+                "multi_asset",
+                "vol_surface_dependence",
+            ],
+            instrument="basket_option",
+            max_lessons=20,
+        )
+
+        lesson_ids = [lesson.id for lesson in k["lessons"]]
+        assert "sem_002" in lesson_ids
+        assert any("required-input plan" in lesson.title.lower() for lesson in k["lessons"])
+
+    def test_retrieve_basket_request_includes_correlated_gbm_mu_lesson(self):
+        from trellis.agent.knowledge import retrieve_for_task
+
+        k = retrieve_for_task(
+            "monte_carlo",
+            features=[
+                "multi_asset",
+                "path_dependent",
+                "ranked_observation",
+                "remaining_selection",
+                "remove_selected",
+                "locked_returns",
+                "maturity_settlement",
+                "discounting",
+            ],
+            instrument="basket_option",
+            max_lessons=20,
+        )
+
+        lesson_ids = [lesson.id for lesson in k["lessons"]]
+        assert "mc_021" in lesson_ids
+        assert any("mu" in lesson.title.lower() and "mus" in lesson.title.lower() for lesson in k["lessons"])
 
     def test_retrieve_alias_method(self):
         from trellis.agent.knowledge import retrieve_for_task
@@ -248,6 +391,36 @@ class TestKnowledgeStore:
         assert stats["hits"] == 1
         assert stats["size"] >= 1
 
+    def test_live_repo_state_helpers_are_revision_keyed(self):
+        from trellis.agent.knowledge import (
+            get_package_map,
+            get_repo_facts,
+            get_repo_revision,
+            get_symbol_map,
+            get_test_map,
+            suggest_tests_for_symbol,
+        )
+
+        revision = get_repo_revision()
+        symbol_map = get_symbol_map()
+        package_map = get_package_map()
+        test_map = get_test_map()
+        repo_facts = get_repo_facts()
+
+        assert symbol_map.repo_revision == revision
+        assert package_map.repo_revision == revision
+        assert test_map.repo_revision == revision
+        assert repo_facts and all(f.repo_revision == revision for f in repo_facts)
+        assert "trellis.models.black" in symbol_map.module_to_symbols
+        assert "black76_call" in symbol_map.symbol_to_modules
+        assert "trellis.models" in package_map.package_to_modules
+        assert any(
+            path.endswith("test_build_loop.py")
+            for tests in test_map.directory_to_tests.values()
+            for path in tests
+        )
+        assert suggest_tests_for_symbol("callable_bond")
+
 
 # ---------------------------------------------------------------------------
 # Prompt formatting
@@ -272,8 +445,9 @@ class TestFormatting:
     def test_format_empty_retrieval(self):
         from trellis.agent.knowledge.retrieval import format_knowledge_for_prompt
         text = format_knowledge_for_prompt({})
-        # Even empty retrieval includes the import registry
+        # Even empty retrieval includes the API map and import registry
         assert "AVAILABLE IMPORTS" in text
+        assert "API Map" in text
 
     def test_build_shared_knowledge_payload_includes_prompt_views_and_summary(self):
         from trellis.agent.knowledge import retrieve_for_product_ir
@@ -288,8 +462,10 @@ class TestFormatting:
         payload = build_shared_knowledge_payload(knowledge)
 
         assert "## Product Semantics" in payload["builder_text"]
+        assert "API Map" in payload["builder_text_distilled"]
         assert "## Shared Failure Memory" in payload["review_text"]
         assert payload["routing_text"]
+        assert "API Map" in payload["routing_text_distilled"]
         assert (
             "## Prior Lessons From Similar Products" in payload["routing_text"]
             or "## Shared Routing Principles" in payload["routing_text"]
@@ -429,24 +605,73 @@ class TestDecompose:
 class TestPromotion:
 
     @pytest.fixture(autouse=True)
-    def cleanup(self):
-        """Clean up any test lessons after each test."""
+    def isolated_store(self, monkeypatch, tmp_path):
+        """Run promotion tests against an isolated lesson store."""
+        import trellis.agent.knowledge.promotion as promotion_module
+
+        lessons_dir = tmp_path / "lessons"
+        entries_dir = lessons_dir / "entries"
+        traces_dir = tmp_path / "traces"
+        semantic_traces_dir = traces_dir / "semantic_extensions"
+        entries_dir.mkdir(parents=True, exist_ok=True)
+        semantic_traces_dir.mkdir(parents=True, exist_ok=True)
+        index_path = lessons_dir / "index.yaml"
+        index_path.write_text(
+            yaml.dump(
+                {"entries": [], "settings": {"max_prompt_entries": 7}},
+                default_flow_style=False,
+                sort_keys=False,
+            )
+        )
+
+        monkeypatch.setattr(promotion_module, "_LESSONS_DIR", lessons_dir)
+        monkeypatch.setattr(promotion_module, "_TRACES_DIR", traces_dir)
+        monkeypatch.setattr(promotion_module, "_SEMANTIC_EXTENSION_TRACES_DIR", semantic_traces_dir)
+        monkeypatch.setattr(promotion_module, "_INDEX_PATH", index_path)
+        monkeypatch.setattr(promotion_module, "_INDEX_REBUILD_SUPPRESS_DEPTH", 0)
+        monkeypatch.setattr(promotion_module, "_INDEX_REBUILD_PENDING", False)
         yield
-        # Remove test entries from index and entries dir
-        from trellis.agent.knowledge.promotion import _LESSONS_DIR, _INDEX_PATH
-        index = yaml.safe_load(_INDEX_PATH.read_text()) if _INDEX_PATH.exists() else {}
-        entries = index.get("entries", [])
-        cleaned = [e for e in entries if not e.get("title", "").startswith("_test_")]
-        if len(cleaned) != len(entries):
-            index["entries"] = cleaned
-            with open(_INDEX_PATH, "w") as f:
-                yaml.dump(index, f, default_flow_style=False, sort_keys=False)
-        # Remove test entry files
-        entries_dir = _LESSONS_DIR / "entries"
-        for f in entries_dir.glob("*_test_*.yaml"):
-            f.unlink()
-        for f in entries_dir.glob("vs_*.yaml"):
-            f.unlink()
+
+    def _write_lesson_entry(
+        self,
+        lesson_id: str,
+        *,
+        title: str,
+        status: str = "candidate",
+        severity: str = "medium",
+        category: str = "vol_surface",
+        applies_when: dict | None = None,
+        **extra: object,
+    ) -> Path:
+        import trellis.agent.knowledge.promotion as promotion_module
+
+        payload = {
+            "id": lesson_id,
+            "title": title,
+            "severity": severity,
+            "category": category,
+            "status": status,
+            "confidence": extra.pop("confidence", 0.7),
+            "created": extra.pop("created", "2026-03-01T00:00:00"),
+            "version": extra.pop("version", ""),
+            "source_trace": extra.pop("source_trace", None),
+            "applies_when": applies_when
+            or {
+                "method": [],
+                "features": [],
+                "instrument": [],
+                "error_signature": None,
+            },
+            "symptom": extra.pop("symptom", "symptom"),
+            "root_cause": extra.pop("root_cause", "root cause"),
+            "fix": extra.pop("fix", "fix"),
+            "validation": extra.pop("validation", "validation"),
+        }
+        payload.update(extra)
+
+        path = promotion_module._LESSONS_DIR / "entries" / f"{lesson_id}.yaml"
+        path.write_text(yaml.safe_dump(payload, sort_keys=False))
+        return path
 
     def test_capture_returns_id(self):
         from trellis.agent.knowledge.promotion import capture_lesson
@@ -470,6 +695,34 @@ class TestPromotion:
         )
         assert lid1 is not None
         assert lid2 is None  # duplicate rejected
+
+    def test_capture_rejects_invalid_contract(self):
+        from trellis.agent.knowledge.promotion import capture_lesson, validate_lesson_payload
+
+        report = validate_lesson_payload(
+            {
+                "category": "vol_surface",
+                "title": "",
+                "severity": "medium",
+                "symptom": "test",
+                "root_cause": "test",
+                "fix": "test fix",
+            }
+        )
+
+        assert not report.valid
+        assert any("title is required" in error for error in report.errors)
+        assert (
+            capture_lesson(
+                category="vol_surface",
+                title="",
+                severity="medium",
+                symptom="test",
+                root_cause="test",
+                fix="test fix",
+            )
+            is None
+        )
 
     def test_validate_requires_confidence(self):
         from trellis.agent.knowledge.promotion import capture_lesson, validate_lesson
@@ -529,6 +782,230 @@ class TestPromotion:
         # Capped at 1.0
         new = boost_confidence(lid, 0.5)
         assert new == 1.0
+
+    def test_rebuild_index_matches_entries(self):
+        import trellis.agent.knowledge.promotion as promotion_module
+
+        self._write_lesson_entry(
+            "mc_002",
+            title="Later lesson",
+            status="promoted",
+            severity="high",
+            category="monte_carlo",
+            applies_when={
+                "method": ["monte_carlo"],
+                "features": ["beta"],
+                "instrument": ["basket_option"],
+                "error_signature": None,
+            },
+        )
+        self._write_lesson_entry(
+            "mc_001",
+            title="Earlier lesson",
+            status="validated",
+            severity="medium",
+            category="monte_carlo",
+            applies_when={
+                "method": ["monte_carlo"],
+                "features": ["alpha"],
+                "instrument": ["basket_option"],
+                "error_signature": None,
+            },
+        )
+
+        index = promotion_module.rebuild_index()
+        index_path = promotion_module._INDEX_PATH
+        persisted = yaml.safe_load(index_path.read_text())
+
+        assert [entry["id"] for entry in index["entries"]] == ["mc_001", "mc_002"]
+        assert [entry["id"] for entry in persisted["entries"]] == ["mc_001", "mc_002"]
+        assert persisted["settings"]["max_prompt_entries"] == 7
+        assert persisted["entries"][0]["title"] == "Earlier lesson"
+        assert persisted["entries"][0]["applies_when"]["features"] == ["alpha"]
+
+    def test_rebuild_index_skips_corrupt_files(self):
+        import trellis.agent.knowledge.promotion as promotion_module
+
+        self._write_lesson_entry(
+            "vol_001",
+            title="Valid lesson",
+            status="candidate",
+            severity="low",
+            category="volatility",
+        )
+        corrupt_path = promotion_module._LESSONS_DIR / "entries" / "vol_002.yaml"
+        corrupt_path.write_text("not: [valid\n")
+
+        index = promotion_module.rebuild_index()
+
+        assert [entry["id"] for entry in index["entries"]] == ["vol_001"]
+
+    def test_rebuild_index_is_deterministic(self):
+        import trellis.agent.knowledge.promotion as promotion_module
+
+        self._write_lesson_entry(
+            "num_002",
+            title="Second numeric lesson",
+            status="promoted",
+            severity="high",
+            category="numerical",
+        )
+        self._write_lesson_entry(
+            "num_001",
+            title="First numeric lesson",
+            status="validated",
+            severity="medium",
+            category="numerical",
+        )
+
+        index_path = promotion_module._INDEX_PATH
+        first = yaml.safe_dump(promotion_module.rebuild_index(), sort_keys=False)
+        second = yaml.safe_dump(promotion_module.rebuild_index(), sort_keys=False)
+
+        assert first == second
+        assert yaml.safe_load(index_path.read_text())["entries"][0]["id"] == "num_001"
+
+    def test_capture_invalidates_retrieval_cache(self, monkeypatch):
+        import trellis.agent.knowledge as knowledge_pkg
+        from trellis.agent.knowledge.promotion import capture_lesson
+
+        class FakeStore:
+            def __init__(self) -> None:
+                self.reload_calls = 0
+
+            def reload(self) -> None:
+                self.reload_calls += 1
+
+        fake_store = FakeStore()
+        monkeypatch.setattr(knowledge_pkg, "_store", fake_store, raising=False)
+
+        lid = capture_lesson(
+            category="vol_surface",
+            title="_test_cache_invalidation",
+            severity="medium",
+            symptom="test",
+            root_cause="test",
+            fix="test fix",
+            confidence=0.7,
+        )
+
+        assert lid is not None
+        assert fake_store.reload_calls == 1
+
+    def test_semantic_extension_trace_rebuilds_index_once(self, monkeypatch):
+        import trellis.agent.knowledge.promotion as promotion_module
+
+        rebuild_calls = {"count": 0}
+
+        def _counting_rebuild_index() -> dict:
+            rebuild_calls["count"] += 1
+            return {"entries": [], "settings": {"max_prompt_entries": 7}}
+
+        monkeypatch.setattr(promotion_module, "rebuild_index", _counting_rebuild_index)
+
+        trace_kwargs = {
+            "request_id": "request-1",
+            "request_text": "Need an extension for a missing pricing primitive",
+            "instrument_type": "callable_bond",
+            "semantic_gap": {
+                "summary": "missing route helper",
+                "missing_route_helpers": ["resolve_route"],
+            },
+            "semantic_extension": {
+                "decision": "extend",
+                "confidence": 0.9,
+                "recommended_next_step": "Add a route helper",
+            },
+            "route_method": "rate_tree",
+        }
+
+        first_path = promotion_module.record_semantic_extension_trace(**trace_kwargs)
+        second_path = promotion_module.record_semantic_extension_trace(**trace_kwargs)
+
+        assert Path(first_path).exists()
+        assert Path(second_path).exists()
+        assert rebuild_calls["count"] == 1
+
+        second_trace = yaml.safe_load(Path(second_path).read_text())
+        lesson_id = second_trace["lesson_id"]
+        lesson_path = promotion_module._LESSONS_DIR / "entries" / f"{lesson_id}.yaml"
+        lesson_data = yaml.safe_load(lesson_path.read_text())
+        assert lesson_data["status"] == "promoted"
+
+    def test_distill_rebuilds_index_once(self, monkeypatch):
+        import trellis.agent.knowledge.promotion as promotion_module
+
+        rebuild_calls = {"count": 0}
+
+        def _counting_rebuild_index() -> dict:
+            rebuild_calls["count"] += 1
+            return {"entries": [], "settings": {"max_prompt_entries": 7}}
+
+        monkeypatch.setattr(promotion_module, "rebuild_index", _counting_rebuild_index)
+
+        index_path = promotion_module._INDEX_PATH
+        entries = [
+            {
+                "id": "mc_010",
+                "title": "Validated lesson",
+                "severity": "high",
+                "category": "monte_carlo",
+                "status": "validated",
+                "applies_when": {
+                    "method": ["monte_carlo"],
+                    "features": ["discounting"],
+                    "instrument": ["basket_option"],
+                    "error_signature": None,
+                },
+            },
+            {
+                "id": "mc_011",
+                "title": "Stale candidate",
+                "severity": "medium",
+                "category": "monte_carlo",
+                "status": "candidate",
+                "applies_when": {
+                    "method": ["monte_carlo"],
+                    "features": ["discounting"],
+                    "instrument": ["basket_option"],
+                    "error_signature": None,
+                },
+            },
+        ]
+        index_path.write_text(
+            yaml.safe_dump(
+                {
+                    "entries": entries,
+                    "settings": {"max_prompt_entries": 7},
+                },
+                sort_keys=False,
+            )
+        )
+        self._write_lesson_entry(
+            "mc_010",
+            title="Validated lesson",
+            status="validated",
+            severity="high",
+            category="monte_carlo",
+            applies_when=entries[0]["applies_when"],
+            confidence=0.9,
+        )
+        self._write_lesson_entry(
+            "mc_011",
+            title="Stale candidate",
+            status="candidate",
+            severity="medium",
+            category="monte_carlo",
+            applies_when=entries[1]["applies_when"],
+            confidence=0.5,
+            created="2026-01-01T00:00:00",
+        )
+
+        stats = promotion_module.distill()
+
+        assert stats["promoted"] == 1
+        assert stats["archived"] == 1
+        assert rebuild_calls["count"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -666,12 +1143,8 @@ class TestReflect:
 
         # Cleanup
         path.unlink()
-        # Remove from index
-        idx_path = Path("/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/lessons/index.yaml")
-        idx = yaml.safe_load(idx_path.read_text()) or {}
-        idx["entries"] = [e for e in idx.get("entries", []) if e["id"] != lid]
-        with open(idx_path, "w") as f:
-            yaml.dump(idx, f, default_flow_style=False, sort_keys=False)
+        from trellis.agent.knowledge.promotion import rebuild_index
+        rebuild_index()
 
     def test_auto_validate_and_promote(self):
         from trellis.agent.knowledge.reflect import _auto_validate_and_promote
@@ -694,11 +1167,8 @@ class TestReflect:
 
         # Cleanup
         path.unlink()
-        idx_path = Path("/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/lessons/index.yaml")
-        idx = yaml.safe_load(idx_path.read_text()) or {}
-        idx["entries"] = [e for e in idx.get("entries", []) if e["id"] != lid]
-        with open(idx_path, "w") as f:
-            yaml.dump(idx, f, default_flow_style=False, sort_keys=False)
+        from trellis.agent.knowledge.promotion import rebuild_index
+        rebuild_index()
 
     def test_should_distill_false_initially(self):
         from trellis.agent.knowledge.reflect import _should_distill
@@ -706,3 +1176,105 @@ class TestReflect:
         # (depends on current state, but should not crash)
         result = _should_distill()
         assert isinstance(result, bool)
+
+
+# ---------------------------------------------------------------------------
+# Solution-contract and semantic-definition regression tests
+# ---------------------------------------------------------------------------
+
+
+class TestAnalyticalSolutionContracts:
+    """Verify that the analytical cookbook and requirements express
+    contract-specific assumptions, not just a generic method label."""
+
+    def test_analytical_cookbook_mentions_solution_contracts(self):
+        """The analytical cookbook template should reference specific solution
+        contracts (black_scholes_equity, garman_kohlhagen_fx, black76_forward_rate)
+        so the LLM sees contract-level distinctions."""
+        from trellis.agent.knowledge import retrieve_for_task
+        k = retrieve_for_task(
+            "analytical",
+            features=["vol_surface_dependence"],
+            instrument="european_option",
+        )
+        cookbook = k["cookbook"]
+        assert cookbook is not None
+        template = cookbook.template
+        assert "solution contract" in template.lower(), (
+            "Analytical cookbook template should reference solution contracts"
+        )
+        assert "black_scholes_equity" in template or "Black-Scholes" in template
+        assert "garman_kohlhagen_fx" in template or "Garman-Kohlhagen" in template
+        assert "black76_forward_rate" in template or "Black76 forward-rate" in template
+
+    def test_analytical_cookbook_states_assumptions(self):
+        """Each analytical code block should be preceded by its assumptions."""
+        from trellis.agent.knowledge import retrieve_for_task
+        k = retrieve_for_task(
+            "analytical",
+            features=["vol_surface_dependence"],
+            instrument="european_option",
+        )
+        template = k["cookbook"].template
+        assert "lognormal" in template.lower() or "GBM" in template
+        assert "deterministic" in template.lower()
+        assert "European exercise" in template or "european" in template.lower()
+
+    def test_analytical_requirements_per_contract(self):
+        """Analytical method requirements should contain contract-specific
+        requirement text, not just one generic block."""
+        from trellis.agent.knowledge import retrieve_for_task
+        k = retrieve_for_task(
+            "analytical",
+            features=["vol_surface_dependence"],
+            instrument="european_option",
+        )
+        reqs = k["method_requirements"]
+        assert reqs is not None
+        req_text = " ".join(reqs.requirements)
+        # Should mention at least two distinct contracts
+        assert "BLACK-SCHOLES" in req_text or "EQUITY" in req_text
+        assert "GARMAN-KOHLHAGEN" in req_text or "FX" in req_text
+        assert "OUTPUT CONTRACT" in req_text
+
+    def test_analytical_requirements_not_empty(self):
+        """Regression: the restructured YAML must still load non-empty requirements."""
+        from trellis.agent.knowledge import retrieve_for_task
+        k = retrieve_for_task(
+            "analytical",
+            features=["vol_surface_dependence"],
+            instrument="cap",
+        )
+        reqs = k["method_requirements"]
+        assert reqs is not None
+        assert len(reqs.requirements) >= 5, (
+            f"Expected >=5 analytical requirements after split, got {len(reqs.requirements)}"
+        )
+
+    def test_analytical_description_mentions_contracts(self):
+        """The cookbook description should signal that contracts are not interchangeable."""
+        from trellis.agent.knowledge import retrieve_for_task
+        k = retrieve_for_task(
+            "analytical",
+            features=["vol_surface_dependence"],
+            instrument="european_option",
+        )
+        desc = k["cookbook"].description
+        assert "not interchangeable" in desc.lower() or "solution contract" in desc.lower(), (
+            "Analytical cookbook description should warn that contracts are assumption-bound"
+        )
+
+    def test_prompt_surface_includes_contract_assumptions(self):
+        """When formatted for the builder prompt, the analytical knowledge
+        should include assumption text, not just code templates."""
+        from trellis.agent.knowledge import retrieve_for_task
+        from trellis.agent.knowledge.retrieval import format_knowledge_for_prompt
+        k = retrieve_for_task(
+            "analytical",
+            features=["vol_surface_dependence"],
+            instrument="european_option",
+        )
+        prompt_text = format_knowledge_for_prompt(k)
+        assert "assumption" in prompt_text.lower() or "Assumptions" in prompt_text, (
+            "Builder prompt should include assumption text for analytical contracts"
+        )

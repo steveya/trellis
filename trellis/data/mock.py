@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import date
+import hashlib
 
 from trellis.curves.credit_curve import CreditCurve
 from trellis.core.state_space import StateSpace
@@ -456,6 +457,9 @@ class MockDataProvider(BaseDataProvider):
         if overrides:
             self._data.update(overrides)
         self._sorted_dates = sorted(self._data.keys())
+        self._provenance_source_kind = "synthetic_snapshot"
+        self._provenance_source_ref = "embedded_regime_snapshot"
+        self._provenance_prior_family = "embedded_market_regime"
 
     @classmethod
     def from_dict(cls, data: dict[date, dict[float, float]]) -> MockDataProvider:
@@ -463,6 +467,9 @@ class MockDataProvider(BaseDataProvider):
         inst = cls.__new__(cls)
         inst._data = dict(data)
         inst._sorted_dates = sorted(inst._data.keys())
+        inst._provenance_source_kind = "user_supplied_snapshot"
+        inst._provenance_source_ref = "MockDataProvider.from_dict"
+        inst._provenance_prior_family = "user_supplied_snapshot_series"
         return inst
 
     def fetch_yields(self, as_of: date | None = None) -> dict[float, float]:
@@ -499,6 +506,18 @@ class MockDataProvider(BaseDataProvider):
             "GBP-SONIA-3M": _shifted_curve(gbp_ois, 18),
         }
         underlier_spots = _build_underlier_spots(regime)
+        prior_seed_payload = "|".join(
+            (
+                self._provenance_prior_family,
+                regime,
+                best.isoformat(),
+                as_of.isoformat() if as_of is not None else "",
+            )
+        ).encode("utf-8")
+        prior_seed = int.from_bytes(
+            hashlib.blake2s(prior_seed_payload, digest_size=8).digest(),
+            "big",
+        )
         metadata = {
             "simulated": True,
             "regime": regime,
@@ -506,6 +525,37 @@ class MockDataProvider(BaseDataProvider):
             "snapshot_date": best.isoformat(),
             "description": "Deterministic stand-in market snapshot derived from embedded yield regimes.",
         }
+
+        prior_parameters: dict[str, object] = {
+            "regime": regime,
+            "snapshot_date": best.isoformat(),
+            "requested_as_of": as_of.isoformat() if as_of is not None else None,
+        }
+        if self._provenance_source_kind == "synthetic_snapshot":
+            prior_parameters.update(
+                {
+                    "curve_set": "embedded_treasury_yield_regime",
+                    "forecast_curve_shifts_bps": {
+                        "USD-SOFR-3M": 35,
+                        "USD-LIBOR-3M": 55,
+                        "EUR-DISC": -175,
+                        "GBP-DISC": -75,
+                    },
+                    "surface_sets": {
+                        "vol_surfaces": "regime_rate_vol_surface",
+                        "local_vol_surfaces": "regime_local_vol_surface",
+                        "jump_parameter_sets": "regime_jump_pack",
+                        "model_parameter_sets": "regime_model_pack",
+                    },
+                }
+            )
+        else:
+            prior_parameters.update(
+                {
+                    "curve_set": "user_supplied_yield_series",
+                    "source": self._provenance_source_ref,
+                }
+            )
 
         return MarketSnapshot(
             as_of=best,
@@ -528,6 +578,14 @@ class MockDataProvider(BaseDataProvider):
             jump_parameter_sets=_build_jump_parameter_sets(regime),
             model_parameter_sets=_build_model_parameter_sets(regime),
             metadata=metadata,
+            provenance={
+                "source": "mock",
+                "source_kind": self._provenance_source_kind,
+                "source_ref": self._provenance_source_ref,
+                "prior_family": self._provenance_prior_family,
+                "prior_seed": prior_seed,
+                "prior_parameters": prior_parameters,
+            },
             default_discount_curve="usd_ois",
             default_vol_surface="usd_rates_smile",
             default_credit_curve="usd_ig",

@@ -1,0 +1,37 @@
+category: monte_carlo
+title: Undefined identifier used for scheme/defaults
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:23:45.686391'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_232347_build_a_pricer_for:_gbm_call:_all_4_schemes_convergence_order
+
+
+  implementation_target:_milstein
+
+  preferred_method_family:_monte_carlo
+
+
+  implementation_target:_milstein_monte_carlo.yaml'
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - greeks
+  - european_vanilla_option
+  - path_independent
+  - monte_carlo_scheme_milstein
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''milstein'' is not defined (or similarly: name ''all_4''
+  is not defined) during module import or class construction.'
+root_cause: The code used bare Python identifiers (e.g. milstein, all_4) as default
+  values or parameters without defining or importing them. Defaults and config values
+  must be primitives (strings/enums) or properly imported symbols.
+fix: Use string constants or an explicit enum for scheme names (e.g. method='milstein')
+  or import the symbol before use; ensure any default identifiers are defined in the
+  module scope. Validate config values at pricer construction time.
+validation: Discovered during build (attempt 1)
+id: mc_040

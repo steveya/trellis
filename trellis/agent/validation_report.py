@@ -8,10 +8,10 @@ from datetime import datetime
 
 @dataclass(frozen=True)
 class ValidationFinding:
-    """A single finding from model validation.
+    """A single issue found during model validation.
 
-    Mirrors bank MRM convention: each finding has severity,
-    category, evidence, and recommended remediation.
+    Structured like a bank Model Risk Management (MRM) review: each finding
+    has a severity level, category, supporting evidence, and a suggested fix.
     """
 
     id: str                         # "MV-001"

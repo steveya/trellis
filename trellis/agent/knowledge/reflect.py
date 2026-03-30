@@ -60,7 +60,20 @@ Return JSON with these fields:
     ],
 
     "cookbook_extract": "If the method '{method}' had no cookbook template, extract the \
-reusable evaluate() pattern from the successful code below. Otherwise null."
+reusable evaluate() pattern from the successful code below. Otherwise null.",
+
+    "route_discovery": {{
+        "route_id": "descriptive_snake_case_id",
+        "engine_family": "analytical|monte_carlo|rate_tree|pde_solver|fft_pricing|copula|waterfall",
+        "match_methods": ["{method}"],
+        "match_instruments": ["{instrument}"],
+        "primitives_used": [
+            {{"module": "trellis.models.xxx", "symbol": "YYY", "role": "pricing_kernel|route_helper|state_process|path_simulation|..."}}
+        ],
+        "market_data_accessed": ["discount_curve", "black_vol_surface"],
+        "parameters_extracted": ["maturity", "strike"],
+        "rationale": "Why this route pattern works for this product class"
+    }}
 }}
 
 Rules:
@@ -68,6 +81,7 @@ Rules:
 - "features" MUST be from the provided feature list, not invented
 - "knowledge_gaps" should list what was missing from the knowledge base
 - "cookbook_extract" should be a reusable code template with INSTRUMENT-SPECIFIC markers, or null
+- "route_discovery" should be non-null ONLY if the build succeeded AND no known route was used (ad-hoc generation). Otherwise null.
 
 {code_section}
 
@@ -94,7 +108,12 @@ def reflect_on_build(
         "success": success,
         "attempt": attempt,
         "lessons_attributed": 0,
+        "routes_attributed": 0,
         "lesson_captured": None,
+        "lesson_contract": None,
+        "lesson_promotion_outcome": None,
+        "route_discovered": None,
+        "route_discovery_outcome": None,
         "gaps_identified": [],
         "cookbook_enriched": False,
         "cookbook_candidate_saved": None,
@@ -106,10 +125,13 @@ def reflect_on_build(
     }
 
     try:
-        # 1. Attribution — boost retrieved lessons on success
+        # 1. Attribution — boost retrieved lessons and routes on success
         if success:
             actions["lessons_attributed"] = _attribute_success(
                 retrieved_lesson_ids
+            )
+            actions["routes_attributed"] = _attribute_route_success(
+                decomposition,
             )
 
         # 2. Save learned decomposition on success
@@ -128,11 +150,13 @@ def reflect_on_build(
             if reflection:
                 # Capture lesson if one was identified
                 lesson_data = reflection.get("lesson")
-                if lesson_data and isinstance(lesson_data, dict) and lesson_data.get("title"):
-                    lid = _capture_structured_lesson(
+                if lesson_data and isinstance(lesson_data, dict):
+                    lid, lesson_contract, lesson_outcome = _capture_structured_lesson(
                         lesson_data, decomposition, success, attempt,
                     )
                     actions["lesson_captured"] = lid
+                    actions["lesson_contract"] = lesson_contract
+                    actions["lesson_promotion_outcome"] = lesson_outcome
 
                 # Record knowledge gaps
                 gaps = reflection.get("knowledge_gaps", [])
@@ -157,6 +181,16 @@ def reflect_on_build(
                     code,
                 )
 
+            # Capture discovered route if build was ad-hoc
+            if reflection:
+                route_data = reflection.get("route_discovery")
+                if route_data and isinstance(route_data, dict) and success:
+                    rid, outcome = _capture_discovered_route(
+                        route_data, decomposition, attempt,
+                    )
+                    actions["route_discovered"] = rid
+                    actions["route_discovery_outcome"] = outcome
+
         # 4. Record trace
         actions["knowledge_trace_saved"] = _record_full_trace(
             description, decomposition, gap_report, retrieved_lesson_ids,
@@ -173,6 +207,12 @@ def reflect_on_build(
             from trellis.agent.knowledge.promotion import distill
             distill()
             actions["distill_run"] = True
+
+        # 6. Maybe retrain route scorer
+        actions["scorer_retrained"] = _maybe_retrain_scorer()
+
+        # 7. Maybe promote semantic validators
+        actions["validators_promoted"] = _maybe_promote_validators()
 
     except Exception:
         pass  # Reflection must never block the build
@@ -195,6 +235,245 @@ def _attribute_success(lesson_ids: list[str]) -> int:
     return count
 
 
+def _attribute_route_success(decomposition: ProductDecomposition) -> int:
+    """Boost confidence of discovered routes that match this product's method+instrument."""
+    try:
+        from trellis.agent.route_registry import (
+            clear_route_registry_cache,
+            load_route_registry,
+            match_candidate_routes,
+        )
+        from trellis.agent.knowledge.schema import ProductIR
+
+        registry = load_route_registry()
+        minimal_ir = ProductIR(
+            instrument=decomposition.instrument,
+            payoff_family=decomposition.instrument,
+        )
+        # Only boost discovered routes (not canonical)
+        all_matches = match_candidate_routes(
+            registry, decomposition.method, minimal_ir, promoted_only=False,
+        )
+        count = 0
+        for route in all_matches:
+            if route.discovered_from is not None and route.status in ("candidate", "validated"):
+                _boost_route_confidence(route.id, delta=0.1)
+                count += 1
+        return count
+    except Exception:
+        return 0
+
+
+def _boost_route_confidence(route_id: str, delta: float = 0.1) -> None:
+    """Increment a discovered route's confidence and successful_builds count."""
+    import yaml
+    entries_dir = _KNOWLEDGE_DIR / "routes" / "entries"
+    route_path = entries_dir / f"{route_id}.yaml"
+    if not route_path.exists():
+        return
+    try:
+        data = yaml.safe_load(route_path.read_text()) or {}
+        old_confidence = float(data.get("confidence", 0.5))
+        new_confidence = round(min(1.0, old_confidence + delta), 2)
+        data["confidence"] = new_confidence
+        data["successful_builds"] = int(data.get("successful_builds", 0)) + 1
+
+        # Auto-validate at 0.6
+        if new_confidence >= 0.6 and data.get("status") == "candidate":
+            data["status"] = "validated"
+        # Auto-promote at 0.8
+        if new_confidence >= 0.8 and data.get("status") in ("candidate", "validated"):
+            data["status"] = "promoted"
+
+        with open(route_path, "w") as fh:
+            yaml.dump(data, fh, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+        from trellis.agent.route_registry import clear_route_registry_cache
+        clear_route_registry_cache()
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Route discovery
+# ---------------------------------------------------------------------------
+
+_ROUTES_ENTRIES_DIR = _KNOWLEDGE_DIR / "routes" / "entries"
+
+
+def _capture_discovered_route(
+    route_data: dict,
+    decomposition: ProductDecomposition,
+    attempt: int,
+) -> tuple[str | None, str]:
+    """Capture a discovered route from LLM reflection output.
+
+    Returns (route_id, outcome) where outcome is one of:
+    "captured", "existing_boosted", "equivalent_boosted", "invalid", "error".
+    """
+    import yaml
+
+    try:
+        route_id = route_data.get("route_id", "").strip().lower().replace(" ", "_").replace("-", "_")
+        if not route_id or len(route_id) < 3:
+            return None, "invalid"
+
+        from trellis.agent.route_registry import load_route_registry, clear_route_registry_cache
+
+        registry = load_route_registry()
+
+        # Check if route already exists by ID
+        for existing in registry.routes:
+            if existing.id == route_id or route_id in existing.aliases:
+                _boost_route_confidence(existing.id, delta=0.1)
+                return existing.id, "existing_boosted"
+
+        # Check for functional equivalence (same primitives)
+        primitives_used = route_data.get("primitives_used", [])
+        new_prim_set = frozenset(
+            (p.get("module", ""), p.get("symbol", ""), p.get("role", ""))
+            for p in primitives_used
+            if isinstance(p, dict)
+        )
+        if new_prim_set:
+            equiv_id = _find_equivalent_route(new_prim_set, registry)
+            if equiv_id:
+                _boost_route_confidence(equiv_id, delta=0.1)
+                return equiv_id, "equivalent_boosted"
+
+        # Write new discovered route entry
+        _ROUTES_ENTRIES_DIR.mkdir(parents=True, exist_ok=True)
+        route_yaml = {
+            "id": route_id,
+            "engine_family": route_data.get("engine_family", "unknown"),
+            "route_family": route_data.get("engine_family", "unknown"),
+            "status": "candidate",
+            "confidence": 0.5,
+            "discovered_from": f"reflect_attempt_{attempt}",
+            "successful_builds": 1,
+            "match": {
+                "methods": route_data.get("match_methods", [decomposition.method]),
+                "instruments": route_data.get("match_instruments", [decomposition.instrument]),
+            },
+            "primitives": primitives_used,
+            "market_data_access": {
+                "required": {
+                    cap: [f"market_state.{cap.replace('_curve', '').replace('black_', '')}"]
+                    for cap in route_data.get("market_data_accessed", [])
+                },
+            },
+            "parameter_bindings": {
+                "required": route_data.get("parameters_extracted", []),
+            },
+            "notes": [route_data.get("rationale", "")],
+        }
+
+        route_path = _ROUTES_ENTRIES_DIR / f"{route_id}.yaml"
+        with open(route_path, "w") as fh:
+            yaml.dump(route_yaml, fh, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+        clear_route_registry_cache()
+        return route_id, "captured"
+
+    except Exception:
+        return None, "error"
+
+
+def _find_equivalent_route(
+    new_prim_set: frozenset[tuple[str, str, str]],
+    registry,
+) -> str | None:
+    """Find a registry route with the same primitive set (module, symbol, role).
+
+    Returns the route ID if an equivalent exists, None otherwise.
+    """
+    for route in registry.routes:
+        existing_set = frozenset(
+            (p.module, p.symbol, p.role) for p in route.primitives
+        )
+        if existing_set == new_prim_set:
+            return route.id
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Scorer auto-retraining
+# ---------------------------------------------------------------------------
+
+def _maybe_retrain_scorer() -> bool:
+    """Retrain the route scorer if enough new outcome data has accumulated.
+
+    Triggers when the task run count exceeds the last training size by 10+.
+    Returns True if retraining occurred.
+    """
+    try:
+        from trellis.agent.route_scorer import model_metadata, get_scorer
+        from trellis.agent.task_run_store import TASK_RUN_LATEST_ROOT
+
+        meta = model_metadata()
+        last_size = meta.get("training_size", 0)
+
+        # Count completed runs
+        if not TASK_RUN_LATEST_ROOT.exists():
+            return False
+        current_size = sum(1 for f in TASK_RUN_LATEST_ROOT.glob("*.json"))
+        if current_size - last_size < 10:
+            return False
+
+        scorer = get_scorer()
+        model = scorer.train_from_outcomes(TASK_RUN_LATEST_ROOT)
+        return model is not None
+    except Exception:
+        return False
+
+
+def _maybe_promote_validators() -> list[str]:
+    """Promote semantic validators from warning → blocking based on FP rate.
+
+    A finding is a false positive if the build succeeded despite the warning.
+    Promotion threshold: <5% FP rate over 50+ findings.
+    Returns list of validator names promoted.
+    """
+    try:
+        from trellis.agent.semantic_validators import set_validator_mode, get_validator_modes
+        from trellis.agent.task_run_store import TASK_RUN_LATEST_ROOT
+
+        if not TASK_RUN_LATEST_ROOT.exists():
+            return []
+
+        modes = get_validator_modes()
+        promoted = []
+        for validator_name, current_mode in modes.items():
+            if current_mode == "blocking":
+                continue  # already promoted
+            # Count findings and false positives from task run records
+            total_findings = 0
+            false_positives = 0
+            for run_file in TASK_RUN_LATEST_ROOT.glob("*.json"):
+                try:
+                    import json
+                    data = json.loads(run_file.read_text())
+                    sem_findings = data.get("semantic_findings", [])
+                    build_ok = data.get("success", False)
+                    for f in sem_findings:
+                        if f.get("validator") == validator_name:
+                            total_findings += 1
+                            if build_ok:
+                                false_positives += 1
+                except Exception:
+                    continue
+
+            if total_findings >= 50:
+                fp_rate = false_positives / total_findings
+                if fp_rate < 0.05:
+                    set_validator_mode(validator_name, "blocking")
+                    promoted.append(validator_name)
+
+        return promoted
+    except Exception:
+        return []
+
+
 # ---------------------------------------------------------------------------
 # Structured lesson capture
 # ---------------------------------------------------------------------------
@@ -204,9 +483,14 @@ def _capture_structured_lesson(
     decomposition: ProductDecomposition,
     success: bool,
     attempt: int,
-) -> str | None:
+) -> tuple[str | None, dict[str, Any] | None, str]:
     """Capture a lesson with structured feature tags from the decomposition."""
-    from trellis.agent.knowledge.promotion import capture_lesson
+    from trellis.agent.knowledge.promotion import (
+        build_lesson_payload,
+        capture_lesson,
+        defer_index_rebuilds,
+        validate_lesson_payload,
+    )
 
     # Use features from lesson_data if valid, else from decomposition
     features = lesson_data.get("features", [])
@@ -221,7 +505,7 @@ def _capture_structured_lesson(
     else:
         confidence = 0.4  # from unresolved failure
 
-    lid = capture_lesson(
+    lesson_payload = build_lesson_payload(
         category=lesson_data.get("category", "unknown"),
         title=lesson_data.get("title", ""),
         severity=lesson_data.get("severity", "medium"),
@@ -234,33 +518,66 @@ def _capture_structured_lesson(
         confidence=confidence,
         version="",
     )
+    lesson_contract = validate_lesson_payload(lesson_payload)
+    if not lesson_contract.valid:
+        return None, lesson_contract.to_dict(), "invalid_contract"
 
-    if lid:
-        _auto_validate_and_promote(lid)
+    lesson_promotion_outcome = "captured"
+    with defer_index_rebuilds():
+        lid = capture_lesson(
+            category=lesson_data.get("category", "unknown"),
+            title=lesson_data.get("title", ""),
+            severity=lesson_data.get("severity", "medium"),
+            symptom=lesson_data.get("symptom", ""),
+            root_cause=lesson_data.get("root_cause", ""),
+            fix=lesson_data.get("fix", ""),
+            validation=f"Discovered during build (attempt {attempt})",
+            method=lesson_data.get("method") or decomposition.method,
+            features=features,
+            confidence=confidence,
+            version="",
+        )
 
-    return lid
+        if lid:
+            promotion_state = _auto_validate_and_promote(lid)
+            if promotion_state["promoted"]:
+                lesson_promotion_outcome = "promoted"
+            elif promotion_state["validated"]:
+                lesson_promotion_outcome = "validated"
+        else:
+            lesson_promotion_outcome = "duplicate"
+
+    return lid, lesson_contract.to_dict(), lesson_promotion_outcome
 
 
-def _auto_validate_and_promote(lesson_id: str) -> None:
+def _auto_validate_and_promote(lesson_id: str) -> dict[str, bool]:
     """Auto-validate and promote if criteria met."""
     from trellis.agent.knowledge.promotion import (
+        defer_index_rebuilds,
         validate_lesson, promote_lesson,
     )
     import yaml
 
     path = _KNOWLEDGE_DIR / "lessons" / "entries" / f"{lesson_id}.yaml"
     if not path.exists():
-        return
+        return {"validated": False, "promoted": False}
 
     data = yaml.safe_load(path.read_text())
-    if not data:
-        return
+    if not isinstance(data, dict):
+        return {"validated": False, "promoted": False}
 
-    conf = data.get("confidence", 0)
-    if conf >= 0.6:
-        validate_lesson(lesson_id)
-    if conf >= 0.8:
-        promote_lesson(lesson_id)
+    try:
+        conf = float(data.get("confidence", 0) or 0)
+    except (TypeError, ValueError):
+        conf = 0.0
+    validated = False
+    promoted = False
+    with defer_index_rebuilds():
+        if conf >= 0.6:
+            validated = validate_lesson(lesson_id)
+        if conf >= 0.8:
+            promoted = promote_lesson(lesson_id)
+    return {"validated": validated, "promoted": promoted}
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +648,7 @@ def _llm_reflect(
             outcome="SUCCEEDED in" if success else "FAILED",
             description=description,
             method=decomposition.method,
+            instrument=decomposition.instrument,
             features=list(decomposition.features),
             confidence=gap_report.confidence,
             gaps=gap_report.missing or "(none)",
@@ -372,10 +690,9 @@ def _enrich_cookbook(method: str, pattern: str) -> None:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False,
                   allow_unicode=True)
 
-    # Invalidate the store cache
-    from trellis.agent.knowledge import get_store
-    store = get_store()
-    store._cookbooks_cache = None
+    # Invalidate the live store caches so the new cookbook is immediately visible.
+    from trellis.agent.knowledge.promotion import _clear_loaded_store_runtime_caches
+    _clear_loaded_store_runtime_caches()
 
 
 # ---------------------------------------------------------------------------
@@ -509,6 +826,9 @@ def _attach_source_trace(lesson_id: str, trace_path: str) -> None:
     data["source_trace"] = trace_path
     with open(lesson_path, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+    from trellis.agent.knowledge.promotion import _clear_loaded_store_runtime_caches
+    _clear_loaded_store_runtime_caches()
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,39 @@
+category: finite_differences
+title: PDE grid time-step too small
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-29T08:48:33.717866'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_084834_build_a_pricer_for:_crank_nicolson_rannacher_smoothing_for_discontinuous_payoffs
+
+
+  implementation_target:_cn_rannacher
+
+  preferred_method_family:_pde_solver
+
+
+  implementation_target:_cn_rannacher_pde_solver.yaml'
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - pde_grid
+  - discontinuous_payoff
+  - theta_method_crank_nicolson
+  - rannacher_smoothing
+  - black_scholes_operator
+  - discounting
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'Automated smoke test failed with: num_time_steps must be at least 200.'
+root_cause: The pricer used either a too-small default or an unchecked user-supplied
+  num_time_steps leading to insufficient temporal resolution for stability/accuracy
+  and to satisfy the test-suite's minimum. The implementation lacked validation and
+  adaptive discretization logic tied to maturity/volatility.
+fix: Validate and enforce a minimum num_time_steps (e.g. >= 200) or compute time steps
+  from maturity and stability criteria (Courant-like condition); also document and/or
+  auto-scale spatial/time grid and provide sensible defaults for Rannacher steps.
+validation: Discovered during build (attempt 3)
+id: fd_034

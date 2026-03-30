@@ -1,0 +1,40 @@
+category: finite_differences
+title: Undefined 'auto' default sentinel
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-03-28T23:15:11.225113'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_231511_build_a_pricer_for:_crank_nicolson_rannacher_smoothing_for_discontinuous_payoffs
+
+
+  implementation_target:_cn_rannacher
+
+  preferred_method_family:_pde_solver
+
+
+  implementation_target:_cn_rannacher_pde_solver.yaml'
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - pde_grid
+  - theta_method
+  - crank_nicolson
+  - rannacher_smoothing
+  - discontinuous_payoff
+  - black_scholes_operator
+  - discounting
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'NameError: name ''auto'' is not defined raised when creating the CnRannacherSpec
+  dataclass.'
+root_cause: The generated dataclass used the identifier 'auto' as a default sentinel
+  for a field without importing enum.auto or defining any sentinel; the code generator
+  inserted an unresolved name instead of a valid default.
+fix: Replace the invalid 'auto' with a proper sentinel such as None or dataclasses.field(default_factory=...),
+  or import and use enum.auto explicitly; add a static/name-resolution lint step to
+  catch unresolved identifiers in generated code.
+validation: Discovered during build (attempt 2)
+id: fd_017

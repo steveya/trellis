@@ -96,7 +96,7 @@ class TestCapPayoff:
         )
         with pytest.raises(MissingCapabilityError) as exc_info:
             price_payoff(cap, ms)
-        assert "black_vol" in exc_info.value.missing
+        assert "black_vol_surface" in exc_info.value.missing
 
 
 class TestFloorPayoff:

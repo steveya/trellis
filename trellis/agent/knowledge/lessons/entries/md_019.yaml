@@ -1,0 +1,28 @@
+id: md_019
+title: Resolve strike from spec
+severity: critical
+category: market_data
+status: validated
+confidence: 0.6
+created: '2026-03-26T20:41:44.982671'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260326_204145_quanto_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - callable
+  - puttable
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: 'Smoke test fails with AttributeError: ''ResolvedQuantoInputs'' object has
+  no attribute ''strike'' during payoff construction.'
+root_cause: The payoff builder assumed resolved market inputs would carry product
+  terms like strike, but strike is a contract/spec field, not a market-data field.
+  The resolved quanto inputs only contain market and model parameters.
+fix: Read strike from the instrument spec and keep the resolved quanto object for
+  market quantities only. Validate the payoff object against the spec before accessing
+  product attributes, and use the resolved inputs solely for pricing inputs such as
+  spot, vol, rates, and quanto adjustment terms.
+validation: Discovered during build (attempt 3)

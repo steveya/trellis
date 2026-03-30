@@ -1,0 +1,38 @@
+id: md_023
+title: ResolvedBasketSemantics missing rates attribute access
+severity: critical
+category: market_data
+status: validated
+confidence: 0.6
+created: '2026-03-28T09:06:25.113097'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_090625_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  - forward_rate
+  - vol_surface_dependence
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: Runtime error 'ResolvedBasketSemantics' object has no attribute 'rates' during
+  MC smoke test when building ranked-observation basket payoff.
+root_cause: The code (or an imported helper such as price_ranked_observation_basket_monte_carlo
+  / RankedObservationBasketMonteCarloPayoff) attempts to access a 'rates' attribute
+  on a ResolvedBasketSemantics object, but that object only exposes discount-curve
+  data via the MarketState, not directly as a field on the semantics struct.
+fix: Do not access discount/rate data through the ResolvedBasketSemantics object;
+  instead retrieve the discount curve directly from the MarketState (e.g. market_state.discount_curve
+  or market_state.rate(tenor)) and pass it explicitly into the payoff function. If
+  using a high-level helper that internally touches semantics.rates, inline the MC
+  payoff logic and source rates from MarketState directly.
+validation: Discovered during build (attempt 2)

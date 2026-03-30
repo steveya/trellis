@@ -1,0 +1,28 @@
+category: finite_differences
+title: PDE Grid ctor missing n_t
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T23:36:50.345043'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_233651_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - pde_grid
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'TypeError: Grid.__init__() missing 1 required positional argument: ''n_t''.'
+root_cause: The PDE Grid constructor requires explicit time-discretization parameters
+  (e.g., n_t) but the generated payoff/pricer attempted to instantiate Grid without
+  them. The template omitted grid discretization and unit conventions, causing the
+  constructor to fail at runtime.
+fix: Pass the required discretization arguments (at minimum n_t and typically n_x
+  or S-grid bounds) when constructing Grid, or use a grid factory that computes sensible
+  defaults from the option maturity and spot; also ensure time units (year fractions)
+  match the Grid's expectations.
+validation: Discovered during build (attempt 3)
+id: fd_025

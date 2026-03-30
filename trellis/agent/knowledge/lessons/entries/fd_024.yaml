@@ -1,0 +1,27 @@
+category: finite_differences
+title: PDE Grid constructor missing parameters
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T23:36:07.758364'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_233608_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - pde_grid
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'TypeError: Grid.__init__() missing 1 required positional argument: ''x_min'''
+root_cause: Code instantiated the PDE Grid without providing the required domain/discretization
+  parameters (e.g. x_min, x_max, nx, nt), assuming defaults or using the wrong constructor
+  signature/import. This often arises from import/signature mismatches or missing
+  unit/scale understanding.
+fix: Call the Grid constructor with explicit discretization parameters (x_min, x_max,
+  nx, nt) matching the library signature, verify correct import paths, and add unit-
+  and constructor-checking tests to fail fast when parameters are missing.
+validation: Discovered during build (attempt 3)
+id: fd_024

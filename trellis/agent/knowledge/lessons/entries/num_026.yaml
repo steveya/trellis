@@ -1,0 +1,30 @@
+category: numerical
+title: Undefined method token 'three_way'
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-03-28T22:59:40.860704'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_225941_american_put_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - american
+  - early_exercise
+  - puttable
+  - discounting
+  - backward_induction
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Python NameError: name ''three_way'' is not defined when constructing spec.default
+  for method.'
+root_cause: The spec used an unquoted identifier three_way as a default value instead
+  of a defined constant or string; the code never defined or imported a 'three_way'
+  symbol.
+fix: Use a string literal (e.g. "three_way") or an enumerated constant and validate
+  spec.method at construction time; add a unit test or static check to catch undefined
+  names in defaults.
+validation: Discovered during build (attempt 1)
+id: num_026

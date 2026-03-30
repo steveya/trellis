@@ -62,6 +62,7 @@ def test_compile_supported_user_defined_callable_product_to_existing_route():
     compiled = compile_user_defined_product(CALLABLE_BOND_SPEC)
 
     assert compiled.product_ir.instrument == "custom_callable_note"
+    assert "rate_lattice" in compiled.product_ir.route_families
     assert compiled.pricing_plan.method == "rate_tree"
     assert compiled.generation_plan.primitive_plan is not None
     assert compiled.generation_plan.primitive_plan.route == "exercise_lattice"

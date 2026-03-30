@@ -27,6 +27,8 @@ market_state:
     forecast_forward: "market_state.forecast_forward_curve(rate_index).forward_rate(T1, T2)"
     black_vol: "market_state.vol_surface.black_vol(T, K)"
     survival_prob: "market_state.credit_curve.survival_probability(T)"
+    hazard_rate: "market_state.credit_curve.hazard_rate(T)"
+    risky_discount: "market_state.credit_curve.risky_discount(T, market_state.discount)"
   capabilities:
     - "discount → discount is not None"
     - "forward_rate → forward_curve is not None (auto from discount)"
@@ -55,13 +57,21 @@ payoff:
 # ---------------------------------------------------------------------------
 # Model imports — trees
 # ---------------------------------------------------------------------------
-trees:
-  module: trellis.models.trees
+equity_tree:
+  module: trellis.models.trees.binomial
+  key_imports:
+    - "from trellis.models.trees.binomial import BinomialTree"
+    - "from trellis.models.trees.backward_induction import backward_induction"
+  notes:
+    - "American/Bermudan equity options use BinomialTree.crr(...) and backward_induction(..., exercise_type=...)"
+    - "Import the binomial and backward-induction submodules directly when you need the exact equity-tree route"
+
+rate_lattice:
+  module: trellis.models.trees.lattice
   key_imports:
     - "from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction"
-    - "from trellis.models.trees import BinomialTree, TrinomialTree, backward_induction"
   notes:
-    - "build_rate_lattice returns a calibrated rate lattice from a TreeModel specification such as Hull-White or Black-Derman-Toy"
+    - "Callable bonds, puttable bonds, and Bermudan swaptions use a calibrated rate lattice from a TreeModel specification such as Hull-White or Black-Derman-Toy"
     - "lattice_backward_induction handles cashflow_at_node and exercise_fn"
 
 # ---------------------------------------------------------------------------
@@ -97,7 +107,7 @@ qmc:
 pde:
   module: trellis.models.pde
   key_imports:
-    - "from trellis.models.pde import Grid"
+    - "from trellis.models.pde.grid import Grid"
     - "from trellis.models.pde.theta_method import theta_method_1d"
     - "from trellis.models.pde.operator import BlackScholesOperator"
     - "from trellis.models.pde import psor_1d  # American options"
@@ -105,6 +115,8 @@ pde:
   notes:
     - "Use theta_method_1d, NOT legacy crank_nicolson_1d or implicit_fd_1d"
     - "theta=0.5 for Crank-Nicolson, theta=1.0 for fully implicit"
+    - "Grid constructor: Grid(x_min, x_max, n_x, T, n_t, log_spacing=False); never omit x_min or n_t"
+    - "BlackScholesOperator constructor: BlackScholesOperator(sigma_fn, r_fn); pass callables, not scalar r/sigma keywords"
 
 # ---------------------------------------------------------------------------
 # Model imports — FFT / Fourier
@@ -132,6 +144,7 @@ analytical:
   module: trellis.models.analytical
   key_imports:
     - "from trellis.models.analytical import zcb_option_hw"
+    - "from trellis.models.analytical import terminal_vanilla_from_basis"
 
 # ---------------------------------------------------------------------------
 # Model imports — calibration
@@ -140,6 +153,7 @@ calibration:
   module: trellis.models.calibration
   key_imports:
     - "from trellis.models.calibration import implied_vol, implied_vol_jaeckel"
+    - "from trellis.models.calibration import RatesCalibrationResult, calibrate_cap_floor_black_vol, calibrate_swaption_black_vol, swaption_terms"
     - "from trellis.models.calibration import calibrate_sabr"
     - "from trellis.models.calibration import dupire_local_vol"
 
@@ -150,19 +164,20 @@ utilities:
   black76:
     module: trellis.models.black
     imports:
-      - "from trellis.models.black import black76_call, black76_put"
+      - "from trellis.models.black import black76_call, black76_put, black76_asset_or_nothing_call, black76_asset_or_nothing_put, black76_cash_or_nothing_call, black76_cash_or_nothing_put"
   garman_kohlhagen:
     module: trellis.models.black
     imports:
-      - "from trellis.models.black import garman_kohlhagen_call, garman_kohlhagen_put"
+      - "from trellis.models.black import black76_asset_or_nothing_call, black76_asset_or_nothing_put, black76_cash_or_nothing_call, black76_cash_or_nothing_put, garman_kohlhagen_call, garman_kohlhagen_put"
+      - "from trellis.models.analytical import terminal_vanilla_from_basis"
   schedule:
-    module: trellis.conventions.schedule
+    module: trellis.core.date_utils
     imports:
-      - "from trellis.conventions import generate_schedule, RollConvention, StubType"
+      - "from trellis.core.date_utils import generate_schedule"
   day_count:
-    module: trellis.conventions.day_count
+    module: trellis.core.date_utils
     imports:
-      - "from trellis.conventions import DayCountConvention, year_fraction"
+      - "from trellis.core.date_utils import year_fraction"
   vol_surface:
     module: trellis.models.vol_surface
     imports:
@@ -173,3 +188,10 @@ utilities:
       - "from trellis.models.cashflow_engine import Waterfall, Tranche"
       - "from trellis.models.cashflow_engine import PSA, CPR, RateDependent"
       - "from trellis.models.cashflow_engine import level_pay, scheduled, custom"
+  credit_curve:
+    module: trellis.curves.credit_curve
+    imports:
+      - "from trellis.curves.credit_curve import CreditCurve"
+    notes:
+      - "CreditCurve.flat(hazard_rate) is the simplest starting point for CDS or nth-to-default tasks"
+      - "CreditCurve.from_spreads(cds_spreads, recovery) bootstraps a hazard-rate term structure from CDS quotes"

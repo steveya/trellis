@@ -1,0 +1,28 @@
+id: num_019
+title: Generated code had Python SyntaxError
+severity: critical
+category: numerical
+status: validated
+confidence: 0.6
+created: '2026-03-27T20:59:21.164350'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260327_205921_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'Python raised SyntaxError: unexpected indent when compiling the generated
+  module (e.g., ''unexpected indent'' at line X).'
+root_cause: The code generator emitted inconsistent or incorrect indentation (mixed
+  spaces/tabs or an extra indent block) and there was no compile/lint validation step
+  before finalizing the module. This allowed a simple syntax error to reach the build
+  stage.
+fix: Enforce a single indentation convention (e.g., 4 spaces), run an automated formatting/lint
+  (or dry-compile) step on generated files before publishing, and add unit/sanity
+  checks that import the built module to catch syntax/import errors early.
+validation: Discovered during build (attempt 1)

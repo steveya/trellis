@@ -1,0 +1,36 @@
+category: market_data
+title: None market state guard
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-28T22:47:00.388383'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_224701_build_a_pricer_for:_krd:_interpolation_aware_bumping
+
+
+  implementation_target:_krd_sum_equals_duration
+
+  preferred_method_family:_analytical
+
+
+  implementation_target:_krd_sum_equals_duration_analytical.yaml'
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - greeks
+  - gamma
+  instrument: []
+  error_signature: null
+symptom: 'evaluate() raises AttributeError: ''NoneType'' object has no attribute ''value''
+  when the market state or one of its required curve objects is missing.'
+root_cause: The payoff builder assumed required market data objects were always populated
+  and dereferenced them before validating presence. In smoke tests, a missing discount/forward
+  curve or settlement field caused a None access during payoff construction or evaluation.
+fix: Add explicit null checks for every required market-state dependency before reading
+  fields like .value, and fail fast with a clear ValueError listing the missing inputs.
+  Keep the analytical path only after market-state validation succeeds, especially
+  when building interpolation-aware KRDs.
+validation: Discovered during build (attempt 3)
+id: md_025

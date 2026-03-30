@@ -1,8 +1,10 @@
 """Tests for the agent build loop with mocked LLM responses."""
 
+import math
 import sys
 from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -13,7 +15,7 @@ from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
 from trellis.engine.payoff_pricer import price_payoff
 from trellis.instruments.fx import FXRate
-from trellis.models.black import garman_kohlhagen_call
+from trellis.models.black import black76_call, garman_kohlhagen_call
 from trellis.models.vol_surface import FlatVol
 
 
@@ -247,6 +249,511 @@ class AmericanOptionPayoff:
         )
 '''
 
+
+def test_reference_modules_include_quanto_resolution_helper():
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import _reference_modules
+
+    modules = _reference_modules(
+        pricing_plan=SimpleNamespace(method="analytical"),
+        instrument_type="quanto_option",
+    )
+
+    assert ("trellis.models.resolution.quanto", "Quanto input-resolution helpers") in modules
+    assert ("trellis.models.analytical.quanto", "Quanto analytical route helpers") in modules
+    assert ("trellis.models.monte_carlo.quanto", "Quanto Monte Carlo route helpers") in modules
+
+
+def test_generate_quanto_monte_carlo_skeleton_uses_family_helper_surface():
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import _generate_skeleton
+
+    spec_schema = SpecSchema(
+        class_name="QuantoOptionMonteCarloPayoff",
+        spec_name="QuantoOptionSpec",
+        requirements=[
+            "discount_curve",
+            "forward_curve",
+            "black_vol_surface",
+            "fx_rates",
+            "spot",
+            "model_parameters",
+        ],
+        fields=[
+            FieldDef("notional", "float", "Notional"),
+            FieldDef("strike", "float", "Strike"),
+            FieldDef("expiry_date", "date", "Expiry"),
+            FieldDef("fx_pair", "str", "FX pair"),
+            FieldDef("underlier_currency", "str", "Underlier currency", '"EUR"'),
+            FieldDef("domestic_currency", "str", "Domestic currency", '"USD"'),
+            FieldDef("option_type", "str", "Option type", '"call"'),
+            FieldDef("quanto_correlation_key", "str | None", "Correlation key", "None"),
+            FieldDef("day_count", "DayCountConvention", "Day count", "DayCountConvention.ACT_365"),
+            FieldDef("n_paths", "int", "Path count", "50000"),
+            FieldDef("n_steps", "int", "Step count", "252"),
+        ],
+    )
+
+    skeleton = _generate_skeleton(
+        spec_schema,
+        "Quanto option: quanto-adjusted BS vs MC cross-currency",
+        pricing_plan=SimpleNamespace(method="monte_carlo", model_to_build="quanto_option"),
+        generation_plan=SimpleNamespace(method="monte_carlo", instrument_type="quanto_option"),
+    )
+
+    assert "from trellis.models.resolution.quanto import resolve_quanto_inputs" in skeleton
+    assert "from trellis.models.monte_carlo.quanto import price_quanto_option_monte_carlo" in skeleton
+    assert "resolved = resolve_quanto_inputs(market_state, spec)" in skeleton
+    assert "return float(price_quanto_option_monte_carlo(spec, resolved))" in skeleton
+def test_generate_module_reports_syntax_error_context(monkeypatch):
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import _generate_module
+
+    monkeypatch.setattr(
+        "trellis.agent.config.llm_generate",
+        lambda prompt, model=None: "def broken(:\n    pass\n",
+    )
+
+    with pytest.raises(RuntimeError, match="SyntaxError"):
+        _generate_module(
+            skeleton="class Demo:\n    def evaluate(self, market_state):\n        raise NotImplementedError\n",
+            spec_schema=SimpleNamespace(class_name="Demo", spec_name="DemoSpec", fields=[]),
+            reference_sources={},
+            model="test-model",
+            max_retries=1,
+        )
+
+
+def test_generate_module_strips_fenced_python_and_compiles(monkeypatch):
+    from trellis.agent.executor import _generate_module
+
+    fenced_module = f"""\
+```python
+{MOCK_MODULE_CODE.rstrip()}
+```
+"""
+
+    monkeypatch.setattr(
+        "trellis.agent.config.llm_generate",
+        lambda prompt, model=None: fenced_module,
+    )
+
+    result = _generate_module(
+        skeleton=MOCK_MODULE_CODE,
+        spec_schema=SimpleNamespace(
+            class_name="SwaptionPayoff",
+            spec_name="SwaptionSpec",
+            fields=[],
+        ),
+        reference_sources={},
+        model="test-model",
+        max_retries=1,
+    )
+
+    compile(result.code, "<recovered>", "exec")
+    assert result.source_report.fence_removed
+    assert result.source_report.fence_language == "python"
+    assert result.raw_code.startswith("```python")
+    assert "class SwaptionPayoff" in result.code
+
+
+def test_generate_module_recovers_partial_repair_fragment(monkeypatch):
+    from trellis.agent.executor import _generate_module
+
+    fragment = """from trellis.models.resolution.quanto import resolve_quanto_inputs
+
+        spec = self._spec
+        resolved = resolve_quanto_inputs(market_state, spec)
+        return float(resolved["underlier_spot"])
+"""
+
+    monkeypatch.setattr(
+        "trellis.agent.config.llm_generate",
+        lambda prompt, model=None: fragment,
+    )
+
+    result = _generate_module(
+        skeleton="""from trellis.core.market_state import MarketState
+
+class QuantoOptionSpec:
+    pass
+
+
+class QuantoOptionAnalyticalPayoff:
+    def __init__(self, spec: QuantoOptionSpec):
+        self._spec = spec
+
+    def evaluate(self, market_state: MarketState) -> float:
+        raise NotImplementedError("evaluate not yet implemented")
+""",
+        spec_schema=SimpleNamespace(
+            class_name="QuantoOptionAnalyticalPayoff",
+            spec_name="QuantoOptionSpec",
+            fields=[],
+        ),
+        reference_sources={},
+        model="test-model",
+        max_retries=1,
+    )
+
+    compile(result.code, "<recovered>", "exec")
+    assert "class QuantoOptionAnalyticalPayoff" in result.code
+    assert "resolve_quanto_inputs" in result.code
+    assert 'return float(resolved["underlier_spot"])' in result.code
+
+
+def test_generate_module_recovers_compilable_evaluate_only_fragment(monkeypatch):
+    from trellis.agent.executor import _generate_module
+
+    fragment = """def evaluate(self, market_state: MarketState) -> float:
+    spec = self._spec
+    return float(spec.strike)
+"""
+
+    monkeypatch.setattr(
+        "trellis.agent.config.llm_generate",
+        lambda prompt, model=None: fragment,
+    )
+
+    result = _generate_module(
+        skeleton="""from trellis.core.market_state import MarketState
+
+class SmokeSpec:
+    strike: float
+
+
+class SmokePayoff:
+    def __init__(self, spec: SmokeSpec):
+        self._spec = spec
+
+    def evaluate(self, market_state: MarketState) -> float:
+        raise NotImplementedError("evaluate not yet implemented")
+""",
+        spec_schema=SimpleNamespace(
+            class_name="SmokePayoff",
+            spec_name="SmokeSpec",
+            fields=[],
+        ),
+        reference_sources={},
+        model="test-model",
+        max_retries=1,
+    )
+
+    compile(result.code, "<recovered>", "exec")
+    assert "class SmokePayoff" in result.code
+    assert "def evaluate(self, market_state: MarketState) -> float:" in result.code
+
+
+def test_generate_module_recovers_imports_plus_evaluate_function_fragment(monkeypatch):
+    from trellis.agent.executor import _generate_module
+
+    fragment = """from trellis.models.resolution.quanto import resolve_quanto_inputs
+
+def evaluate(self, market_state: MarketState) -> float:
+    spec = self._spec
+    resolved = resolve_quanto_inputs(market_state, spec)
+    return float(resolved["underlier_spot"])
+"""
+
+    monkeypatch.setattr(
+        "trellis.agent.config.llm_generate",
+        lambda prompt, model=None: fragment,
+    )
+
+    result = _generate_module(
+        skeleton="""from trellis.core.market_state import MarketState
+
+class QuantoOptionSpec:
+    pass
+
+
+class QuantoOptionAnalyticalPayoff:
+    def __init__(self, spec: QuantoOptionSpec):
+        self._spec = spec
+
+    def evaluate(self, market_state: MarketState) -> float:
+        raise NotImplementedError("evaluate not yet implemented")
+""",
+        spec_schema=SimpleNamespace(
+            class_name="QuantoOptionAnalyticalPayoff",
+            spec_name="QuantoOptionSpec",
+            fields=[],
+        ),
+        reference_sources={},
+        model="test-model",
+        max_retries=1,
+    )
+
+    compile(result.code, "<recovered>", "exec")
+    assert "class QuantoOptionAnalyticalPayoff" in result.code
+    assert "def evaluate(self, market_state: MarketState) -> float:" in result.code
+    assert "resolve_quanto_inputs(market_state, spec)" in result.code
+
+
+def test_generate_module_recovers_evaluate_body_from_malformed_full_module(monkeypatch):
+    from trellis.agent.executor import _generate_module
+
+    malformed_module = '''"""Agent-generated payoff: Quanto option."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+from trellis.core.market_state import MarketState
+from trellis.core.types import DayCountConvention
+from trellis.models.analytical.quanto import price_quanto_option_analytical
+from trellis.models.resolution.quanto import resolve_quanto_inputs
+
+    from importlib import import_module
+
+
+@dataclass(frozen=True)
+class QuantoOptionSpec:
+    notional: float
+    strike: float
+    expiry_date: date
+    fx_pair: str
+    underlier_currency: str = "EUR"
+    domestic_currency: str = "USD"
+    option_type: str = "call"
+    quanto_correlation_key: str | None = None
+    day_count: DayCountConvention = DayCountConvention.ACT_365
+
+
+class QuantoOptionAnalyticalPayoff:
+    def __init__(self, spec: QuantoOptionSpec):
+        self._spec = spec
+
+    @property
+    def spec(self) -> QuantoOptionSpec:
+        return self._spec
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"black_vol_surface", "discount_curve", "forward_curve", "fx_rates", "model_parameters", "spot"}
+
+    def evaluate(self, market_state: MarketState) -> float:
+        spec = self._spec
+        resolved = resolve_quanto_inputs(market_state, spec)
+        return float(price_quanto_option_analytical(spec, resolved))
+'''
+
+    monkeypatch.setattr(
+        "trellis.agent.config.llm_generate",
+        lambda prompt, model=None: malformed_module,
+    )
+
+    result = _generate_module(
+        skeleton="""from trellis.core.market_state import MarketState
+from trellis.models.analytical.quanto import price_quanto_option_analytical
+from trellis.models.resolution.quanto import resolve_quanto_inputs
+
+class QuantoOptionSpec:
+    pass
+
+
+class QuantoOptionAnalyticalPayoff:
+    def __init__(self, spec: QuantoOptionSpec):
+        self._spec = spec
+
+    def evaluate(self, market_state: MarketState) -> float:
+        spec = self._spec
+        resolved = resolve_quanto_inputs(market_state, spec)
+        # return float(price_quanto_option_analytical(spec, resolved))
+        raise NotImplementedError("evaluate not yet implemented")
+""",
+        spec_schema=SimpleNamespace(
+            class_name="QuantoOptionAnalyticalPayoff",
+            spec_name="QuantoOptionSpec",
+            fields=[],
+        ),
+        reference_sources={},
+        model="test-model",
+        max_retries=1,
+    )
+
+    compile(result.code, "<recovered>", "exec")
+    assert "class QuantoOptionAnalyticalPayoff" in result.code
+    assert "return float(price_quanto_option_analytical(spec, resolved))" in result.code
+
+
+def test_validate_build_critic_path_uses_stage_helpers_without_nameerror(monkeypatch, caplog):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import _validate_build
+
+    class DummyPayoff:
+        @property
+        def requirements(self) -> set[str]:
+            return set()
+
+        def evaluate(self, market_state) -> float:
+            return 1.0
+
+    monkeypatch.setattr(
+        "trellis.agent.executor._make_test_payoff",
+        lambda payoff_cls, spec_schema, settle: DummyPayoff(),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.review_policy.determine_review_policy",
+        lambda **kwargs: SimpleNamespace(
+            run_critic=True,
+            risk_level="high",
+            critic_reason="test",
+        ),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.validation_bundles.select_validation_bundle",
+        lambda **kwargs: SimpleNamespace(bundle_id="demo", checks=(), categories={}),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.validation_bundles.execute_validation_bundle",
+        lambda *args, **kwargs: SimpleNamespace(
+            failures=[],
+            failure_details=(),
+            executed_checks=(),
+            skipped_checks=(),
+        ),
+    )
+
+    captured = {}
+
+    @contextmanager
+    def fake_usage_stage(stage, metadata=None):
+        captured["stage"] = stage
+        captured["metadata"] = metadata or {}
+        yield []
+
+    monkeypatch.setattr("trellis.agent.config.get_model_for_stage", lambda stage, model=None: "critic-model")
+    monkeypatch.setattr("trellis.agent.config.llm_usage_stage", fake_usage_stage)
+    monkeypatch.setattr("trellis.agent.config.enforce_llm_token_budget", lambda stage=None: None)
+    monkeypatch.setattr("trellis.agent.config.summarize_llm_usage", lambda usage: {})
+    monkeypatch.setattr(
+        "trellis.agent.critic.critique",
+        lambda code, description, knowledge_context="", model=None: [],
+    )
+    monkeypatch.setattr("trellis.agent.arbiter.run_critic_tests", lambda concerns, payoff: [])
+
+    caplog.set_level("WARNING")
+    failures = _validate_build(
+        payoff_cls=DummyPayoff,
+        code="class Demo: pass",
+        description="Demo analytical payoff",
+        spec_schema=SimpleNamespace(class_name="DemoPayoff", spec_name="DemoSpec", fields=[]),
+        validation="standard",
+        model="gpt-5-mini",
+        pricing_plan=SimpleNamespace(method="analytical", required_market_data=set()),
+        product_ir=SimpleNamespace(instrument="european_option"),
+        build_meta={},
+        attempt_number=1,
+    )
+
+    assert failures == []
+    assert captured["stage"] == "critic"
+    assert captured["metadata"]["model"] == "critic-model"
+    assert "get_model_for_stage" not in caplog.text
+
+
+def test_actual_market_smoke_reports_runtime_error():
+    from trellis.agent.executor import _smoke_test_actual_market_state
+
+    class SmokeSpec:
+        def __init__(self, strike, expiry_date):
+            self.strike = strike
+            self.expiry_date = expiry_date
+
+    class SmokePayoff:
+        def __init__(self, spec):
+            self._spec = spec
+
+        @property
+        def requirements(self) -> set[str]:
+            return set()
+
+        def evaluate(self, market_state):
+            raise TypeError("float() argument must be a string or a real number, not 'FXRate'")
+
+    spec_schema = SimpleNamespace(
+        spec_name="SmokeSpec",
+        fields=[
+            SimpleNamespace(name="strike", type="float"),
+            SimpleNamespace(name="expiry_date", type="date"),
+        ],
+    )
+    SmokeSpec.__module__ = __name__
+    globals()["SmokeSpec"] = SmokeSpec
+    try:
+        failures = _smoke_test_actual_market_state(
+            SmokePayoff,
+            spec_schema,
+            self_market_state:=TestBuildLoop()._quanto_market_state(),
+        )
+    finally:
+        globals().pop("SmokeSpec", None)
+
+    assert failures
+    assert "actual market state smoke test failed" in failures[0].lower()
+    assert "FXRate" in failures[0]
+
+
+@patch("trellis.agent.executor._generate_module")
+@patch("trellis.agent.executor._design_spec")
+def test_build_does_not_return_last_failed_actual_market_candidate(
+    mock_design_spec,
+    mock_gen_mod,
+):
+    from trellis.agent.executor import build_payoff
+
+    mock_design_spec.return_value = SpecSchema(
+        class_name="SmokePayoff",
+        spec_name="SmokeSpec",
+        requirements=["discount_curve"],
+        fields=[
+            FieldDef("strike", "float", "Strike"),
+            FieldDef("expiry_date", "date", "Expiry date"),
+        ],
+    )
+    mock_gen_mod.return_value = '''\
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+from trellis.core.market_state import MarketState
+
+
+@dataclass(frozen=True)
+class SmokeSpec:
+    strike: float
+    expiry_date: date
+
+
+class SmokePayoff:
+    def __init__(self, spec: SmokeSpec):
+        self._spec = spec
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"discount_curve"}
+
+    def evaluate(self, market_state: MarketState) -> float:
+        raise TypeError("synthetic smoke failure")
+'''
+
+    with pytest.raises(RuntimeError, match="Failed to build payoff after 2 attempts"):
+        build_payoff(
+            "Synthetic smoke payoff",
+            {"discount_curve"},
+            market_state=TestBuildLoop()._quanto_market_state(),
+            force_rebuild=True,
+            max_retries=2,
+        )
+
 ROOT = Path(__file__).resolve().parents[2]
 GOOD_BERMUDAN_RATE_TREE_MODULE_CODE = (
     ROOT / "trellis" / "instruments" / "_agent" / "bermudanswaption.py"
@@ -282,6 +789,21 @@ class TestBuildLoop:
             fx_rates={"EURUSD": FXRate(spot=1.10, domestic="USD", foreign="EUR")},
             spot=1.10,
             vol_surface=FlatVol(0.18),
+        )
+
+    def _quanto_market_state(self) -> MarketState:
+        dom = YieldCurve.flat(0.05)
+        fgn = YieldCurve.flat(0.03)
+        return MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=dom,
+            forecast_curves={"EUR-DISC": fgn},
+            fx_rates={"EURUSD": FXRate(spot=1.10, domestic="USD", foreign="EUR")},
+            spot=100.0,
+            underlier_spots={"EUR": 100.0},
+            vol_surface=FlatVol(0.20),
+            model_parameters={"quanto_correlation": 0.35},
         )
 
     @patch("trellis.agent.executor._generate_module")
@@ -437,6 +959,26 @@ class TestBuildLoop:
         assert failure_events[-1]["failure_count"] == 1
 
     @patch("trellis.agent.executor._generate_module")
+    def test_build_retries_after_code_generation_error(self, mock_gen_mod):
+        """Code-generation failures should be retried before the build loop gives up."""
+        mock_gen_mod.side_effect = [
+            RuntimeError("OpenAI text request failed after 1 attempts"),
+            MOCK_MODULE_CODE,
+        ]
+
+        from trellis.agent.executor import build_payoff
+
+        cls = build_payoff(
+            "European payer swaption",
+            {"discount", "forward_rate", "black_vol"},
+            force_rebuild=True,
+            max_retries=2,
+        )
+
+        assert cls.__name__ == "SwaptionPayoff"
+        assert mock_gen_mod.call_count == 2
+
+    @patch("trellis.agent.executor._generate_module")
     def test_build_reuses_existing_fx_analytical_module(self, mock_gen_mod):
         """Vanilla FX analytical builds should reuse the deterministic adapter even on rebuilds."""
         from trellis.agent.executor import build_payoff
@@ -513,6 +1055,193 @@ class TestBuildLoop:
         mock_gen_mod.assert_not_called()
         assert payoff_cls.__name__ == "FXVanillaMonteCarloPayoff"
         assert pv == pytest.approx(expected, rel=0.06)
+
+    @patch("trellis.agent.executor._generate_module")
+    def test_build_reuses_existing_quanto_analytical_module(self, mock_gen_mod):
+        """Quanto analytical builds should reuse the checked-in deterministic adapter."""
+        from trellis.agent.executor import build_payoff
+
+        payoff_cls = build_payoff(
+            "Quanto option: quanto-adjusted BS vs MC cross-currency",
+            force_rebuild=True,
+            validation="fast",
+            instrument_type="quanto_option",
+            preferred_method="analytical",
+        )
+
+        mod = sys.modules[payoff_cls.__module__]
+        spec_cls = mod.QuantoOptionSpec
+        spec = spec_cls(
+            notional=250_000,
+            strike=100.0,
+            expiry_date=date(2025, 11, 15),
+            fx_pair="EURUSD",
+            underlier_currency="EUR",
+            domestic_currency="USD",
+        )
+        market_state = self._quanto_market_state()
+        pv = price_payoff(payoff_cls(spec), market_state)
+        T = year_fraction(SETTLE, spec.expiry_date, spec.day_count)
+        domestic_df = market_state.discount.discount(T)
+        foreign_df = market_state.forecast_curves["EUR-DISC"].discount(T)
+        sigma_underlier = market_state.vol_surface.black_vol(T, spec.strike)
+        sigma_fx = market_state.vol_surface.black_vol(T, market_state.fx_rates["EURUSD"].spot)
+        quanto_forward = (
+            market_state.underlier_spots["EUR"]
+            * foreign_df
+            / domestic_df
+            * math.exp(
+                -market_state.model_parameters["quanto_correlation"] * sigma_underlier * sigma_fx * T
+            )
+        )
+        expected = 250_000 * domestic_df * black76_call(
+            quanto_forward,
+            spec.strike,
+            sigma_underlier,
+            T,
+        )
+
+        mock_gen_mod.assert_not_called()
+        assert payoff_cls.__name__ == "QuantoOptionAnalyticalPayoff"
+        assert pv == pytest.approx(expected, rel=1e-10)
+
+    @patch("trellis.agent.executor._generate_module")
+    def test_build_fresh_build_bypasses_deterministic_quanto_reuse(self, mock_gen_mod):
+        """Fresh-build mode should force codegen even when a deterministic route exists."""
+        from trellis.agent.executor import build_payoff
+
+        mock_gen_mod.side_effect = RuntimeError("fresh-build invoked")
+
+        with pytest.raises(RuntimeError, match="fresh-build invoked"):
+            build_payoff(
+                "Quanto option: quanto-adjusted BS vs MC cross-currency",
+                force_rebuild=True,
+                fresh_build=True,
+                validation="fast",
+                instrument_type="quanto_option",
+                preferred_method="analytical",
+            )
+
+        assert mock_gen_mod.call_count == 3
+
+    @patch("trellis.agent.builder.dynamic_import")
+    @patch("trellis.agent.executor.write_module")
+    @patch("trellis.agent.executor._generate_module")
+    def test_build_fresh_build_writes_quanto_candidate_to_scratch_module(
+        self,
+        mock_gen_mod,
+        mock_write_module,
+        mock_dynamic_import,
+    ):
+        """Fresh-build candidates must not overwrite the checked-in deterministic route."""
+        from types import ModuleType
+        from types import SimpleNamespace
+
+        from trellis.agent.executor import build_payoff
+
+        mock_gen_mod.return_value = '''\
+from dataclasses import dataclass
+from datetime import date
+from trellis.core.market_state import MarketState
+from trellis.core.types import DayCountConvention
+
+@dataclass(frozen=True)
+class QuantoOptionSpec:
+    notional: float
+    strike: float
+    expiry_date: date
+    fx_pair: str
+    underlier_currency: str = "EUR"
+    domestic_currency: str = "USD"
+    option_type: str = "call"
+    quanto_correlation_key: str | None = None
+    day_count: DayCountConvention = DayCountConvention.ACT_365
+
+class QuantoOptionAnalyticalPayoff:
+    def __init__(self, spec: QuantoOptionSpec):
+        self._spec = spec
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot", "model_parameters"}
+
+    def evaluate(self, market_state: MarketState) -> float:
+        return 0.0
+'''
+        scratch_path = Path("/tmp/quantooptionanalytical_fresh.py")
+        mock_write_module.return_value = scratch_path
+        mod = ModuleType("trellis.instruments._agent._fresh.quantooptionanalytical")
+        setattr(mod, "QuantoOptionAnalyticalPayoff", type("QuantoOptionAnalyticalPayoff", (), {}))
+        mock_dynamic_import.return_value = mod
+        with patch(
+            "trellis.agent.executor.validate_semantics",
+            return_value=SimpleNamespace(ok=True, errors=()),
+        ), patch(
+            "trellis.agent.lite_review.review_generated_code",
+            return_value=SimpleNamespace(ok=True, errors=(), issues=[]),
+        ):
+            build_payoff(
+                "Quanto option: quanto-adjusted BS vs MC cross-currency",
+                force_rebuild=True,
+                fresh_build=True,
+                validation="fast",
+                instrument_type="quanto_option",
+                preferred_method="analytical",
+            )
+
+        write_path = mock_write_module.call_args.args[0]
+        assert write_path == "instruments/_agent/_fresh/quantooptionanalytical.py"
+
+    @patch("trellis.agent.executor._generate_module")
+    def test_build_reuses_existing_quanto_monte_carlo_module(self, mock_gen_mod):
+        """Quanto Monte Carlo builds should reuse the checked-in deterministic adapter."""
+        from trellis.agent.executor import build_payoff
+
+        payoff_cls = build_payoff(
+            "Quanto option: quanto-adjusted BS vs MC cross-currency",
+            force_rebuild=True,
+            validation="fast",
+            instrument_type="quanto_option",
+            preferred_method="monte_carlo",
+        )
+
+        mod = sys.modules[payoff_cls.__module__]
+        spec_cls = mod.QuantoOptionSpec
+        spec = spec_cls(
+            notional=100_000,
+            strike=100.0,
+            expiry_date=date(2025, 11, 15),
+            fx_pair="EURUSD",
+            underlier_currency="EUR",
+            domestic_currency="USD",
+            n_paths=20000,
+            n_steps=128,
+        )
+        market_state = self._quanto_market_state()
+        pv = price_payoff(payoff_cls(spec), market_state)
+        T = year_fraction(SETTLE, spec.expiry_date, spec.day_count)
+        domestic_df = market_state.discount.discount(T)
+        foreign_df = market_state.forecast_curves["EUR-DISC"].discount(T)
+        sigma_underlier = market_state.vol_surface.black_vol(T, spec.strike)
+        sigma_fx = market_state.vol_surface.black_vol(T, market_state.fx_rates["EURUSD"].spot)
+        quanto_forward = (
+            market_state.underlier_spots["EUR"]
+            * foreign_df
+            / domestic_df
+            * math.exp(
+                -market_state.model_parameters["quanto_correlation"] * sigma_underlier * sigma_fx * T
+            )
+        )
+        expected = 100_000 * domestic_df * black76_call(
+            quanto_forward,
+            spec.strike,
+            sigma_underlier,
+            T,
+        )
+
+        mock_gen_mod.assert_not_called()
+        assert payoff_cls.__name__ == "QuantoOptionMonteCarloPayoff"
+        assert pv == pytest.approx(expected, rel=0.08)
 
     @patch("trellis.agent.executor._generate_module")
     @patch("trellis.agent.executor._design_spec")

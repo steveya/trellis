@@ -1,0 +1,29 @@
+category: finite_differences
+title: Missing PDE grid discretization parameter
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T23:33:19.386376'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_233320_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - pde_grid
+  - vol_surface_dependence
+  - delta_space_interpolation
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'Grid.__init__() missing 1 required positional argument: ''n_t'''
+root_cause: The PDE Grid constructor was invoked without required discretization parameters
+  (time/space grid counts) because the pricing plan and imports lacked a concrete
+  Grid initialization pattern and required-argument checks. The code assumed a default
+  or different Grid signature than the trellis implementation.
+fix: Supply explicit discretization arguments (e.g. n_t, n_x, t0, t1) when constructing
+  the PDE Grid, use the exact trellis import paths and signatures, and add pre-call
+  validation that all required Grid parameters are present.
+validation: Discovered during build (attempt 3)
+id: fd_023

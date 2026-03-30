@@ -2,8 +2,8 @@ id: num_011
 title: LLM provider returned empty response causing JSON parse failure
 severity: critical
 category: numerical
-status: candidate
-confidence: 0.4
+status: validated
+confidence: 0.6
 created: '2026-03-25T18:38:30.721608'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260325_183830_build_a_pricer_for:_extract:_greeks_engine_(unify_autograd,_fd,_aad)_analytical.yaml

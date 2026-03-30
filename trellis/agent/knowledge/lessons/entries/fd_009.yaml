@@ -2,8 +2,8 @@ id: fd_009
 title: Crank-Nicolson Rannacher smoothing PDE build failed entirely
 severity: critical
 category: finite_differences
-status: candidate
-confidence: 0.4
+status: validated
+confidence: 0.6
 created: '2026-03-25T18:41:34.214199'
 version: ''
 source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260325_184134_build_a_pricer_for:_crank_nicolson_rannacher_smoothing_for_discontinuous_payoffs

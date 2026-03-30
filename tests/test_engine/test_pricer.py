@@ -35,6 +35,7 @@ class TestPricer:
         assert "convexity" in result.greeks
         assert result.greeks["duration"] > 0
         assert result.greeks["dv01"] > 0
+        assert result.curve_sensitivities
 
     def test_flat_curve_zero_coupon(self):
         """Zero-coupon bond on flat curve should equal face * discount(T)."""
@@ -78,7 +79,9 @@ class TestAnalytics:
         p_up = float(price_fn(rates + bump))
         p_dn = float(price_fn(rates - bump))
         fd_dv01 = -(p_up - p_dn) / 2  # for a 1bp shift
+        p = float(price_fn(rates))
+        fd_convexity = (p_up + p_dn - 2 * p) / (p * bump ** 2)
 
         assert greeks["dv01"] == pytest.approx(fd_dv01, rel=0.05)
         assert greeks["duration"] > 0
-        assert greeks["convexity"] > 0
+        assert greeks["convexity"] == pytest.approx(fd_convexity, rel=0.05)

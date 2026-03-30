@@ -1,0 +1,29 @@
+category: finite_differences
+title: PDE grid integer discretization error
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-28T23:42:20.107065'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_234221_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - pde_grid
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'TypeError: ''float'' object cannot be interpreted as an integer raised during
+  payoff construction or PDE grid creation (smoke test failure).'
+root_cause: Discretization parameters (e.g. number of time/space steps) or grid constructor
+  arguments were computed or passed as floats (or omitted and derived as floats) to
+  APIs that require integer counts; missing explicit grid ctor parameters and input
+  validation allowed the bad type to propagate.
+fix: Validate and explicitly pass integer discretization counts to the PDE Grid constructor
+  (cast with int() after a well-defined rounding rule) and add input assertions/smoke
+  tests; ensure market-state-derived quantities (time-to-expiry, daycount fractions)
+  are converted to integers before use in range/array-size APIs.
+validation: Discovered during build (attempt 3)
+id: fd_027

@@ -1,0 +1,35 @@
+id: sem_002
+title: Underspecified requests need a required-input plan before pricing
+severity: high
+category: semantic_contract
+status: promoted
+confidence: 1.0
+created: '2026-03-28T13:48:56'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_090059_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - any
+  features:
+  - discounting
+  - path_dependent
+  - multi_asset
+  - vol_surface_dependence
+  - early_exercise
+  - forward_rate
+  instrument:
+  - any
+  error_signature: null
+symptom: A request such as "price a Himalaya option" reaches the build loop without
+  enough structure to know which market inputs, conventions, or helper providers are
+  needed.
+root_cause: The system treated the user's prose as if it were already a complete pricing
+  spec. In practice, the request may omit underlyings, dates, vol inputs, or settlement
+  conventions, so the agent must infer a required-input checklist from the semantic
+  contract and method requirements before any pricing call.
+fix: Draft the semantic contract first, derive the missing-input checklist from the
+  product IR, method requirements, and data contracts, and then either synthesize
+  mock input providers or ask for the exact remaining fields. Log the inferred fields
+  explicitly so the final run is reproducible.
+validation: Observed during the QUA-284 proving run and its retry loop; use this as
+  the default behavior for partial derivative requests.

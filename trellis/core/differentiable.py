@@ -18,3 +18,8 @@ def get_numpy():
 def gradient(fn, argnum: int = 0):
     """Return a function that computes the gradient of *fn* w.r.t. ``argnum``."""
     return autograd.grad(fn, argnum)
+
+
+def hessian(fn, argnum: int = 0):
+    """Return a function that computes the Hessian of *fn* w.r.t. ``argnum``."""
+    return autograd.hessian(fn, argnum)

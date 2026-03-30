@@ -1,0 +1,29 @@
+id: vol_003
+title: Unit/vol surface mismatch causing huge PV
+severity: critical
+category: volatility
+status: validated
+confidence: 0.6
+created: '2026-03-28T11:30:25.293365'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_113025_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Price sanity check failed: |PV| = 9995.24, which exceeds 10.0× typical notional
+  (100).'
+root_cause: The runtime used inconsistent market conventions (wall‑clock valuation
+  date and/or wrong volatility/forward convention) causing a unit/scale mismatch (e.g.,
+  treating Black vol as a rate vol or computing forward incorrectly). This produced
+  an implausible PV far outside notional bounds.
+fix: Derive valuation date from market_state (never use date.today), explicitly compute
+  forward consistent with the vol surface convention (e.g., forward = spot/df when
+  appropriate), call vol_surface.black_vol(T, strike) with the correct T and strike,
+  and add unit-sanity checks (df>0, vol>0) and PV clamping/comparison to notional
+  to catch implausible outputs early.
+validation: Discovered during build (attempt 3)

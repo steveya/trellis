@@ -103,6 +103,10 @@ class TestMockDataProvider:
         assert "spx_local_vol" in snapshot.local_vol_surfaces
         assert "merton_equity" in snapshot.jump_parameter_sets
         assert "heston_equity" in snapshot.model_parameter_sets
+        assert snapshot.provenance["source_kind"] == "synthetic_snapshot"
+        assert snapshot.provenance["prior_family"] == "embedded_market_regime"
+        assert snapshot.provenance["prior_parameters"]["regime"] == "easing_cycle"
+        assert snapshot.provenance["prior_seed"] > 0
         assert snapshot.vol_surface().black_vol(1.0, 0.05) > 0
         assert snapshot.credit_curve() is not None
 
@@ -132,3 +136,5 @@ class TestResolverMockSource:
         assert snapshot.local_vol_surface() is not None
         assert snapshot.jump_parameters() is not None
         assert snapshot.model_parameters() is not None
+        assert snapshot.provenance["prior_family"] == "embedded_market_regime"
+        assert snapshot.provenance["prior_parameters"]["snapshot_date"] == "2024-11-15"

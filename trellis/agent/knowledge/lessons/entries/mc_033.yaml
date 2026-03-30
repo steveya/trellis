@@ -1,0 +1,33 @@
+id: mc_033
+title: Himalaya pricer code was truncated before completion
+severity: critical
+category: monte_carlo
+status: validated
+confidence: 0.6
+created: '2026-03-28T15:06:27.973442'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_150628_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - multi_asset
+  - path_dependent
+  - ranked_observation
+  - remaining_selection
+  - remove_selected
+  - locked_returns
+  - maturity_settlement
+  - discounting
+  - forward_rate
+  instrument: []
+  error_signature: null
+symptom: Generated source ends mid-expression (e.g. `if not obs_date`) and the module
+  cannot be compiled or imported.
+root_cause: The agent emitted a code block that was cut off before the function body
+  was finished, likely due to output length limits or markdown fence injection mid-stream,
+  leaving the Python source syntactically invalid.
+fix: Ensure the full evaluate() method is emitted in a single, complete raw Python
+  block with no markdown fences; validate compilability with compile() before submission
+  and retry if a SyntaxError is raised.
+validation: Discovered during build (attempt 3)

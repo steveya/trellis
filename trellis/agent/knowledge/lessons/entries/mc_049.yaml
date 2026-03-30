@@ -1,0 +1,31 @@
+category: monte_carlo
+title: Ignored required date schedule primitive
+severity: high
+status: promoted
+confidence: 0.9
+created: '2026-03-30T08:50:44.018320'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: The monte_carlo implementation omitted using trellis.core.date_utils.generate_schedule
+  and implemented custom schedule logic instead.
+root_cause: I assumed rebuilding schedule logic was acceptable and treated provided
+  primitives as optional rather than required, breaking the assembly contract and
+  expectations for thin adapters.
+fix: Refactor the monte_carlo implementation into a thin adapter that calls trellis.core.date_utils.generate_schedule
+  for schedule construction, then applies the Monte Carlo pricing logic.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: mc_cds\nPreferred method family:\
+  \ monte_carlo\n\nImplementation target: mc_cds"
+id: mc_049

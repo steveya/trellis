@@ -56,7 +56,11 @@ class DiscretizationScheme(Protocol):
 
 
 class Euler:
-    """Euler-Maruyama scheme (weak order 1.0, strong order 0.5)."""
+    """Simplest discretization: x_next = x + drift*dt + diffusion*sqrt(dt)*dW.
+
+    Sufficient for most pricing tasks (converges in distribution). Less
+    accurate for individual path realizations than higher-order schemes.
+    """
 
     name = "euler"
 
@@ -68,10 +72,12 @@ class Euler:
 
 
 class Milstein:
-    """Milstein scheme (weak order 1.0, strong order 1.0).
+    """Higher-accuracy discretization that adds a volatility correction term.
 
-    Adds the Itô correction term: 0.5 * σ * σ' * (dW² - dt).
-    σ' is computed via finite differences with configurable epsilon.
+    Improves on Euler by accounting for how the diffusion coefficient
+    changes with the state. The derivative of sigma is estimated via
+    finite differences. Useful when path accuracy matters (e.g. barrier
+    monitoring) but an exact solution is not available.
     """
 
     name = "milstein"

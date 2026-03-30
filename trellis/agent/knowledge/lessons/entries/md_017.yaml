@@ -2,8 +2,8 @@ id: md_017
 title: LLM JSON serialization failure causes total build abort
 severity: critical
 category: market_data
-status: candidate
-confidence: 0.4
+status: validated
+confidence: 0.6
 created: '2026-03-26T09:51:00.568328'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260326_095100_european_option_analytical.yaml

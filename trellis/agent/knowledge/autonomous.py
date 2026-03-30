@@ -50,8 +50,12 @@ class BuildResult:
     knowledge_summary: dict[str, Any] = field(default_factory=dict)
     platform_trace_path: str | None = None
     platform_request_id: str | None = None
+    analytical_trace_path: str | None = None
+    analytical_trace_text_path: str | None = None
+    audit_record_path: str | None = None
     blocker_details: dict[str, Any] | None = None
     token_usage_summary: dict[str, Any] = field(default_factory=dict)
+    gate_decision: object | None = None  # BuildGateDecision when gate evaluated
 
 
 _PROVIDER_FAILURE_MARKERS = (
@@ -73,18 +77,25 @@ def build_with_knowledge(
     max_retries: int = 3,
     validation: str = "standard",
     force_rebuild: bool = False,
+    fresh_build: bool = False,
     preferred_method: str | None = None,
     comparison_target: str | None = None,
     request_metadata: Mapping[str, object] | None = None,
 ) -> BuildResult:
-    """Knowledge-aware build: gap check → build → reflect → enrich.
+    """Build a payoff class while autonomously managing the knowledge lifecycle.
 
-    This is the autonomous entry point that manages the knowledge lifecycle
-    around each build.  It replaces direct calls to build_payoff() when
-    you want the system to self-maintain its knowledge base.
+    Phases:
+      1. Decompose and gap-check -- break the product into features, audit
+         what knowledge is available, and compute a readiness confidence
+         score (0.0-1.0).  Low confidence triggers extra retries.
+      2. Build -- call ``build_payoff()`` with gap warnings injected into the
+         LLM prompt so the code generator knows where knowledge is thin.
+      3. Reflect -- after the build (success or failure), run a lightweight
+         LLM pass that attributes outcomes to lessons and captures new ones.
 
-    Returns a BuildResult with the payoff class and metadata about what
-    the knowledge system learned.
+    Returns a ``BuildResult`` containing the generated payoff class (or None
+    on failure), attempt count, gap confidence, captured lessons, and
+    token-usage summary.
     """
     from trellis.agent.knowledge.decompose import decompose, decompose_to_ir
     from trellis.agent.knowledge.gap_check import gap_check, format_gap_warnings
@@ -121,8 +132,23 @@ def build_with_knowledge(
         gap_report = gap_check(decomposition)
         enforce_llm_token_budget(stage="decomposition")
 
+        # Pre-flight build gate — block very-low-confidence builds early
+        from trellis.agent.build_gate import evaluate_pre_flight_gate
+        pre_flight_gate = evaluate_pre_flight_gate(gap_report)
+
+        if pre_flight_gate.decision == "block":
+            return BuildResult(
+                payoff_cls=None,
+                success=False,
+                attempts=0,
+                gap_confidence=gap_report.confidence,
+                knowledge_gaps=gap_report.missing,
+                failures=[f"Build gate blocked (pre-flight): {pre_flight_gate.reason}"],
+                gate_decision=pre_flight_gate,
+            )
+
         # Increase retries if knowledge is thin
-        if gap_report.confidence < 0.5:
+        if pre_flight_gate.decision == "narrow_route" or gap_report.confidence < 0.5:
             max_retries = max(max_retries, 4)
 
         # Phase 2: Build with gap-aware knowledge
@@ -132,6 +158,7 @@ def build_with_knowledge(
             attempts=0,
             gap_confidence=gap_report.confidence,
             knowledge_gaps=gap_report.missing,
+            gate_decision=pre_flight_gate,
         )
 
         try:
@@ -147,6 +174,7 @@ def build_with_knowledge(
                 max_retries=max_retries,
                 validation=validation,
                 force_rebuild=force_rebuild,
+                fresh_build=fresh_build,
                 preferred_method=preferred_method,
                 request_metadata=request_metadata,
             )
@@ -159,6 +187,9 @@ def build_with_knowledge(
             result.knowledge_summary = dict(build_meta.get("knowledge_summary", {}) or {})
             result.platform_trace_path = build_meta.get("platform_trace_path")
             result.platform_request_id = build_meta.get("platform_request_id")
+            result.analytical_trace_path = build_meta.get("analytical_trace_path")
+            result.analytical_trace_text_path = build_meta.get("analytical_trace_text_path")
+            result.audit_record_path = build_meta.get("audit_record_path")
             result.blocker_details = build_meta.get("blocker_details")
         except BuildTrackingFailure as exc:
             result.failures = [str(exc.cause)]
@@ -168,6 +199,9 @@ def build_with_knowledge(
             result.knowledge_summary = dict(exc.meta.get("knowledge_summary", {}) or {})
             result.platform_trace_path = exc.meta.get("platform_trace_path")
             result.platform_request_id = exc.meta.get("platform_request_id")
+            result.analytical_trace_path = exc.meta.get("analytical_trace_path")
+            result.analytical_trace_text_path = exc.meta.get("analytical_trace_text_path")
+            result.audit_record_path = exc.meta.get("audit_record_path")
             result.blocker_details = exc.meta.get("blocker_details")
         except Exception as e:
             result.failures = [str(e)]
@@ -211,6 +245,9 @@ def build_with_knowledge(
             except Exception:
                 pass
 
+    # Phase 4: Post-task consolidation (background, non-blocking)
+    _maybe_consolidate(result.reflection, model=model)
+
     return result
 
 
@@ -225,14 +262,17 @@ def _build_with_tracking(
     max_retries: int,
     validation: str,
     force_rebuild: bool,
+    fresh_build: bool = False,
     build_description: str | None = None,
     preferred_method: str | None = None,
     request_metadata: Mapping[str, object] | None = None,
 ) -> tuple[type | None, dict]:
-    """Run build_payoff() with metadata tracking for reflection.
+    """Run ``build_payoff()`` while capturing metadata needed by the reflect phase.
 
-    Returns (payoff_cls, metadata) where metadata includes attempts,
-    failures, and final code.
+    Returns ``(payoff_cls, metadata)`` where *payoff_cls* is the generated
+    class (or None), and *metadata* is a dict with keys: ``attempts`` (int),
+    ``failures`` (list[str]), ``code`` (str of the last generated module),
+    ``platform_trace_path``, and ``platform_request_id``.
     """
     from trellis.agent.knowledge import (
         build_shared_knowledge_payload,
@@ -291,7 +331,7 @@ def _build_with_tracking(
             """Wrap module generation so attempt count and last code are captured."""
             attempt_count[0] += 1
             code = original_generate(*args, **kwargs)
-            last_code[0] = code
+            last_code[0] = _generated_module_code_text(code)
             return code
 
         def _tracking_record_platform_event(compiled_request, event, **kwargs):
@@ -315,11 +355,13 @@ def _build_with_tracking(
             market_state=market_state,
             instrument_type=instrument_type,
             force_rebuild=force_rebuild,
+            fresh_build=fresh_build,
             validation=validation,
             max_retries=max_retries,
             preferred_method=preferred_method,
             request_metadata=request_metadata,
             build_meta=meta,
+            gap_report=gap_report,
         )
 
         meta["attempts"] = attempt_count[0]
@@ -351,3 +393,286 @@ def _should_skip_reflection(result: BuildResult) -> bool:
         return False
     failures = [failure.lower() for failure in result.failures]
     return all(any(marker in failure for marker in _PROVIDER_FAILURE_MARKERS) for failure in failures)
+
+
+def _generated_module_code_text(value: object) -> str:
+    """Return the source text from a generated-module result or a legacy string."""
+    if isinstance(value, str):
+        return value
+    code = getattr(value, "code", None)
+    if isinstance(code, str):
+        return code
+    if code is not None:
+        return str(code)
+    return "" if value is None else str(value)
+
+
+# ---------------------------------------------------------------------------
+# Post-task consolidation skill
+# ---------------------------------------------------------------------------
+
+# Thresholds for triggering consolidation tiers
+_CANDIDATE_BACKLOG_RATIO = 0.40  # 40%+ candidates → recalibrate
+_TRACE_BLOAT_COUNT = 500  # 500+ trace files → compact
+_SUPERSEDES_GAP_COUNT = 10  # 10+ unscanned promoted → backfill
+_GAP_NOISE_COUNT = 200  # 200+ gap entries → aggregate
+
+
+@dataclass
+class ConsolidationResult:
+    """Outcome of a post-task consolidation run."""
+
+    triggered: bool = False
+    tiers_run: list[int] = field(default_factory=list)
+    tier_results: dict[str, Any] = field(default_factory=dict)
+    duration_seconds: float = 0.0
+    trigger_reasons: list[str] = field(default_factory=list)
+    error: str | None = None
+
+
+def _assess_consolidation_needs() -> tuple[list[int], list[str]]:
+    """Determine which consolidation tiers should run based on current state.
+
+    Returns (tiers_to_run, trigger_reasons).  All checks are cheap
+    file-system reads — no LLM calls.
+    """
+    from pathlib import Path
+
+    tiers: list[int] = []
+    reasons: list[str] = []
+
+    knowledge_dir = Path(__file__).resolve().parent
+    entries_dir = knowledge_dir / "lessons" / "entries"
+    traces_dir = knowledge_dir / "traces"
+
+    # --- Tier 1: candidate backlog ---
+    if entries_dir.is_dir():
+        import yaml
+
+        total = 0
+        candidates = 0
+        for f in entries_dir.glob("*.yaml"):
+            total += 1
+            try:
+                data = yaml.safe_load(f.read_text())
+                if isinstance(data, dict) and data.get("status") == "candidate":
+                    candidates += 1
+            except Exception:
+                pass
+        if total > 0 and candidates / total > _CANDIDATE_BACKLOG_RATIO:
+            tiers.append(1)
+            reasons.append(f"candidate_backlog ({candidates}/{total} = {candidates / total:.0%})")
+
+    # --- Tier 2: trace bloat ---
+    if traces_dir.is_dir():
+        trace_count = sum(1 for f in traces_dir.glob("*.yaml") if f.is_file())
+        if trace_count > _TRACE_BLOAT_COUNT:
+            tiers.append(2)
+            reasons.append(f"trace_bloat ({trace_count} files)")
+
+    # --- Tier 3: supersedes gap ---
+    if entries_dir.is_dir():
+        promoted_unscanned = 0
+        for f in entries_dir.glob("*.yaml"):
+            try:
+                data = yaml.safe_load(f.read_text())
+                if isinstance(data, dict) and data.get("status") == "promoted":
+                    supersedes = data.get("supersedes")
+                    if not supersedes or supersedes == []:
+                        promoted_unscanned += 1
+            except Exception:
+                pass
+        if promoted_unscanned > _SUPERSEDES_GAP_COUNT:
+            tiers.append(3)
+            reasons.append(f"supersedes_gap ({promoted_unscanned} unscanned)")
+
+    # --- Tier 4: principle opportunity ---
+    # Detected by counting categories with 3+ promoted lessons
+    if entries_dir.is_dir():
+        from collections import Counter
+
+        category_counts: Counter[str] = Counter()
+        for f in entries_dir.glob("*.yaml"):
+            try:
+                data = yaml.safe_load(f.read_text())
+                if isinstance(data, dict) and data.get("status") == "promoted":
+                    cat = data.get("category", "unknown")
+                    category_counts[cat] += 1
+            except Exception:
+                pass
+        eligible = sum(1 for c in category_counts.values() if c >= 3)
+        # Only trigger if there are eligible categories AND no recent draft
+        if eligible > 0:
+            candidates_dir = traces_dir / "principle_candidates"
+            recent_drafts = 0
+            if candidates_dir.is_dir():
+                import time
+
+                now = time.time()
+                for f in candidates_dir.glob("*.yaml"):
+                    try:
+                        if now - f.stat().st_mtime < 86400 * 7:  # within 7 days
+                            recent_drafts += 1
+                    except Exception:
+                        pass
+            if recent_drafts == 0:
+                tiers.append(4)
+                reasons.append(f"principle_opportunity ({eligible} categories eligible)")
+
+    if not tiers:
+        # Always run Tier 1 as a lightweight maintenance pass
+        tiers.append(1)
+        reasons.append("routine_maintenance")
+
+    return tiers, reasons
+
+
+def _run_consolidation(
+    reflection: dict[str, Any],
+    tiers: list[int],
+    *,
+    model: str | None = None,
+) -> ConsolidationResult:
+    """Execute the selected consolidation tiers.
+
+    Tier 1: recalibrate candidates (always, cheap)
+    Tier 2: compact traces (when trace count > threshold)
+    Tier 3: backfill supersedes (dry_run=True — log proposals only)
+    Tier 4: draft principle candidates (needs LLM, advisory only)
+    """
+    import time
+
+    result = ConsolidationResult(triggered=True, tiers_run=list(tiers))
+    start = time.monotonic()
+
+    try:
+        from trellis.agent.knowledge.promotion import (
+            backfill_supersedes,
+            compact_traces,
+            draft_principle_candidates,
+            recalibrate_candidates,
+        )
+
+        # Tier 1: recalibrate stuck candidates
+        if 1 in tiers:
+            try:
+                rc = recalibrate_candidates()
+                result.tier_results["recalibrate"] = rc
+            except Exception as e:
+                result.tier_results["recalibrate"] = {"error": str(e)}
+
+        # Tier 2: compact old traces
+        if 2 in tiers:
+            try:
+                ct = compact_traces(older_than_days=30)
+                result.tier_results["compact_traces"] = ct
+            except Exception as e:
+                result.tier_results["compact_traces"] = {"error": str(e)}
+
+        # Tier 3: backfill supersedes (dry_run=True only — no mutations)
+        if 3 in tiers:
+            try:
+                bs = backfill_supersedes(dry_run=True)
+                result.tier_results["backfill_supersedes_dry"] = {
+                    "proposals": {k: v for k, v in bs.items()} if bs else {},
+                    "count": len(bs),
+                }
+            except Exception as e:
+                result.tier_results["backfill_supersedes_dry"] = {"error": str(e)}
+
+        # Tier 4: draft principle candidates (advisory, no auto-promote)
+        if 4 in tiers and model:
+            try:
+                pc = draft_principle_candidates(model=model)
+                result.tier_results["principle_candidates"] = {
+                    "drafted": len(pc),
+                    "categories": [c.get("category", "?") for c in pc],
+                }
+            except Exception as e:
+                result.tier_results["principle_candidates"] = {"error": str(e)}
+
+    except Exception as e:
+        result.error = str(e)
+
+    result.duration_seconds = round(time.monotonic() - start, 2)
+    _log_consolidation(result)
+    return result
+
+
+def _log_consolidation(result: ConsolidationResult) -> None:
+    """Append consolidation outcome to traces/consolidation_log.yaml."""
+    from pathlib import Path
+    import datetime
+
+    log_path = Path(__file__).resolve().parent / "traces" / "consolidation_log.yaml"
+    entry = {
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "triggered": result.triggered,
+        "tiers_run": result.tiers_run,
+        "trigger_reasons": result.trigger_reasons,
+        "tier_results": result.tier_results,
+        "duration_seconds": result.duration_seconds,
+    }
+    if result.error:
+        entry["error"] = result.error
+
+    try:
+        import yaml
+
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        existing: list = []
+        if log_path.exists():
+            raw = yaml.safe_load(log_path.read_text())
+            if isinstance(raw, list):
+                existing = raw
+        existing.append(entry)
+        log_path.write_text(yaml.dump(existing, default_flow_style=False, sort_keys=False))
+    except Exception:
+        pass  # logging failure must not break the build
+
+
+def _maybe_consolidate(
+    reflection: dict[str, Any],
+    *,
+    model: str | None = None,
+    background: bool = True,
+) -> ConsolidationResult | None:
+    """Post-task consolidation entry point.
+
+    Checks conditions and runs consolidation tiers.  By default runs in a
+    background daemon thread so it does not block the next pricing task.
+    Returns the ConsolidationResult if run synchronously, None if backgrounded.
+    """
+    tiers, reasons = _assess_consolidation_needs()
+
+    if not tiers:
+        return ConsolidationResult(triggered=False)
+
+    # Tier 4 (LLM-based) should not run in background to avoid rate-limit
+    # contention with pricing calls.  Defer it if backgrounding.
+    bg_tiers = [t for t in tiers if t != 4] if background else tiers
+    fg_tier4 = 4 in tiers and not background
+
+    if background and bg_tiers:
+        import threading
+
+        def _bg_run():
+            r = _run_consolidation(reflection, bg_tiers, model=model)
+            r.trigger_reasons = reasons
+            return r
+
+        t = threading.Thread(target=_bg_run, daemon=True)
+        t.start()
+
+        # If tier 4 was requested but deferred, log it
+        if 4 in tiers and 4 not in bg_tiers:
+            _log_consolidation(ConsolidationResult(
+                triggered=False,
+                trigger_reasons=["tier4_deferred_from_background"],
+            ))
+
+        return None
+
+    result = _run_consolidation(reflection, tiers, model=model)
+    result.trigger_reasons = reasons
+    return result

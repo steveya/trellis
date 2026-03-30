@@ -55,12 +55,22 @@ def test_models_package_exports():
         garman_kohlhagen_call,
         garman_kohlhagen_put,
     )
+    from trellis.models.calibration import (
+        RatesCalibrationResult,
+        calibrate_cap_floor_black_vol,
+        calibrate_swaption_black_vol,
+        swaption_terms,
+    )
     from trellis.models.vol_surface import FlatVol, GridVolSurface, VolSurface
 
     assert models.black76_call is black76_call
     assert models.black76_put is black76_put
     assert models.garman_kohlhagen_call is garman_kohlhagen_call
     assert models.garman_kohlhagen_put is garman_kohlhagen_put
+    assert models.calibration.RatesCalibrationResult is RatesCalibrationResult
+    assert models.calibration.calibrate_cap_floor_black_vol is calibrate_cap_floor_black_vol
+    assert models.calibration.calibrate_swaption_black_vol is calibrate_swaption_black_vol
+    assert models.calibration.swaption_terms is swaption_terms
     assert models.FlatVol is FlatVol
     assert models.GridVolSurface is GridVolSurface
     assert models.VolSurface is VolSurface
@@ -78,6 +88,17 @@ def test_models_package_exports():
         "cashflow_engine",
     ):
         assert hasattr(models, name), f"trellis.models missing `{name}` package export"
+
+
+def test_analytical_package_exports_quanto_helpers():
+    import trellis.models.analytical as analytical
+    from trellis.models.analytical.quanto import (
+        price_quanto_option_analytical,
+        price_quanto_option_raw,
+    )
+
+    assert analytical.price_quanto_option_analytical is price_quanto_option_analytical
+    assert analytical.price_quanto_option_raw is price_quanto_option_raw
 
 
 def test_family_package_exports_are_canonical():

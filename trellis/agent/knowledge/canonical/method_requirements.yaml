@@ -1,9 +1,56 @@
 analytical:
-- 'BLACK-SCHOLES / BLACK CONSISTENCY: For European vanilla equity options, derive the forward from spot and discounting before calling Black-style kernels. With no dividends, F = S0 / discount_curve.discount(T); then PV = discount_curve.discount(T) * Black(F, K, sigma, T).'
-- 'GARMAN-KOHLHAGEN CONSISTENCY: For European vanilla FX options, use spot FX, domestic discounting, foreign discounting, and Black vol. Covered interest parity gives F = S0 * df_foreign / df_domestic; then PV = Garman-Kohlhagen(spot, K, sigma, T, df_domestic, df_foreign).'
-- 'MARKET DATA CONTRACT: Analytical pricing for European vanilla equity options requires discounting and Black vol. Spot is an instrument/spec input, not a separate MarketState capability unless the product explicitly sources it from a live market snapshot.'
-- 'FX MARKET DATA CONTRACT: Analytical FX pricing requires `market_state.discount` for domestic discounting, `market_state.forecast_curves[...]` for the selected foreign discount curve, `market_state.forward_curve` for bridged foreign-carry / routing context, `market_state.vol_surface` for Black vol, and `market_state.fx_rates` or `market_state.spot` for spot FX.'
-- 'OUTPUT CONTRACT: Analytical pricers must return a non-empty JSON-serializable structure only when a caller explicitly expects structured output; evaluate() itself must return a float present value.'
+  common:
+  - 'OUTPUT CONTRACT: evaluate() must return a float present value. Return a non-empty
+    JSON-serializable structure only when a caller explicitly expects structured output.'
+  black_scholes_equity:
+  - 'BLACK-SCHOLES FORWARD CONSISTENCY: Derive the forward from spot and discounting
+    before calling Black-style kernels. With no dividends, F = S0 / discount_curve.discount(T);
+    then PV = discount_curve.discount(T) * Black(F, K, sigma, T). This is valid under
+    lognormal spot (GBM) with deterministic rates and European exercise only.'
+  - 'EQUITY MARKET DATA CONTRACT: Requires discounting and Black vol. Spot is an instrument/spec
+    input, not a separate MarketState capability unless the product explicitly sources
+    it from a live market snapshot.'
+  garman_kohlhagen_fx:
+  - 'GARMAN-KOHLHAGEN CONSISTENCY: Use spot FX, domestic discounting, foreign discounting,
+    and Black vol. Covered interest parity gives F = S0 * df_foreign / df_domestic;
+    then either use the basis-assembled Garman-Kohlhagen FX vanilla path or assemble
+    the terminal payoff explicitly from Black76 asset-or-nothing and cash-or-nothing
+    basis claims. This is valid under lognormal FX spot with deterministic domestic
+    and foreign rates.'
+  - 'FX MARKET DATA CONTRACT: Requires `market_state.discount` for domestic discounting,
+    `market_state.forecast_curves[...]` for the selected foreign discount curve, `market_state.forward_curve`
+    for bridged foreign-carry / routing context, `market_state.vol_surface` for Black
+    vol, and `market_state.fx_rates` or `market_state.spot` for spot FX.'
+  black76_forward_rate:
+  - 'BLACK76 FORWARD-RATE CONSISTENCY: Each period prices independently as a Black76
+    call or put on the forward rate fixing at period start, discounted to settlement
+    at period end. Valid under lognormal forward rate with deterministic discount
+    factors.'
+  - 'FORWARD-RATE MARKET DATA CONTRACT: Requires discount curve, forward curve (via
+    forecast_forward_curve), and Black vol surface. Rate fixing dates and payment
+    dates must match the instrument schedule.'
+  credit_default_swap:
+  - 'CREDIT-SURVIVAL CONSISTENCY: For CDS and nth-to-default, price the premium leg
+    and protection leg directly from credit_curve survival probabilities and hazard
+    rates on an explicit payment schedule. Do not reuse Black76 call/put primitives.'
+  - 'CREDIT MARKET DATA CONTRACT: Requires credit_curve plus discount_curve. Declare
+    both in the generated requirements set and keep the adapter thin around schedule
+    generation, year_fraction, survival_probability, hazard_rate, and discounting.'
+  deterministic_cashflow:
+  - 'DETERMINISTIC CASHFLOW CONTRACT: When all cashflows are known at pricing time
+    and there is no optionality, PV = sum of cashflows * discount_factors. No vol
+    surface or forward curve is needed.'
+calibration:
+- 'RATES CALIBRATION CONSISTENCY: Preserve the selected curve names from MarketState
+  in every calibration result. Cap/floor and swaption calibration should clearly state
+  the rate_index, discount curve provenance, and any caller-supplied volatility or
+  correlation source labels.'
+- 'CAP/FLOOR CALIBRATION: Calibrate the flat Black volatility against the selected
+  OIS/forecast multi-curve environment by repricing the cap or floor quote with the
+  exact caplet/floorlet stack used by the pricing route.'
+- 'SWAPTION CALIBRATION: Calibrate the flat Black volatility against the selected
+  multi-curve swaption environment by repricing the forward swap rate and annuity
+  with the same curve selection used by the pricing route.'
 rate_tree:
 - 'CALIBRATION: The rate tree must be calibrated to reprice the input yield curve.
   At each time step, solve for theta(t) so that the tree-implied zero-coupon bond
@@ -15,6 +62,14 @@ rate_tree:
 - 'EXERCISE LOGIC: The call/put decision at each node must compare the CONTINUATION
   VALUE (discounted expected future value) against the exercise price. The continuation
   value is computed from the tree''s own discount factors, not the flat input rate.'
+- 'RATE-LATTICE SCOPE: For callable bonds, puttable bonds, and Bermudan swaptions,
+  use build_rate_lattice/lattice_backward_induction and treat the exact route family
+  as rate_lattice.'
+- 'EQUITY-TREE SCOPE: For American/Bermudan equity options, import BinomialTree from
+  trellis.models.trees.binomial and backward_induction from trellis.models.trees.backward_induction,
+  then use BinomialTree.crr(...) and backward_induction(..., exercise_type="american"|"bermudan").
+  Treat the exact route family as equity_tree. Do not invent crr_tree, AMERICAN, or
+  a method="lsm" fallback for the tree route.'
 monte_carlo:
 - 'CONVERGENCE: Use at least 10,000 paths. Verify that the standard error is <1% of
   the price. If path-dependent, use at least 100 time steps per year.'
@@ -28,13 +83,17 @@ monte_carlo:
   primal_dual_mc, and stochastic_mesh. If the control primitive uses continuation
   regression, the basis or estimator choice is explicit; LaguerreBasis is a common
   option, not a mandatory route primitive.'
+- 'CREDIT-SURVIVAL MC: For CDS and nth-to-default, sample default times from credit_curve hazard rates or survival probabilities on an explicit payment schedule. Declare credit_curve and discount_curve requirements and do not route credit-default pricing through Black76 or equity GBM option logic.'
 qmc:
-- 'LOW-DISCREPANCY SAMPLING: Use Sobol paths in balanced batches, preferably with a power-of-two
-  path count such as 1024, 2048, or 4096. If you deviate, document the reason.'
-- 'HONEST SCOPE: QMC in Trellis currently accelerates Monte Carlo estimators through Sobol normal
-  draws and Brownian-bridge helpers. It is not a separate universal pricing engine.'
+- 'LOW-DISCREPANCY SAMPLING: Use Sobol paths in balanced batches, preferably with
+  a power-of-two path count such as 1024, 2048, or 4096. If you deviate, document
+  the reason.'
+- 'HONEST SCOPE: QMC in Trellis currently accelerates Monte Carlo estimators through
+  Sobol normal draws and Brownian-bridge helpers. It is not a separate universal pricing
+  engine.'
 - 'BIAS VS VARIANCE: QMC can reduce estimator variance, but it does NOT remove time-discretization
-  bias. Keep the same date coverage and step-count discipline required for ordinary Monte Carlo.'
+  bias. Keep the same date coverage and step-count discipline required for ordinary
+  Monte Carlo.'
 copula:
 - 'CALIBRATION: Default probabilities must be consistent with the input credit curve.
   For each name: P(default by T) = 1 - S(T) where S(T) = credit_curve.survival_probability(T).'
@@ -45,6 +104,11 @@ pde_solver:
   calls. For puts: V(0,t)=K*exp(-r*(T-t)), V(S_max,t)=0.'
 - 'STABILITY: Crank-Nicolson (theta=0.5) is second-order but may oscillate near discontinuities.
   Use Rannacher smoothing (2-4 implicit steps at start) for digital/barrier payoffs.'
+- 'PDE ROUTE SCOPE: Use Grid from trellis.models.pde.grid, BlackScholesOperator
+  from trellis.models.pde.operator, and theta_method_1d from trellis.models.pde.theta_method.
+  For American puts, pass exercise_values and exercise_fn=max. Keep lower_bc_fn / upper_bc_fn
+  callables explicit for barrier and digital payoffs, and do not invent log_grid_pde,
+  uniform_grid_pde, absorbing, or dirichlet helper tokens.'
 fft_pricing:
 - 'CHARACTERISTIC FUNCTION CONVENTION: COS method expects CF of log-return log(S_T/S0).
   FFT (Carr-Madan) expects CF of log(S_T). Do NOT mix them.'

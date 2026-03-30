@@ -1,0 +1,34 @@
+category: convention
+title: Undefined identifiers in spec defaults
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-29T09:04:15.464181'
+version: ''
+source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_090416_build_a_pricer_for:_finite_element_method_(fem)_vs_finite_difference_for_european
+
+
+  implementation_target:_black_scholes
+
+  preferred_method_family:_analytical
+
+
+  implementation_target:_black_scholes_analytical.yaml'
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: 'Runtime NameError: name ''black_scholes'' (or ''analytical'') is not defined
+  when constructing the spec or evaluating the pricer.'
+root_cause: Default dataclass fields referenced symbols that were never imported or
+  defined (e.g., black_scholes, analytical). The code mixes symbol references and
+  literal/config names without a clear convention, causing NameErrors at import/instantiation
+  time.
+fix: Use literal strings or typed enums for model/method names or import and reference
+  the actual callable objects; avoid referring to runtime symbols as dataclass defaults.
+  Add unit tests that import the module to catch NameError/ImportError early.
+validation: Discovered during build (attempt 2)
+id: con_027
