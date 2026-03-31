@@ -56,32 +56,39 @@
 
 ### 2.2 Integrity gaps
 
-#### Gap I-1: DSL is advisory, not enforcing
+#### Gap I-1: DSL is advisory, not enforcing — **RESOLVED by QUA-410**
 
-The most consequential finding. The DSL is a **guidance layer** consumed by LLM prompts, not a **constraint layer** that gates the build pipeline.
+~~The most consequential finding. The DSL is a **guidance layer** consumed by LLM prompts, not a **constraint layer** that gates the build pipeline.~~
+
+**Resolution (QUA-410, March 2026):** A hard build-gate checkpoint is now
+enforced between Layer 2 (validation) and Layer 3 (compilation).
+`evaluate_pre_flight_gate()` runs after `gap_check()` in `autonomous.py`;
+`evaluate_pre_generation_gate()` runs inside `executor.py` before the builder
+prompt is assembled. Both return a `BuildGateDecision` that can
+`proceed / narrow_route / clarify / block`. Gap confidence < 0.4 blocks the
+build and emits a structured clarification request instead of wasting an LLM
+round-trip.
 
 | Constraint | Defined in | Consumed by | Enforcement |
 |---|---|---|---|
 | Route selection | `route_registry.py` | `build_generation_plan()` | ✅ Assembly-first |
 | Instruction precedence | `instructions.py` | Prompt rendering | ⚠️ Soft (LLM sees it) |
-| Market data requirements | `MarketDataAccessSpec` | Post-generation review | ❌ Not gating |
-| Spec schema selection | `family_contracts.py` | `planner.py` | ❌ Bypassed entirely |
-| Gap report severity | `gap_check.py` | Warning only | ❌ Never blocks a build |
+| Market data requirements | `MarketDataAccessSpec` | Post-generation review | ❌ Not yet gating |
+| Spec schema selection | `family_contracts.py` | `planner.py` | ❌ Bypassed (see Gap I-2) |
+| Gap report severity | `gap_check.py` | `build_gate.py` | ✅ Now blocks (QUA-410) |
 | Instruction conflicts | `ResolvedInstructionSet` | Rendered for LLM | ❌ LLM decides |
 | Contract validation | `semantic_contract_validation.py` | `lite_review.py` | ⚠️ Post-hoc only |
 
-**Impact:** The DSL works well when a deterministic route exists (FX vanilla analytical). It is weakest for novel or ad-hoc products where gap reports inject warnings but cannot change the build path. A failed contract check after code generation wastes an LLM round-trip.
-
-**Recommendation:** Introduce a **hard-gate** checkpoint between Layer 2 (validation) and Layer 3 (compilation) where:
-- Gap confidence < 0.4 → block build, emit structured clarification request
-- Unresolved instruction conflicts → escalate per role matrix before prompting
-- Missing required market inputs → reject route, force fallback route selection
-
-#### Gap I-2: Spec selection ignores DSL contracts
+#### Gap I-2: Spec selection ignores DSL contracts — **PARTIALLY RESOLVED by QUA-410**
 
 `planner.py._select_specialized_spec()` uses regex and keyword matching against description text. `STATIC_SPECS` is a hardcoded instrument → schema map. Neither consults `SemanticContract.blueprint.spec_schema_hints` or `FamilyContract.blueprint.spec_schema_hints`.
 
-**Impact:** The planner can select a spec schema that contradicts the contract the compiler just validated. The DSL has the data (`spec_schema_hints`) but it's dead code in the planner path.
+**Partial resolution (QUA-410):** The build gate now exposes the compiled
+blueprint (including `spec_schema_hint`) to the executor before the planner
+runs. Full wiring of `spec_schema_hints` into `planner.py` remains outstanding
+(see Gap I-2 in open tickets above).
+
+**Remaining impact:** The planner can still select a spec schema that contradicts the contract. The `spec_schema_hint` is computed in `SemanticImplementationBlueprint` and logged but not yet consumed by `planner.py`.
 
 #### Gap I-3: Knowledge monkey-patching short-circuits DSL retrieval
 
@@ -146,9 +153,9 @@ I compare against four DSL families relevant to Trellis's problem space:
 | **Typed product IR** | ✅ ProductIR (frozen DC) | ✅ Instrument hierarchy | ✅ Product model | N/A | N/A | None |
 | **Method dispatch** | ✅ Route registry | ✅ PricingEngine registry | ✅ CalculationRunner | ✅ Schedule | N/A | None |
 | **Market data binding** | ⚠️ Declared but not enforced | ✅ TermStructure handles | ✅ MarketData container | N/A | N/A | **Medium** |
-| **Composition algebra** | ❌ Flat constituents | ✅ CompositeInstrument | ✅ ResolvedTrade legs | ✅ Func composition | ✅ Graph edges | **High** |
-| **State machine** | ❌ Placeholder strings | ⚠️ Ad-hoc per engine | ✅ Lifecycle states | N/A | ✅ Typed StateGraph | **High** |
-| **Measure protocol** | ❌ Not modeled | ✅ NPV/Greeks/etc. | ✅ Measure enum | N/A | N/A | **High** |
+| **Composition algebra** | ⚠️ Scaffold in `composition_algebra.py` (QUA-413, not wired) | ✅ CompositeInstrument | ✅ ResolvedTrade legs | ✅ Func composition | ✅ Graph edges | **Medium** |
+| **State machine** | ✅ `EventMachine` + `validate_event_machine()` + skeleton emitter (QUA-412) | ⚠️ Ad-hoc per engine | ✅ Lifecycle states | N/A | ✅ Typed StateGraph | **Resolved** |
+| **Measure protocol** | ✅ `DslMeasure` enum + `normalize_dsl_measure()` threaded through compiler (QUA-411) | ✅ NPV/Greeks/etc. | ✅ Measure enum | N/A | N/A | **Resolved** |
 | **Schedule algebra** | ⚠️ generate_schedule only | ✅ Schedule class | ✅ PeriodicSchedule | ✅ Split/fuse/tile | N/A | **Medium** |
 | **Calibration contract** | ⚠️ Concept exists, unused | ✅ CalibrationHelper | ✅ Calibrator | N/A | N/A | **Medium** |
 | **Error typing** | ⚠️ String codes | ✅ Typed exceptions | ✅ FailureItems | N/A | ✅ NodeInterrupt | **Low** |
@@ -166,21 +173,34 @@ I compare against four DSL families relevant to Trellis's problem space:
 
 **Minimum viable version:** Add a `CompositeSemanticContract` that holds a DAG of `SemanticContract` nodes with typed edges (sequential, conditional, parallel). Each node inherits its parent's market data requirements. The compiler flattens to a single `GenerationPlan` but emits sub-contract boundaries as comments/hooks.
 
-#### Gap C-2: No measure protocol (vs. QuantLib, Strata)
+#### Gap C-2: No measure protocol — **RESOLVED by QUA-411**
 
-**What's missing:** The DSL has no first-class notion of "what are we computing?" — NPV, delta, gamma, vega, CVA, etc. The `SensitivityContract` declares `supported_measures` as a flat string tuple, but there is no `Measure` type that flows through the compiler and tells the code generator which outputs to produce.
+~~**What's missing:** The DSL has no first-class notion of "what are we computing?"~~
 
-**Why it matters for the agent:** The agent cannot distinguish "price this bond" from "compute the DV01 of this bond" at the DSL level. Both produce the same ProductIR and route. The sensitivity request is a side-channel in the prompt, not a first-class DSL concept.
+**Resolution (QUA-411, March 2026):** `DslMeasure(str, Enum)` implemented in
+`trellis/core/types.py` with 13 canonical measures. `normalize_dsl_measure()`
+with alias resolution is threaded through `compile_semantic_contract()`.
+`SemanticImplementationBlueprint` now carries `requested_measures: tuple[DslMeasure, ...]`
+and `measure_support_warnings: tuple[str, ...]` — when a requested measure is
+not natively supported by the selected method, the blueprint warns that a
+bump-and-reprice fallback will be attempted. The sensitivity support layer
+(`sensitivity_support.py`) ranks candidate methods by measure coverage when
+`requested_measures` is provided.
 
-**Minimum viable version:** Add a `Measure` enum (npv, delta, gamma, vega, theta, rho, dv01, cs01, cva, fva) and thread it through `compile_semantic_contract()` so the blueprint declares which outputs the generated code must produce. The semantic validator can then check that the code actually computes the declared measures.
+#### Gap C-3: No typed state machine for event-driven exotics — **RESOLVED by QUA-412**
 
-#### Gap C-3: No typed state machine for event-driven exotics (vs. LangGraph, Strata)
+~~**What's missing:** The DSL has `event_transitions: tuple[str, ...]` which is a flat list of labels.~~
 
-**What's missing:** Autocallables, TARFs, accumulators, and other event-driven exotics need a state machine: states (alive, knocked_in, knocked_out, terminated), transitions (observation_date → check_barrier → maybe_knock), and terminal conditions. The DSL has `event_transitions: tuple[str, ...]` which is a flat list of labels.
-
-**Why it matters for the agent:** Without a typed state machine, the agent must invent the entire state-tracking logic in the evaluate() function. This is the single most common failure mode for exotic pricing tasks — the agent forgets a transition, duplicates a state, or misorders observations.
-
-**Minimum viable version:** Define `EventState`, `EventTransition`, and `EventMachine` dataclasses. `EventTransition` has `from_state`, `to_state`, `guard` (a predicate reference), and `action` (a payoff/accumulation reference). The compiler can emit the state-machine skeleton and the agent only fills in the guard/action bodies.
+**Resolution (QUA-412, March 2026):** `EventMachine`, `EventState`,
+`EventTransition`, `EventGuard`, and `EventAction` are fully typed frozen
+dataclasses in `trellis/agent/event_machine.py`. `validate_event_machine()`
+runs BFS reachability to detect orphaned states and unreachable terminal
+conditions. `emit_event_machine_skeleton()` generates a Python state-enum +
+transition stub that is injected into the builder prompt for exotic pricing
+tasks — the agent fills in guard expressions and payoff actions, not the entire
+state-machine scaffolding. Factory functions `autocallable_event_machine()` and
+`tarf_event_machine()` serve as canonical reference implementations and test
+fixtures.
 
 #### Gap C-4: No retry/fallback policy in the DSL (vs. LangGraph)
 

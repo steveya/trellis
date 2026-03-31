@@ -218,6 +218,37 @@ validation gates and accumulating sufficient confidence across multiple builds.
 | **Arbiter** | Owns gap classification decision: retry, extend, or escalate. |
 | **Autonomous wrapper** | Owns the three-phase loop (gap_check → build → reflect) and lesson promotion triggers. |
 
+## Resolved Work (QUA-409 epic)
+
+The following tickets from the QUA-409 DSL Enforcement and Expressiveness epic
+were completed in March 2026:
+
+- **QUA-410 — Hard build gate** — `evaluate_pre_flight_gate()` and
+  `evaluate_pre_generation_gate()` wired into `autonomous.py` and `executor.py`.
+  Gap confidence < 0.4 now blocks the build with a structured clarification
+  request. `BuildGateDecision` (proceed / narrow_route / clarify / block)
+  replaces the silent warning path.
+
+- **QUA-411 — Measure protocol** — `DslMeasure(str, Enum)` added to
+  `trellis/core/types.py` with 13 first-class measures (PRICE, DV01, DURATION,
+  VEGA, DELTA, GAMMA, THETA, RHO, OAS, Z_SPREAD, SCENARIO_PNL, CONVEXITY,
+  KEY_RATE_DURATIONS). `normalize_dsl_measure()` with alias resolution threaded
+  through `compile_semantic_contract()` and the sensitivity support layer.
+
+- **QUA-412 — Event state machine** — `EventMachine`, `EventState`,
+  `EventTransition`, `EventGuard`, `EventAction` frozen dataclasses implemented
+  in `trellis/agent/event_machine.py`. BFS reachability validation in
+  `validate_event_machine()`. `emit_event_machine_skeleton()` injects typed
+  state-machine scaffolding into builder prompts for exotic pricing tasks.
+  Factory functions `autocallable_event_machine()` and `tarf_event_machine()`
+  validate the design.
+
+- **QUA-413 — Composition algebra scaffold** — `PayoffComponent`,
+  `CompositeSemanticContract`, and `CalibrationContract` implemented in
+  `trellis/agent/composition_algebra.py` as a proof-of-concept. The module is
+  intentionally not wired into the production pipeline; full compiler
+  integration is deferred to a future epic (QUA-439).
+
 ## Open Tickets and Remaining Work
 
 ### Taxonomy and Governance (highest priority)

@@ -46,6 +46,10 @@ class SemanticImplementationBlueprint:
     target_modules: tuple[str, ...] = ()
     proving_tasks: tuple[str, ...] = ()
     unsupported_paths: tuple[str, ...] = ()
+    requested_measures: tuple[str, ...] = ()
+    measure_support_warnings: tuple[str, ...] = ()
+    event_machine_skeleton: str | None = None
+    calibration_step: object | None = None  # CalibrationContract when present
 
     def __post_init__(self):
         """Freeze mapping metadata for stable traces and tests."""
@@ -85,6 +89,7 @@ def compile_semantic_contract(
         reusable_primitives=contract.blueprint.target_modules,
         supported=not bool(contract.blueprint.blocked_by),
         preferred_method=preferred_method,
+        event_machine=getattr(contract.product, "event_machine", None),
     )
     pricing_plan = select_pricing_method_for_product_ir(
         product_ir,
@@ -92,9 +97,32 @@ def compile_semantic_contract(
         requested_measures=requested_measures,
         context_description=contract.description,
     )
+    _calibration_modules: tuple[str, ...] = ()
+    _calibration = getattr(contract, "calibration", None)
+    if _calibration is not None:
+        _prim = getattr(_calibration, "proven_primitive", "")
+        if _prim:
+            from trellis.agent.calibration_contract import _KNOWN_PRIMITIVES
+            _cal_mod = _KNOWN_PRIMITIVES.get(_prim, "")
+            if _cal_mod:
+                _calibration_modules = (_cal_mod,)
     route_modules = tuple(
-        dict.fromkeys((*pricing_plan.method_modules, *contract.blueprint.target_modules))
+        dict.fromkeys((*pricing_plan.method_modules, *contract.blueprint.target_modules, *_calibration_modules))
     )
+    # Normalize requested measures and check support coverage
+    normalized_measures = tuple(normalize_requested_measures(requested_measures))
+    measure_warnings: list[str] = []
+    if normalized_measures and pricing_plan.sensitivity_support is not None:
+        supported = set(pricing_plan.sensitivity_support.supported_measures)
+        for m in normalized_measures:
+            m_val = m.value  # DslMeasure is a str-enum; .value is the canonical lowercase key
+            if m_val not in supported:
+                measure_warnings.append(
+                    f"Requested measure '{m_val}' is not in {preferred_method}'s "
+                    f"supported set {sorted(supported)}; analytics engine "
+                    f"will attempt bump-and-reprice"
+                )
+
     return SemanticImplementationBlueprint(
         semantic_id=contract.semantic_id,
         contract=contract,
@@ -116,6 +144,10 @@ def compile_semantic_contract(
         target_modules=tuple(contract.blueprint.target_modules),
         proving_tasks=tuple(contract.blueprint.proving_tasks),
         unsupported_paths=tuple(dict.fromkeys((*contract.methods.unsupported_variants, *contract.blueprint.blocked_by))),
+        requested_measures=normalized_measures,
+        measure_support_warnings=tuple(measure_warnings),
+        event_machine_skeleton=_emit_event_skeleton(contract),
+        calibration_step=getattr(contract, "calibration", None),
     )
 
 
@@ -228,3 +260,15 @@ def _engine_families_from_methods(methods: tuple[str, ...]) -> tuple[str, ...]:
             if family not in families:
                 families.append(family)
     return tuple(families)
+
+
+def _emit_event_skeleton(contract) -> str | None:
+    """Emit an event machine skeleton if the contract has one."""
+    machine = getattr(getattr(contract, "product", None), "event_machine", None)
+    if machine is None:
+        return None
+    try:
+        from trellis.agent.event_machine import emit_event_machine_skeleton
+        return emit_event_machine_skeleton(machine)
+    except Exception:
+        return None
