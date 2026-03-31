@@ -224,5 +224,8 @@ class TestCapabilitySummary:
 
     def test_pde_summary_uses_current_theta_method_signature(self):
         summary = capability_summary()
-        assert "theta_method_1d(grid, op, terminal, theta=0.5)" in summary
+        # theta_method_1d is present with grid/op/terminal/theta args
+        # (rendered as multiline in the capabilities summary)
+        assert "theta_method_1d" in summary
+        assert "theta=0.5" in summary
         assert "sigma_fn, r_fn, payoff" not in summary

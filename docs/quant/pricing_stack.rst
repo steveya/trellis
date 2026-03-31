@@ -82,10 +82,13 @@ it uses during routing and code generation:
 The detailed formulas and implementation notes live in the mathematical reference
 pages linked from :doc:`index`.
 
-Analytical routes usually follow a resolver -> support-helper -> raw-kernel ->
+Analytical routes follow a resolver → support-helper → raw-kernel →
 thin-adapter pattern. The reusable helper surface lives under
 ``trellis.models.analytical.support``, while the public analytical modules keep
-the float-returning adapter boundary explicit.
+the float-returning adapter boundary explicit. See
+:doc:`analytical_route_cookbook` for the step-by-step pattern and shared helper
+reference, and :doc:`basis_claim_patterns` for the extraction policy that
+governs when route-local code is promoted to the support layer.
 
 Agent Boundary
 --------------
@@ -107,6 +110,9 @@ wrong in the deterministic library, the agent will reproduce that mistake.
 Related Reading
 ---------------
 
+- :doc:`analytical_route_cookbook`
+- :doc:`basis_claim_patterns`
+- :doc:`differentiable_pricing`
 - :doc:`extending_trellis`
 - :doc:`knowledge_maintenance`
 - :doc:`../developer/overview`

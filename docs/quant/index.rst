@@ -21,6 +21,8 @@ Core Quant Topics
 
    pricing_stack
    differentiable_pricing
+   analytical_route_cookbook
+   basis_claim_patterns
    extending_trellis
    knowledge_maintenance
 
