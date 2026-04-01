@@ -155,7 +155,7 @@ def test_pde_route_card_mentions_terminal_array_contract():
     assert "rannacher_timesteps" in card
 
 
-def test_american_option_route_card_mentions_binomial_tree():
+def test_american_option_route_card_mentions_equity_tree_helper():
     from trellis.agent.knowledge.decompose import decompose_to_ir
 
     pricing_plan = PricingPlan(
@@ -180,10 +180,11 @@ def test_american_option_route_card_mentions_binomial_tree():
     assert plan.primitive_plan.route_family == "equity_tree"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
-    assert {"BinomialTree", "backward_induction"} <= primitive_symbols
-    assert {"trellis.models.trees.binomial", "trellis.models.trees.backward_induction"} <= primitive_modules
+    assert primitive_symbols == {"price_vanilla_equity_option_tree"}
+    assert primitive_modules == {"trellis.models.equity_option_tree"}
     assert "build_rate_lattice" not in primitive_symbols
-    assert "BinomialTree.crr" in card
+    assert "price_vanilla_equity_option_tree" in card
+    assert "build_spot_lattice" in card
     assert "lsm_mc" not in card
 
 
@@ -240,11 +241,17 @@ def test_cds_monte_carlo_route_uses_single_name_credit_default_swap_assembly():
     assert plan.primitive_plan.route == "credit_default_swap_monte_carlo"
     assert plan.primitive_plan.route_family == "credit_default_swap"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert {"generate_schedule", "year_fraction", "get_numpy"} <= primitive_symbols
+    assert {
+        "build_cds_schedule",
+        "interval_default_probability",
+        "price_cds_monte_carlo",
+        "get_numpy",
+    } <= primitive_symbols
     assert "MonteCarloEngine" not in primitive_symbols
     assert "GaussianCopula" not in primitive_symbols
-    assert "market_state.discount.discount(t)" in card
-    assert "credit curve hazard structure" in card
+    assert "build_cds_schedule" in card
+    assert "price_cds_monte_carlo" in card
+    assert "survival_probability" in card
 
 
 def test_nth_to_default_monte_carlo_route_uses_copula_assembly():
