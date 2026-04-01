@@ -1,0 +1,62 @@
+schema_version: 1
+recorded_at: "2026-03-31T17:10:00Z"
+source_manifest: "/Users/steveyang/Projects/steveya/trellis/TASKS.yaml"
+tasks:
+  - id: "T13"
+    task:
+      id: "T13"
+      title: "European call: theta-method convergence order measurement"
+      construct: "pde"
+      new_component: "convergence_order_diagnostic"
+      cross_validate:
+        internal:
+          - "theta_0.5"
+          - "theta_1.0"
+        analytical: "black_scholes"
+        external:
+          - "quantlib"
+      status: "pending"
+    problem_record:
+      reason: "explicit regression seed"
+      latest_run_model: "gpt-5-mini"
+      latest_result_path: "/Users/steveyang/Projects/steveya/trellis/canary_t13_comparator_bucket.json"
+      latest_summary_path: "/Users/steveyang/Projects/steveya/trellis/canary_t13_comparator_bucket_summary.json"
+      latest_diagnosis_packet_path: "/Users/steveyang/Projects/steveya/trellis/task_runs/diagnostics/latest/T13.json"
+      latest_diagnosis_dossier_path: "/Users/steveyang/Projects/steveya/trellis/task_runs/diagnostics/latest/T13.md"
+      latest_headline: "European call: theta-method convergence order measurement failed in `comparison` with `comparator_build_failure`."
+      problem_hypotheses:
+        - "Analytical comparator build still drifts away from the stable PDE route."
+        - "The packet-level diagnosis is now specific enough; the remaining work is direct Black-Scholes comparator scaffold/codegen repair."
+        - "Code-generation retries still need narrower skeleton/convention guidance for the Black-Scholes comparator."
+  - id: "T38"
+    task:
+      id: "T38"
+      title: "CDS pricing: hazard rate MC vs survival prob analytical"
+      construct:
+        - "monte_carlo"
+        - "credit"
+      new_component: "cds_pricing"
+      cross_validate:
+        internal:
+          - "mc_cds"
+          - "analytical_cds"
+        external:
+          - "quantlib"
+          - "financepy"
+      status: "pending"
+    problem_record:
+      reason: "explicit regression seed"
+      latest_run_model: "gpt-5-mini"
+      latest_result_path: "/Users/steveyang/Projects/steveya/trellis/canary_t38_cds_import_repair.json"
+      latest_summary_path: "/Users/steveyang/Projects/steveya/trellis/canary_t38_cds_import_repair_summary.json"
+      latest_diagnosis_packet_path: "/Users/steveyang/Projects/steveya/trellis/task_runs/diagnostics/latest/T38.json"
+      latest_diagnosis_dossier_path: "/Users/steveyang/Projects/steveya/trellis/task_runs/diagnostics/latest/T38.md"
+      latest_headline: "CDS pricing: hazard rate MC vs survival prob analytical failed in `comparison` with `comparison_insufficient_results`."
+      problem_hypotheses:
+        - "Single-name CDS is no longer being routed through nth_to_default or basket-CDS guidance; the remaining failure is method-local to Monte Carlo."
+        - "The CDS Monte Carlo retry guidance removed the GBM/equity-process fallback, which confirms the route-family/import-family confusion is no longer the active blocker."
+        - "The remaining Monte Carlo CDS problem is now a thinner unit/scaffold issue: spread normalization and loop/body generation still drift into an invalid or mis-indented payoff implementation."
+      supporting_evidence:
+        - "/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/platform/executor_build_20260331164605_ff09404c.yaml"
+        - "/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/platform/executor_build_20260331164820_105134d3.yaml"
+        - "/Users/steveyang/Projects/steveya/trellis/task_runs/diagnostics/latest/T38.json"
