@@ -993,10 +993,47 @@ class SmokePayoff:
             max_retries=2,
         )
 
-ROOT = Path(__file__).resolve().parents[2]
-GOOD_BERMUDAN_RATE_TREE_MODULE_CODE = (
-    ROOT / "trellis" / "instruments" / "_agent" / "bermudanswaption.py"
-).read_text()
+GOOD_BERMUDAN_RATE_TREE_MODULE_CODE = '''\
+"""Agent-generated payoff: Bermudan swaption on HW tree."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+from trellis.core.market_state import MarketState
+from trellis.core.types import DayCountConvention, Frequency
+
+
+@dataclass(frozen=True)
+class BermudanSwaptionSpec:
+    notional: float
+    strike: float
+    exercise_dates: str
+    swap_end: date
+    swap_frequency: Frequency = Frequency.SEMI_ANNUAL
+    day_count: DayCountConvention = DayCountConvention.ACT_360
+    rate_index: str | None = None
+    is_payer: bool = True
+
+
+class BermudanSwaptionPayoff:
+    def __init__(self, spec: BermudanSwaptionSpec):
+        self._spec = spec
+
+    @property
+    def spec(self) -> BermudanSwaptionSpec:
+        return self._spec
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"black_vol", "discount", "forward_rate"}
+
+    def evaluate(self, market_state: MarketState) -> float:
+        from trellis.models.bermudan_swaption_tree import price_bermudan_swaption_tree
+
+        return float(price_bermudan_swaption_tree(market_state, self._spec, model="hull_white"))
+'''
 
 BERMUDAN_SPEC_SCHEMA = SpecSchema(
     class_name="BermudanSwaptionPayoff",
