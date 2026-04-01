@@ -11,6 +11,8 @@ from trellis.agent.codegen_guardrails import PrimitiveRef
 from trellis.agent.knowledge.schema import ProductIR
 from trellis.agent.quant import PricingPlan
 from trellis.agent.route_registry import (
+    evaluate_route_admissibility,
+    find_route_by_id,
     load_route_registry,
     match_candidate_routes,
     resolve_route_adapters,
@@ -62,6 +64,12 @@ def _prim_set(prims):
     return {(p.module, p.symbol, p.role) for p in prims}
 
 
+def _semantic_blueprint_for(contract, **compile_kwargs):
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+
+    return compile_semantic_contract(contract, **compile_kwargs)
+
+
 # ---------------------------------------------------------------------------
 # Registry validation
 # ---------------------------------------------------------------------------
@@ -71,12 +79,25 @@ class TestRegistryValidation:
         errors = validate_registry(registry)
         assert errors == (), f"Registry validation errors: {errors}"
 
-    def test_17_routes_loaded(self, registry):
-        assert len(registry.routes) == 17
+    def test_21_routes_loaded(self, registry):
+        assert len(registry.routes) == 21
 
     def test_all_routes_promoted(self, registry):
         for route in registry.routes:
             assert route.status == "promoted", f"Route {route.id} is {route.status}"
+
+    def test_typed_admissibility_hydrates_for_migrated_routes(self, registry):
+        analytical = find_route_by_id("analytical_black76", registry)
+        lattice = find_route_by_id("exercise_lattice", registry)
+        basket = find_route_by_id("correlated_basket_monte_carlo", registry)
+
+        assert analytical is not None
+        assert analytical.admissibility.supported_control_styles == ("identity", "holder_max")
+        assert analytical.admissibility.multicurrency_support == "single_currency_only"
+        assert lattice is not None
+        assert lattice.admissibility.supported_control_styles == ("identity", "holder_max", "issuer_min")
+        assert basket is not None
+        assert basket.admissibility.event_support == "automatic"
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +155,11 @@ class TestCreditRoutes:
 
     def test_nth_to_default_analytical(self, registry):
         new = _new_routes(registry, "analytical", self.NTD_IR)
-        assert new == ("credit_default_swap_analytical",)
+        assert new == ()
+
+    def test_nth_to_default_monte_carlo(self, registry):
+        new = _new_routes(registry, "monte_carlo", self.NTD_IR)
+        assert new == ("nth_to_default_monte_carlo",)
 
     def test_route_family(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap_analytical"][0]
@@ -165,6 +190,65 @@ class TestBasketRoutes:
             ("trellis.models.monte_carlo.semantic_basket", "price_ranked_observation_basket_monte_carlo", "route_helper"),
         }
         assert _prim_set(new_prims) == expected_prims
+
+    def test_admissibility_rejects_strategic_control_for_basket_event_route(self, registry):
+        from dataclasses import replace
+        from trellis.agent.semantic_contracts import make_ranked_observation_basket_contract
+
+        spec = find_route_by_id("correlated_basket_monte_carlo", registry)
+        assert spec is not None
+
+        contract = make_ranked_observation_basket_contract(
+            description="Himalaya on AAPL, MSFT, NVDA",
+            constituents=("AAPL", "MSFT", "NVDA"),
+            observation_schedule=("2025-06-15", "2025-12-15", "2026-06-15"),
+        )
+        bp = _semantic_blueprint_for(contract)
+        bp = replace(
+            bp,
+            contract=replace(
+                bp.contract,
+                product=replace(
+                    bp.contract.product,
+                    controller_protocol=replace(
+                        bp.contract.product.controller_protocol,
+                        controller_style="holder_max",
+                        controller_role="holder",
+                        admissible_actions=("exercise", "continue"),
+                    ),
+                ),
+            ),
+        )
+
+        decision = evaluate_route_admissibility(spec, semantic_blueprint=bp)
+
+        assert not decision.ok
+        assert "unsupported_control_style:holder_max" in decision.failures
+
+    def test_admissibility_uses_typed_event_machine_not_legacy_event_transition_mirror(self, registry):
+        from dataclasses import replace
+        from trellis.agent.semantic_contracts import make_ranked_observation_basket_contract
+
+        spec = find_route_by_id("correlated_basket_monte_carlo", registry)
+        assert spec is not None
+
+        contract = make_ranked_observation_basket_contract(
+            description="Himalaya on AAPL, MSFT, NVDA",
+            constituents=("AAPL", "MSFT", "NVDA"),
+            observation_schedule=("2025-06-15", "2025-12-15", "2026-06-15"),
+        )
+        contract = replace(
+            contract,
+            product=replace(
+                contract.product,
+                event_transitions=(),
+            ),
+        )
+        bp = _semantic_blueprint_for(contract)
+
+        decision = evaluate_route_admissibility(spec, semantic_blueprint=bp)
+
+        assert decision.ok
 
 
 # ---------------------------------------------------------------------------
@@ -263,7 +347,7 @@ class TestQMCRoutes:
 class TestRateTreeRoutes:
     CALLABLE_IR = ProductIR(
         instrument="callable_bond",
-        payoff_family="callable_bond",
+        payoff_family="callable_fixed_income",
         exercise_style="issuer_call",
         model_family="interest_rate",
     )
@@ -299,8 +383,7 @@ class TestRateTreeRoutes:
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         new_prims = resolve_route_primitives(spec, self.EQUITY_AMERICAN_IR)
         expected_prims = {
-            ("trellis.models.trees.binomial", "BinomialTree", "tree_builder"),
-            ("trellis.models.trees.backward_induction", "backward_induction", "backward_induction"),
+            ("trellis.models.equity_option_tree", "price_vanilla_equity_option_tree", "route_helper"),
         }
         assert _prim_set(new_prims) == expected_prims
 
@@ -308,8 +391,15 @@ class TestRateTreeRoutes:
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         new_prims = resolve_route_primitives(spec, self.CALLABLE_IR)
         expected_prims = {
-            ("trellis.models.trees.lattice", "build_rate_lattice", "lattice_builder"),
-            ("trellis.models.trees.lattice", "lattice_backward_induction", "backward_induction"),
+            ("trellis.models.callable_bond_tree", "price_callable_bond_tree", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_bermudan_swaption_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
+        new_prims = resolve_route_primitives(spec, self.BERMUDAN_IR)
+        expected_prims = {
+            ("trellis.models.bermudan_swaption_tree", "price_bermudan_swaption_tree", "route_helper"),
         }
         assert _prim_set(new_prims) == expected_prims
 
@@ -329,11 +419,22 @@ class TestRateTreeRoutes:
 
 class TestAnalyticalRoutes:
     SWAPTION_IR = ProductIR(instrument="swaption", payoff_family="swaption", exercise_style="european")
+    BERMUDAN_SWAPTION_IR = ProductIR(
+        instrument="bermudan_swaption",
+        payoff_family="swaption",
+        exercise_style="bermudan",
+        model_family="interest_rate",
+    )
     VANILLA_IR = ProductIR(instrument="european_option", payoff_family="vanilla_option", exercise_style="european")
+    ZCB_IR = ProductIR(instrument="zcb_option", payoff_family="zcb_option", exercise_style="european")
 
     def test_swaption_candidate(self, registry):
         new = _new_routes(registry, "analytical", self.SWAPTION_IR)
         assert new == ("analytical_black76",)
+
+    def test_zcb_candidate(self, registry):
+        new = _new_routes(registry, "analytical", self.ZCB_IR)
+        assert new == ("zcb_option_analytical",)
 
     def test_vanilla_primitives_with_product_ir(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
@@ -350,9 +451,78 @@ class TestAnalyticalRoutes:
         assert "black76_call" in prim_symbols
         assert "black76_put" in prim_symbols
 
+    def test_bermudan_swaption_primitives_use_lower_bound_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        new_prims = resolve_route_primitives(spec, self.BERMUDAN_SWAPTION_IR)
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.rate_style_swaption",
+                "price_bermudan_swaption_black76_lower_bound",
+                "route_helper",
+            ),
+        }
+
     def test_engine_family(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         assert spec.engine_family == "analytical"
+
+    def test_zcb_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "zcb_option_analytical"][0]
+        new_prims = resolve_route_primitives(spec, self.ZCB_IR)
+        expected_prims = {
+            ("trellis.models.zcb_option", "price_zcb_option_jamshidian", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_admissibility_rejects_pathwise_state_tags_on_black76(self, registry):
+        from dataclasses import replace
+        from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+        spec = find_route_by_id("analytical_black76", registry)
+        assert spec is not None
+
+        contract = make_vanilla_option_contract(
+            description="EUR call on AAPL, K=150, T=1y",
+            underliers=("AAPL",),
+            observation_schedule=("2026-06-20",),
+        )
+        bp = _semantic_blueprint_for(contract)
+        pathwise_field = replace(
+            bp.contract.product.state_fields[0],
+            tags=("pathwise_only",),
+        )
+        bp = replace(
+            bp,
+            contract=replace(
+                bp.contract,
+                product=replace(
+                    bp.contract.product,
+                    state_fields=(pathwise_field,),
+                ),
+            ),
+        )
+
+        decision = evaluate_route_admissibility(spec, semantic_blueprint=bp)
+
+        assert not decision.ok
+        assert "unsupported_state_tag:pathwise_only" in decision.failures
+
+
+class TestZCBRateTreeRoutes:
+    IR = ProductIR(instrument="zcb_option", payoff_family="zcb_option", exercise_style="european")
+
+    def test_candidate(self, registry):
+        new = _new_routes(registry, "rate_tree", self.IR)
+        assert "zcb_option_rate_tree" in new
+        assert "rate_tree_backward_induction" in new
+
+    def test_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "zcb_option_rate_tree"][0]
+        new_prims = resolve_route_primitives(spec, self.IR)
+        expected_prims = {
+            ("trellis.models.zcb_option_tree", "price_zcb_option_tree", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
 
 
 # ---------------------------------------------------------------------------
@@ -394,6 +564,15 @@ class TestFallbackRoutes:
         new = _new_routes(registry, "pde_solver", None)
         assert new == ("pde_theta_1d",)
 
+    def test_vanilla_equity_pde_candidate(self, registry):
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+        )
+        new = _new_routes(registry, "pde_solver", ir)
+        assert new == ("vanilla_equity_theta_pde", "pde_theta_1d")
+
     def test_copula_candidate(self, registry):
         new = _new_routes(registry, "copula", None)
         assert new == ("copula_loss_distribution",)
@@ -418,6 +597,19 @@ class TestFallbackRoutes:
             ("trellis.models.pde.grid", "Grid", "grid"),
             ("trellis.models.pde.operator", "BlackScholesOperator", "spatial_operator"),
             ("trellis.models.pde.theta_method", "theta_method_1d", "time_stepping"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_vanilla_equity_pde_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "vanilla_equity_theta_pde"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            ("trellis.models.equity_option_pde", "price_vanilla_equity_option_pde", "route_helper"),
         }
         assert _prim_set(new_prims) == expected_prims
 
@@ -449,6 +641,7 @@ class TestEngineFamilyCoverage:
         "correlated_gbm_monte_carlo": "monte_carlo",
         "credit_default_swap_analytical": "analytical",
         "credit_default_swap_monte_carlo": "monte_carlo",
+        "nth_to_default_monte_carlo": "monte_carlo",
         "correlated_basket_monte_carlo": "monte_carlo",
         "exercise_monte_carlo": "exercise",
         "monte_carlo_paths": "monte_carlo",
@@ -456,9 +649,12 @@ class TestEngineFamilyCoverage:
         "qmc_sobol_paths": "qmc",
         "exercise_lattice": "lattice",
         "rate_tree_backward_induction": "lattice",
+        "zcb_option_rate_tree": "lattice",
         "analytical_black76": "analytical",
+        "zcb_option_analytical": "analytical",
         "analytical_garman_kohlhagen": "analytical",
         "transform_fft": "fft_pricing",
+        "vanilla_equity_theta_pde": "pde_solver",
         "pde_theta_1d": "pde_solver",
         "copula_loss_distribution": "copula",
         "waterfall_cashflows": "waterfall",

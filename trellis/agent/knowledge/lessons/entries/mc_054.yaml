@@ -1,0 +1,31 @@
+category: monte_carlo
+title: MC payoff unit / discounting mismatch
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-31T11:44:40.806634'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260331_114442_swap_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - fixed_coupons
+  - floating_coupons
+  - discounting
+  - credit_risk
+  instrument: []
+  error_signature: null
+symptom: Monte Carlo PV magnitude is absurd (|PV| >> 10 × notional) or negative sign
+  observed (e.g., PV = -65791.71 for notional=100).
+root_cause: The payoff used either incorrect primitives (omitted market_state.discount
+  or wrong time units) or had a unit conversion/sign error (e.g., using instantaneous
+  rates as discounts, mis-specified survival/hazard mapping, or passing vols/rates
+  to the wrong API). As a result, discounting and scaling are wrong and payoffs blow
+  up or flip sign.
+fix: Compute path payoffs using the market_state.discount(t) discount factors, apply
+  the correct hazard→survival→default-time mapping (or sample default times from the
+  hazard), ensure notional units match the market data units, and assert sanity checks
+  (PV within e.g. 10× notional).
+validation: Discovered during build (attempt 3)
+id: mc_054

@@ -494,7 +494,7 @@ def print_analysis(categories: dict):
             print(f"  {action}: {count}")
 
 
-def rerun_failed(results: list[dict], model: str = "gpt-5-mini"):
+def rerun_failed(results: list[dict], model: str = "gpt-5.4-mini"):
     """Re-run failed tasks after knowledge fixes."""
     from scripts.run_tasks import run_task, build_market_state
     from trellis.agent.task_runtime import load_tasks

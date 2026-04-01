@@ -404,6 +404,58 @@ def price(spec, market_state):
     assert "lite.local_vol_monte_carlo_local_vol_surface_access_missing" in issue_codes
 
 
+def test_lite_review_accepts_helper_backed_pde_route_without_direct_market_access():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.equity_option_pde import price_vanilla_equity_option_pde
+
+def price(spec, market_state):
+    return float(price_vanilla_equity_option_pde(market_state, spec, theta=1.0))
+"""
+
+    plan = GenerationPlan(
+        method="pde_solver",
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.equity_option_pde",),
+        approved_modules=("trellis.models.equity_option_pde",),
+        symbols_to_reuse=("price_vanilla_equity_option_pde",),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="vanilla_equity_theta_pde",
+            engine_family="pde_solver",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.equity_option_pde",
+                    "price_vanilla_equity_option_pde",
+                    "route_helper",
+                ),
+            ),
+            adapters=("reuse_checked_in_vanilla_equity_pde_helper",),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="pde_solver",
+        method_modules=["trellis.models.equity_option_pde"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.vanilla_equity_theta_pde_discount_curve_access_missing" not in issue_codes
+    assert "lite.vanilla_equity_theta_pde_black_vol_surface_access_missing" not in issue_codes
+
+
 def test_builder_prompt_surface_uses_semantic_repair_for_lite_review():
     from trellis.agent.executor import _builder_prompt_surface_for_attempt
 
@@ -413,6 +465,28 @@ def test_builder_prompt_surface_uses_semantic_repair_for_lite_review():
     )
 
     assert surface == "semantic_repair"
+
+
+def test_builder_prompt_surface_keeps_code_generation_retries_compact():
+    from trellis.agent.executor import _builder_prompt_surface_for_attempt
+
+    surface = _builder_prompt_surface_for_attempt(
+        attempt_number=2,
+        retry_reason="code_generation",
+    )
+
+    assert surface == "compact"
+
+
+def test_builder_prompt_surface_keeps_validation_retries_compact():
+    from trellis.agent.executor import _builder_prompt_surface_for_attempt
+
+    surface = _builder_prompt_surface_for_attempt(
+        attempt_number=2,
+        retry_reason="validation",
+    )
+
+    assert surface == "compact"
 
 
 def test_validate_build_skips_llm_reviewer_stages_after_deterministic_failures(monkeypatch):

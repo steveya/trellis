@@ -65,6 +65,35 @@ internal machinery could now serve:
 - structured user-defined products
 - comparison tasks
 
+The newer semantic-compiler path now adds one more important property: route
+selection and DSL lowering use the same ranked route chooser as the live build
+path. That keeps the semantic blueprint aligned with runtime execution instead
+of exposing one route in the compiler and a different one in generation. In
+practice this is what lets one semantic contract lower cleanly to an
+analytical kernel, a PDE helper, or a lattice helper based on the selected
+method without changing the contract shape.
+
+The practical follow-on is that comparison routes can now target checked-in
+helper surfaces instead of forcing the builder to reassemble the same
+mathematical glue repeatedly. A recent example is Bermudan swaptions:
+
+- the tree lane lowers to ``price_bermudan_swaption_tree(...)``
+- the analytical comparison lane lowers to
+  ``price_bermudan_swaption_black76_lower_bound(...)``
+
+That keeps the comparison target explicit and bounded. The analytical lane is
+no longer "write some Black76-like code for a Bermudan swaption"; it is "call
+the checked-in lower-bound helper that represents the intended comparison
+contract". In this case the intended comparison contract is the European
+swaption exercisable only on the final Bermudan date, not an aggregate or
+max-over-schedule analytical surrogate.
+
+Compiled request metadata now also carries a compact semantic-blueprint summary
+for downstream tooling. That summary records the canonical lowered route, the
+helper references selected by DSL lowering, and any explicit control styles so
+trace, review, and UI code do not need to reconstruct those details from the
+full compiler objects.
+
 ## Comparison Tasks Changed the Architecture
 
 Comparison tasks exposed a deeper truth: not every pricing request is asking

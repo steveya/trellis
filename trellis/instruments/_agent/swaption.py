@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from trellis.core.date_utils import generate_schedule, year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.calibration.rates import swaption_terms
 from trellis.models.black import black76_call, black76_put
 
 
@@ -41,7 +41,27 @@ class SwaptionPayoff:
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        T, annuity, forward_swap_rate, _payment_count = swaption_terms(spec, market_state)
+        fwd_curve = market_state.forecast_forward_curve(spec.rate_index)
+
+        schedule = generate_schedule(spec.swap_start, spec.swap_end, spec.swap_frequency)
+        starts = [spec.swap_start] + schedule[:-1]
+
+        annuity = 0.0
+        float_pv = 0.0
+        for p_start, p_end in zip(starts, schedule):
+            tau = year_fraction(p_start, p_end, spec.day_count)
+            t_start = year_fraction(market_state.settlement, p_start, spec.day_count)
+            t_end = year_fraction(market_state.settlement, p_end, spec.day_count)
+            t_start = max(t_start, 1e-6)
+
+            df = market_state.discount.discount(t_end)
+            F = fwd_curve.forward_rate(t_start, t_end)
+            annuity += tau * float(df)
+            float_pv += float(F) * tau * float(df)
+
+        forward_swap_rate = float_pv / annuity if annuity > 0 else 0.0
+
+        T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)
         sigma = market_state.vol_surface.black_vol(T, spec.strike)
 
         if spec.is_payer:

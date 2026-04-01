@@ -132,7 +132,7 @@ def test_cds_ranks_credit_default_swap_route_above_generic_analytical():
             "trellis.curves.credit_curve",
         ],
         required_market_data={"discount_curve", "credit_curve"},
-        model_to_build="nth_to_default",
+        model_to_build="credit_default_swap",
         reasoning="test",
     )
     product_ir = decompose_to_ir(
@@ -148,6 +148,85 @@ def test_cds_ranks_credit_default_swap_route_above_generic_analytical():
     assert ranked
     assert ranked[0].route == "credit_default_swap_analytical"
     assert ranked[0].route_family == "credit_default_swap"
+    assert ranked[0].score > 0.0
+
+
+def test_zcb_option_ranks_jamshidian_route_above_generic_analytical():
+    from trellis.agent.codegen_guardrails import rank_primitive_routes
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.zcb_option"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="zcb_option",
+        reasoning="test",
+    )
+    product_ir = decompose_to_ir(
+        "ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical",
+        instrument_type="zcb_option",
+    )
+
+    ranked = rank_primitive_routes(
+        pricing_plan=pricing_plan,
+        product_ir=product_ir,
+    )
+
+    assert ranked
+    assert ranked[0].route == "zcb_option_analytical"
+    assert ranked[0].score > 0.0
+
+
+def test_european_option_pde_ranks_helper_route_above_generic_pde():
+    from trellis.agent.codegen_guardrails import rank_primitive_routes
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="pde_solver",
+        method_modules=["trellis.models.equity_option_pde"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+    product_ir = decompose_to_ir(
+        "European call: theta-method convergence order measurement",
+        instrument_type="european_option",
+    )
+
+    ranked = rank_primitive_routes(
+        pricing_plan=pricing_plan,
+        product_ir=product_ir,
+    )
+
+    assert ranked
+    assert ranked[0].route == "vanilla_equity_theta_pde"
+    assert ranked[0].score > ranked[1].score
+
+
+def test_nth_to_default_uses_dedicated_credit_basket_route():
+    from trellis.agent.codegen_guardrails import rank_primitive_routes
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.copulas.gaussian"],
+        required_market_data={"discount_curve", "credit_curve"},
+        model_to_build="nth_to_default",
+        reasoning="test",
+    )
+    product_ir = decompose_to_ir(
+        "First-to-default basket on five names with Gaussian copula",
+        instrument_type="nth_to_default",
+    )
+
+    ranked = rank_primitive_routes(
+        pricing_plan=pricing_plan,
+        product_ir=product_ir,
+    )
+
+    assert ranked
+    assert ranked[0].route == "nth_to_default_monte_carlo"
+    assert ranked[0].route_family == "nth_to_default"
     assert ranked[0].score > 0.0
 
 

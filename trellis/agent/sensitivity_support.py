@@ -203,21 +203,64 @@ _UNSUPPORTED = SensitivitySupport(
 )
 
 
+def normalize_requested_outputs(
+    outputs,
+) -> tuple[str, ...]:
+    """Return canonical output identifiers for request/compiler surfaces.
+
+    Known DSL measures are normalized through ``normalize_dsl_measure``.
+    Unknown outputs are preserved as lowercase snake_case strings so the
+    request surface can remain forward-compatible while sensitivity routing
+    still relies on the narrower ``normalize_requested_measures`` shim.
+    """
+    from trellis.core.types import normalize_dsl_measure
+
+    if not outputs:
+        return ()
+    normalized: list[str] = []
+    for output in outputs:
+        if isinstance(output, str):
+            raw = output
+        elif isinstance(output, dict) and output:
+            raw = str(next(iter(output)))
+        else:
+            raw = getattr(output, "value", getattr(output, "name", str(output)))
+        text = str(raw).strip()
+        if not text:
+            continue
+        try:
+            canonical = normalize_dsl_measure(text).value
+        except ValueError:
+            canonical = text.lower().replace(" ", "_")
+        if canonical not in normalized:
+            normalized.append(canonical)
+    return tuple(normalized)
+
+
 def normalize_requested_measures(
     measures: list[str] | tuple[str, ...] | None,
 ) -> tuple[str, ...]:
-    """Return the normalized sensitivity-only subset of requested measures."""
+    """Return the normalized sensitivity-only subset of requested measures.
+
+    Returns ``DslMeasure`` enum members (which are ``str`` subclasses,
+    so all existing comparisons continue to work).
+    """
+    from trellis.core.types import DslMeasure, normalize_dsl_measure
+
     if not measures:
         return ()
     normalized: list[str] = []
     for measure in measures:
         if not isinstance(measure, str):
             continue
-        key = _SENSITIVITY_MEASURE_ALIASES.get(measure.lower(), measure.lower())
-        if key == "price":
+        try:
+            dsl = normalize_dsl_measure(measure)
+        except ValueError:
             continue
-        if key in _SENSITIVITY_MEASURES and key not in normalized:
-            normalized.append(key)
+        if dsl == DslMeasure.PRICE:
+            continue
+        if dsl.value in _SENSITIVITY_MEASURES and dsl not in normalized:
+            normalized.append(dsl)
     return tuple(normalized)
 
 

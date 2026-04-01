@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -21,6 +22,13 @@ TASK_RUN_ROOT = ROOT / "task_runs"
 TASK_RUN_HISTORY_ROOT = TASK_RUN_ROOT / "history"
 TASK_RUN_LATEST_ROOT = TASK_RUN_ROOT / "latest"
 TASK_RUN_LATEST_INDEX = ROOT / "task_results_latest.json"
+_SKIP_TASK_DIAGNOSIS_PERSIST_ENV = "TRELLIS_SKIP_TASK_DIAGNOSIS_PERSIST"
+
+
+def _env_flag(name: str) -> bool:
+    """Parse a boolean-like environment flag."""
+    raw = os.environ.get(name, "")
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def persist_task_run_record(
@@ -68,10 +76,14 @@ def persist_task_run_record(
 
     diagnosis = None
     diagnosis_error: str | None = None
-    try:
-        diagnosis = save_task_diagnosis_artifacts(record, root=root)
-    except Exception as exc:
-        diagnosis_error = str(exc)[:200]
+    diagnosis_persist_skipped = ""
+    if _env_flag(_SKIP_TASK_DIAGNOSIS_PERSIST_ENV):
+        diagnosis_persist_skipped = f"env:{_SKIP_TASK_DIAGNOSIS_PERSIST_ENV}"
+    else:
+        try:
+            diagnosis = save_task_diagnosis_artifacts(record, root=root)
+        except Exception as exc:
+            diagnosis_error = str(exc)[:200]
 
     return {
         "history_path": str(history_path),
@@ -102,6 +114,7 @@ def persist_task_run_record(
             diagnosis.packet.get("outcome", {}).get("next_action") if diagnosis is not None else ""
         ),
         "diagnosis_persist_error": diagnosis_error or "",
+        "diagnosis_persist_skipped": diagnosis_persist_skipped,
     }
 
 
@@ -148,12 +161,14 @@ def build_task_run_record(
     learning = summarize_task_learning(result, task_kind=task_kind)
     result_with_learning = dict(result)
     result_with_learning["learning"] = learning
+    post_build = _post_build_summary(result_with_learning, method_runs)
     if task_kind == "framework":
         issue_refs = _merge_issue_refs(issue_refs, framework.get("related_issue_refs") or {})
     workflow = _workflow_summary(
         result,
         traces,
         method_runs,
+        post_build=post_build,
         task_kind=task_kind,
         issue_refs=issue_refs,
     )
@@ -173,6 +188,7 @@ def build_task_run_record(
         "market": dict(result.get("market_context") or {}),
         "framework": framework,
         "method_runs": method_runs,
+        "post_build": post_build,
         "token_usage": {
             "task": dict(result.get("token_usage_summary") or {}),
             "methods": {
@@ -410,6 +426,7 @@ def _workflow_summary(
     traces: list[dict[str, Any]],
     method_runs: dict[str, Any],
     *,
+    post_build: dict[str, Any],
     task_kind: str,
     issue_refs: dict[str, list[dict[str, Any]]],
 ) -> dict[str, Any]:
@@ -452,6 +469,10 @@ def _workflow_summary(
         "next_action": next_action,
         "latest_trace": latest_trace,
         "active_trace_count": len(running_traces),
+        "post_build_latest_phase": post_build.get("latest_phase"),
+        "post_build_latest_status": post_build.get("latest_status"),
+        "post_build_latest_method": post_build.get("latest_method"),
+        "post_build_flags": dict(post_build.get("active_flags") or {}),
         "linked_issues": issue_refs,
         "comparison_status": comparison.get("status"),
         "method_count": len(method_runs),
@@ -544,6 +565,8 @@ def summarize_task_learning(
         lesson_contract_outcome = "not_attempted"
     lesson_ids = list(knowledge_summary.get("lesson_ids") or [])
     lesson_titles = list(knowledge_summary.get("lesson_titles") or [])
+    retrieval_stages = list(knowledge_summary.get("retrieval_stages") or [])
+    retrieval_sources = list(knowledge_summary.get("retrieval_sources") or [])
     cookbook_paths = list(artifacts.get("cookbook_candidate_paths") or [])
     promotion_candidate_paths = list(artifacts.get("promotion_candidate_paths") or [])
     knowledge_trace_paths = list(artifacts.get("knowledge_trace_paths") or [])
@@ -603,6 +626,8 @@ def summarize_task_learning(
         "task_kind": task_kind,
         "retrieved_lesson_ids": lesson_ids,
         "retrieved_lesson_titles": lesson_titles,
+        "retrieval_stages": retrieval_stages,
+        "retrieval_sources": retrieval_sources,
         "captured_lesson_ids": captured_ids,
         "lesson_contract_reports": lesson_contract_reports,
         "lesson_contract_count": len(lesson_contract_reports),
@@ -619,6 +644,59 @@ def summarize_task_learning(
         "reusable_artifact_count": reusable_artifact_count,
         "knowledge_outcome": knowledge_outcome,
         "knowledge_outcome_reason": knowledge_outcome_reason,
+    }
+
+
+def _post_build_snapshot(tracking: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Project one post-build tracking payload into a compact summary."""
+    tracking = dict(tracking or {})
+    events = list(tracking.get("events") or [])
+    return {
+        "latest_phase": tracking.get("last_phase"),
+        "latest_status": tracking.get("last_status"),
+        "updated_at": tracking.get("updated_at"),
+        "event_count": len(events),
+        "active_flags": dict(tracking.get("active_flags") or {}),
+    }
+
+
+def _post_build_summary(
+    result: Mapping[str, Any],
+    method_runs: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Aggregate post-build tracking across top-level and per-method runs."""
+    task_snapshot = _post_build_snapshot(result.get("post_build_tracking"))
+    methods: dict[str, dict[str, Any]] = {}
+    merged_flags: dict[str, bool] = {}
+    latest_method: str | None = None
+    latest_phase: str | None = task_snapshot.get("latest_phase")
+    latest_status: str | None = task_snapshot.get("latest_status")
+    latest_updated_at: str = str(task_snapshot.get("updated_at") or "")
+
+    for flag, enabled in dict(task_snapshot.get("active_flags") or {}).items():
+        merged_flags[str(flag)] = bool(enabled)
+
+    for method, payload in method_runs.items():
+        if not isinstance(payload, Mapping):
+            continue
+        snapshot = _post_build_snapshot(payload.get("post_build_tracking"))
+        methods[str(method)] = snapshot
+        for flag, enabled in dict(snapshot.get("active_flags") or {}).items():
+            merged_flags[str(flag)] = merged_flags.get(str(flag), False) or bool(enabled)
+        updated_at = str(snapshot.get("updated_at") or "")
+        if updated_at and updated_at >= latest_updated_at:
+            latest_updated_at = updated_at
+            latest_method = str(method)
+            latest_phase = snapshot.get("latest_phase")
+            latest_status = snapshot.get("latest_status")
+
+    return {
+        "task": task_snapshot,
+        "methods": methods,
+        "latest_method": latest_method,
+        "latest_phase": latest_phase,
+        "latest_status": latest_status,
+        "active_flags": merged_flags,
     }
 
 

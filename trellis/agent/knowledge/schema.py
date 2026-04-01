@@ -101,6 +101,7 @@ class ProductIR:
     reusable_primitives: tuple[str, ...] = ()
     unresolved_primitives: tuple[str, ...] = ()
     supported: bool = True
+    event_machine: object | None = None  # EventMachine when typed, None for legacy
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +134,7 @@ class BuildGateDecision:
     gap_confidence: float  # from GapReport
     unresolved_conflicts: tuple[str, ...] = ()   # conflict summaries
     missing_required_inputs: tuple[str, ...] = ()  # missing market inputs
+    route_admissibility_failures: tuple[str, ...] = ()
     suggested_fallback_route: str | None = None
     gate_source: str = ""  # "pre_flight" or "pre_generation"
 
@@ -393,6 +395,56 @@ class ToolContract:
     outputs: tuple[str, ...] = ()
     guarantees: tuple[str, ...] = ()
     notes: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Generated skill layer
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class SkillRecord:
+    """A generated reusable-guidance record projected from source artifacts."""
+
+    skill_id: str
+    kind: str
+    title: str
+    summary: str = ""
+    source_artifact: str = ""
+    source_path: str = ""
+    instrument_types: tuple[str, ...] = ()
+    method_families: tuple[str, ...] = ()
+    route_families: tuple[str, ...] = ()
+    failure_buckets: tuple[str, ...] = ()
+    concepts: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
+    origin: str = ""
+    parents: tuple[str, ...] = ()
+    supersedes: tuple[str, ...] = ()
+    status: str = ""
+    confidence: float = 1.0
+    updated_at: str = ""
+    precedence_rank: int = 0
+    instruction_type: str = ""
+    source_kind: str = ""
+
+
+@dataclass(frozen=True)
+class SkillIndexManifest:
+    """Provenance metadata for one generated skill index snapshot."""
+
+    repo_revision: str
+    source_paths: tuple[str, ...] = ()
+    source_fingerprints: tuple[str, ...] = ()
+    record_count: int = 0
+    kind_counts: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class GeneratedSkillIndex:
+    """Deterministic generated view over reusable guidance artifacts."""
+
+    manifest: SkillIndexManifest
+    records: tuple[SkillRecord, ...] = ()
 
 
 # ---------------------------------------------------------------------------

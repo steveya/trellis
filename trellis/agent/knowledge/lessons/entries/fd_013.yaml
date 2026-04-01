@@ -1,8 +1,8 @@
 category: finite_differences
 title: Incorrect PDE API import (Grid not exported)
 severity: critical
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-03-28T23:07:38.997683'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_230739_barrier_option_pde_solver.yaml

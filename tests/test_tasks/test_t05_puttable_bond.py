@@ -33,6 +33,7 @@ from trellis.models.trees.lattice import (
     build_generic_lattice,
     lattice_backward_induction,
 )
+from trellis.models.trees.control import resolve_lattice_exercise_policy
 from trellis.models.trees.models import MODEL_REGISTRY
 
 
@@ -135,15 +136,17 @@ def _price_puttable_bond(lattice: RecombiningLattice) -> float:
     def exercise_value(step, node, lat):
         cpn = coupon_steps.get(step, 0.0)
         return PUT_PRICE + cpn
+    exercise_policy = resolve_lattice_exercise_policy(
+        "holder_put",
+        exercise_steps=put_steps,
+    )
 
     price = lattice_backward_induction(
         lattice,
         terminal_payoff=terminal_payoff,
         exercise_value=exercise_value,
-        exercise_type="bermudan",
-        exercise_steps=put_steps,
         cashflow_at_node=cashflow_at_node,
-        exercise_fn=max,  # holder puts to maximize value
+        exercise_policy=exercise_policy,
     )
     return price
 
@@ -169,15 +172,17 @@ def _price_callable_bond(lattice: RecombiningLattice) -> float:
     def exercise_value(step, node, lat):
         cpn = coupon_steps.get(step, 0.0)
         return CALL_PRICE + cpn
+    exercise_policy = resolve_lattice_exercise_policy(
+        "issuer_call",
+        exercise_steps=call_steps,
+    )
 
     price = lattice_backward_induction(
         lattice,
         terminal_payoff=terminal_payoff,
         exercise_value=exercise_value,
-        exercise_type="bermudan",
-        exercise_steps=call_steps,
         cashflow_at_node=cashflow_at_node,
-        exercise_fn=min,  # issuer calls to minimize liability
+        exercise_policy=exercise_policy,
     )
     return price
 

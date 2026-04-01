@@ -8,6 +8,7 @@ from datetime import date
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import MonteCarloPathPayoff
 from trellis.core.types import DayCountConvention, Frequency
+from trellis.models.monte_carlo.basket_state import build_basket_path_requirement, observation_step_indices
 from trellis.models.monte_carlo.ranked_observation_payoffs import (
     build_ranked_observation_basket_initial_state,
     build_ranked_observation_basket_process,
@@ -45,6 +46,19 @@ class RankedObservationBasketSpec:
     correlation_matrix_key: str | None = None
 
 
+@dataclass(frozen=True)
+class RankedObservationBasketPathContract:
+    """Typed snapshot/path-state contract for the ranked-observation basket helper."""
+
+    observation_dates: tuple[date, ...]
+    observation_times: tuple[float, ...]
+    observation_steps: tuple[int, ...]
+    snapshot_steps: tuple[int, ...]
+    state_tags: tuple[str, ...] = ("pathwise_only", "remaining_pool", "locked_cashflow_state")
+    event_kinds: tuple[str, ...] = ("observation", "settlement")
+    path_requirement_kind: str = "observation_snapshot_state"
+
+
 class RankedObservationBasketMonteCarloPayoff(
     MonteCarloPathPayoff[RankedObservationBasketSpec, ResolvedBasketSemantics]
 ):
@@ -76,6 +90,10 @@ class RankedObservationBasketMonteCarloPayoff(
     def engine_kwargs(self, resolved: ResolvedBasketSemantics) -> dict[str, object]:
         return recommended_ranked_observation_basket_mc_engine_kwargs(self.spec, resolved)
 
+    def path_contract(self, resolved: ResolvedBasketSemantics) -> RankedObservationBasketPathContract:
+        """Return the typed snapshot/path-state contract consumed by this route."""
+        return build_ranked_observation_basket_path_contract(self.spec, resolved)
+
     def pathwise_payoff(self, paths, resolved: ResolvedBasketSemantics):
         normalized = self.normalize_paths(paths)
         if normalized.shape[-1] < 1:
@@ -96,9 +114,36 @@ def price_ranked_observation_basket_monte_carlo(
     return float(_price_ranked_observation_basket_monte_carlo(spec, resolved))
 
 
+def build_ranked_observation_basket_path_contract(
+    spec: RankedObservationBasketSpec,
+    resolved: ResolvedBasketSemantics,
+) -> RankedObservationBasketPathContract:
+    """Return the typed snapshot/path-state contract for the basket MC helper."""
+    engine_kwargs = recommended_ranked_observation_basket_mc_engine_kwargs(spec, resolved)
+    n_steps = int(engine_kwargs["n_steps"])
+    observation_steps = observation_step_indices(
+        resolved.observation_times,
+        resolved.T,
+        n_steps,
+    )
+    requirement = build_basket_path_requirement(
+        resolved.observation_times,
+        resolved.T,
+        n_steps,
+    )
+    return RankedObservationBasketPathContract(
+        observation_dates=tuple(resolved.observation_dates),
+        observation_times=tuple(float(item) for item in resolved.observation_times),
+        observation_steps=tuple(int(item) for item in observation_steps),
+        snapshot_steps=tuple(int(item) for item in requirement.snapshot_steps),
+    )
+
+
 __all__ = [
+    "RankedObservationBasketPathContract",
     "RankedObservationBasketMonteCarloPayoff",
     "RankedObservationBasketSpec",
+    "build_ranked_observation_basket_path_contract",
     "build_ranked_observation_basket_initial_state",
     "build_ranked_observation_basket_process",
     "build_ranked_observation_basket_state_payoff",

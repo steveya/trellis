@@ -8,6 +8,7 @@ import threading
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -15,17 +16,17 @@ _LOADED = False
 
 DEFAULT_PROVIDER = "openai"
 DEFAULT_MODEL = {
-    "openai": "gpt-5-mini",
+    "openai": "gpt-5.4-mini",
     "anthropic": "claude-sonnet-4-6",
 }
 STAGE_DEFAULT_MODEL = {
     "openai": {
-        "decomposition": "gpt-5-mini",
-        "spec_design": "gpt-5-mini",
+        "decomposition": "gpt-5.4-mini",
+        "spec_design": "gpt-5.4-mini",
         "code_generation": "gpt-5.4-mini",
-        "critic": "gpt-5-mini",
-        "model_validator": "gpt-5",
-        "reflection": "gpt-5-mini",
+        "critic": "gpt-5.4-mini",
+        "model_validator": "gpt-5.4-mini",
+        "reflection": "gpt-5.4-mini",
     },
     "anthropic": {
         "decomposition": "claude-sonnet-4-6",
@@ -62,6 +63,11 @@ _LLM_USAGE_METADATA: ContextVar[dict[str, Any] | None] = ContextVar(
     "llm_usage_metadata",
     default=None,
 )
+_LLM_REQUEST_CONTEXT: ContextVar[dict[str, Any] | None] = ContextVar(
+    "llm_request_context",
+    default=None,
+)
+LLM_WAIT_LOG_ROOT = Path(__file__).resolve().parents[2] / "task_runs" / "llm_waits"
 
 
 class TokenBudgetExceeded(RuntimeError):
@@ -268,14 +274,19 @@ def summarize_llm_usage(records: list[dict[str, Any]] | None) -> dict[str, Any]:
     return summary
 
 
-def llm_generate(prompt: str, model: str | None = None) -> str:
+def llm_generate(
+    prompt: str,
+    model: str | None = None,
+    *,
+    max_retries: int | None = None,
+) -> str:
     """Call the LLM and return text response."""
     load_env()
     provider = get_provider()
     model = model or get_default_model()
 
     if provider == "openai":
-        text, usage = _openai_generate(prompt, model)
+        text, usage = _openai_generate(prompt, model, max_retries=max_retries)
     elif provider == "anthropic":
         text, usage = _anthropic_generate(prompt, model)
     else:
@@ -292,14 +303,19 @@ def llm_generate(prompt: str, model: str | None = None) -> str:
     return normalized
 
 
-def llm_generate_json(prompt: str, model: str | None = None) -> dict:
+def llm_generate_json(
+    prompt: str,
+    model: str | None = None,
+    *,
+    max_retries: int | None = None,
+) -> dict:
     """Call LLM with JSON response format and return parsed dict."""
     load_env()
     provider = get_provider()
     model = model or get_default_model()
 
     if provider == "openai":
-        text, usage = _openai_generate_json(prompt, model)
+        text, usage = _openai_generate_json(prompt, model, max_retries=max_retries)
     elif provider == "anthropic":
         text, usage = _anthropic_generate_json(prompt, model)
     else:
@@ -349,7 +365,12 @@ def _parse_llm_json_response(text: str | None, *, provider: str, model: str) -> 
         ) from exc
 
 
-def _openai_generate(prompt: str, model: str) -> tuple[str, dict[str, int | None]]:
+def _openai_generate(
+    prompt: str,
+    model: str,
+    *,
+    max_retries: int | None = None,
+) -> tuple[str, dict[str, int | None]]:
     """Request a plain-text completion from the OpenAI chat-completions API."""
     timeout_seconds = _openai_timeout_seconds(
         "OPENAI_TEXT_TIMEOUT_SECONDS",
@@ -365,11 +386,17 @@ def _openai_generate(prompt: str, model: str) -> tuple[str, dict[str, int | None
         model=model,
         response_kind="text",
         timeout_seconds=timeout_seconds,
+        max_retries=max_retries,
     )
     return response.choices[0].message.content, _extract_openai_usage(response)
 
 
-def _openai_generate_json(prompt: str, model: str) -> tuple[str, dict[str, int | None]]:
+def _openai_generate_json(
+    prompt: str,
+    model: str,
+    *,
+    max_retries: int | None = None,
+) -> tuple[str, dict[str, int | None]]:
     """Request a JSON-object completion from OpenAI and parse the response."""
     timeout_seconds = _openai_timeout_seconds(
         "OPENAI_JSON_TIMEOUT_SECONDS",
@@ -386,6 +413,7 @@ def _openai_generate_json(prompt: str, model: str) -> tuple[str, dict[str, int |
         model=model,
         response_kind="json",
         timeout_seconds=timeout_seconds,
+        max_retries=max_retries,
     )
     return response.choices[0].message.content, _extract_openai_usage(response)
 
@@ -418,15 +446,27 @@ def _openai_request_with_retry(
     model: str,
     response_kind: str,
     timeout_seconds: float,
+    max_retries: int | None = None,
 ):
     """Run an OpenAI request with exponential-backoff retries and hard timeout wrapping."""
-    max_retries = _openai_retry_count()
-    max_attempts = max_retries + 1
+    retry_budget = _openai_retry_count() if max_retries is None else max(max_retries, 0)
+    max_attempts = retry_budget + 1
     last_error: Exception | None = None
 
     for attempt in range(1, max_attempts + 1):
         try:
-            return _run_with_wall_clock_timeout(request_fn, timeout_seconds)
+            request_context = {
+                "provider": "openai",
+                "model": model,
+                "response_kind": response_kind,
+                "attempt": attempt,
+                "max_attempts": max_attempts,
+            }
+            token = _LLM_REQUEST_CONTEXT.set(request_context)
+            try:
+                return _run_with_wall_clock_timeout(request_fn, timeout_seconds)
+            finally:
+                _LLM_REQUEST_CONTEXT.reset(token)
         except Exception as exc:  # pragma: no cover - exercised via tests with stubs
             last_error = exc
             if attempt >= max_attempts:
@@ -445,9 +485,16 @@ def _run_with_wall_clock_timeout(request_fn, timeout_seconds: float):
     if timeout_seconds <= 0:
         return request_fn()
 
+    wait_id = f"{time.time_ns()}-{threading.get_ident()}"
     result: dict[str, Any] = {}
     error: dict[str, BaseException] = {}
     completed = threading.Event()
+    started_at = time.monotonic()
+    _write_llm_wait_event(
+        event="wait_started",
+        wait_id=wait_id,
+        timeout_seconds=timeout_seconds,
+    )
 
     def _target() -> None:
         try:
@@ -464,10 +511,71 @@ def _run_with_wall_clock_timeout(request_fn, timeout_seconds: float):
     )
     worker.start()
     if not completed.wait(timeout_seconds):
+        _write_llm_wait_event(
+            event="wait_timeout",
+            wait_id=wait_id,
+            timeout_seconds=timeout_seconds,
+            elapsed_seconds=round(time.monotonic() - started_at, 3),
+        )
         raise TimeoutError(f"OpenAI request exceeded {timeout_seconds:.1f}s")
     if "exception" in error:
+        _write_llm_wait_event(
+            event="wait_error",
+            wait_id=wait_id,
+            timeout_seconds=timeout_seconds,
+            elapsed_seconds=round(time.monotonic() - started_at, 3),
+            error=error["exception"],
+        )
         raise error["exception"]
+    _write_llm_wait_event(
+        event="wait_completed",
+        wait_id=wait_id,
+        timeout_seconds=timeout_seconds,
+        elapsed_seconds=round(time.monotonic() - started_at, 3),
+    )
     return result.get("value")
+
+
+def _llm_wait_log_path() -> Path:
+    """Return the per-process wait log path."""
+    override = os.environ.get("TRELLIS_LLM_WAIT_LOG_PATH", "").strip()
+    if override:
+        return Path(override)
+    return LLM_WAIT_LOG_ROOT / f"{os.getpid()}.jsonl"
+
+
+def _write_llm_wait_event(
+    *,
+    event: str,
+    wait_id: str,
+    timeout_seconds: float,
+    elapsed_seconds: float | None = None,
+    error: BaseException | None = None,
+) -> None:
+    """Append a live LLM wait event for in-flight diagnosis."""
+    entry: dict[str, Any] = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "event": event,
+        "wait_id": wait_id,
+        "pid": os.getpid(),
+        "thread_name": threading.current_thread().name,
+        "timeout_seconds": timeout_seconds,
+        "stage": _LLM_USAGE_STAGE.get(),
+        "stage_metadata": dict(_LLM_USAGE_METADATA.get() or {}),
+        "request_context": dict(_LLM_REQUEST_CONTEXT.get() or {}),
+    }
+    if elapsed_seconds is not None:
+        entry["elapsed_seconds"] = elapsed_seconds
+    if error is not None:
+        entry["error_type"] = type(error).__name__
+        entry["error"] = str(error)[:200]
+    try:
+        path = _llm_wait_log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, default=str, sort_keys=True) + "\n")
+    except Exception:
+        pass
 
 
 def _openai_timeout_seconds(env_var: str, default: float) -> float:

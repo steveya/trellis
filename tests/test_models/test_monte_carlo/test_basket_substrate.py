@@ -156,3 +156,30 @@ def test_ranked_observation_basket_price_helper_uses_snapshot_state_requirement(
     assert created["x0"].shape == (2,)
     assert created["storage_policy"] is not None
     assert created["path_requirement"].snapshot_steps == (1, 2)
+
+
+def test_ranked_observation_basket_path_contract_matches_snapshot_requirement():
+    from trellis.models.monte_carlo.semantic_basket import (
+        RankedObservationBasketSpec,
+        build_ranked_observation_basket_path_contract,
+    )
+
+    resolved = _resolved_basket_inputs()
+    spec = RankedObservationBasketSpec(
+        notional=100.0,
+        strike=0.05,
+        expiry_date=date(2025, 11, 15),
+        constituents="SPX,NDX",
+        n_paths=123,
+        n_steps=12,
+        seed=7,
+    )
+
+    contract = build_ranked_observation_basket_path_contract(spec, resolved)
+
+    assert contract.observation_dates == (date(2025, 2, 15), date(2025, 5, 15))
+    assert contract.observation_times == (0.5, 1.0)
+    assert contract.observation_steps == (126, 252)
+    assert contract.snapshot_steps == (126, 252)
+    assert contract.state_tags == ("pathwise_only", "remaining_pool", "locked_cashflow_state")
+    assert contract.event_kinds == ("observation", "settlement")

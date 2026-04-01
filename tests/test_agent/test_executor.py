@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from contextlib import contextmanager
 from types import ModuleType, SimpleNamespace
 import sys
 
@@ -221,6 +222,118 @@ def test_generate_skeleton_quotes_string_defaults_but_keeps_symbolic_defaults():
     assert "frequency: Frequency = Frequency.SEMI_ANNUAL" in skeleton
 
 
+def test_extract_fragment_body_repairs_orphan_indentation():
+    from trellis.agent.executor import _extract_fragment_body
+
+    body = _extract_fragment_body(
+        [
+            "        spec = self._spec",
+            "                T = year_fraction(market_state.as_of, spec.expiry_date, spec.day_count)",
+            "                if T <= 0.0:",
+            "                    return 0.0",
+        ]
+    )
+
+    assert body.splitlines() == [
+        "spec = self._spec",
+        "T = year_fraction(market_state.as_of, spec.expiry_date, spec.day_count)",
+        "if T <= 0.0:",
+        "    return 0.0",
+    ]
+
+
+def test_extract_evaluate_body_from_module_text_repairs_orphan_indentation():
+    from trellis.agent.executor import _extract_evaluate_body_from_module_text
+
+    module_text = """
+class Demo:
+    def evaluate(self, market_state):
+        spec = self._spec
+                T = year_fraction(market_state.as_of, spec.expiry_date, spec.day_count)
+                if T <= 0.0:
+                    return 0.0
+"""
+
+    body = _extract_evaluate_body_from_module_text(module_text)
+
+    assert body.splitlines() == [
+        "spec = self._spec",
+        "T = year_fraction(market_state.as_of, spec.expiry_date, spec.day_count)",
+        "if T <= 0.0:",
+        "    return 0.0",
+    ]
+
+
+def test_extract_fragment_body_repairs_misnested_elif_else():
+    from trellis.agent.executor import _extract_fragment_body
+
+    body = _extract_fragment_body(
+        [
+            "        if opt_type == \"call\":",
+            "            pv = df * black76_call(forward, spec.strike, sigma, T)",
+            "            elif opt_type == \"put\":",
+            "                pv = df * black76_put(forward, spec.strike, sigma, T)",
+            "                else:",
+            "                    raise ValueError(\"unsupported option_type\")",
+        ]
+    )
+
+    assert body.splitlines() == [
+        "if opt_type == \"call\":",
+        "    pv = df * black76_call(forward, spec.strike, sigma, T)",
+        "elif opt_type == \"put\":",
+        "    pv = df * black76_put(forward, spec.strike, sigma, T)",
+        "else:",
+        "    raise ValueError(\"unsupported option_type\")",
+    ]
+
+
+def test_extract_fragment_body_dedents_offset_tail_after_first_line():
+    from trellis.agent.executor import _extract_fragment_body
+
+    body = _extract_fragment_body(
+        [
+            "spec = self._spec",
+            "        if market_state.discount is None:",
+            "            raise ValueError(\"missing discount\")",
+            "        if market_state.credit_curve is None:",
+            "            raise ValueError(\"missing credit\")",
+            "        spread = float(spec.spread)",
+            "        return spread",
+        ]
+    )
+
+    assert body.splitlines() == [
+        "spec = self._spec",
+        "if market_state.discount is None:",
+        "    raise ValueError(\"missing discount\")",
+        "if market_state.credit_curve is None:",
+        "    raise ValueError(\"missing credit\")",
+        "spread = float(spec.spread)",
+        "return spread",
+    ]
+
+
+def test_extract_fragment_body_repairs_missing_indent_after_block_opener():
+    from trellis.agent.executor import _extract_fragment_body
+
+    body = _extract_fragment_body(
+        [
+            "        spread = float(spec.spread)",
+            "        if spread > 1.0:",
+            "        spread *= 1e-4",
+            "        return spread",
+        ]
+    )
+
+    assert body.splitlines() == [
+        "spread = float(spec.spread)",
+        "if spread > 1.0:",
+        "    spread *= 1e-4",
+        "return spread",
+    ]
+
+
 def test_make_test_payoff_populates_enum_defaults_for_frequency_and_day_count(monkeypatch):
     from trellis.agent.executor import _make_test_payoff
     from trellis.core.types import DayCountConvention, Frequency
@@ -253,3 +366,122 @@ def test_make_test_payoff_populates_enum_defaults_for_frequency_and_day_count(mo
 
     assert payoff._spec.frequency == Frequency.SEMI_ANNUAL
     assert payoff._spec.day_count == DayCountConvention.ACT_360
+
+
+def test_build_payoff_code_generation_stage_uses_instrument_type_metadata(monkeypatch):
+    from trellis.agent.executor import build_payoff
+
+    captured: dict[str, object] = {}
+    pricing_plan = SimpleNamespace(
+        method="analytical",
+        method_modules=("trellis.models.black",),
+        required_market_data=set(),
+        model_to_build=None,
+        reasoning="test analytical route",
+        selection_reason="unit_test",
+        assumption_summary=(),
+        sensitivity_support=None,
+    )
+    product_ir = SimpleNamespace(instrument="credit_default_swap")
+    compiled_request = SimpleNamespace(
+        product_ir=product_ir,
+        pricing_plan=pricing_plan,
+        request=SimpleNamespace(request_id="executor_build_metadata_123", metadata={}),
+        linear_issue_identifier=None,
+        generation_plan=None,
+        knowledge_summary={},
+    )
+    plan = SimpleNamespace(
+        steps=[SimpleNamespace(module_path="trellis/instruments/_agent/test_metadata.py")],
+        spec_schema=SimpleNamespace(
+            spec_name="TestSpec",
+            class_name="TestPayoff",
+            fields=(),
+            requirements=(),
+        ),
+    )
+    generation_plan = SimpleNamespace(
+        method="analytical",
+        instrument_type="credit_default_swap",
+        primitive_plan=SimpleNamespace(
+            engine_family="analytical",
+            blockers=(),
+            route="test_route",
+        ),
+        blocker_report=None,
+        new_primitive_workflow=None,
+    )
+
+    @contextmanager
+    def fake_llm_usage_stage(stage, metadata=None):
+        captured["stage"] = stage
+        captured["metadata"] = metadata or {}
+        yield []
+
+    monkeypatch.setattr("trellis.agent.executor._record_platform_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr("trellis.agent.executor._append_agent_observation", lambda *args, **kwargs: None)
+    monkeypatch.setattr("trellis.agent.planner.plan_build", lambda *args, **kwargs: plan)
+    monkeypatch.setattr("trellis.agent.executor._try_import_existing", lambda plan: None)
+    monkeypatch.setattr("trellis.agent.executor.build_generation_plan", lambda **kwargs: generation_plan)
+    monkeypatch.setattr("trellis.agent.executor._emit_analytical_trace_metadata", lambda **kwargs: None)
+    monkeypatch.setattr("trellis.agent.executor._reference_modules", lambda *args, **kwargs: ())
+    monkeypatch.setattr("trellis.agent.executor._gather_references", lambda modules: [])
+    monkeypatch.setattr("trellis.agent.builder.ensure_agent_package", lambda: None)
+    monkeypatch.setattr("trellis.agent.config.get_default_model", lambda: "gpt-5-mini")
+    monkeypatch.setattr("trellis.agent.config.get_model_for_stage", lambda stage, model=None: model or "gpt-5-mini")
+    monkeypatch.setattr("trellis.agent.config.llm_usage_stage", fake_llm_usage_stage)
+    monkeypatch.setattr("trellis.agent.config.summarize_llm_usage", lambda records: {})
+    monkeypatch.setattr("trellis.agent.config.enforce_llm_token_budget", lambda stage=None: None)
+
+    def fake_generate_module(*args, **kwargs):
+        raise RuntimeError("stub generation failed")
+
+    monkeypatch.setattr("trellis.agent.executor._generate_module", fake_generate_module)
+
+    with pytest.raises(RuntimeError, match="stub generation failed"):
+        build_payoff(
+            "CDS pricing metadata regression",
+            compiled_request=compiled_request,
+            instrument_type="credit_default_swap",
+            market_state=SimpleNamespace(
+                selected_curve_names={},
+                available_capabilities=set(),
+            ),
+            max_retries=1,
+            model="gpt-5-mini",
+        )
+
+    assert captured["stage"] == "code_generation"
+    assert captured["metadata"]["instrument_type"] == "credit_default_swap"
+    assert captured["metadata"]["model"] == "gpt-5-mini"
+    assert captured["metadata"]["attempt"] == 1
+
+
+def test_knowledge_retrieval_stage_maps_builder_retry_reasons():
+    from trellis.agent.executor import _knowledge_retrieval_stage
+
+    assert _knowledge_retrieval_stage(
+        audience="builder",
+        attempt_number=1,
+        retry_reason=None,
+    ) == "initial_build"
+    assert _knowledge_retrieval_stage(
+        audience="builder",
+        attempt_number=2,
+        retry_reason="import_validation",
+    ) == "import_validation_failed"
+    assert _knowledge_retrieval_stage(
+        audience="builder",
+        attempt_number=2,
+        retry_reason="semantic_validation",
+    ) == "semantic_validation_failed"
+    assert _knowledge_retrieval_stage(
+        audience="builder",
+        attempt_number=2,
+        retry_reason="lite_review",
+    ) == "lite_review_failed"
+    assert _knowledge_retrieval_stage(
+        audience="review",
+        attempt_number=1,
+        retry_reason=None,
+    ) == "critic_review"

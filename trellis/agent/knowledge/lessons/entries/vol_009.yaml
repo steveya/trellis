@@ -1,0 +1,37 @@
+category: volatility
+title: Missing vol source in analytic path
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T11:13:13.341270'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - fixed_coupons
+  - discounting
+  - early_exercise
+  - backward_induction
+  - pde_grid
+  - convergence_order_diagnostic
+  - analytical_benchmark
+  instrument: []
+  error_signature: null
+symptom: The analytical Black-76 pricer was implemented without sourcing volatility
+  from market_state.vol_surface.
+root_cause: This happens when the mental model treats the closed-form formula as self-contained
+  and overlooks that its inputs must still come from the same market data plumbing
+  as the numerical methods. As a result, the pricer may compile but be disconnected
+  from the calibrated volatility surface used by validation and cross-checks.
+fix: Wire the analytical vanilla route to pull volatility directly from market_state.vol_surface
+  and use that value consistently in pricing.
+validation: "Resolved during build of Build a pricer for: European call: theta-method\
+  \ convergence order measurement\n\nConstruct methods: pde_solver\nComparison targets:\
+  \ theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes (analytical)\nCross-validation\
+  \ harness:\n  internal targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n\
+  \  external targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+  \ target: black_scholes\nPreferred method family: analytical\n\nImplementation target:\
+  \ black_scholes"
+id: vol_009

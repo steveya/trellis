@@ -48,6 +48,7 @@ class LiteReviewSignals:
     """Static fingerprint of obviously suspicious generation patterns."""
 
     market_state_accesses: tuple[str, ...]
+    call_names: tuple[str, ...]
     literal_assignments: tuple[str, ...]
     wall_clock_calls: tuple[str, ...]
 
@@ -73,6 +74,7 @@ class _LiteReviewVisitor(ast.NodeVisitor):
 
     def __init__(self) -> None:
         self.market_state_accesses: set[str] = set()
+        self.call_names: set[str] = set()
         self.literal_assignments: list[str] = []
         self.wall_clock_calls: set[str] = set()
 
@@ -98,6 +100,8 @@ class _LiteReviewVisitor(ast.NodeVisitor):
 
     def visit_Call(self, node: ast.Call) -> None:
         call_name = _resolve_call_name(node.func)
+        if call_name:
+            self.call_names.add(call_name)
         if call_name in {"date.today", "datetime.today", "datetime.now"}:
             self.wall_clock_calls.add(call_name)
         for keyword in node.keywords:
@@ -128,6 +132,7 @@ def review_generated_code(
             issues=(issue,),
             signals=LiteReviewSignals(
                 market_state_accesses=(),
+                call_names=(),
                 literal_assignments=(),
                 wall_clock_calls=(),
             ),
@@ -137,6 +142,7 @@ def review_generated_code(
     visitor.visit(tree)
     signals = LiteReviewSignals(
         market_state_accesses=tuple(sorted(visitor.market_state_accesses)),
+        call_names=tuple(sorted(visitor.call_names)),
         literal_assignments=tuple(visitor.literal_assignments),
         wall_clock_calls=tuple(sorted(visitor.wall_clock_calls)),
     )
@@ -270,6 +276,14 @@ def _route_specific_issues(
         return tuple(issues)
     if route == "analytical_garman_kohlhagen" and "map_fx_spot_and_curves_to_garman_kohlhagen_inputs" not in adapters:
         return tuple(issues)
+    if primitive_plan is not None:
+        required_helper_symbols = tuple(
+            primitive.symbol
+            for primitive in primitive_plan.primitives
+            if primitive.required and primitive.role == "route_helper"
+        )
+        if required_helper_symbols and any(symbol in signals.call_names for symbol in required_helper_symbols):
+            return tuple(issues)
 
     required_accesses = _route_required_accesses_for(route)
     for capability, prefixes in required_accesses.items():

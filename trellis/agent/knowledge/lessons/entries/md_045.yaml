@@ -1,0 +1,32 @@
+category: market_data
+title: Indentation after guard
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-03-31T19:51:53.497471'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: A runtime syntax error was caused by a missing indentation inside an if-block
+  in the analytical CDS method.
+root_cause: The mental model failure is treating a quick validation check as if it
+  were already structurally complete, so the control-flow block was left without a
+  properly indented body. Small syntax issues like this can hide in otherwise correct
+  pricing logic and block the entire module from loading.
+fix: Ensure every if/else block has an indented body, then rerun syntax validation
+  before testing pricing outputs.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: analytical_cds\nPreferred method\
+  \ family: analytical\n\nImplementation target: analytical_cds"
+id: md_045

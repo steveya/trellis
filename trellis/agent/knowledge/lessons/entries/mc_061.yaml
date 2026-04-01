@@ -1,0 +1,31 @@
+category: monte_carlo
+title: Check indentation in generated Python code
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-03-31T17:29:24.992262'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Generated Python module contained an unexpected indent, causing a SyntaxError.
+root_cause: The agent produced misaligned or mixed-space/tab blocks and did not validate
+  Python's strict indentation rules; this happened because no syntax-check/formatting
+  step was applied to the generated code.
+fix: Enforce consistent indentation (use spaces), run a syntax-check/compile step
+  and an automatic formatter (e.g., black) on the generated code before executing
+  or returning it.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: analytical_cds\nPreferred method\
+  \ family: analytical\n\nImplementation target: analytical_cds"
+id: mc_061

@@ -1,0 +1,32 @@
+category: backward_induction
+title: Guard try-except indentation
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T12:45:26.050682'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: A fallback return was placed at the wrong indentation level after an except
+  block, causing a syntax error.
+root_cause: This happens when the implementation plan changes between model branches
+  and the control-flow structure is not rechecked before emitting code. The mental
+  model failure is treating fallback logic as a content decision rather than a syntactic
+  one that must preserve valid Python block structure.
+fix: Keep fallback returns inside the except block or add an explicit indented pass/body,
+  then re-parse the module before testing.
+validation: "Resolved during build of Build a pricer for: Callable bond: BDT lognormal\
+  \ vs HW normal tree\n\nConstruct methods: rate_tree\nComparison targets: bdt_tree\
+  \ (rate_tree), hull_white_tree (rate_tree)\nCross-validation harness:\n  internal\
+  \ targets: bdt_tree, hull_white_tree\n  external targets: financepy, quantlib\n\
+  New component: bdt_calibration_via_generic_lattice\n\nImplementation target: hull_white_tree\n\
+  Preferred method family: rate_tree\n\nImplementation target: hull_white_tree"
+id: bi_009

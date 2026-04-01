@@ -1,0 +1,32 @@
+category: market_data
+title: Date-Number Type Mismatch
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T12:52:52.804336'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - bermudan
+  - floating_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: A market-state input was treated as a numeric rate/strike, causing a comparison
+  between a float and a datetime.date object.
+root_cause: The mental model failed by assuming all inputs were already normalized
+  scalars, but analytical pricers often receive mixed contract and market fields that
+  must be type-checked before comparison. In Python, date objects are not order-compatible
+  with floats, so any implicit validation can blow up early.
+fix: Normalize and validate input types up front, separating schedule dates from numerical
+  market variables before any comparisons.
+validation: "Resolved during build of Build a pricer for: Bermudan swaption on HW\
+  \ tree\n\nConstruct methods: rate_tree\nComparison targets: hw_tree_bermudan (rate_tree),\
+  \ black76_european_lower_bound (analytical)\nCross-validation harness:\n  internal\
+  \ targets: hw_tree_bermudan, black76_european_lower_bound\n  external targets: quantlib,\
+  \ financepy\nNew component: swap_valuation_on_tree\n\nImplementation target: black76_european_lower_bound\n\
+  Preferred method family: analytical\n\nImplementation target: black76_european_lower_bound"
+id: md_055

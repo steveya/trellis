@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import threading
 import time
@@ -158,6 +159,34 @@ def test_openai_request_with_retry_raises_after_bounded_retries(monkeypatch):
     assert attempts["count"] == 2
 
 
+def test_openai_request_with_retry_honors_per_call_retry_override(monkeypatch):
+    from trellis.agent.config import _openai_request_with_retry
+
+    monkeypatch.setattr("trellis.agent.config.time.sleep", lambda _: None)
+    monkeypatch.setenv("OPENAI_MAX_RETRIES", "5")
+    monkeypatch.setattr(
+        "trellis.agent.config._run_with_wall_clock_timeout",
+        lambda request_fn, timeout_seconds: request_fn(),
+    )
+
+    attempts = {"count": 0}
+
+    def always_fail():
+        attempts["count"] += 1
+        raise TimeoutError("still timed out")
+
+    with pytest.raises(RuntimeError, match="failed after 1 attempts"):
+        _openai_request_with_retry(
+            always_fail,
+            model="gpt-5-mini",
+            response_kind="json",
+            timeout_seconds=5.0,
+            max_retries=0,
+        )
+
+    assert attempts["count"] == 1
+
+
 def test_openai_generate_json_uses_timeout_and_retries(monkeypatch):
     from trellis.agent.config import _openai_generate_json
 
@@ -197,6 +226,23 @@ def test_openai_generate_json_uses_timeout_and_retries(monkeypatch):
     assert calls == [7.0, 7.0]
 
 
+def test_llm_generate_json_passes_retry_override_to_openai(monkeypatch):
+    from trellis.agent.config import llm_generate_json
+
+    captured = {}
+    monkeypatch.setattr("trellis.agent.config.load_env", lambda: None)
+    monkeypatch.setattr("trellis.agent.config.get_provider", lambda: "openai")
+
+    def fake_openai_generate_json(prompt, model, *, max_retries=None):
+        captured["max_retries"] = max_retries
+        return "{}", {"prompt_tokens": None, "completion_tokens": None, "total_tokens": None}
+
+    monkeypatch.setattr("trellis.agent.config._openai_generate_json", fake_openai_generate_json)
+
+    assert llm_generate_json("{}", model="gpt-5-mini", max_retries=0) == {}
+    assert captured["max_retries"] == 0
+
+
 def test_run_with_wall_clock_timeout_times_out_in_worker_thread():
     from trellis.agent.config import _run_with_wall_clock_timeout
 
@@ -214,6 +260,51 @@ def test_run_with_wall_clock_timeout_times_out_in_worker_thread():
 
     assert not thread.is_alive()
     assert isinstance(outcome.get("exception"), TimeoutError)
+
+
+def test_run_with_wall_clock_timeout_writes_wait_log(monkeypatch, tmp_path):
+    from trellis.agent import config as agent_config
+
+    log_path = tmp_path / "llm_waits.jsonl"
+    monkeypatch.setenv("TRELLIS_LLM_WAIT_LOG_PATH", str(log_path))
+    token = agent_config._LLM_REQUEST_CONTEXT.set(
+        {
+            "provider": "openai",
+            "model": "gpt-5-mini",
+            "response_kind": "json",
+            "attempt": 1,
+        }
+    )
+    try:
+        with agent_config.llm_usage_stage(
+            "decomposition",
+            metadata={"model": "gpt-5-mini", "task_id": "T38"},
+        ):
+            assert agent_config._run_with_wall_clock_timeout(lambda: {"ok": True}, 1.0) == {"ok": True}
+    finally:
+        agent_config._LLM_REQUEST_CONTEXT.reset(token)
+
+    lines = [json.loads(line) for line in log_path.read_text().splitlines()]
+    assert [line["event"] for line in lines] == ["wait_started", "wait_completed"]
+    assert lines[0]["stage"] == "decomposition"
+    assert lines[0]["stage_metadata"]["task_id"] == "T38"
+    assert lines[0]["request_context"]["response_kind"] == "json"
+
+
+def test_run_with_wall_clock_timeout_logs_timeout_event(monkeypatch, tmp_path):
+    from trellis.agent import config as agent_config
+
+    log_path = tmp_path / "llm_waits_timeout.jsonl"
+    monkeypatch.setenv("TRELLIS_LLM_WAIT_LOG_PATH", str(log_path))
+
+    with pytest.raises(TimeoutError):
+        with agent_config.llm_usage_stage("code_generation", metadata={"model": "gpt-5-mini", "attempt": 2}):
+            agent_config._run_with_wall_clock_timeout(lambda: time.sleep(0.2), 0.01)
+
+    lines = [json.loads(line) for line in log_path.read_text().splitlines()]
+    assert [line["event"] for line in lines] == ["wait_started", "wait_timeout"]
+    assert lines[-1]["stage"] == "code_generation"
+    assert lines[-1]["stage_metadata"]["attempt"] == 2
 
 
 def test_openai_chat_completion_create_disables_sdk_retries(monkeypatch):
@@ -255,7 +346,7 @@ def test_llm_usage_session_tracks_stage_token_totals(monkeypatch):
     monkeypatch.setattr("trellis.agent.config.get_provider", lambda: "openai")
     monkeypatch.setattr(
         "trellis.agent.config._openai_generate",
-        lambda prompt, model: (
+        lambda prompt, model, **kwargs: (
             "ok",
             {"prompt_tokens": 11, "completion_tokens": 5, "total_tokens": 16},
         ),
@@ -320,9 +411,9 @@ def test_get_model_for_stage_uses_tiered_default_for_openai(monkeypatch):
     monkeypatch.setattr("trellis.agent.config.load_env", lambda: None)
     monkeypatch.setattr("trellis.agent.config.get_provider", lambda: "openai")
 
-    assert get_model_for_stage("decomposition", "gpt-5-mini") == "gpt-5-mini"
-    assert get_model_for_stage("code_generation", "gpt-5-mini") == "gpt-5.4-mini"
-    assert get_model_for_stage("model_validator", "gpt-5-mini") == "gpt-5"
+    assert get_model_for_stage("decomposition", "gpt-5.4-mini") == "gpt-5.4-mini"
+    assert get_model_for_stage("code_generation", "gpt-5.4-mini") == "gpt-5.4-mini"
+    assert get_model_for_stage("model_validator", "gpt-5.4-mini") == "gpt-5.4-mini"
 
 
 def test_enforce_llm_token_budget_raises_after_stage(monkeypatch):
@@ -338,7 +429,7 @@ def test_enforce_llm_token_budget_raises_after_stage(monkeypatch):
     monkeypatch.setattr("trellis.agent.config.get_provider", lambda: "openai")
     monkeypatch.setattr(
         "trellis.agent.config._openai_generate",
-        lambda prompt, model: (
+        lambda prompt, model, **kwargs: (
             "ok",
             {"prompt_tokens": 80, "completion_tokens": 30, "total_tokens": 110},
         ),

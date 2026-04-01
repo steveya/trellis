@@ -55,6 +55,22 @@
   reasoning: "European swaption — Black76 on the forward swap rate."
   learned: false
 
+- instrument: zcb_option
+  features: [vol_surface_dependence]
+  method: analytical
+  method_modules: [trellis.models.zcb_option]
+  required_market_data: [discount, black_vol]
+  modeling_requirements:
+    - >-
+      UNIT STRIKE: Jamshidian uses the zero-coupon bond strike per unit face. If the
+      task quotes a strike such as 63 on 100 face, normalize it to 0.63 before
+      calling the analytical kernel.
+    - >-
+      TIME ORDERING: The underlying bond maturity must be strictly after the
+      option expiry. Validate T_bond > T_exp before pricing.
+  reasoning: "European option on a zero-coupon bond under Hull-White should prefer the Jamshidian closed-form helper."
+  learned: false
+
 # ---------------------------------------------------------------------------
 # Rate tree instruments
 # ---------------------------------------------------------------------------

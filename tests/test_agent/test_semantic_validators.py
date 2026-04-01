@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan
-from trellis.agent.route_registry import load_route_registry, RouteSpec
+from trellis.agent.knowledge.schema import ProductIR
+from trellis.agent.route_registry import load_route_registry, resolve_route_primitives, RouteSpec
 from trellis.agent.semantic_validators import validate_generated_semantics
 from trellis.agent.semantic_validators.algorithm_contract import AlgorithmContractValidator
 from trellis.agent.semantic_validators.base import SemanticFinding, SemanticValidationReport
@@ -144,6 +147,23 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("quanto_adjustment_analytical"), spec)
         assert any(f.category == "route_helper_not_called" for f in findings)
 
+    def test_flags_missing_callable_bond_route_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
+        callable_ir = ProductIR(
+            instrument="callable_bond",
+            payoff_family="callable_fixed_income",
+            exercise_style="bermudan",
+            model_family="short_rate",
+        )
+        spec = replace(spec, primitives=resolve_route_primitives(spec, callable_ir))
+        source = '''
+def evaluate(self, market_state):
+    return lattice_backward_induction(lattice, terminal_payoff)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("exercise_lattice", "lattice"), spec)
+        assert any(f.category == "route_helper_not_called" for f in findings)
+
     def test_flags_missing_discount(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         source = '''
@@ -154,6 +174,29 @@ def evaluate(self, market_state):
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("analytical_black76"), spec)
         assert any(f.category == "missing_discount_application" for f in findings)
+
+    def test_helper_backed_pde_route_does_not_require_low_level_engine_signatures(self, registry):
+        spec = [r for r in registry.routes if r.id == "vanilla_equity_theta_pde"][0]
+        source = '''
+from trellis.models.equity_option_pde import price_vanilla_equity_option_pde
+
+def evaluate(self, market_state):
+    return float(price_vanilla_equity_option_pde(market_state, self._spec, theta=0.5))
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("vanilla_equity_theta_pde", "pde_solver"), spec)
+        assert not any(f.category == "engine_family_mismatch" for f in findings)
+
+    def test_treats_lattice_policy_helper_as_exercise_logic(self, registry):
+        spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
+        source = '''
+from trellis.models.trees.control import resolve_lattice_exercise_policy
+
+policy = resolve_lattice_exercise_policy("issuer_call", exercise_steps=[10, 20])
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("exercise_lattice", "lattice"), spec)
+        assert not any(f.category == "missing_exercise_logic" for f in findings)
 
 
 # ---------------------------------------------------------------------------

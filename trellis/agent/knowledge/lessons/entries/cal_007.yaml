@@ -1,0 +1,26 @@
+category: calibration
+title: Payer Swaption Sign Convention Causes Negative Value
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-03-31T19:32:09.020344'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The payer swaption payoff sign was inverted, treating a payer as a receiver
+  or negating the annuity factor incorrectly.
+root_cause: A payer swaption pays max(S-K,0) times the annuity; confusing payer vs
+  receiver or flipping the strike difference yields a negative or zero analytical
+  price instead of a positive one.
+fix: Ensure the payoff direction flag is set to +1 for payer and -1 for receiver and
+  is applied consistently to both the delta-term and the discounted strike term in
+  the closed-form formula.
+validation: Resolved during build of European payer swaption
+id: cal_007

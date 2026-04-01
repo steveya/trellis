@@ -542,6 +542,18 @@ class TestTreeModels:
         p_down, p_up = probs
         assert p_up < 0.5, f"p_up={p_up} should be < 0.5 when r > target"
 
+    def test_bdt_probabilities_are_centered_when_node_matches_target_log_state(self):
+        """BDT should mean-revert in latent log-rate space, not log(log(rate))."""
+        from trellis.models.trees.models import bdt_mean_reversion_probabilities
+        from trellis.models.trees.lattice import RecombiningLattice
+
+        lattice = RecombiningLattice(10, 0.1, branching=2, state_dim=1)
+        lattice.set_state(5, 2, 0.05)
+        phis = [raw_np.log(0.05)] * 11
+
+        probs = bdt_mean_reversion_probabilities(lattice, 5, 2, phis, 0.1, 0.01)
+        assert probs[1] == pytest.approx(0.5)
+
     def test_all_models_have_description(self):
         """Every model has a non-empty description for agent guidance."""
         from trellis.models.trees.models import MODEL_REGISTRY
@@ -681,3 +693,23 @@ class TestBuildGenericLattice:
         bdt_skew = (raw_np.mean(rates_bdt) - raw_np.median(rates_bdt))
         # Lognormal (BDT) is right-skewed; normal (HW) is symmetric
         assert abs(bdt_skew) > abs(hw_skew) * 0.5 or True  # soft check — distribution shape differs
+
+    def test_bdt_supports_trinomial_generic_builder(self):
+        """The generalized one-factor builder should support trinomial BDT too."""
+        from trellis.models.trees.models import MODEL_REGISTRY
+        from trellis.models.trees.lattice import build_generic_lattice, lattice_backward_induction
+        from trellis.curves.yield_curve import YieldCurve
+
+        curve = YieldCurve.flat(0.05)
+        lattice = build_generic_lattice(
+            MODEL_REGISTRY["bdt"],
+            r0=0.05,
+            sigma=0.20,
+            a=0.05,
+            T=5.0,
+            n_steps=50,
+            discount_curve=curve,
+            branching=3,
+        )
+        zcb = lattice_backward_induction(lattice, lambda s, n, l: 1.0)
+        assert zcb == pytest.approx(float(curve.discount(5.0)), abs=1e-5)

@@ -1,0 +1,32 @@
+category: monte_carlo
+title: None passed to float in MC pricer
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-03-31T14:26:44.173477'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: A None market/state value was passed into float() inside the Monte Carlo
+  CDS pricer, causing a TypeError.
+root_cause: The code assumed all required numeric market/state values (hazard rates,
+  survival probs, discounts) were populated and did not validate inputs, so a missing
+  value propagated as None into a numeric conversion.
+fix: Validate and fail fast or compute defaults for missing market/state values so
+  that only real numbers are passed to float(), and raise a clear error if required
+  data is absent.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: mc_cds\nPreferred method family:\
+  \ monte_carlo\n\nImplementation target: mc_cds"
+id: mc_060

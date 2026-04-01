@@ -30,9 +30,13 @@ analytical:
     forecast_forward_curve), and Black vol surface. Rate fixing dates and payment
     dates must match the instrument schedule.'
   credit_default_swap:
-  - 'CREDIT-SURVIVAL CONSISTENCY: For CDS and nth-to-default, price the premium leg
-    and protection leg directly from credit_curve survival probabilities and hazard
-    rates on an explicit payment schedule. Do not reuse Black76 call/put primitives.'
+  - 'CREDIT-SURVIVAL CONSISTENCY: For single-name CDS, price the premium leg and
+    protection leg directly from credit_curve survival probabilities and hazard
+    rates on an explicit payment schedule. Do not reinterpret CDS as nth-to-default,
+    basket CDS, or first-to-default, and do not reuse Black76 call/put primitives.'
+  - 'CDS SPREAD UNITS: Running CDS spreads in task text are often quoted in basis
+    points. Convert them to decimals before premium-leg accrual, for example 150
+    bp -> 0.015; do not multiply accrual by a raw value like 150.0.'
   - 'CREDIT MARKET DATA CONTRACT: Requires credit_curve plus discount_curve. Declare
     both in the generated requirements set and keep the adapter thin around schedule
     generation, year_fraction, survival_probability, hazard_rate, and discounting.'
@@ -83,7 +87,7 @@ monte_carlo:
   primal_dual_mc, and stochastic_mesh. If the control primitive uses continuation
   regression, the basis or estimator choice is explicit; LaguerreBasis is a common
   option, not a mandatory route primitive.'
-- 'CREDIT-SURVIVAL MC: For CDS and nth-to-default, sample default times from credit_curve hazard rates or survival probabilities on an explicit payment schedule. Declare credit_curve and discount_curve requirements and do not route credit-default pricing through Black76 or equity GBM option logic.'
+- 'CREDIT-SURVIVAL MC: For single-name CDS, sample one default time from the credit_curve hazard rates or survival probabilities on an explicit payment schedule. For nth-to-default, keep multi-name default-order and copula logic explicit instead of reusing the CDS loop. Declare credit_curve and discount_curve requirements and do not route credit-default pricing through Black76 or equity GBM option logic.'
 qmc:
 - 'LOW-DISCREPANCY SAMPLING: Use Sobol paths in balanced batches, preferably with
   a power-of-two path count such as 1024, 2048, or 4096. If you deviate, document

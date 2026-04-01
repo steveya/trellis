@@ -1,0 +1,32 @@
+category: monte_carlo
+title: Uninitialized RNG/sampler
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-03-31T14:20:33.753963'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: The code attempted to call exact_sample on a sampler that was None because
+  the RNG/sampler was never initialized or passed in.
+root_cause: 'The implementation assumed an external sampler object would always be
+  provided (mental model: dependency present), so it didn''t validate or create a
+  default RNG, causing a None dereference at runtime.'
+fix: Ensure the market state or monte_carlo initializer always constructs or is given
+  a valid sampler/RNG (or create a default one) and add input validation with a clear
+  error if missing.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: mc_cds\nPreferred method family:\
+  \ monte_carlo\n\nImplementation target: mc_cds"
+id: mc_059

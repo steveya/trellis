@@ -254,14 +254,16 @@ Write ONLY the body of the `evaluate()` method. The signature is already defined
 - For forward rates: `market_state.forecast_forward_curve(self._spec.rate_index)`
 - For vol: `market_state.vol_surface.black_vol(T, strike)`
 - For discount factors: `market_state.discount.discount(t)`
-- Schedule generation: `generate_schedule(start, end, freq)` returns list[date]
+- Schedule generation: `generate_schedule(start, end, freq)` returns `list[date]`; for event/accrual routes prefer `build_period_schedule(start, end, freq, day_count=..., time_origin=...)`
 - Year fractions: `year_fraction(date1, date2, day_count)`
 - Never use wall-clock dates such as `date.today()` or `datetime.now()` inside `evaluate()`; derive valuation time from `market_state` or shared resolver outputs.
 - Black76: `black76_call(F, K, sigma, T)`, `black76_put(F, K, sigma, T)` — undiscounted
 - Black76 digital: `black76_cash_or_nothing_call(F, K, sigma, T)`, `black76_cash_or_nothing_put(F, K, sigma, T)` — undiscounted cash-or-nothing digitals
 - For CDS / nth-to-default: use `market_state.credit_curve.survival_probability(t)` and `market_state.credit_curve.hazard_rate(t)` on an explicit payment/default schedule; do not route credit-default pricing through Black76 call/put primitives.
-- For equity trees: `from trellis.models.trees.binomial import BinomialTree` and `from trellis.models.trees.backward_induction import backward_induction`
-- For rate lattices: `from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction`
+- For equity trees: prefer `from trellis.models.equity_option_tree import price_vanilla_equity_option_tree`; the lower-level lattice path is `from trellis.models.trees.lattice import build_spot_lattice, lattice_backward_induction`
+- For vanilla European PDE routes: prefer `from trellis.models.equity_option_pde import price_vanilla_equity_option_pde`; the lower-level fallback is `from trellis.models.pde.grid import Grid`, `from trellis.models.pde.operator import BlackScholesOperator`, and `from trellis.models.pde.theta_method import theta_method_1d`
+- For rate lattices: prefer helper surfaces such as `price_callable_bond_tree(...)`, `price_bermudan_swaption_tree(...)`, or `price_zcb_option_tree(...)`; the lower-level fallback is `from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction`
+- For schedule-dependent rate lattices: `from trellis.models.trees.control import lattice_steps_from_timeline, resolve_lattice_exercise_policy`
 - For MC: `from trellis.models.monte_carlo import MonteCarloEngine`
 - For QMC accelerators: `from trellis.models.qmc import sobol_normals, brownian_bridge`
 - For copulas: `from trellis.models.copulas import GaussianCopula, FactorCopula`
@@ -371,10 +373,10 @@ def _render_family_route_guidance(
         lines.append("## Family Route Guidance")
         if method == "rate_tree":
             lines.extend([
-                "- For American/Bermudan equity tree routes, import `BinomialTree` from `trellis.models.trees.binomial` and `backward_induction` from `trellis.models.trees.backward_induction`.",
-                "- Build the tree with `BinomialTree.crr(S0, T, n_steps, r, sigma)`; do not invent a `crr_tree` symbol or helper.",
-                "- Call `backward_induction(..., exercise_type=\"american\")` or `backward_induction(..., exercise_type=\"bermudan\")` with a quoted string literal; do not invent an `AMERICAN` constant.",
-                "- Keep the early-exercise logic on the tree side. Do not route American exercise through `method=\"lsm\"` or an `lsm_mc` alias.",
+                "- For American/Bermudan equity tree routes, prefer `price_vanilla_equity_option_tree(market_state, self._spec, model=\"crr\")` from `trellis.models.equity_option_tree`.",
+                "- If you need the lower-level lattice path, build `build_spot_lattice(..., model=\"crr\"|\"jarrow_rudd\")` and then call `lattice_backward_induction(..., exercise_policy=resolve_lattice_exercise_policy(\"american\"|\"bermudan\"))`.",
+                "- Do not invent a `crr_tree` symbol, an `AMERICAN` constant, or a `method=\"lsm\"` fallback on the tree route.",
+                "- Keep the early-exercise logic on the tree side and treat the checked-in helper as the default adapter surface.",
             ])
         elif method == "pde_solver":
             lines.extend([
@@ -390,23 +392,137 @@ def _render_family_route_guidance(
                 "- If you need a continuation basis, choose it explicitly; `LaguerreBasis` lives in `trellis.models.monte_carlo.schemes`.",
             ])
 
-    if instrument_type in {"cds", "nth_to_default"}:
+    if instrument_type == "european_option":
+        if method == "pde_solver":
+            lines.append("## Family Route Guidance")
+            lines.extend([
+                "- For vanilla European PDE routes, prefer `price_vanilla_equity_option_pde(market_state, self._spec, theta=...)` from `trellis.models.equity_option_pde`.",
+                "- Map `implementation_target=theta_0.5` to `theta=0.5` and `implementation_target=theta_1.0` to `theta=1.0`.",
+                "- Keep the wrapper thin: delegate grid sizing, boundary conditions, terminal payoff assembly, theta-method solve, and interpolation back to spot to the checked-in helper.",
+                "- Only fall back to direct `Grid + BlackScholesOperator + theta_method_1d` assembly when the payoff or boundary contract genuinely differs from plain vanilla European call/put.",
+            ])
+
+    if instrument_type in {"cds", "credit_default_swap"}:
         lines.append("## Family Route Guidance")
         if method in {"monte_carlo", "qmc"}:
             lines.extend([
-                "- For CDS / nth-to-default Monte Carlo routes, keep the premium leg and protection leg on an explicit payment/default schedule.",
+                "- For single-name CDS Monte Carlo routes, keep the premium leg and protection leg on an explicit payment/default schedule for one reference entity.",
+                "- Prefer `build_cds_schedule` and `price_cds_monte_carlo` from `trellis.models.credit_default_swap` so the adapter delegates to checked-in CDS helpers instead of open-coding the leg loop.",
+                "- Do not import or instantiate `MonteCarloEngine` for this route. Here Monte Carlo means direct random default-time draws, not a generic diffusion-engine wrapper.",
+                "- CDS running spreads are often quoted in basis points in task text. Normalize them at the top of `evaluate()` with `spread = float(spec.spread)` and `if spread > 1.0: spread *= 1e-4`, for example `150 bp -> 0.015`.",
+                "- After that normalization step, use only the local `spread` variable in the premium leg. Do not read raw `spec.spread` again later in the body.",
+                "- Treat `100` and `0.01` as semantically equivalent CDS running spreads. The route should price them the same up to numerical tolerance.",
                 "- Start the body with `from trellis.core.differentiable import get_numpy` and `np = get_numpy()` so the route uses the approved array backend.",
+                "- Use `rng = np.random.default_rng(...)` or equivalent direct RNG draws to sample default times from the credit curve hazard structure.",
                 "- Use `market_state.credit_curve.hazard_rate(t)` or `market_state.credit_curve.survival_probability(t)` directly on the schedule; do not hide the credit curve behind an alias.",
                 "- Use `market_state.discount.discount(t)` directly for each payment-date discount factor.",
+                "- Build the explicit schedule with `build_period_schedule(spec.start_date, spec.end_date, spec.frequency, day_count=spec.day_count, time_origin=spec.start_date)` and iterate over `period.payment_date`, `period.accrual_fraction`, and `period.t_payment`.",
+                "- This route must price a Monte Carlo expectation over many paths. Use `n_paths = ...`, `alive = np.ones(n_paths, dtype=bool)`, vectorized `default_in_interval`, and return a path average such as `float(np.mean(protection_pv - premium_pv))`.",
+                "- Do not collapse the Monte Carlo leg to scalar `alive`, a single `rng.random()` draw per coupon date, or a one-scenario loop with `break` after default.",
+                "- Compute interval default probability from `survival_probability(prev_t)` and `survival_probability(t_pay)` as `1.0 - s_pay / s_prev` when `s_prev > 0.0`.",
+                "- Use `hazard_rate` only for within-interval default-time interpolation after an interval default is sampled; do not replace the interval default probability with `1.0 - exp(-hazard * dt)` when survival probabilities are available.",
+                "- For this comparison route, keep protection-leg discounting aligned with the analytical schedule loop: use the payment-date discount factor `discount(t_pay)` for interval default mass.",
+                "- Do not discount protection at sampled default times `tau` or replace interval default mass with sampled settlement-time discounting in the comparison build.",
+                "- Use `spec.start_date` as the time origin for Monte Carlo schedule times so the MC and analytical CDS legs share the same `t` convention.",
+                "- If you track both accrual dates and survival/default times, keep `prev_date` and `prev_t` as separate variables. Do not compare float year-fractions to `date` objects or pass floats into `year_fraction(...)` date slots.",
+                "- Keep a persistent `alive` indicator across the schedule. Sample `default_in_interval` once per accrual interval, add protection only on that interval, then update `alive` before the next payment date.",
+                "- Update `alive` immediately after drawing `default_in_interval`, then use the updated `alive` state for premium accrual at the payment date.",
+                "- Premium accrual should use the fraction of paths still alive through the payment date, not the start-of-interval alive state. Do not overwrite or reinitialize the default state inside each loop iteration.",
                 "- Keep the body as a single explicit schedule loop plus a final `premium_leg` / `protection_leg` PV aggregation; do not invent helper names or route credit-default pricing through Black76.",
+                "- Do not import copulas or reinterpret a single-name CDS as nth-to-default, basket CDS, or first-to-default.",
                 "- A good shape is: initialize `premium_leg = 0.0`, `protection_leg = 0.0`, loop over the payment dates, update both legs, then `return protection_leg - premium_leg`.",
             ])
         elif method == "analytical":
             lines.extend([
-                "- For CDS / nth-to-default analytical routes, build the premium leg and protection leg directly from the credit curve on the explicit payment schedule.",
+                "- For single-name CDS analytical routes, build the premium leg and protection leg directly from the credit curve on the explicit payment schedule.",
+                "- Prefer `build_cds_schedule` and `price_cds_analytical` from `trellis.models.credit_default_swap` so the adapter stays thin and reuses the checked-in leg logic.",
+                "- Prefer `build_period_schedule(...)` over raw `generate_schedule(...)` so the route reads explicit `SchedulePeriod` objects instead of rebuilding `prev_date` and coupon boundaries by hand.",
+                "- CDS running spreads are often quoted in basis points in task text. Convert them to decimals before accrual, for example `150 bp -> 0.015`.",
+                "- After that normalization step, use only the local `spread` variable in the premium leg. Do not read raw `spec.spread` again later in the body.",
                 "- Use `market_state.credit_curve.survival_probability(t)` directly; do not route credit-default pricing through Black76 call/put primitives.",
-                "- Keep discounting explicit with `market_state.discount.discount(t)` and return protection leg minus premium leg.",
-                "- A good shape is: initialize `premium_leg = 0.0`, `protection_leg = 0.0`, loop over the payment dates, update the running survival probability, then `return protection_leg - premium_leg`.",
+                "- Do not reinterpret the request as nth-to-default or basket credit, and do not import copula helpers for a single-name CDS.",
+                "- Use `spec.start_date` as the time origin for schedule year fractions so the analytical and Monte Carlo CDS legs share the same `t` convention.",
+                "- Keep discounting explicit with `market_state.discount.discount(pay_t)` and use that payment-date discount factor for both the premium leg and the interval default mass.",
+                "- Keep the premium leg to `spread * accrual * df * survival` only. Do not add an accrued-on-default premium adjustment like `0.5 * spread * accrual * df * (prev_survival - survival)`.",
+                "- Do not average adjacent discount factors, trapezoid the protection leg, or introduce midpoint expressions like `0.5 * (prev_discount + discount)`.",
+                "- A good shape is: initialize `premium_leg = 0.0`, `protection_leg = 0.0`, build `periods = build_period_schedule(...).periods`, loop over the periods, update the running survival probability, then `return protection_leg - premium_leg`.",
+            ])
+
+    if instrument_type == "callable_bond" and method == "rate_tree":
+        lines.append("## Family Route Guidance")
+        lines.extend([
+            "- Prefer the checked-in callable-bond helper surface in `trellis.models.callable_bond_tree`: `price_callable_bond_tree(market_state, spec, model=\"hull_white\"|\"bdt\")` or the lower-level `build_callable_bond_lattice(...)` + `price_callable_bond_on_lattice(...)`.",
+            "- For callable rate-tree routes, treat lattice control as a checked-in contract: import `build_payment_timeline`, `build_exercise_timeline_from_dates`, `lattice_steps_from_timeline`, `lattice_step_from_time`, and `resolve_lattice_exercise_policy` from `trellis.models.trees.control`.",
+            "- Read the short-rate seed from `market_state.discount.zero_rate(...)`. Do not call `market_state.zero_rate(...)` directly.",
+            "- Keep rate-vol access explicit in the body: bind `black_vol = float(market_state.vol_surface.black_vol(max(T / 2.0, 1e-6), max(r0, 1e-6)))` before converting it to the tree volatility parameter.",
+            "- For explicit BDT / Hull-White comparison routes, prefer `price_callable_bond_tree(..., model=\"bdt\"|\"hull_white\")`. If you must build the tree directly, import `build_generic_lattice` from `trellis.models.trees.lattice` and `MODEL_REGISTRY` from `trellis.models.trees.models`; use `MODEL_REGISTRY[\"bdt\"]` for `bdt_tree` and `MODEL_REGISTRY[\"hull_white\"]` for `hull_white_tree`.",
+            "- Use `build_rate_lattice(r0, sigma_hw, mean_reversion, T, n_steps, discount_curve=market_state.discount)` only for the plain Hull-White helper route; do not invent keyword-only variants like `maturity=...` or `steps=...`.",
+            "- Treat `trellis.models.trees.control` as the canonical lattice-timeline facade. Build payment and exercise timelines there. Map the multi-date exercise timeline with `lattice_steps_from_timeline(..., dt=lattice.dt, n_steps=lattice.n_steps)`, and map individual payment/maturity events with `lattice_step_from_time(..., dt=lattice.dt, n_steps=lattice.n_steps, allow_terminal_step=True)`.",
+            "- Resolve callable exercise with `exercise_policy = resolve_lattice_exercise_policy(\"issuer_call\", exercise_steps=...)`.",
+            "- Call `lattice_backward_induction(lattice, terminal_payoff, exercise_value=..., cashflow_at_node=..., exercise_policy=...)`. Do not use legacy names like `terminal_value=` or `exercise_value_fn=`.",
+            "- `terminal_payoff(step, node, lattice)` should return principal plus the final coupon at maturity. Do not key the terminal payoff off the node index or collapse it to a coupon-only lookup.",
+            "- Coupon cashflows belong to tree steps, not nodes. Build a `coupon_by_step` map from the payment timeline, using `lattice_step_from_time(...)` for individual coupon/maturity steps, and read from it inside `cashflow_at_node(step, node, lattice)`.",
+            "- Pass `exercise_policy=exercise_policy` into `lattice_backward_induction(...)` instead of open-coding `exercise_type`, `exercise_steps`, and `exercise_fn=min` separately.",
+            "- Keep the callable route thin: lattice builder, explicit coupon/exercise timelines, exercise-value callback, and checked-in lattice control only.",
+            "- Do not invent a local exercise convention or holder-maximizing objective for callable bonds. `issuer_call` must map to Bermudan schedule control with the issuer minimizing liability.",
+        ])
+
+    if instrument_type == "bermudan_swaption" and method == "rate_tree":
+        lines.append("## Family Route Guidance")
+        lines.extend([
+            "- Prefer the checked-in Bermudan swaption helper surface in `trellis.models.bermudan_swaption_tree`: `price_bermudan_swaption_tree(market_state, spec, model=\"hull_white\"|\"bdt\")` or the lower-level `build_bermudan_swaption_lattice(...)` + `price_bermudan_swaption_on_lattice(...)`.",
+            "- Treat `trellis.models.trees.control` as the lattice-timeline facade. Build Bermudan exercise timing with `build_exercise_timeline_from_dates(...)` and `lattice_steps_from_timeline(...)`; do not reconstruct step schedules inline from raw integers.",
+            "- Keep rate-vol access explicit in the body: bind `black_vol = float(market_state.vol_surface.black_vol(max(T_option, 1e-6), max(abs(spec.strike), 1e-6)))` before delegating to the helper.",
+            "- Read the short-rate seed from `market_state.discount.zero_rate(...)`. Do not invent `market_state.zero_rate(...)` or a separate curve accessor.",
+            "- For explicit BDT / Hull-White comparison routes, prefer `price_bermudan_swaption_tree(..., model=\"bdt\"|\"hull_white\")`. If you must build the tree directly, use `build_generic_lattice(...)` with `MODEL_REGISTRY[\"bdt\"]` or `MODEL_REGISTRY[\"hull_white\"]`.",
+            "- Resolve Bermudan exercise with `exercise_policy = resolve_lattice_exercise_policy(\"bermudan\", exercise_steps=...)`; do not drift to issuer-call semantics or `exercise_fn=min`.",
+            "- The checked-in helper already owns the fixed-leg coupon map, node-wise swap valuation, and Bermudan rollback. Keep the generated route as a thin adapter over that helper rather than rebuilding swap valuation loops inline.",
+        ])
+
+    if instrument_type == "bermudan_swaption" and method == "analytical":
+        lines.append("## Family Route Guidance")
+        lines.extend([
+            "- For the analytical comparator lane, prefer `price_bermudan_swaption_black76_lower_bound(market_state, spec)` from `trellis.models.rate_style_swaption`.",
+            "- Interpret `black76_european_lower_bound` as the European swaption exercisable only on the final Bermudan date.",
+            "- Keep the adapter thin: validate discount/vol access, then delegate to the checked-in helper. Do not sum one European Black76 price per exercise date.",
+            "- Do not rebuild co-terminal swap schedule loops, annuity extraction, or forward-swap-rate assembly inline when the checked-in helper already owns that route.",
+        ])
+
+    if instrument_type == "zcb_option":
+        lines.append("## Family Route Guidance")
+        if method == "rate_tree":
+            lines.extend([
+                "- For zero-coupon bond option tree routes, prefer `price_zcb_option_tree(market_state, self._spec, model=\"ho_lee\"|\"hull_white\")` from `trellis.models.zcb_option_tree`.",
+                "- Map `implementation_target=ho_lee_tree` to `model=\"ho_lee\"` and `implementation_target=hull_white_tree` to `model=\"hull_white\"`.",
+                "- If you must build the tree directly, import `build_generic_lattice` from `trellis.models.trees.lattice` and `MODEL_REGISTRY` from `trellis.models.trees.models`, then call `build_generic_lattice(MODEL_REGISTRY[...], r0=..., sigma=..., a=..., T=..., n_steps=..., discount_curve=market_state.discount)`.",
+                "- Do not call `build_rate_lattice(...)` with invented keyword forms such as `market_state=...`, `maturity=...`, or `steps=...`.",
+                "- Build the tree to `spec.bond_maturity_date`, not just to expiry, because the route needs nested backward induction for the underlying bond price at option expiry.",
+            ])
+        elif method == "analytical":
+            lines.extend([
+                "- For Jamshidian analytical routes, prefer `price_zcb_option_jamshidian(market_state, self._spec, mean_reversion=0.1)` from `trellis.models.zcb_option`.",
+                "- Do not degrade this route to generic Black76 on a forward bond price when the task explicitly asks for Jamshidian / Hull-White.",
+                "- Normalize strike quotes to unit face before the closed-form kernel. Treat `63` on `100` face as `0.63`.",
+                "- Use `spec.expiry_date` and `spec.bond_maturity_date`; validate that the bond maturity is strictly after expiry.",
+            ])
+
+    if instrument_type == "european_option" and method == "analytical":
+        lines.append("## Family Route Guidance")
+        lines.extend([
+            "- For plain European call/put comparators, keep the adapter minimal: compute `T`, `df`, `sigma`, `forward`, then call `black76_call` or `black76_put` directly.",
+            "- Use `forward = spec.spot / max(df, 1e-12)` for the equity-spot to forward bridge before the Black-style kernel.",
+            "- Do not use `terminal_vanilla_from_basis`, asset-or-nothing helpers, or cash-or-nothing helpers unless the request explicitly asks for digital/binary decomposition.",
+            "- Return a complete module with the spec class and payoff class; do not emit only an `evaluate()` fragment or a partial class body.",
+        ])
+
+    if instrument_type == "nth_to_default":
+        lines.append("## Family Route Guidance")
+        if method in {"monte_carlo", "qmc", "copula"}:
+            lines.extend([
+                "- For nth-to-default and first-to-default basket-credit routes, keep the multi-name contract explicit: reference entities, default order, and correlation model stay visible in the code.",
+                "- Use approved copula helpers such as `GaussianCopula` or `FactorCopula` only for multi-name basket credit. Do not collapse the request into a single-name CDS premium/protection loop.",
+                "- Treat credit-curve access and default-correlation access as separate concerns: marginal default probabilities come from `market_state.credit_curve`, while dependence comes from the approved copula layer.",
+                "- Do not reuse single-name CDS route notes or helpers unless the request explicitly reduces to one reference entity and first-default order is no longer part of the contract.",
             ])
 
     if instrument_type == "barrier_option":

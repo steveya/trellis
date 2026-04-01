@@ -1,0 +1,37 @@
+category: finite_differences
+title: Unchecked None from PDE solver
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-03-31T18:32:26.600495'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - pde_grid
+  - theta_method
+  - convergence_order_diagnostic
+  - discounting
+  - vol_surface_dependence
+  - maturity_settlement
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: The PDE solver returned None and the code attempted numeric comparisons/abs
+  on it.
+root_cause: The implementation assumed the solver always yields numeric prices and
+  did not handle convergence failures or None returns, leading to type errors when
+  tests compared or took abs of the result.
+fix: 'Validate and handle solver results explicitly: on convergence failure raise
+  a clear error or return a defined numeric fallback (e.g., NaN) and prevent numeric
+  ops on None.'
+validation: "Resolved during build of Build a pricer for: European call: theta-method\
+  \ convergence order measurement\n\nConstruct methods: pde_solver\nComparison targets:\
+  \ theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes (analytical)\nCross-validation\
+  \ harness:\n  internal targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n\
+  \  external targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+  \ target: theta_0.5\nPreferred method family: pde_solver\n\nImplementation target:\
+  \ theta_0.5"
+id: fd_037

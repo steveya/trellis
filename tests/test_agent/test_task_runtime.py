@@ -16,6 +16,7 @@ def test_run_task_passes_force_rebuild_and_validation():
 
     calls: list[dict] = []
     fake_market_state = object()
+    wait_log_path = "/tmp/task_runtime_waits.jsonl"
 
     class FakeResult:
         success = True
@@ -34,6 +35,9 @@ def test_run_task_passes_force_rebuild_and_validation():
     def fake_build(**kwargs):
         calls.append(kwargs)
         return FakeResult()
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setenv("TRELLIS_LLM_WAIT_LOG_PATH", wait_log_path)
 
     result = run_task(
         {"id": "T13", "title": "European call: theta-method convergence order"},
@@ -71,9 +75,11 @@ def test_run_task_passes_force_rebuild_and_validation():
     assert calls[0]["validation"] == "fast"
     assert calls[0]["force_rebuild"] is False
     assert calls[0]["fresh_build"] is True
+    assert result["runtime_controls"]["llm_wait_log_path"] == wait_log_path
     assert result["success"] is True
     assert result["elapsed_seconds"] == 4.5
     assert result["payoff_class"] == "FakePayoff"
+    monkeypatch.undo()
 
 
 def test_run_task_replays_the_same_simulation_identity_for_the_same_request_and_snapshot():
@@ -355,6 +361,7 @@ def test_run_task_persists_latest_record(monkeypatch):
         payoff_cls = type("FakePayoff", (), {})
         failures = []
         reflection = {}
+        post_build_tracking = {"last_phase": "consolidation_dispatched", "last_status": "backgrounded"}
 
     def fake_build(**kwargs):
         return FakeResult()
@@ -375,6 +382,7 @@ def test_run_task_persists_latest_record(monkeypatch):
             "diagnosis_decision_stage": "completed",
             "diagnosis_next_action": "No action required.",
             "diagnosis_persist_error": "",
+            "diagnosis_persist_skipped": "",
         }
 
     monkeypatch.setattr(
@@ -399,6 +407,7 @@ def test_run_task_persists_latest_record(monkeypatch):
     assert result["task_diagnosis_latest_dossier_path"] == "/tmp/task_runs/diagnostics/latest/T13.md"
     assert result["task_diagnosis_headline"] == "Demo task completed successfully."
     assert result["task_diagnosis_persist_error"] == ""
+    assert result["task_diagnosis_persist_skipped"] == ""
 
 
 def test_run_task_uses_single_construct_as_preferred_method():
@@ -444,7 +453,7 @@ def test_run_task_uses_single_construct_as_preferred_method():
         "construct:pde",
         "market:default",
     )
-    assert calls[0]["model"] == "gpt-5-mini"
+    assert calls[0]["model"] == "gpt-5.4-mini"
     assert calls[0]["market_state"] is not None
     assert calls[0]["max_retries"] == 3
     assert calls[0]["validation"] == "standard"
@@ -873,6 +882,8 @@ def test_run_task_aggregates_artifact_references_for_comparison_tasks():
                 "lesson_titles": [f"{target} lesson"],
                 "principle_ids": ["P1"],
                 "cookbook_method": method,
+                "retrieval_stages": ["initial_build", "validation_failed"],
+                "retrieval_sources": ["callback"],
             }
             self.platform_request_id = f"executor_build_{target}"
             self.platform_trace_path = f"/tmp/{target}_platform.yaml"
@@ -932,6 +943,11 @@ def test_run_task_aggregates_artifact_references_for_comparison_tasks():
         "analytical",
         "fft_pricing",
     ]
+    assert result["knowledge_summary"]["retrieval_stages"] == [
+        "initial_build",
+        "validation_failed",
+    ]
+    assert result["knowledge_summary"]["retrieval_sources"] == ["callback"]
     assert result["learning"]["knowledge_outcome"] == "captured_knowledge"
     assert "lesson(s)" in result["learning"]["knowledge_outcome_reason"]
     assert result["agent_observation_count"] == 3
@@ -1164,7 +1180,12 @@ events:
         payoff_cls = None
         failures = ["blocked"]
         agent_observations = [{"agent": "critic", "summary": "double discounting"}]
-        knowledge_summary = {"lesson_ids": ["mc_007"], "cookbook_method": "monte_carlo"}
+        knowledge_summary = {
+            "lesson_ids": ["mc_007"],
+            "cookbook_method": "monte_carlo",
+            "retrieval_stages": ["semantic_validation_failed"],
+            "retrieval_sources": ["compiled_request_payload"],
+        }
         platform_trace_path = str(trace_path)
         platform_request_id = "executor_build_blocked"
         analytical_trace_path = "/tmp/blocked_analytical_trace.json"
@@ -1172,6 +1193,11 @@ events:
         blocker_details = {
             "blocker_codes": ["missing_symbol:demo"],
             "new_primitive_workflow": {"summary": "library_repair"},
+        }
+        post_build_tracking = {
+            "last_phase": "reflection_completed",
+            "last_status": "ok",
+            "active_flags": {"skip_reflection": False},
         }
         reflection = {}
 
@@ -1181,6 +1207,8 @@ events:
     assert payload["agent_observation_count"] == 1
     assert payload["agent_observations"][0]["agent"] == "critic"
     assert payload["knowledge_summary"]["lesson_ids"] == ["mc_007"]
+    assert payload["learning"]["retrieval_stages"] == ["semantic_validation_failed"]
+    assert payload["learning"]["retrieval_sources"] == ["compiled_request_payload"]
     assert payload["artifacts"]["platform_trace_paths"] == [str(trace_path)]
     assert payload["artifacts"]["analytical_trace_paths"] == [
         "/tmp/blocked_analytical_trace.json"
@@ -1192,6 +1220,7 @@ events:
     assert payload["build_observability"]["parse_status"] == "parse_failed"
     assert payload["build_observability"]["correlation_status"] == "regularized"
     assert payload["learning"]["knowledge_outcome"] == "blocked_without_learning"
+    assert payload["post_build_tracking"]["last_phase"] == "reflection_completed"
 
 
 def test_build_result_payload_surfaces_lesson_contract():

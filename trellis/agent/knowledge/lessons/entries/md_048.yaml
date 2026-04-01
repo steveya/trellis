@@ -1,0 +1,32 @@
+category: market_data
+title: Use market discount curve
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T00:49:28.774937'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: The rate-tree implementation ignored the required discount-curve source and
+  failed to calibrate or discount from market_state.discount.
+root_cause: I assumed the tree could be built and valued from rates alone, but a pricer
+  must anchor the lattice to the market discount curve for calibration and cashflow
+  present value. Without that access, the tree can match dynamics superficially yet
+  produce ungrounded prices.
+fix: Wire the rate_tree route to consume market_state.discount for calibration and
+  present-value discounting before running the lattice.
+validation: "Resolved during build of Build a pricer for: Callable bond: BDT lognormal\
+  \ vs HW normal tree\n\nConstruct methods: rate_tree\nComparison targets: bdt_tree\
+  \ (rate_tree), hull_white_tree (rate_tree)\nCross-validation harness:\n  internal\
+  \ targets: bdt_tree, hull_white_tree\n  external targets: financepy, quantlib\n\
+  New component: bdt_calibration_via_generic_lattice\n\nImplementation target: bdt_tree\n\
+  Preferred method family: rate_tree\n\nImplementation target: bdt_tree"
+id: md_048

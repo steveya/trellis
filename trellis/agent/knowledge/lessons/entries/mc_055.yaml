@@ -1,0 +1,32 @@
+category: monte_carlo
+title: Unapproved module and MC payoff bugs
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-31T12:06:39.232298'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260331_120640_swap_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - fixed_coupons
+  - floating_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Codegen terminated with error containing 'unapproved Trellis module `trellis.models.processes.gbm`'
+  and the generated MC payoff omitted calls to market_state.discount and required
+  primitives.
+root_cause: The generator imported an unapproved simulation module and did not follow
+  the MC payoff template rules (must use market_state.discount, required primitives,
+  correct shapes and date/float handling). This produced an invalid payoff implementation
+  and indentation/shape mismatches.
+fix: 'Switch to an approved simulation engine (e.g. trellis.models.monte_carlo.engine)
+  and rebuild the MC payoff using the canonical evaluate() pattern: compute schedule
+  and accruals, sample paths or default times via the approved state/process primitives,
+  compute premium and protection legs using market_state.discount and the spec primitives,
+  and ensure correct array shapes and date-to-float conversions. Add smoke tests that
+  assert use of market_state.discount and required primitives.'
+validation: Discovered during build (attempt 3)
+id: mc_055

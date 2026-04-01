@@ -1,0 +1,27 @@
+category: semantic
+title: _semantic_extension_decision_mock_inputs_concept_credit_default_swap
+severity: medium
+status: validated
+confidence: 0.68
+created: '2026-03-31T11:26:01.760133'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/semantic_extensions/cdc4aa6083f1eb35.yaml
+applies_when:
+  method:
+  - mock_inputs
+  features:
+  - discount_curve
+  - credit_curve
+  - instrument_specific_lesson
+  - mock_discount_curve_provider
+  instrument:
+  - credit_default_swap
+  error_signature: null
+symptom: 'missing market inputs: discount_curve, credit_curve; missing knowledge artifacts:
+  instrument_specific_lesson; mock inputs can likely bridge the gap'
+root_cause: 'missing market inputs: discount_curve, credit_curve; missing knowledge
+  artifacts: instrument_specific_lesson; mock inputs can likely bridge the gap'
+fix: Synthesize a mock or empirical market-input source for mock_discount_curve_provider
+  before pricing.
+validation: Repeated semantic extension trace `cdc4aa6083f1eb35`
+id: sem_015

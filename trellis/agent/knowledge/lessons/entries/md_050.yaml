@@ -1,0 +1,34 @@
+category: market_data
+title: Match tree API to inputs
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T07:35:31.532319'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - discounting
+  - maturity_settlement
+  - path_dependent
+  - backward_induction
+  instrument: []
+  error_signature: null
+symptom: The rate-tree call used an unsupported keyword argument and the fallback
+  error handling was syntactically broken.
+root_cause: This happens when the implementation assumes a builder interface that
+  does not match the actual market-state API, so even correct pricing logic fails
+  before valuation starts. Small signature mismatches and malformed try/except blocks
+  can hide the real integration problem behind parser or runtime errors.
+fix: Align the tree-construction call with the real API, remove unsupported keywords,
+  and keep exception handling syntactically valid and minimal.
+validation: "Resolved during build of Build a pricer for: ZCB option: Ho-Lee vs HW\
+  \ tree vs Jamshidian analytical\n\nConstruct methods: rate_tree\nComparison targets:\
+  \ ho_lee_tree (rate_tree), hull_white_tree (rate_tree), jamshidian (analytical)\n\
+  Cross-validation harness:\n  internal targets: ho_lee_tree, hull_white_tree\n  analytical\
+  \ benchmark: jamshidian\n  external targets: quantlib, financepy\nNew component:\
+  \ jamshidian_decomposition\n\nImplementation target: ho_lee_tree\nPreferred method\
+  \ family: rate_tree\n\nImplementation target: ho_lee_tree"
+id: md_050

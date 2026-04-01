@@ -1,0 +1,39 @@
+category: volatility
+title: Source volatility from vol_surface
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-03-31T18:34:27.750952'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - pde_grid
+  - vol_surface_dependence
+  - discounting
+  - analytical
+  - maturity_settlement
+  - convergence_order_diagnostic
+  - grid_refinement_study
+  - rannacher_smoothing
+  instrument: []
+  error_signature: null
+symptom: The Black-76 analytical route used a hard-coded or external volatility instead
+  of sourcing implied vols from market_state.vol_surface.
+root_cause: The implementer assumed volatility would be supplied directly as a scalar
+  or via a different object rather than using the standardized market_state.vol_surface
+  API; this misses required interpolation across strikes/expiries and breaks data-flow
+  conventions.
+fix: Modify analytical_black76 to fetch implied volatility by querying market_state.vol_surface
+  at the option's strike and maturity (with interpolation) and use that value in the
+  Black-76 formula.
+validation: "Resolved during build of Build a pricer for: European call: theta-method\
+  \ convergence order measurement\n\nConstruct methods: pde_solver\nComparison targets:\
+  \ theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes (analytical)\nCross-validation\
+  \ harness:\n  internal targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n\
+  \  external targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+  \ target: black_scholes\nPreferred method family: analytical\n\nImplementation target:\
+  \ black_scholes"
+id: vol_007

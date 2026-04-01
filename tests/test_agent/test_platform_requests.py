@@ -35,6 +35,7 @@ def _semantic_regression_snapshot(compiled):
             "primitive_routes": semantic_blueprint.primitive_routes,
             "route_modules": semantic_blueprint.route_modules,
             "target_modules": semantic_blueprint.target_modules,
+            "dsl_helper_refs": semantic_blueprint.dsl_lowering.helper_refs,
             "required_market_data": semantic_blueprint.required_market_data,
         },
         "product_ir": None
@@ -69,6 +70,10 @@ def test_compile_build_request_uses_quanto_semantic_contract_blueprint():
     assert compiled.family_blueprint is None
     assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "quanto_option"
     assert compiled.request.metadata["semantic_contract"]["semantic_concept"]["semantic_id"] == "quanto_option"
+    assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == "quanto_adjustment_analytical"
+    assert "trellis.models.analytical.quanto.price_quanto_option_analytical" in (
+        compiled.request.metadata["semantic_blueprint"]["dsl_helper_refs"]
+    )
     assert compiled.request.metadata["semantic_role_ownership"]["selected_stage"] == "route_assembly"
     assert compiled.request.metadata["semantic_role_ownership"]["selected_role"] == "quant"
     assert compiled.request.metadata["semantic_role_ownership"]["artifact_kind"] == "GenerationPlan"
@@ -84,7 +89,13 @@ def test_compile_build_request_uses_quanto_semantic_contract_blueprint():
     assert compiled.generation_plan.primitive_plan.route == "quanto_adjustment_analytical"
     assert compiled.semantic_blueprint.selection_reason == compiled.pricing_plan.selection_reason
     assert compiled.semantic_blueprint.route_modules == tuple(
-        dict.fromkeys((*compiled.pricing_plan.method_modules, *compiled.semantic_blueprint.target_modules))
+        dict.fromkeys(
+            (
+                *compiled.pricing_plan.method_modules,
+                *compiled.semantic_blueprint.target_modules,
+                *compiled.semantic_blueprint.dsl_lowering.helper_modules,
+            )
+        )
     )
 
 
@@ -100,6 +111,13 @@ def test_compile_build_request_preserves_quanto_semantic_binding_hints():
     assert "model_parameters" in compiled.semantic_blueprint.connector_binding_hints
     assert compiled.semantic_blueprint.connector_binding_hints["model_parameters"]["capability"] == "model_parameters"
     assert "quanto_correlation" in compiled.semantic_blueprint.connector_binding_hints["model_parameters"]["aliases"]
+    assert compiled.semantic_blueprint.valuation_context is not None
+    assert compiled.semantic_blueprint.required_data_spec.required_input_ids == compiled.semantic_blueprint.required_market_data
+    assert (
+        compiled.semantic_blueprint.market_binding_spec.reporting_currency
+        == compiled.semantic_blueprint.valuation_context.reporting_policy.reporting_currency
+    )
+    assert compiled.request.metadata["semantic_blueprint"]["valuation_context"]["market_source"] == "unbound_market_snapshot"
     assert compiled.semantic_blueprint.required_market_data == (
         "discount_curve",
         "forward_curve",
@@ -165,7 +183,10 @@ def test_compile_term_sheet_request_uses_quanto_semantic_contract():
     assert compiled.semantic_contract is not None
     assert compiled.semantic_blueprint is not None
     assert compiled.family_blueprint is None
+    assert compiled.request.requested_outputs == ("price", "vega")
+    assert compiled.semantic_blueprint.requested_outputs == ("price", "vega")
     assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "quanto_option"
+    assert compiled.request.metadata["semantic_blueprint"]["requested_outputs"] == ["price", "vega"]
     assert compiled.product_ir is not None
     assert compiled.product_ir.instrument == "quanto_option"
     assert compiled.pricing_plan is not None
@@ -295,7 +316,13 @@ def test_mountain_range_request_drafts_ranked_observation_contract():
         "trellis.models.monte_carlo.semantic_basket",
     )
     assert compiled.semantic_blueprint.route_modules == tuple(
-        dict.fromkeys((*compiled.pricing_plan.method_modules, *compiled.semantic_blueprint.target_modules))
+        dict.fromkeys(
+            (
+                *compiled.pricing_plan.method_modules,
+                *compiled.semantic_blueprint.target_modules,
+                *compiled.semantic_blueprint.dsl_lowering.helper_modules,
+            )
+        )
     )
     assert snapshot == snapshot_again
     assert snapshot["semantic_contract"] == compiled.request.metadata["semantic_contract"]
@@ -545,9 +572,16 @@ def test_representative_derivatives_use_generic_semantic_contracts(
         assert compiled.semantic_blueprint.selection_reason == compiled.pricing_plan.selection_reason
         assert compiled.semantic_blueprint.assumption_summary == compiled.pricing_plan.assumption_summary
         assert compiled.semantic_blueprint.route_modules == tuple(
-            dict.fromkeys((*compiled.pricing_plan.method_modules, *compiled.semantic_blueprint.target_modules))
+            dict.fromkeys(
+                (
+                    *compiled.pricing_plan.method_modules,
+                    *compiled.semantic_blueprint.target_modules,
+                    *compiled.semantic_blueprint.dsl_lowering.helper_modules,
+                )
+            )
         )
         assert compiled.semantic_blueprint.primitive_routes == (expected_primitive_route,)
+        assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == expected_primitive_route
         assert expected_generation_module in compiled.semantic_blueprint.target_modules
         assert snapshot == snapshot_again
         assert snapshot["semantic_contract"] == compiled.request.metadata["semantic_contract"]

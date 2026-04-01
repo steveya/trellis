@@ -26,6 +26,27 @@ def _draft_contract(description: str, instrument_type: str):
     return draft_semantic_contract(description, instrument_type=instrument_type)
 
 
+def _phase_index(contract):
+    return {
+        phase: idx
+        for idx, phase in enumerate(contract.product.timeline.phase_order)
+    }
+
+
+def _observables_by_id(contract):
+    return {
+        observable.observable_id: observable
+        for observable in contract.product.observables
+    }
+
+
+def _state_fields_by_name(contract):
+    return {
+        state_field.field_name: state_field
+        for state_field in contract.product.state_fields
+    }
+
+
 def test_ranked_observation_basket_contract_validates():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contract_validation import validate_semantic_contract
@@ -52,11 +73,19 @@ def test_ranked_observation_basket_contract_validates():
         "trellis.models.monte_carlo.semantic_basket",
     )
     assert compiled.route_modules == tuple(
-        dict.fromkeys((*compiled.pricing_plan.method_modules, *compiled.target_modules))
+        dict.fromkeys(
+            (
+                *compiled.pricing_plan.method_modules,
+                *compiled.target_modules,
+                *compiled.dsl_lowering.helper_modules,
+            )
+        )
     )
     assert "trellis.models.monte_carlo.engine" in compiled.route_modules
     assert "correlated_basket_monte_carlo" in compiled.primitive_routes
     assert "trellis.models.processes.correlated_gbm" not in compiled.route_modules
+    assert compiled.dsl_lowering is not None
+    assert compiled.dsl_lowering.route_id == "correlated_basket_monte_carlo"
 
 
 def test_ranked_observation_basket_summary_is_stable_and_family_free():
@@ -85,7 +114,266 @@ def test_ranked_observation_basket_summary_is_stable_and_family_free():
     assert summary["semantic_concept"]["semantic_id"] == "ranked_observation_basket"
     assert "basket_option" in summary["semantic_concept"]["compatibility_wrappers"]
     assert summary["blueprint"]["primitive_families"] == ["correlated_basket_monte_carlo"]
+    assert summary["typed_semantics"]["phase_order"] == [
+        "event",
+        "observation",
+        "decision",
+        "determination",
+        "settlement",
+        "state_update",
+    ]
+    assert summary["typed_semantics"]["controller_protocol"]["controller_style"] == "identity"
+    assert summary["typed_semantics"]["event_machine_present"] is True
     assert "himalaya_option" not in repr(summary).lower()
+
+
+def test_ranked_observation_basket_emits_typed_semantic_surface():
+    from trellis.agent.semantic_contracts import DEFAULT_PHASE_ORDER
+
+    contract = _canonical_contract()
+    observables = _observables_by_id(contract)
+    state_fields = _state_fields_by_name(contract)
+
+    assert contract.product.timeline.phase_order == DEFAULT_PHASE_ORDER
+    assert contract.product.controller_protocol.controller_style == "identity"
+    assert contract.product.implementation_hints.preserve_route_behavior is True
+    assert contract.product.implementation_hints.event_machine_source == "derived_from_event_transitions"
+    assert contract.product.audit_info.legacy_mirrors == (
+        "settlement_rule",
+        "event_transitions",
+        "state_variables",
+    )
+    assert observables["constituent_spots"].availability_phase == "observation"
+    assert observables["ranked_constituent_return"].availability_phase == "determination"
+    assert state_fields["remaining_constituents"].kind == "contract_memory"
+    assert state_fields["locked_returns"].kind == "contract_memory"
+    assert contract.product.obligations[0].obligation_id == "maturity_cash_settlement"
+    assert contract.product.event_machine is not None
+
+
+@pytest.mark.parametrize(
+    "contract_factory",
+    [
+        lambda: _canonical_contract(),
+        lambda: _draft_contract(
+            "European call on AAPL with strike 120 and expiry 2025-11-15",
+            "european_option",
+        ),
+        lambda: _draft_contract(
+            "Quanto option on SAP in USD with EUR underlier currency and expiry 2025-11-15",
+            "quanto_option",
+        ),
+        lambda: _draft_contract(
+            "Callable bond with annual coupons and issuer call dates 2026-01-15, 2027-01-15",
+            "callable_bond",
+        ),
+        lambda: _draft_contract(
+            "European swaption on a fixed-for-floating swap with expiry 2026-01-15",
+            "swaption",
+        ),
+    ],
+)
+def test_typed_semantic_surface_uses_phase_available_inputs_without_future_peek(contract_factory):
+    contract = contract_factory()
+    assert contract is not None
+
+    phase_index = _phase_index(contract)
+    observables = _observables_by_id(contract)
+
+    assert all(
+        observable.availability_phase in phase_index
+        for observable in contract.product.observables
+    )
+
+    for state_field in contract.product.state_fields:
+        cutoff_phase = "determination" if state_field.kind == "event_state" else "state_update"
+        for source in state_field.source_observables:
+            assert source in observables
+            assert (
+                phase_index[observables[source].availability_phase]
+                <= phase_index[cutoff_phase]
+            )
+
+
+def test_automatic_event_paths_and_strategic_rights_are_separated_on_the_typed_surface():
+    basket = _canonical_contract()
+    vanilla = _draft_contract(
+        "European call on AAPL with strike 120 and expiry 2025-11-15",
+        "european_option",
+    )
+    callable_bond = _draft_contract(
+        "Callable bond with annual coupons and issuer call dates 2026-01-15, 2027-01-15",
+        "callable_bond",
+    )
+
+    assert vanilla is not None
+    assert callable_bond is not None
+
+    assert basket.product.controller_protocol.controller_style == "identity"
+    assert basket.product.timeline.decision_dates == ()
+    assert basket.product.event_machine is not None
+
+    assert vanilla.product.controller_protocol.controller_style == "holder_max"
+    assert vanilla.product.controller_protocol.controller_role == "holder"
+    assert vanilla.product.timeline.decision_dates == vanilla.product.observation_schedule
+
+    assert callable_bond.product.controller_protocol.controller_style == "issuer_min"
+    assert callable_bond.product.controller_protocol.controller_role == "issuer"
+    assert callable_bond.product.timeline.decision_dates == callable_bond.product.observation_schedule
+
+
+def test_contract_rejects_illegal_phase_inversion():
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = _canonical_contract()
+    contract = replace(
+        contract,
+        product=replace(
+            contract.product,
+            timeline=replace(
+                contract.product.timeline,
+                phase_order=(
+                    "observation",
+                    "event",
+                    "decision",
+                    "determination",
+                    "settlement",
+                    "state_update",
+                ),
+            ),
+        ),
+    )
+
+    report = validate_semantic_contract(contract)
+
+    assert not report.ok
+    assert any("phase order" in error.lower() for error in report.errors)
+    assert any(f.code == "semantic.phase_order_invalid" for f in report.error_findings)
+
+
+def test_contract_rejects_future_peek_observable_usage():
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = _draft_contract(
+        "European call on AAPL with strike 120 and expiry 2025-11-15",
+        "european_option",
+    )
+    assert contract is not None
+    bad_observable = replace(
+        contract.product.observables[0],
+        availability_phase="settlement",
+    )
+    contract = replace(
+        contract,
+        product=replace(
+            contract.product,
+            observables=(bad_observable,),
+        ),
+    )
+
+    report = validate_semantic_contract(contract)
+
+    assert not report.ok
+    assert any("future-peek" in error.lower() for error in report.errors)
+    assert any(f.code == "semantic.future_peek" for f in report.error_findings)
+
+
+def test_contract_rejects_automatic_trigger_represented_as_control():
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = _canonical_contract()
+    contract = replace(
+        contract,
+        product=replace(
+            contract.product,
+            controller_protocol=replace(
+                contract.product.controller_protocol,
+                controller_style="holder_max",
+                controller_role="holder",
+                admissible_actions=("settle",),
+            ),
+        ),
+    )
+
+    report = validate_semantic_contract(contract)
+
+    assert not report.ok
+    assert any("automatic trigger represented as control" in error.lower() for error in report.errors)
+    assert any(f.code == "semantic.automatic_trigger_as_control" for f in report.error_findings)
+
+
+def test_contract_requires_typed_obligations_for_settlement_bearing_shapes():
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = _draft_contract(
+        "European call on AAPL with strike 120 and expiry 2025-11-15",
+        "european_option",
+    )
+    assert contract is not None
+    contract = replace(
+        contract,
+        product=replace(contract.product, obligations=()),
+    )
+
+    report = validate_semantic_contract(contract)
+
+    assert not report.ok
+    assert any("typed obligation" in error.lower() or "settlement-bearing" in error.lower() for error in report.errors)
+    assert any(f.code == "semantic.missing_obligation" for f in report.error_findings)
+
+
+def test_contract_rejects_inconsistent_state_tags():
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = _draft_contract(
+        "European call on AAPL with strike 120 and expiry 2025-11-15",
+        "european_option",
+    )
+    assert contract is not None
+    bad_state_field = replace(
+        contract.product.state_fields[0],
+        tags=("pathwise_only", "recombining_safe"),
+    )
+    contract = replace(
+        contract,
+        product=replace(
+            contract.product,
+            state_fields=(bad_state_field,),
+        ),
+    )
+
+    report = validate_semantic_contract(contract)
+
+    assert not report.ok
+    assert any("state-tag consistency" in error.lower() for error in report.errors)
+    assert any(f.code == "semantic.state_tag_inconsistent" for f in report.error_findings)
+
+
+def test_legacy_typed_surface_normalization_warns_without_failing():
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = _draft_contract(
+        "European call on AAPL with strike 120 and expiry 2025-11-15",
+        "european_option",
+    )
+    assert contract is not None
+    contract = replace(
+        contract,
+        product=replace(
+            contract.product,
+            observables=(),
+            implementation_hints=replace(
+                contract.product.implementation_hints,
+                primary_schedule_role="",
+            ),
+        ),
+    )
+
+    report = validate_semantic_contract(contract)
+
+    assert report.ok
+    assert any("without typed observables" in warning.lower() for warning in report.warnings)
+    assert any(f.code == "semantic.legacy_observables_missing" for f in report.warning_findings)
 
 
 def test_contract_rejects_missing_observation_schedule():
@@ -226,20 +514,51 @@ def test_representative_derivative_contracts_validate_and_compile(
     assert compiled.pricing_plan.method == expected_method
     assert compiled.selection_reason == compiled.pricing_plan.selection_reason
     assert compiled.assumption_summary == compiled.pricing_plan.assumption_summary
+    assert compiled.dsl_lowering is not None
+    assert compiled.dsl_lowering.route_id == expected_route
     assert compiled.route_modules == tuple(
-        dict.fromkeys((*compiled.pricing_plan.method_modules, *compiled.target_modules))
+        dict.fromkeys(
+            (
+                *compiled.pricing_plan.method_modules,
+                *compiled.target_modules,
+                *compiled.dsl_lowering.helper_modules,
+            )
+        )
     )
     assert compiled.primitive_routes == (expected_route,)
     assert expected_target_module in compiled.target_modules
     assert all("himalaya" not in module.lower() for module in compiled.route_modules)
 
 
-def test_contract_rejects_missing_settlement_rule():
+def test_migrated_contract_allows_missing_settlement_rule_mirror_with_warning():
     from trellis.agent.semantic_contract_validation import validate_semantic_contract
 
     contract = _draft_contract(
         "European call on AAPL with strike 120 and expiry 2025-11-15",
         "european_option",
+    )
+    assert contract is not None
+    contract = replace(
+        contract,
+        product=replace(
+            contract.product,
+            settlement_rule="",
+            maturity_settlement_rule="",
+        ),
+    )
+
+    report = validate_semantic_contract(contract)
+
+    assert report.ok
+    assert any("legacy settlement_rule mirror" in warning for warning in report.warnings)
+
+
+def test_non_migrated_contract_still_requires_settlement_rule_mirror():
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = _draft_contract(
+        "Quanto option on SAP in USD with EUR underlier currency and expiry 2025-11-15",
+        "quanto_option",
     )
     assert contract is not None
     contract = replace(
@@ -664,12 +983,13 @@ class TestCreditConceptResolution:
         assert "credit_curve_survival_probability" in cds.required_primitives
         assert "gaussian_copula" in ntd.required_primitives
 
-    def test_credit_concepts_share_route_family(self):
+    def test_credit_concepts_have_distinct_route_families(self):
         from trellis.agent.semantic_concepts import get_semantic_concept_definition
 
         cds = get_semantic_concept_definition("credit_default_swap")
         ntd = get_semantic_concept_definition("nth_to_default")
-        assert cds.route_family == ntd.route_family == "credit_default_swap"
+        assert cds.route_family == "credit_default_swap"
+        assert ntd.route_family == "nth_to_default"
 
 
 class TestAmbiguousResolutionBlocksBuild:
@@ -720,3 +1040,28 @@ class TestAmbiguousResolutionBlocksBuild:
         )
         assert gap.semantic_concept_id == "nth_to_default"
         assert gap.semantic_concept_resolution_kind == "reuse_existing_concept"
+
+
+def test_bermudan_swaption_analytical_contract_uses_lower_bound_target():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = make_rate_style_swaption_contract(
+        description="Bermudan payer swaption analytical lower bound",
+        observation_schedule=("2026-01-15", "2027-01-15", "2028-01-15"),
+        preferred_method="analytical",
+        exercise_style="bermudan",
+    )
+    report = validate_semantic_contract(contract)
+    assert report.ok
+
+    compiled = compile_semantic_contract(contract, preferred_method="analytical")
+    assert compiled.pricing_plan.method == "analytical"
+    assert compiled.primitive_routes == ("analytical_black76",)
+    assert "trellis.models.rate_style_swaption" in compiled.target_modules
+    assert compiled.dsl_lowering is not None
+    assert (
+        "trellis.models.rate_style_swaption.price_bermudan_swaption_black76_lower_bound"
+        in compiled.dsl_lowering.helper_refs
+    )

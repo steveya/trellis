@@ -409,3 +409,773 @@
     and didn't run a parser/linter, so a stray indent made the module invalid.
   fix: Fix the indentation (or run an auto-formatter/linter) and re-run import/tests
     to ensure the module compiles cleanly.
+
+- category: calibration
+  title: Invalid Trellis Module Reference Breaks Analytical Pricing
+  symptoms:
+  - A non-existent Trellis module `trellis.models.not_a_real_module` was referenced,
+    causing validation failures during swaption pricing setup.
+  - Run a module-existence check or import validation against the Trellis registry
+    before executing any pricing pipeline.
+  explanation: The developer assumed a module existed without verifying the Trellis
+    API surface, likely copying a placeholder or stale reference; this breaks the
+    dependency graph before any calculation begins.
+  fix: Replace the invalid module path with a verified, currently registered Trellis
+    model module appropriate for European payer swaption analytics.
+
+- category: market_data
+  title: API failure masked underlying swaption pricing error
+  symptoms:
+  - The validation failure was caused by an API communication error rather than a
+    logic error in the swaption pricing code itself.
+  - Check if the error message references network, timeout, or API retry language
+    rather than a numerical or QuantLib-specific exception.
+  explanation: Transient network or service failures can surface as RuntimeErrors
+    that mimic code bugs, causing engineers to hunt for logic mistakes when the real
+    issue is infrastructure. This conflates environment failures with model failures.
+  fix: Implement retry logic with exponential backoff for API calls and isolate external
+    service failures from model validation errors using separate exception handling.
+
+- category: monte_carlo
+  title: Watch indentation in generated code
+  symptoms:
+  - Generated analytical implementation had incorrect indentation, causing a SyntaxError
+    on import.
+  - Try importing or compiling the produced module (or run a linter) — the SyntaxError
+    and line number will quickly reveal indentation issues.
+  explanation: The code generator emitted improperly indented Python blocks and there
+    was no compile-time validation, so significant-whitespace errors slipped through;
+    this is a mental-model gap of treating generated text as guaranteed-valid code.
+  fix: Add an automatic compile/lint step (e.g., python -m py_compile or flake8) after
+    generation and fix or regenerate the misindented blocks before using the implementation.
+
+- category: market_data
+  title: Wrong Day Count Convention for Swaption Fixed Leg
+  symptoms:
+  - ACT/360 was used for the swaption's fixed leg and annuity calculation instead
+    of the standard 30/360 or ACT/365F, inflating year fractions by ~1.4% and systematically
+    overstating the price.
+  - Price the swaption under both ACT/360 and 30/360 and assert that the relative
+    difference is below a small tolerance (e.g. 1%); a larger divergence flags a day-count
+    mismatch.
+  explanation: ACT/360 is appropriate for money-market and floating legs but not for
+    fixed swap legs; conflating the two conventions causes every coupon period's year
+    fraction to be overstated by the factor 365/360, compounding across all annuity
+    payments.
+  fix: Set the fixed-leg day count convention to 30/360 (or ACT/365F per the specific
+    swap convention) so annuity and forward-rate calculations use the correct year
+    fractions.
+
+- category: calibration
+  title: Invalid Module Reference Breaks Analytical Swaption Pricing
+  symptoms:
+  - A non-existent Trellis module `trellis.models.not_a_real_module` was referenced,
+    causing validation failures at line 11.
+  - Validate all module paths against the official Trellis module registry or run
+    an import/availability check before executing the pricing pipeline.
+  explanation: The developer assumed a module existed without verifying the Trellis
+    model registry, likely copying or guessing a module path rather than consulting
+    the available API.
+  fix: Replace `trellis.models.not_a_real_module` with the correct, documented Trellis
+    module name that supports European payer swaption analytical pricing.
+
+- category: calibration
+  title: Payer Swaption Analytical Pricing Requires Correct Rate Convention
+  symptoms:
+  - The analytical payer swaption formula failed because the fixed rate, floating
+    rate, or day count convention was inconsistently specified between the swap and
+    the swaption engine.
+  - Check that the forward swap rate computed independently matches the engine's internal
+    forward rate before pricing.
+  explanation: Analytical swaption models assume the annuity and forward swap rate
+    are computed consistently; mismatched conventions cause the ATM forward to be
+    wrong, making the option value nonsensical or negative.
+  fix: Ensure the swaption's underlying swap schedule, day count, and fixed rate conventions
+    exactly match those used to construct the annuity in the analytical engine.
+
+- category: market_data
+  title: Spread unit conversion error
+  symptoms:
+  - Passed CDS running spread in basis points (e.g., 100) directly into accrual/rate
+    formulas instead of as a decimal, producing an absurd PV.
+  - PV magnitude or sign is implausible (e.g., |PV| >> 10× notional or strongly negative
+    when only a small value is expected).
+  explanation: I misread the market quote units—models expect decimal rates (e.g.,
+    0.01 for 100 bp) but I supplied raw bps, so premium leg cashflows were scaled
+    by orders of magnitude and flipped sign.
+  fix: Convert spreads from basis points to decimal before use (spread_decimal = spread_bps
+    / 10000) and add input-unit validation/assertions.
+
+- category: monte_carlo
+  title: Spread unit misinterpretation
+  symptoms:
+  - A quoted running spread in basis points was used directly as a decimal (e.g.,
+    100 treated as 100.0), dramatically inflating cashflows and producing an implausible
+    negative PV.
+  - Flag cases where |PV| >> notional (e.g., >10× notional) or input spread values
+    exceed 1.0, which indicate a bps vs decimal mismatch.
+  explanation: The implementation assumed spreads were already in decimal form and
+    didn't normalize market-quote units, so accrual and premium leg calculations were
+    scaled by orders of magnitude—this is a unit-conversion mental model failure.
+  fix: Normalize spread inputs by converting basis points to decimal (divide bps by
+    10,000, e.g., 150 bps -> 0.015) or enforce/validate input units before valuation.
+
+- category: monte_carlo
+  title: Unexpected indent in Python code
+  symptoms:
+  - A SyntaxError (unexpected indent) in the analytical_cds implementation prevented
+    the module from being produced.
+  - The Python interpreter or linter reports a SyntaxError with the exact line and
+    column where indentation is invalid.
+  explanation: The code contained incorrect or inconsistent indentation (often from
+    copy/paste or mixing tabs and spaces), violating Python's block-structure rules
+    and causing the parser to fail.
+  fix: Normalize and correct indentation (use spaces consistently or a formatter like
+    black) and re-run the parser/linter before executing tests.
+
+- category: monte_carlo
+  title: Uninitialized RNG/sampler
+  symptoms:
+  - The code attempted to call exact_sample on a sampler that was None because the
+    RNG/sampler was never initialized or passed in.
+  - Run the smoke test or replicate the stack trace—an AttributeError 'NoneType' object
+    has no attribute 'exact_sample' or a pre-call None check will reveal the missing
+    sampler.
+  explanation: 'The implementation assumed an external sampler object would always
+    be provided (mental model: dependency present), so it didn''t validate or create
+    a default RNG, causing a None dereference at runtime.'
+  fix: Ensure the market state or monte_carlo initializer always constructs or is
+    given a valid sampler/RNG (or create a default one) and add input validation with
+    a clear error if missing.
+
+- category: monte_carlo
+  title: None passed to float in MC pricer
+  symptoms:
+  - A None market/state value was passed into float() inside the Monte Carlo CDS pricer,
+    causing a TypeError.
+  - Add input validation and smoke tests that assert numeric market/state fields are
+    not None before running the Monte Carlo routine.
+  explanation: The code assumed all required numeric market/state values (hazard rates,
+    survival probs, discounts) were populated and did not validate inputs, so a missing
+    value propagated as None into a numeric conversion.
+  fix: Validate and fail fast or compute defaults for missing market/state values
+    so that only real numbers are passed to float(), and raise a clear error if required
+    data is absent.
+
+- category: monte_carlo
+  title: Unexpected indent in generated Python
+  symptoms:
+  - The generated analytical_cds module contained incorrect indentation, causing a
+    SyntaxError 'unexpected indent'.
+  - 'The failure appears as a SyntaxError with ''unexpected indent'' and the file/line
+    number when importing or running the module. '
+  explanation: Automated code generation or manual edits produced inconsistent or
+    extra indentation (mixing tabs/spaces or an accidental indent level), so the Python
+    parser could not compile the module. This is a formatting/serialization error
+    rather than a numerical or modeling bug.
+  fix: Normalize and correct indentation (use consistent spaces or tabs), remove the
+    stray indent at the reported line, and run a linter or a quick parse step before
+    executing the module.
+
+- category: monte_carlo
+  title: Check indentation in generated Python code
+  symptoms:
+  - Generated Python module contained an unexpected indent, causing a SyntaxError.
+  - Attempt to compile or import the generated module and observe the SyntaxError
+    with line/column information.
+  explanation: The agent produced misaligned or mixed-space/tab blocks and did not
+    validate Python's strict indentation rules; this happened because no syntax-check/formatting
+    step was applied to the generated code.
+  fix: Enforce consistent indentation (use spaces), run a syntax-check/compile step
+    and an automatic formatter (e.g., black) on the generated code before executing
+    or returning it.
+
+- category: monte_carlo
+  title: Missing process argument in MonteCarloEngine
+  symptoms:
+  - Instantiating MonteCarloEngine without supplying the required 'process' argument.
+  - 'A runtime TypeError occurs: MonteCarloEngine.__init__() missing 1 required positional
+    argument: ''process''.'
+  explanation: The code assumed a default or overlooked the engine's dependency on
+    a stochastic process object, reflecting a gap in understanding the API contract
+    for path generation.
+  fix: Provide a properly constructed stochastic process instance as the 'process'
+    parameter when creating the MonteCarloEngine.
+
+- category: calibration
+  title: API failure masked underlying swaption calibration error
+  symptoms:
+  - The validation failure was reported as an API runtime error rather than exposing
+    the actual analytical swaption pricing or calibration issue.
+  - Check whether the error originates in the API/network layer versus the quantitative
+    pricing kernel by isolating the pricing call independently of the API wrapper.
+  explanation: When the orchestration layer fails before executing the pricing logic,
+    the root cause of the financial model error is never surfaced, making it appear
+    as an infrastructure problem rather than a model problem.
+  fix: Retry the API call with exponential backoff and log the underlying pricing
+    exception separately so calibration or volatility input errors are not hidden
+    by transport failures.
+
+- category: monte_carlo
+  title: Unexpected indent in generated module
+  symptoms:
+  - A SyntaxError (unexpected indent) occurred because the generated analytical implementation
+    contained incorrect indentation.
+  - The Python parser raises a SyntaxError pointing to the line and column of the
+    unexpected indent at import/compile time.
+  explanation: When producing multi-line code programmatically, it's easy to introduce
+    inconsistent indentation or stray leading spaces/tabs that break Python's block
+    structure; the authoring mental model ignored code formatting constraints.
+  fix: Normalize and validate indentation (use consistent spaces, remove stray indents)
+    and run a quick parse/lint step on generated code before execution.
+
+- category: market_data
+  title: Missing black vol surface
+  symptoms:
+  - The PDE solver route expected a 'black vol surface' in market_state but none was
+    provided or accessible.
+  - Static validation or runtime attempts to access the vol surface will report a
+    missing accessor or throw an error when the solver runs.
+  explanation: I assumed market_state would include or expose the implied volatility
+    surface required by pde_theta_1d, failing to map or provide the specific black-vol
+    interface the solver demands.
+  fix: Provide a black vol surface in market_state or implement an adapter/accessor
+    that supplies the required surface to the pde_theta_1d solver.
+
+- category: finite_differences
+  title: Unchecked None from PDE solver
+  symptoms:
+  - The PDE solver returned None and the code attempted numeric comparisons/abs on
+    it.
+  - Add tests and runtime checks that assert solver outputs are numeric (not None/NaN)
+    before performing comparisons or arithmetic.
+  explanation: The implementation assumed the solver always yields numeric prices
+    and did not handle convergence failures or None returns, leading to type errors
+    when tests compared or took abs of the result.
+  fix: 'Validate and handle solver results explicitly: on convergence failure raise
+    a clear error or return a defined numeric fallback (e.g., NaN) and prevent numeric
+    ops on None.'
+
+- category: market_data
+  title: Missing vol surface access
+  symptoms:
+  - The PDE theta solver expected a Black volatility surface in market_state but no
+    accessor or data was provided.
+  - Runtime or validation errors report a missing 'black vol surface' access for the
+    pde_theta_1d route.
+  explanation: I assumed the solver could infer or that market_state already exposed
+    the black vol surface, so the dependency was never explicitly wired; this is a
+    dependency-mapping/assumption error.
+  fix: Add a Black vol surface to market_state and/or implement an explicit accessor
+    mapping so pde_theta_1d can retrieve it.
+
+- category: volatility
+  title: Source volatility from vol_surface
+  symptoms:
+  - The Black-76 analytical route used a hard-coded or external volatility instead
+    of sourcing implied vols from market_state.vol_surface.
+  - Add unit tests or static checks that assert analytical_black76 queries market_state.vol_surface
+    for the option's strike and maturity; the test will fail if it does not.
+  explanation: The implementer assumed volatility would be supplied directly as a
+    scalar or via a different object rather than using the standardized market_state.vol_surface
+    API; this misses required interpolation across strikes/expiries and breaks data-flow
+    conventions.
+  fix: Modify analytical_black76 to fetch implied volatility by querying market_state.vol_surface
+    at the option's strike and maturity (with interpolation) and use that value in
+    the Black-76 formula.
+
+- category: market_data
+  title: Invalid Trellis module reference causes validation failure
+  symptoms:
+  - A non-existent Trellis module `trellis.models.not_a_real_module` was referenced
+    in the configuration.
+  - Check all module paths against the official Trellis module registry or run a dry-validation
+    pass before execution.
+  explanation: The developer assumed a module path existed without verifying the Trellis
+    module registry, leading to a broken dependency reference that the validator cannot
+    resolve.
+  fix: Replace the invalid module path with a verified, existing Trellis module that
+    provides the required functionality.
+
+- category: market_data
+  title: API failure masks underlying swaption pricing error
+  symptoms:
+  - The validation pipeline failed due to an API communication error rather than a
+    genuine pricing logic fault.
+  - Check if the error originates from an external API call or network layer rather
+    than from within the pricing or calibration logic itself.
+  explanation: Transient network or service errors can surface as RuntimeErrors that
+    obscure whether the actual financial model is correct, leading to misdiagnosis
+    of the root cause.
+  fix: Implement retry logic with exponential backoff for API calls and separate infrastructure
+    errors from model validation failures in error reporting.
+
+- category: market_data
+  title: Missing market data accessors
+  symptoms:
+  - The PDE solver route required a discount curve and a black vol surface from market_state,
+    but those accessors were not provided.
+  - Validation checks/reporting show 'requires ... access missing' errors for discount
+    curve and black vol surface.
+  explanation: I assumed market_state would expose these objects by default or under
+    different keys and failed to register or map explicit accessors, so the solver
+    couldn't locate required market data.
+  fix: Add the expected discount curve and black vol surface to market_state (or implement
+    the required accessors/mappings) so the pde_theta_1d route can retrieve them.
+
+- category: market_data
+  title: Missing curve access wiring
+  symptoms:
+  - The analytical CDS pricer was implemented without properly wiring the required
+    discount and credit curve access from market_state.
+  - Check route-specific validation for missing market_state dependencies and run
+    a simple access test for every required curve before pricing.
+  explanation: This happens when the model logic is correct but the data plumbing
+    is incomplete, so the pricing route cannot retrieve the curves it depends on.
+    The mental model failure is assuming the analytical formula alone is enough, instead
+    of also ensuring the engine exposes the necessary market inputs.
+  fix: Expose and verify both discount-curve and credit-curve access in market_state
+    for the analytical CDS route before enabling the pricer.
+
+- category: calibration
+  title: Invalid module reference breaks analytical swaption pricing
+  symptoms:
+  - A non-existent Trellis module was referenced, causing validation failures during
+    analytical swaption setup.
+  - Validate all module paths against the Trellis module registry or documentation
+    before running pricing.
+  explanation: Developers sometimes copy or guess module paths without verifying they
+    exist in the framework, leading to silent or loud import failures that prevent
+    model initialization.
+  fix: Replace any unresolved module reference with the correct, documented Trellis
+    module path confirmed to exist in the installed version.
+
+- category: calibration
+  title: Payer Swaption Sign Convention Causes Negative Value
+  symptoms:
+  - The payer swaption payoff sign was inverted, treating a payer as a receiver or
+    negating the annuity factor incorrectly.
+  - Check that the Black/Bachelier formula uses (forward_swap_rate - strike) for payer
+    and (strike - forward_swap_rate) for receiver before multiplying by the annuity.
+  explanation: A payer swaption pays max(S-K,0) times the annuity; confusing payer
+    vs receiver or flipping the strike difference yields a negative or zero analytical
+    price instead of a positive one.
+  fix: Ensure the payoff direction flag is set to +1 for payer and -1 for receiver
+    and is applied consistently to both the delta-term and the discounted strike term
+    in the closed-form formula.
+
+- category: monte_carlo
+  title: Avoid scalar checks on arrays
+  symptoms:
+  - The code used a boolean test on a NumPy array when evaluating market-state inputs
+    in the Monte Carlo CDS pricer.
+  - Run smoke tests with batched array inputs and look for the error 'truth value
+    of an array with more than one element is ambiguous'.
+  explanation: In Monte Carlo workflows, inputs are often vectorized, so expressions
+    like `if x:` become ambiguous when `x` contains multiple elements. The mental
+    model failure is treating an array like a single scalar value instead of checking
+    its shape or reducing it explicitly.
+  fix: Replace implicit truthiness checks with explicit tests such as `x is None`,
+    `x.size == 0`, `np.any(x)`, or `np.all(x)` depending on the intended logic.
+
+- category: market_data
+  title: Indentation after guard
+  symptoms:
+  - A runtime syntax error was caused by a missing indentation inside an if-block
+    in the analytical CDS method.
+  - Run a syntax check or lint the module before validation, especially after adding
+    guard clauses or editing near line boundaries.
+  explanation: The mental model failure is treating a quick validation check as if
+    it were already structurally complete, so the control-flow block was left without
+    a properly indented body. Small syntax issues like this can hide in otherwise
+    correct pricing logic and block the entire module from loading.
+  fix: Ensure every if/else block has an indented body, then rerun syntax validation
+    before testing pricing outputs.
+
+- category: monte_carlo
+  title: Array Truth Check Bug
+  symptoms:
+  - The Monte Carlo code used a raw NumPy array in a boolean condition, causing an
+    ambiguous truth-value failure.
+  - Run smoke tests with vector inputs and watch for "truth value of an array is ambiguous"
+    errors in conditional branches.
+  explanation: NumPy arrays do not have a single truth value when they contain multiple
+    elements, so Python cannot infer whether the condition is true or false. This
+    usually happens when scalar-style branching is applied to vectorized state or
+    path data.
+  fix: Replace scalar boolean checks with explicit reductions like any()/all() or
+    rewrite the logic to operate elementwise with masks.
+
+- category: monte_carlo
+  title: Bypass Required Pricing Primitives
+  symptoms:
+  - The analytical CDS pricer ignored the mandated year-fraction primitive and implemented
+    its own date logic instead.
+  - Check generated code for direct date/time calculations and verify every required
+    primitive from the assembly route is actually invoked.
+  explanation: This usually happens when the model is written as a self-contained
+    calculation rather than a thin adapter over the selected assembly route. The mental
+    model failure is treating required framework primitives as optional helpers, which
+    breaks consistency with the validation harness.
+  fix: Rebuild the pricer as a thin wrapper around trellis.core.date_utils.year_fraction
+    and other required primitives, keeping all date accrual logic inside the framework
+    path.
+
+- category: finite_differences
+  title: Initialize intrinsic before branching
+  symptoms:
+  - The theta=1.0 PDE solver referenced `intrinsic` in a path where it had not been
+    assigned.
+  - Run smoke tests on representative market states and inspect branch coverage for
+    any variables used after conditionals.
+  explanation: This usually means the code assumes a variable exists after a conditional
+    or loop branch, but the control flow can skip the assignment. In pricing routines,
+    every state used for payoff or boundary handling must be defined on all execution
+    paths.
+  fix: Assign `intrinsic` unconditionally before any branch that may use it, or compute
+    it locally in each branch that needs it.
+
+- category: monte_carlo
+  title: Use Required Primitives Directly
+  symptoms:
+  - The Monte Carlo CDS pricer bypassed the required interval_default_probability
+    primitive instead of building a thin payoff adapter around it.
+  - Check whether the generated code explicitly calls the mandated assembly primitive(s)
+    rather than duplicating their behavior with custom probability logic.
+  explanation: This usually happens when the implementation is written from first
+    principles and accidentally re-derives logic already enforced by the assembly
+    route. The mental model failure is treating the pricer as free-form rather than
+    as a constrained composition of specified primitives.
+  fix: Refactor the payoff layer into a minimal adapter that invokes trellis.models.credit_default_swap.interval_default_probability
+    for each interval and uses only its output in the Monte Carlo pricing path.
+
+- category: monte_carlo
+  title: Bypass Required Primitives
+  symptoms:
+  - The Monte Carlo CDS pricer was implemented with custom logic instead of using
+    the required interval_default_probability primitive.
+  - Check generated code against the required primitive list and flag any payoff path
+    that does not call the mandated interval_default_probability interface.
+  explanation: This happens when the modeler treats the payoff as a standalone simulation
+    task and forgets the assembly contract that defines which domain primitives must
+    drive the computation. The mental model failure is optimizing for correctness
+    in isolation rather than compatibility with the selected route.
+  fix: Rebuild the payoff as a thin adapter around the required primitives so the
+    Monte Carlo method uses interval_default_probability directly.
+
+- category: market_data
+  title: Invalid Trellis Module Reference Causes Validation Failure
+  symptoms:
+  - A non-existent Trellis module `trellis.models.not_a_real_module` was referenced
+    in the configuration, causing repeated validation errors.
+  - Validate all Trellis module paths against the registered module list before running
+    the pricer pipeline.
+  explanation: The developer assumed a module name without verifying it exists in
+    the Trellis registry, likely copying or guessing a path rather than consulting
+    the official module catalogue.
+  fix: Replace `trellis.models.not_a_real_module` with the correct, documented Trellis
+    module name for the intended model.
+
+- category: calibration
+  title: API Failure Masked Underlying Swaption Pricing Error
+  symptoms:
+  - The validation failure was caused by an API communication error rather than a
+    logic or calibration error in the swaption pricing code itself.
+  - Check if the error message references a network call, API, or external service
+    rather than a specific financial computation or model parameter.
+  explanation: Transient network or service failures can surface as RuntimeErrors
+    that mimic code bugs, leading developers to chase non-existent logic problems
+    instead of addressing infrastructure reliability.
+  fix: Implement retry logic with exponential backoff for external API calls and separate
+    infrastructure errors from model validation failures in error handling.
+
+- category: market_data
+  title: Invalid Trellis Module Reference Breaks Swaption Pricing
+  symptoms:
+  - A non-existent Trellis module `trellis.models.not_a_real_module` was referenced,
+    causing validation failures during analytical swaption pricing.
+  - Run a module existence check or import validation against the Trellis registry
+    before executing the pricing pipeline.
+  explanation: Developers sometimes copy or guess module paths without verifying they
+    exist in the Trellis registry, assuming the framework will resolve them at runtime
+    rather than at parse/validation time.
+  fix: Replace the invalid module path with a verified, registered Trellis module
+    name confirmed via the official Trellis module catalogue.
+
+- category: calibration
+  title: API Failure Masks Underlying Swaption Pricing Error
+  symptoms:
+  - The validation failure was caused by an API communication error rather than a
+    logic error in the swaption pricing code.
+  - Check whether the error message references an external service or runtime communication
+    failure rather than a numerical or financial computation traceback.
+  explanation: Transient infrastructure failures can be misinterpreted as model or
+    calibration bugs, causing wasted debugging effort on correct financial logic.
+    Distinguishing network/service errors from numerical errors requires explicit
+    error classification.
+  fix: Implement retry logic with exponential backoff for API calls and separate infrastructure
+    error handling from financial model validation error handling.
+
+- category: market_data
+  title: Normalize enum-like inputs
+  symptoms:
+  - The code passed a Frequency object into int() when building the BDT rate tree,
+    assuming the market-state field was already numeric.
+  - Add a smoke test that instantiates the pricer with real market-state objects and
+    trace any non-numeric fields reaching arithmetic or cast points.
+  explanation: This happens when the implementation mixes domain-specific types with
+    primitive numeric APIs, so the mental model incorrectly treats enums/objects as
+    raw scalars. Tree construction then fails at the first place that expects a period
+    count or month step as an integer.
+  fix: Convert Frequency inputs to explicit integer periods or map them through a
+    dedicated adapter before calibration and tree setup.
+
+- category: market_data
+  title: Timeline API mismatch
+  symptoms:
+  - The implementation called build_exercise_timeline_from_dates with positional arguments
+    that did not match its actual signature.
+  - Run a smoke test against the actual helper signature or inspect TypeError messages
+    for arity mismatches early.
+  explanation: This usually happens when the code assumes a helper takes raw dates
+    directly, but the real API expects a different shape or keyword-only inputs. The
+    mental model failure is treating utility methods as interchangeable instead of
+    verifying their exact contract.
+  fix: Align the call site to the helper’s true signature, preferably using named
+    arguments or a small adapter layer to normalize inputs.
+
+- category: backward_induction
+  title: Use exported timeline helpers
+  symptoms:
+  - The implementation imported timeline builders from a module that does not expose
+    those functions.
+  - Run import checks or linting against the exact module path before building the
+    tree logic.
+  explanation: 'This is a mental model failure about API boundaries: a function may
+    exist elsewhere in the codebase, but if it is not exported from the target module
+    it cannot be used there. Validation caught that the chosen helper names were not
+    part of the public control interface.'
+  fix: Import only documented exports from the supported module, or switch to the
+    correct module that provides the timeline builders.
+
+- category: market_data
+  title: Use market discount curve
+  symptoms:
+  - The rate-tree implementation ignored the required discount-curve source and failed
+    to calibrate or discount from market_state.discount.
+  - Check the chosen pricing path to confirm it explicitly reads market_state.discount
+    during calibration or discounting, not just model rates.
+  explanation: I assumed the tree could be built and valued from rates alone, but
+    a pricer must anchor the lattice to the market discount curve for calibration
+    and cashflow present value. Without that access, the tree can match dynamics superficially
+    yet produce ungrounded prices.
+  fix: Wire the rate_tree route to consume market_state.discount for calibration and
+    present-value discounting before running the lattice.
+
+- category: market_data
+  title: Use market state discounts
+  symptoms:
+  - The Hull-White rate tree was implemented without sourcing calibration or discounting
+    from market_state.discount.
+  - Check the implementation path for explicit use of market_state.discount during
+    tree calibration or discount-factor propagation.
+  explanation: The mental model assumed the tree could be built from rates alone,
+    but a rate-tree pricer still needs the market discount curve to anchor calibration
+    and price cash flows consistently. Without that access, the tree cannot match
+    observed term structure.
+  fix: Wire the rate-tree route to read discount factors from market_state.discount
+    and use them as the calibration/discount basis.
+
+- category: market_data
+  title: Match tree API to inputs
+  symptoms:
+  - The rate-tree call used an unsupported keyword argument and the fallback error
+    handling was syntactically broken.
+  - Run a smoke test that instantiates the tree with the exact production arguments
+    and verify the method signature against the actual builder before adding valuation
+    logic.
+  explanation: This happens when the implementation assumes a builder interface that
+    does not match the actual market-state API, so even correct pricing logic fails
+    before valuation starts. Small signature mismatches and malformed try/except blocks
+    can hide the real integration problem behind parser or runtime errors.
+  fix: Align the tree-construction call with the real API, remove unsupported keywords,
+    and keep exception handling syntactically valid and minimal.
+
+- category: market_data
+  title: Missing market state wiring
+  symptoms:
+  - The pricer was routed to a tree method without ensuring the required discount
+    curve and Black vol surface were accessible from market_state.
+  - Check each pricing route against its required market_state dependencies and run
+    validation for missing accessor coverage before accepting the method selection.
+  explanation: I assumed the pricing path could infer all inputs from the model choice,
+    but tree-based option pricing still depends on explicit market data plumbing for
+    discounting and volatility. When those accessors are absent, the implementation
+    can compile logically yet fail validation because the route has no way to retrieve
+    its mandatory inputs.
+  fix: Expose and wire the discount curve and Black vol surface in market_state, or
+    switch to a route whose inputs match the available market data.
+
+- category: market_data
+  title: Missing Curve and Vol Access
+  symptoms:
+  - The rate-tree pricer was implemented without pulling the discount curve and Black
+    vol surface from market_state.
+  - Check the selected pricing route against its declared market dependencies and
+    verify each one has an explicit market_state accessor.
+  explanation: 'I assumed the tree could be built from rates alone, but the option
+    pricer still needs market inputs for discounting and volatility calibration. This
+    is a data-plumbing failure: the algorithm was chosen correctly, but its required
+    inputs were not wired through the access layer.'
+  fix: Add explicit market_state accessors for the discount curve and Black vol surface
+    before running the hull_white_tree rate_tree route.
+
+- category: market_data
+  title: Missing market state access
+  symptoms:
+  - The PDE pricer was wired to a route that needed discount-curve and volatility-surface
+    data, but those market_state accessors were not implemented or exposed.
+  - Check route requirements against the market_state API and run validation for missing
+    input accessors before solver execution.
+  explanation: Theta-method PDE pricing depends on carrying the right market inputs
+    through the solver setup; if the route assumes a discount curve and local/Black
+    vol surface but the market-state interface does not provide them, the model can’t
+    initialize consistently. This is a data-plumbing failure, not a numerical one.
+  fix: Expose the required discount curve and black vol surface access methods in
+    market_state, then rebind the theta_pde route to those inputs.
+
+- category: volatility
+  title: Missing surface volatility source
+  symptoms:
+  - The analytical Black-76 path failed to read volatility from market_state.vol_surface.
+  - Check the analytical route for an explicit vol-surface lookup and compare its
+    outputs against surface-driven benchmarks.
+  explanation: I assumed the pricer could use an implicit or hardcoded volatility
+    input, but the implementation contract required the market state to be the single
+    source of truth. That breaks consistency with calibration and cross-validation
+    harnesses that expect the same surface data to drive every target.
+  fix: Wire black_scholes/black76 pricing to market_state.vol_surface for volatility
+    extraction before computing the option value.
+
+- category: volatility
+  title: Missing vol source in analytic path
+  symptoms:
+  - The analytical Black-76 pricer was implemented without sourcing volatility from
+    market_state.vol_surface.
+  - Trace the analytical pricing path and verify it reads sigma from market_state.vol_surface
+    rather than a hardcoded or separate input.
+  explanation: This happens when the mental model treats the closed-form formula as
+    self-contained and overlooks that its inputs must still come from the same market
+    data plumbing as the numerical methods. As a result, the pricer may compile but
+    be disconnected from the calibrated volatility surface used by validation and
+    cross-checks.
+  fix: Wire the analytical vanilla route to pull volatility directly from market_state.vol_surface
+    and use that value consistently in pricing.
+
+- category: market_data
+  title: Date-Type Comparison Bug
+  symptoms:
+  - The rate tree compared a float to a datetime.date during market-state validation.
+  - Run smoke tests on real market inputs and verify every comparison uses homogeneous
+    types after date-to-time conversion.
+  explanation: The implementation mixed model inputs with raw date objects, so a numeric
+    comparison was attempted before dates were converted into consistent time units.
+    This reflects a failure to normalize market data types at the API boundary.
+  fix: Convert dates to year fractions or numeric times before validation and ensure
+    all tree-state comparisons operate on the same scalar type.
+
+- category: finite_differences
+  title: Indent fallback blocks correctly
+  symptoms:
+  - A fallback call was placed after an except clause without indentation, causing
+    a syntax error.
+  - Run syntax checks or import the module before testing to catch indentation and
+    block-structure errors immediately.
+  explanation: 'The mental model failed to account for Python’s block structure: an
+    except must contain an indented suite, even for a simple fallback path. This often
+    happens when adding compatibility branches quickly and missing the required nesting.'
+  fix: Indent the fallback call inside the except block and verify each try/except
+    branch has a valid executable suite.
+
+- category: backward_induction
+  title: Guard try-except indentation
+  symptoms:
+  - A fallback return was placed at the wrong indentation level after an except block,
+    causing a syntax error.
+  - Run a syntax parse or lint check on generated code before validation to catch
+    indentation and block-structure errors immediately.
+  explanation: This happens when the implementation plan changes between model branches
+    and the control-flow structure is not rechecked before emitting code. The mental
+    model failure is treating fallback logic as a content decision rather than a syntactic
+    one that must preserve valid Python block structure.
+  fix: Keep fallback returns inside the except block or add an explicit indented pass/body,
+    then re-parse the module before testing.
+
+- category: market_data
+  title: Date-Number Type Mismatch
+  symptoms:
+  - A market-state input was treated as a numeric rate/strike, causing a comparison
+    between a float and a datetime.date object.
+  - Run a smoke test on representative raw market inputs and inspect validation paths
+    for mixed date/numeric fields.
+  explanation: The mental model failed by assuming all inputs were already normalized
+    scalars, but analytical pricers often receive mixed contract and market fields
+    that must be type-checked before comparison. In Python, date objects are not order-compatible
+    with floats, so any implicit validation can blow up early.
+  fix: Normalize and validate input types up front, separating schedule dates from
+    numerical market variables before any comparisons.
+
+- category: backward_induction
+  title: Keep fallback paths indented
+  symptoms:
+  - A try/except fallback was left with a missing indented body, causing a syntax
+    error instead of a valid tree pricing implementation.
+  - Run a syntax check or import the module immediately after editing and inspect
+    any try/except branches for empty or misindented blocks.
+  explanation: The mental model failure was treating the fallback as a minor refactor
+    detail rather than preserving Python block structure and control flow. When helper-method
+    compatibility branches are added, every except block must still contain a correctly
+    indented executable statement.
+  fix: Ensure each except clause has a properly indented fallback call or pass statement
+    before validating the module.
+
+- category: backward_induction
+  title: Guard all fallback blocks
+  symptoms:
+  - A fallback try/except path was left with an empty except body, causing a syntax
+    error and blocking the pricing module from loading.
+  - Run a syntax check or import test after any control-flow edit, especially around
+    try/except and nested fallbacks.
+  explanation: When adapting helper calls or signatures, it is easy to focus on the
+    primary path and forget that every exception branch still needs a valid, indented
+    block. The mental model failure is treating fallback code as optional text rather
+    than executable structure.
+  fix: Ensure every except clause contains a complete, indented recovery path or explicitly
+    re-raises, then re-run linting/import validation.
+
+- category: market_data
+  title: Invalid Model Import
+  symptoms:
+  - The swaption validation referenced a non-existent Trellis module path.
+  - Check validation logs for unknown-module or import-resolution errors before running
+    the pricing test.
+  explanation: This happens when the model configuration or lookup string is copied
+    incorrectly, so the system cannot resolve the requested analytical pricer. The
+    mental model failure is assuming the declared module name is valid without verifying
+    it exists in the codebase or registry.
+  fix: Replace the bad module path with a valid registered Trellis module name and
+    rerun validation.
+
+- category: market_data
+  title: Transient request failure
+  symptoms:
+  - The valuation failed because the OpenAI text request errored out instead of producing
+    the swaption result.
+  - Look for runtime errors at the request boundary with no pricing-specific exceptions
+    or outputs.
+  explanation: 'This is a service-layer failure, not a pricing-model problem: the
+    mental model error is treating a temporary API/network interruption as if the
+    analytical method itself were invalid. In practice, the computation can be correct,
+    but the request never completes unless retried or handled gracefully.'
+  fix: Add retry and fallback handling for transient API failures so the valuation
+    can rerun successfully.

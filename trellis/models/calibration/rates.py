@@ -19,7 +19,7 @@ from typing import Callable, Literal, Protocol
 
 from scipy.optimize import brentq
 
-from trellis.core.date_utils import generate_schedule, year_fraction
+from trellis.core.date_utils import build_payment_timeline, year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.instruments.cap import CapFloorSpec, CapPayoff, FloorPayoff
@@ -117,17 +117,23 @@ def _implied_flat_vol(
 
 def _cap_floor_summary(spec: CapFloorSpec, market_state: MarketState) -> dict[str, object]:
     """Return a compact summary of the cap/floor calibration inputs."""
-    schedule = generate_schedule(spec.start_date, spec.end_date, spec.frequency)
-    period_starts = [spec.start_date] + schedule[:-1]
+    timeline = build_payment_timeline(
+        spec.start_date,
+        spec.end_date,
+        spec.frequency,
+        day_count=spec.day_count,
+        time_origin=market_state.settlement,
+        label="cap_floor_calibration_timeline",
+    )
     first_fix = None
     first_pay = None
     last_pay = None
-    if schedule:
-        first_fix = year_fraction(market_state.settlement, period_starts[0], spec.day_count)
-        first_pay = year_fraction(market_state.settlement, schedule[0], spec.day_count)
-        last_pay = year_fraction(market_state.settlement, schedule[-1], spec.day_count)
+    if timeline:
+        first_fix = timeline[0].t_start
+        first_pay = timeline[0].t_payment
+        last_pay = timeline[-1].t_payment
     return {
-        "period_count": len(schedule),
+        "period_count": len(timeline),
         "frequency": spec.frequency.name,
         "day_count": getattr(spec.day_count, "name", str(spec.day_count)),
         "rate_index": spec.rate_index,
@@ -142,22 +148,28 @@ def swaption_terms(
     market_state: MarketState,
 ) -> tuple[float, float, float, int]:
     """Return expiry, annuity, forward swap rate, and payment count."""
-    schedule = generate_schedule(spec.swap_start, spec.swap_end, spec.swap_frequency)
-    if not schedule:
+    timeline = build_payment_timeline(
+        spec.swap_start,
+        spec.swap_end,
+        spec.swap_frequency,
+        day_count=spec.day_count,
+        time_origin=market_state.settlement,
+        label="swaption_underlier_timeline",
+    )
+    if not timeline:
         return 0.0, 0.0, 0.0, 0
 
-    starts = [spec.swap_start] + schedule[:-1]
     fwd_curve = market_state.forecast_forward_curve(spec.rate_index)
     annuity = 0.0
     float_pv = 0.0
     payment_count = 0
 
-    for p_start, p_end in zip(starts, schedule):
-        if p_end <= market_state.settlement:
+    for period in timeline:
+        if period.end_date <= market_state.settlement:
             continue
-        tau = year_fraction(p_start, p_end, spec.day_count)
-        t_start = year_fraction(market_state.settlement, p_start, spec.day_count)
-        t_end = year_fraction(market_state.settlement, p_end, spec.day_count)
+        tau = float(period.accrual_fraction or 0.0)
+        t_start = float(period.t_start or 0.0)
+        t_end = float(period.t_end or 0.0)
         t_start = max(t_start, 1e-6)
         df = float(market_state.discount.discount(t_end))
         fwd = float(fwd_curve.forward_rate(t_start, t_end))

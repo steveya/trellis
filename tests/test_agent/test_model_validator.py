@@ -176,6 +176,8 @@ def test_determine_review_policy_skips_llm_for_low_risk_supported_vanilla():
     assert policy.run_critic is False
     assert policy.run_model_validator_llm is False
     assert policy.critic_reason == "low_risk_supported_vanilla_analytical"
+    assert policy.critic_mode == "skip"
+    assert policy.critic_allow_text_fallback is False
 
 
 def test_determine_review_policy_keeps_llm_for_high_risk_route():
@@ -199,6 +201,35 @@ def test_determine_review_policy_keeps_llm_for_high_risk_route():
     assert policy.risk_level == "high"
     assert policy.run_critic is True
     assert policy.run_model_validator_llm is True
+    assert policy.critic_mode == "required"
+    assert policy.critic_json_max_retries is None
+    assert policy.critic_allow_text_fallback is True
+
+
+def test_determine_review_policy_bounds_standard_critic_path():
+    from trellis.agent.review_policy import determine_review_policy
+
+    policy = determine_review_policy(
+        validation="standard",
+        method="monte_carlo",
+        product_ir=SimpleNamespace(
+            instrument="credit_default_swap",
+            payoff_traits=("credit_sensitive",),
+            exercise_style="none",
+            state_dependence="path_dependent",
+            schedule_dependence=True,
+            model_family="generic",
+            unresolved_primitives=(),
+            supported=True,
+        ),
+    )
+
+    assert policy.risk_level == "high"
+    assert policy.run_critic is True
+    assert policy.run_model_validator_llm is False
+    assert policy.critic_mode == "advisory"
+    assert policy.critic_json_max_retries == 0
+    assert policy.critic_allow_text_fallback is False
 
 
 def test_validate_model_skips_llm_review_for_low_risk_route(monkeypatch):

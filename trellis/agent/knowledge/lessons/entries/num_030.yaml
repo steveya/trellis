@@ -1,0 +1,28 @@
+category: numerical
+title: Payoff code generation indentation error
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-31T12:00:10.621024'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260331_120011_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'RuntimeError: Module import/compile fails with SyntaxError: unexpected indent
+  at a fixed source line when loading generated payoff module.'
+root_cause: The automated code/template generator emitted Python source with inconsistent
+  or incorrect indentation (or un-dedented multi-line strings) for the payoff module,
+  producing invalid syntax at import time. The emitter lacks a final formatting/validation
+  step to catch or fix indentation issues.
+fix: Ensure code-generation templates produce consistently indented Python (use textwrap.dedent
+  on multi-line templates), run a syntax-check (compile()) and a formatter (black
+  or autopep8) on generated source before import, and add unit tests that import/compile
+  every generated payoff module.
+validation: Discovered during build (attempt 3)
+id: num_030

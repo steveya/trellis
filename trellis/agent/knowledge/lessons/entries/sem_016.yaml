@@ -1,0 +1,33 @@
+category: semantic
+title: _semantic_extension_decision_mock_inputs_concept_callable_bond_conce
+severity: medium
+status: validated
+confidence: 0.68
+created: '2026-03-31T22:58:50.084708'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/semantic_extensions/bb8e3b3d584255c0.yaml
+applies_when:
+  method:
+  - mock_inputs
+  features:
+  - underlier_structure
+  - payoff_rule
+  - settlement_rule
+  - discount_curve
+  - market_parameter_source
+  - semantic_contract_lesson
+  - mock_discount_curve_provider
+  - mock_market_parameter_provider
+  instrument:
+  - callable_bond
+  error_signature: null
+symptom: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing market inputs: discount_curve, market_parameter_source; missing knowledge
+  artifacts: semantic_contract_lesson; mock inputs can likely bridge the gap'
+root_cause: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing market inputs: discount_curve, market_parameter_source; missing knowledge
+  artifacts: semantic_contract_lesson; mock inputs can likely bridge the gap'
+fix: Extend the existing semantic concept with the missing attribute and keep the
+  wrapper thin.
+validation: Repeated semantic extension trace `bb8e3b3d584255c0`
+id: sem_016

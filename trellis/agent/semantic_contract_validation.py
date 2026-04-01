@@ -12,11 +12,16 @@ from trellis.agent.semantic_concepts import (
     SemanticConceptResolution,
     resolve_semantic_concept,
 )
-from trellis.agent.semantic_contracts import SemanticContract, parse_semantic_contract
+from trellis.agent.semantic_contracts import (
+    DEFAULT_PHASE_ORDER,
+    SemanticContract,
+    parse_semantic_contract,
+)
 from trellis.core.capabilities import MARKET_DATA, normalize_capability_name
 
 
 _KNOWN_CAPABILITIES = frozenset(cap.name for cap in MARKET_DATA)
+_ALLOWED_PHASES = frozenset(DEFAULT_PHASE_ORDER)
 _ALLOWED_PROVENANCE = frozenset(
     {
         "observed",
@@ -48,6 +53,42 @@ _CANONICAL_REQUIRED_CAPABILITIES = frozenset({
     "black_vol_surface",
     "model_parameters",
 })
+_ALLOWED_CONTROLLER_STYLES = frozenset({"identity", "holder_max", "issuer_min"})
+_ALLOWED_STATE_FIELD_KINDS = frozenset({"event_state", "contract_memory"})
+_ALLOWED_STATE_TAGS = frozenset(
+    {
+        "terminal_markov",
+        "schedule_state",
+        "recombining_safe",
+        "pathwise_only",
+        "remaining_pool",
+        "locked_cashflow_state",
+    }
+)
+_AUTOMATIC_ACTION_HINTS = (
+    "settle",
+    "lock",
+    "remove",
+    "translate",
+    "rank",
+    "record",
+    "observe",
+    "coupon",
+    "autocall",
+    "trigger",
+    "knock",
+    "barrier",
+)
+
+
+@dataclass(frozen=True)
+class SemanticContractValidationFinding:
+    """One structured semantic-contract validation finding."""
+
+    code: str
+    severity: str
+    message: str
+    path: str = ""
 
 
 @dataclass(frozen=True)
@@ -56,12 +97,47 @@ class SemanticContractValidationReport:
 
     errors: tuple[str, ...]
     warnings: tuple[str, ...]
+    findings: tuple[SemanticContractValidationFinding, ...] = ()
     normalized_contract: SemanticContract | None = None
 
     @property
     def ok(self) -> bool:
         """Whether the contract passed validation."""
         return self.normalized_contract is not None and not self.errors
+
+    @property
+    def error_findings(self) -> tuple[SemanticContractValidationFinding, ...]:
+        """Return the structured error findings."""
+        return tuple(f for f in self.findings if f.severity == "error")
+
+    @property
+    def warning_findings(self) -> tuple[SemanticContractValidationFinding, ...]:
+        """Return the structured warning findings."""
+        return tuple(f for f in self.findings if f.severity == "warning")
+
+    @property
+    def confidence(self) -> float:
+        """Expose a simple confidence score for build-gate compatibility."""
+        if self.errors:
+            return 0.0
+        if self.warnings:
+            return 0.9
+        return 1.0
+
+    @property
+    def has_promoted_route(self) -> bool:
+        """Duck-type to the build gate's readiness report."""
+        return self.normalized_contract is not None and not self.errors
+
+    @property
+    def route_gap(self):
+        """Semantic validation does not emit a route-gap object."""
+        return None
+
+    @property
+    def missing(self) -> tuple[str, ...]:
+        """Duck-type the gap-report missing tuple for build-gate reuse."""
+        return self.errors
 
 
 @dataclass(frozen=True)
@@ -160,6 +236,14 @@ def validate_semantic_contract(spec) -> SemanticContractValidationReport:
         return SemanticContractValidationReport(
             errors=(f"Could not parse semantic contract: {exc}",),
             warnings=(),
+            findings=(
+                SemanticContractValidationFinding(
+                    code="semantic.parse_failed",
+                    severity="error",
+                    message=f"Could not parse semantic contract: {exc}",
+                    path="contract",
+                ),
+            ),
             normalized_contract=None,
         )
 
@@ -167,15 +251,83 @@ def validate_semantic_contract(spec) -> SemanticContractValidationReport:
     warnings: list[str] = []
 
     _validate_basic_structure(contract, errors, warnings)
+    _validate_typed_semantic_surface(contract, errors, warnings)
     _validate_market_inputs(contract, errors, warnings)
     _validate_methods(contract, errors, warnings)
     _validate_semantic_shape(contract, errors, warnings)
+    _validate_event_machine(contract, errors, warnings)
+    _validate_calibration(contract, errors, warnings)
 
     return SemanticContractValidationReport(
         errors=tuple(errors),
         warnings=tuple(warnings),
+        findings=_messages_to_findings(errors=errors, warnings=warnings),
         normalized_contract=contract,
     )
+
+
+def _messages_to_findings(
+    *,
+    errors: list[str] | tuple[str, ...],
+    warnings: list[str] | tuple[str, ...],
+) -> tuple[SemanticContractValidationFinding, ...]:
+    """Build structured findings from the stable string error/warning surface."""
+    findings: list[SemanticContractValidationFinding] = []
+    for severity, messages in (("error", errors), ("warning", warnings)):
+        for message in messages:
+            findings.append(
+                SemanticContractValidationFinding(
+                    code=_message_code(message, severity),
+                    severity=severity,
+                    message=message,
+                    path=_message_path(message),
+                )
+            )
+    return tuple(findings)
+
+
+def _message_code(message: str, severity: str) -> str:
+    """Map a validation message to a stable finding code."""
+    lower = str(message).strip().lower()
+    mapping = (
+        ("parse semantic contract", "semantic.parse_failed"),
+        ("phase order", "semantic.phase_order_invalid"),
+        ("future-peek", "semantic.future_peek"),
+        ("automatic trigger represented as control", "semantic.automatic_trigger_as_control"),
+        ("settlement-bearing semantic contracts", "semantic.missing_obligation"),
+        ("typed obligation", "semantic.typed_obligation_invalid"),
+        ("state-tag consistency", "semantic.state_tag_inconsistent"),
+        ("unsupported controller_style", "semantic.controller_style_invalid"),
+        ("unsupported decision phase", "semantic.controller_phase_invalid"),
+        ("normalized legacy schedule semantics", "semantic.legacy_phase_order_normalized"),
+        ("normalized legacy state_variables", "semantic.legacy_state_fields_normalized"),
+        ("normalized legacy event_transitions", "semantic.legacy_event_machine_normalized"),
+        ("without typed observables", "semantic.legacy_observables_missing"),
+        ("strategic rights implicit", "semantic.legacy_controller_protocol_missing"),
+    )
+    for needle, code in mapping:
+        if needle in lower:
+            return code
+    slug = re.sub(r"[^a-z0-9]+", "_", lower).strip("_")
+    return f"semantic.{severity}.{slug[:80]}"
+
+
+def _message_path(message: str) -> str:
+    """Best-effort path classification for semantic validation messages."""
+    lower = str(message).strip().lower()
+    if "observable" in lower:
+        return "product.observables"
+    if "state field" in lower or "state-tag" in lower:
+        return "product.state_fields"
+    if "controller" in lower or "strategic rights" in lower:
+        return "product.controller_protocol"
+    if "obligation" in lower or "settlement-bearing" in lower:
+        return "product.obligations"
+    if "phase order" in lower or "decision phase" in lower:
+        return "product.timeline"
+    if "event_machine" in lower or "event_transitions" in lower:
+        return "product.event_machine"
+    return "contract"
 
 
 def classify_semantic_gap(
@@ -817,7 +969,12 @@ def _validate_basic_structure(
     if not contract.product.payoff_rule:
         errors.append("Semantic product payoff_rule must be provided.")
     if not contract.product.settlement_rule:
-        errors.append("Semantic product settlement_rule must be provided.")
+        if _typed_surface_is_authoritative_for_settlement_rule(contract):
+            warnings.append(
+                "Semantic contract omitted the legacy settlement_rule mirror; typed obligations remain authoritative for this migrated route."
+            )
+        else:
+            errors.append("Semantic product settlement_rule must be provided.")
     if not contract.validation.bundle_hints:
         warnings.append(
             f"Semantic contract `{contract.semantic_id}` has no explicit validation bundle hint."
@@ -826,6 +983,300 @@ def _validate_basic_structure(
         warnings.append(
             f"Semantic contract `{contract.semantic_id}` has no explicit target module hint."
         )
+
+
+def _validate_typed_semantic_surface(
+    contract: SemanticContract,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate the typed semantic surface added to SemanticContract."""
+    product = contract.product
+    phase_order = tuple(product.timeline.phase_order)
+    phase_index = {phase: idx for idx, phase in enumerate(phase_order)}
+
+    _validate_phase_order(product, errors, warnings)
+    _validate_observables(product, phase_index, errors, warnings)
+    _validate_state_fields(product, phase_index, errors, warnings)
+    _validate_controller_protocol(product, phase_index, errors, warnings)
+    _validate_obligations(product, errors, warnings)
+    _validate_legacy_typed_normalization(product, warnings)
+
+
+def _validate_phase_order(
+    product,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate the tranche-1 default same-day phase order."""
+    phase_order = tuple(product.timeline.phase_order)
+    if not phase_order:
+        errors.append(
+            "Semantic timeline phase order must be provided as EVENT -> OBSERVATION -> DECISION -> DETERMINATION -> SETTLEMENT -> STATE_UPDATE."
+        )
+        return
+    if tuple(phase_order) != DEFAULT_PHASE_ORDER:
+        errors.append(
+            "Semantic timeline phase order must preserve EVENT -> OBSERVATION -> DECISION -> DETERMINATION -> SETTLEMENT -> STATE_UPDATE in tranche 1."
+        )
+    unknown_phases = sorted(set(phase_order) - _ALLOWED_PHASES)
+    if unknown_phases:
+        errors.append(
+            f"Semantic timeline phase order uses unsupported phase labels {unknown_phases}."
+        )
+    if product.observation_schedule and not product.implementation_hints.primary_schedule_role:
+        warnings.append(
+            "Semantic contract normalized legacy schedule semantics to the default phase order."
+        )
+
+
+def _validate_observables(
+    product,
+    phase_index: dict[str, int],
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate typed observable metadata and future-peek dependencies."""
+    observables = tuple(product.observables)
+    if not observables:
+        warnings.append(
+            "Semantic contract normalized legacy payoff semantics without typed observables."
+        )
+        return
+
+    observable_map: dict[str, object] = {}
+    for observable in observables:
+        if not observable.observable_id:
+            errors.append("Semantic observable entries must define observable_id.")
+            continue
+        if observable.observable_id in observable_map:
+            errors.append(
+                f"Semantic observable `{observable.observable_id}` is defined more than once."
+            )
+        observable_map[observable.observable_id] = observable
+        if observable.availability_phase not in phase_index:
+            errors.append(
+                f"Semantic observable `{observable.observable_id}` uses unsupported availability phase `{observable.availability_phase}`."
+            )
+
+    for observable in observables:
+        if observable.observable_id not in observable_map:
+            continue
+        for dependency in observable.dependencies:
+            dep = observable_map.get(dependency)
+            if dep is None:
+                errors.append(
+                    f"Semantic observable `{observable.observable_id}` references unknown dependency `{dependency}`."
+                )
+                continue
+            dep_index = phase_index.get(dep.availability_phase)
+            observable_index = phase_index.get(observable.availability_phase)
+            if dep_index is None or observable_index is None:
+                continue
+            if dep_index > observable_index:
+                errors.append(
+                    f"Semantic observable `{observable.observable_id}` has a future-peek dependency on `{dependency}`."
+                )
+
+
+def _validate_state_fields(
+    product,
+    phase_index: dict[str, int],
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate typed state-field metadata and solver tags."""
+    observables = {
+        observable.observable_id: observable
+        for observable in product.observables
+        if observable.observable_id
+    }
+    has_typed_observables = bool(observables)
+
+    for state_field in product.state_fields:
+        if state_field.kind not in _ALLOWED_STATE_FIELD_KINDS:
+            errors.append(
+                f"Semantic state field `{state_field.field_name}` uses unsupported kind `{state_field.kind}`."
+            )
+            continue
+        unknown_tags = sorted(set(state_field.tags) - _ALLOWED_STATE_TAGS)
+        if unknown_tags:
+            errors.append(
+                f"Semantic state-tag consistency failed for `{state_field.field_name}`: unsupported tags {unknown_tags}."
+            )
+        if "recombining_safe" in state_field.tags and "pathwise_only" in state_field.tags:
+            errors.append(
+                f"Semantic state-tag consistency failed for `{state_field.field_name}`: `recombining_safe` and `pathwise_only` cannot both be present."
+            )
+        if state_field.kind == "event_state" and "pathwise_only" in state_field.tags:
+            errors.append(
+                f"Semantic state-tag consistency failed for `{state_field.field_name}`: event_state cannot be tagged `pathwise_only`."
+            )
+        if state_field.kind == "contract_memory" and "terminal_markov" in state_field.tags:
+            errors.append(
+                f"Semantic state-tag consistency failed for `{state_field.field_name}`: contract_memory cannot be tagged `terminal_markov`."
+            )
+
+        cutoff_phase = "determination" if state_field.kind == "event_state" else "state_update"
+        cutoff_index = phase_index.get(cutoff_phase)
+        if cutoff_index is None:
+            errors.append(
+                f"Semantic timeline phase order is missing required phase `{cutoff_phase}` for state-field validation."
+            )
+            continue
+        for source in state_field.source_observables:
+            if not has_typed_observables:
+                continue
+            observable = observables.get(source)
+            if observable is None:
+                errors.append(
+                    f"Semantic state field `{state_field.field_name}` references unknown observable `{source}`."
+                )
+                continue
+            observable_index = phase_index.get(observable.availability_phase)
+            if observable_index is None:
+                continue
+            if observable_index > cutoff_index:
+                errors.append(
+                    f"Semantic state field `{state_field.field_name}` future-peeks observable `{source}` beyond `{cutoff_phase}`."
+                )
+
+        if state_field.description.startswith("Legacy-derived typed state field"):
+            warnings.append(
+                "Semantic contract normalized legacy state_variables into typed state_fields."
+            )
+
+
+def _validate_controller_protocol(
+    product,
+    phase_index: dict[str, int],
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate that strategic rights use controller protocol and triggers do not."""
+    protocol = product.controller_protocol
+    if protocol.controller_style not in _ALLOWED_CONTROLLER_STYLES:
+        errors.append(
+            f"Semantic controller protocol uses unsupported controller_style `{protocol.controller_style}`."
+        )
+    if protocol.decision_phase not in phase_index:
+        errors.append(
+            f"Semantic controller protocol uses unsupported decision phase `{protocol.decision_phase}`."
+        )
+    if (
+        product.exercise_style not in {"", "none"}
+        and protocol.controller_style == "identity"
+    ):
+        warnings.append(
+            "Semantic contract still leaves strategic rights implicit; add a typed controller protocol instead of relying on legacy exercise semantics."
+        )
+    if protocol.controller_style == "identity":
+        return
+
+    automatic_actions = tuple(
+        action for action in protocol.admissible_actions
+        if _looks_like_automatic_action(action)
+    )
+    if product.exercise_style in {"", "none"} or protocol.controller_role in {"", "none"}:
+        errors.append(
+            "Semantic automatic trigger represented as control: controller protocol should only encode strategic rights."
+        )
+    elif protocol.admissible_actions and len(automatic_actions) == len(protocol.admissible_actions):
+        errors.append(
+            "Semantic automatic trigger represented as control: automatic transitions should stay in event/state machinery."
+        )
+
+
+def _validate_obligations(
+    product,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate typed obligation emission for settlement-bearing products."""
+    obligations = tuple(product.obligations)
+    settlement_rules = tuple(
+        rule
+        for rule in (product.settlement_rule, product.maturity_settlement_rule)
+        if rule
+    )
+    if settlement_rules and not obligations:
+        errors.append(
+            "Settlement-bearing semantic contracts must emit at least one typed obligation."
+        )
+        return
+    if not obligations:
+        return
+
+    settle_rules = {obligation.settle_date_rule for obligation in obligations if obligation.settle_date_rule}
+    for obligation in obligations:
+        if not obligation.obligation_id:
+            errors.append("Typed obligations must define obligation_id.")
+        if not obligation.settle_date_rule:
+            errors.append(
+                f"Typed obligation `{obligation.obligation_id or '<unknown>'}` must define settle_date_rule."
+            )
+        if not obligation.amount_expression:
+            errors.append(
+                f"Typed obligation `{obligation.obligation_id or '<unknown>'}` must define amount_expression."
+            )
+    if settlement_rules and settle_rules and not any(rule in settle_rules for rule in settlement_rules):
+        warnings.append(
+            "Typed obligations are present but do not mirror the legacy settlement_rule exactly."
+        )
+
+
+def _typed_surface_is_authoritative_for_settlement_rule(contract: SemanticContract) -> bool:
+    """Return whether typed obligations/timeline are authoritative for settlement on this slice."""
+    product = contract.product
+    instrument = str(getattr(product, "instrument_class", "")).strip().lower()
+    payoff_family = str(getattr(product, "payoff_family", "")).strip().lower()
+    exercise_style = str(getattr(product, "exercise_style", "")).strip().lower()
+    payoff_traits = {
+        str(item).strip().lower()
+        for item in getattr(product, "payoff_traits", ()) or ()
+    }
+    primitive_families = {
+        str(item).strip().lower()
+        for item in getattr(contract.blueprint, "primitive_families", ()) or ()
+    }
+    if instrument == "european_option" and payoff_family == "vanilla_option":
+        return True
+    if instrument == "callable_bond":
+        return True
+    if instrument == "basket_path_payoff" and "ranked_observation" in payoff_traits:
+        return True
+    return instrument == "swaption" and exercise_style == "bermudan" and "exercise_lattice" in primitive_families
+
+
+def _typed_settlement_rules(product) -> tuple[str, ...]:
+    """Return typed settlement rules emitted by obligations, deduplicated in order."""
+    rules: list[str] = []
+    for obligation in getattr(product, "obligations", ()) or ():
+        rule = str(getattr(obligation, "settle_date_rule", "")).strip()
+        if rule and rule not in rules:
+            rules.append(rule)
+    return tuple(rules)
+
+
+def _validate_legacy_typed_normalization(
+    product,
+    warnings: list[str],
+) -> None:
+    """Warn when validation had to rely on legacy semantic mirrors."""
+    if (
+        product.event_machine is not None
+        and product.event_transitions
+        and not product.implementation_hints.event_machine_source
+    ):
+        warnings.append(
+            "Semantic contract normalized legacy event_transitions into a typed event_machine."
+        )
+
+
+def _looks_like_automatic_action(action: str) -> bool:
+    """Return whether an admissible action looks automatic rather than strategic."""
+    lower = str(action).strip().lower()
+    return any(hint in lower for hint in _AUTOMATIC_ACTION_HINTS)
 
 
 def _validate_market_inputs(
@@ -895,6 +1346,51 @@ def _validate_methods(
     if not contract.methods.reference_methods and contract.methods.preferred_method is None:
         warnings.append(
             f"Semantic contract `{contract.semantic_id}` has no explicit preferred or reference method."
+        )
+
+
+def _validate_calibration(
+    contract,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate the calibration contract on the semantic contract, if present."""
+    calibration = getattr(contract, "calibration", None)
+    if calibration is None:
+        return
+    try:
+        from trellis.agent.calibration_contract import validate_calibration_contract
+        cal_errors = validate_calibration_contract(calibration)
+        for err in cal_errors:
+            errors.append(f"calibration: {err}")
+    except Exception as exc:
+        warnings.append(f"Could not validate calibration contract: {exc}")
+
+
+def _validate_event_machine(
+    contract,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate the event machine on the contract product, if present."""
+    product = getattr(contract, "product", None)
+    if product is None:
+        return
+    machine = getattr(product, "event_machine", None)
+    state_dep = getattr(product, "state_dependence", "terminal_markov")
+
+    if machine is not None:
+        try:
+            from trellis.agent.event_machine import validate_event_machine
+            machine_errors = validate_event_machine(machine)
+            for err in machine_errors:
+                errors.append(f"event_machine: {err}")
+        except Exception as exc:
+            warnings.append(f"Could not validate event machine: {exc}")
+    elif state_dep not in ("none", "terminal_markov") and not getattr(product, "event_transitions", ()):
+        warnings.append(
+            f"Product has state_dependence='{state_dep}' but no event_machine "
+            f"or event_transitions declared"
         )
 
 
@@ -1010,9 +1506,14 @@ def _validate_profile_fields(
             f"Semantic slice expects payoff_rule `{expected_payoff_rule}`, got `{product.payoff_rule}`."
         )
     if product.settlement_rule != expected_settlement_rule:
-        errors.append(
-            f"Semantic slice expects settlement_rule `{expected_settlement_rule}`, got `{product.settlement_rule}`."
-        )
+        typed_rules = _typed_settlement_rules(product)
+        if not (
+            _typed_surface_is_authoritative_for_settlement_rule(contract)
+            and expected_settlement_rule in typed_rules
+        ):
+            errors.append(
+                f"Semantic slice expects settlement_rule `{expected_settlement_rule}`, got `{product.settlement_rule}`."
+            )
     if expected_exercise_style is not None and product.exercise_style != expected_exercise_style:
         errors.append(
             f"Semantic slice expects exercise_style `{expected_exercise_style}`, got `{product.exercise_style}`."
@@ -1244,7 +1745,7 @@ def _validate_rate_style_swaption_shape(
         expected_underlier_structure="single_curve_rate_style",
         expected_payoff_rule="swaption_exercise_payoff",
         expected_settlement_rule="cash_settle_at_exercise",
-        expected_exercise_style="european",
+        expected_exercise_style=None,
         expected_multi_asset=False,
         require_schedule=True,
         require_constituents=0,
@@ -1252,6 +1753,10 @@ def _validate_rate_style_swaption_shape(
         state_dependence="schedule_dependent",
         schedule_dependence=True,
     )
+    if contract.product.exercise_style not in {"european", "bermudan"}:
+        errors.append(
+            "Rate-style swaption semantics require exercise_style `european` or `bermudan`."
+        )
     if not contract.blueprint.primitive_families:
         warnings.append(
             f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."

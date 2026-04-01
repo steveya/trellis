@@ -1,0 +1,25 @@
+category: market_data
+title: API failure masked underlying swaption pricing error
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-03-31T10:31:18.187994'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation failure was caused by an API communication error rather than
+  a logic error in the swaption pricing code itself.
+root_cause: Transient network or service failures can surface as RuntimeErrors that
+  mimic code bugs, causing engineers to hunt for logic mistakes when the real issue
+  is infrastructure. This conflates environment failures with model failures.
+fix: Implement retry logic with exponential backoff for API calls and isolate external
+  service failures from model validation errors using separate exception handling.
+validation: Resolved during build of European payer swaption
+id: md_035

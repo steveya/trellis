@@ -1,0 +1,32 @@
+category: monte_carlo
+title: MC CDS payoff unit/date bugs
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-31T11:27:25.366417'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260331_112726_swap_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - fixed_coupons
+  - discounting
+  - credit_risk
+  - maturity_settlement
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: Monte‑Carlo PV magnitude is implausible (|PV| > 10 × notional) or negative
+  during smoke tests.
+root_cause: The MC payoff implementation used incorrect units/inputs (e.g., passed
+  a rate or vol in wrong units) and did not use the supplied MarketState discount
+  factors or required primitives; additionally a Date vs float comparison and generated-code
+  indentation/syntax errors caused the module to fail compilation.
+fix: Use market_state.discount for present value calculations, validate and scale
+  all cashflows to notional units, convert date differences to year fractions before
+  numerical comparisons, sample default times from the hazard-rate process or convert
+  hazard→survival correctly, and fix generator indentation/format to produce syntactically
+  valid code.
+validation: Discovered during build (attempt 3)
+id: mc_053

@@ -1,8 +1,8 @@
 category: finite_differences
 title: Undefined boundary condition symbol
 severity: critical
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-03-28T23:03:08.694503'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_230309_barrier_option_pde_solver.yaml

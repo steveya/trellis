@@ -47,6 +47,12 @@ from trellis.agent.knowledge.api_map import (
     format_api_map_for_prompt,
     get_api_map,
 )
+from trellis.agent.knowledge.skills import (
+    clear_skill_index_cache,
+    get_skill_record,
+    load_skill_index,
+    query_skill_records,
+)
 
 
 # Module-level singleton — hot tier loads at first access
@@ -177,6 +183,10 @@ __all__ = [
     "suggest_tests_for_symbol",
     "get_api_map",
     "format_api_map_for_prompt",
+    "load_skill_index",
+    "get_skill_record",
+    "query_skill_records",
+    "clear_skill_index_cache",
     "retrieve_for_task",
     "retrieve_for_product_ir",
     "build_shared_knowledge_payload",

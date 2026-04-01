@@ -19,7 +19,15 @@ from trellis.core.payoff import (
     PresentValue,
 )
 from trellis.core.state_space import StateSpace
-from trellis.core.types import DayCountConvention, Frequency, PricingResult
+from trellis.core.types import (
+    ContractTimeline,
+    DayCountConvention,
+    EventSchedule,
+    Frequency,
+    PricingResult,
+    SchedulePeriod,
+    TimelineRole,
+)
 
 __all__ = [
     "MarketState",
@@ -31,6 +39,10 @@ __all__ = [
     "StateSpace",
     "Frequency",
     "DayCountConvention",
+    "SchedulePeriod",
+    "EventSchedule",
+    "TimelineRole",
+    "ContractTimeline",
     "PricingResult",
     "analyze_gap",
     "check_market_data",

@@ -39,6 +39,10 @@ class ReviewPolicy:
     run_model_validator_llm: bool
     critic_reason: str
     model_validator_reason: str
+    critic_mode: str = "skip"
+    critic_json_max_retries: int | None = None
+    critic_allow_text_fallback: bool = False
+    critic_text_max_retries: int | None = None
 
 
 def determine_review_policy(
@@ -67,6 +71,7 @@ def determine_review_policy(
             run_model_validator_llm=False,
             critic_reason="validation_mode_skipped",
             model_validator_reason="validation_mode_skipped",
+            critic_mode="skip",
         )
 
     if low_risk_reason:
@@ -76,6 +81,7 @@ def determine_review_policy(
             run_model_validator_llm=False,
             critic_reason=low_risk_reason,
             model_validator_reason=low_risk_reason,
+            critic_mode="skip",
         )
 
     return ReviewPolicy(
@@ -88,6 +94,10 @@ def determine_review_policy(
             if validation == "thorough"
             else "validation_mode_skipped"
         ),
+        critic_mode="required" if validation == "thorough" else "advisory",
+        critic_json_max_retries=None if validation == "thorough" else 0,
+        critic_allow_text_fallback=(validation == "thorough"),
+        critic_text_max_retries=None if validation == "thorough" else 0,
     )
 
 

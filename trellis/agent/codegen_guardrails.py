@@ -105,10 +105,7 @@ FAMILY_SUPPORT_MODULES = {
         "trellis.models.copulas.student_t",
         "trellis.models.copulas.factor",
     ),
-    "credit_default_swap": (
-        "trellis.models.copulas",
-        "trellis.models.copulas.gaussian",
-    ),
+    "credit_default_swap": (),
 }
 
 INSTRUMENT_TEST_TARGETS = {
@@ -1094,5 +1091,4 @@ def _route_score(
 
     score -= len(blockers) * 6.0
     return score
-
 

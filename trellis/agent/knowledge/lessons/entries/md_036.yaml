@@ -1,0 +1,32 @@
+category: market_data
+title: CDS pricer failed due to missing curves
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-31T10:59:57.268530'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260331_105958_swap_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - fixed_coupons
+  - floating_coupons
+  - discounting
+  - credit_risk
+  - spread_computation
+  - maturity_settlement
+  instrument: []
+  error_signature: null
+symptom: Pricer produced an implausible PV (very large magnitude or negative) and
+  ultimately failed with syntax/validation errors.
+root_cause: The analytical CDS implementation assumed well-formed CDS spec and required
+  market inputs (credit/discount curves) that were not provided or had unit/scale
+  mismatches; additionally, the generated code referenced undefined symbols leading
+  to syntax errors.
+fix: Validate and coerce all instrument fields and market curves before pricing (check
+  notional, spread units, daycount, recovery). Require explicit discount_curve and
+  credit_curve inputs and add PV magnitude sanity checks; fix undefined names and
+  add unit tests for typical notional scaling.
+validation: Discovered during build (attempt 3)
+id: md_036

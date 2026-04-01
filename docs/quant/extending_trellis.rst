@@ -46,6 +46,71 @@ agent layers aligned:
 - document the mathematical assumptions and numerical limitations
 - add cookbook and method-requirement knowledge if the builder should be able to use it
 
+Prefer Stable Schedule And Event Objects
+----------------------------------------
+
+If a route depends on accrual periods, event windows, or payment timing, do not
+reconstruct those contracts from raw ``list[date]`` schedule output inside the
+payoff implementation. Use the periodized schedule substrate instead.
+
+The stable pattern is:
+
+1. build an :class:`EventSchedule <trellis.core.types.EventSchedule>` with
+   ``build_period_schedule(...)``
+2. consume explicit :class:`SchedulePeriod <trellis.core.types.SchedulePeriod>`
+   objects inside ``evaluate()``
+3. keep product-specific logic focused on payoff math rather than date
+   reconstruction
+
+This matters most for credit, insurance-linked, callable, and other event-style
+products where routes otherwise drift on:
+
+- period boundaries
+- end-date inclusion
+- payment timing
+- day-count handling
+- model time origin
+
+The DSL and agent surfaces should map to these stable objects, not to raw
+``generate_schedule(...)`` plus hand-built ``prev_date`` logic.
+
+When a route family has enough repeated structure, go one step further and
+expose a checked-in helper surface in ``trellis/models/``. For example,
+single-name CDS routes should prefer shared schedule and leg-pricing helpers
+over open-coded premium/protection loops inside generated adapters. The same
+pattern now applies to:
+
+- vanilla equity tree routes via ``trellis.models.equity_option_tree``
+- vanilla European equity PDE routes via ``trellis.models.equity_option_pde``
+- rate-style swaption analytics via ``trellis.models.rate_style_swaption``
+- zero-coupon bond option tree routes via ``trellis.models.zcb_option_tree``
+- Jamshidian analytical ZCB option routes via ``trellis.models.zcb_option``
+
+For schedule-dependent swaptions, split the stable surfaces by solver role:
+
+- Bermudan tree routes should delegate to
+  ``trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree(...)``
+- analytical comparison lanes should delegate to
+  ``trellis.models.rate_style_swaption.price_bermudan_swaption_black76_lower_bound(...)``
+
+That analytical helper is intentionally a lower-bound surface. It prices the
+European swaption exercisable only on the final Bermudan date. It is not a
+closed-form Bermudan solver and should not be replaced with an inline loop that
+sums multiple exercise-date European values.
+
+The same rule now applies to schedule-dependent lattice exercise. Prefer the
+checked-in control helpers in ``trellis.models.trees.control`` over hand-coded
+``exercise_type`` / ``exercise_steps`` / ``exercise_fn`` combinations:
+
+1. build an exercise timeline
+2. convert it with ``lattice_steps_from_timeline(...)``
+3. resolve the product semantics with ``resolve_lattice_exercise_policy(...)``
+4. pass the resulting ``exercise_policy`` into
+   ``lattice_backward_induction(...)``
+
+That keeps issuer-call, holder-put, and Bermudan semantics stable across
+products and agent-generated routes.
+
 Promote Autograd With Purpose
 -----------------------------
 

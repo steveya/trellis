@@ -1,28 +1,174 @@
-"""Critic agent: reads agent-generated code and produces structured test cases.
+"""Critic agent: reads generated code and selects structured review findings.
 
 The critic sees ONLY the generated code (not the builder's reasoning).
-It outputs (concern, test_code) pairs that the arbiter executes.
+Its standard-path job is to select from a bounded menu of deterministic checks
+that the arbiter can execute cheaply. Legacy ``test_code`` output is still
+parsed for backward compatibility with older traces and thorough-mode work.
 """
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from typing import Sequence
 
-from trellis.agent.config import llm_generate_json
+from trellis.agent.config import llm_generate, llm_generate_json
 
 
 @dataclass(frozen=True)
 class CriticConcern:
     """A potential issue identified by the critic."""
+    check_id: str
     description: str
-    test_code: str
     severity: str = "error"  # "error" or "warning"
+    evidence: str = ""
+    remediation: str = ""
+    status: str = "suspect"
+    test_code: str = ""
+
+
+@dataclass(frozen=True)
+class CriticCheck:
+    """A deterministic arbiter check that the critic may select."""
+
+    check_id: str
+    title: str
+    when_to_use: str
+    deterministic_contract: str
+
+
+_CHECK_LIBRARY: dict[str, CriticCheck] = {
+    "price_non_negative": CriticCheck(
+        check_id="price_non_negative",
+        title="Price should remain non-negative",
+        when_to_use=(
+            "the route prices a long-only vanilla or option-like payoff that should not"
+            " produce a negative PV under the default review market state"
+        ),
+        deterministic_contract="Fail when price_payoff(payoff, ms) < -1e-6.",
+    ),
+    "volatility_input_usage": CriticCheck(
+        check_id="volatility_input_usage",
+        title="Volatility should move the price materially",
+        when_to_use=(
+            "the instrument or method requires volatility but the code looks"
+            " volatility-insensitive"
+        ),
+        deterministic_contract=(
+            "Fail when changing flat vol from 5% to 40% moves price by less than 0.1%."
+        ),
+    ),
+    "rate_sensitivity_present": CriticCheck(
+        check_id="rate_sensitivity_present",
+        title="Discount-rate changes should move the price",
+        when_to_use=(
+            "the route discounts future cashflows and the implementation looks"
+            " insensitive to the discount curve"
+        ),
+        deterministic_contract=(
+            "Fail when changing flat discount rate from 3% to 7% leaves price nearly unchanged."
+        ),
+    ),
+    "callable_bound_vs_straight_bond": CriticCheck(
+        check_id="callable_bound_vs_straight_bond",
+        title="Callable bond should not exceed the equivalent straight bond",
+        when_to_use=(
+            "the instrument is callable and the exercise logic may overvalue the issuer option"
+        ),
+        deterministic_contract=(
+            "Fail when price_payoff(payoff, ms) exceeds straight_bond_pv by more than 1e-6."
+        ),
+    ),
+    "puttable_bound_vs_straight_bond": CriticCheck(
+        check_id="puttable_bound_vs_straight_bond",
+        title="Puttable bond should not be below the equivalent straight bond",
+        when_to_use=(
+            "the instrument is puttable and the holder option may be ignored or undervalued"
+        ),
+        deterministic_contract=(
+            "Fail when price_payoff(payoff, ms) is below straight_bond_pv by more than 1e-6."
+        ),
+    ),
+}
+
+_OPTION_LIKE_INSTRUMENTS = {
+    "european_option",
+    "barrier_option",
+    "digital_option",
+    "fx_option",
+    "swaption",
+    "cap",
+    "floor",
+}
+
+_VOL_SENSITIVE_INSTRUMENTS = _OPTION_LIKE_INSTRUMENTS | {
+    "callable_bond",
+    "puttable_bond",
+}
+
+_RATE_SENSITIVE_INSTRUMENTS = {
+    "bond",
+    "callable_bond",
+    "puttable_bond",
+    "swaption",
+    "cap",
+    "floor",
+}
+
+
+def available_critic_checks(
+    *,
+    instrument_type: str | None = None,
+    method: str | None = None,
+    product_ir=None,
+) -> list[CriticCheck]:
+    """Return the bounded deterministic check menu for one route."""
+
+    instrument = (
+        (instrument_type or "").strip().lower()
+        or str(getattr(product_ir, "instrument", "") or "").strip().lower()
+    )
+    checks: list[CriticCheck] = []
+
+    if instrument in _OPTION_LIKE_INSTRUMENTS:
+        checks.append(_CHECK_LIBRARY["price_non_negative"])
+    if instrument in _VOL_SENSITIVE_INSTRUMENTS:
+        checks.append(_CHECK_LIBRARY["volatility_input_usage"])
+    if instrument in _RATE_SENSITIVE_INSTRUMENTS:
+        checks.append(_CHECK_LIBRARY["rate_sensitivity_present"])
+    if instrument == "callable_bond":
+        checks.append(_CHECK_LIBRARY["callable_bound_vs_straight_bond"])
+    if instrument == "puttable_bond":
+        checks.append(_CHECK_LIBRARY["puttable_bound_vs_straight_bond"])
+
+    seen: set[str] = set()
+    deduped: list[CriticCheck] = []
+    for check in checks:
+        if check.check_id in seen:
+            continue
+        seen.add(check.check_id)
+        deduped.append(check)
+    return deduped
+
+
+def _format_available_checks(checks: Sequence[CriticCheck]) -> str:
+    """Render the allowed deterministic check menu for the critic prompt."""
+
+    if not checks:
+        return "- No route-specific deterministic critic checks are available for this route.\n"
+    lines = []
+    for check in checks:
+        lines.append(
+            f"- `{check.check_id}`: {check.title}. "
+            f"Use when {check.when_to_use}. "
+            f"Deterministic contract: {check.deterministic_contract}"
+        )
+    return "\n".join(lines) + "\n"
 
 
 CRITIC_PROMPT_TEMPLATE = """\
 You are a quantitative model validator reviewing agent-generated pricing code.
-Your job is to find errors, not to praise. Be adversarial.
+Your job is to find deterministic review concerns, not to praise. Be adversarial.
 
 ## Code to review
 ```python
@@ -33,42 +179,29 @@ Your job is to find errors, not to praise. Be adversarial.
 {description}
 {knowledge_section}
 
-## What to look for
-1. **Discounting errors**: Is the code double-discounting or not discounting correctly?
-   - evaluate() should return UNDISCOUNTED cashflows; price_payoff() handles discounting
-   - If the code discounts cashflows internally AND they get discounted again externally, that's a bug
+## Available deterministic checks
+You may ONLY select from this bounded menu:
+{available_checks}
 
-2. **Call/exercise decision errors**: For callable/puttable instruments, does the exercise
-   decision compare PRESENT VALUES (not undiscounted sums)? The issuer calls when the
-   PV of remaining cashflows exceeds the call price.
-
-3. **Missing vol dependence**: If requirements include "black_vol" but the evaluate() body
-   never reads market_state.vol_surface, the option component is not being priced.
-
-4. **Day count / schedule errors**: Are year fractions computed correctly?
-   Is the schedule generation using the right frequency?
-
-5. **Edge cases**: What happens at maturity? What if all call dates are past?
-   What if the instrument is deeply in/out of the money?
+## Review policy
+- Do not write Python code.
+- Do not invent new checks, formulas, or test procedures.
+- Only emit a finding when the code strongly suggests the selected check is likely to fail.
+- If none of the available checks are justified, return [].
 
 ## Output
 Return a JSON array of concerns. Each concern:
 {{
-    "description": "what might be wrong",
-    "test_code": "executable Python assertion (one-liner or short block)",
-    "severity": "error" or "warning"
+    "check_id": "one of the available check ids",
+    "description": "short concern summary",
+    "severity": "error" or "warning",
+    "evidence": "specific code reference or reasoning",
+    "remediation": "what to change",
+    "status": "suspect"
 }}
 
-The test_code will be executed with these variables available:
-- `payoff`: an instance of the payoff class
-- `ms`: a MarketState with flat 5% curve, 20% vol, settlement=2024-11-15
-- `ms_low_rate`: MarketState with flat 3% curve
-- `ms_high_rate`: MarketState with flat 7% curve
-- `price_payoff`: the pricing function
-- `straight_bond_pv`: PV of an equivalent straight bond at 5%
-
-Focus on errors that would cause INCORRECT PRICES, not style issues.
-Return at most 5 concerns, ordered by severity.
+Focus on pricing errors that the deterministic checks can confirm.
+Return at most 3 concerns, ordered by severity.
 Return ONLY the JSON array."""
 
 
@@ -77,6 +210,11 @@ def critique(
     description: str,
     knowledge_context: str = "",
     model: str | None = None,
+    *,
+    available_checks: Sequence[CriticCheck] | None = None,
+    json_max_retries: int | None = None,
+    allow_text_fallback: bool = True,
+    text_max_retries: int | None = None,
 ) -> list[CriticConcern]:
     """Run the critic agent on generated code.
 
@@ -101,28 +239,38 @@ def critique(
         code=code,
         description=description,
         knowledge_section=knowledge_section,
+        available_checks=_format_available_checks(available_checks or ()),
     )
 
     try:
-        data = llm_generate_json(prompt, model=model)
+        data = llm_generate_json(prompt, model=model, max_retries=json_max_retries)
     except Exception:
-        # If JSON parsing fails, try text mode and extract JSON
-        from trellis.agent.config import llm_generate
-        text = llm_generate(prompt, model=model)
-        # Find JSON array in text
+        if not allow_text_fallback:
+            raise
+        text = llm_generate(prompt, model=model, max_retries=text_max_retries)
         start = text.find("[")
         end = text.rfind("]") + 1
-        if start >= 0 and end > start:
-            data = json.loads(text[start:end])
-        else:
+        if start < 0 or end <= start:
             return []
+        data = text[start:end]
+
+    if isinstance(data, str):
+        data = json.loads(data)
 
     concerns = []
     if isinstance(data, list):
         for item in data:
-            concerns.append(CriticConcern(
-                description=item.get("description", ""),
-                test_code=item.get("test_code", ""),
-                severity=item.get("severity", "warning"),
-            ))
+            if not isinstance(item, dict):
+                continue
+            concerns.append(
+                CriticConcern(
+                    check_id=str(item.get("check_id") or ("legacy_test_code" if item.get("test_code") else "")).strip(),
+                    description=str(item.get("description", "") or "").strip(),
+                    severity=str(item.get("severity", "warning") or "warning").strip(),
+                    evidence=str(item.get("evidence", "") or "").strip(),
+                    remediation=str(item.get("remediation", "") or "").strip(),
+                    status=str(item.get("status", "suspect") or "suspect").strip(),
+                    test_code=str(item.get("test_code", "") or "").strip(),
+                )
+            )
     return concerns

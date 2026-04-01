@@ -76,6 +76,14 @@ class AlgorithmContractValidator:
         if not signatures:
             return []
 
+        helper_symbols = tuple(
+            prim.symbol
+            for prim in route_spec.primitives
+            if prim.role == "route_helper" and prim.required
+        )
+        if helper_symbols and any(re.search(rf"\b{re.escape(symbol)}\b", source) for symbol in helper_symbols):
+            return []
+
         found = any(sig in source for sig in signatures)
         if not found:
             return [SemanticFinding(
@@ -145,6 +153,7 @@ class AlgorithmContractValidator:
 
         exercise_keywords = (
             "exercise_type", "exercise_fn", "exercise_steps",
+            "exercise_policy", "resolve_lattice_exercise_policy",
             "longstaff_schwartz", "backward_induction",
             "exercise_boundary", "early_exercise",
             "american", "bermudan",

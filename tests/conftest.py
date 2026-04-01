@@ -1,0 +1,86 @@
+"""Root-level test configuration and shared fixtures.
+
+Provides the ``llm_cassette`` fixture for deterministic LLM replay testing.
+See QUA-423 for design context.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+import pytest
+
+# ---------------------------------------------------------------------------
+# Cassette directories
+# ---------------------------------------------------------------------------
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+CASSETTES_DIR = REPO_ROOT / "cassettes"
+
+
+# ---------------------------------------------------------------------------
+# Custom pytest marks
+# ---------------------------------------------------------------------------
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "tier2: Tier 2 contract tests (cassette replay, no tokens)")
+    config.addinivalue_line("markers", "tier3: Tier 3 canary tests (live LLM, expensive)")
+    config.addinivalue_line("markers", "integration: Full integration tests requiring live LLM")
+
+
+# ---------------------------------------------------------------------------
+# llm_cassette fixture
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def llm_cassette(request, monkeypatch):
+    """Record or replay LLM interactions for deterministic agent testing.
+
+    **Replay mode** (default): replays stored responses from a YAML cassette.
+    Zero LLM calls, zero tokens.
+
+    **Record mode** (``TRELLIS_CASSETTE_RECORD=1``): makes live LLM calls
+    and writes the interactions to a cassette file for future replay.
+
+    The cassette name is derived from the test name by default, or can be
+    specified via ``@pytest.mark.parametrize("llm_cassette", ["name"], indirect=True)``.
+    """
+    from trellis.agent import config as agent_config
+    from trellis.agent.cassette import CassetteRecorder, CassetteReplayer
+
+    # Determine cassette name
+    if hasattr(request, "param") and request.param:
+        cassette_name = request.param
+    else:
+        cassette_name = request.node.name
+
+    cassette_dir = Path(os.environ.get("TRELLIS_CASSETTE_DIR", str(CASSETTES_DIR)))
+    cassette_path = cassette_dir / f"{cassette_name}.yaml"
+
+    if os.environ.get("TRELLIS_CASSETTE_RECORD", "0") == "1":
+        # Record mode: wrap real functions
+        recorder = CassetteRecorder(cassette_path, name=cassette_name)
+        real_generate = agent_config.llm_generate
+        real_generate_json = agent_config.llm_generate_json
+        monkeypatch.setattr(
+            agent_config, "llm_generate",
+            recorder.wrap_generate(real_generate),
+        )
+        monkeypatch.setattr(
+            agent_config, "llm_generate_json",
+            recorder.wrap_generate_json(real_generate_json),
+        )
+        yield recorder
+        recorder.flush(
+            provider=agent_config.get_provider(),
+            model=agent_config.get_default_model(),
+        )
+    else:
+        # Replay mode: return stored responses
+        stale_policy = os.environ.get("TRELLIS_CASSETTE_STALE_POLICY", "warn")
+        replayer = CassetteReplayer(cassette_path, stale_policy=stale_policy)
+        monkeypatch.setattr(agent_config, "llm_generate", replayer.generate)
+        monkeypatch.setattr(agent_config, "llm_generate_json", replayer.generate_json)
+        yield replayer
+        replayer.assert_all_consumed()

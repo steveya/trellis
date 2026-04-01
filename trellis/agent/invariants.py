@@ -8,7 +8,7 @@ Three categories:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, is_dataclass, replace
 from datetime import date
 from typing import Any, Mapping
 
@@ -73,6 +73,57 @@ def _emit_failures(
     return [failure.message for failure in failures]
 
 
+def _default_market_state(market_state_factory):
+    """Instantiate a default validation market state from a factory with optional kwargs."""
+    try:
+        return market_state_factory()
+    except TypeError:
+        return market_state_factory(rate=0.05, vol=0.20, corr=0.35)
+
+
+def _extract_spec(payoff: Payoff):
+    """Return the bound spec object for a payoff when present."""
+    spec = getattr(payoff, "spec", None)
+    if spec is None:
+        spec = getattr(payoff, "_spec", None)
+    return spec
+
+
+def _clone_spec_with_updates(spec, **updates):
+    """Clone one spec object with field updates."""
+    if spec is None:
+        raise TypeError("Payoff does not expose a bound spec")
+    if is_dataclass(spec):
+        return replace(spec, **updates)
+    if hasattr(spec, "__dict__"):
+        values = dict(vars(spec))
+        values.update(updates)
+        return type(spec)(**values)
+    raise TypeError(f"Unsupported spec clone type: {type(spec).__name__}")
+
+
+def _clone_payoff_with_spec_updates(payoff: Payoff, **updates) -> Payoff:
+    """Clone a payoff by rebuilding it with an updated spec."""
+    spec = _extract_spec(payoff)
+    cloned_spec = _clone_spec_with_updates(spec, **updates)
+    return type(payoff)(cloned_spec)
+
+
+def _is_cds_like(payoff: Payoff, spec) -> bool:
+    """Return whether a payoff/spec pair looks like a single-name CDS route."""
+    cls_name = type(payoff).__name__.lower()
+    spec_name = type(spec).__name__.lower() if spec is not None else ""
+    return (
+        "cds" in cls_name
+        or "credit_default_swap" in cls_name
+        or "cds" in spec_name
+        or (
+            spec is not None
+            and all(hasattr(spec, name) for name in ("spread", "recovery", "start_date", "end_date"))
+        )
+    )
+
+
 # ---------------------------------------------------------------------------
 # Protocol conformance
 # ---------------------------------------------------------------------------
@@ -99,6 +150,39 @@ def check_protocol_conformance(cls, market_state: MarketState) -> list[str]:
 # Price bounds
 # ---------------------------------------------------------------------------
 
+
+def _cds_spread_unit_hint(payoff: Payoff) -> tuple[str, dict[str, float | str]]:
+    """Return a targeted CDS spread-unit hint when the spec looks bps-like."""
+    spec = getattr(payoff, "_spec", None)
+    spread = getattr(spec, "spread", None)
+    if not isinstance(spread, (int, float)):
+        return "", {}
+
+    cls_name = type(payoff).__name__.lower()
+    spec_name = type(spec).__name__.lower() if spec is not None else ""
+    is_cds_like = (
+        "cds" in cls_name
+        or "credit_default_swap" in cls_name
+        or "cds" in spec_name
+        or (
+            spec is not None
+            and all(hasattr(spec, name) for name in ("spread", "recovery", "start_date", "end_date"))
+        )
+    )
+    if not is_cds_like or spread <= 1.0:
+        return "", {}
+
+    hint = (
+        f" Likely CDS spread-unit issue: running spread {float(spread):.6g} looks like a "
+        "basis-point quote. Convert basis points to decimal before accrual "
+        "(for example 150 bp -> 0.015)."
+    )
+    context = {
+        "cds_spread_hint": "basis_points_to_decimal",
+        "reported_spread": float(spread),
+    }
+    return hint, context
+
 def check_price_sanity(
     payoff: Payoff,
     market_state: MarketState,
@@ -110,6 +194,7 @@ def check_price_sanity(
     failures: list[InvariantFailure] = []
     try:
         pv = price_payoff(payoff, market_state)
+        spread_hint, spread_context = _cds_spread_unit_hint(payoff)
         # Heuristic: price shouldn't exceed max_multiple × 100 (typical notional)
         if abs(pv) > max_multiple * 100:
             failures.append(
@@ -119,12 +204,14 @@ def check_price_sanity(
                         f"Price sanity check failed: |PV| = {abs(pv):.2f}, which exceeds "
                         f"{max_multiple}× typical notional (100). The model likely has a "
                         f"unit conversion error (e.g., passing Black vol to a rate tree)."
+                        f"{spread_hint}"
                     ),
                     actual=float(pv),
                     expected=f"|PV| <= {max_multiple * 100:.4f}",
                     context={
                         **_market_state_context(market_state),
                         "max_multiple": max_multiple,
+                        **spread_context,
                     },
                 )
             )
@@ -154,14 +241,15 @@ def check_non_negativity(
     failures: list[InvariantFailure] = []
     try:
         pv = price_payoff(payoff, market_state)
+        spread_hint, spread_context = _cds_spread_unit_hint(payoff)
         if pv < -1e-6:
             failures.append(
                 InvariantFailure(
                     check="check_non_negativity",
-                    message=f"Price is negative: {pv:.6f}",
+                    message=f"Price is negative: {pv:.6f}.{spread_hint}" if spread_hint else f"Price is negative: {pv:.6f}",
                     actual=float(pv),
                     expected="PV >= 0.0",
-                    context=_market_state_context(market_state),
+                    context={**_market_state_context(market_state), **spread_context},
                 )
             )
     except Exception as e:
@@ -228,10 +316,11 @@ def check_vol_monotonicity(
     payoff_factory,
     market_state_factory,
     vol_range: tuple[float, ...] = (0.05, 0.10, 0.20, 0.40),
+    expected_direction: str = "increasing",
     *,
     return_diagnostics: bool = False,
 ) -> list[InvariantFailure] | list[str]:
-    """Price must be non-decreasing in vol for option payoffs."""
+    """Price should move monotonically with vol in the expected direction."""
     failures: list[InvariantFailure] = []
     prices = []
     for vol in vol_range:
@@ -247,6 +336,7 @@ def check_vol_monotonicity(
                     exception_message=str(e),
                     context={
                         "vol": float(vol),
+                        "expected_direction": expected_direction,
                         "sampled_prices": [[float(v), float(p)] for v, p in prices],
                     },
                 )
@@ -256,17 +346,35 @@ def check_vol_monotonicity(
     for i in range(len(prices) - 1):
         v1, p1 = prices[i]
         v2, p2 = prices[i + 1]
-        if p2 < p1 - 1e-6:
+        if expected_direction == "increasing" and p2 < p1 - 1e-6:
             failures.append(
                 InvariantFailure(
                     check="check_vol_monotonicity",
                     message=(
                         f"Vol monotonicity violated: price({v1:.2f})={p1:.4f} > "
-                        f"price({v2:.2f})={p2:.4f}"
+                        f"price({v2:.2f})={p2:.4f} (expected increasing)"
                     ),
                     actual=float(p2),
                     expected=f">= {p1:.4f}",
                     context={
+                        "expected_direction": expected_direction,
+                        "violating_pair": [[float(v1), float(p1)], [float(v2), float(p2)]],
+                        "sampled_prices": [[float(v), float(p)] for v, p in prices],
+                    },
+                )
+            )
+        elif expected_direction == "decreasing" and p2 > p1 + 1e-6:
+            failures.append(
+                InvariantFailure(
+                    check="check_vol_monotonicity",
+                    message=(
+                        f"Vol monotonicity violated: price({v1:.2f})={p1:.4f} < "
+                        f"price({v2:.2f})={p2:.4f} (expected decreasing)"
+                    ),
+                    actual=float(p2),
+                    expected=f"<= {p1:.4f}",
+                    context={
+                        "expected_direction": expected_direction,
                         "violating_pair": [[float(v1), float(p1)], [float(v2), float(p2)]],
                         "sampled_prices": [[float(v), float(p)] for v, p in prices],
                     },
@@ -582,6 +690,146 @@ def check_quanto_cross_currency_semantics(
                 context={"sampled_prices": [[float(c), float(p)] for c, p in prices]},
             )
             )
+    return _emit_failures(failures, return_diagnostics=return_diagnostics)
+
+
+def check_cds_spread_quote_normalization(
+    payoff_factory,
+    market_state_factory,
+    *,
+    tolerance: float = 1e-4,
+    return_diagnostics: bool = False,
+) -> list[InvariantFailure] | list[str]:
+    """Single-name CDS should price equivalent decimal and bps spread quotes the same way."""
+    failures: list[InvariantFailure] = []
+    try:
+        payoff = payoff_factory()
+        spec = _extract_spec(payoff)
+        if spec is None or not _is_cds_like(payoff, spec):
+            return _emit_failures(failures, return_diagnostics=return_diagnostics)
+        spread = getattr(spec, "spread", None)
+        if not isinstance(spread, (int, float)) or spread <= 0.0:
+            return _emit_failures(failures, return_diagnostics=return_diagnostics)
+
+        equivalent_spread = float(spread) * 1e-4 if float(spread) > 1.0 else float(spread) * 1e4
+        base_ms = _default_market_state(market_state_factory)
+        equivalent_payoff = _clone_payoff_with_spec_updates(payoff, spread=equivalent_spread)
+        base_pv = price_payoff(payoff, base_ms)
+        equivalent_pv = price_payoff(equivalent_payoff, base_ms)
+        scale = max(abs(base_pv), abs(equivalent_pv), 1.0)
+        diff = abs(base_pv - equivalent_pv)
+        if diff > tolerance * scale:
+            failures.append(
+                InvariantFailure(
+                    check="check_cds_spread_quote_normalization",
+                    message=(
+                        "CDS spread quote normalization failed: semantically equivalent "
+                        f"spreads {float(spread):.6g} and {float(equivalent_spread):.6g} "
+                        f"produced materially different PVs ({base_pv:.6f} vs {equivalent_pv:.6f}). "
+                        "Single-name CDS routes should treat basis-point and decimal quotes consistently."
+                    ),
+                    actual=float(base_pv),
+                    expected=f"{equivalent_pv:.6f} +/- {tolerance:.4%}",
+                    context={
+                        "spread_quote": float(spread),
+                        "equivalent_spread_quote": float(equivalent_spread),
+                        "base_pv": float(base_pv),
+                        "equivalent_pv": float(equivalent_pv),
+                        "tolerance": float(tolerance),
+                    },
+                )
+            )
+    except Exception as e:
+        failures.append(
+            InvariantFailure(
+                check="check_cds_spread_quote_normalization",
+                message=f"CDS spread normalization check failed: {e}",
+                exception_type=type(e).__name__,
+                exception_message=str(e),
+                context={"tolerance": float(tolerance)},
+            )
+        )
+    return _emit_failures(failures, return_diagnostics=return_diagnostics)
+
+
+def check_cds_credit_curve_sensitivity(
+    payoff_factory,
+    market_state_factory,
+    hazard_shifts_bps: tuple[float, ...] = (0.0, 50.0, 100.0),
+    *,
+    tolerance: float = 1e-6,
+    return_diagnostics: bool = False,
+) -> list[InvariantFailure] | list[str]:
+    """Long-protection CDS routes should respond positively to higher hazard rates."""
+    failures: list[InvariantFailure] = []
+    try:
+        base_ms = _default_market_state(market_state_factory)
+        if getattr(base_ms, "credit_curve", None) is None:
+            failures.append(
+                InvariantFailure(
+                    check="check_cds_credit_curve_sensitivity",
+                    message="CDS credit sensitivity check requires a credit curve in MarketState.",
+                    expected="market_state.credit_curve is present",
+                    context=_market_state_context(base_ms),
+                )
+            )
+            return _emit_failures(failures, return_diagnostics=return_diagnostics)
+
+        prices: list[tuple[float, float]] = []
+        for shift in hazard_shifts_bps:
+            shifted_curve = base_ms.credit_curve.shift(float(shift))
+            shifted_ms = replace(base_ms, credit_curve=shifted_curve)
+            pv = price_payoff(payoff_factory(), shifted_ms)
+            prices.append((float(shift), float(pv)))
+
+        rounded_prices = {round(price, 8) for _, price in prices}
+        if len(rounded_prices) <= 1:
+            failures.append(
+                InvariantFailure(
+                    check="check_cds_credit_curve_sensitivity",
+                    message=(
+                        "CDS credit sensitivity check failed: price is insensitive to hazard-rate shifts."
+                    ),
+                    context={"sampled_prices": [[shift, price] for shift, price in prices]},
+                )
+            )
+            return _emit_failures(failures, return_diagnostics=return_diagnostics)
+
+        for index in range(len(prices) - 1):
+            shift_a, pv_a = prices[index]
+            shift_b, pv_b = prices[index + 1]
+            if pv_b < pv_a - tolerance * max(abs(pv_a), 1.0):
+                failures.append(
+                    InvariantFailure(
+                        check="check_cds_credit_curve_sensitivity",
+                        message=(
+                            "CDS credit sensitivity violated: price should increase for a long-protection "
+                            f"CDS when hazard shifts higher, but PV moved from {pv_a:.6f} at +{shift_a:.0f}bp "
+                            f"to {pv_b:.6f} at +{shift_b:.0f}bp."
+                        ),
+                        actual=float(pv_b),
+                        expected=f">= {pv_a:.6f}",
+                        context={
+                            "violating_pair": [[float(shift_a), float(pv_a)], [float(shift_b), float(pv_b)]],
+                            "sampled_prices": [[shift, price] for shift, price in prices],
+                            "tolerance": float(tolerance),
+                        },
+                    )
+                )
+                break
+    except Exception as e:
+        failures.append(
+            InvariantFailure(
+                check="check_cds_credit_curve_sensitivity",
+                message=f"CDS credit sensitivity check failed: {e}",
+                exception_type=type(e).__name__,
+                exception_message=str(e),
+                context={
+                    "hazard_shifts_bps": [float(shift) for shift in hazard_shifts_bps],
+                    "tolerance": float(tolerance),
+                },
+            )
+        )
     return _emit_failures(failures, return_diagnostics=return_diagnostics)
 
 

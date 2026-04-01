@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from enum import Enum
-from typing import Union
+from typing import Iterable, Union
 
 from datetime import datetime
 
+from trellis.conventions.day_count import DayCountConvention, year_fraction
 from trellis.conventions.calendar import BusinessDayAdjustment, Calendar
-from trellis.core.types import Frequency
+from trellis.core.types import ContractTimeline, EventSchedule, Frequency, SchedulePeriod, TimelineRole
 
 DateLike = Union[date, datetime]
 
@@ -98,6 +99,161 @@ def generate_schedule(
         dates = [calendar.adjust(d, bda) for d in dates]
 
     return dates
+
+
+def build_period_schedule(
+    start: DateLike,
+    end: DateLike,
+    frequency: Frequency,
+    *,
+    calendar: Calendar | None = None,
+    bda: BusinessDayAdjustment = BusinessDayAdjustment.UNADJUSTED,
+    stub: StubType = StubType.SHORT_LAST,
+    roll_convention: RollConvention = RollConvention.NONE,
+    day_count: DayCountConvention | None = None,
+    time_origin: DateLike | None = None,
+    payment_lag_days: int = 0,
+) -> EventSchedule:
+    """Build an explicit periodized schedule for pricing routes.
+
+    Unlike :func:`generate_schedule`, this returns accrual periods with
+    explicit period boundaries, payment dates, optional accrual fractions, and
+    optional model times measured from ``time_origin``.
+    """
+    start_d = _to_date(start)
+    end_d = _to_date(end)
+    origin_d = _to_date(time_origin) if time_origin is not None else None
+    if origin_d is not None and day_count is None:
+        raise ValueError("day_count is required when time_origin is provided")
+
+    payment_dates = generate_schedule(
+        start_d,
+        end_d,
+        frequency,
+        calendar=calendar,
+        bda=bda,
+        stub=stub,
+        roll_convention=roll_convention,
+    )
+    period_starts = [start_d] + payment_dates[:-1]
+    periods: list[SchedulePeriod] = []
+
+    for period_start, period_end in zip(period_starts, payment_dates):
+        payment_date = period_end + timedelta(days=payment_lag_days)
+        if calendar is not None and bda != BusinessDayAdjustment.UNADJUSTED:
+            payment_date = calendar.adjust(payment_date, bda)
+
+        accrual_fraction = None
+        if day_count is not None:
+            accrual_fraction = year_fraction(
+                period_start,
+                period_end,
+                day_count,
+                ref_start=period_start,
+                ref_end=period_end,
+                frequency=frequency,
+                calendar=calendar,
+            )
+
+        t_start = t_end = t_payment = None
+        if origin_d is not None and day_count is not None:
+            t_start = year_fraction(origin_d, period_start, day_count, calendar=calendar)
+            t_end = year_fraction(origin_d, period_end, day_count, calendar=calendar)
+            t_payment = year_fraction(origin_d, payment_date, day_count, calendar=calendar)
+
+        periods.append(
+            SchedulePeriod(
+                start_date=period_start,
+                end_date=period_end,
+                payment_date=payment_date,
+                accrual_fraction=accrual_fraction,
+                t_start=t_start,
+                t_end=t_end,
+                t_payment=t_payment,
+            )
+        )
+
+    return EventSchedule(
+        start_date=start_d,
+        end_date=end_d,
+        frequency=frequency,
+        day_count=day_count,
+        time_origin=origin_d,
+        periods=tuple(periods),
+    )
+
+
+def build_contract_timeline(
+    start: DateLike,
+    end: DateLike,
+    frequency: Frequency,
+    *,
+    role: TimelineRole,
+    label: str | None = None,
+    **kwargs,
+) -> ContractTimeline:
+    """Build a role-typed timeline over a periodic schedule."""
+    schedule = build_period_schedule(start, end, frequency, **kwargs)
+    return ContractTimeline(
+        role=role,
+        start_date=schedule.start_date,
+        end_date=schedule.end_date,
+        frequency=schedule.frequency,
+        day_count=schedule.day_count,
+        time_origin=schedule.time_origin,
+        periods=schedule.periods,
+        label=label,
+    )
+
+
+def build_contract_timeline_from_dates(
+    dates: Iterable[DateLike],
+    *,
+    role: TimelineRole,
+    day_count: DayCountConvention | None = None,
+    time_origin: DateLike | None = None,
+    label: str | None = None,
+) -> ContractTimeline:
+    """Build a role-typed point-event timeline from explicit dates.
+
+    Each event date becomes a zero-width schedule period whose start, end, and
+    payment dates are identical. This is appropriate for exercise,
+    observation, reset, or settlement events supplied as explicit dates.
+    """
+    ordered = tuple(sorted(_to_date(item) for item in dates))
+    if not ordered:
+        raise ValueError("explicit event timelines require at least one date")
+    origin_d = _to_date(time_origin) if time_origin is not None else None
+    if origin_d is not None and day_count is None:
+        raise ValueError("day_count is required when time_origin is provided")
+
+    periods: list[SchedulePeriod] = []
+    for event_date in ordered:
+        t_event = None
+        if origin_d is not None and day_count is not None:
+            t_event = year_fraction(origin_d, event_date, day_count)
+        periods.append(
+            SchedulePeriod(
+                start_date=event_date,
+                end_date=event_date,
+                payment_date=event_date,
+                accrual_fraction=0.0,
+                t_start=t_event,
+                t_end=t_event,
+                t_payment=t_event,
+            )
+        )
+
+    return ContractTimeline(
+        role=role,
+        start_date=ordered[0],
+        end_date=ordered[-1],
+        frequency=None,
+        day_count=day_count,
+        time_origin=origin_d,
+        periods=tuple(periods),
+        label=label,
+    )
 
 
 def _generate_forward(start: date, end: date, months: int, eom: bool) -> list[date]:

@@ -32,6 +32,12 @@ Types
    :members:
    :undoc-members:
 
+.. autoclass:: trellis.core.types.SchedulePeriod
+   :members:
+
+.. autoclass:: trellis.core.types.EventSchedule
+   :members:
+
 .. autoclass:: trellis.core.PricingResult
    :members:
 

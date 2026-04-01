@@ -1,0 +1,32 @@
+category: market_data
+title: Normalize enum-like inputs
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-03-31T23:58:27.553326'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: The code passed a Frequency object into int() when building the BDT rate
+  tree, assuming the market-state field was already numeric.
+root_cause: This happens when the implementation mixes domain-specific types with
+  primitive numeric APIs, so the mental model incorrectly treats enums/objects as
+  raw scalars. Tree construction then fails at the first place that expects a period
+  count or month step as an integer.
+fix: Convert Frequency inputs to explicit integer periods or map them through a dedicated
+  adapter before calibration and tree setup.
+validation: "Resolved during build of Build a pricer for: Callable bond: BDT lognormal\
+  \ vs HW normal tree\n\nConstruct methods: rate_tree\nComparison targets: bdt_tree\
+  \ (rate_tree), hull_white_tree (rate_tree)\nCross-validation harness:\n  internal\
+  \ targets: bdt_tree, hull_white_tree\n  external targets: financepy, quantlib\n\
+  New component: bdt_calibration_via_generic_lattice\n\nImplementation target: bdt_tree\n\
+  Preferred method family: rate_tree\n\nImplementation target: bdt_tree"
+id: md_046

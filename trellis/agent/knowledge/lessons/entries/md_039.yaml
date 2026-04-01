@@ -1,0 +1,31 @@
+category: market_data
+title: Spread unit conversion error
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-03-31T13:30:51.325911'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Passed CDS running spread in basis points (e.g., 100) directly into accrual/rate
+  formulas instead of as a decimal, producing an absurd PV.
+root_cause: I misread the market quote units—models expect decimal rates (e.g., 0.01
+  for 100 bp) but I supplied raw bps, so premium leg cashflows were scaled by orders
+  of magnitude and flipped sign.
+fix: Convert spreads from basis points to decimal before use (spread_decimal = spread_bps
+  / 10000) and add input-unit validation/assertions.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: mc_cds\nPreferred method family:\
+  \ monte_carlo\n\nImplementation target: mc_cds"
+id: md_039

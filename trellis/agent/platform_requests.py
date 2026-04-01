@@ -31,10 +31,19 @@ from trellis.agent.knowledge import (
 from trellis.agent.knowledge.decompose import decompose_to_ir
 from trellis.agent.knowledge.methods import normalize_method
 from trellis.agent.semantic_escalation import semantic_role_ownership_summary
+from trellis.agent.market_binding import (
+    market_binding_spec_summary,
+    required_data_spec_summary,
+)
 from trellis.agent.quant import (
     PricingPlan,
     select_pricing_method_for_family_blueprint,
     select_pricing_method_for_product_ir,
+)
+from trellis.agent.sensitivity_support import normalize_requested_outputs
+from trellis.agent.valuation_context import (
+    build_valuation_context,
+    valuation_context_summary,
 )
 
 if TYPE_CHECKING:
@@ -52,18 +61,8 @@ def _freeze_tuple(values: list | tuple | None) -> tuple:
 
 
 def _normalize_measures(measures: list | tuple | None) -> tuple[str, ...]:
-    """Normalize heterogeneous measure inputs to canonical measure-name strings."""
-    if not measures:
-        return ()
-    normalized: list[str] = []
-    for measure in measures:
-        if isinstance(measure, str):
-            normalized.append(measure)
-        elif isinstance(measure, dict) and measure:
-            normalized.append(str(next(iter(measure))))
-        else:
-            normalized.append(getattr(measure, "name", type(measure).__name__.lower()))
-    return tuple(normalized)
+    """Backward-compatible shim for canonical requested-output normalization."""
+    return normalize_requested_outputs(measures)
 
 
 def _new_request_id(entry_point: str, request_type: str) -> str:
@@ -84,6 +83,7 @@ class PlatformRequest:
     description: str | None = None
     instrument_type: str | None = None
     measures: tuple[str, ...] = ()
+    requested_outputs: tuple[str, ...] = ()
     model: str | None = None
     term_sheet: Any | None = None
     product_spec: Any | None = None
@@ -94,6 +94,10 @@ class PlatformRequest:
 
     def __post_init__(self):
         """Freeze mutable metadata so requests remain hash- and trace-stable."""
+        normalized_outputs = _normalize_measures(self.requested_outputs or self.measures)
+        normalized_measures = _normalize_measures(self.measures or normalized_outputs)
+        object.__setattr__(self, "requested_outputs", normalized_outputs)
+        object.__setattr__(self, "measures", normalized_measures)
         object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
 
 
@@ -104,9 +108,17 @@ class ExecutionPlan:
     action: str
     reason: str
     measures: tuple[str, ...] = ()
+    requested_outputs: tuple[str, ...] = ()
     route_method: str | None = None
     requires_build: bool = False
     should_trace: bool = True
+
+    def __post_init__(self):
+        """Keep the legacy ``measures`` field aligned with canonical requested outputs."""
+        normalized_outputs = _normalize_measures(self.requested_outputs or self.measures)
+        normalized_measures = _normalize_measures(self.measures or normalized_outputs)
+        object.__setattr__(self, "requested_outputs", normalized_outputs)
+        object.__setattr__(self, "measures", normalized_measures)
 
 
 @dataclass(frozen=True)
@@ -329,7 +341,7 @@ def _direct_instrument_execution_plan(request: PlatformRequest) -> ExecutionPlan
     return ExecutionPlan(
         action=action,
         reason="direct_session_request",
-        measures=request.measures,
+        requested_outputs=request.requested_outputs,
         route_method="direct_existing",
     )
 
@@ -346,7 +358,7 @@ def _execution_plan_for_request(
     return ExecutionPlan(
         action=action,
         reason=reason,
-        measures=request.measures,
+        requested_outputs=request.requested_outputs,
         route_method=route_method,
         requires_build=requires_build,
     )
@@ -518,6 +530,7 @@ def _request_with_semantic_metadata(
     request: PlatformRequest,
     semantic_contract,
     *,
+    semantic_blueprint=None,
     semantic_role_ownership: Mapping[str, object] | None = None,
 ) -> PlatformRequest:
     """Attach a YAML-safe semantic summary to request metadata."""
@@ -525,9 +538,39 @@ def _request_with_semantic_metadata(
 
     metadata = dict(request.metadata or {})
     metadata["semantic_contract"] = semantic_contract_summary(semantic_contract)
+    if semantic_blueprint is not None:
+        metadata["semantic_blueprint"] = _semantic_blueprint_summary(semantic_blueprint)
     if semantic_role_ownership is not None:
         metadata["semantic_role_ownership"] = dict(semantic_role_ownership)
     return replace(request, metadata=metadata)
+
+
+def _semantic_blueprint_summary(semantic_blueprint) -> dict[str, object]:
+    """Return a compact YAML-safe summary of lowering-relevant blueprint state."""
+    lowering = getattr(semantic_blueprint, "dsl_lowering", None)
+    control_styles = tuple(
+        getattr(style, "value", str(style))
+        for style in getattr(lowering, "control_styles", ())
+    )
+    return {
+        "preferred_method": semantic_blueprint.preferred_method,
+        "primitive_routes": list(getattr(semantic_blueprint, "primitive_routes", ()) or ()),
+        "route_modules": list(getattr(semantic_blueprint, "route_modules", ()) or ()),
+        "dsl_route": getattr(lowering, "route_id", None),
+        "dsl_route_family": getattr(lowering, "route_family", None),
+        "dsl_helper_refs": list(getattr(lowering, "helper_refs", ()) or ()),
+        "dsl_control_styles": list(control_styles),
+        "requested_outputs": list(getattr(semantic_blueprint, "requested_outputs", ()) or ()),
+        "valuation_context": valuation_context_summary(semantic_blueprint.valuation_context)
+        if getattr(semantic_blueprint, "valuation_context", None) is not None
+        else None,
+        "required_data_spec": required_data_spec_summary(semantic_blueprint.required_data_spec)
+        if getattr(semantic_blueprint, "required_data_spec", None) is not None
+        else None,
+        "market_binding_spec": market_binding_spec_summary(semantic_blueprint.market_binding_spec)
+        if getattr(semantic_blueprint, "market_binding_spec", None) is not None
+        else None,
+    }
 
 
 def _request_with_semantic_gap_metadata(
@@ -673,16 +716,25 @@ def _compile_semantic_request(
     """Compile a semantic contract into execution artifacts."""
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
 
+    valuation_context = _valuation_context_for_request(
+        request,
+        semantic_contract=semantic_contract,
+    )
     semantic_blueprint = compile_semantic_contract(
         semantic_contract,
+        valuation_context=valuation_context,
         requested_measures=request.measures,
         preferred_method=preferred_method,
     )
-    request = _request_with_semantic_metadata(request, semantic_blueprint.contract)
+    request = _request_with_semantic_metadata(
+        request,
+        semantic_blueprint.contract,
+        semantic_blueprint=semantic_blueprint,
+    )
     pricing_plan = select_pricing_method_for_product_ir(
         semantic_blueprint.product_ir,
         preferred_method=semantic_blueprint.preferred_method,
-        requested_measures=request.measures,
+        requested_measures=semantic_blueprint.requested_outputs,
         context_description=request.description,
     )
     inspected_modules = semantic_blueprint.route_modules
@@ -709,7 +761,7 @@ def _compile_semantic_request(
         execution_plan=ExecutionPlan(
             action=action,
             reason=reason,
-            measures=request.measures,
+            requested_outputs=request.requested_outputs,
             route_method=pricing_plan.method,
             requires_build=not should_block,
         ),
@@ -1101,3 +1153,38 @@ def _aggregate_comparison_knowledge(
     merged["exercise_style"] = getattr(product_ir, "exercise_style", None)
     merged["model_family"] = getattr(product_ir, "model_family", None)
     return merged
+
+
+def _request_reporting_currency(
+    request: PlatformRequest,
+    *,
+    semantic_contract=None,
+) -> str:
+    """Infer the best available reporting currency from request and semantic context."""
+    term_sheet_currency = getattr(getattr(request, "term_sheet", None), "currency", None)
+    if term_sheet_currency:
+        return str(term_sheet_currency).strip()
+    if semantic_contract is not None:
+        conventions = getattr(getattr(semantic_contract, "product", None), "conventions", None)
+        for attr in ("reporting_currency", "payment_currency"):
+            value = getattr(conventions, attr, None)
+            if value:
+                return str(value).strip()
+    return ""
+
+
+def _valuation_context_for_request(
+    request: PlatformRequest,
+    *,
+    semantic_contract=None,
+):
+    """Build the tranche-1 valuation context for one semantic request."""
+    return build_valuation_context(
+        market_snapshot=request.market_snapshot,
+        model_spec=request.model,
+        reporting_currency=_request_reporting_currency(
+            request,
+            semantic_contract=semantic_contract,
+        ),
+        requested_outputs=request.requested_outputs,
+    )

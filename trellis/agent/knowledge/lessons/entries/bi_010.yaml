@@ -1,0 +1,32 @@
+category: backward_induction
+title: Keep fallback paths indented
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T13:23:16.362151'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: A try/except fallback was left with a missing indented body, causing a syntax
+  error instead of a valid tree pricing implementation.
+root_cause: The mental model failure was treating the fallback as a minor refactor
+  detail rather than preserving Python block structure and control flow. When helper-method
+  compatibility branches are added, every except block must still contain a correctly
+  indented executable statement.
+fix: Ensure each except clause has a properly indented fallback call or pass statement
+  before validating the module.
+validation: "Resolved during build of Build a pricer for: Callable bond: BDT lognormal\
+  \ vs HW normal tree\n\nConstruct methods: rate_tree\nComparison targets: bdt_tree\
+  \ (rate_tree), hull_white_tree (rate_tree)\nCross-validation harness:\n  internal\
+  \ targets: bdt_tree, hull_white_tree\n  external targets: financepy, quantlib\n\
+  New component: bdt_calibration_via_generic_lattice\n\nImplementation target: bdt_tree\n\
+  Preferred method family: rate_tree\n\nImplementation target: bdt_tree"
+id: bi_010

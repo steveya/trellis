@@ -58,21 +58,23 @@ payoff:
 # Model imports — trees
 # ---------------------------------------------------------------------------
 equity_tree:
-  module: trellis.models.trees.binomial
+  module: trellis.models.equity_option_tree
   key_imports:
-    - "from trellis.models.trees.binomial import BinomialTree"
-    - "from trellis.models.trees.backward_induction import backward_induction"
+    - "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree"
+    - "from trellis.models.trees.lattice import build_spot_lattice, lattice_backward_induction"
   notes:
-    - "American/Bermudan equity options use BinomialTree.crr(...) and backward_induction(..., exercise_type=...)"
-    - "Import the binomial and backward-induction submodules directly when you need the exact equity-tree route"
+    - "American/Bermudan equity options should prefer the checked-in helper `price_vanilla_equity_option_tree(...)`"
+    - "If you need the lower-level path, import the lattice builder/backward induction submodules directly"
 
 rate_lattice:
   module: trellis.models.trees.lattice
   key_imports:
     - "from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction"
+    - "from trellis.models.zcb_option_tree import price_zcb_option_tree"
   notes:
     - "Callable bonds, puttable bonds, and Bermudan swaptions use a calibrated rate lattice from a TreeModel specification such as Hull-White or Black-Derman-Toy"
     - "lattice_backward_induction handles cashflow_at_node and exercise_fn"
+    - "Zero-coupon bond option tree routes should prefer `price_zcb_option_tree(...)` instead of rebuilding nested backward induction inline"
 
 # ---------------------------------------------------------------------------
 # Model imports — Monte Carlo
@@ -107,12 +109,14 @@ qmc:
 pde:
   module: trellis.models.pde
   key_imports:
+    - "from trellis.models.equity_option_pde import price_vanilla_equity_option_pde"
     - "from trellis.models.pde.grid import Grid"
     - "from trellis.models.pde.theta_method import theta_method_1d"
     - "from trellis.models.pde.operator import BlackScholesOperator"
     - "from trellis.models.pde import psor_1d  # American options"
     - "from trellis.models.pde import HullWhitePDEOperator"
   notes:
+    - "Vanilla European equity PDE routes should prefer the checked-in helper `price_vanilla_equity_option_pde(...)`"
     - "Use theta_method_1d, NOT legacy crank_nicolson_1d or implicit_fd_1d"
     - "theta=0.5 for Crank-Nicolson, theta=1.0 for fully implicit"
     - "Grid constructor: Grid(x_min, x_max, n_x, T, n_t, log_spacing=False); never omit x_min or n_t"
@@ -141,8 +145,9 @@ copulas:
 # Model imports — analytical
 # ---------------------------------------------------------------------------
 analytical:
-  module: trellis.models.analytical
+  module: trellis.models.zcb_option
   key_imports:
+    - "from trellis.models.zcb_option import price_zcb_option_jamshidian"
     - "from trellis.models.analytical import zcb_option_hw"
     - "from trellis.models.analytical import terminal_vanilla_from_basis"
 

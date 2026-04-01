@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import calendar
 from datetime import date, datetime, timedelta
-from typing import Union
+from typing import Iterable, Union
 
-from trellis.core.types import DayCountConvention, Frequency
+from trellis.core.types import (
+    ContractTimeline,
+    DayCountConvention,
+    EventSchedule,
+    Frequency,
+    TimelineRole,
+)
 
 DateLike = Union[date, datetime]
 
@@ -49,6 +55,78 @@ def generate_schedule(start: DateLike, end: DateLike,
     """
     from trellis.conventions.schedule import generate_schedule as _gs
     return _gs(start, end, frequency, **kwargs)
+
+
+def build_period_schedule(
+    start: DateLike,
+    end: DateLike,
+    frequency: Frequency,
+    **kwargs,
+) -> EventSchedule:
+    """Build an explicit period schedule for pricing routes.
+
+    This is the route-safe companion to :func:`generate_schedule`. It returns
+    period objects with accrual boundaries, payment dates, and optional model
+    times so routes do not have to reconstruct those contracts manually.
+    """
+    from trellis.conventions.schedule import build_period_schedule as _bps
+    return _bps(start, end, frequency, **kwargs)
+
+
+def build_contract_timeline(
+    start: DateLike,
+    end: DateLike,
+    frequency: Frequency,
+    role: TimelineRole,
+    **kwargs,
+) -> ContractTimeline:
+    """Build a role-typed contract timeline over a periodic schedule."""
+    from trellis.conventions.schedule import build_contract_timeline as _bct
+    return _bct(start, end, frequency, role=role, **kwargs)
+
+
+def build_contract_timeline_from_dates(
+    dates: Iterable[DateLike],
+    role: TimelineRole,
+    **kwargs,
+) -> ContractTimeline:
+    """Build a role-typed point-event timeline from explicit dates."""
+    from trellis.conventions.schedule import build_contract_timeline_from_dates as _bctfd
+    return _bctfd(dates, role=role, **kwargs)
+
+
+def build_payment_timeline(
+    start: DateLike,
+    end: DateLike,
+    frequency: Frequency,
+    **kwargs,
+) -> ContractTimeline:
+    """Build a payment timeline over explicit periods."""
+    return build_contract_timeline(start, end, frequency, role=TimelineRole.PAYMENT, **kwargs)
+
+
+def build_observation_timeline(
+    start: DateLike,
+    end: DateLike,
+    frequency: Frequency,
+    **kwargs,
+) -> ContractTimeline:
+    """Build an observation timeline over explicit periods."""
+    return build_contract_timeline(
+        start,
+        end,
+        frequency,
+        role=TimelineRole.OBSERVATION,
+        **kwargs,
+    )
+
+
+def build_exercise_timeline_from_dates(
+    dates: Iterable[DateLike],
+    **kwargs,
+) -> ContractTimeline:
+    """Build an exercise timeline from explicit decision dates."""
+    return build_contract_timeline_from_dates(dates, role=TimelineRole.EXERCISE, **kwargs)
 
 
 def get_bracketing_dates(start: DateLike, end: DateLike,

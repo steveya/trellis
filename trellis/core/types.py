@@ -2,7 +2,7 @@
 
 Defines the fundamental types that most other modules depend on:
 frequency enums, day count conventions, the DiscountCurve and Instrument
-protocols, and simple data containers like CashflowSchedule and PricingResult.
+protocols, and simple data containers like schedules and pricing results.
 """
 
 from __future__ import annotations
@@ -26,6 +26,59 @@ KNOWN_GREEKS = frozenset({
 })
 
 
+class DslMeasure(str, Enum):
+    """Declarative measure type for the DSL pipeline.
+
+    Each member's value is the canonical lowercase string used throughout
+    the pipeline.  Inherits from ``str`` so existing code comparing
+    ``measure == "dv01"`` or ``measure in some_set`` works unchanged.
+    """
+
+    PRICE = "price"
+    DV01 = "dv01"
+    DURATION = "duration"
+    CONVEXITY = "convexity"
+    KEY_RATE_DURATIONS = "key_rate_durations"
+    VEGA = "vega"
+    DELTA = "delta"
+    GAMMA = "gamma"
+    THETA = "theta"
+    RHO = "rho"
+    OAS = "oas"
+    Z_SPREAD = "z_spread"
+    SCENARIO_PNL = "scenario_pnl"
+
+
+_DSL_MEASURE_ALIASES: dict[str, DslMeasure] = {
+    "krd": DslMeasure.KEY_RATE_DURATIONS,
+    "modified_duration": DslMeasure.DURATION,
+    "pv": DslMeasure.PRICE,
+    "npv": DslMeasure.PRICE,
+    "pv01": DslMeasure.DV01,
+    "zspread": DslMeasure.Z_SPREAD,
+    "z-spread": DslMeasure.Z_SPREAD,
+    "scenario": DslMeasure.SCENARIO_PNL,
+}
+
+
+def normalize_dsl_measure(name: str) -> DslMeasure:
+    """Resolve a string measure name to the canonical ``DslMeasure`` enum.
+
+    Raises ``ValueError`` for unknown names.
+    """
+    key = name.strip().lower().replace(" ", "_")
+    alias = _DSL_MEASURE_ALIASES.get(key)
+    if alias is not None:
+        return alias
+    try:
+        return DslMeasure(key)
+    except ValueError:
+        raise ValueError(
+            f"Unknown measure: {key!r}. "
+            f"Known: {sorted(m.value for m in DslMeasure)}"
+        ) from None
+
+
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------
@@ -36,6 +89,16 @@ class Frequency(Enum):
     SEMI_ANNUAL = 2
     QUARTERLY = 4
     MONTHLY = 12
+
+
+class TimelineRole(Enum):
+    """Semantic role carried by a contract timeline."""
+
+    PAYMENT = "payment"
+    OBSERVATION = "observation"
+    EXERCISE = "exercise"
+    RESET = "reset"
+    SETTLEMENT = "settlement"
 
 
 
@@ -64,6 +127,98 @@ class CashflowSchedule:
     """
     dates: list[date]
     amounts: list[float]
+
+
+@dataclass(frozen=True)
+class SchedulePeriod:
+    """One explicit accrual/payment period in a pricing schedule.
+
+    The date fields are always populated. Time and accrual fields are optional
+    so routes can use the same object with or without a chosen time origin and
+    day-count convention.
+    """
+
+    start_date: date
+    end_date: date
+    payment_date: date
+    accrual_fraction: float | None = None
+    t_start: float | None = None
+    t_end: float | None = None
+    t_payment: float | None = None
+
+
+@dataclass(frozen=True)
+class EventSchedule:
+    """Immutable sequence of explicit schedule periods for event-style routes."""
+
+    start_date: date
+    end_date: date
+    frequency: Frequency
+    day_count: DayCountConvention | None
+    time_origin: date | None
+    periods: tuple[SchedulePeriod, ...]
+
+    def __iter__(self):
+        return iter(self.periods)
+
+    def __len__(self) -> int:
+        return len(self.periods)
+
+    def __getitem__(self, item):
+        return self.periods[item]
+
+    @property
+    def payment_dates(self) -> tuple[date, ...]:
+        """Return the payment dates in order."""
+        return tuple(period.payment_date for period in self.periods)
+
+    @property
+    def period_end_dates(self) -> tuple[date, ...]:
+        """Return the accrual end dates in order."""
+        return tuple(period.end_date for period in self.periods)
+
+
+@dataclass(frozen=True)
+class ContractTimeline:
+    """Role-typed timeline used by contract and route helpers.
+
+    This wraps explicit schedule periods with a semantic role so downstream
+    code can distinguish payment, observation, exercise, reset, and settlement
+    timelines without rebuilding those meanings from local context.
+    """
+
+    role: TimelineRole
+    start_date: date
+    end_date: date
+    frequency: Frequency | None
+    day_count: DayCountConvention | None
+    time_origin: date | None
+    periods: tuple[SchedulePeriod, ...]
+    label: str | None = None
+
+    def __iter__(self):
+        return iter(self.periods)
+
+    def __len__(self) -> int:
+        return len(self.periods)
+
+    def __getitem__(self, item):
+        return self.periods[item]
+
+    @property
+    def event_dates(self) -> tuple[date, ...]:
+        """Return the primary event dates in order."""
+        return tuple(period.payment_date for period in self.periods)
+
+    @property
+    def payment_dates(self) -> tuple[date, ...]:
+        """Return payment dates for timelines that emit cashflows."""
+        return tuple(period.payment_date for period in self.periods)
+
+    @property
+    def period_end_dates(self) -> tuple[date, ...]:
+        """Return the period end dates in order."""
+        return tuple(period.end_date for period in self.periods)
 
 
 @dataclass

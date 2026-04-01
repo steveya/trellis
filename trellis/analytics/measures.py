@@ -529,3 +529,12 @@ def resolve_measures(specs) -> list:
             # Assume it's already a Measure object
             measures.append(spec)
     return measures
+
+
+def dsl_measure_to_runtime(measure_name: str) -> type | None:
+    """Map a DSL measure name to the runtime Measure class, if available.
+
+    Returns ``None`` when the DSL measure has no runtime implementation
+    (e.g. delta, gamma, theta which are equity-only and not yet implemented).
+    """
+    return MEASURE_REGISTRY.get(measure_name)

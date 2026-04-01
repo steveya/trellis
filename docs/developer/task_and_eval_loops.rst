@@ -60,6 +60,32 @@ you need to understand a failure or confirm a success. The batch runner now
 surfaces those packet paths directly on the task result so you do not have to
 reconstruct them from traces or summary files.
 
+The task record and diagnosis packet also preserve post-build checkpoint
+metadata. That metadata records the transition from a validated method build
+into reflection, token-usage attachment, decision-checkpoint emission, and
+background consolidation so silent post-build stalls can be bisected without
+adding ad hoc logging.
+
+Review policy is now explicit about critic cost. Standard validation keeps the
+deterministic gates authoritative and treats critic as a bounded residual-risk
+reviewer for high-risk routes. In practice that means standard runs use an
+``advisory`` critic mode with a single JSON attempt and no JSON-to-text
+fallback chain. The critic now selects from a bounded menu of deterministic
+``check_id`` values instead of emitting open-ended review code on the standard
+path. Thorough validation keeps the broader reviewer path for routes that
+still need deep conceptual review.
+
+Route-specific invariant packs now carry more of the rejection load. For
+single-name CDS routes, deterministic validation checks quote normalization
+and hazard sensitivity before generic price-sanity heuristics, so spread-unit
+mistakes are rejected as contract violations instead of being left to a slow
+reviewer stage.
+
+For earlier request/build phases, set ``TRELLIS_LLM_WAIT_LOG_PATH`` during a
+rerun. That emits a JSONL timeline of bounded LLM waits, keyed by stage and
+request metadata, and the configured path is echoed into the task result and
+diagnosis dossier so the run record points back to the live wait log.
+
 For comparison tasks, the top-level task result also aggregates nested method
 failures into a single failure list before remediation runs. That keeps the
 analysis loop from losing the actual timeout, import, or implementation-gap

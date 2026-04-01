@@ -1,18 +1,22 @@
-"""Short-rate tree model specifications — separates the model from the tree.
+"""One-factor lattice model specifications.
 
-A tree model defines:
-1. **displacement_fn**: How rates spread at each node (the stochastic part)
-2. **probability_fn**: Transition probabilities (optionally incorporating drift)
-3. **vol_type**: Normal (additive) vs. lognormal (multiplicative)
+A model spec defines:
+1. **displacement_fn**: How latent node coordinates spread at each node
+2. **probability_fn**: Transition probabilities (or a compatibility fallback)
+3. **rate_fn**: How latent level + displacement map into node state
+4. **state_metric_fn**: Which latent metric mean reversion acts on
+5. **vol_type**: Normal (additive) vs. lognormal (multiplicative)
 
-Different models become different parameterizations of the same tree:
+Different one-factor models become different parameterizations of the same
+recombining lattice:
 - Hull-White (normal):        x(m,j) = (2j - m) * σ√Δt
-- Black-Derman-Toy (lognormal): x(m,j) = exp((2j - m) * σ√Δt)
+- Black-Derman-Toy (lognormal latent state): x(m,j) = (2j - m) * σ√Δt
 - Black-Karasinski (lognormal): same as BDT with mean reversion in log-space
 - Ho-Lee (normal, no MR):     x(m,j) = (2j - m) * σ√Δt, p = 0.5
 
-All models use the same calibrate_lattice() function with different displacement_fn.
-The agent chooses the model based on instrument and market characteristics.
+These specs are the transitional bridge toward the broader lattice algebra:
+topology, model kernel, contract overlay, and rollback logic should remain
+separate.
 """
 
 from __future__ import annotations
@@ -25,7 +29,7 @@ import numpy as raw_np
 
 @dataclass(frozen=True)
 class TreeModel:
-    """Specification for a short-rate tree model.
+    """Specification for a one-factor lattice model.
 
     Parameters
     ----------
@@ -43,6 +47,10 @@ class TreeModel:
         Normal: r = phi + x.  Lognormal: r = phi * exp(x) or r = exp(phi + x).
     discount_fn : callable(rate, dt) -> float
         One-step discount factor from the rate. Usually exp(-r * dt).
+    state_metric_fn : callable(state) -> float
+        Latent state metric used for probability drift / mean reversion.
+        Normal short-rate models use the observed state directly.
+        Lognormal short-rate models use ``log(rate)``.
     vol_type : str
         "normal" or "lognormal" — affects how vol is interpreted.
     description : str
@@ -55,6 +63,9 @@ class TreeModel:
     discount_fn: Callable
     vol_type: str
     description: str
+    state_metric_fn: Callable[[float], float]
+    supported_branchings: tuple[int, ...] = (2, 3)
+    factor_family: str = "short_rate"
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +94,49 @@ def ho_lee_displacement(step: int, node: int, dr: float) -> float:
 # Probability functions
 # ---------------------------------------------------------------------------
 
+def identity_state_metric(state: float) -> float:
+    """Latent metric for additive models."""
+    return float(state)
+
+
+def log_rate_state_metric(state: float) -> float:
+    """Latent metric for lognormal short-rate models."""
+    return float(raw_np.log(max(float(state), 1e-10)))
+
+
+def binomial_mean_reversion_probabilities_from_metric(
+    current_metric: float,
+    target_metric: float,
+    *,
+    dt: float,
+    a: float,
+    dr: float,
+) -> list[float]:
+    """Return binomial transition probabilities from a latent drift metric."""
+    drift = a * (target_metric - current_metric) * dt
+    p_up = 0.5 + drift / (2 * dr) if dr > 0 else 0.5
+    p_up = max(0.01, min(0.99, p_up))
+    return [1 - p_up, p_up]
+
+
+def trinomial_mean_reversion_probabilities_from_metric(
+    current_metric: float,
+    target_metric: float,
+    *,
+    dt: float,
+    a: float,
+    dr: float,
+) -> list[float]:
+    """Return trinomial transition probabilities from a latent drift metric."""
+    drift = a * (target_metric - current_metric) * dt
+    half_drift = drift / (2 * dr) if dr > 0 else 0.0
+    p_up = max(0.01, min(0.98, 1.0 / 6 + half_drift))
+    p_down = max(0.01, min(0.98, 1.0 / 6 - half_drift))
+    p_mid = max(0.01, 1.0 - p_up - p_down)
+    total = p_up + p_mid + p_down
+    return [p_down / total, p_mid / total, p_up / total]
+
+
 def equal_probabilities(lattice, step, node, phis, a, dr):
     """Equal probabilities: p_up = p_down = 0.5. No mean reversion."""
     return [0.5, 0.5]
@@ -94,14 +148,17 @@ def hw_mean_reversion_probabilities(lattice, step, node, phis, a, dr):
     p_up = 0.5 + a*(phi(m+1) - r(m,j))*dt / (2*dr)
     Clamped to [0.01, 0.99] for stability.
     """
-    r = lattice.get_state(step, node)
     n_steps = lattice.n_steps
     target = phis[min(step + 1, n_steps)]
     dt = lattice.dt
-    drift = a * (target - r) * dt
-    p_up = 0.5 + drift / (2 * dr) if dr > 0 else 0.5
-    p_up = max(0.01, min(0.99, p_up))
-    return [1 - p_up, p_up]
+    current_metric = identity_state_metric(lattice.get_state(step, node))
+    return binomial_mean_reversion_probabilities_from_metric(
+        current_metric,
+        float(target),
+        dt=dt,
+        a=a,
+        dr=dr,
+    )
 
 
 def bdt_mean_reversion_probabilities(lattice, step, node, phis, a, dr):
@@ -110,16 +167,17 @@ def bdt_mean_reversion_probabilities(lattice, step, node, phis, a, dr):
     Mean reversion acts on log(r), not r directly.
     p_up = 0.5 + a*(log_target - log_r)*dt / (2*dr)
     """
-    r = lattice.get_state(step, node)
     n_steps = lattice.n_steps
     target = phis[min(step + 1, n_steps)]
     dt = lattice.dt
-    log_r = raw_np.log(max(r, 1e-10))
-    log_target = raw_np.log(max(target, 1e-10))
-    drift = a * (log_target - log_r) * dt
-    p_up = 0.5 + drift / (2 * dr) if dr > 0 else 0.5
-    p_up = max(0.01, min(0.99, p_up))
-    return [1 - p_up, p_up]
+    current_metric = log_rate_state_metric(lattice.get_state(step, node))
+    return binomial_mean_reversion_probabilities_from_metric(
+        current_metric,
+        float(target),
+        dt=dt,
+        a=a,
+        dr=dr,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +225,7 @@ HULL_WHITE = TreeModel(
         "Vol input: absolute rate vol (sigma_HW), NOT Black vol. "
         "Convert: sigma_HW = sigma_Black * forward_rate."
     ),
+    state_metric_fn=identity_state_metric,
 )
 
 BLACK_DERMAN_TOY = TreeModel(
@@ -182,6 +241,7 @@ BLACK_DERMAN_TOY = TreeModel(
         "Vol input: yield volatility (proportional), NOT basis-point vol. "
         "The model assumes rates are lognormally distributed."
     ),
+    state_metric_fn=log_rate_state_metric,
 )
 
 BLACK_KARASINSKI = TreeModel(
@@ -196,6 +256,7 @@ BLACK_KARASINSKI = TreeModel(
         "Differs from BDT in that mean reversion speed is a free parameter "
         "(BDT calibrates it implicitly from the vol term structure)."
     ),
+    state_metric_fn=log_rate_state_metric,
 )
 
 HO_LEE = TreeModel(
@@ -210,6 +271,7 @@ HO_LEE = TreeModel(
         "Simplest arbitrage-free model. Equal probabilities at all nodes. "
         "Best for: short-dated instruments where mean reversion doesn't matter."
     ),
+    state_metric_fn=identity_state_metric,
 )
 
 # Model registry — the agent chooses from these

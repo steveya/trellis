@@ -1,0 +1,33 @@
+category: convention
+title: CDS spread / curve unit mismatch
+severity: critical
+status: promoted
+confidence: 0.8
+created: '2026-03-31T12:09:15.695504'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260331_120916_swap_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - fixed_coupons
+  - floating_coupons
+  - discounting
+  - credit_risk
+  - coupons
+  - spread_computation
+  - maturity_settlement
+  instrument: []
+  error_signature: null
+symptom: Computed PV magnitude exceeds 10× notional or returns a negative PV for a
+  running-spread CDS (e.g. |PV| > 10 * notional).
+root_cause: 'Input conventions and required market data were not validated: running
+  spread was treated with wrong units (bps vs decimal) and required curves (credit/discount)
+  were missing or not passed to the analytical routine, causing unit/convention and
+  data-availability errors.'
+fix: Enforce and normalize input conventions (auto-convert spread in bps to decimal
+  if > 1, require explicit units), require and validate presence of discount_curve
+  and credit_curve before pricing, and add PV sanity checks (compare |PV| to notional)
+  to fail fast with actionable errors.
+validation: Discovered during build (attempt 3)
+id: con_033

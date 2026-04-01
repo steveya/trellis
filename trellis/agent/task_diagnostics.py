@@ -36,18 +36,24 @@ def build_task_diagnosis_packet(record: Mapping[str, Any]) -> dict[str, Any]:
     comparison = dict(record.get("comparison") or {})
     market = dict(record.get("market") or {})
     framework = dict(record.get("framework") or {})
+    runtime_controls = dict(result.get("runtime_controls") or {})
     method_runs = dict(record.get("method_runs") or {})
+    post_build = dict(record.get("post_build") or {})
     traces = list(record.get("trace_summaries") or [])
     storage = dict(record.get("storage") or {})
 
-    failure_bucket = _classify_task_result(result)
+    method_outcomes = _method_outcomes(method_runs)
+    failure_bucket = _diagnosis_failure_bucket(
+        result=result,
+        summary=summary,
+        method_outcomes=method_outcomes,
+    )
     decision_stage = _decision_stage(
         result=result,
         workflow=workflow,
         summary=summary,
         failure_bucket=failure_bucket,
     )
-    method_outcomes = _method_outcomes(method_runs)
     trace_index = _trace_index(traces, method_runs)
     primary_failure = _primary_failure(
         result=result,
@@ -102,6 +108,8 @@ def build_task_diagnosis_packet(record: Mapping[str, Any]) -> dict[str, Any]:
         "comparison": comparison,
         "market": market,
         "framework": framework,
+        "runtime_controls": runtime_controls,
+        "post_build": post_build,
         "evidence": _evidence(
             result=result,
             comparison=comparison,
@@ -113,6 +121,43 @@ def build_task_diagnosis_packet(record: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _diagnosis_failure_bucket(
+    *,
+    result: Mapping[str, Any],
+    summary: Mapping[str, Any],
+    method_outcomes: list[dict[str, Any]],
+) -> str:
+    """Override the coarse task bucket when the method-level story is clearer."""
+    failure_bucket = _classify_task_result(result)
+    if failure_bucket != "comparison_failed":
+        return failure_bucket
+
+    comparison_status = str(summary.get("comparison_status") or "").strip().lower()
+    successful_methods = [item for item in method_outcomes if item.get("success")]
+    failed_methods = [item for item in method_outcomes if not item.get("success")]
+    if comparison_status not in {"", "passed"}:
+        return failure_bucket
+    if not successful_methods or not failed_methods:
+        return failure_bucket
+
+    build_like_buckets = {
+        "build_failure",
+        "import_validation",
+        "semantic_validation",
+        "import_hallucination",
+        "implementation_gap",
+        "llm_response",
+        "timeout",
+    }
+    failed_buckets = {
+        str(item.get("failure_bucket") or "").strip().lower()
+        for item in failed_methods
+    }
+    if failed_buckets and failed_buckets <= build_like_buckets:
+        return "comparator_build_failure"
+    return failure_bucket
+
+
 def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
     """Render one diagnosis packet as a human-readable Markdown dossier."""
     task = dict(packet.get("task") or {})
@@ -122,6 +167,8 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
     learning = dict(packet.get("learning") or {})
     workflow = dict(packet.get("workflow") or {})
     comparison = dict(packet.get("comparison") or {})
+    runtime_controls = dict(packet.get("runtime_controls") or {})
+    post_build = dict(packet.get("post_build") or {})
     evidence = dict(packet.get("evidence") or {})
     storage = dict(packet.get("storage") or {})
 
@@ -170,18 +217,30 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
                 lines.append(f"  - `{key}`: `{_format_value(value)}`")
         lines.append("")
 
+    if runtime_controls:
+        lines.extend(
+            [
+                "## Runtime Controls",
+                f"- Skip post-build reflection: `{runtime_controls.get('skip_post_build_reflection', '')}`",
+                f"- Skip post-build consolidation: `{runtime_controls.get('skip_post_build_consolidation', '')}`",
+                f"- Skip diagnosis persist: `{runtime_controls.get('skip_task_diagnosis_persist', '')}`",
+                f"- LLM wait log path: `{runtime_controls.get('llm_wait_log_path', '') or 'not set'}`",
+                "",
+            ]
+        )
+
     lines.extend(
         [
             "## Method Outcomes",
             *_render_table(
-                headers=("Method", "Success", "Attempts", "Bucket", "Route", "Trace"),
+                headers=("Method", "Success", "Attempts", "Bucket", "Post-build", "Trace"),
                 rows=[
                     (
                         outcome_row.get("method"),
                         _yes_no(outcome_row.get("success")),
                         outcome_row.get("attempts"),
                         outcome_row.get("failure_bucket"),
-                        outcome_row.get("route_method"),
+                        outcome_row.get("post_build_latest_phase"),
                         outcome_row.get("trace_path"),
                     )
                     for outcome_row in packet.get("method_outcomes", [])
@@ -209,6 +268,8 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
             f"- Knowledge outcome reason: {learning.get('knowledge_outcome_reason', '')}",
             f"- Lessons captured: `{_join_or_none(learning.get('captured_lesson_ids'))}`",
             f"- Lessons retrieved: `{_join_or_none(learning.get('retrieved_lesson_ids'))}`",
+            f"- Retrieval stages: `{_join_or_none(learning.get('retrieval_stages'))}`",
+            f"- Retrieval sources: `{_join_or_none(learning.get('retrieval_sources'))}`",
             f"- Cookbook paths: `{_join_or_none(learning.get('cookbook_candidate_paths'))}`",
             f"- Promotion candidate paths: `{_join_or_none(learning.get('promotion_candidate_paths'))}`",
             "",
@@ -236,6 +297,28 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
         lines.append("- Audit records:")
         for path in model_audit.get("audit_record_paths") or []:
             lines.append(f"  - `{path}`")
+
+    lines.extend(
+        [
+            "",
+            "## Post-build",
+            f"- Latest phase: `{post_build.get('latest_phase', '')}`",
+            f"- Latest status: `{post_build.get('latest_status', '')}`",
+            f"- Latest method: `{post_build.get('latest_method', '')}`",
+            f"- Active flags: `{_join_or_none(sorted(flag for flag, enabled in dict(post_build.get('active_flags') or {}).items() if enabled))}`",
+        ]
+    )
+    method_post_build = dict(post_build.get("methods") or {})
+    if method_post_build:
+        lines.append("- Method checkpoints:")
+        for method, summary in method_post_build.items():
+            summary = dict(summary or {})
+            lines.append(
+                "  - "
+                f"`{method}`: phase=`{summary.get('latest_phase', '')}`, "
+                f"status=`{summary.get('latest_status', '')}`, "
+                f"events=`{summary.get('event_count', '')}`"
+            )
 
     lines.extend(
         [
@@ -425,6 +508,8 @@ def _decision_stage(
     comparison_status = str(summary.get("comparison_status") or "").strip().lower()
     if comparison_status and comparison_status != "passed":
         return "comparison"
+    if failure_bucket == "comparator_build_failure":
+        return "comparison"
     if failure_bucket in {"missing_market_data"}:
         return "market_data"
     if failure_bucket in {"missing_cookbook", "missing_decomposition", "import_hallucination"}:
@@ -460,6 +545,8 @@ def _method_outcomes(method_runs: Mapping[str, Any]) -> list[dict[str, Any]]:
             "token_usage": dict(payload.get("token_usage_summary") or {}),
             "error": payload.get("error"),
             "failures": list(payload.get("failures") or []),
+            "post_build_latest_phase": dict(payload.get("post_build_tracking") or {}).get("last_phase"),
+            "post_build_latest_status": dict(payload.get("post_build_tracking") or {}).get("last_status"),
         }
         outcomes.append(outcome)
     return outcomes
@@ -531,6 +618,8 @@ def _evidence(
                 "error": item.get("error"),
                 "failures": item.get("failures"),
                 "trace_path": item.get("trace_path"),
+                "post_build_latest_phase": item.get("post_build_latest_phase"),
+                "post_build_latest_status": item.get("post_build_latest_status"),
             }
             for item in method_outcomes
             if not item.get("success")
@@ -590,6 +679,14 @@ def _likely_cause(
         return "The task contract itself is invalid, so the run failed before a usable pricing path could be assembled."
     if result.get("blocker_details"):
         return "The run was intentionally blocked by explicit blocker details."
+    if failure_bucket == "comparator_build_failure":
+        failed_methods = [item.get("method") for item in method_outcomes if not item.get("success")]
+        if failed_methods:
+            return (
+                "One comparison/comparator lane failed to build while other methods completed; "
+                f"broken lanes: {', '.join(str(method) for method in failed_methods if method)}."
+            )
+        return "One comparison/comparator lane failed to build while the rest of the task completed."
     if failure_bucket == "comparison_failure" or comparison_status not in {"", "passed"}:
         failed_methods = [item.get("method") for item in method_outcomes if not item.get("success")]
         if failed_methods:
@@ -625,6 +722,8 @@ def _likely_cause(
 def _confidence_for(*, failure_bucket: str, signals: list[str]) -> str:
     if failure_bucket in {"import_hallucination", "missing_market_data", "llm_response", "timeout", "rate_limit"}:
         return "high"
+    if failure_bucket == "comparator_build_failure":
+        return "high"
     if failure_bucket in {"comparison_failure", "validation_failure", "implementation_gap"}:
         return "medium"
     if signals:
@@ -652,6 +751,11 @@ def _headline_from_bucket(
 ) -> str:
     if result.get("success"):
         return "Run completed successfully."
+    if failure_bucket == "comparator_build_failure":
+        failing_methods = [item.get("method") for item in method_outcomes if not item.get("success")]
+        if failing_methods:
+            return f"Comparator build failed for {', '.join(str(method) for method in failing_methods if method)}."
+        return "Comparator build failed before the task could finish."
     if failure_bucket == "comparison_failure":
         failing_methods = [item.get("method") for item in method_outcomes if not item.get("success")]
         if failing_methods:
@@ -671,6 +775,8 @@ def _headline_from_bucket(
 
 
 def _default_next_action(*, failure_bucket: str, decision_stage: str) -> str:
+    if failure_bucket == "comparator_build_failure":
+        return "Repair the failing comparator route or scaffold, then rerun the broken comparator lane before rerunning the full task."
     if failure_bucket == "comparison_failure":
         return "Inspect which methods failed to produce valid results, then rerun the narrowest broken route."
     if failure_bucket == "implementation_gap":
@@ -728,6 +834,7 @@ def _is_generic_next_action(text: str) -> bool:
             "tracked externally via linked issues",
             "review the framework task summary",
             "review comparison prices and deviations",
+            "inspect which methods failed to produce valid results",
             "completed successfully",
         )
     )

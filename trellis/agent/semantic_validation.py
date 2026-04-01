@@ -48,6 +48,7 @@ class SemanticSignals:
     lattice_exercise_types: tuple[str, ...]
     lattice_has_exercise_steps: bool
     lattice_exercise_functions: tuple[str, ...]
+    lattice_exercise_styles: tuple[str, ...]
 
     @property
     def uses_longstaff_schwartz(self) -> bool:
@@ -91,6 +92,8 @@ class _SemanticVisitor(ast.NodeVisitor):
         self.lattice_exercise_types: list[str] = []
         self.lattice_has_exercise_steps = False
         self.lattice_exercise_functions: list[str] = []
+        self.lattice_exercise_styles: list[str] = []
+        self._lattice_policy_bindings: dict[str, _LatticePolicyBinding] = {}
         self._mc_engine_vars: set[str] = set()
 
     def visit_Import(self, node: ast.Import) -> None:
@@ -127,6 +130,11 @@ class _SemanticVisitor(ast.NodeVisitor):
             for target in node.targets:
                 if isinstance(target, ast.Name):
                     self._mc_engine_vars.add(target.id)
+        lattice_policy = _extract_lattice_policy_binding(node.value, self.aliases)
+        if lattice_policy is not None:
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    self._lattice_policy_bindings[target.id] = lattice_policy
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
@@ -166,6 +174,15 @@ class _SemanticVisitor(ast.NodeVisitor):
             exercise_fn = _name_keyword(node, "exercise_fn", self.aliases)
             if exercise_fn:
                 self.lattice_exercise_functions.append(exercise_fn)
+            exercise_policy = _policy_keyword(node, "exercise_policy", self.aliases, self._lattice_policy_bindings)
+            if exercise_policy is not None:
+                self.lattice_exercise_styles.append(exercise_policy.exercise_style)
+                self.lattice_exercise_types.append(exercise_policy.exercise_type)
+                self.lattice_has_exercise_steps = (
+                    self.lattice_has_exercise_steps
+                    or bool(exercise_policy.has_exercise_steps)
+                )
+                self.lattice_exercise_functions.append(exercise_policy.exercise_objective)
 
         if isinstance(node.func, ast.Attribute) and node.func.attr == "price":
             engine_name = node.func.value.id if isinstance(node.func.value, ast.Name) else None
@@ -182,6 +199,8 @@ class _SemanticVisitor(ast.NodeVisitor):
         """Map imported module paths onto the exact route-family taxonomy when possible."""
         if module_name.startswith("trellis.models.black"):
             self.engine_families.add("analytical")
+        elif module_name.startswith("trellis.models.rate_style_swaption"):
+            self.engine_families.add("analytical")
         elif module_name.startswith("trellis.models.transforms"):
             self.engine_families.add("fft_pricing")
         elif module_name.startswith("trellis.models.trees.binomial"):
@@ -190,6 +209,12 @@ class _SemanticVisitor(ast.NodeVisitor):
             self.engine_families.add("equity_tree")
         elif module_name.startswith("trellis.models.trees.trinomial"):
             self.engine_families.add("equity_tree")
+        elif module_name.startswith("trellis.models.equity_option_tree"):
+            self.engine_families.add("equity_tree")
+        elif module_name.startswith("trellis.models.bermudan_swaption_tree"):
+            self.engine_families.add("rate_lattice")
+        elif module_name.startswith("trellis.models.equity_option_pde"):
+            self.engine_families.add("pde_solver")
         elif module_name.startswith("trellis.models.trees.lattice"):
             self.engine_families.add("rate_lattice")
         elif module_name == "trellis.models.trees":
@@ -229,6 +254,7 @@ def extract_semantic_signals(source: str) -> SemanticSignals:
         lattice_exercise_types=tuple(visitor.lattice_exercise_types),
         lattice_has_exercise_steps=visitor.lattice_has_exercise_steps,
         lattice_exercise_functions=tuple(visitor.lattice_exercise_functions),
+        lattice_exercise_styles=tuple(visitor.lattice_exercise_styles),
     )
 
 
@@ -251,6 +277,25 @@ def validate_semantics(
     issues: list[SemanticIssue] = []
 
     primitive_plan = generation_plan.primitive_plan if generation_plan is not None else None
+    required_route_helpers: tuple[str, ...] = ()
+    helper_only_required_route = False
+    helper_route_calls_present = False
+    if primitive_plan is not None:
+        required_route_helpers = tuple(
+            f"{primitive.module}.{primitive.symbol}"
+            for primitive in primitive_plan.primitives
+            if primitive.required and primitive.role == "route_helper"
+        )
+        required_non_helper_primitives = tuple(
+            primitive
+            for primitive in primitive_plan.primitives
+            if primitive.required and primitive.role != "route_helper"
+        )
+        helper_only_required_route = bool(required_route_helpers) and not required_non_helper_primitives
+        helper_route_calls_present = any(
+            helper_name in signals.resolved_calls
+            for helper_name in required_route_helpers
+        )
     if primitive_plan is not None and primitive_plan.blockers:
         blocker_text = ", ".join(primitive_plan.blockers)
         if generation_plan is not None and generation_plan.blocker_report is not None:
@@ -265,6 +310,9 @@ def validate_semantics(
         ))
 
     thin_adapter_calls = any(call.startswith("trellis.instruments.") for call in signals.resolved_calls)
+    helper_backed_thin_adapter = thin_adapter_calls or (
+        helper_only_required_route and helper_route_calls_present
+    )
     if primitive_plan is not None and not primitive_plan.blockers and not thin_adapter_calls:
         missing_primitives = [
             f"{primitive.module}.{primitive.symbol}"
@@ -322,7 +370,7 @@ def validate_semantics(
         ))
 
     if (
-        not thin_adapter_calls
+        not helper_backed_thin_adapter
         and product_ir is not None
         and product_ir.exercise_style in {
         "american",
@@ -353,7 +401,7 @@ def validate_semantics(
         for call in signals.resolved_calls
     )
     if (
-        not thin_adapter_calls
+        not helper_backed_thin_adapter
         and product_ir is not None
         and product_ir.exercise_style in {"bermudan", "issuer_call", "holder_put"}
     ):
@@ -410,7 +458,7 @@ def validate_semantics(
             ),
         ))
 
-    if product_ir is not None and signals.engine_families:
+    if product_ir is not None and signals.engine_families and not helper_backed_thin_adapter:
         allowed = set(product_ir.candidate_engine_families)
         allowed.update(getattr(product_ir, "route_families", ()))
         if generation_plan is not None:
@@ -463,6 +511,62 @@ def _callback_name(node: ast.Call) -> str | None:
     for keyword in node.keywords:
         if keyword.arg == "payoff_fn" and isinstance(keyword.value, ast.Name):
             return keyword.value.id
+    return None
+
+
+@dataclass(frozen=True)
+class _LatticePolicyBinding:
+    """Static fingerprint for a resolved lattice exercise policy binding."""
+
+    exercise_style: str
+    exercise_type: str
+    exercise_objective: str
+    has_exercise_steps: bool
+
+
+def _extract_lattice_policy_binding(
+    node: ast.AST,
+    aliases: dict[str, str],
+) -> _LatticePolicyBinding | None:
+    """Extract a static lattice exercise policy binding from a helper call."""
+    if not isinstance(node, ast.Call):
+        return None
+    call_name = _resolve_call_name(node.func, aliases)
+    if not call_name.endswith("resolve_lattice_exercise_policy"):
+        return None
+    exercise_style = _literal_keyword(node, "exercise_style")
+    if exercise_style is None and node.args and isinstance(node.args[0], ast.Constant):
+        value = node.args[0].value
+        exercise_style = value if isinstance(value, str) else None
+    if exercise_style is None:
+        return None
+    exercise_style = exercise_style.strip().lower()
+    exercise_type = "bermudan" if exercise_style in {"bermudan", "issuer_call", "holder_put"} else exercise_style
+    exercise_objective = "min" if exercise_style == "issuer_call" else "max"
+    has_exercise_steps = any(keyword.arg == "exercise_steps" for keyword in node.keywords)
+    if len(node.args) >= 2:
+        has_exercise_steps = True
+    return _LatticePolicyBinding(
+        exercise_style=exercise_style,
+        exercise_type=exercise_type,
+        exercise_objective=exercise_objective,
+        has_exercise_steps=has_exercise_steps,
+    )
+
+
+def _policy_keyword(
+    node: ast.Call,
+    name: str,
+    aliases: dict[str, str],
+    bindings: dict[str, _LatticePolicyBinding],
+) -> _LatticePolicyBinding | None:
+    """Resolve a lattice policy keyword to a tracked binding when possible."""
+    for keyword in node.keywords:
+        if keyword.arg != name:
+            continue
+        if isinstance(keyword.value, ast.Name):
+            return bindings.get(keyword.value.id)
+        return _extract_lattice_policy_binding(keyword.value, aliases)
     return None
 
 
@@ -551,4 +655,5 @@ def _empty_signals() -> SemanticSignals:
         lattice_exercise_types=(),
         lattice_has_exercise_steps=False,
         lattice_exercise_functions=(),
+        lattice_exercise_styles=(),
     )
