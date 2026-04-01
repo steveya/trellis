@@ -1,0 +1,461 @@
+# Canary Task Set — curated for regression detection
+#
+# Selection principle: one task per engine family, covering simple + complex.
+# Prioritize historically fragile tasks (proven regression signal) and tasks
+# that exercise different guardrail paths.
+#
+# Each canary task carries a `specificity` level and a `market_tier`:
+#   specificity: full | partial | vague
+#   market_tier: 1 (flat/textbook) | 2 (realistic curves) | 3 (full surface)
+#
+# Tier 2/3 tasks include a `market` block so the agent receives real term
+# structures, smile surfaces, or credit curves from the mock provider.  The
+# agent is expected to pick models that honour the richness of the data — e.g.
+# do NOT use flat Black-Scholes when a smile surface is provided.
+#
+# Run: python scripts/run_canary.py
+# Budget: ~$2.50 per full run
+#
+# See QUA-424 for curation rationale.
+
+version: 2
+total_budget_usd: 3.00
+refresh_cadence: weekly
+
+canary_set:
+  # ───────────────────────────────────────────────────────────────────────
+  # Lattice / Rate Tree
+  # ───────────────────────────────────────────────────────────────────────
+  - id: T01
+    engine_family: lattice
+    complexity: simple
+    specificity: full
+    market_tier: 1
+    estimated_cost_usd: 0.12
+    description: |
+      Price a 1Y European option on a zero-coupon bond maturing at T=5Y.
+      Face value $100, strike price $88. Hull-White model: mean reversion
+      a=0.1, short-rate vol sigma=0.01, initial short rate r0=0.05.
+      Flat yield curve at 5%.
+      Cross-validate Ho-Lee tree, Hull-White tree, and Jamshidian analytical
+      decomposition.  All three should agree within 2%.
+    rationale: >
+      ZCB option — Ho-Lee vs HW tree vs Jamshidian analytical.  Status: done.
+      Cross-validates three methods, exercises tree calibration and backward
+      induction.  Simplest lattice task with known-good baseline.
+    covers:
+      - rate_tree
+      - ho_lee
+      - hull_white
+      - backward_induction
+      - cross_validation
+
+  - id: T02
+    engine_family: lattice
+    complexity: complex
+    specificity: full
+    market_tier: 2
+    estimated_cost_usd: 0.15
+    description: |
+      Price a 10-year callable bond paying a 5% semi-annual coupon, par $100,
+      callable at par on any coupon date after year 3.
+      Use the USD OIS discount curve from the market snapshot (as_of 2024-11-15,
+      easing-cycle regime — the curve is NOT flat, running ~4.2-4.6%).
+      Compare BDT lognormal tree vs Hull-White normal tree.
+      Both trees should be calibrated to the yield curve.
+      Compute clean price and effective duration.
+    market:
+      source: mock
+      as_of: 2024-11-15
+      discount_curve: usd_ois
+    rationale: >
+      Callable bond — BDT lognormal vs HW normal tree.  Status: done.
+      Exercises callable feature, mean_reversion, BDT calibration, and
+      backward induction with early exercise.  Tier 2: uses the full OIS
+      curve rather than a flat rate, so the agent must calibrate the tree
+      to term structure.
+    covers:
+      - callable
+      - bdt_tree
+      - hull_white
+      - mean_reversion
+      - early_exercise
+      - term_structure_calibration
+
+  # ───────────────────────────────────────────────────────────────────────
+  # Monte Carlo
+  # ───────────────────────────────────────────────────────────────────────
+  - id: T25
+    engine_family: monte_carlo
+    complexity: simple
+    specificity: full
+    market_tier: 1
+    estimated_cost_usd: 0.10
+    description: |
+      European call option on a non-dividend-paying stock.
+      S0=100, K=100, T=1Y, risk-free rate r=5%, volatility sigma=30%.
+      Simulate with 100,000 paths and 252 time steps using four GBM
+      discretization schemes: Euler-Maruyama, Milstein, log-Euler (exact
+      GBM), and predictor-corrector.
+      Compare each scheme's price to the Black-Scholes analytical value.
+      Measure convergence order (weak order 1.0 for Euler, 1.0 for
+      Milstein in 1D GBM, exact for log-Euler).
+    rationale: >
+      GBM call — all 4 discretization schemes convergence order.
+      Exercises the MC engine, GBM process, multiple schemes (Euler,
+      Milstein, predictor-corrector, exact), and convergence verification.
+    covers:
+      - gbm
+      - euler_scheme
+      - milstein_scheme
+      - convergence_order
+
+  - id: T26
+    engine_family: monte_carlo
+    complexity: complex
+    specificity: full
+    market_tier: 1
+    estimated_cost_usd: 0.15
+    description: |
+      European call option on a non-dividend-paying stock.
+      S0=100, K=105, T=1Y, risk-free rate r=5%, volatility sigma=20%.
+      Run 100,000 paths with the exact GBM scheme.
+      Compare four configurations:
+        1. Plain MC (no variance reduction)
+        2. Antithetic variates
+        3. Control variate (use the geometric-average Asian as control)
+        4. Antithetic + control variate combined
+      Report price, standard error, and effective variance reduction ratio
+      for each.  All four should converge to the Black-Scholes value;
+      methods 2-4 should show lower standard error than method 1.
+    rationale: >
+      Variance reduction — antithetic + control variate + importance sampling.
+      Exercises all three variance reduction techniques and verifies they
+      actually reduce standard error vs plain MC.
+    covers:
+      - antithetic
+      - control_variate
+      - importance_sampling
+      - variance_reduction
+
+  # ───────────────────────────────────────────────────────────────────────
+  # PDE
+  # ───────────────────────────────────────────────────────────────────────
+  - id: T13
+    engine_family: pde
+    complexity: simple
+    specificity: full
+    market_tier: 1
+    estimated_cost_usd: 0.12
+    description: |
+      European call option on a non-dividend-paying stock.
+      S0=100, K=105, T=1Y, risk-free rate r=5%, volatility sigma=20%.
+      Solve with the Black-Scholes PDE operator using Crank-Nicolson
+      (theta=0.5) and fully implicit (theta=1.0) on a 200-point spot grid
+      × 100 time steps.
+      Measure convergence order by doubling the grid: the CN scheme should
+      show O(dt^2 + dS^2) convergence and the implicit scheme O(dt + dS^2).
+      Compare both to the Black-Scholes analytical price.
+    rationale: >
+      European call — theta-method convergence order measurement.
+      Exercises CN/implicit PDE solver, BS operator, and Richardson
+      extrapolation.  Historically ~8% failure rate — good regression signal.
+    covers:
+      - theta_method
+      - crank_nicolson
+      - bs_operator
+      - convergence_order
+
+  - id: T17
+    engine_family: pde
+    complexity: complex
+    specificity: full
+    market_tier: 2
+    estimated_cost_usd: 0.15
+    description: |
+      Price a 10-year callable bond paying a 5% semi-annual coupon, par $100,
+      callable at par on any coupon date after year 3.
+      Use the USD OIS discount curve from the market snapshot (as_of 2024-11-15).
+      Hull-White model: mean reversion a=0.05, short-rate vol sigma=0.01.
+      Method 1: solve the HW rate PDE backward in time using PSOR to
+      enforce the call constraint (issuer calls when continuation value > par).
+      Method 2: Hull-White trinomial/binomial rate tree for comparison.
+      Both methods should agree within 1%.
+      Compute callable bond price and option-adjusted spread (OAS).
+    market:
+      source: mock
+      as_of: 2024-11-15
+      discount_curve: usd_ois
+    rationale: >
+      Callable bond — HW rate PDE (PSOR) vs HW tree.  Tier 2: full OIS
+      curve forces the agent to calibrate HW to non-flat term structure.
+      Cross-validates PDE and tree approaches.  Exercises PSOR for early
+      exercise, HW rate operator, and boundary conditions.
+    covers:
+      - psor
+      - hw_operator
+      - callable
+      - early_exercise
+      - cross_validation
+      - term_structure_calibration
+
+  # ───────────────────────────────────────────────────────────────────────
+  # Credit
+  # ───────────────────────────────────────────────────────────────────────
+  - id: T38
+    engine_family: credit
+    complexity: complex
+    specificity: full
+    market_tier: 2
+    estimated_cost_usd: 0.15
+    description: |
+      Standard single-name CDS, protection buyer side.
+      Notional: $10,000,000.  Maturity: 5Y from settlement.
+      Premium leg: quarterly payments, Act/360 day count.
+      Running CDS spread: 150 bp.  Recovery rate: 40%.
+      Use the investment-grade (IG) credit curve from the market snapshot
+      (as_of 2024-11-15) — this provides term-dependent hazard rates
+      bootstrapped from market CDS spreads at 1Y, 3Y, 5Y, and 10Y tenors.
+      Do NOT use a flat hazard rate — the model must respect the full
+      hazard rate term structure.
+      Use the USD OIS curve for risk-free discounting.
+      Method 1: Monte Carlo simulation of default times from the hazard curve.
+      Method 2: Analytical (deterministic) survival-probability integration.
+      Compute the mark-to-market PV (protection leg minus premium leg).
+    market:
+      source: mock
+      as_of: 2024-11-15
+      discount_curve: usd_ois
+      credit_curve: usd_ig
+    rationale: >
+      CDS pricing — hazard rate MC vs survival prob analytical.
+      Historically the most fragile task in the suite (~94% failure rate
+      before description enhancement).  Tier 2: the IG credit curve has
+      term-dependent hazard rates — the agent must NOT flatten it.
+      Essential regression canary for the credit pipeline.
+    covers:
+      - credit_default_swap
+      - hazard_rate
+      - survival_probability
+      - credit_curve
+      - term_structure
+
+  - id: T51
+    engine_family: credit
+    complexity: simple
+    specificity: full
+    market_tier: 1
+    estimated_cost_usd: 0.12
+    description: |
+      Bootstrap a hazard rate curve from CDS par spreads, then reprice
+      each input CDS to verify the curve reproduces the market spreads.
+      Input CDS maturities and par spreads:
+        1Y: 50 bp, 2Y: 80 bp, 3Y: 100 bp, 5Y: 150 bp, 7Y: 200 bp.
+      Recovery rate: 40%.  Flat risk-free rate: 3%.
+      Method 1: piecewise-constant hazard rate bootstrap (solve for each
+      segment so that the model CDS spread matches the market spread).
+      Method 2: closed-form analytical CDS pricing using the bootstrapped
+      curve — verify round-trip consistency (repriced spreads should match
+      input spreads to within 0.1 bp).
+    rationale: >
+      CDS par spread — hazard rate bootstrap vs closed-form.
+      Simpler credit task for baseline regression detection.  Tests the
+      credit curve bootstrap pathway.
+    covers:
+      - cds_spread
+      - hazard_bootstrap
+      - credit_curve
+
+  # ───────────────────────────────────────────────────────────────────────
+  # Analytical / Cross-Method
+  # ───────────────────────────────────────────────────────────────────────
+  - id: T73
+    engine_family: analytical
+    complexity: complex
+    specificity: full
+    market_tier: 2
+    estimated_cost_usd: 0.12
+    description: |
+      European payer swaption.  Expiry: 1Y.  Underlying: 5Y fixed-for-float
+      interest rate swap.  Strike (fixed rate): 3%.  Notional: $1,000,000.
+      Fixed leg: semi-annual, 30/360.  Float leg: quarterly 3M SOFR, Act/360.
+      Use the USD OIS curve for discounting and the SOFR-3M forecast curve
+      for forward rate projection from the market snapshot (as_of 2024-11-15).
+      The yield curve is NOT flat — the agent must project forward swap rates
+      from the actual term structure.
+      Hull-White model: mean reversion a=0.05, vol sigma=0.01.
+      Method 1: Black76 analytical (with forward swap rate and swaption vol).
+      Method 2: Hull-White tree (calibrated to the OIS curve).
+      Method 3: Hull-White Monte Carlo (calibrated to the OIS curve).
+      All three should agree within 5%.
+    market:
+      source: mock
+      as_of: 2024-11-15
+      discount_curve: usd_ois
+      forecast_curve: USD-SOFR-3M
+      vol_surface: usd_rates_atm
+    rationale: >
+      European swaption — Black76 vs HW tree vs HW MC.  Tier 2: full OIS
+      and SOFR curves force the agent to compute actual forward rates rather
+      than using a flat-rate shortcut.  Three-way cross-validation covering
+      the analytical/tree/MC decision space.
+    covers:
+      - swaption
+      - black76
+      - hull_white
+      - cross_validation
+      - term_structure
+      - forward_rate_projection
+
+  # ───────────────────────────────────────────────────────────────────────
+  # Transforms (FFT / COS)
+  # ───────────────────────────────────────────────────────────────────────
+  - id: T39
+    engine_family: transforms
+    complexity: simple
+    specificity: full
+    market_tier: 1
+    estimated_cost_usd: 0.12
+    description: |
+      European call and put options on a non-dividend-paying stock under GBM.
+      S0=100, risk-free rate r=5%, volatility sigma=20%.
+      Price across a grid of strikes K=[80, 90, 100, 110, 120] and
+      maturities T=[0.5, 1.0, 2.0] years — 15 call prices and 15 put
+      prices total.
+      Method 1: FFT (Carr-Madan) with N=4096, eta=0.25, Simpson weights.
+      Method 2: COS method with N=128 terms.
+      Both methods should agree with Black-Scholes analytical to within 0.5%.
+    rationale: >
+      FFT vs COS — GBM calls/puts across strikes and maturities.
+      Baseline transforms task exercising both FFT and COS methods.
+    covers:
+      - fft
+      - cos_method
+      - characteristic_function
+
+  - id: T40
+    engine_family: transforms
+    complexity: complex
+    specificity: full
+    market_tier: 3
+    estimated_cost_usd: 0.15
+    description: |
+      Extract the implied volatility smile surface under the Heston
+      stochastic volatility model for SPX.
+      Use the market snapshot (as_of 2024-11-15) which provides:
+        - SPX spot (S=5890)
+        - Heston parameters: kappa=2.0, theta=0.04, xi=0.48, rho=-0.68, v0=0.04
+        - USD OIS discount curve
+        - A reference implied vol smile surface (6 expiries x 7 strikes)
+      Price European calls across strikes K=[5400, 5600, 5800, 5900, 6000,
+      6200, 6400] and maturities T=[0.25, 0.5, 1.0, 2.0] years.
+      Method 1: Heston FFT (Carr-Madan with the Heston characteristic function).
+      Method 2: Heston COS method.
+      Method 3: Heston MC (QE scheme, 200k paths).
+      From each set of prices, extract the implied vol surface by inverting
+      Black-Scholes.  All three surfaces should agree within 0.5 vol points.
+      The resulting smile should show negative skew (lower strikes have
+      higher IV) consistent with rho=-0.68.
+    market:
+      source: mock
+      as_of: 2024-11-15
+      discount_curve: usd_ois
+      vol_surface: usd_rates_smile
+      underlier_spot: SPX
+      model_parameters: heston_equity
+    rationale: >
+      Heston smile — FFT vs COS vs MC implied vol surface.  Tier 3: full
+      smile surface and Heston model parameters from mock.  The agent must
+      use stochastic-vol-aware methods — flat Black-Scholes would miss the
+      skew entirely.  Exercises vol surface construction and three-way
+      method comparison.
+    covers:
+      - heston
+      - fft
+      - cos_method
+      - implied_vol
+      - vol_surface
+      - stochastic_vol
+
+  # ───────────────────────────────────────────────────────────────────────
+  # Copula / Multi-Name Credit
+  # ───────────────────────────────────────────────────────────────────────
+  - id: T49
+    engine_family: copula
+    complexity: complex
+    specificity: partial
+    market_tier: 2
+    estimated_cost_usd: 0.15
+    description: |
+      Price a synthetic CDO mezzanine tranche on a 100-name investment-grade
+      portfolio.  Attachment point: 3%.  Detachment point: 7%.
+      Maturity: 5Y.  Notional per name: $1,000,000 (portfolio notional $100M).
+      Recovery rate: 40% flat across all names.
+      Use the IG credit curve from the market snapshot (as_of 2024-11-15)
+      as the representative single-name hazard curve for all 100 names.
+      Flat pairwise default correlation: 0.3.
+      Method 1: Gaussian copula (one-factor, semi-analytical via Vasicek
+      large-pool or recursive).
+      Method 2: Student-t copula (degrees of freedom = 5) for comparison
+      to see heavier-tail effects on the mezzanine tranche.
+      Report tranche fair spread (bp) and expected loss for each copula.
+    market:
+      source: mock
+      as_of: 2024-11-15
+      discount_curve: usd_ois
+      credit_curve: usd_ig
+    rationale: >
+      CDO tranche — Gaussian vs Student-t copula.  Tier 2: IG credit curve
+      provides term-dependent hazard rates.  Partial specificity — the agent
+      must handle reasonable defaults for individual name spreads (here
+      proxied by the single IG curve).  Exercises the entire multi-name
+      credit dependency pipeline.
+    covers:
+      - gaussian_copula
+      - student_t_copula
+      - cdo_tranche
+      - correlation
+      - credit_curve
+      - term_structure
+
+  # ───────────────────────────────────────────────────────────────────────
+  # Calibration
+  # ───────────────────────────────────────────────────────────────────────
+  - id: T65
+    engine_family: calibration
+    complexity: complex
+    specificity: full
+    market_tier: 2
+    estimated_cost_usd: 0.15
+    description: |
+      Calibrate the Hull-White one-factor model parameters (mean reversion a,
+      short-rate vol sigma) to a set of at-the-money co-terminal European
+      swaption volatilities.
+      Swaption grid (expiry x tail, all co-terminal to 10Y):
+        1Y x 9Y, 2Y x 8Y, 3Y x 7Y, 5Y x 5Y, 7Y x 3Y, 9Y x 1Y.
+      Target ATM normal vols (bp): 55, 58, 60, 62, 60, 55.
+      Use the USD OIS curve for discounting and the SOFR-3M forecast curve
+      for forward swap rate projection from the market snapshot (as_of
+      2024-11-15).
+      Calibrate by minimizing the sum of squared differences between model
+      and market swaption prices (or vols).  Report calibrated (a, sigma)
+      and the residual pricing error for each swaption.
+      Cross-validate: reprice each swaption with the calibrated HW tree
+      and with an uncalibrated HW tree (a=0.05, sigma=0.01) to show the
+      calibrated model fits better.
+    market:
+      source: mock
+      as_of: 2024-11-15
+      discount_curve: usd_ois
+      forecast_curve: USD-SOFR-3M
+    rationale: >
+      HW calibration to swaption volatilities.  Tier 2: full OIS and SOFR
+      curves force the agent to compute actual forward swap rates and annuity
+      factors from the curve.  Foundational calibration task — exercises the
+      optimization loop and market data fitting.
+    covers:
+      - hull_white_calibration
+      - swaption_vol
+      - optimization
+      - term_structure
+      - forward_rate_projection
