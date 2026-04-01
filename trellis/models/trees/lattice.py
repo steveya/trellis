@@ -11,9 +11,15 @@ This separates the tree structure from the financial model.
 
 from __future__ import annotations
 
+import inspect
 import numpy as raw_np
 
 from trellis.models._numba import NUMBA_AVAILABLE, maybe_njit
+from trellis.models.trees.control import LatticeExercisePolicy, merge_lattice_exercise_policy
+from trellis.models.trees.models import (
+    binomial_mean_reversion_probabilities_from_metric,
+    trinomial_mean_reversion_probabilities_from_metric,
+)
 
 
 class RecombiningLattice:
@@ -168,6 +174,97 @@ def _node_values(count: int, generator) -> raw_np.ndarray:
     return raw_np.fromiter(generator, dtype=float, count=count)
 
 
+def _positional_callback_params(callback) -> tuple[tuple[str, ...], bool]:
+    """Return positional parameter names and whether the callable accepts ``*args``."""
+    try:
+        signature = inspect.signature(callback)
+    except (TypeError, ValueError):
+        return (), True
+
+    names: list[str] = []
+    has_varargs = False
+    for parameter in signature.parameters.values():
+        if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
+            has_varargs = True
+            continue
+        if parameter.kind in (
+            inspect.Parameter.POSITIONAL_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        ):
+            names.append(parameter.name)
+    return tuple(names), has_varargs
+
+
+def _terminal_payoff_adapter(terminal_payoff):
+    """Adapt common legacy terminal-payoff callback shapes to the lattice contract."""
+    param_names, has_varargs = _positional_callback_params(terminal_payoff)
+    arity = len(param_names)
+
+    if has_varargs or arity >= 3:
+        return lambda step, node, lattice: terminal_payoff(step, node, lattice)
+    if arity == 2:
+        first = param_names[0].lower()
+        if "step" in first:
+            return lambda step, node, lattice: terminal_payoff(step, node)
+        return lambda step, node, lattice: terminal_payoff(node, lattice)
+    if arity == 1:
+        first = param_names[0].lower()
+        if "node" in first:
+            return lambda step, node, lattice: terminal_payoff(node)
+        return lambda step, node, lattice: terminal_payoff(step)
+    return lambda step, node, lattice: terminal_payoff()
+
+
+def _cashflow_adapter(cashflow_at_node):
+    """Adapt common legacy cashflow callback shapes to the lattice contract."""
+    param_names, has_varargs = _positional_callback_params(cashflow_at_node)
+    arity = len(param_names)
+
+    if has_varargs or arity >= 3:
+        return lambda step, node, lattice: cashflow_at_node(step, node, lattice)
+    if arity == 2:
+        return lambda step, node, lattice: cashflow_at_node(step, node)
+    if arity == 1:
+        return lambda step, node, lattice: cashflow_at_node(step)
+    return lambda step, node, lattice: cashflow_at_node()
+
+
+def _exercise_value_adapter(exercise_value):
+    """Adapt legacy exercise-value callback shapes to the lattice contract."""
+    param_names, has_varargs = _positional_callback_params(exercise_value)
+    arity = len(param_names)
+
+    if has_varargs or arity >= 4:
+        third = param_names[2].lower() if arity >= 3 else ""
+        if "continuation" in third:
+            return lambda step, node, lattice, continuation: exercise_value(
+                step,
+                node,
+                continuation,
+                lattice,
+            )
+        return lambda step, node, lattice, continuation: exercise_value(
+            step,
+            node,
+            lattice,
+            continuation,
+        )
+    if arity == 3:
+        third = param_names[2].lower()
+        if "continuation" in third:
+            return lambda step, node, lattice, continuation: exercise_value(
+                step,
+                node,
+                continuation,
+            )
+        return lambda step, node, lattice, continuation: exercise_value(step, node, lattice)
+    if arity == 2:
+        return lambda step, node, lattice, continuation: exercise_value(step, node)
+    if arity == 1:
+        return lambda step, node, lattice, continuation: exercise_value(step)
+    return lambda step, node, lattice, continuation: exercise_value()
+
+
 def _apply_exercise_rule(
     continuation: raw_np.ndarray,
     exercise: raw_np.ndarray,
@@ -290,20 +387,23 @@ def _discount_array(
 
 def lattice_backward_induction(
     lattice: RecombiningLattice,
-    terminal_payoff,
+    terminal_payoff=None,
     exercise_value=None,
     exercise_type: str = "european",
     exercise_steps: list[int] | None = None,
     cashflow_at_node=None,
     exercise_fn=None,
+    exercise_policy: LatticeExercisePolicy | None = None,
+    terminal_value: float | None = None,
+    exercise_value_fn=None,
 ) -> float:
     """Generic backward induction on a RecombiningLattice.
 
     Parameters
     ----------
     lattice : RecombiningLattice
-    terminal_payoff : callable(step, node, lattice) -> float
-        Payoff at terminal nodes.
+    terminal_payoff : callable(step, node, lattice) -> float, optional
+        Payoff at terminal nodes. Required unless ``terminal_value`` is supplied.
     exercise_value : callable(step, node, lattice) -> float, optional
         Exercise value at a node. Used for American/Bermudan.
     exercise_type : str
@@ -317,17 +417,53 @@ def lattice_backward_induction(
         How to combine continuation and exercise values.
         Default: ``max`` (holder exercises to maximize value — puts, American options).
         Use ``min`` for issuer-callable instruments (issuer calls to minimize liability).
+    exercise_policy : LatticeExercisePolicy or None
+        Checked-in normalized exercise contract. When supplied, this becomes the
+        authoritative source for lattice exercise semantics and step timing.
+    terminal_value : float or None
+        Compatibility alias for a constant terminal payoff.
+    exercise_value_fn : callable or None
+        Compatibility alias for ``exercise_value``.
 
     Returns
     -------
     float
         Price at root node (step=0, node=0).
     """
+    if terminal_payoff is not None and not callable(terminal_payoff):
+        if terminal_value is not None:
+            raise TypeError("lattice_backward_induction() received multiple terminal payoff specifications")
+        terminal_value = float(terminal_payoff)
+        terminal_payoff = None
+
+    if terminal_payoff is None:
+        if terminal_value is None:
+            raise TypeError(
+                "lattice_backward_induction() missing 1 required positional argument: 'terminal_payoff'"
+            )
+        terminal_payoff = lambda step, node, lat: float(terminal_value)
+    elif terminal_value is not None:
+        raise TypeError("lattice_backward_induction() received both terminal_payoff and terminal_value")
+
+    if exercise_value is None and exercise_value_fn is not None:
+        exercise_value = exercise_value_fn
+
+    exercise_type, effective_exercise_steps, exercise_fn = merge_lattice_exercise_policy(
+        exercise_policy=exercise_policy,
+        exercise_type=exercise_type,
+        exercise_steps=exercise_steps,
+        exercise_fn=exercise_fn,
+    )
     if exercise_fn is None:
         exercise_fn = max
     n = lattice.n_steps
     branching = lattice.branching
-    exercise_set = {int(step) for step in (exercise_steps or [])}
+    exercise_set = {int(step) for step in effective_exercise_steps}
+    terminal_payoff = _terminal_payoff_adapter(terminal_payoff)
+    if cashflow_at_node is not None:
+        cashflow_at_node = _cashflow_adapter(cashflow_at_node)
+    if exercise_value is not None:
+        exercise_value = _exercise_value_adapter(exercise_value)
 
     # Terminal values
     n_terminal = lattice.n_nodes(n)
@@ -356,7 +492,7 @@ def lattice_backward_induction(
         ):
             exercise = _node_values(
                 n_nodes_i,
-                (exercise_value(i, j, lattice) for j in range(n_nodes_i)),
+                (exercise_value(i, j, lattice, float(new_values[j])) for j in range(n_nodes_i)),
             )
             new_values = _apply_exercise_rule(new_values, exercise, exercise_fn)
 
@@ -678,15 +814,36 @@ def build_spot_lattice(
     sigma: float,
     T: float,
     n_steps: int,
+    *,
+    model: str = "crr",
 ) -> RecombiningLattice:
-    """Build a CRR spot-price lattice (for equity options).
+    """Build a recombining spot-price lattice for low-dimensional equity trees.
 
-    dS/S = r dt + sigma dW
+    Parameters
+    ----------
+    S0, r, sigma, T, n_steps
+        Standard spot-lattice inputs.
+    model : str, default ``"crr"``
+        Supported one-factor spot parameterizations:
+
+        - ``"crr"`` / ``"cox_ross_rubinstein"``
+        - ``"jarrow_rudd"`` / ``"jr"``
     """
     dt = T / n_steps
-    u = raw_np.exp(sigma * raw_np.sqrt(dt))
-    d = 1.0 / u
-    p = (raw_np.exp(r * dt) - d) / (u - d)
+    model_key = str(model).strip().lower()
+    if model_key in {"crr", "cox_ross_rubinstein"}:
+        u = raw_np.exp(sigma * raw_np.sqrt(dt))
+        d = 1.0 / u
+        p = (raw_np.exp(r * dt) - d) / (u - d)
+    elif model_key in {"jarrow_rudd", "jr"}:
+        u = raw_np.exp((r - 0.5 * sigma ** 2) * dt + sigma * raw_np.sqrt(dt))
+        d = raw_np.exp((r - 0.5 * sigma ** 2) * dt - sigma * raw_np.sqrt(dt))
+        p = 0.5
+    else:
+        raise ValueError(
+            f"Unsupported spot lattice model {model!r}. Supported models: "
+            "'crr', 'jarrow_rudd'."
+        )
 
     lattice = RecombiningLattice(n_steps, dt, branching=2, state_dim=1)
     states = lattice._states[:, :, 0]
@@ -748,6 +905,12 @@ def build_generic_lattice(
         raise ValueError("discount_curve is required for calibrated lattice building")
     if branching not in (2, 3):
         raise ValueError(f"branching must be 2 or 3, got {branching}")
+    supported_branchings = getattr(model, "supported_branchings", (2, 3))
+    if branching not in supported_branchings:
+        raise ValueError(
+            f"Model {getattr(model, 'name', model)!r} does not support branching={branching}. "
+            f"Supported: {supported_branchings}"
+        )
 
     dt = T / n_steps
     lattice = RecombiningLattice(n_steps, dt, branching, state_dim=1)
@@ -789,10 +952,31 @@ def build_generic_lattice(
 
     # --- Pass 2: model-specific probabilities ---
     _prob_fn = model.probability_fn
+    state_metric_fn = getattr(model, "state_metric_fn", None)
     for i in range(n_steps):
         n_nodes_i = lattice.n_nodes(i)
+        target_metric = float(phis[min(i + 1, n_steps)])
         for j in range(n_nodes_i):
-            probs[i, j, :branching] = _prob_fn(lattice, i, j, phis, a, dr)
+            if state_metric_fn is not None:
+                current_metric = float(state_metric_fn(lattice.get_state(i, j)))
+                if branching == 2:
+                    probs[i, j, :branching] = binomial_mean_reversion_probabilities_from_metric(
+                        current_metric,
+                        target_metric,
+                        dt=dt,
+                        a=a,
+                        dr=dr,
+                    )
+                else:
+                    probs[i, j, :branching] = trinomial_mean_reversion_probabilities_from_metric(
+                        current_metric,
+                        target_metric,
+                        dt=dt,
+                        a=a,
+                        dr=dr,
+                    )
+            else:
+                probs[i, j, :branching] = _prob_fn(lattice, i, j, phis, a, dr)
 
     # --- Pass 3: re-calibrate with final probabilities ---
     phis = calibrate_lattice(

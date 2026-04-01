@@ -1,0 +1,37 @@
+category: market_data
+title: Missing market state access
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T08:19:33.890540'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - coupons
+  - fixed_coupons
+  - discounting
+  - pde_grid
+  - backward_induction
+  - greeks
+  - convergence_order_diagnostic
+  instrument: []
+  error_signature: null
+symptom: The PDE pricer was wired to a route that needed discount-curve and volatility-surface
+  data, but those market_state accessors were not implemented or exposed.
+root_cause: Theta-method PDE pricing depends on carrying the right market inputs through
+  the solver setup; if the route assumes a discount curve and local/Black vol surface
+  but the market-state interface does not provide them, the model can’t initialize
+  consistently. This is a data-plumbing failure, not a numerical one.
+fix: Expose the required discount curve and black vol surface access methods in market_state,
+  then rebind the theta_pde route to those inputs.
+validation: "Resolved during build of Build a pricer for: European call: theta-method\
+  \ convergence order measurement\n\nConstruct methods: pde_solver\nComparison targets:\
+  \ theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes (analytical)\nCross-validation\
+  \ harness:\n  internal targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n\
+  \  external targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+  \ target: theta_0.5\nPreferred method family: pde_solver\n\nImplementation target:\
+  \ theta_0.5"
+id: md_053

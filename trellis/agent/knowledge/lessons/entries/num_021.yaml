@@ -2,8 +2,8 @@ id: num_021
 title: Missing primitive adapter
 severity: critical
 category: numerical
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 0.8
 created: '2026-03-28T11:32:47.076946'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_113247_cap_analytical.yaml

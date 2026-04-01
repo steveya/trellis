@@ -15,15 +15,23 @@ from trellis.models.vol_surface import FlatVol, GridVolSurface, VolSurface
 
 from . import (
     analytical,
+    bermudan_swaption_tree,
     calibration,
     cashflow_engine,
+    callable_bond_tree,
+    credit_default_swap,
+    equity_option_pde,
     copulas,
+    equity_option_tree,
     monte_carlo,
     pde,
     processes,
     qmc,
+    rate_style_swaption,
     transforms,
     trees,
+    zcb_option,
+    zcb_option_tree,
 )
 
 __all__ = [
@@ -35,6 +43,7 @@ __all__ = [
     "GridVolSurface",
     "VolSurface",
     "analytical",
+    "bermudan_swaption_tree",
     "trees",
     "monte_carlo",
     "qmc",
@@ -44,4 +53,11 @@ __all__ = [
     "copulas",
     "calibration",
     "cashflow_engine",
+    "rate_style_swaption",
+    "callable_bond_tree",
+    "credit_default_swap",
+    "equity_option_pde",
+    "equity_option_tree",
+    "zcb_option",
+    "zcb_option_tree",
 ]

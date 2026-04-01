@@ -1,0 +1,30 @@
+category: market_data
+title: Date-Type Comparison Bug
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T12:20:18.641798'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: The rate tree compared a float to a datetime.date during market-state validation.
+root_cause: The implementation mixed model inputs with raw date objects, so a numeric
+  comparison was attempted before dates were converted into consistent time units.
+  This reflects a failure to normalize market data types at the API boundary.
+fix: Convert dates to year fractions or numeric times before validation and ensure
+  all tree-state comparisons operate on the same scalar type.
+validation: "Resolved during build of Build a pricer for: Callable bond: BDT lognormal\
+  \ vs HW normal tree\n\nConstruct methods: rate_tree\nComparison targets: bdt_tree\
+  \ (rate_tree), hull_white_tree (rate_tree)\nCross-validation harness:\n  internal\
+  \ targets: bdt_tree, hull_white_tree\n  external targets: financepy, quantlib\n\
+  New component: bdt_calibration_via_generic_lattice\n\nImplementation target: bdt_tree\n\
+  Preferred method family: rate_tree\n\nImplementation target: bdt_tree"
+id: md_054

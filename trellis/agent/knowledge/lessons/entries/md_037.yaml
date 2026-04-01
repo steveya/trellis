@@ -1,0 +1,35 @@
+category: market_data
+title: Missing credit curve and unit conventions
+severity: critical
+status: promoted
+confidence: 0.8
+created: '2026-03-31T11:29:23.100601'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260331_112924_swap_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - fixed_coupons
+  - floating_coupons
+  - discounting
+  - credit_risk
+  - spread_computation
+  - maturity_settlement
+  - act_act_isda
+  - coupons
+  instrument: []
+  error_signature: null
+symptom: Computed PV magnitude |PV| > 10 × notional (e.g., |PV| = 71978.56 for notional
+  100) or negative PV returned by analytical pricer.
+root_cause: The analytical CDS pricer was executed without a validated credit_curve
+  and with inconsistent unit conventions (rates/spreads provided in wrong scale),
+  and primitive adapters (CDS spec ↔ market-state) were missing. As a result survival/hazard
+  inputs or discount factors were interpreted incorrectly and produced massively wrong
+  cashflows.
+fix: Require and validate credit_curve and discount_curve inputs before pricing, enforce
+  unit conventions (decimal rates vs bps), and add sanity checks on PV (e.g., reject
+  |PV| > 10×notional). Provide a primitive adapter to map CDS spec into schedule,
+  accrual fractions and curve query points.
+validation: Discovered during build (attempt 3)
+id: md_037

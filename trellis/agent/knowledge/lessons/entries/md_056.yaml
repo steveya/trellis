@@ -1,0 +1,25 @@
+category: market_data
+title: Invalid Model Import
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T18:26:48.198599'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The swaption validation referenced a non-existent Trellis module path.
+root_cause: This happens when the model configuration or lookup string is copied incorrectly,
+  so the system cannot resolve the requested analytical pricer. The mental model failure
+  is assuming the declared module name is valid without verifying it exists in the
+  codebase or registry.
+fix: Replace the bad module path with a valid registered Trellis module name and rerun
+  validation.
+validation: Resolved during build of European payer swaption
+id: md_056

@@ -124,7 +124,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--model",
-        default="gpt-5-mini",
+        default="gpt-5.4-mini",
         help="LLM model to use for all task-run stages.",
     )
     parser.add_argument(

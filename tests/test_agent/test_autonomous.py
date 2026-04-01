@@ -369,3 +369,134 @@ def test_build_with_knowledge_skips_reflection_on_provider_failure_without_code(
         "skipped": True,
         "reason": "provider_failure_before_build",
     }
+
+
+def test_build_with_knowledge_records_post_build_phase_markers(monkeypatch):
+    from trellis.agent.knowledge.gap_check import GapReport
+    from trellis.agent.knowledge.schema import ProductDecomposition
+    from trellis.agent.knowledge.autonomous import build_with_knowledge
+
+    decompose_mod = import_module("trellis.agent.knowledge.decompose")
+    decomposition = ProductDecomposition(
+        instrument="european_option",
+        features=("vanilla",),
+        method="analytical",
+        learned=False,
+    )
+
+    monkeypatch.setattr(decompose_mod, "decompose", lambda *args, **kwargs: decomposition)
+    monkeypatch.setattr(
+        decompose_mod,
+        "decompose_to_ir",
+        lambda *args, **kwargs: SimpleNamespace(instrument="european_option"),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.gap_check.gap_check",
+        lambda decomposition: GapReport(confidence=0.9, retrieved_lesson_ids=[]),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.autonomous._build_with_tracking",
+        lambda **kwargs: (
+            type("FakePayoff", (), {}),
+            {
+                "attempts": 1,
+                "failures": [],
+                "code": "pass",
+                "platform_trace_path": "/tmp/platform_trace.yaml",
+                "platform_request_id": "executor_build_demo",
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.reflect.reflect_on_build",
+        lambda **kwargs: {"lessons_attributed": 1},
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.autonomous._emit_decision_checkpoint",
+        lambda **kwargs: {"status": "ok", "path": "/tmp/checkpoint.yaml"},
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.autonomous._maybe_consolidate",
+        lambda *args, **kwargs: None,
+    )
+
+    result = build_with_knowledge("European option", instrument_type="european_option")
+
+    tracking = result.post_build_tracking
+    assert tracking["last_phase"] == "consolidation_dispatched"
+    assert tracking["last_status"] == "backgrounded"
+    phases = [event["phase"] for event in tracking["events"]]
+    assert phases == [
+        "build_completed",
+        "reflection_started",
+        "reflection_completed",
+        "token_usage_attached",
+        "decision_checkpoint_emitted",
+        "consolidation_dispatched",
+    ]
+
+
+def test_build_with_knowledge_can_skip_reflection_via_env(monkeypatch):
+    from trellis.agent.knowledge.gap_check import GapReport
+    from trellis.agent.knowledge.schema import ProductDecomposition
+    from trellis.agent.knowledge.autonomous import build_with_knowledge
+
+    decompose_mod = import_module("trellis.agent.knowledge.decompose")
+    decomposition = ProductDecomposition(
+        instrument="european_option",
+        features=("vanilla",),
+        method="analytical",
+        learned=False,
+    )
+
+    monkeypatch.setattr(decompose_mod, "decompose", lambda *args, **kwargs: decomposition)
+    monkeypatch.setattr(
+        decompose_mod,
+        "decompose_to_ir",
+        lambda *args, **kwargs: SimpleNamespace(instrument="european_option"),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.gap_check.gap_check",
+        lambda decomposition: GapReport(confidence=0.9, retrieved_lesson_ids=[]),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.autonomous._build_with_tracking",
+        lambda **kwargs: (
+            type("FakePayoff", (), {}),
+            {
+                "attempts": 1,
+                "failures": [],
+                "code": "pass",
+                "platform_trace_path": "/tmp/platform_trace.yaml",
+                "platform_request_id": "executor_build_demo",
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.autonomous._emit_decision_checkpoint",
+        lambda **kwargs: {"status": "ok", "path": "/tmp/checkpoint.yaml"},
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.autonomous._maybe_consolidate",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setenv("TRELLIS_SKIP_POST_BUILD_REFLECTION", "1")
+
+    def fail_if_called(**kwargs):
+        raise AssertionError("reflection should have been skipped")
+
+    monkeypatch.setattr("trellis.agent.knowledge.reflect.reflect_on_build", fail_if_called)
+
+    result = build_with_knowledge("European option", instrument_type="european_option")
+
+    assert result.reflection == {
+        "skipped": True,
+        "reason": "TRELLIS_SKIP_POST_BUILD_REFLECTION",
+    }
+    assert result.post_build_tracking["active_flags"]["skip_reflection"] is True
+    phases = {
+        event["phase"]: event["status"]
+        for event in result.post_build_tracking["events"]
+    }
+    assert phases["reflection_started"] == "skipped"
+    assert phases["reflection_completed"] == "skipped"

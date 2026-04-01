@@ -1,0 +1,34 @@
+category: market_data
+title: Missing market data accessors
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-03-31T18:47:16.159912'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - pde_grid
+  - discounting
+  - vol_surface_dependence
+  - greeks
+  - convergence_order_diagnostic
+  instrument: []
+  error_signature: null
+symptom: The PDE solver route required a discount curve and a black vol surface from
+  market_state, but those accessors were not provided.
+root_cause: I assumed market_state would expose these objects by default or under
+  different keys and failed to register or map explicit accessors, so the solver couldn't
+  locate required market data.
+fix: Add the expected discount curve and black vol surface to market_state (or implement
+  the required accessors/mappings) so the pde_theta_1d route can retrieve them.
+validation: "Resolved during build of Build a pricer for: European call: theta-method\
+  \ convergence order measurement\n\nConstruct methods: pde_solver\nComparison targets:\
+  \ theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes (analytical)\nCross-validation\
+  \ harness:\n  internal targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n\
+  \  external targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+  \ target: theta_0.5\nPreferred method family: pde_solver\n\nImplementation target:\
+  \ theta_0.5"
+id: md_043

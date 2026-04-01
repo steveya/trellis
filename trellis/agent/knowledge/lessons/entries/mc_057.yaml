@@ -1,0 +1,31 @@
+category: monte_carlo
+title: Watch indentation in generated code
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-03-31T12:52:33.477780'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Generated analytical implementation had incorrect indentation, causing a
+  SyntaxError on import.
+root_cause: The code generator emitted improperly indented Python blocks and there
+  was no compile-time validation, so significant-whitespace errors slipped through;
+  this is a mental-model gap of treating generated text as guaranteed-valid code.
+fix: Add an automatic compile/lint step (e.g., python -m py_compile or flake8) after
+  generation and fix or regenerate the misindented blocks before using the implementation.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: analytical_cds\nPreferred method\
+  \ family: analytical\n\nImplementation target: analytical_cds"
+id: mc_057

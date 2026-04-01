@@ -1,0 +1,32 @@
+category: backward_induction
+title: Use exported timeline helpers
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T00:16:30.009600'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: The implementation imported timeline builders from a module that does not
+  expose those functions.
+root_cause: 'This is a mental model failure about API boundaries: a function may exist
+  elsewhere in the codebase, but if it is not exported from the target module it cannot
+  be used there. Validation caught that the chosen helper names were not part of the
+  public control interface.'
+fix: Import only documented exports from the supported module, or switch to the correct
+  module that provides the timeline builders.
+validation: "Resolved during build of Build a pricer for: Callable bond: BDT lognormal\
+  \ vs HW normal tree\n\nConstruct methods: rate_tree\nComparison targets: bdt_tree\
+  \ (rate_tree), hull_white_tree (rate_tree)\nCross-validation harness:\n  internal\
+  \ targets: bdt_tree, hull_white_tree\n  external targets: financepy, quantlib\n\
+  New component: bdt_calibration_via_generic_lattice\n\nImplementation target: hull_white_tree\n\
+  Preferred method family: rate_tree\n\nImplementation target: hull_white_tree"
+id: bi_008

@@ -63,7 +63,7 @@ def test_ir_native_retrieval_ranks_early_exercise_lessons_for_american_put():
     assert any("exercise" in title or "lsm" in title for title in top_titles)
 
 
-def test_autonomous_build_tracking_patch_accepts_product_ir_kwarg():
+def test_autonomous_build_tracking_passes_stage_aware_knowledge_retriever():
     from trellis.agent.knowledge.autonomous import _build_with_tracking
     from trellis.agent.knowledge.decompose import decompose_to_ir
 
@@ -81,22 +81,36 @@ def test_autonomous_build_tracking_patch_accepts_product_ir_kwarg():
         missing=[],
         retrieved_lesson_ids=[],
     )
+    observed: dict[str, object] = {}
 
     def _fake_build_payoff(*args, **kwargs):
         import trellis.agent.executor as executor
 
-        text = executor._retrieve_knowledge(
-            SimpleNamespace(method="monte_carlo"),
-            "american_option",
+        observed["executor_retrieve"] = executor._retrieve_knowledge
+        request = executor.KnowledgeRetrievalRequest(
+            audience="builder",
+            stage="initial_build",
+            attempt_number=1,
+            knowledge_surface="compact",
+            prompt_surface="compact",
+            retry_reason=None,
+            instrument_type="american_option",
+            pricing_method="monte_carlo",
             product_ir=product_ir,
+            compiled_request=None,
         )
-        assert "## Product Semantics" in text
+        text = kwargs["knowledge_retriever"](request)
+        assert "## Distilled Build Memory" in text
+        assert "## Pricing Method" not in text
 
         class DummyPayoff:
             pass
 
         return DummyPayoff
 
+    import trellis.agent.executor as executor
+
+    original_retrieve = executor._retrieve_knowledge
     with patch("trellis.agent.executor.build_payoff", side_effect=_fake_build_payoff):
         payoff_cls, meta = _build_with_tracking(
             description="American put option on equity",
@@ -113,3 +127,5 @@ def test_autonomous_build_tracking_patch_accepts_product_ir_kwarg():
 
     assert payoff_cls.__name__ == "DummyPayoff"
     assert meta["failures"] == []
+    assert observed["executor_retrieve"] is original_retrieve
+    assert "lesson_ids" in meta["knowledge_summary"]

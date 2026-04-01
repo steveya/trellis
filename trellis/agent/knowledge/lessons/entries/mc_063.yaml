@@ -1,0 +1,32 @@
+category: monte_carlo
+title: Avoid scalar checks on arrays
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-03-31T19:44:52.573165'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: The code used a boolean test on a NumPy array when evaluating market-state
+  inputs in the Monte Carlo CDS pricer.
+root_cause: In Monte Carlo workflows, inputs are often vectorized, so expressions
+  like `if x:` become ambiguous when `x` contains multiple elements. The mental model
+  failure is treating an array like a single scalar value instead of checking its
+  shape or reducing it explicitly.
+fix: Replace implicit truthiness checks with explicit tests such as `x is None`, `x.size
+  == 0`, `np.any(x)`, or `np.all(x)` depending on the intended logic.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: mc_cds\nPreferred method family:\
+  \ monte_carlo\n\nImplementation target: mc_cds"
+id: mc_063

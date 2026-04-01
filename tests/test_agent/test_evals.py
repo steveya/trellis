@@ -246,6 +246,14 @@ def test_classify_task_result_buckets_market_data_blocked_and_comparison_failure
             "cross_validation": {"status": "failed", "failed_targets": ["fft"]},
         }
     ) == "comparison_failed"
+    assert classify_task_result(
+        {
+            "task_id": "T4",
+            "success": False,
+            "comparison_task": True,
+            "task_diagnosis_failure_bucket": "comparator_build_failure",
+        }
+    ) == "comparator_build_failure"
 
 
 def test_summarize_task_results_reports_retry_recovery_and_reviewer_signals():
@@ -305,14 +313,21 @@ def test_summarize_task_results_reports_retry_recovery_and_reviewer_signals():
             "success": False,
             "error": "MissingCapabilityError: missing market data black_vol_surface",
         },
+        {
+            "task_id": "T4",
+            "success": False,
+            "comparison_task": True,
+            "task_diagnosis_failure_bucket": "comparator_build_failure",
+        },
     ]
 
     summary = summarize_task_results(results)
 
-    assert summary["totals"]["tasks"] == 3
+    assert summary["totals"]["tasks"] == 4
     assert summary["totals"]["successes"] == 1
     assert summary["failure_buckets"]["blocked"] == 1
     assert summary["failure_buckets"]["missing_market_data"] == 1
+    assert summary["failure_buckets"]["comparator_build_failure"] == 1
     assert summary["retry_recovery"]["successful_after_retry"] == 1
     assert summary["reviewer_signals"]["tasks_with_reviewer_issues"] == 2
     assert summary["reviewer_signals"]["tasks_recovered_after_review"] == 1

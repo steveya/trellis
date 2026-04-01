@@ -1,0 +1,31 @@
+category: market_data
+title: Missing Curve and Vol Access
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T08:03:40.027112'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The rate-tree pricer was implemented without pulling the discount curve and
+  Black vol surface from market_state.
+root_cause: 'I assumed the tree could be built from rates alone, but the option pricer
+  still needs market inputs for discounting and volatility calibration. This is a
+  data-plumbing failure: the algorithm was chosen correctly, but its required inputs
+  were not wired through the access layer.'
+fix: Add explicit market_state accessors for the discount curve and Black vol surface
+  before running the hull_white_tree rate_tree route.
+validation: "Resolved during build of Build a pricer for: ZCB option: Ho-Lee vs HW\
+  \ tree vs Jamshidian analytical\n\nConstruct methods: rate_tree\nComparison targets:\
+  \ ho_lee_tree (rate_tree), hull_white_tree (rate_tree), jamshidian (analytical)\n\
+  Cross-validation harness:\n  internal targets: ho_lee_tree, hull_white_tree\n  analytical\
+  \ benchmark: jamshidian\n  external targets: quantlib, financepy\nNew component:\
+  \ jamshidian_decomposition\n\nImplementation target: hull_white_tree\nPreferred\
+  \ method family: rate_tree\n\nImplementation target: hull_white_tree"
+id: md_052

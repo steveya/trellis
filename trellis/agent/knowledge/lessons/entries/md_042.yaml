@@ -1,0 +1,25 @@
+category: market_data
+title: Invalid Trellis module reference causes validation failure
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-03-31T18:44:19.436695'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: A non-existent Trellis module `trellis.models.not_a_real_module` was referenced
+  in the configuration.
+root_cause: The developer assumed a module path existed without verifying the Trellis
+  module registry, leading to a broken dependency reference that the validator cannot
+  resolve.
+fix: Replace the invalid module path with a verified, existing Trellis module that
+  provides the required functionality.
+validation: Resolved during build of European payer swaption
+id: md_042

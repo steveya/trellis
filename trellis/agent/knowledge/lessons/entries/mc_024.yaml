@@ -2,8 +2,8 @@ id: mc_024
 title: Date vs float comparison in smoke test
 severity: critical
 category: monte_carlo
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-03-28T11:32:15.269980'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_113215_cap_monte_carlo.yaml

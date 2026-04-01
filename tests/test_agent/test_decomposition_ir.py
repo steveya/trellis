@@ -102,6 +102,19 @@ class TestProductIR:
         assert "equity_tree" in ir.route_families
         assert ir.supported is True
 
+    def test_ir_for_zcb_option(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir("ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical")
+
+        assert ir.instrument == "zcb_option"
+        assert ir.payoff_family == "zcb_option"
+        assert ir.exercise_style == "european"
+        assert ir.schedule_dependence is False
+        assert ir.model_family == "interest_rate"
+        assert "analytical" in ir.candidate_engine_families
+        assert ir.supported is True
+
     def test_ir_normalizes_american_option_alias(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir
 

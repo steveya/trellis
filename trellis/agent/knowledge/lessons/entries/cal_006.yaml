@@ -1,0 +1,26 @@
+category: calibration
+title: Payer Swaption Analytical Pricing Requires Correct Rate Convention
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-03-31T13:25:48.923669'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The analytical payer swaption formula failed because the fixed rate, floating
+  rate, or day count convention was inconsistently specified between the swap and
+  the swaption engine.
+root_cause: Analytical swaption models assume the annuity and forward swap rate are
+  computed consistently; mismatched conventions cause the ATM forward to be wrong,
+  making the option value nonsensical or negative.
+fix: Ensure the swaption's underlying swap schedule, day count, and fixed rate conventions
+  exactly match those used to construct the annuity in the analytical engine.
+validation: Resolved during build of European payer swaption
+id: cal_006

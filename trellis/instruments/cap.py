@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from trellis.core.date_utils import generate_schedule, year_fraction
+from trellis.core.date_utils import build_period_schedule
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.models.black import black76_call, black76_put
@@ -45,17 +45,22 @@ def _capfloor_pv(
 
     and sums the surviving periods after settlement.
     """
-    schedule = generate_schedule(spec.start_date, spec.end_date, spec.frequency)
-    period_starts = [spec.start_date] + schedule[:-1]
+    schedule = build_period_schedule(
+        spec.start_date,
+        spec.end_date,
+        spec.frequency,
+        day_count=spec.day_count,
+        time_origin=market_state.settlement,
+    )
 
     pv = 0.0
-    for p_start, p_end in zip(period_starts, schedule):
-        if p_end <= market_state.settlement:
+    for period in schedule:
+        if period.payment_date <= market_state.settlement:
             continue
 
-        tau = year_fraction(p_start, p_end, spec.day_count)
-        t_fix = year_fraction(market_state.settlement, p_start, spec.day_count)
-        t_pay = year_fraction(market_state.settlement, p_end, spec.day_count)
+        tau = float(period.accrual_fraction or 0.0)
+        t_fix = float(period.t_start or 0.0)
+        t_pay = float(period.t_payment or 0.0)
 
         if t_fix <= 0:
             continue

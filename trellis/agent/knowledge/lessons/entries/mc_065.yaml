@@ -1,0 +1,33 @@
+category: monte_carlo
+title: Bypass Required Pricing Primitives
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-03-31T20:24:18.978503'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: The analytical CDS pricer ignored the mandated year-fraction primitive and
+  implemented its own date logic instead.
+root_cause: This usually happens when the model is written as a self-contained calculation
+  rather than a thin adapter over the selected assembly route. The mental model failure
+  is treating required framework primitives as optional helpers, which breaks consistency
+  with the validation harness.
+fix: Rebuild the pricer as a thin wrapper around trellis.core.date_utils.year_fraction
+  and other required primitives, keeping all date accrual logic inside the framework
+  path.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: analytical_cds\nPreferred method\
+  \ family: analytical\n\nImplementation target: analytical_cds"
+id: mc_065

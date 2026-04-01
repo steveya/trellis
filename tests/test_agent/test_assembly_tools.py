@@ -64,6 +64,22 @@ def test_select_invariant_pack_for_callable_bond_includes_bounding():
     assert "check_bounded_by_reference" in pack.checks
 
 
+def test_select_invariant_pack_for_cds_prioritizes_credit_specific_checks():
+    from trellis.agent.assembly_tools import select_invariant_pack
+
+    pack = select_invariant_pack(
+        instrument_type="credit_default_swap",
+        method="monte_carlo",
+    )
+
+    assert pack.checks[:2] == (
+        "check_cds_spread_quote_normalization",
+        "check_cds_credit_curve_sensitivity",
+    )
+    assert "check_non_negativity" in pack.checks
+    assert "check_price_sanity" in pack.checks
+
+
 def test_build_comparison_harness_plan_resolves_targets_and_reference():
     from trellis.agent.assembly_tools import build_comparison_harness_plan
 

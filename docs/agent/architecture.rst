@@ -62,10 +62,10 @@ Agent Roles
    * - **Critic Agent**
      - Find errors in generated code
      - Generated source code
-     - ``(concern, test_code)`` pairs
+     - structured ``CriticConcern`` findings with deterministic ``check_id`` values
    * - **Arbiter**
-     - Run tests deterministically
-     - Invariants + critic tests
+     - Run checks deterministically
+     - Invariants + critic-selected checks
      - Pass/fail with failure messages
 
 Design Principles
@@ -82,9 +82,10 @@ Design Principles
    ``evaluate()``.
 
 4. **Adversarial validation**: the critic sees code only (not the builder's
-   reasoning). It outputs executable assertions, not opinions.
+   reasoning). It selects from bounded deterministic checks rather than writing
+   open-ended review code on the standard path.
 
-5. **Retry on failure**: if invariants or critic tests fail, the builder
+5. **Retry on failure**: if invariants or critic-selected checks fail, the builder
    retries with the failure feedback (up to 3 attempts).
 
 Return Type Convention

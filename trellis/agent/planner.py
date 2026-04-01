@@ -74,6 +74,19 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("is_payer", "bool", "True=payer swaption, False=receiver", "True"),
         ],
     ),
+    "zcb_option": SpecSchema(
+        class_name="ZCBOptionPayoff",
+        spec_name="ZCBOptionSpec",
+        requirements=["discount", "black_vol"],
+        fields=[
+            FieldDef("notional", "float", "Face value / notional of the underlying bond"),
+            FieldDef("strike", "float", "Strike quoted per unit face or on the stated notional"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("bond_maturity_date", "date", "Underlying zero-coupon bond maturity date"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+        ],
+    ),
     "cap": SpecSchema(
         class_name="AgentCapPayoff",
         spec_name="AgentCapSpec",
@@ -235,7 +248,7 @@ STATIC_SPECS: dict[str, SpecSchema] = {
         requirements=["discount", "credit"],
         fields=[
             FieldDef("notional", "float", "Protection notional"),
-            FieldDef("spread", "float", "CDS spread (decimal, e.g. 0.01 = 100bps)"),
+            FieldDef("spread", "float", "CDS running spread in decimal form (e.g. 0.015 = 150bps, not 150.0)"),
             FieldDef("recovery", "float", "Recovery rate", "0.4"),
             FieldDef("start_date", "date", "Protection start date"),
             FieldDef("end_date", "date", "Protection end date"),
@@ -362,7 +375,7 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
 def plan_build(
     payoff_description: str,
     requirements: set[str],
-    model: str = "gpt-5-mini",
+    model: str = "gpt-5.4-mini",
     instrument_type: str | None = None,
     preferred_method: str | None = None,
     spec_schema_hint: str | None = None,

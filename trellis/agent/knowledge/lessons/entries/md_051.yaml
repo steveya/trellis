@@ -1,0 +1,32 @@
+category: market_data
+title: Missing market state wiring
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T08:03:25.427370'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The pricer was routed to a tree method without ensuring the required discount
+  curve and Black vol surface were accessible from market_state.
+root_cause: I assumed the pricing path could infer all inputs from the model choice,
+  but tree-based option pricing still depends on explicit market data plumbing for
+  discounting and volatility. When those accessors are absent, the implementation
+  can compile logically yet fail validation because the route has no way to retrieve
+  its mandatory inputs.
+fix: Expose and wire the discount curve and Black vol surface in market_state, or
+  switch to a route whose inputs match the available market data.
+validation: "Resolved during build of Build a pricer for: ZCB option: Ho-Lee vs HW\
+  \ tree vs Jamshidian analytical\n\nConstruct methods: rate_tree\nComparison targets:\
+  \ ho_lee_tree (rate_tree), hull_white_tree (rate_tree), jamshidian (analytical)\n\
+  Cross-validation harness:\n  internal targets: ho_lee_tree, hull_white_tree\n  analytical\
+  \ benchmark: jamshidian\n  external targets: quantlib, financepy\nNew component:\
+  \ jamshidian_decomposition\n\nImplementation target: ho_lee_tree\nPreferred method\
+  \ family: rate_tree\n\nImplementation target: ho_lee_tree"
+id: md_051

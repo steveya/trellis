@@ -1,0 +1,32 @@
+category: backward_induction
+title: Guard all fallback blocks
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T13:36:24.979111'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - bermudan
+  - floating_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: A fallback try/except path was left with an empty except body, causing a
+  syntax error and blocking the pricing module from loading.
+root_cause: When adapting helper calls or signatures, it is easy to focus on the primary
+  path and forget that every exception branch still needs a valid, indented block.
+  The mental model failure is treating fallback code as optional text rather than
+  executable structure.
+fix: Ensure every except clause contains a complete, indented recovery path or explicitly
+  re-raises, then re-run linting/import validation.
+validation: "Resolved during build of Build a pricer for: Bermudan swaption on HW\
+  \ tree\n\nConstruct methods: rate_tree\nComparison targets: hw_tree_bermudan (rate_tree),\
+  \ black76_european_lower_bound (analytical)\nCross-validation harness:\n  internal\
+  \ targets: hw_tree_bermudan, black76_european_lower_bound\n  external targets: quantlib,\
+  \ financepy\nNew component: swap_valuation_on_tree\n\nImplementation target: hw_tree_bermudan\n\
+  Preferred method family: rate_tree\n\nImplementation target: hw_tree_bermudan"
+id: bi_011

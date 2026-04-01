@@ -27,7 +27,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("task_ids", nargs="+", help="Specific task ids to benchmark")
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--warmups", type=int, default=1)
-    parser.add_argument("--model", default="gpt-5-mini")
+    parser.add_argument("--model", default="gpt-5.4-mini")
     parser.add_argument("--output")
     return parser.parse_args(argv)
 

@@ -1,8 +1,9 @@
 Critic Agent & Arbiter
 ======================
 
-The critic agent reads generated code and produces structured test cases.
-The arbiter executes them deterministically.
+The critic agent reads generated code and selects from a bounded menu of
+deterministic review checks. The arbiter executes those checks deterministically.
+Legacy critic-authored ``test_code`` remains supported for backward compatibility.
 
 Critic Agent
 ------------
@@ -18,9 +19,9 @@ It looks for:
 4. **Day count errors** — wrong convention applied
 5. **Edge cases** — what happens at maturity, all dates past, deep ITM/OTM
 
-Output: a list of ``CriticConcern(description, test_code, severity)``.
-
-The ``test_code`` is executable Python — an assertion that tests the concern.
+Output: a list of ``CriticConcern(check_id, description, severity, evidence, remediation)``.
+The critic does not need to write executable Python on the standard path; it
+selects a supported ``check_id`` and explains why that check is warranted.
 
 .. autoclass:: trellis.agent.critic.CriticConcern
    :members:
@@ -33,7 +34,7 @@ Arbiter
 The arbiter runs all validation checks deterministically:
 
 1. **Invariant suite** — non-negativity, vol monotonicity, bounding, rate sensitivity
-2. **Critic test cases** — execute each concern's ``test_code``
+2. **Critic-selected deterministic checks** — execute each concern's supported ``check_id``
 3. **Report** — ``ValidationResult(passed, invariant_failures, critic_failures)``
 
 No LLM judgment — just run the tests and report pass/fail.

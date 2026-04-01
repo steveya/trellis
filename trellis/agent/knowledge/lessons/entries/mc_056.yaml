@@ -1,0 +1,33 @@
+category: monte_carlo
+title: CDS spread unit-conversion & discounting bug
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-03-31T12:47:05.247775'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260331_124706_swap_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - fixed_coupons
+  - floating_coupons
+  - discounting
+  - credit_risk
+  - spread_computation
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: Computed PV has an unreasonable magnitude or sign (e.g., |PV| >> notional
+  or large negative PV).
+root_cause: The payoff used inconsistent units for the running spread (treated as
+  whole-number bps like 100 instead of decimal 0.01), and omitted or misapplied discounting
+  / survival computations; additionally, a code-generation indentation/syntax error
+  broke the module. These caused accrual and protection legs to be scaled incorrectly
+  and the code to fail to compile.
+fix: Convert spreads from basis points to decimal before accrual (e.g., spread_bps
+  / 10000.0), always use market_state.discount(t) for discounting and market_state
+  credit primitives (hazard or survival) for default probabilities, add PV sanity
+  checks against notional, and fix the indentation/syntax errors in generated code.
+validation: Discovered during build (attempt 3)
+id: mc_056

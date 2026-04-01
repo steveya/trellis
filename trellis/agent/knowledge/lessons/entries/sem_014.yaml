@@ -1,0 +1,26 @@
+category: semantic
+title: _semantic_extension_decision_knowledge_artifact_concept_rate_style_s
+severity: medium
+status: validated
+confidence: 0.6
+created: '2026-03-31T10:25:26.610362'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/semantic_extensions/1d7dd7caa723500b.yaml
+applies_when:
+  method:
+  - knowledge_artifact
+  features:
+  - underlier_structure
+  - payoff_rule
+  - settlement_rule
+  - semantic_contract_lesson
+  instrument: []
+  error_signature: null
+symptom: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing knowledge artifacts: semantic_contract_lesson'
+root_cause: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing knowledge artifacts: semantic_contract_lesson'
+fix: Extend the existing semantic concept with the missing attribute and keep the
+  wrapper thin.
+validation: Repeated semantic extension trace `1d7dd7caa723500b`
+id: sem_014

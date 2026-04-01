@@ -168,6 +168,7 @@ def build_product_ir(
     supported: bool | None = None,
     preferred_method: str | None = None,
     store: KnowledgeStore | None = None,
+    event_machine: object | None = None,
 ) -> ProductIR:
     """Build a ``ProductIR`` from explicit structured fields.
 
@@ -258,6 +259,7 @@ def build_product_ir(
         reusable_primitives=resolved_reusable_primitives,
         unresolved_primitives=resolved_unresolved_primitives,
         supported=len(resolved_unresolved_primitives) == 0 if supported is None else supported,
+        event_machine=event_machine,
     )
 
 
@@ -331,6 +333,7 @@ def _infer_instrument(description: str, instrument_type: str | None) -> str | No
         ("bermudan_swaption", ("bermudan_swaption", "bermudan swaption")),
         ("callable_bond", ("callable_bond", "callable bond")),
         ("puttable_bond", ("puttable_bond", "puttable bond")),
+        ("zcb_option", ("zcb_option", "zcb option", "zero_coupon_bond_option", "zero-coupon bond option")),
         ("american_put", ("american_put", "american put")),
         ("american_option", ("american_option", "american option")),
         ("barrier_option", ("barrier_option", "barrier option")),
@@ -530,6 +533,8 @@ def _payoff_family_for(
         return "composite_option"
     if instrument in {"swaption", "bermudan_swaption"}:
         return "swaption"
+    if instrument == "zcb_option":
+        return "zcb_option"
     if instrument == "callable_bond":
         return "callable_fixed_income"
     if instrument == "puttable_bond":
@@ -618,7 +623,7 @@ def _model_family_for(
         return "stochastic_volatility"
     if "jump_diffusion" in payoff_traits:
         return "jump_diffusion"
-    if instrument in {"swap", "swaption", "bermudan_swaption", "callable_bond", "puttable_bond", "bond", "cap", "floor"}:
+    if instrument in {"swap", "swaption", "bermudan_swaption", "callable_bond", "puttable_bond", "bond", "cap", "floor", "zcb_option"}:
         return "interest_rate"
     if method == "copula" or instrument in {"cdo", "nth_to_default"}:
         return "credit_copula"
@@ -665,7 +670,7 @@ def _route_families_for(
     """Return the exact route-family labels that remain semantically valid."""
     families: list[str] = []
     if instrument == "nth_to_default":
-        families.append("credit_default_swap")
+        families.append("nth_to_default")
     if (
         payoff_family == "vanilla_option"
         and exercise_style in {"american", "bermudan"}

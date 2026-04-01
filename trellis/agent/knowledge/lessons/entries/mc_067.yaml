@@ -1,0 +1,32 @@
+category: monte_carlo
+title: Bypass Required Primitives
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-03-31T20:33:37.385714'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: The Monte Carlo CDS pricer was implemented with custom logic instead of using
+  the required interval_default_probability primitive.
+root_cause: This happens when the modeler treats the payoff as a standalone simulation
+  task and forgets the assembly contract that defines which domain primitives must
+  drive the computation. The mental model failure is optimizing for correctness in
+  isolation rather than compatibility with the selected route.
+fix: Rebuild the payoff as a thin adapter around the required primitives so the Monte
+  Carlo method uses interval_default_probability directly.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: mc_cds\nPreferred method family:\
+  \ monte_carlo\n\nImplementation target: mc_cds"
+id: mc_067

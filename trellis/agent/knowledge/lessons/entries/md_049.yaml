@@ -1,0 +1,32 @@
+category: market_data
+title: Use market state discounts
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T00:49:44.094011'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: The Hull-White rate tree was implemented without sourcing calibration or
+  discounting from market_state.discount.
+root_cause: The mental model assumed the tree could be built from rates alone, but
+  a rate-tree pricer still needs the market discount curve to anchor calibration and
+  price cash flows consistently. Without that access, the tree cannot match observed
+  term structure.
+fix: Wire the rate-tree route to read discount factors from market_state.discount
+  and use them as the calibration/discount basis.
+validation: "Resolved during build of Build a pricer for: Callable bond: BDT lognormal\
+  \ vs HW normal tree\n\nConstruct methods: rate_tree\nComparison targets: bdt_tree\
+  \ (rate_tree), hull_white_tree (rate_tree)\nCross-validation harness:\n  internal\
+  \ targets: bdt_tree, hull_white_tree\n  external targets: financepy, quantlib\n\
+  New component: bdt_calibration_via_generic_lattice\n\nImplementation target: hull_white_tree\n\
+  Preferred method family: rate_tree\n\nImplementation target: hull_white_tree"
+id: md_049

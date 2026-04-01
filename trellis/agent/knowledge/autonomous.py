@@ -19,8 +19,10 @@ Usage:
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from dataclasses import replace
 from dataclasses import dataclass, field
+import os
 from typing import Any, Mapping
 
 
@@ -56,6 +58,7 @@ class BuildResult:
     blocker_details: dict[str, Any] | None = None
     token_usage_summary: dict[str, Any] = field(default_factory=dict)
     gate_decision: object | None = None  # BuildGateDecision when gate evaluated
+    post_build_tracking: dict[str, Any] = field(default_factory=dict)
 
 
 _PROVIDER_FAILURE_MARKERS = (
@@ -67,6 +70,74 @@ _PROVIDER_FAILURE_MARKERS = (
     "returned empty json response",
     "request failed after",
 )
+
+_SKIP_POST_BUILD_REFLECTION_ENV = "TRELLIS_SKIP_POST_BUILD_REFLECTION"
+_SKIP_POST_BUILD_CONSOLIDATION_ENV = "TRELLIS_SKIP_POST_BUILD_CONSOLIDATION"
+
+
+def _utc_now_iso() -> str:
+    """Return a compact UTC timestamp for post-build tracking."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _env_flag(name: str) -> bool:
+    """Parse a boolean-like environment flag."""
+    raw = os.environ.get(name, "")
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _post_build_control_flags() -> dict[str, bool]:
+    """Return the active post-build bisection controls."""
+    return {
+        "skip_reflection": _env_flag(_SKIP_POST_BUILD_REFLECTION_ENV),
+        "skip_consolidation": _env_flag(_SKIP_POST_BUILD_CONSOLIDATION_ENV),
+    }
+
+
+def _record_post_build_phase(
+    tracking: dict[str, Any],
+    phase: str,
+    *,
+    status: str,
+    **details: Any,
+) -> None:
+    """Append one structured post-build phase marker."""
+    entry = {
+        "phase": phase,
+        "status": status,
+        "timestamp": _utc_now_iso(),
+    }
+    if details:
+        entry["details"] = details
+    tracking.setdefault("events", []).append(entry)
+    tracking["last_phase"] = phase
+    tracking["last_status"] = status
+    tracking["updated_at"] = entry["timestamp"]
+
+
+def _llm_stage_metadata(
+    *,
+    model: str,
+    instrument_type: str | None,
+    request_metadata: Mapping[str, object] | None,
+    comparison_target: str | None,
+) -> dict[str, Any]:
+    """Attach stable request metadata to LLM stage logs."""
+    metadata = {
+        "model": model,
+        "instrument_type": instrument_type,
+        "task_id": (
+            str(request_metadata.get("task_id"))
+            if isinstance(request_metadata, Mapping) and request_metadata.get("task_id")
+            else None
+        ),
+        "comparison_target": comparison_target,
+    }
+    return {
+        key: value
+        for key, value in metadata.items()
+        if value not in {None, ""}
+    }
 
 
 def build_with_knowledge(
@@ -121,7 +192,15 @@ def build_with_knowledge(
     with llm_usage_session() as usage_records:
         # Phase 1: Decompose and gap check
         decomposition_model = get_model_for_stage("decomposition", model)
-        with llm_usage_stage("decomposition", metadata={"model": decomposition_model}):
+        with llm_usage_stage(
+            "decomposition",
+            metadata=_llm_stage_metadata(
+                model=decomposition_model,
+                instrument_type=instrument_type,
+                request_metadata=request_metadata,
+                comparison_target=comparison_target,
+            ),
+        ):
             decomposition = decompose(effective_description, instrument_type, decomposition_model)
         if preferred_method:
             decomposition = replace(
@@ -145,6 +224,10 @@ def build_with_knowledge(
                 knowledge_gaps=gap_report.missing,
                 failures=[f"Build gate blocked (pre-flight): {pre_flight_gate.reason}"],
                 gate_decision=pre_flight_gate,
+                post_build_tracking={
+                    "active_flags": _post_build_control_flags(),
+                    "events": [],
+                },
             )
 
         # Increase retries if knowledge is thin
@@ -159,6 +242,10 @@ def build_with_knowledge(
             gap_confidence=gap_report.confidence,
             knowledge_gaps=gap_report.missing,
             gate_decision=pre_flight_gate,
+            post_build_tracking={
+                "active_flags": _post_build_control_flags(),
+                "events": [],
+            },
         )
 
         try:
@@ -205,18 +292,70 @@ def build_with_knowledge(
             result.blocker_details = exc.meta.get("blocker_details")
         except Exception as e:
             result.failures = [str(e)]
+        _record_post_build_phase(
+            result.post_build_tracking,
+            "build_completed",
+            status="ok" if result.success else "error",
+            attempts=result.attempts,
+            success=result.success,
+            platform_trace_path=result.platform_trace_path,
+            failure_count=len(result.failures),
+        )
 
         # Phase 3: Post-build reflection (skip on obvious provider/config failures)
-        if _should_skip_reflection(result):
+        post_build_flags = dict(result.post_build_tracking.get("active_flags") or {})
+        if post_build_flags.get("skip_reflection"):
+            result.reflection = {
+                "skipped": True,
+                "reason": _SKIP_POST_BUILD_REFLECTION_ENV,
+            }
+            _record_post_build_phase(
+                result.post_build_tracking,
+                "reflection_started",
+                status="skipped",
+                reason=_SKIP_POST_BUILD_REFLECTION_ENV,
+            )
+            _record_post_build_phase(
+                result.post_build_tracking,
+                "reflection_completed",
+                status="skipped",
+                reason=_SKIP_POST_BUILD_REFLECTION_ENV,
+            )
+        elif _should_skip_reflection(result):
             result.reflection = {
                 "skipped": True,
                 "reason": "provider_failure_before_build",
             }
+            _record_post_build_phase(
+                result.post_build_tracking,
+                "reflection_started",
+                status="skipped",
+                reason="provider_failure_before_build",
+            )
+            _record_post_build_phase(
+                result.post_build_tracking,
+                "reflection_completed",
+                status="skipped",
+                reason="provider_failure_before_build",
+            )
         else:
+            _record_post_build_phase(
+                result.post_build_tracking,
+                "reflection_started",
+                status="running",
+            )
             try:
                 reflection_model = get_model_for_stage("reflection", model)
                 enforce_llm_token_budget(stage="pre_reflection")
-                with llm_usage_stage("reflection", metadata={"model": reflection_model}):
+                with llm_usage_stage(
+                    "reflection",
+                    metadata=_llm_stage_metadata(
+                        model=reflection_model,
+                        instrument_type=instrument_type,
+                        request_metadata=request_metadata,
+                        comparison_target=comparison_target,
+                    ),
+                ):
                     reflection = reflect_on_build(
                         description=description,
                         decomposition=decomposition,
@@ -230,10 +369,28 @@ def build_with_knowledge(
                         model=reflection_model,
                     )
                 result.reflection = reflection
+                _record_post_build_phase(
+                    result.post_build_tracking,
+                    "reflection_completed",
+                    status="ok",
+                    lessons_attributed=int(reflection.get("lessons_attributed") or 0),
+                )
             except TokenBudgetExceeded as exc:
                 result.reflection = {"token_budget_exceeded": str(exc)}
-            except Exception:
-                pass
+                _record_post_build_phase(
+                    result.post_build_tracking,
+                    "reflection_completed",
+                    status="token_budget_exceeded",
+                    error=str(exc)[:200],
+                )
+            except Exception as exc:
+                result.reflection = {"error": str(exc)[:200]}
+                _record_post_build_phase(
+                    result.post_build_tracking,
+                    "reflection_completed",
+                    status="error",
+                    error=str(exc)[:200],
+                )
 
         result.token_usage_summary = summarize_llm_usage(usage_records)
         if result.platform_trace_path and result.token_usage_summary["call_count"] > 0:
@@ -242,11 +399,70 @@ def build_with_knowledge(
                     result.platform_trace_path,
                     result.token_usage_summary,
                 )
+                _record_post_build_phase(
+                    result.post_build_tracking,
+                    "token_usage_attached",
+                    status="ok",
+                    call_count=result.token_usage_summary.get("call_count"),
+                    total_tokens=result.token_usage_summary.get("total_tokens"),
+                )
             except Exception:
-                pass
+                _record_post_build_phase(
+                    result.post_build_tracking,
+                    "token_usage_attached",
+                    status="error",
+                    call_count=result.token_usage_summary.get("call_count"),
+                )
+        else:
+            _record_post_build_phase(
+                result.post_build_tracking,
+                "token_usage_attached",
+                status="skipped",
+                reason=(
+                    "missing_platform_trace"
+                    if not result.platform_trace_path
+                    else "no_llm_calls"
+                ),
+                call_count=result.token_usage_summary.get("call_count"),
+            )
+
+    # Phase 3b: Emit decision checkpoint (best-effort, never blocks)
+    checkpoint_status = _emit_decision_checkpoint(
+        result=result,
+        decomposition=decomposition,
+        instrument_type=instrument_type,
+        model=model or "",
+    )
+    _record_post_build_phase(
+        result.post_build_tracking,
+        "decision_checkpoint_emitted",
+        status=str(checkpoint_status.get("status") or "unknown"),
+        checkpoint_path=checkpoint_status.get("path"),
+        error=checkpoint_status.get("error"),
+    )
 
     # Phase 4: Post-task consolidation (background, non-blocking)
-    _maybe_consolidate(result.reflection, model=model)
+    if post_build_flags.get("skip_consolidation"):
+        _record_post_build_phase(
+            result.post_build_tracking,
+            "consolidation_dispatched",
+            status="skipped",
+            reason=_SKIP_POST_BUILD_CONSOLIDATION_ENV,
+        )
+    else:
+        consolidation = _maybe_consolidate(result.reflection, model=model)
+        _record_post_build_phase(
+            result.post_build_tracking,
+            "consolidation_dispatched",
+            status=(
+                "backgrounded"
+                if consolidation is None
+                else ("error" if consolidation.error else "ok")
+            ),
+            tiers=getattr(consolidation, "tiers_run", []),
+            trigger_reasons=getattr(consolidation, "trigger_reasons", []),
+            error=getattr(consolidation, "error", None),
+        )
 
     return result
 
@@ -298,27 +514,43 @@ def _build_with_tracking(
             instrument=decomposition.instrument,
         )
     knowledge_payload = build_shared_knowledge_payload(knowledge)
+    meta: dict = {
+        "knowledge_summary": dict(knowledge_payload.get("summary") or {}),
+    }
+
+    distilled_knowledge_text = knowledge_payload["builder_text_distilled"]
     compact_knowledge_text = knowledge_payload["builder_text"]
     expanded_knowledge_text = knowledge_payload["builder_text_expanded"]
-    knowledge_text = compact_knowledge_text
+    distilled_review_text = knowledge_payload["review_text_distilled"]
+    compact_review_text = knowledge_payload["review_text"]
+    expanded_review_text = knowledge_payload["review_text_expanded"]
     gap_warnings = format_gap_warnings(gap_report)
-    if gap_warnings:
-        knowledge_text += "\n\n" + gap_warnings
-        expanded_knowledge_text += "\n\n" + gap_warnings
-
-    # Monkey-patch _retrieve_knowledge to return our pre-built context
-    # This is a pragmatic approach — avoids deep refactoring of build_payoff
     import trellis.agent.executor as executor
-    original_retrieve = executor._retrieve_knowledge
     original_record_platform_event = executor._record_platform_event
 
-    def _patched_retrieve(pricing_plan, inst_type, *, product_ir=None, compact=True):
-        """Return the precomputed knowledge context instead of re-querying storage."""
-        return knowledge_text if compact else expanded_knowledge_text
+    def _stage_aware_knowledge_retriever(request) -> str:
+        """Serve precomputed knowledge with audience/surface awareness."""
+        audience = getattr(request, "audience", "builder")
+        knowledge_surface = getattr(request, "knowledge_surface", "compact")
+        prompt_surface = getattr(request, "prompt_surface", "compact")
+        expanded = knowledge_surface == "expanded"
+        if audience == "review":
+            if expanded:
+                return expanded_review_text
+            return distilled_review_text
+        if expanded:
+            text = expanded_knowledge_text
+        elif prompt_surface == "import_repair":
+            text = compact_knowledge_text
+        else:
+            text = distilled_knowledge_text
+        if gap_warnings:
+            text += "\n\n" + gap_warnings
+        return text
 
-    executor._retrieve_knowledge = _patched_retrieve
-
-    meta: dict = {"attempts": 0, "failures": [], "code": ""}
+    meta.setdefault("attempts", 0)
+    meta.setdefault("failures", [])
+    meta.setdefault("code", "")
     try:
         # Track attempts by wrapping _generate_module
         original_generate = executor._generate_module
@@ -362,6 +594,7 @@ def _build_with_tracking(
             request_metadata=request_metadata,
             build_meta=meta,
             gap_report=gap_report,
+            knowledge_retriever=_stage_aware_knowledge_retriever,
         )
 
         meta["attempts"] = attempt_count[0]
@@ -379,7 +612,6 @@ def _build_with_tracking(
         raise BuildTrackingFailure(str(e), meta=meta, cause=e) from e
     finally:
         # Restore original functions
-        executor._retrieve_knowledge = original_retrieve
         executor._record_platform_event = original_record_platform_event
         if 'original_generate' in dir():
             executor._generate_module = original_generate
@@ -629,6 +861,74 @@ def _log_consolidation(result: ConsolidationResult) -> None:
         log_path.write_text(yaml.dump(existing, default_flow_style=False, sort_keys=False))
     except Exception:
         pass  # logging failure must not break the build
+
+
+def _emit_decision_checkpoint(
+    *,
+    result: BuildResult,
+    decomposition: object,
+    instrument_type: str | None,
+    model: str,
+) -> dict[str, Any]:
+    """Best-effort: save a structured decision checkpoint for drift detection.
+
+    Never raises — checkpoint emission must not block the pipeline.
+    """
+    import logging
+
+    _log = logging.getLogger(__name__)
+    try:
+        from trellis.agent.checkpoints import capture_checkpoint, save_checkpoint
+
+        # Extract quant decision from agent_observations
+        pricing_plan_proxy = None
+        spec_schema_proxy = None
+        for obs in result.agent_observations:
+            if obs.get("agent") == "quant" and obs.get("kind") == "decision":
+                details = obs.get("details", {})
+                from types import SimpleNamespace
+
+                pricing_plan_proxy = SimpleNamespace(
+                    method=details.get("method", getattr(decomposition, "method", "unknown")),
+                    required_market_data=set(details.get("required_market_data", [])),
+                    method_modules=details.get("method_modules", []),
+                    selection_reason=details.get("selection_reason", ""),
+                )
+                break
+
+        # Derive task_id from platform request or instrument type
+        task_id = "unknown"
+        if result.platform_request_id:
+            task_id = result.platform_request_id[:12]
+        elif instrument_type:
+            task_id = instrument_type
+
+        outcome = "pass" if result.success else "fail_build"
+        if not result.success and result.failures:
+            if any("validation" in f.lower() for f in result.failures):
+                outcome = "fail_validate"
+
+        checkpoint = capture_checkpoint(
+            task_id=task_id,
+            instrument_type=instrument_type or "unknown",
+            pricing_plan=pricing_plan_proxy,
+            code=result.code or None,
+            token_summary=result.token_usage_summary,
+            outcome=outcome,
+            attempts=result.attempts,
+            model=model,
+        )
+        path = save_checkpoint(checkpoint)
+        return {
+            "status": "ok",
+            "path": str(path) if path is not None else "",
+        }
+    except Exception as exc:
+        _log.debug("_emit_decision_checkpoint: %s", exc)
+        return {
+            "status": "error",
+            "error": str(exc)[:200],
+        }
 
 
 def _maybe_consolidate(

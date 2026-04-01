@@ -1,0 +1,32 @@
+category: market_data
+title: Missing curve access wiring
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-03-31T19:23:56.230374'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: The analytical CDS pricer was implemented without properly wiring the required
+  discount and credit curve access from market_state.
+root_cause: This happens when the model logic is correct but the data plumbing is
+  incomplete, so the pricing route cannot retrieve the curves it depends on. The mental
+  model failure is assuming the analytical formula alone is enough, instead of also
+  ensuring the engine exposes the necessary market inputs.
+fix: Expose and verify both discount-curve and credit-curve access in market_state
+  for the analytical CDS route before enabling the pricer.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: analytical_cds\nPreferred method\
+  \ family: analytical\n\nImplementation target: analytical_cds"
+id: md_044

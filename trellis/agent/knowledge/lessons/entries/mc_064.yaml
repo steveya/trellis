@@ -1,0 +1,31 @@
+category: monte_carlo
+title: Array Truth Check Bug
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-03-31T19:58:38.565680'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: The Monte Carlo code used a raw NumPy array in a boolean condition, causing
+  an ambiguous truth-value failure.
+root_cause: NumPy arrays do not have a single truth value when they contain multiple
+  elements, so Python cannot infer whether the condition is true or false. This usually
+  happens when scalar-style branching is applied to vectorized state or path data.
+fix: Replace scalar boolean checks with explicit reductions like any()/all() or rewrite
+  the logic to operate elementwise with masks.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: mc_cds\nPreferred method family:\
+  \ monte_carlo\n\nImplementation target: mc_cds"
+id: mc_064

@@ -10,6 +10,7 @@ from trellis.models.trees.lattice import (
     build_spot_lattice,
     lattice_backward_induction,
 )
+from trellis.models.trees.control import resolve_lattice_exercise_policy
 
 
 S0, K, r, sigma, T = 100.0, 100.0, 0.05, 0.20, 1.0
@@ -72,6 +73,16 @@ class TestSpotLattice:
         )
         assert amer >= euro - 0.01
 
+    def test_jarrow_rudd_call_converges(self):
+        lattice = build_spot_lattice(S0, r, sigma, T, 200, model="jarrow_rudd")
+
+        def payoff(step, node, lat):
+            return max(lat.get_state(step, node) - K, 0.0)
+
+        price = lattice_backward_induction(lattice, payoff)
+        bs_ref = bs_call(S0, K, T, r, sigma)
+        assert price == pytest.approx(bs_ref, rel=0.03)
+
 
 class TestRateLattice:
 
@@ -123,3 +134,98 @@ class TestRateLattice:
         # Price must change meaningfully with vol
         total_change = abs(prices[-1] - prices[0])
         assert total_change > 0.01, f"Prices nearly unchanged with vol: {prices}"
+
+    def test_exercise_policy_matches_legacy_kwargs(self):
+        lattice = build_rate_lattice(0.05, 0.01, 0.1, 10.0, 100)
+        dt = 10.0 / 100
+        exercise_steps = [30, 50, 70]
+
+        def payoff(step, node, lat):
+            return 100.0 + 100.0 * 0.05 * dt
+
+        def exercise(step, node, lat):
+            return 100.0 + 100.0 * 0.05 * dt
+
+        legacy = lattice_backward_induction(
+            lattice,
+            payoff,
+            exercise,
+            exercise_type="bermudan",
+            exercise_steps=exercise_steps,
+            exercise_fn=min,
+        )
+        policy = resolve_lattice_exercise_policy(
+            "issuer_call",
+            exercise_steps=exercise_steps,
+        )
+        policy_price = lattice_backward_induction(
+            lattice,
+            payoff,
+            exercise,
+            exercise_policy=policy,
+        )
+
+        assert policy_price == pytest.approx(legacy)
+
+    def test_lattice_backward_induction_accepts_legacy_terminal_value_and_exercise_value_fn(self):
+        lattice = build_rate_lattice(0.05, 0.01, 0.1, 1.0, 4)
+        policy = resolve_lattice_exercise_policy("issuer_call", exercise_steps=[2, 3])
+
+        def cashflow_at_node(step, node):
+            return 1.0 if step > 0 else 0.0
+
+        def exercise_value_fn(step, node, continuation):
+            return 100.0 if continuation > 100.0 else 101.0
+
+        price = lattice_backward_induction(
+            lattice,
+            terminal_value=101.0,
+            cashflow_at_node=cashflow_at_node,
+            exercise_value_fn=exercise_value_fn,
+            exercise_policy=policy,
+        )
+
+        assert price > 0.0
+
+    def test_lattice_backward_induction_accepts_legacy_callable_signatures(self):
+        lattice = build_rate_lattice(0.05, 0.01, 0.1, 1.0, 4)
+        policy = resolve_lattice_exercise_policy("issuer_call", exercise_steps=[2, 3])
+
+        def terminal_payoff(node, _t):
+            return 101.0
+
+        def cashflow_at_node(step, node, _t):
+            return 1.0 if step > 0 else 0.0
+
+        def exercise_value(step, node, continuation, _t):
+            return 100.0 if continuation > 100.0 else 101.0
+
+        price = lattice_backward_induction(
+            lattice,
+            terminal_payoff=terminal_payoff,
+            cashflow_at_node=cashflow_at_node,
+            exercise_value=exercise_value,
+            exercise_policy=policy,
+        )
+
+        assert price > 0.0
+
+    def test_lattice_backward_induction_accepts_scalar_terminal_payoff(self):
+        lattice = build_rate_lattice(0.05, 0.01, 0.1, 1.0, 4)
+        policy = resolve_lattice_exercise_policy("issuer_call", exercise_steps=[2, 3])
+
+        def cashflow_at_node(step, node):
+            return 1.0 if step > 0 else 0.0
+
+        def exercise_value(step, node):
+            return 100.0
+
+        price = lattice_backward_induction(
+            lattice,
+            101.0,
+            exercise_value=exercise_value,
+            cashflow_at_node=cashflow_at_node,
+            exercise_policy=policy,
+        )
+
+        assert price > 0.0

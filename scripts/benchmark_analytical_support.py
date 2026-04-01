@@ -36,7 +36,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         nargs="*",
         help="Representative task ids to benchmark. Defaults to the analytical support tranche.",
     )
-    parser.add_argument("--model", default="gpt-5-mini")
+    parser.add_argument("--model", default="gpt-5.4-mini")
     parser.add_argument("--output-root", default=str(ROOT / "docs" / "benchmarks"))
     parser.add_argument("--report-name", default="analytical_support_reliability")
     parser.add_argument(

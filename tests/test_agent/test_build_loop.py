@@ -265,6 +265,36 @@ def test_reference_modules_include_quanto_resolution_helper():
     assert ("trellis.models.monte_carlo.quanto", "Quanto Monte Carlo route helpers") in modules
 
 
+def test_reference_modules_do_not_use_mutable_cds_agent_module_for_single_name_cds():
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import _reference_modules
+
+    modules = _reference_modules(
+        pricing_plan=SimpleNamespace(method="monte_carlo"),
+        instrument_type="credit_default_swap",
+    )
+
+    assert all(module != "trellis.instruments._agent.cds" for module, _ in modules)
+    assert ("trellis.models.monte_carlo", "Monte Carlo package exports") not in modules
+    assert ("trellis.instruments.barrier_option", "BarrierOptionPayoff (MC reference)") not in modules
+
+
+def test_reference_modules_include_generic_rate_tree_surfaces_for_callable_bond():
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import _reference_modules
+
+    modules = _reference_modules(
+        pricing_plan=SimpleNamespace(method="rate_tree"),
+        instrument_type="callable_bond",
+    )
+
+    assert ("trellis.models.trees.lattice", "Generic/calibrated lattice builders") in modules
+    assert ("trellis.models.trees.models", "Tree model registry for BDT/Hull-White selection") in modules
+    assert ("trellis.models.trees.control", "Lattice exercise/control helpers") in modules
+
+
 def test_generate_quanto_monte_carlo_skeleton_uses_family_helper_surface():
     from types import SimpleNamespace
 
@@ -493,6 +523,95 @@ class QuantoOptionAnalyticalPayoff:
     assert "resolve_quanto_inputs(market_state, spec)" in result.code
 
 
+def test_generate_module_recovers_fragment_with_offset_tail_indentation(monkeypatch):
+    from trellis.agent.executor import _generate_module
+
+    fragment = """spec = self._spec
+        if market_state.discount is None:
+            raise ValueError("missing discount")
+        if market_state.credit_curve is None:
+            raise ValueError("missing credit")
+        spread = float(spec.spread)
+        return spread
+"""
+
+    monkeypatch.setattr(
+        "trellis.agent.config.llm_generate",
+        lambda prompt, model=None: fragment,
+    )
+
+    result = _generate_module(
+        skeleton="""from trellis.core.market_state import MarketState
+
+class SmokeSpec:
+    spread: float
+
+
+class SmokePayoff:
+    def __init__(self, spec: SmokeSpec):
+        self._spec = spec
+
+    def evaluate(self, market_state: MarketState) -> float:
+        raise NotImplementedError("evaluate not yet implemented")
+""",
+        spec_schema=SimpleNamespace(
+            class_name="SmokePayoff",
+            spec_name="SmokeSpec",
+            fields=[],
+        ),
+        reference_sources={},
+        model="test-model",
+        max_retries=1,
+    )
+
+    compile(result.code, "<recovered>", "exec")
+    assert "if market_state.credit_curve is None:" in result.code
+    assert "return spread" in result.code
+
+
+def test_generate_module_recovers_fragment_missing_indent_after_if(monkeypatch):
+    from trellis.agent.executor import _generate_module
+
+    fragment = """spread = float(spec.spread)
+if spread > 1.0:
+spread *= 1e-4
+return spread
+"""
+
+    monkeypatch.setattr(
+        "trellis.agent.config.llm_generate",
+        lambda prompt, model=None: fragment,
+    )
+
+    result = _generate_module(
+        skeleton="""from trellis.core.market_state import MarketState
+
+class SmokeSpec:
+    spread: float
+
+
+class SmokePayoff:
+    def __init__(self, spec: SmokeSpec):
+        self._spec = spec
+
+    def evaluate(self, market_state: MarketState) -> float:
+        raise NotImplementedError("evaluate not yet implemented")
+""",
+        spec_schema=SimpleNamespace(
+            class_name="SmokePayoff",
+            spec_name="SmokeSpec",
+            fields=[],
+        ),
+        reference_sources={},
+        model="test-model",
+        max_retries=1,
+    )
+
+    compile(result.code, "<recovered>", "exec")
+    assert "if spread > 1.0:" in result.code
+    assert "spread *= 1e-4" in result.code
+
+
 def test_generate_module_recovers_evaluate_body_from_malformed_full_module(monkeypatch):
     from trellis.agent.executor import _generate_module
 
@@ -633,10 +752,26 @@ def test_validate_build_critic_path_uses_stage_helpers_without_nameerror(monkeyp
     monkeypatch.setattr("trellis.agent.config.llm_usage_stage", fake_usage_stage)
     monkeypatch.setattr("trellis.agent.config.enforce_llm_token_budget", lambda stage=None: None)
     monkeypatch.setattr("trellis.agent.config.summarize_llm_usage", lambda usage: {})
-    monkeypatch.setattr(
-        "trellis.agent.critic.critique",
-        lambda code, description, knowledge_context="", model=None: [],
-    )
+    critic_call = {}
+
+    def fake_critique(
+        code,
+        description,
+        knowledge_context="",
+        model=None,
+        *,
+        available_checks=None,
+        json_max_retries=None,
+        allow_text_fallback=True,
+        text_max_retries=None,
+    ):
+        critic_call["available_checks"] = [check.check_id for check in available_checks or ()]
+        critic_call["json_max_retries"] = json_max_retries
+        critic_call["allow_text_fallback"] = allow_text_fallback
+        critic_call["text_max_retries"] = text_max_retries
+        return []
+
+    monkeypatch.setattr("trellis.agent.critic.critique", fake_critique)
     monkeypatch.setattr("trellis.agent.arbiter.run_critic_tests", lambda concerns, payoff: [])
 
     caplog.set_level("WARNING")
@@ -656,7 +791,110 @@ def test_validate_build_critic_path_uses_stage_helpers_without_nameerror(monkeyp
     assert failures == []
     assert captured["stage"] == "critic"
     assert captured["metadata"]["model"] == "critic-model"
+    assert critic_call["available_checks"] == [
+        "price_non_negative",
+        "volatility_input_usage",
+    ]
+    assert critic_call["json_max_retries"] is None
+    assert critic_call["allow_text_fallback"] is True
     assert "get_model_for_stage" not in caplog.text
+
+
+def test_validate_build_passes_bounded_standard_critic_policy(monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import _validate_build
+
+    class DummyPayoff:
+        @property
+        def requirements(self) -> set[str]:
+            return set()
+
+        def evaluate(self, market_state) -> float:
+            return 1.0
+
+    monkeypatch.setattr(
+        "trellis.agent.executor._make_test_payoff",
+        lambda payoff_cls, spec_schema, settle: DummyPayoff(),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.review_policy.determine_review_policy",
+        lambda **kwargs: SimpleNamespace(
+            run_critic=True,
+            risk_level="high",
+            critic_reason="test",
+            critic_mode="advisory",
+            critic_json_max_retries=0,
+            critic_allow_text_fallback=False,
+            critic_text_max_retries=0,
+        ),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.validation_bundles.select_validation_bundle",
+        lambda **kwargs: SimpleNamespace(bundle_id="demo", checks=(), categories={}),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.validation_bundles.execute_validation_bundle",
+        lambda *args, **kwargs: SimpleNamespace(
+            failures=[],
+            failure_details=(),
+            executed_checks=(),
+            skipped_checks=(),
+        ),
+    )
+
+    @contextmanager
+    def fake_usage_stage(stage, metadata=None):
+        yield []
+
+    monkeypatch.setattr("trellis.agent.config.get_model_for_stage", lambda stage, model=None: "critic-model")
+    monkeypatch.setattr("trellis.agent.config.llm_usage_stage", fake_usage_stage)
+    monkeypatch.setattr("trellis.agent.config.enforce_llm_token_budget", lambda stage=None: None)
+    monkeypatch.setattr("trellis.agent.config.summarize_llm_usage", lambda usage: {})
+
+    captured = {}
+
+    def fake_critique(
+        code,
+        description,
+        knowledge_context="",
+        model=None,
+        *,
+        available_checks=None,
+        json_max_retries=None,
+        allow_text_fallback=True,
+        text_max_retries=None,
+    ):
+        captured["available_checks"] = [check.check_id for check in available_checks or ()]
+        captured["json_max_retries"] = json_max_retries
+        captured["allow_text_fallback"] = allow_text_fallback
+        captured["text_max_retries"] = text_max_retries
+        return []
+
+    monkeypatch.setattr("trellis.agent.critic.critique", fake_critique)
+    monkeypatch.setattr("trellis.agent.arbiter.run_critic_tests", lambda concerns, payoff: [])
+
+    failures = _validate_build(
+        payoff_cls=DummyPayoff,
+        code="class Demo: pass",
+        description="Demo payoff",
+        spec_schema=SimpleNamespace(class_name="DemoPayoff", spec_name="DemoSpec", fields=[]),
+        validation="standard",
+        model="gpt-5-mini",
+        pricing_plan=SimpleNamespace(method="monte_carlo", required_market_data=set()),
+        product_ir=SimpleNamespace(instrument="credit_default_swap"),
+        build_meta={},
+        attempt_number=1,
+    )
+
+    assert failures == []
+    assert captured == {
+        "available_checks": [],
+        "json_max_retries": 0,
+        "allow_text_fallback": False,
+        "text_max_retries": 0,
+    }
 
 
 def test_actual_market_smoke_reports_runtime_error():
@@ -750,6 +988,7 @@ class SmokePayoff:
             "Synthetic smoke payoff",
             {"discount_curve"},
             market_state=TestBuildLoop()._quanto_market_state(),
+            instrument_type="european_option",
             force_rebuild=True,
             max_retries=2,
         )
@@ -1338,7 +1577,10 @@ class QuantoOptionAnalyticalPayoff:
         """Unsupported routes fail before code generation when primitive blockers are known."""
         from trellis.agent.executor import build_payoff
 
-        with pytest.raises(RuntimeError, match="primitive planning blockers"):
+        with pytest.raises(
+            RuntimeError,
+            match="primitive planning blockers|Build gate blocked pre-generation",
+        ):
             build_payoff(
                 "American Asian barrier option under Heston with early exercise",
                 {"discount", "black_vol"},

@@ -38,7 +38,7 @@ load_env()
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", default="gpt-5-mini")
+    parser.add_argument("--model", default="gpt-5.4-mini")
     parser.add_argument("--validation", default="standard")
     parser.add_argument("--include-t94", action="store_true")
     parser.add_argument("--output", help="Path for candidate task results JSON")

@@ -414,6 +414,82 @@ def test_persist_task_run_record_retains_runtime_contract_metadata(tmp_path):
     }
 
 
+def test_persist_task_run_record_summarizes_post_build_markers(tmp_path):
+    from trellis.agent.task_run_store import load_task_run_record, persist_task_run_record
+
+    task = {
+        "id": "T777",
+        "title": "Post-build marker demo",
+    }
+    result = {
+        "task_id": "T777",
+        "title": task["title"],
+        "success": False,
+        "start_time": "2026-03-31T14:00:00",
+        "comparison_task": True,
+        "method_results": {
+            "mc_demo": {
+                "success": False,
+                "attempts": 2,
+                "failures": ["timeout"],
+                "reflection": {},
+                "post_build_tracking": {
+                    "last_phase": "reflection_completed",
+                    "last_status": "error",
+                    "updated_at": "2026-03-31T14:00:30+00:00",
+                    "active_flags": {"skip_reflection": False},
+                    "events": [
+                        {"phase": "build_completed", "status": "ok"},
+                        {"phase": "reflection_completed", "status": "error"},
+                    ],
+                },
+            }
+        },
+        "reflection": {},
+        "post_build_tracking": {
+            "last_phase": "decision_checkpoint_emitted",
+            "last_status": "ok",
+            "updated_at": "2026-03-31T14:00:10+00:00",
+            "active_flags": {"skip_task_diagnosis_persist": False},
+            "events": [
+                {"phase": "build_completed", "status": "ok"},
+                {"phase": "decision_checkpoint_emitted", "status": "ok"},
+            ],
+        },
+    }
+
+    persisted = persist_task_run_record(
+        task,
+        result,
+        root=tmp_path,
+        persisted_at=datetime(2026, 3, 31, 14, 1, tzinfo=timezone.utc),
+    )
+
+    latest = load_task_run_record(persisted["latest_path"])
+
+    assert latest["post_build"]["latest_method"] == "mc_demo"
+    assert latest["post_build"]["latest_phase"] == "reflection_completed"
+    assert latest["post_build"]["latest_status"] == "error"
+    assert latest["workflow"]["post_build_latest_phase"] == "reflection_completed"
+    assert latest["workflow"]["post_build_latest_method"] == "mc_demo"
+
+
+def test_persist_task_run_record_can_skip_diagnosis_artifacts(monkeypatch, tmp_path):
+    from trellis.agent.task_run_store import persist_task_run_record
+
+    monkeypatch.setenv("TRELLIS_SKIP_TASK_DIAGNOSIS_PERSIST", "1")
+
+    persisted = persist_task_run_record(
+        {"id": "T778", "title": "Diagnosis skip demo"},
+        {"task_id": "T778", "title": "Diagnosis skip demo", "success": True, "reflection": {}},
+        root=tmp_path,
+        persisted_at=datetime(2026, 3, 31, 14, 5, tzinfo=timezone.utc),
+    )
+
+    assert persisted["diagnosis_persist_skipped"] == "env:TRELLIS_SKIP_TASK_DIAGNOSIS_PERSIST"
+    assert persisted["diagnosis_persist_error"] == ""
+
+
 def test_collect_trace_summaries_reads_analytical_trace_json(tmp_path):
     import json
 

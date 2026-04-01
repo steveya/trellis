@@ -85,6 +85,70 @@ def test_select_validation_bundle_for_quanto_family_includes_family_checks():
     assert "product_family" in bundle.categories
 
 
+def test_select_validation_bundle_for_cds_includes_credit_family_checks_first():
+    from trellis.agent.validation_bundles import select_validation_bundle
+
+    bundle = select_validation_bundle(
+        instrument_type="credit_default_swap",
+        method="monte_carlo",
+    )
+
+    assert bundle.bundle_id == "monte_carlo:credit_default_swap"
+    assert bundle.checks[:2] == (
+        "check_cds_spread_quote_normalization",
+        "check_cds_credit_curve_sensitivity",
+    )
+    assert "product_family" in bundle.categories
+
+
+def test_execute_validation_bundle_uses_decreasing_vol_direction_for_callable_bond(monkeypatch):
+    from trellis.agent.validation_bundles import ValidationBundle, execute_validation_bundle
+
+    seen: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_non_negativity",
+        lambda payoff, market_state: [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_price_sanity",
+        lambda payoff, market_state: [],
+    )
+
+    def _check_vol_monotonicity(payoff_factory, market_state_factory, **kwargs):
+        seen["expected_direction"] = kwargs.get("expected_direction")
+        return []
+
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_vol_monotonicity",
+        _check_vol_monotonicity,
+    )
+
+    bundle = ValidationBundle(
+        bundle_id="rate_tree:callable_bond",
+        instrument_type="callable_bond",
+        method="rate_tree",
+        checks=(
+            "check_non_negativity",
+            "check_price_sanity",
+            "check_vol_monotonicity",
+        ),
+        categories={"universal": ("check_non_negativity", "check_price_sanity")},
+    )
+
+    execution = execute_validation_bundle(
+        bundle,
+        validation_level="standard",
+        test_payoff=object(),
+        market_state=object(),
+        payoff_factory=lambda: object(),
+        market_state_factory=lambda **kwargs: object(),
+    )
+
+    assert execution.failures == ()
+    assert seen["expected_direction"] == "decreasing"
+
+
 def test_execute_validation_bundle_runs_quanto_family_checks(monkeypatch):
     from trellis.agent.validation_bundles import ValidationBundle, execute_validation_bundle
 
@@ -187,3 +251,62 @@ def test_execute_validation_bundle_returns_structured_failure_details(monkeypatc
     assert detail.check == "check_non_negativity"
     assert detail.actual == -2.0
     assert detail.context["spot"] == 100.0
+
+
+def test_execute_validation_bundle_runs_cds_checks_before_universal(monkeypatch):
+    from trellis.agent.validation_bundles import ValidationBundle, execute_validation_bundle
+
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_cds_spread_quote_normalization",
+        lambda *args, **kwargs: calls.append("check_cds_spread_quote_normalization") or [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_cds_credit_curve_sensitivity",
+        lambda *args, **kwargs: calls.append("check_cds_credit_curve_sensitivity") or [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_non_negativity",
+        lambda *args, **kwargs: calls.append("check_non_negativity") or [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_price_sanity",
+        lambda *args, **kwargs: calls.append("check_price_sanity") or [],
+    )
+
+    bundle = ValidationBundle(
+        bundle_id="monte_carlo:credit_default_swap",
+        instrument_type="credit_default_swap",
+        method="monte_carlo",
+        checks=(
+            "check_cds_spread_quote_normalization",
+            "check_cds_credit_curve_sensitivity",
+            "check_non_negativity",
+            "check_price_sanity",
+        ),
+        categories={
+            "product_family": (
+                "check_cds_spread_quote_normalization",
+                "check_cds_credit_curve_sensitivity",
+            ),
+            "universal": ("check_non_negativity", "check_price_sanity"),
+        },
+    )
+
+    execution = execute_validation_bundle(
+        bundle,
+        validation_level="standard",
+        test_payoff=object(),
+        market_state=object(),
+        payoff_factory=lambda: object(),
+        market_state_factory=lambda **kwargs: object(),
+    )
+
+    assert execution.failures == ()
+    assert calls == [
+        "check_cds_spread_quote_normalization",
+        "check_cds_credit_curve_sensitivity",
+        "check_non_negativity",
+        "check_price_sanity",
+    ]

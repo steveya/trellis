@@ -5,13 +5,17 @@ from datetime import date
 import pytest
 
 from trellis.agent.invariants import (
+    check_cds_credit_curve_sensitivity,
+    check_cds_spread_quote_normalization,
     check_non_negativity,
+    check_price_sanity,
     check_vol_monotonicity,
     check_zero_vol_intrinsic,
     run_invariant_suite,
 )
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
+from trellis.curves.credit_curve import CreditCurve
 from trellis.curves.yield_curve import YieldCurve
 from trellis.engine.payoff_pricer import price_payoff
 from trellis.instruments.cap import CapFloorSpec, CapPayoff
@@ -68,6 +72,276 @@ class TestNonNegativity:
         assert failure.actual == pytest.approx(-2.5)
         assert "available_capabilities" in failure.context
 
+    def test_non_negativity_surfaces_cds_spread_unit_hint(self):
+        class CdsLikePayoff:
+            def __init__(self):
+                self._spec = type(
+                    "CDSSpec",
+                    (),
+                    {
+                        "spread": 150.0,
+                        "recovery": 0.4,
+                        "start_date": SETTLE,
+                        "end_date": date(2029, 11, 15),
+                    },
+                )()
+
+            @property
+            def requirements(self):
+                return {"discount", "credit"}
+
+            def evaluate(self, market_state):
+                return -65000.0
+
+        failures = check_non_negativity(
+            CdsLikePayoff(),
+            MarketState(
+                as_of=SETTLE,
+                settlement=SETTLE,
+                discount=YieldCurve.flat(0.05),
+                credit_curve=CreditCurve.flat(0.02),
+            ),
+            return_diagnostics=True,
+        )
+
+        assert len(failures) == 1
+        failure = failures[0]
+        assert "150 bp -> 0.015" in failure.message
+        assert failure.context["cds_spread_hint"] == "basis_points_to_decimal"
+        assert failure.context["reported_spread"] == pytest.approx(150.0)
+
+
+class TestPriceSanity:
+
+    def test_price_sanity_surfaces_cds_spread_unit_hint(self):
+        class CdsLikePayoff:
+            def __init__(self):
+                self._spec = type(
+                    "CDSSpec",
+                    (),
+                    {
+                        "spread": 150.0,
+                        "recovery": 0.4,
+                        "start_date": SETTLE,
+                        "end_date": date(2029, 11, 15),
+                    },
+                )()
+
+            @property
+            def requirements(self):
+                return {"discount", "credit"}
+
+            def evaluate(self, market_state):
+                return -65000.0
+
+        failures = check_price_sanity(
+            CdsLikePayoff(),
+            MarketState(
+                as_of=SETTLE,
+                settlement=SETTLE,
+                discount=YieldCurve.flat(0.05),
+                credit_curve=CreditCurve.flat(0.02),
+            ),
+            return_diagnostics=True,
+        )
+
+        assert len(failures) == 1
+        failure = failures[0]
+        assert "150 bp -> 0.015" in failure.message
+        assert failure.context["cds_spread_hint"] == "basis_points_to_decimal"
+
+
+class TestCreditDefaultSwapInvariants:
+
+    @staticmethod
+    def _cds_market_state():
+        return MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.05),
+            credit_curve=CreditCurve.flat(0.02),
+        )
+
+    def test_cds_spread_quote_normalization_passes_for_equivalent_quotes(self):
+        from dataclasses import dataclass
+
+        @dataclass(frozen=True)
+        class CDSSpec:
+            notional: float
+            spread: float
+            recovery: float
+            start_date: date
+            end_date: date
+
+        class NormalizingCDSPayoff:
+            def __init__(self, spec):
+                self._spec = spec
+
+            @property
+            def requirements(self):
+                return {"discount", "credit"}
+
+            def evaluate(self, market_state):
+                spread = float(self._spec.spread)
+                if spread > 1.0:
+                    spread *= 1e-4
+                return float(-self._spec.notional * spread)
+
+        def payoff_factory():
+            return NormalizingCDSPayoff(
+                CDSSpec(
+                    notional=100.0,
+                    spread=100.0,
+                    recovery=0.4,
+                    start_date=SETTLE,
+                    end_date=date(2029, 11, 15),
+                )
+            )
+
+        failures = check_cds_spread_quote_normalization(
+            payoff_factory,
+            lambda **kwargs: self._cds_market_state(),
+        )
+
+        assert failures == []
+
+    def test_cds_spread_quote_normalization_fails_without_normalization(self):
+        from dataclasses import dataclass
+
+        @dataclass(frozen=True)
+        class CDSSpec:
+            notional: float
+            spread: float
+            recovery: float
+            start_date: date
+            end_date: date
+
+        class NonNormalizingCDSPayoff:
+            def __init__(self, spec):
+                self._spec = spec
+
+            @property
+            def requirements(self):
+                return {"discount", "credit"}
+
+            def evaluate(self, market_state):
+                return float(-self._spec.notional * float(self._spec.spread))
+
+        def payoff_factory():
+            return NonNormalizingCDSPayoff(
+                CDSSpec(
+                    notional=100.0,
+                    spread=100.0,
+                    recovery=0.4,
+                    start_date=SETTLE,
+                    end_date=date(2029, 11, 15),
+                )
+            )
+
+        failures = check_cds_spread_quote_normalization(
+            payoff_factory,
+            lambda **kwargs: self._cds_market_state(),
+            return_diagnostics=True,
+        )
+
+        assert len(failures) == 1
+        failure = failures[0]
+        assert failure.check == "check_cds_spread_quote_normalization"
+        assert "semantically equivalent spreads 100 and 0.01" in failure.message
+
+    def test_cds_credit_curve_sensitivity_passes_for_long_protection(self):
+        from dataclasses import dataclass
+
+        @dataclass(frozen=True)
+        class CDSSpec:
+            notional: float
+            spread: float
+            recovery: float
+            start_date: date
+            end_date: date
+
+        class SensitiveCDSPayoff:
+            def __init__(self, spec):
+                self._spec = spec
+
+            @property
+            def requirements(self):
+                return {"discount", "credit"}
+
+            def evaluate(self, market_state):
+                survival = market_state.credit_curve.survival_probability(5.0)
+                spread = float(self._spec.spread)
+                if spread > 1.0:
+                    spread *= 1e-4
+                protection = self._spec.notional * (1.0 - self._spec.recovery) * (1.0 - survival)
+                premium = self._spec.notional * spread * survival
+                return float(protection - premium)
+
+        def payoff_factory():
+            return SensitiveCDSPayoff(
+                CDSSpec(
+                    notional=100.0,
+                    spread=100.0,
+                    recovery=0.4,
+                    start_date=SETTLE,
+                    end_date=date(2029, 11, 15),
+                )
+            )
+
+        failures = check_cds_credit_curve_sensitivity(
+            payoff_factory,
+            lambda **kwargs: self._cds_market_state(),
+        )
+
+        assert failures == []
+
+    def test_cds_credit_curve_sensitivity_fails_when_credit_curve_unused(self):
+        from dataclasses import dataclass
+
+        @dataclass(frozen=True)
+        class CDSSpec:
+            notional: float
+            spread: float
+            recovery: float
+            start_date: date
+            end_date: date
+
+        class InsensitiveCDSPayoff:
+            def __init__(self, spec):
+                self._spec = spec
+
+            @property
+            def requirements(self):
+                return {"discount", "credit"}
+
+            def evaluate(self, market_state):
+                spread = float(self._spec.spread)
+                if spread > 1.0:
+                    spread *= 1e-4
+                return float(1.0 - spread)
+
+        def payoff_factory():
+            return InsensitiveCDSPayoff(
+                CDSSpec(
+                    notional=100.0,
+                    spread=100.0,
+                    recovery=0.4,
+                    start_date=SETTLE,
+                    end_date=date(2029, 11, 15),
+                )
+            )
+
+        failures = check_cds_credit_curve_sensitivity(
+            payoff_factory,
+            lambda **kwargs: self._cds_market_state(),
+            return_diagnostics=True,
+        )
+
+        assert len(failures) == 1
+        failure = failures[0]
+        assert failure.check == "check_cds_credit_curve_sensitivity"
+        assert "insensitive to hazard-rate shifts" in failure.message
+
 
 class TestVolMonotonicity:
 
@@ -92,6 +366,44 @@ class TestVolMonotonicity:
         failures = check_vol_monotonicity(bond_factory, _ms_factory)
         # Weak monotonicity (p2 >= p1) should pass for constant prices
         assert failures == []
+
+    def test_callable_like_price_can_decrease_with_vol(self):
+        class CallableLikePayoff:
+            @property
+            def requirements(self):
+                return {"discount", "black_vol"}
+
+            def evaluate(self, market_state):
+                vol = float(market_state.vol_surface.black_vol(1.0, 1.0))
+                return float(100.0 - 10.0 * vol)
+
+        failures = check_vol_monotonicity(
+            lambda: CallableLikePayoff(),
+            _ms_factory,
+            expected_direction="decreasing",
+        )
+
+        assert failures == []
+
+    def test_callable_like_price_fails_if_marked_increasing(self):
+        class CallableLikePayoff:
+            @property
+            def requirements(self):
+                return {"discount", "black_vol"}
+
+            def evaluate(self, market_state):
+                vol = float(market_state.vol_surface.black_vol(1.0, 1.0))
+                return float(100.0 - 10.0 * vol)
+
+        failures = check_vol_monotonicity(
+            lambda: CallableLikePayoff(),
+            _ms_factory,
+            expected_direction="increasing",
+            return_diagnostics=True,
+        )
+
+        assert failures
+        assert all(failure.context["expected_direction"] == "increasing" for failure in failures)
 
 
 class TestZeroVolIntrinsic:

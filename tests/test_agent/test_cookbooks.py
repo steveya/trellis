@@ -110,7 +110,15 @@ class TestCookbooks:
 
     def test_rate_tree_cookbook_includes_schedule_exercise_guidance(self):
         cb = get_cookbook("rate_tree")
+        assert "price_callable_bond_tree" in cb
         assert "build_rate_lattice" in cb
+        assert "build_generic_lattice" in cb
+        assert 'MODEL_REGISTRY["bdt"]' in cb
         assert "lattice_backward_induction" in cb
-        assert "exercise_fn=min" in cb
-        assert "exercise_fn=max" in cb
+        assert "resolve_lattice_exercise_policy" in cb
+        assert "lattice_steps_from_timeline" in cb
+        assert "lattice_step_from_time" in cb
+        assert "market_state.discount.zero_rate" in cb
+        assert "build_payment_timeline" in cb
+        assert "build_exercise_timeline_from_dates" in cb
+        assert 'model="hull_white"' in cb

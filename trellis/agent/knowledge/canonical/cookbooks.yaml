@@ -5,7 +5,6 @@ analytical:
     - cap
     - floor
     - cds
-    - nth_to_default
     - swaption
     - european_option
   version: canonical
@@ -54,15 +53,16 @@ analytical:
       lattice_equivalence: rate tree with matching short-rate vol and mean reversion converges only when the rate distribution assumptions align
       pde_equivalence: not directly applicable (forward-rate models require HJM or similar framework)
     - id: credit_default_swap
-      name: Credit default swap / nth-to-default
+      name: Credit default swap (single-name)
       assumptions:
         - deterministic discounting
         - piecewise survival probabilities from a credit curve
+        - one reference entity only
         - premium leg paid on a discrete schedule
         - protection leg triggered by default before maturity
-      payoff: CDS premium leg minus protection leg under a credit-curve survival model
+      payoff: Single-name CDS premium leg minus protection leg under a credit-curve survival model
       market_data: [discount_curve, credit_curve]
-      lattice_equivalence: not intended for tree routing; use credit survival inputs directly or a copula/Monte Carlo credit model
+      lattice_equivalence: not intended for tree routing; use credit survival inputs directly or a single-name hazard-rate Monte Carlo model
       pde_equivalence: not directly applicable
     - id: deterministic_cashflow
       name: Deterministic cashflow discounting
@@ -219,41 +219,44 @@ analytical:
         return pv
     ```
 
-    ### Credit default swap / nth-to-default (solution contract: credit_default_swap)
+    ### Credit default swap (single-name) (solution contract: credit_default_swap)
     Assumptions: deterministic discounting, credit survival probabilities from
-    a credit curve, premium leg on a schedule, protection leg triggered by
-    default before maturity.
+    a credit curve, one reference entity, premium leg on a schedule, protection
+    leg triggered by default before maturity. Do not reinterpret this section as
+    nth-to-default or basket CDS.
+    Convert quoted running spreads from basis points to decimals before accrual,
+    for example 150 bp -> 0.015.
+    Keep the analytical schedule convention aligned with the Monte Carlo
+    comparator: use `spec.start_date` as the time origin for `year_fraction(...)`
+    schedule times and discount both the premium leg and the interval default
+    mass with the payment-date discount factor. Do not trapezoid the protection
+    leg or average adjacent discount factors.
+    Prefer the checked-in CDS helpers so the adapter stays thin.
+    The shared analytical helper uses `credit_curve.survival_probability(t)` and
+    `discount_curve.discount(t)` internally and preserves the same premium/protection
+    leg contract.
     ```python
     def evaluate(self, market_state):
-        from trellis.core.date_utils import generate_schedule, year_fraction
+        from trellis.models.credit_default_swap import (
+            build_cds_schedule,
+            price_cds_analytical,
+        )
 
         spec = self._spec
-        schedule = generate_schedule(spec.start_date, spec.end_date, spec.frequency)
-        if not schedule:
-            return 0.0
-
-        premium_leg = 0.0
-        protection_leg = 0.0
-        prev_t = 0.0
-        prev_survival = 1.0
-
-        for payment_date in schedule:
-            t = year_fraction(market_state.settlement, payment_date, spec.day_count)
-            if t <= 0:
-                continue
-
-            survival = float(market_state.credit_curve.survival_probability(t))
-            default_prob = max(0.0, prev_survival - survival)
-            df = float(market_state.discount.discount(t))
-            accrual = max(t - prev_t, 0.0)
-
-            premium_leg += spec.notional * spec.spread * accrual * df * survival
-            protection_leg += spec.notional * (1.0 - spec.recovery) * default_prob * df
-
-            prev_t = t
-            prev_survival = survival
-
-        return protection_leg - premium_leg
+        schedule = build_cds_schedule(
+            spec.start_date,
+            spec.end_date,
+            spec.frequency,
+            spec.day_count,
+        )
+        return price_cds_analytical(
+            notional=spec.notional,
+            spread_quote=spec.spread,
+            recovery=spec.recovery,
+            schedule=schedule,
+            credit_curve=market_state.credit_curve,
+            discount_curve=market_state.discount,
+        )
     ```
 
 calibration:
@@ -327,14 +330,45 @@ rate_tree:
     Use this pattern for instruments with early exercise on interest rates
     (callable bonds, puttable bonds, Bermudan swaptions).
 
-    IMPORTANT: For rate derivatives, use `build_rate_lattice` which creates a
-    mean-reverting SHORT-RATE tree (Hull-White style). Do NOT use `BinomialTree.crr`
-    for interest-rate exercise problems.
+    IMPORTANT: For plain Hull-White-style rate derivatives, use
+    `build_rate_lattice` which creates a mean-reverting SHORT-RATE tree.
+    For model-specific calibrated trees such as BDT vs Hull-White comparisons,
+    use `build_generic_lattice(..., MODEL_REGISTRY["bdt"|"hull_white"], ...)`.
+    Do NOT use `BinomialTree.crr` for interest-rate exercise problems.
+
+    Prefer the checked-in helper surface first:
 
     ```python
     def evaluate(self, market_state):
-        from trellis.core.date_utils import year_fraction
-        from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction
+        from trellis.models.callable_bond_tree import price_callable_bond_tree
+
+        return price_callable_bond_tree(
+            market_state,
+            self._spec,
+            model="hull_white",  # or "bdt" for explicit comparison routes
+        )
+    ```
+
+    If you must build the lattice path manually, keep to the following shape:
+
+    ```python
+    def evaluate(self, market_state):
+        from trellis.core.date_utils import (
+            build_exercise_timeline_from_dates,
+            build_payment_timeline,
+            year_fraction,
+        )
+        from trellis.models.trees.control import (
+            lattice_step_from_time,
+            lattice_steps_from_timeline,
+            resolve_lattice_exercise_policy,
+        )
+        from trellis.models.trees.lattice import (
+            build_generic_lattice,
+            build_rate_lattice,
+            lattice_backward_induction,
+        )
+        from trellis.models.trees.models import MODEL_REGISTRY
 
         spec = self._spec
         T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
@@ -347,13 +381,40 @@ rate_tree:
         mean_reversion = 0.1
 
         n_steps = min(200, max(50, int(T * 50)))
+        # Hull-White helper route
         lattice = build_rate_lattice(
             r0, sigma_hw, mean_reversion, T, n_steps,
             discount_curve=market_state.discount,
         )
+        # BDT / explicit model-comparison route
+        # model = MODEL_REGISTRY["bdt"]  # or MODEL_REGISTRY["hull_white"]
+        # lattice = build_generic_lattice(
+        #     model, r0=r0, sigma=black_vol, a=0.05, T=T, n_steps=n_steps,
+        #     discount_curve=market_state.discount,
+        # )
 
-        # >>> INSTRUMENT-SPECIFIC: map coupon/exercise dates to lattice steps <<<
-        exercise_steps = []
+        payment_timeline = build_payment_timeline(
+            spec.start_date,
+            spec.end_date,
+            spec.frequency,
+            day_count=spec.day_count,
+            time_origin=market_state.settlement,
+            label="coupon_timeline",
+        )
+        exercise_timeline = build_exercise_timeline_from_dates(
+            spec.call_dates,
+            day_count=spec.day_count,
+            time_origin=market_state.settlement,
+            label="issuer_call_dates",
+        )
+        exercise_policy = resolve_lattice_exercise_policy(
+            "issuer_call",  # or "holder_put" / "bermudan"
+            exercise_steps=lattice_steps_from_timeline(
+                exercise_timeline,
+                dt=lattice.dt,
+                n_steps=lattice.n_steps,
+            ),
+        )
 
         def payoff_at_node(step, node, lattice):
             # >>> INSTRUMENT-SPECIFIC: terminal payoff at maturity <<<
@@ -371,17 +432,21 @@ rate_tree:
             lattice,
             payoff_at_node,
             exercise_value,
-            exercise_type="bermudan",
-            exercise_steps=exercise_steps,
             cashflow_at_node=cashflow,
-            exercise_fn=min,  # >>> INSTRUMENT-SPECIFIC: min for callable, max for puttable <<<
+            exercise_policy=exercise_policy,
         )
         return price
     ```
 
-    For issuer-callable structures, pass `exercise_fn=min`.
+    `lattice_backward_induction(...)` expects a terminal-payoff callback as the
+    second argument. Do not call it with legacy aliases like `terminal_value=...`
+    or `exercise_value_fn=...`.
+
+    For issuer-callable structures, resolve the policy with
+    `resolve_lattice_exercise_policy("issuer_call", ...)`.
     For holder-exercised structures such as puttable bonds or Bermudan
-    swaptions, pass `exercise_fn=max`.
+    swaptions, resolve `"holder_put"` or `"bermudan"` instead of open-coding
+    `exercise_fn=max`.
 
 monte_carlo:
   description: Path simulation for path-dependent or high-dimensional claims, including LSM-based exercise when needed
@@ -392,7 +457,6 @@ monte_carlo:
     - autocallable
     - variance_swap
     - cds
-    - nth_to_default
     - mbs
     - basket_path_payoff
     - ranked_observation_basket
@@ -434,52 +498,45 @@ monte_carlo:
     return result["price"]
     ```
 
-    ### Credit default swap / nth-to-default (solution contract: credit_default_swap)
-    Use this pattern for credit protection legs and premium-leg accrual under
-    a hazard-rate or survival-probability model.
+    ### Credit default swap (single-name) (solution contract: credit_default_swap)
+    Use this pattern for single-name credit protection legs and premium-leg
+    accrual under a hazard-rate or survival-probability model. Do not reuse it
+    for nth-to-default or basket CDS.
+    Convert quoted running spreads from basis points to decimals before accrual,
+    for example 150 bp -> 0.015. Do that once at the top of `evaluate()` and
+    then reuse only the normalized `spread` variable for the premium leg.
+    Semantically equivalent quotes such as `100` and `0.01` should produce the
+    same PV up to numerical tolerance.
+    Prefer the checked-in CDS helpers so the adapter stays thin.
+    The shared Monte Carlo helper samples interval defaults from the credit
+    curve survival structure, using `survival_probability(...)` for interval
+    default mass and `hazard_rate(...)` only if later routes need within-interval
+    timing refinement.
 
     ```python
     def evaluate(self, market_state):
-        from trellis.core.date_utils import generate_schedule, year_fraction
-        from trellis.core.differentiable import get_numpy
+        from trellis.models.credit_default_swap import (
+            build_cds_schedule,
+            price_cds_monte_carlo,
+        )
 
-        np = get_numpy()
         spec = self._spec
-        payment_dates = generate_schedule(spec.start_date, spec.end_date, spec.frequency)
-        if not payment_dates:
-            return 0.0
-
-        horizon = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
-        if horizon <= 0:
-            return 0.0
-
-        # First-pass Monte Carlo: sample a default time from the horizon hazard rate.
-        # If the request supplies a term structure, replace this with numerical
-        # inversion of the survival curve.
-        hazard = max(float(market_state.credit_curve.hazard_rate(horizon)), 1e-12)
-        n_paths = 50000
-        rng = np.random.default_rng(42)
-        default_times = -np.log(rng.uniform(size=n_paths)) / hazard
-
-        pv = 0.0
-        prev_t = 0.0
-        for payment_date in payment_dates:
-            t = year_fraction(market_state.settlement, payment_date, spec.day_count)
-            if t <= 0:
-                continue
-
-            accrual = max(t - prev_t, 0.0)
-            survival = float(np.mean(default_times > t))
-            df = float(market_state.discount.discount(t))
-
-            premium_leg = spec.notional * spec.spread * accrual * df * survival
-            default_prob = float(np.mean((default_times <= t) & (default_times > prev_t)))
-            protection_leg = spec.notional * (1.0 - spec.recovery) * df * default_prob
-
-            pv += protection_leg - premium_leg
-            prev_t = t
-
-        return pv
+        schedule = build_cds_schedule(
+            spec.start_date,
+            spec.end_date,
+            spec.frequency,
+            spec.day_count,
+        )
+        return price_cds_monte_carlo(
+            notional=spec.notional,
+            spread_quote=spec.spread,
+            recovery=spec.recovery,
+            schedule=schedule,
+            credit_curve=market_state.credit_curve,
+            discount_curve=market_state.discount,
+            n_paths=50000,
+            seed=42,
+        )
     ```
 
     If the user request is partial or underspecified, do not guess the missing
@@ -781,6 +838,10 @@ pde_solver:
   template: |
     ## Cookbook: PDE (finite difference theta-method)
     Use this pattern for low-dimensional Markov claims where a 1D PDE is natural.
+
+    For plain European call/put equity routes, prefer the checked-in helper
+    `price_vanilla_equity_option_pde(market_state, spec, theta=...)` from
+    `trellis.models.equity_option_pde` so the adapter stays thin.
 
     ```python
     def evaluate(self, market_state):

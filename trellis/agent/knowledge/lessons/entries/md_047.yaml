@@ -1,0 +1,32 @@
+category: market_data
+title: Timeline API mismatch
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T00:03:33.267849'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: The implementation called build_exercise_timeline_from_dates with positional
+  arguments that did not match its actual signature.
+root_cause: This usually happens when the code assumes a helper takes raw dates directly,
+  but the real API expects a different shape or keyword-only inputs. The mental model
+  failure is treating utility methods as interchangeable instead of verifying their
+  exact contract.
+fix: Align the call site to the helper’s true signature, preferably using named arguments
+  or a small adapter layer to normalize inputs.
+validation: "Resolved during build of Build a pricer for: Callable bond: BDT lognormal\
+  \ vs HW normal tree\n\nConstruct methods: rate_tree\nComparison targets: bdt_tree\
+  \ (rate_tree), hull_white_tree (rate_tree)\nCross-validation harness:\n  internal\
+  \ targets: bdt_tree, hull_white_tree\n  external targets: financepy, quantlib\n\
+  New component: bdt_calibration_via_generic_lattice\n\nImplementation target: hull_white_tree\n\
+  Preferred method family: rate_tree\n\nImplementation target: hull_white_tree"
+id: md_047

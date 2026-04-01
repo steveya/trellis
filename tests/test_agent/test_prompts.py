@@ -138,7 +138,9 @@ def test_executor_knowledge_context_escalates_after_first_attempt(monkeypatch):
     )
 
     assert (builder_text, builder_surface) == ("compact builder", "compact")
-    assert (retry_builder_text, retry_builder_surface) == ("expanded builder", "expanded")
+    assert retry_builder_surface == "compact"
+    assert retry_builder_text.startswith("compact builder")
+    assert "## Retry Focus" in retry_builder_text
     assert (review_text, review_surface) == ("compact review", "compact")
     assert (retry_review_text, retry_review_surface) == ("expanded review", "expanded")
 
@@ -168,7 +170,187 @@ def test_executor_import_retry_keeps_compact_builder_knowledge(monkeypatch):
         product_ir=None,
     )
 
-    assert (builder_text, builder_surface) == ("compact builder", "compact")
+    assert builder_surface == "compact"
+    assert builder_text.startswith("compact builder")
+    assert "Use only import-registry and API-map-backed modules and symbols." in builder_text
+
+
+def test_executor_semantic_retry_expands_builder_knowledge_and_records_stage(monkeypatch):
+    from trellis.agent.executor import _builder_knowledge_context_for_attempt
+
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.retrieval.build_shared_knowledge_payload",
+        lambda knowledge: {
+            "builder_text": "compact builder",
+            "builder_text_distilled": "distilled builder",
+            "builder_text_expanded": "expanded builder",
+        },
+    )
+
+    compiled_request = SimpleNamespace(
+        knowledge={"lessons": []},
+        knowledge_text="compact builder",
+    )
+    build_meta: dict[str, object] = {"knowledge_summary": {}}
+
+    builder_text, builder_surface = _builder_knowledge_context_for_attempt(
+        pricing_plan=None,
+        instrument_type="european_option",
+        attempt_number=2,
+        retry_reason="semantic_validation",
+        compiled_request=compiled_request,
+        product_ir=None,
+        build_meta=build_meta,
+    )
+
+    assert builder_surface == "expanded"
+    assert builder_text.startswith("expanded builder")
+    assert "Match the runtime contract exactly" in builder_text
+    assert build_meta["knowledge_summary"]["retrieval_stages"] == ["semantic_validation_failed"]
+    assert build_meta["knowledge_summary"]["retrieval_sources"] == ["compiled_request_payload"]
+
+
+def test_executor_stage_aware_callback_overrides_cached_knowledge():
+    from trellis.agent.executor import (
+        KnowledgeRetrievalRequest,
+        _builder_knowledge_context_for_attempt,
+    )
+
+    observed: dict[str, object] = {}
+
+    def fake_retriever(request: KnowledgeRetrievalRequest) -> str:
+        observed["request"] = request
+        return f"{request.stage}:{request.knowledge_surface}"
+
+    build_meta: dict[str, object] = {"knowledge_summary": {}}
+    builder_text, builder_surface = _builder_knowledge_context_for_attempt(
+        pricing_plan=SimpleNamespace(method="pde_solver"),
+        instrument_type="european_option",
+        attempt_number=2,
+        retry_reason="semantic_validation",
+        compiled_request=SimpleNamespace(
+            knowledge={"lessons": []},
+            knowledge_text="stale compact",
+        ),
+        product_ir="demo-ir",
+        build_meta=build_meta,
+        knowledge_retriever=fake_retriever,
+    )
+
+    assert builder_surface == "expanded"
+    assert builder_text.startswith("semantic_validation_failed:expanded")
+    assert "## Retry Focus" in builder_text
+    request = observed["request"]
+    assert request.stage == "semantic_validation_failed"
+    assert request.knowledge_surface == "expanded"
+    assert request.pricing_method == "pde_solver"
+    assert build_meta["knowledge_summary"]["retrieval_sources"] == ["callback"]
+
+
+def test_executor_validation_retry_stays_compact():
+    from trellis.agent.executor import (
+        KnowledgeRetrievalRequest,
+        _builder_knowledge_context_for_attempt,
+    )
+
+    observed: dict[str, object] = {}
+
+    def fake_retriever(request: KnowledgeRetrievalRequest) -> str:
+        observed["request"] = request
+        return f"{request.stage}:{request.knowledge_surface}"
+
+    builder_text, builder_surface = _builder_knowledge_context_for_attempt(
+        pricing_plan=SimpleNamespace(method="monte_carlo"),
+        instrument_type="credit_default_swap",
+        attempt_number=2,
+        retry_reason="validation",
+        compiled_request=SimpleNamespace(
+            knowledge={"lessons": []},
+            knowledge_text="stale compact",
+        ),
+        product_ir="demo-ir",
+        build_meta={"knowledge_summary": {}},
+        knowledge_retriever=fake_retriever,
+    )
+
+    assert builder_surface == "compact"
+    assert builder_text.startswith("validation_failed:compact")
+    request = observed["request"]
+    assert request.stage == "validation_failed"
+    assert request.knowledge_surface == "compact"
+
+
+def test_executor_credit_default_swap_retry_adds_disambiguation_guidance():
+    from trellis.agent.executor import _builder_knowledge_context_for_attempt
+
+    def fake_retriever(request) -> str:
+        return "base credit knowledge"
+
+    text, surface = _builder_knowledge_context_for_attempt(
+        pricing_plan=SimpleNamespace(method="monte_carlo"),
+        instrument_type="credit_default_swap",
+        attempt_number=2,
+        retry_reason="import_validation",
+        compiled_request=None,
+        product_ir=SimpleNamespace(instrument="credit_default_swap"),
+        knowledge_retriever=fake_retriever,
+    )
+
+    assert surface == "compact"
+    assert "single-name CDS / credit_default_swap" in text
+    assert "Do not reinterpret CDS here as nth_to_default" in text
+    assert "Do not import copula or Gaussian-copula machinery" in text
+    assert "Use only import-registry and API-map-backed modules and symbols." in text
+    assert "Do not import `trellis.models.processes.gbm`" in text
+    assert "Do not import or instantiate `MonteCarloEngine`" in text
+    assert "Single-name CDS Monte Carlo does not need an equity price process" in text
+    assert "np.random.default_rng" in text
+    assert "build_period_schedule" in text or "build_cds_schedule" in text
+    assert "use `prev_date` for `year_fraction(prev_date, pay_date, ...)` and `prev_t` for survival/default-time thresholds" in text
+    assert "persistent `alive` indicator" in text
+    assert "Update `alive` before premium accrual" in text
+    assert "spread = float(spec.spread)" in text
+    assert "spread *= 1e-4" in text
+    assert "`100` and `0.01` must produce the same CDS PV" in text
+
+
+def test_executor_european_black_scholes_retry_keeps_plain_vanilla_shape():
+    from trellis.agent.executor import _builder_knowledge_context_for_attempt
+
+    text, surface = _builder_knowledge_context_for_attempt(
+        pricing_plan=SimpleNamespace(method="analytical"),
+        instrument_type="european_option",
+        attempt_number=2,
+        retry_reason="code_generation",
+        compiled_request=SimpleNamespace(
+            request=SimpleNamespace(metadata={"comparison_target": "black_scholes"})
+        ),
+        product_ir=SimpleNamespace(instrument="european_option"),
+        knowledge_retriever=lambda request: "base european analytical knowledge",
+    )
+
+    assert surface == "compact"
+    assert "plain Black-Scholes / Black76 comparator lane" in text
+    assert "black76_call" in text and "black76_put" in text
+    assert "Do not import or call `terminal_vanilla_from_basis`" in text
+    assert "Do not emit only an `evaluate()` fragment" in text
+
+
+def test_executor_nth_to_default_disambiguation_keeps_credit_family_distinct():
+    from trellis.agent.executor import _builder_knowledge_context_for_attempt
+
+    text, _ = _builder_knowledge_context_for_attempt(
+        pricing_plan=SimpleNamespace(method="copula"),
+        instrument_type="nth_to_default",
+        attempt_number=1,
+        retry_reason=None,
+        compiled_request=None,
+        product_ir=SimpleNamespace(instrument="nth_to_default"),
+        knowledge_retriever=lambda request: "base nth-to-default knowledge",
+    )
+
+    assert "Treat this request as nth_to_default / multi-name credit" in text
+    assert "single-name CDS" in text
 
 
 def test_evaluate_prompt_compact_surface_uses_route_card_and_truncated_references():
@@ -276,6 +458,51 @@ def test_evaluate_prompt_compact_surface_mentions_black76_basis_helpers():
     assert "basis claims" in prompt
 
 
+def test_evaluate_prompt_plain_european_analytical_surface_prefers_direct_black76():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.prompts import evaluate_prompt
+    from trellis.agent.quant import PricingPlan
+
+    plan = GenerationPlan(
+        method="analytical",
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.black",),
+        approved_modules=("trellis.models.black", "trellis.core.date_utils"),
+        symbols_to_reuse=("black76_call", "black76_put", "year_fraction"),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="analytical_black76",
+            engine_family="analytical",
+            primitives=(
+                PrimitiveRef("trellis.models.black", "black76_call", "pricing_kernel"),
+                PrimitiveRef("trellis.models.black", "black76_put", "pricing_kernel"),
+            ),
+            adapters=("map_spot_to_forward",),
+            blockers=(),
+        ),
+    )
+
+    prompt = evaluate_prompt(
+        skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
+        spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
+        reference_sources={"Black helper": "x" * 1500},
+        pricing_plan=PricingPlan(
+            method="analytical",
+            method_modules=["trellis.models.black"],
+            required_market_data={"discount_curve"},
+            model_to_build="european_option",
+            reasoning="Plain vanilla comparator route.",
+        ),
+        knowledge_context="## Shared Knowledge\n- Compact route",
+        generation_plan=plan,
+        prompt_surface="compact",
+    )
+
+    assert "compute `T`, `df`, `sigma`, `forward`, then call `black76_call` or `black76_put` directly" in prompt
+    assert "Do not use `terminal_vanilla_from_basis`" in prompt
+    assert "Return a complete module with the spec class and payoff class" in prompt
+
+
 def test_evaluate_prompt_compact_surface_mentions_fx_basis_helpers():
     from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
     from trellis.agent.prompts import evaluate_prompt
@@ -366,10 +593,10 @@ def test_evaluate_prompt_compact_surface_mentions_current_pde_contract():
     )
 
     assert "## Structured Route Card" in prompt
-    assert "trellis.models.pde.grid" in prompt
-    assert "trellis.models.pde.operator" in prompt
-    assert "Construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray" in prompt
-    assert "Do not pass a callable terminal payoff into `theta_method_1d`" in prompt
+    assert "trellis.models.equity_option_pde" in prompt
+    assert "price_vanilla_equity_option_pde" in prompt
+    assert "Map `implementation_target=theta_0.5` to `theta=0.5`" in prompt
+    assert "Grid + BlackScholesOperator + theta_method_1d" in prompt
     assert "Import Repair Card" not in prompt
 
 
@@ -388,7 +615,7 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
             method="analytical",
             method_modules=["trellis.core.date_utils"],
             required_market_data={"discount_curve", "credit_curve"},
-            model_to_build="nth_to_default",
+            model_to_build="credit_default_swap",
             reasoning="CDS route.",
         ),
         instrument_type="cds",
@@ -404,7 +631,7 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
             method="analytical",
             method_modules=["trellis.core.date_utils"],
             required_market_data={"discount_curve", "credit_curve"},
-            model_to_build="nth_to_default",
+            model_to_build="credit_default_swap",
             reasoning="CDS route.",
         ),
         knowledge_context="## Shared Knowledge\n- CDS compact route",
@@ -414,9 +641,16 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
 
     assert "credit_curve" in prompt
     assert "survival probability" in prompt.lower() or "survival_probability" in prompt
-    assert "CDS / nth-to-default Monte Carlo routes" in prompt or "CDS / nth-to-default analytical routes" in prompt
+    assert "single-name CDS analytical routes" in prompt
+    assert "150 bp -> 0.015" in prompt
     assert "explicit payment/default schedule" in prompt
+    assert "build_cds_schedule" in prompt
+    assert "price_cds_analytical" in prompt
     assert "market_state.discount.discount(t)" in prompt
+    assert "spec.start_date` as the time origin" in prompt
+    assert "accrued-on-default premium adjustment" in prompt
+    assert "Do not average adjacent discount factors" in prompt
+    assert "price_cds_analytical" in prompt
 
 
 def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule_loop():
@@ -462,10 +696,134 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "np = get_numpy()" in prompt
     assert "explicit payment/default schedule" in prompt
     assert "hazard_rate" in prompt or "survival_probability" in prompt
+    assert "150 bp -> 0.015" in prompt
+    assert "spread = float(spec.spread)" in prompt
+    assert "spread *= 1e-4" in prompt
+    assert "`100` and `0.01`" in prompt
+    assert "Do not import or instantiate `MonteCarloEngine`" in prompt
+    assert "np.random.default_rng" in prompt
+    assert "build_cds_schedule" in prompt
+    assert "price_cds_monte_carlo" in prompt
+    assert "many paths" in prompt
+    assert "scalar `alive`" in prompt
+    assert "1.0 - s_pay / s_prev" in prompt
+    assert "1.0 - exp(-hazard * dt)" in prompt
+    assert "Do not discount protection at sampled default times `tau`" in prompt
+    assert "Use `spec.start_date` as the time origin for Monte Carlo schedule times" in prompt
+    assert "keep `prev_date` and `prev_t` as separate variables" in prompt
+    assert "persistent `alive` indicator" in prompt
+    assert "Update `alive` immediately after drawing `default_in_interval`" in prompt
     assert "market_state.discount.discount(t)" in prompt
 
 
-def test_evaluate_prompt_american_tree_surface_mentions_binomial_tree_and_longstaff_schwartz():
+def test_executor_credit_default_swap_analytical_retry_pins_discount_and_time_origin():
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import KnowledgeRetrievalRequest, _route_specific_retry_lines
+
+    request = KnowledgeRetrievalRequest(
+        audience="builder",
+        attempt_number=2,
+        knowledge_surface="compact",
+        prompt_surface="compact",
+        retry_reason="validation",
+        pricing_method="analytical",
+        instrument_type="credit_default_swap",
+        stage="validation_failed",
+        product_ir=SimpleNamespace(instrument="credit_default_swap"),
+    )
+
+    text = "\n".join(_route_specific_retry_lines(request))
+
+    assert "spec.start_date" in text
+    assert "accrued-on-default premium adjustment" in text
+    assert "Do not average adjacent discount factors" in text
+    assert "0.5 * (prev_discount + discount)" in text
+    assert "market_state.discount.discount(pay_t)" in text
+
+
+def test_executor_callable_bond_rate_tree_retry_pins_vol_surface_and_control_policy():
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import KnowledgeRetrievalRequest, _route_specific_retry_lines
+
+    request = KnowledgeRetrievalRequest(
+        audience="builder",
+        attempt_number=2,
+        knowledge_surface="compact",
+        prompt_surface="compact",
+        retry_reason="validation",
+        pricing_method="rate_tree",
+        instrument_type="callable_bond",
+        stage="validation_failed",
+        product_ir=SimpleNamespace(instrument="callable_bond"),
+    )
+
+    text = "\n".join(_route_specific_retry_lines(request))
+
+    assert "market_state.vol_surface.black_vol" in text
+    assert "market_state.discount.zero_rate" in text
+    assert "price_callable_bond_tree" in text
+    assert "sigma_hw = black_vol" in text
+    assert "build_generic_lattice" in text
+    assert 'MODEL_REGISTRY["bdt"]' in text
+    assert "lattice_step_from_time" in text
+    assert "lattice_steps_from_timeline" in text
+    assert "build_payment_timeline" in text
+    assert 'resolve_lattice_exercise_policy("issuer_call"' in text
+
+
+def test_executor_bermudan_swaption_rate_tree_retry_pins_helper_and_bermudan_control():
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import KnowledgeRetrievalRequest, _route_specific_retry_lines
+
+    request = KnowledgeRetrievalRequest(
+        audience="builder",
+        attempt_number=2,
+        knowledge_surface="compact",
+        prompt_surface="compact",
+        retry_reason="validation",
+        pricing_method="rate_tree",
+        instrument_type="bermudan_swaption",
+        stage="validation_failed",
+        product_ir=SimpleNamespace(instrument="bermudan_swaption"),
+    )
+
+    text = "\n".join(_route_specific_retry_lines(request))
+
+    assert "price_bermudan_swaption_tree" in text
+    assert "market_state.vol_surface.black_vol" in text
+    assert "market_state.discount.zero_rate" in text
+    assert 'resolve_lattice_exercise_policy("bermudan"' in text
+    assert "price_callable_bond_tree" in text
+
+
+def test_executor_bermudan_swaption_analytical_retry_pins_lower_bound_helper():
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import KnowledgeRetrievalRequest, _route_specific_retry_lines
+
+    request = KnowledgeRetrievalRequest(
+        audience="builder",
+        attempt_number=2,
+        knowledge_surface="compact",
+        prompt_surface="compact",
+        retry_reason="validation",
+        pricing_method="analytical",
+        instrument_type="bermudan_swaption",
+        stage="validation_failed",
+        product_ir=SimpleNamespace(instrument="bermudan_swaption"),
+    )
+
+    text = "\n".join(_route_specific_retry_lines(request))
+
+    assert "price_bermudan_swaption_black76_lower_bound" in text
+    assert "European swaption exercisable only on the final Bermudan date" in text
+    assert "Do not sum one European Black76 price per exercise date" in text
+
+
+def test_evaluate_prompt_american_tree_surface_mentions_equity_tree_helper_and_longstaff_schwartz():
     from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
     from trellis.agent.prompts import evaluate_prompt
     from trellis.agent.quant import PricingPlan
@@ -490,18 +848,17 @@ def test_evaluate_prompt_american_tree_surface_mentions_binomial_tree_and_longst
             engine_family="tree",
             route_family="equity_tree",
             primitives=(
-                PrimitiveRef("trellis.models.trees.binomial", "BinomialTree", "tree_builder"),
                 PrimitiveRef(
-                    "trellis.models.trees.backward_induction",
-                    "backward_induction",
-                    "backward_induction",
+                    "trellis.models.equity_option_tree",
+                    "price_vanilla_equity_option_tree",
+                    "route_helper",
                 ),
             ),
-            adapters=("map_spot_to_tree_steps",),
+            adapters=(),
             blockers=(),
             notes=(
-                "For American and Bermudan equity options, use `BinomialTree.crr(...)` and `backward_induction(..., exercise_type=\"american\"|\"bermudan\")`.",
-                "Do not invent `crr_tree`, `AMERICAN`, or a `method=\"lsm\"` fallback on the tree route.",
+                "For American and Bermudan equity options, prefer `price_vanilla_equity_option_tree(...)` from `trellis.models.equity_option_tree`.",
+                "If you need the lower-level lattice path, use `build_spot_lattice(..., model=\"crr\"|\"jarrow_rudd\")` with `lattice_backward_induction(...)`.",
             ),
         ),
     )
@@ -513,8 +870,8 @@ def test_evaluate_prompt_american_tree_surface_mentions_binomial_tree_and_longst
         pricing_plan=PricingPlan(
             method="rate_tree",
             method_modules=[
-                "trellis.models.trees.binomial",
-                "trellis.models.trees.backward_induction",
+                "trellis.models.equity_option_tree",
+                "trellis.models.trees.lattice",
             ],
             required_market_data={"discount_curve", "black_vol_surface"},
             model_to_build="american_option",
@@ -525,12 +882,12 @@ def test_evaluate_prompt_american_tree_surface_mentions_binomial_tree_and_longst
         prompt_surface="compact",
     )
 
-    assert "BinomialTree" in prompt
-    assert "backward_induction" in prompt
-    assert "trellis.models.trees.binomial" in prompt
-    assert "trellis.models.trees.backward_induction" in prompt
+    assert "price_vanilla_equity_option_tree" in prompt
+    assert "build_spot_lattice" in prompt
+    assert "lattice_backward_induction" in prompt
+    assert "trellis.models.equity_option_tree" in prompt
     assert "Route family: `equity_tree`" in prompt
-    assert 'exercise_type="american"' in prompt
+    assert 'model="crr"' in prompt
     assert "longstaff_schwartz" in prompt
 
 
@@ -592,8 +949,104 @@ def test_evaluate_prompt_american_pde_surface_mentions_exercise_values_and_ranna
     assert "exercise_values" in prompt
     assert "exercise_fn=max" in prompt
     assert "rannacher_timesteps" in prompt
-    assert "trellis.models.pde.grid" in prompt
-    assert "trellis.models.pde.operator" in prompt
+
+
+def test_evaluate_prompt_callable_bond_rate_tree_surface_mentions_lattice_control_helper():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.prompts import evaluate_prompt
+    from trellis.agent.quant import PricingPlan
+
+    plan = GenerationPlan(
+        method="rate_tree",
+        instrument_type="callable_bond",
+        inspected_modules=(
+            "trellis.models.trees.lattice",
+            "trellis.models.trees.models",
+            "trellis.models.trees.control",
+        ),
+        approved_modules=(
+            "trellis.models.trees.lattice",
+            "trellis.models.trees.models",
+            "trellis.models.trees.control",
+        ),
+        symbols_to_reuse=(
+            "build_generic_lattice",
+            "build_rate_lattice",
+            "lattice_backward_induction",
+            "MODEL_REGISTRY",
+            "lattice_steps_from_timeline",
+            "resolve_lattice_exercise_policy",
+        ),
+        proposed_tests=("tests/test_tasks/test_t02_bdt_callable.py",),
+        primitive_plan=PrimitivePlan(
+            route="exercise_lattice",
+            engine_family="lattice",
+            route_family="rate_lattice",
+            primitives=(
+                PrimitiveRef("trellis.models.trees.lattice", "build_generic_lattice", "generic_lattice_builder", required=False),
+                PrimitiveRef("trellis.models.trees.lattice", "build_rate_lattice", "lattice_builder"),
+                PrimitiveRef(
+                    "trellis.models.trees.lattice",
+                    "lattice_backward_induction",
+                    "backward_induction",
+                ),
+                PrimitiveRef(
+                    "trellis.models.trees.models",
+                    "MODEL_REGISTRY",
+                    "model_registry",
+                    required=False,
+                ),
+                PrimitiveRef(
+                    "trellis.models.trees.control",
+                    "resolve_lattice_exercise_policy",
+                    "control_policy",
+                    required=False,
+                ),
+                PrimitiveRef(
+                    "trellis.models.trees.control",
+                    "lattice_steps_from_timeline",
+                    "step_mapper",
+                    required=False,
+                ),
+            ),
+            adapters=("resolve_schedule_dependent_lattice_control_policy",),
+            blockers=(),
+            notes=(
+                "Use lattice_backward_induction with a checked-in lattice exercise policy.",
+                "Prefer resolve_lattice_exercise_policy(...) and lattice_steps_from_timeline(...).",
+                "For BDT or explicit Hull-White comparisons, use build_generic_lattice(..., MODEL_REGISTRY[...], ...).",
+            ),
+        ),
+    )
+
+    prompt = evaluate_prompt(
+        skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
+        spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
+        reference_sources={},
+        pricing_plan=PricingPlan(
+            method="rate_tree",
+            method_modules=[
+                "trellis.models.trees.lattice",
+                "trellis.models.trees.models",
+                "trellis.models.trees.control",
+            ],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="callable_bond",
+            reasoning="Callable bond rate-tree route.",
+        ),
+        knowledge_context="## Shared Knowledge\n- Callable lattice route",
+        generation_plan=plan,
+        prompt_surface="compact",
+    )
+
+    assert "resolve_lattice_exercise_policy" in prompt
+    assert "lattice_steps_from_timeline" in prompt
+    assert "build_generic_lattice" in prompt
+    assert "MODEL_REGISTRY" in prompt
+    assert 'exercise_policy=exercise_policy' in prompt
+    assert '"issuer_call"' in prompt
+    assert "market_state.vol_surface.black_vol" in prompt
+    assert "market_state.discount.zero_rate" in prompt
 
 
 def test_evaluate_prompt_barrier_pde_surface_mentions_grid_operator_and_rannacher():
@@ -658,6 +1111,31 @@ def test_evaluate_prompt_barrier_pde_surface_mentions_grid_operator_and_rannache
     assert "trellis.models.pde.operator" in prompt
     assert "lower_bc_fn" in prompt
     assert "upper_bc_fn" in prompt
+
+
+def test_executor_european_option_pde_retry_pins_helper_surface_and_theta_mapping():
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import KnowledgeRetrievalRequest, _route_specific_retry_lines
+
+    request = KnowledgeRetrievalRequest(
+        audience="builder",
+        attempt_number=2,
+        knowledge_surface="compact",
+        prompt_surface="compact",
+        retry_reason="validation",
+        pricing_method="pde_solver",
+        instrument_type="european_option",
+        stage="validation_failed",
+        product_ir=SimpleNamespace(instrument="european_option"),
+    )
+
+    text = "\n".join(_route_specific_retry_lines(request))
+
+    assert "price_vanilla_equity_option_pde" in text
+    assert "theta_0.5" in text
+    assert "theta_1.0" in text
+    assert "Grid" in text
 
 
 def test_evaluate_prompt_import_repair_surface_uses_import_card_without_references():

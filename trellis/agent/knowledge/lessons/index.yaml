@@ -108,6 +108,62 @@ entries:
     - backward_induction
     instrument: []
     error_signature: null
+- id: bi_008
+  title: Use exported timeline helpers
+  severity: high
+  category: backward_induction
+  status: candidate
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: bi_009
+  title: Guard try-except indentation
+  severity: high
+  category: backward_induction
+  status: candidate
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: bi_010
+  title: Keep fallback paths indented
+  severity: high
+  category: backward_induction
+  status: candidate
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: bi_011
+  title: Guard all fallback blocks
+  severity: high
+  category: backward_induction
+  status: candidate
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - bermudan
+    - floating_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
 - id: cal_001
   title: Uncalibrated rate tree
   severity: critical
@@ -162,6 +218,45 @@ entries:
     instrument:
     - callable_bond
     - puttable_bond
+    error_signature: null
+- id: cal_005
+  title: Invalid Trellis Module Reference Breaks Analytical Pricing
+  severity: high
+  category: calibration
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: cal_006
+  title: Payer Swaption Analytical Pricing Requires Correct Rate Convention
+  severity: high
+  category: calibration
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: cal_007
+  title: Payer Swaption Sign Convention Causes Negative Value
+  severity: high
+  category: calibration
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
     error_signature: null
 - id: con_001
   title: Use exact trellis import paths — never guess module names
@@ -621,6 +716,51 @@ entries:
     - nth_to_default
     - cds
     error_signature: comparison_failed
+- id: con_032
+  title: Code-gen payoff template and conventions missing
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    - greeks
+    instrument: []
+    error_signature: null
+- id: con_033
+  title: CDS spread / curve unit mismatch
+  severity: critical
+  category: convention
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - fixed_coupons
+    - floating_coupons
+    - discounting
+    - credit_risk
+    - coupons
+    - spread_computation
+    - maturity_settlement
+    instrument: []
+    error_signature: null
+- id: con_034
+  title: Generated payoff syntax error
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
 - id: fd_001
   title: Tree gamma requires wider bumps than delta
   severity: medium
@@ -774,7 +914,7 @@ entries:
   title: Undefined boundary condition symbol
   severity: critical
   category: finite_differences
-  status: validated
+  status: promoted
   applies_when:
     method:
     - pde_solver
@@ -790,7 +930,7 @@ entries:
   title: Incorrect PDE API import (Grid not exported)
   severity: critical
   category: finite_differences
-  status: validated
+  status: promoted
   applies_when:
     method:
     - pde_solver
@@ -824,7 +964,7 @@ entries:
   title: Unit conversion causes extreme PV
   severity: critical
   category: finite_differences
-  status: validated
+  status: promoted
   applies_when:
     method:
     - pde_solver
@@ -1157,6 +1297,57 @@ entries:
     - theta_method
     - rannacher_timestepping
     - greeks
+    instrument: []
+    error_signature: null
+- id: fd_037
+  title: Unchecked None from PDE solver
+  severity: high
+  category: finite_differences
+  status: candidate
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - theta_method
+    - convergence_order_diagnostic
+    - discounting
+    - vol_surface_dependence
+    - maturity_settlement
+    - greeks
+    instrument: []
+    error_signature: null
+- id: fd_038
+  title: Initialize intrinsic before branching
+  severity: high
+  category: finite_differences
+  status: candidate
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - coupons
+    - fixed_coupons
+    - discounting
+    - pde_grid
+    - greeks
+    - backward_induction
+    - convergence_order_diagnostic
+    instrument: []
+    error_signature: null
+- id: fd_039
+  title: Indent fallback blocks correctly
+  severity: high
+  category: finite_differences
+  status: candidate
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - vol_surface_dependence
+    - pde_grid
+    - convergence_order_diagnostic
     instrument: []
     error_signature: null
 - id: mc_001
@@ -1544,7 +1735,7 @@ entries:
   title: Date vs float comparison in smoke test
   severity: critical
   category: monte_carlo
-  status: validated
+  status: promoted
   applies_when:
     method:
     - monte_carlo
@@ -2028,6 +2219,222 @@ entries:
   applies_when:
     method:
     - analytical
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_053
+  title: MC CDS payoff unit/date bugs
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - fixed_coupons
+    - discounting
+    - credit_risk
+    - maturity_settlement
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: mc_054
+  title: MC payoff unit / discounting mismatch
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - fixed_coupons
+    - floating_coupons
+    - discounting
+    - credit_risk
+    instrument: []
+    error_signature: null
+- id: mc_055
+  title: Unapproved module and MC payoff bugs
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - fixed_coupons
+    - floating_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_056
+  title: CDS spread unit-conversion & discounting bug
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - fixed_coupons
+    - floating_coupons
+    - discounting
+    - credit_risk
+    - spread_computation
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: mc_057
+  title: Watch indentation in generated code
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_058
+  title: Spread unit misinterpretation
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_059
+  title: Uninitialized RNG/sampler
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_060
+  title: None passed to float in MC pricer
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_061
+  title: Check indentation in generated Python code
+  severity: high
+  category: monte_carlo
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_062
+  title: Missing process argument in MonteCarloEngine
+  severity: high
+  category: monte_carlo
+  status: candidate
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_063
+  title: Avoid scalar checks on arrays
+  severity: high
+  category: monte_carlo
+  status: candidate
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_064
+  title: Array Truth Check Bug
+  severity: high
+  category: monte_carlo
+  status: candidate
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_065
+  title: Bypass Required Pricing Primitives
+  severity: high
+  category: monte_carlo
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_066
+  title: Use Required Primitives Directly
+  severity: high
+  category: monte_carlo
+  status: candidate
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_067
+  title: Bypass Required Primitives
+  severity: high
+  category: monte_carlo
+  status: candidate
+  applies_when:
+    method:
+    - monte_carlo
     features:
     - credit_risk
     - fixed_coupons
@@ -2519,7 +2926,7 @@ entries:
   title: Missing credit_curve and CDS spec
   severity: critical
   category: market_data
-  status: validated
+  status: promoted
   applies_when:
     method:
     - analytical
@@ -2545,6 +2952,339 @@ entries:
     - spread_computation
     - maturity_settlement
     - coupons
+    instrument: []
+    error_signature: null
+- id: md_035
+  title: API failure masked underlying swaption pricing error
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_036
+  title: CDS pricer failed due to missing curves
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - fixed_coupons
+    - floating_coupons
+    - discounting
+    - credit_risk
+    - spread_computation
+    - maturity_settlement
+    instrument: []
+    error_signature: null
+- id: md_037
+  title: Missing credit curve and unit conventions
+  severity: critical
+  category: market_data
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - fixed_coupons
+    - floating_coupons
+    - discounting
+    - credit_risk
+    - spread_computation
+    - maturity_settlement
+    - act_act_isda
+    - coupons
+    instrument: []
+    error_signature: null
+- id: md_038
+  title: Wrong Day Count Convention for Swaption Fixed Leg
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_039
+  title: Spread unit conversion error
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: md_040
+  title: Missing black vol surface
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - vol_surface_dependence
+    - black_vol
+    - discounting
+    - payoffs
+    - convergence_order_diagnostic
+    instrument: []
+    error_signature: null
+- id: md_041
+  title: Missing vol surface access
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - discounting
+    - vol_surface_dependence
+    - greeks
+    - convergence_order_diagnostic
+    instrument: []
+    error_signature: null
+- id: md_042
+  title: Invalid Trellis module reference causes validation failure
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_043
+  title: Missing market data accessors
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - pde_grid
+    - discounting
+    - vol_surface_dependence
+    - greeks
+    - convergence_order_diagnostic
+    instrument: []
+    error_signature: null
+- id: md_044
+  title: Missing curve access wiring
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: md_045
+  title: Indentation after guard
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: md_046
+  title: Normalize enum-like inputs
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: md_047
+  title: Timeline API mismatch
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: md_048
+  title: Use market discount curve
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: md_049
+  title: Use market state discounts
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: md_050
+  title: Match tree API to inputs
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - discounting
+    - maturity_settlement
+    - path_dependent
+    - backward_induction
+    instrument: []
+    error_signature: null
+- id: md_051
+  title: Missing market state wiring
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_052
+  title: Missing Curve and Vol Access
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_053
+  title: Missing market state access
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - coupons
+    - fixed_coupons
+    - discounting
+    - pde_grid
+    - backward_induction
+    - greeks
+    - convergence_order_diagnostic
+    instrument: []
+    error_signature: null
+- id: md_054
+  title: Date-Type Comparison Bug
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: md_055
+  title: Date-Number Type Mismatch
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - bermudan
+    - floating_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: md_056
+  title: Invalid Model Import
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_057
+  title: Transient request failure
+  severity: high
+  category: market_data
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
     instrument: []
     error_signature: null
 - id: num_001
@@ -2833,7 +3573,7 @@ entries:
   title: Missing primitive adapter
   severity: critical
   category: numerical
-  status: validated
+  status: promoted
   applies_when:
     method:
     - analytical
@@ -2960,6 +3700,19 @@ entries:
     - pde_grid
     - discounting
     - greeks
+    instrument: []
+    error_signature: null
+- id: num_030
+  title: Payoff code generation indentation error
+  severity: critical
+  category: numerical
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
     instrument: []
     error_signature: null
 - id: sem_001
@@ -3217,6 +3970,57 @@ entries:
     instrument:
     - european_option
     error_signature: null
+- id: sem_014
+  title: _semantic_extension_decision_knowledge_artifact_concept_rate_style_s
+  severity: medium
+  category: semantic
+  status: validated
+  applies_when:
+    method:
+    - knowledge_artifact
+    features:
+    - underlier_structure
+    - payoff_rule
+    - settlement_rule
+    - semantic_contract_lesson
+    instrument: []
+    error_signature: null
+- id: sem_015
+  title: _semantic_extension_decision_mock_inputs_concept_credit_default_swap
+  severity: medium
+  category: semantic
+  status: validated
+  applies_when:
+    method:
+    - mock_inputs
+    features:
+    - discount_curve
+    - credit_curve
+    - instrument_specific_lesson
+    - mock_discount_curve_provider
+    instrument:
+    - credit_default_swap
+    error_signature: null
+- id: sem_016
+  title: _semantic_extension_decision_mock_inputs_concept_callable_bond_conce
+  severity: medium
+  category: semantic
+  status: validated
+  applies_when:
+    method:
+    - mock_inputs
+    features:
+    - underlier_structure
+    - payoff_rule
+    - settlement_rule
+    - discount_curve
+    - market_parameter_source
+    - semantic_contract_lesson
+    - mock_discount_curve_provider
+    - mock_market_parameter_provider
+    instrument:
+    - callable_bond
+    error_signature: null
 - id: tst_001
   title: Measure actual gap before setting test tolerance
   severity: medium
@@ -3320,6 +4124,60 @@ entries:
     - stochastic_vol
     - spread_computation
     - discounting
+    instrument: []
+    error_signature: null
+- id: vol_007
+  title: Source volatility from vol_surface
+  severity: high
+  category: volatility
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - pde_grid
+    - vol_surface_dependence
+    - discounting
+    - analytical
+    - maturity_settlement
+    - convergence_order_diagnostic
+    - grid_refinement_study
+    - rannacher_smoothing
+    instrument: []
+    error_signature: null
+- id: vol_008
+  title: Missing surface volatility source
+  severity: high
+  category: volatility
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - fixed_coupons
+    - discrete_coupons
+    - coupons
+    - discounting
+    - gamma
+    - pde_grid
+    instrument: []
+    error_signature: null
+- id: vol_009
+  title: Missing vol source in analytic path
+  severity: high
+  category: volatility
+  status: candidate
+  applies_when:
+    method:
+    - analytical
+    features:
+    - fixed_coupons
+    - discounting
+    - early_exercise
+    - backward_induction
+    - pde_grid
+    - convergence_order_diagnostic
+    - analytical_benchmark
     instrument: []
     error_signature: null
 settings:

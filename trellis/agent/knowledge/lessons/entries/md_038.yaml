@@ -1,0 +1,27 @@
+category: market_data
+title: Wrong Day Count Convention for Swaption Fixed Leg
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-03-31T13:23:29.278450'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: ACT/360 was used for the swaption's fixed leg and annuity calculation instead
+  of the standard 30/360 or ACT/365F, inflating year fractions by ~1.4% and systematically
+  overstating the price.
+root_cause: ACT/360 is appropriate for money-market and floating legs but not for
+  fixed swap legs; conflating the two conventions causes every coupon period's year
+  fraction to be overstated by the factor 365/360, compounding across all annuity
+  payments.
+fix: Set the fixed-leg day count convention to 30/360 (or ACT/365F per the specific
+  swap convention) so annuity and forward-rate calculations use the correct year fractions.
+validation: Resolved during build of European payer swaption
+id: md_038

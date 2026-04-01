@@ -1,8 +1,8 @@
 category: market_data
 title: Missing credit_curve and CDS spec
 severity: critical
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 0.8
 created: '2026-03-30T08:34:54.488252'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260330_083455_nth_to_default_analytical.yaml

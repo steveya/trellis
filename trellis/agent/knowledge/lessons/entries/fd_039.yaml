@@ -1,0 +1,33 @@
+category: finite_differences
+title: Indent fallback blocks correctly
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T12:20:49.357625'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - vol_surface_dependence
+  - pde_grid
+  - convergence_order_diagnostic
+  instrument: []
+  error_signature: null
+symptom: A fallback call was placed after an except clause without indentation, causing
+  a syntax error.
+root_cause: 'The mental model failed to account for Python’s block structure: an except
+  must contain an indented suite, even for a simple fallback path. This often happens
+  when adding compatibility branches quickly and missing the required nesting.'
+fix: Indent the fallback call inside the except block and verify each try/except branch
+  has a valid executable suite.
+validation: "Resolved during build of Build a pricer for: European call: theta-method\
+  \ convergence order measurement\n\nConstruct methods: pde_solver\nComparison targets:\
+  \ theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes (analytical)\nCross-validation\
+  \ harness:\n  internal targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n\
+  \  external targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+  \ target: theta_0.5\nPreferred method family: pde_solver\n\nImplementation target:\
+  \ theta_0.5"
+id: fd_039

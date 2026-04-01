@@ -1,0 +1,26 @@
+category: market_data
+title: Transient request failure
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T18:27:00.276890'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The valuation failed because the OpenAI text request errored out instead
+  of producing the swaption result.
+root_cause: 'This is a service-layer failure, not a pricing-model problem: the mental
+  model error is treating a temporary API/network interruption as if the analytical
+  method itself were invalid. In practice, the computation can be correct, but the
+  request never completes unless retried or handled gracefully.'
+fix: Add retry and fallback handling for transient API failures so the valuation can
+  rerun successfully.
+validation: Resolved during build of European payer swaption
+id: md_057

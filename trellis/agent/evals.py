@@ -376,6 +376,14 @@ def classify_task_result(result: Mapping[str, Any]) -> str:
     if result.get("success"):
         return "success"
 
+    diagnosis_bucket = str(
+        result.get("task_diagnosis_failure_bucket")
+        or result.get("diagnosis_failure_bucket")
+        or ""
+    ).strip()
+    if diagnosis_bucket:
+        return diagnosis_bucket
+
     blocker_details = result.get("blocker_details") or {}
     if blocker_details:
         return "blocked"

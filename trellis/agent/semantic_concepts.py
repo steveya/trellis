@@ -635,7 +635,7 @@ SEMANTIC_CONCEPT_REGISTRY: tuple[SemanticConceptDefinition, ...] = (
             "discount_curve",
             "credit_curve",
         ),
-        route_family="credit_default_swap",
+        route_family="nth_to_default",
         example_requests=(
             "Price a first-to-default basket on 5 names",
             "Nth-to-default on a portfolio of investment-grade credits",

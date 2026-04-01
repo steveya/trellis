@@ -37,7 +37,7 @@ load_env()
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ids", nargs="*", help="'all' or a start/end task id pair")
-    parser.add_argument("--model", default="gpt-5-mini")
+    parser.add_argument("--model", default="gpt-5.4-mini")
     parser.add_argument(
         "--reuse",
         action="store_true",
@@ -57,7 +57,7 @@ def run_block(
     tasks: list[dict],
     output_file: str,
     *,
-    model: str = "gpt-5-mini",
+    model: str = "gpt-5.4-mini",
     force_rebuild: bool = True,
     fresh_build: bool = False,
     validation: str = "standard",

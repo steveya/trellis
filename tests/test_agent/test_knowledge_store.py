@@ -131,16 +131,21 @@ class TestKnowledgeStore:
         k = retrieve_for_task(
             "analytical",
             features=["credit", "spread"],
-            instrument="nth_to_default",
+            instrument="cds",
         )
 
         assert k["decomposition"] is not None
-        assert k["decomposition"].instrument == "nth_to_default"
+        assert k["decomposition"].instrument == "cds"
         assert k["cookbook"] is not None
         template = k["cookbook"].template
-        assert "Credit default swap / nth-to-default" in template
+        assert "Credit default swap (single-name)" in template
         assert "survival_probability" in template
         assert "credit_curve" in template
+        assert "build_cds_schedule" in template
+        assert "price_cds_analytical" in template
+        assert "spec.start_date" in template
+        assert "Do not trapezoid the protection" in template
+        assert "price_cds_analytical" in template
 
     def test_retrieve_monte_carlo_cds_includes_hazard_rate_guidance(self):
         from trellis.agent.knowledge import retrieve_for_task
@@ -148,6 +153,31 @@ class TestKnowledgeStore:
         k = retrieve_for_task(
             "monte_carlo",
             features=["credit", "spread"],
+            instrument="cds",
+        )
+
+        assert k["decomposition"] is not None
+        assert k["decomposition"].instrument == "cds"
+        assert k["cookbook"] is not None
+        template = k["cookbook"].template
+        cds_section = template.split("### Credit default swap (single-name)")[1].split(
+            "If the user request is partial or underspecified",
+        )[0]
+        assert "Credit default swap (single-name)" in template
+        assert "hazard_rate" in template or "survival_probability" in template
+        assert "credit_curve" in template
+        assert "150 bp -> 0.015" in template
+        assert "`100`" in template and "`0.01`" in template
+        assert "MonteCarloEngine" not in cds_section
+        assert "build_cds_schedule" in cds_section
+        assert "price_cds_monte_carlo" in cds_section
+
+    def test_retrieve_copula_nth_to_default_keeps_basket_credit_guidance(self):
+        from trellis.agent.knowledge import retrieve_for_task
+
+        k = retrieve_for_task(
+            "copula",
+            features=["credit_risk"],
             instrument="nth_to_default",
         )
 
@@ -155,9 +185,8 @@ class TestKnowledgeStore:
         assert k["decomposition"].instrument == "nth_to_default"
         assert k["cookbook"] is not None
         template = k["cookbook"].template
-        assert "Credit default swap / nth-to-default" in template
-        assert "hazard_rate" in template
-        assert "credit_curve" in template
+        assert "portfolio credit instruments" in template
+        assert "FactorCopula" in template
 
     def test_retrieve_qmc(self):
         from trellis.agent.knowledge import retrieve_for_task
@@ -169,6 +198,20 @@ class TestKnowledgeStore:
         assert k["cookbook"].method == "qmc"
         assert k["data_contracts"]
         assert k["method_requirements"] is not None
+
+    def test_retrieve_pde_european_option_mentions_checked_in_helper_surface(self):
+        from trellis.agent.knowledge import retrieve_for_task
+
+        k = retrieve_for_task(
+            "pde_solver",
+            features=["discounting", "vol_surface_dependence"],
+            instrument="european_option",
+        )
+
+        assert k["cookbook"] is not None
+        template = k["cookbook"].template
+        assert "price_vanilla_equity_option_pde" in template
+        assert "theta-method" in template.lower()
 
     def test_retrieve_american_put_ir_includes_early_exercise_policy_guidance(self):
         from trellis.agent.knowledge import retrieve_for_product_ir
@@ -304,7 +347,7 @@ class TestKnowledgeStore:
                 "vol_surface_dependence",
             ],
             instrument="basket_option",
-            max_lessons=20,
+            max_lessons=80,
         )
 
         lesson_ids = [lesson.id for lesson in k["lessons"]]

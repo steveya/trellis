@@ -30,6 +30,7 @@ from trellis.models.trees.lattice import (
     build_generic_lattice,
     lattice_backward_induction,
 )
+from trellis.models.trees.control import resolve_lattice_exercise_policy
 from trellis.models.trees.models import MODEL_REGISTRY
 
 
@@ -118,17 +119,17 @@ def _price_callable_bond(lattice: RecombiningLattice) -> float:
         cpn = coupon_steps.get(step, 0.0)
         return CALL_PRICE + cpn
 
-    # Convert call_steps to sorted list for Bermudan exercise
-    exercise_step_list = sorted(call_steps)
+    exercise_policy = resolve_lattice_exercise_policy(
+        "issuer_call",
+        exercise_steps=sorted(call_steps),
+    )
 
     price = lattice_backward_induction(
         lattice,
         terminal_payoff=terminal_payoff,
         exercise_value=exercise_value,
-        exercise_type="bermudan",
-        exercise_steps=exercise_step_list,
         cashflow_at_node=cashflow_at_node,
-        exercise_fn=min,  # issuer calls to minimize liability
+        exercise_policy=exercise_policy,
     )
     return price
 

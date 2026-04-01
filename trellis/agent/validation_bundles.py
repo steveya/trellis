@@ -23,6 +23,14 @@ NO_ARBITRAGE_CHECKS = {
 }
 PRODUCT_FAMILY_CHECKS = {"check_bounded_by_reference"}
 _KNOWN_FAMILY_CHECKS = {
+    "credit_default_swap": (
+        "check_cds_spread_quote_normalization",
+        "check_cds_credit_curve_sensitivity",
+    ),
+    "cds": (
+        "check_cds_spread_quote_normalization",
+        "check_cds_credit_curve_sensitivity",
+    ),
     "quanto_option": (
         "check_quanto_required_inputs",
         "check_quanto_cross_currency_semantics",
@@ -113,6 +121,7 @@ def execute_validation_bundle(
     failure_details: list[Any] = []
     executed_checks: list[str] = []
     skipped_checks: list[str] = []
+    vol_direction = _vol_monotonicity_direction(bundle.instrument_type)
 
     for check in bundle.checks:
         if failures and check not in UNIVERSAL_CHECKS:
@@ -185,6 +194,24 @@ def execute_validation_bundle(
             failure_details.extend(result[1])
             continue
 
+        if check in {
+            "check_cds_spread_quote_normalization",
+            "check_cds_credit_curve_sensitivity",
+        }:
+            if payoff_factory is None or market_state_factory is None:
+                skipped_checks.append(check)
+                continue
+            executed_checks.append(check)
+            result = _run_check_with_diagnostics(
+                getattr(invariants, check),
+                check,
+                payoff_factory,
+                market_state_factory,
+            )
+            failures.extend(result[0])
+            failure_details.extend(result[1])
+            continue
+
         if check in {"check_vol_sensitivity", "check_vol_monotonicity", "check_rate_monotonicity"}:
             if validation_level == "fast":
                 skipped_checks.append(check)
@@ -206,6 +233,7 @@ def execute_validation_bundle(
                     check,
                     payoff_factory,
                     market_state_factory,
+                    expected_direction=vol_direction,
                 )
             else:
                 result = _run_check_with_diagnostics(
@@ -330,3 +358,10 @@ def _family_checks_for(
     if sem_validation is not None and getattr(sem_validation, "semantic_checks", None):
         return tuple(sem_validation.semantic_checks)
     return _KNOWN_FAMILY_CHECKS.get(normalized_instrument, ())
+
+
+def _vol_monotonicity_direction(instrument_type: str | None) -> str:
+    normalized = (instrument_type or "").strip().lower()
+    if normalized == "callable_bond":
+        return "decreasing"
+    return "increasing"

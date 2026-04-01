@@ -20,6 +20,9 @@ Core Quant Topics
    :maxdepth: 1
 
    pricing_stack
+   contract_algebra
+   dsl_algebra
+   lattice_algebra
    differentiable_pricing
    analytical_route_cookbook
    basis_claim_patterns

@@ -1,0 +1,35 @@
+category: volatility
+title: Missing surface volatility source
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-01T08:22:27.359840'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - fixed_coupons
+  - discrete_coupons
+  - coupons
+  - discounting
+  - gamma
+  - pde_grid
+  instrument: []
+  error_signature: null
+symptom: The analytical Black-76 path failed to read volatility from market_state.vol_surface.
+root_cause: I assumed the pricer could use an implicit or hardcoded volatility input,
+  but the implementation contract required the market state to be the single source
+  of truth. That breaks consistency with calibration and cross-validation harnesses
+  that expect the same surface data to drive every target.
+fix: Wire black_scholes/black76 pricing to market_state.vol_surface for volatility
+  extraction before computing the option value.
+validation: "Resolved during build of Build a pricer for: European call: theta-method\
+  \ convergence order measurement\n\nConstruct methods: pde_solver\nComparison targets:\
+  \ theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes (analytical)\nCross-validation\
+  \ harness:\n  internal targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n\
+  \  external targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+  \ target: black_scholes\nPreferred method family: analytical\n\nImplementation target:\
+  \ black_scholes"
+id: vol_008

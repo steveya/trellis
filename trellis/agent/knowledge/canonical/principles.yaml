@@ -9,7 +9,7 @@
   category: calibration
 
 - id: P2
-  rule: "Callable bonds need exercise_fn=min, discrete coupons, and exercise=par+coupon"
+  rule: "Callable bonds need issuer_call lattice control, discrete coupons, and exercise=par+coupon"
   derived_from: [bi_002, bi_003, bi_004]
   category: backward_induction
 

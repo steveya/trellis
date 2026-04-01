@@ -67,3 +67,78 @@ The packet is meant to shorten the feedback loop after a pricing batch:
 - future diagnosis work should refine the packet schema rather than creating
   another parallel report
 
+Post-build checkpoints
+----------------------
+
+The diagnosis packet now carries a compact post-build summary for each run and,
+when applicable, for each comparison method. This is meant to narrow the
+silent gap between “the method validated” and “the task returned”.
+
+The post-build phase markers currently cover:
+
+- ``build_completed``
+- ``reflection_started``
+- ``reflection_completed``
+- ``token_usage_attached``
+- ``decision_checkpoint_emitted``
+- ``consolidation_dispatched``
+
+The dossier renders the latest post-build phase and a per-method checkpoint
+summary so a human can quickly see whether the run failed before build
+completion, during reflection, or after the build returned.
+
+Runtime bisection flags
+-----------------------
+
+Three environment flags can temporarily narrow the post-build path during live
+debugging:
+
+- ``TRELLIS_SKIP_POST_BUILD_REFLECTION=1``
+- ``TRELLIS_SKIP_POST_BUILD_CONSOLIDATION=1``
+- ``TRELLIS_SKIP_TASK_DIAGNOSIS_PERSIST=1``
+
+These are debugging controls, not normal operating modes. When enabled, the
+task run record and diagnosis packet note the active flags so later diagnosis
+can tell which parts of the runtime were intentionally bypassed.
+
+LLM wait logs
+-------------
+
+Earlier-stage stalls can be diagnosed with ``TRELLIS_LLM_WAIT_LOG_PATH``:
+
+- ``TRELLIS_LLM_WAIT_LOG_PATH=/tmp/t38_waits.jsonl``
+
+When set, Trellis writes one JSON line per bounded LLM wait with:
+
+- stage name
+- request metadata such as ``task_id`` and ``comparison_target``
+- timeout bound
+- completion vs timeout outcome
+
+The task dossier now records the configured wait-log path under ``Runtime
+Controls`` so a human can jump directly from the packet to the live request
+timeline during a rerun.
+
+Reviewer latency
+----------------
+
+When a rerun looks quiet after a successful build, check the wait log before
+assuming the task runtime is deadlocked. Standard validation now bounds the
+critic path deliberately:
+
+- critic mode ``advisory`` for high-risk standard routes
+- one JSON attempt
+- no JSON-to-text fallback chain
+
+That means a slow critic should now show up as a single bounded wait and a
+non-blocking ``critic_failed`` event, not as a long series of reviewer
+retries. Thorough validation is still allowed to use the broader reviewer path
+when deep conceptual review is the point of the run. On the standard path,
+critic concerns should now carry deterministic ``check_id`` values plus
+evidence and remediation, rather than critic-authored executable test code.
+
+For credit-default-swap routes, the deterministic bundle now also emits more
+specific failures before the generic sanity checks. If a run is mixing decimal
+and basis-point spread quotes, or if the payoff ignores the credit curve, the
+packet should now show a CDS-specific invariant failure rather than only a
+large-PV heuristic.

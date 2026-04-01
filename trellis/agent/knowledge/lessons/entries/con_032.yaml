@@ -1,0 +1,29 @@
+category: convention
+title: Code-gen payoff template and conventions missing
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-31T10:52:38.922136'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260331_105240_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: Automated build failed with a SyntaxError (unexpected indent) when generating
+  the payoff module after repeated attempts.
+root_cause: The code generator lacked a stable, canonical payoff/module skeleton and
+  explicit coding conventions (imports, indentation, instrument-signature), causing
+  malformed Python output. In addition, missing explicit guidance on unit and vol-surface
+  conventions caused mismatches between generated code and runtime expectations.
+fix: Provide a minimal canonical payoff/module template and instrument class signature,
+  enforce a compile/lint step after generation, and codify unit and vol-surface conventions
+  (e.g., vol type, date conventions) so generated code can be validated automatically
+  before use.
+validation: Discovered during build (attempt 3)
+id: con_032

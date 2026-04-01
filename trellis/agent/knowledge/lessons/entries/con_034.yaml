@@ -1,0 +1,26 @@
+category: convention
+title: Generated payoff syntax error
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-03-31T13:05:03.507042'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260331_130504_european_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Importing the generated pricing module fails with SyntaxError: unexpected
+  indent (e.g. at line 83).'
+root_cause: The code-generation/template engine produced payoff code with inconsistent
+  indentation or stray whitespace, yielding invalid Python source that cannot be compiled
+  or imported.
+fix: Sanitize and dedent generated code (e.g., textwrap.dedent), validate by compiling
+  (py_compile) before importing, and add an automated import/unit test for each generated
+  module to catch template whitespace/indentation errors early.
+validation: Discovered during build (attempt 3)
+id: con_034

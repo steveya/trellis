@@ -43,7 +43,7 @@
   features: [callable, early_exercise]
   diagnostic_hint: >-
     Callable bond priced above the straight bond means the exercise function is
-    wrong. Callable needs exercise_fn=min (issuer minimizes liability), not max
+    wrong. Callable needs issuer_call lattice control (issuer minimizes liability), not a holder-maximizing exercise rule
     (which turns it into a puttable bond).
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 from dataclasses import MISSING, dataclass, fields, is_dataclass, replace
 from datetime import date, datetime
 from importlib import import_module
@@ -57,6 +58,29 @@ _GENERIC_TITLE_STOPWORDS = {
     "via",
     "vs",
 }
+_SKIP_TASK_DIAGNOSIS_PERSIST_ENV = "TRELLIS_SKIP_TASK_DIAGNOSIS_PERSIST"
+_SKIP_POST_BUILD_REFLECTION_ENV = "TRELLIS_SKIP_POST_BUILD_REFLECTION"
+_SKIP_POST_BUILD_CONSOLIDATION_ENV = "TRELLIS_SKIP_POST_BUILD_CONSOLIDATION"
+_LLM_WAIT_LOG_PATH_ENV = "TRELLIS_LLM_WAIT_LOG_PATH"
+
+
+def _env_flag(name: str) -> bool:
+    """Parse a boolean-like environment flag."""
+    raw = os.environ.get(name, "")
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _runtime_bisection_controls() -> dict[str, Any]:
+    """Return active runtime bisection flags for diagnostics."""
+    controls: dict[str, Any] = {
+        "skip_post_build_reflection": _env_flag(_SKIP_POST_BUILD_REFLECTION_ENV),
+        "skip_post_build_consolidation": _env_flag(_SKIP_POST_BUILD_CONSOLIDATION_ENV),
+        "skip_task_diagnosis_persist": _env_flag(_SKIP_TASK_DIAGNOSIS_PERSIST_ENV),
+    }
+    wait_log_path = os.environ.get(_LLM_WAIT_LOG_PATH_ENV, "").strip()
+    if wait_log_path:
+        controls["llm_wait_log_path"] = wait_log_path
+    return controls
 
 
 def _selected_curve_names_from_market_state(market_state) -> dict[str, str]:
@@ -717,7 +741,7 @@ def run_task(
     task: dict,
     market_state,
     *,
-    model: str = "gpt-5-mini",
+    model: str = "gpt-5.4-mini",
     force_rebuild: bool = True,
     fresh_build: bool = False,
     validation: str = "standard",
@@ -763,6 +787,7 @@ def run_task(
         "cross_validate": task.get("cross_validate"),
         "new_component": task.get("new_component"),
         "semantic_contract_id": getattr(getattr(semantic_contract, "product", None), "semantic_id", None),
+        "runtime_controls": _runtime_bisection_controls(),
     }
 
     try:
@@ -1001,6 +1026,7 @@ def run_task(
         result_data["task_diagnosis_decision_stage"] = persisted.get("diagnosis_decision_stage")
         result_data["task_diagnosis_next_action"] = persisted.get("diagnosis_next_action")
         result_data["task_diagnosis_persist_error"] = persisted.get("diagnosis_persist_error")
+        result_data["task_diagnosis_persist_skipped"] = persisted.get("diagnosis_persist_skipped")
     except Exception as exc:
         result_data["task_run_persist_error"] = str(exc)[:200]
 
@@ -1213,25 +1239,32 @@ def _build_result_payload(
         "platform_request_id": getattr(result, "platform_request_id", None),
         "analytical_trace_path": getattr(result, "analytical_trace_path", None),
         "analytical_trace_text_path": getattr(result, "analytical_trace_text_path", None),
+        "audit_record_path": getattr(result, "audit_record_path", None),
         "build_observability": _trace_observability(
             getattr(result, "platform_trace_path", None)
         ),
         "blocker_details": getattr(result, "blocker_details", None),
-                "reflection": {
-                    key: value for key, value in result.reflection.items()
-                    if key in (
-                        "lessons_attributed",
-                        "lesson_captured",
-                        "lesson_contract",
-                        "lesson_promotion_outcome",
-                        "gaps_identified",
-                        "cookbook_enriched",
-                        "cookbook_candidate_saved",
-                        "promotion_candidate_saved",
-                        "knowledge_trace_saved",
+        "post_build_tracking": dict(getattr(result, "post_build_tracking", {}) or {}),
+        "reflection": {
+            key: value
+            for key, value in result.reflection.items()
+            if key in (
+                "lessons_attributed",
+                "lesson_captured",
+                "lesson_contract",
+                "lesson_promotion_outcome",
+                "gaps_identified",
+                "cookbook_enriched",
+                "cookbook_candidate_saved",
+                "promotion_candidate_saved",
+                "knowledge_trace_saved",
                 "knowledge_gap_log_saved",
                 "decomposition_saved",
                 "distill_run",
+                "skipped",
+                "reason",
+                "error",
+                "token_budget_exceeded",
             )
         },
     }
@@ -1449,6 +1482,12 @@ def _aggregate_knowledge_summaries(method_payloads: dict[str, dict[str, Any]]) -
         "unresolved_primitives": _unique_strings(
             summary.get("unresolved_primitives", ()) for summary in summaries
         ),
+        "retrieval_stages": _unique_strings(
+            summary.get("retrieval_stages", ()) for summary in summaries
+        ),
+        "retrieval_sources": _unique_strings(
+            summary.get("retrieval_sources", ()) for summary in summaries
+        ),
     }
 
 
@@ -1632,7 +1671,7 @@ def _check_compiled_for_ambiguity(compiled: object | None, task: dict) -> None:
         _log.debug("_check_compiled_for_ambiguity: could not read metadata: %s", exc)
 
 
-def prepare_existing_task(task: dict, *, model: str = "gpt-5-mini") -> PreparedTask:
+def prepare_existing_task(task: dict, *, model: str = "gpt-5.4-mini") -> PreparedTask:
     """Resolve a task to an existing generated payoff class without rebuilding."""
     description = task_to_description(task)
     instrument_type = task_to_instrument_type(task)
@@ -1751,7 +1790,7 @@ def benchmark_existing_task(
     market_state,
     repeats: int = 5,
     warmups: int = 1,
-    model: str = "gpt-5-mini",
+    model: str = "gpt-5.4-mini",
     timer: Callable[[], float] = perf_counter,
     price_fn: Callable[[Any, Any], float] | None = None,
 ) -> dict:

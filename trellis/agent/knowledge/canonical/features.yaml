@@ -51,7 +51,7 @@
   method_hint: rate_tree
 
 - id: callable
-  description: "Issuer right to redeem the instrument early (exercise_fn=min)"
+  description: "Issuer right to redeem the instrument early (issuer_call lattice control)"
   implies: [early_exercise]
   method_hint: rate_tree
 

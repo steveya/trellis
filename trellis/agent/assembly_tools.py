@@ -230,10 +230,19 @@ def select_invariant_pack(
 ) -> InvariantPack:
     """Select a deterministic invariant pack for one route/product family."""
     normalized_method = normalize_method(method)
-    checks = ["check_non_negativity", "check_price_sanity"]
-
     normalized_instrument = (instrument_type or getattr(product_ir, "instrument", None) or "").strip().lower()
     payoff_traits = set(getattr(product_ir, "payoff_traits", ()) or ())
+    checks: list[str] = []
+
+    if normalized_instrument in {"credit_default_swap", "cds"}:
+        checks.extend(
+            [
+                "check_cds_spread_quote_normalization",
+                "check_cds_credit_curve_sensitivity",
+            ]
+        )
+
+    checks.extend(["check_non_negativity", "check_price_sanity"])
 
     if (
         normalized_instrument not in _CREDIT_INSTRUMENTS

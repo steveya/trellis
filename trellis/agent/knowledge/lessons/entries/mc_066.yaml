@@ -1,0 +1,32 @@
+category: monte_carlo
+title: Use Required Primitives Directly
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-03-31T20:32:32.924825'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: The Monte Carlo CDS pricer bypassed the required interval_default_probability
+  primitive instead of building a thin payoff adapter around it.
+root_cause: This usually happens when the implementation is written from first principles
+  and accidentally re-derives logic already enforced by the assembly route. The mental
+  model failure is treating the pricer as free-form rather than as a constrained composition
+  of specified primitives.
+fix: Refactor the payoff layer into a minimal adapter that invokes trellis.models.credit_default_swap.interval_default_probability
+  for each interval and uses only its output in the Monte Carlo pricing path.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: mc_cds\nPreferred method family:\
+  \ monte_carlo\n\nImplementation target: mc_cds"
+id: mc_066

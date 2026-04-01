@@ -52,6 +52,8 @@ def _sample_record(root: Path) -> dict[str, object]:
             "task_kind": "pricing",
             "retrieved_lesson_ids": [],
             "retrieved_lesson_titles": [],
+            "retrieval_stages": ["semantic_validation_failed"],
+            "retrieval_sources": ["callback"],
             "captured_lesson_ids": [],
             "lesson_contract_reports": [],
             "lesson_contract_count": 0,
@@ -68,6 +70,23 @@ def _sample_record(root: Path) -> dict[str, object]:
             "reusable_artifact_count": 0,
             "knowledge_outcome": "blocked_without_learning",
             "knowledge_outcome_reason": "task failed before any reusable learning artifact was captured",
+        },
+        "post_build": {
+            "latest_method": "psor",
+            "latest_phase": "reflection_completed",
+            "latest_status": "error",
+            "active_flags": {
+                "skip_post_build_reflection": False,
+                "skip_post_build_consolidation": False,
+            },
+            "methods": {
+                "psor": {
+                    "latest_phase": "reflection_completed",
+                    "latest_status": "error",
+                    "event_count": 4,
+                    "active_flags": {"skip_reflection": False},
+                }
+            },
         },
         "trace_summaries": [
             {
@@ -102,12 +121,17 @@ def _sample_record(root: Path) -> dict[str, object]:
                     "latest_event_status": "error",
                     "updated_at": "2026-03-29T12:00:00+00:00",
                 },
-                "cross_validation": {"status": "failed"},
-                "token_usage_summary": {"total_tokens": 120},
-                "failures": ["name 'absorbing' is not defined"],
-                "error": "name 'absorbing' is not defined",
+            "cross_validation": {"status": "failed"},
+            "token_usage_summary": {"total_tokens": 120},
+            "failures": ["name 'absorbing' is not defined"],
+            "error": "name 'absorbing' is not defined",
+            "post_build_tracking": {
+                "last_phase": "reflection_completed",
+                "last_status": "error",
+                "active_flags": {"skip_reflection": False},
             },
-            "black_scholes": {
+        },
+        "black_scholes": {
                 "success": True,
                 "preferred_method": "analytical",
                 "attempts": 1,
@@ -125,11 +149,16 @@ def _sample_record(root: Path) -> dict[str, object]:
                     "latest_event_status": "ok",
                     "updated_at": "2026-03-29T12:00:00+00:00",
                 },
-                "cross_validation": {"status": "passed"},
-                "token_usage_summary": {"total_tokens": 40},
-                "failures": [],
-                "error": None,
+            "cross_validation": {"status": "passed"},
+            "token_usage_summary": {"total_tokens": 40},
+            "failures": [],
+            "error": None,
+            "post_build_tracking": {
+                "last_phase": "consolidation_dispatched",
+                "last_status": "backgrounded",
+                "active_flags": {"skip_reflection": False},
             },
+        },
         },
         "result": {
             "success": False,
@@ -147,6 +176,12 @@ def _sample_record(root: Path) -> dict[str, object]:
             "method_results": {},
             "knowledge_gaps": ["missing_cookbook"],
             "gap_confidence": 0.6,
+            "runtime_controls": {
+                "skip_post_build_reflection": True,
+                "skip_post_build_consolidation": False,
+                "skip_task_diagnosis_persist": False,
+                "llm_wait_log_path": "/tmp/t999_waits.jsonl",
+            },
             "task_contract_error": {},
             "reflection": {},
             "artifacts": {
@@ -173,14 +208,21 @@ def test_build_task_diagnosis_packet_summarizes_failure(tmp_path):
         "The comparison task did not produce a valid enough method set"
     )
     assert packet["method_outcomes"][0]["method"] == "psor"
+    assert packet["method_outcomes"][0]["post_build_latest_phase"] == "reflection_completed"
     assert packet["trace_index"][0]["scope"] == "task"
     assert packet["trace_index"][1]["scope"] == "method"
+    assert packet["post_build"]["latest_phase"] == "reflection_completed"
+    assert packet["runtime_controls"]["llm_wait_log_path"] == "/tmp/t999_waits.jsonl"
 
     rendered = render_task_diagnosis_dossier(packet)
     assert "## Primary Diagnosis" in rendered
+    assert "## Runtime Controls" in rendered
     assert "## Method Outcomes" in rendered
+    assert "## Post-build" in rendered
     assert "## Storage" in rendered
     assert "comparison_insufficient_results" in rendered
+    assert "semantic_validation_failed" in rendered
+    assert "/tmp/t999_waits.jsonl" in rendered
 
 
 def test_save_task_diagnosis_artifacts_writes_packet_and_dossier(tmp_path):
@@ -195,3 +237,104 @@ def test_save_task_diagnosis_artifacts_writes_packet_and_dossier(tmp_path):
     assert artifacts.packet_path.parent.name == "T999"
     assert artifacts.packet["outcome"]["headline"].startswith("Callable bond stress test")
     assert "Task diagnosis" in artifacts.dossier_path.read_text()
+
+
+def test_build_task_diagnosis_packet_detects_comparator_build_failure(tmp_path):
+    from trellis.agent.task_diagnostics import build_task_diagnosis_packet
+
+    record = _sample_record(tmp_path)
+    record["task_id"] = "T013"
+    record["task"] = {
+        "id": "T013",
+        "title": "European call comparator stress",
+        "construct": "pde",
+    }
+    record["summary"] = {
+        "success": False,
+        "status": "failed",
+        "comparison_status": "passed",
+    }
+    record["comparison"] = {
+        "status": "passed",
+        "reference_target": "black_scholes",
+    }
+    record["method_runs"] = {
+        "theta_0.5": {
+            "success": True,
+            "attempts": 1,
+            "preferred_method": "pde_solver",
+            "route_method": "pde_solver",
+            "trace_summary": {
+                "path": str(tmp_path / "task_runs" / "platform" / "theta_05.yaml"),
+                "exists": True,
+                "trace_kind": "platform",
+                "request_id": "theta_05",
+                "status": "succeeded",
+                "outcome": "build_completed",
+                "route_method": "pde_solver",
+                "latest_event": "build_completed",
+                "latest_event_status": "ok",
+                "updated_at": "2026-03-29T12:00:00+00:00",
+            },
+            "cross_validation": {"status": "passed"},
+            "token_usage_summary": {"total_tokens": 120},
+            "failures": [],
+            "error": None,
+        },
+        "black_scholes": {
+            "success": False,
+            "attempts": 3,
+            "preferred_method": "analytical",
+            "route_method": "analytical",
+            "platform_trace_path": str(tmp_path / "task_runs" / "platform" / "black_scholes.yaml"),
+            "trace_summary": {
+                "path": str(tmp_path / "task_runs" / "platform" / "black_scholes.yaml"),
+                "exists": True,
+                "trace_kind": "platform",
+                "request_id": "black_scholes",
+                "status": "failed",
+                "outcome": "request_failed",
+                "route_method": "analytical",
+                "latest_event": "request_failed",
+                "latest_event_status": "error",
+                "updated_at": "2026-03-29T12:00:00+00:00",
+            },
+            "cross_validation": {"status": "passed"},
+            "token_usage_summary": {"total_tokens": 40},
+            "failures": [
+                "Failed to build payoff after 3 attempts: SyntaxError at line 83, column 16: unexpected indent",
+            ],
+            "error": None,
+        },
+    }
+    record["result"] = {
+        "success": False,
+        "attempts": 3,
+        "elapsed_seconds": 12.3,
+        "error": "comparison failed",
+        "failures": ["comparison failed"],
+        "blocker_details": {},
+        "cross_validation": {"status": "passed"},
+        "comparison_task": True,
+        "method_results": {},
+        "knowledge_gaps": [],
+        "gap_confidence": 0.6,
+        "task_contract_error": {},
+        "reflection": {},
+        "artifacts": {
+            "platform_trace_paths": [],
+            "analytical_trace_paths": [],
+        },
+    }
+
+    packet = build_task_diagnosis_packet(record)
+
+    assert packet["outcome"]["failure_bucket"] == "comparator_build_failure"
+    assert packet["outcome"]["decision_stage"] == "comparison"
+    assert packet["primary_failure"]["likely_cause"].startswith(
+        "One comparison/comparator lane failed to build while other methods completed"
+    )
+    assert packet["primary_failure"]["confidence"] == "high"
+    assert packet["outcome"]["next_action"].startswith(
+        "Repair the failing comparator route or scaffold"
+    )
