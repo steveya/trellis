@@ -6,15 +6,23 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Mapping
 
+from trellis.agent.codegen_guardrails import rank_primitive_routes
 from trellis.agent.knowledge.decompose import build_product_ir
 from trellis.agent.knowledge.methods import normalize_method
+from trellis.agent.market_binding import (
+    build_market_binding_spec,
+    build_required_data_spec,
+)
 from trellis.agent.quant import select_pricing_method_for_product_ir
+from trellis.agent.dsl_lowering import lower_semantic_blueprint
 from trellis.agent.semantic_contract_validation import validate_semantic_contract
 from trellis.agent.sensitivity_support import (
     normalize_requested_measures,
+    normalize_requested_outputs,
     rank_sensitivity_support,
     support_for_method,
 )
+from trellis.agent.valuation_context import normalize_valuation_context
 
 
 def _freeze_mapping(mapping: Mapping[str, object] | None) -> Mapping[str, object]:
@@ -24,7 +32,15 @@ def _freeze_mapping(mapping: Mapping[str, object] | None) -> Mapping[str, object
 
 @dataclass(frozen=True)
 class SemanticImplementationBlueprint:
-    """Deterministic blueprint emitted from a validated semantic contract."""
+    """Deterministic blueprint emitted from a validated semantic contract.
+
+    The blueprint now carries two related views:
+
+    - route/module hints for the existing build pipeline
+    - a conservative `dsl_lowering` companion object that lowers supported
+      semantic routes onto the semiring/Bellman DSL and checked-in helper
+      targets
+    """
 
     semantic_id: str
     contract: object
@@ -34,6 +50,9 @@ class SemanticImplementationBlueprint:
     candidate_methods: tuple[str, ...]
     required_market_data: tuple[str, ...]
     derivable_market_data: tuple[str, ...]
+    valuation_context: object | None = None
+    required_data_spec: object | None = None
+    market_binding_spec: object | None = None
     route_modules: tuple[str, ...] = ()
     selection_reason: str = ""
     assumption_summary: tuple[str, ...] = ()
@@ -46,10 +65,12 @@ class SemanticImplementationBlueprint:
     target_modules: tuple[str, ...] = ()
     proving_tasks: tuple[str, ...] = ()
     unsupported_paths: tuple[str, ...] = ()
+    requested_outputs: tuple[str, ...] = ()
     requested_measures: tuple[str, ...] = ()
     measure_support_warnings: tuple[str, ...] = ()
     event_machine_skeleton: str | None = None
     calibration_step: object | None = None  # CalibrationContract when present
+    dsl_lowering: object | None = None
 
     def __post_init__(self):
         """Freeze mapping metadata for stable traces and tests."""
@@ -60,19 +81,43 @@ class SemanticImplementationBlueprint:
 def compile_semantic_contract(
     spec,
     *,
+    valuation_context=None,
+    requested_outputs: tuple[str, ...] | list[str] | None = None,
     requested_measures: tuple[str, ...] | list[str] | None = None,
     preferred_method: str | None = None,
 ) -> SemanticImplementationBlueprint:
-    """Compile a validated semantic contract into a deterministic blueprint."""
+    """Compile a validated semantic contract into a deterministic blueprint.
+
+    The result preserves the existing route/module selection fields and also
+    attaches a conservative DSL-lowering companion for helper-backed routes.
+    Unsupported lowering paths remain explicit through
+    ``blueprint.dsl_lowering.admissibility_errors``.
+    """
     report = validate_semantic_contract(spec)
     if not report.ok or report.normalized_contract is None:
         joined = "; ".join(report.errors) or "unknown validation error"
         raise ValueError(f"Cannot compile invalid semantic contract: {joined}")
 
     contract = report.normalized_contract
+    resolved_valuation_context = normalize_valuation_context(
+        valuation_context,
+        requested_outputs=requested_outputs,
+        requested_measures=requested_measures,
+        reporting_currency=(
+            getattr(getattr(contract.product, "conventions", None), "reporting_currency", "")
+            or getattr(getattr(contract.product, "conventions", None), "payment_currency", "")
+            or ""
+        ),
+    )
+    required_data_spec = build_required_data_spec(contract)
+    market_binding_spec = build_market_binding_spec(
+        contract,
+        valuation_context=resolved_valuation_context,
+        required_data_spec=required_data_spec,
+    )
     preferred_method = _select_preferred_method(
         contract,
-        requested_measures=requested_measures,
+        requested_measures=resolved_valuation_context.requested_outputs,
         preferred_method=preferred_method,
     )
     product_ir = build_product_ir(
@@ -85,7 +130,7 @@ def compile_semantic_contract(
         schedule_dependence=contract.product.schedule_dependence,
         model_family=contract.product.model_family,
         candidate_engine_families=_engine_families_from_methods(contract.methods.candidate_methods),
-        required_market_data=frozenset(_required_capabilities(contract)),
+        required_market_data=frozenset(required_data_spec.required_capabilities),
         reusable_primitives=contract.blueprint.target_modules,
         supported=not bool(contract.blueprint.blocked_by),
         preferred_method=preferred_method,
@@ -94,7 +139,7 @@ def compile_semantic_contract(
     pricing_plan = select_pricing_method_for_product_ir(
         product_ir,
         preferred_method=preferred_method,
-        requested_measures=requested_measures,
+        requested_measures=resolved_valuation_context.requested_outputs,
         context_description=contract.description,
     )
     _calibration_modules: tuple[str, ...] = ()
@@ -106,11 +151,11 @@ def compile_semantic_contract(
             _cal_mod = _KNOWN_PRIMITIVES.get(_prim, "")
             if _cal_mod:
                 _calibration_modules = (_cal_mod,)
-    route_modules = tuple(
-        dict.fromkeys((*pricing_plan.method_modules, *contract.blueprint.target_modules, *_calibration_modules))
-    )
     # Normalize requested measures and check support coverage
-    normalized_measures = tuple(normalize_requested_measures(requested_measures))
+    normalized_outputs = tuple(
+        normalize_requested_outputs(resolved_valuation_context.requested_outputs)
+    )
+    normalized_measures = tuple(normalize_requested_measures(normalized_outputs))
     measure_warnings: list[str] = []
     if normalized_measures and pricing_plan.sensitivity_support is not None:
         supported = set(pricing_plan.sensitivity_support.supported_measures)
@@ -123,6 +168,30 @@ def compile_semantic_contract(
                     f"will attempt bump-and-reprice"
                 )
 
+    primitive_routes = _primitive_routes(
+        contract,
+        product_ir=product_ir,
+        pricing_plan=pricing_plan,
+    )
+    dsl_lowering = lower_semantic_blueprint(
+        contract,
+        product_ir=product_ir,
+        pricing_plan=pricing_plan,
+        primitive_routes=primitive_routes,
+        valuation_context=resolved_valuation_context,
+        market_binding_spec=market_binding_spec,
+    )
+    route_modules = tuple(
+        dict.fromkeys(
+            (
+                *pricing_plan.method_modules,
+                *contract.blueprint.target_modules,
+                *getattr(dsl_lowering, "helper_modules", ()),
+                *_calibration_modules,
+            )
+        )
+    )
+
     return SemanticImplementationBlueprint(
         semantic_id=contract.semantic_id,
         contract=contract,
@@ -130,24 +199,29 @@ def compile_semantic_contract(
         pricing_plan=pricing_plan,
         preferred_method=preferred_method,
         candidate_methods=tuple(contract.methods.candidate_methods),
-        required_market_data=tuple(item.input_id for item in contract.market_data.required_inputs),
-        derivable_market_data=tuple(contract.market_data.derivable_inputs),
+        required_market_data=required_data_spec.required_input_ids,
+        derivable_market_data=required_data_spec.derivable_inputs,
+        valuation_context=resolved_valuation_context,
+        required_data_spec=required_data_spec,
+        market_binding_spec=market_binding_spec,
         route_modules=route_modules,
         selection_reason=pricing_plan.selection_reason,
         assumption_summary=tuple(pricing_plan.assumption_summary),
-        connector_binding_hints=_connector_binding_hints(contract),
-        estimation_hints=_estimation_hints(contract),
+        connector_binding_hints=_connector_binding_hints(market_binding_spec),
+        estimation_hints=_estimation_hints(required_data_spec),
         spec_schema_hint=_spec_schema_hint(contract, preferred_method),
-        primitive_routes=_primitive_routes(contract),
+        primitive_routes=primitive_routes,
         adapter_steps=tuple(contract.blueprint.adapter_obligations),
         validation_bundle_hint=contract.validation.bundle_hints[0] if contract.validation.bundle_hints else None,
         target_modules=tuple(contract.blueprint.target_modules),
         proving_tasks=tuple(contract.blueprint.proving_tasks),
         unsupported_paths=tuple(dict.fromkeys((*contract.methods.unsupported_variants, *contract.blueprint.blocked_by))),
+        requested_outputs=normalized_outputs,
         requested_measures=normalized_measures,
         measure_support_warnings=tuple(measure_warnings),
         event_machine_skeleton=_emit_event_skeleton(contract),
         calibration_step=getattr(contract, "calibration", None),
+        dsl_lowering=dsl_lowering,
     )
 
 
@@ -188,36 +262,18 @@ def _select_preferred_method(
     return ranked[1]
 
 
-def _required_capabilities(contract) -> tuple[str, ...]:
-    """Return canonical MarketState capabilities required by the contract."""
-    capabilities: list[str] = []
-    for item in contract.market_data.required_inputs:
-        if item.capability and item.capability not in capabilities:
-            capabilities.append(item.capability)
-    return tuple(capabilities)
+def _connector_binding_hints(market_binding_spec) -> dict[str, object]:
+    """Return backward-compatible runtime binding hints from compiled bindings."""
+    if market_binding_spec is None:
+        return {}
+    return market_binding_spec.to_connector_binding_hints()
 
 
-def _connector_binding_hints(contract) -> dict[str, object]:
-    """Return per-input binding hints for runtime connector resolution."""
-    return {
-        item.input_id: {
-            "capability": item.capability,
-            "aliases": list(item.aliases),
-            "connector_hint": item.connector_hint,
-            "allowed_provenance": list(item.allowed_provenance),
-        }
-        for item in (*contract.market_data.required_inputs, *contract.market_data.optional_inputs)
-    }
-
-
-def _estimation_hints(contract) -> dict[str, object]:
-    """Return estimation and provenance policy hints."""
-    return {
-        "derivable_inputs": list(contract.market_data.derivable_inputs),
-        "estimation_policy": list(contract.market_data.estimation_policy),
-        "provenance_requirements": list(contract.market_data.provenance_requirements),
-        "missing_data_error_policy": list(contract.market_data.missing_data_error_policy),
-    }
+def _estimation_hints(required_data_spec) -> dict[str, object]:
+    """Return backward-compatible estimation hints from the compiled data spec."""
+    if required_data_spec is None:
+        return {}
+    return required_data_spec.to_estimation_hints()
 
 
 def _spec_schema_hint(contract, preferred_method: str) -> str | None:
@@ -234,9 +290,29 @@ def _spec_schema_hint(contract, preferred_method: str) -> str | None:
     return hints[0]
 
 
-def _primitive_routes(contract) -> tuple[str, ...]:
-    """Return the deterministic primitive-route hints for the contract."""
-    routes = list(contract.blueprint.primitive_families)
+def _primitive_routes(
+    contract,
+    *,
+    product_ir,
+    pricing_plan,
+) -> tuple[str, ...]:
+    """Return deterministic primitive-route hints aligned with route ranking.
+
+    The semantic compiler used to rely only on the static blueprint
+    ``primitive_families`` hints. That made lowering insensitive to the
+    selected method, for example keeping vanilla-option PDE requests pinned to
+    ``analytical_black76``. Reuse the live primitive-plan ranking so semantic
+    blueprints and generation plans expose the same route ordering.
+    """
+    ranked = rank_primitive_routes(
+        pricing_plan=pricing_plan,
+        product_ir=product_ir,
+    )
+    routes: list[str] = []
+    if ranked:
+        routes.append(ranked[0].route)
+    else:
+        routes.extend(contract.blueprint.primitive_families)
     if contract.product.payoff_family == "basket_path_payoff" and "correlated_basket_monte_carlo" not in routes:
         routes.append("correlated_basket_monte_carlo")
     return tuple(routes)

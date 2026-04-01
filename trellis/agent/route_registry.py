@@ -29,6 +29,8 @@ from trellis.agent.knowledge.import_registry import (
 )
 from trellis.agent.knowledge.methods import normalize_method
 from trellis.agent.knowledge.schema import ProductIR
+from trellis.agent.sensitivity_support import normalize_requested_outputs
+from trellis.core.types import DslMeasure
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +81,28 @@ class DynamicNote:
 
 
 @dataclass(frozen=True)
+class RouteAdmissibilitySpec:
+    """Typed tranche-1 capability contract for one route."""
+
+    supported_control_styles: tuple[str, ...] = ("identity",)
+    event_support: str = "none"  # "none" | "automatic"
+    phase_sensitivity: str = "default_phase_order_only"  # "default_phase_order_only" | "ordered_same_day"
+    multicurrency_support: str = "single_currency_only"  # "single_currency_only" | "native_payout_with_fx" | "reporting_currency_supported"
+    supported_outputs: tuple[str, ...] = ("price",)
+    supports_sensitivity_outputs: bool = True
+    supported_state_tags: tuple[str, ...] = ()
+    supports_calibration: bool = False
+
+
+@dataclass(frozen=True)
+class RouteAdmissibilityDecision:
+    """Deterministic route-admissibility result."""
+
+    ok: bool
+    failures: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class RouteSpec:
     """A single route declaration — canonical or discovered."""
 
@@ -104,6 +128,7 @@ class RouteSpec:
     dynamic_notes: tuple[DynamicNote, ...] = ()
     market_data_access: MarketDataAccessSpec = MarketDataAccessSpec()
     parameter_bindings: ParameterBindingSpec = ParameterBindingSpec()
+    admissibility: RouteAdmissibilitySpec = RouteAdmissibilitySpec()
     score_hints: dict[str, Any] = field(default_factory=dict)
     aliases: tuple[str, ...] = ()
     discovered_from: str | None = None
@@ -221,6 +246,135 @@ def _parse_dynamic_notes(raw: list | None) -> tuple[DynamicNote, ...]:
     )
 
 
+_KNOWN_MEASURE_OUTPUTS = tuple(measure.value for measure in DslMeasure)
+
+
+def _default_admissibility_for_route(route_id: str, engine_family: str) -> RouteAdmissibilitySpec:
+    """Return conservative tranche-1 admissibility defaults."""
+    defaults = {
+        "analytical": RouteAdmissibilitySpec(
+            supported_control_styles=("identity", "holder_max"),
+            event_support="none",
+            phase_sensitivity="default_phase_order_only",
+            multicurrency_support="single_currency_only",
+            supported_outputs=("price", "scenario_pnl"),
+            supports_sensitivity_outputs=True,
+            supported_state_tags=("terminal_markov", "recombining_safe", "schedule_state"),
+            supports_calibration=False,
+        ),
+        "pde_solver": RouteAdmissibilitySpec(
+            supported_control_styles=("identity", "holder_max"),
+            event_support="none",
+            phase_sensitivity="default_phase_order_only",
+            multicurrency_support="single_currency_only",
+            supported_outputs=("price", "scenario_pnl"),
+            supports_sensitivity_outputs=True,
+            supported_state_tags=("terminal_markov", "recombining_safe"),
+            supports_calibration=False,
+        ),
+        "lattice": RouteAdmissibilitySpec(
+            supported_control_styles=("identity", "holder_max", "issuer_min"),
+            event_support="none",
+            phase_sensitivity="default_phase_order_only",
+            multicurrency_support="single_currency_only",
+            supported_outputs=("price", "scenario_pnl", "exercise_boundary"),
+            supports_sensitivity_outputs=True,
+            supported_state_tags=("terminal_markov", "recombining_safe", "schedule_state"),
+            supports_calibration=True,
+        ),
+        "monte_carlo": RouteAdmissibilitySpec(
+            supported_control_styles=("identity",),
+            event_support="automatic",
+            phase_sensitivity="default_phase_order_only",
+            multicurrency_support="single_currency_only",
+            supported_outputs=("price", "scenario_pnl"),
+            supports_sensitivity_outputs=True,
+            supported_state_tags=("pathwise_only", "remaining_pool", "locked_cashflow_state", "terminal_markov", "schedule_state"),
+            supports_calibration=False,
+        ),
+        "exercise": RouteAdmissibilitySpec(
+            supported_control_styles=("holder_max",),
+            event_support="none",
+            phase_sensitivity="default_phase_order_only",
+            multicurrency_support="single_currency_only",
+            supported_outputs=("price", "scenario_pnl", "exercise_boundary"),
+            supports_sensitivity_outputs=True,
+            supported_state_tags=("pathwise_only", "terminal_markov", "schedule_state"),
+            supports_calibration=False,
+        ),
+        "qmc": RouteAdmissibilitySpec(
+            supported_control_styles=("identity",),
+            event_support="automatic",
+            phase_sensitivity="default_phase_order_only",
+            multicurrency_support="single_currency_only",
+            supported_outputs=("price", "scenario_pnl"),
+            supports_sensitivity_outputs=True,
+            supported_state_tags=("pathwise_only", "terminal_markov", "schedule_state"),
+            supports_calibration=False,
+        ),
+        "fft_pricing": RouteAdmissibilitySpec(
+            supported_control_styles=("identity",),
+            event_support="none",
+            phase_sensitivity="default_phase_order_only",
+            multicurrency_support="single_currency_only",
+            supported_outputs=("price", "scenario_pnl"),
+            supports_sensitivity_outputs=True,
+            supported_state_tags=("terminal_markov",),
+            supports_calibration=False,
+        ),
+        "copula": RouteAdmissibilitySpec(
+            supported_control_styles=("identity",),
+            event_support="automatic",
+            phase_sensitivity="default_phase_order_only",
+            multicurrency_support="single_currency_only",
+            supported_outputs=("price", "scenario_pnl"),
+            supports_sensitivity_outputs=True,
+            supported_state_tags=("pathwise_only", "schedule_state"),
+            supports_calibration=False,
+        ),
+        "waterfall": RouteAdmissibilitySpec(
+            supported_control_styles=("identity",),
+            event_support="none",
+            phase_sensitivity="default_phase_order_only",
+            multicurrency_support="single_currency_only",
+            supported_outputs=("price", "scenario_pnl", "cashflow_projection"),
+            supports_sensitivity_outputs=True,
+            supported_state_tags=("schedule_state",),
+            supports_calibration=False,
+        ),
+    }
+    spec = defaults.get(engine_family, RouteAdmissibilitySpec())
+    if route_id in {"quanto_adjustment_analytical", "correlated_gbm_monte_carlo", "analytical_garman_kohlhagen"}:
+        return RouteAdmissibilitySpec(
+            supported_control_styles=spec.supported_control_styles,
+            event_support=spec.event_support,
+            phase_sensitivity=spec.phase_sensitivity,
+            multicurrency_support="native_payout_with_fx",
+            supported_outputs=spec.supported_outputs,
+            supports_sensitivity_outputs=spec.supports_sensitivity_outputs,
+            supported_state_tags=spec.supported_state_tags,
+            supports_calibration=spec.supports_calibration,
+        )
+    return spec
+
+
+def _parse_admissibility(raw: dict | None, *, route_id: str, engine_family: str) -> RouteAdmissibilitySpec:
+    """Parse one route admissibility block with conservative defaults."""
+    default = _default_admissibility_for_route(route_id, engine_family)
+    if not raw:
+        return default
+    return RouteAdmissibilitySpec(
+        supported_control_styles=_str_tuple(raw.get("control_styles")) or default.supported_control_styles,
+        event_support=str(raw.get("event_support", default.event_support)).strip() or default.event_support,
+        phase_sensitivity=str(raw.get("phase_sensitivity", default.phase_sensitivity)).strip() or default.phase_sensitivity,
+        multicurrency_support=str(raw.get("multicurrency_support", default.multicurrency_support)).strip() or default.multicurrency_support,
+        supported_outputs=_str_tuple(raw.get("supported_outputs")) or default.supported_outputs,
+        supports_sensitivity_outputs=bool(raw.get("supports_sensitivity_outputs", default.supports_sensitivity_outputs)),
+        supported_state_tags=_str_tuple(raw.get("supported_state_tags")) or default.supported_state_tags,
+        supports_calibration=bool(raw.get("supports_calibration", default.supports_calibration)),
+    )
+
+
 def _str_tuple(val) -> tuple[str, ...]:
     if val is None:
         return ()
@@ -237,9 +391,11 @@ def _optional_str_tuple(val) -> tuple[str, ...] | None:
 
 def _parse_route(raw: dict) -> RouteSpec:
     match = raw.get("match", {})
+    route_id = raw["id"]
+    engine_family = raw["engine_family"]
     return RouteSpec(
-        id=raw["id"],
-        engine_family=raw["engine_family"],
+        id=route_id,
+        engine_family=engine_family,
         route_family=raw.get("route_family", raw["engine_family"]),
         status=raw.get("status", "promoted"),
         confidence=float(raw.get("confidence", 1.0)),
@@ -260,6 +416,7 @@ def _parse_route(raw: dict) -> RouteSpec:
         dynamic_notes=_parse_dynamic_notes(raw.get("dynamic_notes")),
         market_data_access=_parse_market_data_access(raw.get("market_data_access")),
         parameter_bindings=_parse_parameter_bindings(raw.get("parameter_bindings")),
+        admissibility=_parse_admissibility(raw.get("admissibility"), route_id=route_id, engine_family=engine_family),
         score_hints=dict(raw.get("score_hints", {})),
         aliases=_str_tuple(raw.get("aliases")),
         discovered_from=raw.get("discovered_from"),
@@ -565,6 +722,140 @@ def find_route_by_id(route_id: str, registry: RouteRegistry | None = None) -> Ro
         if route.id == route_id or route_id in route.aliases:
             return route
     return None
+
+
+def evaluate_route_admissibility(
+    spec: RouteSpec,
+    *,
+    semantic_blueprint=None,
+    product_ir: ProductIR | None = None,
+) -> RouteAdmissibilityDecision:
+    """Evaluate typed route admissibility against one semantic blueprint."""
+    if semantic_blueprint is None:
+        return RouteAdmissibilityDecision(ok=True)
+
+    contract = getattr(semantic_blueprint, "contract", None)
+    valuation_context = getattr(semantic_blueprint, "valuation_context", None)
+    market_binding_spec = getattr(semantic_blueprint, "market_binding_spec", None)
+    calibration_step = getattr(semantic_blueprint, "calibration_step", None)
+    if contract is None:
+        return RouteAdmissibilityDecision(ok=True)
+
+    product = getattr(contract, "product", None)
+    if product is None:
+        return RouteAdmissibilityDecision(ok=True)
+
+    admissibility = spec.admissibility
+    failures: list[str] = []
+
+    control_style = str(getattr(getattr(product, "controller_protocol", None), "controller_style", "identity")).strip() or "identity"
+    if admissibility.supported_control_styles and control_style not in admissibility.supported_control_styles:
+        failures.append(f"unsupported_control_style:{control_style}")
+
+    phase_order = tuple(getattr(getattr(product, "timeline", None), "phase_order", ()) or ())
+    try:
+        from trellis.agent.semantic_contracts import DEFAULT_PHASE_ORDER
+    except Exception:  # pragma: no cover - defensive only
+        DEFAULT_PHASE_ORDER = ("event", "observation", "decision", "determination", "settlement", "state_update")
+    if (
+        admissibility.phase_sensitivity == "default_phase_order_only"
+        and phase_order
+        and phase_order != DEFAULT_PHASE_ORDER
+    ):
+        failures.append("unsupported_phase_order:custom_same_day_order")
+
+    if _has_automatic_events(product) and admissibility.event_support == "none":
+        failures.append("unsupported_event_support:automatic_triggers")
+
+    requested_outputs = normalize_requested_outputs(
+        getattr(semantic_blueprint, "requested_outputs", ())
+        or getattr(valuation_context, "requested_outputs", ())
+    )
+    for output in requested_outputs:
+        if output in _KNOWN_MEASURE_OUTPUTS:
+            if output == DslMeasure.PRICE.value:
+                if output not in admissibility.supported_outputs:
+                    failures.append(f"unsupported_output:{output}")
+                continue
+            if not admissibility.supports_sensitivity_outputs and output not in admissibility.supported_outputs:
+                failures.append(f"unsupported_output:{output}")
+            continue
+        if output not in admissibility.supported_outputs:
+            failures.append(f"unsupported_output:{output}")
+
+    supported_tags = set(admissibility.supported_state_tags)
+    if supported_tags:
+        state_tags = {
+            str(tag)
+            for field_spec in getattr(product, "state_fields", ()) or ()
+            for tag in getattr(field_spec, "tags", ()) or ()
+        }
+        for tag in sorted(state_tags):
+            if tag not in supported_tags:
+                failures.append(f"unsupported_state_tag:{tag}")
+
+    if calibration_step is not None and not admissibility.supports_calibration:
+        failures.append("unsupported_calibration_step")
+
+    if _requires_cross_currency_support(product, market_binding_spec, valuation_context):
+        support = admissibility.multicurrency_support
+        if support == "single_currency_only":
+            failures.append("unsupported_multicurrency:cross_currency_contract")
+        elif (
+            support == "native_payout_with_fx"
+            and _requires_reporting_currency_conversion(product, market_binding_spec, valuation_context)
+        ):
+            failures.append("unsupported_reporting_policy:non_native_reporting_currency")
+
+    return RouteAdmissibilityDecision(
+        ok=not failures,
+        failures=tuple(dict.fromkeys(failures)),
+    )
+
+
+def _has_automatic_events(product) -> bool:
+    """Return whether the semantic product relies on automatic event transitions."""
+    controller_style = str(getattr(getattr(product, "controller_protocol", None), "controller_style", "identity")).strip() or "identity"
+    if controller_style != "identity":
+        return False
+    if bool(getattr(product, "event_machine", None)):
+        transitions = tuple(getattr(getattr(product, "event_machine", None), "transitions", ()) or ())
+        return bool(transitions)
+    if str(getattr(product, "path_dependence", "")).strip() == "path_dependent":
+        typed_surface_present = any(
+            (
+                tuple(getattr(product, "state_fields", ()) or ()),
+                tuple(getattr(product, "observables", ()) or ()),
+                tuple(getattr(product, "obligations", ()) or ()),
+            )
+        )
+        if typed_surface_present:
+            return True
+    return bool(getattr(product, "schedule_dependence", False) and getattr(product, "event_transitions", ()))
+
+
+def _requires_cross_currency_support(product, market_binding_spec, valuation_context) -> bool:
+    """Return whether the semantic/valuation contract is cross-currency."""
+    underlier_structure = str(getattr(product, "underlier_structure", "")).lower()
+    payoff_traits = {str(item).lower() for item in getattr(product, "payoff_traits", ()) or ()}
+    if "cross_currency" in underlier_structure or "fx_translation" in payoff_traits:
+        return True
+    bindings = getattr(market_binding_spec, "bindings", ()) or ()
+    for binding in bindings:
+        if str(getattr(binding, "capability", "")) == "fx_rates":
+            return True
+    reporting_currency = str(getattr(getattr(valuation_context, "reporting_policy", None), "reporting_currency", "")).strip()
+    payment_currency = str(getattr(getattr(product, "conventions", None), "payment_currency", "")).strip()
+    return bool(payment_currency and reporting_currency and payment_currency != reporting_currency)
+
+
+def _requires_reporting_currency_conversion(product, market_binding_spec, valuation_context) -> bool:
+    """Return whether reporting requires conversion away from the contract payout currency."""
+    reporting_currency = str(getattr(getattr(valuation_context, "reporting_policy", None), "reporting_currency", "")).strip()
+    payment_currency = str(getattr(getattr(product, "conventions", None), "payment_currency", "")).strip()
+    if not reporting_currency or not payment_currency:
+        return False
+    return reporting_currency != payment_currency
 
 
 # ---------------------------------------------------------------------------

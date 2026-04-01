@@ -21,6 +21,86 @@ from trellis.agent.knowledge.schema import BuildGateDecision, BuildGateThreshold
 _DEFAULT_THRESHOLDS = BuildGateThresholds()
 
 
+def _semantic_validation_gate_decision(report, *, gate_source: str) -> BuildGateDecision | None:
+    """Map a semantic validation report onto the existing build-gate surface."""
+    if report is None:
+        return None
+    if not hasattr(report, "normalized_contract") or not hasattr(report, "errors") or not hasattr(report, "warnings"):
+        return None
+
+    errors = tuple(getattr(report, "errors", ()) or ())
+    warnings = tuple(getattr(report, "warnings", ()) or ())
+    if errors:
+        preview = "; ".join(errors[:2])
+        if len(errors) > 2:
+            preview += f"; +{len(errors) - 2} more"
+        return BuildGateDecision(
+            decision="block",
+            reason=f"Semantic contract validation failed: {preview}",
+            gap_confidence=0.0,
+            gate_source=gate_source,
+        )
+    if warnings:
+        preview = "; ".join(warnings[:2])
+        if len(warnings) > 2:
+            preview += f"; +{len(warnings) - 2} more"
+        return BuildGateDecision(
+            decision="proceed",
+            reason=f"Semantic contract validation passed with warnings: {preview}",
+            gap_confidence=1.0,
+            gate_source=gate_source,
+        )
+    return BuildGateDecision(
+        decision="proceed",
+        reason="Semantic contract validation passed",
+        gap_confidence=1.0,
+        gate_source=gate_source,
+    )
+
+
+def _route_admissibility_gate_decision(
+    generation_plan,
+    *,
+    semantic_blueprint=None,
+    gap_confidence: float,
+    gate_source: str,
+) -> BuildGateDecision | None:
+    """Map typed route-admissibility failures onto the build-gate surface."""
+    if generation_plan is None or semantic_blueprint is None:
+        return None
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    route_id = getattr(primitive_plan, "route", "") if primitive_plan is not None else ""
+    if not route_id:
+        return None
+
+    from trellis.agent.route_registry import (
+        evaluate_route_admissibility,
+        find_route_by_id,
+    )
+
+    route_spec = find_route_by_id(route_id)
+    if route_spec is None:
+        return None
+    decision = evaluate_route_admissibility(
+        route_spec,
+        semantic_blueprint=semantic_blueprint,
+        product_ir=getattr(semantic_blueprint, "product_ir", None),
+    )
+    if decision.ok:
+        return None
+
+    preview = "; ".join(decision.failures[:2])
+    if len(decision.failures) > 2:
+        preview += f"; +{len(decision.failures) - 2} more"
+    return BuildGateDecision(
+        decision="block",
+        reason=f"Route admissibility failed for `{route_id}`: {preview}",
+        gap_confidence=gap_confidence,
+        route_admissibility_failures=decision.failures,
+        gate_source=gate_source,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pre-flight gate (autonomous.py, after gap_check)
 # ---------------------------------------------------------------------------
@@ -44,6 +124,13 @@ def evaluate_pre_flight_gate(
     BuildGateDecision
         decision is one of "proceed", "narrow_route", "block".
     """
+    semantic_decision = _semantic_validation_gate_decision(
+        gap_report,
+        gate_source="pre_flight",
+    )
+    if semantic_decision is not None:
+        return semantic_decision
+
     t = thresholds or _DEFAULT_THRESHOLDS
     confidence = gap_report.confidence
 
@@ -98,6 +185,7 @@ def evaluate_pre_generation_gate(
     gap_report,
     generation_plan,
     *,
+    semantic_blueprint=None,
     thresholds: BuildGateThresholds | None = None,
 ) -> BuildGateDecision:
     """Evaluate whether code generation should proceed.
@@ -115,6 +203,22 @@ def evaluate_pre_generation_gate(
     thresholds:
         Optional overrides; falls back to conservative defaults.
     """
+    semantic_decision = _semantic_validation_gate_decision(
+        gap_report,
+        gate_source="pre_generation",
+    )
+    if semantic_decision is not None:
+        return semantic_decision
+
+    route_admissibility_decision = _route_admissibility_gate_decision(
+        generation_plan,
+        semantic_blueprint=semantic_blueprint,
+        gap_confidence=gap_report.confidence if gap_report is not None else 0.0,
+        gate_source="pre_generation",
+    )
+    if route_admissibility_decision is not None:
+        return route_admissibility_decision
+
     t = thresholds or _DEFAULT_THRESHOLDS
 
     # 1. Check hard blockers from the primitive plan

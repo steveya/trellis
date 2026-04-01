@@ -9,7 +9,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Callable, Mapping
 from types import SimpleNamespace
 
 from trellis.agent.codegen_guardrails import (
@@ -81,6 +81,32 @@ class GeneratedModuleResult:
     source_report: GeneratedSourceSanitizationReport
 
 
+@dataclass(frozen=True)
+class KnowledgeRetrievalRequest:
+    """One stage-aware knowledge retrieval request issued during a build."""
+
+    audience: str
+    stage: str
+    attempt_number: int
+    knowledge_surface: str
+    prompt_surface: str
+    retry_reason: str | None
+    instrument_type: str | None
+    pricing_method: str | None
+    product_ir: Any = None
+    compiled_request: Any = None
+
+
+@dataclass(frozen=True)
+class KnowledgeContextResult:
+    """Resolved knowledge text plus retrieval metadata for one attempt."""
+
+    text: str
+    knowledge_surface: str
+    retrieval_stage: str
+    retrieval_source: str
+
+
 class GeneratedModuleSourceError(RuntimeError):
     """Raised when generated source cannot be sanitized for execution."""
 
@@ -92,6 +118,32 @@ class GeneratedModuleSourceError(RuntimeError):
     ) -> None:
         super().__init__(message)
         self.source_report = source_report
+
+
+def _llm_stage_metadata(
+    *,
+    compiled_request,
+    model: str,
+    attempt: int | None = None,
+    instrument_type: str | None = None,
+) -> dict[str, Any]:
+    """Attach stable request metadata to LLM stage logs."""
+    request = getattr(compiled_request, "request", None)
+    request_metadata = getattr(request, "metadata", None) or {}
+    metadata = {
+        "model": model,
+        "attempt": attempt,
+        "instrument_type": instrument_type,
+        "request_id": getattr(request, "request_id", None),
+        "task_id": request_metadata.get("task_id"),
+        "comparison_target": request_metadata.get("comparison_target"),
+        "preferred_method": request_metadata.get("preferred_method"),
+    }
+    return {
+        key: value
+        for key, value in metadata.items()
+        if value not in {None, ""}
+    }
 
 
 def _render_spec_default_value(field_type: str, default: str) -> str:
@@ -643,6 +695,7 @@ def build_payoff(
     compiled_request=None,
     build_meta: dict | None = None,
     gap_report=None,
+    knowledge_retriever: Callable[[KnowledgeRetrievalRequest], str | None] | None = None,
 ) -> type:
     """Build a Payoff class via the multi-agent pipeline.
 
@@ -928,7 +981,15 @@ def build_payoff(
         _last_spec_exc = None
         for _spec_attempt in range(_SPEC_DESIGN_MAX_RETRIES + 1):
             try:
-                with llm_usage_stage("spec_design", metadata={"model": stage_model}) as usage_records:
+                with llm_usage_stage(
+                    "spec_design",
+                    metadata=_llm_stage_metadata(
+                        compiled_request=compiled_request,
+                        model=stage_model,
+                        attempt=_spec_attempt + 1,
+                        instrument_type=instrument_type,
+                    ),
+                ) as usage_records:
                     spec_schema = _design_spec(payoff_description, requirements, stage_model)
                 _record_platform_event(
                     compiled_request,
@@ -1002,7 +1063,11 @@ def build_payoff(
 
     # Step 4b: Pre-generation build gate
     from trellis.agent.build_gate import evaluate_pre_generation_gate
-    _pre_gen_gate = evaluate_pre_generation_gate(gap_report, generation_plan)
+    _pre_gen_gate = evaluate_pre_generation_gate(
+        gap_report,
+        generation_plan,
+        semantic_blueprint=getattr(compiled_request, "semantic_blueprint", None),
+    )
     if build_meta is not None:
         from dataclasses import asdict as _gate_asdict
         build_meta["build_gate_decision"] = _gate_asdict(_pre_gen_gate)
@@ -1122,14 +1187,20 @@ def build_payoff(
             attempt_number=attempt_number,
             retry_reason=retry_reason,
         )
-        knowledge_text, knowledge_surface = _builder_knowledge_context_for_attempt(
-            pricing_plan,
-            instrument_type,
+        knowledge_context = _resolve_knowledge_context_for_attempt(
+            audience="builder",
+            pricing_plan=pricing_plan,
+            instrument_type=instrument_type,
             attempt_number=attempt_number,
             retry_reason=retry_reason,
             compiled_request=compiled_request,
             product_ir=product_ir,
+            prompt_surface=prompt_surface,
+            build_meta=build_meta,
+            knowledge_retriever=knowledge_retriever,
         )
+        knowledge_text = knowledge_context.text
+        knowledge_surface = knowledge_context.knowledge_surface
         _record_platform_event(
             compiled_request,
             "builder_attempt_started",
@@ -1138,6 +1209,8 @@ def build_payoff(
                 "attempt": attempt_number,
                 "prompt_surface": prompt_surface,
                 "knowledge_surface": knowledge_surface,
+                "retrieval_stage": knowledge_context.retrieval_stage,
+                "retrieval_source": knowledge_context.retrieval_source,
                 "retry_reason": retry_reason,
                 "knowledge_context_chars": len(knowledge_text),
             },
@@ -1147,7 +1220,12 @@ def build_payoff(
         try:
             with llm_usage_stage(
                 "code_generation",
-                metadata={"attempt": attempt_number, "model": stage_model},
+                metadata=_llm_stage_metadata(
+                    compiled_request=compiled_request,
+                    model=stage_model,
+                    attempt=attempt_number,
+                    instrument_type=instrument_type,
+                ),
             ) as usage_records:
                 generated_module = _generate_module(
                     skeleton, spec_schema, reference_sources, stage_model, 1,
@@ -1211,6 +1289,8 @@ def build_payoff(
                 "attempt": attempt_number,
                 "prompt_surface": prompt_surface,
                 "knowledge_surface": knowledge_surface,
+                "retrieval_stage": knowledge_context.retrieval_stage,
+                "retrieval_source": knowledge_context.retrieval_source,
                 "retry_reason": retry_reason,
                 "knowledge_context_chars": len(knowledge_text),
                 "parse_status": "compiled",
@@ -1436,6 +1516,7 @@ def build_payoff(
             attempt_number=attempt_number,
             return_failure_details=True,
             gate_results_out=_attempt_gate_results,
+            knowledge_retriever=knowledge_retriever,
         )
 
         if not failures:
@@ -1535,6 +1616,7 @@ def _validate_build(
     attempt_number: int | None = None,
     return_failure_details: bool = False,
     gate_results_out: list | None = None,
+    knowledge_retriever: Callable[[KnowledgeRetrievalRequest], str | None] | None = None,
 ) -> list[str] | tuple[list[str], tuple[object, ...]]:
     """Run validation checks on a built payoff."""
     from trellis.agent.review_policy import determine_review_policy
@@ -1743,33 +1825,62 @@ def _validate_build(
     deterministic_gate_reason = (
         "deterministic_validation_failed" if deterministic_gate_failed else None
     )
+    critic_mode = getattr(
+        review_policy,
+        "critic_mode",
+        "required" if getattr(review_policy, "run_critic", False) else "skip",
+    )
+    critic_json_max_retries = getattr(review_policy, "critic_json_max_retries", None)
+    critic_allow_text_fallback = getattr(review_policy, "critic_allow_text_fallback", True)
+    critic_text_max_retries = getattr(review_policy, "critic_text_max_retries", None)
 
     # Standard: run critic
     if (
         validation in ("standard", "thorough")
-        and review_policy.run_critic
+        and getattr(review_policy, "run_critic", False)
         and not deterministic_gate_failed
     ):
-        review_knowledge_text, review_prompt_surface = _review_knowledge_context_for_attempt(
-            pricing_plan,
-            itype,
+        critic_error = None
+        review_context = _resolve_knowledge_context_for_attempt(
+            audience="review",
+            pricing_plan=pricing_plan,
+            instrument_type=itype,
             attempt_number=attempt_number or 1,
             compiled_request=compiled_request,
             product_ir=product_ir,
+            prompt_surface="critic_review",
+            build_meta=build_meta,
+            knowledge_retriever=knowledge_retriever,
         )
+        review_knowledge_text = review_context.text
+        review_prompt_surface = review_context.knowledge_surface
         try:
-            from trellis.agent.critic import critique
+            from trellis.agent.critic import available_critic_checks, critique
             from trellis.agent.arbiter import run_critic_tests
+            critic_checks = available_critic_checks(
+                instrument_type=itype,
+                method=getattr(pricing_plan, "method", None),
+                product_ir=product_ir,
+            )
             stage_model = get_model_for_stage("critic", model)
             with llm_usage_stage(
                 "critic",
-                metadata={"attempt": attempt_number, "model": stage_model},
+                metadata=_llm_stage_metadata(
+                    compiled_request=compiled_request,
+                    model=stage_model,
+                    attempt=attempt_number,
+                    instrument_type=itype,
+                ),
             ) as usage_records:
                 concerns = critique(
                     code,
                     description,
                     knowledge_context=review_knowledge_text,
                     model=stage_model,
+                    available_checks=critic_checks,
+                    json_max_retries=critic_json_max_retries,
+                    allow_text_fallback=critic_allow_text_fallback,
+                    text_max_retries=critic_text_max_retries,
                 )
             enforce_llm_token_budget(stage="critic")
             _record_platform_event(
@@ -1779,7 +1890,14 @@ def _validate_build(
                 details={
                     "concern_count": len(concerns),
                     "prompt_surface": review_prompt_surface,
+                    "retrieval_stage": review_context.retrieval_stage,
+                    "retrieval_source": review_context.retrieval_source,
                     "knowledge_context_chars": len(review_knowledge_text),
+                    "available_check_ids": [check.check_id for check in critic_checks],
+                    "critic_mode": critic_mode,
+                    "json_max_retries": critic_json_max_retries,
+                    "allow_text_fallback": critic_allow_text_fallback,
+                    "text_max_retries": critic_text_max_retries,
                     "token_usage": summarize_llm_usage(usage_records),
                 },
             )
@@ -1791,7 +1909,13 @@ def _validate_build(
                     concern.description,
                     severity=concern.severity,
                     attempt=attempt_number,
-                    details={"test_code": concern.test_code},
+                    details={
+                        "check_id": concern.check_id,
+                        "status": concern.status,
+                        "evidence": concern.evidence,
+                        "remediation": concern.remediation,
+                        **({"test_code": concern.test_code} if concern.test_code else {}),
+                    },
                 )
             critic_failures = run_critic_tests(concerns, test_payoff)
             failures.extend(critic_failures)
@@ -1806,11 +1930,39 @@ def _validate_build(
                     details={"message": failure},
                 )
         except Exception as e:
+            critic_error = e
             import logging
             logging.getLogger(__name__).warning(f"Critic validation error (non-blocking): {e}")
+            _record_platform_event(
+                compiled_request,
+                "critic_failed",
+                status="error",
+                details={
+                    "error_type": type(e).__name__,
+                    "error": str(e),
+                    "critic_mode": critic_mode,
+                    "reason": getattr(review_policy, "critic_reason", ""),
+                    "json_max_retries": critic_json_max_retries,
+                    "allow_text_fallback": critic_allow_text_fallback,
+                    "text_max_retries": critic_text_max_retries,
+                },
+            )
         if gate_results_out is not None:
             _critic_fails = locals().get("critic_failures", [])
-            gate_results_out.append(("critic", not bool(_critic_fails), tuple(_critic_fails[:3])))
+            _critic_passed = not bool(_critic_fails) and critic_error is None
+            _critic_details = {
+                "critic_mode": critic_mode,
+                "json_max_retries": critic_json_max_retries,
+                "allow_text_fallback": critic_allow_text_fallback,
+                "text_max_retries": critic_text_max_retries,
+            }
+            if critic_error is not None:
+                _critic_details["error_type"] = type(critic_error).__name__
+                _critic_details["error"] = str(critic_error)
+                _critic_details["advisory"] = critic_mode == "advisory"
+            gate_results_out.append(
+                ("critic", _critic_passed, tuple(_critic_fails[:3]), _critic_details)
+            )
     elif validation in ("standard", "thorough"):
         _record_platform_event(
             compiled_request,
@@ -1818,6 +1970,7 @@ def _validate_build(
             status="info",
             details={
                 "risk_level": review_policy.risk_level,
+                "critic_mode": critic_mode,
                 "reason": deterministic_gate_reason or review_policy.critic_reason,
                 "failure_count": len(failures),
             },
@@ -1839,20 +1992,31 @@ def _validate_build(
             from trellis.agent.model_validator import validate_model
 
             if review_policy.run_model_validator_llm and not review_knowledge_text:
-                review_knowledge_text, review_prompt_surface = _review_knowledge_context_for_attempt(
-                    pricing_plan,
-                    itype,
+                review_context = _resolve_knowledge_context_for_attempt(
+                    audience="review",
+                    pricing_plan=pricing_plan,
+                    instrument_type=itype,
                     attempt_number=attempt_number or 1,
                     compiled_request=compiled_request,
                     product_ir=product_ir,
+                    prompt_surface="model_validator_review",
+                    build_meta=build_meta,
+                    knowledge_retriever=knowledge_retriever,
                 )
+                review_knowledge_text = review_context.text
+                review_prompt_surface = review_context.knowledge_surface
 
             usage_summary = None
             if review_policy.run_model_validator_llm:
                 stage_model = get_model_for_stage("model_validator", model)
                 with llm_usage_stage(
                     "model_validator",
-                    metadata={"attempt": attempt_number, "model": stage_model},
+                    metadata=_llm_stage_metadata(
+                        compiled_request=compiled_request,
+                        model=stage_model,
+                        attempt=attempt_number,
+                        instrument_type=itype,
+                    ),
                 ) as usage_records:
                     report = validate_model(
                         payoff_factory=payoff_factory,
@@ -2264,6 +2428,7 @@ def _generate_module(
 
     last_error = ""
     last_code = ""
+    last_parse_candidate = ""
     for attempt in range(max_retries):
         if attempt > 0:
             full_prompt = prompt + f"\n\n## Previous attempt had error:\n{last_error}\nFix the code."
@@ -2283,6 +2448,7 @@ def _generate_module(
 
             sanitized_code = source_report.sanitized_source
             code = sanitized_code.expandtabs(4)
+            last_parse_candidate = code
             if not code.strip():
                 raise RuntimeError("LLM returned empty module body")
             if not _module_has_expected_structure(code, spec_schema):
@@ -2299,6 +2465,7 @@ def _generate_module(
                     )
                 if recovered is not None:
                     code = recovered
+                    last_parse_candidate = code
             try:
                 ast.parse(code)
             except SyntaxError:
@@ -2316,6 +2483,7 @@ def _generate_module(
                 if recovered is None:
                     raise
                 code = recovered
+                last_parse_candidate = code
                 ast.parse(code)
             if not _module_has_expected_structure(code, spec_schema):
                 raise RuntimeError(
@@ -2330,7 +2498,7 @@ def _generate_module(
         except SyntaxError as e:
             last_error = _format_code_generation_error(
                 e,
-                code=last_code,
+                code=last_parse_candidate or last_code,
                 error_type="SyntaxError",
             )
             if attempt >= max_retries - 1:
@@ -2530,11 +2698,15 @@ def _extract_fragment_body(body_lines: list[str]) -> str:
     if not dedented_lines:
         return ""
 
+    dedented_lines = _dedent_fragment_tail(dedented_lines)
+
+    normalized_text = "\n".join(dedented_lines)
     first_line = dedented_lines[0].strip()
     if first_line.startswith("def evaluate(") or first_line.startswith("async def evaluate("):
         function_body = textwrap.dedent("\n".join(dedented_lines[1:])).strip("\n")
+        function_body = _repair_orphan_indentation(function_body)
         return function_body
-    return dedented
+    return _repair_orphan_indentation(normalized_text)
 
 
 def _extract_evaluate_body_from_module_text(code: str) -> str:
@@ -2564,7 +2736,104 @@ def _extract_evaluate_body_from_module_text(code: str) -> str:
     if not body_lines:
         return ""
 
-    return textwrap.dedent("\n".join(body_lines)).strip("\n")
+    return _repair_orphan_indentation(textwrap.dedent("\n".join(body_lines)).strip("\n"))
+
+
+def _dedent_fragment_tail(lines: list[str]) -> list[str]:
+    """Normalize fragments where only the first top-level line lost its base indent.
+
+    Some model outputs start with one unindented top-level statement and then keep
+    the rest of the method body indented as if the base method indent were still
+    present. When that shape is stitched into the skeleton verbatim, later
+    top-level statements remain trapped under the first block opener and the
+    generated method silently returns ``None`` on the happy path.
+    """
+    if len(lines) < 2:
+        return lines
+
+    first = lines[0]
+    first_stripped = first.strip()
+    first_indent = len(first) - len(first.lstrip())
+    if first_indent != 0:
+        return lines
+    if first_stripped.endswith(":") or first_stripped.endswith(("\\", "(", "[", "{", ",")):
+        return lines
+
+    positive_indents = [
+        len(line) - len(line.lstrip())
+        for line in lines[1:]
+        if line.strip() and (len(line) - len(line.lstrip())) > 0
+    ]
+    if not positive_indents:
+        return lines
+
+    tail_base = min(positive_indents)
+    repaired = [first.lstrip()]
+    for line in lines[1:]:
+        stripped = line.lstrip()
+        if not stripped:
+            repaired.append("")
+            continue
+        indent = max((len(line) - len(stripped)) - tail_base, 0)
+        repaired.append((" " * indent) + stripped)
+    return repaired
+
+
+def _repair_orphan_indentation(body_text: str) -> str:
+    """Flatten indentation jumps that are not introduced by a block opener.
+
+    Repair output from the model sometimes contains an already-indented
+    ``evaluate()`` body where one statement is accidentally indented as if it
+    lived under a nonexistent block. We only normalize those orphan jumps in the
+    recovery path; accepted full-module output still goes through normal parsing.
+    """
+    lines = body_text.splitlines()
+    if not lines:
+        return ""
+
+    repaired: list[str] = []
+    previous_stripped = ""
+    previous_indent = 0
+
+    for line in lines:
+        stripped = line.lstrip()
+        if not stripped:
+            repaired.append("")
+            continue
+
+        current_indent = len(line) - len(stripped)
+        if repaired and stripped.startswith(("elif ", "else:", "except ", "except:", "finally:")):
+            current_indent = max(previous_indent - 4, 0)
+        elif (
+            repaired
+            and previous_stripped
+            and previous_stripped.endswith(":")
+            and current_indent <= previous_indent
+            and not stripped.startswith(("elif ", "else:", "except ", "except:", "finally:"))
+        ):
+            current_indent = previous_indent + 4
+        elif (
+            repaired
+            and current_indent > previous_indent
+            and previous_stripped
+            and previous_stripped.endswith(":")
+            and current_indent > previous_indent + 4
+        ):
+            current_indent = previous_indent + 4
+        elif (
+            repaired
+            and current_indent > previous_indent
+            and previous_stripped
+            and not previous_stripped.endswith(":")
+            and not previous_stripped.endswith(("\\", "(", "[", "{", ","))
+        ):
+            current_indent = previous_indent
+
+        repaired.append((" " * current_indent) + stripped)
+        previous_stripped = stripped
+        previous_indent = current_indent
+
+    return "\n".join(repaired)
 
 
 def _try_import_existing(plan) -> type | None:
@@ -2615,6 +2884,7 @@ def _reference_modules(
         ("trellis.core.types", "Frequency/day-count types"),
         ("trellis.models.black", "Black-style analytical helpers"),
     ]
+    normalized_instrument = str(instrument_type or "").strip().lower()
 
     if pricing_plan:
         method = normalize_method(pricing_plan.method)
@@ -2622,10 +2892,15 @@ def _reference_modules(
             modules.append(("trellis.instruments.cap", "CapPayoff (analytical reference)"))
         elif method == "rate_tree":
             modules.append(("trellis.instruments.callable_bond", "CallableBondPayoff (tree reference)"))
+            modules.append(("trellis.models.callable_bond_tree", "Callable bond lattice/tree helper"))
             modules.append(("trellis.models.trees", "Tree package exports"))
+            modules.append(("trellis.models.trees.lattice", "Generic/calibrated lattice builders"))
+            modules.append(("trellis.models.trees.models", "Tree model registry for BDT/Hull-White selection"))
+            modules.append(("trellis.models.trees.control", "Lattice exercise/control helpers"))
         elif method == "monte_carlo":
-            modules.append(("trellis.instruments.barrier_option", "BarrierOptionPayoff (MC reference)"))
-            modules.append(("trellis.models.monte_carlo", "Monte Carlo package exports"))
+            if normalized_instrument not in {"credit_default_swap", "cds"}:
+                modules.append(("trellis.instruments.barrier_option", "BarrierOptionPayoff (MC reference)"))
+                modules.append(("trellis.models.monte_carlo", "Monte Carlo package exports"))
         elif method == "qmc":
             modules.append(("trellis.models.qmc", "QMC package exports"))
             modules.append(("trellis.models.monte_carlo", "Monte Carlo package exports"))
@@ -2638,6 +2913,8 @@ def _reference_modules(
             modules.append(("trellis.models.pde.theta_method", "Theta-method solver reference"))
             modules.append(("trellis.models.pde.grid", "PDE grid reference"))
             modules.append(("trellis.models.pde.operator", "PDE operator reference"))
+            if normalized_instrument == "european_option":
+                modules.append(("trellis.models.equity_option_pde", "Vanilla equity PDE helper"))
         elif method == "fft_pricing":
             modules.append(("trellis.models.transforms", "Transform package exports"))
             modules.append(("trellis.models.processes.heston", "Heston process reference"))
@@ -2658,6 +2935,13 @@ def _reference_modules(
         )
         modules.append(
             ("trellis.models.monte_carlo.quanto", "Quanto Monte Carlo route helpers")
+        )
+    if normalized_instrument == "zcb_option":
+        modules.append(
+            ("trellis.models.zcb_option", "Jamshidian ZCB option helper")
+        )
+        modules.append(
+            ("trellis.models.zcb_option_tree", "ZCB option tree helper")
         )
 
     deduped: list[tuple[str, str]] = []
@@ -2882,27 +3166,27 @@ def _builder_knowledge_context_for_attempt(
     retry_reason: str | None = None,
     compiled_request=None,
     product_ir=None,
+    prompt_surface: str | None = None,
+    build_meta: dict | None = None,
+    knowledge_retriever: Callable[[KnowledgeRetrievalRequest], str | None] | None = None,
 ) -> tuple[str, str]:
-    """Return compact knowledge on first pass and expanded context on retries."""
-    expanded = attempt_number > 1 and retry_reason == "validation"
-    knowledge_surface = "expanded" if expanded else "compact"
-
-    if compiled_request is not None and getattr(compiled_request, "knowledge", None) is not None:
-        from trellis.agent.knowledge.retrieval import build_shared_knowledge_payload
-
-        if not expanded and compiled_request.knowledge_text:
-            return compiled_request.knowledge_text, knowledge_surface
-
-        payload = build_shared_knowledge_payload(compiled_request.knowledge)
-        key = "builder_text_expanded" if expanded else "builder_text_distilled"
-        return payload.get(key, ""), knowledge_surface
-
-    return _retrieve_knowledge(
-        pricing_plan,
-        instrument_type,
+    """Return builder knowledge text and surface for one attempt."""
+    context = _resolve_knowledge_context_for_attempt(
+        audience="builder",
+        pricing_plan=pricing_plan,
+        instrument_type=instrument_type,
+        attempt_number=attempt_number,
+        retry_reason=retry_reason,
+        compiled_request=compiled_request,
         product_ir=product_ir,
-        compact=not expanded,
-    ), knowledge_surface
+        prompt_surface=prompt_surface or _builder_prompt_surface_for_attempt(
+            attempt_number=attempt_number,
+            retry_reason=retry_reason,
+        ),
+        build_meta=build_meta,
+        knowledge_retriever=knowledge_retriever,
+    )
+    return context.text, context.knowledge_surface
 
 
 def _review_knowledge_context_for_attempt(
@@ -2912,16 +3196,23 @@ def _review_knowledge_context_for_attempt(
     attempt_number: int,
     compiled_request=None,
     product_ir=None,
+    prompt_surface: str | None = None,
+    build_meta: dict | None = None,
+    knowledge_retriever: Callable[[KnowledgeRetrievalRequest], str | None] | None = None,
 ) -> tuple[str, str]:
     """Return reviewer knowledge with the same compact-first policy."""
-    return _knowledge_context_for_attempt(
+    context = _resolve_knowledge_context_for_attempt(
         audience="review",
         pricing_plan=pricing_plan,
         instrument_type=instrument_type,
         attempt_number=attempt_number,
         compiled_request=compiled_request,
         product_ir=product_ir,
+        prompt_surface=prompt_surface or "review",
+        build_meta=build_meta,
+        knowledge_retriever=knowledge_retriever,
     )
+    return context.text, context.knowledge_surface
 
 
 def _builder_prompt_surface_for_attempt(
@@ -2932,59 +3223,517 @@ def _builder_prompt_surface_for_attempt(
     """Select the retry prompt surface from the previous failure type."""
     if attempt_number <= 1:
         return "compact"
+    if retry_reason == "code_generation":
+        return "compact"
     if retry_reason == "import_validation":
         return "import_repair"
     if retry_reason in {"semantic_validation", "lite_review"}:
         return "semantic_repair"
+    if retry_reason == "validation":
+        return "compact"
     return "expanded"
 
 
-def _knowledge_context_for_attempt(
+def _resolve_knowledge_context_for_attempt(
     *,
     audience: str,
     pricing_plan,
     instrument_type: str | None,
     attempt_number: int,
+    retry_reason: str | None = None,
     compiled_request=None,
     product_ir=None,
-) -> tuple[str, str]:
-    """Select compact knowledge first, then expand after the first failed attempt."""
-    expanded = attempt_number > 1
-    prompt_surface = "expanded" if expanded else "compact"
+    prompt_surface: str,
+    build_meta: dict | None = None,
+    knowledge_retriever: Callable[[KnowledgeRetrievalRequest], str | None] | None = None,
+) -> KnowledgeContextResult:
+    """Resolve knowledge text and retrieval metadata for one build/review step."""
+    retrieval_stage = _knowledge_retrieval_stage(
+        audience=audience,
+        attempt_number=attempt_number,
+        retry_reason=retry_reason,
+    )
+    knowledge_surface = _knowledge_surface_for_stage(
+        audience=audience,
+        attempt_number=attempt_number,
+        retry_reason=retry_reason,
+    )
+    compact = knowledge_surface != "expanded"
+    request = KnowledgeRetrievalRequest(
+        audience=audience,
+        stage=retrieval_stage,
+        attempt_number=attempt_number,
+        knowledge_surface=knowledge_surface,
+        prompt_surface=prompt_surface,
+        retry_reason=retry_reason,
+        instrument_type=instrument_type,
+        pricing_method=getattr(pricing_plan, "method", None),
+        product_ir=product_ir,
+        compiled_request=compiled_request,
+    )
+
+    if knowledge_retriever is not None:
+        callback_text = knowledge_retriever(request)
+        if isinstance(callback_text, str) and callback_text:
+            callback_text = _augment_retrieval_text(callback_text, request=request)
+            _record_knowledge_retrieval(
+                build_meta,
+                audience=audience,
+                retrieval_stage=retrieval_stage,
+                knowledge_surface=knowledge_surface,
+                retrieval_source="callback",
+                attempt_number=attempt_number,
+                prompt_surface=prompt_surface,
+                retry_reason=retry_reason,
+                chars=len(callback_text),
+            )
+            return KnowledgeContextResult(
+                text=callback_text,
+                knowledge_surface=knowledge_surface,
+                retrieval_stage=retrieval_stage,
+                retrieval_source="callback",
+            )
 
     if compiled_request is not None and getattr(compiled_request, "knowledge", None) is not None:
         from trellis.agent.knowledge.retrieval import build_shared_knowledge_payload
 
-        if not expanded:
+        if compact:
             if audience == "builder" and compiled_request.knowledge_text:
-                return compiled_request.knowledge_text, prompt_surface
+                text = _augment_retrieval_text(compiled_request.knowledge_text, request=request)
+                _record_knowledge_retrieval(
+                    build_meta,
+                    audience=audience,
+                    retrieval_stage=retrieval_stage,
+                    knowledge_surface=knowledge_surface,
+                    retrieval_source="compiled_request",
+                    attempt_number=attempt_number,
+                    prompt_surface=prompt_surface,
+                    retry_reason=retry_reason,
+                    chars=len(text),
+                )
+                return KnowledgeContextResult(
+                    text=text,
+                    knowledge_surface=knowledge_surface,
+                    retrieval_stage=retrieval_stage,
+                    retrieval_source="compiled_request",
+                )
             if audience == "review" and compiled_request.review_knowledge_text:
-                return compiled_request.review_knowledge_text, prompt_surface
+                text = _augment_retrieval_text(compiled_request.review_knowledge_text, request=request)
+                _record_knowledge_retrieval(
+                    build_meta,
+                    audience=audience,
+                    retrieval_stage=retrieval_stage,
+                    knowledge_surface=knowledge_surface,
+                    retrieval_source="compiled_request",
+                    attempt_number=attempt_number,
+                    prompt_surface=prompt_surface,
+                    retry_reason=retry_reason,
+                    chars=len(text),
+                )
+                return KnowledgeContextResult(
+                    text=text,
+                    knowledge_surface=knowledge_surface,
+                    retrieval_stage=retrieval_stage,
+                    retrieval_source="compiled_request",
+                )
 
         payload = build_shared_knowledge_payload(compiled_request.knowledge)
         if audience == "builder":
-            key = "builder_text_expanded" if expanded else "builder_text_distilled"
+            key = "builder_text_expanded" if not compact else "builder_text_distilled"
         elif audience == "review":
-            key = "review_text_expanded" if expanded else "review_text_distilled"
+            key = "review_text_expanded" if not compact else "review_text_distilled"
         else:
             raise ValueError(f"Unsupported knowledge audience: {audience}")
-        return payload.get(key, ""), prompt_surface
+        text = _augment_retrieval_text(payload.get(key, ""), request=request)
+        _record_knowledge_retrieval(
+            build_meta,
+            audience=audience,
+            retrieval_stage=retrieval_stage,
+            knowledge_surface=knowledge_surface,
+            retrieval_source="compiled_request_payload",
+            attempt_number=attempt_number,
+            prompt_surface=prompt_surface,
+            retry_reason=retry_reason,
+            chars=len(text),
+        )
+        return KnowledgeContextResult(
+            text=text,
+            knowledge_surface=knowledge_surface,
+            retrieval_stage=retrieval_stage,
+            retrieval_source="compiled_request_payload",
+        )
 
     if audience == "builder":
-        return _retrieve_knowledge(
+        text = _retrieve_knowledge(
             pricing_plan,
             instrument_type,
             product_ir=product_ir,
-            compact=not expanded,
-        ), prompt_surface
+            compact=compact,
+        )
+        text = _augment_retrieval_text(text, request=request)
+        _record_knowledge_retrieval(
+            build_meta,
+            audience=audience,
+            retrieval_stage=retrieval_stage,
+            knowledge_surface=knowledge_surface,
+            retrieval_source="live_retrieval",
+            attempt_number=attempt_number,
+            prompt_surface=prompt_surface,
+            retry_reason=retry_reason,
+            chars=len(text),
+        )
+        return KnowledgeContextResult(
+            text=text,
+            knowledge_surface=knowledge_surface,
+            retrieval_stage=retrieval_stage,
+            retrieval_source="live_retrieval",
+        )
     if audience == "review":
-        return _retrieve_review_knowledge(
+        text = _retrieve_review_knowledge(
             pricing_plan,
             instrument_type,
             product_ir=product_ir,
-            compact=not expanded,
-        ), prompt_surface
+            compact=compact,
+        )
+        text = _augment_retrieval_text(text, request=request)
+        _record_knowledge_retrieval(
+            build_meta,
+            audience=audience,
+            retrieval_stage=retrieval_stage,
+            knowledge_surface=knowledge_surface,
+            retrieval_source="live_retrieval",
+            attempt_number=attempt_number,
+            prompt_surface=prompt_surface,
+            retry_reason=retry_reason,
+            chars=len(text),
+        )
+        return KnowledgeContextResult(
+            text=text,
+            knowledge_surface=knowledge_surface,
+            retrieval_stage=retrieval_stage,
+            retrieval_source="live_retrieval",
+        )
     raise ValueError(f"Unsupported knowledge audience: {audience}")
+
+
+def _knowledge_retrieval_stage(
+    *,
+    audience: str,
+    attempt_number: int,
+    retry_reason: str | None,
+) -> str:
+    """Normalize builder/reviewer attempt state into a stable retrieval stage label."""
+    if audience == "review":
+        return "critic_review_after_retry" if attempt_number > 1 else "critic_review"
+    if attempt_number <= 1:
+        return "initial_build"
+    if retry_reason == "code_generation":
+        return "code_generation_failed"
+    if retry_reason == "import_validation":
+        return "import_validation_failed"
+    if retry_reason == "semantic_validation":
+        return "semantic_validation_failed"
+    if retry_reason == "lite_review":
+        return "lite_review_failed"
+    if retry_reason == "validation":
+        return "validation_failed"
+    return "retry_build"
+
+
+def _knowledge_surface_for_stage(
+    *,
+    audience: str,
+    attempt_number: int,
+    retry_reason: str | None,
+) -> str:
+    """Select the prompt-budget surface for the current retry stage."""
+    if audience == "review":
+        return "expanded" if attempt_number > 1 else "compact"
+    if attempt_number <= 1:
+        return "compact"
+    if retry_reason in {"semantic_validation", "lite_review"}:
+        return "expanded"
+    return "compact"
+
+
+def _record_knowledge_retrieval(
+    build_meta: dict | None,
+    *,
+    audience: str,
+    retrieval_stage: str,
+    knowledge_surface: str,
+    retrieval_source: str,
+    attempt_number: int,
+    prompt_surface: str,
+    retry_reason: str | None,
+    chars: int,
+) -> None:
+    """Persist one structured retrieval decision for later diagnosis."""
+    if build_meta is None:
+        return
+    decision = {
+        "audience": audience,
+        "stage": retrieval_stage,
+        "knowledge_surface": knowledge_surface,
+        "retrieval_source": retrieval_source,
+        "attempt": attempt_number,
+        "prompt_surface": prompt_surface,
+        "retry_reason": retry_reason,
+        "chars": chars,
+    }
+    build_meta.setdefault("knowledge_retrieval_history", []).append(decision)
+    summary = build_meta.setdefault("knowledge_summary", {})
+    for key, value in (
+        ("retrieval_stages", retrieval_stage),
+        ("retrieval_sources", retrieval_source),
+    ):
+        existing = [
+            item
+            for item in summary.get(key, ())
+            if isinstance(item, str) and item
+        ]
+        if value not in existing:
+            existing.append(value)
+        summary[key] = existing
+
+
+def _augment_retrieval_text(
+    text: str,
+    *,
+    request: KnowledgeRetrievalRequest,
+) -> str:
+    """Append stage-aware retry guidance and instrument disambiguation notes."""
+    sections: list[str] = []
+    retry_lines = _retry_focus_lines(request.stage)
+    if retry_lines:
+        sections.append("## Retry Focus")
+        sections.extend(f"- {line}" for line in retry_lines)
+
+    route_specific_lines = _route_specific_retry_lines(request)
+    if route_specific_lines:
+        sections.append("## Route-Specific Recovery")
+        sections.extend(f"- {line}" for line in route_specific_lines)
+
+    disambiguation_lines = _instrument_disambiguation_lines(request)
+    if disambiguation_lines:
+        sections.append("## Instrument Disambiguation")
+        sections.extend(f"- {line}" for line in disambiguation_lines)
+
+    if not sections:
+        return text
+
+    suffix = "\n".join(sections)
+    if text.strip():
+        return f"{text}\n\n{suffix}"
+    return suffix
+
+
+def _retry_focus_lines(stage: str) -> tuple[str, ...]:
+    """Return narrow retry instructions for the current failure stage."""
+    if stage == "code_generation_failed":
+        return (
+            "Regenerate from the canonical scaffold; do not improvise a new module shape.",
+            "Keep indentation, imports, and class/spec names aligned with the approved route skeleton.",
+        )
+    if stage == "import_validation_failed":
+        return (
+            "Use only import-registry and API-map-backed modules and symbols.",
+            "Do not swap route families or import adjacent credit/copula helpers just because the names sound similar.",
+        )
+    if stage in {"semantic_validation_failed", "validation_failed"}:
+        return (
+            "Match the runtime contract exactly: required curves, units, and payoff-leg signs must be explicit in code.",
+            "Prefer a smaller, explicit implementation over a broad helper abstraction when recovering from validation failures.",
+        )
+    if stage == "lite_review_failed":
+        return (
+            "Address the flagged semantic/risk issues directly instead of broadening the route or changing the product family.",
+        )
+    return ()
+
+
+def _route_specific_retry_lines(
+    request: KnowledgeRetrievalRequest,
+) -> tuple[str, ...]:
+    """Return narrow route-repair guidance for fragile families."""
+    instrument = (request.instrument_type or "").strip().lower()
+    if not instrument and request.product_ir is not None:
+        instrument = str(getattr(request.product_ir, "instrument", "") or "").strip().lower()
+    pricing_method = str(request.pricing_method or "").strip().lower()
+    stage = str(request.stage or "").strip().lower()
+    request_metadata = (
+        getattr(getattr(request.compiled_request, "request", None), "metadata", None) or {}
+    )
+    comparison_target = str(request_metadata.get("comparison_target") or "").strip().lower()
+
+    if (
+        instrument in {"credit_default_swap", "cds"}
+        and pricing_method in {"monte_carlo", "qmc"}
+        and stage in {"code_generation_failed", "import_validation_failed", "validation_failed"}
+    ):
+        return (
+            "Single-name CDS Monte Carlo does not need an equity price process, spot diffusion, or volatility path.",
+            "Do not import `trellis.models.processes.gbm` or any adjacent equity-process fallback just to make Monte Carlo compile.",
+            "Do not import or instantiate `MonteCarloEngine` for a single-name CDS route. That engine expects a diffusion process and is the wrong scaffold here.",
+            "Stay within the approved CDS route backbone: credit-curve default-time sampling, discounting, schedule generation, and leg aggregation.",
+            "Prefer `from trellis.models.credit_default_swap import build_cds_schedule, price_cds_monte_carlo` and delegate to those helpers from the adapter.",
+            "Prefer `build_period_schedule(spec.start_date, spec.end_date, spec.frequency, day_count=spec.day_count, time_origin=spec.start_date)` so the route iterates over explicit periods instead of rebuilding coupon boundaries by hand.",
+            "Use `from trellis.core.differentiable import get_numpy`, `np = get_numpy()`, and direct `np.random.default_rng(...)` draws for default times instead.",
+            "Track accrual dates and survival/default times separately: use `prev_date` for `year_fraction(prev_date, pay_date, ...)` and `prev_t` for survival/default-time thresholds.",
+            "Do not compare float year-fractions to `date` objects, and do not pass floats into the date positions of `year_fraction(...)`.",
+            "Use `period.payment_date`, `period.accrual_fraction`, and `period.t_payment` from that schedule object so the Monte Carlo leg covers the full CDS horizon without reconstructing payment_dates manually.",
+            "This route must price a Monte Carlo expectation over many paths. Use `n_paths = ...`, `alive = np.ones(n_paths, dtype=bool)`, and vectorized `default_in_interval` arrays.",
+            "Do not collapse the Monte Carlo CDS leg to scalar `alive`, a single `rng.random()` draw per payment date, or a one-scenario loop that breaks after default.",
+            "Compute interval default probability from survival ratios: `default_prob = max(0.0, min(1.0, 1.0 - s_pay / s_prev))` using `survival_probability(prev_t)` and `survival_probability(t_pay)`.",
+            "Do not replace that interval default probability with a midpoint-hazard shortcut like `1.0 - exp(-hazard * dt)` when survival probabilities are available.",
+            "For this comparison route, keep protection-leg discounting aligned with the analytical schedule loop: accrue interval default mass with the payment-date discount factor `discount(t_pay)`.",
+            "Do not discount protection at sampled default times `tau` or replace interval default mass with sampled settlement-time discounting in the comparison build.",
+            "Use `spec.start_date` as the time origin for Monte Carlo schedule times. Do not switch this route to `market_state.as_of` while the analytical comparator uses `spec.start_date`.",
+            "Carry a persistent `alive` indicator across the schedule; do not overwrite the default state from scratch inside each interval.",
+            "Use per-interval conditional default draws: `default_in_interval = alive & (u < conditional_default_prob)`, accrue protection on that interval only, then update `alive &= ~default_in_interval` before the next coupon date.",
+            "Update `alive` before premium accrual. The premium leg should use the fraction of paths still alive through the payment date, not the start-of-interval alive state, so the Monte Carlo leg timing matches the analytical schedule loop in expectation.",
+            "Normalize the running spread immediately with `spread = float(spec.spread)` and `if spread > 1.0: spread *= 1e-4` before any premium-leg accrual.",
+            "After that normalization step, use only the local `spread` variable; do not read raw `spec.spread` again inside the loop.",
+            "Validation contract: semantically equivalent quotes `100` and `0.01` must produce the same CDS PV up to numerical tolerance.",
+        )
+    if (
+        instrument in {"credit_default_swap", "cds"}
+        and pricing_method == "analytical"
+        and stage in {"code_generation_failed", "import_validation_failed", "validation_failed"}
+    ):
+        return (
+            "Single-name CDS analytical pricing should stay on the same explicit schedule convention as the Monte Carlo comparator.",
+            "Normalize the running spread immediately with `spread = float(spec.spread)` and `if spread > 1.0: spread *= 1e-4`, then use only the local `spread` variable.",
+            "Prefer `from trellis.models.credit_default_swap import build_cds_schedule, price_cds_analytical` and delegate to those helpers from the adapter.",
+            "Prefer `build_period_schedule(spec.start_date, spec.end_date, spec.frequency, day_count=spec.day_count, time_origin=spec.start_date)` and iterate over explicit periods instead of rebuilding date lists by hand.",
+            "Use `spec.start_date` as the time origin for `year_fraction(...)` schedule times so the analytical and Monte Carlo legs share the same `t` convention.",
+            "For each payment date, discount both the premium leg and the interval default mass with `market_state.discount.discount(pay_t)`.",
+            "Keep the premium leg to `spread * accrual * df * survival` only. Do not add a separate accrued-on-default premium adjustment such as `0.5 * spread * accrual * df * (prev_survival - survival)`.",
+            "Do not average adjacent discount factors, trapezoid the protection leg, or introduce `0.5 * (prev_discount + discount)`.",
+            "Keep the body as one schedule loop with `premium_leg += ... * df * surv` and `protection_leg += ... * df * max(prev_survival - survival, 0.0)`.",
+            "Return a full Python module with the spec class and payoff class. Do not emit only an `evaluate()` fragment, markdown bullets, or an indented class body snippet.",
+        )
+    if (
+        instrument == "callable_bond"
+        and pricing_method == "rate_tree"
+        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed"}
+    ):
+        return (
+            "Callable rate-tree routes must keep both rate-vol access and schedule-dependent lattice control explicit in the generated body.",
+            "Prefer the checked-in helper surface in `trellis.models.callable_bond_tree`: `price_callable_bond_tree(market_state, spec, model=\"hull_white\"|\"bdt\")` or the lower-level `build_callable_bond_lattice(...)` + `price_callable_bond_on_lattice(...)`.",
+            "Read the short-rate seed from `market_state.discount.zero_rate(...)`; do not call `market_state.zero_rate(...)` or invent a curve accessor on MarketState itself.",
+            "Read the short-rate volatility proxy from `market_state.vol_surface.black_vol(...)` and keep that access visible in `evaluate()`; do not replace it with a hard-coded fallback or hide it behind a stale helper.",
+            "A good shape is `black_vol = float(market_state.vol_surface.black_vol(max(T / 2.0, 1e-6), max(r0, 1e-6)))`, followed by `sigma_hw = black_vol * max(abs(r0), 1e-6)`.",
+            "Do not drop `market_state.vol_surface` access just because the route later converts Black vol into a Hull-White or BDT tree volatility.",
+            "For BDT or explicit Hull-White comparison routes, prefer `price_callable_bond_tree(..., model=\"bdt\"|\"hull_white\")`. If you must build the tree directly, import `build_generic_lattice` from `trellis.models.trees.lattice` and `MODEL_REGISTRY` from `trellis.models.trees.models`, then choose `MODEL_REGISTRY[\"bdt\"]` or `MODEL_REGISTRY[\"hull_white\"]` explicitly.",
+            "If you use the plain Hull-White helper route, call `build_rate_lattice(r0, sigma_hw, mean_reversion, T, n_steps, discount_curve=market_state.discount)` with positional `r0, sigma_hw, mean_reversion, T, n_steps`.",
+            "Treat `trellis.models.trees.control` as the lattice-timeline facade: it exports `build_payment_timeline(...)`, `build_exercise_timeline_from_dates(...)`, `lattice_steps_from_timeline(...)`, and `lattice_step_from_time(...)`.",
+            "Build payment and exercise timelines with that control facade; map the multi-date exercise timeline with `lattice_steps_from_timeline(..., dt=lattice.dt, n_steps=lattice.n_steps)` and map individual coupon/maturity times with `lattice_step_from_time(..., dt=lattice.dt, n_steps=lattice.n_steps, allow_terminal_step=True)`.",
+            "Resolve callable exercise with `exercise_policy = resolve_lattice_exercise_policy(\"issuer_call\", exercise_steps=...)`.",
+            "Call `lattice_backward_induction(lattice, terminal_payoff, exercise_value=..., cashflow_at_node=..., exercise_policy=...)`; do not fall back to legacy names like `terminal_value=` or `exercise_value_fn=`.",
+            "Make `terminal_payoff(step, node, lattice)` return principal plus the final coupon. Do not key maturity cashflows off the node index or collapse terminal value to a coupon-only lookup.",
+            "Coupon cashflows are step-based, not node-based. Build a `coupon_by_step` map from the payment timeline and use `lattice_step_from_time(...)` for any single coupon or maturity event you later index directly.",
+            "Pass `exercise_policy=exercise_policy` into `lattice_backward_induction(...)` instead of open-coding holder-style exercise semantics.",
+            "Keep the callable route thin: explicit coupon cashflows, explicit exercise value, explicit vol-surface access, checked-in lattice control, and no bespoke exercise convention logic.",
+        )
+    if (
+        instrument == "bermudan_swaption"
+        and pricing_method == "rate_tree"
+        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "import_validation_failed"}
+    ):
+        return (
+            "Bermudan swaption rate-tree routes should stay on the checked-in helper surface.",
+            "Prefer `from trellis.models.bermudan_swaption_tree import price_bermudan_swaption_tree` and delegate to that helper from the adapter.",
+            "Keep `market_state.vol_surface.black_vol(...)` visible in `evaluate()` before delegating so the route makes its calibration input explicit.",
+            "Read the short-rate seed from `market_state.discount.zero_rate(...)`; do not invent `market_state.zero_rate(...)` or hide the discount curve behind a stale wrapper.",
+            "Treat `trellis.models.trees.control` as the lattice-timeline facade: use `build_exercise_timeline_from_dates(...)`, `lattice_steps_from_timeline(...)`, and `resolve_lattice_exercise_policy(\"bermudan\", exercise_steps=...)`.",
+            "Do not reuse `price_callable_bond_tree(...)` for Bermudan swaptions. Callable bonds and swaptions are separate helper routes with different exercise payoffs.",
+            "If you must build the tree directly, use `build_generic_lattice(MODEL_REGISTRY[\"hull_white\"|\"bdt\"], r0=..., sigma=..., a=..., T=..., n_steps=..., discount_curve=market_state.discount)` and keep the swaption payoff as a Bermudan option on node-wise swap values.",
+            "Keep the route thin: helper-backed lattice builder, explicit exercise schedule, explicit swaption direction (`is_payer`), and no bespoke analytical fallback inside the rate-tree build.",
+        )
+    if (
+        instrument == "bermudan_swaption"
+        and pricing_method == "analytical"
+        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "import_validation_failed"}
+    ):
+        return (
+            "Bermudan swaption analytical comparators should stay on the checked-in lower-bound helper surface.",
+            "Prefer `from trellis.models.rate_style_swaption import price_bermudan_swaption_black76_lower_bound` and delegate to that helper from the adapter.",
+            "Interpret `black76_european_lower_bound` as the European swaption exercisable only on the final Bermudan date.",
+            "Do not sum one European Black76 price per exercise date, and do not rebuild forward-swap-rate or annuity loops inline when the checked-in helper already owns the route.",
+            "Keep the adapter minimal: validate `market_state.discount` and `market_state.vol_surface`, then call the helper and return `float(...)`.",
+        )
+    if (
+        instrument == "zcb_option"
+        and pricing_method == "rate_tree"
+        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "import_validation_failed"}
+    ):
+        return (
+            "Zero-coupon bond option tree routes should stay on the checked-in helper surface.",
+            "Prefer `from trellis.models.zcb_option_tree import price_zcb_option_tree` and delegate to that helper from the adapter.",
+            "Map `implementation_target=ho_lee_tree` to `model=\"ho_lee\"` and `implementation_target=hull_white_tree` to `model=\"hull_white\"`.",
+            "If you must build the tree directly, use `build_generic_lattice(MODEL_REGISTRY[...], r0=..., sigma=..., a=..., T=..., n_steps=..., discount_curve=market_state.discount)`.",
+            "Do not call `build_rate_lattice(...)` with invented keyword forms such as `market_state=...`, `maturity=...`, or `steps=...`.",
+            "The tree horizon must run to `spec.bond_maturity_date`, not merely to option expiry, because the route needs the bond price at expiry first.",
+        )
+    if (
+        instrument == "zcb_option"
+        and pricing_method == "analytical"
+        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "import_validation_failed"}
+    ):
+        return (
+            "Jamshidian analytical routes should use the checked-in helper instead of rebuilding forward-bond Black76 inline.",
+            "Prefer `from trellis.models.zcb_option import price_zcb_option_jamshidian` and delegate to that helper from the adapter.",
+            "Normalize strike quotes to unit face before the closed-form kernel: treat `63` on `100` face as `0.63`.",
+            "Use `spec.expiry_date` and `spec.bond_maturity_date`, and validate that the bond maturity is strictly after expiry.",
+        )
+    if (
+        instrument == "european_option"
+        and pricing_method == "pde_solver"
+        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "import_validation_failed"}
+    ):
+        return (
+            "Vanilla European PDE routes should stay on the checked-in helper surface whenever the contract is plain call/put Black-Scholes.",
+            "Prefer `from trellis.models.equity_option_pde import price_vanilla_equity_option_pde` and delegate to that helper from the adapter.",
+            "Map `implementation_target=theta_0.5` to `theta=0.5` and `implementation_target=theta_1.0` to `theta=1.0`.",
+            "Do not rebuild terminal intrinsic branches, boundary callables, scalar interpolation, or discount-to-rate glue inline when the checked-in helper already matches the route.",
+            "Use the lower-level `Grid`, `BlackScholesOperator`, and `theta_method_1d` primitives only if the payoff or boundary contract genuinely differs from plain vanilla European call/put.",
+        )
+    if (
+        instrument == "european_option"
+        and pricing_method == "analytical"
+        and comparison_target == "black_scholes"
+        and stage in {"code_generation_failed", "import_validation_failed"}
+    ):
+        return (
+            "This retry is only for the plain Black-Scholes / Black76 comparator lane, not a general analytical decomposition route.",
+            "Keep the module minimal: compute `T`, `df`, `sigma`, and `forward = spec.spot / max(df, 1e-12)`, then call `black76_call` or `black76_put`.",
+            "Do not import or call `terminal_vanilla_from_basis`, `black76_asset_or_nothing_*`, or `black76_cash_or_nothing_*` for this comparator.",
+            "Return a full Python module with the spec class and payoff class. Do not emit only an `evaluate()` fragment, markdown bullets, or an indented class body snippet.",
+        )
+    return ()
+
+
+def _instrument_disambiguation_lines(
+    request: KnowledgeRetrievalRequest,
+) -> tuple[str, ...]:
+    """Return route-family disambiguation notes for ambiguous instrument families."""
+    instrument = (request.instrument_type or "").strip()
+    if not instrument and request.product_ir is not None:
+        instrument = str(getattr(request.product_ir, "instrument", "") or "").strip()
+
+    if instrument in {"credit_default_swap", "cds"}:
+        return (
+            "Treat this request as a single-name CDS / credit_default_swap contract.",
+            "Do not reinterpret CDS here as nth_to_default, basket CDS, first-to-default, or any multi-name credit product.",
+            "Do not import copula or Gaussian-copula machinery unless the request explicitly says nth-to-default, first-to-default, basket CDS, or multiple reference names.",
+        )
+    if instrument == "nth_to_default":
+        return (
+            "Treat this request as nth_to_default / multi-name credit, not a single-name CDS.",
+            "Copula and default-correlation primitives are valid here; single-name CDS shortcuts are not enough.",
+        )
+    return ()
 
 
 def _retrieve_knowledge(

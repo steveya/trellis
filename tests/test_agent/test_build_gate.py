@@ -9,7 +9,7 @@ Covers:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pytest
 
@@ -75,6 +75,17 @@ class _StubGenerationPlan:
     resolved_instructions: _StubResolvedInstructions | None = None
 
 
+def _generation_plan_for_semantic_blueprint(semantic_blueprint):
+    from trellis.agent.codegen_guardrails import build_generation_plan
+
+    return build_generation_plan(
+        pricing_plan=semantic_blueprint.pricing_plan,
+        instrument_type=getattr(semantic_blueprint.product_ir, "instrument", None),
+        inspected_modules=tuple(semantic_blueprint.route_modules),
+        product_ir=semantic_blueprint.product_ir,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pre-flight gate tests
 # ---------------------------------------------------------------------------
@@ -135,6 +146,54 @@ class TestPreFlightGate:
         # 0.55 is NOT < 0.55, so should proceed
         decision = evaluate_pre_flight_gate(gap)
         assert decision.decision == "proceed"
+
+    def test_invalid_semantic_validation_report_blocks(self):
+        from trellis.agent.semantic_contracts import make_vanilla_option_contract
+        from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+        contract = make_vanilla_option_contract(
+            description="European call on AAPL",
+            underliers=("AAPL",),
+            observation_schedule=("2025-11-15",),
+        )
+        contract = replace(
+            contract,
+            product=replace(contract.product, obligations=()),
+        )
+
+        report = validate_semantic_contract(contract)
+        decision = evaluate_pre_flight_gate(report)
+
+        assert decision.decision == "block"
+        assert "semantic contract validation failed" in decision.reason.lower()
+
+    def test_warning_only_semantic_validation_report_proceeds_with_reason(self):
+        from trellis.agent.semantic_contracts import make_vanilla_option_contract
+        from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+        contract = make_vanilla_option_contract(
+            description="European call on AAPL",
+            underliers=("AAPL",),
+            observation_schedule=("2025-11-15",),
+        )
+        contract = replace(
+            contract,
+            product=replace(
+                contract.product,
+                observables=(),
+                implementation_hints=replace(
+                    contract.product.implementation_hints,
+                    primary_schedule_role="",
+                ),
+            ),
+        )
+
+        report = validate_semantic_contract(contract)
+        decision = evaluate_pre_flight_gate(report)
+
+        assert report.ok
+        assert decision.decision == "proceed"
+        assert "warnings" in decision.reason.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +293,66 @@ class TestPreGenerationGate:
         # Blocker check runs first
         assert decision.decision == "block"
 
+    def test_blocks_on_route_admissibility_for_unsupported_output(self):
+        from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+        from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+        blueprint = compile_semantic_contract(
+            make_vanilla_option_contract(
+                description="European call on AAPL",
+                underliers=("AAPL",),
+                observation_schedule=("2025-11-15",),
+            ),
+            requested_outputs=["exercise_boundary"],
+        )
+        plan = _generation_plan_for_semantic_blueprint(blueprint)
+
+        decision = evaluate_pre_generation_gate(
+            _StubGapReport(confidence=0.8),
+            plan,
+            semantic_blueprint=blueprint,
+        )
+
+        assert decision.decision == "block"
+        assert "unsupported_output:exercise_boundary" in decision.route_admissibility_failures
+
+    def test_blocks_on_route_admissibility_for_unsupported_control_style(self):
+        from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+        from trellis.agent.semantic_contracts import make_ranked_observation_basket_contract
+
+        blueprint = compile_semantic_contract(
+            make_ranked_observation_basket_contract(
+                description="Himalaya on AAPL, MSFT",
+                constituents=("AAPL", "MSFT"),
+                observation_schedule=("2025-06-15", "2025-12-15"),
+            )
+        )
+        blueprint = replace(
+            blueprint,
+            contract=replace(
+                blueprint.contract,
+                product=replace(
+                    blueprint.contract.product,
+                    controller_protocol=replace(
+                        blueprint.contract.product.controller_protocol,
+                        controller_style="holder_max",
+                        controller_role="holder",
+                        admissible_actions=("exercise", "continue"),
+                    ),
+                ),
+            ),
+        )
+        plan = _generation_plan_for_semantic_blueprint(blueprint)
+
+        decision = evaluate_pre_generation_gate(
+            _StubGapReport(confidence=0.8),
+            plan,
+            semantic_blueprint=blueprint,
+        )
+
+        assert decision.decision == "block"
+        assert "unsupported_control_style:holder_max" in decision.route_admissibility_failures
+
 
 # ---------------------------------------------------------------------------
 # BuildGateDecision dataclass tests
@@ -249,6 +368,7 @@ class TestBuildGateDecision:
         d = BuildGateDecision(decision="proceed", reason="ok", gap_confidence=0.8)
         assert d.unresolved_conflicts == ()
         assert d.missing_required_inputs == ()
+        assert d.route_admissibility_failures == ()
         assert d.suggested_fallback_route is None
         assert d.gate_source == ""
 

@@ -77,7 +77,12 @@ class TestVanillaOptionPipeline:
 
         assert bp.semantic_id == "vanilla_option"
         assert bp.preferred_method == "analytical"
+        assert bp.requested_outputs == ("vega",)
+        assert bp.valuation_context is not None
+        assert bp.valuation_context.requested_outputs == ("vega",)
         assert "vega" in {m.value for m in bp.requested_measures}
+        assert bp.required_data_spec.required_input_ids == bp.required_market_data
+        assert bp.market_binding_spec.requested_outputs == ("vega",)
         # Blueprint must declare route modules
         assert len(bp.route_modules) > 0
         # Blueprint must list required market data
@@ -176,6 +181,7 @@ class TestBasketPathPayoffPipeline:
 
         assert bp.semantic_id == "ranked_observation_basket"
         assert bp.preferred_method == "monte_carlo"
+        assert bp.requested_outputs == ("price", "delta")
         # MC basket must list correlated_basket_monte_carlo in primitive routes
         assert "correlated_basket_monte_carlo" in bp.primitive_routes
         # Measures present — normalize_requested_measures strips PRICE (sensitivity-only)
@@ -260,6 +266,31 @@ class TestSwaptionPipeline:
         assert bp.preferred_method in bp.candidate_methods
         measure_strs = {m.value for m in bp.requested_measures}
         assert "rho" in measure_strs
+
+
+def test_compiler_accepts_explicit_valuation_context():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_vanilla_option_contract
+    from trellis.agent.valuation_context import build_valuation_context
+
+    contract = make_vanilla_option_contract(
+        description="EUR call on AAPL, K=150, T=1y",
+        underliers=("AAPL",),
+        observation_schedule=("2026-06-20",),
+    )
+    bp = compile_semantic_contract(
+        contract,
+        valuation_context=build_valuation_context(
+            model_spec="local_vol",
+            reporting_currency="USD",
+            requested_outputs=["price", "vega"],
+        ),
+    )
+
+    assert bp.valuation_context.model_spec == "local_vol"
+    assert bp.valuation_context.reporting_policy.reporting_currency == "USD"
+    assert bp.requested_outputs == ("price", "vega")
+    assert {m.value for m in bp.requested_measures} == {"vega"}
 
 
 # ---------------------------------------------------------------------------

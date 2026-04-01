@@ -1,15 +1,15 @@
 Pricing Stack
 =============
 
-This section is the map of the deterministic pricing stack that sits underneath
-``trellis.ask(...)`` and the rest of the public API.
+This page records the deterministic pricing stack that now sits underneath
+``trellis.ask(...)`` and the semantic DSL boundary.
 
 Layering
 --------
 
 .. list-table::
    :header-rows: 1
-   :widths: 20 30 25 25
+   :widths: 20 28 24 28
 
    * - Layer
      - Primary objects
@@ -19,100 +19,121 @@ Layering
      - ``trellis.ask``, ``Session``, ``Pipeline``
      - User-facing entry points for ask, direct pricing, and batch flows
      - ``trellis/__init__.py``, ``trellis/session.py``, ``trellis/pipeline.py``
-   * - Market contract
-     - ``MarketState``, ``MarketSnapshot``, capability checks
-     - Immutable market inputs and data-availability checks
-     - ``trellis/core/market_state.py``, ``trellis/data/schema.py``, ``trellis/core/capabilities.py``
-   * - Payoff contract
-     - ``Payoff``, ``Cashflows``, ``PresentValue``
-     - Common evaluation interface for deterministic engines
-     - ``trellis/core/payoff.py``, ``trellis/engine/payoff_pricer.py``
-   * - Instrument library
-     - Bonds, swaps, caps, callable bonds, FX, credit
-     - Hand-written reference implementations and public product surfaces
-     - ``trellis/instruments/``
+   * - Semantic contract
+     - ``SemanticContract`` and typed product semantics
+     - Contract meaning independent of solver or market snapshot
+     - ``trellis/agent/semantic_contracts.py``
+   * - Valuation context
+     - ``ValuationContext``, ``RequiredDataSpec``, ``MarketBindingSpec``
+     - Market binding, model/measure policy, reporting, and requested outputs
+     - ``trellis/agent/valuation_context.py``, ``trellis/agent/market_binding.py``
+   * - Product summary and routing
+     - ``ProductIR``, ``PricingPlan``, ``RouteSpec``, ``BuildGateDecision``
+     - Checked summary, method choice, typed admissibility, and gatekeeping
+     - ``trellis/agent/semantic_contract_compiler.py``, ``trellis/agent/route_registry.py``, ``trellis/agent/build_gate.py``
+   * - Family lowering
+     - family-specific lowering IRs + DSL lowering
+     - Narrow typed lowering onto checked-in helper-backed routes
+     - ``trellis/agent/family_lowering_ir.py``, ``trellis/agent/dsl_lowering.py``
    * - Numerical engines
-     - Trees, MC, PDE, transforms, copulas, analytical methods
-     - Computational machinery used by hand-written and agent-built payoffs
+     - analytical, lattice, PDE, Monte Carlo, transforms, copulas
+     - Deterministic pricing math used by hand-written and agent-built routes
      - ``trellis/models/``
-   * - Agent interface
-     - Term sheet, quant, planner, builder, critic, validator
-     - Compiles natural-language or build requests into deterministic execution
-     - ``trellis/agent/``
+   * - Market and payoff runtime
+     - ``MarketState``, ``Payoff``, ``PresentValue``
+     - Immutable market inputs and common execution interfaces
+     - ``trellis/core/market_state.py``, ``trellis/core/payoff.py``
 
 Deterministic Flow
 ------------------
 
-The stable pricing path is:
+The current semantic pricing path is:
 
-1. Resolve or construct market data into a ``Session`` or ``MarketState``.
-2. Instantiate a hand-written instrument/payoff or let ``ask()`` parse a term sheet.
-3. Check required capabilities against the market state.
-4. Evaluate through deterministic pricing code.
+1. Normalize a request into a ``SemanticContract``.
+2. Validate typed semantics, including phase order, obligations, and controller semantics.
+3. Build a ``ValuationContext`` and compile ``RequiredDataSpec`` plus ``MarketBindingSpec``.
+4. Build ``ProductIR`` and select a pricing method and candidate route.
+5. Apply typed route admissibility through ``BuildGateDecision``.
+6. Lower onto a family-specific IR and then onto a checked helper or kernel.
+7. Execute the existing deterministic numerical code.
 
-When multiple named curves are present, the compiled ``MarketState`` also
-retains the selected curve names alongside the curve objects. That preserves
-curve provenance for multi-curve routing, trace export, and replay/debugging
-without changing the underlying pricing math.
+The LLM is not in the pricing hot path. It participates in parsing, planning,
+generation, review, and validation around the deterministic library.
 
-The market-data resolver can also assemble named rate-curve sources from
-bootstrap instrument sets before compilation. That keeps the source-selection
-step explicit: a bootstrapped curve is still just a named curve in the
-snapshot, and the runtime state records which curve name was chosen.
+Shipped Lowering Boundary
+-------------------------
 
-The LLM is not in the pricing hot path. It participates only in parsing,
-routing, code generation, review, and model validation around the deterministic
-library.
+The current compiler boundary is:
 
-Method Families
----------------
+.. code-block:: text
 
-Trellis groups computational methods by directory and by the agent method labels
-it uses during routing and code generation:
+   SemanticContract
+     + ValuationContext
+     -> ProductIR
+     -> family lowering IR
+     -> helper-backed numerical route
 
-- ``analytical`` for closed-form or direct cashflow-style valuation
-- ``rate_tree`` and related lattice routines for callable or early-exercise rate products
-- ``monte_carlo`` for path-dependent or simulation-heavy products
-- ``pde_solver`` for finite-difference grids and operator-based valuation
-- ``fft_pricing`` and transform methods for characteristic-function pricing
-- ``copula`` for portfolio credit and tranche/default aggregation
-- ``calibration`` for implied-parameter solves such as cap/floor and swaption Black-vol fits
-- calibration and cashflow-engine utilities for supporting model inputs and structured cashflows
+The shipped family IRs are:
 
-The detailed formulas and implementation notes live in the mathematical reference
-pages linked from :doc:`index`.
+- ``AnalyticalBlack76IR``
+- ``VanillaEquityPDEIR``
+- ``ExerciseLatticeIR``
+- ``CorrelatedBasketMonteCarloIR``
 
-Analytical routes follow a resolver → support-helper → raw-kernel →
-thin-adapter pattern. The reusable helper surface lives under
-``trellis.models.analytical.support``, while the public analytical modules keep
-the float-returning adapter boundary explicit. See
-:doc:`analytical_route_cookbook` for the step-by-step pattern and shared helper
-reference, and :doc:`basis_claim_patterns` for the extraction policy that
-governs when route-local code is promoted to the support layer.
+This is intentionally not a flat universal IR. The current stack uses
+``ProductIR`` as the shared checked summary and then narrows into family IRs
+for the proven route families.
 
-Agent Boundary
---------------
-
-The agent system reuses this stack rather than replacing it.
-
-- The quant agent selects a method and data requirements: :doc:`../agent/quant_agent`
-- The builder agent writes an ``evaluate()`` body around deterministic interfaces: :doc:`../agent/builder_agent`
-- The critic, arbiter, and model validator test the generated artifact before use: :doc:`../agent/critic_agent`
-
-Analytical trace export
+Current Proven Families
 -----------------------
 
-When the agent build loop assembles an analytical route, Trellis now persists both a machine-readable JSON trace and a Markdown rendering derived from the same trace object. The trace is emitted before cached or reused route short-circuits, so the task result and task-run records keep the trace paths even when the builder does not regenerate the route body. Downstream tools can inspect the build steps, validation outcomes, reuse decisions, and resolved curve provenance without re-running the build.
+The end-to-end typed boundary is currently proven for:
 
-That design matters for quant work: if a method family or market-data contract is
-wrong in the deterministic library, the agent will reproduce that mistake.
+- ``analytical_black76`` on vanilla options
+- ``vanilla_equity_theta_pde`` on vanilla options
+- ``exercise_lattice`` on callable bonds and Bermudan swaptions
+- ``correlated_basket_monte_carlo`` on ranked-observation baskets
 
-Related Reading
+These route IDs and helper-backed numerical kernels are preserved. The new work
+changes validation, binding, admissibility, and lowering, not the pricing math.
+
+Warning And Error Policy
+------------------------
+
+The current stack distinguishes three classes of outcomes:
+
+- semantic validation errors
+- route admissibility failures
+- successful compilation with warnings
+
+Warnings are used when legacy semantic mirrors are normalized or ignored for
+migrated route families. Errors are used for invalid typed semantics, missing
+required bindings, unsupported outputs, unsupported control styles, or
+unsupported state tags.
+
+Authority Rules
 ---------------
 
-- :doc:`analytical_route_cookbook`
-- :doc:`basis_claim_patterns`
-- :doc:`differentiable_pricing`
-- :doc:`extending_trellis`
-- :doc:`knowledge_maintenance`
-- :doc:`../developer/overview`
+For the migrated families listed above:
+
+- typed ``SemanticTimeline`` and ``ObligationSpec`` are authoritative for settlement semantics
+- typed ``EventMachine`` is authoritative for automatic event semantics
+- ``requested_outputs`` is the canonical output field
+- ``requested_measures`` is a shim surface only
+
+Legacy fields such as ``settlement_rule`` and ``event_transitions`` remain on
+the semantic contract for non-migrated code paths, tracing, and compatibility,
+but they are mirrors rather than the truth source for migrated routes.
+
+Deferred Scope
+--------------
+
+The current stack does not yet include:
+
+- a full desk-task DSL
+- ordered sequential multi-controller protocols
+- nonlinear funding or XVA semantics inside ``ValuationContext``
+- a universal IR covering every solver family
+
+Those remain future extensions after the typed semantic boundary is stable
+across more route families.

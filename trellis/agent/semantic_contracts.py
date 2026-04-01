@@ -43,6 +43,112 @@ def _string_list(values) -> list[str]:
     return [str(value).strip() for value in _tuple(values)]
 
 
+DEFAULT_PHASE_ORDER = (
+    "event",
+    "observation",
+    "decision",
+    "determination",
+    "settlement",
+    "state_update",
+)
+
+
+@dataclass(frozen=True)
+class ConventionEnv:
+    """Compact contract-convention environment for semantic contracts."""
+
+    calendar: str = ""
+    business_day_convention: str = ""
+    day_count_convention: str = ""
+    settlement_lag: str = ""
+    payment_currency: str = ""
+    reporting_currency: str = ""
+    tags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class SemanticTimeline:
+    """Phase-aware contract timeline keyed by role-specific date sets."""
+
+    phase_order: tuple[str, ...] = DEFAULT_PHASE_ORDER
+    anchor_dates: tuple[str, ...] = ()
+    event_dates: tuple[str, ...] = ()
+    observation_dates: tuple[str, ...] = ()
+    decision_dates: tuple[str, ...] = ()
+    determination_dates: tuple[str, ...] = ()
+    settlement_dates: tuple[str, ...] = ()
+    state_update_dates: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ObservableSpec:
+    """One typed observable consumed by contract semantics."""
+
+    observable_id: str
+    observable_type: str
+    description: str = ""
+    source: str = ""
+    schedule_role: str = ""
+    availability_phase: str = "observation"
+    dependencies: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class StateField:
+    """One semantic state component, tagged as event state or contract memory."""
+
+    field_name: str
+    kind: str = "contract_memory"
+    description: str = ""
+    source_observables: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ObligationSpec:
+    """One emitted settlement obligation from the semantic contract."""
+
+    obligation_id: str
+    settle_date_rule: str
+    amount_expression: str
+    currency: str = ""
+    settlement_kind: str = "cash"
+    trigger: str = ""
+    provenance: str = ""
+
+
+@dataclass(frozen=True)
+class ControllerProtocol:
+    """Tranche-1 controller protocol for strategic rights."""
+
+    controller_style: str = "identity"
+    controller_role: str = "none"
+    decision_phase: str = "decision"
+    schedule_role: str = ""
+    admissible_actions: tuple[str, ...] = ()
+    description: str = ""
+
+
+@dataclass(frozen=True)
+class SemanticAuditInfo:
+    """Minimal audit and provenance metadata for one semantic slice."""
+
+    semantic_origin: str = ""
+    provenance: tuple[str, ...] = ()
+    notes: tuple[str, ...] = ()
+    legacy_mirrors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ImplementationHints:
+    """Implementation-facing hints that do not change contract meaning."""
+
+    preserve_route_behavior: bool = True
+    event_machine_source: str = ""
+    primary_schedule_role: str = ""
+    notes: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class SemanticMarketInputSpec:
     """One named market input in a semantic contract."""
@@ -87,10 +193,18 @@ class SemanticProductSemantics:
     payoff_family: str
 
     # --- Underlier & Payoff ---
+    conventions: ConventionEnv = field(default_factory=ConventionEnv)
+    timeline: SemanticTimeline = field(default_factory=SemanticTimeline)
     underlier_structure: str = ""
     payoff_rule: str = ""
     settlement_rule: str = ""
     payoff_traits: tuple[str, ...] = ()
+    observables: tuple[ObservableSpec, ...] = ()
+    state_fields: tuple[StateField, ...] = ()
+    obligations: tuple[ObligationSpec, ...] = ()
+    controller_protocol: ControllerProtocol = field(default_factory=ControllerProtocol)
+    audit_info: SemanticAuditInfo = field(default_factory=SemanticAuditInfo)
+    implementation_hints: ImplementationHints = field(default_factory=ImplementationHints)
 
     # --- Exercise & Path ---
     exercise_style: str = "none"
@@ -114,6 +228,7 @@ class SemanticProductSemantics:
     constituents: tuple[str, ...] = ()
     state_variables: tuple[str, ...] = ()
     event_transitions: tuple[str, ...] = ()
+    event_machine: object | None = None  # EventMachine when typed
 
     def to_compact_dict(self) -> dict:
         """Return a dict with only non-default, non-empty fields."""
@@ -177,6 +292,7 @@ class SemanticContract:
     validation: SemanticValidationContract
     blueprint: SemanticBlueprintHints
     description: str = ""
+    calibration: object | None = None  # CalibrationContract when typed
 
     @property
     def semantic_id(self) -> str:
@@ -200,6 +316,7 @@ def parse_semantic_contract(spec: SemanticContract | dict[str, Any] | str) -> Se
         validation=_parse_validation_contract(payload.get("validation", {})),
         blueprint=_parse_blueprint_hints(payload.get("blueprint", {})),
         description=str(payload.get("description", "")).strip(),
+        calibration=payload.get("calibration"),
     )
 
 
@@ -229,6 +346,46 @@ def semantic_contract_summary(contract: SemanticContract | dict[str, Any] | str)
             "lock_rule": parsed.product.lock_rule,
             "aggregation_rule": parsed.product.aggregation_rule,
             "multi_asset": parsed.product.multi_asset,
+        },
+        "typed_semantics": {
+            "phase_order": list(parsed.product.timeline.phase_order),
+            "observables": [
+                {
+                    "observable_id": item.observable_id,
+                    "observable_type": item.observable_type,
+                    "availability_phase": item.availability_phase,
+                    "schedule_role": item.schedule_role,
+                }
+                for item in parsed.product.observables
+            ],
+            "state_fields": [
+                {
+                    "field_name": item.field_name,
+                    "kind": item.kind,
+                    "tags": list(item.tags),
+                }
+                for item in parsed.product.state_fields
+            ],
+            "obligations": [
+                {
+                    "obligation_id": item.obligation_id,
+                    "settle_date_rule": item.settle_date_rule,
+                    "settlement_kind": item.settlement_kind,
+                }
+                for item in parsed.product.obligations
+            ],
+            "controller_protocol": {
+                "controller_style": parsed.product.controller_protocol.controller_style,
+                "controller_role": parsed.product.controller_protocol.controller_role,
+                "decision_phase": parsed.product.controller_protocol.decision_phase,
+                "schedule_role": parsed.product.controller_protocol.schedule_role,
+            },
+            "implementation_hints": {
+                "preserve_route_behavior": parsed.product.implementation_hints.preserve_route_behavior,
+                "event_machine_source": parsed.product.implementation_hints.event_machine_source,
+                "primary_schedule_role": parsed.product.implementation_hints.primary_schedule_role,
+            },
+            "event_machine_present": parsed.product.event_machine is not None,
         },
         "market_data": {
             "required_inputs": [item.input_id for item in parsed.market_data.required_inputs],
@@ -267,6 +424,11 @@ def make_ranked_observation_basket_contract(
         instrument_class="basket_path_payoff",
         instrument_aliases=("ranked_observation_basket", "ranked_selection_basket", "basket_path_payoff"),
         payoff_family="basket_path_payoff",
+        timeline=_default_semantic_timeline(
+            schedule,
+            settlement_dates=schedule[-1:],
+            state_update_dates=schedule,
+        ),
         underlier_structure="multi_asset_basket",
         payoff_rule="ranked_observation_path_payoff",
         settlement_rule="settle_once_at_maturity",
@@ -276,6 +438,64 @@ def make_ranked_observation_basket_contract(
             "remove_selected",
             "locked_returns",
             "maturity_settlement",
+        ),
+        observables=(
+            ObservableSpec(
+                observable_id="constituent_spots",
+                observable_type="spot_vector",
+                description="Observed constituent spots at each ranked observation date.",
+                source="underlier_spots",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+            ObservableSpec(
+                observable_id="ranked_constituent_return",
+                observable_type="simple_return",
+                description="Derived simple return used for ranked constituent selection.",
+                source="derived_from_constituent_spots",
+                schedule_role="determination_dates",
+                availability_phase="determination",
+                dependencies=("constituent_spots",),
+            ),
+        ),
+        state_fields=(
+            StateField(
+                field_name="remaining_constituents",
+                kind="contract_memory",
+                description="Constituents that remain eligible for future observation dates.",
+                source_observables=("ranked_constituent_return",),
+                tags=("pathwise_only", "remaining_pool"),
+            ),
+            StateField(
+                field_name="locked_returns",
+                kind="contract_memory",
+                description="Returns locked at prior ranked observations.",
+                source_observables=("ranked_constituent_return",),
+                tags=("pathwise_only", "locked_cashflow_state"),
+            ),
+        ),
+        obligations=(
+            ObligationSpec(
+                obligation_id="maturity_cash_settlement",
+                settle_date_rule="settle_once_at_maturity",
+                amount_expression="average_locked_returns",
+                settlement_kind="cash",
+                trigger="all_observations_complete",
+                provenance="semantic_contract",
+            ),
+        ),
+        controller_protocol=ControllerProtocol(
+            controller_style="identity",
+            controller_role="none",
+            decision_phase="decision",
+            schedule_role="",
+            admissible_actions=(),
+            description="Automatic ranked-selection transitions only; no strategic controller.",
+        ),
+        audit_info=_default_audit_info(),
+        implementation_hints=_default_implementation_hints(
+            event_machine_source="derived_from_event_transitions",
+            primary_schedule_role="observation_dates",
         ),
         exercise_style="none",
         path_dependence="path_dependent",
@@ -298,6 +518,15 @@ def make_ranked_observation_basket_contract(
             "remove_selected_constituent",
             "lock_simple_return",
             "settle_at_maturity",
+        ),
+        event_machine=_derive_event_machine(
+            (
+                "rank_remaining_constituents",
+                "remove_selected_constituent",
+                "lock_simple_return",
+                "settle_at_maturity",
+            ),
+            state_dependence="path_dependent",
         ),
     )
 
@@ -522,6 +751,7 @@ def _semantic_contract_from_sections(
     blocked_by: tuple[str, ...] | list[str] = (),
     spec_schema_hints: tuple[str, ...] | list[str] = (),
     description: str = "",
+    calibration: object | None = None,
 ) -> SemanticContract:
     """Assemble one typed semantic contract from section-level inputs."""
     return SemanticContract(
@@ -554,6 +784,7 @@ def _semantic_contract_from_sections(
             spec_schema_hints=spec_schema_hints,
         ),
         description=description,
+        calibration=calibration,
     )
 
 
@@ -647,10 +878,57 @@ def make_vanilla_option_contract(
         instrument_class="european_option",
         instrument_aliases=("vanilla_option", "european_option", "option"),
         payoff_family="vanilla_option",
+        timeline=_default_semantic_timeline(
+            schedule,
+            includes_decision=True,
+            settlement_dates=schedule,
+        ),
         underlier_structure="single_underlier",
         payoff_rule="vanilla_option_payoff",
         settlement_rule="cash_settle_at_expiry",
         payoff_traits=("discounting", "vol_surface_dependence"),
+        observables=(
+            ObservableSpec(
+                observable_id="terminal_underlier_spot",
+                observable_type="spot",
+                description="Observed underlier spot at option expiry.",
+                source="underlier_spot",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+        ),
+        state_fields=(
+            StateField(
+                field_name="underlier_price",
+                kind="event_state",
+                description="Observed terminal underlier price used for payoff determination.",
+                source_observables=("terminal_underlier_spot",),
+                tags=("terminal_markov", "recombining_safe"),
+            ),
+        ),
+        obligations=(
+            ObligationSpec(
+                obligation_id="expiry_cash_settlement",
+                settle_date_rule="cash_settle_at_expiry",
+                amount_expression="vanilla_option_payoff",
+                settlement_kind="cash",
+                trigger="exercise_if_optimal_at_expiry",
+                provenance="semantic_contract",
+            ),
+        ),
+        controller_protocol=ControllerProtocol(
+            controller_style="holder_max",
+            controller_role="holder",
+            decision_phase="decision",
+            schedule_role="decision_dates",
+            admissible_actions=("exercise", "continue"),
+            description="Holder exercise decision at expiry.",
+        ),
+        audit_info=_default_audit_info(),
+        implementation_hints=_default_implementation_hints(
+            event_machine_source="derived_from_event_transitions",
+            primary_schedule_role="decision_dates",
+        ),
         exercise_style="european",
         path_dependence="terminal_markov",
         schedule_dependence=False,
@@ -668,6 +946,10 @@ def make_vanilla_option_contract(
         constituents=underlier_names,
         state_variables=("underlier_price",),
         event_transitions=("evaluate_terminal_payoff", "settle_at_expiry"),
+        event_machine=_derive_event_machine(
+            ("evaluate_terminal_payoff", "settle_at_expiry"),
+            state_dependence="terminal_markov",
+        ),
     )
 
     required_inputs = (
@@ -751,10 +1033,72 @@ def make_quanto_option_contract(
         instrument_class="quanto_option",
         instrument_aliases=("quanto_option", "quanto", "fx_option"),
         payoff_family="vanilla_option",
+        timeline=_default_semantic_timeline(
+            schedule,
+            includes_decision=True,
+            settlement_dates=schedule,
+        ),
         underlier_structure="cross_currency_single_underlier",
         payoff_rule="quanto_adjusted_vanilla_payoff",
         settlement_rule="cash_settle_at_expiry_after_fx_conversion",
         payoff_traits=("discounting", "vol_surface_dependence", "fx_translation"),
+        observables=(
+            ObservableSpec(
+                observable_id="terminal_underlier_spot",
+                observable_type="spot",
+                description="Observed underlier spot at expiry.",
+                source="underlier_spot",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+            ObservableSpec(
+                observable_id="expiry_fx_rate",
+                observable_type="fx_rate",
+                description="Observed FX rate used for payout conversion at expiry.",
+                source="fx_rates",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+        ),
+        state_fields=(
+            StateField(
+                field_name="underlier_price",
+                kind="event_state",
+                description="Observed terminal underlier price.",
+                source_observables=("terminal_underlier_spot",),
+                tags=("terminal_markov", "recombining_safe"),
+            ),
+            StateField(
+                field_name="fx_rate",
+                kind="event_state",
+                description="Observed FX rate applied at settlement conversion.",
+                source_observables=("expiry_fx_rate",),
+                tags=("terminal_markov", "recombining_safe"),
+            ),
+        ),
+        obligations=(
+            ObligationSpec(
+                obligation_id="expiry_quanto_cash_settlement",
+                settle_date_rule="cash_settle_at_expiry_after_fx_conversion",
+                amount_expression="quanto_adjusted_vanilla_payoff",
+                settlement_kind="cash",
+                trigger="exercise_if_optimal_at_expiry",
+                provenance="semantic_contract",
+            ),
+        ),
+        controller_protocol=ControllerProtocol(
+            controller_style="holder_max",
+            controller_role="holder",
+            decision_phase="decision",
+            schedule_role="decision_dates",
+            admissible_actions=("exercise", "continue"),
+            description="Holder exercise decision at expiry after FX translation is known.",
+        ),
+        audit_info=_default_audit_info(),
+        implementation_hints=_default_implementation_hints(
+            event_machine_source="derived_from_event_transitions",
+            primary_schedule_role="decision_dates",
+        ),
         exercise_style="european",
         path_dependence="terminal_markov",
         schedule_dependence=False,
@@ -772,6 +1116,10 @@ def make_quanto_option_contract(
         constituents=underlier_names,
         state_variables=("underlier_price", "fx_rate"),
         event_transitions=("translate_payoff_through_fx", "settle_at_expiry"),
+        event_machine=_derive_event_machine(
+            ("translate_payoff_through_fx", "settle_at_expiry"),
+            state_dependence="terminal_markov",
+        ),
     )
 
     required_inputs = (
@@ -889,10 +1237,73 @@ def make_callable_bond_contract(
         instrument_class="callable_bond",
         instrument_aliases=("callable_bond", "callable_debt", "issuer_call_bond"),
         payoff_family="callable_fixed_income",
+        timeline=_default_semantic_timeline(
+            schedule,
+            includes_decision=True,
+            settlement_dates=schedule,
+            state_update_dates=schedule,
+        ),
         underlier_structure="single_issuer_bond",
         payoff_rule="issuer_call_contingent_cashflow",
         settlement_rule="settle_on_call_or_maturity",
         payoff_traits=("callable", "fixed_coupons", "mean_reversion"),
+        observables=(
+            ObservableSpec(
+                observable_id="rate_tree_state",
+                observable_type="discount_curve",
+                description="Rate-state observation driving callable bond continuation values.",
+                source="discount_curve",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+            ObservableSpec(
+                observable_id="coupon_cashflow_schedule",
+                observable_type="cashflow_schedule",
+                description="Coupon dates and fixed cashflow amounts available on the bond schedule.",
+                source="contract_terms",
+                schedule_role="determination_dates",
+                availability_phase="determination",
+            ),
+        ),
+        state_fields=(
+            StateField(
+                field_name="call_schedule",
+                kind="contract_memory",
+                description="Issuer call schedule used for backward induction.",
+                source_observables=(),
+                tags=("schedule_state", "recombining_safe"),
+            ),
+            StateField(
+                field_name="coupon_schedule",
+                kind="contract_memory",
+                description="Coupon schedule carried into exercise and settlement evaluation.",
+                source_observables=("coupon_cashflow_schedule",),
+                tags=("schedule_state", "recombining_safe"),
+            ),
+        ),
+        obligations=(
+            ObligationSpec(
+                obligation_id="call_or_maturity_settlement",
+                settle_date_rule="settle_on_call_or_maturity",
+                amount_expression="issuer_call_contingent_cashflow",
+                settlement_kind="cash",
+                trigger="issuer_call_or_bond_maturity",
+                provenance="semantic_contract",
+            ),
+        ),
+        controller_protocol=ControllerProtocol(
+            controller_style="issuer_min",
+            controller_role="issuer",
+            decision_phase="decision",
+            schedule_role="decision_dates",
+            admissible_actions=("call", "continue"),
+            description="Issuer call decision on scheduled call dates.",
+        ),
+        audit_info=_default_audit_info(),
+        implementation_hints=_default_implementation_hints(
+            event_machine_source="derived_from_event_transitions",
+            primary_schedule_role="decision_dates",
+        ),
         exercise_style="issuer_call",
         path_dependence="schedule_dependent",
         schedule_dependence=True,
@@ -910,6 +1321,10 @@ def make_callable_bond_contract(
         constituents=(),
         state_variables=("call_schedule", "coupon_schedule"),
         event_transitions=("evaluate_call_decision", "backward_induction", "settle_on_call_or_maturity"),
+        event_machine=_derive_event_machine(
+            ("evaluate_call_decision", "backward_induction", "settle_on_call_or_maturity"),
+            state_dependence="schedule_dependent",
+        ),
     )
 
     required_inputs = (
@@ -930,6 +1345,14 @@ def make_callable_bond_contract(
             allowed_provenance=("observed",),
         ),
     )
+    # Attach Hull-White calibration contract if available
+    _calibration = None
+    try:
+        from trellis.agent.calibration_contract import hull_white_calibration_contract
+        _calibration = hull_white_calibration_contract(fitting="swaption")
+    except Exception:
+        pass
+
     return _semantic_contract_from_sections(
         product=product,
         required_inputs=required_inputs,
@@ -961,6 +1384,7 @@ def make_callable_bond_contract(
         ),
         spec_schema_hints=("callable_bond",),
         description=description,
+        calibration=_calibration,
     )
 
 
@@ -969,11 +1393,26 @@ def make_rate_style_swaption_contract(
     description: str,
     observation_schedule: tuple[str, ...] | list[str],
     preferred_method: str = "analytical",
+    exercise_style: str = "european",
 ) -> SemanticContract:
     """Construct a generic rate-style swaption semantic contract."""
     schedule = _normalize_schedule(observation_schedule)
     if not schedule:
         raise ValueError("Rate-style swaption contract requires an exercise schedule.")
+    normalized_method = normalize_method(preferred_method)
+    normalized_exercise = str(exercise_style).strip().lower()
+    if normalized_exercise not in {"european", "bermudan"}:
+        raise ValueError("Rate-style swaption contract only supports european or bermudan exercise.")
+    if normalized_exercise == "european":
+        target_modules = ("trellis.models.black",)
+        primitive_families = ("analytical_black76",)
+    elif normalized_method == "analytical":
+        target_modules = ("trellis.models.rate_style_swaption",)
+        primitive_families = ("analytical_black76",)
+    else:
+        target_modules = ("trellis.models.trees.lattice",)
+        primitive_families = ("exercise_lattice",)
+    spec_schema_hints = ("swaption",) if normalized_exercise == "european" else ("bermudan_swaption",)
 
     product = SemanticProductSemantics(
         semantic_id="rate_style_swaption",
@@ -981,11 +1420,74 @@ def make_rate_style_swaption_contract(
         instrument_class="swaption",
         instrument_aliases=("swaption", "rate_style_swaption", "bermudan_swaption"),
         payoff_family="swaption",
+        timeline=_default_semantic_timeline(
+            schedule,
+            includes_decision=True,
+            settlement_dates=schedule,
+            state_update_dates=schedule,
+        ),
         underlier_structure="single_curve_rate_style",
         payoff_rule="swaption_exercise_payoff",
         settlement_rule="cash_settle_at_exercise",
         payoff_traits=("floating_coupons", "vol_surface_dependence"),
-        exercise_style="european",
+        observables=(
+            ObservableSpec(
+                observable_id="forward_swap_rate",
+                observable_type="forward_rate",
+                description="Observed or implied forward/par swap rate at exercise.",
+                source="forward_curve",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+            ObservableSpec(
+                observable_id="discount_curve_state",
+                observable_type="discount_curve",
+                description="Discount curve state used to settle the exercised swaption.",
+                source="discount_curve",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+        ),
+        state_fields=(
+            StateField(
+                field_name="exercise_date",
+                kind="contract_memory",
+                description="Exercise date carried through schedule-dependent swaption semantics.",
+                source_observables=(),
+                tags=("schedule_state", "recombining_safe"),
+            ),
+            StateField(
+                field_name="swap_rate",
+                kind="event_state",
+                description="Observed swap rate used for exercise payoff evaluation.",
+                source_observables=("forward_swap_rate",),
+                tags=("schedule_state", "recombining_safe"),
+            ),
+        ),
+        obligations=(
+            ObligationSpec(
+                obligation_id="exercise_cash_settlement",
+                settle_date_rule="cash_settle_at_exercise",
+                amount_expression="swaption_exercise_payoff",
+                settlement_kind="cash",
+                trigger="holder_exercises_swaption",
+                provenance="semantic_contract",
+            ),
+        ),
+        controller_protocol=ControllerProtocol(
+            controller_style="holder_max",
+            controller_role="holder",
+            decision_phase="decision",
+            schedule_role="decision_dates",
+            admissible_actions=("exercise", "continue"),
+            description="Holder exercise decision on the swaption exercise schedule.",
+        ),
+        audit_info=_default_audit_info(),
+        implementation_hints=_default_implementation_hints(
+            event_machine_source="derived_from_event_transitions",
+            primary_schedule_role="decision_dates",
+        ),
+        exercise_style=normalized_exercise,
         path_dependence="schedule_dependent",
         schedule_dependence=True,
         state_dependence="schedule_dependent",
@@ -1002,6 +1504,10 @@ def make_rate_style_swaption_contract(
         constituents=(),
         state_variables=("exercise_date", "swap_rate"),
         event_transitions=("price_swaption_at_exercise", "settle_at_exercise"),
+        event_machine=_derive_event_machine(
+            ("price_swaption_at_exercise", "settle_at_exercise"),
+            state_dependence="schedule_dependent",
+        ),
     )
 
     required_inputs = (
@@ -1048,8 +1554,8 @@ def make_rate_style_swaption_contract(
         ),
         comparison_targets=(normalize_method(preferred_method),),
         reduction_cases=("single_curve_rate_style_swaption",),
-        target_modules=("trellis.models.black",),
-        primitive_families=("analytical_black76",),
+        target_modules=target_modules,
+        primitive_families=primitive_families,
         adapter_obligations=(
             "resolve_forward_and_discount_curves",
             "derive_swaption_exercise_schedule",
@@ -1060,7 +1566,7 @@ def make_rate_style_swaption_contract(
             "validate_rate_style_swaption_contract",
             "emit_bounded_semantic_blueprint",
         ),
-        spec_schema_hints=("swaption",),
+        spec_schema_hints=spec_schema_hints,
         description=description,
     )
 
@@ -1125,23 +1631,47 @@ def _parse_product_semantics(
         return payload
     semantic_id = str(payload["semantic_id"]).strip()
     instrument_class = str(payload.get("instrument_class", semantic_id)).strip()
+    event_transitions = _tuple(payload.get("event_transitions", ()))
+    state_dependence = str(payload.get("state_dependence", "terminal_markov")).strip()
+    observation_schedule = _tuple(payload.get("observation_schedule", ()))
     return SemanticProductSemantics(
         semantic_id=semantic_id,
         semantic_version=str(payload.get("semantic_version", "c2.0")).strip(),
         instrument_class=instrument_class,
         instrument_aliases=_tuple(payload.get("instrument_aliases", ())),
         payoff_family=str(payload["payoff_family"]).strip(),
+        conventions=_parse_convention_env(payload.get("conventions", {})),
+        timeline=_parse_semantic_timeline(
+            payload.get("timeline", {}),
+            fallback_schedule=observation_schedule,
+            includes_decision=str(payload.get("exercise_style", "none")).strip() != "none",
+        ),
         underlier_structure=str(payload.get("underlier_structure", "")).strip(),
         payoff_rule=str(payload.get("payoff_rule", "")).strip(),
         settlement_rule=str(payload.get("settlement_rule", "")).strip(),
         payoff_traits=_tuple(payload.get("payoff_traits", ())),
+        observables=tuple(
+            _parse_observable_spec(item)
+            for item in payload.get("observables", ())
+        ),
+        state_fields=tuple(
+            _parse_state_field(item)
+            for item in payload.get("state_fields", ())
+        ) or _legacy_state_fields(payload.get("state_variables", ())),
+        obligations=tuple(
+            _parse_obligation_spec(item)
+            for item in payload.get("obligations", ())
+        ),
+        controller_protocol=_parse_controller_protocol(payload.get("controller_protocol", {})),
+        audit_info=_parse_audit_info(payload.get("audit_info", {})),
+        implementation_hints=_parse_implementation_hints(payload.get("implementation_hints", {})),
         exercise_style=str(payload.get("exercise_style", "none")).strip(),
         path_dependence=str(payload.get("path_dependence", "terminal_markov")).strip(),
         schedule_dependence=bool(payload.get("schedule_dependence", False)),
-        state_dependence=str(payload.get("state_dependence", "terminal_markov")).strip(),
+        state_dependence=state_dependence,
         model_family=str(payload.get("model_family", "generic")).strip(),
         multi_asset=bool(payload.get("multi_asset", False)),
-        observation_schedule=_tuple(payload.get("observation_schedule", ())),
+        observation_schedule=observation_schedule,
         observation_basis=str(payload.get("observation_basis", "")).strip(),
         selection_operator=str(payload.get("selection_operator", "")).strip(),
         selection_scope=str(payload.get("selection_scope", "")).strip(),
@@ -1151,7 +1681,12 @@ def _parse_product_semantics(
         maturity_settlement_rule=str(payload.get("maturity_settlement_rule", "")).strip(),
         constituents=_tuple(payload.get("constituents", ())),
         state_variables=_tuple(payload.get("state_variables", ())),
-        event_transitions=_tuple(payload.get("event_transitions", ())),
+        event_transitions=event_transitions,
+        event_machine=_derive_event_machine(
+            event_transitions,
+            state_dependence=state_dependence,
+            explicit_machine=payload.get("event_machine"),
+        ),
     )
 
 
@@ -1235,6 +1770,138 @@ def _parse_blueprint_hints(
     )
 
 
+def _parse_convention_env(payload: ConventionEnv | dict[str, Any] | None) -> ConventionEnv:
+    """Normalize the compact convention environment."""
+    if isinstance(payload, ConventionEnv):
+        return payload
+    payload = dict(payload or {})
+    return ConventionEnv(
+        calendar=str(payload.get("calendar", "")).strip(),
+        business_day_convention=str(payload.get("business_day_convention", "")).strip(),
+        day_count_convention=str(payload.get("day_count_convention", "")).strip(),
+        settlement_lag=str(payload.get("settlement_lag", "")).strip(),
+        payment_currency=str(payload.get("payment_currency", "")).strip(),
+        reporting_currency=str(payload.get("reporting_currency", "")).strip(),
+        tags=_tuple(payload.get("tags", ())),
+    )
+
+
+def _parse_semantic_timeline(
+    payload: SemanticTimeline | dict[str, Any] | None,
+    *,
+    fallback_schedule: tuple[str, ...] = (),
+    includes_decision: bool = False,
+) -> SemanticTimeline:
+    """Normalize phase-aware timeline metadata."""
+    if isinstance(payload, SemanticTimeline):
+        return payload
+    payload = dict(payload or {})
+    if not payload:
+        return _default_semantic_timeline(
+            fallback_schedule,
+            includes_decision=includes_decision,
+            settlement_dates=fallback_schedule[-1:] if fallback_schedule else (),
+        )
+    return SemanticTimeline(
+        phase_order=_normalize_phase_order(payload.get("phase_order", DEFAULT_PHASE_ORDER)),
+        anchor_dates=_normalize_schedule(payload.get("anchor_dates", fallback_schedule)),
+        event_dates=_normalize_schedule(payload.get("event_dates", fallback_schedule)),
+        observation_dates=_normalize_schedule(payload.get("observation_dates", fallback_schedule)),
+        decision_dates=_normalize_schedule(payload.get("decision_dates", fallback_schedule if includes_decision else ())),
+        determination_dates=_normalize_schedule(payload.get("determination_dates", fallback_schedule)),
+        settlement_dates=_normalize_schedule(payload.get("settlement_dates", fallback_schedule[-1:] if fallback_schedule else ())),
+        state_update_dates=_normalize_schedule(payload.get("state_update_dates", fallback_schedule)),
+    )
+
+
+def _parse_observable_spec(payload: ObservableSpec | dict[str, Any]) -> ObservableSpec:
+    """Normalize one observable spec."""
+    if isinstance(payload, ObservableSpec):
+        return payload
+    return ObservableSpec(
+        observable_id=str(payload["observable_id"]).strip(),
+        observable_type=str(payload["observable_type"]).strip(),
+        description=str(payload.get("description", "")).strip(),
+        source=str(payload.get("source", "")).strip(),
+        schedule_role=str(payload.get("schedule_role", "")).strip(),
+        availability_phase=str(payload.get("availability_phase", "observation")).strip().lower(),
+        dependencies=_tuple(payload.get("dependencies", ())),
+    )
+
+
+def _parse_state_field(payload: StateField | dict[str, Any]) -> StateField:
+    """Normalize one state-field record."""
+    if isinstance(payload, StateField):
+        return payload
+    return StateField(
+        field_name=str(payload["field_name"]).strip(),
+        kind=str(payload.get("kind", "contract_memory")).strip(),
+        description=str(payload.get("description", "")).strip(),
+        source_observables=_tuple(payload.get("source_observables", ())),
+        tags=_tuple(payload.get("tags", ())),
+    )
+
+
+def _parse_obligation_spec(payload: ObligationSpec | dict[str, Any]) -> ObligationSpec:
+    """Normalize one obligation spec."""
+    if isinstance(payload, ObligationSpec):
+        return payload
+    return ObligationSpec(
+        obligation_id=str(payload["obligation_id"]).strip(),
+        settle_date_rule=str(payload.get("settle_date_rule", "")).strip(),
+        amount_expression=str(payload.get("amount_expression", "")).strip(),
+        currency=str(payload.get("currency", "")).strip(),
+        settlement_kind=str(payload.get("settlement_kind", "cash")).strip(),
+        trigger=str(payload.get("trigger", "")).strip(),
+        provenance=str(payload.get("provenance", "")).strip(),
+    )
+
+
+def _parse_controller_protocol(
+    payload: ControllerProtocol | dict[str, Any] | None,
+) -> ControllerProtocol:
+    """Normalize controller protocol metadata."""
+    if isinstance(payload, ControllerProtocol):
+        return payload
+    payload = dict(payload or {})
+    return ControllerProtocol(
+        controller_style=str(payload.get("controller_style", "identity")).strip(),
+        controller_role=str(payload.get("controller_role", "none")).strip(),
+        decision_phase=str(payload.get("decision_phase", "decision")).strip().lower(),
+        schedule_role=str(payload.get("schedule_role", "")).strip(),
+        admissible_actions=_tuple(payload.get("admissible_actions", ())),
+        description=str(payload.get("description", "")).strip(),
+    )
+
+
+def _parse_audit_info(payload: SemanticAuditInfo | dict[str, Any] | None) -> SemanticAuditInfo:
+    """Normalize semantic audit metadata."""
+    if isinstance(payload, SemanticAuditInfo):
+        return payload
+    payload = dict(payload or {})
+    return SemanticAuditInfo(
+        semantic_origin=str(payload.get("semantic_origin", "")).strip(),
+        provenance=_tuple(payload.get("provenance", ())),
+        notes=_tuple(payload.get("notes", ())),
+        legacy_mirrors=_tuple(payload.get("legacy_mirrors", ())),
+    )
+
+
+def _parse_implementation_hints(
+    payload: ImplementationHints | dict[str, Any] | None,
+) -> ImplementationHints:
+    """Normalize implementation-hint metadata."""
+    if isinstance(payload, ImplementationHints):
+        return payload
+    payload = dict(payload or {})
+    return ImplementationHints(
+        preserve_route_behavior=bool(payload.get("preserve_route_behavior", True)),
+        event_machine_source=str(payload.get("event_machine_source", "")).strip(),
+        primary_schedule_role=str(payload.get("primary_schedule_role", "")).strip(),
+        notes=_tuple(payload.get("notes", ())),
+    )
+
+
 def _normalize_schedule(values) -> tuple[str, ...]:
     """Normalize observation schedule values to ISO-date strings."""
     normalized: list[str] = []
@@ -1248,6 +1915,110 @@ def _normalize_schedule(values) -> tuple[str, ...]:
         if text and text not in normalized:
             normalized.append(text)
     return tuple(normalized)
+
+
+def _normalize_phase_order(values) -> tuple[str, ...]:
+    """Normalize phase-order metadata."""
+    normalized: list[str] = []
+    for value in values or DEFAULT_PHASE_ORDER:
+        text = str(value).strip().lower()
+        if text and text not in normalized:
+            normalized.append(text)
+    return tuple(normalized) or DEFAULT_PHASE_ORDER
+
+
+def _default_semantic_timeline(
+    schedule: tuple[str, ...] | list[str],
+    *,
+    includes_decision: bool = False,
+    settlement_dates: tuple[str, ...] | list[str] = (),
+    state_update_dates: tuple[str, ...] | list[str] = (),
+) -> SemanticTimeline:
+    """Build the default phase-aware timeline used in tranche 1."""
+    normalized_schedule = _normalize_schedule(schedule)
+    normalized_settlement = _normalize_schedule(
+        settlement_dates or (normalized_schedule[-1:],)
+    ) if normalized_schedule else ()
+    normalized_state_updates = _normalize_schedule(state_update_dates)
+    return SemanticTimeline(
+        phase_order=DEFAULT_PHASE_ORDER,
+        anchor_dates=normalized_schedule,
+        event_dates=normalized_schedule,
+        observation_dates=normalized_schedule,
+        decision_dates=normalized_schedule if includes_decision else (),
+        determination_dates=normalized_schedule,
+        settlement_dates=normalized_settlement,
+        state_update_dates=normalized_state_updates,
+    )
+
+
+def _legacy_state_fields(values) -> tuple[StateField, ...]:
+    """Derive typed state fields from legacy state_variables."""
+    fields: list[StateField] = []
+    for name in _tuple(values):
+        lower = name.lower()
+        if any(token in lower for token in ("spot", "price", "rate")):
+            kind = "event_state"
+            tags = ("recombining_safe",)
+        else:
+            kind = "contract_memory"
+            tags = ("schedule_state",) if "schedule" in lower else ()
+        fields.append(
+            StateField(
+                field_name=name,
+                kind=kind,
+                description=f"Legacy-derived typed state field for `{name}`.",
+                source_observables=(),
+                tags=tags,
+            )
+        )
+    return tuple(fields)
+
+
+def _derive_event_machine(
+    event_transitions: tuple[str, ...] | list[str],
+    *,
+    state_dependence: str,
+    explicit_machine: object | None = None,
+) -> object | None:
+    """Derive a typed event machine from legacy transitions when needed."""
+    if explicit_machine is not None:
+        return explicit_machine
+    transitions = _tuple(event_transitions)
+    if not transitions:
+        return None
+    try:
+        from trellis.agent.event_machine import event_transitions_to_machine
+        return event_transitions_to_machine(
+            transitions,
+            state_dependence=state_dependence,
+        )
+    except Exception:
+        return None
+
+
+def _default_audit_info() -> SemanticAuditInfo:
+    """Return the default semantic audit info for checked-in factories."""
+    return SemanticAuditInfo(
+        semantic_origin="checked_in_factory",
+        provenance=("checked_in_factory", "deterministic_semantic_contract"),
+        notes=("legacy semantic string fields are retained as mirrors in tranche 1",),
+        legacy_mirrors=("settlement_rule", "event_transitions", "state_variables"),
+    )
+
+
+def _default_implementation_hints(
+    *,
+    event_machine_source: str,
+    primary_schedule_role: str,
+) -> ImplementationHints:
+    """Return default implementation hints for checked-in semantic factories."""
+    return ImplementationHints(
+        preserve_route_behavior=True,
+        event_machine_source=event_machine_source,
+        primary_schedule_role=primary_schedule_role,
+        notes=("typed semantic surface added without route-helper behavior changes",),
+    )
 
 
 def _combined_request_text(
@@ -1511,9 +2282,12 @@ def _draft_shape_contract(
             raise ValueError(
                 "Semantic rate-style swaption request requires an exercise schedule."
             )
+        normalized_instrument = str(instrument_type or "").strip().lower()
         return make_rate_style_swaption_contract(
             description=description,
             observation_schedule=observation_schedule,
+            preferred_method="rate_tree" if normalized_instrument == "bermudan_swaption" else "analytical",
+            exercise_style="bermudan" if normalized_instrument == "bermudan_swaption" else "european",
         )
 
     return None
