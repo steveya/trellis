@@ -8,8 +8,18 @@ from typing import Protocol
 
 from trellis.core.date_utils import year_fraction
 from trellis.core.types import DayCountConvention
-from trellis.models.trees.control import resolve_lattice_exercise_policy
-from trellis.models.trees.lattice import build_spot_lattice, lattice_backward_induction
+from trellis.models.trees.algebra import (
+    BINOMIAL_1F_TOPOLOGY,
+    LOG_SPOT_MESH,
+    NO_CALIBRATION_TARGET,
+    LATTICE_MODEL_REGISTRY,
+    LatticeContractSpec,
+    build_lattice,
+    compile_lattice_recipe,
+    equity_tree,
+    price_on_lattice,
+    with_control,
+)
 
 
 class DiscountCurveLike(Protocol):
@@ -68,14 +78,36 @@ def build_vanilla_equity_lattice(
     model: str = "crr",
 ):
     """Build a one-factor equity lattice on the shared lattice substrate."""
-    return build_spot_lattice(
-        spot,
-        rate,
-        sigma,
-        maturity,
-        n_steps,
-        model=model,
+    return build_lattice(
+        BINOMIAL_1F_TOPOLOGY,
+        LOG_SPOT_MESH,
+        LATTICE_MODEL_REGISTRY[str(model).strip().lower()],
+        calibration_target=NO_CALIBRATION_TARGET(),
+        spot=spot,
+        rate=rate,
+        sigma=sigma,
+        maturity=maturity,
+        n_steps=n_steps,
     )
+
+
+def compile_vanilla_equity_contract_spec(
+    *,
+    strike: float,
+    option_type: str = "call",
+    exercise_style: str = "european",
+) -> LatticeContractSpec:
+    """Compile a vanilla equity option into the generalized lattice contract surface."""
+    recipe = equity_tree(
+        model_family="crr",
+        strike=float(strike),
+        option_type=str(option_type).strip().lower(),
+    )
+    normalized_exercise = str(exercise_style).strip().lower()
+    if normalized_exercise in {"american", "bermudan"}:
+        recipe = with_control(recipe, normalized_exercise)
+    _, _, _, contract = compile_lattice_recipe(recipe)
+    return contract
 
 
 def price_vanilla_equity_option_on_lattice(
@@ -92,23 +124,14 @@ def price_vanilla_equity_option_on_lattice(
         raise ValueError(f"Unsupported option_type {option_type!r}")
     if exercise_kind not in {"european", "american", "bermudan"}:
         raise ValueError(f"Unsupported exercise_style {exercise_style!r}")
-
-    def payoff(step, node, lat):
-        spot = float(lat.get_state(step, node))
-        if option_kind == "call":
-            return max(spot - float(strike), 0.0)
-        return max(float(strike) - spot, 0.0)
-
-    if exercise_kind == "european":
-        return float(lattice_backward_induction(lattice, payoff))
-
-    exercise_policy = resolve_lattice_exercise_policy(exercise_kind)
     return float(
-        lattice_backward_induction(
+        price_on_lattice(
             lattice,
-            payoff,
-            exercise_value=payoff,
-            exercise_policy=exercise_policy,
+            compile_vanilla_equity_contract_spec(
+                strike=float(strike),
+                option_type=option_kind,
+                exercise_style=exercise_kind,
+            ),
         )
     )
 
@@ -171,6 +194,7 @@ def resolve_vanilla_equity_tree_inputs(
 __all__ = [
     "ResolvedEquityTreeInputs",
     "build_vanilla_equity_lattice",
+    "compile_vanilla_equity_contract_spec",
     "price_vanilla_equity_option_on_lattice",
     "price_vanilla_equity_option_tree",
     "resolve_vanilla_equity_tree_inputs",

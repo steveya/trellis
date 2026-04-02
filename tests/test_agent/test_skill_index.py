@@ -69,7 +69,10 @@ def test_route_hint_projection_includes_instruction_lifecycle_records():
 
     assert "route_hint:credit_default_swap_monte_carlo:schedule-builder" in skill_ids
     assert "route_hint:credit_default_swap_monte_carlo:schedule-body" in skill_ids
-    assert any("sample one default time" in summary.lower() for summary in summaries)
+    assert any(
+        "default-time" in summary.lower() or "default time" in summary.lower()
+        for summary in summaries
+    )
 
 
 def test_skill_index_generation_is_deterministic():

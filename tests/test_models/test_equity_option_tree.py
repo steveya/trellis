@@ -135,3 +135,17 @@ def test_resolve_vanilla_equity_tree_inputs_uses_market_state_contract():
     assert resolved.sigma == pytest.approx(0.20, rel=1e-3)
     assert resolved.option_type == "call"
     assert resolved.exercise_style == "bermudan"
+
+
+def test_build_vanilla_equity_lattice_attaches_generalized_lattice_metadata():
+    lattice = build_vanilla_equity_lattice(
+        spot=100.0,
+        rate=0.05,
+        sigma=0.20,
+        maturity=1.0,
+        n_steps=64,
+        model="crr",
+    )
+
+    assert lattice._lattice_model_spec.name == "crr"
+    assert lattice._lattice_topology_spec.name == "binomial_1f"

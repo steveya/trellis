@@ -6,6 +6,28 @@ from dataclasses import replace
 import pytest
 
 
+def _expected_route_modules(compiled) -> tuple[str, ...]:
+    from trellis.agent.calibration_contract import _KNOWN_PRIMITIVES
+
+    calibration_modules: tuple[str, ...] = ()
+    calibration_step = getattr(compiled, "calibration_step", None)
+    primitive = getattr(calibration_step, "proven_primitive", "") if calibration_step is not None else ""
+    if primitive:
+        module = _KNOWN_PRIMITIVES.get(primitive, "")
+        if module:
+            calibration_modules = (module,)
+    return tuple(
+        dict.fromkeys(
+            (
+                *compiled.pricing_plan.method_modules,
+                *compiled.target_modules,
+                *compiled.dsl_lowering.helper_modules,
+                *calibration_modules,
+            )
+        )
+    )
+
+
 def _canonical_contract():
     from trellis.agent.semantic_contracts import make_ranked_observation_basket_contract
 
@@ -72,15 +94,7 @@ def test_ranked_observation_basket_contract_validates():
         "trellis.models.resolution.basket_semantics",
         "trellis.models.monte_carlo.semantic_basket",
     )
-    assert compiled.route_modules == tuple(
-        dict.fromkeys(
-            (
-                *compiled.pricing_plan.method_modules,
-                *compiled.target_modules,
-                *compiled.dsl_lowering.helper_modules,
-            )
-        )
-    )
+    assert compiled.route_modules == _expected_route_modules(compiled)
     assert "trellis.models.monte_carlo.engine" in compiled.route_modules
     assert "correlated_basket_monte_carlo" in compiled.primitive_routes
     assert "trellis.models.processes.correlated_gbm" not in compiled.route_modules
@@ -516,15 +530,7 @@ def test_representative_derivative_contracts_validate_and_compile(
     assert compiled.assumption_summary == compiled.pricing_plan.assumption_summary
     assert compiled.dsl_lowering is not None
     assert compiled.dsl_lowering.route_id == expected_route
-    assert compiled.route_modules == tuple(
-        dict.fromkeys(
-            (
-                *compiled.pricing_plan.method_modules,
-                *compiled.target_modules,
-                *compiled.dsl_lowering.helper_modules,
-            )
-        )
-    )
+    assert compiled.route_modules == _expected_route_modules(compiled)
     assert compiled.primitive_routes == (expected_route,)
     assert expected_target_module in compiled.target_modules
     assert all("himalaya" not in module.lower() for module in compiled.route_modules)

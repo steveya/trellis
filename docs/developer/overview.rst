@@ -58,6 +58,9 @@ Where Things Live
    * - Validation and evals
      - ``model_validator``, ``validation_report``, ``evals``
      - Deterministic and LLM-assisted grading around generated artifacts
+   * - Grid pricing substrate
+     - ``trellis.models.trees.algebra``, ``trellis.models.grid_protocols``, ``trellis.models.pde``
+     - Shared lattice/PDE rollback contracts, exercise boundaries, local-vol and two-factor lattice extensions
    * - Task runtime
      - ``task_runtime.py``, ``scripts/*.py``, ``TASKS.yaml``, ``FRAMEWORK_TASKS.yaml``
      - Batch execution, reruns, benchmarking, remediation, and separate pricing-vs-framework task inventories

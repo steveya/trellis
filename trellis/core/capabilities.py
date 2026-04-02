@@ -146,14 +146,14 @@ METHODS: list[MethodCapability] = [
         name="rate_tree",
         description="Binomial/trinomial rate tree for backward induction pricing.",
         providing_modules=(
-            "trellis.models.trees.binomial",
-            "trellis.models.trees.trinomial",
-            "trellis.models.trees.backward_induction",
+            "trellis.models.trees.algebra",
+            "trellis.models.trees.lattice",
         ),
         example_usage=(
-            "from trellis.models.trees import BinomialTree, backward_induction\n"
-            "tree = BinomialTree.crr(S0, T, n_steps, r, sigma)\n"
-            "price = backward_induction(tree, payoff_fn, r, 'american')"
+            "from trellis.models.trees import build_lattice, price_on_lattice\n"
+            "from trellis.models.trees.algebra import BINOMIAL_1F_TOPOLOGY, LOG_SPOT_MESH, LATTICE_MODEL_REGISTRY\n"
+            "lattice = build_lattice(BINOMIAL_1F_TOPOLOGY, LOG_SPOT_MESH, LATTICE_MODEL_REGISTRY['crr'], spot=S0, rate=r, sigma=sigma, maturity=T, n_steps=n_steps)\n"
+            "price = price_on_lattice(lattice, contract_spec)"
         ),
         requires_market_data=("discount_curve", "black_vol_surface"),
     ),

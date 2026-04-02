@@ -10,7 +10,9 @@ from trellis.curves.yield_curve import YieldCurve
 from trellis.instruments.callable_bond import CallableBondSpec
 from trellis.models.callable_bond_tree import (
     build_callable_bond_lattice,
+    compile_callable_bond_contract_spec,
     price_callable_bond_tree,
+    price_callable_bond_on_lattice,
 )
 from trellis.models.vol_surface import FlatVol
 
@@ -61,3 +63,29 @@ def test_price_callable_bond_tree_bdt_and_hull_white_are_consistent_on_flat_curv
     hw = price_callable_bond_tree(_market_state(0.20), _spec(), model="hull_white")
 
     assert abs(bdt - hw) / max(abs(hw), 1.0) < 0.05
+
+
+def test_compile_callable_bond_contract_spec_matches_helper_price():
+    market_state = _market_state(0.20)
+    spec = _spec()
+    lattice = build_callable_bond_lattice(
+        market_state,
+        spec,
+        model="hull_white",
+        n_steps=80,
+    )
+    contract = compile_callable_bond_contract_spec(
+        spec,
+        settlement=market_state.settlement,
+        dt=lattice.dt,
+        n_steps=lattice.n_steps,
+    )
+
+    assert price_callable_bond_on_lattice(
+        lattice,
+        spec=spec,
+        settlement=market_state.settlement,
+    ) == price_callable_bond_on_lattice(
+        lattice,
+        contract_spec=contract,
+    )

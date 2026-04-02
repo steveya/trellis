@@ -60,7 +60,7 @@ class CalibrationContract:
     method: CalibrationMethod = field(default_factory=CalibrationMethod)
     acceptance_criteria: tuple[str, ...] = ("repricing_residual < 1e-6",)
     output: OutputBinding = field(default_factory=lambda: OutputBinding(target_path=""))
-    proven_primitive: str = ""   # e.g. "calibrate_swaption_black_vol", "build_rate_lattice"
+    proven_primitive: str = ""   # e.g. "calibrate_swaption_black_vol", "build_lattice"
     depends_on: str = ""         # another CalibrationContract ID for chaining
     description: str = ""
 
@@ -99,6 +99,7 @@ _KNOWN_TARGETS = {
 }
 
 _KNOWN_PRIMITIVES = {
+    "build_lattice": "trellis.models.trees.algebra",
     "build_rate_lattice": "trellis.models.trees.lattice",
     "calibrate_swaption_black_vol": "trellis.models.calibration",
     "calibrate_cap_floor_black_vol": "trellis.models.calibration",
@@ -170,8 +171,8 @@ def hull_white_calibration_contract(
 ) -> CalibrationContract:
     """Build the canonical Hull-White rate-tree calibration contract.
 
-    Maps to ``build_rate_lattice()`` which uses the Brigo-Mercurio
-    analytical calibration framework.
+    Maps to the unified ``build_lattice()`` surface with a short-rate lattice
+    model specification and term-structure calibration target.
     """
     if fitting == "swaption":
         instruments = (
@@ -214,7 +215,7 @@ def hull_white_calibration_contract(
             parameter_names=("mean_reversion", "sigma_hw"),
             consumption_pattern="build_lattice",
         ),
-        proven_primitive="build_rate_lattice",
+        proven_primitive="build_lattice",
         description=f"Hull-White calibration via {fitting} fitting (Brigo-Mercurio analytical)",
     )
 

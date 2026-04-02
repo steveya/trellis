@@ -348,7 +348,7 @@ def callable_bond_composite(
                 contract_id="hw_calibration",
                 contract=hw_cal,
                 proven=True,
-                primitive_ref="trellis.models.trees.lattice.build_rate_lattice",
+                primitive_ref="trellis.models.trees.algebra.build_lattice",
             ),
             SubContractRef(
                 contract_id="bond_cashflows",

@@ -15,6 +15,14 @@ from trellis.core.date_utils import (
     build_payment_timeline,
     year_fraction,
 )
+from trellis.models.trees.algebra import (
+    BINOMIAL_1F_TOPOLOGY,
+    TERM_STRUCTURE_TARGET,
+    UNIFORM_ADDITIVE_MESH,
+    LatticeContractSpec,
+    LatticeControlSpec,
+    LatticeLinearClaimSpec,
+)
 from trellis.models.trees.control import (
     lattice_step_from_time,
     lattice_steps_from_timeline,
@@ -22,8 +30,8 @@ from trellis.models.trees.control import (
 )
 from trellis.models.trees.lattice import (
     RecombiningLattice,
-    build_generic_lattice,
-    lattice_backward_induction,
+    build_lattice,
+    price_on_lattice,
 )
 from trellis.models.trees.models import MODEL_REGISTRY
 
@@ -49,14 +57,16 @@ def build_callable_bond_lattice(
 
     tree_model = MODEL_REGISTRY[model_key]
     sigma = black_vol if tree_model.vol_type == "lognormal" else black_vol * max(abs(r0), 1e-6)
-    return build_generic_lattice(
-        tree_model,
+    return build_lattice(
+        BINOMIAL_1F_TOPOLOGY,
+        UNIFORM_ADDITIVE_MESH,
+        tree_model.as_lattice_model_spec(),
+        calibration_target=TERM_STRUCTURE_TARGET(market_state.discount),
         r0=r0,
         sigma=sigma,
         a=mean_reversion,
         T=maturity,
         n_steps=step_count,
-        discount_curve=market_state.discount,
     )
 
 
@@ -128,46 +138,62 @@ def build_callable_bond_exercise_policy(
     )
 
 
-def price_callable_bond_on_lattice(
-    lattice: RecombiningLattice,
-    *,
+def compile_callable_bond_contract_spec(
     spec,
+    *,
     settlement: date,
-) -> float:
-    """Price a callable bond on a pre-built lattice."""
+    dt: float,
+    n_steps: int,
+) -> LatticeContractSpec:
+    """Compile callable-bond coupons and exercise into a lattice contract."""
     coupon_by_step = build_callable_bond_coupon_map(
         spec,
         settlement=settlement,
-        dt=lattice.dt,
-        n_steps=lattice.n_steps,
+        dt=dt,
+        n_steps=n_steps,
     )
     exercise_policy = build_callable_bond_exercise_policy(
         spec,
         settlement=settlement,
-        dt=lattice.dt,
-        n_steps=lattice.n_steps,
+        dt=dt,
+        n_steps=n_steps,
+    )
+    terminal_coupon = coupon_by_step.get(n_steps, 0.0)
+    return LatticeContractSpec(
+        claim=LatticeLinearClaimSpec(
+            terminal_payoff=lambda step, node, lattice, obs: float(spec.notional) + float(terminal_coupon),
+            node_cashflow_fn=lambda step, node, lattice, obs: float(coupon_by_step.get(step, 0.0)),
+            observable_requirements=("rate",),
+        ),
+        control=LatticeControlSpec(
+            objective="issuer_min",
+            exercise_steps=exercise_policy.exercise_steps,
+            exercise_value_fn=(
+                lambda step, node, lattice, obs: float(spec.call_price) + float(coupon_by_step.get(step, 0.0))
+            ),
+        ),
+        metadata={"coupon_by_step": coupon_by_step},
     )
 
-    terminal_coupon = coupon_by_step.get(lattice.n_steps, 0.0)
 
-    def terminal_payoff(step, node, lattice_):
-        return float(spec.notional) + terminal_coupon
-
-    def cashflow_at_node(step, node, lattice_):
-        return float(coupon_by_step.get(step, 0.0))
-
-    def exercise_value(step, node, lattice_):
-        return float(spec.call_price) + float(coupon_by_step.get(step, 0.0))
-
-    return float(
-        lattice_backward_induction(
-            lattice,
-            terminal_payoff,
-            exercise_value=exercise_value,
-            cashflow_at_node=cashflow_at_node,
-            exercise_policy=exercise_policy,
+def price_callable_bond_on_lattice(
+    lattice: RecombiningLattice,
+    *,
+    spec=None,
+    settlement: date | None = None,
+    contract_spec: LatticeContractSpec | None = None,
+) -> float:
+    """Price a callable bond on a pre-built lattice."""
+    if contract_spec is None:
+        if spec is None or settlement is None:
+            raise ValueError("Provide either contract_spec or both spec and settlement")
+        contract_spec = compile_callable_bond_contract_spec(
+            spec,
+            settlement=settlement,
+            dt=lattice.dt,
+            n_steps=lattice.n_steps,
         )
-    )
+    return float(price_on_lattice(lattice, contract_spec))
 
 
 def price_callable_bond_tree(

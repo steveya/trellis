@@ -62,7 +62,7 @@ class TestFactories:
         c = hull_white_calibration_contract()
         errors = validate_calibration_contract(c)
         assert errors == (), errors
-        assert c.proven_primitive == "build_rate_lattice"
+        assert c.proven_primitive == "build_lattice"
         assert c.target.model_family == "hull_white"
         assert c.output.consumption_pattern == "build_lattice"
 
@@ -166,7 +166,7 @@ class TestCompilerIntegration:
             observation_schedule=("2025-06-30", "2026-06-30"),
         )
         assert contract.calibration is not None
-        assert contract.calibration.proven_primitive == "build_rate_lattice"
+        assert contract.calibration.proven_primitive == "build_lattice"
 
     def test_blueprint_has_calibration_step(self):
         from trellis.agent.semantic_contracts import make_callable_bond_contract
@@ -178,7 +178,7 @@ class TestCompilerIntegration:
         )
         blueprint = compile_semantic_contract(contract)
         assert blueprint.calibration_step is not None
-        assert blueprint.calibration_step.proven_primitive == "build_rate_lattice"
+        assert blueprint.calibration_step.proven_primitive == "build_lattice"
         # Calibration module should be in route_modules
         assert any("calibration" in m or "lattice" in m for m in blueprint.route_modules)
 

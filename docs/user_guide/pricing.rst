@@ -61,6 +61,24 @@ the returned calibration result keeps the selected curve names plus any caller
 labels for the volatility or correlation source. That makes the calibration run
 replayable without re-resolving market data.
 
+Unified Lattice Pricing
+-----------------------
+
+The checked lattice entry points are now:
+
+- ``trellis.models.trees.build_lattice(...)``
+- ``trellis.models.trees.price_on_lattice(...)``
+
+Those surfaces cover one-factor short-rate trees, CRR/Jarrow-Rudd equity
+lattices, local-volatility trinomial lattices, and low-dimensional two-factor
+product lattices. Legacy helpers such as ``build_rate_lattice(...)`` and
+``build_spot_lattice(...)`` still work, but they are compatibility shims and
+emit deprecation warnings.
+
+For plain equity/rate pricing, prefer the helper routes or recipe compilers.
+For new lattice integrations, target ``LatticeRecipe`` and the unified builder
+instead of hand-assembling route-local tree logic.
+
 Return Types
 ~~~~~~~~~~~~
 

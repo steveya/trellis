@@ -6,6 +6,7 @@ from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
 from trellis.models.bermudan_swaption_tree import (
     build_bermudan_swaption_lattice,
+    compile_bermudan_swaption_contract_spec,
     price_bermudan_swaption_on_lattice,
     price_bermudan_swaption_tree,
 )
@@ -98,3 +99,28 @@ def test_price_bermudan_swaption_tree_receiver_is_non_negative():
     price = price_bermudan_swaption_tree(market_state, receiver, model="hull_white")
 
     assert price >= 0.0
+
+
+def test_compile_bermudan_swaption_contract_spec_matches_helper_price():
+    market_state = _market_state()
+    spec = _Spec()
+    lattice = build_bermudan_swaption_lattice(
+        market_state,
+        spec,
+        model="hull_white",
+        n_steps=120,
+    )
+    contract = compile_bermudan_swaption_contract_spec(
+        lattice,
+        spec=spec,
+        settlement=market_state.settlement,
+    )
+
+    assert price_bermudan_swaption_on_lattice(
+        lattice,
+        spec=spec,
+        settlement=market_state.settlement,
+    ) == price_bermudan_swaption_on_lattice(
+        lattice,
+        contract_spec=contract,
+    )

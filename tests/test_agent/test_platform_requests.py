@@ -14,6 +14,29 @@ from trellis.session import Session
 SETTLE = date(2024, 11, 15)
 
 
+def _expected_route_modules(compiled) -> tuple[str, ...]:
+    from trellis.agent.calibration_contract import _KNOWN_PRIMITIVES
+
+    blueprint = compiled.semantic_blueprint
+    calibration_modules: tuple[str, ...] = ()
+    calibration_step = getattr(blueprint, "calibration_step", None)
+    primitive = getattr(calibration_step, "proven_primitive", "") if calibration_step is not None else ""
+    if primitive:
+        module = _KNOWN_PRIMITIVES.get(primitive, "")
+        if module:
+            calibration_modules = (module,)
+    return tuple(
+        dict.fromkeys(
+            (
+                *compiled.pricing_plan.method_modules,
+                *blueprint.target_modules,
+                *blueprint.dsl_lowering.helper_modules,
+                *calibration_modules,
+            )
+        )
+    )
+
+
 def _semantic_regression_snapshot(compiled):
     from trellis.agent.semantic_contracts import semantic_contract_summary
 
@@ -88,15 +111,7 @@ def test_compile_build_request_uses_quanto_semantic_contract_blueprint():
     assert compiled.generation_plan.primitive_plan is not None
     assert compiled.generation_plan.primitive_plan.route == "quanto_adjustment_analytical"
     assert compiled.semantic_blueprint.selection_reason == compiled.pricing_plan.selection_reason
-    assert compiled.semantic_blueprint.route_modules == tuple(
-        dict.fromkeys(
-            (
-                *compiled.pricing_plan.method_modules,
-                *compiled.semantic_blueprint.target_modules,
-                *compiled.semantic_blueprint.dsl_lowering.helper_modules,
-            )
-        )
-    )
+    assert compiled.semantic_blueprint.route_modules == _expected_route_modules(compiled)
 
 
 def test_compile_build_request_preserves_quanto_semantic_binding_hints():
@@ -315,15 +330,7 @@ def test_mountain_range_request_drafts_ranked_observation_contract():
         "trellis.models.resolution.basket_semantics",
         "trellis.models.monte_carlo.semantic_basket",
     )
-    assert compiled.semantic_blueprint.route_modules == tuple(
-        dict.fromkeys(
-            (
-                *compiled.pricing_plan.method_modules,
-                *compiled.semantic_blueprint.target_modules,
-                *compiled.semantic_blueprint.dsl_lowering.helper_modules,
-            )
-        )
-    )
+    assert compiled.semantic_blueprint.route_modules == _expected_route_modules(compiled)
     assert snapshot == snapshot_again
     assert snapshot["semantic_contract"] == compiled.request.metadata["semantic_contract"]
     assert "trellis.models.resolution.basket_semantics" in snapshot["approved_modules"]
@@ -571,15 +578,7 @@ def test_representative_derivatives_use_generic_semantic_contracts(
         assert compiled.semantic_contract.product.underlier_structure
         assert compiled.semantic_blueprint.selection_reason == compiled.pricing_plan.selection_reason
         assert compiled.semantic_blueprint.assumption_summary == compiled.pricing_plan.assumption_summary
-        assert compiled.semantic_blueprint.route_modules == tuple(
-            dict.fromkeys(
-                (
-                    *compiled.pricing_plan.method_modules,
-                    *compiled.semantic_blueprint.target_modules,
-                    *compiled.semantic_blueprint.dsl_lowering.helper_modules,
-                )
-            )
-        )
+        assert compiled.semantic_blueprint.route_modules == _expected_route_modules(compiled)
         assert compiled.semantic_blueprint.primitive_routes == (expected_primitive_route,)
         assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == expected_primitive_route
         assert expected_generation_module in compiled.semantic_blueprint.target_modules

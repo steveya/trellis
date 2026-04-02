@@ -22,6 +22,7 @@ Core Developer Topics
    task_and_eval_loops
    task_diagnostics
    knowledge_skill_layer
+   lattice_algebra_boundary_adr
 
 Implementation Journey Notes
 ----------------------------

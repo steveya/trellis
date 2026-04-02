@@ -12,6 +12,7 @@ This separates the tree structure from the financial model.
 from __future__ import annotations
 
 import inspect
+import warnings
 import numpy as raw_np
 
 from trellis.models._numba import NUMBA_AVAILABLE, maybe_njit
@@ -697,6 +698,11 @@ def build_rate_lattice(
     branching : int
         2 (binomial) or 3 (trinomial).
     """
+    warnings.warn(
+        "build_rate_lattice() is deprecated; use trellis.models.trees.build_lattice(...) with a lattice model spec",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     dt = T / n_steps
     lattice = RecombiningLattice(n_steps, dt, branching, state_dim=1)
     dr = sigma * raw_np.sqrt(dt)
@@ -808,7 +814,7 @@ def build_rate_lattice(
     return lattice
 
 
-def build_spot_lattice(
+def _build_spot_lattice_impl(
     S0: float,
     r: float,
     sigma: float,
@@ -863,6 +869,31 @@ def build_spot_lattice(
         probs[i, :n_nodes_i, 1] = p
 
     return lattice
+
+
+def build_spot_lattice(
+    S0: float,
+    r: float,
+    sigma: float,
+    T: float,
+    n_steps: int,
+    *,
+    model: str = "crr",
+) -> RecombiningLattice:
+    """Backward-compatible wrapper for the legacy spot-lattice helper."""
+    warnings.warn(
+        "build_spot_lattice() is deprecated; use trellis.models.trees.build_lattice(...) with an equity lattice model spec",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return _build_spot_lattice_impl(
+        S0,
+        r,
+        sigma,
+        T,
+        n_steps,
+        model=model,
+    )
 
 
 def build_generic_lattice(
@@ -985,3 +1016,23 @@ def build_generic_lattice(
     )
 
     return lattice
+
+
+def build_lattice(topology, mesh, model, calibration_target=None, **params):
+    """Build a lattice through the generalized lattice-algebra surface."""
+    from trellis.models.trees.algebra import build_lattice as _build_lattice
+
+    return _build_lattice(
+        topology,
+        mesh,
+        model,
+        calibration_target=calibration_target,
+        **params,
+    )
+
+
+def price_on_lattice(lattice: RecombiningLattice, contract) -> float:
+    """Price a generalized lattice contract on one built lattice."""
+    from trellis.models.trees.algebra import price_on_lattice as _price_on_lattice
+
+    return _price_on_lattice(lattice, contract)

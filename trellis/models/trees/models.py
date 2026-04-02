@@ -67,6 +67,12 @@ class TreeModel:
     supported_branchings: tuple[int, ...] = (2, 3)
     factor_family: str = "short_rate"
 
+    def as_lattice_model_spec(self):
+        """Return the generalized lattice-model specification for this tree model."""
+        from trellis.models.trees.algebra import _lattice_model_from_tree_model
+
+        return _lattice_model_from_tree_model(self)
+
 
 # ---------------------------------------------------------------------------
 # Displacement functions

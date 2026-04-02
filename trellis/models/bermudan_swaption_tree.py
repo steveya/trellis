@@ -13,6 +13,14 @@ from trellis.core.date_utils import (
 )
 from trellis.core.differentiable import get_numpy
 from trellis.core.types import DayCountConvention
+from trellis.models.trees.algebra import (
+    BINOMIAL_1F_TOPOLOGY,
+    TERM_STRUCTURE_TARGET,
+    UNIFORM_ADDITIVE_MESH,
+    LatticeContractSpec,
+    LatticeControlSpec,
+    LatticeLinearClaimSpec,
+)
 from trellis.models.trees.control import (
     lattice_step_from_time,
     lattice_steps_from_timeline,
@@ -20,8 +28,8 @@ from trellis.models.trees.control import (
 )
 from trellis.models.trees.lattice import (
     RecombiningLattice,
-    build_generic_lattice,
-    lattice_backward_induction,
+    build_lattice,
+    price_on_lattice,
 )
 from trellis.models.trees.models import MODEL_REGISTRY
 
@@ -159,14 +167,17 @@ def build_bermudan_swaption_lattice(
         mean_reversion=mean_reversion,
         n_steps=n_steps,
     )
-    return build_generic_lattice(
-        MODEL_REGISTRY[str(model).strip().lower()],
+    tree_model = MODEL_REGISTRY[str(model).strip().lower()]
+    return build_lattice(
+        BINOMIAL_1F_TOPOLOGY,
+        UNIFORM_ADDITIVE_MESH,
+        tree_model.as_lattice_model_spec(),
+        calibration_target=TERM_STRUCTURE_TARGET(market_state.discount),
         r0=resolved.r0,
         sigma=resolved.sigma,
         a=float(mean_reversion),
         T=resolved.tree_horizon,
         n_steps=resolved.n_steps,
-        discount_curve=market_state.discount,
     )
 
 
@@ -253,19 +264,13 @@ def build_bermudan_swaption_exercise_policy(
     )
 
 
-def price_bermudan_swaption_on_lattice(
+def compile_bermudan_swaption_contract_spec(
     lattice: RecombiningLattice,
     *,
     spec: BermudanSwaptionSpecLike,
     settlement: date,
-) -> float:
-    """Price a Bermudan swaption on a pre-built lattice.
-
-    This intentionally mirrors the checked-in T04 Bermudan tree reference: the
-    option is a Bermudan claim on node-wise swap values, and the underlying swap
-    keeps the same quantized tenor measured from the first exercise date.
-    """
-    np = get_numpy()
+) -> LatticeContractSpec:
+    """Compile Bermudan swaption exercise into a lattice contract."""
     exercise_policy = build_bermudan_swaption_exercise_policy(
         spec,
         settlement=settlement,
@@ -273,7 +278,10 @@ def price_bermudan_swaption_on_lattice(
         n_steps=lattice.n_steps,
     )
     if not exercise_policy.exercise_steps:
-        return 0.0
+        return LatticeContractSpec(
+            claim=LatticeLinearClaimSpec(terminal_payoff=lambda step, node, lattice_, obs: 0.0),
+            control=None,
+        )
 
     swap_start = min(_normalized_exercise_dates(spec.exercise_dates))
     coupon_by_step = build_bermudan_swaption_coupon_map(
@@ -287,7 +295,10 @@ def price_bermudan_swaption_on_lattice(
         step for step in exercise_policy.exercise_steps if 0 <= step < lattice.n_steps
     )
     if not valid_exercise_steps:
-        return 0.0
+        return LatticeContractSpec(
+            claim=LatticeLinearClaimSpec(terminal_payoff=lambda step, node, lattice_, obs: 0.0),
+            control=None,
+        )
 
     frequency_per_year = _frequency_per_year(spec.swap_frequency)
     tenor = float(year_fraction(swap_start, spec.swap_end, spec.day_count))
@@ -308,33 +319,53 @@ def price_bermudan_swaption_on_lattice(
         for step in valid_exercise_steps
         if step < swap_end_step
     }
-    if not payer_swap_values:
-        return 0.0
     signed_swap_values = payer_swap_values if bool(spec.is_payer) else {
         step: -values for step, values in payer_swap_values.items()
     }
-    ordered_exercise_steps = tuple(sorted(signed_swap_values))
-    last_exercise_step = ordered_exercise_steps[-1]
-    values = np.maximum(signed_swap_values[last_exercise_step], 0.0)
 
-    for step in range(last_exercise_step - 1, -1, -1):
-        n_nodes = lattice.n_nodes(step)
-        new_values = np.zeros(n_nodes)
-        for node in range(n_nodes):
-            discount = lattice.get_discount(step, node)
-            probs = lattice.get_probabilities(step, node)
-            children = lattice.child_indices(step, node)
-            new_values[node] = discount * sum(
-                float(prob) * float(values[child])
-                for prob, child in zip(probs, children)
-            )
-        values = new_values
-        exercise_values = signed_swap_values.get(step)
-        if exercise_values is not None:
-            for node in range(n_nodes):
-                values[node] = max(float(values[node]), max(float(exercise_values[node]), 0.0))
+    def exercise_value(step: int, node: int, lattice_, obs) -> float:
+        del lattice_, obs
+        values = signed_swap_values.get(step)
+        if values is None:
+            return 0.0
+        return max(float(values[node]), 0.0)
 
-    return float(values[0])
+    return LatticeContractSpec(
+        claim=LatticeLinearClaimSpec(
+            terminal_payoff=lambda step, node, lattice_, obs: 0.0,
+            observable_requirements=("rate",),
+        ),
+        control=LatticeControlSpec(
+            objective="holder_max",
+            exercise_steps=tuple(sorted(signed_swap_values)),
+            exercise_value_fn=exercise_value,
+        ),
+        metadata={"signed_swap_values": signed_swap_values},
+    )
+
+
+def price_bermudan_swaption_on_lattice(
+    lattice: RecombiningLattice,
+    *,
+    spec: BermudanSwaptionSpecLike | None = None,
+    settlement: date | None = None,
+    contract_spec: LatticeContractSpec | None = None,
+) -> float:
+    """Price a Bermudan swaption on a pre-built lattice.
+
+    This intentionally mirrors the checked-in T04 Bermudan tree reference: the
+    option is a Bermudan claim on node-wise swap values, and the underlying swap
+    keeps the same quantized tenor measured from the first exercise date.
+    """
+    if contract_spec is None:
+        if spec is None or settlement is None:
+            raise ValueError("Provide either contract_spec or both spec and settlement")
+        contract_spec = compile_bermudan_swaption_contract_spec(
+            lattice,
+            spec=spec,
+            settlement=settlement,
+        )
+    return float(price_on_lattice(lattice, contract_spec))
 
 
 def price_bermudan_swaption_tree(
@@ -485,6 +516,7 @@ __all__ = [
     "build_bermudan_swaption_coupon_map",
     "build_bermudan_swaption_exercise_policy",
     "build_bermudan_swaption_lattice",
+    "compile_bermudan_swaption_contract_spec",
     "price_bermudan_swaption_on_lattice",
     "price_bermudan_swaption_tree",
     "resolve_bermudan_swaption_tree_inputs",

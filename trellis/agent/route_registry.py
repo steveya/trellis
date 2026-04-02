@@ -744,6 +744,8 @@ def evaluate_route_admissibility(
     product = getattr(contract, "product", None)
     if product is None:
         return RouteAdmissibilityDecision(ok=True)
+    if product_ir is None:
+        product_ir = getattr(semantic_blueprint, "product_ir", None)
 
     admissibility = spec.admissibility
     failures: list[str] = []
@@ -766,6 +768,18 @@ def evaluate_route_admissibility(
 
     if _has_automatic_events(product) and admissibility.event_support == "none":
         failures.append("unsupported_event_support:automatic_triggers")
+
+    if spec.engine_family == "lattice":
+        try:
+            from trellis.models.trees.algebra import lattice_algebra_eligible
+
+            eligibility = lattice_algebra_eligible(product=product, product_ir=product_ir)
+            failures.extend(
+                f"ineligible_for_lattice_algebra:{reason}"
+                for reason in eligibility.reasons
+            )
+        except Exception:  # pragma: no cover - admissibility should stay fail-open on import issues
+            pass
 
     requested_outputs = normalize_requested_outputs(
         getattr(semantic_blueprint, "requested_outputs", ())

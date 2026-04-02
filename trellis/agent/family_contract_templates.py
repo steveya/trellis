@@ -13,6 +13,7 @@ from trellis.agent.family_contracts import (
     ValidationContract,
 )
 from trellis.agent.semantic_contracts import (
+    ObligationSpec,
     SemanticBlueprintHints,
     SemanticContract,
     SemanticMarketDataContract,
@@ -247,9 +248,26 @@ def _family_semantic_overrides(family_id: str) -> dict:
     return {}
 
 
+def _family_semantic_obligations(fc: FamilyContract, overrides: dict) -> tuple[ObligationSpec, ...]:
+    """Bridge family settlement semantics into typed obligations for validation."""
+    settlement_rule = str(overrides.get("settlement_rule", "")).strip()
+    if not settlement_rule:
+        return ()
+    return (
+        ObligationSpec(
+            obligation_id=f"{fc.product.family_id}_cash_settlement",
+            settle_date_rule=settlement_rule,
+            amount_expression=str(overrides.get("payoff_rule", "")).strip() or fc.product.payoff_family,
+            settlement_kind="cash",
+            provenance="family_contract_template_bridge",
+        ),
+    )
+
+
 def _family_contract_to_semantic(fc: FamilyContract) -> SemanticContract:
     """Convert a FamilyContract into a pre-resolved SemanticContract."""
     overrides = _family_semantic_overrides(fc.product.family_id)
+    obligations = _family_semantic_obligations(fc, overrides)
     product = SemanticProductSemantics(
         semantic_id=fc.product.family_id,
         semantic_version=fc.product.family_version,
@@ -260,6 +278,7 @@ def _family_contract_to_semantic(fc: FamilyContract) -> SemanticContract:
         payoff_rule=overrides.get("payoff_rule", ""),
         settlement_rule=overrides.get("settlement_rule", ""),
         payoff_traits=fc.product.payoff_traits,
+        obligations=obligations,
         exercise_style=fc.product.exercise_style,
         path_dependence=fc.product.path_dependence,
         schedule_dependence=fc.product.schedule_dependence,
