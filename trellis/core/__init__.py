@@ -18,6 +18,15 @@ from trellis.core.payoff import (
     Payoff,
     PresentValue,
 )
+from trellis.core.runtime_contract import (
+    ContractAwareMapping,
+    ContractState,
+    ContractViolation,
+    MarketStateContractProxy,
+    ResolvedInputs,
+    RuntimeContext,
+    wrap_market_state_with_contract,
+)
 from trellis.core.state_space import StateSpace
 from trellis.core.types import (
     ContractTimeline,
@@ -36,6 +45,13 @@ __all__ = [
     "DeterministicCashflowPayoff",
     "Cashflows",
     "PresentValue",
+    "ContractAwareMapping",
+    "ContractState",
+    "ContractViolation",
+    "MarketStateContractProxy",
+    "ResolvedInputs",
+    "RuntimeContext",
+    "wrap_market_state_with_contract",
     "StateSpace",
     "Frequency",
     "DayCountConvention",

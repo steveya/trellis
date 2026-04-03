@@ -36,7 +36,7 @@ class HimalayaOptionSpec:
     strike: float
     expiry_date: date
     constituents: str
-    observation_dates: str | None = None
+    observation_dates: tuple[date, ...] | None = None
     selection_rule: str = "best_of_remaining"
     lock_rule: str = "remove_selected"
     aggregation_rule: str = "average_locked_returns"

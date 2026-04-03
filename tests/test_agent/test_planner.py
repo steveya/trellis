@@ -24,6 +24,15 @@ class TestSpecSchema:
         spec = STATIC_SPECS["cap"]
         assert spec.class_name == "AgentCapPayoff"
 
+    def test_schedule_dependent_static_specs_use_typed_date_tuples(self):
+        callable_spec = STATIC_SPECS["callable_bond"]
+        puttable_spec = STATIC_SPECS["puttable_bond"]
+        bermudan_spec = STATIC_SPECS["bermudan_swaption"]
+
+        assert next(f for f in callable_spec.fields if f.name == "call_dates").type == "tuple[date, ...]"
+        assert next(f for f in puttable_spec.fields if f.name == "put_dates").type == "tuple[date, ...]"
+        assert next(f for f in bermudan_spec.fields if f.name == "exercise_dates").type == "tuple[date, ...]"
+
     def test_frozen(self):
         spec = STATIC_SPECS["swaption"]
         with pytest.raises(AttributeError):
@@ -35,8 +44,8 @@ class TestPlanStatic:
     def test_swaption_plan_has_spec(self):
         plan = _plan_static(
             "European payer swaption",
-            {"discount", "forward_rate", "black_vol"},
-            {"discount", "forward_rate", "black_vol"},
+            {"discount_curve", "forward_curve", "black_vol_surface"},
+            {"discount_curve", "forward_curve", "black_vol_surface"},
             set(),
         )
         assert plan.payoff_class_name == "SwaptionPayoff"
@@ -48,8 +57,8 @@ class TestPlanStatic:
     def test_unknown_instrument_no_spec(self):
         plan = _plan_static(
             "variance swap on VIX",
-            {"discount", "black_vol"},
-            {"discount", "black_vol"},
+            {"discount_curve", "black_vol_surface"},
+            {"discount_curve", "black_vol_surface"},
             set(),
         )
         assert plan.spec_schema is None  # no static spec → needs LLM Step 1
@@ -57,8 +66,8 @@ class TestPlanStatic:
     def test_generic_class_name(self):
         plan = _plan_static(
             "variance swap on VIX",
-            {"discount"},
-            {"discount"},
+            {"discount_curve"},
+            {"discount_curve"},
             set(),
         )
         assert plan.payoff_class_name == "VarianceSwapPayoff"
@@ -66,8 +75,8 @@ class TestPlanStatic:
     def test_barrier_option_has_spec(self):
         plan = _plan_static(
             "exotic barrier option",
-            {"discount", "black_vol"},
-            {"discount", "black_vol"},
+            {"discount_curve", "black_vol_surface"},
+            {"discount_curve", "black_vol_surface"},
             set(),
         )
         assert plan.spec_schema is not None
@@ -76,8 +85,8 @@ class TestPlanStatic:
     def test_basket_option_has_spec(self):
         plan = _plan_static(
             "worst-of basket option on two equities",
-            {"discount", "spot"},
-            {"discount", "spot"},
+            {"discount_curve", "spot"},
+            {"discount_curve", "spot"},
             set(),
         )
         assert plan.spec_schema is not None
@@ -111,8 +120,8 @@ class TestPlanStatic:
     def test_european_option_description_gets_specialized_spec(self):
         plan = _plan_static(
             "European call option on equity",
-            {"discount", "black_vol"},
-            {"discount", "black_vol"},
+            {"discount_curve", "black_vol_surface"},
+            {"discount_curve", "black_vol_surface"},
             set(),
             instrument_type="european_option",
         )
@@ -147,12 +156,12 @@ class TestPlanBuild:
 
     def test_missing_capabilities_raises(self):
         with pytest.raises(NotImplementedError, match="missing capabilities"):
-            plan_build("some exotic", {"discount", "simulated_paths"})
+            plan_build("some exotic", {"discount_curve", "simulated_paths"})
 
     def test_swaption_returns_plan_with_spec(self):
         plan = plan_build(
             "European payer swaption",
-            {"discount", "forward_rate", "black_vol"},
+            {"discount_curve", "forward_curve", "black_vol_surface"},
         )
         assert isinstance(plan, BuildPlan)
         assert plan.spec_schema is not None
@@ -182,7 +191,7 @@ class TestPlanBuild:
     def test_plan_gap_analysis(self):
         plan = plan_build(
             "European payer swaption",
-            {"discount", "forward_rate", "black_vol"},
+            {"discount_curve", "forward_curve", "black_vol_surface"},
         )
-        assert plan.satisfied == frozenset({"discount", "forward_rate", "black_vol"})
+        assert plan.satisfied == frozenset({"discount_curve", "forward_curve", "black_vol_surface"})
         assert plan.missing == frozenset()

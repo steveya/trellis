@@ -2,8 +2,8 @@ id: md_023
 title: ResolvedBasketSemantics missing rates attribute access
 severity: critical
 category: market_data
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 0.8
 created: '2026-03-28T09:06:25.113097'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_090625_basket_option_monte_carlo.yaml

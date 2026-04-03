@@ -72,6 +72,19 @@ Typed route admissibility is owned by:
 - `RouteSpec.admissibility`
 - `BuildGateDecision`
 
+Routes are no longer the primary synthesis plan. The compiler now emits lane
+obligations first and then a structured route-binding authority packet that
+answers a narrower question:
+
+- which exact checked backend fit was selected
+- which modules, primitives, and helper refs are in authority for that fit
+- which validation bundle and canary tasks cover the fit
+- which typed admissibility contract and failures apply to the request
+
+That packet is the backend-binding and provenance surface shared by prompt
+rendering, trace replay, validation events, checkpoints, and diagnostics.
+Route-card prose is secondary evidence, not the planning authority.
+
 ### 2.4 Lowering authority
 
 The current lowering boundary is family-specific, not universal:
@@ -101,7 +114,30 @@ This boundary preserves current route IDs and helper entry surfaces.
 
 ---
 
-## 4. Warning And Error Policy
+## 4. Post-Boundary Runtime Leverage
+
+The semantic boundary now also has concrete runtime leverage layers on top of
+it. These do not reopen the contract/compiler split; they exploit it:
+
+- deterministic checked-in route reuse is now route-metadata-driven rather than
+  executor-hardcoded
+- replay, checkpoints, and diagnosis packets consume the same
+  route-binding-authority packet rather than inferring route meaning from
+  scattered helper text
+- low-confidence and cold-start builds can surface similar-product retrieval
+  through gap-check, knowledge retrieval, and prompt formatting
+- deterministic validation is compiled through `CompiledValidationContract`
+  and can attach route-specific financial checks before reviewer escalation
+- eligible single-method builds can run a post-bundle reference oracle against
+  exact helper-backed or bound-style checked-in references
+
+This matters operationally because the shipped boundary is no longer only a
+compiler refactor. It is the authority surface that retrieval, validation,
+reuse, and runtime diagnostics now share.
+
+---
+
+## 5. Warning And Error Policy
 
 The current system distinguishes:
 
@@ -125,7 +161,7 @@ Errors are used when:
 
 ---
 
-## 5. Migrated-Family Authority Rules
+## 6. Migrated-Family Authority Rules
 
 For the migrated families above:
 
@@ -141,7 +177,7 @@ blocking the migrated family path, as long as the typed surface is valid.
 
 ---
 
-## 6. What Changed Relative To The Earlier In-Flight Review
+## 7. What Changed Relative To The Earlier In-Flight Review
 
 The earlier review was directionally useful but stale on several points. The
 following are now shipped, not hypothetical:
@@ -164,7 +200,7 @@ The following remain intentionally deferred:
 
 ---
 
-## 7. Engineering Rules For The Current Slice
+## 8. Engineering Rules For The Current Slice
 
 These rules are now part of the shipped design:
 
@@ -176,7 +212,7 @@ These rules are now part of the shipped design:
 
 ---
 
-## 8. Remaining Gaps Worth Tracking
+## 9. Remaining Gaps Worth Tracking
 
 These are real follow-ons, but they are outside the current shipped boundary:
 

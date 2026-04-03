@@ -34,6 +34,7 @@ from trellis.agent.knowledge.schema import (
     ProductDecomposition,
     RetrievalSpec,
     Severity,
+    SimilarProductMatch,
 )
 
 
@@ -339,6 +340,8 @@ class KnowledgeStore:
             "cookbook": self._load_cookbook(method) if method else None,
             "data_contracts": self._load_contracts(method) if method else [],
             "method_requirements": self._load_requirements(method) if method else None,
+            "similar_products": [],
+            "borrowed_lessons": [],
         }
 
         if spec.include_benchmarks:
@@ -347,8 +350,74 @@ class KnowledgeStore:
         if spec.error_signatures:
             result["matched_signatures"] = self._match_signatures(spec.error_signatures)
 
+        if self._should_surface_similar_products(spec, result):
+            similar_products = self.find_similar_products(spec)
+            result["similar_products"] = similar_products
+            if similar_products:
+                result["borrowed_lessons"] = self._borrow_lessons_from_similar_products(
+                    similar_products,
+                    spec,
+                    primary_lessons=result["lessons"],
+                )
+
         self._retrieval_cache[cache_key] = result
         return result
+
+    def find_similar_products(
+        self,
+        spec: RetrievalSpec,
+        *,
+        limit: int = 3,
+        min_score: float = 0.2,
+    ) -> list[SimilarProductMatch]:
+        """Return deterministic nearest known products for a sparse retrieval spec."""
+        query_features = set(expand_features(list(spec.features), self._features))
+        if not query_features:
+            return []
+
+        method = normalize_method(spec.method) if spec.method else ""
+        matches: list[SimilarProductMatch] = []
+        for instrument, decomposition in self._decompositions.items():
+            if spec.instrument and instrument == spec.instrument:
+                continue
+
+            candidate_features = set(
+                expand_features(list(decomposition.features), self._features)
+            )
+            shared_features = sorted(query_features & candidate_features)
+            if not shared_features:
+                continue
+
+            union = query_features | candidate_features
+            jaccard = len(shared_features) / max(len(union), 1)
+            method_bonus = 0.15 if method and normalize_method(decomposition.method) == method else 0.0
+            score = round(min(1.0, jaccard + method_bonus), 2)
+            if score < min_score:
+                continue
+
+            matches.append(
+                SimilarProductMatch(
+                    instrument=instrument,
+                    method=normalize_method(decomposition.method),
+                    score=score,
+                    shared_features=tuple(shared_features),
+                    query_only_features=tuple(sorted(query_features - candidate_features)),
+                    candidate_only_features=tuple(sorted(candidate_features - query_features)),
+                    promoted_routes=self._promoted_routes_for(
+                        instrument=instrument,
+                        method=decomposition.method,
+                    ),
+                )
+            )
+
+        matches.sort(
+            key=lambda match: (
+                -match.score,
+                -len(match.shared_features),
+                match.instrument,
+            )
+        )
+        return matches[: max(limit, 0)]
 
     def retrieval_cache_stats(self) -> dict[str, int]:
         """Return lightweight retrieval-cache statistics for testing and traces."""
@@ -421,6 +490,87 @@ class KnowledgeStore:
         for _, _, lesson in scored[:max_n]:
             lessons.append(lesson)
         return lessons
+
+    def _should_surface_similar_products(
+        self,
+        spec: RetrievalSpec,
+        result: dict[str, Any],
+    ) -> bool:
+        """Return whether similar-product suggestions should be added."""
+        if not spec.features:
+            return False
+        if result.get("decomposition") is None:
+            return True
+        if len(result.get("lessons", []) or []) < min(3, max(spec.max_lessons, 1)):
+            return True
+        if spec.instrument and not self._promoted_routes_for(instrument=spec.instrument, method=spec.method):
+            return True
+        return False
+
+    def _borrow_lessons_from_similar_products(
+        self,
+        matches: list[SimilarProductMatch],
+        spec: RetrievalSpec,
+        *,
+        primary_lessons: list[Lesson],
+        max_borrowed: int = 2,
+    ) -> list[Lesson]:
+        """Borrow a few extra lessons from the nearest known products."""
+        borrowed: list[Lesson] = []
+        seen_ids = {lesson.id for lesson in primary_lessons}
+        for match in matches:
+            candidate = self._decompositions.get(match.instrument)
+            if candidate is None:
+                continue
+
+            candidate_spec = RetrievalSpec(
+                method=match.method,
+                features=list(candidate.features),
+                instrument=match.instrument,
+                exercise_style=spec.exercise_style,
+                state_dependence=spec.state_dependence,
+                schedule_dependence=spec.schedule_dependence,
+                model_family=spec.model_family,
+                candidate_engine_families=spec.candidate_engine_families,
+                max_lessons=2,
+            )
+            candidate_lessons = self._query_lessons(
+                expand_features(list(candidate.features), self._features),
+                candidate_spec,
+                2,
+            )
+            for lesson in candidate_lessons:
+                if lesson.id in seen_ids:
+                    continue
+                borrowed.append(lesson)
+                seen_ids.add(lesson.id)
+                break
+            if len(borrowed) >= max_borrowed:
+                break
+        return borrowed
+
+    @staticmethod
+    def _promoted_routes_for(*, instrument: str | None, method: str | None) -> tuple[str, ...]:
+        """Return promoted route ids for one canonical decomposition when available."""
+        if not instrument or not method:
+            return ()
+        try:
+            from trellis.agent.knowledge.schema import ProductIR
+            from trellis.agent.route_registry import (
+                load_route_registry,
+                match_candidate_routes,
+            )
+
+            registry = load_route_registry()
+            promoted = match_candidate_routes(
+                registry,
+                method,
+                ProductIR(instrument=instrument, payoff_family=instrument),
+                promoted_only=True,
+            )
+            return tuple(route.id for route in promoted)
+        except Exception:
+            return ()
 
     @staticmethod
     def _relevance_score(

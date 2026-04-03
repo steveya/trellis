@@ -1,8 +1,8 @@
 category: calibration
 title: Payer Swaption Sign Convention Causes Negative Value
 severity: high
-status: candidate
-confidence: 0.5
+status: validated
+confidence: 0.6
 created: '2026-03-31T19:32:09.020344'
 version: ''
 source_trace: null

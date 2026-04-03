@@ -72,7 +72,7 @@ Implementation target: analytical_cds."""
 
     @property
     def requirements(self) -> set[str]:
-        return {"credit", "discount"}
+        return {"credit_curve", "discount_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec

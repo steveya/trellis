@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
-from trellis.agent.assembly_tools import select_invariant_pack
+from trellis.agent.assembly_tools import normalize_comparison_relation, select_invariant_pack
 from trellis.agent.knowledge.methods import normalize_method
 
 
@@ -22,6 +22,7 @@ NO_ARBITRAGE_CHECKS = {
     "check_zero_vol_intrinsic",
 }
 PRODUCT_FAMILY_CHECKS = {"check_bounded_by_reference"}
+ROUTE_SPECIFIC_CHECKS = {"check_rate_style_swaption_helper_consistency"}
 _KNOWN_FAMILY_CHECKS = {
     "credit_default_swap": (
         "check_cds_spread_quote_normalization",
@@ -113,6 +114,7 @@ def execute_validation_bundle(
     market_state_factory: Callable[..., Any] | None = None,
     reference_factory: Callable[[], Any] | None = None,
     intrinsic_fn: Callable[[Any], float] | None = None,
+    check_relations: Mapping[str, str] | None = None,
 ) -> ValidationBundleExecution:
     """Execute the deterministic checks selected for a validation bundle."""
     from trellis.agent import invariants
@@ -121,6 +123,7 @@ def execute_validation_bundle(
     failure_details: list[Any] = []
     executed_checks: list[str] = []
     skipped_checks: list[str] = []
+    check_relations = check_relations or {}
     vol_direction = _vol_monotonicity_direction(bundle.instrument_type)
 
     for check in bundle.checks:
@@ -151,6 +154,10 @@ def execute_validation_bundle(
                 skipped_checks.append(check)
                 continue
             executed_checks.append(check)
+            bound_relation = normalize_comparison_relation(
+                check_relations.get(check),
+                default="<=",
+            )
             result = _run_check_with_diagnostics(
                 invariants.check_bounded_by_reference,
                 check,
@@ -158,7 +165,7 @@ def execute_validation_bundle(
                 reference_factory,
                 market_state_factory,
                 rate_range=(0.02, 0.05, 0.08),
-                relation="<=",
+                relation=bound_relation,
             )
             failures.extend(result[0])
             failure_details.extend(result[1])
@@ -204,6 +211,21 @@ def execute_validation_bundle(
             executed_checks.append(check)
             result = _run_check_with_diagnostics(
                 getattr(invariants, check),
+                check,
+                payoff_factory,
+                market_state_factory,
+            )
+            failures.extend(result[0])
+            failure_details.extend(result[1])
+            continue
+
+        if check == "check_rate_style_swaption_helper_consistency":
+            if payoff_factory is None or market_state_factory is None:
+                skipped_checks.append(check)
+                continue
+            executed_checks.append(check)
+            result = _run_check_with_diagnostics(
+                invariants.check_rate_style_swaption_helper_consistency,
                 check,
                 payoff_factory,
                 market_state_factory,
@@ -307,6 +329,7 @@ def _categorize_checks(checks: tuple[str, ...]) -> dict[str, tuple[str, ...]]:
             for check in checks
             if check in (PRODUCT_FAMILY_CHECKS | set().union(*_KNOWN_FAMILY_CHECKS.values()))
         ),
+        "route_specific": tuple(check for check in checks if check in ROUTE_SPECIFIC_CHECKS),
     }
     return {
         key: value

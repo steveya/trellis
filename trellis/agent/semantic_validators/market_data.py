@@ -42,6 +42,7 @@ class MarketDataValidator:
 
         # 2. Check for hard-coded market data (always)
         findings.extend(self._check_hardcoded_market_data(source))
+        findings.extend(self._check_fx_rate_scalar_extraction(source))
 
         return tuple(findings)
 
@@ -86,3 +87,75 @@ class MarketDataValidator:
                 evidence=line_text,
             ))
         return findings
+
+    def _check_fx_rate_scalar_extraction(self, source: str) -> list[SemanticFinding]:
+        """Require explicit scalar extraction before arithmetic on FXRate quotes."""
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return []
+
+        detector = _FXRateArithmeticDetector()
+        detector.visit(tree)
+        if not detector.offending_nodes:
+            return []
+
+        first = detector.offending_nodes[0]
+        line = getattr(first, "lineno", None)
+        evidence = ast.get_source_segment(source, first) or "market_state.fx_rates[...]"
+        return [SemanticFinding(
+            validator="market_data",
+            severity="error",
+            category="fx_rate_scalar_extraction_missing",
+            message=(
+                "`market_state.fx_rates[...]` returns an FXRate wrapper. Extract "
+                "`.spot` before arithmetic or process seeding instead of multiplying "
+                "or otherwise treating the wrapper as a scalar."
+            ),
+            line=line,
+            evidence=evidence,
+        )]
+
+
+class _FXRateArithmeticDetector(ast.NodeVisitor):
+    """Detect arithmetic performed on raw FXRate wrappers."""
+
+    def __init__(self) -> None:
+        self.fx_quote_aliases: set[str] = set()
+        self.offending_nodes: list[ast.AST] = []
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        if _is_raw_fx_quote(node.value):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    self.fx_quote_aliases.add(target.id)
+        self.generic_visit(node)
+
+    def visit_BinOp(self, node: ast.BinOp) -> None:
+        if _contains_raw_fx_quote(node.left, self.fx_quote_aliases) or _contains_raw_fx_quote(
+            node.right, self.fx_quote_aliases,
+        ):
+            self.offending_nodes.append(node)
+        self.generic_visit(node)
+
+
+def _contains_raw_fx_quote(node: ast.AST, aliases: set[str]) -> bool:
+    """Whether the AST node still represents a raw FXRate wrapper."""
+    if _is_raw_fx_quote(node):
+        return True
+    if isinstance(node, ast.Name):
+        return node.id in aliases
+    return False
+
+
+def _is_raw_fx_quote(node: ast.AST) -> bool:
+    """Whether the AST node directly references market_state.fx_rates[...] without .spot."""
+    if not isinstance(node, ast.Subscript):
+        return False
+    value = node.value
+    return (
+        isinstance(value, ast.Attribute)
+        and value.attr == "fx_rates"
+        and isinstance(value.value, ast.Name)
+        and value.value.id == "market_state"
+    )

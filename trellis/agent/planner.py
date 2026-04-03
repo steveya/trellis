@@ -17,7 +17,7 @@ from trellis.core.capabilities import analyze_gap, normalize_capability_name
 class FieldDef:
     """One field definition for a payoff specification (name, type, description, optional default)."""
     name: str
-    type: str  # "float", "int", "str", "bool", "date", "str | None", "Frequency", "DayCountConvention"
+    type: str  # "float", "int", "str", "bool", "date", "str | None", "tuple[date, ...]", ...
     description: str
     default: str | None = None  # None = required; otherwise a Python literal string
 
@@ -61,7 +61,7 @@ STATIC_SPECS: dict[str, SpecSchema] = {
     "swaption": SpecSchema(
         class_name="SwaptionPayoff",
         spec_name="SwaptionSpec",
-        requirements=["discount", "forward_rate", "black_vol"],
+        requirements=["discount_curve", "forward_curve", "black_vol_surface"],
         fields=[
             FieldDef("notional", "float", "Notional amount"),
             FieldDef("strike", "float", "Strike rate (fixed rate of underlying swap)"),
@@ -77,7 +77,7 @@ STATIC_SPECS: dict[str, SpecSchema] = {
     "zcb_option": SpecSchema(
         class_name="ZCBOptionPayoff",
         spec_name="ZCBOptionSpec",
-        requirements=["discount", "black_vol"],
+        requirements=["discount_curve", "black_vol_surface"],
         fields=[
             FieldDef("notional", "float", "Face value / notional of the underlying bond"),
             FieldDef("strike", "float", "Strike quoted per unit face or on the stated notional"),
@@ -90,7 +90,7 @@ STATIC_SPECS: dict[str, SpecSchema] = {
     "cap": SpecSchema(
         class_name="AgentCapPayoff",
         spec_name="AgentCapSpec",
-        requirements=["discount", "forward_rate", "black_vol"],
+        requirements=["discount_curve", "forward_curve", "black_vol_surface"],
         fields=[
             FieldDef("notional", "float", "Notional amount"),
             FieldDef("strike", "float", "Cap strike rate"),
@@ -104,7 +104,7 @@ STATIC_SPECS: dict[str, SpecSchema] = {
     "floor": SpecSchema(
         class_name="AgentFloorPayoff",
         spec_name="AgentFloorSpec",
-        requirements=["discount", "forward_rate", "black_vol"],
+        requirements=["discount_curve", "forward_curve", "black_vol_surface"],
         fields=[
             FieldDef("notional", "float", "Notional amount"),
             FieldDef("strike", "float", "Floor strike rate"),
@@ -118,13 +118,13 @@ STATIC_SPECS: dict[str, SpecSchema] = {
     "callable_bond": SpecSchema(
         class_name="CallableBondPayoff",
         spec_name="CallableBondSpec",
-        requirements=["discount", "black_vol"],
+        requirements=["discount_curve", "black_vol_surface"],
         fields=[
             FieldDef("notional", "float", "Face value / notional"),
             FieldDef("coupon", "float", "Annual coupon rate"),
             FieldDef("start_date", "date", "Bond issue / settlement date"),
             FieldDef("end_date", "date", "Maturity date"),
-            FieldDef("call_dates", "str", "Comma-separated ISO dates: '2027-11-15,2029-11-15'"),
+            FieldDef("call_dates", "tuple[date, ...]", "Ordered callable exercise dates"),
             FieldDef("call_price", "float", "Call price (typically par)", "100.0"),
             FieldDef("frequency", "Frequency", "Coupon frequency", "Frequency.SEMI_ANNUAL"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
@@ -133,13 +133,13 @@ STATIC_SPECS: dict[str, SpecSchema] = {
     "puttable_bond": SpecSchema(
         class_name="PuttableBondPayoff",
         spec_name="PuttableBondSpec",
-        requirements=["discount", "black_vol"],
+        requirements=["discount_curve", "black_vol_surface"],
         fields=[
             FieldDef("notional", "float", "Face value / notional"),
             FieldDef("coupon", "float", "Annual coupon rate"),
             FieldDef("start_date", "date", "Bond issue / settlement date"),
             FieldDef("end_date", "date", "Maturity date"),
-            FieldDef("put_dates", "str", "Comma-separated ISO dates"),
+            FieldDef("put_dates", "tuple[date, ...]", "Ordered put exercise dates"),
             FieldDef("put_price", "float", "Put price (typically par)", "100.0"),
             FieldDef("frequency", "Frequency", "Coupon frequency", "Frequency.SEMI_ANNUAL"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
@@ -148,7 +148,7 @@ STATIC_SPECS: dict[str, SpecSchema] = {
     "barrier_option": SpecSchema(
         class_name="BarrierOptionPayoff",
         spec_name="BarrierOptionSpec",
-        requirements=["discount", "black_vol"],
+        requirements=["discount_curve", "black_vol_surface"],
         fields=[
             FieldDef("notional", "float", "Notional / number of shares"),
             FieldDef("spot", "float", "Current spot price"),
@@ -163,7 +163,7 @@ STATIC_SPECS: dict[str, SpecSchema] = {
     "asian_option": SpecSchema(
         class_name="AsianOptionPayoff",
         spec_name="AsianOptionSpec",
-        requirements=["discount", "black_vol"],
+        requirements=["discount_curve", "black_vol_surface"],
         fields=[
             FieldDef("notional", "float", "Notional / number of shares"),
             FieldDef("spot", "float", "Current spot price"),
@@ -178,7 +178,7 @@ STATIC_SPECS: dict[str, SpecSchema] = {
     "basket_option": SpecSchema(
         class_name="BasketOptionPayoff",
         spec_name="BasketOptionSpec",
-        requirements=["discount", "spot"],
+        requirements=["discount_curve", "spot"],
         fields=[
             FieldDef("notional", "float", "Notional / number of basket units"),
             FieldDef("underliers", "str", "Comma-separated basket underlier names"),
@@ -201,7 +201,7 @@ STATIC_SPECS: dict[str, SpecSchema] = {
     "cdo": SpecSchema(
         class_name="CDOTranchePayoff",
         spec_name="CDOTrancheSpec",
-        requirements=["discount", "credit"],
+        requirements=["discount_curve", "credit_curve"],
         fields=[
             FieldDef("notional", "float", "Tranche notional"),
             FieldDef("n_names", "int", "Number of names in reference portfolio"),
@@ -216,7 +216,7 @@ STATIC_SPECS: dict[str, SpecSchema] = {
     "nth_to_default": SpecSchema(
         class_name="NthToDefaultPayoff",
         spec_name="NthToDefaultSpec",
-        requirements=["discount", "credit"],
+        requirements=["discount_curve", "credit_curve"],
         fields=[
             FieldDef("notional", "float", "Protection notional"),
             FieldDef("n_names", "int", "Number of names in basket"),
@@ -230,11 +230,11 @@ STATIC_SPECS: dict[str, SpecSchema] = {
     "bermudan_swaption": SpecSchema(
         class_name="BermudanSwaptionPayoff",
         spec_name="BermudanSwaptionSpec",
-        requirements=["discount", "forward_rate", "black_vol"],
+        requirements=["discount_curve", "forward_curve", "black_vol_surface"],
         fields=[
             FieldDef("notional", "float", "Notional amount"),
             FieldDef("strike", "float", "Strike rate"),
-            FieldDef("exercise_dates", "str", "Comma-separated ISO exercise dates"),
+            FieldDef("exercise_dates", "tuple[date, ...]", "Ordered Bermudan exercise dates"),
             FieldDef("swap_end", "date", "Underlying swap end date"),
             FieldDef("swap_frequency", "Frequency", "Swap frequency", "Frequency.SEMI_ANNUAL"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_360"),
@@ -245,7 +245,7 @@ STATIC_SPECS: dict[str, SpecSchema] = {
     "cds": SpecSchema(
         class_name="CDSPayoff",
         spec_name="CDSSpec",
-        requirements=["discount", "credit"],
+        requirements=["discount_curve", "credit_curve"],
         fields=[
             FieldDef("notional", "float", "Protection notional"),
             FieldDef("spread", "float", "CDS running spread in decimal form (e.g. 0.015 = 150bps, not 150.0)"),
@@ -259,10 +259,30 @@ STATIC_SPECS: dict[str, SpecSchema] = {
 }
 
 SPECIALIZED_SPECS: dict[str, SpecSchema] = {
+    "cds_monte_carlo": SpecSchema(
+        class_name="CDSPayoff",
+        spec_name="CDSSpec",
+        requirements=["discount_curve", "credit_curve"],
+        fields=[
+            FieldDef("notional", "float", "Protection notional"),
+            FieldDef("spread", "float", "CDS running spread in decimal form (e.g. 0.015 = 150bps, not 150.0)"),
+            FieldDef("recovery", "float", "Recovery rate", "0.4"),
+            FieldDef("start_date", "date", "Protection start date"),
+            FieldDef("end_date", "date", "Protection end date"),
+            FieldDef("frequency", "Frequency", "Premium payment frequency", "Frequency.QUARTERLY"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_360"),
+            FieldDef(
+                "n_paths",
+                "int",
+                "Number of Monte Carlo paths for comparison-quality CDS pricing",
+                "250000",
+            ),
+        ],
+    ),
     "fx_vanilla_analytical": SpecSchema(
         class_name="FXVanillaAnalyticalPayoff",
         spec_name="FXVanillaOptionSpec",
-        requirements=["discount", "forward_rate", "black_vol", "fx"],
+        requirements=["discount_curve", "forward_curve", "black_vol_surface", "fx_rates"],
         fields=[
             FieldDef("notional", "float", "Option notional in foreign units"),
             FieldDef("strike", "float", "Strike in domestic currency per unit of foreign currency"),
@@ -276,7 +296,7 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
     "fx_vanilla_monte_carlo": SpecSchema(
         class_name="FXVanillaMonteCarloPayoff",
         spec_name="FXVanillaOptionSpec",
-        requirements=["discount", "forward_rate", "black_vol", "fx"],
+        requirements=["discount_curve", "forward_curve", "black_vol_surface", "fx_rates"],
         fields=[
             FieldDef("notional", "float", "Option notional in foreign units"),
             FieldDef("strike", "float", "Strike in domestic currency per unit of foreign currency"),
@@ -326,7 +346,7 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
     "european_option_analytical": SpecSchema(
         class_name="EuropeanOptionAnalyticalPayoff",
         spec_name="EuropeanOptionSpec",
-        requirements=["discount", "black_vol"],
+        requirements=["discount_curve", "black_vol_surface"],
         fields=[
             FieldDef("notional", "float", "Notional / number of shares"),
             FieldDef("spot", "float", "Current spot price"),
@@ -339,7 +359,7 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
     "european_option_monte_carlo": SpecSchema(
         class_name="EuropeanOptionMonteCarloPayoff",
         spec_name="EuropeanOptionSpec",
-        requirements=["discount", "black_vol"],
+        requirements=["discount_curve", "black_vol_surface"],
         fields=[
             FieldDef("notional", "float", "Notional / number of shares"),
             FieldDef("spot", "float", "Current spot price"),
@@ -354,7 +374,7 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
     "european_local_vol_monte_carlo": SpecSchema(
         class_name="EuropeanLocalVolMonteCarloPayoff",
         spec_name="EuropeanLocalVolOptionSpec",
-        requirements=["discount", "spot", "local_vol"],
+        requirements=["discount_curve", "spot", "local_vol_surface"],
         fields=[
             FieldDef("notional", "float", "Notional / number of shares"),
             FieldDef("strike", "float", "Option strike price"),
@@ -518,6 +538,10 @@ def _select_specialized_spec(
         if method_hint == "monte_carlo":
             return SPECIALIZED_SPECS["quanto_option_monte_carlo"]
         return SPECIALIZED_SPECS["quanto_option_analytical"]
+
+    if normalized_instrument in {"cds", "credit_default_swap"}:
+        if method_hint == "monte_carlo":
+            return SPECIALIZED_SPECS["cds_monte_carlo"]
 
     if _looks_like_fx_vanilla(description, desc_lower, normalized_requirements):
         if method_hint == "monte_carlo":

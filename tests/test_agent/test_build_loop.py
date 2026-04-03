@@ -30,10 +30,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from trellis.core.date_utils import generate_schedule, year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.black import black76_call, black76_put
+from trellis.models.rate_style_swaption import (
+    price_swaption_black76_raw,
+    resolve_swaption_black76_inputs,
+)
 
 
 @dataclass(frozen=True)
@@ -62,48 +64,20 @@ class SwaptionPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        return {"black_vol", "discount", "forward_rate"}
+        return {"black_vol_surface", "discount_curve", "forward_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
-        spec = self._spec
-        fwd_curve = market_state.forecast_forward_curve(spec.rate_index)
-
-        schedule = generate_schedule(spec.swap_start, spec.swap_end, spec.swap_frequency)
-        starts = [spec.swap_start] + schedule[:-1]
-
-        annuity = 0.0
-        float_pv = 0.0
-        for p_start, p_end in zip(starts, schedule):
-            tau = year_fraction(p_start, p_end, spec.day_count)
-            t_start = year_fraction(market_state.settlement, p_start, spec.day_count)
-            t_end = year_fraction(market_state.settlement, p_end, spec.day_count)
-            t_start = max(t_start, 1e-6)
-
-            df = market_state.discount.discount(t_end)
-            F = fwd_curve.forward_rate(t_start, t_end)
-            annuity += tau * float(df)
-            float_pv += float(F) * tau * float(df)
-
-        forward_swap_rate = float_pv / annuity if annuity > 0 else 0.0
-
-        T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)
-        sigma = market_state.vol_surface.black_vol(T, spec.strike)
-
-        if spec.is_payer:
-            black_value = black76_call(forward_swap_rate, spec.strike, sigma, T)
-        else:
-            black_value = black76_put(forward_swap_rate, spec.strike, sigma, T)
-
-        return spec.notional * annuity * float(black_value)
+        resolved = resolve_swaption_black76_inputs(market_state, self._spec)
+        return float(price_swaption_black76_raw(resolved))
 '''
 
 BAD_IMPORT_MODULE_CODE = MOCK_MODULE_CODE.replace(
-    "from trellis.models.black import black76_call, black76_put",
-    "from trellis.models.not_a_real_module import black76_call, black76_put",
+    "from trellis.models.rate_style_swaption import (\n    price_swaption_black76_raw,\n    resolve_swaption_black76_inputs,\n)",
+    "from trellis.models.not_a_real_module import (\n    price_swaption_black76_raw,\n    resolve_swaption_black76_inputs,\n)",
 )
 
 UNAPPROVED_IMPORT_MODULE_CODE = MOCK_MODULE_CODE.replace(
-    "from trellis.models.black import black76_call, black76_put",
+    "from trellis.models.rate_style_swaption import (\n    price_swaption_black76_raw,\n    resolve_swaption_black76_inputs,\n)",
     "from trellis.models.processes.heston import Heston",
 )
 
@@ -153,7 +127,7 @@ class AmericanOptionPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        return {"discount", "black_vol"}
+        return {"discount_curve", "black_vol_surface"}
 
     def evaluate(self, market_state: MarketState) -> float:
         import numpy as np
@@ -211,7 +185,7 @@ class AmericanOptionPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        return {"discount", "black_vol"}
+        return {"discount_curve", "black_vol_surface"}
 
     def evaluate(self, market_state: MarketState) -> float:
         from trellis.models.monte_carlo.engine import MonteCarloEngine
@@ -760,6 +734,7 @@ def test_validate_build_critic_path_uses_stage_helpers_without_nameerror(monkeyp
         knowledge_context="",
         model=None,
         *,
+        generation_plan=None,
         available_checks=None,
         json_max_retries=None,
         allow_text_fallback=True,
@@ -772,7 +747,10 @@ def test_validate_build_critic_path_uses_stage_helpers_without_nameerror(monkeyp
         return []
 
     monkeypatch.setattr("trellis.agent.critic.critique", fake_critique)
-    monkeypatch.setattr("trellis.agent.arbiter.run_critic_tests", lambda concerns, payoff: [])
+    monkeypatch.setattr(
+        "trellis.agent.arbiter.run_critic_tests",
+        lambda concerns, payoff, **kwargs: [],
+    )
 
     caplog.set_level("WARNING")
     failures = _validate_build(
@@ -861,6 +839,7 @@ def test_validate_build_passes_bounded_standard_critic_policy(monkeypatch):
         knowledge_context="",
         model=None,
         *,
+        generation_plan=None,
         available_checks=None,
         json_max_retries=None,
         allow_text_fallback=True,
@@ -873,7 +852,10 @@ def test_validate_build_passes_bounded_standard_critic_policy(monkeypatch):
         return []
 
     monkeypatch.setattr("trellis.agent.critic.critique", fake_critique)
-    monkeypatch.setattr("trellis.agent.arbiter.run_critic_tests", lambda concerns, payoff: [])
+    monkeypatch.setattr(
+        "trellis.agent.arbiter.run_critic_tests",
+        lambda concerns, payoff, **kwargs: [],
+    )
 
     failures = _validate_build(
         payoff_cls=DummyPayoff,
@@ -1009,7 +991,7 @@ from trellis.core.types import DayCountConvention, Frequency
 class BermudanSwaptionSpec:
     notional: float
     strike: float
-    exercise_dates: str
+    exercise_dates: tuple[date, ...]
     swap_end: date
     swap_frequency: Frequency = Frequency.SEMI_ANNUAL
     day_count: DayCountConvention = DayCountConvention.ACT_360
@@ -1027,7 +1009,7 @@ class BermudanSwaptionPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        return {"black_vol", "discount", "forward_rate"}
+        return {"black_vol_surface", "discount_curve", "forward_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
         from trellis.models.bermudan_swaption_tree import price_bermudan_swaption_tree
@@ -1042,7 +1024,7 @@ BERMUDAN_SPEC_SCHEMA = SpecSchema(
     fields=[
         FieldDef("notional", "float", "Swaption notional"),
         FieldDef("strike", "float", "Fixed strike rate"),
-        FieldDef("exercise_dates", "str", "Comma-separated exercise dates"),
+        FieldDef("exercise_dates", "tuple[date, ...]", "Ordered Bermudan exercise dates"),
         FieldDef("swap_end", "date", "Underlying swap end date"),
         FieldDef("swap_frequency", "Frequency", "Swap payment frequency", "Frequency.SEMI_ANNUAL"),
         FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_360"),
@@ -1091,7 +1073,7 @@ class TestBuildLoop:
 
         cls = build_payoff(
             "European payer swaption",
-            {"discount", "forward_rate", "black_vol"},
+            {"discount_curve", "forward_curve", "black_vol_surface"},
             force_rebuild=True,
         )
 
@@ -1108,7 +1090,7 @@ class TestBuildLoop:
 
         SwaptionPayoff = build_payoff(
             "European payer swaption",
-            {"discount", "forward_rate", "black_vol"},
+            {"discount_curve", "forward_curve", "black_vol_surface"},
             force_rebuild=True,
         )
 
@@ -1144,7 +1126,7 @@ class TestBuildLoop:
 
         SwaptionPayoff = build_payoff(
             "European payer swaption",
-            {"discount", "forward_rate", "black_vol"},
+            {"discount_curve", "forward_curve", "black_vol_surface"},
             force_rebuild=True,
         )
 
@@ -1184,7 +1166,7 @@ class TestBuildLoop:
 
         cls = build_payoff(
             "European payer swaption",
-            {"discount", "forward_rate", "black_vol"},
+            {"discount_curve", "forward_curve", "black_vol_surface"},
             force_rebuild=True,
         )
 
@@ -1201,7 +1183,7 @@ class TestBuildLoop:
         with pytest.raises(RuntimeError, match="unapproved Trellis module"):
             build_payoff(
                 "European payer swaption",
-                {"discount", "forward_rate", "black_vol"},
+                {"discount_curve", "forward_curve", "black_vol_surface"},
                 force_rebuild=True,
                 max_retries=2,
             )
@@ -1224,7 +1206,7 @@ class TestBuildLoop:
             with pytest.raises(RuntimeError, match="OpenAI text request failed"):
                 executor.build_payoff(
                     "European payer swaption",
-                    {"discount", "forward_rate", "black_vol"},
+                    {"discount_curve", "forward_curve", "black_vol_surface"},
                     force_rebuild=True,
                     max_retries=1,
                 )
@@ -1246,7 +1228,7 @@ class TestBuildLoop:
 
         cls = build_payoff(
             "European payer swaption",
-            {"discount", "forward_rate", "black_vol"},
+            {"discount_curve", "forward_curve", "black_vol_surface"},
             force_rebuild=True,
             max_retries=2,
         )
@@ -1420,6 +1402,7 @@ from dataclasses import dataclass
 from datetime import date
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
+from trellis.models.analytical.quanto import price_quanto_option_analytical
 
 @dataclass(frozen=True)
 class QuantoOptionSpec:
@@ -1442,7 +1425,7 @@ class QuantoOptionAnalyticalPayoff:
         return {"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot", "model_parameters"}
 
     def evaluate(self, market_state: MarketState) -> float:
-        return 0.0
+        return float(price_quanto_option_analytical(self._spec, market_state))
 '''
         scratch_path = Path("/tmp/quantooptionanalytical_fresh.py")
         mock_write_module.return_value = scratch_path
@@ -1548,7 +1531,7 @@ class QuantoOptionAnalyticalPayoff:
         ) as mock_write_module:
             cls = build_payoff(
                 "American put option on equity",
-                {"discount", "black_vol"},
+                {"discount_curve", "black_vol_surface"},
                 instrument_type="american_option",
                 force_rebuild=True,
                 validation="fast",
@@ -1585,7 +1568,7 @@ class QuantoOptionAnalyticalPayoff:
         ):
             payoff_cls = build_payoff(
                 "American put option on equity",
-                {"discount", "black_vol"},
+                {"discount_curve", "black_vol_surface"},
                 instrument_type="american_option",
                 force_rebuild=True,
                 validation="fast",
@@ -1620,7 +1603,7 @@ class QuantoOptionAnalyticalPayoff:
         ):
             build_payoff(
                 "American Asian barrier option under Heston with early exercise",
-                {"discount", "black_vol"},
+                {"discount_curve", "black_vol_surface"},
                 force_rebuild=True,
                 validation="fast",
                 max_retries=1,
@@ -1654,7 +1637,7 @@ class QuantoOptionAnalyticalPayoff:
         ):
             payoff_cls = build_payoff(
                 "Bermudan swaption: tree vs LSM MC",
-                {"discount", "forward_rate", "black_vol"},
+                {"discount_curve", "forward_curve", "black_vol_surface"},
                 instrument_type="bermudan_swaption",
                 force_rebuild=True,
                 validation="fast",

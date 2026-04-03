@@ -699,7 +699,7 @@ def _market_data_for_traits(
         if feature is not None:
             market_data.update(feature.market_data)
     if "barrier" in payoff_traits or "asian" in payoff_traits or "vanilla_option" in payoff_traits:
-        market_data.update({"discount", "black_vol"})
+        market_data.update({"discount_curve", "black_vol_surface"})
     return sorted(market_data)
 
 
@@ -802,7 +802,7 @@ Return JSON:
     "features": ["feature1", "feature2", ...],
     "method": "pricing_method",
     "method_modules": ["trellis.models.module1", ...],
-    "required_market_data": ["discount", "black_vol", ...],
+    "required_market_data": ["discount_curve", "black_vol_surface", ...],
     "reasoning": "Brief explanation of why this decomposition and method",
     "notes": "Any known complexities or edge cases"
 }}"""
@@ -824,7 +824,7 @@ Return JSON:
         features=tuple(data.get("features", ["discounting"])),
         method=normalize_method(data.get("method", "analytical")),
         method_modules=tuple(data.get("method_modules", [])),
-        required_market_data=frozenset(data.get("required_market_data", ["discount"])),
+        required_market_data=frozenset(data.get("required_market_data", ["discount_curve"])),
         reasoning=data.get("reasoning", ""),
         notes=data.get("notes", ""),
         learned=True,

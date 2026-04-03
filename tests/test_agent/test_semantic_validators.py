@@ -6,7 +6,7 @@ from dataclasses import replace
 
 import pytest
 
-from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan
+from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
 from trellis.agent.knowledge.schema import ProductIR
 from trellis.agent.route_registry import load_route_registry, resolve_route_primitives, RouteSpec
 from trellis.agent.semantic_validators import validate_generated_semantics
@@ -21,7 +21,15 @@ def registry():
     return load_route_registry()
 
 
-def _make_plan(route: str, engine_family: str = "analytical") -> GenerationPlan:
+def _make_plan(
+    route: str,
+    engine_family: str = "analytical",
+    *,
+    primitives: tuple[PrimitiveRef, ...] = (),
+    adapters: tuple[str, ...] = (),
+    notes: tuple[str, ...] = (),
+    route_family: str = "",
+) -> GenerationPlan:
     return GenerationPlan(
         method=engine_family,
         instrument_type=None,
@@ -32,9 +40,11 @@ def _make_plan(route: str, engine_family: str = "analytical") -> GenerationPlan:
         primitive_plan=PrimitivePlan(
             route=route,
             engine_family=engine_family,
-            primitives=(),
-            adapters=(),
+            primitives=primitives,
+            adapters=adapters,
             blockers=(),
+            notes=notes,
+            route_family=route_family,
         ),
     )
 
@@ -79,6 +89,16 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("test"), None)
         warnings = [f for f in findings if f.category == "hardcoded_market_data"]
         assert len(warnings) >= 1
+
+    def test_flags_raw_fx_rate_used_in_arithmetic(self):
+        source = '''
+def evaluate(self, market_state):
+    spot = market_state.fx_rates[spec.fx_pair]
+    return spot * 1.01
+'''
+        validator = MarketDataValidator()
+        findings = validator.validate(source, _make_plan("test"), None)
+        assert any(f.category == "fx_rate_scalar_extraction_missing" for f in findings)
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +184,18 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("exercise_lattice", "lattice"), spec)
         assert any(f.category == "route_helper_not_called" for f in findings)
 
+    def test_importing_route_helper_without_calling_it_still_fails(self, registry):
+        spec = [r for r in registry.routes if r.id == "quanto_adjustment_analytical"][0]
+        source = '''
+from trellis.models.analytical.quanto import price_quanto_option_analytical
+
+def evaluate(self, market_state):
+    return black76_call(F, K, T, vol, df)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("quanto_adjustment_analytical"), spec)
+        assert any(f.category == "route_helper_not_called" for f in findings)
+
     def test_flags_missing_discount(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         source = '''
@@ -174,6 +206,32 @@ def evaluate(self, market_state):
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("analytical_black76"), spec)
         assert any(f.category == "missing_discount_application" for f in findings)
+
+    def test_flags_exact_helper_signature_mismatch(self, registry):
+        spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
+        callable_ir = ProductIR(
+            instrument="american_option",
+            payoff_family="vanilla_option",
+            exercise_style="american",
+            model_family="equity_diffusion",
+        )
+        spec = replace(spec, primitives=resolve_route_primitives(spec, callable_ir))
+        source = '''
+from trellis.models.equity_option_tree import price_vanilla_equity_option_tree
+
+def evaluate(self, market_state):
+    return price_vanilla_equity_option_tree(
+        market_state=market_state,
+        underlying=self._spec.underlying,
+        expiry_date=self._spec.expiry_date,
+        strike=self._spec.strike,
+        exercise="american",
+        steps=200,
+    )
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("exercise_lattice", "lattice"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_helper_backed_pde_route_does_not_require_low_level_engine_signatures(self, registry):
         spec = [r for r in registry.routes if r.id == "vanilla_equity_theta_pde"][0]
@@ -229,3 +287,39 @@ def evaluate(self, market_state):
         report = validate_generated_semantics(source, plan, route_spec=spec)
         assert isinstance(report, SemanticValidationReport)
         assert len(report.findings) > 0
+
+    def test_uses_resolved_primitive_plan_when_route_spec_is_not_passed(self):
+        source = '''
+def evaluate(self, market_state):
+    return lattice_backward_induction(lattice, terminal_payoff)
+'''
+        plan = _make_plan(
+            "exercise_lattice",
+            "lattice",
+            primitives=(
+                PrimitiveRef(
+                    module="trellis.models.callable_bond_tree",
+                    symbol="price_callable_bond_tree",
+                    role="route_helper",
+                ),
+            ),
+            route_family="callable_bond",
+        )
+
+        report = validate_generated_semantics(source, plan)
+
+        assert not report.ok
+        assert any(f.category == "route_helper_not_called" for f in report.findings)
+        assert report.mode == "blocking"
+
+    def test_fx_rate_scalar_extraction_is_blocking_by_default(self):
+        source = '''
+def evaluate(self, market_state):
+    spot = market_state.fx_rates["EURUSD"]
+    return spot * 1.01
+'''
+        report = validate_generated_semantics(source, _make_plan("test"))
+
+        assert not report.ok
+        assert any(f.category == "fx_rate_scalar_extraction_missing" for f in report.findings)
+        assert report.mode == "blocking"

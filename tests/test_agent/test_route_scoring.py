@@ -12,7 +12,7 @@ def test_callable_bond_ranks_exercise_lattice_above_generic_tree():
     pricing_plan = PricingPlan(
         method="rate_tree",
         method_modules=["trellis.models.trees.lattice"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="callable_bond",
         reasoning="test",
     )
@@ -41,7 +41,7 @@ def test_american_put_ranks_exercise_mc_above_plain_mc():
     pricing_plan = PricingPlan(
         method="monte_carlo",
         method_modules=["trellis.models.monte_carlo.engine"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="american_option",
         reasoning="test",
     )
@@ -102,7 +102,7 @@ def test_unsupported_composite_routes_are_penalized_by_blockers():
     pricing_plan = PricingPlan(
         method="monte_carlo",
         method_modules=["trellis.models.monte_carlo.engine"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build=None,
         reasoning="test",
     )
@@ -237,7 +237,7 @@ def test_generation_plan_selects_highest_scored_route():
     pricing_plan = PricingPlan(
         method="rate_tree",
         method_modules=["trellis.models.trees.lattice"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="callable_bond",
         reasoning="test",
     )

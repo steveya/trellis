@@ -1,7 +1,8 @@
 """Arbiter: runs invariant suite + deterministic critic-selected checks.
 
 No LLM judgment — just execute deterministic checks and report pass/fail.
-Legacy critic-authored ``test_code`` is still supported for compatibility.
+Legacy critic-authored ``test_code`` is available only through an explicit
+compatibility flag and is disabled in the standard path.
 """
 
 from __future__ import annotations
@@ -37,6 +38,9 @@ def run_critic_tests(
     concerns: list,
     payoff,
     spec_kwargs: dict | None = None,
+    *,
+    allowed_check_ids: set[str] | None = None,
+    allow_legacy_test_code: bool = False,
 ) -> list[str]:
     """Execute critic-selected checks in a controlled namespace.
 
@@ -101,10 +105,16 @@ def run_critic_tests(
     for concern in concerns:
         if concern.severity != "error":
             continue
+        check_id = str(getattr(concern, "check_id", "") or "").strip()
+        if allowed_check_ids is not None and check_id not in allowed_check_ids:
+            if not (allow_legacy_test_code and check_id == "legacy_test_code"):
+                continue
         dispatched = _run_structured_critic_check(concern, namespace)
         if dispatched is not None:
             if dispatched:
                 failures.append(_format_structured_failure(concern, dispatched))
+            continue
+        if not allow_legacy_test_code:
             continue
         test_code = concern.test_code
         if not test_code.strip():

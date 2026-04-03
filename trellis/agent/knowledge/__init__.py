@@ -48,10 +48,15 @@ from trellis.agent.knowledge.api_map import (
     get_api_map,
 )
 from trellis.agent.knowledge.skills import (
+    augment_prompt_with_skill_records,
+    append_prompt_skill_artifacts,
     clear_skill_index_cache,
     get_skill_record,
+    get_skill_lineage,
     load_skill_index,
+    load_skill_lineage_index,
     query_skill_records,
+    select_prompt_skill_artifacts,
 )
 
 
@@ -184,8 +189,13 @@ __all__ = [
     "get_api_map",
     "format_api_map_for_prompt",
     "load_skill_index",
+    "load_skill_lineage_index",
     "get_skill_record",
+    "get_skill_lineage",
     "query_skill_records",
+    "select_prompt_skill_artifacts",
+    "append_prompt_skill_artifacts",
+    "augment_prompt_with_skill_records",
     "clear_skill_index_cache",
     "retrieve_for_task",
     "retrieve_for_product_ir",

@@ -7,6 +7,8 @@ pipeline after ``validate_semantics()`` (gate 3), sharing its retry slot.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from trellis.agent.codegen_guardrails import GenerationPlan
 from trellis.agent.route_registry import RouteSpec, find_route_by_id
 from trellis.agent.semantic_validators.algorithm_contract import AlgorithmContractValidator
@@ -33,6 +35,37 @@ _VALIDATOR_MODES: dict[str, str] = {
     "parameter_binding": "warning",
     "algorithm_contract": "warning",
 }
+
+_ALWAYS_BLOCKING_CATEGORIES = {
+    "fx_rate_scalar_extraction_missing",
+    "route_helper_not_called",
+    "route_helper_signature_mismatch",
+}
+
+
+def _resolved_route_spec(
+    plan: GenerationPlan,
+    route_spec: RouteSpec | None,
+) -> RouteSpec | None:
+    """Project the compiled primitive plan back onto the base route spec.
+
+    Semantic validation needs the resolved primitive/adaptor set chosen for the
+    current product, not just the generic route shell loaded from the registry.
+    """
+    primitive_plan = plan.primitive_plan
+    if route_spec is None and primitive_plan is not None:
+        route_spec = find_route_by_id(primitive_plan.route)
+    if route_spec is None or primitive_plan is None:
+        return route_spec
+
+    return replace(
+        route_spec,
+        primitives=primitive_plan.primitives,
+        adapters=primitive_plan.adapters,
+        notes=primitive_plan.notes,
+        route_family=primitive_plan.route_family or route_spec.route_family,
+        engine_family=primitive_plan.engine_family or route_spec.engine_family,
+    )
 
 
 def validate_generated_semantics(
@@ -61,11 +94,11 @@ def validate_generated_semantics(
     SemanticValidationReport
         Merged findings from all validators.
     """
-    if route_spec is None and plan.primitive_plan is not None:
-        route_spec = find_route_by_id(plan.primitive_plan.route)
+    route_spec = _resolved_route_spec(plan, route_spec)
 
     all_findings: list[SemanticFinding] = []
     effective_mode = mode or "warning"
+    force_blocking = False
 
     for validator in _VALIDATORS:
         findings = validator.validate(source, plan, route_spec)
@@ -74,9 +107,13 @@ def validate_generated_semantics(
             validator_name = findings[0].validator if findings else ""
             validator_mode = _VALIDATOR_MODES.get(validator_name, "warning")
             if validator_mode == "warning":
-                # Downgrade errors to warnings
+                if any(f.category in _ALWAYS_BLOCKING_CATEGORIES for f in findings):
+                    force_blocking = True
+                # Downgrade non-contract-breaking errors to warnings
                 findings = tuple(
-                    SemanticFinding(
+                    f
+                    if f.category in _ALWAYS_BLOCKING_CATEGORIES
+                    else SemanticFinding(
                         validator=f.validator,
                         severity="warning",
                         category=f.category,
@@ -90,6 +127,9 @@ def validate_generated_semantics(
                 effective_mode = "blocking"
 
         all_findings.extend(findings)
+
+    if force_blocking:
+        effective_mode = "blocking"
 
     return SemanticValidationReport(
         findings=tuple(all_findings),

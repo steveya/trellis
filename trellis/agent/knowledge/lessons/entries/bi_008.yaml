@@ -1,8 +1,8 @@
 category: backward_induction
 title: Use exported timeline helpers
 severity: high
-status: candidate
-confidence: 0.5
+status: validated
+confidence: 0.7
 created: '2026-04-01T00:16:30.009600'
 version: ''
 source_trace: null

@@ -29,6 +29,8 @@ from trellis.agent.task_runtime import (
 
 ROOT = Path(__file__).resolve().parents[2]
 STRESS_TASK_MANIFEST = ROOT / "tests" / "evals" / "stress_tasks.yaml"
+STRESS_COMPARE_READY = "compare_ready"
+STRESS_HONEST_BLOCK = "honest_block"
 
 
 @dataclass(frozen=True)
@@ -187,6 +189,22 @@ def load_stress_task_manifest(path: str | Path | None = None) -> dict[str, dict[
     return {str(task_id): dict(spec) for task_id, spec in loaded.items()}
 
 
+def _task_contract_required_capabilities(task: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return the market capabilities the task contract claims it needs."""
+    market_assertions = task.get("market_assertions") or {}
+    return tuple(str(item) for item in (market_assertions.get("requires") or ()))
+
+
+def _task_contract_comparison_targets(task: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return the normalized comparison targets implied by the task contract."""
+    cross_validate = task.get("cross_validate") or {}
+    internal = tuple(str(item) for item in (cross_validate.get("internal") or ()))
+    analytical = cross_validate.get("analytical")
+    if analytical:
+        return internal + (str(analytical),)
+    return internal
+
+
 def grade_stress_task_preflight(
     task: dict[str, Any],
     expectation: dict[str, Any],
@@ -198,6 +216,7 @@ def grade_stress_task_preflight(
         market_state, _ = build_market_state_for_task(task, build_market_state())
 
     required_capabilities = tuple(expectation.get("required_mock_capabilities") or ())
+    contract_capabilities = _task_contract_required_capabilities(task)
     available_capabilities = set(getattr(market_state, "available_capabilities", ()))
     missing_capabilities = tuple(
         capability for capability in required_capabilities if capability not in available_capabilities
@@ -208,6 +227,7 @@ def grade_stress_task_preflight(
         target.target_id for target in _task_comparison_targets(task, construct_methods)
     )
     expected_targets = tuple(expectation.get("comparison_targets") or ())
+    contract_targets = _task_contract_comparison_targets(task)
     missing_targets = tuple(
         target for target in expected_targets if target not in comparison_targets
     )
@@ -221,7 +241,23 @@ def grade_stress_task_preflight(
     if reference_target and reference_target not in comparison_targets:
         reference_errors.append(f"missing reference target: {reference_target}")
 
+    contract_drift = []
+    if required_capabilities != contract_capabilities:
+        contract_drift.append(
+            "required mock capabilities drift: "
+            f"manifest={required_capabilities} task_contract={contract_capabilities}"
+        )
+    if expected_targets != contract_targets:
+        contract_drift.append(
+            "comparison target drift: "
+            f"manifest={expected_targets} task_contract={contract_targets}"
+        )
+
     return {
+        "task_contract_alignment": GradeResult(
+            not contract_drift,
+            tuple(contract_drift),
+        ),
         "market_capability_alignment": GradeResult(
             not missing_capabilities,
             tuple(
@@ -258,8 +294,6 @@ def grade_stress_task_result(
     result: Mapping[str, Any],
 ) -> dict[str, GradeResult]:
     """Grade one live stress-task result against its manifest expectation."""
-    del task  # reserved for future task/result cross-checks
-
     forbidden_patterns = tuple(str(pattern) for pattern in (expectation.get("forbidden_failure_patterns") or ()))
     haystack = _stress_result_text(result)
     forbidden_hits = tuple(
@@ -268,18 +302,86 @@ def grade_stress_task_result(
     )
 
     bucket = classify_task_result(result)
-    outcome_class = str(expectation.get("outcome_class") or "").strip().lower()
+    outcome_class = _normalize_stress_outcome_class(expectation.get("outcome_class"))
+    observed_reference_target = str(
+        (result.get("cross_validation") or {}).get("reference_target") or ""
+    ).strip()
+    expected_reference_target = str(expectation.get("reference_target") or "").strip()
+    comparison_status = str(
+        (result.get("cross_validation") or {}).get("status") or ""
+    ).strip().lower()
+    expected_blocker_categories = tuple(
+        str(category) for category in (expectation.get("expected_blocker_categories") or ())
+    )
+    observed_blocker_categories = _stress_observed_blocker_categories(result)
 
-    if outcome_class == "compare_ready":
-        outcome_ok = bucket not in {"missing_market_data", "llm_response", "timeout"}
-    elif outcome_class == "honest_block":
-        outcome_ok = result.get("success") or bucket not in {"missing_market_data", "llm_response", "timeout"}
-    else:
-        outcome_ok = True
+    outcome_ok = True
+    outcome_details: list[str] = []
+    if outcome_class == STRESS_COMPARE_READY:
+        if not result.get("success"):
+            outcome_ok = False
+            outcome_details.append(f"compare-ready task did not succeed: bucket={bucket}")
+        if task.get("cross_validate") and comparison_status != "passed":
+            outcome_ok = False
+            outcome_details.append(
+                f"compare-ready task did not finish with passed comparison status: {comparison_status or 'missing'}"
+            )
+        if observed_blocker_categories:
+            outcome_ok = False
+            outcome_details.append(
+                "compare-ready task surfaced blocker categories: "
+                + ", ".join(observed_blocker_categories)
+            )
+    elif outcome_class == STRESS_HONEST_BLOCK:
+        if not result.get("success"):
+            if expected_blocker_categories:
+                if not observed_blocker_categories:
+                    outcome_ok = False
+                    outcome_details.append(
+                        "honest-block task did not surface blocker categories"
+                    )
+                elif not set(observed_blocker_categories) & set(expected_blocker_categories):
+                    outcome_ok = False
+                    outcome_details.append(
+                        "honest-block task surfaced unexpected blocker categories: "
+                        f"observed={observed_blocker_categories} expected={expected_blocker_categories}"
+                    )
+            elif bucket in {"missing_market_data", "llm_response", "timeout"}:
+                outcome_ok = False
+                outcome_details.append(f"unexpected honest-block outcome bucket: {bucket}")
 
-    details = []
-    if not outcome_ok:
-        details.append(f"unexpected stress-task outcome bucket: {bucket}")
+    blocker_alignment_ok = True
+    blocker_alignment_details: list[str] = []
+    if expected_blocker_categories and not result.get("success"):
+        observed = set(observed_blocker_categories)
+        expected = set(expected_blocker_categories)
+        if not observed:
+            blocker_alignment_ok = False
+            blocker_alignment_details.append(
+                "expected blocker categories were not surfaced in the result"
+            )
+        elif not observed & expected:
+            blocker_alignment_ok = False
+            blocker_alignment_details.append(
+                "observed blocker categories did not match the manifest expectation: "
+                f"observed={observed_blocker_categories} expected={expected_blocker_categories}"
+            )
+    elif outcome_class == STRESS_COMPARE_READY and observed_blocker_categories:
+        blocker_alignment_ok = False
+        blocker_alignment_details.append(
+            "compare-ready task should not emit blocker categories: "
+            + ", ".join(observed_blocker_categories)
+        )
+
+    reference_alignment_ok = True
+    reference_alignment_details: list[str] = []
+    if expected_reference_target and comparison_status:
+        if observed_reference_target != expected_reference_target:
+            reference_alignment_ok = False
+            reference_alignment_details.append(
+                "comparison reference target drifted from the manifest: "
+                f"observed={observed_reference_target or 'missing'} expected={expected_reference_target}"
+            )
 
     return {
         "forbidden_failure_patterns": GradeResult(
@@ -288,8 +390,60 @@ def grade_stress_task_result(
         ),
         "outcome_class_alignment": GradeResult(
             outcome_ok,
-            tuple(details),
+            tuple(outcome_details),
         ),
+        "blocker_category_alignment": GradeResult(
+            blocker_alignment_ok,
+            tuple(blocker_alignment_details),
+        ),
+        "reference_target_alignment": GradeResult(
+            reference_alignment_ok,
+            tuple(reference_alignment_details),
+        ),
+    }
+
+
+def summarize_stress_preflight(
+    tasks: Mapping[str, Mapping[str, Any]],
+    *,
+    manifest: Mapping[str, Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Render a canonical summary for one deterministic stress-task preflight pass."""
+    expectations = {
+        str(task_id): dict(spec)
+        for task_id, spec in (manifest or load_stress_task_manifest()).items()
+    }
+    by_task: dict[str, dict[str, Any]] = {}
+    failed_tasks: list[str] = []
+    totals = {
+        "tasks": 0,
+        "passed": 0,
+        "failed": 0,
+    }
+
+    for task_id, task in tasks.items():
+        expectation = expectations.get(task_id, {})
+        report = grade_stress_task_preflight(task, expectation)
+        blocked = not all(item.passed for item in report.values())
+        by_task[task_id] = {
+            "title": task.get("title"),
+            "blocked": blocked,
+            "checks": {
+                key: {"passed": value.passed, "details": list(value.details)}
+                for key, value in report.items()
+            },
+        }
+        totals["tasks"] += 1
+        if blocked:
+            totals["failed"] += 1
+            failed_tasks.append(task_id)
+        else:
+            totals["passed"] += 1
+
+    return {
+        "totals": totals,
+        "failed_tasks": failed_tasks,
+        "by_task": by_task,
     }
 
 
@@ -326,9 +480,17 @@ def summarize_stress_tranche(
         preflight = grade_stress_task_preflight(task, expectation) if expectation else {}
         live_report = grade_stress_task_result(task, expectation, result) if expectation and result else {}
 
-        outcome_class = str(expectation.get("outcome_class") or "unknown")
+        outcome_class = _normalize_stress_outcome_class(expectation.get("outcome_class")) or "unknown"
         bucket = classify_task_result(result) if result else "missing"
         failure_buckets[bucket] = failure_buckets.get(bucket, 0) + 1
+        blocker_categories = _stress_observed_blocker_categories(result) if result else ()
+        follow_on = _stress_follow_on_candidate(
+            task_id,
+            task,
+            expectation,
+            result,
+            blocker_categories=blocker_categories,
+        )
 
         passed_gate = all(
             item.passed for item in (
@@ -353,6 +515,16 @@ def summarize_stress_tranche(
             "run_id": result.get("task_run_history_path") or result.get("start_time"),
             "market_context": dict(result.get("market_context") or {}),
             "comparison_status": (result.get("cross_validation") or {}).get("status"),
+            "reference_target": expectation.get("reference_target"),
+            "observed_reference_target": (result.get("cross_validation") or {}).get("reference_target"),
+            "expected_blocker_categories": list(expectation.get("expected_blocker_categories") or []),
+            "observed_blocker_categories": list(blocker_categories),
+            "task_run_latest_path": result.get("task_run_latest_path"),
+            "task_run_history_path": result.get("task_run_history_path"),
+            "diagnosis_packet_path": result.get("task_diagnosis_packet_path"),
+            "diagnosis_dossier_path": result.get("task_diagnosis_dossier_path"),
+            "diagnosis_latest_packet_path": result.get("task_diagnosis_latest_packet_path"),
+            "diagnosis_latest_dossier_path": result.get("task_diagnosis_latest_dossier_path"),
             "preflight": {
                 key: {"passed": value.passed, "details": list(value.details)}
                 for key, value in preflight.items()
@@ -362,12 +534,21 @@ def summarize_stress_tranche(
                 for key, value in live_report.items()
             },
             "passed_gate": passed_gate,
+            "follow_on": follow_on,
         }
 
     return {
         "totals": totals,
         "failure_buckets": failure_buckets,
         "by_task": report_by_task,
+        "preflight_summary": summarize_stress_preflight(tasks, manifest=expectations),
+        "artifact_inventory": _stress_artifact_inventory(results_by_id),
+        "follow_on_candidates": [
+            report["follow_on"]
+            for report in report_by_task.values()
+            if isinstance(report.get("follow_on"), Mapping)
+            and report["follow_on"].get("action") != "no_action"
+        ],
     }
 
 
@@ -772,6 +953,349 @@ def _stress_result_text(result: Mapping[str, Any]) -> str:
     if blocker_details:
         fragments.append(json.dumps(blocker_details, default=str))
     return "\n".join(fragment for fragment in fragments if fragment).lower()
+
+
+def render_stress_tranche_report(report: Mapping[str, Any]) -> str:
+    """Render one connector-stress batch report as operator-facing Markdown."""
+    preflight = dict(report.get("preflight_summary") or {})
+    stress_summary = dict(report.get("stress_summary") or {})
+    lines = [
+        "# Connector stress tranche",
+        "",
+        f"- Status: `{report.get('status', '')}`",
+        f"- Model: `{report.get('model', '')}`",
+        f"- Validation: `{report.get('validation', '')}`",
+        f"- Fresh build: `{report.get('fresh_build', '')}`",
+        f"- Tasks: `{', '.join(report.get('task_ids') or [])}`",
+        f"- Raw results: `{report.get('raw_results_path', '')}`",
+        f"- Report JSON: `{report.get('report_json_path', '')}`",
+        f"- Report Markdown: `{report.get('report_md_path', '')}`",
+        "",
+        "## Deterministic Preflight",
+        f"- Passed: `{dict(preflight.get('totals') or {}).get('passed', 0)}`",
+        f"- Failed: `{dict(preflight.get('totals') or {}).get('failed', 0)}`",
+    ]
+    failed_tasks = list(preflight.get("failed_tasks") or [])
+    if failed_tasks:
+        lines.append(f"- Blocked tasks: `{', '.join(failed_tasks)}`")
+        for task_id in failed_tasks:
+            task_report = dict((preflight.get("by_task") or {}).get(task_id) or {})
+            lines.append(f"### Preflight block: {task_id} - {task_report.get('title', '')}")
+            for check_name, check in dict(task_report.get("checks") or {}).items():
+                if not check.get("passed"):
+                    lines.append(f"- `{check_name}`:")
+                    for detail in check.get("details") or []:
+                        lines.append(f"  - {detail}")
+        return "\n".join(lines).rstrip() + "\n"
+
+    if not stress_summary:
+        return "\n".join(lines).rstrip() + "\n"
+
+    totals = dict(stress_summary.get("totals") or {})
+    lines.extend(
+        [
+            "",
+            "## Gate Summary",
+            f"- Passed gate: `{totals.get('passed_gate', 0)}`",
+            f"- Failed gate: `{totals.get('failed_gate', 0)}`",
+            f"- Compare-ready tasks: `{totals.get('compare_ready', 0)}`",
+            f"- Honest-block tasks: `{totals.get('honest_block', 0)}`",
+            "",
+            "## Task View",
+        ]
+    )
+    for task_id, task_report in sorted((stress_summary.get("by_task") or {}).items()):
+        task_report = dict(task_report or {})
+        lines.extend(
+            [
+                f"### {task_id} - {task_report.get('title', '')}",
+                f"- Outcome class: `{task_report.get('outcome_class', '')}`",
+                f"- Gate passed: `{task_report.get('passed_gate', '')}`",
+                f"- Success: `{task_report.get('success', '')}`",
+                f"- Failure bucket: `{task_report.get('failure_bucket', '')}`",
+                f"- Comparison status: `{task_report.get('comparison_status', '') or 'missing'}`",
+                f"- Observed blocker categories: `{', '.join(task_report.get('observed_blocker_categories') or []) or 'none'}`",
+                f"- Latest diagnosis dossier: `{task_report.get('diagnosis_latest_dossier_path', '') or task_report.get('diagnosis_dossier_path', '') or 'missing'}`",
+                f"- Latest diagnosis packet: `{task_report.get('diagnosis_latest_packet_path', '') or task_report.get('diagnosis_packet_path', '') or 'missing'}`",
+            ]
+        )
+        failing_checks = [
+            (check_name, check)
+            for check_name, check in dict(task_report.get("live_checks") or {}).items()
+            if not check.get("passed")
+        ]
+        if failing_checks:
+            lines.append("- Failed live checks:")
+            for check_name, check in failing_checks:
+                lines.append(f"  - `{check_name}`")
+                for detail in check.get("details") or []:
+                    lines.append(f"    - {detail}")
+        follow_on = dict(task_report.get("follow_on") or {})
+        if follow_on and follow_on.get("action") != "no_action":
+            lines.append("- Follow-on:")
+            lines.append(f"  - action: `{follow_on.get('action')}`")
+            lines.append(f"  - repeat_count: `{follow_on.get('repeat_count')}`")
+            lines.append(f"  - signature: `{follow_on.get('signature')}`")
+            if follow_on.get("suggested_title"):
+                lines.append(f"  - suggested_title: `{follow_on['suggested_title']}`")
+        lines.append("")
+
+    follow_ons = list(stress_summary.get("follow_on_candidates") or [])
+    lines.append("## Follow-on Candidates")
+    if not follow_ons:
+        lines.append("- None")
+    else:
+        for item in follow_ons:
+            lines.append(
+                f"- `{item.get('task_id')}` `{item.get('action')}` "
+                f"(repeat_count={item.get('repeat_count')}, signature={item.get('signature')})"
+            )
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _normalize_stress_outcome_class(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _iter_stress_blocker_details(result: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]:
+    blocker_details = result.get("blocker_details")
+    if isinstance(blocker_details, Mapping) and blocker_details:
+        yield blocker_details
+    method_results = result.get("method_results") or {}
+    if not isinstance(method_results, Mapping):
+        return
+    for payload in method_results.values():
+        if not isinstance(payload, Mapping):
+            continue
+        blocker_details = payload.get("blocker_details")
+        if isinstance(blocker_details, Mapping) and blocker_details:
+            yield blocker_details
+
+
+def _stress_observed_blocker_categories(result: Mapping[str, Any]) -> tuple[str, ...]:
+    categories: list[str] = []
+    for details in _iter_stress_blocker_details(result):
+        blocker_report = details.get("blocker_report") or {}
+        blockers = blocker_report.get("blockers") or []
+        for blocker in blockers:
+            if not isinstance(blocker, Mapping):
+                continue
+            categories.extend(
+                _map_stress_blocker_categories(
+                    blocker.get("category"),
+                    blocker_id=blocker.get("id"),
+                )
+            )
+        for raw_blocker in details.get("blockers") or []:
+            categories.extend(
+                _map_stress_blocker_categories(
+                    None,
+                    blocker_id=raw_blocker,
+                )
+            )
+        if (details.get("new_primitive_workflow") or {}).get("items"):
+            categories.append("missing_foundational_primitive")
+        reason = str(details.get("reason") or "").strip()
+        if reason == "semantic_clarification_required":
+            categories.append("semantic_clarification")
+        semantic_gap = details.get("semantic_gap") or {}
+        if isinstance(semantic_gap, Mapping):
+            if semantic_gap.get("missing_route_helpers"):
+                categories.append("unsupported_route")
+            if semantic_gap.get("missing_runtime_primitives"):
+                categories.append("missing_foundational_primitive")
+            if semantic_gap.get("missing_contract_fields"):
+                categories.append("semantic_contract_gap")
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for category in categories:
+        text = str(category).strip()
+        if text and text not in seen:
+            seen.add(text)
+            ordered.append(text)
+    return tuple(ordered)
+
+
+def _map_stress_blocker_categories(
+    category: Any,
+    *,
+    blocker_id: Any,
+) -> tuple[str, ...]:
+    raw_category = str(category or "").strip().lower()
+    raw_blocker_id = str(blocker_id or "").strip().lower()
+    mapped: list[str] = []
+    if raw_category in {
+        "numerical_substrate_gap",
+        "implementation_gap",
+        "export_or_registry_gap",
+        "unknown_gap",
+    }:
+        mapped.append("missing_foundational_primitive")
+    if raw_category == "unsupported_route":
+        mapped.append("unsupported_route")
+    if any(
+        token in raw_blocker_id
+        for token in (
+            "path_dependent",
+            "stochastic_vol",
+            "unsupported_composite",
+        )
+    ):
+        mapped.append("unsupported_composite")
+    if raw_blocker_id.startswith(("missing_module:", "missing_symbol:")):
+        mapped.append("missing_foundational_primitive")
+    if raw_blocker_id.startswith("missing_route_helper:"):
+        mapped.append("unsupported_route")
+    return tuple(dict.fromkeys(mapped))
+
+
+def _stress_artifact_inventory(
+    results_by_id: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    inventory = {
+        "latest_run_records": 0,
+        "latest_diagnosis_packets": 0,
+        "latest_diagnosis_dossiers": 0,
+    }
+    for result in results_by_id.values():
+        if result.get("task_run_latest_path"):
+            inventory["latest_run_records"] += 1
+        if result.get("task_diagnosis_latest_packet_path"):
+            inventory["latest_diagnosis_packets"] += 1
+        if result.get("task_diagnosis_latest_dossier_path"):
+            inventory["latest_diagnosis_dossiers"] += 1
+    return inventory
+
+
+def _stress_follow_on_candidate(
+    task_id: str,
+    task: Mapping[str, Any],
+    expectation: Mapping[str, Any],
+    result: Mapping[str, Any],
+    *,
+    blocker_categories: tuple[str, ...],
+) -> dict[str, Any]:
+    if not result or result.get("success"):
+        return {"action": "no_action"}
+
+    signature = _stress_failure_signature(
+        task_id,
+        result,
+        blocker_categories=blocker_categories,
+    )
+    repeat_count = _stress_failure_repeat_count(
+        task_id,
+        signature,
+    )
+    linked_linear_issues = _stress_linked_linear_issues(result)
+    action = "no_action"
+    if linked_linear_issues:
+        action = "tracked_externally"
+    elif repeat_count >= 2:
+        action = "create_follow_on"
+    elif repeat_count == 1:
+        action = "watch"
+
+    from trellis.agent.request_issue_format import (
+        build_stress_follow_on_body,
+        build_stress_follow_on_title,
+    )
+
+    payload = {
+        "task_id": task_id,
+        "task_title": task.get("title"),
+        "outcome_class": _normalize_stress_outcome_class(expectation.get("outcome_class")),
+        "failure_bucket": classify_task_result(result),
+        "comparison_status": (result.get("cross_validation") or {}).get("status"),
+        "observed_blocker_categories": list(blocker_categories),
+        "repeat_count": repeat_count,
+        "signature": signature,
+        "diagnosis_dossier_path": result.get("task_diagnosis_latest_dossier_path") or result.get("task_diagnosis_dossier_path"),
+        "diagnosis_packet_path": result.get("task_diagnosis_latest_packet_path") or result.get("task_diagnosis_packet_path"),
+        "task_run_history_path": result.get("task_run_history_path"),
+        "task_run_latest_path": result.get("task_run_latest_path"),
+        "linked_linear_issues": linked_linear_issues,
+    }
+    payload["action"] = action
+    if action != "no_action":
+        payload["suggested_title"] = build_stress_follow_on_title(payload)
+        payload["suggested_body"] = build_stress_follow_on_body(payload)
+    return payload
+
+
+def _stress_failure_signature(
+    task_id: str,
+    result: Mapping[str, Any],
+    *,
+    blocker_categories: tuple[str, ...],
+) -> str:
+    bucket = classify_task_result(result)
+    comparison_status = str(
+        (result.get("cross_validation") or {}).get("status") or ""
+    ).strip().lower()
+    parts = [task_id, bucket]
+    if blocker_categories:
+        parts.append(",".join(blocker_categories))
+    elif comparison_status and comparison_status != "passed":
+        parts.append(comparison_status)
+    return "::".join(parts)
+
+
+def _stress_failure_repeat_count(
+    task_id: str,
+    signature: str,
+    *,
+    root: Path = ROOT,
+) -> int:
+    history_root = root / "task_runs" / "history" / task_id
+    if not history_root.exists():
+        return 0
+
+    matches = 0
+    for path in sorted(history_root.glob("*.json")):
+        try:
+            record = json.loads(path.read_text())
+        except Exception:
+            continue
+        result = record.get("result") or {}
+        if not isinstance(result, Mapping):
+            continue
+        candidate_signature = _stress_failure_signature(
+            task_id,
+            result,
+            blocker_categories=_stress_observed_blocker_categories(result),
+        )
+        if candidate_signature == signature:
+            matches += 1
+    return matches
+
+
+def _stress_linked_linear_issues(result: Mapping[str, Any]) -> list[str]:
+    issues: list[str] = []
+    for payload in (result.get("method_results") or {}).values():
+        if not isinstance(payload, Mapping):
+            continue
+        trace_path = payload.get("platform_trace_path")
+        if not trace_path:
+            continue
+        trace = _load_stress_trace_summary(trace_path)
+        issue = (trace or {}).get("linear_issue") or {}
+        identifier = issue.get("identifier")
+        if identifier and identifier not in issues:
+            issues.append(str(identifier))
+    return issues
+
+
+def _load_stress_trace_summary(path: Any) -> dict[str, Any] | None:
+    trace_path = Path(str(path))
+    if not trace_path.exists() or trace_path.suffix.lower() != ".yaml":
+        return None
+    try:
+        loaded = yaml.safe_load(trace_path.read_text()) or {}
+    except Exception:
+        return None
+    return dict(loaded)
 
 
 def _iter_agent_observations(result: Mapping[str, Any]) -> Iterable[dict[str, Any]]:

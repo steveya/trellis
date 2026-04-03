@@ -9,6 +9,7 @@ Checks:
 
 from __future__ import annotations
 
+import ast
 import re
 
 from trellis.agent.codegen_guardrails import GenerationPlan
@@ -38,6 +39,42 @@ _DISCOUNT_PATTERNS = (
     ".discount(",
 )
 
+_EXACT_HELPER_SIGNATURES = {
+    "price_vanilla_equity_option_tree": {
+        "min_positional_args": 2,
+        "allowed_keywords": frozenset({"model", "n_steps"}),
+        "message": (
+            "`price_vanilla_equity_option_tree(...)` expects `(market_state, spec_like, "
+            "model=..., n_steps=...)`. Pass a spec-like object with `spot`, `strike`, "
+            "`expiry_date`, and optional exercise fields instead of inventing helper keywords."
+        ),
+    },
+}
+
+
+def _calls_symbol(source: str, symbol: str) -> bool:
+    """Return whether ``source`` appears to call ``symbol`` as a function."""
+    return re.search(rf"\b{re.escape(symbol)}\s*\(", source) is not None
+
+
+def _call_matches_symbol(node: ast.Call, symbol: str) -> bool:
+    """Whether one AST call targets the requested symbol."""
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id == symbol
+    if isinstance(func, ast.Attribute):
+        return func.attr == symbol
+    return False
+
+
+def _find_calls_for_symbol(tree: ast.AST, symbol: str) -> tuple[ast.Call, ...]:
+    """Return every AST call that targets the given symbol name."""
+    return tuple(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and _call_matches_symbol(node, symbol)
+    )
+
 
 class AlgorithmContractValidator:
     """Validates that generated code implements the correct pricing algorithm."""
@@ -58,6 +95,7 @@ class AlgorithmContractValidator:
 
         # 2. Route helper usage
         findings.extend(self._check_route_helper(source, route_spec))
+        findings.extend(self._check_exact_helper_surface(source, route_spec))
 
         # 3. Discount application
         findings.extend(self._check_discount_application(source, route_spec))
@@ -81,7 +119,7 @@ class AlgorithmContractValidator:
             for prim in route_spec.primitives
             if prim.role == "route_helper" and prim.required
         )
-        if helper_symbols and any(re.search(rf"\b{re.escape(symbol)}\b", source) for symbol in helper_symbols):
+        if helper_symbols and any(_calls_symbol(source, symbol) for symbol in helper_symbols):
             return []
 
         found = any(sig in source for sig in signatures)
@@ -105,7 +143,7 @@ class AlgorithmContractValidator:
         findings = []
         for prim in route_spec.primitives:
             if prim.role == "route_helper" and prim.required:
-                if prim.symbol not in source:
+                if not _calls_symbol(source, prim.symbol):
                     findings.append(SemanticFinding(
                         validator="algorithm_contract",
                         severity="error",
@@ -115,6 +153,51 @@ class AlgorithmContractValidator:
                             f"'{prim.symbol}' from '{prim.module}', but it's not "
                             f"referenced in the generated code."
                         ),
+                    ))
+        return findings
+
+    def _check_exact_helper_surface(
+        self, source: str, route_spec: RouteSpec,
+    ) -> list[SemanticFinding]:
+        """Verify exact backend helpers are called with an admissible surface."""
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return []
+
+        findings: list[SemanticFinding] = []
+        for prim in route_spec.primitives:
+            if prim.role != "route_helper" or not prim.required:
+                continue
+            signature = _EXACT_HELPER_SIGNATURES.get(prim.symbol)
+            if signature is None:
+                continue
+            for call in _find_calls_for_symbol(tree, prim.symbol):
+                if len(call.args) < int(signature["min_positional_args"]):
+                    findings.append(SemanticFinding(
+                        validator="algorithm_contract",
+                        severity="error",
+                        category="route_helper_signature_mismatch",
+                        message=str(signature["message"]),
+                        line=getattr(call, "lineno", None),
+                    ))
+                    continue
+                keyword_names = {
+                    keyword.arg
+                    for keyword in call.keywords
+                    if keyword.arg is not None
+                }
+                unexpected = sorted(keyword_names - set(signature["allowed_keywords"]))
+                if unexpected:
+                    findings.append(SemanticFinding(
+                        validator="algorithm_contract",
+                        severity="error",
+                        category="route_helper_signature_mismatch",
+                        message=(
+                            str(signature["message"])
+                            + f" Unexpected keyword(s): {', '.join(unexpected)}."
+                        ),
+                        line=getattr(call, "lineno", None),
                     ))
         return findings
 

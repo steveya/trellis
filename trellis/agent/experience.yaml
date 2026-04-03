@@ -1179,3 +1179,1275 @@
     but the request never completes unless retried or handled gracefully.'
   fix: Add retry and fallback handling for transient API failures so the valuation
     can rerun successfully.
+
+- category: market_data
+  title: Invalid module reference
+  symptoms:
+  - The validation failed because the swaption setup referenced a non-existent Trellis
+    module path.
+  - Check configuration and import paths for typos or placeholders whenever validation
+    reports an unknown module.
+  explanation: This usually happens when a model configuration points to a typo, stale
+    import, or copy-pasted placeholder instead of a real library module. The mental
+    model failure is assuming the referenced component exists and is loadable without
+    verifying the exact module name.
+  fix: Replace the invalid module reference with a valid Trellis module path and re-run
+    validation.
+
+- category: market_data
+  title: Handle upstream request failures
+  symptoms:
+  - The valuation failed because the pricing workflow depended on a text request that
+    errored out instead of completing the swaption calculation.
+  - Look for immediate runtime errors or empty outputs before any model-specific validation
+    checks are reached.
+  explanation: The mental model failure is treating the analytics call as if it were
+    guaranteed to return results, when in reality upstream service or request errors
+    can interrupt the pricing path before any financial logic runs. Even a correct
+    analytical method cannot produce a price if the required request is not successfully
+    executed.
+  fix: Add robust retry, fallback, or offline computation handling so the pricing
+    engine can proceed or fail gracefully when the upstream request fails.
+
+- category: market_data
+  title: Invalid module path
+  symptoms:
+  - The validation failed because the swaption referenced a non-existent Trellis module
+    path.
+  - Check the instrument config for unresolved module import paths or repeated unknown-module
+    errors in validation logs.
+  explanation: This happens when the instrument configuration points to a typo, stale
+    package name, or unsupported model identifier instead of a valid module. The mental
+    model failure is assuming the analytical method will resolve any string, when
+    it only accepts registered modules.
+  fix: Replace the invalid module reference with a supported Trellis model module
+    and re-run validation.
+
+- category: market_data
+  title: Handle request failures gracefully
+  symptoms:
+  - The pricing workflow failed because the OpenAI text request errored out and was
+    not retried or handled robustly.
+  - Watch for single-attempt request errors and missing fallback or retry logic in
+    validation logs.
+  explanation: The mental model assumed the external request would succeed on the
+    first try, but API calls can fail transiently due to network, rate limits, or
+    service issues. For analytical pricing flows, any upstream dependency should be
+    treated as unreliable unless explicitly hardened.
+  fix: Add retries with backoff and a safe fallback path so transient request failures
+    do not break the pricing run.
+
+- category: market_data
+  title: Invalid Module Reference
+  symptoms:
+  - The validation used a non-existent Trellis module import path.
+  - Check validation logs for unknown-module errors and verify every configured import
+    path against the Trellis module registry.
+  explanation: This happens when the pricing setup points to a module name that is
+    not registered or spelled correctly in the available Trellis package namespace.
+    The mental model failure is assuming any dotted path will resolve without checking
+    the actual installed module list.
+  fix: Replace the invalid module path with a valid, installed Trellis module name
+    and rerun validation.
+
+- category: market_data
+  title: Check request reliability
+  symptoms:
+  - The pricing run failed because the external OpenAI text request did not succeed
+    on the first attempt.
+  - Look for early runtime failures from external service calls, especially single-attempt
+    request errors before any model output is produced.
+  explanation: The mental model failure is assuming the helper service will always
+    respond once called. In reality, transient API/network issues can interrupt the
+    validation pipeline before pricing logic is even reached.
+  fix: Add retry handling and fallback behavior for external requests so transient
+    failures do not stop validation.
+
+- category: calibration
+  title: Invalid Module Reference Causes Swaption Pricing Failure
+  symptoms:
+  - A non-existent Trellis module `trellis.models.not_a_real_module` was referenced,
+    breaking the analytical pricing pipeline.
+  - Validate all module path strings against the installed package's public API or
+    run an import check in a unit test before executing the pricing routine.
+  explanation: Developers sometimes copy or auto-complete module paths without verifying
+    they exist in the installed package, assuming the import will resolve at runtime.
+    This creates a silent misconfiguration that only surfaces when the module is actually
+    invoked.
+  fix: Replace `trellis.models.not_a_real_module` with the correct, documented Trellis
+    module path for the intended analytical swaption model.
+
+- category: market_data
+  title: Payer Swaption Requires Correct Fixed/Float Leg Setup
+  symptoms:
+  - The swaption failed because the fixed and floating leg parameters were misconfigured
+    or market data handles were not properly linked.
+  - Check that the underlying swap's fixed leg coupon and floating leg index are both
+    assigned valid, non-null term structure handles before pricing.
+  explanation: A payer swaption gives the right to pay fixed and receive floating,
+    so the engine requires a correctly oriented swap with consistent day count, calendar,
+    and rate term structure handles; mismatches cause the analytical engine to throw
+    a runtime error during pricing.
+  fix: Ensure the swap is constructed as pay-fixed with matching conventions and that
+    both the discount curve and the forward curve are linked to the pricing engine
+    before calling NPV.
+
+- category: market_data
+  title: External request failure
+  symptoms:
+  - The pricing workflow failed because the OpenAI text request could not be completed,
+    so no valuation result was produced.
+  - Look for upstream request errors or missing model output before investigating
+    pricing formulas or calibration.
+  explanation: The mental model failure is assuming the analytical pricing path is
+    self-contained, when it actually depends on an external service call that can
+    fail independently of the model logic. If that dependency is unavailable or not
+    retried robustly, validation fails before any swaption math is evaluated.
+  fix: Add resilient request handling with retries, fallback behavior, and clear error
+    propagation so the pricing engine can still complete or fail gracefully.
+
+- category: market_data
+  title: API request failed
+  symptoms:
+  - The pricing run failed because the OpenAI text request could not complete, so
+    no analytical valuation result was produced.
+  - Check for request/transport errors and missing model output before interpreting
+    the valuation as a pricing discrepancy.
+  explanation: 'This is a tooling and data-access failure, not a model issue: the
+    valuation pipeline depends on an external request succeeding before it can proceed.
+    The mental model mistake is treating a transient service failure as if the pricing
+    logic itself were invalid.'
+  fix: Retry the request with proper fallback handling and only validate the swaption
+    result after the external call returns successfully.
+
+- category: market_data
+  title: Missing model response
+  symptoms:
+  - The valuation failed because the OpenAI text request could not be completed, so
+    the swaption calculation never produced a result.
+  - Flag any runtime error from the text request layer or repeated empty/no-response
+    outcomes before trusting the valuation result.
+  explanation: The mental model error is treating the pricing engine as always available;
+    in practice, external service calls can fail due to transient outages, timeouts,
+    or connectivity issues. A pricing workflow must assume missing upstream data or
+    responses and handle them explicitly.
+  fix: Add retry, timeout, and fallback handling for external requests so the pricing
+    path can recover or fail gracefully with a clear error.
+
+- category: market_data
+  title: Invalid module reference causes swaption validation failure
+  symptoms:
+  - A non-existent Trellis module `trellis.models.not_a_real_module` was referenced
+    on line 11, causing validation to fail.
+  - Validate all module import paths against the official Trellis module registry
+    before running any analytical pricing routine.
+  explanation: Developers sometimes copy or guess module paths without verifying they
+    exist in the framework, leading to unresolved references that break the pricing
+    pipeline entirely.
+  fix: Replace the invalid module reference with the correct, verified Trellis module
+    path for the intended European payer swaption analytical model.
+
+- category: calibration
+  title: Payer Swaption Sign Convention for Analytical Pricing
+  symptoms:
+  - The payer swaption payoff sign or strike/swap-rate ordering was inverted, producing
+    a negative or zero analytical price.
+  - Check that the analytical price is strictly positive for an in-the-money payer
+    (S > K) and verify the d1/d2 signs match the payer-swaption Black formula.
+  explanation: A payer swaption pays max(S - K, 0) on the swap rate, so confusing
+    payer vs receiver or passing arguments in wrong order to Black/Bachelier formula
+    flips the in-the-money direction and yields nonsense prices.
+  fix: Ensure the Black formula is called as annuity * Black76_call(forward=swap_rate,
+    strike=K, ...) and that payer/receiver flag selects call, not put.
+
+- category: market_data
+  title: Invalid Module Reference Causes Repeated Validation Failure
+  symptoms:
+  - A non-existent Trellis module `trellis.models.not_a_real_module` was referenced,
+    causing the same validation error to appear twice.
+  - Run a module registry lookup or import validation step before executing the analytical
+    pricer to confirm all referenced modules resolve correctly.
+  explanation: The developer assumed a module name without verifying it exists in
+    the Trellis registry, and the duplicate error suggests the reference appeared
+    in a shared or reused configuration path.
+  fix: Replace `trellis.models.not_a_real_module` with a verified, existing Trellis
+    model module name appropriate for European payer swaption pricing.
+
+- category: market_data
+  title: API failure masked as validation error
+  symptoms:
+  - The validation failure was caused by an upstream API timeout, not a logic error
+    in the swaption pricing code.
+  - Check whether the error message references a network call, retry count, or external
+    service before inspecting pricing logic.
+  explanation: Transient network or service failures can surface as cryptic RuntimeErrors
+    that look like model bugs, leading to wasted debugging effort on correct code.
+  fix: Implement retry logic with exponential backoff and distinguish API connectivity
+    errors from model validation errors in error handling.
+
+- category: calibration
+  title: Payer Swaption Sign Convention and Strike Alignment
+  symptoms:
+  - The payer swaption value was computed with incorrect sign convention or misaligned
+    strike relative to the forward swap rate.
+  - Check that deep ITM payer swaption price approaches the annuity-weighted forward
+    swap rate minus strike and is strictly positive when forward rate exceeds strike.
+  explanation: A payer swaption gives the right to pay fixed, so its intrinsic value
+    is max(S-K,0) scaled by annuity; confusing payer/receiver or swapping strike and
+    forward inverts the payoff direction and yields nonsensical prices.
+  fix: Ensure the Black/normal formula uses (forwardRate - strikeRate) for payer swaptions
+    and verify the annuity discount factor is applied consistently.
+
+- category: calibration
+  title: API failure masked as swaption validation error
+  symptoms:
+  - The validation failure was caused by an API connectivity or timeout issue, not
+    a genuine pricing model error.
+  - Check whether the error message references network, API, or external service failures
+    before inspecting model logic.
+  explanation: Transient infrastructure failures can surface as cryptic runtime errors
+    that appear to be model bugs, causing wasted debugging effort on the wrong layer
+    of the stack.
+  fix: Implement retry logic with exponential backoff for external API calls and distinguish
+    infrastructure errors from model validation failures in error handling.
+
+- category: market_data
+  title: Invalid Trellis Module Reference Breaks Analytical Swaption
+  symptoms:
+  - A non-existent Trellis module `trellis.models.not_a_real_module` was referenced,
+    causing the validation to fail.
+  - Validate all module import paths against the Trellis module registry or installed
+    package contents before running the pricer.
+  explanation: Developers sometimes copy or guess module paths without verifying they
+    exist in the framework, assuming the name will resolve at runtime; this breaks
+    the dependency graph before any pricing logic runs.
+  fix: Replace the invalid module path with the correct, verified Trellis module name
+    from the official documentation or package index.
+
+- category: calibration
+  title: Swaption Analytical Pricing Requires Proper Engine Setup
+  symptoms:
+  - The analytical payer swaption pricing failed due to missing or misconfigured volatility
+    term structure and pricing engine attachment.
+  - Check if engine is set via swaption.setPricingEngine() and vol handle returns
+    non-null quotes before calling NPV().
+  explanation: Analysts assume QuantLib objects self-configure, but swaption instruments
+    require an explicit Black or Bachelier engine with a calibrated vol handle attached
+    before pricing calls are made.
+  fix: Instantiate a BlackSwaptionEngine or BachelierSwaptionEngine with a valid SwaptionVolatilityStructure
+    handle and attach it to the swaption before pricing.
+
+- category: market_data
+  title: Invalid module reference causes validation failure
+  symptoms:
+  - A non-existent Trellis module `trellis.models.not_a_real_module` was referenced
+    in the configuration.
+  - Validate all module paths against the Trellis module registry or available imports
+    before running the analytical pricer.
+  explanation: Developers sometimes copy-paste or guess module paths without verifying
+    they exist in the framework, leading to broken references that fail at validation
+    time.
+  fix: Replace the invalid module path with a verified, existing Trellis module that
+    provides the required functionality.
+
+- category: calibration
+  title: Payer Swaption Sign Convention Misalignment
+  symptoms:
+  - The payer swaption payoff or rate direction was incorrectly specified, causing
+    the analytical formula to return zero or negative value.
+  - Check that the computed swaption value is positive and increases as the forward
+    swap rate exceeds the strike; a zero or near-zero value when deep in-the-money
+    signals a sign error.
+  explanation: A payer swaption gives the right to pay fixed and receive floating,
+    so the intrinsic payoff is max(swap_rate - strike, 0); confusing this with a receiver
+    swaption flips the sign and produces nonsensical results.
+  fix: Ensure the payoff is defined as annuity * max(forward_swap_rate - strike, 0)
+    and that the Black/Bachelier formula uses omega=+1 for payer and omega=-1 for
+    receiver.
+
+- category: market_data
+  title: Invalid model import path
+  symptoms:
+  - The validation failed because the swaption referenced a non-existent Trellis module
+    path.
+  - Check validation logs for unknown-module errors and verify every configured module
+    path exists and is registered.
+  explanation: This usually happens when a model or product is configured with an
+    outdated or mistyped import string. The mental model failure is assuming the runtime
+    will resolve arbitrary module names, when it only accepts registered, valid modules.
+  fix: Replace the bad module reference with a valid Trellis module path and rerun
+    validation.
+
+- category: market_data
+  title: Missing external request fallback
+  symptoms:
+  - The valuation failed because the OpenAI text request was treated as a hard dependency
+    and no retry or fallback path was available.
+  - Look for failures that occur before pricing logic starts, especially single-attempt
+    network or API errors in logs.
+  explanation: The mental model assumed the external text service would always respond,
+    but analytical pricing still depends on reliable upstream data and infrastructure.
+    When that single call failed, the whole validation run aborted instead of degrading
+    gracefully.
+  fix: Add retries, timeout handling, and a local fallback or cached data path so
+    a transient request failure does not stop validation.
+
+- category: calibration
+  title: Always verify Trellis module names before referencing
+  symptoms:
+  - A non-existent Trellis module `trellis.models.not_a_real_module` was referenced
+    in the configuration, causing validation failures.
+  - Run a module existence check or consult the Trellis module registry before referencing
+    any module path in configuration.
+  explanation: The developer assumed a module existed without checking the Trellis
+    module registry, likely copying or guessing a name rather than consulting authoritative
+    documentation.
+  fix: Replace the invalid module path with a verified, existing Trellis module name
+    drawn directly from the official module registry or documentation.
+
+- category: market_data
+  title: Handle external request failures
+  symptoms:
+  - The pricing run failed because an external OpenAI text request errored and was
+    not retried or handled gracefully.
+  - Look for runtime errors from external services in the validation log, especially
+    single-attempt failures with no model-specific pricing exception.
+  explanation: The mental model assumed the dependency would always return a result,
+    but analytical pricing still depends on upstream services for inputs or processing.
+    When a single external call fails, the whole validation can abort unless retries,
+    fallbacks, or clear error handling are in place.
+  fix: Add retry and fallback handling for external requests, and isolate them so
+    a service outage does not stop the analytical pricing workflow.
+
+- category: calibration
+  title: Importing non-exported functions from internal modules
+  symptoms:
+  - The code imported `build_payment_timeline` and `build_exercise_timeline_from_dates`
+    from `trellis.models.trees.control`, but those functions are not part of that
+    module's public exports.
+  - Check the module's `__all__` list or its documented exports before referencing
+    any symbol from it.
+  explanation: The developer assumed helper utilities visible elsewhere in the codebase
+    lived in a central control module, without verifying the actual public API surface
+    of that module.
+  fix: Import only symbols confirmed to exist in `trellis.models.trees.control`, and
+    source timeline-building utilities from whichever module actually exports them.
+
+- category: market_data
+  title: Importing non-exported helpers from internal modules
+  symptoms:
+  - Code imported `build_payment_timeline` and `build_exercise_timeline_from_dates`
+    from `trellis.models.trees.control`, but those functions are not part of that
+    module's public API.
+  - Check the module's `__all__` or explicitly listed exports before referencing any
+    function by name to confirm it is publicly accessible.
+  explanation: The developer assumed utility helpers visible elsewhere in the codebase
+    lived in the nearest plausible module, without verifying the actual export list;
+    internal modules often expose only a curated subset of their functions.
+  fix: Locate the correct source module that actually exports these timeline-building
+    helpers (e.g., a dedicated `timeline` or `cashflow` utilities module) and update
+    the import path accordingly.
+
+- category: market_data
+  title: Resolved inputs object missing expected volatility attribute
+  symptoms:
+  - The code accessed `.sigma` directly on `ResolvedQuantoInputs` but the resolved
+    object stores volatility under a different attribute name.
+  - A smoke test with real market data raises `AttributeError` on `.sigma`, revealing
+    the attribute name mismatch at runtime.
+  explanation: When building a resolver that bundles multiple vol surfaces (domestic,
+    foreign, FX), the developer assumes a flat `.sigma` field exists but the resolved
+    dataclass uses more specific names like `.sigma_d`, `.sigma_f`, or `.vol` to disambiguate
+    sources.
+  fix: Inspect the `ResolvedQuantoInputs` dataclass definition and replace `.sigma`
+    with the correct field name (e.g., `.sigma_d` for domestic vol) wherever the analytical
+    pricer reads volatility.
+
+- category: market_data
+  title: Validate module references
+  symptoms:
+  - The swaption setup referenced a non-existent Trellis module path.
+  - Run validation or import checks on all configured module paths before pricing.
+  explanation: 'This is a configuration/typing error: the model is fine, but the input
+    points to a module name that cannot be resolved. The mental model failure is assuming
+    any dotted path will load without checking the available Trellis modules.'
+  fix: Replace the invalid module path with a valid Trellis module name and re-run
+    validation.
+
+- category: market_data
+  title: Model-data request failure
+  symptoms:
+  - The validation failed because the analytical pricing run depended on an OpenAI
+    text request that timed out or failed immediately.
+  - Look for early runtime errors from external API or data-fetch steps before calibration
+    or pricing output is produced.
+  explanation: The mental model assumed the pricing workflow would always have a reliable
+    upstream data/service call, but external requests can fail independently of the
+    model logic. When that happens, the valuation never reaches the analytical method
+    and the test fails before any pricing can occur.
+  fix: Add retry, fallback, and explicit error handling for the external request so
+    the pricing path can proceed or fail gracefully.
+
+- category: market_data
+  title: Invalid model import
+  symptoms:
+  - The swaption used a non-existent Trellis module path in its configuration.
+  - Check validation logs for unknown module or import resolution errors before running
+    calibration or pricing.
+  explanation: This happens when the model registry or import path is assumed instead
+    of verified, so the pricing setup points to a module that cannot be resolved.
+    The mental model failure is treating configuration strings as if they were automatically
+    valid just because the overall product type is correct.
+  fix: Replace the bad module path with a valid registered Trellis model name and
+    re-run validation.
+
+- category: market_data
+  title: Missing Fallback for API Failure
+  symptoms:
+  - The pricing run failed because it depended on a single OpenAI text request that
+    errored out with no retry or fallback path.
+  - Look for immediate runtime failures or empty outputs from external request steps,
+    especially when no retries, timeouts, or alternate data sources are configured.
+  explanation: The mental model mistake is treating an external service call as guaranteed
+    instead of recognizing it as an unreliable dependency. When that dependency fails,
+    the analytical pricing workflow cannot proceed unless the code handles the failure
+    explicitly.
+  fix: Add robust retry, timeout, and fallback handling for the external request so
+    the valuation can continue or fail gracefully with a clear diagnostic.
+
+- category: market_data
+  title: Bad module reference
+  symptoms:
+  - The model pointed to a non-existent Trellis module in the validation setup.
+  - Check validation logs for unknown-module errors and compare every configured import
+    path against the installed Trellis modules.
+  explanation: This happens when the pricing configuration references an invalid or
+    stale module path, so the framework cannot resolve the model definition. The mental
+    model failure is assuming the configured component name matches an available implementation
+    without verifying it.
+  fix: Replace the invalid module reference with a valid Trellis module path and rerun
+    validation.
+
+- category: market_data
+  title: API Call Resilience
+  symptoms:
+  - The valuation failed because the external text request errored out on the first
+    attempt.
+  - Look for failures that occur before pricing logic starts, especially single-attempt
+    request errors or empty upstream responses.
+  explanation: 'This is a reliability rather than pricing issue: the model assumed
+    the supporting request would succeed once, but transient API/network failures
+    can interrupt the workflow before any analytical calculation runs. The mental
+    model failure is treating upstream service calls as guaranteed instead of fallible
+    dependencies.'
+  fix: Add retry handling with backoff and fallback behavior so transient request
+    failures do not abort the swaption valuation.
+
+- category: market_data
+  title: Invalid Module Import
+  symptoms:
+  - The swaption setup referenced a non-existent Trellis module, causing validation
+    to fail before the analytical pricing logic could run.
+  - Check validation logs for unknown-module or import-resolution errors before debugging
+    the pricer.
+  explanation: This happens when the input configuration points to an incorrect or
+    outdated module path, so the model loader cannot resolve the required component.
+    The failure is not in the pricing method itself but in the plumbing that wires
+    the model to its dependencies.
+  fix: Replace the bad module path with a valid Trellis module import and re-run validation.
+
+- category: market_data
+  title: Missing Service Retry
+  symptoms:
+  - The valuation failed because the OpenAI text request had no successful retry path
+    and the model could not return a result.
+  - Look for runtime failures from upstream service calls, especially errors that
+    occur before any pricing logic runs.
+  explanation: The mental model error is treating an external data/service call as
+    if it were reliable and always available. In practice, transient API failures
+    can abort the entire pricing workflow unless they are handled explicitly.
+  fix: Add robust retry and fallback handling for external requests so transient API
+    failures do not stop the valuation.
+
+- category: market_data
+  title: Retry external requests
+  symptoms:
+  - The valuation failed because the OpenAI text request errored out and was not retried
+    or handled gracefully.
+  - Look for failures that stop before model logic runs and mention request or connection
+    errors rather than pricing mismatches.
+  explanation: The mental model failure is assuming an external service call will
+    always succeed during validation. In reality, transient network or API issues
+    can abort an otherwise valid pricing workflow.
+  fix: Add retry, timeout, and fallback handling for external requests so transient
+    API failures do not fail validation.
+
+- category: market_data
+  title: API Request Robustness
+  symptoms:
+  - The analytical valuation never completed because the OpenAI text request failed
+    on the first attempt.
+  - Watch for immediate runtime failures before any pricing output, especially one-attempt
+    request errors or transient network/API exceptions.
+  explanation: 'The mental model failed to account for external API instability: even
+    correct pricing logic can be blocked by transient network, rate-limit, or service
+    errors. In validation workflows, a single request attempt is not enough when the
+    dependency is outside the model''s control.'
+  fix: Add retry logic with backoff and fallback handling so transient request failures
+    do not stop the validation run.
+
+- category: market_data
+  title: Import Valid Modules
+  symptoms:
+  - The model referenced a non-existent Trellis module in its validation setup.
+  - Check the configured module paths against the Trellis package or run validation
+    to catch unknown imports immediately.
+  explanation: This is a mental model failure of assuming any module path is acceptable,
+    when the analytical method must point to a real, supported implementation. Validation
+    catches this because the model cannot resolve invalid dependencies.
+  fix: Replace the invalid module reference with a valid Trellis module path supported
+    by the analytical swaption method.
+
+- category: market_data
+  title: Guard against upstream request failures
+  symptoms:
+  - The validation failed because the pricing workflow depended on a text request
+    that could fail before any swaption logic ran.
+  - Check logs for early runtime or request errors before any pricing outputs are
+    produced.
+  explanation: The mental model error is assuming the analytical pricer is the only
+    source of failure, when in reality upstream data or service calls can abort the
+    run first. If those requests are not retried or handled gracefully, the model
+    never gets a chance to validate the instrument itself.
+  fix: Add retry, fallback, or offline handling for external requests so the valuation
+    can proceed or fail with a clear diagnostic.
+
+- category: market_data
+  title: Model I/O failure
+  symptoms:
+  - The validation failed because the pricing request could not be executed, so no
+    analytical swaption result was produced.
+  - Check for request/API errors and missing outputs before inspecting pricing formulas
+    or calibration results.
+  explanation: The mental model mistake is assuming pricing logic is the only failure
+    point; in practice, upstream data/model service or API call errors can stop the
+    valuation before any finance-specific computation begins. Even a correct implementation
+    will fail if the request layer is unavailable or misconfigured.
+  fix: Add robust retry, timeout, and fallback handling for the request path, and
+    verify the pricing service is reachable before running validation.
+
+- category: market_data
+  title: Missing API retry handling
+  symptoms:
+  - The pricing attempt failed because the OpenAI text request error was not retried
+    or recovered from.
+  - Look for one-off runtime failures from external services, especially when the
+    code works logically but aborts before pricing completes.
+  explanation: The mental model failure is assuming a single external request will
+    succeed reliably during validation. In practice, transient API or network failures
+    are common and must be handled as part of the workflow, not treated as model errors.
+  fix: Add robust retry, timeout, and fallback handling for external requests so transient
+    service errors do not stop validation.
+
+- category: market_data
+  title: Import valid model module
+  symptoms:
+  - The validation failed because the swaption referenced a Trellis model module that
+    does not exist.
+  - Check validation logs for unknown-module errors and confirm every configured module
+    import path exists.
+  explanation: This usually means the product configuration points to a stale or mistyped
+    model path instead of an installed, supported module. The mental model failure
+    is assuming any module string is acceptable without verifying it resolves in the
+    runtime environment.
+  fix: Replace the invalid module path with a valid Trellis model module that is available
+    in the environment.
+
+- category: market_data
+  title: Request Fallback Needed
+  symptoms:
+  - The valuation workflow depended on a single OpenAI text request, so a transient
+    request failure caused the swaption validation to fail immediately.
+  - Look for failures that occur before pricing begins, especially single-attempt
+    external API errors in logs or test runs.
+  explanation: This is a mental model failure of treating an external service as guaranteed
+    rather than unreliable. Analytical pricing can still be blocked if supporting
+    data or orchestration requests have no retry, fallback, or cached alternative.
+  fix: Add retries with backoff and a local fallback path so temporary request failures
+    do not stop the valuation.
+
+- category: market_data
+  title: Handle transient request failures
+  symptoms:
+  - The validation run failed because the OpenAI text request was treated as a single-shot
+    dependency and no retry or fallback path was available.
+  - Look for failures that occur before any pricing output is produced, especially
+    transient network or API errors with no model-side exception.
+  explanation: 'This reflects a brittle orchestration mental model: external text/API
+    calls can fail independently of the pricing logic, so success depends on infrastructure
+    resilience as well as model correctness. Without retries or graceful degradation,
+    a transient service issue becomes a hard validation failure.'
+  fix: Add retry logic with backoff and a fallback path so temporary OpenAI request
+    failures do not abort the validation run.
+
+- category: calibration
+  title: Verify Trellis Module Names Before Referencing Them
+  symptoms:
+  - An invalid, non-existent Trellis module name was referenced in the configuration,
+    causing validation failures.
+  - Check all Trellis module references against the official module registry or documentation
+    before running validation.
+  explanation: Developers sometimes assume module names by pattern or analogy without
+    confirming they exist in the library, leading to silent misconfiguration that
+    only surfaces at validation time.
+  fix: Replace any speculative or placeholder module names with verified, existing
+    Trellis module identifiers.
+
+- category: market_data
+  title: Check module imports
+  symptoms:
+  - The swaption validation referenced a nonexistent Trellis module import.
+  - Inspect validation logs for unknown module or import-path errors and verify every
+    configured module name against the codebase or registry.
+  explanation: This happens when the model configuration points to an invalid or outdated
+    module path, so the validation fails before any pricing logic runs. The mental
+    model failure is assuming a named dependency exists without verifying the actual
+    available package or registry entry.
+  fix: Replace the bad module reference with a valid Trellis module path or add the
+    missing module implementation.
+
+- category: market_data
+  title: Retry failed API call
+  symptoms:
+  - The validation failed because the OpenAI text request hit a transient runtime
+    error and was not recovered with a retry path.
+  - Look for immediate runtime failures at the request layer before any pricing logic
+    executes.
+  explanation: The mental model mistake is treating an external model/API call as
+    if it were deterministic and always available. In practice, network, rate-limit,
+    or service hiccups can interrupt an otherwise correct analytical pricing run.
+  fix: Add robust retry and fallback handling for external requests so transient API
+    errors do not fail the validation outright.
+
+- category: market_data
+  title: Invalid Module Reference Causes Validation Failure
+  symptoms:
+  - A non-existent Trellis module `trellis.models.not_a_real_module` was referenced,
+    causing repeated validation failures.
+  - Lint or validate all module import paths against the official Trellis module registry
+    before running the pricer.
+  explanation: Developers sometimes copy or guess module paths without verifying they
+    exist in the library, assuming the framework will resolve them dynamically. This
+    mental model fails because static validation checks module registries at parse
+    time.
+  fix: Replace `trellis.models.not_a_real_module` with a verified, documented Trellis
+    module appropriate for European payer swaption pricing.
+
+- category: market_data
+  title: External service fallback
+  symptoms:
+  - The valuation failed because the required text request to an external service
+    did not succeed on the first attempt.
+  - Flag any valuation path that depends on external API calls and monitor for request
+    failures, timeouts, or empty responses.
+  explanation: The mental model error is assuming downstream dependencies are always
+    available and that a single request is sufficient. In practice, transient network
+    or service failures can break validation even when the pricing logic is correct.
+  fix: Add retry logic with backoff and a deterministic fallback so the pricing workflow
+    can complete without a single external call failure.
+
+- category: market_data
+  title: Verify module names
+  symptoms:
+  - The swaption validation referenced a non-existent Trellis module path, causing
+    the analytical method setup to fail.
+  - Run configuration validation or a dry import check to catch unknown module paths
+    before pricing.
+  explanation: This usually happens when the model configuration is copied or edited
+    with an invalid import/reference, so the engine cannot resolve the requested pricing
+    component. The mental model failure is assuming a module name is valid without
+    checking it exists in the library.
+  fix: Replace the invalid module reference with a valid Trellis module name and revalidate
+    the setup.
+
+- category: market_data
+  title: Handle API request failures
+  symptoms:
+  - The valuation flow depended on a text request that failed immediately, so the
+    swaption validation could not complete.
+  - Watch for runtime errors from upstream requests and repeated validation failures
+    that occur before any pricing logic runs.
+  explanation: The mental model failure is assuming external data or service calls
+    will always succeed during pricing or validation. In practice, transient API issues
+    can interrupt even otherwise correct analytical calculations.
+  fix: Add retry, fallback, and clear error handling for external requests before
+    starting the valuation.
+
+- category: market_data
+  title: Use valid model imports
+  symptoms:
+  - The swaption validation failed because the input referenced a nonexistent Trellis
+    module name.
+  - Inspect validation logs for unknown-module or unresolved-import errors and verify
+    the module path matches an installed Trellis model.
+  explanation: 'This is usually a configuration/metadata mistake: the pricing setup
+    points to a module path that cannot be resolved, so validation fails before the
+    analytical pricing logic can run. The mental model error is assuming any module
+    string is acceptable instead of checking it against the registered Trellis modules.'
+  fix: Replace the invalid module reference with a valid Trellis module name and rerun
+    validation.
+
+- category: market_data
+  title: Dependency failure
+  symptoms:
+  - The validation failed because the pricing step depended on an OpenAI text request
+    that errored out instead of using a self-contained analytical workflow.
+  - Check whether the valuation pipeline makes external service calls and fails before
+    any model computation begins.
+  explanation: The mental model failure is treating an external AI/text service as
+    part of the core pricing path. For validation, pricing logic must be deterministic
+    and independent of brittle network or API dependencies.
+  fix: Remove the external request from the pricing path or add a reliable fallback
+    so the analytical swaption valuation can run locally and deterministically.
+
+- category: market_data
+  title: Payer Swaption Sign Convention and Market Data Setup
+  symptoms:
+  - The payer swaption was mispriced due to incorrect sign convention or missing market
+    data linkage when constructing the analytical pricing engine.
+  - Check that the NPV is positive and consistent with Black's formula by comparing
+    against a manual intrinsic value calculation using the forward swap rate and strike.
+  explanation: A payer swaption gives the right to pay fixed and receive floating,
+    so the underlying swap must be constructed with the correct VanillaSwap.Payer
+    type; confusing payer/receiver or failing to attach a valid term structure causes
+    the engine to return zero or negative value.
+  fix: Ensure the swap is instantiated with VanillaSwap.Payer, the discount and forward
+    curves are properly linked, and the Black volatility is passed correctly to BlackSwaptionEngine.
+
+- category: market_data
+  title: Valid Module Import
+  symptoms:
+  - The model referenced a nonexistent Trellis module in the validation setup.
+  - Check validation logs for unknown module or import errors before interpreting
+    pricing failures.
+  explanation: This happens when the pricing configuration or test fixture points
+    to an invalid or outdated module path. The mental model failure is assuming the
+    analytical method can run even if its dependencies are not correctly registered
+    or importable.
+  fix: Replace the invalid module path with a supported Trellis module and rerun validation.
+
+- category: market_data
+  title: API request failure
+  symptoms:
+  - The validation failed because the OpenAI text request itself errored out before
+    the swaption could be priced.
+  - Check whether the failure occurs before any pricing logs or model calculations
+    and whether the exception is raised by the request layer.
+  explanation: 'This is a process failure, not a model failure: the pricing logic
+    was never reached because the external request dependency was unavailable or failed
+    immediately. The mental model mistake is treating the output issue as if it were
+    a valuation problem instead of a service/integration problem.'
+  fix: Retry or harden the API call path, verify credentials/connectivity, and ensure
+    a fallback or graceful error handling before running validation.
+
+- category: market_data
+  title: Handle Request Failures
+  symptoms:
+  - The validation failed because the OpenAI text request failed and was not successfully
+    retried or recovered.
+  - Look for runtime errors or empty responses from the external text/API call during
+    validation.
+  explanation: The mental model assumed the external request would succeed on the
+    first try, but network or service errors can break the pricing/validation flow
+    before any model logic runs. This is a robustness failure, not a quantitative
+    one.
+  fix: Add retries, timeout handling, and a graceful fallback path when the text request
+    fails.
+
+- category: market_data
+  title: Valid module references only
+  symptoms:
+  - The validation failed because the model pointed to a non-existent Trellis module
+    import.
+  - Check the configured module path against the available Trellis package/modules
+    and run import or schema validation before submitting.
+  explanation: This happens when the configured source path or module name is copied
+    from an example or typoed, so the analytical setup cannot resolve the referenced
+    implementation. The mental model failure is assuming any string-like module reference
+    will be accepted instead of needing an actual registered module.
+  fix: Replace the invalid module name with a real Trellis module path that exists
+    and is supported by the analytical method.
+
+- category: market_data
+  title: Check data request reliability
+  symptoms:
+  - The validation failed because the pricing flow depended on an external text/data
+    request that could fail outright on the first attempt.
+  - Look for runtime errors or empty inputs from external data requests before the
+    pricing logic starts.
+  explanation: The mental model error is assuming supporting data services are always
+    available during pricing, when in reality network/API failures can interrupt an
+    otherwise valid analytical valuation. A robust pricer must treat data acquisition
+    as a separate failure-prone step and not assume success on the first call.
+  fix: Add retries, fallback data paths, and clear pre-checks so the valuation only
+    proceeds once required inputs are successfully loaded.
+
+- category: backward_induction
+  title: Puttable Bond Exercise Value Uses Wrong Comparison Direction
+  symptoms:
+  - The puttable bond used min() instead of max() for the exercise function, causing
+    the holder's right to sell at par to be ignored when bond value falls below par.
+  - Check that at low rates where bond value exceeds par the put is not exercised,
+    and at high rates where bond value drops below par the value is floored at par
+    (put_price), confirming max() is applied correctly.
+  explanation: A puttable bond gives the holder the right to sell back at par, so
+    the holder maximizes value by choosing max(continuation, put_price); confusing
+    put exercise logic with callable bond (issuer calls, so min) inverts the optimization
+    direction.
+  fix: Apply exercise_fn=max(continuation_value, put_strike) at each node during backward
+    induction so the bondholder exercises the put whenever continuation value falls
+    below the put price.
+
+- category: market_data
+  title: Invalid Module Reference Causes Trellis Model Failure
+  symptoms:
+  - A non-existent Trellis module `trellis.models.not_a_real_module` was referenced,
+    causing validation failures on line 10.
+  - Validate all Trellis module paths against the library's published module registry
+    or run an import check before executing the pricing pipeline.
+  explanation: Developers sometimes copy or auto-complete module paths without verifying
+    they exist in the installed library, leading to silent misconfiguration that only
+    surfaces at validation time.
+  fix: Replace `trellis.models.not_a_real_module` with the correct, documented Trellis
+    model module name appropriate for the European payer swaption context.
+
+- category: calibration
+  title: API Failure Masked Underlying Swaption Calibration Error
+  symptoms:
+  - The validation failure was reported as an API runtime error rather than exposing
+    the actual analytical swaption pricing or calibration bug.
+  - Check whether reported errors are infrastructure/API failures versus actual numerical
+    or model errors by retrying and logging the full exception chain.
+  explanation: When the text generation service fails, the root cause of the quantitative
+    error is never surfaced, leaving the mental model of the pricing pipeline incomplete
+    and preventing targeted diagnosis.
+  fix: Ensure fallback logging captures the underlying quantitative exception before
+    the API call so calibration or pricing failures are always visible independently
+    of service availability.
+
+- category: market_data
+  title: Valid module references
+  symptoms:
+  - The model referenced a non-existent Trellis module in its validation setup.
+  - Check validation logs for unknown module or import-path errors before running
+    the analytical method.
+  explanation: This happens when the mental model assumes any import path or helper
+    name is acceptable, but the validator only accepts registered, real modules. The
+    failure is a configuration/schema mismatch rather than a pricing issue.
+  fix: Replace the bogus module path with a valid Trellis module name that exists
+    in the supported registry.
+
+- category: monte_carlo
+  title: Use Required Primitives
+  symptoms:
+  - The Monte Carlo CDS payoff was implemented with custom probability logic instead
+    of wrapping the required interval_default_probability primitive.
+  - Check generated code against the selected assembly route and fail if required
+    primitives are not directly referenced.
+  explanation: This usually happens when the modeler optimizes for convenience and
+    accidentally bypasses the approved assembly route. The mental model failure is
+    treating the primitive as optional rather than the authoritative building block
+    for the payoff.
+  fix: Rebuild the payoff as a thin adapter that delegates interval default probability
+    calculations to trellis.models.credit_default_swap.interval_default_probability.
+
+- category: market_data
+  title: Match Market Interface
+  symptoms:
+  - The analytical CDS pricer used a different argument name than the market-facing
+    API, so the smoke test passed 'spread' into a function that did not accept it.
+  - Run a basic end-to-end smoke test against the public pricing API with realistic
+    market inputs and check for unexpected keyword or positional argument errors.
+  explanation: 'This is a mental model failure about interface consistency: the pricing
+    logic may be correct, but if the function signature does not mirror the expected
+    market data contract, integration fails before pricing can even run. It often
+    happens when refactoring internal methods without updating the external wrapper
+    or tests.'
+  fix: Align the analytical pricer signature with the expected market interface, or
+    add a thin adapter that maps 'spread' to the internal parameter name.
+
+- category: market_data
+  title: Validate Model Imports
+  symptoms:
+  - The swaption validation referenced an invalid Trellis module path, so the pricing
+    setup could not resolve the required model.
+  - Check validation logs for unresolved module, import, or dependency errors before
+    running pricing tests.
+  explanation: This happens when the implementation is wired to a nonexistent or misspelled
+    dependency instead of a supported analytical model. The mental model failure is
+    assuming the framework will infer or tolerate bad module names.
+  fix: Replace the invalid module reference with a valid Trellis analytical model
+    module and verify the import path matches the installed package.
+
+- category: market_data
+  title: Valid module imports
+  symptoms:
+  - The valuation failed because the model referenced a nonexistent Trellis module
+    path.
+  - Check the validation logs for import or module-resolution errors and verify every
+    configured module path against the available Trellis modules.
+  explanation: 'This is usually a configuration or naming mistake, not a pricing logic
+    issue: the engine tries to load a module by string name and cannot resolve it
+    if the path is invalid. The mental model failure is assuming the referenced package/module
+    exists or is spelled correctly without verifying the registered module name.'
+  fix: Replace the invalid module reference with a valid, registered Trellis module
+    name and rerun validation.
+
+- category: market_data
+  title: External request fallback
+  symptoms:
+  - The pricing run failed because the validation step depended on an external text
+    request that was not available or retried properly.
+  - Watch for request-timeout, API failure, or single-attempt errors during validation
+    runs.
+  explanation: This reflects a mental model failure where the workflow assumes an
+    upstream service will always respond, but network or service issues can interrupt
+    even deterministic analytical pricing. When a model relies on external calls for
+    inputs or validation, a single request failure can stop the whole valuation path.
+  fix: Add retries with backoff and a local fallback path so analytical pricing does
+    not depend on one external request succeeding.
+
+- category: market_data
+  title: Upstream API request failure
+  symptoms:
+  - The validation failed because the pricing run depended on an external OpenAI text
+    request that errored before any model results were produced.
+  - Look for failures that occur before pricing outputs are generated, especially
+    errors mentioning request timeouts or exhausted retries from external services.
+  explanation: This is a mental model failure about assuming the full workflow is
+    deterministic and self-contained when it actually includes a fragile external
+    dependency. If that upstream service is unavailable or times out, the analytical
+    pricing logic never gets a chance to execute.
+  fix: Add resilient retry and fallback handling for external requests, or remove
+    the dependency from the validation path so the analytical swaption pricer can
+    run independently.
+
+- category: market_data
+  title: Retry External Request Failures
+  symptoms:
+  - The validation failed because the analytical swaption run depended on an external
+    OpenAI text request that failed immediately.
+  - Look for runtime errors tied to external API calls or single-attempt request failures
+    before investigating pricing formulas.
+  explanation: This is a mental model failure of assuming the pricing/validation pipeline
+    is self-contained when it actually relies on a networked service that can fail
+    independently of the model logic. If that dependency is unavailable, the analytical
+    method cannot complete even if the core calculation is correct.
+  fix: Add retry and fallback handling for external requests, or remove the dependency
+    from the validation path so the analytical calculation can run offline.
+
+- category: volatility
+  title: Volatility Not Propagated
+  symptoms:
+  - The tree pricing stayed at zero across low and high volatilities, so the option
+    value did not respond to volatility changes.
+  - Bump volatility materially and confirm the price changes; a flat price curve or
+    zero vega indicates the tree is not wired to sigma correctly.
+  explanation: This usually means the volatility input is not being used in the branch
+    dynamics or discounting logic, so the model behaves like a degenerate deterministic
+    tree. The mental model failure is treating vol as an optional parameter instead
+    of a core driver of state evolution and option convexity.
+  fix: Thread volatility into the tree step probabilities/step sizes and validate
+    the output against known vega-sensitive benchmarks.
+
+- category: monte_carlo
+  title: Match GBM init signature
+  symptoms:
+  - The Monte Carlo pricer passed a spot keyword that the GBM model constructor did
+    not accept.
+  - Run a smoke test that instantiates the process with the pricer's actual arguments
+    and verify keyword compatibility early.
+  explanation: This usually comes from assuming a generic market-state API instead
+    of checking the exact model signature. The mental model failure is treating all
+    stochastic-process classes as interchangeable when their parameter names differ.
+  fix: Align the pricer to the GBM constructor's exact parameter names or add a thin
+    adapter that maps spot to the expected input.
+
+- category: market_data
+  title: Comparing float to date object in market state
+  symptoms:
+  - A numeric comparison (>=) was attempted between a float and a datetime.date object,
+    likely when validating or processing a market state field such as expiry or settlement
+    date.
+  - Run the smoke test and look for TypeError mentioning '>=' not supported between
+    float and datetime.date, or add an assertion that all date fields are datetime.date
+    instances and all numeric fields are float/int before any comparison.
+  explanation: Market state containers mix numeric fields (spot, rate, vol) with date
+    fields (expiry, value_date), and generic validation loops or comparisons treat
+    all fields uniformly without type-checking, causing silent type mismatches when
+    Python tries to compare them.
+  fix: Separate date fields from numeric fields in validation logic and ensure expiry/settlement
+    inputs are parsed into datetime.date (or converted to a time-to-expiry float)
+    before any numerical comparison is performed.
+
+- category: market_data
+  title: API failure masked as swaption pricing error
+  symptoms:
+  - The validation failure was caused by an external API request error, not a flaw
+    in the swaption pricing logic itself.
+  - Check whether the error originates in the pricing/analytics layer or in an external
+    call by inspecting the stack trace for API/network exceptions before debugging
+    model parameters.
+  explanation: Developers conflate infrastructure failures with model errors; a transient
+    network or authentication issue surfaces as a generic RuntimeError that obscures
+    the true root cause.
+  fix: Add retry logic with exponential backoff and explicit error categorization
+    so API failures are surfaced separately from quantitative model failures.
+
+- category: calibration
+  title: Verify Trellis Module Names Before Referencing
+  symptoms:
+  - A non-existent Trellis module `trellis.models.not_a_real_module` was referenced,
+    causing validation failures.
+  - Run a module existence check or consult the Trellis documentation/registry to
+    confirm the module path resolves before use.
+  explanation: The developer assumed a module existed without checking the Trellis
+    API, likely copying a pattern from a similar context where the module name was
+    different.
+  fix: Replace the invalid module reference with a verified, existing Trellis module
+    from the official module registry.
+
+- category: market_data
+  title: API Connectivity Failure Masks Underlying Pricing Logic
+  symptoms:
+  - The validation failed due to an API request error rather than any fault in the
+    swaption pricing logic itself.
+  - Check if the error message references network, API, or external service calls
+    before debugging financial model internals.
+  explanation: Transient network or service failures can surface as cryptic RuntimeErrors
+    that are mistaken for model or calibration bugs, causing unnecessary investigation
+    of correct code.
+  fix: Implement retry logic with exponential backoff for external API calls and isolate
+    connectivity failures from model validation failures in error reporting.
+
+- category: market_data
+  title: Request Failure Handling
+  symptoms:
+  - The pricing run failed because the OpenAI text request errored out and the validation
+    path did not recover from the failed external call.
+  - Look for runtime errors at the first external request and repeated failures before
+    any pricing output is produced.
+  explanation: This is a mental model failure around assuming the upstream service
+    will always respond successfully. Analytical pricing still depends on reliable
+    access to supporting external requests, so a single transient API failure can
+    stop the whole validation.
+  fix: Add retry, timeout, and fallback handling for text requests so transient upstream
+    failures do not abort validation.
+
+- category: market_data
+  title: Request failure handling
+  symptoms:
+  - The valuation failed because the OpenAI text request errored out on the first
+    attempt and was not successfully retried or handled.
+  - Look for runtime errors from external API calls and missing retry or fallback
+    logs in the pricing path.
+  explanation: The mental model mistake is treating an external request as if it were
+    reliable and immediate, when it can fail transiently due to network, rate limits,
+    or service issues. Pricing workflows need robust fallback and retry logic because
+    a single dependency failure can block the entire validation.
+  fix: Add retry with backoff and a graceful fallback or cached response path for
+    external request failures.
+
+- category: market_data
+  title: Invalid module import
+  symptoms:
+  - The validation failed because the swaption file referenced a nonexistent Trellis
+    module in its model import path.
+  - Check the model import path for unresolved or misspelled Trellis modules before
+    running validation.
+  explanation: This is usually a configuration or copy-paste error where the model
+    definition points to an unavailable package instead of a valid pricing module.
+    The mental model failure is assuming the analytical setup is correct when the
+    import wiring is actually broken.
+  fix: Replace the invalid module reference with a valid Trellis analytical swaption
+    module and rerun validation.
+
+- category: market_data
+  title: Wrong field name passed to resolved inputs dataclass
+  symptoms:
+  - The constructor was called with 'domestic_df' but the dataclass field was named
+    differently (e.g., 'discount_factor' or 'df_domestic').
+  - Inspect the dataclass __init__ signature or run a quick instantiation unit test
+    with known good values before wiring it into the full pipeline.
+  explanation: When mapping market state quantities to a resolved inputs dataclass,
+    it is easy to guess field names rather than checking the actual dataclass definition,
+    leading to a silent naming mismatch that only surfaces at runtime.
+  fix: Always derive constructor calls directly from the dataclass field names using
+    dataclasses.fields() or by reading the class definition, never from assumptions
+    about naming conventions.
+
+- category: monte_carlo
+  title: Passing Invalid Keyword Arguments to MC Engine Constructor
+  symptoms:
+  - The MonteCarloEngine was instantiated with a 'dt' keyword argument that its __init__
+    method does not accept.
+  - Check the engine's __init__ signature before instantiation, or run a minimal smoke
+    test with only required parameters to surface unexpected keyword errors immediately.
+  explanation: The developer assumed the engine exposes time-step granularity as a
+    constructor parameter, but the engine derives 'dt' internally from 'T' and 'n_steps',
+    making 'dt' a redundant/unsupported argument.
+  fix: Remove 'dt' from the constructor call and let the engine compute it internally,
+    or pass the underlying parameters (T, n_steps) that the engine actually accepts.
+
+- category: backward_induction
+  title: Pass spec-like object, not invented keyword arguments
+  symptoms:
+  - Extra helper keywords like `spot`, `strike`, or `expiry` were passed directly
+    to `price_vanilla_equity_option_tree` instead of bundling them into a spec-like
+    object.
+  - A TypeError or unexpected-keyword-argument error when calling `price_vanilla_equity_option_tree`
+    with bare scalar kwargs instead of a spec object.
+  explanation: The function signature expects a structured spec-like object carrying
+    all option details; passing flat keyword arguments bypasses the expected interface
+    and causes unexpected parameter errors.
+  fix: Construct a spec-like object (e.g., a dataclass or namedtuple) with `spot`,
+    `strike`, `expiry_date`, and optional exercise fields, then pass it as the second
+    positional argument.
+
+- category: monte_carlo
+  title: Wrong keyword argument passed to GBM constructor
+  symptoms:
+  - The GBM process was instantiated with 'spot' as a keyword argument, but the constructor
+    expects a different parameter name (e.g., 'S0' or 's0').
+  - Inspect the GBM class __init__ signature (via help() or source inspection) before
+    calling it, or run a minimal smoke test that instantiates GBM with the intended
+    arguments.
+  explanation: The caller assumed a parameter name without checking the actual constructor
+    signature, a common mismatch when switching between libraries or custom classes
+    that use different naming conventions for the initial asset price.
+  fix: Replace 'spot=...' with the correct parameter name used by the GBM constructor,
+    such as 'S0=...' or 's0=...'.
+
+- category: backward_induction
+  title: Wrong keyword args passed to lattice pricing helper
+  symptoms:
+  - Custom helper keywords were invented instead of passing a spec-like object with
+    the fields the lattice engine actually expects.
+  - Run the pricer with a minimal spec object and inspect the TypeError or unexpected-keyword-argument
+    traceback to see exactly which parameter names the engine demands.
+  explanation: Developers assume a pricing helper accepts ad-hoc keyword arguments
+    matching their mental model, forgetting the engine has a fixed contract requiring
+    a structured spec object with specific named attributes like spot, strike, expiry_date,
+    and exercise fields.
+  fix: Pass a spec-like object carrying spot, strike, expiry_date, and optional exercise
+    fields directly to price_vanilla_equity_option_tree instead of inventing helper-specific
+    keywords.
+
+- category: monte_carlo
+  title: MC CDS payoff must wrap required credit primitives
+  symptoms:
+  - The generated Monte Carlo CDS implementation computed default probabilities and
+    pricing logic from scratch instead of delegating to the mandated primitives interval_default_probability
+    and price_cds_monte_carlo.
+  - Check that every required primitive listed in the assembly route appears as an
+    explicit call in the generated code before accepting the implementation.
+  explanation: When an assembly route specifies required primitives, the implementation
+    must act as a thin adapter around them; writing independent logic bypasses the
+    validated primitive layer and violates the assembly contract.
+  fix: Rebuild the payoff function as a thin adapter that calls trellis.models.credit_default_swap.interval_default_probability
+    and price_cds_monte_carlo directly, adding only the minimal glue code needed to
+    pass inputs and collect outputs.
+
+- category: market_data
+  title: Analytical impl ignored required primitive adapter pattern
+  symptoms:
+  - The analytical_cds implementation computed CDS price independently instead of
+    delegating to the required primitive trellis.models.credit_default_swap.price_cds_analytical.
+  - Check that every call site in the generated code explicitly invokes the primitives
+    listed in the assembly route rather than replicating their logic inline.
+  explanation: The developer treated the primitive as optional documentation rather
+    than a mandatory thin-wrapper contract, reimplementing equivalent logic from scratch
+    and bypassing the assembly route entirely.
+  fix: Rebuild the implementation as a thin adapter that calls trellis.models.credit_default_swap.price_cds_analytical
+    directly, only adding argument mapping and output formatting around it.
+
+- category: market_data
+  title: Dependency/API request failure
+  symptoms:
+  - The valuation failed because a required OpenAI text request could not be completed
+    on the first attempt.
+  - Watch for immediate runtime errors from upstream requests before any model/calibration
+    output is produced.
+  explanation: The mental model failure is treating an external API call as a guaranteed
+    input instead of a fallible dependency. Analytical pricing logic can be correct,
+    but if upstream data or service access fails, the swaption validation still cannot
+    complete.
+  fix: Add retries, fallback handling, and clear error reporting for external data
+    or service calls before running the valuation.
+
+- category: calibration
+  title: Invalid Module Reference Breaks Analytical Swaption Setup
+  symptoms:
+  - A non-existent Trellis module `trellis.models.not_a_real_module` was referenced,
+    causing validation failures.
+  - Validate all module paths against the Trellis registry or available namespace
+    before running the analytical pricer.
+  explanation: Developers sometimes copy or guess module paths without verifying they
+    exist in the framework, leading to broken imports that silently misconfigure the
+    pricing pipeline.
+  fix: Replace `trellis.models.not_a_real_module` with the correct, existing Trellis
+    model module path confirmed from the framework documentation.
+
+- category: monte_carlo
+  title: Passing Invalid Keyword Args to MonteCarloEngine
+  symptoms:
+  - The MonteCarloEngine constructor was called with a 'dt' keyword argument that
+    it does not accept.
+  - Inspect the MonteCarloEngine.__init__ signature before passing arguments, or run
+    a minimal smoke test with only required parameters first.
+  explanation: The developer assumed the engine exposes low-level time-step parameters
+    directly in __init__, conflating the engine's public API with internal simulation
+    details that are computed internally from other parameters (e.g., T and n_steps).
+  fix: Remove 'dt' from the constructor call and instead pass the parameters the engine
+    actually accepts (e.g., 'n_steps' and 'T'), letting the engine derive 'dt' internally.
+
+- category: market_data
+  title: Correct Trellis module path
+  symptoms:
+  - The validation failed because the swaption referenced a non-existent Trellis model
+    module path.
+  - Check model references against the installed Trellis module list and run config
+    validation before pricing.
+  explanation: This happens when a model configuration points to an invalid or outdated
+    import path, so the framework cannot resolve the required pricing component. The
+    mental model failure is assuming any module-like string is acceptable instead
+    of matching an actual available Trellis module.
+  fix: Replace the invalid module path with a valid Trellis model module that exists
+    in the environment.
+
+- category: market_data
+  title: Handle request failures
+  symptoms:
+  - The valuation flow failed because an external OpenAI text request was treated
+    as infallible and the runtime error was not recovered from.
+  - Watch for runtime errors from external requests and missing retries or fallback
+    logs in the pricing path.
+  explanation: This reflects a mental model that upstream service calls will always
+    succeed, but network/API requests can fail transiently or permanently. Pricing
+    pipelines need explicit error handling and fallback behavior instead of assuming
+    a single attempt is enough.
+  fix: Add robust retry, timeout, and fallback handling around external requests so
+    the valuation can continue or fail gracefully.
+
+- category: monte_carlo
+  title: Wrong constructor argument name for GBM spot price
+  symptoms:
+  - The GBM process was instantiated with 'spot' as a keyword argument, but the class
+    expects a different parameter name (e.g., 'S0' or 's0').
+  - Run a minimal instantiation smoke test of the GBM class and inspect its __init__
+    signature with inspect.signature() before integrating it into the pricer.
+  explanation: The developer assumed the GBM class API matched a generic mental model
+    of spot-price processes without checking the actual constructor signature, leading
+    to a keyword mismatch.
+  fix: Replace 'spot=' with the correct parameter name used in the GBM class constructor,
+    confirmed by reading its signature or documentation.

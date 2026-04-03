@@ -32,6 +32,9 @@ def validate_model(
     knowledge_context: str = "",
     model: str | None = None,
     product_ir=None,
+    generation_plan=None,
+    validation_contract=None,
+    review_reason: str | None = None,
     run_llm_review: bool | None = None,
 ) -> ValidationReport:
     """Run full model validation — automated tests + LLM review.
@@ -74,6 +77,7 @@ def validate_model(
             method=method,
             instrument_type=instrument_type,
             product_ir=product_ir,
+            validation_contract=validation_contract,
         )
         run_llm_review = policy.run_model_validator_llm
     if run_llm_review:
@@ -82,6 +86,9 @@ def validate_model(
             instrument_type,
             method,
             knowledge_context=knowledge_context,
+            generation_plan=generation_plan,
+            residual_risks=_model_validator_residual_risks(validation_contract),
+            review_reason=review_reason,
             model=model,
         )
         report.findings.extend(llm_findings)
@@ -120,6 +127,9 @@ def validate_model_for_request(
         knowledge_context=knowledge_context,
         model=model,
         product_ir=compiled_request.product_ir,
+        generation_plan=getattr(compiled_request, "generation_plan", None),
+        validation_contract=getattr(compiled_request, "validation_contract", None),
+        review_reason=None,
     )
 
 
@@ -128,6 +138,9 @@ def _llm_conceptual_review(
     instrument_type: str,
     method: str,
     knowledge_context: str = "",
+    generation_plan=None,
+    residual_risks: tuple[str, ...] = (),
+    review_reason: str | None = None,
     model: str | None = None,
 ) -> list[ValidationFinding]:
     """LLM-based model validation — conceptual soundness review."""
@@ -138,6 +151,22 @@ def _llm_conceptual_review(
     knowledge_section = ""
     if knowledge_context.strip():
         knowledge_section = f"\n## Shared Knowledge\n{knowledge_context}\n"
+    residual_risk_section = ""
+    if residual_risks:
+        residual_risk_lines = "\n".join(f"- `{risk}`" for risk in residual_risks)
+        residual_risk_section = (
+            "\n## Residual Conceptual Risks\n"
+            "Residual conceptual review only. Focus on the unresolved items below.\n"
+            f"{residual_risk_lines}\n"
+        )
+    review_reason_section = ""
+    if review_reason:
+        review_reason_section = f"\n## Review Trigger\n- `{review_reason}`\n"
+    route_contract_section = ""
+    if generation_plan is not None:
+        from trellis.agent.codegen_guardrails import render_review_contract_card
+
+        route_contract_section = "\n" + render_review_contract_card(generation_plan) + "\n"
 
     prompt = f"""You are a model validation analyst at a quantitative finance firm.
 Your role is to independently assess whether a pricing model is conceptually
@@ -145,10 +174,15 @@ sound, correctly calibrated, and produces reasonable risk measures.
 
 You are NOT reviewing code quality — the code reviewer already did that.
 You are reviewing MODEL quality.
+Do not repeat deterministic checks such as non-negativity, basic sensitivity,
+reference bounds, or other validations already covered by the validation contract.
 
 ## Instrument type: {instrument_type}
 ## Pricing method: {method}
 {knowledge_section}
+{route_contract_section}
+{residual_risk_section}
+{review_reason_section}
 
 ## Code to validate
 ```python
@@ -217,3 +251,10 @@ Return ONLY the JSON array."""
                 remediation=item.get("remediation", ""),
             ))
     return findings
+
+
+def _model_validator_residual_risks(validation_contract) -> tuple[str, ...]:
+    """Return the residual conceptual risk ids that still justify LLM review."""
+    if validation_contract is None:
+        return ()
+    return tuple(getattr(validation_contract, "residual_risks", ()) or ())

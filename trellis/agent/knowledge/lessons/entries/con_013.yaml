@@ -2,8 +2,8 @@ id: con_013
 title: Undefined instrument class reference
 severity: critical
 category: convention
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-03-25T11:50:43.108639'
 version: ''
 source_trace: null

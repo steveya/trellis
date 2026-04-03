@@ -30,7 +30,7 @@ E22:
     - MissingCapabilityError
 
 E23:
-  outcome_class: honest_block
+  outcome_class: compare_ready
   required_mock_capabilities:
     - discount_curve
     - local_vol_surface
@@ -38,9 +38,6 @@ E23:
   comparison_targets:
     - local_vol_pde
     - local_vol_mc
-  expected_blocker_categories:
-    - missing_foundational_primitive
-    - unsupported_route
   forbidden_failure_patterns:
     - MissingCapabilityError
 
@@ -54,30 +51,30 @@ E24:
     - merton_mc
     - merton_fft
   expected_blocker_categories:
-    - missing_foundational_primitive
-    - unsupported_route
+    - semantic_clarification
+    - semantic_contract_gap
   forbidden_failure_patterns:
     - MissingCapabilityError
 
 E25:
-  outcome_class: honest_block
+  outcome_class: compare_ready
   required_mock_capabilities:
     - discount_curve
+    - forward_curve
     - fx_rates
+    - spot
   comparison_targets:
     - gk_mc
     - garman_kohlhagen
-  expected_blocker_categories:
-    - missing_foundational_primitive
-    - unsupported_route
+  reference_target: garman_kohlhagen
   forbidden_failure_patterns:
     - MissingCapabilityError
 
 E26:
   outcome_class: honest_block
   required_mock_capabilities:
-    - credit_curve
     - discount_curve
+    - credit_curve
   comparison_targets:
     - gaussian_copula
     - mc_default_times

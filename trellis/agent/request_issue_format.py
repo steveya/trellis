@@ -168,6 +168,55 @@ def build_event_comment(
     return "\n".join(lines)
 
 
+def build_stress_follow_on_title(summary: Mapping[str, Any]) -> str:
+    """Build a durable issue title for a repeated connector-stress failure."""
+    task_id = str(summary.get("task_id") or "unknown").strip()
+    task_title = str(summary.get("task_title") or "").strip()
+    failure_bucket = str(summary.get("failure_bucket") or "failed").strip()
+    blocker_categories = list(summary.get("observed_blocker_categories") or [])
+
+    suffix = failure_bucket.replace("_", " ")
+    if blocker_categories:
+        suffix = ", ".join(str(category).replace("_", " ") for category in blocker_categories)
+    title = f"Connector stress: {task_id}"
+    if task_title:
+        title += f" {task_title}"
+    title += f" [{suffix}]"
+    return _compact(title, 180)
+
+
+def build_stress_follow_on_body(summary: Mapping[str, Any]) -> str:
+    """Render a durable follow-on issue body from connector-stress batch context."""
+    lines = [
+        "## Why This Issue Exists",
+        "- source: `connector_stress_gate`",
+        f"- task: `{summary.get('task_id', 'unknown')}` — {summary.get('task_title', '')}",
+        f"- outcome_class: `{summary.get('outcome_class', '')}`",
+        f"- failure_bucket: `{summary.get('failure_bucket', '')}`",
+        f"- comparison_status: `{summary.get('comparison_status', '') or 'missing'}`",
+        f"- repeat_count: `{summary.get('repeat_count', 0)}`",
+        f"- signature: `{summary.get('signature', '')}`",
+    ]
+    blocker_categories = list(summary.get("observed_blocker_categories") or [])
+    if blocker_categories:
+        lines.append(f"- blocker_categories: `{', '.join(str(item) for item in blocker_categories)}`")
+    linked_linear_issues = list(summary.get("linked_linear_issues") or [])
+    if linked_linear_issues:
+        lines.append(f"- linked_linear_issues: `{', '.join(str(item) for item in linked_linear_issues)}`")
+
+    lines.extend(
+        [
+            "",
+            "## Artifacts",
+            f"- latest_run_record: `{summary.get('task_run_latest_path', '') or 'missing'}`",
+            f"- history_run_record: `{summary.get('task_run_history_path', '') or 'missing'}`",
+            f"- diagnosis_dossier: `{summary.get('diagnosis_dossier_path', '') or 'missing'}`",
+            f"- diagnosis_packet: `{summary.get('diagnosis_packet_path', '') or 'missing'}`",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _event_title(event: str) -> str:
     mapping = {
         "build_started": "Build started",

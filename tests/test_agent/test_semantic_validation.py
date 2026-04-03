@@ -157,6 +157,38 @@ def build_price(self, market_state):
 """
 
 
+HELPER_BACKED_CDS_MONTE_CARLO_SOURCE = """\
+from __future__ import annotations
+
+from trellis.models.credit_default_swap import build_cds_schedule, price_cds_monte_carlo
+
+
+def build_price(self, market_state):
+    spec = self._spec
+    schedule = build_cds_schedule(
+        spec.start_date,
+        spec.end_date,
+        spec.frequency,
+        spec.day_count,
+    )
+    spread = float(spec.spread)
+    if spread > 1.0:
+        spread *= 1e-4
+    return float(
+        price_cds_monte_carlo(
+            notional=spec.notional,
+            spread_quote=spread,
+            recovery=spec.recovery,
+            schedule=schedule,
+            credit_curve=market_state.credit_curve,
+            discount_curve=market_state.discount,
+            n_paths=int(getattr(spec, "n_paths", 250000)),
+            seed=42,
+        )
+    )
+"""
+
+
 RATE_LATTICE_SOURCE = """\
 from __future__ import annotations
 
@@ -252,6 +284,52 @@ from trellis.models.bermudan_swaption_tree import price_bermudan_swaption_tree
 def build_price(self, market_state):
     spec = self._spec
     return float(price_bermudan_swaption_tree(market_state, spec, model="hull_white"))
+"""
+
+RAW_STRING_BERMUDAN_SPEC_SOURCE = """\
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+
+@dataclass(frozen=True)
+class BermudanSwaptionSpec:
+    notional: float
+    strike: float
+    exercise_dates: str
+    swap_end: date
+"""
+
+
+TYPED_BERMUDAN_SPEC_SOURCE = """\
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+
+@dataclass(frozen=True)
+class BermudanSwaptionSpec:
+    notional: float
+    strike: float
+    exercise_dates: tuple[date, ...]
+    swap_end: date
+"""
+
+
+INVALID_LATTICE_POLICY_KWARG_SOURCE = """\
+from __future__ import annotations
+
+from trellis.models.trees.control import resolve_lattice_exercise_policy
+
+
+def build_policy(exercise_steps):
+    return resolve_lattice_exercise_policy(
+        "holder_put",
+        exercise_steps=exercise_steps,
+        exercise_fn=max,
+    )
 """
 
 
@@ -451,6 +529,45 @@ def test_accepts_fixed_t39_transform_artifact():
     assert report.ok
 
 
+def test_rejects_raw_string_schedule_fields():
+    from trellis.agent.semantic_validation import validate_semantics
+
+    report = validate_semantics(
+        RAW_STRING_BERMUDAN_SPEC_SOURCE,
+        product_ir=decompose_to_ir(
+            "Bermudan swaption: tree vs LSM MC",
+            instrument_type="bermudan_swaption",
+        ),
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "schedule.raw_string_field" in issue_codes
+
+
+def test_accepts_typed_tuple_schedule_fields():
+    from trellis.agent.semantic_validation import validate_semantics
+
+    report = validate_semantics(
+        TYPED_BERMUDAN_SPEC_SOURCE,
+        product_ir=decompose_to_ir(
+            "Bermudan swaption: tree vs LSM MC",
+            instrument_type="bermudan_swaption",
+        ),
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "schedule.raw_string_field" not in issue_codes
+
+
+def test_rejects_invalid_lattice_policy_keywords():
+    from trellis.agent.semantic_validation import validate_semantics
+
+    report = validate_semantics(INVALID_LATTICE_POLICY_KWARG_SOURCE)
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lattice.invalid_policy_kwarg" in issue_codes
+
+
 def test_callable_adapter_does_not_claim_lattice_objective():
     from trellis.agent.semantic_validation import validate_semantics
 
@@ -504,7 +621,7 @@ def test_accepts_helper_only_bermudan_swaption_route_without_low_level_tree_cont
     pricing_plan = PricingPlan(
         method="rate_tree",
         method_modules=["trellis.models.bermudan_swaption_tree"],
-        required_market_data={"discount", "black_vol", "forward_rate"},
+        required_market_data={"discount_curve", "black_vol_surface", "forward_curve"},
         model_to_build="bermudan_swaption",
         reasoning="test",
     )
@@ -551,7 +668,7 @@ def test_accepts_helper_only_callable_route_without_low_level_lattice_contract()
     pricing_plan = PricingPlan(
         method="rate_tree",
         method_modules=["trellis.models.callable_bond_tree"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="callable_bond",
         reasoning="test",
     )
@@ -586,7 +703,7 @@ def test_accepts_helper_only_equity_tree_route_without_low_level_tree_contract()
     pricing_plan = PricingPlan(
         method="rate_tree",
         method_modules=["trellis.models.equity_option_tree"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="american_option",
         reasoning="test",
     )
@@ -619,7 +736,7 @@ def test_accepts_helper_only_equity_pde_route_without_low_level_pde_contract():
     pricing_plan = PricingPlan(
         method="pde_solver",
         method_modules=["trellis.models.equity_option_pde"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="european_option",
         reasoning="test",
     )
@@ -646,6 +763,38 @@ def test_accepts_helper_only_equity_pde_route_without_low_level_pde_contract():
     assert report.ok
 
 
+def test_accepts_helper_backed_cds_route_without_internal_event_probability_call():
+    from trellis.agent.semantic_validation import validate_semantics
+
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.credit_default_swap"],
+        required_market_data={"discount_curve", "credit_curve"},
+        model_to_build="credit_default_swap",
+        reasoning="test",
+    )
+    product_ir = decompose_to_ir(
+        "CDS pricing: hazard rate MC vs survival prob analytical",
+        instrument_type="credit_default_swap",
+    )
+    generation_plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="credit_default_swap",
+        inspected_modules=("trellis.models.credit_default_swap",),
+        product_ir=product_ir,
+    )
+
+    report = validate_semantics(
+        HELPER_BACKED_CDS_MONTE_CARLO_SOURCE,
+        product_ir=product_ir,
+        generation_plan=generation_plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "assembly.required_primitive_missing" not in issue_codes
+    assert report.ok
+
+
 def test_rejects_matrix_payoff_passed_to_mc_engine():
     from trellis.agent.semantic_validation import validate_semantics
 
@@ -664,7 +813,7 @@ def test_requires_selected_primitives_from_generation_plan():
     pricing_plan = PricingPlan(
         method="monte_carlo",
         method_modules=["trellis.models.monte_carlo.engine"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="american_option",
         reasoning="test",
     )
@@ -696,7 +845,7 @@ def test_rejects_generation_plan_with_blockers():
     pricing_plan = PricingPlan(
         method="monte_carlo",
         method_modules=["trellis.models.monte_carlo.engine"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build=None,
         reasoning="test",
     )

@@ -69,6 +69,20 @@ class TestT38PlannerSpec:
         assert "0.015" in spread_field.description
         assert "150bps" in spread_field.description
 
+    @pytest.mark.tier2
+    def test_cds_monte_carlo_specialized_spec_adds_tuned_path_count(self):
+        plan = plan_build(
+            "CDS pricing: hazard rate MC vs survival prob analytical",
+            {"discount_curve", "credit_curve"},
+            instrument_type="cds",
+            preferred_method="monte_carlo",
+        )
+
+        assert plan.spec_schema is not None
+        field_by_name = {field.name: field for field in plan.spec_schema.fields}
+        assert "n_paths" in field_by_name
+        assert field_by_name["n_paths"].default == "250000"
+
 
 # ---------------------------------------------------------------------------
 # Callable bond spec schema

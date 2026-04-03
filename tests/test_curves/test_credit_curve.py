@@ -50,4 +50,4 @@ class TestCreditCurve:
             discount=YieldCurve.flat(0.05),
             credit_curve=CreditCurve.flat(0.02),
         )
-        assert "credit" in ms.available_capabilities
+        assert "credit_curve" in ms.available_capabilities

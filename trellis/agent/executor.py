@@ -41,13 +41,6 @@ from trellis.agent.knowledge.api_map import format_api_map_for_prompt
 # Sentinel in the skeleton that gets replaced by the LLM-generated body.
 EVALUATE_SENTINEL = '        raise NotImplementedError("evaluate not yet implemented")'
 
-_DETERMINISTIC_SUPPORTED_ROUTE_MODULES = frozenset({
-    "instruments/_agent/fxvanillaanalytical.py",
-    "instruments/_agent/fxvanillamontecarlo.py",
-    "instruments/_agent/quantooptionanalytical.py",
-    "instruments/_agent/quantooptionmontecarlo.py",
-})
-
 _REPO_REVISION: str | None = None
 
 
@@ -95,6 +88,7 @@ class KnowledgeRetrievalRequest:
     pricing_method: str | None
     product_ir: Any = None
     compiled_request: Any = None
+    recent_failures: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1198,6 +1192,7 @@ def build_payoff(
             prompt_surface=prompt_surface,
             build_meta=build_meta,
             knowledge_retriever=knowledge_retriever,
+            previous_failures=previous_failures,
         )
         knowledge_text = knowledge_context.text
         knowledge_surface = knowledge_context.knowledge_surface
@@ -1470,7 +1465,7 @@ def build_payoff(
                 + "\n".join(f"- {failure}" for failure in failures)
                 + "\n\nThe generated payoff must also run against the real task market_state, not just synthetic validation fixtures."
             )
-            retry_reason = "validation"
+            retry_reason = "actual_market_smoke"
             continue
 
         if validation == "fast":
@@ -1620,6 +1615,16 @@ def _validate_build(
 ) -> list[str] | tuple[list[str], tuple[object, ...]]:
     """Run validation checks on a built payoff."""
     from trellis.agent.review_policy import determine_review_policy
+    from trellis.agent.route_registry import route_binding_authority_summary
+    from trellis.agent.validation_contract import (
+        compile_validation_contract,
+        validation_contract_summary,
+    )
+    from trellis.agent.reference_oracles import (
+        execute_reference_oracle,
+        reference_oracle_summary,
+        select_reference_oracle,
+    )
     from trellis.agent.config import (
         enforce_llm_token_budget,
         get_model_for_stage,
@@ -1648,11 +1653,32 @@ def _validate_build(
         or _extract_instrument_type(description)
     )
     required_market_data = set(getattr(pricing_plan, "required_market_data", ()) or ())
+    validation_contract = getattr(compiled_request, "validation_contract", None)
+    if validation_contract is None:
+        validation_contract = compile_validation_contract(
+            request=getattr(compiled_request, "request", None),
+            product_ir=product_ir,
+            pricing_plan=pricing_plan,
+            generation_plan=getattr(compiled_request, "generation_plan", None),
+            family_blueprint=getattr(compiled_request, "family_blueprint", None),
+            semantic_blueprint=getattr(compiled_request, "semantic_blueprint", None),
+            comparison_spec=getattr(compiled_request, "comparison_spec", None),
+            instrument_type=itype,
+        )
+    validation_contract_data = validation_contract_summary(validation_contract)
+    route_binding_authority_data = route_binding_authority_summary(
+        getattr(getattr(compiled_request, "generation_plan", None), "route_binding_authority", None)
+    )
+    if route_binding_authority_data is None and compiled_request is not None:
+        route_binding_authority_data = dict(
+            getattr(getattr(compiled_request, "request", None), "metadata", {}).get("route_binding_authority") or {}
+        )
     review_policy = determine_review_policy(
         validation=validation,
         method=(pricing_plan.method if pricing_plan is not None else "unknown"),
         instrument_type=itype,
         product_ir=product_ir,
+        validation_contract=validation_contract,
     )
     review_knowledge_text = ""
     review_prompt_surface = "none"
@@ -1689,15 +1715,7 @@ def _validate_build(
         """
         effective_requirements = set(required_market_data)
         if extra_requirements:
-            # Map capability aliases used by payoff.requirements to the plan keys
-            _alias_map = {
-                "credit": "credit_curve",
-                "vol": "black_vol_surface",
-                "local_vol": "local_vol_surface",
-                "fx": "fx_rates",
-            }
-            for req in extra_requirements:
-                effective_requirements.add(_alias_map.get(req, req))
+            effective_requirements.update(extra_requirements)
 
         discount_curve = YieldCurve.flat(rate)
         payload = {
@@ -1790,8 +1808,17 @@ def _validate_build(
             "categories": {
                 key: list(value) for key, value in validation_bundle.categories.items()
             },
+            "validation_contract": validation_contract_data,
+            "route_binding_authority": route_binding_authority_data,
         },
     )
+    validation_check_relations = {}
+    if validation_contract is not None:
+        validation_check_relations = {
+            check.check_id: check.relation
+            for check in getattr(validation_contract, "deterministic_checks", ())
+            if getattr(check, "relation", None)
+        }
     bundle_execution = execute_validation_bundle(
         validation_bundle,
         validation_level=validation,
@@ -1800,6 +1827,7 @@ def _validate_build(
         payoff_factory=payoff_factory,
         market_state_factory=ms_factory,
         reference_factory=reference_factory,
+        check_relations=validation_check_relations,
     )
     failures.extend(bundle_execution.failures)
     failure_details.extend(bundle_execution.failure_details)
@@ -1813,13 +1841,67 @@ def _validate_build(
             "skipped_checks": list(bundle_execution.skipped_checks),
             "failure_count": len(bundle_execution.failures),
             "failure_details": [asdict(detail) for detail in bundle_execution.failure_details],
+            "validation_contract": validation_contract_data,
+            "route_binding_authority": route_binding_authority_data,
         },
     )
 
     if gate_results_out is not None:
         gate_results_out.append(("bundle", not bool(bundle_execution.failures), tuple(
             bundle_execution.failures
-        ), {"bundle_id": validation_bundle.bundle_id}))
+        ), {
+            "bundle_id": validation_bundle.bundle_id,
+            "validation_contract_id": (
+                None if validation_contract is None else validation_contract.contract_id
+            ),
+            "route_binding_authority": route_binding_authority_data,
+        }))
+
+    oracle_execution = None
+    if not failures and _should_run_reference_oracle(compiled_request):
+        oracle_spec = select_reference_oracle(
+            instrument_type=itype,
+            method=(pricing_plan.method if pricing_plan is not None else "unknown"),
+        )
+        if oracle_spec is not None:
+            oracle_execution = execute_reference_oracle(
+                oracle_spec,
+                payoff_factory=payoff_factory,
+                market_state_factory=ms_factory,
+                reference_factory=reference_factory,
+            )
+            oracle_summary = reference_oracle_summary(oracle_execution)
+            _record_platform_event(
+                compiled_request,
+                "reference_oracle_executed",
+                status="ok" if (oracle_execution and oracle_execution.passed) else "error",
+                details={
+                    "oracle": oracle_summary,
+                    "validation_contract": validation_contract_data,
+                    "route_binding_authority": route_binding_authority_data,
+                },
+            )
+            if gate_results_out is not None:
+                gate_results_out.append((
+                    "reference_oracle",
+                    bool(oracle_execution and oracle_execution.passed),
+                    tuple(
+                        []
+                        if oracle_execution is None or oracle_execution.failure_message is None
+                        else [oracle_execution.failure_message]
+                    ),
+                    {
+                        "oracle_id": None if oracle_execution is None else oracle_execution.oracle_id,
+                        "relation": None if oracle_execution is None else oracle_execution.relation,
+                        "source": None if oracle_execution is None else oracle_execution.source,
+                    },
+                ))
+            if oracle_execution is not None and not oracle_execution.passed:
+                failures.append(
+                    oracle_execution.failure_message
+                    or f"Reference oracle `{oracle_execution.oracle_id}` failed."
+                )
+                failure_details.append(oracle_execution)
 
     deterministic_gate_failed = bool(failures)
     deterministic_gate_reason = (
@@ -1861,6 +1943,7 @@ def _validate_build(
                 instrument_type=itype,
                 method=getattr(pricing_plan, "method", None),
                 product_ir=product_ir,
+                validation_contract=validation_contract,
             )
             stage_model = get_model_for_stage("critic", model)
             with llm_usage_stage(
@@ -1877,6 +1960,7 @@ def _validate_build(
                     description,
                     knowledge_context=review_knowledge_text,
                     model=stage_model,
+                    generation_plan=getattr(compiled_request, "generation_plan", None),
                     available_checks=critic_checks,
                     json_max_retries=critic_json_max_retries,
                     allow_text_fallback=critic_allow_text_fallback,
@@ -1914,10 +1998,13 @@ def _validate_build(
                         "status": concern.status,
                         "evidence": concern.evidence,
                         "remediation": concern.remediation,
-                        **({"test_code": concern.test_code} if concern.test_code else {}),
                     },
                 )
-            critic_failures = run_critic_tests(concerns, test_payoff)
+            critic_failures = run_critic_tests(
+                concerns,
+                test_payoff,
+                allowed_check_ids={check.check_id for check in critic_checks},
+            )
             failures.extend(critic_failures)
             for failure in critic_failures:
                 _append_agent_observation(
@@ -2027,6 +2114,9 @@ def _validate_build(
                         knowledge_context=review_knowledge_text,
                         model=stage_model,
                         product_ir=product_ir,
+                        generation_plan=getattr(compiled_request, "generation_plan", None),
+                        validation_contract=validation_contract,
+                        review_reason=review_policy.model_validator_reason,
                         run_llm_review=True,
                     )
                 enforce_llm_token_budget(stage="model_validator")
@@ -2058,6 +2148,9 @@ def _validate_build(
                     knowledge_context="",
                     model=model,
                     product_ir=product_ir,
+                    generation_plan=getattr(compiled_request, "generation_plan", None),
+                    validation_contract=validation_contract,
+                    review_reason=review_policy.model_validator_reason,
                     run_llm_review=False,
                 )
 
@@ -2159,10 +2252,19 @@ def _make_test_payoff(payoff_cls, spec_schema, settle: date):
     import sys
 
     spec_cls = None
+    for attr_name in ("__init__", "evaluate"):
+        func = getattr(payoff_cls, attr_name, None)
+        globals_dict = getattr(func, "__globals__", None)
+        if isinstance(globals_dict, dict):
+            candidate = globals_dict.get(spec_schema.spec_name)
+            if candidate is not None:
+                spec_cls = candidate
+                break
+
     module = sys.modules.get(getattr(payoff_cls, "__module__", ""))
-    if module is not None and hasattr(module, spec_schema.spec_name):
+    if spec_cls is None and module is not None and hasattr(module, spec_schema.spec_name):
         spec_cls = getattr(module, spec_schema.spec_name)
-    else:
+    elif spec_cls is None:
         for _, mod in list(sys.modules.items()):
             if mod and hasattr(mod, spec_schema.spec_name):
                 spec_cls = getattr(mod, spec_schema.spec_name)
@@ -2181,6 +2283,14 @@ def _make_test_payoff(payoff_cls, spec_schema, settle: date):
         "bool": True,
         "date": date(2034, 11, 15),
         "str | None": None,
+        "float | None": None,
+        "int | None": None,
+        "tuple[date, ...]": (
+            date(2026, 4, 1),
+            date(2026, 5, 1),
+            date(2026, 6, 1),
+        ),
+        "tuple[date, ...] | None": None,
         "Frequency": Frequency.SEMI_ANNUAL,
         "DayCountConvention": DayCountConvention.ACT_360,
     }
@@ -2191,16 +2301,32 @@ def _make_test_payoff(payoff_cls, spec_schema, settle: date):
         "strike": 0.05,
         "underlyings": "AAPL,MSFT,NVDA",
         "constituents": "AAPL,MSFT,NVDA",
-        "observation_dates": "2026-04-01,2026-05-01,2026-06-01",
+        "observation_dates": (
+            date(2026, 4, 1),
+            date(2026, 5, 1),
+            date(2026, 6, 1),
+        ),
         "expiry_date": date(2025, 11, 15),
         "swap_start": date(2025, 11, 15),
         "swap_end": date(2034, 11, 15),
         "start_date": settle,
         "end_date": date(2034, 11, 15),
         "is_payer": True,
-        "call_dates": "2027-11-15,2029-11-15,2031-11-15",
-        "put_dates": "2027-11-15,2029-11-15,2031-11-15",
-        "exercise_dates": "2027-11-15,2029-11-15,2031-11-15",
+        "call_dates": (
+            date(2027, 11, 15),
+            date(2029, 11, 15),
+            date(2031, 11, 15),
+        ),
+        "put_dates": (
+            date(2027, 11, 15),
+            date(2029, 11, 15),
+            date(2031, 11, 15),
+        ),
+        "exercise_dates": (
+            date(2027, 11, 15),
+            date(2029, 11, 15),
+            date(2031, 11, 15),
+        ),
         "call_price": 100.0,
         "put_price": 100.0,
         "call_schedule": "2027-11-15,2029-11-15,2031-11-15",
@@ -2229,7 +2355,7 @@ def _make_test_payoff(payoff_cls, spec_schema, settle: date):
         name_defaults["notional"] = 10.0
         name_defaults["strike"] = 100.0
         name_defaults["spot"] = 100.0
-        name_defaults["underlier_currency"] = "SPX"
+        name_defaults["underlier_currency"] = "EUR"
         name_defaults["domestic_currency"] = "USD"
         name_defaults["fx_pair"] = "EURUSD"
         name_defaults["quanto_correlation_key"] = None
@@ -2341,27 +2467,40 @@ def _generate_skeleton(
     fields_block = "\n".join(field_lines)
 
     requirements_str = ", ".join(f'"{r}"' for r in sorted(spec_schema.requirements))
-    extra_imports = ""
-    evaluate_preamble = "        spec = self._spec\n"
+    import_lines = list(_skeleton_type_import_lines(spec_schema))
+    import_lines.extend(_skeleton_exact_binding_import_lines(generation_plan))
+    evaluate_preamble_lines = ["        spec = self._spec"]
 
     if instrument_type == "quanto_option" and method == "analytical":
-        extra_imports = (
-            "from trellis.models.analytical.quanto import price_quanto_option_analytical\n"
-            "from trellis.models.resolution.quanto import resolve_quanto_inputs\n"
+        import_lines.extend(
+            [
+                "from trellis.models.analytical.quanto import price_quanto_option_analytical",
+                "from trellis.models.resolution.quanto import resolve_quanto_inputs",
+            ]
         )
-        evaluate_preamble += (
-            "        resolved = resolve_quanto_inputs(market_state, spec)\n"
-            "        # return float(price_quanto_option_analytical(spec, resolved))\n"
+        evaluate_preamble_lines.extend(
+            [
+                "        resolved = resolve_quanto_inputs(market_state, spec)",
+                "        # return float(price_quanto_option_analytical(spec, resolved))",
+            ]
         )
     elif instrument_type == "quanto_option" and method == "monte_carlo":
-        extra_imports = (
-            "from trellis.models.monte_carlo.quanto import price_quanto_option_monte_carlo\n"
-            "from trellis.models.resolution.quanto import resolve_quanto_inputs\n"
+        import_lines.extend(
+            [
+                "from trellis.models.monte_carlo.quanto import price_quanto_option_monte_carlo",
+                "from trellis.models.resolution.quanto import resolve_quanto_inputs",
+            ]
         )
-        evaluate_preamble += (
-            "        resolved = resolve_quanto_inputs(market_state, spec)\n"
-            "        # return float(price_quanto_option_monte_carlo(spec, resolved))\n"
+        evaluate_preamble_lines.extend(
+            [
+                "        resolved = resolve_quanto_inputs(market_state, spec)",
+                "        # return float(price_quanto_option_monte_carlo(spec, resolved))",
+            ]
         )
+    extra_imports = "\n".join(dict.fromkeys(import_lines))
+    if extra_imports:
+        extra_imports = f"{extra_imports}\n"
+    evaluate_preamble = "\n".join(evaluate_preamble_lines) + "\n"
 
     return f'''"""Agent-generated payoff: {description}."""
 
@@ -2370,10 +2509,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from trellis.core.date_utils import generate_schedule, year_fraction
 from trellis.core.market_state import MarketState
-from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.black import black76_call, black76_put
 {extra_imports}
 
 
@@ -2400,6 +2536,50 @@ class {spec_schema.class_name}:
     def evaluate(self, market_state: MarketState) -> float:
 {evaluate_preamble}{EVALUATE_SENTINEL}
 '''
+
+
+def _skeleton_type_import_lines(spec_schema) -> tuple[str, ...]:
+    """Return the minimal type imports required by the spec fields."""
+    field_types = [str(getattr(field, "type", "") or "") for field in spec_schema.fields]
+    names: list[str] = []
+    if any("DayCountConvention" in field_type for field_type in field_types):
+        names.append("DayCountConvention")
+    if any("Frequency" in field_type for field_type in field_types):
+        names.append("Frequency")
+    if not names:
+        return ()
+    return (f"from trellis.core.types import {', '.join(names)}",)
+
+
+def _skeleton_exact_binding_import_lines(generation_plan) -> tuple[str, ...]:
+    """Return import lines for compiler-selected exact bindings."""
+    if generation_plan is None:
+        return ()
+
+    refs: list[str] = list(getattr(generation_plan, "lane_exact_binding_refs", ()) or ())
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    if primitive_plan is not None:
+        refs.extend(
+            f"{primitive.module}.{primitive.symbol}"
+            for primitive in getattr(primitive_plan, "primitives", ()) or ()
+            if getattr(primitive, "role", "") in {"route_helper", "pricing_kernel", "schedule_builder"}
+            and getattr(primitive, "module", "")
+            and getattr(primitive, "symbol", "")
+        )
+
+    imports_by_module: dict[str, list[str]] = {}
+    for ref in refs:
+        module, _, symbol = str(ref or "").rpartition(".")
+        if not module or not symbol:
+            continue
+        module_symbols = imports_by_module.setdefault(module, [])
+        if symbol not in module_symbols:
+            module_symbols.append(symbol)
+
+    return tuple(
+        f"from {module} import {', '.join(symbols)}"
+        for module, symbols in sorted(imports_by_module.items())
+    )
 
 
 def _generate_module(
@@ -2856,12 +3036,41 @@ def _try_import_existing(plan) -> type | None:
         return None
 
 
+def _deterministic_reuse_module_paths() -> frozenset[str]:
+    """Return checked-in module paths that are explicitly reusable by route metadata."""
+    try:
+        from trellis.agent.route_registry import load_route_registry
+
+        registry = load_route_registry()
+        return frozenset(
+            path
+            for route in registry.routes
+            for path in getattr(route, "reuse_module_paths", ())
+            if path
+        )
+    except Exception:
+        return frozenset()
+
+
 def _is_deterministic_supported_route(plan) -> bool:
     """Whether the plan targets a checked-in deterministic adapter."""
+    supported_paths = _deterministic_reuse_module_paths()
+    if not supported_paths:
+        return False
     return bool(plan.steps) and all(
-        step.module_path in _DETERMINISTIC_SUPPORTED_ROUTE_MODULES
+        step.module_path in supported_paths
         for step in plan.steps
     )
+
+
+def _should_run_reference_oracle(compiled_request) -> bool:
+    """Return whether the current build is eligible for a single-method oracle."""
+    if compiled_request is None:
+        return True
+    if getattr(compiled_request, "comparison_spec", None) is not None:
+        return False
+    comparison_method_plans = getattr(compiled_request, "comparison_method_plans", ()) or ()
+    return not bool(comparison_method_plans)
 
 
 def _fresh_build_module_path(module_path: str) -> str:
@@ -3227,7 +3436,7 @@ def _builder_prompt_surface_for_attempt(
         return "compact"
     if retry_reason == "import_validation":
         return "import_repair"
-    if retry_reason in {"semantic_validation", "lite_review"}:
+    if retry_reason in {"semantic_validation", "lite_review", "actual_market_smoke", "comparison_insufficient_results"}:
         return "semantic_repair"
     if retry_reason == "validation":
         return "compact"
@@ -3246,6 +3455,7 @@ def _resolve_knowledge_context_for_attempt(
     prompt_surface: str,
     build_meta: dict | None = None,
     knowledge_retriever: Callable[[KnowledgeRetrievalRequest], str | None] | None = None,
+    previous_failures: list[str] | tuple[str, ...] | None = None,
 ) -> KnowledgeContextResult:
     """Resolve knowledge text and retrieval metadata for one build/review step."""
     retrieval_stage = _knowledge_retrieval_stage(
@@ -3270,12 +3480,18 @@ def _resolve_knowledge_context_for_attempt(
         pricing_method=getattr(pricing_plan, "method", None),
         product_ir=product_ir,
         compiled_request=compiled_request,
+        recent_failures=tuple(
+            str(item) for item in (previous_failures or ()) if str(item).strip()
+        ),
     )
 
     if knowledge_retriever is not None:
         callback_text = knowledge_retriever(request)
         if isinstance(callback_text, str) and callback_text:
-            callback_text = _augment_retrieval_text(callback_text, request=request)
+            callback_text, selected_artifacts = _augment_retrieval_text(
+                callback_text,
+                request=request,
+            )
             _record_knowledge_retrieval(
                 build_meta,
                 audience=audience,
@@ -3286,6 +3502,7 @@ def _resolve_knowledge_context_for_attempt(
                 prompt_surface=prompt_surface,
                 retry_reason=retry_reason,
                 chars=len(callback_text),
+                selected_artifacts=selected_artifacts,
             )
             return KnowledgeContextResult(
                 text=callback_text,
@@ -3297,9 +3514,20 @@ def _resolve_knowledge_context_for_attempt(
     if compiled_request is not None and getattr(compiled_request, "knowledge", None) is not None:
         from trellis.agent.knowledge.retrieval import build_shared_knowledge_payload
 
-        if compact:
-            if audience == "builder" and compiled_request.knowledge_text:
-                text = _augment_retrieval_text(compiled_request.knowledge_text, request=request)
+        knowledge_profile = str(
+            (getattr(compiled_request, "knowledge_summary", {}) or {}).get("knowledge_profile") or ""
+        ).strip()
+        if knowledge_profile == "knowledge_light":
+            stored_text = (
+                compiled_request.knowledge_text
+                if audience == "builder"
+                else compiled_request.review_knowledge_text
+            )
+            if stored_text:
+                text, selected_artifacts = _augment_retrieval_text(
+                    stored_text,
+                    request=request,
+                )
                 _record_knowledge_retrieval(
                     build_meta,
                     audience=audience,
@@ -3310,6 +3538,32 @@ def _resolve_knowledge_context_for_attempt(
                     prompt_surface=prompt_surface,
                     retry_reason=retry_reason,
                     chars=len(text),
+                    selected_artifacts=selected_artifacts,
+                )
+                return KnowledgeContextResult(
+                    text=text,
+                    knowledge_surface=knowledge_surface,
+                    retrieval_stage=retrieval_stage,
+                    retrieval_source="compiled_request",
+                )
+
+        if compact:
+            if audience == "builder" and compiled_request.knowledge_text:
+                text, selected_artifacts = _augment_retrieval_text(
+                    compiled_request.knowledge_text,
+                    request=request,
+                )
+                _record_knowledge_retrieval(
+                    build_meta,
+                    audience=audience,
+                    retrieval_stage=retrieval_stage,
+                    knowledge_surface=knowledge_surface,
+                    retrieval_source="compiled_request",
+                    attempt_number=attempt_number,
+                    prompt_surface=prompt_surface,
+                    retry_reason=retry_reason,
+                    chars=len(text),
+                    selected_artifacts=selected_artifacts,
                 )
                 return KnowledgeContextResult(
                     text=text,
@@ -3318,7 +3572,10 @@ def _resolve_knowledge_context_for_attempt(
                     retrieval_source="compiled_request",
                 )
             if audience == "review" and compiled_request.review_knowledge_text:
-                text = _augment_retrieval_text(compiled_request.review_knowledge_text, request=request)
+                text, selected_artifacts = _augment_retrieval_text(
+                    compiled_request.review_knowledge_text,
+                    request=request,
+                )
                 _record_knowledge_retrieval(
                     build_meta,
                     audience=audience,
@@ -3329,6 +3586,7 @@ def _resolve_knowledge_context_for_attempt(
                     prompt_surface=prompt_surface,
                     retry_reason=retry_reason,
                     chars=len(text),
+                    selected_artifacts=selected_artifacts,
                 )
                 return KnowledgeContextResult(
                     text=text,
@@ -3344,7 +3602,10 @@ def _resolve_knowledge_context_for_attempt(
             key = "review_text_expanded" if not compact else "review_text_distilled"
         else:
             raise ValueError(f"Unsupported knowledge audience: {audience}")
-        text = _augment_retrieval_text(payload.get(key, ""), request=request)
+        text, selected_artifacts = _augment_retrieval_text(
+            payload.get(key, ""),
+            request=request,
+        )
         _record_knowledge_retrieval(
             build_meta,
             audience=audience,
@@ -3355,6 +3616,7 @@ def _resolve_knowledge_context_for_attempt(
             prompt_surface=prompt_surface,
             retry_reason=retry_reason,
             chars=len(text),
+            selected_artifacts=selected_artifacts,
         )
         return KnowledgeContextResult(
             text=text,
@@ -3370,7 +3632,7 @@ def _resolve_knowledge_context_for_attempt(
             product_ir=product_ir,
             compact=compact,
         )
-        text = _augment_retrieval_text(text, request=request)
+        text, selected_artifacts = _augment_retrieval_text(text, request=request)
         _record_knowledge_retrieval(
             build_meta,
             audience=audience,
@@ -3381,6 +3643,7 @@ def _resolve_knowledge_context_for_attempt(
             prompt_surface=prompt_surface,
             retry_reason=retry_reason,
             chars=len(text),
+            selected_artifacts=selected_artifacts,
         )
         return KnowledgeContextResult(
             text=text,
@@ -3395,7 +3658,7 @@ def _resolve_knowledge_context_for_attempt(
             product_ir=product_ir,
             compact=compact,
         )
-        text = _augment_retrieval_text(text, request=request)
+        text, selected_artifacts = _augment_retrieval_text(text, request=request)
         _record_knowledge_retrieval(
             build_meta,
             audience=audience,
@@ -3406,6 +3669,7 @@ def _resolve_knowledge_context_for_attempt(
             prompt_surface=prompt_surface,
             retry_reason=retry_reason,
             chars=len(text),
+            selected_artifacts=selected_artifacts,
         )
         return KnowledgeContextResult(
             text=text,
@@ -3435,8 +3699,12 @@ def _knowledge_retrieval_stage(
         return "semantic_validation_failed"
     if retry_reason == "lite_review":
         return "lite_review_failed"
+    if retry_reason == "actual_market_smoke":
+        return "actual_market_smoke_failed"
     if retry_reason == "validation":
         return "validation_failed"
+    if retry_reason == "comparison_insufficient_results":
+        return "comparison_insufficient_results"
     return "retry_build"
 
 
@@ -3451,7 +3719,7 @@ def _knowledge_surface_for_stage(
         return "expanded" if attempt_number > 1 else "compact"
     if attempt_number <= 1:
         return "compact"
-    if retry_reason in {"semantic_validation", "lite_review"}:
+    if retry_reason in {"semantic_validation", "lite_review", "actual_market_smoke", "comparison_insufficient_results"}:
         return "expanded"
     return "compact"
 
@@ -3467,6 +3735,7 @@ def _record_knowledge_retrieval(
     prompt_surface: str,
     retry_reason: str | None,
     chars: int,
+    selected_artifacts: list[dict[str, str]] | None = None,
 ) -> None:
     """Persist one structured retrieval decision for later diagnosis."""
     if build_meta is None:
@@ -3481,6 +3750,8 @@ def _record_knowledge_retrieval(
         "retry_reason": retry_reason,
         "chars": chars,
     }
+    if selected_artifacts:
+        decision["selected_artifacts"] = [dict(item) for item in selected_artifacts]
     build_meta.setdefault("knowledge_retrieval_history", []).append(decision)
     summary = build_meta.setdefault("knowledge_summary", {})
     for key, value in (
@@ -3495,15 +3766,42 @@ def _record_knowledge_retrieval(
         if value not in existing:
             existing.append(value)
         summary[key] = existing
+    if selected_artifacts:
+        for key, field in (
+            ("selected_artifact_ids", "id"),
+            ("selected_artifact_titles", "title"),
+        ):
+            existing = [
+                item
+                for item in summary.get(key, ())
+                if isinstance(item, str) and item
+            ]
+            for artifact in selected_artifacts:
+                value = str(artifact.get(field) or "").strip()
+                if value and value not in existing:
+                    existing.append(value)
+            summary[key] = existing
 
 
 def _augment_retrieval_text(
     text: str,
     *,
     request: KnowledgeRetrievalRequest,
-) -> str:
+) -> tuple[str, list[dict[str, str]]]:
     """Append stage-aware retry guidance and instrument disambiguation notes."""
     sections: list[str] = []
+    selected_artifacts = _prune_selected_artifacts_for_prompt(
+        text,
+        _stage_aware_skill_artifacts(request),
+        knowledge_surface=request.knowledge_surface,
+    )
+    if selected_artifacts:
+        sections.append("## Stage-Aware Skills")
+        sections.extend(
+            f"- [{artifact['kind']}] {artifact['title']}: {artifact['summary']}"
+            for artifact in selected_artifacts
+        )
+
     retry_lines = _retry_focus_lines(request.stage)
     if retry_lines:
         sections.append("## Retry Focus")
@@ -3520,12 +3818,290 @@ def _augment_retrieval_text(
         sections.extend(f"- {line}" for line in disambiguation_lines)
 
     if not sections:
-        return text
+        return text, selected_artifacts
 
     suffix = "\n".join(sections)
     if text.strip():
-        return f"{text}\n\n{suffix}"
-    return suffix
+        return f"{text}\n\n{suffix}", selected_artifacts
+    return suffix, selected_artifacts
+
+
+def _prune_selected_artifacts_for_prompt(
+    text: str,
+    artifacts: list[dict[str, str]],
+    *,
+    knowledge_surface: str,
+) -> list[dict[str, str]]:
+    """Drop duplicate stage-aware guidance and enforce a small prompt budget."""
+    normalized_text = " ".join(str(text or "").lower().split())
+    budget = 900 if knowledge_surface == "expanded" else 420
+    selected: list[dict[str, str]] = []
+    seen_signatures: set[tuple[str, str, str]] = set()
+    used_chars = 0
+
+    for artifact in artifacts:
+        artifact_id = str(artifact.get("id") or "").strip()
+        kind = str(artifact.get("kind") or "").strip()
+        title = " ".join(str(artifact.get("title") or "").split())
+        summary = " ".join(str(artifact.get("summary") or "").split())
+        if not summary:
+            continue
+        signature = (artifact_id, title.lower(), summary.lower())
+        if signature in seen_signatures:
+            continue
+        normalized_title = title.lower()
+        normalized_summary = summary.lower()
+        if normalized_summary in normalized_text:
+            continue
+        if normalized_title and normalized_title in normalized_text:
+            continue
+        projected = used_chars + len(title) + len(summary) + 8
+        if selected and projected > budget:
+            break
+        selected.append(
+            {
+                "id": artifact_id,
+                "kind": kind,
+                "title": title,
+                "summary": summary,
+            }
+        )
+        seen_signatures.add(signature)
+        used_chars = projected
+    return selected
+
+
+def _stage_aware_skill_artifacts(
+    request: KnowledgeRetrievalRequest,
+) -> list[dict[str, str]]:
+    """Select deterministic skill-index guidance for retry-time prompt repair."""
+    if request.audience == "builder" and request.attempt_number <= 1:
+        return []
+    if request.audience == "review" and request.stage == "critic_review":
+        return []
+    try:
+        from trellis.agent.knowledge import load_skill_index
+    except Exception:
+        return []
+
+    instrument_tokens = _candidate_instrument_tokens(request)
+    method_token = _normalize_retrieval_token(request.pricing_method)
+    route_ids = _candidate_route_ids(request)
+    route_families = _candidate_route_families(request)
+    kind_order = _skill_kind_order_for_stage(request.stage, audience=request.audience)
+    limit = 5 if request.knowledge_surface == "expanded" else 3
+
+    records = []
+    for record in load_skill_index().records:
+        if record.kind not in kind_order:
+            continue
+        if record.status and _normalize_retrieval_token(record.status) not in {
+            "active",
+            "validated",
+            "promoted",
+            "fresh",
+        }:
+            continue
+        if not _skill_record_matches_request(
+            record,
+            instrument_tokens=instrument_tokens,
+            method_token=method_token,
+            route_ids=route_ids,
+            route_families=route_families,
+        ):
+            continue
+        records.append(record)
+
+    records.sort(
+        key=lambda record: _skill_record_rank(
+            record,
+            kind_order=kind_order,
+            instrument_tokens=instrument_tokens,
+            method_token=method_token,
+            route_ids=route_ids,
+            route_families=route_families,
+        )
+    )
+
+    selected: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for record in records:
+        if record.skill_id in seen:
+            continue
+        seen.add(record.skill_id)
+        summary = " ".join(str(record.summary or "").split())
+        if not summary:
+            continue
+        if len(summary) > 220:
+            summary = summary[:217].rstrip() + "..."
+        selected.append(
+            {
+                "id": record.skill_id,
+                "kind": record.kind,
+                "title": record.title,
+                "summary": summary,
+            }
+        )
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _skill_kind_order_for_stage(
+    stage: str,
+    *,
+    audience: str,
+) -> tuple[str, ...]:
+    """Return the preferred skill kinds for the current retrieval stage."""
+    if audience == "review":
+        return ("principle", "lesson", "route_hint")
+    if stage == "code_generation_failed":
+        return ("route_hint", "cookbook", "principle")
+    if stage == "import_validation_failed":
+        return ("route_hint", "principle", "lesson")
+    if stage in {
+        "semantic_validation_failed",
+        "lite_review_failed",
+        "actual_market_smoke_failed",
+        "validation_failed",
+        "comparison_insufficient_results",
+    }:
+        return ("route_hint", "lesson", "principle", "cookbook")
+    return ("cookbook", "principle", "lesson")
+
+
+def _skill_record_matches_request(
+    record,
+    *,
+    instrument_tokens: tuple[str, ...],
+    method_token: str,
+    route_ids: tuple[str, ...],
+    route_families: tuple[str, ...],
+) -> bool:
+    """Apply deterministic scope matching for one skill record."""
+    record_methods = {_normalize_retrieval_token(item) for item in record.method_families}
+    if method_token and record_methods and method_token not in record_methods:
+        return False
+
+    record_instruments = {_normalize_retrieval_token(item) for item in record.instrument_types}
+    record_route_families = {_normalize_retrieval_token(item) for item in record.route_families}
+    record_tags = {_normalize_retrieval_token(item) for item in record.tags}
+    route_id_tags = {f"route:{route_id}" for route_id in route_ids if route_id}
+
+    if record.kind == "route_hint":
+        if route_id_tags & record_tags:
+            return True
+        if route_families and record_route_families and set(route_families) & record_route_families:
+            return True
+        if instrument_tokens and record_instruments and set(instrument_tokens) & record_instruments:
+            return True
+        return False
+
+    if instrument_tokens and record_instruments:
+        return bool(set(instrument_tokens) & record_instruments)
+    return True
+
+
+def _skill_record_rank(
+    record,
+    *,
+    kind_order: tuple[str, ...],
+    instrument_tokens: tuple[str, ...],
+    method_token: str,
+    route_ids: tuple[str, ...],
+    route_families: tuple[str, ...],
+) -> tuple[object, ...]:
+    """Order matched skill records by route specificity, stage fit, and stability."""
+    record_instruments = {_normalize_retrieval_token(item) for item in record.instrument_types}
+    record_methods = {_normalize_retrieval_token(item) for item in record.method_families}
+    record_route_families = {_normalize_retrieval_token(item) for item in record.route_families}
+    record_tags = {_normalize_retrieval_token(item) for item in record.tags}
+    route_id_score = int(bool({f"route:{route_id}" for route_id in route_ids if route_id} & record_tags))
+    route_family_score = int(bool(set(route_families) & record_route_families))
+    instrument_score = int(bool(set(instrument_tokens) & record_instruments))
+    method_score = int(bool(method_token and method_token in record_methods))
+    hard_constraint_score = int(str(getattr(record, "instruction_type", "") or "") == "hard_constraint")
+    return (
+        -route_id_score,
+        -route_family_score,
+        -instrument_score,
+        -method_score,
+        kind_order.index(record.kind),
+        -hard_constraint_score,
+        -int(getattr(record, "precedence_rank", 0) or 0),
+        -float(getattr(record, "confidence", 0.0) or 0.0),
+        str(getattr(record, "skill_id", "") or ""),
+    )
+
+
+def _candidate_instrument_tokens(
+    request: KnowledgeRetrievalRequest,
+) -> tuple[str, ...]:
+    """Return normalized instrument aliases usable for skill matching."""
+    raw_values = [
+        request.instrument_type,
+        getattr(request.product_ir, "instrument", None),
+    ]
+    tokens = {
+        _normalize_retrieval_token(value)
+        for value in raw_values
+        if _normalize_retrieval_token(value)
+    }
+    if "credit_default_swap" in tokens:
+        tokens.add("cds")
+    if "cds" in tokens:
+        tokens.add("credit_default_swap")
+    return tuple(sorted(tokens))
+
+
+def _candidate_route_ids(
+    request: KnowledgeRetrievalRequest,
+) -> tuple[str, ...]:
+    """Return exact route identifiers from the compiled semantic/generation boundary."""
+    compiled_request = request.compiled_request
+    generation_plan = getattr(compiled_request, "generation_plan", None)
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    request_metadata = (
+        getattr(getattr(compiled_request, "request", None), "metadata", None) or {}
+    )
+    semantic_blueprint = dict(request_metadata.get("semantic_blueprint") or {})
+    values = {
+        _normalize_retrieval_token(getattr(generation_plan, "lowering_route_id", None)),
+        _normalize_retrieval_token(getattr(primitive_plan, "route", None)),
+        _normalize_retrieval_token(semantic_blueprint.get("dsl_route")),
+    }
+    return tuple(sorted(value for value in values if value))
+
+
+def _candidate_route_families(
+    request: KnowledgeRetrievalRequest,
+) -> tuple[str, ...]:
+    """Return route-family tokens from the semantic and generation boundary."""
+    compiled_request = request.compiled_request
+    generation_plan = getattr(compiled_request, "generation_plan", None)
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    request_metadata = (
+        getattr(getattr(compiled_request, "request", None), "metadata", None) or {}
+    )
+    semantic_blueprint = dict(request_metadata.get("semantic_blueprint") or {})
+    values = {
+        _normalize_retrieval_token(getattr(generation_plan, "lowering_route_family", None)),
+        _normalize_retrieval_token(getattr(primitive_plan, "route_family", None)),
+        _normalize_retrieval_token(semantic_blueprint.get("dsl_route_family")),
+    }
+    route_families = getattr(request.product_ir, "route_families", ()) or ()
+    for value in route_families:
+        normalized = _normalize_retrieval_token(value)
+        if normalized:
+            values.add(normalized)
+    return tuple(sorted(value for value in values if value))
+
+
+def _normalize_retrieval_token(value: object) -> str:
+    """Normalize free-form metadata tokens for deterministic matching."""
+    if value is None:
+        return ""
+    return str(value).strip().lower().replace(" ", "_")
 
 
 def _retry_focus_lines(stage: str) -> tuple[str, ...]:
@@ -3540,6 +4116,11 @@ def _retry_focus_lines(stage: str) -> tuple[str, ...]:
             "Use only import-registry and API-map-backed modules and symbols.",
             "Do not swap route families or import adjacent credit/copula helpers just because the names sound similar.",
         )
+    if stage == "actual_market_smoke_failed":
+        return (
+            "Recover against the real task market contract: required curves, spots, and volatility surfaces must be read from the live market_state.",
+            "Do not fix actual-market failures by hard-coding fixture values or widening fallback defaults inside evaluate().",
+        )
     if stage in {"semantic_validation_failed", "validation_failed"}:
         return (
             "Match the runtime contract exactly: required curves, units, and payoff-leg signs must be explicit in code.",
@@ -3548,6 +4129,11 @@ def _retry_focus_lines(stage: str) -> tuple[str, ...]:
     if stage == "lite_review_failed":
         return (
             "Address the flagged semantic/risk issues directly instead of broadening the route or changing the product family.",
+        )
+    if stage == "comparison_insufficient_results":
+        return (
+            "Rebuild only the missing comparison lane and keep it semantically aligned with the canonical route contract.",
+            "Prefer thin adapters over novel product-specific scaffolding when a comparison target is missing or invalid.",
         )
     return ()
 
@@ -3569,7 +4155,7 @@ def _route_specific_retry_lines(
     if (
         instrument in {"credit_default_swap", "cds"}
         and pricing_method in {"monte_carlo", "qmc"}
-        and stage in {"code_generation_failed", "import_validation_failed", "validation_failed"}
+        and stage in {"code_generation_failed", "import_validation_failed", "validation_failed", "actual_market_smoke_failed"}
     ):
         return (
             "Single-name CDS Monte Carlo does not need an equity price process, spot diffusion, or volatility path.",
@@ -3583,6 +4169,8 @@ def _route_specific_retry_lines(
             "Do not compare float year-fractions to `date` objects, and do not pass floats into the date positions of `year_fraction(...)`.",
             "Use `period.payment_date`, `period.accrual_fraction`, and `period.t_payment` from that schedule object so the Monte Carlo leg covers the full CDS horizon without reconstructing payment_dates manually.",
             "This route must price a Monte Carlo expectation over many paths. Use `n_paths = ...`, `alive = np.ones(n_paths, dtype=bool)`, and vectorized `default_in_interval` arrays.",
+            "Do not hard-code `n_paths=50000` for a comparison-quality single-name CDS build. If the spec exposes `n_paths`, pass `spec.n_paths` through to `price_cds_monte_carlo(...)`; otherwise use a comparison-stable path count such as `250000`.",
+            "Keep the CDS comparison build reproducible with `seed=42` unless the spec explicitly carries another seed.",
             "Do not collapse the Monte Carlo CDS leg to scalar `alive`, a single `rng.random()` draw per payment date, or a one-scenario loop that breaks after default.",
             "Compute interval default probability from survival ratios: `default_prob = max(0.0, min(1.0, 1.0 - s_pay / s_prev))` using `survival_probability(prev_t)` and `survival_probability(t_pay)`.",
             "Do not replace that interval default probability with a midpoint-hazard shortcut like `1.0 - exp(-hazard * dt)` when survival probabilities are available.",
@@ -3599,12 +4187,13 @@ def _route_specific_retry_lines(
     if (
         instrument in {"credit_default_swap", "cds"}
         and pricing_method == "analytical"
-        and stage in {"code_generation_failed", "import_validation_failed", "validation_failed"}
+        and stage in {"code_generation_failed", "import_validation_failed", "validation_failed", "actual_market_smoke_failed"}
     ):
         return (
             "Single-name CDS analytical pricing should stay on the same explicit schedule convention as the Monte Carlo comparator.",
             "Normalize the running spread immediately with `spread = float(spec.spread)` and `if spread > 1.0: spread *= 1e-4`, then use only the local `spread` variable.",
             "Prefer `from trellis.models.credit_default_swap import build_cds_schedule, price_cds_analytical` and delegate to those helpers from the adapter.",
+            "Do not write `from trellis.models import black`; if you genuinely need Black helpers, import concrete symbols from `trellis.models.black`, but this CDS route should normally only need `trellis.models.credit_default_swap` plus core helpers.",
             "Prefer `build_period_schedule(spec.start_date, spec.end_date, spec.frequency, day_count=spec.day_count, time_origin=spec.start_date)` and iterate over explicit periods instead of rebuilding date lists by hand.",
             "Use `spec.start_date` as the time origin for `year_fraction(...)` schedule times so the analytical and Monte Carlo legs share the same `t` convention.",
             "For each payment date, discount both the premium leg and the interval default mass with `market_state.discount.discount(pay_t)`.",
@@ -3616,7 +4205,7 @@ def _route_specific_retry_lines(
     if (
         instrument == "callable_bond"
         and pricing_method == "rate_tree"
-        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed"}
+        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed"}
     ):
         return (
             "Callable rate-tree routes must keep both rate-vol access and schedule-dependent lattice control explicit in the generated body.",
@@ -3637,9 +4226,24 @@ def _route_specific_retry_lines(
             "Keep the callable route thin: explicit coupon cashflows, explicit exercise value, explicit vol-surface access, checked-in lattice control, and no bespoke exercise convention logic.",
         )
     if (
+        instrument == "puttable_bond"
+        and pricing_method == "rate_tree"
+        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
+    ):
+        return (
+            "Puttable bond rate-tree routes should stay on the checked-in embedded-bond helper surface whenever possible.",
+            "Prefer `from trellis.models.callable_bond_tree import price_callable_bond_tree` and delegate to that helper from the adapter. The helper accepts puttable specs with `put_dates` and `put_price`.",
+            "If you need the lower-level lattice path, resolve holder exercise with `exercise_policy = resolve_lattice_exercise_policy(\"holder_put\", exercise_steps=...)`.",
+            "Do not pass `exercise_fn=` into `resolve_lattice_exercise_policy(...)`. That function only accepts `exercise_style` and `exercise_steps`; the holder-max objective is already built into the `holder_put` policy.",
+            "Do not pass a second bespoke holder exercise function into `lattice_backward_induction(...)` when you already pass `exercise_policy=exercise_policy`.",
+            "Treat `trellis.models.trees.control` as the lattice-timeline facade: build the exercise schedule from explicit `put_dates`, map it with `lattice_steps_from_timeline(...)`, and keep the policy object explicit.",
+            "Keep `market_state.vol_surface.black_vol(...)` and `market_state.discount.zero_rate(...)` visible in `evaluate()` before delegating so the route keeps its calibration inputs explicit.",
+            "Puttable bonds are holder-maximizing Bermudan exercise problems. Do not drift to issuer-minimizing semantics or `exercise_fn=min` anywhere in the route.",
+        )
+    if (
         instrument == "bermudan_swaption"
         and pricing_method == "rate_tree"
-        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "import_validation_failed"}
+        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
     ):
         return (
             "Bermudan swaption rate-tree routes should stay on the checked-in helper surface.",
@@ -3654,7 +4258,7 @@ def _route_specific_retry_lines(
     if (
         instrument == "bermudan_swaption"
         and pricing_method == "analytical"
-        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "import_validation_failed"}
+        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
     ):
         return (
             "Bermudan swaption analytical comparators should stay on the checked-in lower-bound helper surface.",
@@ -3664,9 +4268,21 @@ def _route_specific_retry_lines(
             "Keep the adapter minimal: validate `market_state.discount` and `market_state.vol_surface`, then call the helper and return `float(...)`.",
         )
     if (
+        instrument == "swaption"
+        and pricing_method == "analytical"
+        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
+    ):
+        return (
+            "European rate-style swaption analytical routes should stay on the checked helper-backed Black76 surface.",
+            "Prefer `from trellis.models.rate_style_swaption import resolve_swaption_black76_inputs, price_swaption_black76_raw` and delegate to those helpers from the adapter.",
+            "Treat `ResolvedSwaptionBlack76Inputs` as the resolved contract for expiry, annuity, forward swap rate, strike, volatility, notional, direction, and payment count.",
+            "Do not rebuild annuity, forward-swap-rate, expiry year-fraction, or payment-count loops inline when the checked helper already owns that binding.",
+            "Keep cap/floor-style period loops separate. This helper-backed shortcut is for single-exercise European swaptions, not for caplet or floorlet strips.",
+        )
+    if (
         instrument == "zcb_option"
         and pricing_method == "rate_tree"
-        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "import_validation_failed"}
+        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
     ):
         return (
             "Zero-coupon bond option tree routes should stay on the checked-in helper surface.",
@@ -3679,18 +4295,20 @@ def _route_specific_retry_lines(
     if (
         instrument == "zcb_option"
         and pricing_method == "analytical"
-        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "import_validation_failed"}
+        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
     ):
         return (
             "Jamshidian analytical routes should use the checked-in helper instead of rebuilding forward-bond Black76 inline.",
             "Prefer `from trellis.models.zcb_option import price_zcb_option_jamshidian` and delegate to that helper from the adapter.",
+            "If you need the resolved-input lane under that wrapper, use `resolve_zcb_option_hw_inputs(...)` and pass `resolved.jamshidian` into `zcb_option_hw_raw(...)` from `trellis.models.analytical.jamshidian`.",
+            "Treat `ResolvedJamshidianInputs` as the traced closed-form contract after date and strike normalization.",
             "Normalize strike quotes to unit face before the closed-form kernel: treat `63` on `100` face as `0.63`.",
             "Use `spec.expiry_date` and `spec.bond_maturity_date`, and validate that the bond maturity is strictly after expiry.",
         )
     if (
         instrument == "european_option"
         and pricing_method == "pde_solver"
-        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "import_validation_failed"}
+        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
     ):
         return (
             "Vanilla European PDE routes should stay on the checked-in helper surface whenever the contract is plain call/put Black-Scholes.",
@@ -3703,7 +4321,7 @@ def _route_specific_retry_lines(
         instrument == "european_option"
         and pricing_method == "analytical"
         and comparison_target == "black_scholes"
-        and stage in {"code_generation_failed", "import_validation_failed"}
+        and stage in {"code_generation_failed", "actual_market_smoke_failed", "import_validation_failed"}
     ):
         return (
             "This retry is only for the plain Black-Scholes / Black76 comparator lane, not a general analytical decomposition route.",

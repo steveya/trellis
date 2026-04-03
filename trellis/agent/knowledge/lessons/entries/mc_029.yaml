@@ -2,8 +2,8 @@ id: mc_029
 title: Do not import unapproved correlated_gbm module in payoff
 severity: critical
 category: monte_carlo
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 0.8
 created: '2026-03-28T14:44:24.251551'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_144424_basket_option_monte_carlo.yaml

@@ -81,7 +81,7 @@ class FXForwardPayoff:
     @property
     def requirements(self) -> set[str]:
         """Needs everything the inner payoff needs, plus FX rates and curves."""
-        return self._inner.requirements | {"fx", "discount", "forecast_rate"}
+        return self._inner.requirements | {"fx_rates", "discount_curve", "forward_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
         """Price inner payoff in foreign currency, convert to domestic.

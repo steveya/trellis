@@ -41,7 +41,7 @@ Preferred method family: analytical
 Implementation target: black76_european_lower_bound."""
     notional: float
     strike: float
-    exercise_dates: str
+    exercise_dates: tuple[date, ...]
     swap_end: date
     swap_frequency: Frequency = Frequency.SEMI_ANNUAL
     day_count: DayCountConvention = DayCountConvention.ACT_360
@@ -73,7 +73,7 @@ Implementation target: black76_european_lower_bound."""
 
     @property
     def requirements(self) -> set[str]:
-        return {"black_vol", "discount", "forward_rate"}
+        return {"black_vol_surface", "discount_curve", "forward_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec

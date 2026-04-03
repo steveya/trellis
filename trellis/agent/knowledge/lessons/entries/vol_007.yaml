@@ -1,8 +1,8 @@
 category: volatility
 title: Source volatility from vol_surface
 severity: high
-status: candidate
-confidence: 0.5
+status: validated
+confidence: 0.6
 created: '2026-03-31T18:34:27.750952'
 version: ''
 source_trace: null

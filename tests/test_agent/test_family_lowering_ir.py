@@ -7,7 +7,9 @@ from dataclasses import replace
 from trellis.agent.family_lowering_ir import (
     AnalyticalBlack76IR,
     CorrelatedBasketMonteCarloIR,
+    CreditDefaultSwapIR,
     ExerciseLatticeIR,
+    NthToDefaultIR,
     VanillaEquityPDEIR,
 )
 
@@ -313,3 +315,77 @@ def test_ranked_observation_basket_family_ir_rejects_missing_correlation_input()
 
     with pytest.raises(ValueError, match="correlation data"):
         compile_semantic_contract(contract)
+
+
+def test_credit_default_swap_compiles_to_analytical_family_ir():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_credit_default_swap_contract
+
+    contract = make_credit_default_swap_contract(
+        description="Single-name CDS on ACME with quarterly premium dates through 2027-06-20",
+        observation_schedule=("2026-06-20", "2026-09-20", "2026-12-20", "2027-03-20", "2027-06-20"),
+    )
+    blueprint = compile_semantic_contract(contract, requested_outputs=["price", "scenario_pnl"])
+
+    family_ir = blueprint.dsl_lowering.family_ir
+    assert isinstance(family_ir, CreditDefaultSwapIR)
+    assert family_ir.route_id == "credit_default_swap_analytical"
+    assert family_ir.route_family == "credit_default_swap"
+    assert family_ir.product_instrument == "cds"
+    assert family_ir.payoff_family == "credit_default_swap"
+    assert family_ir.pricing_mode == "analytical"
+    assert family_ir.schedule_builder_symbol == "build_cds_schedule"
+    assert family_ir.helper_symbol == "price_cds_analytical"
+    assert family_ir.market_mapping == "discount_curve_credit_curve_to_cds_legs"
+    assert family_ir.required_input_ids == blueprint.required_market_data
+    assert family_ir.requested_outputs == ("price", "scenario_pnl")
+    assert family_ir.payment_dates == ("2026-06-20", "2026-09-20", "2026-12-20", "2027-03-20", "2027-06-20")
+
+
+def test_credit_default_swap_compiles_to_monte_carlo_family_ir():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_credit_default_swap_contract
+
+    contract = make_credit_default_swap_contract(
+        description="Single-name CDS on ACME Monte Carlo",
+        observation_schedule=("2026-06-20", "2026-09-20", "2026-12-20", "2027-03-20", "2027-06-20"),
+        preferred_method="monte_carlo",
+    )
+    blueprint = compile_semantic_contract(
+        contract,
+        preferred_method="monte_carlo",
+        requested_outputs=["price"],
+    )
+
+    family_ir = blueprint.dsl_lowering.family_ir
+    assert isinstance(family_ir, CreditDefaultSwapIR)
+    assert family_ir.route_id == "credit_default_swap_monte_carlo"
+    assert family_ir.pricing_mode == "monte_carlo"
+    assert family_ir.helper_symbol == "price_cds_monte_carlo"
+    assert family_ir.payment_dates[-1] == "2027-06-20"
+
+
+def test_nth_to_default_compiles_to_family_ir():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_nth_to_default_contract
+
+    contract = make_nth_to_default_contract(
+        description="First-to-default basket on ACME, BRAVO, CHARLIE, DELTA, ECHO through 2029-11-15",
+        observation_schedule=("2029-11-15",),
+        reference_entities=("ACME", "BRAVO", "CHARLIE", "DELTA", "ECHO"),
+        trigger_rank=1,
+    )
+    blueprint = compile_semantic_contract(contract, requested_outputs=["price", "scenario_pnl"])
+
+    family_ir = blueprint.dsl_lowering.family_ir
+    assert isinstance(family_ir, NthToDefaultIR)
+    assert family_ir.route_id == "nth_to_default_monte_carlo"
+    assert family_ir.route_family == "nth_to_default"
+    assert family_ir.product_instrument == "nth_to_default"
+    assert family_ir.payoff_family == "nth_to_default"
+    assert family_ir.helper_symbol == "price_nth_to_default_basket"
+    assert family_ir.copula_symbol == "GaussianCopula"
+    assert family_ir.trigger_rank == 1
+    assert family_ir.reference_entities == ("ACME", "BRAVO", "CHARLIE", "DELTA", "ECHO")
+    assert family_ir.required_input_ids == blueprint.required_market_data
+    assert family_ir.requested_outputs == ("price", "scenario_pnl")

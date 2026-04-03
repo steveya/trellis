@@ -2,7 +2,7 @@ category: convention
 title: ACT_365F market state mismatch
 severity: critical
 status: validated
-confidence: 0.6
+confidence: 0.7
 created: '2026-03-28T22:46:31.334223'
 version: ''
 source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_224632_build_a_pricer_for:_krd:_interpolation_aware_bumping

@@ -40,6 +40,8 @@ STAGE_DEFAULT_MODEL = {
 
 ALLOWED_FIELD_TYPES = frozenset({
     "float", "int", "str", "bool", "date", "str | None",
+    "float | None", "int | None",
+    "tuple[date, ...]", "tuple[date, ...] | None",
     "Frequency", "DayCountConvention",
 })
 

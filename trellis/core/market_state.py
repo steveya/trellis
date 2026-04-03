@@ -175,14 +175,12 @@ class MarketState:
 
     @property
     def available_capabilities(self) -> set[str]:
-        """Return the normalized capability names exposed by this market state."""
+        """Return the canonical capability names exposed by this market state."""
         caps: set[str] = set()
         if self.discount is not None:
-            caps.add("discount")
             caps.add("discount_curve")
             caps.add("forward_curve")
         if self.forward_curve is not None or self.forecast_curves is not None:
-            caps.add("forward_rate")
             caps.add("forward_curve")
         if self.vol_surface is not None:
             caps.add("black_vol_surface")
@@ -190,7 +188,6 @@ class MarketState:
             caps.add("state_space")
         if self.credit_curve is not None:
             caps.add("credit_curve")
-            caps.add("credit")
         if self.fx_rates is not None:
             caps.add("fx_rates")
         if self.spot is not None or self.underlier_spots is not None:

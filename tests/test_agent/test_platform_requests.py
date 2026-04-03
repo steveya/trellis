@@ -97,6 +97,8 @@ def test_compile_build_request_uses_quanto_semantic_contract_blueprint():
     assert "trellis.models.analytical.quanto.price_quanto_option_analytical" in (
         compiled.request.metadata["semantic_blueprint"]["dsl_helper_refs"]
     )
+    assert compiled.request.metadata["semantic_blueprint"]["lane_plan"]["lane_family"] == "analytical"
+    assert compiled.request.metadata["semantic_blueprint"]["lane_plan"]["plan_kind"] == "exact_target_binding"
     assert compiled.request.metadata["semantic_role_ownership"]["selected_stage"] == "route_assembly"
     assert compiled.request.metadata["semantic_role_ownership"]["selected_role"] == "quant"
     assert compiled.request.metadata["semantic_role_ownership"]["artifact_kind"] == "GenerationPlan"
@@ -108,10 +110,40 @@ def test_compile_build_request_uses_quanto_semantic_contract_blueprint():
     assert compiled.execution_plan.reason == "semantic_contract_request"
     assert "trellis.models.resolution.quanto" in compiled.semantic_blueprint.target_modules
     assert "trellis.models.resolution.quanto" in compiled.generation_plan.approved_modules
+    assert compiled.semantic_blueprint.lane_plan is not None
+    assert compiled.semantic_blueprint.lane_plan.lane_family == "analytical"
+    assert compiled.generation_plan.lane_family == "analytical"
+    assert compiled.generation_plan.lane_plan_kind == "exact_target_binding"
     assert compiled.generation_plan.primitive_plan is not None
     assert compiled.generation_plan.primitive_plan.route == "quanto_adjustment_analytical"
     assert compiled.semantic_blueprint.selection_reason == compiled.pricing_plan.selection_reason
     assert compiled.semantic_blueprint.route_modules == _expected_route_modules(compiled)
+
+
+def test_compile_build_request_attaches_route_binding_authority_packet():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "Quanto option on SAP in USD with EUR underlier currency expiring 2025-11-15",
+        instrument_type="quanto_option",
+    )
+
+    authority = compiled.request.metadata["route_binding_authority"]
+
+    assert authority["route_id"] == "quanto_adjustment_analytical"
+    assert authority["route_family"] == "analytical"
+    assert authority["engine_family"] == "analytical"
+    assert authority["authority_kind"] == "exact_backend_fit"
+    assert authority["exact_backend_fit"] is True
+    assert "trellis.models.resolution.quanto.resolve_quanto_inputs" in authority["primitive_refs"]
+    assert "trellis.models.analytical.quanto.price_quanto_option_analytical" in authority["helper_refs"]
+    assert authority["validation_bundle_id"] == "analytical:quanto_option"
+    assert "check_non_negativity" in authority["validation_check_ids"]
+    assert authority["admissibility"]["multicurrency_support"] == "native_payout_with_fx"
+    assert authority["admissibility_failures"] == []
+    assert authority["canary_task_ids"] == ["T105"]
+    assert authority["provenance"]["semantic_contract_id"] == "quanto_option"
+    assert authority["provenance"]["lane_plan_kind"] == "exact_target_binding"
 
 
 def test_compile_build_request_preserves_quanto_semantic_binding_hints():
@@ -142,6 +174,72 @@ def test_compile_build_request_preserves_quanto_semantic_binding_hints():
         "model_parameters",
     )
     assert compiled.semantic_blueprint.derivable_market_data == ()
+
+
+def test_compile_build_request_records_generated_skill_artifacts_in_shared_bundle():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "Quanto option on SAP in USD with EUR underlier currency expiring 2025-11-15",
+        instrument_type="quanto_option",
+    )
+
+    assert "## Generated Skills" in compiled.knowledge_text
+    assert "## Routing Skills" in compiled.routing_knowledge_text
+    assert "route_hint:quanto_adjustment_analytical:route-helper" in (
+        compiled.knowledge_summary["selected_artifact_ids"]
+    )
+    assert "builder" in compiled.knowledge_summary["selected_artifacts_by_audience"]
+    assert "routing" in compiled.knowledge_summary["selected_artifacts_by_audience"]
+
+
+def test_compile_build_request_supports_knowledge_light_profile():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "Quanto option on SAP in USD with EUR underlier currency expiring 2025-11-15",
+        instrument_type="quanto_option",
+        knowledge_profile="knowledge_light",
+    )
+
+    assert compiled.knowledge_summary["knowledge_profile"] == "knowledge_light"
+    assert compiled.knowledge_text.startswith("## Knowledge-Light Mode")
+    assert compiled.review_knowledge_text.startswith("## Knowledge-Light Review Mode")
+    assert compiled.routing_knowledge_text.startswith("## Knowledge-Light Routing Mode")
+
+
+def test_compile_build_request_emits_fallback_lane_plan_for_american_tree_route():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "American put: tree vs PDE vs LSM at 3 vol levels",
+        instrument_type="american_option",
+        preferred_method="rate_tree",
+        knowledge_profile="knowledge_light",
+    )
+
+    assert compiled.semantic_blueprint is None
+    assert compiled.generation_plan.primitive_plan is not None
+    assert compiled.generation_plan.primitive_plan.route == "exercise_lattice"
+    assert compiled.generation_plan.lane_family == "lattice"
+    assert "price_vanilla_equity_option_tree" in " ".join(compiled.generation_plan.lane_construction_steps)
+
+
+def test_compile_build_request_emits_fallback_lane_plan_for_fx_monte_carlo_route():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "FX vanilla option: Garman-Kohlhagen vs MC",
+        instrument_type="european_option",
+        preferred_method="monte_carlo",
+        knowledge_profile="knowledge_light",
+    )
+
+    assert compiled.semantic_blueprint is None
+    assert compiled.generation_plan.primitive_plan is not None
+    assert compiled.generation_plan.primitive_plan.route == "monte_carlo_paths"
+    assert compiled.generation_plan.lane_family == "monte_carlo"
+    assert any("FXRate" in step for step in compiled.generation_plan.lane_construction_steps)
 
 
 def test_compile_build_request_respects_quanto_preferred_monte_carlo_route():
@@ -208,6 +306,29 @@ def test_compile_term_sheet_request_uses_quanto_semantic_contract():
     assert compiled.pricing_plan.method == "analytical"
     assert compiled.execution_plan.route_method == "analytical"
     assert compiled.execution_plan.reason == "semantic_contract_request"
+
+
+def test_known_family_request_requires_semantic_bridge(monkeypatch):
+    from trellis.agent.platform_requests import PlatformRequest, _compile_known_family_request
+
+    monkeypatch.setattr(
+        "trellis.agent.platform_requests.family_template_as_semantic_contract",
+        lambda family_id: None,
+    )
+
+    with pytest.raises(ValueError, match="has no semantic bridge"):
+        _compile_known_family_request(
+            family_id="quanto_option",
+            request=PlatformRequest(
+                request_id="test_build_001",
+                request_type="build",
+                entry_point="executor",
+                description="Quanto option on SAP in USD with EUR underlier currency expiring 2025-11-15",
+                instrument_type="quanto_option",
+            ),
+            reason="known_family_build_request",
+            description="Quanto option on SAP in USD with EUR underlier currency expiring 2025-11-15",
+        )
 
 
 @pytest.mark.parametrize(
@@ -606,3 +727,76 @@ def test_request_missing_schedule_returns_semantic_error():
             "Himalaya-style ranked observation basket on AAPL, MSFT, NVDA with best-performer removal and maturity settlement, but no observation dates were provided.",
             instrument_type="basket_option",
         )
+
+
+@pytest.mark.parametrize(
+    "preferred_method,expected_route,expected_expr_kind",
+    [
+        ("analytical", "credit_default_swap_analytical", "ThenExpr"),
+        ("monte_carlo", "credit_default_swap_monte_carlo", "ThenExpr"),
+    ],
+)
+def test_compile_build_request_uses_credit_default_swap_semantic_contract_blueprint(
+    preferred_method,
+    expected_route,
+    expected_expr_kind,
+):
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        (
+            "Single-name CDS on ACME with premium dates "
+            "2026-06-20, 2026-09-20, 2026-12-20, 2027-03-20, 2027-06-20"
+        ),
+        instrument_type="credit_default_swap",
+        preferred_method=preferred_method,
+    )
+
+    assert compiled.semantic_contract is not None
+    assert compiled.semantic_blueprint is not None
+    assert compiled.family_blueprint is None
+    assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "credit_default_swap"
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.instrument == "cds"
+    assert compiled.product_ir.payoff_family == "credit_default_swap"
+    assert compiled.pricing_plan is not None
+    assert compiled.pricing_plan.method == preferred_method
+    assert compiled.semantic_blueprint.route_modules == _expected_route_modules(compiled)
+    assert compiled.semantic_blueprint.primitive_routes == (expected_route,)
+    assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == expected_route
+    assert compiled.request.metadata["semantic_blueprint"]["dsl_family_ir_type"] == "CreditDefaultSwapIR"
+    assert compiled.request.metadata["semantic_blueprint"]["dsl_expr_kind"] == expected_expr_kind
+    assert (
+        compiled.request.metadata["semantic_blueprint"]["dsl_family_ir"]["schedule_builder_symbol"]
+        == "build_cds_schedule"
+    )
+    assert "trellis.models.credit_default_swap" in compiled.semantic_blueprint.target_modules
+
+
+def test_compile_build_request_uses_nth_to_default_semantic_contract_blueprint():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "First-to-default basket on ACME, BRAVO, CHARLIE, DELTA, ECHO maturing 2029-11-15",
+        instrument_type="nth_to_default",
+    )
+
+    assert compiled.semantic_contract is not None
+    assert compiled.semantic_blueprint is not None
+    assert compiled.family_blueprint is None
+    assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "nth_to_default"
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.instrument == "nth_to_default"
+    assert compiled.product_ir.payoff_family == "nth_to_default"
+    assert compiled.pricing_plan is not None
+    assert compiled.pricing_plan.method == "copula"
+    assert compiled.semantic_blueprint.route_modules == _expected_route_modules(compiled)
+    assert compiled.semantic_blueprint.primitive_routes == ("nth_to_default_monte_carlo",)
+    assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == "nth_to_default_monte_carlo"
+    assert compiled.request.metadata["semantic_blueprint"]["dsl_family_ir_type"] == "NthToDefaultIR"
+    assert compiled.request.metadata["semantic_blueprint"]["dsl_expr_kind"] == "ContractAtom"
+    assert (
+        compiled.request.metadata["semantic_blueprint"]["dsl_family_ir"]["helper_symbol"]
+        == "price_nth_to_default_basket"
+    )
+    assert "trellis.instruments.nth_to_default" in compiled.semantic_blueprint.target_modules

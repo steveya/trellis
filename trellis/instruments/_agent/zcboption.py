@@ -74,7 +74,7 @@ Implementation target: jamshidian."""
 
     @property
     def requirements(self) -> set[str]:
-        return {"black_vol", "discount"}
+        return {"black_vol_surface", "discount_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec

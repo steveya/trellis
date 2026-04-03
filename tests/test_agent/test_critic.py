@@ -57,7 +57,7 @@ class TestRunCriticTests:
         class VolBlindOption:
             @property
             def requirements(self):
-                return {"discount", "black_vol"}
+                return {"discount_curve", "black_vol_surface"}
 
             def evaluate(self, ms):
                 return 10.0
@@ -93,7 +93,7 @@ class TestRunCriticTests:
                      maturity=10, frequency=2)
         payoff = DeterministicCashflowPayoff(bond)
 
-        failures = run_critic_tests(concerns, payoff)
+        failures = run_critic_tests(concerns, payoff, allow_legacy_test_code=True)
         assert len(failures) == 1
         assert "price should exceed 200" in failures[0]
 
@@ -110,7 +110,7 @@ class TestRunCriticTests:
                      maturity=10, frequency=2)
         payoff = DeterministicCashflowPayoff(bond)
 
-        failures = run_critic_tests(concerns, payoff)
+        failures = run_critic_tests(concerns, payoff, allow_legacy_test_code=True)
         assert failures == []
 
 
@@ -137,6 +137,39 @@ def test_critique_includes_shared_knowledge(monkeypatch):
     assert "price_non_negative" in captured["prompt"]
 
 
+def test_critique_includes_compiled_route_contract(monkeypatch):
+    from trellis.agent.critic import critique
+    from trellis.agent.platform_requests import compile_build_request
+
+    captured = {}
+
+    def fake_llm_generate_json(prompt, model=None, max_retries=None):
+        captured["prompt"] = prompt
+        return []
+
+    monkeypatch.setattr("trellis.agent.critic.llm_generate_json", fake_llm_generate_json)
+
+    compiled = compile_build_request(
+        "European equity call on AAPL with strike 120 and expiry 2025-11-15",
+        instrument_type="european_option",
+    )
+
+    critique(
+        "def price():\n    return 0.0",
+        "Demo instrument",
+        generation_plan=compiled.generation_plan,
+        available_checks=available_critic_checks(
+            instrument_type="european_option",
+            validation_contract=compiled.validation_contract,
+        ),
+    )
+
+    assert "Compiled Route Contract" in captured["prompt"]
+    assert "bridge=`thin_compatibility_wrapper`" in captured["prompt"]
+    assert "route=`analytical_black76`" in captured["prompt"]
+    assert "bundle=`analytical:european_option`" in captured["prompt"]
+
+
 def test_critique_can_disable_text_fallback(monkeypatch):
     from trellis.agent.critic import critique
 
@@ -159,7 +192,7 @@ def test_critique_can_disable_text_fallback(monkeypatch):
         )
 
 
-def test_critique_parses_legacy_test_code_payload(monkeypatch):
+def test_critique_filters_legacy_test_code_payload_by_default(monkeypatch):
     from trellis.agent.critic import critique
 
     monkeypatch.setattr(
@@ -177,6 +210,30 @@ def test_critique_parses_legacy_test_code_payload(monkeypatch):
         "def price():\n    return 0.0",
         "Demo instrument",
         available_checks=available_critic_checks(instrument_type="callable_bond"),
+    )
+
+    assert concerns == []
+
+
+def test_critique_can_opt_in_legacy_test_code_payload(monkeypatch):
+    from trellis.agent.critic import critique
+
+    monkeypatch.setattr(
+        "trellis.agent.critic.llm_generate_json",
+        lambda prompt, model=None, max_retries=None: [
+            {
+                "description": "legacy finding",
+                "test_code": "assert True",
+                "severity": "error",
+            }
+        ],
+    )
+
+    concerns = critique(
+        "def price():\n    return 0.0",
+        "Demo instrument",
+        available_checks=available_critic_checks(instrument_type="callable_bond"),
+        allow_legacy_test_code=True,
     )
 
     assert len(concerns) == 1
@@ -201,6 +258,54 @@ def test_available_critic_checks_for_european_option():
         "price_non_negative",
         "volatility_input_usage",
     ]
+
+
+def test_available_critic_checks_can_be_restricted_by_validation_contract():
+    from trellis.agent.validation_contract import CompiledValidationContract, ValidationCheckSpec
+
+    checks = available_critic_checks(
+        instrument_type="callable_bond",
+        validation_contract=CompiledValidationContract(
+            contract_id="rate_tree:callable_bond",
+            instrument_type="callable_bond",
+            method="rate_tree",
+            bundle_id="rate_tree:callable_bond",
+            deterministic_checks=(
+                ValidationCheckSpec("check_non_negativity", "universal"),
+                ValidationCheckSpec("check_vol_monotonicity", "no_arbitrage"),
+                ValidationCheckSpec("check_bounded_by_reference", "product_family", relation="<="),
+            ),
+        ),
+    )
+
+    ids = [check.check_id for check in checks]
+    assert ids == [
+        "price_non_negative",
+        "volatility_input_usage",
+        "callable_bound_vs_straight_bond",
+    ]
+
+
+def test_run_critic_tests_respects_allowed_check_ids():
+    concerns = [
+        CriticConcern(
+            "legacy_test_code",
+            "price should exceed 200",
+            "error",
+            test_code="assert price_payoff(payoff, ms) > 200",
+        ),
+    ]
+    bond = Bond(face=100, coupon=0.05, maturity_date=date(2034, 11, 15),
+                 maturity=10, frequency=2)
+    payoff = DeterministicCashflowPayoff(bond)
+
+    failures = run_critic_tests(
+        concerns,
+        payoff,
+        allowed_check_ids={"price_non_negative"},
+    )
+
+    assert failures == []
 
 
 class TestInvariantExpanded:

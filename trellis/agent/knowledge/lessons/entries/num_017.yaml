@@ -2,8 +2,8 @@ id: num_017
 title: Wall-clock valuation and syntax generation errors
 severity: critical
 category: numerical
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 0.8
 created: '2026-03-26T19:56:39.003347'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260326_195639_quanto_option_analytical.yaml

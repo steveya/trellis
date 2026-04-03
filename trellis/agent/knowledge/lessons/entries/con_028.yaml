@@ -1,8 +1,8 @@
 category: convention
 title: Undefined exercise-style constant in spec
 severity: critical
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 0.9
 created: '2026-03-29T09:21:25.811488'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_092126_american_put_monte_carlo.yaml

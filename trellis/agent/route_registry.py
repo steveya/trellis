@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import yaml
@@ -132,6 +133,7 @@ class RouteSpec:
     score_hints: dict[str, Any] = field(default_factory=dict)
     aliases: tuple[str, ...] = ()
     discovered_from: str | None = None
+    reuse_module_paths: tuple[str, ...] = ()
     successful_builds: int = 0
 
 
@@ -141,6 +143,31 @@ class RouteRegistry:
 
     routes: tuple[RouteSpec, ...]
     _method_index: dict[str, tuple[int, ...]] = field(default_factory=dict, repr=False)
+
+
+@dataclass(frozen=True)
+class RouteBindingAuthority:
+    """Structured route-binding authority packet for build, replay, and review."""
+
+    route_id: str
+    route_family: str
+    engine_family: str
+    authority_kind: str
+    exact_backend_fit: bool
+    exact_target_refs: tuple[str, ...] = ()
+    approved_modules: tuple[str, ...] = ()
+    primitive_refs: tuple[str, ...] = ()
+    helper_refs: tuple[str, ...] = ()
+    validation_bundle_id: str = ""
+    validation_check_ids: tuple[str, ...] = ()
+    admissibility: RouteAdmissibilitySpec = RouteAdmissibilitySpec()
+    admissibility_failures: tuple[str, ...] = ()
+    canary_task_ids: tuple[str, ...] = ()
+    provenance: dict[str, object] = field(default_factory=dict)
+
+    def __post_init__(self):
+        """Freeze mutable provenance metadata for stable comparisons and traces."""
+        object.__setattr__(self, "provenance", MappingProxyType(dict(self.provenance or {})))
 
 
 # ---------------------------------------------------------------------------
@@ -420,6 +447,7 @@ def _parse_route(raw: dict) -> RouteSpec:
         score_hints=dict(raw.get("score_hints", {})),
         aliases=_str_tuple(raw.get("aliases")),
         discovered_from=raw.get("discovered_from"),
+        reuse_module_paths=_str_tuple(raw.get("reuse_module_paths")),
         successful_builds=int(raw.get("successful_builds", 0)),
     )
 
@@ -724,6 +752,247 @@ def find_route_by_id(route_id: str, registry: RouteRegistry | None = None) -> Ro
     return None
 
 
+def compile_route_binding_authority(
+    *,
+    generation_plan=None,
+    validation_contract=None,
+    semantic_blueprint=None,
+    product_ir: ProductIR | None = None,
+    request=None,
+    registry: RouteRegistry | None = None,
+) -> RouteBindingAuthority | None:
+    """Compile the structured route-binding authority packet for one request."""
+    route_id = _route_id_for_authority(generation_plan=generation_plan, semantic_blueprint=semantic_blueprint)
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    route_spec = find_route_by_id(route_id, registry) if route_id else None
+    if not route_id and primitive_plan is None and route_spec is None:
+        return None
+
+    route_family = (
+        str(getattr(route_spec, "route_family", "") or "").strip()
+        or str(getattr(primitive_plan, "route_family", "") or "").strip()
+        or str(getattr(validation_contract, "route_family", "") or "").strip()
+    )
+    engine_family = (
+        str(getattr(route_spec, "engine_family", "") or "").strip()
+        or str(getattr(primitive_plan, "engine_family", "") or "").strip()
+        or route_family
+    )
+    exact_target_refs = tuple(getattr(generation_plan, "lane_exact_binding_refs", ()) or ())
+    helper_refs = tuple(
+        dict.fromkeys(
+            str(ref).strip()
+            for ref in (
+                getattr(generation_plan, "lowering_helper_refs", ())
+                or getattr(getattr(semantic_blueprint, "dsl_lowering", None), "helper_refs", ())
+                or ()
+            )
+            if str(ref).strip()
+        )
+    )
+    primitive_refs = _primitive_refs_for(
+        primitive_plan=primitive_plan,
+        route_spec=route_spec,
+        product_ir=product_ir,
+    )
+    approved_modules = tuple(
+        dict.fromkeys(
+            str(module).strip()
+            for module in (getattr(generation_plan, "approved_modules", ()) or ())
+            if str(module).strip()
+        )
+    )
+    exact_backend_fit = bool(
+        str(getattr(generation_plan, "lane_plan_kind", "") or "").strip() == "exact_target_binding"
+        or exact_target_refs
+        or helper_refs
+    )
+    authority_kind = "exact_backend_fit" if exact_backend_fit else "route_registry_binding"
+    admissibility = (
+        getattr(route_spec, "admissibility", None)
+        or _default_admissibility_for_route(route_id or route_family or engine_family, engine_family or route_family or "")
+    )
+    admissibility_failures = tuple(
+        str(item).strip()
+        for item in (getattr(validation_contract, "admissibility_failures", ()) or ())
+        if str(item).strip()
+    )
+    validation_bundle_id = str(getattr(validation_contract, "bundle_id", "") or "")
+    validation_check_ids = tuple(
+        str(getattr(check, "check_id", "") or "").strip()
+        for check in (getattr(validation_contract, "deterministic_checks", ()) or ())
+        if str(getattr(check, "check_id", "") or "").strip()
+    )
+    canary_task_ids = _route_canary_task_ids(
+        route_id=route_id,
+        route_family=route_family,
+        engine_family=engine_family,
+        generation_plan=generation_plan,
+        validation_contract=validation_contract,
+        semantic_blueprint=semantic_blueprint,
+        product_ir=product_ir,
+        request=request,
+    )
+    provenance = {
+        "semantic_contract_id": str(getattr(semantic_blueprint, "semantic_id", "") or ""),
+        "requested_instrument_type": str(getattr(request, "instrument_type", "") or ""),
+        "product_instrument_type": str(getattr(product_ir, "instrument", "") or ""),
+        "method": str(getattr(generation_plan, "method", "") or ""),
+        "lane_family": str(getattr(generation_plan, "lane_family", "") or ""),
+        "lane_plan_kind": str(getattr(generation_plan, "lane_plan_kind", "") or ""),
+        "repo_revision": str(getattr(generation_plan, "repo_revision", "") or ""),
+    }
+    return RouteBindingAuthority(
+        route_id=route_id or str(getattr(primitive_plan, "route", "") or ""),
+        route_family=route_family,
+        engine_family=engine_family,
+        authority_kind=authority_kind,
+        exact_backend_fit=exact_backend_fit,
+        exact_target_refs=exact_target_refs,
+        approved_modules=approved_modules,
+        primitive_refs=primitive_refs,
+        helper_refs=helper_refs,
+        validation_bundle_id=validation_bundle_id,
+        validation_check_ids=validation_check_ids,
+        admissibility=admissibility,
+        admissibility_failures=admissibility_failures,
+        canary_task_ids=canary_task_ids,
+        provenance=provenance,
+    )
+
+
+def route_binding_authority_summary(
+    authority: RouteBindingAuthority | None,
+) -> dict[str, object] | None:
+    """Project the route-binding authority packet onto YAML-safe primitives."""
+    if authority is None:
+        return None
+    return {
+        "route_id": authority.route_id,
+        "route_family": authority.route_family,
+        "engine_family": authority.engine_family,
+        "authority_kind": authority.authority_kind,
+        "exact_backend_fit": authority.exact_backend_fit,
+        "exact_target_refs": list(authority.exact_target_refs),
+        "approved_modules": list(authority.approved_modules),
+        "primitive_refs": list(authority.primitive_refs),
+        "helper_refs": list(authority.helper_refs),
+        "validation_bundle_id": authority.validation_bundle_id,
+        "validation_check_ids": list(authority.validation_check_ids),
+        "admissibility": {
+            "supported_control_styles": list(authority.admissibility.supported_control_styles),
+            "event_support": authority.admissibility.event_support,
+            "phase_sensitivity": authority.admissibility.phase_sensitivity,
+            "multicurrency_support": authority.admissibility.multicurrency_support,
+            "supported_outputs": list(authority.admissibility.supported_outputs),
+            "supports_sensitivity_outputs": authority.admissibility.supports_sensitivity_outputs,
+            "supported_state_tags": list(authority.admissibility.supported_state_tags),
+            "supports_calibration": authority.admissibility.supports_calibration,
+        },
+        "admissibility_failures": list(authority.admissibility_failures),
+        "canary_task_ids": list(authority.canary_task_ids),
+        "provenance": dict(authority.provenance),
+    }
+
+
+def _route_id_for_authority(*, generation_plan=None, semantic_blueprint=None) -> str:
+    """Return the best available selected route identifier."""
+    route_id = str(getattr(generation_plan, "lowering_route_id", "") or "").strip()
+    if route_id:
+        return route_id
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    route_id = str(getattr(primitive_plan, "route", "") or "").strip()
+    if route_id:
+        return route_id
+    lowering = getattr(semantic_blueprint, "dsl_lowering", None)
+    return str(getattr(lowering, "route_id", "") or "").strip()
+
+
+def _primitive_refs_for(
+    *,
+    primitive_plan=None,
+    route_spec: RouteSpec | None,
+    product_ir: ProductIR | None,
+) -> tuple[str, ...]:
+    """Return fully qualified primitive refs that define the checked backend surface."""
+    if primitive_plan is not None and getattr(primitive_plan, "primitives", None):
+        primitives = primitive_plan.primitives
+    elif route_spec is not None:
+        primitives = resolve_route_primitives(route_spec, product_ir)
+    else:
+        primitives = ()
+    return tuple(
+        dict.fromkeys(
+            f"{primitive.module}.{primitive.symbol}"
+            for primitive in primitives
+            if str(getattr(primitive, "module", "") or "").strip()
+            and str(getattr(primitive, "symbol", "") or "").strip()
+        )
+    )
+
+
+def _route_canary_task_ids(
+    *,
+    route_id: str,
+    route_family: str,
+    engine_family: str,
+    generation_plan=None,
+    validation_contract=None,
+    semantic_blueprint=None,
+    product_ir: ProductIR | None,
+    request=None,
+) -> tuple[str, ...]:
+    """Return curated canary task IDs that cover the current route authority surface."""
+    canary_path = Path(__file__).resolve().parents[2] / "CANARY_TASKS.yaml"
+    if not canary_path.exists():
+        return ()
+    try:
+        raw = yaml.safe_load(canary_path.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return ()
+    normalized_terms = {
+        str(value).strip().lower()
+        for value in (
+            route_id,
+            route_family,
+            engine_family,
+            getattr(generation_plan, "method", None),
+            getattr(validation_contract, "instrument_type", None),
+            getattr(product_ir, "instrument", None),
+            getattr(semantic_blueprint, "semantic_id", None),
+            getattr(request, "instrument_type", None),
+        )
+        if str(value or "").strip()
+    }
+    aliases = {
+        "callable_bond": "callable",
+        "puttable_bond": "puttable",
+        "credit_default_swap": "credit_default_swap",
+        "quanto_option": "quanto_option",
+        "swaption": "swaption",
+        "basket_option": "basket_option",
+    }
+    normalized_terms.update(
+        alias
+        for key, alias in aliases.items()
+        if key in normalized_terms and alias
+    )
+    matches: list[str] = []
+    for canary in raw.get("canary_set", ()) or ():
+        covers = {
+            str(item).strip().lower()
+            for item in (canary.get("covers") or ())
+            if str(item).strip()
+        }
+        if not covers:
+            continue
+        if normalized_terms.intersection(covers):
+            task_id = str(canary.get("id", "") or "").strip()
+            if task_id and task_id not in matches:
+                matches.append(task_id)
+    return tuple(matches)
+
+
 def evaluate_route_admissibility(
     spec: RouteSpec,
     *,
@@ -884,12 +1153,13 @@ def _matches_condition(
     product_ir: ProductIR | None,
 ) -> bool:
     """Check whether a ProductIR matches a conditional 'when' clause."""
+    payoff_families = _expanded_payoff_families(payoff_family, product_ir)
     for key, expected in when.items():
         if key == "payoff_family":
             if isinstance(expected, list):
-                if payoff_family not in expected:
+                if not any(candidate in payoff_families for candidate in expected):
                     return False
-            elif payoff_family != expected:
+            elif expected not in payoff_families:
                 return False
         elif key == "exercise_style":
             if isinstance(expected, list):
@@ -911,3 +1181,26 @@ def _matches_condition(
             # Unknown condition key — conservative: don't match
             return False
     return True
+
+
+def _expanded_payoff_families(
+    payoff_family: str,
+    product_ir: ProductIR | None,
+) -> frozenset[str]:
+    """Return payoff-family aliases used for route-condition matching.
+
+    The route registry stores helper-backed fixed-income exercise routes under
+    the callable-bond family names. Puttable bonds share the same checked helper
+    surface but decompose to ``puttable_fixed_income``. Expand that family here
+    so the helper route stays reachable without mutating canonical route YAML.
+    """
+    families = {str(payoff_family or "")}
+    instrument = str(getattr(product_ir, "instrument", "") or "").strip().lower()
+
+    if instrument == "puttable_bond" or payoff_family == "puttable_fixed_income":
+        families.update({"puttable_fixed_income", "callable_fixed_income", "callable_bond", "bond"})
+    elif instrument == "callable_bond" or payoff_family == "callable_fixed_income":
+        families.update({"callable_fixed_income", "callable_bond", "bond"})
+
+    families.discard("")
+    return frozenset(families)

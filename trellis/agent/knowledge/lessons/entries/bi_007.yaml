@@ -2,8 +2,8 @@ id: bi_007
 title: Payoff must call lattice_backward_induction primitives
 severity: critical
 category: backward_induction
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 0.8
 created: '2026-03-25T11:28:30.082940'
 version: ''
 source_trace: null

@@ -2,7 +2,7 @@ category: monte_carlo
 title: Undefined identifier in spec defaults
 severity: critical
 status: validated
-confidence: 0.6
+confidence: 0.7
 created: '2026-03-28T23:04:04.640121'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_230405_barrier_option_monte_carlo.yaml

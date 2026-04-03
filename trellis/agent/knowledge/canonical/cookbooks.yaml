@@ -52,6 +52,17 @@ analytical:
       market_data: [discount_curve, forward_curve, black_vol_surface]
       lattice_equivalence: rate tree with matching short-rate vol and mean reversion converges only when the rate distribution assumptions align
       pde_equivalence: not directly applicable (forward-rate models require HJM or similar framework)
+    - id: jamshidian_zcb_option
+      name: Jamshidian / Hull-White ZCB option
+      assumptions:
+        - one-factor Hull-White / Jamshidian closed-form contract
+        - deterministic discount curve inputs at pricing time
+        - Black-style volatility quote mapped at option expiry
+        - European exercise only
+      payoff: European call or put on a zero-coupon bond
+      market_data: [discount_curve, black_vol_surface]
+      lattice_equivalence: Hull-White or Ho-Lee trees converge only when the underlying short-rate model assumptions align
+      pde_equivalence: not directly applicable
     - id: credit_default_swap
       name: Credit default swap (single-name)
       assumptions:
@@ -131,24 +142,19 @@ analytical:
         return pv
     ```
 
-    ### Garman-Kohlhagen FX European (explicit basis assembly; solution contract: garman_kohlhagen_fx)
+    ### Garman-Kohlhagen FX European (helper-backed resolved-input route; solution contract: garman_kohlhagen_fx)
     Assumptions: lognormal FX spot, deterministic domestic/foreign rates,
     covered interest parity.
     ```python
     def evaluate(self, market_state):
         from trellis.core.date_utils import year_fraction
-        from trellis.models.analytical import terminal_vanilla_from_basis
-        from trellis.models.black import (
-            black76_asset_or_nothing_call,
-            black76_asset_or_nothing_put,
-            black76_cash_or_nothing_call,
-            black76_cash_or_nothing_put,
+        from trellis.models.analytical.fx import (
+            ResolvedGarmanKohlhagenInputs,
+            garman_kohlhagen_price_raw,
         )
 
         spec = self._spec
         T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)
-        if T <= 0:
-            return 0.0
 
         fx_quote = market_state.fx_rates[spec.fx_pair]
         foreign_curve = market_state.forecast_curves[spec.foreign_discount_key]
@@ -156,28 +162,17 @@ analytical:
         spot = float(fx_quote.spot)
         df_domestic = float(market_state.discount.discount(T))
         df_foreign = float(foreign_curve.discount(T))
-        sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
-        forward = spot * df_foreign / df_domestic
-
-        if spec.option_type == "put":
-            asset = black76_asset_or_nothing_put(
-                forward, spec.strike, sigma, T
-            )
-            cash = black76_cash_or_nothing_put(forward, spec.strike, sigma, T)
-        else:
-            asset = black76_asset_or_nothing_call(
-                forward, spec.strike, sigma, T
-            )
-            cash = black76_cash_or_nothing_call(forward, spec.strike, sigma, T)
-
-        pv = df_domestic * terminal_vanilla_from_basis(
-            spec.option_type,
-            asset_value=asset,
-            cash_value=cash,
+        sigma = 0.0 if T <= 0 else float(market_state.vol_surface.black_vol(T, spec.strike))
+        resolved = ResolvedGarmanKohlhagenInputs(
+            spot=spot,
             strike=spec.strike,
+            sigma=sigma,
+            T=T,
+            df_domestic=df_domestic,
+            df_foreign=df_foreign,
         )
 
-        return spec.notional * float(pv)
+        return spec.notional * float(garman_kohlhagen_price_raw(spec.option_type, resolved))
     ```
 
     For FX tasks, the selected foreign curve is usually bridged into
@@ -190,22 +185,27 @@ analytical:
     rate fixing at period start. Use for caps, floors, swaptions.
     ```python
     def evaluate(self, market_state):
-        from trellis.core.date_utils import generate_schedule, year_fraction
+        from trellis.core.date_utils import build_payment_timeline
         from trellis.models.black import black76_call, black76_put
 
         spec = self._spec
         fwd_curve = market_state.forecast_forward_curve(spec.rate_index)
 
-        schedule = generate_schedule(spec.start_date, spec.end_date, spec.frequency)
-        starts = [spec.start_date] + schedule[:-1]
+        timeline = build_payment_timeline(
+            spec.start_date,
+            spec.end_date,
+            spec.frequency,
+            day_count=spec.day_count,
+            time_origin=market_state.settlement,
+        )
 
         pv = 0.0
-        for p_start, p_end in zip(starts, schedule):
-            if p_end <= market_state.settlement:
+        for period in timeline:
+            if period.payment_date <= market_state.settlement:
                 continue
-            tau = year_fraction(p_start, p_end, spec.day_count)
-            t_start = year_fraction(market_state.settlement, p_start, spec.day_count)
-            t_end = year_fraction(market_state.settlement, p_end, spec.day_count)
+            tau = float(period.accrual_fraction or 0.0)
+            t_start = float(period.t_start or 0.0)
+            t_end = float(period.t_payment or 0.0)
             t_start = max(t_start, 1e-6)
 
             F = fwd_curve.forward_rate(t_start, t_end)
@@ -217,6 +217,62 @@ analytical:
             pv += float(undiscounted) * float(df)
 
         return pv
+    ```
+
+    For European rate-style swaptions, prefer the checked helper-backed path
+    over rebuilding annuity, forward-swap-rate, and expiry binding inline.
+
+    ### Rate-style swaption Black76 (helper-backed resolved-input route; solution contract: black76_forward_rate)
+    Assumptions: single-exercise European rate-style swaption under the
+    checked Black76 forward-rate helper contract.
+    ```python
+    def evaluate(self, market_state):
+        from trellis.models.rate_style_swaption import (
+            ResolvedSwaptionBlack76Inputs,
+            price_swaption_black76_raw,
+            resolve_swaption_black76_inputs,
+        )
+
+        spec = self._spec
+        resolved = resolve_swaption_black76_inputs(market_state, spec)
+        assert isinstance(resolved, ResolvedSwaptionBlack76Inputs)
+        return float(price_swaption_black76_raw(resolved))
+    ```
+
+    ### Jamshidian zero-coupon bond option (helper-backed resolved-input route; solution contract: jamshidian_zcb_option)
+    Assumptions: one-factor Hull-White / Jamshidian closed form, European
+    exercise, option on a zero-coupon bond.
+    ```python
+    def evaluate(self, market_state):
+        from trellis.models.zcb_option import resolve_zcb_option_hw_inputs
+        from trellis.models.analytical.jamshidian import (
+            ResolvedJamshidianInputs,
+            zcb_option_hw_raw,
+        )
+
+        spec = self._spec
+        resolved = resolve_zcb_option_hw_inputs(
+            market_state,
+            spec,
+            mean_reversion=0.1,
+        )
+        assert isinstance(resolved.jamshidian, ResolvedJamshidianInputs)
+
+        if resolved.jamshidian.T_exp <= 0.0:
+            if resolved.option_type == "put":
+                intrinsic = max(
+                    resolved.jamshidian.strike - resolved.jamshidian.discount_factor_bond,
+                    0.0,
+                )
+            else:
+                intrinsic = max(
+                    resolved.jamshidian.discount_factor_bond - resolved.jamshidian.strike,
+                    0.0,
+                )
+            return float(resolved.notional * intrinsic)
+
+        raw = zcb_option_hw_raw(resolved.jamshidian)
+        return float(resolved.notional * raw[resolved.option_type])
     ```
 
     ### Credit default swap (single-name) (solution contract: credit_default_swap)

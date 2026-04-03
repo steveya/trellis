@@ -2,8 +2,8 @@ id: mc_023
 title: Zero vega from MC payoff
 severity: critical
 category: monte_carlo
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-03-28T11:31:02.771346'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_113102_european_option_monte_carlo.yaml

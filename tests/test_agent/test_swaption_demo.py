@@ -142,7 +142,7 @@ class TestBuildSwaptionFromScratch:
 
         PayoffCls = build_payoff(
             "European payer swaption",
-            {"discount", "forward_rate", "black_vol"},
+            {"discount_curve", "forward_curve", "black_vol_surface"},
             force_rebuild=True,
         )
 
@@ -167,8 +167,8 @@ class TestBuildSwaptionFromScratch:
         )
         payoff = PayoffCls(spec)
 
-        assert "discount" in payoff.requirements
-        assert "forward_rate" in payoff.requirements
+        assert "discount_curve" in payoff.requirements
+        assert "forward_curve" in payoff.requirements
 
         # Price
         pv = price_payoff(payoff, _ms())
@@ -190,7 +190,7 @@ class TestBuildSwaptionFromScratch:
 
         PayoffCls = build_payoff(
             "European payer swaption",
-            {"discount", "forward_rate", "black_vol"},
+            {"discount_curve", "forward_curve", "black_vol_surface"},
         )
 
         import importlib
@@ -217,7 +217,7 @@ class TestReuseSwaption:
 
         PayoffCls = build_payoff(
             "European payer swaption",
-            {"discount", "forward_rate", "black_vol"},
+            {"discount_curve", "forward_curve", "black_vol_surface"},
             force_rebuild=False,
         )
 

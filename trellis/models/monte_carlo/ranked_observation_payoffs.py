@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
+from trellis.core.types import ContractTimeline
 from trellis.core.differentiable import get_numpy
 from trellis.core.payoff import MonteCarloPathPayoff
 from trellis.models.analytical.support import normalized_option_type
@@ -31,7 +32,7 @@ class RankedObservationBasketSpecLike(Protocol):
     option_type: str
     expiry_date: date
     constituents: str
-    observation_dates: str | None
+    observation_dates: ContractTimeline | tuple[date, ...] | None
     selection_rule: str
     lock_rule: str
     aggregation_rule: str

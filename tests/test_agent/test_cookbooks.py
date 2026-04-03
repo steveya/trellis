@@ -44,12 +44,24 @@ class TestCookbooks:
 
     def test_analytical_cookbook_includes_fx_garman_kohlhagen_pattern(self):
         cb = get_cookbook("analytical")
-        assert "terminal_vanilla_from_basis" in cb
-        assert "black76_asset_or_nothing_call" in cb
-        assert "black76_cash_or_nothing_call" in cb
+        assert "ResolvedGarmanKohlhagenInputs" in cb
+        assert "garman_kohlhagen_price_raw" in cb
         assert "market_state.fx_rates" in cb
         assert "df_domestic" in cb
         assert "df_foreign" in cb
+
+    def test_analytical_cookbook_includes_helper_backed_swaption_pattern(self):
+        cb = get_cookbook("analytical")
+        assert "ResolvedSwaptionBlack76Inputs" in cb
+        assert "resolve_swaption_black76_inputs" in cb
+        assert "price_swaption_black76_raw" in cb
+
+    def test_analytical_cookbook_includes_jamshidian_resolved_input_pattern(self):
+        cb = get_cookbook("analytical")
+        assert "resolve_zcb_option_hw_inputs" in cb
+        assert "ResolvedJamshidianInputs" in cb
+        assert "zcb_option_hw_raw" in cb
+        assert "price_zcb_option_jamshidian" not in cb
 
     def test_rate_tree_returns_present_value(self):
         cb = get_cookbook("rate_tree")

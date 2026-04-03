@@ -1,8 +1,8 @@
 category: numerical
 title: Undefined method identifier breaks build
 severity: critical
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-03-29T08:29:55.528668'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_082956_american_put_rate_tree.yaml

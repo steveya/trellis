@@ -85,6 +85,6 @@ class TestFXForwardPayoff:
                  maturity=5, frequency=2, issue_date=SETTLE)
         )
         fx_payoff = FXForwardPayoff(inner, "EURUSD", "EUR-DISC")
-        assert "fx" in fx_payoff.requirements
-        assert "discount" in fx_payoff.requirements
-        assert "forecast_rate" in fx_payoff.requirements
+        assert "fx_rates" in fx_payoff.requirements
+        assert "discount_curve" in fx_payoff.requirements
+        assert "forward_curve" in fx_payoff.requirements

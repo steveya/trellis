@@ -19,6 +19,26 @@ from trellis.agent.early_exercise_policy import (
 )
 from trellis.agent.knowledge.schema import ProductIR
 
+_RAW_STRING_SCHEDULE_FIELD_NAMES = frozenset({
+    "call_dates",
+    "put_dates",
+    "exercise_dates",
+    "observation_dates",
+})
+_RAW_STRING_SCHEDULE_ANNOTATIONS = frozenset({
+    "str",
+    "str|None",
+    "Optional[str]",
+    "typing.Optional[str]",
+})
+_ROUTE_HELPER_SUBSUMED_PRIMITIVE_ROLES = frozenset({
+    "array_backend",
+    "event_probability",
+    "market_binding",
+    "pricing_kernel",
+    "time_measure",
+})
+
 
 @dataclass(frozen=True)
 class SemanticIssue:
@@ -49,6 +69,7 @@ class SemanticSignals:
     lattice_has_exercise_steps: bool
     lattice_exercise_functions: tuple[str, ...]
     lattice_exercise_styles: tuple[str, ...]
+    lattice_invalid_policy_kwargs: tuple[str, ...]
 
     @property
     def uses_longstaff_schwartz(self) -> bool:
@@ -93,6 +114,7 @@ class _SemanticVisitor(ast.NodeVisitor):
         self.lattice_has_exercise_steps = False
         self.lattice_exercise_functions: list[str] = []
         self.lattice_exercise_styles: list[str] = []
+        self.lattice_invalid_policy_kwargs: list[str] = []
         self._lattice_policy_bindings: dict[str, _LatticePolicyBinding] = {}
         self._mc_engine_vars: set[str] = set()
 
@@ -184,6 +206,14 @@ class _SemanticVisitor(ast.NodeVisitor):
                 )
                 self.lattice_exercise_functions.append(exercise_policy.exercise_objective)
 
+        if call_name.endswith("resolve_lattice_exercise_policy"):
+            invalid_kwargs = sorted(
+                keyword.arg
+                for keyword in node.keywords
+                if keyword.arg in {"exercise_fn", "exercise_type"}
+            )
+            self.lattice_invalid_policy_kwargs.extend(invalid_kwargs)
+
         if isinstance(node.func, ast.Attribute) and node.func.attr == "price":
             engine_name = node.func.value.id if isinstance(node.func.value, ast.Name) else None
             if engine_name in self._mc_engine_vars:
@@ -255,6 +285,7 @@ def extract_semantic_signals(source: str) -> SemanticSignals:
         lattice_has_exercise_steps=visitor.lattice_has_exercise_steps,
         lattice_exercise_functions=tuple(visitor.lattice_exercise_functions),
         lattice_exercise_styles=tuple(visitor.lattice_exercise_styles),
+        lattice_invalid_policy_kwargs=tuple(visitor.lattice_invalid_policy_kwargs),
     )
 
 
@@ -275,6 +306,18 @@ def validate_semantics(
         return SemanticValidationReport(issues=(issue,), signals=_empty_signals())
 
     issues: list[SemanticIssue] = []
+
+    for field_name, annotation in _raw_string_schedule_fields(source):
+        issues.append(
+            SemanticIssue(
+                code="schedule.raw_string_field",
+                message=(
+                    f"Schedule-bearing spec field `{field_name}` is annotated as `{annotation}`. "
+                    "Use `tuple[date, ...]` or `tuple[date, ...] | None` and normalize those "
+                    "explicit dates onto `ContractTimeline` helpers instead of comma-separated strings."
+                ),
+            )
+        )
 
     primitive_plan = generation_plan.primitive_plan if generation_plan is not None else None
     required_route_helpers: tuple[str, ...] = ()
@@ -318,6 +361,10 @@ def validate_semantics(
             f"{primitive.module}.{primitive.symbol}"
             for primitive in primitive_plan.primitives
             if primitive.required
+            and not (
+                helper_route_calls_present
+                and primitive.role in _ROUTE_HELPER_SUBSUMED_PRIMITIVE_ROLES
+            )
             and f"{primitive.module}.{primitive.symbol}" not in signals.resolved_calls
         ]
         if missing_primitives:
@@ -356,6 +403,17 @@ def validate_semantics(
                 "'milstein', or 'exact'. Use an approved early-exercise "
                 "control primitive instead of inventing method='lsm'. "
                 f"Approved policy classes: {render_early_exercise_policy_summary()}."
+            ),
+        ))
+
+    if signals.lattice_invalid_policy_kwargs:
+        invalid_kwargs = ", ".join(f"`{name}`" for name in sorted(set(signals.lattice_invalid_policy_kwargs)))
+        issues.append(SemanticIssue(
+            code="lattice.invalid_policy_kwarg",
+            message=(
+                "resolve_lattice_exercise_policy(...) only accepts product exercise semantics "
+                f"and schedule steps. Remove unsupported keyword(s) {invalid_kwargs} and "
+                "let the checked-in policy object carry the lattice objective/type."
             ),
         ))
 
@@ -582,6 +640,24 @@ def _resolve_name(node: ast.AST, aliases: dict[str, str]) -> str | None:
     return None
 
 
+def _raw_string_schedule_fields(source: str) -> tuple[tuple[str, str], ...]:
+    """Return schedule-bearing spec fields that still use raw string annotations."""
+    tree = ast.parse(source)
+    flagged: list[tuple[str, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.AnnAssign):
+            continue
+        if not isinstance(node.target, ast.Name):
+            continue
+        field_name = node.target.id
+        if field_name not in _RAW_STRING_SCHEDULE_FIELD_NAMES:
+            continue
+        annotation = ast.unparse(node.annotation).replace(" ", "")
+        if annotation in _RAW_STRING_SCHEDULE_ANNOTATIONS:
+            flagged.append((field_name, ast.unparse(node.annotation)))
+    return tuple(flagged)
+
+
 def _function_uses_scalar_math(node: ast.FunctionDef, aliases: dict[str, str]) -> bool:
     """Return whether a function calls scalar-only ``math`` or ``cmath`` helpers."""
     for child in ast.walk(node):
@@ -656,4 +732,5 @@ def _empty_signals() -> SemanticSignals:
         lattice_has_exercise_steps=False,
         lattice_exercise_functions=(),
         lattice_exercise_styles=(),
+        lattice_invalid_policy_kwargs=(),
     )

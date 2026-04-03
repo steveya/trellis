@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import calendar
+from collections.abc import Iterable
 from datetime import date, datetime, timedelta
-from typing import Iterable, Union
+from typing import Union
 
 from trellis.core.types import (
     ContractTimeline,
@@ -15,6 +16,7 @@ from trellis.core.types import (
 )
 
 DateLike = Union[date, datetime]
+ExplicitDateInput = ContractTimeline | EventSchedule | Iterable[DateLike | str] | str
 
 
 def _to_date(d: DateLike) -> date:
@@ -127,6 +129,76 @@ def build_exercise_timeline_from_dates(
 ) -> ContractTimeline:
     """Build an exercise timeline from explicit decision dates."""
     return build_contract_timeline_from_dates(dates, role=TimelineRole.EXERCISE, **kwargs)
+
+
+def normalize_explicit_dates(dates: ExplicitDateInput) -> tuple[date, ...]:
+    """Normalize explicit date inputs into a unique, ordered ``date`` tuple.
+
+    This is the shared compatibility boundary for schedule-bearing routes:
+    preferred inputs are ``ContractTimeline`` objects or explicit date
+    iterables, while legacy comma-separated strings remain accepted at the
+    edge during the migration.
+    """
+    raw_items: Iterable[DateLike | str]
+    if isinstance(dates, ContractTimeline):
+        raw_items = dates.event_dates
+    elif isinstance(dates, EventSchedule):
+        raw_items = dates.payment_dates
+    elif isinstance(dates, str):
+        raw_items = tuple(
+            chunk.strip()
+            for chunk in dates.replace(";", ",").split(",")
+            if chunk.strip()
+        )
+    else:
+        raw_items = dates
+
+    normalized: list[date] = []
+    for item in raw_items:
+        if isinstance(item, datetime):
+            normalized.append(item.date())
+            continue
+        if isinstance(item, date):
+            normalized.append(item)
+            continue
+        text = str(item).strip()
+        if text:
+            normalized.append(date.fromisoformat(text))
+    return tuple(sorted(dict.fromkeys(normalized)))
+
+
+def coerce_contract_timeline_from_dates(
+    dates: ExplicitDateInput,
+    *,
+    role: TimelineRole,
+    day_count: DayCountConvention | None = None,
+    time_origin: DateLike | None = None,
+    label: str | None = None,
+) -> ContractTimeline:
+    """Coerce explicit date inputs onto a role-typed ``ContractTimeline``."""
+    if isinstance(dates, ContractTimeline):
+        if dates.role == role:
+            if day_count is None:
+                day_count = dates.day_count
+            if time_origin is None:
+                time_origin = dates.time_origin
+            if label is None:
+                label = dates.label
+        normalized_dates = dates.event_dates
+    else:
+        if isinstance(dates, EventSchedule):
+            if day_count is None:
+                day_count = dates.day_count
+            if time_origin is None:
+                time_origin = dates.time_origin
+        normalized_dates = normalize_explicit_dates(dates)
+    return build_contract_timeline_from_dates(
+        normalized_dates,
+        role=role,
+        day_count=day_count,
+        time_origin=time_origin,
+        label=label,
+    )
 
 
 def get_bracketing_dates(start: DateLike, end: DateLike,

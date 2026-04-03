@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections import Counter
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 import yaml
 
@@ -20,12 +20,14 @@ _KNOWLEDGE_DIR = Path(__file__).parent
 _CANONICAL_DIR = _KNOWLEDGE_DIR / "canonical"
 _LESSON_ENTRIES_DIR = _KNOWLEDGE_DIR / "lessons" / "entries"
 _SKILL_INDEX_CACHE: dict[tuple[object, ...], GeneratedSkillIndex] = {}
+_SKILL_LINEAGE_CACHE: dict[tuple[object, ...], dict[str, dict[str, Any]]] = {}
 _ACTIVE_SKILL_STATUSES = {"active", "validated", "promoted", "fresh"}
 
 
 def clear_skill_index_cache() -> None:
     """Clear the generated skill-index cache."""
     _SKILL_INDEX_CACHE.clear()
+    _SKILL_LINEAGE_CACHE.clear()
 
 
 def load_skill_index() -> GeneratedSkillIndex:
@@ -41,8 +43,11 @@ def load_skill_index() -> GeneratedSkillIndex:
     records: list[SkillRecord] = []
     records.extend(_project_lessons(lesson_rows))
     records.extend(_project_principles(lesson_by_id))
-    records.extend(_project_cookbooks())
-    records.extend(_project_route_hints())
+    cookbook_records = _project_cookbooks()
+    records.extend(cookbook_records)
+    records.extend(
+        _project_route_hints(cookbook_ids={record.skill_id for record in cookbook_records})
+    )
     records = sorted(records, key=lambda record: (record.kind, record.skill_id))
 
     manifest = SkillIndexManifest(
@@ -63,6 +68,63 @@ def get_skill_record(skill_id: str) -> SkillRecord | None:
         if record.skill_id == skill_id:
             return record
     return None
+
+
+def get_skill_lineage(skill_id: str) -> dict[str, Any] | None:
+    """Return surfaced lineage metadata for one generated skill record."""
+    lineage = load_skill_lineage_index().get(skill_id)
+    return dict(lineage) if lineage is not None else None
+
+
+def load_skill_lineage_index() -> dict[str, dict[str, Any]]:
+    """Return the canonical lineage index for the generated skill layer."""
+    key = _cache_key()
+    cached = _SKILL_LINEAGE_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    index = load_skill_index()
+    children_by_parent: dict[str, set[str]] = {}
+    replacements_by_target: dict[str, set[str]] = {}
+    same_source_groups: dict[tuple[str, str, str], set[str]] = {}
+
+    for record in index.records:
+        for parent in record.parents:
+            children_by_parent.setdefault(parent, set()).add(record.skill_id)
+        for target in record.supersedes:
+            replacements_by_target.setdefault(target, set()).add(record.skill_id)
+        same_source_groups.setdefault(
+            (record.source_kind, record.source_artifact, record.source_path),
+            set(),
+        ).add(record.skill_id)
+
+    lineage_index = {
+        record.skill_id: {
+            "skill_id": record.skill_id,
+            "kind": record.kind,
+            "origin": record.origin,
+            "source_kind": record.source_kind,
+            "source_artifact": record.source_artifact,
+            "source_path": record.source_path,
+            "lineage_status": record.lineage_status,
+            "lineage_evidence": record.lineage_evidence,
+            "parents": record.parents,
+            "supersedes": record.supersedes,
+            "children": _sorted_unique(children_by_parent.get(record.skill_id, ())),
+            "replaced_by": _sorted_unique(replacements_by_target.get(record.skill_id, ())),
+            "same_source": _sorted_unique(
+                item
+                for item in same_source_groups.get(
+                    (record.source_kind, record.source_artifact, record.source_path),
+                    (),
+                )
+                if item != record.skill_id
+            ),
+        }
+        for record in index.records
+    }
+    _SKILL_LINEAGE_CACHE[key] = lineage_index
+    return lineage_index
 
 
 def query_skill_records(
@@ -111,6 +173,167 @@ def query_skill_records(
             continue
         results.append(record)
     return tuple(results)
+
+
+def select_prompt_skill_artifacts(
+    text: str,
+    *,
+    audience: str,
+    stage: str,
+    instrument_type: str | None = None,
+    pricing_method: str | None = None,
+    route_ids: Iterable[str] = (),
+    route_families: Iterable[str] = (),
+    knowledge_surface: str = "compact",
+) -> list[dict[str, Any]]:
+    """Return small prompt-ready skill guidance for one agent audience/stage.
+
+    The selector is deterministic and intentionally conservative: it keeps the
+    generated skill layer as a thin guidance surface over the existing
+    KnowledgeStore payloads rather than replacing them outright.
+    """
+    instrument_tokens = {
+        token
+        for token in (
+            _normalize_key(instrument_type),
+            "credit_default_swap" if _normalize_key(instrument_type) == "cds" else "",
+            "cds" if _normalize_key(instrument_type) == "credit_default_swap" else "",
+        )
+        if token
+    }
+    method_token = normalize_method(pricing_method) if pricing_method else ""
+    normalized_route_ids = tuple(
+        sorted(
+            {
+                _normalize_key(item)
+                for item in route_ids
+                if _normalize_key(item)
+            }
+        )
+    )
+    normalized_route_families = tuple(
+        sorted(
+            {
+                _normalize_key(item)
+                for item in route_families
+                if _normalize_key(item)
+            }
+        )
+    )
+    kind_order = _prompt_skill_kind_order(
+        audience=audience,
+        stage=stage,
+    )
+
+    candidates: list[SkillRecord] = []
+    for record in load_skill_index().records:
+        if record.kind not in kind_order:
+            continue
+        if record.status and _normalize_key(record.status) not in _ACTIVE_SKILL_STATUSES:
+            continue
+        if not _skill_record_matches_scope(
+            record,
+            instrument_tokens=instrument_tokens,
+            method_token=method_token,
+            route_ids=normalized_route_ids,
+            route_families=normalized_route_families,
+        ):
+            continue
+        candidates.append(record)
+
+    candidates.sort(
+        key=lambda record: _skill_prompt_rank(
+            record,
+            kind_order=kind_order,
+            instrument_tokens=instrument_tokens,
+            method_token=method_token,
+            route_ids=normalized_route_ids,
+            route_families=normalized_route_families,
+        )
+    )
+
+    artifacts: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for record in candidates:
+        if record.skill_id in seen_ids:
+            continue
+        seen_ids.add(record.skill_id)
+        summary = " ".join(str(record.summary or "").split())
+        if not summary:
+            continue
+        if len(summary) > 220:
+            summary = summary[:217].rstrip() + "..."
+        artifacts.append(
+            {
+                "id": record.skill_id,
+                "kind": record.kind,
+                "title": str(record.title or "").strip(),
+                "summary": summary,
+                "origin": record.origin,
+                "parents": list(record.parents),
+                "supersedes": list(record.supersedes),
+                "lineage_status": record.lineage_status,
+                "lineage_summary": _lineage_summary(record),
+            }
+        )
+
+    return _prune_prompt_skill_artifacts(
+        text,
+        artifacts,
+        knowledge_surface=knowledge_surface,
+    )
+
+
+def append_prompt_skill_artifacts(
+    text: str,
+    artifacts: Iterable[dict[str, Any]],
+    *,
+    heading: str = "## Generated Skills",
+) -> str:
+    """Append one generated-skill section to prompt text when artifacts exist."""
+    selected = [
+        artifact
+        for artifact in artifacts
+        if str(artifact.get("summary") or "").strip()
+    ]
+    if not selected:
+        return text
+
+    section_lines = [heading]
+    section_lines.extend(
+        _render_prompt_skill_artifact(artifact)
+        for artifact in selected
+    )
+    suffix = "\n".join(section_lines)
+    if text:
+        return f"{text}\n\n{suffix}"
+    return suffix
+
+
+def augment_prompt_with_skill_records(
+    text: str,
+    *,
+    audience: str,
+    stage: str,
+    instrument_type: str | None = None,
+    pricing_method: str | None = None,
+    route_ids: Iterable[str] = (),
+    route_families: Iterable[str] = (),
+    knowledge_surface: str = "compact",
+    heading: str = "## Generated Skills",
+) -> tuple[str, list[dict[str, Any]]]:
+    """Select prompt-ready skills and append them to the supplied text."""
+    artifacts = select_prompt_skill_artifacts(
+        text,
+        audience=audience,
+        stage=stage,
+        instrument_type=instrument_type,
+        pricing_method=pricing_method,
+        route_ids=route_ids,
+        route_families=route_families,
+        knowledge_surface=knowledge_surface,
+    )
+    return append_prompt_skill_artifacts(text, artifacts, heading=heading), artifacts
 
 
 def _cache_key() -> tuple[object, ...]:
@@ -192,6 +415,8 @@ def _project_lessons(rows: list[dict]) -> list[SkillRecord]:
                 confidence=float(row.get("confidence") or 1.0),
                 updated_at=str(row.get("created") or ""),
                 source_kind="lesson_entry",
+                lineage_status="superseding" if row.get("supersedes") else "source_root",
+                lineage_evidence=("lesson.supersedes",) if row.get("supersedes") else ("lesson.entry",),
             )
         )
     return records
@@ -254,6 +479,8 @@ def _project_principles(lesson_by_id: dict[str, dict]) -> list[SkillRecord]:
                 confidence=1.0,
                 updated_at=updated_at,
                 source_kind="canonical",
+                lineage_status="derived" if derived_from else "source_root",
+                lineage_evidence=("principles.derived_from",) if derived_from else ("principles.entry",),
             )
         )
     return records
@@ -308,12 +535,14 @@ def _project_cookbooks() -> list[SkillRecord]:
                 confidence=1.0,
                 updated_at=str(entry.get("version") or ""),
                 source_kind="canonical",
+                lineage_status="source_root",
+                lineage_evidence=("cookbooks.entry",),
             )
         )
     return records
 
 
-def _project_route_hints() -> list[SkillRecord]:
+def _project_route_hints(*, cookbook_ids: set[str]) -> list[SkillRecord]:
     records: list[SkillRecord] = []
     from trellis.agent.route_registry import load_route_registry
 
@@ -324,6 +553,11 @@ def _project_route_hints() -> list[SkillRecord]:
         route_families = _sorted_unique(
             [route.route_family, *(item.route_family for item in route.conditional_route_family or ())]
         )
+        cookbook_candidates = _sorted_unique(
+            f"cookbook:{normalize_method(method)}"
+            for method in route.match_methods
+            if f"cookbook:{normalize_method(method)}" in cookbook_ids
+        )
         concepts = _sorted_unique(
             [
                 *(route.match_payoff_traits or ()),
@@ -331,6 +565,18 @@ def _project_route_hints() -> list[SkillRecord]:
                 *(route.market_data_access.required.keys()),
             ]
         )
+        if len(cookbook_candidates) == 1:
+            parent_cookbooks = cookbook_candidates
+            lineage_status = "derived"
+            lineage_evidence = ("route.match_method_to_cookbook",)
+        elif len(cookbook_candidates) > 1:
+            parent_cookbooks = ()
+            lineage_status = "advisory"
+            lineage_evidence = ("route.match_method_to_cookbook_ambiguous",)
+        else:
+            parent_cookbooks = ()
+            lineage_status = "source_root"
+            lineage_evidence = ("route_card",)
         tags = _sorted_unique(
             [
                 f"engine_family:{route.engine_family}",
@@ -360,7 +606,7 @@ def _project_route_hints() -> list[SkillRecord]:
                     concepts=concepts,
                     tags=_sorted_unique([*tags, f"module:{helper.module}", f"symbol:{helper.symbol}"]),
                     origin="canonical" if not route.discovered_from else "captured",
-                    parents=(),
+                    parents=parent_cookbooks,
                     supersedes=(),
                     status=route.status,
                     confidence=route.confidence,
@@ -368,19 +614,28 @@ def _project_route_hints() -> list[SkillRecord]:
                     precedence_rank=100,
                     instruction_type="hard_constraint",
                     source_kind="route_card",
+                    lineage_status=lineage_status,
+                    lineage_evidence=lineage_evidence,
                 )
             )
 
-        needs_schedule_builder = any(
-            primitive.role == "schedule_builder" or primitive.symbol == "generate_schedule"
-            for primitive in route.primitives
+        schedule_builder = next(
+            (
+                primitive
+                for primitive in route.primitives
+                if primitive.role == "schedule_builder" or primitive.symbol == "generate_schedule"
+            ),
+            None,
         )
-        if needs_schedule_builder:
+        if schedule_builder is not None:
             for skill_id, title, summary, precedence_rank in (
                 (
                     f"route_hint:{route.id}:schedule-builder",
                     f"{route.id} schedule builder",
-                    "Use `trellis.core.date_utils.generate_schedule` to build ordered dates before pricing.",
+                    (
+                        f"Use `{schedule_builder.module}.{schedule_builder.symbol}` "
+                        "to build the route schedule before pricing."
+                    ),
                     90,
                 ),
                 (
@@ -405,7 +660,7 @@ def _project_route_hints() -> list[SkillRecord]:
                         concepts=concepts,
                         tags=tags,
                         origin="canonical" if not route.discovered_from else "captured",
-                        parents=(),
+                        parents=parent_cookbooks,
                         supersedes=(),
                         status=route.status,
                         confidence=route.confidence,
@@ -413,6 +668,8 @@ def _project_route_hints() -> list[SkillRecord]:
                         precedence_rank=precedence_rank,
                         instruction_type="route_hint",
                         source_kind="route_card",
+                        lineage_status=lineage_status,
+                        lineage_evidence=lineage_evidence,
                     )
                 )
 
@@ -433,7 +690,7 @@ def _project_route_hints() -> list[SkillRecord]:
                     concepts=concepts,
                     tags=_sorted_unique([*tags, f"note_index:{index}"]),
                     origin="canonical" if not route.discovered_from else "captured",
-                    parents=(),
+                    parents=parent_cookbooks,
                     supersedes=(),
                     status=route.status,
                     confidence=route.confidence,
@@ -441,6 +698,8 @@ def _project_route_hints() -> list[SkillRecord]:
                     precedence_rank=50 - index,
                     instruction_type=instruction_type,
                     source_kind="route_card",
+                    lineage_status=lineage_status,
+                    lineage_evidence=lineage_evidence,
                 )
             )
 
@@ -460,7 +719,7 @@ def _project_route_hints() -> list[SkillRecord]:
                     concepts=concepts,
                     tags=_sorted_unique([*tags, f"dynamic_source:{note.source}", f"dynamic_function:{note.function}"]),
                     origin="canonical" if not route.discovered_from else "captured",
-                    parents=(),
+                    parents=parent_cookbooks,
                     supersedes=(),
                     status=route.status,
                     confidence=route.confidence,
@@ -468,9 +727,38 @@ def _project_route_hints() -> list[SkillRecord]:
                     precedence_rank=40 - index,
                     instruction_type="historical_note",
                     source_kind="route_card",
+                    lineage_status=lineage_status,
+                    lineage_evidence=lineage_evidence,
                 )
             )
     return records
+
+
+def _render_prompt_skill_artifact(artifact: dict[str, Any]) -> str:
+    """Render one prompt-ready skill artifact with compact lineage context."""
+    lineage = str(artifact.get("lineage_summary") or "").strip()
+    suffix = f" [lineage: {lineage}]" if lineage else ""
+    return f"- [{artifact['kind']}] {artifact['title']}: {artifact['summary']}{suffix}"
+
+
+def _lineage_summary(record: SkillRecord) -> str:
+    """Return a compact lineage caption for one generated skill record."""
+    if record.parents:
+        return f"derived from {_short_lineage_list(record.parents)}"
+    if record.supersedes:
+        return f"supersedes {_short_lineage_list(record.supersedes)}"
+    return ""
+
+
+def _short_lineage_list(values: Iterable[str]) -> str:
+    """Render at most two lineage ids with a count suffix when needed."""
+    ordered = [str(value) for value in values if str(value).strip()]
+    if not ordered:
+        return ""
+    head = ordered[:2]
+    if len(ordered) <= 2:
+        return ", ".join(head)
+    return f"{', '.join(head)} +{len(ordered) - 2} more"
 
 
 def _sorted_unique(values: Iterable[str]) -> tuple[str, ...]:
@@ -481,3 +769,142 @@ def _normalize_key(value: str | None) -> str:
     if value is None:
         return ""
     return value.strip().lower().replace(" ", "_")
+
+
+def _prompt_skill_kind_order(
+    *,
+    audience: str,
+    stage: str,
+) -> tuple[str, ...]:
+    """Return the preferred generated-skill kinds for one prompt stage."""
+    normalized_stage = _normalize_key(stage)
+    if audience == "routing":
+        return ("route_hint", "principle", "lesson", "cookbook")
+    if audience == "review":
+        if normalized_stage == "critic_review":
+            return ("principle", "lesson", "route_hint")
+        return ("principle", "lesson", "route_hint", "cookbook")
+    if normalized_stage in {
+        "code_generation_failed",
+        "import_validation_failed",
+        "semantic_validation_failed",
+        "lite_review_failed",
+        "actual_market_smoke_failed",
+        "validation_failed",
+        "comparison_insufficient_results",
+        "retry_build",
+    }:
+        return ("route_hint", "cookbook", "principle", "lesson")
+    return ("cookbook", "principle", "lesson", "route_hint")
+
+
+def _skill_record_matches_scope(
+    record: SkillRecord,
+    *,
+    instrument_tokens: set[str],
+    method_token: str,
+    route_ids: tuple[str, ...],
+    route_families: tuple[str, ...],
+) -> bool:
+    """Apply deterministic prompt-scope matching for one generated skill."""
+    record_methods = {_normalize_key(item) for item in record.method_families}
+    if method_token and record_methods and method_token not in record_methods:
+        return False
+
+    record_instruments = {_normalize_key(item) for item in record.instrument_types}
+    record_route_families = {_normalize_key(item) for item in record.route_families}
+    record_tags = {_normalize_key(item) for item in record.tags}
+    route_id_tags = {f"route:{route_id}" for route_id in route_ids if route_id}
+
+    if record.kind == "route_hint":
+        if route_id_tags & record_tags:
+            return True
+        if route_families and record_route_families and set(route_families) & record_route_families:
+            return True
+        if instrument_tokens and record_instruments and instrument_tokens & record_instruments:
+            return True
+        return False
+
+    if instrument_tokens and record_instruments:
+        return bool(instrument_tokens & record_instruments)
+    return True
+
+
+def _skill_prompt_rank(
+    record: SkillRecord,
+    *,
+    kind_order: tuple[str, ...],
+    instrument_tokens: set[str],
+    method_token: str,
+    route_ids: tuple[str, ...],
+    route_families: tuple[str, ...],
+) -> tuple[object, ...]:
+    """Order prompt-ready skills by scope fit and stability."""
+    record_instruments = {_normalize_key(item) for item in record.instrument_types}
+    record_methods = {_normalize_key(item) for item in record.method_families}
+    record_route_families = {_normalize_key(item) for item in record.route_families}
+    record_tags = {_normalize_key(item) for item in record.tags}
+    route_id_score = int(bool({f"route:{route_id}" for route_id in route_ids if route_id} & record_tags))
+    route_family_score = int(bool(set(route_families) & record_route_families))
+    instrument_score = int(bool(instrument_tokens & record_instruments))
+    method_score = int(bool(method_token and method_token in record_methods))
+    hard_constraint_score = int(str(getattr(record, "instruction_type", "") or "") == "hard_constraint")
+    return (
+        -route_id_score,
+        -route_family_score,
+        -instrument_score,
+        -method_score,
+        kind_order.index(record.kind),
+        -hard_constraint_score,
+        -int(getattr(record, "precedence_rank", 0) or 0),
+        -float(getattr(record, "confidence", 0.0) or 0.0),
+        str(getattr(record, "skill_id", "") or ""),
+    )
+
+
+def _prune_prompt_skill_artifacts(
+    text: str,
+    artifacts: list[dict[str, Any]],
+    *,
+    knowledge_surface: str,
+) -> list[dict[str, Any]]:
+    """Drop duplicate prompt guidance and enforce a small skill budget."""
+    normalized_text = " ".join(str(text or "").lower().split())
+    budget = 900 if knowledge_surface == "expanded" else 420
+    selected: list[dict[str, Any]] = []
+    seen_signatures: set[tuple[str, str, str]] = set()
+    used_chars = 0
+
+    for artifact in artifacts:
+        artifact_id = str(artifact.get("id") or "").strip()
+        kind = str(artifact.get("kind") or "").strip()
+        title = " ".join(str(artifact.get("title") or "").split())
+        summary = " ".join(str(artifact.get("summary") or "").split())
+        if not summary:
+            continue
+        signature = (artifact_id, title.lower(), summary.lower())
+        if signature in seen_signatures:
+            continue
+        if summary.lower() in normalized_text:
+            continue
+        if title and title.lower() in normalized_text:
+            continue
+        projected = used_chars + len(title) + len(summary) + 8
+        if selected and projected > budget:
+            break
+        selected.append(
+            {
+                "id": artifact_id,
+                "kind": kind,
+                "title": title,
+                "summary": summary,
+                "origin": str(artifact.get("origin") or "").strip(),
+                "parents": list(artifact.get("parents") or []),
+                "supersedes": list(artifact.get("supersedes") or []),
+                "lineage_status": str(artifact.get("lineage_status") or "").strip(),
+                "lineage_summary": str(artifact.get("lineage_summary") or "").strip(),
+            }
+        )
+        seen_signatures.add(signature)
+        used_chars = projected
+    return selected

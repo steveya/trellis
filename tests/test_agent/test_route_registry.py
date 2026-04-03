@@ -99,6 +99,21 @@ class TestRegistryValidation:
         assert basket is not None
         assert basket.admissibility.event_support == "automatic"
 
+    def test_reuse_module_paths_hydrate_for_checked_in_deterministic_routes(self, registry):
+        analytical_fx = find_route_by_id("analytical_garman_kohlhagen", registry)
+        monte_carlo_fx = find_route_by_id("monte_carlo_paths", registry)
+        analytical_quanto = find_route_by_id("quanto_adjustment_analytical", registry)
+        monte_carlo_quanto = find_route_by_id("correlated_gbm_monte_carlo", registry)
+
+        assert analytical_fx is not None
+        assert analytical_fx.reuse_module_paths == ("instruments/_agent/fxvanillaanalytical.py",)
+        assert monte_carlo_fx is not None
+        assert monte_carlo_fx.reuse_module_paths == ("instruments/_agent/fxvanillamontecarlo.py",)
+        assert analytical_quanto is not None
+        assert analytical_quanto.reuse_module_paths == ("instruments/_agent/quantooptionanalytical.py",)
+        assert monte_carlo_quanto is not None
+        assert monte_carlo_quanto.reuse_module_paths == ("instruments/_agent/quantooptionmontecarlo.py",)
+
 
 # ---------------------------------------------------------------------------
 # Quanto routes
@@ -307,7 +322,7 @@ class TestLocalVolRoutes:
         payoff_family="vanilla_option",
         exercise_style="european",
     )
-    PLAN = _make_plan("monte_carlo", market_data={"local_vol_surface", "spot", "discount"})
+    PLAN = _make_plan("monte_carlo", market_data={"local_vol_surface", "spot", "discount_curve"})
 
     def test_candidate(self, registry):
         new = _new_routes(registry, "monte_carlo", self.IR, pricing_plan=self.PLAN)
@@ -351,6 +366,12 @@ class TestRateTreeRoutes:
         exercise_style="issuer_call",
         model_family="interest_rate",
     )
+    PUTTABLE_IR = ProductIR(
+        instrument="puttable_bond",
+        payoff_family="puttable_fixed_income",
+        exercise_style="holder_put",
+        model_family="interest_rate",
+    )
     BERMUDAN_IR = ProductIR(
         instrument="bermudan_swaption",
         payoff_family="swaption",
@@ -369,9 +390,19 @@ class TestRateTreeRoutes:
         assert "exercise_lattice" in new
         assert "rate_tree_backward_induction" in new
 
+    def test_puttable_bond_candidates(self, registry):
+        new = _new_routes(registry, "rate_tree", self.PUTTABLE_IR)
+        assert "exercise_lattice" in new
+        assert "rate_tree_backward_induction" in new
+
     def test_callable_bond_route_family(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         new = resolve_route_family(spec, self.CALLABLE_IR)
+        assert new == "rate_lattice"
+
+    def test_puttable_bond_route_family(self, registry):
+        spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
+        new = resolve_route_family(spec, self.PUTTABLE_IR)
         assert new == "rate_lattice"
 
     def test_equity_american_route_family(self, registry):
@@ -390,6 +421,14 @@ class TestRateTreeRoutes:
     def test_callable_bond_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         new_prims = resolve_route_primitives(spec, self.CALLABLE_IR)
+        expected_prims = {
+            ("trellis.models.callable_bond_tree", "price_callable_bond_tree", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_puttable_bond_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
+        new_prims = resolve_route_primitives(spec, self.PUTTABLE_IR)
         expected_prims = {
             ("trellis.models.callable_bond_tree", "price_callable_bond_tree", "route_helper"),
         }
@@ -447,9 +486,24 @@ class TestAnalyticalRoutes:
     def test_default_primitives_without_vanilla(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         new_prims = resolve_route_primitives(spec, self.SWAPTION_IR)
-        prim_symbols = {p.symbol for p in new_prims}
-        assert "black76_call" in prim_symbols
-        assert "black76_put" in prim_symbols
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.rate_style_swaption",
+                "resolve_swaption_black76_inputs",
+                "market_binding",
+            ),
+            (
+                "trellis.models.rate_style_swaption",
+                "price_swaption_black76_raw",
+                "route_helper",
+            ),
+        }
+
+    def test_swaption_notes_pin_helper_backed_route(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        notes = resolve_route_notes(spec, self.SWAPTION_IR)
+        assert any("resolve_swaption_black76_inputs" in note for note in notes)
+        assert any("price_swaption_black76_raw" in note for note in notes)
 
     def test_bermudan_swaption_primitives_use_lower_bound_helper(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
@@ -473,6 +527,12 @@ class TestAnalyticalRoutes:
             ("trellis.models.zcb_option", "price_zcb_option_jamshidian", "route_helper"),
         }
         assert _prim_set(new_prims) == expected_prims
+
+    def test_zcb_notes_pin_resolved_jamshidian_lane(self, registry):
+        spec = [r for r in registry.routes if r.id == "zcb_option_analytical"][0]
+        notes = resolve_route_notes(spec, self.ZCB_IR)
+        assert any("resolve_zcb_option_hw_inputs" in note for note in notes)
+        assert any("zcb_option_hw_raw" in note for note in notes)
 
     def test_admissibility_rejects_pathwise_state_tags_on_black76(self, registry):
         from dataclasses import replace
@@ -531,7 +591,7 @@ class TestZCBRateTreeRoutes:
 
 class TestFXAnalyticalRoutes:
     FX_IR = ProductIR(instrument="fx_option", payoff_family="vanilla_option", exercise_style="european")
-    FX_PLAN = _make_plan("analytical", market_data={"fx_rates", "forward_curve", "discount"})
+    FX_PLAN = _make_plan("analytical", market_data={"fx_rates", "forward_curve", "discount_curve"})
 
     def test_fx_candidate(self, registry):
         new = _new_routes(registry, "analytical", self.FX_IR, pricing_plan=self.FX_PLAN)
@@ -541,11 +601,7 @@ class TestFXAnalyticalRoutes:
         spec = [r for r in registry.routes if r.id == "analytical_garman_kohlhagen"][0]
         new_prims = resolve_route_primitives(spec, self.FX_IR)
         expected_prims = {
-            ("trellis.models.black", "black76_asset_or_nothing_call", "pricing_kernel"),
-            ("trellis.models.black", "black76_asset_or_nothing_put", "pricing_kernel"),
-            ("trellis.models.black", "black76_cash_or_nothing_call", "pricing_kernel"),
-            ("trellis.models.black", "black76_cash_or_nothing_put", "pricing_kernel"),
-            ("trellis.models.analytical", "terminal_vanilla_from_basis", "assembly_helper"),
+            ("trellis.models.analytical.fx", "garman_kohlhagen_price_raw", "route_helper"),
             ("trellis.core.date_utils", "year_fraction", "time_measure"),
         }
         assert _prim_set(new_prims) == expected_prims

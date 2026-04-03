@@ -42,7 +42,7 @@ class TestMatchPayoff:
         result = match_payoff(ts, SETTLE)
         assert result is not None
         payoff, reqs = result
-        assert "discount" in reqs
+        assert "discount_curve" in reqs
         assert type(payoff).__name__ == "DeterministicCashflowPayoff"
 
     def test_match_cap(self):
@@ -59,7 +59,7 @@ class TestMatchPayoff:
         assert result is not None
         payoff, reqs = result
         assert type(payoff).__name__ == "CapPayoff"
-        assert "black_vol" in reqs
+        assert "black_vol_surface" in reqs
 
     def test_match_floor(self):
         ts = TermSheet(

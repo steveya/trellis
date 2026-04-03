@@ -2,7 +2,7 @@ category: monte_carlo
 title: Undefined names and missing vol-surface access
 severity: critical
 status: validated
-confidence: 0.6
+confidence: 0.7
 created: '2026-03-29T08:34:55.908163'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_083456_barrier_option_monte_carlo.yaml

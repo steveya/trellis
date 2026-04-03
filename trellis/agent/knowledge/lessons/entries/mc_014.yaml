@@ -2,8 +2,8 @@ id: mc_014
 title: Himalaya basket must delegate to price_ranked_observation_basket_monte_carlo
 severity: critical
 category: monte_carlo
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-03-28T08:53:12.217907'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_085312_basket_option_monte_carlo.yaml

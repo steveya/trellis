@@ -2,7 +2,7 @@ category: monte_carlo
 title: Undefined regression-basis symbol in dataclass
 severity: high
 status: validated
-confidence: 0.6
+confidence: 0.7
 created: '2026-03-28T23:01:09.636831'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_230110_american_put_monte_carlo.yaml

@@ -441,6 +441,7 @@
     external:
     - quantlib
     - financepy
+    tolerance_pct: 2.0
   status: pending
 - id: T39
   title: 'FFT vs COS: GBM calls/puts across strikes and maturities'

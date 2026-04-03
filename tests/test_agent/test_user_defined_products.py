@@ -70,6 +70,9 @@ def test_compile_supported_user_defined_callable_product_to_existing_route():
     assert compiled.generation_plan.new_primitive_workflow is None
     assert compiled.knowledge_text
     assert "custom_callable_note" in compiled.knowledge_text
+    assert "## Generated Skills" in compiled.knowledge_text
+    assert compiled.knowledge_summary["selected_artifact_ids"]
+    assert "builder" in compiled.knowledge_summary["selected_artifacts_by_audience"]
 
 
 def test_compile_blocked_user_defined_product_surfaces_blocker_and_workflow():

@@ -267,27 +267,10 @@ _MARKET_DATA_NAMES = frozenset(c.name for c in MARKET_DATA)
 _METHOD_NAMES = frozenset(c.name for c in METHODS)
 _ALL_NAMES = _MARKET_DATA_NAMES | _METHOD_NAMES
 _MARKET_DATA_BY_NAME = {c.name: c for c in MARKET_DATA}
-_MARKET_DATA_ALIASES: dict[str, str] = {
-    "discount": "discount_curve",
-    "yield_curve": "discount_curve",
-    "risk_free_curve": "discount_curve",
-    "risk_free_rate": "discount_curve",
-    "forward_rate": "forward_curve",
-    "forecast_rate": "forward_curve",
-    "forecast_curve": "forward_curve",
-    "forward_rate_curve": "forward_curve",
-    "black_vol": "black_vol_surface",
-    "vol_surface": "black_vol_surface",
-    "volatility_surface": "black_vol_surface",
-    "credit": "credit_curve",
-    "fx": "fx_rates",
-    "underlying_price": "spot",
-    "local_vol": "local_vol_surface",
-}
 
 # Backward-compatible alias
 CAPABILITIES = MARKET_DATA  # type: ignore
-_KNOWN_NAMES = _ALL_NAMES | frozenset(_MARKET_DATA_ALIASES)
+_KNOWN_NAMES = _ALL_NAMES
 
 
 def discover_capabilities() -> dict[str, list]:
@@ -313,20 +296,42 @@ def analyze_gap(requirements: set[str]) -> tuple[set[str], set[str]]:
 
 
 def normalize_capability_name(requirement: str) -> str:
-    """Map an alias to its canonical name (e.g. "discount" -> "discount_curve").
+    """Return the normalized capability label.
 
-    Returns the input unchanged if it is already canonical or unrecognized.
+    Capability aliases have been retired; callers should already use the
+    canonical market-data names from ``MARKET_DATA``.
     """
-    if requirement in _METHOD_NAMES or requirement in _MARKET_DATA_NAMES:
-        return requirement
-    return _MARKET_DATA_ALIASES.get(requirement, requirement)
+    return str(requirement).strip()
+
+
+def validate_market_data_requirements(
+    requirements: set[str] | frozenset[str] | tuple[str, ...],
+    *,
+    allow_methods: bool = False,
+) -> set[str]:
+    """Return canonical market-data requirements or raise on unknown names."""
+    normalized = set()
+    unknown = set()
+    for requirement in requirements:
+        label = normalize_capability_name(requirement)
+        if label in _MARKET_DATA_NAMES:
+            normalized.add(label)
+            continue
+        if allow_methods and label in _METHOD_NAMES:
+            continue
+        if label:
+            unknown.add(label)
+    if unknown:
+        raise ValueError(
+            "Unknown market-data requirements "
+            f"{sorted(unknown)}. Use canonical capability names "
+            f"{sorted(_MARKET_DATA_NAMES)}."
+        )
+    return normalized
 
 
 def normalize_market_data_requirements(requirements: set[str] | frozenset[str] | tuple[str, ...]) -> set[str]:
-    """Normalize requirement names and keep only the market-data ones.
-
-    Method names and unrecognized names are silently dropped.
-    """
+    """Normalize requirement names and keep only canonical market-data ones."""
     normalized = set()
     for requirement in requirements:
         canonical = normalize_capability_name(requirement)
@@ -357,7 +362,10 @@ def check_market_data(
     """
     errors = []
     available = market_state.available_capabilities
-    normalized_requirements = normalize_market_data_requirements(requirements)
+    normalized_requirements = validate_market_data_requirements(
+        requirements,
+        allow_methods=True,
+    )
     for requirement in normalized_requirements:
         cap = _capability_for_requirement(requirement)
         if cap is None:

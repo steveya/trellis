@@ -115,6 +115,29 @@ class AnalyticalTraceArtifacts:
     text_path: Path
 
 
+def route_health_snapshot(trace: AnalyticalTrace) -> dict[str, Any]:
+    """Return a compact route-health observation for one analytical trace."""
+    generation_plan = dict(trace.context.get("generation_plan") or {})
+    instruction_resolution = dict(generation_plan.get("instruction_resolution") or {})
+    effective = list(instruction_resolution.get("effective_instructions") or [])
+    conflicts = list(instruction_resolution.get("conflicts") or [])
+    return {
+        "route_id": trace.route.name,
+        "route_family": trace.route.family,
+        "trace_status": trace.status,
+        "effective_instruction_ids": [
+            str(item.get("id") or "").strip()
+            for item in effective
+            if str(item.get("id") or "").strip()
+        ],
+        "effective_instruction_count": len(effective),
+        "hard_constraint_count": sum(
+            1 for item in effective if str(item.get("instruction_type") or "") == "hard_constraint"
+        ),
+        "conflict_count": len(conflicts),
+    }
+
+
 def build_analytical_trace_from_generation_plan(
     plan: GenerationPlan,
     *,

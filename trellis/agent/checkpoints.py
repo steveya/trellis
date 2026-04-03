@@ -24,12 +24,13 @@ Usage::
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import yaml
 
@@ -94,8 +95,14 @@ class StageDivergence:
 # ---------------------------------------------------------------------------
 
 def _hash_value(value: Any) -> str:
-    """SHA-256 hex of a string/dict/list representation (first 16 chars)."""
-    text = str(value)
+    """SHA-256 hex of a stable JSON-safe representation (first 16 chars)."""
+    normalized = _normalize_for_hash(value)
+    text = json.dumps(
+        normalized,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
@@ -107,6 +114,33 @@ def _extract_imports_from_code(code: str) -> list[str]:
         if stripped.startswith("from ") or stripped.startswith("import "):
             imports.append(stripped)
     return imports
+
+
+def _normalize_for_hash(value: Any) -> Any:
+    """Normalize nested values into a stable JSON-safe shape for hashing."""
+    if isinstance(value, dict):
+        return {
+            str(key): _normalize_for_hash(item)
+            for key, item in sorted(value.items(), key=lambda item: str(item[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_normalize_for_hash(item) for item in value]
+    if isinstance(value, (set, frozenset)):
+        normalized = [_normalize_for_hash(item) for item in value]
+        return sorted(normalized, key=lambda item: json.dumps(item, sort_keys=True, default=str))
+    return value
+
+
+def _nonempty_mapping(*, source: Mapping[str, Any] | None, keys: tuple[str, ...]) -> dict[str, Any]:
+    """Project selected keys from a mapping while dropping empty values."""
+    if source is None:
+        return {}
+    selected: dict[str, Any] = {}
+    for key in keys:
+        value = source.get(key)
+        if value not in (None, "", [], {}, ()):
+            selected[key] = value
+    return selected
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +156,9 @@ def capture_checkpoint(
     spec_schema: Any = None,
     code: str | None = None,
     token_summary: dict[str, Any] | None = None,
+    semantic_checkpoint: Mapping[str, Any] | None = None,
+    generation_boundary: Mapping[str, Any] | None = None,
+    validation_contract: Mapping[str, Any] | None = None,
     outcome: str = "unknown",
     final_price: float | None = None,
     tolerance: float | None = None,
@@ -133,9 +170,14 @@ def capture_checkpoint(
 
     This extracts decision boundaries from the artifacts that already exist
     in the pipeline (pricing_plan, spec_schema, generated code, build_meta)
-    without requiring changes to executor.py internals.
+    without requiring changes to executor.py internals. Semantic-route callers
+    can additionally pass compact semantic, generation, and validation
+    summaries to make route drift diffable across reruns.
     """
     stages: list[StageDecision] = []
+    semantic_checkpoint_data = dict(semantic_checkpoint or {})
+    generation_boundary_data = dict(generation_boundary or {})
+    validation_contract_data = dict(validation_contract or {})
 
     # Stage 1: Quant agent decision
     if pricing_plan is not None:
@@ -143,19 +185,67 @@ def capture_checkpoint(
         required_data = sorted(getattr(pricing_plan, "required_market_data", []) or [])
         method_modules = list(getattr(pricing_plan, "method_modules", []) or [])
         reason = getattr(pricing_plan, "selection_reason", None)
+        quant_metadata = {
+            "required_market_data": required_data,
+            "method_modules": method_modules,
+            "selection_reason": reason or "",
+        }
         stages.append(StageDecision(
             agent="quant",
             decision=method,
-            metadata={
-                "required_market_data": required_data,
-                "method_modules": method_modules,
-                "selection_reason": reason or "",
-            },
+            metadata=quant_metadata,
             input_hash=_hash_value(instrument_type),
-            output_hash=_hash_value(method),
+            output_hash=_hash_value({
+                "decision": method,
+                "metadata": quant_metadata,
+            }),
         ))
 
-    # Stage 2: Planner decision
+    # Stage 2: Semantic identity and compatibility bridge summary.
+    if semantic_checkpoint_data:
+        semantic_decision = str(semantic_checkpoint_data.get("semantic_id") or "unknown")
+        stages.append(StageDecision(
+            agent="semantic",
+            decision=semantic_decision,
+            metadata=semantic_checkpoint_data,
+            input_hash=_hash_value(instrument_type),
+            output_hash=_hash_value({
+                "decision": semantic_decision,
+                "metadata": semantic_checkpoint_data,
+            }),
+        ))
+
+    # Stage 3: Route / lowering boundary.
+    if generation_boundary_data:
+        route_metadata = _nonempty_mapping(
+            source=generation_boundary_data,
+            keys=(
+                "method",
+                "valuation_context",
+                "required_data_spec",
+                "market_binding_spec",
+                "lowering",
+                "route_binding_authority",
+                "primitive_plan",
+            ),
+        )
+        lowering = route_metadata.get("lowering") or {}
+        route_decision = str(
+            lowering.get("route_id")
+            or generation_boundary_data.get("method")
+            or "unknown"
+        )
+        stages.append(StageDecision(
+            agent="route",
+            decision=route_decision,
+            metadata=route_metadata,
+            output_hash=_hash_value({
+                "decision": route_decision,
+                "metadata": route_metadata,
+            }),
+        ))
+
+    # Stage 4: Planner decision
     if spec_schema is not None:
         spec_name = getattr(spec_schema, "spec_name", "unknown")
         class_name = getattr(spec_schema, "class_name", "unknown")
@@ -174,35 +264,57 @@ def capture_checkpoint(
             output_hash=_hash_value(f"{spec_name}:{class_name}:{sorted(fields)}"),
         ))
 
-    # Stage 3: Builder (code generation) decision
-    if code is not None:
-        code_lines = len(code.splitlines())
-        imports = _extract_imports_from_code(code)
+    # Stage 5: Builder (code generation) decision
+    builder_boundary = _nonempty_mapping(
+        source=generation_boundary_data,
+        keys=("approved_modules", "inspected_modules", "symbols_to_reuse"),
+    )
+    builder_code = code
+    if builder_code is None and build_meta is not None:
+        builder_code = build_meta.get("code")
+    if builder_code:
+        code_lines = len(builder_code.splitlines())
+        imports = _extract_imports_from_code(builder_code)
+        builder_metadata = dict(builder_boundary)
+        builder_metadata.update({
+            "code_lines": code_lines,
+            "import_count": len(imports),
+            "imports": imports[:20],  # cap to avoid huge metadata
+        })
         stages.append(StageDecision(
             agent="builder",
             decision="compiled",
-            metadata={
-                "code_lines": code_lines,
-                "import_count": len(imports),
-                "imports": imports[:20],  # cap to avoid huge metadata
-            },
-            output_hash=_hash_value(code),
+            metadata=builder_metadata,
+            output_hash=_hash_value({
+                "code": builder_code,
+                "boundary": builder_boundary,
+            }),
         ))
-    elif build_meta is not None and build_meta.get("code"):
-        _code = build_meta["code"]
+    elif builder_boundary:
         stages.append(StageDecision(
             agent="builder",
-            decision="compiled",
-            metadata={
-                "code_lines": len(_code.splitlines()),
-                "import_count": len(_extract_imports_from_code(_code)),
-            },
-            output_hash=_hash_value(_code),
+            decision="planned",
+            metadata=builder_boundary,
+            output_hash=_hash_value(builder_boundary),
         ))
 
-    # Stage 4: Validation outcome
-    if outcome in ("pass", "fail_validate", "fail_price"):
-        validation_meta: dict[str, Any] = {}
+    # Stage 6: Validation boundary + outcome.
+    if outcome in ("pass", "fail_validate", "fail_price") or validation_contract_data:
+        validation_meta = _nonempty_mapping(
+            source=validation_contract_data,
+            keys=(
+                "contract_id",
+                "bundle_id",
+                "route_id",
+                "route_family",
+                "required_market_data",
+                "deterministic_checks",
+                "comparison_relations",
+                "lowering_errors",
+                "admissibility_failures",
+                "residual_risks",
+            ),
+        )
         if final_price is not None:
             validation_meta["final_price"] = final_price
         if tolerance is not None:
@@ -212,10 +324,34 @@ def capture_checkpoint(
             if failures:
                 validation_meta["failure_count"] = len(failures)
                 validation_meta["first_failure"] = str(failures[0])[:200]
+        validation_decision = "planned"
+        if outcome == "pass":
+            validation_decision = "pass"
+        elif outcome in ("fail_validate", "fail_price"):
+            validation_decision = "fail"
+        validation_hash_meta = _nonempty_mapping(
+            source=validation_meta,
+            keys=(
+                "contract_id",
+                "bundle_id",
+                "route_id",
+                "route_family",
+                "required_market_data",
+                "deterministic_checks",
+                "comparison_relations",
+                "lowering_errors",
+                "admissibility_failures",
+                "residual_risks",
+            ),
+        )
         stages.append(StageDecision(
             agent="validator",
-            decision="pass" if outcome == "pass" else "fail",
+            decision=validation_decision,
             metadata=validation_meta,
+            output_hash=_hash_value({
+                "decision": validation_decision,
+                "metadata": validation_hash_meta,
+            }),
         ))
 
     # Extract total tokens

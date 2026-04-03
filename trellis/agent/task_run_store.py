@@ -10,6 +10,7 @@ from typing import Any, Mapping
 
 import yaml
 
+from trellis.agent.analytical_traces import AnalyticalTrace, route_health_snapshot
 from trellis.agent.task_diagnostics import (
     DIAGNOSIS_HISTORY_ROOT,
     DIAGNOSIS_LATEST_ROOT,
@@ -172,6 +173,13 @@ def build_task_run_record(
         task_kind=task_kind,
         issue_refs=issue_refs,
     )
+    telemetry = summarize_skill_telemetry(
+        result_with_learning,
+        task_kind=task_kind,
+        traces=traces,
+        method_runs=method_runs,
+        workflow=workflow,
+    )
 
     return {
         "task_id": task["id"],
@@ -198,6 +206,7 @@ def build_task_run_record(
             },
         },
         "learning": learning,
+        "telemetry": telemetry,
         "artifacts": dict(result.get("artifacts") or {}),
         "trace_summaries": traces,
         "issue_refs": issue_refs,
@@ -307,6 +316,7 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
 
     if trace_path.suffix.lower() == ".json":
         data = json.loads(trace_path.read_text()) or {}
+        analytical_trace = AnalyticalTrace.from_dict(data)
         steps = list(data.get("steps") or [])
         latest_step = steps[-1] if steps else {}
         route = data.get("route") or {}
@@ -341,6 +351,7 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
             "instruction_resolution_conflict_count": len(
                 instruction_resolution.get("conflicts") or []
             ),
+            "route_health": route_health_snapshot(analytical_trace),
             "token_usage": data.get("token_usage") or {},
             "request_metadata": context,
             "linear_issue": None,
@@ -354,6 +365,12 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
     linear = data.get("linear_issue") or {}
     github = data.get("github_issue") or {}
     metadata = data.get("request_metadata") or {}
+    generation_boundary = data.get("generation_boundary") or {}
+    route_binding_authority = (
+        generation_boundary.get("route_binding_authority")
+        or metadata.get("route_binding_authority")
+        or {}
+    )
     semantic_role_ownership = (
         data.get("semantic_role_ownership")
         or metadata.get("semantic_role_ownership")
@@ -365,6 +382,27 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
         or (metadata.get("runtime_contract") or {}).get("snapshot_reference", {}).get("selected_curve_names")
         or {}
     )
+    semantic_blueprint = dict(metadata.get("semantic_blueprint") or {})
+    route_health = {
+        "route_id": str(
+            route_binding_authority.get("route_id")
+            or semantic_blueprint.get("dsl_route")
+            or data.get("action")
+            or ""
+        ).strip(),
+        "route_family": str(
+            route_binding_authority.get("route_family")
+            or semantic_blueprint.get("dsl_route_family")
+            or data.get("route_method")
+            or ""
+        ).strip(),
+        "trace_status": str(data.get("status") or "").strip(),
+        "effective_instruction_ids": [],
+        "effective_instruction_count": 0,
+        "hard_constraint_count": 0,
+        "conflict_count": 0,
+        "canary_task_ids": list(route_binding_authority.get("canary_task_ids") or []),
+    }
     return {
         "path": str(trace_path),
         "exists": True,
@@ -384,6 +422,8 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
         "semantic_role_ownership_role": semantic_role_ownership.get("selected_role"),
         "semantic_role_ownership_trigger": semantic_role_ownership.get("trigger_condition"),
         "semantic_role_ownership_artifact": semantic_role_ownership.get("artifact_kind"),
+        "route_binding_authority": route_binding_authority,
+        "route_health": route_health,
         "token_usage": data.get("token_usage") or {},
         "request_metadata": metadata,
         "linear_issue": linear if linear else None,
@@ -567,6 +607,13 @@ def summarize_task_learning(
     lesson_titles = list(knowledge_summary.get("lesson_titles") or [])
     retrieval_stages = list(knowledge_summary.get("retrieval_stages") or [])
     retrieval_sources = list(knowledge_summary.get("retrieval_sources") or [])
+    selected_artifact_ids = list(knowledge_summary.get("selected_artifact_ids") or [])
+    selected_artifact_titles = list(knowledge_summary.get("selected_artifact_titles") or [])
+    selected_artifacts_by_audience = {
+        str(audience): [dict(item) for item in artifacts]
+        for audience, artifacts in dict(knowledge_summary.get("selected_artifacts_by_audience") or {}).items()
+        if isinstance(artifacts, list) and artifacts
+    }
     cookbook_paths = list(artifacts.get("cookbook_candidate_paths") or [])
     promotion_candidate_paths = list(artifacts.get("promotion_candidate_paths") or [])
     knowledge_trace_paths = list(artifacts.get("knowledge_trace_paths") or [])
@@ -628,6 +675,9 @@ def summarize_task_learning(
         "retrieved_lesson_titles": lesson_titles,
         "retrieval_stages": retrieval_stages,
         "retrieval_sources": retrieval_sources,
+        "selected_artifact_ids": selected_artifact_ids,
+        "selected_artifact_titles": selected_artifact_titles,
+        "selected_artifacts_by_audience": selected_artifacts_by_audience,
         "captured_lesson_ids": captured_ids,
         "lesson_contract_reports": lesson_contract_reports,
         "lesson_contract_count": len(lesson_contract_reports),
@@ -645,6 +695,555 @@ def summarize_task_learning(
         "knowledge_outcome": knowledge_outcome,
         "knowledge_outcome_reason": knowledge_outcome_reason,
     }
+
+
+def summarize_skill_telemetry(
+    result: dict[str, Any],
+    *,
+    task_kind: str,
+    traces: list[dict[str, Any]],
+    method_runs: Mapping[str, Any],
+    workflow: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Summarize selected-skill attribution and route health for one task run."""
+    learning = dict(result.get("learning") or {})
+    outcome = _telemetry_run_outcome(
+        result=result,
+        workflow=workflow,
+        method_runs=method_runs,
+    )
+    retry_count = _telemetry_retry_count(result=result, method_runs=method_runs)
+    degraded = _telemetry_is_degraded(result=result, method_runs=method_runs)
+    comparison_status = str((result.get("cross_validation") or {}).get("status") or "").strip()
+    route_observations = _route_observations(
+        traces=traces,
+        method_runs=method_runs,
+        outcome=outcome,
+        retry_count=retry_count,
+        degraded=degraded,
+        selected_artifact_ids=[],
+    )
+    selected_artifacts = _selected_artifact_observations(
+        learning=learning,
+        route_observations=route_observations,
+        outcome=outcome,
+        retry_count=retry_count,
+        degraded=degraded,
+    )
+    selected_artifact_ids = [item["artifact_id"] for item in selected_artifacts]
+    if selected_artifact_ids:
+        for item in route_observations:
+            item["selected_artifact_ids"] = list(selected_artifact_ids)
+    return {
+        "task_kind": task_kind,
+        "run_outcome": outcome,
+        "retried": retry_count > 0,
+        "retry_count": retry_count,
+        "degraded": degraded,
+        "comparison_status": comparison_status,
+        "selected_artifacts": selected_artifacts,
+        "route_observations": route_observations,
+    }
+
+
+def aggregate_skill_telemetry(records: list[Mapping[str, Any]]) -> dict[str, Any]:
+    """Roll up selected-skill outcome attribution across persisted task-run records."""
+    aggregates: dict[str, dict[str, Any]] = {}
+    for record in records:
+        telemetry = dict(record.get("telemetry") or {})
+        task_id = str(record.get("task_id") or "").strip()
+        persisted_at = str(record.get("persisted_at") or "").strip()
+        for item in telemetry.get("selected_artifacts") or []:
+            if not isinstance(item, Mapping):
+                continue
+            artifact_id = str(item.get("artifact_id") or "").strip()
+            if not artifact_id:
+                continue
+            aggregate = aggregates.setdefault(
+                artifact_id,
+                {
+                    "artifact_id": artifact_id,
+                    "title": str(item.get("title") or "").strip(),
+                    "kind": str(item.get("kind") or "").strip(),
+                    "selection_count": 0,
+                    "audiences": [],
+                    "route_ids": [],
+                    "route_families": [],
+                    **_rollup_counter_fields(),
+                },
+            )
+            aggregate["selection_count"] += 1
+            _accumulate_rollup_counters(
+                aggregate,
+                item,
+                task_id=task_id,
+                persisted_at=persisted_at,
+            )
+            for key in ("audiences", "route_ids", "route_families"):
+                for value in item.get(key) or []:
+                    if value and value not in aggregate[key]:
+                        aggregate[key].append(value)
+    rollup = {
+        "run_count": len(records),
+        "artifacts": sorted(aggregates.values(), key=lambda item: item["artifact_id"]),
+    }
+    rollup["ranking_inputs"] = build_skill_ranking_inputs(rollup)["artifacts"]
+    return rollup
+
+
+def aggregate_route_health(records: list[Mapping[str, Any]]) -> dict[str, Any]:
+    """Roll up route observations across persisted task-run records."""
+    aggregates: dict[tuple[str, str], dict[str, Any]] = {}
+    for record in records:
+        telemetry = dict(record.get("telemetry") or {})
+        task_id = str(record.get("task_id") or "").strip()
+        persisted_at = str(record.get("persisted_at") or "").strip()
+        for item in telemetry.get("route_observations") or []:
+            if not isinstance(item, Mapping):
+                continue
+            route_id = str(item.get("route_id") or "").strip()
+            route_family = str(item.get("route_family") or "").strip()
+            if not route_id and not route_family:
+                continue
+            key = (route_id, route_family)
+            aggregate = aggregates.setdefault(
+                key,
+                {
+                    "route_id": route_id,
+                    "route_family": route_family,
+                    "observation_count": 0,
+                    "trace_kinds": [],
+                    "selected_artifact_ids": [],
+                    "effective_instruction_count_total": 0,
+                    "hard_constraint_count_total": 0,
+                    "conflict_count_total": 0,
+                    **_rollup_counter_fields(),
+                },
+            )
+            aggregate["observation_count"] += 1
+            _accumulate_rollup_counters(
+                aggregate,
+                item,
+                task_id=task_id,
+                persisted_at=persisted_at,
+            )
+            for key_name in ("trace_kinds", "selected_artifact_ids"):
+                for value in item.get(key_name) or []:
+                    if value and value not in aggregate[key_name]:
+                        aggregate[key_name].append(value)
+            aggregate["effective_instruction_count_total"] += int(
+                item.get("effective_instruction_count") or 0
+            )
+            aggregate["hard_constraint_count_total"] += int(
+                item.get("hard_constraint_count") or 0
+            )
+            aggregate["conflict_count_total"] += int(item.get("conflict_count") or 0)
+    rollup = {
+        "run_count": len(records),
+        "routes": sorted(
+            aggregates.values(),
+            key=lambda item: (item["route_family"], item["route_id"]),
+        ),
+    }
+    rollup["ranking_inputs"] = build_route_ranking_inputs(rollup)["routes"]
+    return rollup
+
+
+def load_latest_skill_telemetry_rollup(
+    *,
+    root: Path = ROOT,
+    task_kind: str | None = None,
+) -> dict[str, Any]:
+    """Load the latest task runs and aggregate selected-skill telemetry."""
+    return load_latest_telemetry_rollups(root=root, task_kind=task_kind)["skill_telemetry"]
+
+
+def load_latest_route_health_rollup(
+    *,
+    root: Path = ROOT,
+    task_kind: str | None = None,
+) -> dict[str, Any]:
+    """Load the latest task runs and aggregate route-health observations."""
+    return load_latest_telemetry_rollups(root=root, task_kind=task_kind)["route_health"]
+
+
+def load_latest_telemetry_rollups(
+    *,
+    root: Path = ROOT,
+    task_kind: str | None = None,
+) -> dict[str, Any]:
+    """Load the latest task runs once and rebuild both telemetry rollups."""
+    records = load_latest_task_run_records(root=root, task_kind=task_kind)
+    return {
+        "skill_telemetry": aggregate_skill_telemetry(records),
+        "route_health": aggregate_route_health(records),
+    }
+
+
+def build_skill_ranking_inputs(rollup: Mapping[str, Any]) -> dict[str, Any]:
+    """Project skill-telemetry rollups into stable ranking inputs."""
+    artifacts = []
+    for item in rollup.get("artifacts") or []:
+        if not isinstance(item, Mapping):
+            continue
+        selection_count = int(item.get("selection_count") or 0)
+        artifacts.append(
+            {
+                "artifact_id": str(item.get("artifact_id") or "").strip(),
+                "title": str(item.get("title") or "").strip(),
+                "kind": str(item.get("kind") or "").strip(),
+                "selection_count": selection_count,
+                "success_rate": _fraction(item.get("success_count"), selection_count),
+                "failure_rate": _fraction(item.get("failure_count"), selection_count),
+                "blocked_rate": _fraction(item.get("blocked_count"), selection_count),
+                "retry_rate": _fraction(item.get("retried_count"), selection_count),
+                "degradation_rate": _fraction(item.get("degraded_count"), selection_count),
+                "avg_retry_count": _fraction(item.get("retry_count_total"), selection_count),
+                "last_seen_at": str(item.get("last_seen_at") or "").strip(),
+                "first_seen_at": str(item.get("first_seen_at") or "").strip(),
+                "route_coverage_count": len(item.get("route_ids") or []),
+                "task_coverage_count": len(item.get("task_ids") or []),
+            }
+        )
+    return {
+        "run_count": int(rollup.get("run_count") or 0),
+        "artifacts": sorted(artifacts, key=lambda item: item["artifact_id"]),
+    }
+
+
+def build_route_ranking_inputs(rollup: Mapping[str, Any]) -> dict[str, Any]:
+    """Project route-health rollups into stable ranking inputs."""
+    routes = []
+    for item in rollup.get("routes") or []:
+        if not isinstance(item, Mapping):
+            continue
+        observation_count = int(item.get("observation_count") or 0)
+        routes.append(
+            {
+                "route_id": str(item.get("route_id") or "").strip(),
+                "route_family": str(item.get("route_family") or "").strip(),
+                "observation_count": observation_count,
+                "success_rate": _fraction(item.get("success_count"), observation_count),
+                "failure_rate": _fraction(item.get("failure_count"), observation_count),
+                "blocked_rate": _fraction(item.get("blocked_count"), observation_count),
+                "retry_rate": _fraction(item.get("retried_count"), observation_count),
+                "degradation_rate": _fraction(item.get("degraded_count"), observation_count),
+                "avg_retry_count": _fraction(item.get("retry_count_total"), observation_count),
+                "avg_effective_instruction_count": _fraction(
+                    item.get("effective_instruction_count_total"),
+                    observation_count,
+                ),
+                "avg_hard_constraint_count": _fraction(
+                    item.get("hard_constraint_count_total"),
+                    observation_count,
+                ),
+                "avg_conflict_count": _fraction(
+                    item.get("conflict_count_total"),
+                    observation_count,
+                ),
+                "last_seen_at": str(item.get("last_seen_at") or "").strip(),
+                "first_seen_at": str(item.get("first_seen_at") or "").strip(),
+                "selected_artifact_count": len(item.get("selected_artifact_ids") or []),
+                "task_coverage_count": len(item.get("task_ids") or []),
+            }
+        )
+    return {
+        "run_count": int(rollup.get("run_count") or 0),
+        "routes": sorted(routes, key=lambda item: (item["route_family"], item["route_id"])),
+    }
+
+
+def load_latest_skill_ranking_inputs(
+    *,
+    root: Path = ROOT,
+    task_kind: str | None = None,
+) -> dict[str, Any]:
+    """Load the latest task runs and derive skill-ranking inputs."""
+    return build_skill_ranking_inputs(
+        load_latest_telemetry_rollups(root=root, task_kind=task_kind)["skill_telemetry"]
+    )
+
+
+def load_latest_route_ranking_inputs(
+    *,
+    root: Path = ROOT,
+    task_kind: str | None = None,
+) -> dict[str, Any]:
+    """Load the latest task runs and derive route-ranking inputs."""
+    return build_route_ranking_inputs(
+        load_latest_telemetry_rollups(root=root, task_kind=task_kind)["route_health"]
+    )
+
+
+def _rollup_counter_fields() -> dict[str, Any]:
+    """Return the shared counter fields used by telemetry rollups."""
+    return {
+        "success_count": 0,
+        "failure_count": 0,
+        "blocked_count": 0,
+        "retried_count": 0,
+        "retry_count_total": 0,
+        "degraded_count": 0,
+        "outcome_counts": {},
+        "task_ids": [],
+        "first_seen_at": "",
+        "last_seen_at": "",
+    }
+
+
+def _accumulate_rollup_counters(
+    aggregate: dict[str, Any],
+    item: Mapping[str, Any],
+    *,
+    task_id: str,
+    persisted_at: str,
+) -> None:
+    """Accumulate the shared counters for one telemetry observation."""
+    if item.get("success"):
+        aggregate["success_count"] += 1
+    elif str(item.get("outcome") or "") in {"blocked", "needs_library_work"}:
+        aggregate["blocked_count"] += 1
+    else:
+        aggregate["failure_count"] += 1
+    outcome = str(item.get("outcome") or "unknown")
+    aggregate["outcome_counts"][outcome] = aggregate["outcome_counts"].get(outcome, 0) + 1
+    if item.get("retried"):
+        aggregate["retried_count"] += 1
+    aggregate["retry_count_total"] += int(item.get("retry_count") or 0)
+    if item.get("degraded"):
+        aggregate["degraded_count"] += 1
+    if task_id and task_id not in aggregate["task_ids"]:
+        aggregate["task_ids"].append(task_id)
+    if persisted_at:
+        if not aggregate["first_seen_at"] or persisted_at < aggregate["first_seen_at"]:
+            aggregate["first_seen_at"] = persisted_at
+        if not aggregate["last_seen_at"] or persisted_at > aggregate["last_seen_at"]:
+            aggregate["last_seen_at"] = persisted_at
+
+
+def _fraction(numerator: Any, denominator: int) -> float:
+    """Return a rounded ratio for ranking inputs."""
+    if denominator <= 0:
+        return 0.0
+    return round(float(numerator or 0) / float(denominator), 4)
+
+
+def _telemetry_run_outcome(
+    *,
+    result: Mapping[str, Any],
+    workflow: Mapping[str, Any],
+    method_runs: Mapping[str, Any],
+) -> str:
+    """Normalize one task run into a stable telemetry outcome bucket."""
+    workflow_status = str(workflow.get("status") or "").strip()
+    comparison_status = str((result.get("cross_validation") or {}).get("status") or "").strip()
+    if workflow_status in {"blocked", "needs_library_work"}:
+        return workflow_status
+    if comparison_status and comparison_status != "passed":
+        return f"comparison:{comparison_status}"
+    if bool(result.get("success")):
+        return "succeeded"
+    if _telemetry_is_degraded(result=result, method_runs=method_runs):
+        return "degraded"
+    if workflow_status:
+        return workflow_status
+    return "failed"
+
+
+def _telemetry_retry_count(
+    *,
+    result: Mapping[str, Any],
+    method_runs: Mapping[str, Any],
+) -> int:
+    """Count retries beyond the initial attempt for one task run."""
+    method_retry_count = sum(
+        max(int(payload.get("attempts") or 0) - 1, 0)
+        for payload in method_runs.values()
+        if isinstance(payload, Mapping)
+    )
+    if method_retry_count:
+        return method_retry_count
+    return max(int(result.get("attempts") or 0) - 1, 0)
+
+
+def _telemetry_is_degraded(
+    *,
+    result: Mapping[str, Any],
+    method_runs: Mapping[str, Any],
+) -> bool:
+    """Report whether the run partially succeeded but did not cleanly complete."""
+    successful_methods = [
+        payload
+        for payload in method_runs.values()
+        if isinstance(payload, Mapping) and bool(payload.get("success"))
+    ]
+    failed_methods = [
+        payload
+        for payload in method_runs.values()
+        if isinstance(payload, Mapping) and not bool(payload.get("success"))
+    ]
+    comparison_status = str((result.get("cross_validation") or {}).get("status") or "").strip().lower()
+    return bool(successful_methods and failed_methods) or comparison_status == "insufficient_results"
+
+
+def _selected_artifact_observations(
+    *,
+    learning: Mapping[str, Any],
+    route_observations: list[dict[str, Any]],
+    outcome: str,
+    retry_count: int,
+    degraded: bool,
+) -> list[dict[str, Any]]:
+    """Project selected-artifact telemetry for one task run."""
+    by_audience = {
+        str(audience): [dict(item) for item in artifacts]
+        for audience, artifacts in dict(learning.get("selected_artifacts_by_audience") or {}).items()
+        if isinstance(artifacts, list)
+    }
+    route_ids = _unique_strings(
+        [[item.get("route_id")] for item in route_observations]
+    )
+    route_families = _unique_strings(
+        [[item.get("route_family")] for item in route_observations]
+    )
+
+    artifacts: dict[str, dict[str, Any]] = {}
+    for audience, items in by_audience.items():
+        for item in items:
+            artifact_id = str(item.get("id") or "").strip()
+            if not artifact_id:
+                continue
+            artifact = artifacts.setdefault(
+                artifact_id,
+                {
+                    "artifact_id": artifact_id,
+                    "title": str(item.get("title") or "").strip(),
+                    "kind": str(item.get("kind") or "").strip(),
+                    "audiences": [],
+                    "outcome": outcome,
+                    "success": outcome == "succeeded",
+                    "retried": retry_count > 0,
+                    "retry_count": retry_count,
+                    "degraded": degraded,
+                    "route_ids": list(route_ids),
+                    "route_families": list(route_families),
+                    "task_ids": [],
+                },
+            )
+            if audience not in artifact["audiences"]:
+                artifact["audiences"].append(audience)
+    return sorted(artifacts.values(), key=lambda item: item["artifact_id"])
+
+
+def _route_observations(
+    *,
+    traces: list[dict[str, Any]],
+    method_runs: Mapping[str, Any],
+    outcome: str,
+    retry_count: int,
+    degraded: bool,
+    selected_artifact_ids: list[str],
+) -> list[dict[str, Any]]:
+    """Project route-health observations from trace summaries and method runs."""
+    observations: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    for trace in traces:
+        route_health = dict(trace.get("route_health") or {})
+        metadata = dict(trace.get("request_metadata") or {})
+        semantic_blueprint = dict(metadata.get("semantic_blueprint") or {})
+        route_id = (
+            str(route_health.get("route_id") or "").strip()
+            or str(trace.get("action") or "").strip()
+            or str(semantic_blueprint.get("dsl_route") or "").strip()
+        )
+        route_family = (
+            str(route_health.get("route_family") or "").strip()
+            or str(trace.get("route_method") or "").strip()
+            or str(semantic_blueprint.get("dsl_route_family") or "").strip()
+        )
+        trace_kind = str(trace.get("trace_kind") or "").strip()
+        if not route_id and not route_family:
+            continue
+        key = (route_id, route_family, trace_kind)
+        if key in seen:
+            continue
+        seen.add(key)
+        instruction_resolution = dict(trace.get("instruction_resolution") or {})
+        instruction_ids = [
+            str(item.get("id") or "").strip()
+            for item in instruction_resolution.get("effective_instructions") or []
+            if str(item.get("id") or "").strip()
+        ]
+        instruction_ids.extend(
+            [
+                value
+                for value in route_health.get("effective_instruction_ids") or []
+                if isinstance(value, str) and value.strip() and value not in instruction_ids
+            ]
+        )
+        effective_instruction_count = int(
+            route_health.get("effective_instruction_count")
+            or trace.get("instruction_resolution_effective_count")
+            or len(instruction_ids)
+        )
+        hard_constraint_count = int(route_health.get("hard_constraint_count") or 0)
+        conflict_count = int(
+            route_health.get("conflict_count")
+            or trace.get("instruction_resolution_conflict_count")
+            or 0
+        )
+        observations.append(
+            {
+                "route_id": route_id,
+                "route_family": route_family,
+                "trace_kind": trace_kind or "unknown",
+                "trace_status": str(trace.get("status") or "").strip(),
+                "outcome": outcome,
+                "success": outcome == "succeeded",
+                "retried": retry_count > 0,
+                "retry_count": retry_count,
+                "degraded": degraded,
+                "selected_artifact_ids": list(selected_artifact_ids),
+                "instruction_ids": instruction_ids,
+                "effective_instruction_count": effective_instruction_count,
+                "hard_constraint_count": hard_constraint_count,
+                "conflict_count": conflict_count,
+                "task_ids": list(route_health.get("canary_task_ids") or []),
+            }
+        )
+
+    for payload in method_runs.values():
+        if not isinstance(payload, Mapping):
+            continue
+        route_family = str(payload.get("route_method") or "").strip()
+        if not route_family:
+            continue
+        key = ("", route_family, "method_run")
+        if key in seen:
+            continue
+        seen.add(key)
+        observations.append(
+            {
+                "route_id": "",
+                "route_family": route_family,
+                "trace_kind": "method_run",
+                "trace_status": "ok" if bool(payload.get("success")) else "error",
+                "outcome": outcome,
+                "success": outcome == "succeeded",
+                "retried": retry_count > 0,
+                "retry_count": retry_count,
+                "degraded": degraded,
+                "selected_artifact_ids": list(selected_artifact_ids),
+                "instruction_ids": [],
+                "effective_instruction_count": 0,
+                "hard_constraint_count": 0,
+                "conflict_count": 0,
+                "task_ids": [],
+            }
+        )
+
+    return observations
 
 
 def _post_build_snapshot(tracking: Mapping[str, Any] | None) -> dict[str, Any]:

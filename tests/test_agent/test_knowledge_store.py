@@ -58,6 +58,24 @@ class TestKnowledgeStore:
         assert "delta_space_interpolation" in expanded
         assert "callable" in expanded
 
+    def test_find_similar_products_ranks_callable_bond_for_cold_start_rate_tree_note(self):
+        from trellis.agent.knowledge import get_store
+        from trellis.agent.knowledge.schema import RetrievalSpec
+
+        store = get_store()
+        matches = store.find_similar_products(
+            RetrievalSpec(
+                method="rate_tree",
+                features=["callable", "fixed_coupons", "mean_reversion"],
+                instrument="callable_range_note",
+            )
+        )
+
+        assert matches
+        assert matches[0].instrument == "callable_bond"
+        assert "callable" in matches[0].shared_features
+        assert matches[0].promoted_routes
+
     def test_retrieve_callable_bond(self):
         from trellis.agent.knowledge import retrieve_for_task
         k = retrieve_for_task(
@@ -254,9 +272,8 @@ class TestKnowledgeStore:
                 "spot",
             },
             reusable_primitives=(
-                "black76_asset_or_nothing_call",
-                "black76_cash_or_nothing_call",
-                "terminal_vanilla_from_basis",
+                "ResolvedGarmanKohlhagenInputs",
+                "garman_kohlhagen_price_raw",
             ),
             supported=True,
             preferred_method="analytical",
@@ -264,16 +281,83 @@ class TestKnowledgeStore:
         k = retrieve_for_product_ir(ir, preferred_method="analytical")
 
         assert k["cookbook"] is not None
-        assert "terminal_vanilla_from_basis" in k["cookbook"].template
+        assert "garman_kohlhagen_price_raw" in k["cookbook"].template
         assert k["data_contracts"]
         contract_names = {contract.name for contract in k["data_contracts"]}
         assert "FX_DOMESTIC_FOREIGN_DISCOUNTING" in contract_names
         assert k["method_requirements"] is not None
         requirements_text = "\n".join(k["method_requirements"].requirements)
         assert "GARMAN-KOHLHAGEN" in requirements_text
-        assert "Black76 asset-or-nothing" in requirements_text or "Black76 asset-or-nothing" in k["cookbook"].template
+        assert "resolved inputs" in requirements_text
+        assert "garman_kohlhagen_price_raw" in k["cookbook"].template
         assert "fx_rates" in requirements_text
         assert "forward_curve" in requirements_text
+
+    def test_retrieve_swaption_ir_includes_helper_backed_black76_guidance(self):
+        from trellis.agent.knowledge import retrieve_for_product_ir
+        from trellis.agent.knowledge.decompose import build_product_ir
+
+        ir = build_product_ir(
+            description="European payer swaption on USD 5Y swap",
+            instrument="swaption",
+            payoff_family="swaption",
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            schedule_dependence=True,
+            model_family="interest_rate",
+            candidate_engine_families=("analytical", "rate_tree"),
+            required_market_data={"discount_curve", "black_vol_surface", "forward_curve"},
+            reusable_primitives=(
+                "ResolvedSwaptionBlack76Inputs",
+                "resolve_swaption_black76_inputs",
+                "price_swaption_black76_raw",
+            ),
+            supported=True,
+            preferred_method="analytical",
+        )
+        k = retrieve_for_product_ir(ir, preferred_method="analytical")
+
+        assert k["cookbook"] is not None
+        assert "ResolvedSwaptionBlack76Inputs" in k["cookbook"].template
+        assert "resolve_swaption_black76_inputs" in k["cookbook"].template
+        assert "price_swaption_black76_raw" in k["cookbook"].template
+        assert k["method_requirements"] is not None
+        requirements_text = "\n".join(k["method_requirements"].requirements)
+        assert "RATE-STYLE SWAPTION HELPER CONTRACT" in requirements_text
+        assert "price_swaption_black76_raw" in requirements_text
+
+    def test_retrieve_zcb_option_ir_includes_jamshidian_raw_guidance(self):
+        from trellis.agent.knowledge import retrieve_for_product_ir
+        from trellis.agent.knowledge.decompose import build_product_ir
+
+        ir = build_product_ir(
+            description="European call on a zero-coupon bond under Hull-White / Jamshidian",
+            instrument="zcb_option",
+            payoff_family="zcb_option",
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            schedule_dependence=True,
+            model_family="interest_rate",
+            candidate_engine_families=("analytical", "rate_tree"),
+            required_market_data={"discount_curve", "black_vol_surface"},
+            reusable_primitives=(
+                "ResolvedJamshidianInputs",
+                "resolve_zcb_option_hw_inputs",
+                "zcb_option_hw_raw",
+            ),
+            supported=True,
+            preferred_method="analytical",
+        )
+        k = retrieve_for_product_ir(ir, preferred_method="analytical")
+
+        assert k["cookbook"] is not None
+        assert "resolve_zcb_option_hw_inputs" in k["cookbook"].template
+        assert "ResolvedJamshidianInputs" in k["cookbook"].template
+        assert "zcb_option_hw_raw" in k["cookbook"].template
+        assert k["method_requirements"] is not None
+        requirements_text = "\n".join(k["method_requirements"].requirements)
+        assert "JAMSHIDIAN ZCB OPTION CONSISTENCY" in requirements_text
+        assert "unit face" in requirements_text
 
     def test_retrieve_ranked_observation_basket_includes_semantic_basket_guidance(self):
         from trellis.agent.knowledge import retrieve_for_product_ir
@@ -498,10 +582,10 @@ class TestFormatting:
         from trellis.agent.knowledge.retrieval import build_shared_knowledge_payload
 
         product_ir = decompose_to_ir(
-            "American put option on equity",
-            instrument_type="american_option",
+            "Quanto option on SAP in USD with EUR underlier currency expiring 2025-11-15",
+            instrument_type="quanto_option",
         )
-        knowledge = retrieve_for_product_ir(product_ir, preferred_method="monte_carlo")
+        knowledge = retrieve_for_product_ir(product_ir, preferred_method="analytical")
         payload = build_shared_knowledge_payload(knowledge)
 
         assert "## Product Semantics" in payload["builder_text"]
@@ -521,6 +605,14 @@ class TestFormatting:
         assert payload["routing_text_distilled"]
         assert payload["summary"]["instrument"] == product_ir.instrument
         assert payload["summary"]["lesson_count"] >= 1
+        assert payload["summary"]["selected_artifact_ids"]
+        assert "## Generated Skills" in payload["builder_text_distilled"]
+        assert "builder" in payload["summary"]["selected_artifacts_by_audience"]
+        builder_artifact = payload["summary"]["selected_artifacts_by_audience"]["builder"][0]
+        assert "lineage_status" in builder_artifact
+        assert "lineage_summary" in builder_artifact
+        if builder_artifact["lineage_summary"]:
+            assert "lineage:" in payload["builder_text_distilled"]
         assert payload["summary"]["prompt_sizes"]["builder"]["expanded_chars"] >= (
             payload["summary"]["prompt_sizes"]["builder"]["compact_chars"]
         )
@@ -573,6 +665,31 @@ class TestFormatting:
         assert payload["summary"]["prompt_sizes"]["builder"]["expanded_chars"] > (
             payload["summary"]["prompt_sizes"]["builder"]["compact_chars"]
         )
+
+    def test_build_shared_knowledge_payload_surfaces_similar_products_and_borrowed_lessons(self):
+        from trellis.agent.knowledge import get_store
+        from trellis.agent.knowledge.retrieval import build_shared_knowledge_payload
+        from trellis.agent.knowledge.schema import RetrievalSpec
+
+        store = get_store()
+        knowledge = store.retrieve_for_task(
+            RetrievalSpec(
+                method="rate_tree",
+                features=["callable", "fixed_coupons", "mean_reversion"],
+                instrument="callable_range_note",
+                max_lessons=1,
+            )
+        )
+        payload = build_shared_knowledge_payload(knowledge)
+
+        assert knowledge["similar_products"]
+        assert knowledge["similar_products"][0].instrument == "callable_bond"
+        assert knowledge["borrowed_lessons"]
+        assert "## Similar Products" in payload["builder_text"]
+        assert "callable_bond" in payload["builder_text"]
+        assert knowledge["similar_products"][0].promoted_routes[0] in payload["builder_text"]
+        assert payload["summary"]["similar_product_ids"][0] == "callable_bond"
+        assert payload["summary"]["borrowed_lesson_ids"]
 
 
 # ---------------------------------------------------------------------------
@@ -1148,6 +1265,25 @@ class TestGapCheck:
         d = decompose("callable bond", instrument_type="callable_bond")
         report = gap_check(d)
         assert len(report.retrieved_lesson_ids) >= 3
+
+    def test_gap_warnings_include_similar_products_for_cold_start(self):
+        from trellis.agent.knowledge.gap_check import format_gap_warnings, gap_check
+        from trellis.agent.knowledge.schema import ProductDecomposition
+
+        report = gap_check(
+            ProductDecomposition(
+                instrument="callable_range_note",
+                features=("callable", "fixed_coupons", "mean_reversion"),
+                method="rate_tree",
+                learned=True,
+            )
+        )
+
+        assert report.similar_products
+        text = format_gap_warnings(report)
+        assert "Similar Products" in text
+        assert "callable_bond" in text
+        assert report.similar_products[0].promoted_routes[0] in text
 
 
 # ---------------------------------------------------------------------------

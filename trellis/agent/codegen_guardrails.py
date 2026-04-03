@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import ast
+import importlib
+import inspect
 import re
 import textwrap
 from dataclasses import dataclass, replace
 
 from trellis.agent.blocker_planning import BlockerReport, plan_blockers, render_blocker_report
+from trellis.agent.lane_obligations import compile_fallback_lane_construction_plan
 from trellis.agent.knowledge.instructions import resolve_instruction_records
 from trellis.agent.knowledge.schema import (
     InstructionRecord,
@@ -94,6 +97,15 @@ METHOD_TEST_TARGETS = {
 }
 
 FAMILY_SUPPORT_MODULES = {
+    "callable_bond": (
+        "trellis.models.callable_bond_tree",
+    ),
+    "puttable_bond": (
+        "trellis.models.callable_bond_tree",
+    ),
+    "bermudan_swaption": (
+        "trellis.models.bermudan_swaption_tree",
+    ),
     "quanto_option": (
         "trellis.models.resolution.quanto",
         "trellis.models.analytical.quanto",
@@ -120,6 +132,7 @@ INSTRUMENT_TEST_TARGETS = {
     "swaption": ("tests/test_agent/test_swaption_demo.py",),
     "bermudan_swaption": ("tests/test_tasks/test_t04_bermudan_swaption.py",),
     "callable_bond": ("tests/test_agent/test_callable_bond.py",),
+    "puttable_bond": ("tests/test_tasks/test_t05_puttable_bond.py",),
 }
 
 _GENERATION_PLAN_CACHE: dict[tuple[object, ...], "GenerationPlan"] = {}
@@ -171,6 +184,34 @@ class GenerationPlan:
     package_map: PackageMap | None = None
     test_map: TestMap | None = None
     resolved_instructions: ResolvedInstructionSet | None = None
+    semantic_contract_id: str = ""
+    semantic_requested_instrument_type: str = ""
+    semantic_compatibility_bridge_status: str = ""
+    semantic_matched_wrapper: str = ""
+    semantic_instrument_class: str = ""
+    semantic_payoff_family: str = ""
+    semantic_underlier_structure: str = ""
+    valuation_market_source: str = ""
+    valuation_reporting_currency: str = ""
+    valuation_requested_outputs: tuple[str, ...] = ()
+    lane_family: str = ""
+    lane_plan_kind: str = ""
+    lane_timeline_roles: tuple[str, ...] = ()
+    lane_market_requirements: tuple[str, ...] = ()
+    lane_state_obligations: tuple[str, ...] = ()
+    lane_control_obligations: tuple[str, ...] = ()
+    lane_construction_steps: tuple[str, ...] = ()
+    lane_reusable_primitives: tuple[str, ...] = ()
+    lane_exact_binding_refs: tuple[str, ...] = ()
+    lane_unresolved_primitives: tuple[str, ...] = ()
+    lowering_route_id: str = ""
+    lowering_expr_kind: str = ""
+    lowering_family_ir_type: str = ""
+    lowering_helper_refs: tuple[str, ...] = ()
+    validation_bundle_id: str = ""
+    validation_check_ids: tuple[str, ...] = ()
+    validation_residual_risks: tuple[str, ...] = ()
+    route_binding_authority: object | None = None
 
 
 @dataclass(frozen=True)
@@ -302,6 +343,13 @@ def build_generation_plan(
             blocker_report,
             product_ir=product_ir,
         )
+    lane_plan = compile_fallback_lane_construction_plan(
+        preferred_method=method,
+        required_market_data=tuple(sorted(getattr(pricing_plan, "required_market_data", ()) or ())),
+        primitive_plan=primitive_plan,
+        product_ir=product_ir,
+        instrument_type=instrument_type,
+    )
 
     plan = GenerationPlan(
         method=method,
@@ -318,6 +366,20 @@ def build_generation_plan(
         symbol_map=symbol_map,
         package_map=package_map,
         test_map=test_map,
+        lane_family=str(getattr(lane_plan, "lane_family", "") or ""),
+        lane_plan_kind=str(getattr(lane_plan, "plan_kind", "") or ""),
+        lane_timeline_roles=tuple(getattr(lane_plan, "timeline_roles", ()) or ()),
+        lane_market_requirements=tuple(getattr(lane_plan, "market_requirements", ()) or ()),
+        lane_state_obligations=tuple(getattr(lane_plan, "state_obligations", ()) or ()),
+        lane_control_obligations=tuple(getattr(lane_plan, "control_obligations", ()) or ()),
+        lane_construction_steps=tuple(getattr(lane_plan, "construction_steps", ()) or ()),
+        lane_reusable_primitives=tuple(
+            str(getattr(binding, "primitive_ref", "") or "")
+            for binding in (getattr(lane_plan, "reusable_bindings", ()) or ())
+            if str(getattr(binding, "primitive_ref", "") or "").strip()
+        ),
+        lane_exact_binding_refs=tuple(getattr(lane_plan, "exact_target_refs", ()) or ()),
+        lane_unresolved_primitives=tuple(getattr(lane_plan, "unresolved_primitives", ()) or ()),
     )
     plan = replace(
         plan,
@@ -372,6 +434,194 @@ def _generation_plan_cache_key(
     )
 
 
+def _render_lane_obligation_lines(plan: GenerationPlan, *, compact: bool) -> list[str]:
+    """Render compiler-emitted lane obligations ahead of route-local details."""
+    if not plan.lane_family:
+        return []
+
+    lines = [
+        "- Lane obligations:",
+        f"  - Lane family: `{plan.lane_family}`",
+    ]
+    if plan.lane_plan_kind:
+        lines.append(f"  - Plan kind: `{plan.lane_plan_kind}`")
+    if plan.lane_timeline_roles:
+        roles = ", ".join(f"`{role}`" for role in plan.lane_timeline_roles[: (4 if compact else 8)])
+        lines.append(f"  - Timeline roles: {roles}")
+    if plan.lane_market_requirements:
+        reqs = ", ".join(
+            f"`{item}`" for item in plan.lane_market_requirements[: (4 if compact else 8)]
+        )
+        lines.append(f"  - Market bindings: {reqs}")
+    if plan.lane_control_obligations:
+        controls = ", ".join(
+            f"`{item}`" for item in plan.lane_control_obligations[: (3 if compact else 6)]
+        )
+        lines.append(f"  - Control semantics: {controls}")
+    if plan.lane_state_obligations:
+        states = ", ".join(
+            f"`{item}`" for item in plan.lane_state_obligations[: (4 if compact else 8)]
+        )
+        lines.append(f"  - State obligations: {states}")
+    if plan.lane_construction_steps:
+        lines.append("  - Construction steps:")
+        lines.extend(
+            f"    - {step}"
+            for step in plan.lane_construction_steps[: (3 if compact else 6)]
+        )
+    if plan.lane_reusable_primitives:
+        label = "Exact backend bindings" if plan.lane_exact_binding_refs else "Reusable primitives"
+        lines.append(f"  - {label}:")
+        lines.extend(
+            f"    - `{primitive}`"
+            for primitive in plan.lane_reusable_primitives[: (6 if compact else 10)]
+        )
+        signature_lines = _exact_binding_signature_lines(plan, compact=compact)
+        if signature_lines:
+            lines.append("  - Exact binding signatures:")
+            lines.extend(signature_lines)
+    if plan.lane_unresolved_primitives:
+        lines.append("  - Unresolved primitives:")
+        lines.extend(
+            f"    - `{item}`"
+            for item in plan.lane_unresolved_primitives[: (4 if compact else 8)]
+        )
+    return lines
+
+
+def _exact_binding_signature_lines(plan: GenerationPlan, *, compact: bool) -> list[str]:
+    """Render callable signatures for compiler-selected exact bindings."""
+    refs = tuple(
+        ref
+        for ref in plan.lane_exact_binding_refs[: (2 if compact else 4)]
+        if isinstance(ref, str) and ref.strip()
+    )
+    if not refs:
+        return []
+
+    lines: list[str] = []
+    for ref in refs:
+        module_name, _, symbol_name = ref.rpartition(".")
+        if not module_name or not symbol_name:
+            continue
+        if not module_exists(module_name) or not is_valid_import(module_name, symbol_name):
+            continue
+        try:
+            obj = getattr(importlib.import_module(module_name), symbol_name)
+            signature = inspect.signature(obj)
+        except Exception:
+            continue
+        lines.append(f"    - `{symbol_name}{signature}`")
+    return lines
+
+
+def _render_backend_binding_lines(plan: GenerationPlan, *, compact: bool) -> list[str]:
+    """Render route/helper bindings as a secondary backend-binding section."""
+    if plan.primitive_plan is None:
+        return []
+
+    lines = ["- Backend binding:"]
+    lines.append(f"  - Route: `{plan.primitive_plan.route}`")
+    lines.append(f"  - Engine family: `{plan.primitive_plan.engine_family}`")
+    if plan.primitive_plan.route_family:
+        lines.append(f"  - Route family: `{plan.primitive_plan.route_family}`")
+    if not compact:
+        lines.append(f"  - Route score: `{plan.primitive_plan.score:.2f}`")
+    if plan.primitive_plan.primitives:
+        lines.append("  - Selected primitives:")
+        lines.extend(
+            f"    - `{primitive.module}.{primitive.symbol}` ({primitive.role})"
+            for primitive in plan.primitive_plan.primitives[: (8 if compact else 12)]
+        )
+    resolved_instructions = _resolve_generation_instructions(plan)
+    if resolved_instructions.effective_instructions:
+        lines.append("  - Resolved instructions:")
+        lines.extend(
+            f"    - [{instruction.instruction_type}] {instruction.statement}"
+            for instruction in resolved_instructions.effective_instructions[: (8 if compact else 12)]
+        )
+        schedule_instructions = _schedule_related_instructions(resolved_instructions)
+        if schedule_instructions:
+            lines.append("  - Schedule construction:")
+            lines.extend(
+                f"    - [{instruction.instruction_type}] {instruction.statement}"
+                for instruction in schedule_instructions[: (8 if compact else 12)]
+            )
+    if resolved_instructions.conflicts:
+        lines.append("  - Instruction conflicts:")
+        lines.extend(
+            f"    - {conflict.reason}"
+            for conflict in resolved_instructions.conflicts[: (4 if compact else 8)]
+        )
+    if plan.primitive_plan.adapters:
+        lines.append("  - Required adapters:")
+        lines.extend(
+            f"    - `{adapter}`"
+            for adapter in plan.primitive_plan.adapters[: (6 if compact else 10)]
+        )
+    if plan.primitive_plan.notes and compact:
+        lines.append("  - Backend notes:")
+        lines.extend(f"    - {note}" for note in plan.primitive_plan.notes[:4])
+    return lines
+
+
+def _render_route_authority_lines(plan: GenerationPlan, *, compact: bool) -> list[str]:
+    """Render the structured route-binding authority packet."""
+    if plan.route_binding_authority is None:
+        return []
+
+    from trellis.agent.route_registry import route_binding_authority_summary
+
+    authority = route_binding_authority_summary(plan.route_binding_authority)
+    if not authority:
+        return []
+
+    lines = ["- Route authority:"]
+    authority_bits = []
+    if authority.get("route_id"):
+        authority_bits.append(f"route=`{authority['route_id']}`")
+    if authority.get("authority_kind"):
+        authority_bits.append(f"authority=`{authority['authority_kind']}`")
+    if authority.get("engine_family"):
+        authority_bits.append(f"engine=`{authority['engine_family']}`")
+    if authority_bits:
+        lines.append(f"  - {', '.join(authority_bits)}")
+    if authority.get("validation_bundle_id"):
+        lines.append(f"  - Validation bundle: `{authority['validation_bundle_id']}`")
+    check_ids = tuple(authority.get("validation_check_ids") or ())
+    if check_ids:
+        selected = check_ids[: (4 if compact else 6)]
+        lines.append(
+            "  - Validation checks: "
+            + ", ".join(f"`{check_id}`" for check_id in selected)
+        )
+    canary_task_ids = tuple(authority.get("canary_task_ids") or ())
+    if canary_task_ids:
+        selected = ", ".join(f"`{task_id}`" for task_id in canary_task_ids[: (2 if compact else 4)])
+        lines.append(f"  - Canary coverage: canaries={selected}")
+    helper_refs = tuple(authority.get("helper_refs") or ())
+    if helper_refs:
+        selected = helper_refs[: (2 if compact else 4)]
+        lines.append(
+            "  - Helper authority: "
+            + ", ".join(f"`{helper}`" for helper in selected)
+        )
+    exact_refs = tuple(authority.get("exact_target_refs") or ())
+    if exact_refs:
+        selected = exact_refs[: (2 if compact else 4)]
+        lines.append(
+            "  - Exact target bindings: "
+            + ", ".join(f"`{ref}`" for ref in selected)
+        )
+    admissibility_failures = tuple(authority.get("admissibility_failures") or ())
+    if admissibility_failures:
+        lines.append(
+            "  - Admissibility failures: "
+            + ", ".join(f"`{failure}`" for failure in admissibility_failures[: (3 if compact else 6)])
+        )
+    return lines
+
+
 def render_generation_plan(plan: GenerationPlan) -> str:
     """Format the structured generation plan for prompt injection."""
     lines = [
@@ -379,6 +629,9 @@ def render_generation_plan(plan: GenerationPlan) -> str:
         f"- Method family: `{plan.method}`",
         f"- Instrument type: `{plan.instrument_type or 'unknown'}`",
     ]
+    lines.extend(_render_compiled_boundary_lines(plan, compact=False))
+    lines.extend(_render_lane_obligation_lines(plan, compact=False))
+    lines.extend(_render_route_authority_lines(plan, compact=False))
     if plan.repo_revision:
         lines.append(f"- Repo revision: `{plan.repo_revision}`")
     lines.append("- Inspected modules:")
@@ -386,8 +639,9 @@ def render_generation_plan(plan: GenerationPlan) -> str:
     lines.append("- Approved Trellis modules for imports:")
     lines.extend(f"  - `{module}`" for module in plan.approved_modules)
     if plan.symbols_to_reuse:
+        symbol_limit = 24 if plan.lane_family else 80
         lines.append("- Public symbols available from the approved modules:")
-        lines.extend(f"  - `{symbol}`" for symbol in plan.symbols_to_reuse[:80])
+        lines.extend(f"  - `{symbol}`" for symbol in plan.symbols_to_reuse[:symbol_limit])
     if plan.proposed_tests:
         lines.append("- Tests to run after generation:")
         lines.extend(f"  - `{target}`" for target in plan.proposed_tests)
@@ -401,45 +655,11 @@ def render_generation_plan(plan: GenerationPlan) -> str:
             lines.append("- Likely tests for reused symbols:")
             lines.extend(likely_test_lines)
     if plan.primitive_plan is not None:
-        lines.append("- Primitive route:")
-        lines.append(f"  - Route: `{plan.primitive_plan.route}`")
-        lines.append(f"  - Engine family: `{plan.primitive_plan.engine_family}`")
-        if plan.primitive_plan.route_family:
-            lines.append(f"  - Route family: `{plan.primitive_plan.route_family}`")
-        lines.append(f"  - Route score: `{plan.primitive_plan.score:.2f}`")
-        if plan.primitive_plan.primitives:
-            lines.append("  - Selected primitives:")
-            lines.extend(
-                f"    - `{primitive.module}.{primitive.symbol}` ({primitive.role})"
-                for primitive in plan.primitive_plan.primitives
-            )
-        resolved_instructions = _resolve_generation_instructions(plan)
-        if resolved_instructions.effective_instructions:
-            lines.append("  - Resolved instructions:")
-            lines.extend(
-                f"    - [{instruction.instruction_type}] {instruction.statement}"
-                for instruction in resolved_instructions.effective_instructions
-            )
-            schedule_instructions = _schedule_related_instructions(resolved_instructions)
-            if schedule_instructions:
-                lines.append("  - Schedule construction:")
-                lines.extend(
-                    f"    - [{instruction.instruction_type}] {instruction.statement}"
-                    for instruction in schedule_instructions
-                )
-        if resolved_instructions.conflicts:
-            lines.append("  - Instruction conflicts:")
-            lines.extend(
-                f"    - {conflict.reason}"
-                for conflict in resolved_instructions.conflicts
-            )
-        if plan.primitive_plan.adapters:
-            lines.append("  - Required adapters:")
-            lines.extend(f"    - `{adapter}`" for adapter in plan.primitive_plan.adapters)
+        lines.extend(_render_backend_binding_lines(plan, compact=False))
         lines.append(
-            "  - Instruction precedence: follow the approved modules, primitives, "
-            "and route helper in this plan. If older guidance conflicts, treat it "
-            "as stale and obey this plan."
+            "  - Instruction precedence: follow the compiler-emitted lane obligations first, "
+            "then satisfy the exact backend binding and approved imports. If older guidance "
+            "conflicts, treat it as stale and obey this plan."
         )
         if plan.blocker_report is not None:
             lines.append("  - Blockers:")
@@ -467,44 +687,15 @@ def render_generation_plan(plan: GenerationPlan) -> str:
 def render_generation_route_card(plan: GenerationPlan) -> str:
     """Render a compact route card for token-efficient first-pass prompting."""
     lines = [
-        "## Structured Route Card",
+        "## Structured Lane Card",
         f"- Method family: `{plan.method}`",
         f"- Instrument type: `{plan.instrument_type or 'unknown'}`",
     ]
+    lines.extend(_render_compiled_boundary_lines(plan, compact=True))
+    lines.extend(_render_lane_obligation_lines(plan, compact=True))
+    lines.extend(_render_route_authority_lines(plan, compact=True))
     if plan.primitive_plan is not None:
-        lines.append(f"- Route: `{plan.primitive_plan.route}`")
-        lines.append(f"- Engine family: `{plan.primitive_plan.engine_family}`")
-        if plan.primitive_plan.route_family:
-            lines.append(f"- Route family: `{plan.primitive_plan.route_family}`")
-        if plan.primitive_plan.primitives:
-            lines.append("- Required primitives:")
-            lines.extend(
-                f"  - `{primitive.module}.{primitive.symbol}` ({primitive.role})"
-                for primitive in plan.primitive_plan.primitives[:8]
-            )
-        resolved_instructions = _resolve_generation_instructions(plan)
-        if resolved_instructions.effective_instructions:
-            lines.append("- Resolved instructions:")
-            lines.extend(
-                f"  - [{instruction.instruction_type}] {instruction.statement}"
-                for instruction in resolved_instructions.effective_instructions[:8]
-            )
-            schedule_instructions = _schedule_related_instructions(resolved_instructions)
-            if schedule_instructions:
-                lines.append("- Schedule construction:")
-                lines.extend(
-                    f"  - [{instruction.instruction_type}] {instruction.statement}"
-                    for instruction in schedule_instructions[:8]
-                )
-        if resolved_instructions.conflicts:
-            lines.append("- Instruction conflicts:")
-            lines.extend(
-                f"  - {conflict.reason}"
-                for conflict in resolved_instructions.conflicts[:4]
-            )
-        if plan.primitive_plan.adapters:
-            lines.append("- Required adapters:")
-            lines.extend(f"  - `{adapter}`" for adapter in plan.primitive_plan.adapters[:6])
+        lines.extend(_render_backend_binding_lines(plan, compact=True))
     if plan.inspected_modules:
         lines.append("- Primary modules to inspect/reuse:")
         lines.extend(f"  - `{module}`" for module in plan.inspected_modules[:6])
@@ -512,12 +703,36 @@ def render_generation_route_card(plan: GenerationPlan) -> str:
         lines.append("- Post-build test targets:")
         lines.extend(f"  - `{target}`" for target in plan.proposed_tests[:4])
     lines.append(
-        "- Instruction precedence: follow the approved modules, primitives, and "
-        "route helper in this card. If older guidance conflicts, treat it as "
-        "stale and obey this plan."
+        "- Instruction precedence: follow the lane obligations in this card first. "
+        "Treat backend route/helper details as exact-fit bindings, not as permission "
+        "to invent a different numerical path."
     )
     lines.append(
-        "- Use approved Trellis imports only. Prefer thin adapters over bespoke numerical kernels."
+        "- Treat route authority as backend-fit evidence, not as permission to invent a different synthesis plan."
+    )
+    lines.append(
+        "- Use approved Trellis imports only. Prefer thin adapters when the compiler found an exact backend; otherwise build the smallest lane-consistent kernel the plan requires."
+    )
+    return "\n".join(lines)
+
+
+def render_review_contract_card(plan: GenerationPlan) -> str:
+    """Render the compact compiled route contract for reviewer prompts."""
+    lines = [
+        "## Compiled Route Contract",
+        f"- Method family: `{plan.method}`",
+        f"- Instrument type: `{plan.instrument_type or 'unknown'}`",
+    ]
+    lines.extend(_render_compiled_boundary_lines(plan, compact=True))
+    lines.extend(_render_lane_obligation_lines(plan, compact=True))
+    lines.extend(_render_route_authority_lines(plan, compact=True))
+    if plan.primitive_plan is not None:
+        lines.extend(_render_backend_binding_lines(plan, compact=True))
+    if plan.approved_modules:
+        lines.append("- Approved modules in scope:")
+        lines.extend(f"  - `{module}`" for module in plan.approved_modules[:8])
+    lines.append(
+        "- Review the generated code against this compiled boundary. Treat route, helper, or validation drift as real findings."
     )
     return "\n".join(lines)
 
@@ -573,11 +788,15 @@ def _build_instruction_records(plan: GenerationPlan) -> tuple[InstructionRecord,
             )
         )
 
-    needs_schedule_builder = any(
-        primitive.role == "schedule_builder" or primitive.symbol == "generate_schedule"
-        for primitive in primitive_plan.primitives
+    schedule_builder = next(
+        (
+            primitive
+            for primitive in primitive_plan.primitives
+            if primitive.role == "schedule_builder" or primitive.symbol == "generate_schedule"
+        ),
+        None,
     )
-    if needs_schedule_builder:
+    if schedule_builder is not None:
         records.append(
             InstructionRecord(
                 id=f"{route}:schedule-builder",
@@ -588,9 +807,12 @@ def _build_instruction_records(plan: GenerationPlan) -> tuple[InstructionRecord,
                 scope_methods=route_scope_methods,
                 scope_instruments=route_scope_instruments,
                 scope_routes=route_scope_routes,
-                scope_modules=("trellis.core.date_utils",),
+                scope_modules=(schedule_builder.module,),
                 precedence_rank=90,
-                statement="Use `trellis.core.date_utils.generate_schedule` to build ordered dates before pricing.",
+                statement=(
+                    f"Use `{schedule_builder.module}.{schedule_builder.symbol}` "
+                    "to build the route schedule before pricing."
+                ),
                 rationale="Schedule construction is a shared route capability, not payoff-body glue.",
             )
         )
@@ -667,6 +889,7 @@ def render_semantic_repair_card(plan: GenerationPlan) -> str:
         f"- Method family: `{plan.method}`",
         f"- Instrument type: `{plan.instrument_type or 'unknown'}`",
     ]
+    lines.extend(_render_compiled_boundary_lines(plan, compact=True))
     if plan.primitive_plan is not None:
         lines.append(f"- Route: `{plan.primitive_plan.route}`")
         lines.append(f"- Engine family: `{plan.primitive_plan.engine_family}`")
@@ -690,6 +913,228 @@ def render_semantic_repair_card(plan: GenerationPlan) -> str:
     lines.append("- Match the product semantics, required primitives, and approved imports exactly.")
     lines.append("- Return the complete module again, not only an evaluate-body fragment, patch, or diff.")
     return "\n".join(lines)
+
+
+def enrich_generation_plan(
+    plan: GenerationPlan,
+    *,
+    request=None,
+    semantic_blueprint=None,
+    validation_contract=None,
+) -> GenerationPlan:
+    """Attach semantic, lowering, and validation summaries for prompt rendering."""
+    from trellis.agent.route_registry import compile_route_binding_authority
+
+    semantic_contract = getattr(semantic_blueprint, "contract", None)
+    product = getattr(semantic_contract, "product", None)
+    valuation_context = getattr(semantic_blueprint, "valuation_context", None)
+    lowering = getattr(semantic_blueprint, "dsl_lowering", None)
+    lane_plan = getattr(semantic_blueprint, "lane_plan", None)
+    semantic_id = str(getattr(semantic_blueprint, "semantic_id", "") or "")
+    requested_instrument_type = str(getattr(request, "instrument_type", "") or "")
+    matched_wrapper, bridge_status = _semantic_bridge_metadata(
+        semantic_id=semantic_id,
+        requested_instrument_type=requested_instrument_type,
+    )
+
+    enriched_plan = replace(
+        plan,
+        semantic_contract_id=semantic_id,
+        semantic_requested_instrument_type=requested_instrument_type,
+        semantic_compatibility_bridge_status=bridge_status,
+        semantic_matched_wrapper=matched_wrapper,
+        semantic_instrument_class=str(getattr(product, "instrument_class", "") or ""),
+        semantic_payoff_family=str(getattr(product, "payoff_family", "") or ""),
+        semantic_underlier_structure=str(getattr(product, "underlier_structure", "") or ""),
+        valuation_market_source=str(getattr(valuation_context, "market_source", "") or ""),
+        valuation_reporting_currency=str(
+            getattr(getattr(valuation_context, "reporting_policy", None), "reporting_currency", "") or ""
+        ),
+        valuation_requested_outputs=tuple(getattr(semantic_blueprint, "requested_outputs", ()) or ()),
+        lane_family=str(getattr(lane_plan, "lane_family", "") or ""),
+        lane_plan_kind=str(getattr(lane_plan, "plan_kind", "") or ""),
+        lane_timeline_roles=tuple(getattr(lane_plan, "timeline_roles", ()) or ()),
+        lane_market_requirements=tuple(getattr(lane_plan, "market_requirements", ()) or ()),
+        lane_state_obligations=tuple(getattr(lane_plan, "state_obligations", ()) or ()),
+        lane_control_obligations=tuple(getattr(lane_plan, "control_obligations", ()) or ()),
+        lane_construction_steps=tuple(getattr(lane_plan, "construction_steps", ()) or ()),
+        lane_reusable_primitives=tuple(
+            str(getattr(binding, "primitive_ref", "") or "")
+            for binding in (getattr(lane_plan, "reusable_bindings", ()) or ())
+            if str(getattr(binding, "primitive_ref", "") or "").strip()
+        ),
+        lane_exact_binding_refs=tuple(getattr(lane_plan, "exact_target_refs", ()) or ()),
+        lane_unresolved_primitives=tuple(getattr(lane_plan, "unresolved_primitives", ()) or ()),
+        lowering_route_id=str(getattr(lowering, "route_id", "") or ""),
+        lowering_expr_kind=(
+            "" if lowering is None or getattr(lowering, "normalized_expr", None) is None
+            else type(lowering.normalized_expr).__name__
+        ),
+        lowering_family_ir_type=(
+            "" if lowering is None or getattr(lowering, "family_ir", None) is None
+            else type(lowering.family_ir).__name__
+        ),
+        lowering_helper_refs=tuple(getattr(lowering, "helper_refs", ()) or ()),
+        validation_bundle_id=str(getattr(validation_contract, "bundle_id", "") or ""),
+        validation_check_ids=tuple(
+            str(check.check_id)
+            for check in (getattr(validation_contract, "deterministic_checks", ()) or ())
+        ),
+        validation_residual_risks=tuple(
+            str(risk) for risk in (getattr(validation_contract, "residual_risks", ()) or ())
+        ),
+    )
+    return replace(
+        enriched_plan,
+        route_binding_authority=compile_route_binding_authority(
+            generation_plan=enriched_plan,
+            validation_contract=validation_contract,
+            semantic_blueprint=semantic_blueprint,
+            product_ir=getattr(semantic_blueprint, "product_ir", None),
+            request=request,
+        ),
+    )
+
+
+def _semantic_bridge_metadata(
+    *,
+    semantic_id: str,
+    requested_instrument_type: str,
+) -> tuple[str, str]:
+    """Return matched wrapper and compatibility bridge status for prompt rendering."""
+    normalized_request = _normalize_semantic_label(requested_instrument_type)
+    normalized_semantic = _normalize_semantic_label(semantic_id)
+    if not normalized_request:
+        return "", "implicit_semantic_request"
+    if normalized_request == normalized_semantic:
+        return "", "canonical_semantic"
+
+    wrappers = set()
+    if normalized_semantic:
+        try:
+            from trellis.agent.semantic_concepts import get_semantic_concept_definition
+
+            concept = get_semantic_concept_definition(normalized_semantic)
+            wrappers = {
+                _normalize_semantic_label(item)
+                for item in getattr(concept, "compatibility_wrappers", ()) or ()
+                if _normalize_semantic_label(item)
+            }
+        except Exception:
+            wrappers = set()
+
+    if normalized_request in wrappers:
+        return requested_instrument_type, "thin_compatibility_wrapper"
+    return "", "request_alias"
+
+
+def _normalize_semantic_label(value: object) -> str:
+    """Normalize semantic labels for wrapper-status comparisons."""
+    return str(value or "").strip().lower().replace(" ", "_")
+
+
+def _render_compiled_boundary_lines(plan: GenerationPlan, *, compact: bool) -> list[str]:
+    """Render semantic/valuation/lowering/validation summaries for prompts."""
+    lines: list[str] = []
+    if plan.semantic_contract_id:
+        semantic_bits = [
+            f"`{plan.semantic_contract_id}`",
+        ]
+        if plan.semantic_requested_instrument_type:
+            semantic_bits.append(f"request=`{plan.semantic_requested_instrument_type}`")
+        if plan.semantic_compatibility_bridge_status:
+            semantic_bits.append(
+                f"bridge=`{plan.semantic_compatibility_bridge_status}`"
+            )
+        if plan.semantic_matched_wrapper:
+            semantic_bits.append(f"wrapper=`{plan.semantic_matched_wrapper}`")
+        if plan.semantic_instrument_class:
+            semantic_bits.append(f"instrument=`{plan.semantic_instrument_class}`")
+        if plan.semantic_payoff_family:
+            semantic_bits.append(f"payoff=`{plan.semantic_payoff_family}`")
+        if plan.semantic_underlier_structure:
+            semantic_bits.append(f"structure=`{plan.semantic_underlier_structure}`")
+        lines.append(f"- Semantic contract: {', '.join(semantic_bits)}")
+
+    valuation_bits: list[str] = []
+    if plan.valuation_market_source:
+        valuation_bits.append(f"market_source=`{plan.valuation_market_source}`")
+    if plan.valuation_reporting_currency:
+        valuation_bits.append(f"reporting=`{plan.valuation_reporting_currency}`")
+    if plan.valuation_requested_outputs:
+        valuation_bits.append(
+            "outputs=" + ", ".join(f"`{output}`" for output in plan.valuation_requested_outputs[:6])
+        )
+    if valuation_bits:
+        lines.append(f"- Valuation context: {', '.join(valuation_bits)}")
+
+    lane_bits: list[str] = []
+    if plan.lane_family:
+        lane_bits.append(f"family=`{plan.lane_family}`")
+    if plan.lane_plan_kind:
+        lane_bits.append(f"kind=`{plan.lane_plan_kind}`")
+    if plan.lane_timeline_roles:
+        lane_bits.append(
+            "timeline_roles=" + ", ".join(f"`{role}`" for role in plan.lane_timeline_roles[: (3 if compact else 6)])
+        )
+    if plan.lane_exact_binding_refs:
+        refs = ", ".join(
+            f"`{ref}`" for ref in plan.lane_exact_binding_refs[: (2 if compact else 4)]
+        )
+        lane_bits.append(f"exact_bindings={refs}")
+    elif plan.lane_reusable_primitives:
+        refs = ", ".join(
+            f"`{ref}`" for ref in plan.lane_reusable_primitives[: (2 if compact else 4)]
+        )
+        lane_bits.append(f"primitives={refs}")
+    if plan.lane_unresolved_primitives:
+        unresolved = ", ".join(
+            f"`{item}`" for item in plan.lane_unresolved_primitives[: (2 if compact else 4)]
+        )
+        lane_bits.append(f"unresolved={unresolved}")
+    if lane_bits:
+        lines.append(f"- Lane boundary: {', '.join(lane_bits)}")
+
+    lowering_bits: list[str] = []
+    if plan.lowering_route_id:
+        lowering_bits.append(f"route=`{plan.lowering_route_id}`")
+    if plan.lowering_expr_kind:
+        lowering_bits.append(f"expr=`{plan.lowering_expr_kind}`")
+    if plan.lowering_family_ir_type:
+        lowering_bits.append(f"family_ir=`{plan.lowering_family_ir_type}`")
+    if plan.lowering_helper_refs:
+        helper_limit = 2 if compact else 4
+        helper_refs = ", ".join(
+            f"`{helper}`" for helper in plan.lowering_helper_refs[:helper_limit]
+        )
+        lowering_bits.append(f"helpers={helper_refs}")
+    if lowering_bits:
+        lines.append(f"- Lowering boundary: {', '.join(lowering_bits)}")
+
+    validation_bits: list[str] = []
+    if plan.validation_bundle_id:
+        validation_bits.append(f"bundle=`{plan.validation_bundle_id}`")
+    if plan.validation_check_ids:
+        if compact and len(plan.validation_check_ids) > 4:
+            selected_checks = tuple(
+                dict.fromkeys(
+                    (
+                        *plan.validation_check_ids[:2],
+                        *plan.validation_check_ids[-2:],
+                    )
+                )
+            )
+        else:
+            selected_checks = plan.validation_check_ids[: (4 if compact else 6)]
+        checks = ", ".join(f"`{check}`" for check in selected_checks)
+        validation_bits.append(f"checks={checks}")
+    if plan.validation_residual_risks:
+        risk_limit = 2 if compact else 4
+        risks = ", ".join(f"`{risk}`" for risk in plan.validation_residual_risks[:risk_limit])
+        validation_bits.append(f"residual_risks={risks}")
+    if validation_bits:
+        lines.append(f"- Validation contract: {', '.join(validation_bits)}")
+    return lines
 
 
 def extract_trellis_imports(source: str) -> tuple[ImportReference, ...]:
@@ -1091,4 +1536,3 @@ def _route_score(
 
     score -= len(blockers) * 6.0
     return score
-

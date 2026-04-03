@@ -1,8 +1,8 @@
 category: volatility
 title: Missing vol source in analytic path
 severity: high
-status: candidate
-confidence: 0.5
+status: validated
+confidence: 0.6
 created: '2026-04-01T11:13:13.341270'
 version: ''
 source_trace: null

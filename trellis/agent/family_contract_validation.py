@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import trellis.core.capabilities as capability_registry
+
 from trellis.agent.family_contracts import FamilyContract, parse_family_contract
 from trellis.agent.knowledge.methods import is_known_method
 from trellis.agent.sensitivity_support import support_for_method
-from trellis.core.capabilities import MARKET_DATA
 
 
-_KNOWN_CAPABILITIES = frozenset(cap.name for cap in MARKET_DATA)
+_KNOWN_CAPABILITIES = frozenset(cap.name for cap in capability_registry.MARKET_DATA)
 _ALLOWED_PROVENANCE = frozenset({"observed", "derived", "estimated", "user_supplied"})
 _ALLOWED_SUPPORT_LEVELS = frozenset({"unsupported", "experimental", "bump_only", "native"})
 

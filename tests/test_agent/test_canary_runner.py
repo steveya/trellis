@@ -221,6 +221,36 @@ class TestCanaryFileValidity:
         for c in canaries:
             assert c["id"] in task_ids, f"Canary {c['id']} not found in TASKS.yaml"
 
+    def test_real_canary_file_pins_migrated_semantic_routes(self):
+        from trellis.agent.task_runtime import task_to_instrument_type
+
+        real_path = ROOT / "CANARY_TASKS.yaml"
+        tasks_path = ROOT / "TASKS.yaml"
+        if not real_path.exists() or not tasks_path.exists():
+            pytest.skip("CANARY_TASKS.yaml or TASKS.yaml not found")
+
+        canaries, _ = load_canary_set(real_path)
+        tasks = yaml.safe_load(tasks_path.read_text())
+        task_lookup = {task["id"]: task for task in tasks}
+        canary_lookup = {canary["id"]: canary for canary in canaries}
+
+        expected_ids = {"T02", "T13", "T73", "T105"}
+        assert expected_ids <= set(canary_lookup)
+
+        instrument_types = {
+            task_to_instrument_type(task_lookup[task_id])
+            for task_id in expected_ids
+        }
+        assert instrument_types == {
+            "callable_bond",
+            "european_option",
+            "swaption",
+            "quanto_option",
+        }
+
+        assert "semantic_contract" in canary_lookup["T105"]["covers"]
+        assert "helper_route" in canary_lookup["T105"]["covers"]
+
 
 # ---------------------------------------------------------------------------
 # Drift detection integration (QUA-426)
@@ -350,3 +380,12 @@ class TestDriftIntegration:
         args_none = _parse_args([])
         assert args_none.check_drift is False
         assert args_none.update_golden is False
+
+    def test_parse_args_knowledge_light_flag(self):
+        from run_canary import _parse_args
+
+        args = _parse_args(["--knowledge-light"])
+        assert args.knowledge_light is True
+
+        args_none = _parse_args([])
+        assert args_none.knowledge_light is False

@@ -89,6 +89,10 @@ def test_build_comparison_harness_plan_resolves_targets_and_reference():
             "cross_validate": {
                 "internal": ["crr_tree", "bs_pde", "mc_exact", "fft", "cos"],
                 "analytical": "black_scholes",
+                "relations": {
+                    "crr_tree": "<=",
+                    "bs_pde": "approx",
+                },
                 "tolerance_pct": 1.0,
             },
         }
@@ -104,6 +108,14 @@ def test_build_comparison_harness_plan_resolves_targets_and_reference():
     ]
     assert plan.reference_target == "black_scholes"
     assert plan.tolerance_pct == 1.0
+    assert {target.target_id: target.relation for target in plan.targets} == {
+        "crr_tree": "<=",
+        "bs_pde": "within_tolerance",
+        "mc_exact": None,
+        "fft": None,
+        "cos": None,
+        "black_scholes": None,
+    }
 
 
 def test_build_cookbook_candidate_payload_extracts_template():

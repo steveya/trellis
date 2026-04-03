@@ -84,7 +84,7 @@ class TestCallableBond:
             start_date=SETTLE, end_date=date(2034, 11, 15),
             call_dates=[date(2029, 11, 15)],
         )
-        assert CallableBondPayoff(spec).requirements == {"discount", "black_vol"}
+        assert CallableBondPayoff(spec).requirements == {"discount_curve", "black_vol_surface"}
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +136,7 @@ class TestBarrierOption:
             notional=100, spot=100, strike=100, barrier=80,
             expiry_date=date(2025, 11, 15),
         )
-        assert BarrierOptionPayoff(spec).requirements == {"discount", "black_vol"}
+        assert BarrierOptionPayoff(spec).requirements == {"discount_curve", "black_vol_surface"}
 
 
 # ---------------------------------------------------------------------------
@@ -185,4 +185,4 @@ class TestNthToDefault:
             notional=1_000_000, n_names=5, n_th=1,
             end_date=date(2029, 11, 15),
         )
-        assert NthToDefaultPayoff(spec).requirements == {"discount", "credit"}
+        assert NthToDefaultPayoff(spec).requirements == {"discount_curve", "credit_curve"}

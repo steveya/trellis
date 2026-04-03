@@ -28,6 +28,16 @@ def test_list_exports_tool_returns_public_exports():
     assert "theta_method_1d" in names
 
 
+def test_list_exports_tool_includes_control_timeline_facade_symbols():
+    payload = json.loads(_handle_tool_call(
+        "list_exports",
+        {"module_path": "trellis.models.trees.control"},
+    ))
+    names = {item["name"] for item in payload}
+    assert "build_payment_timeline" in names
+    assert "build_exercise_timeline_from_dates" in names
+
+
 def test_resolve_import_candidates_tool_returns_mapping():
     payload = json.loads(_handle_tool_call(
         "resolve_import_candidates",

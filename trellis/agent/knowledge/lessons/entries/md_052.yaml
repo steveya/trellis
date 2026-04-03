@@ -1,8 +1,8 @@
 category: market_data
 title: Missing Curve and Vol Access
 severity: high
-status: candidate
-confidence: 0.5
+status: validated
+confidence: 0.6
 created: '2026-04-01T08:03:40.027112'
 version: ''
 source_trace: null

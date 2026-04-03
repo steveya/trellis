@@ -15,8 +15,8 @@ from numbers import Real
 from typing import Iterable, Sequence
 
 from trellis.core.date_utils import (
-    build_exercise_timeline_from_dates,
-    build_payment_timeline,
+    build_exercise_timeline_from_dates as _build_exercise_timeline_from_dates,
+    build_payment_timeline as _build_payment_timeline,
 )
 from trellis.core.types import ContractTimeline, EventSchedule, SchedulePeriod
 
@@ -57,6 +57,24 @@ class LatticeExercisePolicy:
     def objective_name(self) -> str:
         """Return the canonical objective label."""
         return self.objective.value
+
+
+def build_payment_timeline(
+    start: date,
+    end: date,
+    frequency,
+    **kwargs,
+) -> ContractTimeline:
+    """Re-export the canonical payment-timeline builder from this lattice facade."""
+    return _build_payment_timeline(start, end, frequency, **kwargs)
+
+
+def build_exercise_timeline_from_dates(
+    dates: Iterable[date | str],
+    **kwargs,
+) -> ContractTimeline:
+    """Re-export the canonical exercise-timeline builder from this lattice facade."""
+    return _build_exercise_timeline_from_dates(dates, **kwargs)
 
 
 def resolve_lattice_exercise_policy(

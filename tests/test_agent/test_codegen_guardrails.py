@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from trellis.agent.codegen_guardrails import (
     build_generation_plan,
+    render_generation_plan,
+    render_review_contract_card,
     render_generation_route_card,
     sanitize_generated_source,
     validate_generated_imports,
@@ -27,12 +29,19 @@ INVALID_SYMBOL_SOURCE = """\
 from trellis.models.black import not_a_real_symbol
 """
 
+CONTROL_TIMELINE_SOURCE = """\
+from trellis.models.trees.control import (
+    build_exercise_timeline_from_dates,
+    build_payment_timeline,
+)
+"""
+
 
 def _analytical_plan():
     pricing_plan = PricingPlan(
         method="analytical",
         method_modules=["trellis.models.black"],
-        required_market_data={"discount", "forward_rate", "black_vol"},
+        required_market_data={"discount_curve", "forward_curve", "black_vol_surface"},
         model_to_build="swaption",
         reasoning="test",
     )
@@ -71,11 +80,30 @@ def test_validate_generated_imports_rejects_invalid_symbol():
     assert any("not exported" in error for error in report.errors)
 
 
+def test_validate_generated_imports_accepts_control_timeline_facade_exports():
+    pricing_plan = PricingPlan(
+        method="rate_tree",
+        method_modules=["trellis.models.trees.control"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="callable_bond",
+        reasoning="test",
+    )
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="callable_bond",
+        inspected_modules=("trellis.models.trees.control",),
+    )
+
+    report = validate_generated_imports(CONTROL_TIMELINE_SOURCE, plan)
+
+    assert report.ok
+
+
 def test_qmc_generation_plan_approves_qmc_family_modules():
     pricing_plan = PricingPlan(
         method="qmc",
         method_modules=["trellis.models.qmc"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="autocallable",
         reasoning="test",
     )
@@ -123,21 +151,88 @@ def test_basket_route_card_calls_helper_directly():
     assert "trellis.models.payoff" not in card
 
 
+def test_generation_plan_renders_compiled_semantic_and_validation_boundary():
+    compiled = compile_build_request(
+        "Quanto option on SAP in USD with EUR underlier currency expiring 2025-11-15",
+        instrument_type="quanto_option",
+        model="claude-sonnet-4-6",
+    )
+
+    text = render_generation_plan(compiled.generation_plan)
+
+    assert "- Semantic contract: `quanto_option`" in text
+    assert "instrument=`quanto_option`" in text
+    assert "payoff=`vanilla_option`" in text
+    assert "- Valuation context:" in text
+    assert "market_source=`unbound_market_snapshot`" in text
+    assert "- Lane boundary:" in text
+    assert "family=`analytical`" in text
+    assert "- Lane obligations:" in text
+    assert "Plan kind: `exact_target_binding`" in text
+    assert "- Lowering boundary:" in text
+    assert "route=`quanto_adjustment_analytical`" in text
+    assert "expr=`ThenExpr`" in text
+    assert "price_quanto_option_analytical" in text
+    assert "- Validation contract:" in text
+    assert "bundle=`analytical:quanto_option`" in text
+    assert "check_non_negativity" in text
+    assert "quanto_adjustment_applied" in text
+    assert "- Route authority:" in text
+    assert "authority=`exact_backend_fit`" in text
+    assert "canaries=`T105`" in text
+
+
+def test_generation_route_card_keeps_lane_obligations_ahead_of_route_authority():
+    compiled = compile_build_request(
+        "Quanto option on SAP in USD with EUR underlier currency expiring 2025-11-15",
+        instrument_type="quanto_option",
+        model="claude-sonnet-4-6",
+    )
+
+    text = render_generation_route_card(compiled.generation_plan)
+
+    assert "- Lane obligations:" in text
+    assert "- Route authority:" in text
+    assert "- Backend binding:" in text
+    assert text.index("- Lane obligations:") < text.index("- Route authority:")
+    assert text.index("- Route authority:") < text.index("- Backend binding:")
+    assert "Treat route authority as backend-fit evidence, not as permission to invent a different synthesis plan." in text
+
+
+def test_review_contract_card_renders_wrapper_route_and_validation_scope():
+    compiled = compile_build_request(
+        "European equity call on AAPL with strike 120 and expiry 2025-11-15",
+        instrument_type="european_option",
+        model="claude-sonnet-4-6",
+    )
+
+    text = render_review_contract_card(compiled.generation_plan)
+
+    assert "## Compiled Route Contract" in text
+    assert "bridge=`thin_compatibility_wrapper`" in text
+    assert "wrapper=`european_option`" in text
+    assert "route=`analytical_black76`" in text
+    assert "bundle=`analytical:european_option`" in text
+    assert "- Route authority:" in text
+    assert "authority=`exact_backend_fit`" in text
+    assert "trellis.models.black" in text
+
+
 def test_schedule_dependent_route_card_mentions_shared_schedule_builder():
     plan = _analytical_plan()
     card = render_generation_route_card(plan)
 
-    assert "generate_schedule" in card
+    assert "build_payment_timeline" in card
     assert "Schedule construction:" in card
     assert "Do not hard-code observation or payment grids inside the payoff body." in card
-    assert "Instruction precedence: follow the approved modules, primitives, and route helper in this card." in card
+    assert "Instruction precedence: follow the lane obligations in this card first." in card
 
 
 def test_pde_route_card_mentions_terminal_array_contract():
     pricing_plan = PricingPlan(
         method="pde_solver",
         method_modules=["trellis.models.pde.theta_method"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="european_option",
         reasoning="test",
     )
@@ -161,7 +256,7 @@ def test_american_option_route_card_mentions_equity_tree_helper():
     pricing_plan = PricingPlan(
         method="rate_tree",
         method_modules=["trellis.models.trees"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="american_option",
         reasoning="test",
     )
@@ -182,17 +277,45 @@ def test_american_option_route_card_mentions_equity_tree_helper():
     primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
     assert primitive_symbols == {"price_vanilla_equity_option_tree"}
     assert primitive_modules == {"trellis.models.equity_option_tree"}
+    assert "Lane obligations:" in card
+    assert "Resolve a spec-like contract with `spot`, `strike`, `expiry_date`" in card
+    assert "price_vanilla_equity_option_tree(market_state, spec_like, model=\"crr\"|\"jarrow_rudd\", n_steps=...)" in card
     assert "build_rate_lattice" not in primitive_symbols
     assert "price_vanilla_equity_option_tree" in card
     assert "build_spot_lattice" in card
     assert "lsm_mc" not in card
 
 
+def test_fx_monte_carlo_route_card_mentions_fx_rate_scalar_extraction():
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.monte_carlo.engine", "trellis.models.processes.gbm"],
+        required_market_data={"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot"},
+        model_to_build="european_option",
+        reasoning="FX MC route",
+    )
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.monte_carlo.engine", "trellis.models.processes.gbm"),
+        product_ir=decompose_to_ir("FX option (EURUSD): GK analytical vs MC", instrument_type="european_option"),
+    )
+
+    card = render_generation_route_card(plan)
+
+    assert "Lane obligations:" in card
+    assert "Lane family: `monte_carlo`" in card
+    assert "Resolve scalar FX spot from `market_state.fx_rates[spec.fx_pair].spot`" in card
+    assert "FXRate` wrapper" in card
+
+
 def test_barrier_option_route_card_mentions_grid_operator_and_rannacher():
     pricing_plan = PricingPlan(
         method="pde_solver",
         method_modules=["trellis.models.pde.theta_method"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="barrier_option",
         reasoning="test",
     )
@@ -221,7 +344,7 @@ def test_cds_monte_carlo_route_uses_single_name_credit_default_swap_assembly():
     pricing_plan = PricingPlan(
         method="monte_carlo",
         method_modules=["trellis.models.monte_carlo.engine"],
-        required_market_data={"discount", "credit_curve"},
+        required_market_data={"discount_curve", "credit_curve"},
         model_to_build="credit_default_swap",
         reasoning="test",
     )
@@ -251,7 +374,36 @@ def test_cds_monte_carlo_route_uses_single_name_credit_default_swap_assembly():
     assert "GaussianCopula" not in primitive_symbols
     assert "build_cds_schedule" in card
     assert "price_cds_monte_carlo" in card
+    assert "spread_quote" in card
+    assert "n_paths" in card
     assert "survival_probability" in card
+
+
+def test_cds_analytical_route_card_surfaces_helper_signature_keywords():
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.black"],
+        required_market_data={"discount_curve", "credit_curve"},
+        model_to_build="credit_default_swap",
+        reasoning="test",
+    )
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="credit_default_swap",
+        inspected_modules=("trellis.models.black",),
+        product_ir=decompose_to_ir(
+            "CDS pricing: hazard rate MC vs survival prob analytical",
+            instrument_type="credit_default_swap",
+        ),
+    )
+
+    card = render_generation_route_card(plan)
+
+    assert "price_cds_analytical" in card
+    assert "spread_quote" in card
+    assert "discount_curve" in card
 
 
 def test_nth_to_default_monte_carlo_route_uses_copula_assembly():
@@ -260,7 +412,7 @@ def test_nth_to_default_monte_carlo_route_uses_copula_assembly():
     pricing_plan = PricingPlan(
         method="monte_carlo",
         method_modules=["trellis.models.copulas.gaussian"],
-        required_market_data={"discount", "credit_curve"},
+        required_market_data={"discount_curve", "credit_curve"},
         model_to_build="nth_to_default",
         reasoning="test",
     )

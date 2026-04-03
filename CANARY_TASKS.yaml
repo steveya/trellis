@@ -19,7 +19,7 @@
 # See QUA-424 for curation rationale.
 
 version: 2
-total_budget_usd: 3.00
+total_budget_usd: 3.12
 refresh_cadence: weekly
 
 canary_set:
@@ -306,6 +306,40 @@ canary_set:
       - cross_validation
       - term_structure
       - forward_rate_projection
+
+  - id: T105
+    engine_family: analytical
+    complexity: complex
+    specificity: full
+    market_tier: 2
+    estimated_cost_usd: 0.12
+    description: |
+      Quanto option on SAP with domestic settlement in USD and underlier
+      currency EUR.  Expiry: 2025-11-15.  Use the USD OIS discount curve,
+      EUR discount/carry curve, EURUSD FX spot, SAP underlier spot, Black
+      volatility surface, and explicit underlier/FX correlation from the
+      market snapshot (as_of 2024-11-15).
+      Method 1: analytical quanto adjustment with domestic payout semantics.
+      Method 2: correlated underlier/FX Monte Carlo.
+      The analytical route must keep the domestic-vs-foreign binding explicit
+      and the two methods should agree within 5%.
+    market:
+      source: mock
+      as_of: 2024-11-15
+      discount_curve: usd_ois
+      forecast_curve: EUR-DISC
+      fx_rate: EURUSD
+    rationale: >
+      Quanto option — analytical quanto adjustment vs correlated Monte Carlo.
+      This is the narrow migrated semantic proving slice for cross-currency
+      pricing.  It keeps resolver-backed market binding, FX conversion
+      semantics, and the helper-backed analytical route under regression.
+    covers:
+      - quanto_option
+      - cross_currency
+      - semantic_contract
+      - helper_route
+      - cross_validation
 
   # ───────────────────────────────────────────────────────────────────────
   # Transforms (FFT / COS)

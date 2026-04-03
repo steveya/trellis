@@ -1,12 +1,10 @@
-"""Agent-generated payoff: Build a pricer for: European call: theta-method convergence order measurement
+"""Agent-generated payoff: Build a pricer for: European equity call: 5-way (tree, PDE, MC, FFT, COS)
 
-Construct methods: pde_solver
-Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes (analytical)
+Construct methods: rate_tree, pde_solver, monte_carlo, fft_pricing
+Comparison targets: crr_tree (rate_tree), bs_pde (pde_solver), mc_exact (monte_carlo), fft (fft_pricing), cos (fft_pricing), black_scholes (analytical)
 Cross-validation harness:
-  internal targets: theta_0.5, theta_1.0
+  internal targets: crr_tree, bs_pde, mc_exact, fft, cos
   analytical benchmark: black_scholes
-  external targets: quantlib
-New component: convergence_order_diagnostic
 
 Implementation target: black_scholes
 Preferred method family: analytical
@@ -27,15 +25,13 @@ from trellis.models.black import black76_call, black76_put
 
 @dataclass(frozen=True)
 class EuropeanOptionSpec:
-    """Specification for Build a pricer for: European call: theta-method convergence order measurement
+    """Specification for Build a pricer for: European equity call: 5-way (tree, PDE, MC, FFT, COS)
 
-Construct methods: pde_solver
-Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes (analytical)
+Construct methods: rate_tree, pde_solver, monte_carlo, fft_pricing
+Comparison targets: crr_tree (rate_tree), bs_pde (pde_solver), mc_exact (monte_carlo), fft (fft_pricing), cos (fft_pricing), black_scholes (analytical)
 Cross-validation harness:
-  internal targets: theta_0.5, theta_1.0
+  internal targets: crr_tree, bs_pde, mc_exact, fft, cos
   analytical benchmark: black_scholes
-  external targets: quantlib
-New component: convergence_order_diagnostic
 
 Implementation target: black_scholes
 Preferred method family: analytical
@@ -50,15 +46,13 @@ Implementation target: black_scholes."""
 
 
 class EuropeanOptionAnalyticalPayoff:
-    """Build a pricer for: European call: theta-method convergence order measurement
+    """Build a pricer for: European equity call: 5-way (tree, PDE, MC, FFT, COS)
 
-Construct methods: pde_solver
-Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes (analytical)
+Construct methods: rate_tree, pde_solver, monte_carlo, fft_pricing
+Comparison targets: crr_tree (rate_tree), bs_pde (pde_solver), mc_exact (monte_carlo), fft (fft_pricing), cos (fft_pricing), black_scholes (analytical)
 Cross-validation harness:
-  internal targets: theta_0.5, theta_1.0
+  internal targets: crr_tree, bs_pde, mc_exact, fft, cos
   analytical benchmark: black_scholes
-  external targets: quantlib
-New component: convergence_order_diagnostic
 
 Implementation target: black_scholes
 Preferred method family: analytical
@@ -74,25 +68,24 @@ Implementation target: black_scholes."""
 
     @property
     def requirements(self) -> set[str]:
-        return {"black_vol", "discount"}
+        return {"black_vol_surface", "discount_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
         t = year_fraction(market_state.as_of, spec.expiry_date, spec.day_count)
         if t <= 0.0:
-            if spec.option_type.strip("'\"").lower() == "call":
-                return float(spec.notional * max(spec.spot - spec.strike, 0.0))
-            return float(spec.notional * max(spec.strike - spec.spot, 0.0))
+            intrinsic = max(spec.spot - spec.strike, 0.0) if str(spec.option_type).strip("'\"").lower() == "call" else max(spec.strike - spec.spot, 0.0)
+            return float(spec.notional * intrinsic)
 
         df = market_state.discount.discount(t)
-        vol = market_state.black_vol(t, spec.strike) if hasattr(market_state, "black_vol") else market_state.vol_surface.black_vol(t, spec.strike)
+        sigma = market_state.vol_surface.black_vol(t, spec.strike)
         forward = spec.spot / max(df, 1e-12)
 
-        opt_type = spec.option_type.strip("'\"").lower()
+        opt_type = str(spec.option_type).strip("'\"").lower()
         if opt_type == "call":
-            pv = df * black76_call(forward, spec.strike, vol, t)
+            pv = df * black76_call(forward, spec.strike, sigma, t)
         elif opt_type == "put":
-            pv = df * black76_put(forward, spec.strike, vol, t)
+            pv = df * black76_put(forward, spec.strike, sigma, t)
         else:
             raise ValueError(f"Unsupported option_type: {spec.option_type!r}")
 

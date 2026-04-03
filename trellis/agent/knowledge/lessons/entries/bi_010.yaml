@@ -1,8 +1,8 @@
 category: backward_induction
 title: Keep fallback paths indented
 severity: high
-status: candidate
-confidence: 0.5
+status: validated
+confidence: 0.7
 created: '2026-04-01T13:23:16.362151'
 version: ''
 source_trace: null

@@ -1,6 +1,22 @@
 Market Data
 ===========
 
+Canonical Capability Names
+--------------------------
+
+When a payoff, plan, or runtime contract declares required market data, use
+the canonical capability names rather than older aliases:
+
+- ``discount_curve``
+- ``forward_curve``
+- ``black_vol_surface``
+- ``credit_curve``
+- ``fx_rates``
+- ``spot``
+- ``local_vol_surface``
+- ``jump_parameters``
+- ``model_parameters``
+
 Yield Curves
 ------------
 

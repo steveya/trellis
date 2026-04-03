@@ -29,9 +29,10 @@ def price_payoff(
     MissingCapabilityError
         If market_state lacks required market data.
     """
-    from trellis.core.capabilities import check_market_data, normalize_market_data_requirements
+    from trellis.core.capabilities import check_market_data, validate_market_data_requirements
+    from trellis.core.runtime_contract import wrap_market_state_with_contract
 
-    market_data_reqs = normalize_market_data_requirements(payoff.requirements)
+    market_data_reqs = validate_market_data_requirements(payoff.requirements)
     errors = check_market_data(market_data_reqs, market_state)
     if errors:
         raise MissingCapabilityError(
@@ -40,4 +41,9 @@ def price_payoff(
             details=errors,
         )
 
-    return payoff.evaluate(market_state)
+    proxied_market_state = wrap_market_state_with_contract(
+        market_state,
+        requirements=market_data_reqs,
+        context=type(payoff).__name__,
+    )
+    return payoff.evaluate(proxied_market_state)

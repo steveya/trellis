@@ -27,11 +27,12 @@
   convention: Domestic and foreign expiry discount factors under covered interest
     parity
   typical_range: df_domestic and df_foreign usually between 0.80 and 1.00
-  model_expects: spot FX plus df_domestic and df_foreign assembled into Garman-Kohlhagen
-    or explicit Black76 basis claims
-  conversion: forward = spot * df_foreign / df_domestic; then either evaluate the
-    Garman-Kohlhagen basis-assembled FX vanilla path directly or assemble the payoff
-    explicitly from Black76 asset-or-nothing and cash-or-nothing basis claims
+  model_expects: spot FX plus df_domestic and df_foreign resolved into the
+    checked Garman-Kohlhagen helper surface
+  conversion: forward = spot * df_foreign / df_domestic; then prefer the checked
+    FX helper path (for example garman_kohlhagen_price_raw over resolved inputs),
+    using explicit Black76 basis claims only when the decomposition itself is the
+    object being validated
   model_range: discount factors remain positive and typically <= 1.00
   warning: NEVER reuse the domestic curve for both currencies or infer the foreign
     discount factor from spot alone; the foreign curve must be selected explicitly.

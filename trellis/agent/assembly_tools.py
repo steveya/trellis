@@ -94,6 +94,7 @@ class ComparisonHarnessTarget:
     target_id: str
     preferred_method: str
     is_reference: bool = False
+    relation: str | None = None
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,42 @@ class ComparisonHarnessPlan:
     targets: tuple[ComparisonHarnessTarget, ...]
     reference_target: str | None
     tolerance_pct: float
+
+
+def normalize_comparison_relation(
+    value: object | None,
+    *,
+    default: str | None = None,
+) -> str | None:
+    """Normalize user-facing comparison relation labels onto stable runtime ids."""
+    if value is None:
+        return default
+    text = str(value).strip().lower()
+    if not text:
+        return default
+    mapping = {
+        "<=": "<=",
+        "le": "<=",
+        "lte": "<=",
+        "upper_bound": "<=",
+        "at_most": "<=",
+        "no_greater_than": "<=",
+        ">=": ">=",
+        "ge": ">=",
+        "gte": ">=",
+        "lower_bound": ">=",
+        "at_least": ">=",
+        "no_less_than": ">=",
+        "==": "within_tolerance",
+        "=": "within_tolerance",
+        "~=": "within_tolerance",
+        "approx": "within_tolerance",
+        "approx_equal": "within_tolerance",
+        "close": "within_tolerance",
+        "within_tolerance": "within_tolerance",
+        "tolerance": "within_tolerance",
+    }
+    return mapping.get(text, text)
 
 
 def lookup_primitive_route_from_context(
@@ -256,6 +293,8 @@ def select_invariant_pack(
 
     if normalized_method == "analytical" and normalized_instrument in {"european_option", "cap", "floor", "swaption"}:
         checks.append("check_zero_vol_intrinsic")
+    if normalized_method == "analytical" and normalized_instrument == "swaption":
+        checks.append("check_rate_style_swaption_helper_consistency")
 
     if normalized_instrument in {"callable_bond", "puttable_bond"}:
         checks.append("check_bounded_by_reference")
@@ -292,21 +331,39 @@ def build_comparison_harness_plan(task: Mapping[str, Any]) -> ComparisonHarnessP
         construct_methods = [normalize_method(item) for item in (construct or [])]
 
     cross_validate = task.get("cross_validate") or {}
-    internal_targets = [str(target) for target in (cross_validate.get("internal") or ())]
+    relation_overrides = cross_validate.get("relations") or {}
+    internal_targets = list(cross_validate.get("internal") or ())
     analytical_target = cross_validate.get("analytical")
 
     targets: list[ComparisonHarnessTarget] = []
     if internal_targets:
         for target_id in internal_targets:
+            relation = None
+            normalized_target_id = str(target_id).strip()
+            if normalized_target_id:
+                relation = normalize_comparison_relation(
+                    relation_overrides.get(normalized_target_id)
+                    if isinstance(relation_overrides, Mapping)
+                    else None
+                )
             targets.append(
                 ComparisonHarnessTarget(
-                    target_id=target_id,
-                    preferred_method=_preferred_method_for_target(target_id, construct_methods),
+                    target_id=normalized_target_id,
+                    preferred_method=_preferred_method_for_target(normalized_target_id, construct_methods),
+                    relation=relation,
                 )
             )
     else:
         targets.extend(
-            ComparisonHarnessTarget(target_id=method, preferred_method=method)
+            ComparisonHarnessTarget(
+                target_id=method,
+                preferred_method=method,
+                relation=normalize_comparison_relation(
+                    relation_overrides.get(method)
+                    if isinstance(relation_overrides, Mapping)
+                    else None
+                ),
+            )
             for method in construct_methods
         )
 

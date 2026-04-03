@@ -7,10 +7,10 @@ from datetime import date
 from types import SimpleNamespace
 from typing import Any, Protocol
 
-from trellis.core.date_utils import year_fraction
+from trellis.core.date_utils import normalize_explicit_dates, year_fraction
 from trellis.core.differentiable import get_numpy
 from trellis.core.market_state import MarketState
-from trellis.core.types import DayCountConvention, Frequency
+from trellis.core.types import ContractTimeline, DayCountConvention, Frequency
 
 np = get_numpy()
 
@@ -21,7 +21,7 @@ class BasketSpecLike(Protocol):
     strike: float
     expiry_date: date
     constituents: str
-    observation_dates: str | None
+    observation_dates: ContractTimeline | tuple[date, ...] | None
     selection_rule: str
     lock_rule: str
     aggregation_rule: str
@@ -357,19 +357,7 @@ def _resolve_observation_dates(
     spec: BasketSpecLike,
 ) -> tuple[date, ...]:
     if spec.observation_dates:
-        parsed: list[date] = []
-        if isinstance(spec.observation_dates, str):
-            raw_items = spec.observation_dates.replace(";", ",").split(",")
-        else:
-            raw_items = list(spec.observation_dates)
-        for item in raw_items:
-            if isinstance(item, date):
-                parsed.append(item)
-                continue
-            text = str(item).strip()
-            if text:
-                parsed.append(date.fromisoformat(text))
-        return tuple(dict.fromkeys(sorted(parsed)))
+        return normalize_explicit_dates(spec.observation_dates)
 
     from trellis.core.date_utils import generate_schedule
 

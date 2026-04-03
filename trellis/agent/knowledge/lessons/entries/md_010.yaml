@@ -2,8 +2,8 @@ id: md_010
 title: Missing Market Data in LSM Pricing
 severity: critical
 category: market_data
-status: candidate
-confidence: 0.4
+status: validated
+confidence: 0.6
 created: '2026-03-24T20:49:11.880664'
 version: ''
 source_trace: null

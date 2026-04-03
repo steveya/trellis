@@ -220,6 +220,94 @@ def test_generate_skeleton_quotes_string_defaults_but_keeps_symbolic_defaults():
     assert "pricing_method: str = 'monte_carlo'" in skeleton
     assert "rate_index: str | None = None" in skeleton
     assert "frequency: Frequency = Frequency.SEMI_ANNUAL" in skeleton
+    assert "from trellis.core.types import Frequency" in skeleton
+    assert "from trellis.core.date_utils import generate_schedule, year_fraction" not in skeleton
+    assert "from trellis.models.black import black76_call, black76_put" not in skeleton
+
+
+def test_generate_skeleton_prefills_exact_binding_imports_without_generic_noise():
+    from trellis.agent.executor import _generate_skeleton
+    from trellis.agent.planner import FieldDef, SpecSchema
+
+    spec_schema = SpecSchema(
+        class_name="AmericanOptionPayoff",
+        spec_name="AmericanPutEquitySpec",
+        requirements=["discount_curve", "black_vol_surface"],
+        fields=[
+            FieldDef("spot", "float", "Spot"),
+            FieldDef("strike", "float", "Strike"),
+            FieldDef("expiry_date", "date", "Expiry"),
+            FieldDef("option_type", "str", "Option type", '"put"'),
+            FieldDef("exercise_style", "str", "Exercise style", '"american"'),
+        ],
+    )
+
+    skeleton = _generate_skeleton(
+        spec_schema,
+        "American put: equity tree knowledge-light proving",
+        generation_plan=SimpleNamespace(
+            method="rate_tree",
+            instrument_type="american_put",
+            lane_exact_binding_refs=(
+                "trellis.models.equity_option_tree.price_vanilla_equity_option_tree",
+            ),
+            primitive_plan=None,
+        ),
+    )
+
+    assert (
+        "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree"
+        in skeleton
+    )
+    assert "from trellis.core.date_utils import generate_schedule, year_fraction" not in skeleton
+    assert "from trellis.models.black import black76_call, black76_put" not in skeleton
+
+
+def test_generate_skeleton_prefills_cds_exact_bindings_from_compiler_plan():
+    from trellis.agent.executor import _generate_skeleton
+    from trellis.agent.planner import FieldDef, SpecSchema
+
+    spec_schema = SpecSchema(
+        class_name="CDSPayoff",
+        spec_name="CDSSpec",
+        requirements=["credit_curve", "discount_curve"],
+        fields=[
+            FieldDef("notional", "float", "Notional"),
+            FieldDef("spread", "float", "Spread"),
+            FieldDef("start_date", "date", "Start"),
+            FieldDef("end_date", "date", "End"),
+            FieldDef("recovery", "float", "Recovery", "0.4"),
+            FieldDef("frequency", "Frequency", "Coupon frequency", "Frequency.QUARTERLY"),
+            FieldDef(
+                "day_count",
+                "DayCountConvention",
+                "Day count",
+                "DayCountConvention.ACT_360",
+            ),
+        ],
+    )
+
+    skeleton = _generate_skeleton(
+        spec_schema,
+        "CDS pricing: hazard rate MC vs survival prob analytical",
+        generation_plan=SimpleNamespace(
+            method="analytical",
+            instrument_type="credit_default_swap",
+            lane_exact_binding_refs=(
+                "trellis.models.credit_default_swap.build_cds_schedule",
+                "trellis.models.credit_default_swap.price_cds_analytical",
+            ),
+            primitive_plan=None,
+        ),
+    )
+
+    assert (
+        "from trellis.models.credit_default_swap import build_cds_schedule, "
+        "price_cds_analytical" in skeleton
+    )
+    assert "from trellis.core.types import DayCountConvention, Frequency" in skeleton
+    assert "from trellis.core.date_utils import generate_schedule, year_fraction" not in skeleton
+    assert "from trellis.models.black import black76_call, black76_put" not in skeleton
 
 
 def test_extract_fragment_body_repairs_orphan_indentation():
@@ -480,6 +568,11 @@ def test_knowledge_retrieval_stage_maps_builder_retry_reasons():
         attempt_number=2,
         retry_reason="lite_review",
     ) == "lite_review_failed"
+    assert _knowledge_retrieval_stage(
+        audience="builder",
+        attempt_number=2,
+        retry_reason="actual_market_smoke",
+    ) == "actual_market_smoke_failed"
     assert _knowledge_retrieval_stage(
         audience="review",
         attempt_number=1,

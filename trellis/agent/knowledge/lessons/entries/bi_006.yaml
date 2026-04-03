@@ -2,8 +2,8 @@ id: bi_006
 title: Undefined tree import/name error
 severity: critical
 category: backward_induction
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-03-25T10:16:56.690038'
 version: ''
 source_trace: null

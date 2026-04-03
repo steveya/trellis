@@ -1,8 +1,8 @@
 category: market_data
 title: Missing market state access
 severity: high
-status: candidate
-confidence: 0.5
+status: validated
+confidence: 0.6
 created: '2026-04-01T08:19:33.890540'
 version: ''
 source_trace: null

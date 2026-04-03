@@ -48,6 +48,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Bypass deterministic supported-route reuse so tasks exercise live code generation.",
     )
+    parser.add_argument(
+        "--knowledge-light",
+        action="store_true",
+        help="Use the compiler-first minimal knowledge profile during task builds.",
+    )
     parser.add_argument("--validation", default="standard")
     parser.add_argument("--output")
     return parser.parse_args(argv)
@@ -60,6 +65,7 @@ def run_block(
     model: str = "gpt-5.4-mini",
     force_rebuild: bool = True,
     fresh_build: bool = False,
+    knowledge_light: bool = False,
     validation: str = "standard",
 ):
     """Run a block of tasks and save results incrementally."""
@@ -73,6 +79,7 @@ def run_block(
     print(f"# Model: {model}")
     print(f"# Force rebuild: {force_rebuild}")
     print(f"# Fresh build: {fresh_build}")
+    print(f"# Knowledge light: {knowledge_light}")
     print(f"# Validation: {validation}")
     print(f"# Started: {datetime.now().isoformat()}")
     print(f"{'#' * 60}")
@@ -85,6 +92,7 @@ def run_block(
             model=model,
             force_rebuild=(force_rebuild or fresh_build),
             fresh_build=fresh_build,
+            knowledge_profile="knowledge_light" if knowledge_light else None,
             validation=validation,
         )
         results.append(result)
@@ -152,5 +160,6 @@ if __name__ == "__main__":
         model=args.model,
         force_rebuild=not args.reuse,
         fresh_build=args.fresh_build,
+        knowledge_light=args.knowledge_light,
         validation=args.validation,
     )

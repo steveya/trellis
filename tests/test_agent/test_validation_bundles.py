@@ -20,6 +20,19 @@ def test_select_validation_bundle_for_analytical_european_option():
     assert "no_arbitrage" in bundle.categories
 
 
+def test_select_validation_bundle_for_analytical_swaption_includes_helper_consistency():
+    from trellis.agent.validation_bundles import select_validation_bundle
+
+    bundle = select_validation_bundle(
+        instrument_type="swaption",
+        method="analytical",
+    )
+
+    assert bundle.bundle_id == "analytical:swaption"
+    assert "check_rate_style_swaption_helper_consistency" in bundle.checks
+    assert "route_specific" in bundle.categories
+
+
 def test_execute_validation_bundle_respects_validation_level(monkeypatch):
     from trellis.agent.validation_bundles import ValidationBundle, execute_validation_bundle
 
@@ -147,6 +160,43 @@ def test_execute_validation_bundle_uses_decreasing_vol_direction_for_callable_bo
 
     assert execution.failures == ()
     assert seen["expected_direction"] == "decreasing"
+
+
+def test_execute_validation_bundle_uses_configured_bound_relation(monkeypatch):
+    from trellis.agent.validation_bundles import ValidationBundle, execute_validation_bundle
+
+    seen: dict[str, object] = {}
+
+    def _check_bounded_by_reference(*args, **kwargs):
+        seen["relation"] = kwargs.get("relation")
+        return []
+
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_bounded_by_reference",
+        _check_bounded_by_reference,
+    )
+
+    bundle = ValidationBundle(
+        bundle_id="rate_tree:puttable_bond",
+        instrument_type="puttable_bond",
+        method="rate_tree",
+        checks=("check_bounded_by_reference",),
+        categories={"product_family": ("check_bounded_by_reference",)},
+    )
+
+    execution = execute_validation_bundle(
+        bundle,
+        validation_level="standard",
+        test_payoff=object(),
+        market_state=object(),
+        payoff_factory=lambda: object(),
+        market_state_factory=lambda **kwargs: object(),
+        reference_factory=lambda: object(),
+        check_relations={"check_bounded_by_reference": ">="},
+    )
+
+    assert execution.failures == ()
+    assert seen["relation"] == ">="
 
 
 def test_execute_validation_bundle_runs_quanto_family_checks(monkeypatch):
@@ -310,3 +360,54 @@ def test_execute_validation_bundle_runs_cds_checks_before_universal(monkeypatch)
         "check_non_negativity",
         "check_price_sanity",
     ]
+
+
+def test_execute_validation_bundle_runs_swaption_helper_consistency(monkeypatch):
+    from trellis.agent.validation_bundles import ValidationBundle, execute_validation_bundle
+
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_non_negativity",
+        lambda *args, **kwargs: calls.append("check_non_negativity") or [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_price_sanity",
+        lambda *args, **kwargs: calls.append("check_price_sanity") or [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_rate_style_swaption_helper_consistency",
+        lambda *args, **kwargs: calls.append("check_rate_style_swaption_helper_consistency") or [],
+    )
+
+    bundle = ValidationBundle(
+        bundle_id="analytical:swaption",
+        instrument_type="swaption",
+        method="analytical",
+        checks=(
+            "check_non_negativity",
+            "check_price_sanity",
+            "check_rate_style_swaption_helper_consistency",
+        ),
+        categories={
+            "universal": ("check_non_negativity", "check_price_sanity"),
+            "route_specific": ("check_rate_style_swaption_helper_consistency",),
+        },
+    )
+
+    execution = execute_validation_bundle(
+        bundle,
+        validation_level="fast",
+        test_payoff=object(),
+        market_state=object(),
+        payoff_factory=lambda: object(),
+        market_state_factory=lambda **kwargs: object(),
+    )
+
+    assert execution.failures == ()
+    assert execution.executed_checks == (
+        "check_non_negativity",
+        "check_price_sanity",
+        "check_rate_style_swaption_helper_consistency",
+    )
+    assert calls == list(execution.executed_checks)

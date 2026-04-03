@@ -15,6 +15,7 @@ from trellis.agent.market_binding import (
 )
 from trellis.agent.quant import select_pricing_method_for_product_ir
 from trellis.agent.dsl_lowering import lower_semantic_blueprint
+from trellis.agent.lane_obligations import compile_lane_construction_plan
 from trellis.agent.semantic_contract_validation import validate_semantic_contract
 from trellis.agent.sensitivity_support import (
     normalize_requested_measures,
@@ -71,6 +72,7 @@ class SemanticImplementationBlueprint:
     event_machine_skeleton: str | None = None
     calibration_step: object | None = None  # CalibrationContract when present
     dsl_lowering: object | None = None
+    lane_plan: object | None = None
 
     def __post_init__(self):
         """Freeze mapping metadata for stable traces and tests."""
@@ -181,6 +183,19 @@ def compile_semantic_contract(
         valuation_context=resolved_valuation_context,
         market_binding_spec=market_binding_spec,
     )
+    lane_plan = compile_lane_construction_plan(
+        preferred_method=preferred_method,
+        required_market_data=required_data_spec.required_input_ids,
+        dsl_lowering=dsl_lowering,
+        unsupported_paths=tuple(
+            dict.fromkeys(
+                (
+                    *contract.methods.unsupported_variants,
+                    *contract.blueprint.blocked_by,
+                )
+            )
+        ),
+    )
     route_modules = tuple(
         dict.fromkeys(
             (
@@ -222,6 +237,7 @@ def compile_semantic_contract(
         event_machine_skeleton=_emit_event_skeleton(contract),
         calibration_step=getattr(contract, "calibration", None),
         dsl_lowering=dsl_lowering,
+        lane_plan=lane_plan,
     )
 
 

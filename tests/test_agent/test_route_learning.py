@@ -61,7 +61,7 @@ def test_fit_linear_route_ranker_prefers_exercise_routes_for_known_products():
         pricing_plan=PricingPlan(
             method="rate_tree",
             method_modules=["trellis.models.trees.lattice"],
-            required_market_data={"discount", "black_vol"},
+            required_market_data={"discount_curve", "black_vol_surface"},
             model_to_build="callable_bond",
             reasoning="test",
         ),
@@ -78,7 +78,7 @@ def test_fit_linear_route_ranker_prefers_exercise_routes_for_known_products():
         pricing_plan=PricingPlan(
             method="monte_carlo",
             method_modules=["trellis.models.monte_carlo.engine"],
-            required_market_data={"discount", "black_vol"},
+            required_market_data={"discount_curve", "black_vol_surface"},
             model_to_build="american_option",
             reasoning="test",
         ),
@@ -110,7 +110,7 @@ def test_learned_route_decision_keeps_blocked_composite_blocked():
         pricing_plan=PricingPlan(
             method="monte_carlo",
             method_modules=["trellis.models.monte_carlo.engine"],
-            required_market_data={"discount", "black_vol"},
+            required_market_data={"discount_curve", "black_vol_surface"},
             model_to_build=None,
             reasoning="test",
         ),

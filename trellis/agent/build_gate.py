@@ -101,6 +101,72 @@ def _route_admissibility_gate_decision(
     )
 
 
+def _lane_plan_summary(
+    generation_plan,
+    *,
+    semantic_blueprint=None,
+) -> tuple[str, str, tuple[str, ...], tuple[str, ...]]:
+    """Return the lane family, kind, exact bindings, and steps available."""
+    lane_family = str(getattr(generation_plan, "lane_family", "") or "")
+    lane_kind = str(getattr(generation_plan, "lane_plan_kind", "") or "")
+    exact_refs = tuple(getattr(generation_plan, "lane_exact_binding_refs", ()) or ())
+    steps = tuple(getattr(generation_plan, "lane_construction_steps", ()) or ())
+    if lane_family or lane_kind or exact_refs or steps:
+        return lane_family, lane_kind, exact_refs, steps
+
+    lane_plan = getattr(semantic_blueprint, "lane_plan", None)
+    if lane_plan is None:
+        return "", "", (), ()
+    return (
+        str(getattr(lane_plan, "lane_family", "") or ""),
+        str(getattr(lane_plan, "plan_kind", "") or ""),
+        tuple(getattr(lane_plan, "exact_target_refs", ()) or ()),
+        tuple(getattr(lane_plan, "construction_steps", ()) or ()),
+    )
+
+
+def _lane_obligation_gate_decision(
+    generation_plan,
+    *,
+    semantic_blueprint=None,
+    gap_confidence: float,
+    gate_source: str,
+) -> BuildGateDecision | None:
+    """Require either an exact backend binding or a constructive lane plan."""
+    if generation_plan is None:
+        return None
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    lane_family, lane_kind, exact_refs, steps = _lane_plan_summary(
+        generation_plan,
+        semantic_blueprint=semantic_blueprint,
+    )
+    if primitive_plan is not None:
+        return None
+    if exact_refs or steps:
+        return None
+
+    if not lane_family and not lane_kind:
+        return BuildGateDecision(
+            decision="narrow_route",
+            reason=(
+                "No primitive plan resolved and the compiler did not emit a constructive "
+                "lane plan; narrowing generation instead of guessing a backend."
+            ),
+            gap_confidence=gap_confidence,
+            gate_source=gate_source,
+        )
+
+    return BuildGateDecision(
+        decision="block",
+        reason=(
+            f"Lane `{lane_family or 'unknown'}` has no exact backend binding and no "
+            "constructive steps; generation would be route guessing."
+        ),
+        gap_confidence=gap_confidence,
+        gate_source=gate_source,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pre-flight gate (autonomous.py, after gap_check)
 # ---------------------------------------------------------------------------
@@ -263,6 +329,10 @@ def evaluate_pre_generation_gate(
     # 3. Confidence check (if gap_report threaded)
     if gap_report is not None:
         confidence = gap_report.confidence
+        lane_family, lane_kind, exact_refs, steps = _lane_plan_summary(
+            generation_plan,
+            semantic_blueprint=semantic_blueprint,
+        )
         if confidence < t.block_below:
             return BuildGateDecision(
                 decision="block",
@@ -283,6 +353,25 @@ def evaluate_pre_generation_gate(
                 gap_confidence=confidence,
                 gate_source="pre_generation",
             )
+        if primitive_plan is None and not (lane_family or lane_kind or exact_refs or steps):
+            return BuildGateDecision(
+                decision="narrow_route",
+                reason=(
+                    "No primitive plan resolved and no compiler-backed lane plan "
+                    "was attached; restricting generation instead of guessing."
+                ),
+                gap_confidence=confidence,
+                gate_source="pre_generation",
+            )
+
+    lane_obligation_decision = _lane_obligation_gate_decision(
+        generation_plan,
+        semantic_blueprint=semantic_blueprint,
+        gap_confidence=gap_report.confidence if gap_report is not None else 0.0,
+        gate_source="pre_generation",
+    )
+    if lane_obligation_decision is not None:
+        return lane_obligation_decision
 
     return BuildGateDecision(
         decision="proceed",

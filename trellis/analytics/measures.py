@@ -41,7 +41,7 @@ class Measure(Protocol):
 
     @property
     def requires(self) -> set[str]:
-        """Market data capabilities needed (e.g., 'discount', 'black_vol')."""
+        """Market data capabilities needed (e.g., 'discount_curve', 'black_vol_surface')."""
         ...
 
     def compute(self, payoff, market_state: MarketState, **context) -> Any:
@@ -186,7 +186,7 @@ def _cached_rate_bundle(payoff, ms: MarketState, ctx: dict[str, Any]) -> dict[st
 class Price:
     """Present value of the instrument (what it is worth today)."""
     name: str = "price"
-    requires: set = field(default_factory=lambda: {"discount"})
+    requires: set = field(default_factory=lambda: {"discount_curve"})
 
     def compute(self, payoff, ms, **ctx):
         """Return the base present value, caching the first evaluation."""
@@ -214,7 +214,7 @@ class DV01:
     """
     bump_bps: float = 1.0
     name: str = "dv01"
-    requires: set = field(default_factory=lambda: {"discount"})
+    requires: set = field(default_factory=lambda: {"discount_curve"})
 
     def compute(self, payoff, ms, **ctx):
         """Compute DV01 with autodiff when available, otherwise bump."""
@@ -238,7 +238,7 @@ class Duration:
     """
     bump_bps: float = 1.0
     name: str = "duration"
-    requires: set = field(default_factory=lambda: {"discount"})
+    requires: set = field(default_factory=lambda: {"discount_curve"})
 
     def compute(self, payoff, ms, **ctx):
         """Compute modified duration with autodiff when available."""
@@ -269,7 +269,7 @@ class Convexity:
     """
     bump_bps: float = 10.0
     name: str = "convexity"
-    requires: set = field(default_factory=lambda: {"discount"})
+    requires: set = field(default_factory=lambda: {"discount_curve"})
 
     def compute(self, payoff, ms, **ctx):
         """Compute convexity with autodiff when available."""
@@ -302,7 +302,7 @@ class Vega:
     """
     bump_pct: float = 1.0
     name: str = "vega"
-    requires: set = field(default_factory=lambda: {"discount", "black_vol"})
+    requires: set = field(default_factory=lambda: {"discount_curve", "black_vol_surface"})
 
     def compute(self, payoff, ms, **ctx):
         """Compute vega with autodiff when the surface is flat."""
@@ -350,7 +350,7 @@ class KeyRateDurations:
     tenors: tuple = (1, 2, 3, 5, 7, 10, 20, 30)
     bump_bps: float = 25.0
     name: str = "key_rate_durations"
-    requires: set = field(default_factory=lambda: {"discount"})
+    requires: set = field(default_factory=lambda: {"discount_curve"})
 
     def compute(self, payoff, ms, **ctx):
         """Compute per-tenor durations with autodiff when available."""
@@ -388,7 +388,7 @@ class OAS:
     market_price: float = 100.0
     vol_fixed: bool = True
     name: str = "oas"
-    requires: set = field(default_factory=lambda: {"discount", "black_vol"})
+    requires: set = field(default_factory=lambda: {"discount_curve", "black_vol_surface"})
 
     def compute(self, payoff, ms, **ctx):
         """Solve for the option-adjusted spread matching ``market_price``."""
@@ -409,7 +409,7 @@ class ZSpread:
     """
     market_price: float = 100.0
     name: str = "z_spread"
-    requires: set = field(default_factory=lambda: {"discount"})
+    requires: set = field(default_factory=lambda: {"discount_curve"})
 
     def compute(self, payoff, ms, **ctx):
         """Solve for the parallel curve shift matching ``market_price``."""
@@ -438,7 +438,7 @@ class ScenarioPnL:
     """
     shifts_bps: tuple = (-100, -50, +50, +100, +200)
     name: str = "scenario_pnl"
-    requires: set = field(default_factory=lambda: {"discount"})
+    requires: set = field(default_factory=lambda: {"discount_curve"})
 
     def compute(self, payoff, ms, **ctx):
         """Return P&L relative to base value under configured rate shocks."""

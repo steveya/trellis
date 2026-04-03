@@ -9,6 +9,7 @@ from trellis.agent.invariants import (
     check_cds_spread_quote_normalization,
     check_non_negativity,
     check_price_sanity,
+    check_rate_style_swaption_helper_consistency,
     check_vol_monotonicity,
     check_zero_vol_intrinsic,
     run_invariant_suite,
@@ -19,6 +20,7 @@ from trellis.curves.credit_curve import CreditCurve
 from trellis.curves.yield_curve import YieldCurve
 from trellis.engine.payoff_pricer import price_payoff
 from trellis.instruments.cap import CapFloorSpec, CapPayoff
+from trellis.models.rate_style_swaption import price_swaption_black76
 from trellis.models.vol_surface import FlatVol
 
 
@@ -55,7 +57,7 @@ class TestNonNegativity:
         class NegativePayoff:
             @property
             def requirements(self):
-                return {"discount"}
+                return {"discount_curve"}
 
             def evaluate(self, market_state):
                 return -2.5
@@ -88,7 +90,7 @@ class TestNonNegativity:
 
             @property
             def requirements(self):
-                return {"discount", "credit"}
+                return {"discount_curve", "credit_curve"}
 
             def evaluate(self, market_state):
                 return -65000.0
@@ -129,7 +131,7 @@ class TestPriceSanity:
 
             @property
             def requirements(self):
-                return {"discount", "credit"}
+                return {"discount_curve", "credit_curve"}
 
             def evaluate(self, market_state):
                 return -65000.0
@@ -179,7 +181,7 @@ class TestCreditDefaultSwapInvariants:
 
             @property
             def requirements(self):
-                return {"discount", "credit"}
+                return {"discount_curve", "credit_curve"}
 
             def evaluate(self, market_state):
                 spread = float(self._spec.spread)
@@ -222,7 +224,7 @@ class TestCreditDefaultSwapInvariants:
 
             @property
             def requirements(self):
-                return {"discount", "credit"}
+                return {"discount_curve", "credit_curve"}
 
             def evaluate(self, market_state):
                 return float(-self._spec.notional * float(self._spec.spread))
@@ -249,6 +251,89 @@ class TestCreditDefaultSwapInvariants:
         assert failure.check == "check_cds_spread_quote_normalization"
         assert "semantically equivalent spreads 100 and 0.01" in failure.message
 
+
+class TestRateStyleSwaptionInvariants:
+
+    @staticmethod
+    def _market_state(rate=0.05, vol=0.20):
+        return MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(rate, max_tenor=31.0),
+            vol_surface=FlatVol(vol),
+        )
+
+    @staticmethod
+    def _cds_market_state():
+        return MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.05),
+            credit_curve=CreditCurve.flat(0.02),
+        )
+
+    @staticmethod
+    def _spec():
+        class SwaptionSpec:
+            notional = 100.0
+            strike = 0.05
+            expiry_date = date(2029, 11, 15)
+            swap_start = expiry_date
+            swap_end = date(2034, 11, 15)
+            swap_frequency = Frequency.SEMI_ANNUAL
+            day_count = DayCountConvention.ACT_360
+            rate_index = None
+            is_payer = True
+
+        return SwaptionSpec()
+
+    def test_swaption_helper_consistency_passes_for_helper_backed_payoff(self):
+        spec = self._spec()
+
+        class HelperBackedSwaptionPayoff:
+            def __init__(self, spec):
+                self._spec = spec
+
+            @property
+            def requirements(self):
+                return {"discount_curve", "forward_curve", "black_vol_surface"}
+
+            def evaluate(self, market_state):
+                return float(price_swaption_black76(market_state, self._spec))
+
+        failures = check_rate_style_swaption_helper_consistency(
+            lambda: HelperBackedSwaptionPayoff(spec),
+            self._market_state,
+        )
+
+        assert failures == []
+
+    def test_swaption_helper_consistency_fails_when_notional_is_ignored(self):
+        spec = self._spec()
+
+        class BrokenSwaptionPayoff:
+            def __init__(self, spec):
+                self._spec = spec
+
+            @property
+            def requirements(self):
+                return {"discount_curve", "forward_curve", "black_vol_surface"}
+
+            def evaluate(self, market_state):
+                return float(price_swaption_black76(market_state, self._spec) / spec.notional)
+
+        failures = check_rate_style_swaption_helper_consistency(
+            lambda: BrokenSwaptionPayoff(spec),
+            self._market_state,
+            return_diagnostics=True,
+        )
+
+        assert len(failures) == 1
+        failure = failures[0]
+        assert failure.check == "check_rate_style_swaption_helper_consistency"
+        assert failure.context["relation"] == "within_tolerance"
+        assert failure.context["sampled_prices"]
+
     def test_cds_credit_curve_sensitivity_passes_for_long_protection(self):
         from dataclasses import dataclass
 
@@ -266,7 +351,7 @@ class TestCreditDefaultSwapInvariants:
 
             @property
             def requirements(self):
-                return {"discount", "credit"}
+                return {"discount_curve", "credit_curve"}
 
             def evaluate(self, market_state):
                 survival = market_state.credit_curve.survival_probability(5.0)
@@ -312,7 +397,7 @@ class TestCreditDefaultSwapInvariants:
 
             @property
             def requirements(self):
-                return {"discount", "credit"}
+                return {"discount_curve", "credit_curve"}
 
             def evaluate(self, market_state):
                 spread = float(self._spec.spread)
@@ -371,7 +456,7 @@ class TestVolMonotonicity:
         class CallableLikePayoff:
             @property
             def requirements(self):
-                return {"discount", "black_vol"}
+                return {"discount_curve", "black_vol_surface"}
 
             def evaluate(self, market_state):
                 vol = float(market_state.vol_surface.black_vol(1.0, 1.0))
@@ -389,7 +474,7 @@ class TestVolMonotonicity:
         class CallableLikePayoff:
             @property
             def requirements(self):
-                return {"discount", "black_vol"}
+                return {"discount_curve", "black_vol_surface"}
 
             def evaluate(self, market_state):
                 vol = float(market_state.vol_surface.black_vol(1.0, 1.0))

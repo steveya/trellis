@@ -12,17 +12,15 @@ All of them compile to the same internal shape before execution.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from datetime import date, datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Mapping
 from uuid import uuid4
 
-from trellis.agent.codegen_guardrails import build_generation_plan
-from trellis.agent.family_contract_compiler import compile_family_contract
+from trellis.agent.codegen_guardrails import build_generation_plan, enrich_generation_plan
 from trellis.agent.family_contract_templates import (
     family_template_as_semantic_contract,
-    get_family_contract_template,
 )
 from trellis.agent.knowledge import (
     build_shared_knowledge_payload,
@@ -37,7 +35,6 @@ from trellis.agent.market_binding import (
 )
 from trellis.agent.quant import (
     PricingPlan,
-    select_pricing_method_for_family_blueprint,
     select_pricing_method_for_product_ir,
 )
 from trellis.agent.sensitivity_support import normalize_requested_outputs
@@ -168,6 +165,7 @@ class CompiledPlatformRequest:
     product_ir: ProductIR | None = None
     pricing_plan: PricingPlan | None = None
     generation_plan: Any | None = None
+    validation_contract: Any | None = None
     blocker_report: Any | None = None
     new_primitive_workflow: Any | None = None
     knowledge: dict[str, Any] | None = None
@@ -439,56 +437,22 @@ def _compile_known_family_request(
 
     When the family template can be converted to a SemanticContract the
     request is routed through the unified semantic compilation pipeline.
-    The legacy family-contract compiler is used only as a fallback.
+    Known-family request routing must not fall back to the deprecated
+    family-contract compiler.
     """
     semantic_contract = family_template_as_semantic_contract(family_id)
-    if semantic_contract is not None:
-        return _compile_semantic_request(
-            request=request,
-            semantic_contract=semantic_contract,
-            reason=reason or "family_template_request",
-            preferred_method=preferred_method,
+    if semantic_contract is None:
+        raise ValueError(
+            "Known checked-in family template "
+            f"{family_id!r} has no semantic bridge. "
+            "Retire the registration or add a semantic contract bridge before "
+            "routing it through the platform request compiler."
         )
-    # Fallback: family has no semantic conversion yet.
-    blueprint = compile_family_contract(
-        get_family_contract_template(family_id),
-        requested_measures=request.measures,
-    )
-    pricing_plan = select_pricing_method_for_family_blueprint(
-        blueprint,
-        preferred_method=preferred_method,
-    )
-    generation_plan = build_generation_plan(
-        pricing_plan=pricing_plan,
-        instrument_type=blueprint.product_ir.instrument,
-        inspected_modules=tuple(pricing_plan.method_modules),
-        product_ir=blueprint.product_ir,
-    )
-    knowledge_bundle = _shared_knowledge_bundle(
-        blueprint.product_ir,
-        preferred_method=pricing_plan.method,
-    )
-    should_block = _generation_plan_should_block(generation_plan)
-    action = "block" if should_block else (
-        "compile_only" if request.request_type == "build" else "build_then_price"
-    )
-    return _finalize_compiled_request(
+    return _compile_semantic_request(
         request=request,
-        market_snapshot=request.market_snapshot,
-        execution_plan=_execution_plan_for_request(
-            request,
-            action=action,
-            reason=reason,
-            route_method=pricing_plan.method,
-            requires_build=not should_block,
-        ),
-        family_blueprint=blueprint,
-        product_ir=blueprint.product_ir,
-        pricing_plan=pricing_plan,
-        generation_plan=generation_plan,
-        blocker_report=generation_plan.blocker_report,
-        new_primitive_workflow=generation_plan.new_primitive_workflow,
-        knowledge_bundle=knowledge_bundle,
+        semantic_contract=semantic_contract,
+        reason=reason or "family_template_request",
+        preferred_method=preferred_method,
     )
 
 
@@ -548,6 +512,7 @@ def _request_with_semantic_metadata(
 def _semantic_blueprint_summary(semantic_blueprint) -> dict[str, object]:
     """Return a compact YAML-safe summary of lowering-relevant blueprint state."""
     lowering = getattr(semantic_blueprint, "dsl_lowering", None)
+    lane_plan = getattr(semantic_blueprint, "lane_plan", None)
     control_styles = tuple(
         getattr(style, "value", str(style))
         for style in getattr(lowering, "control_styles", ())
@@ -558,8 +523,30 @@ def _semantic_blueprint_summary(semantic_blueprint) -> dict[str, object]:
         "route_modules": list(getattr(semantic_blueprint, "route_modules", ()) or ()),
         "dsl_route": getattr(lowering, "route_id", None),
         "dsl_route_family": getattr(lowering, "route_family", None),
+        "dsl_expr_kind": None if lowering is None or getattr(lowering, "normalized_expr", None) is None else type(lowering.normalized_expr).__name__,
         "dsl_helper_refs": list(getattr(lowering, "helper_refs", ()) or ()),
         "dsl_control_styles": list(control_styles),
+        "dsl_family_ir_type": None if lowering is None or getattr(lowering, "family_ir", None) is None else type(lowering.family_ir).__name__,
+        "dsl_family_ir": _yaml_safe_value(getattr(lowering, "family_ir", None)),
+        "dsl_target_bindings": [
+            {
+                "module": binding.module,
+                "symbol": binding.symbol,
+                "role": binding.role,
+                "required": binding.required,
+            }
+            for binding in getattr(lowering, "target_bindings", ()) or ()
+        ],
+        "dsl_lowering_errors": [
+            {
+                "route_id": item.route_id,
+                "stage": item.stage,
+                "code": item.code,
+                "message": item.message,
+            }
+            for item in getattr(lowering, "errors", ()) or ()
+        ],
+        "lane_plan": _yaml_safe_value(lane_plan),
         "requested_outputs": list(getattr(semantic_blueprint, "requested_outputs", ()) or ()),
         "valuation_context": valuation_context_summary(semantic_blueprint.valuation_context)
         if getattr(semantic_blueprint, "valuation_context", None) is not None
@@ -571,6 +558,28 @@ def _semantic_blueprint_summary(semantic_blueprint) -> dict[str, object]:
         if getattr(semantic_blueprint, "market_binding_spec", None) is not None
         else None,
     }
+
+
+def _yaml_safe_value(value):
+    """Project dataclass-heavy lowering metadata onto YAML-safe primitives."""
+    if value is None:
+        return None
+    if is_dataclass(value):
+        return {
+            field.name: _yaml_safe_value(getattr(value, field.name))
+            for field in fields(value)
+        }
+    if isinstance(value, Mapping):
+        return {
+            str(key): _yaml_safe_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (tuple, list, set, frozenset)):
+        return [_yaml_safe_value(item) for item in value]
+    enum_value = getattr(value, "value", None)
+    if enum_value is not None and type(value).__module__ != "builtins":
+        return enum_value
+    return value
 
 
 def _request_with_semantic_gap_metadata(
@@ -683,6 +692,59 @@ def _finalize_compiled_request(
             artifact_kind=route_artifact,
             semantic_contract=semantic_contract is not None,
         )
+    validation_contract = None
+    if any(
+        item is not None
+        for item in (pricing_plan, product_ir, family_blueprint, semantic_blueprint)
+    ):
+        from trellis.agent.validation_contract import (
+            compile_validation_contract,
+            validation_contract_summary,
+        )
+
+        validation_contract = compile_validation_contract(
+            request=request,
+            product_ir=product_ir,
+            pricing_plan=pricing_plan,
+            generation_plan=generation_plan,
+            family_blueprint=family_blueprint,
+            semantic_blueprint=semantic_blueprint,
+            comparison_spec=comparison_spec,
+            instrument_type=request.instrument_type,
+        )
+        validation_summary = validation_contract_summary(validation_contract)
+        if validation_summary is not None:
+            request_metadata["validation_contract"] = validation_summary
+    if generation_plan is not None and semantic_blueprint is not None:
+        generation_plan = enrich_generation_plan(
+            generation_plan,
+            request=request,
+            semantic_blueprint=semantic_blueprint,
+            validation_contract=validation_contract,
+        )
+    if generation_plan is not None:
+        from trellis.agent.route_registry import (
+            compile_route_binding_authority,
+            route_binding_authority_summary,
+        )
+
+        if getattr(generation_plan, "route_binding_authority", None) is None:
+            generation_plan = replace(
+                generation_plan,
+                route_binding_authority=compile_route_binding_authority(
+                    generation_plan=generation_plan,
+                    validation_contract=validation_contract,
+                    semantic_blueprint=semantic_blueprint,
+                    product_ir=product_ir,
+                    request=request,
+                ),
+            )
+        authority_summary = route_binding_authority_summary(
+            getattr(generation_plan, "route_binding_authority", None)
+        )
+        if authority_summary is not None:
+            request_metadata["route_binding_authority"] = authority_summary
+    if request_metadata != dict(request.metadata or {}):
         request = replace(request, metadata=request_metadata)
     return CompiledPlatformRequest(
         request=request,
@@ -694,6 +756,7 @@ def _finalize_compiled_request(
         product_ir=product_ir,
         pricing_plan=pricing_plan,
         generation_plan=generation_plan,
+        validation_contract=validation_contract,
         blocker_report=blocker_report,
         new_primitive_workflow=new_primitive_workflow,
         knowledge=bundle.get("knowledge"),
@@ -747,6 +810,8 @@ def _compile_semantic_request(
     knowledge_bundle = _shared_knowledge_bundle(
         semantic_blueprint.product_ir,
         preferred_method=pricing_plan.method,
+        generation_plan=generation_plan,
+        knowledge_profile=_knowledge_profile_for_request(request),
     )
     should_block = bool(
         generation_plan.blocker_report
@@ -812,7 +877,11 @@ def _compile_term_sheet_request(request: PlatformRequest) -> CompiledPlatformReq
 
     match = match_payoff(term_sheet, request.settlement or date.today())
     if match is not None:
-        knowledge_bundle = _shared_knowledge_bundle(product_ir)
+        knowledge_bundle = _shared_knowledge_bundle(
+            product_ir,
+            preferred_method="direct_existing",
+            knowledge_profile=_knowledge_profile_for_request(request),
+        )
         return _finalize_compiled_request(
             request=request,
             market_snapshot=request.market_snapshot,
@@ -879,6 +948,8 @@ def _compile_term_sheet_request(request: PlatformRequest) -> CompiledPlatformReq
     knowledge_bundle = _shared_knowledge_bundle(
         product_ir,
         preferred_method=pricing_plan.method,
+        generation_plan=generation_plan,
+        knowledge_profile=_knowledge_profile_for_request(request),
     )
     should_block = _generation_plan_should_block(generation_plan)
     return _finalize_compiled_request(
@@ -909,6 +980,7 @@ def compile_build_request(
     model: str | None = None,
     preferred_method: str | None = None,
     measures: list | None = None,
+    knowledge_profile: str | None = None,
     metadata: Mapping[str, object] | None = None,
 ) -> CompiledPlatformRequest:
     """Compile a free-form build request through the canonical path."""
@@ -922,7 +994,14 @@ def compile_build_request(
         instrument_type=instrument_type,
         measures=_normalize_measures(measures),
         model=model,
-        metadata=metadata or {},
+        metadata={
+            **(metadata or {}),
+            **(
+                {"knowledge_profile": knowledge_profile}
+                if knowledge_profile is not None
+                else {}
+            ),
+        },
     )
     semantic_contract = _draft_semantic_contract(
         description,
@@ -999,6 +1078,8 @@ def compile_build_request(
     knowledge_bundle = _shared_knowledge_bundle(
         product_ir,
         preferred_method=pricing_plan.method,
+        generation_plan=generation_plan,
+        knowledge_profile=_knowledge_profile_for_request(request),
     )
     should_block = _generation_plan_should_block(generation_plan)
     return _finalize_compiled_request(
@@ -1037,6 +1118,7 @@ def _compile_comparison_request(request: PlatformRequest) -> CompiledPlatformReq
             product_ir=product_ir,
             instrument_type=request.instrument_type,
             preferred_method=method,
+            knowledge_profile=_knowledge_profile_for_request(request),
             measures=request.measures,
             description=request.description,
         )
@@ -1072,6 +1154,7 @@ def _compile_comparison_method_plan(
     product_ir,
     instrument_type: str | None,
     preferred_method: str,
+    knowledge_profile: str = "default",
     measures: tuple[str, ...] = (),
     description: str | None = None,
 ) -> ComparisonMethodPlan:
@@ -1091,6 +1174,8 @@ def _compile_comparison_method_plan(
     knowledge_bundle = _shared_knowledge_bundle(
         product_ir,
         preferred_method=pricing_plan.method,
+        generation_plan=generation_plan,
+        knowledge_profile=knowledge_profile,
     )
     return ComparisonMethodPlan(
         preferred_method=preferred_method,
@@ -1112,13 +1197,83 @@ def pricing_plan_for_request(request: PlatformRequest) -> PricingPlan | None:
     return compiled.pricing_plan
 
 
-def _shared_knowledge_bundle(product_ir, *, preferred_method: str | None = None) -> dict[str, Any]:
+def _knowledge_profile_for_request(request: PlatformRequest | None) -> str:
+    """Return the requested knowledge profile for compiler and build-loop prompts."""
+    metadata = getattr(request, "metadata", None) or {}
+    profile = str(metadata.get("knowledge_profile") or "").strip().lower().replace(" ", "_")
+    return profile or "default"
+
+
+def _knowledge_light_bundle() -> dict[str, Any]:
+    """Return a compiler-first knowledge bundle for tranche-2 proving runs."""
+    builder_text = (
+        "## Knowledge-Light Mode\n"
+        "- Use the semantic contract, lane obligations, DSL lowering, validation contract, and approved imports as the primary contract.\n"
+        "- Treat route-specific lessons, cookbook examples, and prompt-local helper lore as intentionally unavailable.\n"
+        "- If the compiler emitted an exact backend binding, use it directly. Otherwise build only the smallest lane-consistent kernel required by the construction steps."
+    )
+    review_text = (
+        "## Knowledge-Light Review Mode\n"
+        "- Review against the semantic contract, lane obligations, lowering boundary, and validation contract first.\n"
+        "- Do not assume missing cookbook or lesson guidance implies the build is invalid; focus on whether the generated code satisfied the compiled lane contract."
+    )
+    routing_text = (
+        "## Knowledge-Light Routing Mode\n"
+        "- Prefer compiler-emitted lane obligations over route-local prompt heuristics.\n"
+        "- Treat exact backend bindings as optional only when the compiler did not emit one."
+    )
+    summary = {
+        "knowledge_profile": "knowledge_light",
+        "retrieval_mode": "compiler_first_minimal_prompt_surface",
+    }
+    return {
+        "knowledge": {"knowledge_profile": "knowledge_light"},
+        "builder_text_distilled": builder_text,
+        "builder_text": builder_text,
+        "builder_text_expanded": builder_text,
+        "review_text_distilled": review_text,
+        "review_text": review_text,
+        "review_text_expanded": review_text,
+        "routing_text_distilled": routing_text,
+        "routing_text": routing_text,
+        "routing_text_expanded": routing_text,
+        "summary": summary,
+    }
+
+
+def _shared_knowledge_bundle(
+    product_ir,
+    *,
+    preferred_method: str | None = None,
+    generation_plan=None,
+    knowledge_profile: str = "default",
+) -> dict[str, Any]:
     """Build all prompt/trace views for one ProductIR retrieval result."""
+    if knowledge_profile == "knowledge_light":
+        return _knowledge_light_bundle()
     knowledge = retrieve_for_product_ir(
         product_ir,
         preferred_method=preferred_method,
     )
-    return build_shared_knowledge_payload(knowledge)
+    route_ids: tuple[str, ...] = ()
+    if generation_plan is not None:
+        primitive_plan = getattr(generation_plan, "primitive_plan", None)
+        route_ids = tuple(
+            dict.fromkeys(
+                item
+                for item in (
+                    getattr(generation_plan, "lowering_route_id", None),
+                    getattr(primitive_plan, "route", None),
+                )
+                if isinstance(item, str) and item.strip()
+            )
+        )
+    return build_shared_knowledge_payload(
+        knowledge,
+        pricing_method=preferred_method,
+        route_ids=route_ids,
+        route_families=tuple(getattr(product_ir, "route_families", ()) or ()),
+    )
 
 
 def _aggregate_comparison_knowledge(
@@ -1133,6 +1288,8 @@ def _aggregate_comparison_knowledge(
         "cookbook_methods": [],
         "data_contracts": [],
         "unresolved_primitives": [],
+        "selected_artifact_ids": [],
+        "selected_artifact_titles": [],
     }
     for plan in method_plans:
         plan_summary = dict(plan.knowledge_summary or {})
@@ -1143,6 +1300,8 @@ def _aggregate_comparison_knowledge(
             summary["cookbook_methods"].append(plan_summary["cookbook_method"])
         summary["data_contracts"].extend(plan_summary.get("data_contracts", ()))
         summary["unresolved_primitives"].extend(plan_summary.get("unresolved_primitives", ()))
+        summary["selected_artifact_ids"].extend(plan_summary.get("selected_artifact_ids", ()))
+        summary["selected_artifact_titles"].extend(plan_summary.get("selected_artifact_titles", ()))
 
     merged = {
         key: tuple(sorted(set(values)))

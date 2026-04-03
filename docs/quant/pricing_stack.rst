@@ -79,6 +79,8 @@ The shipped family IRs are:
 - ``VanillaEquityPDEIR``
 - ``ExerciseLatticeIR``
 - ``CorrelatedBasketMonteCarloIR``
+- ``CreditDefaultSwapIR``
+- ``NthToDefaultIR``
 
 This is intentionally not a flat universal IR. The current stack uses
 ``ProductIR`` as the shared checked summary and then narrows into family IRs
@@ -93,9 +95,15 @@ The end-to-end typed boundary is currently proven for:
 - ``vanilla_equity_theta_pde`` on vanilla options
 - ``exercise_lattice`` on callable bonds and Bermudan swaptions
 - ``correlated_basket_monte_carlo`` on ranked-observation baskets
+- ``credit_default_swap_analytical`` and ``credit_default_swap_monte_carlo`` on single-name CDS
+- ``nth_to_default_monte_carlo`` on nth-to-default basket credit
 
 These route IDs and helper-backed numerical kernels are preserved. The new work
 changes validation, binding, admissibility, and lowering, not the pricing math.
+For single-name CDS comparison builds, the typed boundary now also carries a
+comparison-quality ``n_paths`` control on the Monte Carlo spec so the helper
+route can tighten internal agreement without changing the checked pricing
+kernel.
 
 Warning And Error Policy
 ------------------------

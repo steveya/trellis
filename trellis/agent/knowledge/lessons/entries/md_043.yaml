@@ -1,8 +1,8 @@
 category: market_data
 title: Missing market data accessors
 severity: high
-status: candidate
-confidence: 0.5
+status: validated
+confidence: 0.6
 created: '2026-03-31T18:47:16.159912'
 version: ''
 source_trace: null

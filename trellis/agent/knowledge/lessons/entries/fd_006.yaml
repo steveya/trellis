@@ -3,7 +3,7 @@ title: Missing local volatility capability
 severity: critical
 category: finite_differences
 status: validated
-confidence: 0.6
+confidence: 0.7
 created: '2026-03-24T20:47:38.404478'
 version: ''
 source_trace: null

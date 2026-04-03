@@ -2,8 +2,8 @@ id: con_009
 title: Use exact module import paths
 severity: critical
 category: convention
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-03-24T12:37:47.056864'
 version: ''
 source_trace: null

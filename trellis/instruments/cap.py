@@ -95,7 +95,7 @@ class CapPayoff:
     @property
     def requirements(self) -> set[str]:
         """Cap pricing needs discount, forward rate, and volatility curves."""
-        return {"discount", "forward_rate", "black_vol"}
+        return {"discount_curve", "forward_curve", "black_vol_surface"}
 
     def evaluate(self, market_state: MarketState) -> float:
         """Sum the present values of all caplets to get the cap price."""
@@ -121,7 +121,7 @@ class FloorPayoff:
     @property
     def requirements(self) -> set[str]:
         """Floor pricing needs discount, forward rate, and volatility curves."""
-        return {"discount", "forward_rate", "black_vol"}
+        return {"discount_curve", "forward_curve", "black_vol_surface"}
 
     def evaluate(self, market_state: MarketState) -> float:
         """Sum the present values of all floorlets to get the floor price."""

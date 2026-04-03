@@ -1,8 +1,8 @@
 category: market_data
 title: Invalid Model Import
 severity: high
-status: candidate
-confidence: 0.5
+status: validated
+confidence: 0.6
 created: '2026-04-01T18:26:48.198599'
 version: ''
 source_trace: null

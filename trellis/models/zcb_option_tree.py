@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import date
 from typing import Protocol
 
+import trellis.models.trees.models as tree_models
+
 from trellis.core.date_utils import year_fraction
 from trellis.core.types import DayCountConvention
 from trellis.models.trees.lattice import RecombiningLattice, build_generic_lattice
-from trellis.models.trees.models import MODEL_REGISTRY
 from trellis.models.zcb_option import (
     VolSurfaceLike,
     normalize_zcb_option_strike,
@@ -74,7 +75,7 @@ def build_zcb_option_lattice(
     sigma = float(market_state.vol_surface.black_vol(max(t_exp, 1e-6), strike_unit))
     step_count = int(n_steps or min(400, max(100, int(t_bond * 24))))
     return build_generic_lattice(
-        MODEL_REGISTRY[str(model).strip().lower()],
+        tree_models.MODEL_REGISTRY[str(model).strip().lower()],
         r0=r0,
         sigma=sigma,
         a=float(mean_reversion),

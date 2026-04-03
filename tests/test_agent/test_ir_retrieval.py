@@ -129,3 +129,100 @@ def test_autonomous_build_tracking_passes_stage_aware_knowledge_retriever():
     assert meta["failures"] == []
     assert observed["executor_retrieve"] is original_retrieve
     assert "lesson_ids" in meta["knowledge_summary"]
+
+
+def test_autonomous_build_tracking_refreshes_knowledge_between_attempts(monkeypatch):
+    from trellis.agent.knowledge.autonomous import _build_with_tracking
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    product_ir = decompose_to_ir(
+        "American put option on equity",
+        instrument_type="american_option",
+    )
+    decomposition = SimpleNamespace(
+        method="monte_carlo",
+        features=("early_exercise",),
+        instrument="american_put",
+    )
+    gap_report = SimpleNamespace(
+        confidence=1.0,
+        missing=[],
+        retrieved_lesson_ids=[],
+    )
+
+    retrieval_calls = {"count": 0}
+    observed_texts: list[str] = []
+
+    def fake_retrieve_for_product_ir(*args, **kwargs):
+        retrieval_calls["count"] += 1
+        return {"marker": retrieval_calls["count"]}
+
+    def fake_build_shared_payload(knowledge):
+        marker = knowledge["marker"]
+        return {
+            "builder_text_distilled": f"distilled {marker}",
+            "builder_text": f"compact {marker}",
+            "builder_text_expanded": f"expanded {marker}",
+            "review_text_distilled": f"review distilled {marker}",
+            "review_text": f"review compact {marker}",
+            "review_text_expanded": f"review expanded {marker}",
+            "summary": {"lesson_ids": [f"lesson_{marker}"]},
+        }
+
+    def _fake_build_payoff(*args, **kwargs):
+        import trellis.agent.executor as executor
+
+        request = executor.KnowledgeRetrievalRequest(
+            audience="builder",
+            stage="semantic_validation_failed",
+            attempt_number=2,
+            knowledge_surface="expanded",
+            prompt_surface="semantic_repair",
+            retry_reason="semantic_validation",
+            instrument_type="american_option",
+            pricing_method="monte_carlo",
+            product_ir=product_ir,
+            compiled_request=None,
+        )
+        observed_texts.append(kwargs["knowledge_retriever"](request))
+        observed_texts.append(kwargs["knowledge_retriever"](request))
+
+        class DummyPayoff:
+            pass
+
+        return DummyPayoff
+
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.retrieve_for_product_ir",
+        fake_retrieve_for_product_ir,
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.build_shared_knowledge_payload",
+        fake_build_shared_payload,
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.gap_check.format_gap_warnings",
+        lambda report: "gap warning",
+    )
+
+    with patch("trellis.agent.executor.build_payoff", side_effect=_fake_build_payoff):
+        payoff_cls, meta = _build_with_tracking(
+            description="American put option on equity",
+            instrument_type="american_option",
+            decomposition=decomposition,
+            product_ir=product_ir,
+            gap_report=gap_report,
+            model=None,
+            market_state=None,
+            max_retries=2,
+            validation="fast",
+            force_rebuild=True,
+        )
+
+    assert payoff_cls.__name__ == "DummyPayoff"
+    assert meta["failures"] == []
+    assert observed_texts[0] != observed_texts[1]
+    assert observed_texts[0].startswith("expanded 2")
+    assert observed_texts[1].startswith("expanded 3")
+    assert observed_texts[0].endswith("gap warning")
+    assert observed_texts[1].endswith("gap warning")

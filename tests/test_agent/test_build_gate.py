@@ -73,6 +73,10 @@ class _StubGenerationPlan:
     primitive_plan: _StubPrimitivePlan | None = None
     blocker_report: _StubBlockerReport | None = None
     resolved_instructions: _StubResolvedInstructions | None = None
+    lane_family: str = ""
+    lane_plan_kind: str = ""
+    lane_exact_binding_refs: tuple = ()
+    lane_construction_steps: tuple = ()
 
 
 def _generation_plan_for_semantic_blueprint(semantic_blueprint):
@@ -249,7 +253,7 @@ class TestPreGenerationGate:
         )
         thresholds = BuildGateThresholds(max_unresolved_conflicts=1)
         decision = evaluate_pre_generation_gate(gap, plan, thresholds=thresholds)
-        assert decision.decision == "proceed"
+        assert decision.decision == "narrow_route"
 
     def test_block_on_low_confidence_in_pre_gen(self):
         gap = _StubGapReport(confidence=0.2)
@@ -266,6 +270,17 @@ class TestPreGenerationGate:
     def test_proceed_when_no_primitive_plan_but_high_confidence(self):
         gap = _StubGapReport(confidence=0.8)
         plan = _StubGenerationPlan(primitive_plan=None)
+        decision = evaluate_pre_generation_gate(gap, plan)
+        assert decision.decision == "narrow_route"
+
+    def test_proceed_when_no_primitive_plan_but_compiler_emits_lane_steps(self):
+        gap = _StubGapReport(confidence=0.8)
+        plan = _StubGenerationPlan(
+            primitive_plan=None,
+            lane_family="analytical",
+            lane_plan_kind="constructive_synthesis",
+            lane_construction_steps=("Bind analytical inputs.", "Assemble payoff kernel.",),
+        )
         decision = evaluate_pre_generation_gate(gap, plan)
         assert decision.decision == "proceed"
 

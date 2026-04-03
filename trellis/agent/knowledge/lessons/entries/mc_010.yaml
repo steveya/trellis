@@ -2,8 +2,8 @@ id: mc_010
 title: Unexpected indent in generated module
 severity: critical
 category: monte_carlo
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-03-26T18:28:10.443173'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260326_182810_quanto_option_monte_carlo.yaml

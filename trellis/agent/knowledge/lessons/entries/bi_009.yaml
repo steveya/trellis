@@ -1,8 +1,8 @@
 category: backward_induction
 title: Guard try-except indentation
 severity: high
-status: candidate
-confidence: 0.5
+status: validated
+confidence: 0.7
 created: '2026-04-01T12:45:26.050682'
 version: ''
 source_trace: null

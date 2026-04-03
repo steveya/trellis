@@ -1071,3 +1071,99 @@ def test_bermudan_swaption_analytical_contract_uses_lower_bound_target():
         "trellis.models.rate_style_swaption.price_bermudan_swaption_black76_lower_bound"
         in compiled.dsl_lowering.helper_refs
     )
+
+
+def test_credit_default_swap_contract_validates_and_compiles():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_credit_default_swap_contract
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = make_credit_default_swap_contract(
+        description="Single-name CDS on ACME with quarterly premium dates",
+        observation_schedule=("2026-06-20", "2026-09-20", "2026-12-20", "2027-03-20", "2027-06-20"),
+    )
+    report = validate_semantic_contract(contract)
+
+    assert report.ok
+    assert report.normalized_contract is not None
+
+    compiled = compile_semantic_contract(contract)
+    assert compiled.semantic_id == "credit_default_swap"
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.instrument == "cds"
+    assert compiled.product_ir.payoff_family == "credit_default_swap"
+    assert compiled.product_ir.schedule_dependence is True
+    assert compiled.pricing_plan.method == "analytical"
+    assert compiled.target_modules == ("trellis.models.credit_default_swap",)
+    assert compiled.route_modules == _expected_route_modules(compiled)
+    assert compiled.primitive_routes == ("credit_default_swap_analytical",)
+    assert compiled.dsl_lowering is not None
+    assert compiled.dsl_lowering.route_id == "credit_default_swap_analytical"
+
+
+def test_credit_default_swap_summary_is_stable_and_route_specific():
+    from trellis.agent.semantic_contracts import make_credit_default_swap_contract, semantic_contract_summary
+
+    contract = make_credit_default_swap_contract(
+        description="Single-name CDS on ACME with quarterly premium dates",
+        observation_schedule=("2026-06-20", "2026-09-20", "2026-12-20", "2027-03-20", "2027-06-20"),
+    )
+    summary = semantic_contract_summary(contract)
+
+    assert summary == semantic_contract_summary(contract)
+    assert summary["semantic_id"] == "credit_default_swap"
+    assert summary["product"]["instrument_class"] == "cds"
+    assert summary["product"]["payoff_family"] == "credit_default_swap"
+    assert summary["typed_semantics"]["controller_protocol"]["controller_style"] == "identity"
+    assert summary["market_data"]["required_inputs"] == ["discount_curve", "credit_curve"]
+    assert summary["blueprint"]["primitive_families"] == ["credit_default_swap_analytical"]
+
+
+def test_nth_to_default_contract_validates_and_compiles():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_nth_to_default_contract
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = make_nth_to_default_contract(
+        description="First-to-default basket on ACME, BRAVO, CHARLIE, DELTA, ECHO through 2029-11-15",
+        observation_schedule=("2029-11-15",),
+        reference_entities=("ACME", "BRAVO", "CHARLIE", "DELTA", "ECHO"),
+        trigger_rank=1,
+    )
+    report = validate_semantic_contract(contract)
+
+    assert report.ok
+    assert report.normalized_contract is not None
+
+    compiled = compile_semantic_contract(contract)
+    assert compiled.semantic_id == "nth_to_default"
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.instrument == "nth_to_default"
+    assert compiled.product_ir.payoff_family == "nth_to_default"
+    assert compiled.product_ir.schedule_dependence is True
+    assert compiled.pricing_plan.method == "copula"
+    assert compiled.target_modules == ("trellis.instruments.nth_to_default",)
+    assert compiled.route_modules == _expected_route_modules(compiled)
+    assert compiled.primitive_routes == ("nth_to_default_monte_carlo",)
+    assert compiled.dsl_lowering is not None
+    assert compiled.dsl_lowering.route_id == "nth_to_default_monte_carlo"
+
+
+def test_nth_to_default_summary_is_stable_and_route_specific():
+    from trellis.agent.semantic_contracts import make_nth_to_default_contract, semantic_contract_summary
+
+    contract = make_nth_to_default_contract(
+        description="First-to-default basket on ACME, BRAVO, CHARLIE, DELTA, ECHO through 2029-11-15",
+        observation_schedule=("2029-11-15",),
+        reference_entities=("ACME", "BRAVO", "CHARLIE", "DELTA", "ECHO"),
+        trigger_rank=1,
+    )
+    summary = semantic_contract_summary(contract)
+
+    assert summary == semantic_contract_summary(contract)
+    assert summary["semantic_id"] == "nth_to_default"
+    assert summary["product"]["instrument_class"] == "nth_to_default"
+    assert summary["product"]["payoff_family"] == "nth_to_default"
+    assert summary["typed_semantics"]["controller_protocol"]["controller_style"] == "identity"
+    assert summary["market_data"]["required_inputs"] == ["discount_curve", "credit_curve"]
+    assert summary["blueprint"]["primitive_families"] == ["nth_to_default_monte_carlo"]

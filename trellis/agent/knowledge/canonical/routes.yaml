@@ -16,6 +16,7 @@ routes:
     route_family: analytical
     status: promoted
     confidence: 1.0
+    reuse_module_paths: [instruments/_agent/quantooptionanalytical.py]
     match:
       methods: [analytical]
       instruments: [quanto_option]
@@ -58,6 +59,7 @@ routes:
     route_family: monte_carlo
     status: promoted
     confidence: 1.0
+    reuse_module_paths: [instruments/_agent/quantooptionmontecarlo.py]
     match:
       methods: [monte_carlo, qmc]
       instruments: [quanto_option]
@@ -99,6 +101,15 @@ routes:
     match:
       methods: [analytical]
       instruments: [cds]
+    admissibility:
+      control_styles: [identity]
+      event_support: automatic
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [terminal_markov, schedule_state]
+      supports_calibration: false
     primitives:
       - module: trellis.models.credit_default_swap
         symbol: build_cds_schedule
@@ -134,6 +145,15 @@ routes:
     match:
       methods: [monte_carlo, qmc]
       instruments: [cds]
+    admissibility:
+      control_styles: [identity]
+      event_support: automatic
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [pathwise_only, schedule_state]
+      supports_calibration: false
     primitives:
       - module: trellis.models.credit_default_swap
         symbol: build_cds_schedule
@@ -153,6 +173,9 @@ routes:
       - declare_credit_curve_and_discount_curve_requirements
     notes:
       - "For single-name CDS Monte Carlo pricing, prefer the checked-in build_cds_schedule(...) and price_cds_monte_carlo(...) helpers so the adapter stays thin."
+      - "If the spec exposes n_paths, pass spec.n_paths through to price_cds_monte_carlo(...) instead of hard-coding a smaller comparison-path count in the adapter."
+      - "Do not hard-code n_paths=50000 for comparison-quality single-name CDS. Use spec.n_paths when available; otherwise choose a comparison-stable count such as 250000."
+      - "Keep comparison-task randomness reproducible with seed=42 unless the spec explicitly carries a different seed input."
       - "Do not import or instantiate `MonteCarloEngine` for a single-name CDS route. Here Monte Carlo means direct random default-time draws on the explicit payment schedule, not a generic diffusion-engine wrapper."
       - "Use market_state.credit_curve.survival_probability(t0/t1) to bracket each payment interval; use hazard_rate only for within-interval interpolation of the default time."
       - "Use market_state.discount.discount(t) directly for every discount factor so the route checker can see discount-curve access."
@@ -182,9 +205,20 @@ routes:
     route_family: nth_to_default
     status: promoted
     confidence: 1.0
+    score_hints:
+      payoff_family_bonus: {nth_to_default: 2.0}
     match:
       methods: [monte_carlo, qmc, copula]
       instruments: [nth_to_default]
+    admissibility:
+      control_styles: [identity]
+      event_support: automatic
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [pathwise_only, remaining_pool, schedule_state]
+      supports_calibration: false
     primitives:
       - module: trellis.core.date_utils
         symbol: generate_schedule
@@ -199,6 +233,9 @@ routes:
       - module: trellis.models.copulas.gaussian
         symbol: GaussianCopula
         role: default_time_sampler
+      - module: trellis.instruments.nth_to_default
+        symbol: price_nth_to_default_basket
+        role: route_helper
       - module: trellis.models.monte_carlo.engine
         symbol: MonteCarloEngine
         role: path_simulation
@@ -283,6 +320,15 @@ routes:
     match:
       methods: [monte_carlo, qmc]
       exercise: [american, bermudan]
+    admissibility:
+      control_styles: [holder_max]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl, exercise_boundary]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [pathwise_only, terminal_markov, schedule_state]
+      supports_calibration: false
     # NOTE: _route_components calls early_exercise_policy at import time.
     # The notes below are static captures of the policy summaries.
     primitives:
@@ -335,12 +381,22 @@ routes:
     route_family: monte_carlo
     status: promoted
     confidence: 1.0
+    reuse_module_paths: [instruments/_agent/fxvanillamontecarlo.py]
     score_hints:
       non_european_penalty: -2.0
       penalize_when_market_data: {local_vol_surface: -3.0}
     match:
       methods: [monte_carlo]
       exclude_instruments: [quanto_option, cds, nth_to_default, basket_option]
+    admissibility:
+      control_styles: [identity]
+      event_support: automatic
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [pathwise_only, terminal_markov, schedule_state]
+      supports_calibration: false
     primitives:
       - module: trellis.models.processes.gbm
         symbol: GBM
@@ -367,6 +423,15 @@ routes:
     match:
       methods: [monte_carlo]
       required_market_data: [local_vol_surface]
+    admissibility:
+      control_styles: [identity]
+      event_support: automatic
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [pathwise_only, terminal_markov, schedule_state]
+      supports_calibration: false
     primitives:
       - module: trellis.models.processes.local_vol
         symbol: LocalVol
@@ -396,6 +461,15 @@ routes:
     match:
       methods: [qmc]
       exclude_instruments: [quanto_option, cds, nth_to_default, basket_option]
+    admissibility:
+      control_styles: [identity]
+      event_support: automatic
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [pathwise_only, terminal_markov, schedule_state]
+      supports_calibration: false
     primitives:
       - module: trellis.models.qmc
         symbol: sobol_normals
@@ -557,6 +631,15 @@ routes:
       non_european_penalty: -2.0
     match:
       methods: [rate_tree]
+    admissibility:
+      control_styles: [identity, holder_max, issuer_min]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl, exercise_boundary]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [terminal_markov, recombining_safe, schedule_state]
+      supports_calibration: true
     primitives:
       - module: trellis.models.trees.lattice
         symbol: build_rate_lattice
@@ -586,6 +669,15 @@ routes:
     match:
       methods: [rate_tree]
       instruments: [zcb_option]
+    admissibility:
+      control_styles: [identity]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [terminal_markov, recombining_safe, schedule_state]
+      supports_calibration: true
     primitives:
       - module: trellis.models.zcb_option_tree
         symbol: price_zcb_option_tree
@@ -678,6 +770,22 @@ routes:
           - "For Bermudan swaption analytical comparators, prefer `trellis.models.rate_style_swaption.price_bermudan_swaption_black76_lower_bound(...)`."
           - "Interpret the analytical comparator as the European swaption exercisable only on the final Bermudan date."
           - "Keep the generated route as a thin adapter over the helper; do not sum multiple exercise-date European prices or rebuild co-terminal schedule loops inline."
+      - when:
+          payoff_family: swaption
+          exercise_style: [european]
+        primitives:
+          - module: trellis.models.rate_style_swaption
+            symbol: resolve_swaption_black76_inputs
+            role: market_binding
+          - module: trellis.models.rate_style_swaption
+            symbol: price_swaption_black76_raw
+            role: route_helper
+        adapters:
+          - reuse_checked_in_rate_style_swaption_helper
+        notes:
+          - "For European rate-style swaptions, prefer the checked helper-backed split `resolve_swaption_black76_inputs(...)` -> `price_swaption_black76_raw(...)` from `trellis.models.rate_style_swaption`."
+          - "Treat `ResolvedSwaptionBlack76Inputs` as the resolved contract for expiry, annuity, forward swap rate, strike, vol, notional, direction, and payment count."
+          - "Keep the generated route as a thin adapter over the helper-backed resolved-input contract; do not rebuild annuity, forward-swap-rate, or expiry binding inline."
       - when: default
         primitives:
           - module: trellis.models.black
@@ -707,7 +815,7 @@ routes:
             role: assembly_helper
             required: false
           - module: trellis.core.date_utils
-            symbol: generate_schedule
+            symbol: build_payment_timeline
             role: schedule_builder
           - module: trellis.core.date_utils
             symbol: year_fraction
@@ -716,6 +824,7 @@ routes:
           - extract_forward_and_annuity_from_market_state
         notes:
           - "Prefer thin orchestration around existing analytical kernels."
+          - "For schedule-driven analytical products such as caps and floors, prefer `build_payment_timeline(...)` so accrual fractions and model times stay explicit."
           - "Terminal vanilla payoffs should be assembled from asset-or-nothing and cash-or-nothing basis claims when the decomposition is exact."
           - "For cash-or-nothing digital options, use the Black76 digital helpers directly instead of a vanilla call/put approximation."
     market_data_access:
@@ -733,6 +842,15 @@ routes:
     match:
       methods: [analytical]
       instruments: [zcb_option]
+    admissibility:
+      control_styles: [identity]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [terminal_markov, schedule_state]
+      supports_calibration: false
     primitives:
       - module: trellis.models.zcb_option
         symbol: price_zcb_option_jamshidian
@@ -741,6 +859,7 @@ routes:
       - reuse_checked_in_zcb_option_analytical_helper
     notes:
       - "For European zero-coupon bond option analytics, prefer `price_zcb_option_jamshidian(market_state, spec, mean_reversion=...)` from `trellis.models.zcb_option`."
+      - "If you need the resolved-input lane under that wrapper, use `resolve_zcb_option_hw_inputs(...)` from `trellis.models.zcb_option`, then delegate the traced kernel to `zcb_option_hw_raw(...)` from `trellis.models.analytical.jamshidian`."
       - "Do not fall back to Black76 on a forward bond price when the request explicitly asks for Jamshidian / Hull-White."
       - "Normalize strike quotes to unit face before the closed-form kernel: treat `63` on `100` face as `0.63`."
       - "Use `spec.expiry_date` and `spec.bond_maturity_date`; the underlying bond maturity must be strictly after expiry."
@@ -754,6 +873,7 @@ routes:
     route_family: analytical
     status: promoted
     confidence: 1.0
+    reuse_module_paths: [instruments/_agent/fxvanillaanalytical.py]
     score_hints:
       payoff_family_bonus: {vanilla_option: 1.0}
       non_european_penalty: -4.0
@@ -771,29 +891,17 @@ routes:
       supported_state_tags: [terminal_markov, recombining_safe]
       supports_calibration: false
     primitives:
-      - module: trellis.models.black
-        symbol: black76_asset_or_nothing_call
-        role: pricing_kernel
-      - module: trellis.models.black
-        symbol: black76_asset_or_nothing_put
-        role: pricing_kernel
-      - module: trellis.models.black
-        symbol: black76_cash_or_nothing_call
-        role: pricing_kernel
-      - module: trellis.models.black
-        symbol: black76_cash_or_nothing_put
-        role: pricing_kernel
-      - module: trellis.models.analytical
-        symbol: terminal_vanilla_from_basis
-        role: assembly_helper
+      - module: trellis.models.analytical.fx
+        symbol: garman_kohlhagen_price_raw
+        role: route_helper
       - module: trellis.core.date_utils
         symbol: year_fraction
         role: time_measure
     adapters:
       - map_fx_spot_and_curves_to_garman_kohlhagen_inputs
     notes:
-      - "For European vanilla FX options, assemble the terminal payoff from Black76 asset-or-nothing and cash-or-nothing basis claims after mapping spot FX and domestic/foreign curves to a forward."
-      - "Treat Garman-Kohlhagen as the model identity and a compatibility surface; keep the generated route thin and basis-assembled."
+      - "For European vanilla FX options, map spot FX and domestic/foreign curves to resolved inputs, then call `garman_kohlhagen_price_raw(spec.option_type, resolved)` from `trellis.models.analytical.fx`."
+      - "Treat Garman-Kohlhagen as the model identity and compatibility surface, but keep the generated route thin by delegating to the checked helper instead of rebuilding the basis assembly inline."
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -812,6 +920,15 @@ routes:
     confidence: 1.0
     match:
       methods: [fft_pricing]
+    admissibility:
+      control_styles: [identity]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [terminal_markov]
+      supports_calibration: false
     primitives:
       - module: trellis.models.transforms.fft_pricer
         symbol: fft_price
@@ -876,6 +993,15 @@ routes:
     confidence: 1.0
     match:
       methods: [pde_solver]
+    admissibility:
+      control_styles: [identity, holder_max]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [terminal_markov, recombining_safe]
+      supports_calibration: false
     primitives:
       - module: trellis.models.pde.grid
         symbol: Grid
@@ -910,6 +1036,15 @@ routes:
     confidence: 1.0
     match:
       methods: [copula]
+    admissibility:
+      control_styles: [identity]
+      event_support: automatic
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl, loss_distribution]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [pathwise_only, schedule_state, remaining_pool]
+      supports_calibration: false
     primitives:
       - module: trellis.models.copulas.factor
         symbol: FactorCopula
@@ -932,6 +1067,15 @@ routes:
     confidence: 1.0
     match:
       methods: [waterfall]
+    admissibility:
+      control_styles: [identity]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl, cashflow_projection]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [schedule_state, locked_cashflow_state, remaining_pool]
+      supports_calibration: false
     primitives:
       - module: trellis.models.cashflow_engine.waterfall
         symbol: Waterfall

@@ -17,10 +17,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from trellis.core.date_utils import generate_schedule, year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.black import black76_call, black76_put
+from trellis.models.credit_default_swap import build_cds_schedule, price_cds_analytical
 
 
 
@@ -72,60 +71,35 @@ Implementation target: analytical_cds."""
 
     @property
     def requirements(self) -> set[str]:
-        return {"credit", "discount"}
+        return {"credit_curve", "discount_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
         spec = self._spec
-        from trellis.models.credit_default_swap import build_cds_schedule, price_cds_analytical
-
-        if market_state.discount is None:
-            raise ValueError("CDSPayoff.evaluate requires a discount curve in market_state")
         if market_state.credit_curve is None:
-            raise ValueError("CDSPayoff.evaluate requires a credit curve in market_state")
+            raise ValueError("CDSPayoff requires market_state.credit_curve")
+        if market_state.discount is None:
+            raise ValueError("CDSPayoff requires market_state.discount")
 
-        spread = float(spec.spread)
+        spread = spec.spread
         if spread > 1.0:
-            spread *= 1e-4
+            spread = spread / 10000.0
 
-        schedule = generate_schedule(spec.start_date, spec.end_date, spec.frequency)
-        if not schedule or schedule[0] != spec.start_date:
-            schedule = [spec.start_date] + [d for d in schedule if d > spec.start_date]
-        if schedule[-1] != spec.end_date:
-            schedule = [d for d in schedule if d < spec.end_date] + [spec.end_date]
-
-        periods = build_cds_schedule(
+        schedule = build_cds_schedule(
             spec.start_date,
             spec.end_date,
             spec.frequency,
-            day_count=spec.day_count,
+            spec.day_count,
             time_origin=spec.start_date,
         )
 
-        try:
-            return float(
-                price_cds_analytical(
-                    notional=spec.notional,
-                    spread=spread,
-                    recovery=spec.recovery,
-                    periods=periods,
-                    market_state=market_state,
-                )
+        return float(
+            price_cds_analytical(
+                notional=spec.notional,
+                spread_quote=spread,
+                recovery=spec.recovery,
+                schedule=schedule,
+                credit_curve=market_state.credit_curve,
+                discount_curve=market_state.discount,
             )
-        except TypeError:
-            premium_leg = 0.0
-            protection_leg = 0.0
-            prev_t = 0.0
-            prev_surv = 1.0
-
-            for pay_date in schedule[1:]:
-                t = year_fraction(spec.start_date, pay_date, spec.day_count)
-                surv = market_state.credit_curve.survival_probability(t)
-                df = market_state.discount.discount(t)
-                accrual = t - prev_t
-                premium_leg += spread * spec.notional * accrual * df * surv
-                protection_leg += spec.notional * (1.0 - spec.recovery) * df * (prev_surv - surv)
-                prev_t = t
-                prev_surv = surv
-
-            return float(protection_leg - premium_leg)
+        )

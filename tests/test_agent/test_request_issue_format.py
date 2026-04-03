@@ -71,3 +71,40 @@ def test_issue_format_includes_task_and_target_context():
     assert "- task: `E23` — European equity call under local vol: PDE vs MC" in comment
     assert "- route_method: `pde_solver`" in comment
     assert "- ownership_role: `quant`" in comment
+
+
+def test_stress_follow_on_format_includes_repeat_context_and_artifacts():
+    from trellis.agent.request_issue_format import (
+        build_stress_follow_on_body,
+        build_stress_follow_on_title,
+    )
+
+    summary = {
+        "task_id": "E23",
+        "task_title": "European equity call under local vol: PDE vs MC",
+        "outcome_class": "honest_block",
+        "failure_bucket": "blocked",
+        "comparison_status": "insufficient_results",
+        "observed_blocker_categories": [
+            "missing_foundational_primitive",
+            "unsupported_route",
+        ],
+        "repeat_count": 3,
+        "signature": "E23::blocked::missing_foundational_primitive,unsupported_route",
+        "task_run_latest_path": "/tmp/task_runs/latest/E23.json",
+        "task_run_history_path": "/tmp/task_runs/history/E23/run.json",
+        "diagnosis_dossier_path": "/tmp/task_runs/diagnostics/latest/E23.md",
+        "diagnosis_packet_path": "/tmp/task_runs/diagnostics/latest/E23.json",
+        "linked_linear_issues": ["QUA-500"],
+    }
+
+    title = build_stress_follow_on_title(summary)
+    body = build_stress_follow_on_body(summary)
+
+    assert title.startswith("Connector stress: E23")
+    assert "missing foundational primitive" in title
+    assert "- source: `connector_stress_gate`" in body
+    assert "- repeat_count: `3`" in body
+    assert "- blocker_categories: `missing_foundational_primitive, unsupported_route`" in body
+    assert "- linked_linear_issues: `QUA-500`" in body
+    assert "/tmp/task_runs/diagnostics/latest/E23.md" in body

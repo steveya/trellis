@@ -12,7 +12,7 @@ def test_generation_plan_attaches_structured_blocker_report_for_blocked_composit
     pricing_plan = PricingPlan(
         method="monte_carlo",
         method_modules=["trellis.models.monte_carlo.engine"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build=None,
         reasoning="test",
     )
@@ -57,7 +57,7 @@ def test_render_generation_plan_includes_structured_blocker_actions():
     pricing_plan = PricingPlan(
         method="monte_carlo",
         method_modules=["trellis.models.monte_carlo.engine"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build=None,
         reasoning="test",
     )

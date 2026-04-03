@@ -159,6 +159,7 @@ def test_ranked_observation_basket_price_helper_uses_snapshot_state_requirement(
 
 
 def test_ranked_observation_basket_path_contract_matches_snapshot_requirement():
+    from trellis.core.runtime_contract import ContractState, ResolvedInputs, RuntimeContext
     from trellis.models.monte_carlo.semantic_basket import (
         RankedObservationBasketSpec,
         build_ranked_observation_basket_path_contract,
@@ -183,3 +184,9 @@ def test_ranked_observation_basket_path_contract_matches_snapshot_requirement():
     assert contract.snapshot_steps == (126, 252)
     assert contract.state_tags == ("pathwise_only", "remaining_pool", "locked_cashflow_state")
     assert contract.event_kinds == ("observation", "settlement")
+    assert isinstance(contract.initial_state, ContractState)
+    assert isinstance(contract.resolved_inputs, ResolvedInputs)
+    assert isinstance(contract.runtime_context, RuntimeContext)
+    assert contract.initial_state.require_memory("selection_rule") == "best_of_remaining"
+    assert contract.resolved_inputs.require("constituent_spots") == (100.0, 100.0)
+    assert contract.runtime_context.phase == "observation"

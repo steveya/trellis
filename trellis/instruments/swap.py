@@ -54,7 +54,7 @@ class SwapPayoff:
     @property
     def requirements(self) -> set[str]:
         """Swap pricing needs a discount curve and a forward rate curve."""
-        return {"discount", "forward_rate"}
+        return {"discount_curve", "forward_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
         """Compute the net present value: floating payments minus fixed payments (for a payer)."""

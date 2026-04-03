@@ -74,6 +74,8 @@ The semantic layer now follows these rules:
 - contracts emit typed obligations, not discounted cashflows
 - event state and contract memory are distinct ``StateField.kind`` values
 - solver-facing state tags live on ``StateField.tags``
+- schedule-bearing routes compile onto explicit timeline carriers such as
+  ``ContractTimeline`` rather than raw comma-separated date strings
 
 Legacy mirrors such as ``settlement_rule`` and ``event_transitions`` still
 exist on ``SemanticProductSemantics``, but they are no longer the authority for
@@ -114,9 +116,58 @@ The compiler also emits:
 
 - ``RequiredDataSpec``
 - ``MarketBindingSpec``
+- ``LaneConstructionPlan``
 
 These are compiled before route code generation. Raw contract hint dicts are no
 longer the valuation truth.
+
+``LaneConstructionPlan`` is the constructive bridge from contract algebra and
+DSL lowering onto the computational lanes. It records:
+
+- the lane family
+- required timeline roles
+- market-binding obligations
+- state and control obligations
+- lane construction steps
+- exact checked backend targets when they already satisfy those obligations
+
+After the lane plan is emitted, the runtime may also attach a
+``RouteBindingAuthority`` packet. That packet is intentionally narrower than
+the contract algebra itself. It does not tell the agent what should be built;
+the lane obligations already do that. It only records:
+
+- the exact checked backend fit, if one was found
+- the approved modules, primitive refs, and helper refs for that fit
+- the validation bundle and canary IDs that cover the fit
+- the typed route admissibility contract and any request-local failures
+
+In other words, contract algebra remains the constructive source of truth while
+route authority is reduced to backend binding, validation ownership, and
+provenance.
+
+This separates "what must be built" from "which existing backend already
+matches it", which is the key tranche-2 shift away from treating route IDs as
+the whole compiler output.
+
+Runtime Contract
+----------------
+
+The compiled contract now also has a shared helper-facing runtime substrate:
+
+- ``ContractState``
+- ``ResolvedInputs``
+- ``RuntimeContext``
+
+This keeps automatic event state separate from contract memory and gives helper
+routes one stable place to read resolved market inputs and runtime metadata.
+The first checked consumers are the ranked-observation basket Monte Carlo path,
+single-name CDS helper routes, and nth-to-default basket-credit lowering, but
+the surface is intentionally generic.
+
+For schedule-dependent helper routes, tranche 1 now treats explicit timelines
+as the practical runtime boundary. Agent-facing specs may still be normalized
+from legacy date tuples, but raw string schedule fields are rejected before the
+generated adapter reaches execution.
 
 Checked Summaries And Lowering
 ------------------------------
@@ -144,6 +195,8 @@ Shipped family IRs:
 - ``VanillaEquityPDEIR``
 - ``ExerciseLatticeIR``
 - ``CorrelatedBasketMonteCarloIR``
+- ``CreditDefaultSwapIR``
+- ``NthToDefaultIR``
 
 Current Proven Families
 -----------------------
@@ -154,6 +207,8 @@ The typed semantic boundary is proven end-to-end for:
 - ``vanilla_equity_theta_pde`` on vanilla options
 - ``exercise_lattice`` on callable bonds and Bermudan swaptions
 - ``correlated_basket_monte_carlo`` on ranked-observation baskets
+- ``credit_default_swap_analytical`` and ``credit_default_swap_monte_carlo`` on single-name CDS
+- ``nth_to_default_monte_carlo`` on nth-to-default basket credit
 
 These routes preserve the existing helper-backed pricing math. The work in this
 slice changes the contract, validation, binding, admissibility, and lowering
@@ -184,6 +239,22 @@ Validation now distinguishes:
 
 - hard errors for invalid typed semantics
 - warnings when legacy mirrors are normalized or ignored for migrated routes
+
+The semantic validator also treats compiled primitive obligations as binding
+contract. If a resolved lowering plan requires a checked helper or primitive,
+importing related modules is not enough; the generated code must actually call
+the required symbol.
+
+For migrated routes, the compiled blueprint metadata now also records:
+
+- the selected family IR type and YAML-safe payload
+- the normalized DSL expression kind
+- the helper target bindings
+- structured lowering errors with stable codes
+
+That metadata is persisted into platform-request traces so replay tools can see
+the algebra objects that drove helper selection, not just the final module
+list.
 
 Deferred Scope
 --------------

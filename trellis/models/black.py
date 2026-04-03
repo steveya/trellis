@@ -5,8 +5,6 @@ from __future__ import annotations
 from autograd.scipy.stats import norm
 
 from trellis.core.differentiable import get_numpy
-from trellis.models.analytical.support import terminal_vanilla_from_basis
-
 np = get_numpy()
 
 
@@ -193,14 +191,20 @@ def garman_kohlhagen_call(
     df_foreign
         Foreign discount factor to expiry.
     """
-    forward = spot * df_foreign / df_domestic
-    asset_call, _, cash_call, _ = _black76_basis_prices(forward, strike, sigma, T)
-    return df_domestic * terminal_vanilla_from_basis(
-        "call",
-        asset_value=asset_call,
-        cash_value=cash_call,
-        strike=strike,
+    from trellis.models.analytical.fx import (
+        ResolvedGarmanKohlhagenInputs,
+        garman_kohlhagen_call_raw,
     )
+
+    resolved = ResolvedGarmanKohlhagenInputs(
+        spot=spot,
+        strike=strike,
+        sigma=sigma,
+        T=T,
+        df_domestic=df_domestic,
+        df_foreign=df_foreign,
+    )
+    return garman_kohlhagen_call_raw(resolved)
 
 
 def garman_kohlhagen_put(
@@ -212,11 +216,17 @@ def garman_kohlhagen_put(
     df_foreign: float,
 ) -> float:
     """Domestic-currency FX vanilla put under Garman-Kohlhagen basis assembly."""
-    forward = spot * df_foreign / df_domestic
-    _, asset_put, _, cash_put = _black76_basis_prices(forward, strike, sigma, T)
-    return df_domestic * terminal_vanilla_from_basis(
-        "put",
-        asset_value=asset_put,
-        cash_value=cash_put,
-        strike=strike,
+    from trellis.models.analytical.fx import (
+        ResolvedGarmanKohlhagenInputs,
+        garman_kohlhagen_put_raw,
     )
+
+    resolved = ResolvedGarmanKohlhagenInputs(
+        spot=spot,
+        strike=strike,
+        sigma=sigma,
+        T=T,
+        df_domestic=df_domestic,
+        df_foreign=df_foreign,
+    )
+    return garman_kohlhagen_put_raw(resolved)

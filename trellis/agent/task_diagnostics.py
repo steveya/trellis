@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DIAGNOSIS_ROOT = ROOT / "task_runs" / "diagnostics"
 DIAGNOSIS_HISTORY_ROOT = DIAGNOSIS_ROOT / "history"
 DIAGNOSIS_LATEST_ROOT = DIAGNOSIS_ROOT / "latest"
-DIAGNOSIS_SCHEMA_VERSION = 1
+DIAGNOSIS_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -36,6 +36,7 @@ def build_task_diagnosis_packet(record: Mapping[str, Any]) -> dict[str, Any]:
     comparison = dict(record.get("comparison") or {})
     market = dict(record.get("market") or {})
     framework = dict(record.get("framework") or {})
+    telemetry = _telemetry_section(record)
     runtime_controls = dict(result.get("runtime_controls") or {})
     method_runs = dict(record.get("method_runs") or {})
     post_build = dict(record.get("post_build") or {})
@@ -108,6 +109,7 @@ def build_task_diagnosis_packet(record: Mapping[str, Any]) -> dict[str, Any]:
         "comparison": comparison,
         "market": market,
         "framework": framework,
+        "telemetry": telemetry,
         "runtime_controls": runtime_controls,
         "post_build": post_build,
         "evidence": _evidence(
@@ -167,6 +169,7 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
     learning = dict(packet.get("learning") or {})
     workflow = dict(packet.get("workflow") or {})
     comparison = dict(packet.get("comparison") or {})
+    telemetry = dict(packet.get("telemetry") or {})
     runtime_controls = dict(packet.get("runtime_controls") or {})
     post_build = dict(packet.get("post_build") or {})
     evidence = dict(packet.get("evidence") or {})
@@ -270,12 +273,73 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
             f"- Lessons retrieved: `{_join_or_none(learning.get('retrieved_lesson_ids'))}`",
             f"- Retrieval stages: `{_join_or_none(learning.get('retrieval_stages'))}`",
             f"- Retrieval sources: `{_join_or_none(learning.get('retrieval_sources'))}`",
+            f"- Selected artifacts: `{_join_or_none(learning.get('selected_artifact_ids'))}`",
             f"- Cookbook paths: `{_join_or_none(learning.get('cookbook_candidate_paths'))}`",
             f"- Promotion candidate paths: `{_join_or_none(learning.get('promotion_candidate_paths'))}`",
             "",
-            "## Evidence",
+            "## Skill Telemetry",
+            f"- Run outcome: `{telemetry.get('run_outcome', '')}`",
+            f"- Retries beyond first attempt: `{telemetry.get('retry_count', 0)}`",
+            f"- Degraded: `{_yes_no(telemetry.get('degraded'))}`",
         ]
     )
+    selected_artifacts = list(telemetry.get("selected_artifacts") or [])
+    if selected_artifacts:
+        lines.extend(
+            [
+                *_render_table(
+                    headers=("Artifact", "Kind", "Audience", "Outcome", "Routes"),
+                    rows=[
+                        (
+                            item.get("artifact_id"),
+                            item.get("kind"),
+                            _join_or_none(item.get("audiences")),
+                            item.get("outcome"),
+                            _join_or_none(item.get("route_ids")),
+                        )
+                        for item in selected_artifacts
+                    ],
+                ),
+            ]
+        )
+    else:
+        lines.append("- Selected artifacts: none recorded")
+    route_observations = list(telemetry.get("route_observations") or [])
+    if route_observations:
+        lines.extend(
+            [
+                *_render_table(
+                    headers=("Route", "Family", "Outcome", "Health", "Trace"),
+                    rows=[
+                        (
+                            item.get("route_id"),
+                            item.get("route_family"),
+                            item.get("outcome"),
+                            (
+                                "effective="
+                                f"{item.get('effective_instruction_count', 0)}, "
+                                "hard="
+                                f"{item.get('hard_constraint_count', 0)}, "
+                                "conflicts="
+                                f"{item.get('conflict_count', 0)}"
+                            ),
+                            item.get("trace_kind"),
+                        )
+                        for item in route_observations
+                    ],
+                ),
+                "",
+                "## Evidence",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "- Route observations: none recorded",
+                "",
+                "## Evidence",
+            ]
+        )
     for label in (
         ("Top-level error", evidence.get("top_level_error")),
         ("Top-level failures", evidence.get("top_level_failures")),
@@ -458,6 +522,161 @@ def _consolidated_validation_section(
         all_passed = all(g["passed"] for g in gates) if gates else None
         result[str(method)] = {"gates": gates, "all_passed": all_passed}
     return result
+
+
+def _telemetry_section(record: Mapping[str, Any]) -> dict[str, Any]:
+    """Return telemetry from the persisted record or derive a minimal fallback view."""
+    telemetry = record.get("telemetry")
+    if isinstance(telemetry, Mapping) and telemetry:
+        return _enrich_telemetry_route_observations(dict(telemetry), record)
+
+    learning = dict(record.get("learning") or {})
+    workflow = dict(record.get("workflow") or {})
+    selected_artifacts = []
+    titles = {
+        str(artifact_id): str(title)
+        for artifact_id, title in zip(
+            learning.get("selected_artifact_ids") or [],
+            learning.get("selected_artifact_titles") or [],
+        )
+    }
+    by_audience = dict(learning.get("selected_artifacts_by_audience") or {})
+    if by_audience:
+        seen: set[str] = set()
+        for audience, artifacts in by_audience.items():
+            if not isinstance(artifacts, list):
+                continue
+            for artifact in artifacts:
+                if not isinstance(artifact, Mapping):
+                    continue
+                artifact_id = str(artifact.get("id") or "").strip()
+                if not artifact_id or artifact_id in seen:
+                    continue
+                seen.add(artifact_id)
+                selected_artifacts.append(
+                    {
+                        "artifact_id": artifact_id,
+                        "title": str(artifact.get("title") or "").strip(),
+                        "kind": str(artifact.get("kind") or "").strip(),
+                        "audiences": [str(audience)],
+                        "outcome": str(workflow.get("status") or "").strip(),
+                        "success": bool(record.get("summary", {}).get("success")),
+                        "retried": False,
+                        "retry_count": 0,
+                        "degraded": False,
+                        "route_ids": [],
+                        "route_families": [],
+                    }
+                )
+    else:
+        selected_artifacts = [
+            {
+                "artifact_id": str(artifact_id),
+                "title": titles.get(str(artifact_id), ""),
+                "kind": "",
+                "audiences": [],
+                "outcome": str(workflow.get("status") or "").strip(),
+                "success": bool(record.get("summary", {}).get("success")),
+                "retried": False,
+                "retry_count": 0,
+                "degraded": False,
+                "route_ids": [],
+                "route_families": [],
+            }
+            for artifact_id in learning.get("selected_artifact_ids") or []
+        ]
+
+    route_observations = []
+    for trace in record.get("trace_summaries") or []:
+        if not isinstance(trace, Mapping):
+            continue
+        route_health = dict(trace.get("route_health") or {})
+        route_binding_authority = dict(trace.get("route_binding_authority") or {})
+        route_id = str(route_health.get("route_id") or trace.get("action") or "").strip()
+        route_family = str(
+            route_health.get("route_family")
+            or trace.get("route_method")
+            or ""
+        ).strip()
+        if not route_id and not route_family:
+            continue
+        route_observations.append(
+            {
+                "route_id": route_id,
+                "route_family": route_family,
+                "trace_kind": str(trace.get("trace_kind") or "").strip(),
+                "trace_status": str(trace.get("status") or "").strip(),
+                "outcome": str(workflow.get("status") or "").strip(),
+                "success": bool(record.get("summary", {}).get("success")),
+                "retried": False,
+                "retry_count": 0,
+                "degraded": False,
+                "selected_artifact_ids": [
+                    item.get("artifact_id")
+                    for item in selected_artifacts
+                    if item.get("artifact_id")
+                ],
+                "instruction_ids": list(route_health.get("effective_instruction_ids") or []),
+                "effective_instruction_count": int(route_health.get("effective_instruction_count") or 0),
+                "hard_constraint_count": int(route_health.get("hard_constraint_count") or 0),
+                "conflict_count": int(route_health.get("conflict_count") or 0),
+                "task_ids": list(
+                    route_binding_authority.get("canary_task_ids")
+                    or route_health.get("canary_task_ids")
+                    or []
+                ),
+            }
+        )
+
+    return {
+        "task_kind": str(record.get("task_kind") or "").strip(),
+        "run_outcome": str(workflow.get("status") or "").strip(),
+        "retried": False,
+        "retry_count": 0,
+        "degraded": False,
+        "comparison_status": str(record.get("summary", {}).get("comparison_status") or "").strip(),
+        "selected_artifacts": selected_artifacts,
+        "route_observations": route_observations,
+    }
+
+
+def _enrich_telemetry_route_observations(
+    telemetry: dict[str, Any],
+    record: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Backfill route-authority canary IDs into persisted telemetry when available."""
+    traces = list(record.get("trace_summaries") or [])
+    route_task_ids: dict[tuple[str, str], list[str]] = {}
+    for trace in traces:
+        if not isinstance(trace, Mapping):
+            continue
+        route_health = dict(trace.get("route_health") or {})
+        route_binding_authority = dict(trace.get("route_binding_authority") or {})
+        route_id = str(route_health.get("route_id") or trace.get("action") or "").strip()
+        route_family = str(route_health.get("route_family") or trace.get("route_method") or "").strip()
+        task_ids = list(
+            route_binding_authority.get("canary_task_ids")
+            or route_health.get("canary_task_ids")
+            or []
+        )
+        if route_id or route_family:
+            route_task_ids[(route_id, route_family)] = task_ids
+
+    observations = []
+    for observation in telemetry.get("route_observations") or []:
+        if not isinstance(observation, Mapping):
+            continue
+        item = dict(observation)
+        route_id = str(item.get("route_id") or "").strip()
+        route_family = str(item.get("route_family") or "").strip()
+        item["task_ids"] = list(
+            item.get("task_ids")
+            or route_task_ids.get((route_id, route_family))
+            or []
+        )
+        observations.append(item)
+    telemetry["route_observations"] = observations
+    return telemetry
 
 
 def _primary_failure(

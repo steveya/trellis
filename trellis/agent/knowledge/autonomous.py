@@ -518,32 +518,46 @@ def _build_with_tracking(
         "knowledge_summary": dict(knowledge_payload.get("summary") or {}),
     }
 
-    distilled_knowledge_text = knowledge_payload["builder_text_distilled"]
-    compact_knowledge_text = knowledge_payload["builder_text"]
-    expanded_knowledge_text = knowledge_payload["builder_text_expanded"]
-    distilled_review_text = knowledge_payload["review_text_distilled"]
-    compact_review_text = knowledge_payload["review_text"]
-    expanded_review_text = knowledge_payload["review_text_expanded"]
-    gap_warnings = format_gap_warnings(gap_report)
+    def _retrieve_live_payload() -> dict[str, Any]:
+        """Render a fresh shared-knowledge payload for each retry attempt."""
+        if product_ir is not None:
+            latest_knowledge = retrieve_for_product_ir(
+                product_ir,
+                preferred_method=preferred_method or decomposition.method,
+            )
+        else:
+            latest_knowledge = retrieve_for_task(
+                method=decomposition.method,
+                features=list(decomposition.features),
+                instrument=decomposition.instrument,
+            )
+        return build_shared_knowledge_payload(latest_knowledge)
+
     import trellis.agent.executor as executor
     original_record_platform_event = executor._record_platform_event
 
     def _stage_aware_knowledge_retriever(request) -> str:
-        """Serve precomputed knowledge with audience/surface awareness."""
+        """Serve fresh knowledge with audience/surface awareness on every attempt."""
+        try:
+            payload = _retrieve_live_payload()
+        except Exception:
+            payload = knowledge_payload
+
         audience = getattr(request, "audience", "builder")
         knowledge_surface = getattr(request, "knowledge_surface", "compact")
         prompt_surface = getattr(request, "prompt_surface", "compact")
         expanded = knowledge_surface == "expanded"
         if audience == "review":
             if expanded:
-                return expanded_review_text
-            return distilled_review_text
+                return payload["review_text_expanded"]
+            return payload["review_text_distilled"]
         if expanded:
-            text = expanded_knowledge_text
+            text = payload["builder_text_expanded"]
         elif prompt_surface == "import_repair":
-            text = compact_knowledge_text
+            text = payload["builder_text"]
         else:
-            text = distilled_knowledge_text
+            text = payload["builder_text_distilled"]
+        gap_warnings = format_gap_warnings(gap_report)
         if gap_warnings:
             text += "\n\n" + gap_warnings
         return text
@@ -879,6 +893,7 @@ def _emit_decision_checkpoint(
     _log = logging.getLogger(__name__)
     try:
         from trellis.agent.checkpoints import capture_checkpoint, save_checkpoint
+        from trellis.agent.platform_traces import TRACE_ROOT, load_platform_trace_boundary
 
         # Extract quant decision from agent_observations
         pricing_plan_proxy = None
@@ -908,12 +923,26 @@ def _emit_decision_checkpoint(
             if any("validation" in f.lower() for f in result.failures):
                 outcome = "fail_validate"
 
+        trace_path = result.platform_trace_path
+        if not trace_path and result.platform_request_id:
+            candidate = TRACE_ROOT / f"{result.platform_request_id}.yaml"
+            if candidate.exists():
+                trace_path = str(candidate)
+        trace_boundary = (
+            load_platform_trace_boundary(trace_path)
+            if trace_path
+            else {}
+        )
+
         checkpoint = capture_checkpoint(
             task_id=task_id,
             instrument_type=instrument_type or "unknown",
             pricing_plan=pricing_plan_proxy,
             code=result.code or None,
             token_summary=result.token_usage_summary,
+            semantic_checkpoint=trace_boundary.get("semantic_checkpoint"),
+            generation_boundary=trace_boundary.get("generation_boundary"),
+            validation_contract=trace_boundary.get("validation_contract"),
             outcome=outcome,
             attempts=result.attempts,
             model=model,

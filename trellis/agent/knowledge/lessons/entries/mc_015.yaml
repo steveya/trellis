@@ -2,8 +2,8 @@ id: mc_015
 title: CorrelatedGBM requires 'spot_prices' not 'spots' keyword
 severity: critical
 category: monte_carlo
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-03-28T09:10:21.242675'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_091021_basket_option_monte_carlo.yaml

@@ -7,22 +7,19 @@ same coupon and exercise mapping inline.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from typing import Iterable
 
 from trellis.core.date_utils import (
-    build_exercise_timeline_from_dates,
     build_payment_timeline,
+    coerce_contract_timeline_from_dates,
+    normalize_explicit_dates,
     year_fraction,
 )
-from trellis.models.trees.algebra import (
-    BINOMIAL_1F_TOPOLOGY,
-    TERM_STRUCTURE_TARGET,
-    UNIFORM_ADDITIVE_MESH,
-    LatticeContractSpec,
-    LatticeControlSpec,
-    LatticeLinearClaimSpec,
-)
+from trellis.core.types import TimelineRole
+import trellis.models.trees.algebra as lattice_algebra
+import trellis.models.trees.models as tree_models
 from trellis.models.trees.control import (
     lattice_step_from_time,
     lattice_steps_from_timeline,
@@ -33,7 +30,17 @@ from trellis.models.trees.lattice import (
     build_lattice,
     price_on_lattice,
 )
-from trellis.models.trees.models import MODEL_REGISTRY
+
+
+@dataclass(frozen=True)
+class _EmbeddedBondExerciseConfig:
+    """Resolved embedded-option semantics for callable or puttable bonds."""
+
+    schedule_dates: object
+    exercise_price: float
+    exercise_style: str
+    control_style: str
+    reference_bound: str
 
 
 def build_callable_bond_lattice(
@@ -55,13 +62,13 @@ def build_callable_bond_lattice(
     step_count = int(n_steps or min(200, max(50, int(maturity * 50))))
     model_key = str(model).strip().lower()
 
-    tree_model = MODEL_REGISTRY[model_key]
+    tree_model = tree_models.MODEL_REGISTRY[model_key]
     sigma = black_vol if tree_model.vol_type == "lognormal" else black_vol * max(abs(r0), 1e-6)
     return build_lattice(
-        BINOMIAL_1F_TOPOLOGY,
-        UNIFORM_ADDITIVE_MESH,
+        lattice_algebra.BINOMIAL_1F_TOPOLOGY,
+        lattice_algebra.UNIFORM_ADDITIVE_MESH,
         tree_model.as_lattice_model_spec(),
-        calibration_target=TERM_STRUCTURE_TARGET(market_state.discount),
+        calibration_target=lattice_algebra.TERM_STRUCTURE_TARGET(market_state.discount),
         r0=r0,
         sigma=sigma,
         a=mean_reversion,
@@ -111,20 +118,26 @@ def build_callable_bond_exercise_policy(
     dt: float,
     n_steps: int,
 ):
-    """Resolve issuer-call exercise dates into a lattice policy."""
-    call_dates = _normalized_call_dates(spec.call_dates)
-    if not call_dates:
+    """Resolve callable or puttable exercise dates into a lattice policy."""
+    exercise = _resolve_embedded_bond_exercise_config(spec)
+    exercise_dates = tuple(
+        exercise_date
+        for exercise_date in normalize_explicit_dates(exercise.schedule_dates)
+        if settlement < exercise_date <= spec.end_date
+    )
+    if not exercise_dates:
         return resolve_lattice_exercise_policy_from_control_style(
-            "issuer_min",
+            exercise.control_style,
             exercise_steps=(),
-            exercise_style="issuer_call",
+            exercise_style=exercise.exercise_style,
         )
 
-    exercise_timeline = build_exercise_timeline_from_dates(
-        [d for d in call_dates if settlement < d <= spec.end_date],
+    exercise_timeline = coerce_contract_timeline_from_dates(
+        exercise_dates,
+        role=TimelineRole.EXERCISE,
         day_count=spec.day_count,
         time_origin=settlement,
-        label="callable_bond_call_timeline",
+        label=f"{exercise.exercise_style}_timeline",
     )
     exercise_steps = lattice_steps_from_timeline(
         exercise_timeline,
@@ -132,9 +145,9 @@ def build_callable_bond_exercise_policy(
         n_steps=n_steps,
     )
     return resolve_lattice_exercise_policy_from_control_style(
-        "issuer_min",
+        exercise.control_style,
         exercise_steps=exercise_steps,
-        exercise_style="issuer_call",
+        exercise_style=exercise.exercise_style,
     )
 
 
@@ -144,8 +157,9 @@ def compile_callable_bond_contract_spec(
     settlement: date,
     dt: float,
     n_steps: int,
-) -> LatticeContractSpec:
-    """Compile callable-bond coupons and exercise into a lattice contract."""
+) -> lattice_algebra.LatticeContractSpec:
+    """Compile callable- or puttable-bond coupons and exercise into a lattice contract."""
+    exercise = _resolve_embedded_bond_exercise_config(spec)
     coupon_by_step = build_callable_bond_coupon_map(
         spec,
         settlement=settlement,
@@ -159,17 +173,18 @@ def compile_callable_bond_contract_spec(
         n_steps=n_steps,
     )
     terminal_coupon = coupon_by_step.get(n_steps, 0.0)
-    return LatticeContractSpec(
-        claim=LatticeLinearClaimSpec(
+    return lattice_algebra.LatticeContractSpec(
+        claim=lattice_algebra.LatticeLinearClaimSpec(
             terminal_payoff=lambda step, node, lattice, obs: float(spec.notional) + float(terminal_coupon),
             node_cashflow_fn=lambda step, node, lattice, obs: float(coupon_by_step.get(step, 0.0)),
             observable_requirements=("rate",),
         ),
-        control=LatticeControlSpec(
-            objective="issuer_min",
+        control=lattice_algebra.LatticeControlSpec(
+            objective=exercise.control_style,
             exercise_steps=exercise_policy.exercise_steps,
             exercise_value_fn=(
-                lambda step, node, lattice, obs: float(spec.call_price) + float(coupon_by_step.get(step, 0.0))
+                lambda step, node, lattice, obs: float(exercise.exercise_price)
+                + float(coupon_by_step.get(step, 0.0))
             ),
         ),
         metadata={"coupon_by_step": coupon_by_step},
@@ -181,7 +196,7 @@ def price_callable_bond_on_lattice(
     *,
     spec=None,
     settlement: date | None = None,
-    contract_spec: LatticeContractSpec | None = None,
+    contract_spec: lattice_algebra.LatticeContractSpec | None = None,
 ) -> float:
     """Price a callable bond on a pre-built lattice."""
     if contract_spec is None:
@@ -204,7 +219,7 @@ def price_callable_bond_tree(
     mean_reversion: float = 0.1,
     n_steps: int | None = None,
 ) -> float:
-    """Build the requested callable-bond tree and return the holder PV."""
+    """Build the requested callable- or puttable-bond tree and return the holder PV."""
     settlement = _settlement_date(market_state, spec)
     lattice = build_callable_bond_lattice(
         market_state,
@@ -218,7 +233,11 @@ def price_callable_bond_tree(
         spec=spec,
         settlement=settlement,
     )
-    return min(tree_price, straight_bond_present_value(market_state, spec, settlement=settlement))
+    straight_price = straight_bond_present_value(market_state, spec, settlement=settlement)
+    exercise = _resolve_embedded_bond_exercise_config(spec)
+    if exercise.reference_bound == "lower":
+        return max(tree_price, straight_price)
+    return min(tree_price, straight_price)
 
 
 def straight_bond_present_value(market_state, spec, *, settlement: date) -> float:
@@ -246,11 +265,34 @@ def straight_bond_present_value(market_state, spec, *, settlement: date) -> floa
     return float(pv)
 
 
-def _normalized_call_dates(call_dates: str | Iterable[date]) -> list[date]:
-    if isinstance(call_dates, str):
-        return [date.fromisoformat(item.strip()) for item in call_dates.split(",") if item.strip()]
-    return sorted(date.fromisoformat(item) if isinstance(item, str) else item for item in call_dates)
-
-
 def _settlement_date(market_state, spec) -> date:
     return market_state.settlement or market_state.as_of or spec.start_date
+
+
+def _resolve_embedded_bond_exercise_config(spec) -> _EmbeddedBondExerciseConfig:
+    has_call_dates = hasattr(spec, "call_dates")
+    has_put_dates = hasattr(spec, "put_dates")
+    if has_call_dates and has_put_dates:
+        raise ValueError("Embedded bond spec must define either call_dates or put_dates, not both")
+    if has_call_dates:
+        return _EmbeddedBondExerciseConfig(
+            schedule_dates=getattr(spec, "call_dates"),
+            exercise_price=_quoted_exercise_price_to_cash(spec, "call_price"),
+            exercise_style="issuer_call",
+            control_style="issuer_min",
+            reference_bound="upper",
+        )
+    if has_put_dates:
+        return _EmbeddedBondExerciseConfig(
+            schedule_dates=getattr(spec, "put_dates"),
+            exercise_price=_quoted_exercise_price_to_cash(spec, "put_price"),
+            exercise_style="holder_put",
+            control_style="holder_max",
+            reference_bound="lower",
+        )
+    raise ValueError("Embedded bond spec must define call_dates or put_dates")
+
+
+def _quoted_exercise_price_to_cash(spec, field_name: str) -> float:
+    quoted_price = float(getattr(spec, field_name))
+    return quoted_price / 100.0 * float(spec.notional)

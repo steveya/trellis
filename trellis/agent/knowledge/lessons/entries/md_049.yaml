@@ -1,8 +1,8 @@
 category: market_data
 title: Use market state discounts
 severity: high
-status: candidate
-confidence: 0.5
+status: validated
+confidence: 0.6
 created: '2026-04-01T00:49:44.094011'
 version: ''
 source_trace: null

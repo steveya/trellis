@@ -39,7 +39,7 @@ class FXVanillaMonteCarloPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        return {"discount", "forward_rate", "black_vol", "fx"}
+        return {"discount_curve", "forward_curve", "black_vol_surface", "fx_rates"}
 
     def evaluate(self, market_state: MarketState) -> float:
         from trellis.models.monte_carlo.engine import MonteCarloEngine
@@ -47,14 +47,20 @@ class FXVanillaMonteCarloPayoff:
 
         spec = self._spec
         np = get_numpy()
-        spot, T, domestic_df, foreign_df = _resolve_fx_inputs(market_state, spec)
-        if T <= 0:
-            intrinsic = max(spot - spec.strike, 0.0) if spec.option_type.lower() == "call" else max(spec.strike - spot, 0.0)
+        resolved = _resolve_fx_inputs(market_state, spec)
+        spot = float(resolved.spot)
+        T = float(resolved.T)
+        if T <= 0.0:
+            intrinsic = (
+                max(spot - spec.strike, 0.0)
+                if spec.option_type.lower() == "call"
+                else max(spec.strike - spot, 0.0)
+            )
             return float(spec.notional) * float(intrinsic)
 
-        sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
-        rd = float(-np.log(domestic_df) / T)
-        rf = float(-np.log(foreign_df) / T)
+        sigma = float(resolved.sigma)
+        rd = float(-np.log(resolved.df_domestic) / T)
+        rf = float(-np.log(resolved.df_foreign) / T)
         process = GBM(mu=rd - rf, sigma=sigma)
         engine = MonteCarloEngine(
             process,

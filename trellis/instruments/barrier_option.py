@@ -56,7 +56,7 @@ class BarrierOptionPayoff:
     @property
     def requirements(self) -> set[str]:
         """Needs a discount curve and a volatility surface."""
-        return {"discount", "black_vol"}
+        return {"discount_curve", "black_vol_surface"}
 
     def evaluate(self, market_state: MarketState) -> float:
         """Simulate price paths, track barrier crossings, and average the surviving payoffs."""

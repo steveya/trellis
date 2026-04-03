@@ -118,9 +118,10 @@ which modules to import, and what constraints to enforce.
 feature-method compatibility, not product name.
 
 **Partially implemented in:** `quant.py`, `planner.py`,
-`codegen_guardrails.py`, `family_contract_compiler.py`. The family-contract
-compiler exists but is not yet wired into the main executor path for all
-request types.
+`codegen_guardrails.py`, `platform_requests.py`,
+`semantic_contract_compiler.py`. Known checked-in template routing now goes
+through the semantic request compiler; the deprecated family-contract compiler
+is retained only for compatibility tests and direct legacy utilities.
 
 **Output contract:** `GenerationPlan` (frozen dataclass in
 `codegen_guardrails.py`).
@@ -264,8 +265,9 @@ were completed in March 2026:
 
 - **QUA-286** — Validator rules and draft fixtures: deterministic validation
   suite for Layer 2.
-- **QUA-287** — Compiler and request routing: wire `family_contract_compiler`
-  into the main executor path for all request types.
+- **QUA-287** — Compiler and request routing: keep the semantic request
+  compiler authoritative for known templates, route binding, and bridge
+  retirement.
 
 ### Route and Market Data Policy
 

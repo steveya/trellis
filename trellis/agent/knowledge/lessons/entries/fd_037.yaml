@@ -1,8 +1,8 @@
 category: finite_differences
 title: Unchecked None from PDE solver
 severity: high
-status: candidate
-confidence: 0.5
+status: validated
+confidence: 0.6
 created: '2026-03-31T18:32:26.600495'
 version: ''
 source_trace: null

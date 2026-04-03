@@ -14,19 +14,30 @@ from trellis.models.vol_surface import FlatVol
 SETTLE = date(2024, 11, 15)
 
 
-def _quanto_market_state(*, corr: float = 0.35) -> MarketState:
+def _quanto_market_state(
+    *,
+    corr: float = 0.35,
+    forecast_curves: dict[str, object] | None = None,
+    model_parameters: dict[str, object] | None = None,
+    selected_curve_names: dict[str, str] | None = None,
+    market_provenance: dict[str, object] | None = None,
+) -> MarketState:
     domestic = YieldCurve.flat(0.05)
     foreign = YieldCurve.flat(0.03)
     return MarketState(
         as_of=SETTLE,
         settlement=SETTLE,
         discount=domestic,
-        forecast_curves={"EUR-DISC": foreign},
+        forecast_curves=forecast_curves if forecast_curves is not None else {"EUR-DISC": foreign},
         fx_rates={"EURUSD": FXRate(spot=1.10, domestic="USD", foreign="EUR")},
         spot=100.0,
         underlier_spots={"EUR": 100.0},
         vol_surface=FlatVol(0.20),
-        model_parameters={"quanto_correlation": corr},
+        model_parameters=(
+            model_parameters if model_parameters is not None else {"quanto_correlation": corr}
+        ),
+        selected_curve_names=selected_curve_names,
+        market_provenance=market_provenance,
     )
 
 
@@ -73,6 +84,15 @@ def test_resolve_quanto_inputs_matches_expected_market_binding():
     assert resolved.sigma_underlier == pytest.approx(0.20)
     assert resolved.sigma_fx == pytest.approx(0.20)
     assert resolved.corr == pytest.approx(0.35)
+    assert resolved.provenance["underlier_spot"]["source_kind"] == "underlier_spot"
+    assert resolved.provenance["fx_spot"]["source_kind"] == "fx_rate"
+    assert resolved.provenance["domestic_curve"]["source_kind"] == "discount_curve"
+    assert resolved.provenance["foreign_curve"]["source_kind"] == "forecast_curve"
+    assert resolved.provenance["foreign_curve"]["source_parameters"]["binding_kind"] == (
+        "canonical_foreign_curve"
+    )
+    assert resolved.provenance["underlier_vol"]["source_kind"] == "surface_lookup"
+    assert resolved.provenance["fx_vol"]["source_kind"] == "surface_lookup"
     assert resolved.provenance["correlation"]["source_family"] == "explicit"
     assert resolved.provenance["correlation"]["source_kind"] == "explicit_scalar"
     assert resolved.valuation_date == SETTLE
@@ -103,6 +123,112 @@ def test_resolve_quanto_inputs_requires_correlation():
 
     with pytest.raises(ValueError, match="underlier/FX correlation"):
         resolve_quanto_inputs(market_state, spec)
+
+
+def test_resolve_quanto_inputs_rejects_noncanonical_single_forecast_curve_without_policy():
+    from trellis.instruments._agent.quantooptionanalytical import QuantoOptionSpec
+    from trellis.models.resolution.quanto import resolve_quanto_inputs
+
+    market_state = _quanto_market_state(
+        forecast_curves={"foreign_proxy": YieldCurve.flat(0.03)},
+    )
+    spec = QuantoOptionSpec(
+        notional=100_000,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        fx_pair="EURUSD",
+        underlier_currency="EUR",
+        domestic_currency="USD",
+    )
+
+    with pytest.raises(ValueError, match="foreign carry/discount curve bound"):
+        resolve_quanto_inputs(market_state, spec)
+
+
+def test_resolve_quanto_inputs_rejects_implicit_domestic_discount_bridge():
+    from trellis.instruments._agent.quantooptionanalytical import QuantoOptionSpec
+    from trellis.models.resolution.quanto import resolve_quanto_inputs
+
+    market_state = _quanto_market_state(
+        forecast_curves={},
+    )
+    spec = QuantoOptionSpec(
+        notional=100_000,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        fx_pair="EURUSD",
+        underlier_currency="EUR",
+        domestic_currency="USD",
+    )
+
+    with pytest.raises(ValueError, match="quanto_foreign_curve_policy"):
+        resolve_quanto_inputs(market_state, spec)
+
+
+def test_resolve_quanto_inputs_supports_selected_forecast_curve_bridge_policy():
+    from trellis.instruments._agent.quantooptionanalytical import QuantoOptionSpec
+    from trellis.models.resolution.quanto import resolve_quanto_inputs
+
+    market_state = _quanto_market_state(
+        forecast_curves={"foreign_proxy": YieldCurve.flat(0.03)},
+        selected_curve_names={"discount_curve": "usd_ois", "forecast_curve": "foreign_proxy"},
+        market_provenance={
+            "source": "unit",
+            "source_kind": "user_supplied_snapshot",
+            "source_ref": "selected_forecast_curve_bridge",
+            "quanto_foreign_curve_policy": {"kind": "selected_forecast_curve"},
+        },
+    )
+    spec = QuantoOptionSpec(
+        notional=100_000,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        fx_pair="EURUSD",
+        underlier_currency="EUR",
+        domestic_currency="USD",
+    )
+
+    resolved = resolve_quanto_inputs(market_state, spec)
+
+    assert resolved.foreign_df > 0.0
+    assert resolved.provenance["foreign_curve"]["source_family"] == "derived"
+    assert resolved.provenance["foreign_curve"]["source_kind"] == (
+        "selected_forecast_curve_bridge"
+    )
+    assert resolved.provenance["foreign_curve"]["source_key"] == "foreign_proxy"
+    assert resolved.provenance["foreign_curve"]["source_parameters"]["policy_key"] == (
+        "market_provenance.quanto_foreign_curve_policy"
+    )
+
+
+def test_resolve_quanto_inputs_supports_explicit_domestic_discount_bridge_policy():
+    from trellis.instruments._agent.quantooptionanalytical import QuantoOptionSpec
+    from trellis.models.resolution.quanto import resolve_quanto_inputs
+
+    market_state = _quanto_market_state(
+        forecast_curves={},
+        selected_curve_names={"discount_curve": "usd_ois"},
+        model_parameters={
+            "quanto_correlation": 0.35,
+            "quanto_foreign_curve_policy": {"kind": "domestic_discount_curve"},
+        },
+    )
+    spec = QuantoOptionSpec(
+        notional=100_000,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        fx_pair="EURUSD",
+        underlier_currency="EUR",
+        domestic_currency="USD",
+    )
+
+    resolved = resolve_quanto_inputs(market_state, spec)
+
+    assert resolved.foreign_df == pytest.approx(resolved.domestic_df)
+    assert resolved.provenance["foreign_curve"]["source_kind"] == "domestic_discount_bridge"
+    assert resolved.provenance["foreign_curve"]["source_parameters"]["policy_key"] == (
+        "model_parameters.quanto_foreign_curve_policy"
+    )
 
 
 def test_resolved_quanto_inputs_support_generated_code_aliases():
@@ -176,7 +302,7 @@ def test_resolve_himalaya_inputs_matches_expected_market_binding():
         strike=0.05,
         expiry_date=date(2025, 11, 15),
         constituents="SPX,NDX",
-        observation_dates="2025-02-15,2025-05-15",
+        observation_dates=(date(2025, 2, 15), date(2025, 5, 15)),
     )
 
     resolved = resolve_himalaya_inputs(_himalaya_market_state(), spec)
@@ -208,7 +334,7 @@ def test_resolve_basket_semantics_matches_expected_market_binding():
         strike=0.05,
         expiry_date=date(2025, 11, 15),
         constituents="SPX,NDX",
-        observation_dates="2025-02-15,2025-05-15",
+        observation_dates=(date(2025, 2, 15), date(2025, 5, 15)),
     )
 
     resolved = resolve_basket_semantics(_himalaya_market_state(), spec)
@@ -257,7 +383,7 @@ def test_resolve_basket_semantics_regularizes_non_pd_correlation_matrix():
         strike=0.05,
         expiry_date=date(2025, 11, 15),
         constituents="SPX,NDX,RTY",
-        observation_dates="2025-02-15,2025-05-15",
+        observation_dates=(date(2025, 2, 15), date(2025, 5, 15)),
     )
 
     resolved = resolve_basket_semantics(market_state, spec)
@@ -310,7 +436,7 @@ def test_resolve_basket_semantics_estimates_empirical_correlation_from_history()
         strike=0.05,
         expiry_date=date(2025, 11, 15),
         constituents="SPX,NDX",
-        observation_dates="2025-02-15,2025-05-15",
+        observation_dates=(date(2025, 2, 15), date(2025, 5, 15)),
     )
 
     resolved = resolve_basket_semantics(market_state, spec)
@@ -384,7 +510,7 @@ def test_resolve_basket_semantics_supports_implied_and_synthetic_correlation_sou
         strike=0.05,
         expiry_date=date(2025, 11, 15),
         constituents="SPX,NDX",
-        observation_dates="2025-02-15,2025-05-15",
+        observation_dates=(date(2025, 2, 15), date(2025, 5, 15)),
     )
 
     implied_resolved = resolve_basket_semantics(implied_market_state, spec)
@@ -437,7 +563,7 @@ def test_resolve_basket_semantics_rejects_malformed_correlation_matrix(bad_matri
         strike=0.05,
         expiry_date=date(2025, 11, 15),
         constituents="SPX,NDX",
-        observation_dates="2025-02-15,2025-05-15",
+        observation_dates=(date(2025, 2, 15), date(2025, 5, 15)),
     )
 
     from trellis.models.resolution.basket_semantics import CorrelationPreflightError

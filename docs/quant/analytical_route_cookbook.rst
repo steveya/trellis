@@ -30,11 +30,11 @@ Layer Summary
      - Top of the route module
    * - Support helpers
      - Reusable mathematical building blocks (discounting, forwards, payoff decomposition)
-     - ``terminal_intrinsic``, ``df_continuous``, ``forward_from_spot``
+     - ``discounted_value``, ``forward_from_discount_factors``, ``terminal_vanilla_from_basis``
      - ``trellis.models.analytical.support``
    * - ``xxx_raw(resolved)``
-     - Autograd-safe pricing kernel that accepts only the resolved dataclass
-     - ``down_and_out_call_raw``, ``black76_call_raw``
+     - Autograd-safe pricing kernel that accepts resolved inputs plus, at most, a small semantic selector
+     - ``down_and_out_call_raw``, ``garman_kohlhagen_price_raw``
      - Route module, private or exported
    * - ``xxx(S, K, …)`` public adapter
      - Accepts raw market inputs, constructs ``ResolvedXxxInputs``, calls the raw kernel
@@ -54,11 +54,11 @@ Here is a stripped-down template for a new analytical route:
 
     from dataclasses import dataclass
 
-    import autograd.numpy as np
-
     from trellis.models.analytical.support import (
-        df_continuous,
-        forward_from_spot,
+        discount_factor_from_zero_rate,
+        discounted_value,
+        forward_from_carry_rate,
+        safe_time_fraction,
         terminal_intrinsic,
     )
 
@@ -66,50 +66,75 @@ Here is a stripped-down template for a new analytical route:
     @dataclass(frozen=True)
     class ResolvedMyProductInputs:
         """Pre-computed scalar inputs for MyProduct pricing."""
+        option_type: str
         spot: float
         strike: float
-        rate: float
-        sigma: float
+        domestic_rate: float
+        carry_rate: float
         T: float
 
 
     def my_product_raw(resolved: ResolvedMyProductInputs) -> float:
-        """Autograd-safe pricing kernel. Only accepts the resolved dataclass."""
-        fwd = forward_from_spot(resolved.spot, resolved.rate, resolved.T)
-        df = df_continuous(resolved.rate, resolved.T)
-        intrinsic = terminal_intrinsic(fwd, resolved.strike)
-        # … add model-specific terms …
-        return float(df * intrinsic)
+        """Autograd-safe pricing kernel over resolved inputs only."""
+        T = safe_time_fraction(resolved.T)
+        forward = forward_from_carry_rate(
+            spot=resolved.spot,
+            carry_rate=resolved.carry_rate,
+            T=T,
+        )
+        discount_factor = discount_factor_from_zero_rate(
+            resolved.domestic_rate,
+            T,
+        )
+        intrinsic = terminal_intrinsic(
+            resolved.option_type,
+            spot=forward,
+            strike=resolved.strike,
+        )
+        return discounted_value(intrinsic, discount_factor)
 
 
     def my_product(
+        option_type: str,
         S: float,
         K: float,
-        r: float,
-        sigma: float,
+        domestic_rate: float,
+        carry_rate: float,
         T: float,
     ) -> float:
         """Price MyProduct. Public adapter — handles market inputs."""
-        if T <= 0:
-            return max(S - K, 0.0)
-        resolved = ResolvedMyProductInputs(spot=S, strike=K, rate=r, sigma=sigma, T=T)
-        return my_product_raw(resolved)
+        if T <= 0.0:
+            return float(terminal_intrinsic(option_type, spot=S, strike=K))
+        resolved = ResolvedMyProductInputs(
+            option_type=option_type,
+            spot=S,
+            strike=K,
+            domestic_rate=domestic_rate,
+            carry_rate=carry_rate,
+            T=T,
+        )
+        return float(my_product_raw(resolved))
 
 
 Rules for Raw Kernels
 ---------------------
 
-1. **Only** ``autograd.numpy`` (aliased as ``np``) inside the raw kernel.
-   Never use plain ``numpy`` — it breaks the gradient tape.
+1. Use autograd-safe numerics inside the raw kernel. That can mean composing
+   the checked support helpers or calling ``trellis.core.differentiable.get_numpy()``.
+   Never switch to plain ``numpy`` inside traced pricing code.
 
-2. Accept exactly **one** argument: the resolved dataclass.  No ``**kwargs``,
-   no market-state threading.
+2. Accept a resolved dataclass plus, at most, a small fixed semantic selector
+   such as ``option_type``. No ``MarketState``, no schedule parsing, and no
+   open-ended ``**kwargs`` plumbing.
 
-3. Return a plain Python ``float``.  Use ``float(...)`` on the final result.
+3. Keep the raw kernel trace-friendly. Do not wrap the final value in
+   ``float(...)`` inside the traced region; let the public adapter cast if it
+   needs a plain Python float.
 
-4. No branching on input values inside the raw kernel (e.g. ``if S <= B``).
-   Move branching to the public adapter **before** constructing the resolved
-   dataclass.  Branching breaks autograd through the kernel.
+4. Keep market resolution, date parsing, and hard route selection outside the
+   raw kernel. Small semantic branches such as call vs put are fine; traced
+   numerical regime handling should prefer array-safe control such as
+   ``np.where(...)`` when the branch must remain differentiable.
 
 
 Shared Support Helpers
@@ -124,39 +149,77 @@ The support layer provides the standard building blocks:
    * - Helper
      - Purpose
      - Module
-   * - ``df_continuous(r, T)``
-     - Continuous-compounding discount factor ``exp(-rT)``
+   * - ``discount_factor_from_zero_rate(rate, T)``
+     - Continuous-compounding discount factor implied by a zero rate
      - ``support.discounting``
-   * - ``df_from_rate(rate, T, convention)``
-     - Discount factor from a rate under a named day-count convention
+   * - ``discounted_value(value, discount_factor, scale=...)``
+     - Apply discounting and optional notional scaling to an undiscounted value
      - ``support.discounting``
-   * - ``safe_sqrt_T(T)``
-     - ``sqrt(T)`` clamped to a small floor to avoid ``0/0``
+   * - ``safe_time_fraction(T)``
+     - Clamp a model horizon to a non-negative analytical time fraction
      - ``support.discounting``
-   * - ``forward_from_spot(S, r, T)``
-     - Forward price ``S * exp(rT)`` (no dividends)
+   * - ``forward_from_carry_rate(spot, carry_rate, T)``
+     - Forward implied by a continuous carry rate over ``T``
      - ``support.forwards``
-   * - ``forward_from_discount_factors(S, df_r, df_q)``
-     - Forward price given separate risk-free and dividend discount factors
+   * - ``forward_from_discount_factors(spot, domestic_df, foreign_df)``
+     - Forward bridge from spot and domestic/foreign discount factors
      - ``support.forwards``
-   * - ``terminal_intrinsic(F, K)``
-     - ``max(F - K, 0)`` — vanilla call terminal payoff from forward
+   * - ``forward_from_dividend_yield(spot, domestic_rate, dividend_yield, T)``
+     - Standard equity forward under continuous dividend yield
+     - ``support.forwards``
+   * - ``terminal_intrinsic(option_type, spot=..., strike=...)``
+     - Terminal intrinsic value for a vanilla call or put
      - ``support.payoffs``
-   * - ``cash_or_nothing_intrinsic(F, K)``
-     - ``1 if F > K else 0`` — digital cash payoff from forward
+   * - ``cash_or_nothing_intrinsic(option_type, spot=..., strike=..., cash=...)``
+     - Terminal cash-or-nothing payoff for a vanilla call or put
      - ``support.payoffs``
-   * - ``asset_or_nothing_intrinsic(F, K)``
-     - ``F if F > K else 0`` — digital asset payoff from forward
+   * - ``asset_or_nothing_intrinsic(option_type, spot=..., strike=...)``
+     - Terminal asset-or-nothing payoff for a vanilla call or put
      - ``support.payoffs``
-   * - ``terminal_vanilla_from_basis(asset_or_nothing, cash_or_nothing, K)``
-     - Assembles vanilla payoff from basis claims
+   * - ``terminal_vanilla_from_basis(option_type, asset_value=..., cash_value=..., strike=...)``
+     - Assemble a vanilla payoff from exact basis claims
      - ``support.payoffs``
-   * - ``quanto_adjusted_forward(S, r_d, r_f, rho, sigma_S, sigma_FX, T)``
-     - Forward under quanto measure adjustment
+   * - ``foreign_to_domestic_forward_bridge(spot, domestic_df, foreign_df)``
+     - Bridge foreign-carry spot into a domestic forward level
      - ``support.cross_asset``
-   * - ``effective_vol_cross_asset(sigma_S, sigma_FX, rho)``
-     - Combined volatility for cross-currency products
+   * - ``quanto_adjusted_forward(spot, domestic_df, foreign_df, corr, sigma_underlier, sigma_fx, T)``
+     - Domestic-payout quanto forward after covariance adjustment
      - ``support.cross_asset``
+   * - ``exchange_option_effective_vol(sigma_1, sigma_2, corr)``
+     - Margrabe-style effective volatility for exchange-style payoffs
+     - ``support.cross_asset``
+
+
+Checked-In Route Examples
+-------------------------
+
+Recent analytical routes in Trellis follow the same resolver-to-raw split:
+
+- FX vanilla: ``ResolvedGarmanKohlhagenInputs`` ->
+  ``garman_kohlhagen_price_raw(...)`` in
+  ``trellis.models.analytical.fx``.
+- Quanto vanilla: ``resolve_quanto_inputs(...)`` ->
+  ``ResolvedQuantoInputs`` -> ``price_quanto_option_raw(...)`` in
+  ``trellis.models.resolution.quanto`` and
+  ``trellis.models.analytical.quanto``. The resolver accepts canonical foreign
+  carry keys such as ``EUR-DISC`` directly, but any noncanonical foreign-curve
+  reuse now requires an explicit ``quanto_foreign_curve_policy`` bridge instead
+  of silently falling back to the only forecast curve or the domestic discount
+  curve.
+- European rate-style swaption: ``resolve_swaption_black76_inputs(...)`` ->
+  ``ResolvedSwaptionBlack76Inputs`` ->
+  ``price_swaption_black76_raw(...)`` in
+  ``trellis.models.rate_style_swaption``.
+- Jamshidian zero-coupon bond option:
+  ``resolve_zcb_option_hw_inputs(...)`` ->
+  ``ResolvedJamshidianInputs`` / ``zcb_option_hw_raw(...)`` under the public
+  wrapper ``price_zcb_option_jamshidian(...)`` in
+  ``trellis.models.zcb_option`` and
+  ``trellis.models.analytical.jamshidian``.
+
+When a checked-in helper already owns market binding plus a raw kernel, agent
+generated adapters should delegate to that helper-backed surface instead of
+reconstructing annuity, forward, or strike-normalization logic inline.
 
 
 Gradient Verification
@@ -178,7 +241,8 @@ pricing test:
               - my_product_raw(replace(resolved, sigma=resolved.sigma - 1e-6))) / 2e-6
         assert autodiff == pytest.approx(fd, rel=1e-6, abs=1e-8)
 
-See ``tests/test_models/test_analytical_support.py`` for full examples.
+See ``tests/test_models/test_analytical_support.py`` and
+``tests/test_models/test_fx_analytical_support.py`` for checked-in examples.
 
 
 Barrier Monitoring
@@ -214,9 +278,10 @@ When the agent builds a new analytical route it should:
 3. Register the route in ``trellis/agent/knowledge/canonical/routes.yaml`` with
    the appropriate ``family``, ``method``, and ``score_hints`` block.
 
-The builder cookbook ``rate_tree``, ``monte_carlo``, ``analytical``, and
-other templates in ``trellis/agent/cookbooks.py`` show the full
-``evaluate()`` body structure expected by the agent validator.
+The builder-facing cookbook entries live in
+``trellis/agent/knowledge/canonical/cookbooks.yaml`` and are rendered through
+the agent prompt layer. Keep those cookbook entries aligned with the checked-in
+helper surface whenever a new analytical route lands.
 
 Related Reading
 ---------------

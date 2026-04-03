@@ -49,8 +49,9 @@ Start with the Markdown dossier. It is ordered for diagnosis:
 4. Method outcomes
 5. Trace index
 6. Learning summary
-7. Evidence
-8. Workflow and storage paths
+7. Skill telemetry
+8. Evidence
+9. Workflow and storage paths
 
 If the dossier is still not enough, open the JSON packet next. The packet is
 the canonical structured record and should contain the same evidence in a
@@ -66,6 +67,48 @@ The packet is meant to shorten the feedback loop after a pricing batch:
   bucket failures
 - future diagnosis work should refine the packet schema rather than creating
   another parallel report
+
+Skill telemetry
+---------------
+
+Diagnosis packets now include a dedicated telemetry section sourced from the
+persisted task-run record.
+
+That section answers:
+
+- which generated skills were selected for the run
+- which audience surface consumed them
+- what the normalized run outcome was
+- whether the run required retries or ended in a degraded partial-success state
+- which route or route family was involved, together with any recorded
+  instruction-resolution counts
+
+For maintenance tooling, the same data is also available as deterministic
+rollups through ``trellis.agent.task_run_store``:
+
+- ``load_latest_skill_telemetry_rollup()``
+- ``load_latest_route_health_rollup()``
+
+Connector-stress batch surfacing
+--------------------------------
+
+The standing connector-stress runner now treats the packet and dossier as the
+primary per-task drill-down surface instead of a side artifact.
+
+For ``scripts/run_stress_tranche.py`` this means the batch report should show,
+for each task:
+
+- outcome class (``compare_ready`` vs ``honest_block``)
+- failure bucket
+- observed blocker categories
+- latest diagnosis dossier path
+- latest diagnosis packet path
+- any follow-on candidate derived from repeated failures
+
+Operationally, the batch report is the front door and the per-task dossier is
+the second click. If a stress rerun looks wrong, read the batch report first,
+then open the linked dossier for the specific task instead of starting from the
+raw batch JSON or trace directories.
 
 Post-build checkpoints
 ----------------------
@@ -142,3 +185,92 @@ specific failures before the generic sanity checks. If a run is mixing decimal
 and basis-point spread quotes, or if the payoff ignores the credit curve, the
 packet should now show a CDS-specific invariant failure rather than only a
 large-PV heuristic.
+
+For comparison-quality single-name CDS Monte Carlo runs, the typed spec now
+also carries the path-count control explicitly. The planner specializes the
+CDS Monte Carlo schema with ``n_paths``, and the ``T38`` canary pins a tighter
+``2.0`` percent comparison tolerance around the resulting internal reference.
+If the generated adapter hard-codes a smaller path count such as ``50000``
+instead of flowing ``spec.n_paths``, expect a route-specific diagnosis packet
+that fails on internal comparison spread long before reviewer escalation.
+
+For analytical rate-style swaption routes, the deterministic bundle now also
+checks helper consistency against the checked-in
+``trellis.models.rate_style_swaption`` Black76 surface. If a generated adapter
+compiles but misbinds annuity, forward swap rate, or notional, the packet
+should now show a route-specific ``check_rate_style_swaption_helper_consistency``
+failure with sampled scenario prices before the run escalates to critic or
+model-validator review.
+
+Eligible single-method routes now also emit a post-bundle
+``reference_oracle_executed`` event before reviewer escalation. This is the
+next checkpoint after the deterministic bundle for helper-backed exact or
+bound-style routes:
+
+- analytical swaptions against the checked-in Black76 helper
+- analytical zero-coupon-bond options against the Jamshidian helper
+- callable and puttable rate-tree bonds against the straight-bond bound helper
+
+The packet should therefore show the oracle id, source, relation, tolerance,
+sampled scenario prices, and maximum observed deviation when that checkpoint
+runs. Comparison builds intentionally skip this oracle step because they
+already carry explicit cross-method evidence.
+
+Compiled primitive obligations
+------------------------------
+
+When the compiler resolves a request onto a checked helper-backed route, the
+semantic-validator layer now treats that primitive plan as binding contract.
+The diagnosis packet should therefore show a structured semantic-validator
+failure when generated code ignores a required helper, even if the surrounding
+module imports look plausible.
+
+This is deliberate: prompt text may mention the helper, but the packet is now
+the place to confirm whether the generated adapter actually satisfied the
+compiled primitive obligation. For schedule-bearing routes, the same layer now
+also surfaces raw string schedule fields before execution so timeline-typing
+drift is visible in the packet rather than only as a later runtime failure.
+
+Lane obligations
+----------------
+
+The generation boundary now also persists a compiler-emitted lane plan. This is
+the constructive side of the semantic compiler:
+
+- lane family
+- timeline roles
+- market requirements
+- state and control obligations
+- construction steps
+- exact backend bindings, when they exist
+
+When a build fails, this makes it easier to distinguish two cases:
+
+- the agent ignored an exact backend binding that the compiler had already
+  found
+- the compiler intentionally emitted a constructive lane plan and the build
+  failed while trying to synthesize that lane-level implementation
+
+For tranche-2 synthesis proving, use
+``scripts/run_knowledge_light_proving.py``. That runner forces a
+compiler-first, knowledge-light prompt surface and still writes the standard
+task diagnosis packet and dossier for each benchmark. In that mode the lane
+card now also renders exact backend helper signatures when the compiler found
+a safe checked binding. This matters for thin-adapter families such as CDS,
+where the task may select the correct helper but still drift on keyword names
+without the signature in view.
+
+Runtime contract failures
+-------------------------
+
+Generated and checked-in payoffs are now evaluated through a contract-aware
+``MarketState`` proxy inside ``trellis.engine.payoff_pricer.price_payoff``.
+When a route indexes a missing named market binding or tries to use an
+ambiguous scalar field that the runtime contract cannot supply honestly,
+Trellis raises ``ContractViolation`` instead of surfacing a raw Python
+``AttributeError`` or ``KeyError``.
+
+In practice this means diagnosis packets and comparison-task failures should
+now preserve the missing field or mapping key explicitly, for example a missing
+``underlier_spots['GOOG']`` lookup, rather than collapsing into a generic
+runtime failure.

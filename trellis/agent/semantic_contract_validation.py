@@ -6,6 +6,8 @@ import hashlib
 from dataclasses import dataclass
 import re
 
+import trellis.core.capabilities as capability_registry
+
 from trellis.agent.knowledge.methods import is_known_method
 from trellis.agent.semantic_concepts import (
     get_semantic_concept_definition,
@@ -17,10 +19,9 @@ from trellis.agent.semantic_contracts import (
     SemanticContract,
     parse_semantic_contract,
 )
-from trellis.core.capabilities import MARKET_DATA, normalize_capability_name
 
 
-_KNOWN_CAPABILITIES = frozenset(cap.name for cap in MARKET_DATA)
+_KNOWN_CAPABILITIES = frozenset(cap.name for cap in capability_registry.MARKET_DATA)
 _ALLOWED_PHASES = frozenset(DEFAULT_PHASE_ORDER)
 _ALLOWED_PROVENANCE = frozenset(
     {
@@ -45,6 +46,7 @@ _ALLOWED_UNDERLIER_STRUCTURES = frozenset(
         "cross_currency_single_underlier",
         "single_issuer_bond",
         "single_curve_rate_style",
+        "single_reference_entity",
     }
 )
 _CANONICAL_REQUIRED_CAPABILITIES = frozenset({
@@ -1303,7 +1305,7 @@ def _validate_market_inputs(
                 errors.append(
                     f"Market input `{input_spec.input_id}` references unknown capability `{input_spec.capability}`."
                 )
-            normalized = normalize_capability_name(input_spec.capability)
+            normalized = capability_registry.normalize_capability_name(input_spec.capability)
             if normalized != input_spec.capability:
                 warnings.append(
                     f"Market input `{input_spec.input_id}` normalizes capability `{input_spec.capability}` to `{normalized}`."
@@ -1426,6 +1428,8 @@ def _validate_semantic_shape(
         "quanto_option": _validate_quanto_option_shape,
         "callable_bond": _validate_callable_bond_shape,
         "rate_style_swaption": _validate_rate_style_swaption_shape,
+        "credit_default_swap": _validate_credit_default_swap_shape,
+        "nth_to_default": _validate_nth_to_default_shape,
     }
     validator = dispatch.get(contract.semantic_id)
     if validator is None:
@@ -1439,7 +1443,7 @@ def _validate_semantic_shape(
 def _required_capabilities(contract: SemanticContract) -> set[str]:
     """Return the normalized market-data capabilities required by a contract."""
     return {
-        normalize_capability_name(item.capability or item.input_id)
+        capability_registry.normalize_capability_name(item.capability or item.input_id)
         for item in contract.market_data.required_inputs
         if item.capability or item.input_id
     }
@@ -1720,6 +1724,108 @@ def _validate_callable_bond_shape(
     )
     if not contract.product.observation_schedule:
         errors.append("Semantic callable bond requires a call schedule.")
+    if not contract.blueprint.primitive_families:
+        warnings.append(
+            f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."
+        )
+
+
+def _validate_credit_default_swap_shape(
+    contract: SemanticContract,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate a single-name CDS semantic shape."""
+    required_capabilities = _validate_market_capabilities(
+        contract,
+        errors,
+        frozenset({"discount_curve", "credit_curve"}),
+    )
+    _validate_profile_fields(
+        contract,
+        errors,
+        expected_instrument_class="cds",
+        expected_payoff_family="credit_default_swap",
+        expected_underlier_structure="single_reference_entity",
+        expected_payoff_rule="single_name_cds_legs",
+        expected_settlement_rule="premium_schedule_and_default_settlement",
+        expected_exercise_style="none",
+        expected_multi_asset=False,
+        require_schedule=True,
+        require_constituents=0,
+        path_dependence="schedule_dependent",
+        state_dependence="schedule_dependent",
+        schedule_dependence=True,
+    )
+    if "credit_curve" not in required_capabilities:
+        errors.append("Credit-default-swap semantics require a credit curve input.")
+    product = contract.product
+    observable_types = {
+        str(getattr(item, "observable_type", "")).strip().lower()
+        for item in product.observables
+    }
+    if "credit_curve" not in observable_types:
+        errors.append("Credit-default-swap semantics require a typed credit_curve observable.")
+    if "cashflow_schedule" not in observable_types:
+        errors.append("Credit-default-swap semantics require a typed cashflow_schedule observable.")
+    obligation_ids = {item.obligation_id for item in product.obligations}
+    if "premium_leg_cashflow" not in obligation_ids:
+        errors.append("Credit-default-swap semantics require a typed premium-leg obligation.")
+    if "protection_leg_cashflow" not in obligation_ids:
+        errors.append("Credit-default-swap semantics require a typed protection-leg obligation.")
+    if product.controller_protocol.controller_style != "identity":
+        errors.append("Credit-default-swap semantics cannot declare a strategic controller.")
+    if not contract.blueprint.primitive_families:
+        warnings.append(
+            f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."
+        )
+
+
+def _validate_nth_to_default_shape(
+    contract: SemanticContract,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate an nth-to-default basket-credit semantic shape."""
+    required_capabilities = _validate_market_capabilities(
+        contract,
+        errors,
+        frozenset({"discount_curve", "credit_curve"}),
+    )
+    _validate_profile_fields(
+        contract,
+        errors,
+        expected_instrument_class="nth_to_default",
+        expected_payoff_family="nth_to_default",
+        expected_underlier_structure="multi_asset_basket",
+        expected_payoff_rule="nth_default_loss_payment",
+        expected_settlement_rule="settle_at_nth_default_or_maturity",
+        expected_exercise_style="none",
+        expected_multi_asset=True,
+        require_schedule=True,
+        require_constituents=2,
+        path_dependence="path_dependent",
+        state_dependence="path_dependent",
+        schedule_dependence=True,
+    )
+    if "credit_curve" not in required_capabilities:
+        errors.append("Nth-to-default semantics require a credit curve input.")
+    product = contract.product
+    observable_types = {
+        str(getattr(item, "observable_type", "")).strip().lower()
+        for item in product.observables
+    }
+    if "credit_curve" not in observable_types:
+        errors.append("Nth-to-default semantics require a typed credit_curve observable.")
+    obligation_ids = {item.obligation_id for item in product.obligations}
+    if "nth_default_cash_settlement" not in obligation_ids:
+        errors.append("Nth-to-default semantics require a typed nth-default settlement obligation.")
+    if product.controller_protocol.controller_style != "identity":
+        errors.append("Nth-to-default semantics cannot declare a strategic controller.")
+    if product.selection_count < 1:
+        errors.append("Nth-to-default semantics require trigger_rank >= 1.")
+    if product.selection_count > len(product.constituents):
+        errors.append("Nth-to-default trigger_rank cannot exceed the reference-entity pool.")
     if not contract.blueprint.primitive_families:
         warnings.append(
             f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."

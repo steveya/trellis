@@ -14,6 +14,7 @@ from trellis.agent.knowledge.schema import (
     Principle,
     ProductDecomposition,
     ProductIR,
+    SimilarProductMatch,
 )
 from trellis.agent.knowledge.promotion import (
     detect_adapter_lifecycle_records,
@@ -279,6 +280,34 @@ def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = Fa
             lines.append(omission)
         sections.append("\n".join(lines))
 
+    similar_products: list[SimilarProductMatch] = knowledge.get("similar_products", [])
+    if similar_products:
+        lines = ["## Similar Products\n"]
+        selected = _take_limited(
+            similar_products,
+            _COMPACT_LIMITS["builder"]["lessons"] if compact else None,
+        )
+        for match in selected:
+            lines.append(_render_similar_product_match(match))
+        omission = _omission_notice("similar products", len(similar_products), len(selected))
+        if omission:
+            lines.append(omission)
+        sections.append("\n".join(lines))
+
+    borrowed_lessons: list[Lesson] = knowledge.get("borrowed_lessons", [])
+    if borrowed_lessons:
+        lines = ["## Borrowed Lessons From Similar Products\n"]
+        selected = _take_limited(
+            borrowed_lessons,
+            _COMPACT_LIMITS["builder"]["lessons"] if compact else None,
+        )
+        for lesson in selected:
+            lines.append(f"- **{lesson.title}**: {lesson.fix.strip()}")
+        omission = _omission_notice("borrowed lessons", len(borrowed_lessons), len(selected))
+        if omission:
+            lines.append(omission)
+        sections.append("\n".join(lines))
+
     # 7. Decomposition notes (for novel/composite products)
     decomp: ProductDecomposition | None = knowledge.get("decomposition")
     if decomp and decomp.notes:
@@ -327,6 +356,8 @@ def summarize_knowledge_for_trace(knowledge: dict[str, Any]) -> dict[str, Any]:
     contracts: list[DataContractEntry] = knowledge.get("data_contracts", [])
     principles: list[Principle] = knowledge.get("principles", [])
     lessons: list[Lesson] = knowledge.get("lessons", [])
+    similar_products: list[SimilarProductMatch] = knowledge.get("similar_products", [])
+    borrowed_lessons: list[Lesson] = knowledge.get("borrowed_lessons", [])
     unresolved_primitives: tuple[str, ...] | list[str] = knowledge.get("unresolved_primitives", ())
 
     summary: dict[str, Any] = {
@@ -334,6 +365,12 @@ def summarize_knowledge_for_trace(knowledge: dict[str, Any]) -> dict[str, Any]:
         "lesson_ids": [lesson.id for lesson in lessons],
         "lesson_titles": [lesson.title for lesson in lessons],
         "lesson_count": len(lessons),
+        "similar_product_ids": [match.instrument for match in similar_products],
+        "similar_product_scores": {
+            match.instrument: match.score for match in similar_products
+        },
+        "borrowed_lesson_ids": [lesson.id for lesson in borrowed_lessons],
+        "borrowed_lesson_titles": [lesson.title for lesson in borrowed_lessons],
         "cookbook_method": cookbook.method if cookbook else None,
         "data_contracts": [contract.name for contract in contracts],
         "requirement_count": len(reqs.requirements) if reqs else 0,
@@ -452,6 +489,20 @@ def format_review_knowledge_for_prompt(
             lines.append(omission)
         sections.append("\n".join(lines))
 
+    similar_products: list[SimilarProductMatch] = knowledge.get("similar_products", [])
+    if similar_products:
+        lines = ["## Similar Products\n"]
+        selected = _take_limited(
+            similar_products,
+            _COMPACT_LIMITS["review"]["lessons"] if compact else None,
+        )
+        for match in selected:
+            lines.append(_render_similar_product_match(match))
+        omission = _omission_notice("similar products", len(similar_products), len(selected))
+        if omission:
+            lines.append(omission)
+        sections.append("\n".join(lines))
+
     adapter_warnings = _adapter_lifecycle_warnings(compact=compact)
     if adapter_warnings:
         sections.append(adapter_warnings)
@@ -507,6 +558,20 @@ def format_decomposition_knowledge_for_prompt(knowledge: dict[str, Any], *, comp
             lines.append(omission)
         sections.append("\n".join(lines))
 
+    similar_products: list[SimilarProductMatch] = knowledge.get("similar_products", [])
+    if similar_products:
+        lines = ["## Similar Product Matches\n"]
+        selected = _take_limited(
+            similar_products,
+            _COMPACT_LIMITS["routing"]["lessons"] if compact else None,
+        )
+        for match in selected:
+            lines.append(_render_similar_product_match(match))
+        omission = _omission_notice("similar products", len(similar_products), len(selected))
+        if omission:
+            lines.append(omission)
+        sections.append("\n".join(lines))
+
     adapter_warnings = _adapter_lifecycle_warnings(compact=compact)
     if adapter_warnings:
         sections.append(adapter_warnings)
@@ -534,6 +599,7 @@ def format_distilled_knowledge_for_prompt(
     reqs: MethodRequirements | None = knowledge.get("method_requirements")
     principles: list[Principle] = knowledge.get("principles", [])
     lessons: list[Lesson] = knowledge.get("lessons", [])
+    similar_products: list[SimilarProductMatch] = knowledge.get("similar_products", [])
     unresolved_primitives: tuple[str, ...] | list[str] = knowledge.get("unresolved_primitives", ())
 
     if audience == "builder":
@@ -560,6 +626,10 @@ def format_distilled_knowledge_for_prompt(
             lines.append("- Repeated fixes to reuse:")
             for lesson in _take_limited(lessons, limits["lessons"]):
                 lines.append(f"  - `{lesson.title}` -> {lesson.fix.strip()}")
+        if similar_products:
+            lines.append("- Nearest known products:")
+            for match in _take_limited(similar_products, 2):
+                lines.append(f"  - `{match.instrument}` ({match.score:.0%})")
         if unresolved_primitives:
             lines.append(
                 "- Open primitive gaps: "
@@ -589,6 +659,10 @@ def format_distilled_knowledge_for_prompt(
             lines.append("- Known failure traps:")
             for lesson in _take_limited(lessons, limits["lessons"]):
                 lines.append(f"  - `{lesson.title}` -> {lesson.root_cause.strip()}")
+        if similar_products:
+            lines.append("- Nearby known products:")
+            for match in _take_limited(similar_products, 2):
+                lines.append(f"  - `{match.instrument}` ({match.score:.0%})")
         adapter_summary = _adapter_lifecycle_summary()
         stale_ids = adapter_summary["stale_adapter_ids"]
         if stale_ids:
@@ -624,6 +698,10 @@ def format_distilled_knowledge_for_prompt(
             lines.append("- Similar-product lessons:")
             for lesson in _take_limited(lessons, limits["lessons"]):
                 lines.append(f"  - `{lesson.title}` -> {lesson.fix.strip()}")
+        if similar_products:
+            lines.append("- Similar products:")
+            for match in _take_limited(similar_products, 3):
+                lines.append(f"  - `{match.instrument}` ({match.score:.0%})")
         adapter_summary = _adapter_lifecycle_summary()
         stale_ids = adapter_summary["stale_adapter_ids"]
         if stale_ids:
@@ -638,19 +716,136 @@ def format_distilled_knowledge_for_prompt(
     return "\n\n".join(section for section in sections if section.strip())
 
 
-def build_shared_knowledge_payload(knowledge: dict[str, Any]) -> dict[str, Any]:
+def build_shared_knowledge_payload(
+    knowledge: dict[str, Any],
+    *,
+    pricing_method: str | None = None,
+    route_ids: tuple[str, ...] | list[str] = (),
+    route_families: tuple[str, ...] | list[str] | None = None,
+) -> dict[str, Any]:
     """Build compact-first and expanded shared-knowledge views for reuse."""
-    builder_text_distilled = format_distilled_knowledge_for_prompt(knowledge, audience="builder")
-    builder_text = format_knowledge_for_prompt(knowledge, compact=True)
-    builder_text_expanded = format_knowledge_for_prompt(knowledge, compact=False)
-    review_text_distilled = format_distilled_knowledge_for_prompt(knowledge, audience="review")
-    review_text = format_review_knowledge_for_prompt(knowledge, compact=True)
-    review_text_expanded = format_review_knowledge_for_prompt(knowledge, compact=False)
-    routing_text_distilled = format_distilled_knowledge_for_prompt(knowledge, audience="routing")
-    routing_text = format_decomposition_knowledge_for_prompt(knowledge, compact=True)
-    routing_text_expanded = format_decomposition_knowledge_for_prompt(knowledge, compact=False)
+    from trellis.agent.knowledge.skills import append_prompt_skill_artifacts, select_prompt_skill_artifacts
+
+    product_ir: ProductIR | None = knowledge.get("product_ir")
+    instrument_type = getattr(product_ir, "instrument", None)
+    resolved_route_families = tuple(
+        route_families
+        if route_families is not None
+        else tuple(getattr(product_ir, "route_families", ()) or ())
+    )
+    resolved_route_ids = tuple(str(item) for item in route_ids if str(item).strip())
+    resolved_method = pricing_method or None
+
+    builder_text_distilled_base = format_distilled_knowledge_for_prompt(knowledge, audience="builder")
+    builder_text_base = format_knowledge_for_prompt(knowledge, compact=True)
+    builder_text_expanded_base = format_knowledge_for_prompt(knowledge, compact=False)
+    review_text_distilled_base = format_distilled_knowledge_for_prompt(knowledge, audience="review")
+    review_text_base = format_review_knowledge_for_prompt(knowledge, compact=True)
+    review_text_expanded_base = format_review_knowledge_for_prompt(knowledge, compact=False)
+    routing_text_distilled_base = format_distilled_knowledge_for_prompt(knowledge, audience="routing")
+    routing_text_base = format_decomposition_knowledge_for_prompt(knowledge, compact=True)
+    routing_text_expanded_base = format_decomposition_knowledge_for_prompt(knowledge, compact=False)
+
+    builder_artifacts = select_prompt_skill_artifacts(
+        builder_text_distilled_base,
+        audience="builder",
+        stage="initial_build",
+        instrument_type=instrument_type,
+        pricing_method=resolved_method,
+        route_ids=resolved_route_ids,
+        route_families=resolved_route_families,
+        knowledge_surface="compact",
+    )
+    review_artifacts = select_prompt_skill_artifacts(
+        review_text_distilled_base,
+        audience="review",
+        stage="critic_review",
+        instrument_type=instrument_type,
+        pricing_method=resolved_method,
+        route_ids=resolved_route_ids,
+        route_families=resolved_route_families,
+        knowledge_surface="compact",
+    )
+    routing_artifacts = select_prompt_skill_artifacts(
+        routing_text_distilled_base,
+        audience="routing",
+        stage="route_selection",
+        instrument_type=instrument_type,
+        pricing_method=resolved_method,
+        route_ids=resolved_route_ids,
+        route_families=resolved_route_families,
+        knowledge_surface="compact",
+    )
+
+    builder_text_distilled = append_prompt_skill_artifacts(
+        builder_text_distilled_base,
+        builder_artifacts,
+        heading="## Generated Skills",
+    )
+    builder_text = append_prompt_skill_artifacts(
+        builder_text_base,
+        builder_artifacts,
+        heading="## Generated Skills",
+    )
+    builder_text_expanded = append_prompt_skill_artifacts(
+        builder_text_expanded_base,
+        builder_artifacts,
+        heading="## Generated Skills",
+    )
+    review_text_distilled = append_prompt_skill_artifacts(
+        review_text_distilled_base,
+        review_artifacts,
+        heading="## Generated Skills",
+    )
+    review_text = append_prompt_skill_artifacts(
+        review_text_base,
+        review_artifacts,
+        heading="## Generated Skills",
+    )
+    review_text_expanded = append_prompt_skill_artifacts(
+        review_text_expanded_base,
+        review_artifacts,
+        heading="## Generated Skills",
+    )
+    routing_text_distilled = append_prompt_skill_artifacts(
+        routing_text_distilled_base,
+        routing_artifacts,
+        heading="## Routing Skills",
+    )
+    routing_text = append_prompt_skill_artifacts(
+        routing_text_base,
+        routing_artifacts,
+        heading="## Routing Skills",
+    )
+    routing_text_expanded = append_prompt_skill_artifacts(
+        routing_text_expanded_base,
+        routing_artifacts,
+        heading="## Routing Skills",
+    )
 
     summary = summarize_knowledge_for_trace(knowledge)
+    selected_by_audience = {
+        "builder": builder_artifacts,
+        "review": review_artifacts,
+        "routing": routing_artifacts,
+    }
+    selected_ids: list[str] = []
+    selected_titles: list[str] = []
+    for artifacts in selected_by_audience.values():
+        for artifact in artifacts:
+            artifact_id = str(artifact.get("id") or "").strip()
+            artifact_title = str(artifact.get("title") or "").strip()
+            if artifact_id and artifact_id not in selected_ids:
+                selected_ids.append(artifact_id)
+            if artifact_title and artifact_title not in selected_titles:
+                selected_titles.append(artifact_title)
+    summary["selected_artifact_ids"] = selected_ids
+    summary["selected_artifact_titles"] = selected_titles
+    summary["selected_artifacts_by_audience"] = {
+        audience: [dict(artifact) for artifact in artifacts]
+        for audience, artifacts in selected_by_audience.items()
+        if artifacts
+    }
     summary["prompt_sizes"] = {
         "builder": {
             "distilled_chars": len(builder_text_distilled),
@@ -689,6 +884,20 @@ def _take_limited(items, limit: int | None):
     if limit is None:
         return list(items)
     return list(items)[: max(limit, 0)]
+
+
+def _render_similar_product_match(match: SimilarProductMatch) -> str:
+    """Render one deterministic similar-product suggestion as one bullet line."""
+    shared_features = ", ".join(f"`{feature}`" for feature in match.shared_features[:4]) or "`none`"
+    route_hint = (
+        " | routes: " + ", ".join(f"`{route}`" for route in match.promoted_routes[:3])
+        if match.promoted_routes
+        else ""
+    )
+    return (
+        f"- `{match.instrument}` ({match.score:.0%}, `{match.method}`): "
+        f"shared features {shared_features}{route_hint}"
+    )
 
 
 def _omission_notice(label: str, total: int, shown: int) -> str:

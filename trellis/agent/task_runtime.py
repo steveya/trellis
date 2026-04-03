@@ -16,7 +16,7 @@ from importlib import import_module
 from pathlib import Path
 from statistics import mean, median
 from time import perf_counter, time
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, get_args, get_origin
 
 _log = logging.getLogger(__name__)
 
@@ -158,6 +158,7 @@ class ComparisonBuildTarget:
     target_id: str
     preferred_method: str
     is_reference: bool = False
+    relation: str | None = None
 
 
 @dataclass(frozen=True)
@@ -746,6 +747,7 @@ def run_task(
     fresh_build: bool = False,
     validation: str = "standard",
     max_retries: int = 3,
+    knowledge_profile: str | None = None,
     build_fn: Callable[..., Any] | None = None,
     timer: Callable[[], float] = time,
     now_fn: Callable[[], datetime] = datetime.now,
@@ -805,6 +807,8 @@ def run_task(
             "task_title": task["title"],
             "runtime_contract": runtime_contract,
         }
+        if knowledge_profile:
+            base_request_metadata["knowledge_profile"] = knowledge_profile
         if semantic_contract is not None:
             from trellis.agent.semantic_contracts import semantic_contract_summary
 
@@ -1155,6 +1159,7 @@ def _task_comparison_targets(
                 target_id=target.target_id,
                 preferred_method=target.preferred_method,
                 is_reference=target.is_reference,
+                relation=target.relation,
             )
             for target in harness_plan.targets
         ]
@@ -1488,7 +1493,56 @@ def _aggregate_knowledge_summaries(method_payloads: dict[str, dict[str, Any]]) -
         "retrieval_sources": _unique_strings(
             summary.get("retrieval_sources", ()) for summary in summaries
         ),
+        "selected_artifact_ids": _unique_strings(
+            summary.get("selected_artifact_ids", ()) for summary in summaries
+        ),
+        "selected_artifact_titles": _unique_strings(
+            summary.get("selected_artifact_titles", ()) for summary in summaries
+        ),
+        "selected_artifacts_by_audience": _aggregate_selected_artifacts_by_audience(summaries),
     }
+
+
+def _aggregate_selected_artifacts_by_audience(
+    summaries: list[Mapping[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Merge audience-scoped selected-artifact records across comparison builds."""
+    merged: dict[str, list[dict[str, Any]]] = {}
+    seen: dict[str, set[tuple[str, str, str]]] = {}
+
+    for summary in summaries:
+        by_audience = dict(summary.get("selected_artifacts_by_audience") or {})
+        for audience, artifacts in by_audience.items():
+            if not isinstance(artifacts, list):
+                continue
+            audience_key = str(audience)
+            bucket = merged.setdefault(audience_key, [])
+            seen_bucket = seen.setdefault(audience_key, set())
+            for artifact in artifacts:
+                if not isinstance(artifact, Mapping):
+                    continue
+                normalized = dict(artifact)
+                dedupe_key = (
+                    str(normalized.get("id") or "").strip(),
+                    str(normalized.get("title") or "").strip(),
+                    str(normalized.get("kind") or "").strip(),
+                )
+                if dedupe_key in seen_bucket:
+                    continue
+                seen_bucket.add(dedupe_key)
+                bucket.append(normalized)
+
+    for audience, bucket in merged.items():
+        merged[audience] = sorted(
+            bucket,
+            key=lambda item: (
+                str(item.get("id") or ""),
+                str(item.get("title") or ""),
+                str(item.get("kind") or ""),
+            ),
+        )
+
+    return merged
 
 
 def _aggregate_token_usage(method_payloads: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -1552,6 +1606,32 @@ def _unique_strings(values) -> list[str]:
     return sorted(set(flattened))
 
 
+def _normalized_comparison_relations_for_task(
+    comparison_targets: list[ComparisonBuildTarget],
+    configured_targets: Mapping[str, Any],
+) -> dict[str, str]:
+    """Return normalized per-target comparison relations for one task run."""
+    from trellis.agent.assembly_tools import normalize_comparison_relation
+
+    configured_relations = configured_targets.get("relations") or {}
+    default_relation = normalize_comparison_relation(
+        configured_targets.get("relation"),
+        default="within_tolerance",
+    )
+    resolved: dict[str, str] = {}
+    for target in comparison_targets:
+        if target.is_reference:
+            continue
+        relation = normalize_comparison_relation(target.relation)
+        if relation is None and isinstance(configured_relations, Mapping):
+            relation = normalize_comparison_relation(configured_relations.get(target.target_id))
+        if relation is None:
+            relation = default_relation
+        if relation:
+            resolved[target.target_id] = relation
+    return resolved
+
+
 def _cross_validate_comparison_task(
     comparison_targets: list[ComparisonBuildTarget],
     live_results: dict[str, Any],
@@ -1603,7 +1683,15 @@ def _cross_validate_comparison_task(
         for target in comparison_targets
         if not target.is_reference and target.target_id in priced
     ]
-    if reference_target is None and len(comparable_targets) >= 2:
+    comparison_relations = _normalized_comparison_relations_for_task(
+        comparison_targets,
+        configured_targets,
+    )
+    requires_explicit_reference = any(
+        relation in {"<=", ">="}
+        for relation in comparison_relations.values()
+    )
+    if reference_target is None and len(comparable_targets) >= 2 and not requires_explicit_reference:
         reference_price = median(priced[target_id] for target_id in comparable_targets)
         reference_target = "median_internal"
 
@@ -1614,15 +1702,24 @@ def _cross_validate_comparison_task(
 
     if reference_price is not None:
         denominator = max(abs(reference_price), 1e-12)
+        tolerance_amount = denominator * tolerance_pct / 100.0
         for target_id in comparable_targets:
-            deviation_pct = abs(priced[target_id] - reference_price) / denominator * 100.0
+            relation = comparison_relations.get(target_id, "within_tolerance")
+            delta = priced[target_id] - reference_price
+            deviation_pct = abs(delta) / denominator * 100.0
             deviations[target_id] = round(deviation_pct, 4)
-            if deviation_pct <= tolerance_pct:
+            if relation == "<=":
+                passed = priced[target_id] <= reference_price + tolerance_amount
+            elif relation == ">=":
+                passed = priced[target_id] >= reference_price - tolerance_amount
+            else:
+                passed = abs(delta) <= tolerance_amount
+            if passed:
                 passed_targets.append(target_id)
             else:
                 failed_targets.append(target_id)
 
-    if reference_price is None and len(priced) < 2:
+    if reference_price is None and (len(priced) < 2 or requires_explicit_reference):
         status = "insufficient_results"
     elif price_errors:
         status = "pricing_error"
@@ -1640,6 +1737,7 @@ def _cross_validate_comparison_task(
         "reference_price": round(reference_price, 10) if reference_price is not None else None,
         "tolerance_pct": tolerance_pct,
         "deviations_pct": deviations,
+        "comparison_relations": comparison_relations,
         "passed_targets": passed_targets,
         "failed_targets": failed_targets,
         "successful_targets": [target_id for target_id in [target.target_id for target in comparison_targets] if target_id in priced],
@@ -1969,6 +2067,11 @@ def _find_cached_payoff_class(module) -> type | None:
 def _annotation_to_field_type(annotation) -> str:
     """Map Python/dataclass annotations to planner field type strings."""
     if isinstance(annotation, str):
+        normalized = annotation.replace(" ", "")
+        if normalized == "tuple[date,...]":
+            return "tuple[date, ...]"
+        if normalized in {"tuple[date,...]|None", "None|tuple[date,...]"}:
+            return "tuple[date, ...] | None"
         return annotation if annotation in {
             "float",
             "int",
@@ -1976,6 +2079,10 @@ def _annotation_to_field_type(annotation) -> str:
             "bool",
             "date",
             "str | None",
+            "float | None",
+            "int | None",
+            "tuple[date, ...]",
+            "tuple[date, ...] | None",
             "Frequency",
             "DayCountConvention",
         } else "str"
@@ -1990,6 +2097,17 @@ def _annotation_to_field_type(annotation) -> str:
         return "bool"
     if annotation is date:
         return "date"
+
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is tuple and args == (date, Ellipsis):
+        return "tuple[date, ...]"
+    if args and type(None) in args:
+        non_none = tuple(arg for arg in args if arg is not type(None))
+        if len(non_none) == 1:
+            inner = _annotation_to_field_type(non_none[0])
+            if inner in {"float", "int", "str", "tuple[date, ...]"}:
+                return f"{inner} | None"
 
     annotation_name = getattr(annotation, "__name__", None)
     if annotation_name in {"Frequency", "DayCountConvention"}:

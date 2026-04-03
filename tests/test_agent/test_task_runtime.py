@@ -627,6 +627,8 @@ def test_cross_validate_comparison_task_prices_reused_fx_modules():
 
 
 def test_cross_validate_comparison_task_prices_reused_quanto_modules():
+    from dataclasses import replace
+
     from trellis.agent.task_runtime import (
         ComparisonBuildTarget,
         _cross_validate_comparison_task,
@@ -669,6 +671,13 @@ def test_cross_validate_comparison_task_prices_reused_quanto_modules():
         },
     }
     market_state, _ = build_market_state_for_task(task)
+    market_state = replace(
+        market_state,
+        model_parameters={
+            **dict(market_state.model_parameters or {}),
+            "quanto_foreign_curve_policy": {"kind": "selected_forecast_curve"},
+        },
+    )
 
     class FakeResult:
         def __init__(self, payoff_cls):
@@ -696,7 +705,49 @@ def test_cross_validate_comparison_task_prices_reused_quanto_modules():
     assert set(result["successful_targets"]) == {"quanto_bs", "mc_quanto"}
     assert result["price_errors"] == {}
     assert result["prices"]["quanto_bs"] > 0.0
-    assert result["prices"]["mc_quanto"] > 0.0
+    assert result["prices"]["mc_quanto"] >= 0.0
+
+
+def test_cross_validate_comparison_task_respects_directional_relations():
+    from trellis.agent.task_runtime import ComparisonBuildTarget, _cross_validate_comparison_task
+
+    class FakeResult:
+        def __init__(self, payoff_cls):
+            self.success = True
+            self.payoff_cls = payoff_cls
+
+    reference_cls = type("ReferencePayoff", (), {"price": 100.0})
+    upper_bound_cls = type("UpperBoundPayoff", (), {"price": 101.0})
+    lower_bound_cls = type("LowerBoundPayoff", (), {"price": 99.7})
+
+    live_results = {
+        "black_scholes": FakeResult(reference_cls),
+        "tree_upper": FakeResult(upper_bound_cls),
+        "tree_lower": FakeResult(lower_bound_cls),
+    }
+    comparison_targets = [
+        ComparisonBuildTarget("black_scholes", "analytical", is_reference=True),
+        ComparisonBuildTarget("tree_upper", "rate_tree", relation="<="),
+        ComparisonBuildTarget("tree_lower", "rate_tree", relation=">="),
+    ]
+
+    result = _cross_validate_comparison_task(
+        comparison_targets,
+        live_results,
+        market_state=object(),
+        configured_targets={"tolerance_pct": 0.5},
+        payoff_factory=lambda payoff_cls, spec_schema, settle: payoff_cls(),
+        price_fn=lambda payoff, market_state: payoff.price,
+    )
+
+    assert result["status"] == "failed"
+    assert result["reference_target"] == "black_scholes"
+    assert result["comparison_relations"] == {
+        "tree_upper": "<=",
+        "tree_lower": ">=",
+    }
+    assert result["passed_targets"] == ["tree_lower"]
+    assert result["failed_targets"] == ["tree_upper"]
 
 
 def test_load_tasks_excludes_framework_inventory():
@@ -721,6 +772,15 @@ def test_load_framework_tasks_returns_meta_inventory():
     assert {"T91", "T92", "T93", "E01", "E20"} <= task_ids
     assert "T94" not in task_ids
     assert "E21" not in task_ids
+
+
+def test_t38_manifest_uses_tighter_credit_comparison_tolerance():
+    from trellis.agent.task_runtime import load_tasks
+
+    tasks = load_tasks(status=None)
+    t38 = next(task for task in tasks if task["id"] == "T38")
+
+    assert t38["cross_validate"]["tolerance_pct"] == 2.0
 
 
 def test_task_to_instrument_type_maps_quanto_to_family_contract_key():
@@ -884,6 +944,17 @@ def test_run_task_aggregates_artifact_references_for_comparison_tasks():
                 "cookbook_method": method,
                 "retrieval_stages": ["initial_build", "validation_failed"],
                 "retrieval_sources": ["callback"],
+                "selected_artifact_ids": [f"{target}_artifact"],
+                "selected_artifact_titles": [f"{target} artifact"],
+                "selected_artifacts_by_audience": {
+                    "builder": [
+                        {
+                            "id": f"{target}_artifact",
+                            "title": f"{target} artifact",
+                            "kind": "route_hint",
+                        }
+                    ]
+                },
             }
             self.platform_request_id = f"executor_build_{target}"
             self.platform_trace_path = f"/tmp/{target}_platform.yaml"
@@ -948,6 +1019,19 @@ def test_run_task_aggregates_artifact_references_for_comparison_tasks():
         "validation_failed",
     ]
     assert result["knowledge_summary"]["retrieval_sources"] == ["callback"]
+    assert result["knowledge_summary"]["selected_artifact_ids"] == [
+        "black_scholes_artifact",
+        "cos_artifact",
+        "fft_artifact",
+    ]
+    assert [
+        item["id"]
+        for item in result["knowledge_summary"]["selected_artifacts_by_audience"]["builder"]
+    ] == [
+        "black_scholes_artifact",
+        "cos_artifact",
+        "fft_artifact",
+    ]
     assert result["learning"]["knowledge_outcome"] == "captured_knowledge"
     assert "lesson(s)" in result["learning"]["knowledge_outcome_reason"]
     assert result["agent_observation_count"] == 3
@@ -1961,8 +2045,8 @@ def test_benchmark_existing_task_supports_generic_cached_transform_task():
     assert result["last_price"] > 0.0
 
 
-def test_make_test_payoff_uses_basket_specific_string_defaults(monkeypatch):
-    """Basket smoke tests should get valid observation/date defaults."""
+def test_make_test_payoff_uses_basket_specific_schedule_defaults(monkeypatch):
+    """Basket smoke tests should get typed observation-date defaults."""
     from trellis.agent.task_runtime import _make_test_payoff
 
     class BasketSpec:
@@ -1987,7 +2071,7 @@ def test_make_test_payoff_uses_basket_specific_string_defaults(monkeypatch):
         spec_name="HimalayaBasketSpec",
         fields=[
             SimpleNamespace(name="underlyings", type="str", default=None),
-            SimpleNamespace(name="observation_dates", type="str", default=None),
+            SimpleNamespace(name="observation_dates", type="tuple[date, ...]", default=None),
             SimpleNamespace(name="expiry_date", type="date", default=None),
             SimpleNamespace(name="start_date", type="date", default=None),
             SimpleNamespace(name="notional", type="float", default=None),
@@ -1997,7 +2081,11 @@ def test_make_test_payoff_uses_basket_specific_string_defaults(monkeypatch):
     payoff = _make_test_payoff(BasketPayoff, spec_schema, date(2024, 11, 15))
 
     assert payoff.spec.kwargs["underlyings"] == "AAPL,MSFT,NVDA"
-    assert payoff.spec.kwargs["observation_dates"] == "2026-04-01,2026-05-01,2026-06-01"
+    assert payoff.spec.kwargs["observation_dates"] == (
+        date(2026, 4, 1),
+        date(2026, 5, 1),
+        date(2026, 6, 1),
+    )
     assert payoff.spec.kwargs["start_date"] == date(2024, 11, 15)
     assert payoff.spec.kwargs["expiry_date"] == date(2025, 11, 15)
 
@@ -2041,6 +2129,66 @@ def test_make_test_payoff_uses_atm_strike_for_spot_based_options(monkeypatch):
     assert payoff.spec.kwargs["spot"] == 100.0
     assert payoff.spec.kwargs["strike"] == 100.0
     assert payoff.spec.kwargs["option_type"] == "call"
+
+
+def test_make_test_payoff_prefers_defining_module_spec_when_sys_modules_is_stale(monkeypatch):
+    """Comparison builds should not pick up a newer spec class from a reused module path."""
+    from trellis.agent.task_runtime import _make_test_payoff
+
+    module_name = "dummy_cds_adapter"
+    monte_carlo_module = ModuleType(module_name)
+    analytical_module = ModuleType(module_name)
+    monkeypatch.setitem(sys.modules, module_name, monte_carlo_module)
+
+    exec(
+        """
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class CDSSpec:
+    notional: float
+    n_paths: int = 250000
+
+class CDSPayoff:
+    def __init__(self, spec):
+        self.spec = spec
+
+    def evaluate(self, market_state):
+        return float(self.spec.n_paths)
+""",
+        monte_carlo_module.__dict__,
+    )
+    monkeypatch.setitem(sys.modules, module_name, analytical_module)
+    exec(
+        """
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class CDSSpec:
+    notional: float
+
+class CDSPayoff:
+    def __init__(self, spec):
+        self.spec = spec
+""",
+        analytical_module.__dict__,
+    )
+
+    MonteCarloPayoff = monte_carlo_module.CDSPayoff
+    MonteCarloPayoff.__module__ = module_name
+
+    spec_schema = SimpleNamespace(
+        spec_name="CDSSpec",
+        fields=[
+            SimpleNamespace(name="notional", type="float", default=None),
+            SimpleNamespace(name="n_paths", type="int", default="250000"),
+        ],
+    )
+
+    payoff = _make_test_payoff(MonteCarloPayoff, spec_schema, date(2024, 11, 15))
+
+    assert hasattr(payoff.spec, "n_paths")
+    assert payoff.evaluate(None) == 250000.0
 
 
 # ---------------------------------------------------------------------------

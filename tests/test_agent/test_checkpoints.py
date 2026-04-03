@@ -39,7 +39,7 @@ def _fake_pricing_plan(
 ):
     return SimpleNamespace(
         method=method,
-        required_market_data=required_data or {"discount_curve", "vol_surface"},
+        required_market_data=required_data or {"discount_curve", "black_vol_surface"},
         method_modules=modules,
         selection_reason=reason,
         reasoning="test reasoning",
@@ -75,6 +75,103 @@ class CallableBondPayoff(Payoff):
         tree = BDTTree()
         return tree.price()
 """
+
+
+def _semantic_checkpoint(
+    *,
+    semantic_id: str = "vanilla_option",
+    bridge_status: str = "thin_compatibility_wrapper",
+    requested_instrument_type: str = "european_option",
+):
+    return {
+        "semantic_id": semantic_id,
+        "semantic_version": "c2.1",
+        "requested_instrument_type": requested_instrument_type,
+        "product_instrument_class": "european_option",
+        "payoff_family": "vanilla_option",
+        "underlier_structure": "single_underlier",
+        "preferred_method": "analytical",
+        "required_market_inputs": ["discount_curve", "underlier_spot", "black_vol_surface"],
+        "compatibility_bridge_status": bridge_status,
+        "matched_wrapper": requested_instrument_type if bridge_status == "thin_compatibility_wrapper" else "",
+    }
+
+
+def _generation_boundary(
+    *,
+    route_id: str = "analytical_black76",
+    approved_modules: tuple[str, ...] = ("trellis.models.black",),
+):
+    return {
+        "method": "analytical",
+        "approved_modules": list(approved_modules),
+        "inspected_modules": ["trellis.models.black"],
+        "symbols_to_reuse": ["black76_call"],
+        "valuation_context": {
+            "market_source": "unbound_market_snapshot",
+            "reporting_policy": {
+                "reporting_currency": "USD",
+            },
+        },
+        "required_data_spec": {
+            "required_input_ids": ["discount_curve", "underlier_spot", "black_vol_surface"],
+        },
+        "market_binding_spec": {
+            "reporting_currency": "USD",
+        },
+        "lowering": {
+            "route_id": route_id,
+            "route_family": "analytical",
+            "primitive_routes": [route_id],
+            "route_modules": ["trellis.models.black"],
+            "expr_kind": "TerminalVanillaOptionExpr",
+            "family_ir_type": "VanillaOptionIR",
+            "helper_refs": [],
+            "target_bindings": [],
+            "lowering_errors": [],
+        },
+        "primitive_plan": {
+            "route": route_id,
+            "engine_family": "analytical",
+            "route_family": "analytical",
+            "adapters": [],
+            "blockers": [],
+        },
+        "route_binding_authority": {
+            "route_id": route_id,
+            "route_family": "analytical",
+            "engine_family": "analytical",
+            "authority_kind": "exact_backend_fit",
+            "exact_backend_fit": True,
+            "validation_bundle_id": "analytical:vanilla_option",
+            "canary_task_ids": ["T73"],
+            "helper_refs": ["trellis.models.black.black76_call"],
+        },
+    }
+
+
+def _validation_contract(
+    *,
+    route_id: str = "analytical_black76",
+    bundle_id: str = "analytical:vanilla_option",
+):
+    return {
+        "contract_id": "analytical:vanilla_option",
+        "bundle_id": bundle_id,
+        "route_id": route_id,
+        "route_family": "analytical",
+        "required_market_data": ["discount_curve", "underlier_spot", "black_vol_surface"],
+        "deterministic_checks": [
+            {
+                "check_id": "closed_form_regression",
+                "category": "pricing",
+            },
+        ],
+        "comparison_relations": [],
+        "lowering_errors": [],
+        "admissibility_failures": [],
+        "residual_risks": [],
+    }
 
 
 def _make_checkpoint(**overrides) -> DecisionCheckpoint:
@@ -131,7 +228,23 @@ class TestDecisionCheckpoint:
         cp = _make_checkpoint()
         assert len(cp.stages) == 4
         assert cp.stages[0].agent == "quant"
-        assert cp.stages[0].decision == "rate_tree"
+
+
+def test_capture_checkpoint_threads_route_binding_authority_into_route_stage():
+    checkpoint = capture_checkpoint(
+        task_id="T73",
+        instrument_type="swaption",
+        pricing_plan=_fake_pricing_plan(method="analytical", modules=("trellis.models.black",)),
+        generation_boundary=_generation_boundary(route_id="analytical_black76"),
+        validation_contract=_validation_contract(route_id="analytical_black76", bundle_id="analytical:swaption"),
+        outcome="pass",
+    )
+
+    route_stage = next(stage for stage in checkpoint.stages if stage.agent == "route")
+
+    assert route_stage.decision == "analytical_black76"
+    assert route_stage.metadata["route_binding_authority"]["authority_kind"] == "exact_backend_fit"
+    assert route_stage.metadata["route_binding_authority"]["canary_task_ids"] == ["T73"]
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +342,38 @@ class TestCaptureCheckpoint:
         assert validator.decision == "fail"
         assert validator.metadata["failure_count"] == 2
 
+    def test_capture_semantic_route_boundary(self):
+        cp = capture_checkpoint(
+            task_id="T74",
+            instrument_type="european_option",
+            pricing_plan=_fake_pricing_plan(method="analytical", modules=("trellis.models.black",)),
+            code=SAMPLE_CODE,
+            semantic_checkpoint=_semantic_checkpoint(),
+            generation_boundary=_generation_boundary(),
+            validation_contract=_validation_contract(),
+            outcome="pass",
+            final_price=12.34,
+            tolerance=0.5,
+        )
+
+        agents = [stage.agent for stage in cp.stages]
+        assert agents == ["quant", "semantic", "route", "builder", "validator"]
+
+        semantic = [stage for stage in cp.stages if stage.agent == "semantic"][0]
+        assert semantic.decision == "vanilla_option"
+        assert semantic.metadata["compatibility_bridge_status"] == "thin_compatibility_wrapper"
+
+        route = [stage for stage in cp.stages if stage.agent == "route"][0]
+        assert route.decision == "analytical_black76"
+        assert route.metadata["valuation_context"]["market_source"] == "unbound_market_snapshot"
+
+        builder = [stage for stage in cp.stages if stage.agent == "builder"][0]
+        assert "trellis.models.black" in builder.metadata["approved_modules"]
+
+        validator = [stage for stage in cp.stages if stage.agent == "validator"][0]
+        assert validator.decision == "pass"
+        assert validator.metadata["bundle_id"] == "analytical:vanilla_option"
+
 
 # ---------------------------------------------------------------------------
 # diff_checkpoints
@@ -322,6 +467,79 @@ class TestDiffCheckpoints:
         ))
         divs = diff_checkpoints(a, b)
         assert any(d.agent == "planner" and d.new_decision == "(absent)" for d in divs)
+
+    def test_semantic_wrapper_drift_is_metadata_divergence(self):
+        a = capture_checkpoint(
+            task_id="T74",
+            instrument_type="european_option",
+            semantic_checkpoint=_semantic_checkpoint(bridge_status="thin_compatibility_wrapper"),
+            generation_boundary=_generation_boundary(),
+            validation_contract=_validation_contract(),
+            outcome="pass",
+        )
+        b = capture_checkpoint(
+            task_id="T74",
+            instrument_type="vanilla_option",
+            semantic_checkpoint=_semantic_checkpoint(
+                bridge_status="canonical_semantic",
+                requested_instrument_type="vanilla_option",
+            ),
+            generation_boundary=_generation_boundary(),
+            validation_contract=_validation_contract(),
+            outcome="pass",
+        )
+
+        divs = diff_checkpoints(a, b)
+        assert any(d.agent == "semantic" and d.severity == "metadata" for d in divs)
+
+    def test_route_and_approved_module_drift_are_detected(self):
+        baseline = capture_checkpoint(
+            task_id="T105",
+            instrument_type="quanto_option",
+            semantic_checkpoint=_semantic_checkpoint(
+                semantic_id="quanto_option",
+                bridge_status="canonical_semantic",
+                requested_instrument_type="quanto_option",
+            ),
+            generation_boundary=_generation_boundary(
+                route_id="quanto_adjustment_analytical",
+                approved_modules=(
+                    "trellis.models.black",
+                    "trellis.models.resolution.quanto",
+                ),
+            ),
+            validation_contract=_validation_contract(
+                route_id="quanto_adjustment_analytical",
+                bundle_id="analytical:quanto_option",
+            ),
+            outcome="pass",
+        )
+        changed = capture_checkpoint(
+            task_id="T105",
+            instrument_type="quanto_option",
+            semantic_checkpoint=_semantic_checkpoint(
+                semantic_id="quanto_option",
+                bridge_status="canonical_semantic",
+                requested_instrument_type="quanto_option",
+            ),
+            generation_boundary=_generation_boundary(
+                route_id="analytical_garman_kohlhagen",
+                approved_modules=(
+                    "trellis.models.black",
+                    "trellis.models.resolution.quanto",
+                    "trellis.models.analytical.quanto",
+                ),
+            ),
+            validation_contract=_validation_contract(
+                route_id="analytical_garman_kohlhagen",
+                bundle_id="analytical:quanto_option",
+            ),
+            outcome="pass",
+        )
+
+        divs = diff_checkpoints(baseline, changed)
+        assert any(d.agent == "route" and d.severity == "decision" for d in divs)
+        assert any(d.agent == "builder" and d.severity == "metadata" for d in divs)
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +685,7 @@ class TestEmitDecisionCheckpoint:
                     "message": "Selected pricing method `rate_tree`",
                     "details": {
                         "method": "rate_tree",
-                        "required_market_data": ["discount_curve", "vol_surface"],
+                        "required_market_data": ["discount_curve", "black_vol_surface"],
                         "method_modules": ["trellis.models.trees.bdt"],
                         "selection_reason": "static_plan",
                     },
@@ -550,3 +768,70 @@ class TestEmitDecisionCheckpoint:
             instrument_type=None,
             model="",
         )
+
+    def test_emit_uses_platform_trace_boundary(self, tmp_path, monkeypatch):
+        """Checkpoint emission should pull semantic/route/validation boundary from the trace."""
+        from trellis.agent.knowledge.autonomous import BuildResult, _emit_decision_checkpoint
+        from trellis.agent.platform_requests import compile_build_request
+        from trellis.agent.platform_traces import record_platform_trace
+        import trellis.agent.checkpoints as cp_mod
+
+        checkpoint_dir = tmp_path / "checkpoints"
+        monkeypatch.setattr(cp_mod, "CHECKPOINT_DIR", checkpoint_dir)
+
+        compiled = compile_build_request(
+            "Himalaya-style ranked observation basket on AAPL, MSFT, NVDA with observation dates "
+            "2025-01-15, 2025-02-15, 2025-03-15. At each observation choose the best performer "
+            "among the remaining constituents, remove it, lock the simple return, and settle the "
+            "average locked returns at maturity.",
+            instrument_type="basket_option",
+        )
+        trace_path = record_platform_trace(
+            compiled,
+            success=True,
+            outcome="build_completed",
+            root=tmp_path / "platform",
+        )
+        result = BuildResult(
+            payoff_cls=object,
+            success=True,
+            attempts=1,
+            code=SAMPLE_CODE,
+            agent_observations=[
+                {
+                    "agent": "quant",
+                    "kind": "decision",
+                    "details": {
+                        "method": compiled.pricing_plan.method,
+                        "required_market_data": list(compiled.pricing_plan.required_market_data),
+                        "method_modules": list(compiled.pricing_plan.method_modules),
+                        "selection_reason": compiled.pricing_plan.selection_reason,
+                    },
+                },
+            ],
+            token_usage_summary={"total_tokens": 1234},
+            platform_trace_path=str(trace_path),
+            platform_request_id=compiled.request.request_id,
+        )
+
+        _emit_decision_checkpoint(
+            result=result,
+            decomposition=SimpleNamespace(method=compiled.pricing_plan.method),
+            instrument_type="basket_option",
+            model="gpt-5-mini",
+        )
+
+        files = list(checkpoint_dir.glob("*.yaml"))
+        assert len(files) == 1
+        loaded = load_checkpoint(files[0])
+        semantic = [stage for stage in loaded.stages if stage.agent == "semantic"][0]
+        route = [stage for stage in loaded.stages if stage.agent == "route"][0]
+        builder = [stage for stage in loaded.stages if stage.agent == "builder"][0]
+        validator = [stage for stage in loaded.stages if stage.agent == "validator"][0]
+
+        assert semantic.decision == "ranked_observation_basket"
+        assert semantic.metadata["compatibility_bridge_status"] == "thin_compatibility_wrapper"
+        assert route.decision == "correlated_basket_monte_carlo"
+        assert "trellis.models.monte_carlo.semantic_basket" in builder.metadata["approved_modules"]
+        assert validator.metadata["route_id"] == "correlated_basket_monte_carlo"
+        assert validator.metadata["bundle_id"] == "monte_carlo:basket_option"

@@ -1,8 +1,8 @@
 category: market_data
 title: Invalid Trellis module reference causes validation failure
 severity: high
-status: candidate
-confidence: 0.5
+status: validated
+confidence: 0.6
 created: '2026-03-31T18:44:19.436695'
 version: ''
 source_trace: null

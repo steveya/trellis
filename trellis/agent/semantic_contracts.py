@@ -827,8 +827,12 @@ def _extract_primary_underlier(text: str, term_sheet) -> tuple[str, ...]:
     stopwords = {
         "CALL",
         "CALLABLE",
+        "CDS",
+        "CREDIT",
         "CURRENCY",
+        "DEFAULT",
         "DISCOUNT",
+        "ENTITY",
         "EUR",
         "EURO",
         "FX",
@@ -841,6 +845,7 @@ def _extract_primary_underlier(text: str, term_sheet) -> tuple[str, ...]:
         "PAYOFF",
         "PUT",
         "RATE",
+        "REFERENCE",
         "SWAP",
         "SWAPTION",
         "THE",
@@ -1571,6 +1576,368 @@ def make_rate_style_swaption_contract(
     )
 
 
+def make_credit_default_swap_contract(
+    *,
+    description: str,
+    observation_schedule: tuple[str, ...] | list[str],
+    preferred_method: str = "analytical",
+    reference_entities: tuple[str, ...] | list[str] = (),
+) -> SemanticContract:
+    """Construct a generic single-name CDS semantic contract."""
+    schedule = _normalize_schedule(observation_schedule)
+    reference_names = _tuple(reference_entities)
+    if not schedule:
+        raise ValueError("Credit default swap contract requires a premium or maturity schedule.")
+
+    normalized_method = normalize_method(preferred_method)
+    primitive_family = (
+        "credit_default_swap_monte_carlo"
+        if normalized_method == "monte_carlo"
+        else "credit_default_swap_analytical"
+    )
+
+    product = SemanticProductSemantics(
+        semantic_id="credit_default_swap",
+        semantic_version="c2.1",
+        instrument_class="cds",
+        instrument_aliases=("cds", "credit_default_swap", "single_name_cds"),
+        payoff_family="credit_default_swap",
+        timeline=_default_semantic_timeline(
+            schedule,
+            settlement_dates=schedule,
+            state_update_dates=schedule,
+        ),
+        underlier_structure="single_reference_entity",
+        payoff_rule="single_name_cds_legs",
+        settlement_rule="premium_schedule_and_default_settlement",
+        payoff_traits=("credit_spread_dependence", "default_contingent", "premium_leg"),
+        observables=(
+            ObservableSpec(
+                observable_id="reference_entity_survival",
+                observable_type="credit_curve",
+                description="Survival term structure for the single reference entity.",
+                source="credit_curve",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+            ObservableSpec(
+                observable_id="premium_payment_schedule",
+                observable_type="cashflow_schedule",
+                description="Premium-leg payment schedule used for accrual and settlement.",
+                source="contract_terms",
+                schedule_role="observation_dates",
+                availability_phase="determination",
+            ),
+        ),
+        state_fields=(
+            StateField(
+                field_name="survival_state",
+                kind="event_state",
+                description="Reference-entity survival state used to price CDS premium and protection legs.",
+                source_observables=("reference_entity_survival",),
+                tags=("terminal_markov", "schedule_state"),
+            ),
+            StateField(
+                field_name="premium_leg_schedule",
+                kind="contract_memory",
+                description="Premium payment schedule shared by analytical and Monte Carlo CDS routes.",
+                source_observables=("premium_payment_schedule",),
+                tags=("schedule_state", "recombining_safe"),
+            ),
+            StateField(
+                field_name="default_indicator",
+                kind="contract_memory",
+                description="Pathwise default state used by Monte Carlo CDS routes.",
+                source_observables=("reference_entity_survival",),
+                tags=("pathwise_only", "schedule_state"),
+            ),
+        ),
+        obligations=(
+            ObligationSpec(
+                obligation_id="premium_leg_cashflow",
+                settle_date_rule="premium_schedule_and_default_settlement",
+                amount_expression="running_spread_coupon_leg",
+                settlement_kind="cash",
+                trigger="survive_to_payment",
+                provenance="semantic_contract",
+            ),
+            ObligationSpec(
+                obligation_id="protection_leg_cashflow",
+                settle_date_rule="premium_schedule_and_default_settlement",
+                amount_expression="loss_given_default_payment",
+                settlement_kind="cash",
+                trigger="default_before_maturity",
+                provenance="semantic_contract",
+            ),
+        ),
+        controller_protocol=ControllerProtocol(
+            controller_style="identity",
+            controller_role="none",
+            decision_phase="decision",
+            schedule_role="",
+            admissible_actions=(),
+            description="Single-name CDS semantics are automatic and have no strategic controller.",
+        ),
+        audit_info=_default_audit_info(),
+        implementation_hints=_default_implementation_hints(
+            event_machine_source="derived_from_event_transitions",
+            primary_schedule_role="observation_dates",
+        ),
+        exercise_style="none",
+        path_dependence="schedule_dependent",
+        schedule_dependence=True,
+        state_dependence="schedule_dependent",
+        model_family="credit_intensity",
+        multi_asset=False,
+        observation_schedule=schedule,
+        observation_basis="premium_schedule",
+        selection_operator="",
+        selection_scope="",
+        selection_count=0,
+        lock_rule="",
+        aggregation_rule="",
+        maturity_settlement_rule="premium_schedule_and_default_settlement",
+        constituents=reference_names,
+        state_variables=("survival_state", "premium_leg_schedule", "default_indicator"),
+        event_transitions=("observe_credit_state", "accrue_premium_leg", "settle_on_default_or_maturity"),
+        event_machine=_derive_event_machine(
+            ("observe_credit_state", "accrue_premium_leg", "settle_on_default_or_maturity"),
+            state_dependence="schedule_dependent",
+        ),
+    )
+
+    required_inputs = (
+        SemanticMarketInputSpec(
+            input_id="discount_curve",
+            description="Discount curve used to present-value premium and protection legs.",
+            capability="discount_curve",
+            aliases=("discount", "discount_rate"),
+            connector_hint="Use the settlement discount curve.",
+            allowed_provenance=("observed",),
+        ),
+        SemanticMarketInputSpec(
+            input_id="credit_curve",
+            description="Credit curve exposing single-name survival probabilities.",
+            capability="credit_curve",
+            aliases=("hazard_curve", "survival_curve"),
+            connector_hint="Provide the single-name credit curve for the reference entity.",
+            allowed_provenance=("observed", "derived"),
+        ),
+    )
+
+    return _semantic_contract_from_sections(
+        product=product,
+        required_inputs=required_inputs,
+        candidate_methods=("analytical", "monte_carlo"),
+        preferred_method=preferred_method,
+        bundle_hints=("credit_default_swap_contract",),
+        universal_checks=(
+            "single_reference_entity_present",
+            "premium_or_maturity_schedule_present",
+            "premium_and_protection_legs_present",
+        ),
+        semantic_checks=(
+            "premium_leg_accrues_on_schedule",
+            "protection_leg_triggers_on_default",
+        ),
+        comparison_targets=(normalized_method,),
+        reduction_cases=("single_name_credit_default_swap",),
+        target_modules=("trellis.models.credit_default_swap",),
+        primitive_families=(primitive_family,),
+        adapter_obligations=(
+            "resolve_credit_curve_and_discount_curve",
+            "build_cds_payment_schedule",
+            "delegate_cds_leg_pricing_to_checked_helpers",
+        ),
+        proving_tasks=(
+            "compile_request_to_product_ir",
+            "validate_credit_default_swap_contract",
+            "emit_bounded_semantic_blueprint",
+        ),
+        spec_schema_hints=("credit_default_swap",),
+        description=description,
+    )
+
+
+def make_nth_to_default_contract(
+    *,
+    description: str,
+    observation_schedule: tuple[str, ...] | list[str],
+    reference_entities: tuple[str, ...] | list[str],
+    trigger_rank: int = 1,
+    preferred_method: str = "copula",
+) -> SemanticContract:
+    """Construct a generic nth-to-default semantic contract."""
+    schedule = _normalize_schedule(observation_schedule)
+    reference_names = _tuple(reference_entities)
+    normalized_method = normalize_method(preferred_method)
+    normalized_trigger_rank = max(int(trigger_rank), 1)
+    if not schedule:
+        raise ValueError("Nth-to-default contract requires a maturity or trigger schedule.")
+    if len(reference_names) < 2:
+        raise ValueError("Nth-to-default contract requires at least two reference entities.")
+    if normalized_trigger_rank > len(reference_names):
+        raise ValueError(
+            "Nth-to-default trigger rank cannot exceed the number of reference entities."
+        )
+    if normalized_method != "copula":
+        raise ValueError(
+            "Nth-to-default semantic contracts currently support the copula route only."
+        )
+
+    product = SemanticProductSemantics(
+        semantic_id="nth_to_default",
+        semantic_version="c2.1",
+        instrument_class="nth_to_default",
+        instrument_aliases=("nth_to_default", "first_to_default", "basket_cds"),
+        payoff_family="nth_to_default",
+        timeline=_default_semantic_timeline(
+            schedule,
+            settlement_dates=schedule,
+            state_update_dates=schedule,
+        ),
+        underlier_structure="multi_asset_basket",
+        payoff_rule="nth_default_loss_payment",
+        settlement_rule="settle_at_nth_default_or_maturity",
+        payoff_traits=(
+            "credit_spread_dependence",
+            "correlation_dependence",
+            "default_contingent",
+            "nth_default_trigger",
+        ),
+        observables=(
+            ObservableSpec(
+                observable_id="basket_credit_curve",
+                observable_type="credit_curve",
+                description="Portfolio credit curve used to derive marginal default probabilities.",
+                source="credit_curve",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+        ),
+        state_fields=(
+            StateField(
+                field_name="remaining_reference_pool",
+                kind="contract_memory",
+                description="Surviving reference-entity pool after each simulated default event.",
+                source_observables=("basket_credit_curve",),
+                tags=("pathwise_only", "remaining_pool", "schedule_state"),
+            ),
+            StateField(
+                field_name="trigger_default_counter",
+                kind="contract_memory",
+                description="Running counter of realized defaults used to detect the nth trigger event.",
+                source_observables=("basket_credit_curve",),
+                tags=("pathwise_only", "schedule_state"),
+            ),
+        ),
+        obligations=(
+            ObligationSpec(
+                obligation_id="nth_default_cash_settlement",
+                settle_date_rule="settle_at_nth_default_or_maturity",
+                amount_expression="basket_loss_given_nth_default",
+                settlement_kind="cash",
+                trigger="nth_default_before_maturity",
+                provenance="semantic_contract",
+            ),
+        ),
+        controller_protocol=ControllerProtocol(
+            controller_style="identity",
+            controller_role="none",
+            decision_phase="decision",
+            schedule_role="",
+            admissible_actions=(),
+            description="Nth-to-default semantics are automatic and have no strategic controller.",
+        ),
+        audit_info=_default_audit_info(),
+        implementation_hints=_default_implementation_hints(
+            event_machine_source="derived_from_event_transitions",
+            primary_schedule_role="observation_dates",
+        ),
+        exercise_style="none",
+        path_dependence="path_dependent",
+        schedule_dependence=True,
+        state_dependence="path_dependent",
+        model_family="credit_copula",
+        multi_asset=True,
+        observation_schedule=schedule,
+        observation_basis="maturity_horizon",
+        selection_operator="nth_default_trigger",
+        selection_scope="reference_entities",
+        selection_count=normalized_trigger_rank,
+        lock_rule="survivor_pool_updates_after_each_default",
+        aggregation_rule="loss_given_nth_default",
+        maturity_settlement_rule="settle_at_nth_default_or_maturity",
+        constituents=reference_names,
+        state_variables=("remaining_reference_pool", "trigger_default_counter"),
+        event_transitions=(
+            "sample_correlated_default_times",
+            "track_default_order",
+            "settle_at_nth_default_or_maturity",
+        ),
+        event_machine=_derive_event_machine(
+            (
+                "sample_correlated_default_times",
+                "track_default_order",
+                "settle_at_nth_default_or_maturity",
+            ),
+            state_dependence="path_dependent",
+        ),
+    )
+
+    required_inputs = (
+        SemanticMarketInputSpec(
+            input_id="discount_curve",
+            description="Discount curve used to present-value the nth-default settlement.",
+            capability="discount_curve",
+            aliases=("discount", "discount_rate"),
+            connector_hint="Use the settlement discount curve.",
+            allowed_provenance=("observed",),
+        ),
+        SemanticMarketInputSpec(
+            input_id="credit_curve",
+            description="Portfolio credit curve used for marginal default probabilities.",
+            capability="credit_curve",
+            aliases=("hazard_curve", "survival_curve"),
+            connector_hint="Provide the basket credit curve or reference-entity survival term structure.",
+            allowed_provenance=("observed", "derived"),
+        ),
+    )
+
+    return _semantic_contract_from_sections(
+        product=product,
+        required_inputs=required_inputs,
+        candidate_methods=("copula",),
+        preferred_method=normalized_method,
+        bundle_hints=("nth_to_default_contract",),
+        universal_checks=(
+            "reference_entities_present",
+            "trigger_rank_within_reference_pool",
+            "maturity_or_trigger_schedule_present",
+        ),
+        semantic_checks=(
+            "nth_default_order_explicit",
+            "copula_dependence_assumption_explicit",
+        ),
+        comparison_targets=(normalized_method,),
+        reduction_cases=("first_to_default_basket",),
+        target_modules=("trellis.instruments.nth_to_default",),
+        primitive_families=("nth_to_default_monte_carlo",),
+        adapter_obligations=(
+            "resolve_basket_credit_curve_and_discount_curve",
+            "preserve_reference_entities_and_trigger_rank",
+            "delegate_nth_to_default_pricing_to_checked_helper",
+        ),
+        proving_tasks=(
+            "compile_request_to_product_ir",
+            "validate_nth_to_default_contract",
+            "emit_bounded_semantic_blueprint",
+        ),
+        spec_schema_hints=("nth_to_default",),
+        description=description,
+    )
+
+
 def draft_semantic_contract(
     description: str,
     instrument_type: str | None = None,
@@ -2102,6 +2469,18 @@ def _extract_constituents(text: str, term_sheet) -> tuple[str, ...]:
     return tuple(constituents)
 
 
+def _extract_reference_entities(text: str, term_sheet) -> tuple[str, ...]:
+    """Extract nth-to-default reference entities from structured fields or free text."""
+    parameters = getattr(term_sheet, "parameters", {}) or {}
+    for key in ("reference_entities", "names", "constituents", "basket_names", "underliers"):
+        value = parameters.get(key)
+        if value:
+            if isinstance(value, str):
+                return _parse_name_list(value)
+            return _tuple(value)
+    return _extract_constituents(text, term_sheet)
+
+
 def _parse_name_list(value: str) -> tuple[str, ...]:
     """Parse a comma-separated or slash-separated name list."""
     tokens = re.split(r"[,;/]|(?:\band\b)", value)
@@ -2129,6 +2508,45 @@ def _extract_observation_schedule(text: str, term_sheet) -> tuple[str, ...]:
         if value not in schedule:
             schedule.append(value)
     return tuple(schedule)
+
+
+def _extract_trigger_rank(text: str, term_sheet) -> int:
+    """Extract the nth-default trigger rank from structured fields or free text."""
+    parameters = getattr(term_sheet, "parameters", {}) or {}
+    for key in ("trigger_rank", "default_trigger_n", "n_th", "nth", "rank"):
+        value = parameters.get(key)
+        if value is None:
+            continue
+        try:
+            rank = int(value)
+        except (TypeError, ValueError):
+            continue
+        if rank > 0:
+            return rank
+
+    lower = text.lower()
+    ordinal_ranks = {
+        "first": 1,
+        "second": 2,
+        "third": 3,
+        "fourth": 4,
+        "fifth": 5,
+        "sixth": 6,
+        "seventh": 7,
+        "eighth": 8,
+        "ninth": 9,
+        "tenth": 10,
+    }
+    for ordinal, rank in ordinal_ranks.items():
+        if f"{ordinal} to default" in lower or f"{ordinal}-to-default" in lower:
+            return rank
+
+    match = re.search(r"\b(\d+)(?:st|nd|rd|th)?[-\s]+to[-\s]+default\b", lower)
+    if match is not None:
+        rank = int(match.group(1))
+        if rank > 0:
+            return rank
+    return 1
 
 
 def _looks_like_quanto_option_request(text: str, instrument_type: str | None) -> bool:
@@ -2204,6 +2622,49 @@ def _looks_like_rate_style_swaption_request(text: str, instrument_type: str | No
             "forward swap",
             "swap rate",
             "swap exercise",
+        )
+    )
+
+
+def _looks_like_credit_default_swap_request(text: str, instrument_type: str | None) -> bool:
+    """Return whether the request appears to describe a single-name CDS."""
+    lower = text.lower()
+    normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
+    if normalized_instrument in {"credit_default_swap", "cds"}:
+        return True
+    if any(cue in lower for cue in ("nth to default", "nth-to-default", "first to default", "basket cds", "default correlation")):
+        return False
+    return any(
+        cue in lower
+        for cue in (
+            "credit default swap",
+            "single-name cds",
+            "single name cds",
+            " cds ",
+            "protection leg",
+            "premium leg",
+            "reference entity",
+        )
+    )
+
+
+def _looks_like_nth_to_default_request(text: str, instrument_type: str | None) -> bool:
+    """Return whether the request appears to describe an nth-to-default basket."""
+    lower = text.lower()
+    normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
+    if normalized_instrument == "nth_to_default":
+        return True
+    return any(
+        cue in lower
+        for cue in (
+            "nth to default",
+            "nth-to-default",
+            "first to default",
+            "first-to-default",
+            "second to default",
+            "second-to-default",
+            "basket cds",
+            "default correlation",
         )
     )
 
@@ -2288,6 +2749,60 @@ def _draft_shape_contract(
             observation_schedule=observation_schedule,
             preferred_method="rate_tree" if normalized_instrument == "bermudan_swaption" else "analytical",
             exercise_style="bermudan" if normalized_instrument == "bermudan_swaption" else "european",
+        )
+
+    if _looks_like_nth_to_default_request(text, instrument_type):
+        observation_schedule = _split_supported_dates(
+            text,
+            term_sheet,
+            parameter_keys=(
+                "maturity_date",
+                "end_date",
+                "observation_schedule",
+                "observation_dates",
+                "trigger_dates",
+            ),
+        )
+        if not observation_schedule:
+            raise ValueError(
+                "Semantic nth-to-default request requires a maturity or trigger schedule."
+            )
+        reference_entities = _extract_reference_entities(text, term_sheet)
+        if len(reference_entities) < 2:
+            raise ValueError(
+                "Semantic nth-to-default request requires at least two reference entities."
+            )
+        return make_nth_to_default_contract(
+            description=description,
+            observation_schedule=observation_schedule,
+            reference_entities=reference_entities,
+            trigger_rank=_extract_trigger_rank(text, term_sheet),
+        )
+
+    if _looks_like_credit_default_swap_request(text, instrument_type):
+        observation_schedule = _split_supported_dates(
+            text,
+            term_sheet,
+            parameter_keys=(
+                "premium_schedule",
+                "premium_dates",
+                "observation_schedule",
+                "observation_dates",
+                "maturity_date",
+                "end_date",
+                "expiry_date",
+            ),
+        )
+        if not observation_schedule:
+            raise ValueError(
+                "Semantic credit default swap request requires a premium or maturity schedule."
+            )
+        reference_entities = _extract_primary_underlier(text, term_sheet)
+        return make_credit_default_swap_contract(
+            description=description,
+            observation_schedule=observation_schedule,
+            preferred_method="monte_carlo" if "hazard rate mc" in text.lower() else "analytical",
+            reference_entities=reference_entities,
         )
 
     return None

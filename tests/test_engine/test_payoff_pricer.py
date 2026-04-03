@@ -44,7 +44,7 @@ class TestMarketState:
 
     def test_available_capabilities_with_discount(self):
         ms = _market_state()
-        assert {"discount", "forward_rate"} <= ms.available_capabilities
+        assert {"discount_curve", "forward_curve"} <= ms.available_capabilities
 
     def test_available_capabilities_without_discount(self):
         ms = MarketState(as_of=SETTLE, settlement=SETTLE, discount=None)
@@ -63,14 +63,14 @@ class TestMarketState:
 class TestMissingCapabilityError:
 
     def test_message(self):
-        err = MissingCapabilityError({"black_vol"}, {"discount"})
-        assert "black_vol" in str(err)
-        assert "discount" in str(err)
+        err = MissingCapabilityError({"black_vol_surface"}, {"discount_curve"})
+        assert "black_vol_surface" in str(err)
+        assert "discount_curve" in str(err)
 
     def test_fields(self):
-        err = MissingCapabilityError({"forward_rate"}, {"discount"})
-        assert err.missing == {"forward_rate"}
-        assert err.available == {"discount"}
+        err = MissingCapabilityError({"forward_curve"}, {"discount_curve"})
+        assert err.missing == {"forward_curve"}
+        assert err.available == {"discount_curve"}
 
 
 # --- Payoff protocol tests ---
@@ -152,7 +152,7 @@ class TestPricePayoff:
         class ZeroPayoff:
             @property
             def requirements(self):
-                return {"discount"}
+                return {"discount_curve"}
 
             def evaluate(self, market_state):
                 return 0.0
@@ -221,7 +221,7 @@ class TestCustomPayoff:
         class SingleCashflowPayoff:
             @property
             def requirements(self):
-                return {"discount"}
+                return {"discount_curve"}
 
             def evaluate(self, market_state):
                 t = year_fraction(market_state.settlement, date(2025, 11, 15))
@@ -240,7 +240,7 @@ class TestCustomPayoff:
         class VolPayoff:
             @property
             def requirements(self):
-                return {"discount", "black_vol"}
+                return {"discount_curve", "black_vol_surface"}
 
             def evaluate(self, market_state):
                 return 0.0
@@ -259,7 +259,7 @@ class TestEvaluateReturnsFloat:
         class DirectPayoff:
             @property
             def requirements(self):
-                return {"discount"}
+                return {"discount_curve"}
 
             def evaluate(self, market_state):
                 return 42.57
@@ -274,7 +274,7 @@ class TestEvaluateReturnsFloat:
         class PayoffA:
             @property
             def requirements(self):
-                return {"discount"}
+                return {"discount_curve"}
             def evaluate(self, ms):
                 t = year_fraction(ms.settlement, date(2025, 11, 15))
                 return 100.0 * ms.discount.discount(t)
@@ -282,7 +282,7 @@ class TestEvaluateReturnsFloat:
         class PayoffB:
             @property
             def requirements(self):
-                return {"discount"}
+                return {"discount_curve"}
             def evaluate(self, ms):
                 t = year_fraction(ms.settlement, date(2025, 11, 15))
                 return 100.0 * ms.discount.discount(t)

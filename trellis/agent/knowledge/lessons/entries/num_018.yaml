@@ -3,7 +3,7 @@ title: Indentation broke module build
 severity: critical
 category: numerical
 status: validated
-confidence: 0.6
+confidence: 0.7
 created: '2026-03-26T21:07:34.592913'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260326_210734_quanto_option_analytical.yaml

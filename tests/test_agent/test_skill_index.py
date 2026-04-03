@@ -7,7 +7,9 @@ from dataclasses import asdict
 from trellis.agent.knowledge.skills import (
     clear_skill_index_cache,
     get_skill_record,
+    get_skill_lineage,
     load_skill_index,
+    load_skill_lineage_index,
     query_skill_records,
 )
 
@@ -41,6 +43,8 @@ def test_principle_skill_projection_inherits_lesson_context():
     assert record is not None
     assert record.kind == "principle"
     assert record.origin == "derived"
+    assert record.lineage_status == "derived"
+    assert "principles.derived_from" in record.lineage_evidence
     assert "lesson:sem_001" in record.parents
     assert "lesson:mc_020" in record.parents
     assert record.method_families
@@ -52,6 +56,8 @@ def test_cookbook_skill_projection_aggregates_contract_metadata():
 
     assert record is not None
     assert record.kind == "cookbook"
+    assert record.lineage_status == "source_root"
+    assert record.lineage_evidence == ("cookbooks.entry",)
     assert "cds" in record.instrument_types
     assert "credit_curve" in record.concepts
     assert "solution_contract:credit_default_swap" in record.tags
@@ -73,6 +79,38 @@ def test_route_hint_projection_includes_instruction_lifecycle_records():
         "default-time" in summary.lower() or "default time" in summary.lower()
         for summary in summaries
     )
+
+
+def test_route_hint_lineage_links_back_to_matching_cookbook():
+    record = get_skill_record("route_hint:analytical_garman_kohlhagen:note:1")
+
+    assert record is not None
+    assert record.lineage_status == "derived"
+    assert "route.match_method_to_cookbook" in record.lineage_evidence
+    assert "cookbook:analytical" in record.parents
+
+
+def test_skill_lineage_query_surfaces_children_and_same_source_records():
+    lineage = get_skill_lineage("cookbook:analytical")
+
+    assert lineage is not None
+    assert "route_hint:analytical_garman_kohlhagen:note:1" in lineage["children"]
+
+    route_lineage = get_skill_lineage("route_hint:analytical_garman_kohlhagen:note:1")
+    assert route_lineage is not None
+    assert "route_hint:analytical_garman_kohlhagen:route-helper" in route_lineage["same_source"]
+
+    lineage_index = load_skill_lineage_index()
+    assert lineage_index["cookbook:analytical"]["children"] == lineage["children"]
+
+
+def test_ambiguous_route_hint_cookbook_backfill_is_left_unresolved():
+    record = get_skill_record("route_hint:nth_to_default_monte_carlo:schedule-builder")
+
+    assert record is not None
+    assert record.parents == ()
+    assert record.lineage_status == "advisory"
+    assert record.lineage_evidence == ("route.match_method_to_cookbook_ambiguous",)
 
 
 def test_skill_index_generation_is_deterministic():

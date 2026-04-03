@@ -43,3 +43,12 @@ Agent Architecture Reference
    ../agent/quant_agent
    ../agent/builder_agent
    ../agent/critic_agent
+
+Planning Notes
+--------------
+
+.. toctree::
+   :maxdepth: 1
+
+   ../plans/unified-platform-migration
+   ../plans/trellis-mcp-implementation

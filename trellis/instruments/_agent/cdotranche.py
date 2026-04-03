@@ -39,7 +39,7 @@ class CDOTranchePayoff:
     @property
     def requirements(self) -> set[str]:
         """Declare that valuation needs discounting and credit-survival inputs."""
-        return {"credit", "discount"}
+        return {"credit_curve", "discount_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
         """Estimate discounted expected tranche loss from a factor-copula loss distribution."""

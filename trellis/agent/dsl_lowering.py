@@ -28,7 +28,9 @@ from trellis.agent.dsl_algebra import (
 from trellis.agent.family_lowering_ir import (
     AnalyticalBlack76IR,
     CorrelatedBasketMonteCarloIR,
+    CreditDefaultSwapIR,
     ExerciseLatticeIR,
+    NthToDefaultIR,
     VanillaEquityPDEIR,
     build_family_lowering_ir,
 )
@@ -58,6 +60,16 @@ class DslTargetBinding:
 
 
 @dataclass(frozen=True)
+class DslLoweringError:
+    """Structured lowering rejection recorded without raising."""
+
+    route_id: str | None
+    stage: str
+    code: str
+    message: str
+
+
+@dataclass(frozen=True)
 class SemanticDslLowering:
     """Deterministic lowering result for one compiled semantic contract."""
 
@@ -69,7 +81,7 @@ class SemanticDslLowering:
     target_bindings: tuple[DslTargetBinding, ...] = ()
     adapters: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
-    admissibility_errors: tuple[str, ...] = ()
+    errors: tuple[DslLoweringError, ...] = ()
 
     @property
     def control_styles(self) -> tuple[ControlStyle, ...]:
@@ -96,6 +108,11 @@ class SemanticDslLowering:
                 refs.append(binding.primitive_ref)
         return tuple(refs)
 
+    @property
+    def admissibility_errors(self) -> tuple[str, ...]:
+        """Backward-compatible lowering error messages."""
+        return tuple(item.message for item in self.errors)
+
 
 def lower_semantic_blueprint(
     contract,
@@ -118,14 +135,28 @@ def lower_semantic_blueprint(
             family_ir=None,
             expr=None,
             normalized_expr=None,
-            admissibility_errors=("No primitive routes declared for DSL lowering.",),
+            errors=(
+                _lowering_error(
+                    route_id=None,
+                    stage="route_selection",
+                    code="missing_primitive_routes",
+                    message="No primitive routes declared for DSL lowering.",
+                ),
+            ),
         )
 
-    errors: list[str] = []
+    errors: list[DslLoweringError] = []
     for route_id in primitive_routes:
         route = find_route_by_id(route_id)
         if route is None:
-            errors.append(f"Unknown primitive route for DSL lowering: '{route_id}'")
+            errors.append(
+                _lowering_error(
+                    route_id=route_id,
+                    stage="route_selection",
+                    code="unknown_primitive_route",
+                    message=f"Unknown primitive route for DSL lowering: '{route_id}'",
+                )
+            )
             continue
 
         bindings = tuple(
@@ -151,7 +182,14 @@ def lower_semantic_blueprint(
                 market_binding_spec=market_binding_spec,
             )
         except ValueError as exc:
-            errors.append(f"Route '{route_id}' family lowering rejected the semantic contract: {exc}")
+            errors.append(
+                _lowering_error(
+                    route_id=route_id,
+                    stage="family_ir",
+                    code=_infer_error_code(str(exc)),
+                    message=f"Route '{route_id}' family lowering rejected the semantic contract: {exc}",
+                )
+            )
             continue
         if family_ir is not None:
             expr, lowering_errors = _build_expr_for_family_ir(
@@ -169,14 +207,27 @@ def lower_semantic_blueprint(
                 bindings=bindings,
             )
         if lowering_errors:
-            errors.extend(lowering_errors)
+            errors.extend(
+                _lowering_error(
+                    route_id=route_id,
+                    stage="dsl_expr",
+                    code=_infer_error_code(error),
+                    message=error,
+                )
+                for error in lowering_errors
+            )
             continue
         assert expr is not None
 
         type_errors = validate_contract_expr(expr)
         if type_errors:
             errors.extend(
-                f"Route '{route_id}' lowered to an invalid DSL fragment: {error}"
+                _lowering_error(
+                    route_id=route_id,
+                    stage="dsl_typecheck",
+                    code="invalid_dsl_fragment",
+                    message=f"Route '{route_id}' lowered to an invalid DSL fragment: {error}",
+                )
                 for error in type_errors
             )
             continue
@@ -190,7 +241,7 @@ def lower_semantic_blueprint(
             target_bindings=bindings,
             adapters=adapters,
             notes=notes,
-            admissibility_errors=(),
+            errors=(),
         )
 
     return SemanticDslLowering(
@@ -199,7 +250,7 @@ def lower_semantic_blueprint(
         family_ir=None,
         expr=None,
         normalized_expr=None,
-        admissibility_errors=tuple(errors),
+        errors=tuple(errors),
     )
 
 
@@ -230,6 +281,18 @@ def _build_expr_for_family_ir(
         )
     if isinstance(family_ir, CorrelatedBasketMonteCarloIR):
         return _build_correlated_basket_mc_expr_from_family_ir(
+            route_id=route_id,
+            family_ir=family_ir,
+            bindings=bindings,
+        )
+    if isinstance(family_ir, CreditDefaultSwapIR):
+        return _build_credit_default_swap_expr_from_family_ir(
+            route_id=route_id,
+            family_ir=family_ir,
+            bindings=bindings,
+        )
+    if isinstance(family_ir, NthToDefaultIR):
+        return _build_nth_to_default_expr_from_family_ir(
             route_id=route_id,
             family_ir=family_ir,
             bindings=bindings,
@@ -361,6 +424,44 @@ def _build_black76_expr(
             ),
             (),
         )
+
+    if (
+        payoff_family == "swaption"
+        and getattr(contract.product, "exercise_style", "") == "european"
+        and route_helper is not None
+    ):
+        market_binding = next(
+            (binding for binding in bindings if binding.role == "market_binding"),
+            None,
+        )
+        if market_binding is None:
+            return None, (
+                f"Route '{route_id}' is missing the required market binding for European rate-style swaption lowering.",
+            )
+
+        binding_atom = ContractAtom(
+            atom_id=f"{route_id}:market_binding",
+            primitive_ref=market_binding.primitive_ref,
+            description="Resolve market inputs for a European rate-style swaption.",
+            signature=ContractSignature(
+                inputs=market_signature.inputs,
+                outputs=("resolved_state:state",),
+                timeline_roles=market_signature.timeline_roles,
+                market_data_requirements=market_signature.market_data_requirements,
+            ),
+        )
+        helper_atom = ContractAtom(
+            atom_id=f"{route_id}:route_helper",
+            primitive_ref=route_helper.primitive_ref,
+            description="Delegate European rate-style swaption pricing to the checked-in Black76 raw helper.",
+            signature=ContractSignature(
+                inputs=("resolved_state:state",),
+                outputs=("price:scalar",),
+                timeline_roles=market_signature.timeline_roles,
+                market_data_requirements=market_signature.market_data_requirements,
+            ),
+        )
+        return ThenExpr(terms=(binding_atom, helper_atom)), ()
 
     option_type = _option_type_for_contract(contract)
     kernel_name = "black76_put" if option_type == "put" else "black76_call"
@@ -596,6 +697,119 @@ def _build_correlated_basket_mc_expr_from_family_ir(
     return ThenExpr(terms=(binding_atom, helper_atom)), ()
 
 
+def _build_credit_default_swap_expr_from_family_ir(
+    *,
+    route_id: str,
+    family_ir: CreditDefaultSwapIR,
+    bindings: tuple[DslTargetBinding, ...],
+) -> tuple[ContractExpr | None, tuple[str, ...]]:
+    """Build a typed CDS schedule-builder and helper lowering."""
+    schedule_builder = next(
+        (
+            binding
+            for binding in bindings
+            if binding.role == "schedule_builder" and binding.symbol == family_ir.schedule_builder_symbol
+        ),
+        None,
+    )
+    if schedule_builder is None:
+        return None, (
+            f"Route '{route_id}' is missing the required schedule builder '{family_ir.schedule_builder_symbol}'.",
+        )
+
+    route_helper = next(
+        (
+            binding
+            for binding in bindings
+            if binding.role == "route_helper" and binding.symbol == family_ir.helper_symbol
+        ),
+        None,
+    )
+    if route_helper is None:
+        return None, (
+            f"Route '{route_id}' is missing the required route helper '{family_ir.helper_symbol}'.",
+        )
+
+    market_signature = _market_signature_from_family_ir(family_ir)
+    schedule_atom = ContractAtom(
+        atom_id=f"{route_id}:schedule_builder",
+        primitive_ref=schedule_builder.primitive_ref,
+        description="Build the canonical CDS premium schedule shared by the checked-in route helpers.",
+        signature=ContractSignature(
+            inputs=market_signature.inputs,
+            outputs=("payment_schedule:schedule", *market_signature.inputs),
+            timeline_roles=market_signature.timeline_roles,
+            market_data_requirements=market_signature.market_data_requirements,
+        ),
+    )
+    helper_atom = ContractAtom(
+        atom_id=f"{route_id}:route_helper",
+        primitive_ref=route_helper.primitive_ref,
+        description=(
+            f"Typed single-name CDS {family_ir.pricing_mode} helper using the checked-in "
+            "premium/protection-leg pricing contract."
+        ),
+        signature=ContractSignature(
+            inputs=("payment_schedule:schedule", *market_signature.inputs),
+            outputs=("price:scalar",),
+            timeline_roles=market_signature.timeline_roles,
+            market_data_requirements=market_signature.market_data_requirements,
+        ),
+    )
+    return ThenExpr(terms=(schedule_atom, helper_atom)), ()
+
+
+def _build_nth_to_default_expr_from_family_ir(
+    *,
+    route_id: str,
+    family_ir: NthToDefaultIR,
+    bindings: tuple[DslTargetBinding, ...],
+) -> tuple[ContractExpr | None, tuple[str, ...]]:
+    """Build a typed nth-to-default helper lowering."""
+    route_helper = next(
+        (
+            binding
+            for binding in bindings
+            if binding.role == "route_helper" and binding.symbol == family_ir.helper_symbol
+        ),
+        None,
+    )
+    if route_helper is None:
+        return None, (
+            f"Route '{route_id}' is missing the required route helper '{family_ir.helper_symbol}'.",
+        )
+
+    copula_binding = next(
+        (
+            binding
+            for binding in bindings
+            if binding.role == "default_time_sampler" and binding.symbol == family_ir.copula_symbol
+        ),
+        None,
+    )
+    if copula_binding is None:
+        return None, (
+            f"Route '{route_id}' is missing the required copula primitive '{family_ir.copula_symbol}'.",
+        )
+
+    market_signature = _market_signature_from_family_ir(family_ir)
+    helper_atom = ContractAtom(
+        atom_id=f"{route_id}:route_helper",
+        primitive_ref=route_helper.primitive_ref,
+        description=(
+            f"Typed nth-to-default helper backed by the checked-in "
+            f"{family_ir.copula_symbol} dependence route."
+        ),
+        signature=ContractSignature(
+            inputs=market_signature.inputs,
+            outputs=("price:scalar",),
+            timeline_roles=market_signature.timeline_roles,
+            market_data_requirements=market_signature.market_data_requirements,
+        ),
+    )
+    return helper_atom, ()
+
+
 def _build_control_expr(
     *,
     product_ir,
@@ -770,3 +984,49 @@ def _has_typed_payment_semantics(product) -> bool:
         "coupon" in str(getattr(obligation, "amount_expression", "")).strip().lower()
         for obligation in getattr(product, "obligations", ()) or ()
     )
+
+
+def _lowering_error(
+    *,
+    route_id: str | None,
+    stage: str,
+    code: str,
+    message: str,
+) -> DslLoweringError:
+    """Build one structured lowering error record."""
+    return DslLoweringError(
+        route_id=route_id,
+        stage=stage,
+        code=code,
+        message=message,
+    )
+
+
+def _infer_error_code(message: str) -> str:
+    """Map a lowering rejection message onto a stable machine-readable code."""
+    lower = message.lower()
+    if "unknown primitive route" in lower:
+        return "unknown_primitive_route"
+    if "no primitive routes declared" in lower:
+        return "missing_primitive_routes"
+    if "invalid dsl fragment" in lower:
+        return "invalid_dsl_fragment"
+    if "unsupported family lowering ir" in lower:
+        return "unsupported_family_ir"
+    if "missing required market inputs" in lower:
+        return "missing_market_inputs"
+    if "missing required typed observables" in lower:
+        return "missing_observables"
+    if "missing required state tags" in lower:
+        return "missing_state_tags"
+    if "missing the required market binding" in lower:
+        return "missing_market_binding"
+    if "missing the required pricing kernel" in lower:
+        return "missing_pricing_kernel"
+    if "missing the required schedule builder" in lower:
+        return "missing_schedule_builder"
+    if "missing the required route helper" in lower or "has no helper target" in lower or "has no helper-backed lowering target" in lower:
+        return "missing_route_helper"
+    if "family lowering rejected the semantic contract" in lower:
+        return "family_ir_rejected"
+    return "lowering_rejected"

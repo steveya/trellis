@@ -22,7 +22,13 @@ class _Spec:
         *,
         notional: float = 100.0,
         strike: float = 0.05,
-        exercise_dates: str = "2025-11-15,2026-11-15,2027-11-15,2028-11-15,2029-11-15",
+        exercise_dates: tuple[date, ...] = (
+            date(2025, 11, 15),
+            date(2026, 11, 15),
+            date(2027, 11, 15),
+            date(2028, 11, 15),
+            date(2029, 11, 15),
+        ),
         swap_end: date = date(2030, 11, 15),
         is_payer: bool = True,
     ) -> None:
@@ -83,7 +89,7 @@ def test_price_bermudan_swaption_tree_matches_task_reference():
 
 def test_price_bermudan_swaption_tree_monotone_in_exercise_rights():
     market_state = _market_state()
-    fewer = _Spec(exercise_dates="2027-11-15,2029-11-15")
+    fewer = _Spec(exercise_dates=(date(2027, 11, 15), date(2029, 11, 15)))
     more = _Spec()
 
     price_fewer = price_bermudan_swaption_tree(market_state, fewer, model="hull_white")

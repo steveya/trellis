@@ -1,8 +1,8 @@
 category: convention
 title: Missing required date-schedule primitive usage
 severity: critical
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-03-28T23:05:13.870588'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_230514_barrier_option_analytical.yaml

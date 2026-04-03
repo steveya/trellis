@@ -44,7 +44,7 @@ class TestSwapPayoff:
         assert isinstance(SwapPayoff(_swap_spec()), Payoff)
 
     def test_requirements(self):
-        assert SwapPayoff(_swap_spec()).requirements == {"discount", "forward_rate"}
+        assert SwapPayoff(_swap_spec()).requirements == {"discount_curve", "forward_curve"}
 
     def test_par_swap_pv_is_zero(self):
         ms = _ms(0.05)

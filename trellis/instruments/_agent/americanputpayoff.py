@@ -34,7 +34,7 @@ class AmericanOptionPayoff:
     @property
     def requirements(self) -> set[str]:
         """Declare that valuation needs discounting and Black volatility."""
-        return {"discount", "black_vol"}
+        return {"discount_curve", "black_vol_surface"}
 
     def evaluate(self, market_state: MarketState) -> float:
         """Price the generated American put with Longstaff-Schwartz regression."""

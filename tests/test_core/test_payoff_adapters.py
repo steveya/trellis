@@ -46,7 +46,7 @@ def test_resolved_input_payoff_routes_expired_and_live_cases():
     class DummyPayoff(ResolvedInputPayoff[DummySpec, DummyResolved]):
         @property
         def requirements(self) -> set[str]:
-            return {"discount"}
+            return {"discount_curve"}
 
         def resolve_inputs(self, market_state: MarketState) -> DummyResolved:
             return DummyResolved(T=float(self.spec.value), value=2.0)
@@ -95,7 +95,7 @@ def test_monte_carlo_path_payoff_normalizes_paths_and_discounts_mean():
     class DummyMonteCarloPayoff(MonteCarloPathPayoff[DummySpec, DummyResolved]):
         @property
         def requirements(self) -> set[str]:
-            return {"discount"}
+            return {"discount_curve"}
 
         def resolve_inputs(self, market_state: MarketState) -> DummyResolved:
             return DummyResolved(T=1.5, domestic_df=0.9)

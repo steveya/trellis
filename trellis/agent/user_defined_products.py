@@ -114,7 +114,16 @@ def compile_user_defined_product(
         product_ir,
         preferred_method=pricing_plan.method,
     )
-    shared_knowledge = build_shared_knowledge_payload(knowledge)
+    route_ids: tuple[str, ...] = ()
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    if primitive_plan is not None and getattr(primitive_plan, "route", None):
+        route_ids = (primitive_plan.route,)
+    shared_knowledge = build_shared_knowledge_payload(
+        knowledge,
+        pricing_method=pricing_plan.method,
+        route_ids=route_ids,
+        route_families=tuple(getattr(product_ir, "route_families", ()) or ()),
+    )
     rendered_plan = render_generation_plan(generation_plan)
     return UserDefinedProductCompilation(
         spec=parsed,

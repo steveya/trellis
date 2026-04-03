@@ -14,7 +14,7 @@
   features: [fixed_coupons, discounting]
   method: analytical
   method_modules: []
-  required_market_data: [discount]
+  required_market_data: [discount_curve]
   modeling_requirements: []
   reasoning: "Deterministic cashflows — discount each coupon and principal."
   learned: false
@@ -23,7 +23,7 @@
   features: [fixed_coupons, floating_coupons, discounting]
   method: analytical
   method_modules: []
-  required_market_data: [discount, forward_rate]
+  required_market_data: [discount_curve, forward_curve]
   modeling_requirements: []
   reasoning: "Fixed and floating legs are deterministic given the forward curve."
   learned: false
@@ -32,7 +32,7 @@
   features: [floating_coupons, vol_surface_dependence]
   method: analytical
   method_modules: [trellis.models.black]
-  required_market_data: [discount, forward_rate, black_vol]
+  required_market_data: [discount_curve, forward_curve, black_vol_surface]
   modeling_requirements: []
   reasoning: "Each caplet is a European option on a forward rate — use Black76."
   learned: false
@@ -41,7 +41,7 @@
   features: [floating_coupons, vol_surface_dependence]
   method: analytical
   method_modules: [trellis.models.black]
-  required_market_data: [discount, forward_rate, black_vol]
+  required_market_data: [discount_curve, forward_curve, black_vol_surface]
   modeling_requirements: []
   reasoning: "Each floorlet is a European put on a forward rate — use Black76."
   learned: false
@@ -50,7 +50,7 @@
   features: [floating_coupons, vol_surface_dependence]
   method: analytical
   method_modules: [trellis.models.black]
-  required_market_data: [discount, forward_rate, black_vol]
+  required_market_data: [discount_curve, forward_curve, black_vol_surface]
   modeling_requirements: []
   reasoning: "European swaption — Black76 on the forward swap rate."
   learned: false
@@ -59,7 +59,7 @@
   features: [vol_surface_dependence]
   method: analytical
   method_modules: [trellis.models.zcb_option]
-  required_market_data: [discount, black_vol]
+  required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
     - >-
       UNIT STRIKE: Jamshidian uses the zero-coupon bond strike per unit face. If the
@@ -79,7 +79,7 @@
   features: [callable, fixed_coupons, mean_reversion]
   method: rate_tree
   method_modules: [trellis.models.trees.lattice]
-  required_market_data: [discount, black_vol]
+  required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
     - >-
       CALIBRATION: The rate tree must be calibrated to reprice the input yield curve.
@@ -100,7 +100,7 @@
   features: [puttable, fixed_coupons, mean_reversion]
   method: rate_tree
   method_modules: [trellis.models.trees.lattice]
-  required_market_data: [discount, black_vol]
+  required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
     - >-
       CALIBRATION: The rate tree must be calibrated to reprice the input yield curve.
@@ -121,7 +121,7 @@
   features: [bermudan, floating_coupons, mean_reversion]
   method: rate_tree
   method_modules: [trellis.models.trees.lattice]
-  required_market_data: [discount, forward_rate, black_vol]
+  required_market_data: [discount_curve, forward_curve, black_vol_surface]
   modeling_requirements:
     - >-
       CALIBRATION: The rate tree must be calibrated to reprice the input yield curve.
@@ -148,7 +148,7 @@
   method_modules:
     - trellis.models.monte_carlo.engine
     - trellis.models.processes.gbm
-  required_market_data: [discount, black_vol]
+  required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
     - >-
       CONVERGENCE: Use at least 10,000 paths. Verify that the standard error is <1%
@@ -166,7 +166,7 @@
   method_modules:
     - trellis.models.monte_carlo.engine
     - trellis.models.processes.gbm
-  required_market_data: [discount, black_vol]
+  required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
     - >-
       CONVERGENCE: Use at least 10,000 paths. Verify that the standard error is <1%
@@ -192,7 +192,7 @@
   method_modules:
     - trellis.models.resolution.basket_semantics
     - trellis.models.monte_carlo.semantic_basket
-  required_market_data: [discount, spot, black_vol, correlation]
+  required_market_data: [discount_curve, spot, black_vol_surface, correlation]
   modeling_requirements:
     - >-
       OBSERVATION SCHEDULE: ranked-selection payoffs need ordered observation
@@ -212,7 +212,7 @@
     - trellis.models.monte_carlo.engine
     - trellis.models.cashflow_engine.waterfall
     - trellis.models.cashflow_engine.prepayment
-  required_market_data: [discount]
+  required_market_data: [discount_curve]
   modeling_requirements:
     - >-
       CONVERGENCE: Use at least 10,000 paths. Verify that the standard error is <1%
@@ -234,7 +234,7 @@
   method_modules:
     - trellis.models.copulas.factor
     - trellis.models.copulas.gaussian
-  required_market_data: [discount, credit]
+  required_market_data: [discount_curve, credit_curve]
   modeling_requirements:
     - >-
       CALIBRATION: Default probabilities must be consistent with the input credit curve.
@@ -247,7 +247,7 @@
   method: copula
   method_modules:
     - trellis.models.copulas.gaussian
-  required_market_data: [discount, credit]
+  required_market_data: [discount_curve, credit_curve]
   modeling_requirements:
     - >-
       CALIBRATION: Default probabilities must be consistent with the input credit curve.
@@ -259,7 +259,7 @@
   features: [credit_risk, fixed_coupons, discounting]
   method: analytical
   method_modules: []
-  required_market_data: [discount, credit]
+  required_market_data: [discount_curve, credit_curve]
   modeling_requirements:
     - >-
       CREDIT-SURVIVAL: Price premium leg as sum of
@@ -287,7 +287,7 @@
     - trellis.models.monte_carlo.engine
     - trellis.models.monte_carlo.lsm
     - trellis.models.processes.gbm
-  required_market_data: [discount, black_vol]
+  required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
     - >-
       CONVERGENCE: Use at least 50,000 paths for LSM. Verify standard error <1%.
@@ -304,7 +304,7 @@
     - trellis.models.monte_carlo.engine
     - trellis.models.monte_carlo.lsm
     - trellis.models.processes.gbm
-  required_market_data: [discount, black_vol]
+  required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
     - >-
       CONVERGENCE: Use at least 50,000 paths for LSM. Verify standard error <1%.
@@ -319,7 +319,7 @@
   method: analytical
   method_modules:
     - trellis.models.black
-  required_market_data: [discount, black_vol]
+  required_market_data: [discount_curve, black_vol_surface]
   reasoning: "European option — closed-form Black-Scholes."
   learned: false
 
@@ -330,7 +330,7 @@
     - trellis.models.transforms.cos_method
     - trellis.models.transforms.fft_pricer
     - trellis.models.processes.heston
-  required_market_data: [discount, black_vol]
+  required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
     - >-
       CHARACTERISTIC FUNCTION: Heston CF uses log(S_T/S0) for COS, log(S_T) for FFT.
@@ -347,7 +347,7 @@
   method_modules:
     - trellis.models.monte_carlo.engine
     - trellis.models.processes.gbm
-  required_market_data: [discount, black_vol]
+  required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
     - >-
       CONVERGENCE: Use at least 50,000 paths. Verify standard error <1%.
@@ -366,7 +366,7 @@
   method_modules:
     - trellis.models.monte_carlo.engine
     - trellis.models.processes.gbm
-  required_market_data: [discount, black_vol]
+  required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
     - >-
       CONVERGENCE: Use at least 50,000 paths. Realized variance is sum of

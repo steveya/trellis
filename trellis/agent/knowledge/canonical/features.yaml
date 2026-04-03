@@ -21,7 +21,7 @@
 - id: floating_coupons
   description: "Coupon payments linked to a floating rate index (e.g. SOFR)"
   implies: [coupons, discounting, forward_rate]
-  market_data: [forward_rate]
+  market_data: [forward_curve]
 
 - id: coupons
   description: "Any scheduled coupon payments (fixed or floating)"
@@ -152,7 +152,7 @@
 
 - id: vol_surface_dependence
   description: "Pricing requires a volatility surface (strike/tenor grid)"
-  market_data: [black_vol]
+  market_data: [black_vol_surface]
 
 - id: delta_space_interpolation
   description: "Vol surface interpolated in delta space rather than strike space"
@@ -182,16 +182,16 @@
 
 - id: discounting
   description: "Present-value computation using a discount curve"
-  market_data: [discount]
+  market_data: [discount_curve]
 
 - id: forward_rate
   description: "Forward rate projection from a curve"
   implies: [discounting]
-  market_data: [forward_rate]
+  market_data: [forward_curve]
 
 - id: credit_risk
   description: "Default probability modeling (survival curves, copulas)"
-  market_data: [credit]
+  market_data: [credit_curve]
   method_hint: copula
 
 # ---------------------------------------------------------------------------

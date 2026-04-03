@@ -8,12 +8,9 @@ from datetime import date
 from trellis.core.date_utils import year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
-from trellis.models.analytical import terminal_vanilla_from_basis
-from trellis.models.black import (
-    black76_asset_or_nothing_call,
-    black76_asset_or_nothing_put,
-    black76_cash_or_nothing_call,
-    black76_cash_or_nothing_put,
+from trellis.models.analytical.fx import (
+    ResolvedGarmanKohlhagenInputs,
+    garman_kohlhagen_price_raw,
 )
 
 
@@ -30,8 +27,11 @@ class FXVanillaOptionSpec:
     day_count: DayCountConvention = DayCountConvention.ACT_365
 
 
-def _resolve_fx_inputs(market_state: MarketState, spec: FXVanillaOptionSpec):
-    """Resolve FX spot and domestic/foreign discount factors from MarketState."""
+def _resolve_fx_inputs(
+    market_state: MarketState,
+    spec: FXVanillaOptionSpec,
+) -> ResolvedGarmanKohlhagenInputs:
+    """Resolve FX market inputs into the checked analytical helper surface."""
     if market_state.discount is None:
         raise ValueError("market_state.discount is required for FX analytical pricing")
     if not market_state.forecast_curves or spec.foreign_discount_key not in market_state.forecast_curves:
@@ -53,11 +53,24 @@ def _resolve_fx_inputs(market_state: MarketState, spec: FXVanillaOptionSpec):
     domestic_df = float(market_state.discount.discount(T))
     foreign_curve = market_state.forecast_curves[spec.foreign_discount_key]
     foreign_df = float(foreign_curve.discount(T))
-    return spot, T, domestic_df, foreign_df
+    if T > 0.0:
+        if market_state.vol_surface is None:
+            raise ValueError("market_state.vol_surface is required for FX analytical pricing")
+        sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
+    else:
+        sigma = 0.0
+    return ResolvedGarmanKohlhagenInputs(
+        spot=spot,
+        strike=float(spec.strike),
+        sigma=sigma,
+        T=float(T),
+        df_domestic=domestic_df,
+        df_foreign=foreign_df,
+    )
 
 
 class FXVanillaAnalyticalPayoff:
-    """Deterministic thin adapter over the Garman-Kohlhagen basis assembly."""
+    """Deterministic thin adapter over the checked FX analytical helper."""
 
     def __init__(self, spec: FXVanillaOptionSpec):
         self._spec = spec
@@ -68,27 +81,11 @@ class FXVanillaAnalyticalPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        return {"discount", "forward_rate", "black_vol", "fx"}
+        return {"discount_curve", "forward_curve", "black_vol_surface", "fx_rates"}
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        spot, T, domestic_df, foreign_df = _resolve_fx_inputs(market_state, spec)
-        option_type = spec.option_type.lower()
-        sigma = 0.0 if T <= 0 else float(market_state.vol_surface.black_vol(T, spec.strike))
-        forward = spot * foreign_df / domestic_df
-        if option_type == "call":
-            asset = black76_asset_or_nothing_call(forward, spec.strike, sigma, T)
-            cash = black76_cash_or_nothing_call(forward, spec.strike, sigma, T)
-        elif option_type == "put":
-            asset = black76_asset_or_nothing_put(forward, spec.strike, sigma, T)
-            cash = black76_cash_or_nothing_put(forward, spec.strike, sigma, T)
-        else:
-            raise ValueError(f"Unsupported option_type {spec.option_type!r}; expected 'call' or 'put'")
-
-        price = domestic_df * terminal_vanilla_from_basis(
-            option_type,
-            asset_value=asset,
-            cash_value=cash,
-            strike=spec.strike,
+        resolved = _resolve_fx_inputs(market_state, spec)
+        return float(spec.notional) * float(
+            garman_kohlhagen_price_raw(spec.option_type, resolved)
         )
-        return float(spec.notional) * float(price)

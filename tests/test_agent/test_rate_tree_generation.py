@@ -34,7 +34,7 @@ from trellis.models.bermudan_swaption_tree import price_bermudan_swaption_tree
 class BermudanSwaptionSpec:
     notional: float
     strike: float
-    exercise_dates: str
+    exercise_dates: tuple[date, ...]
     swap_end: date
     swap_frequency: Frequency = Frequency.SEMI_ANNUAL
     day_count: DayCountConvention = DayCountConvention.ACT_360
@@ -48,7 +48,7 @@ class BermudanSwaptionPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        return {"discount", "black_vol", "forward_rate"}
+        return {"discount_curve", "black_vol_surface", "forward_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
         if market_state.discount is None:
@@ -68,7 +68,7 @@ def _callable_plan():
         pricing_plan=PricingPlan(
             method="rate_tree",
             method_modules=["trellis.models.trees.lattice"],
-            required_market_data={"discount", "black_vol"},
+            required_market_data={"discount_curve", "black_vol_surface"},
             model_to_build="callable_bond",
             reasoning="test",
         ),
@@ -86,7 +86,7 @@ def _bermudan_plan():
         pricing_plan=PricingPlan(
             method="rate_tree",
             method_modules=["trellis.models.trees.lattice"],
-            required_market_data={"discount", "black_vol", "forward_rate"},
+            required_market_data={"discount_curve", "black_vol_surface", "forward_curve"},
             model_to_build="bermudan_swaption",
             reasoning="test",
         ),
@@ -149,7 +149,11 @@ def test_callable_artifact_prices_plausibly_against_reference_tree():
         coupon=0.05,
         start_date=settle,
         end_date=date(2034, 11, 15),
-        call_dates="2027-11-15,2029-11-15,2031-11-15",
+        call_dates=(
+            date(2027, 11, 15),
+            date(2029, 11, 15),
+            date(2031, 11, 15),
+        ),
     )
     artifact_price = price_payoff(mod.CallableBondPayoff(spec), market_state)
 
@@ -192,7 +196,13 @@ def test_bermudan_artifact_prices_plausibly_against_reference_tree():
     class _Spec:
         notional = NOTIONAL
         strike = FIXED_RATE
-        exercise_dates = "2025-11-15,2026-11-15,2027-11-15,2028-11-15,2029-11-15"
+        exercise_dates = (
+            date(2025, 11, 15),
+            date(2026, 11, 15),
+            date(2027, 11, 15),
+            date(2028, 11, 15),
+            date(2029, 11, 15),
+        )
         swap_end = date(2030, 11, 15)
         from trellis.core.types import DayCountConvention, Frequency
         swap_frequency = Frequency.SEMI_ANNUAL

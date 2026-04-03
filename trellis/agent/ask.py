@@ -110,7 +110,7 @@ def _match_bond(ts: TermSheet, p: dict, settlement: date):
                    __import__("trellis.core.types", fromlist=["Frequency"]).Frequency.SEMI_ANNUAL).value,
     )
     payoff = DeterministicCashflowPayoff(bond)
-    return payoff, {"discount"}
+    return payoff, {"discount_curve"}
 
 
 def _match_cap(ts: TermSheet, p: dict, settlement: date, is_floor: bool):
@@ -142,7 +142,7 @@ def _match_cap(ts: TermSheet, p: dict, settlement: date, is_floor: bool):
         )
 
     cls = FloorPayoff if is_floor else CapPayoff
-    return cls(spec), {"discount", "forward_rate", "black_vol"}
+    return cls(spec), {"discount_curve", "forward_curve", "black_vol_surface"}
 
 
 def _match_swap(ts: TermSheet, p: dict, settlement: date):
@@ -164,7 +164,7 @@ def _match_swap(ts: TermSheet, p: dict, settlement: date):
         is_payer=p.get("is_payer", True),
         rate_index=p.get("rate_index"),
     )
-    return SwapPayoff(spec), {"discount", "forward_rate"}
+    return SwapPayoff(spec), {"discount_curve", "forward_curve"}
 
 
 def _match_swaption(ts: TermSheet, p: dict, settlement: date):
@@ -193,7 +193,7 @@ def _match_swaption(ts: TermSheet, p: dict, settlement: date):
         is_payer=p.get("is_payer", True),
         rate_index=p.get("rate_index"),
     )
-    return SwaptionPayoff(spec), {"discount", "forward_rate", "black_vol"}
+    return SwaptionPayoff(spec), {"discount_curve", "forward_curve", "black_vol_surface"}
 
 
 # ---------------------------------------------------------------------------
@@ -423,11 +423,11 @@ def _infer_requirements(ts: TermSheet) -> set[str]:
     """Infer MarketState requirements from instrument type."""
     itype = ts.instrument_type.lower()
     if itype in ("bond", "zero_coupon_bond"):
-        return {"discount"}
+        return {"discount_curve"}
     elif itype in ("swap",):
-        return {"discount", "forward_rate"}
+        return {"discount_curve", "forward_curve"}
     elif itype in ("cap", "floor", "swaption", "callable_bond"):
-        return {"discount", "forward_rate", "black_vol"}
+        return {"discount_curve", "forward_curve", "black_vol_surface"}
     else:
         # Conservative: assume everything
-        return {"discount", "forward_rate", "black_vol"}
+        return {"discount_curve", "forward_curve", "black_vol_surface"}

@@ -1,8 +1,8 @@
 category: market_data
 title: Date-Type Comparison Bug
 severity: high
-status: candidate
-confidence: 0.5
+status: validated
+confidence: 0.6
 created: '2026-04-01T12:20:18.641798'
 version: ''
 source_trace: null

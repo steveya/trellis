@@ -173,7 +173,7 @@ class TestDataAvailability:
         errors = check_data_availability(plan, ms)
         assert any("credit_curve" in e for e in errors)
 
-    def test_alias_market_data_names_are_accepted(self):
+    def test_legacy_market_data_names_raise(self):
         ms = MarketState(
             as_of=SETTLE,
             settlement=SETTLE,
@@ -195,7 +195,8 @@ class TestDataAvailability:
             model_to_build=None,
             reasoning="test",
         )
-        assert check_data_availability(plan, ms) == []
+        with pytest.raises(ValueError, match="Unknown market-data requirements"):
+            check_data_availability(plan, ms)
 
 
 class TestPricingPlan:

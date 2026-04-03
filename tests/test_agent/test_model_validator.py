@@ -74,7 +74,7 @@ class TestSensitivityValidation:
         class FakeCallable:
             @property
             def requirements(self):
-                return {"discount", "black_vol"}
+                return {"discount_curve", "black_vol_surface"}
             def evaluate(self, ms):
                 return 100.0 * ms.discount.discount(5.0)
 
@@ -154,6 +154,76 @@ def test_llm_conceptual_review_includes_shared_knowledge(monkeypatch):
     assert "Check calibration first." in captured["prompt"]
 
 
+def test_llm_conceptual_review_includes_compiled_route_contract(monkeypatch):
+    from trellis.agent.model_validator import _llm_conceptual_review
+    from trellis.agent.platform_requests import compile_build_request
+
+    captured = {}
+
+    monkeypatch.setattr(
+        "trellis.agent.config.get_default_model",
+        lambda: "fake-model",
+    )
+
+    def fake_llm_generate_json(prompt, model=None):
+        captured["prompt"] = prompt
+        return []
+
+    monkeypatch.setattr("trellis.agent.config.llm_generate_json", fake_llm_generate_json)
+
+    compiled = compile_build_request(
+        "European equity call on AAPL with strike 120 and expiry 2025-11-15",
+        instrument_type="european_option",
+        model="claude-sonnet-4-6",
+    )
+
+    findings = _llm_conceptual_review(
+        code="def price():\n    return 0.0",
+        instrument_type="european_option",
+        method="analytical",
+        generation_plan=compiled.generation_plan,
+        model="fake-model",
+    )
+
+    assert findings == []
+    assert "Compiled Route Contract" in captured["prompt"]
+    assert "bridge=`thin_compatibility_wrapper`" in captured["prompt"]
+    assert "route=`analytical_black76`" in captured["prompt"]
+    assert "bundle=`analytical:european_option`" in captured["prompt"]
+
+
+def test_llm_conceptual_review_includes_residual_risk_focus(monkeypatch):
+    from trellis.agent.model_validator import _llm_conceptual_review
+
+    captured = {}
+
+    monkeypatch.setattr(
+        "trellis.agent.config.get_default_model",
+        lambda: "fake-model",
+    )
+
+    def fake_llm_generate_json(prompt, model=None):
+        captured["prompt"] = prompt
+        return []
+
+    monkeypatch.setattr("trellis.agent.config.llm_generate_json", fake_llm_generate_json)
+
+    findings = _llm_conceptual_review(
+        code="def price():\n    return 0.0",
+        instrument_type="callable_bond",
+        method="rate_tree",
+        residual_risks=("unsupported_paths_declared", "measure_support_warnings_present"),
+        review_reason="validation_contract_residual_risks_present",
+        model="fake-model",
+    )
+
+    assert findings == []
+    assert "Residual conceptual review only" in captured["prompt"]
+    assert "unsupported_paths_declared" in captured["prompt"]
+    assert "measure_support_warnings_present" in captured["prompt"]
+    assert "Do not repeat deterministic checks" in captured["prompt"]
+
+
 def test_determine_review_policy_skips_llm_for_low_risk_supported_vanilla():
     from trellis.agent.review_policy import determine_review_policy
 
@@ -204,6 +274,72 @@ def test_determine_review_policy_keeps_llm_for_high_risk_route():
     assert policy.critic_mode == "required"
     assert policy.critic_json_max_retries is None
     assert policy.critic_allow_text_fallback is True
+
+
+def test_determine_review_policy_escalates_on_validation_contract_residual_risk():
+    from trellis.agent.review_policy import determine_review_policy
+    from trellis.agent.validation_contract import CompiledValidationContract
+
+    policy = determine_review_policy(
+        validation="standard",
+        method="analytical",
+        product_ir=SimpleNamespace(
+            instrument="european_option",
+            payoff_traits=(),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            schedule_dependence=False,
+            model_family="equity_diffusion",
+            unresolved_primitives=(),
+            supported=True,
+        ),
+        validation_contract=CompiledValidationContract(
+            contract_id="analytical:european_option",
+            instrument_type="european_option",
+            method="analytical",
+            bundle_id="analytical:european_option",
+            residual_risks=("comparison_relations_unspecified",),
+        ),
+    )
+
+    assert policy.risk_level == "high"
+    assert policy.run_critic is True
+    assert policy.run_model_validator_llm is False
+    assert policy.critic_reason == "validation_contract_residual_risks_present"
+    assert policy.critic_mode == "advisory"
+
+
+def test_determine_review_policy_blocks_on_validation_contract_lowering_errors():
+    from trellis.agent.review_policy import determine_review_policy
+    from trellis.agent.validation_contract import CompiledValidationContract
+
+    policy = determine_review_policy(
+        validation="thorough",
+        method="analytical",
+        product_ir=SimpleNamespace(
+            instrument="european_option",
+            payoff_traits=(),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            schedule_dependence=False,
+            model_family="equity_diffusion",
+            unresolved_primitives=(),
+            supported=True,
+        ),
+        validation_contract=CompiledValidationContract(
+            contract_id="analytical:european_option",
+            instrument_type="european_option",
+            method="analytical",
+            bundle_id="analytical:european_option",
+            lowering_errors=("lowering:missing_target_binding",),
+        ),
+    )
+
+    assert policy.risk_level == "blocked"
+    assert policy.run_critic is False
+    assert policy.run_model_validator_llm is False
+    assert policy.critic_reason == "validation_contract_lowering_errors_present"
+    assert policy.critic_mode == "skip"
 
 
 def test_determine_review_policy_bounds_standard_critic_path():
@@ -320,3 +456,90 @@ def test_validate_model_runs_llm_review_for_high_risk_route(monkeypatch):
     assert len(report.findings) == 1
     assert report.findings[0].id == "MV-L001"
     assert report.approved is False
+
+
+def test_validate_model_threads_validation_contract_residual_risks(monkeypatch):
+    from trellis.agent.model_validator import validate_model
+    from trellis.agent.validation_contract import CompiledValidationContract
+
+    monkeypatch.setattr(
+        "trellis.agent.model_validator.check_sensitivity_signs",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.model_validator.check_benchmark",
+        lambda *args, **kwargs: [],
+    )
+
+    captured = {}
+
+    def fake_llm_review(*args, residual_risks=(), review_reason=None, **kwargs):
+        captured["residual_risks"] = residual_risks
+        captured["review_reason"] = review_reason
+        return []
+
+    monkeypatch.setattr(
+        "trellis.agent.model_validator._llm_conceptual_review",
+        fake_llm_review,
+    )
+
+    report = validate_model(
+        payoff_factory=lambda: object(),
+        market_state_factory=lambda rate, vol: object(),
+        code="def price():\n    return 1.0",
+        instrument_type="callable_bond",
+        method="rate_tree",
+        validation_contract=CompiledValidationContract(
+            contract_id="rate_tree:callable_bond",
+            instrument_type="callable_bond",
+            method="rate_tree",
+            bundle_id="rate_tree:callable_bond",
+            residual_risks=("unsupported_paths_declared",),
+        ),
+        run_llm_review=True,
+    )
+
+    assert report.findings == []
+    assert captured["residual_risks"] == ("unsupported_paths_declared",)
+    assert captured["review_reason"] is None
+
+
+def test_validate_model_for_request_threads_generation_plan(monkeypatch):
+    from trellis.agent.model_validator import validate_model_for_request
+    from trellis.agent.platform_requests import compile_build_request
+
+    monkeypatch.setattr(
+        "trellis.agent.model_validator.check_sensitivity_signs",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.model_validator.check_benchmark",
+        lambda *args, **kwargs: [],
+    )
+
+    captured = {}
+
+    def fake_llm_review(*args, generation_plan=None, **kwargs):
+        captured["generation_plan"] = generation_plan
+        return []
+
+    monkeypatch.setattr(
+        "trellis.agent.model_validator._llm_conceptual_review",
+        fake_llm_review,
+    )
+
+    compiled = compile_build_request(
+        "European equity call on AAPL with strike 120 and expiry 2025-11-15",
+        instrument_type="european_option",
+        model="claude-sonnet-4-6",
+    )
+
+    report = validate_model_for_request(
+        compiled,
+        payoff_factory=lambda: object(),
+        market_state_factory=lambda rate, vol: object(),
+        code="def price():\n    return 1.0",
+    )
+
+    assert report.findings == []
+    assert captured["generation_plan"] == compiled.generation_plan

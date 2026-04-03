@@ -48,7 +48,7 @@ class TestCapPayoff:
 
     def test_requirements(self):
         cap = CapPayoff(_cap_spec())
-        assert cap.requirements == {"discount", "forward_rate", "black_vol"}
+        assert cap.requirements == {"discount_curve", "forward_curve", "black_vol_surface"}
 
     def test_positive_price(self):
         cap = CapPayoff(_cap_spec())

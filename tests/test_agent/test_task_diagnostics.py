@@ -54,6 +54,17 @@ def _sample_record(root: Path) -> dict[str, object]:
             "retrieved_lesson_titles": [],
             "retrieval_stages": ["semantic_validation_failed"],
             "retrieval_sources": ["callback"],
+            "selected_artifact_ids": ["route_hint:callable_bond_tree"],
+            "selected_artifact_titles": ["Callable bond tree route"],
+            "selected_artifacts_by_audience": {
+                "builder": [
+                    {
+                        "id": "route_hint:callable_bond_tree",
+                        "title": "Callable bond tree route",
+                        "kind": "route_hint",
+                    }
+                ]
+            },
             "captured_lesson_ids": [],
             "lesson_contract_reports": [],
             "lesson_contract_count": 0,
@@ -70,6 +81,47 @@ def _sample_record(root: Path) -> dict[str, object]:
             "reusable_artifact_count": 0,
             "knowledge_outcome": "blocked_without_learning",
             "knowledge_outcome_reason": "task failed before any reusable learning artifact was captured",
+        },
+        "telemetry": {
+            "task_kind": "pricing",
+            "run_outcome": "comparison:insufficient_results",
+            "retried": True,
+            "retry_count": 1,
+            "degraded": True,
+            "comparison_status": "insufficient_results",
+            "selected_artifacts": [
+                {
+                    "artifact_id": "route_hint:callable_bond_tree",
+                    "title": "Callable bond tree route",
+                    "kind": "route_hint",
+                    "audiences": ["builder"],
+                    "outcome": "comparison:insufficient_results",
+                    "success": False,
+                    "retried": True,
+                    "retry_count": 1,
+                    "degraded": True,
+                    "route_ids": ["callable_bond_tree"],
+                    "route_families": ["pde"],
+                }
+            ],
+            "route_observations": [
+                {
+                    "route_id": "callable_bond_tree",
+                    "route_family": "pde",
+                    "trace_kind": "platform",
+                    "trace_status": "failed",
+                    "outcome": "comparison:insufficient_results",
+                    "success": False,
+                    "retried": True,
+                    "retry_count": 1,
+                    "degraded": True,
+                    "selected_artifact_ids": ["route_hint:callable_bond_tree"],
+                    "instruction_ids": [],
+                    "effective_instruction_count": 0,
+                    "hard_constraint_count": 0,
+                    "conflict_count": 0,
+                }
+            ],
         },
         "post_build": {
             "latest_method": "psor",
@@ -100,6 +152,24 @@ def _sample_record(root: Path) -> dict[str, object]:
                 "latest_event": "builder_attempt_failed",
                 "latest_event_status": "error",
                 "updated_at": "2026-03-29T12:00:00+00:00",
+                "route_health": {
+                    "route_id": "callable_bond_tree",
+                    "route_family": "pde",
+                    "trace_status": "failed",
+                    "effective_instruction_ids": [],
+                    "effective_instruction_count": 0,
+                    "hard_constraint_count": 0,
+                    "conflict_count": 0,
+                },
+                "route_binding_authority": {
+                    "route_id": "callable_bond_tree",
+                    "route_family": "pde",
+                    "engine_family": "pde_solver",
+                    "authority_kind": "route_registry_binding",
+                    "exact_backend_fit": False,
+                    "validation_bundle_id": "pde_solver:callable_bond",
+                    "canary_task_ids": ["T02"],
+                },
             }
         ],
         "method_runs": {
@@ -200,7 +270,7 @@ def test_build_task_diagnosis_packet_summarizes_failure(tmp_path):
 
     packet = build_task_diagnosis_packet(_sample_record(tmp_path))
 
-    assert packet["schema_version"] == 1
+    assert packet["schema_version"] == 2
     assert packet["task"]["id"] == "T999"
     assert packet["outcome"]["failure_bucket"] == "comparison_insufficient_results"
     assert packet["outcome"]["decision_stage"] == "comparison"
@@ -213,15 +283,21 @@ def test_build_task_diagnosis_packet_summarizes_failure(tmp_path):
     assert packet["trace_index"][1]["scope"] == "method"
     assert packet["post_build"]["latest_phase"] == "reflection_completed"
     assert packet["runtime_controls"]["llm_wait_log_path"] == "/tmp/t999_waits.jsonl"
+    assert packet["telemetry"]["selected_artifacts"][0]["artifact_id"] == "route_hint:callable_bond_tree"
+    assert packet["telemetry"]["route_observations"][0]["route_id"] == "callable_bond_tree"
+    assert packet["telemetry"]["route_observations"][0]["task_ids"] == ["T02"]
 
     rendered = render_task_diagnosis_dossier(packet)
     assert "## Primary Diagnosis" in rendered
     assert "## Runtime Controls" in rendered
     assert "## Method Outcomes" in rendered
+    assert "## Skill Telemetry" in rendered
     assert "## Post-build" in rendered
     assert "## Storage" in rendered
     assert "comparison_insufficient_results" in rendered
     assert "semantic_validation_failed" in rendered
+    assert "route_hint:callable_bond_tree" in rendered
+    assert "callable_bond_tree" in rendered
     assert "/tmp/t999_waits.jsonl" in rendered
 
 

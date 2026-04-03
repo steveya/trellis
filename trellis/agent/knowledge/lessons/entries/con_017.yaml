@@ -2,7 +2,7 @@ category: convention
 title: Undefined identifiers in spec dataclass
 severity: high
 status: validated
-confidence: 0.6
+confidence: 0.7
 created: '2026-03-28T23:02:15.957642'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_230216_american_put_analytical.yaml

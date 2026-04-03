@@ -12,13 +12,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-import numpy as raw_np
-
 from trellis.core.date_utils import year_fraction
 from trellis.core.market_state import MarketState
 
 from trellis.core.types import DayCountConvention
-from trellis.models.copulas.gaussian import GaussianCopula
+from trellis.models.contingent_cashflows import (
+    ProtectionPayment,
+    nth_to_default_probability,
+    protection_payment_pv,
+    terminal_default_probability,
+)
 
 
 @dataclass(frozen=True)
@@ -49,41 +52,66 @@ class NthToDefaultPayoff:
     @property
     def requirements(self) -> set[str]:
         """Needs a discount curve and a credit curve (for default probabilities)."""
-        return {"discount", "credit"}
+        return {"discount_curve", "credit_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
         """Simulate correlated defaults and compute the expected discounted loss payment."""
         spec = self._spec
-        T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
-        if T <= 0:
-            return 0.0
+        T = _nth_to_default_horizon(
+            market_state.settlement,
+            spec.end_date,
+            spec.day_count,
+        )
+        return price_nth_to_default_basket(
+            notional=spec.notional,
+            n_names=spec.n_names,
+            n_th=spec.n_th,
+            horizon=T,
+            correlation=spec.correlation,
+            recovery=spec.recovery,
+            credit_curve=market_state.credit_curve,
+            discount_curve=market_state.discount,
+        )
 
-        # Get hazard rate from credit curve (uniform for all names)
-        lam = float(market_state.credit_curve.hazard_rate(T))
-        hazard_rates = raw_np.full(spec.n_names, lam)
 
-        # Build correlation matrix (equicorrelation)
-        corr = raw_np.full((spec.n_names, spec.n_names), spec.correlation)
-        raw_np.fill_diagonal(corr, 1.0)
+def price_nth_to_default_basket(
+    *,
+    notional: float,
+    n_names: int,
+    n_th: int,
+    horizon: float,
+    correlation: float,
+    recovery: float,
+    credit_curve,
+    discount_curve,
+) -> float:
+    """Price a helper-backed nth-to-default basket from curve inputs and contract terms."""
+    T = float(horizon)
+    if T <= 0:
+        return 0.0
 
-        copula = GaussianCopula(corr)
-        n_paths = 50000
-        rng = raw_np.random.default_rng(42)
+    default_prob = terminal_default_probability(credit_curve, T)
+    trigger_prob = nth_to_default_probability(
+        n_names,
+        n_th,
+        default_prob,
+        correlation,
+    )
+    df = float(discount_curve.discount(T))
+    return float(
+        protection_payment_pv(
+            ProtectionPayment(
+                notional=notional,
+                recovery=recovery,
+                default_probability=trigger_prob,
+                discount_factor=df,
+            )
+        )
+    )
 
-        # Simulate default times
-        default_times = copula.sample_default_times(hazard_rates, n_paths, rng)
 
-        # Count defaults within protection period
-        defaults_in_period = raw_np.sum(default_times <= T, axis=1)
-
-        # Nth-to-default triggers if n_th or more names default
-        triggered = defaults_in_period >= spec.n_th
-
-        # Protection payment: (1 - recovery) * notional, discounted
-        loss_given_default = (1 - spec.recovery) * spec.notional
-        df = float(market_state.discount.discount(T))
-
-        # Expected discounted protection payment
-        protection_pv = float(raw_np.mean(triggered)) * loss_given_default * df
-
-        return protection_pv
+def _nth_to_default_horizon(start: date, end: date, day_count: DayCountConvention) -> float:
+    """Normalize same-anniversary maturities to whole-year tenors for helper parity."""
+    if (start.month, start.day) == (end.month, end.day):
+        return float(end.year - start.year)
+    return year_fraction(start, end, day_count)

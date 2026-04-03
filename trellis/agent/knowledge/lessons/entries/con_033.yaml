@@ -2,7 +2,7 @@ category: convention
 title: CDS spread / curve unit mismatch
 severity: critical
 status: promoted
-confidence: 0.8
+confidence: 1.0
 created: '2026-03-31T12:09:15.695504'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260331_120916_swap_analytical.yaml

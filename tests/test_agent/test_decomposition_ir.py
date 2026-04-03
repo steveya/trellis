@@ -15,8 +15,8 @@ class TestDecompositionCharacterization:
         assert decomp.method == "rate_tree"
         assert "callable" in decomp.features
         assert "mean_reversion" in decomp.features
-        assert "discount" in decomp.required_market_data
-        assert "black_vol" in decomp.required_market_data
+        assert "discount_curve" in decomp.required_market_data
+        assert "black_vol_surface" in decomp.required_market_data
 
     def test_american_put_static_decomposition(self):
         from trellis.agent.knowledge.decompose import decompose

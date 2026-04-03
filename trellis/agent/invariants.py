@@ -468,7 +468,7 @@ def check_vol_sensitivity(
 ) -> list[InvariantFailure] | list[str]:
     """Price of an instrument with embedded optionality MUST change with vol.
 
-    Any instrument whose requirements include 'black_vol' has embedded
+    Any instrument whose requirements include 'black_vol_surface' has embedded
     optionality. If the price doesn't change when vol changes, the model
     is not capturing the option component (e.g., using a spot tree for a
     rate derivative).
@@ -830,6 +830,103 @@ def check_cds_credit_curve_sensitivity(
                 },
             )
         )
+    return _emit_failures(failures, return_diagnostics=return_diagnostics)
+
+
+def check_rate_style_swaption_helper_consistency(
+    payoff_factory,
+    market_state_factory,
+    *,
+    scenarios: tuple[tuple[float, float], ...] = ((0.03, 0.15), (0.05, 0.20), (0.07, 0.30)),
+    tolerance: float = 1e-4,
+    return_diagnostics: bool = False,
+) -> list[InvariantFailure] | list[str]:
+    """Analytical rate-style swaptions should agree with the checked helper surface."""
+    from trellis.models.rate_style_swaption import price_swaption_black76
+
+    failures: list[InvariantFailure] = []
+    try:
+        sample_payoff = payoff_factory()
+        spec = _extract_spec(sample_payoff)
+    except Exception as e:
+        return _emit_failures(
+            [
+                InvariantFailure(
+                    check="check_rate_style_swaption_helper_consistency",
+                    message=f"Swaption helper consistency setup failed: {e}",
+                    exception_type=type(e).__name__,
+                    exception_message=str(e),
+                    context={"relation": "within_tolerance", "tolerance": float(tolerance)},
+                )
+            ],
+            return_diagnostics=return_diagnostics,
+        )
+
+    required_fields = (
+        "notional",
+        "strike",
+        "swap_end",
+        "swap_frequency",
+        "day_count",
+        "is_payer",
+    )
+    if spec is None or any(not hasattr(spec, field) for field in required_fields):
+        return _emit_failures(failures, return_diagnostics=return_diagnostics)
+
+    sampled_prices: list[dict[str, float]] = []
+    for rate, vol in scenarios:
+        try:
+            market_state = market_state_factory(rate=rate, vol=vol)
+            payoff = payoff_factory()
+            generated = float(price_payoff(payoff, market_state))
+            reference = float(price_swaption_black76(market_state, _extract_spec(payoff)))
+            sampled_prices.append(
+                {
+                    "rate": float(rate),
+                    "vol": float(vol),
+                    "generated": generated,
+                    "reference": reference,
+                }
+            )
+            scale = max(abs(reference), 1.0)
+            if abs(generated - reference) > tolerance * scale:
+                failures.append(
+                    InvariantFailure(
+                        check="check_rate_style_swaption_helper_consistency",
+                        message=(
+                            "Rate-style swaption helper consistency failed: generated payoff "
+                            f"{generated:.6f} deviates from helper reference {reference:.6f} "
+                            f"at rate={rate:.2%}, vol={vol:.2%}."
+                        ),
+                        actual=generated,
+                        expected=f"{reference:.6f} +/- {tolerance:.4%}",
+                        context={
+                            "relation": "within_tolerance",
+                            "tolerance": float(tolerance),
+                            "rate": float(rate),
+                            "vol": float(vol),
+                            "sampled_prices": sampled_prices,
+                        },
+                    )
+                )
+                break
+        except Exception as e:
+            failures.append(
+                InvariantFailure(
+                    check="check_rate_style_swaption_helper_consistency",
+                    message=f"Swaption helper consistency check failed: {e}",
+                    exception_type=type(e).__name__,
+                    exception_message=str(e),
+                    context={
+                        "relation": "within_tolerance",
+                        "tolerance": float(tolerance),
+                        "rate": float(rate),
+                        "vol": float(vol),
+                        "sampled_prices": sampled_prices,
+                    },
+                )
+            )
+            break
     return _emit_failures(failures, return_diagnostics=return_diagnostics)
 
 

@@ -7,20 +7,14 @@ from datetime import date
 from typing import Iterable, Protocol
 
 from trellis.core.date_utils import (
-    build_exercise_timeline_from_dates,
     build_payment_timeline,
+    normalize_explicit_dates,
     year_fraction,
 )
 from trellis.core.differentiable import get_numpy
-from trellis.core.types import DayCountConvention
-from trellis.models.trees.algebra import (
-    BINOMIAL_1F_TOPOLOGY,
-    TERM_STRUCTURE_TARGET,
-    UNIFORM_ADDITIVE_MESH,
-    LatticeContractSpec,
-    LatticeControlSpec,
-    LatticeLinearClaimSpec,
-)
+from trellis.core.types import ContractTimeline, DayCountConvention
+import trellis.models.trees.algebra as lattice_algebra
+import trellis.models.trees.models as tree_models
 from trellis.models.trees.control import (
     lattice_step_from_time,
     lattice_steps_from_timeline,
@@ -31,7 +25,6 @@ from trellis.models.trees.lattice import (
     build_lattice,
     price_on_lattice,
 )
-from trellis.models.trees.models import MODEL_REGISTRY
 
 
 class DiscountCurveLike(Protocol):
@@ -68,7 +61,7 @@ class BermudanSwaptionSpecLike(Protocol):
 
     notional: float
     strike: float
-    exercise_dates: str | Iterable[date]
+    exercise_dates: ContractTimeline | Iterable[date | str]
     swap_end: date
     swap_frequency: object
     day_count: DayCountConvention
@@ -135,7 +128,7 @@ def resolve_bermudan_swaption_tree_inputs(
     black_vol = float(
         market_state.vol_surface.black_vol(max(option_horizon, 1e-6), max(abs(float(spec.strike)), 1e-6))
     )
-    tree_model = MODEL_REGISTRY[str(model).strip().lower()]
+    tree_model = tree_models.MODEL_REGISTRY[str(model).strip().lower()]
     sigma = black_vol if tree_model.vol_type == "lognormal" else black_vol * max(abs(r0), 1e-6)
     step_count = int(n_steps or min(400, max(100, int(tree_horizon * 20.0))))
     return ResolvedBermudanSwaptionTreeInputs(
@@ -167,12 +160,12 @@ def build_bermudan_swaption_lattice(
         mean_reversion=mean_reversion,
         n_steps=n_steps,
     )
-    tree_model = MODEL_REGISTRY[str(model).strip().lower()]
+    tree_model = tree_models.MODEL_REGISTRY[str(model).strip().lower()]
     return build_lattice(
-        BINOMIAL_1F_TOPOLOGY,
-        UNIFORM_ADDITIVE_MESH,
+        lattice_algebra.BINOMIAL_1F_TOPOLOGY,
+        lattice_algebra.UNIFORM_ADDITIVE_MESH,
         tree_model.as_lattice_model_spec(),
-        calibration_target=TERM_STRUCTURE_TARGET(market_state.discount),
+        calibration_target=lattice_algebra.TERM_STRUCTURE_TARGET(market_state.discount),
         r0=resolved.r0,
         sigma=resolved.sigma,
         a=float(mean_reversion),
@@ -269,7 +262,7 @@ def compile_bermudan_swaption_contract_spec(
     *,
     spec: BermudanSwaptionSpecLike,
     settlement: date,
-) -> LatticeContractSpec:
+) -> lattice_algebra.LatticeContractSpec:
     """Compile Bermudan swaption exercise into a lattice contract."""
     exercise_policy = build_bermudan_swaption_exercise_policy(
         spec,
@@ -278,8 +271,8 @@ def compile_bermudan_swaption_contract_spec(
         n_steps=lattice.n_steps,
     )
     if not exercise_policy.exercise_steps:
-        return LatticeContractSpec(
-            claim=LatticeLinearClaimSpec(terminal_payoff=lambda step, node, lattice_, obs: 0.0),
+        return lattice_algebra.LatticeContractSpec(
+            claim=lattice_algebra.LatticeLinearClaimSpec(terminal_payoff=lambda step, node, lattice_, obs: 0.0),
             control=None,
         )
 
@@ -295,8 +288,8 @@ def compile_bermudan_swaption_contract_spec(
         step for step in exercise_policy.exercise_steps if 0 <= step < lattice.n_steps
     )
     if not valid_exercise_steps:
-        return LatticeContractSpec(
-            claim=LatticeLinearClaimSpec(terminal_payoff=lambda step, node, lattice_, obs: 0.0),
+        return lattice_algebra.LatticeContractSpec(
+            claim=lattice_algebra.LatticeLinearClaimSpec(terminal_payoff=lambda step, node, lattice_, obs: 0.0),
             control=None,
         )
 
@@ -330,12 +323,12 @@ def compile_bermudan_swaption_contract_spec(
             return 0.0
         return max(float(values[node]), 0.0)
 
-    return LatticeContractSpec(
-        claim=LatticeLinearClaimSpec(
+    return lattice_algebra.LatticeContractSpec(
+        claim=lattice_algebra.LatticeLinearClaimSpec(
             terminal_payoff=lambda step, node, lattice_, obs: 0.0,
             observable_requirements=("rate",),
         ),
-        control=LatticeControlSpec(
+        control=lattice_algebra.LatticeControlSpec(
             objective="holder_max",
             exercise_steps=tuple(sorted(signed_swap_values)),
             exercise_value_fn=exercise_value,
@@ -349,7 +342,7 @@ def price_bermudan_swaption_on_lattice(
     *,
     spec: BermudanSwaptionSpecLike | None = None,
     settlement: date | None = None,
-    contract_spec: LatticeContractSpec | None = None,
+    contract_spec: lattice_algebra.LatticeContractSpec | None = None,
 ) -> float:
     """Price a Bermudan swaption on a pre-built lattice.
 
@@ -460,19 +453,8 @@ def _compute_payer_swap_values_at_step(
     return float(principal) - values
 
 
-def _normalized_exercise_dates(exercise_dates: str | Iterable[date]) -> tuple[date, ...]:
-    if isinstance(exercise_dates, str):
-        parsed = [
-            date.fromisoformat(item.strip())
-            for item in exercise_dates.split(",")
-            if item.strip()
-        ]
-    else:
-        parsed = [
-            date.fromisoformat(item) if isinstance(item, str) else item
-            for item in exercise_dates
-        ]
-    return tuple(sorted(parsed))
+def _normalized_exercise_dates(exercise_dates: ContractTimeline | Iterable[date | str]) -> tuple[date, ...]:
+    return normalize_explicit_dates(exercise_dates)
 
 
 def _settlement_date(market_state, spec) -> date:

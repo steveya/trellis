@@ -1,8 +1,8 @@
 category: market_data
 title: Match tree API to inputs
 severity: high
-status: candidate
-confidence: 0.5
+status: promoted
+confidence: 0.8
 created: '2026-04-01T07:35:31.532319'
 version: ''
 source_trace: null

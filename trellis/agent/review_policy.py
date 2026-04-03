@@ -51,6 +51,7 @@ def determine_review_policy(
     method: str,
     instrument_type: str | None = None,
     product_ir=None,
+    validation_contract=None,
 ) -> ReviewPolicy:
     """Classify one build into a deterministic review policy.
 
@@ -63,6 +64,8 @@ def determine_review_policy(
         product_ir=product_ir,
     )
     risk_level = "low" if low_risk_reason else "high"
+    blocking_reason = _validation_contract_blocking_reason(validation_contract)
+    contract_review_reason = _validation_contract_review_reason(validation_contract)
 
     if validation not in {"standard", "thorough"}:
         return ReviewPolicy(
@@ -74,7 +77,17 @@ def determine_review_policy(
             critic_mode="skip",
         )
 
-    if low_risk_reason:
+    if blocking_reason:
+        return ReviewPolicy(
+            risk_level="blocked",
+            run_critic=False,
+            run_model_validator_llm=False,
+            critic_reason=blocking_reason,
+            model_validator_reason=blocking_reason,
+            critic_mode="skip",
+        )
+
+    if low_risk_reason and contract_review_reason is None:
         return ReviewPolicy(
             risk_level="low",
             run_critic=False,
@@ -84,13 +97,14 @@ def determine_review_policy(
             critic_mode="skip",
         )
 
+    review_reason = contract_review_reason or "high_risk_route_requires_llm_review"
     return ReviewPolicy(
         risk_level="high",
         run_critic=True,
         run_model_validator_llm=(validation == "thorough"),
-        critic_reason="high_risk_route_requires_llm_review",
+        critic_reason=review_reason,
         model_validator_reason=(
-            "high_risk_route_requires_llm_review"
+            review_reason
             if validation == "thorough"
             else "validation_mode_skipped"
         ),
@@ -133,4 +147,33 @@ def _low_risk_reason(
     normalized = (instrument_type or "").strip().lower()
     if normalized == "european_option":
         return "low_risk_supported_vanilla_analytical"
+    return None
+
+
+def _validation_contract_blocking_reason(validation_contract) -> str | None:
+    """Return a deterministic blocking reason from the compiled validation contract."""
+    if validation_contract is None:
+        return None
+    if getattr(validation_contract, "lowering_errors", ()) or ():
+        return "validation_contract_lowering_errors_present"
+    if getattr(validation_contract, "admissibility_failures", ()) or ():
+        return "validation_contract_admissibility_failures_present"
+    return None
+
+
+def _validation_contract_review_reason(validation_contract) -> str | None:
+    """Return the contract-driven review escalation reason, if any."""
+    if validation_contract is None:
+        return None
+    if getattr(validation_contract, "residual_risks", ()) or ():
+        return "validation_contract_residual_risks_present"
+
+    relations = tuple(getattr(validation_contract, "comparison_relations", ()) or ())
+    if any(getattr(item, "relation", None) in {"<=", ">="} for item in relations):
+        return "validation_contract_directional_relations_present"
+    if any(
+        (getattr(item, "relation", None) or "") not in {"", "within_tolerance", "<=", ">="}
+        for item in relations
+    ):
+        return "validation_contract_complex_relations_present"
     return None

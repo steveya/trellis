@@ -119,6 +119,7 @@ def run_canaries(
     model: str = "gpt-5.4-mini",
     budget_override: float | None = None,
     validation: str = "standard",
+    knowledge_light: bool = False,
     output_file: str | None = None,
 ) -> list[dict]:
     """Run canary tasks and return results.
@@ -168,6 +169,7 @@ def run_canaries(
                 model=model,
                 force_rebuild=True,
                 validation=validation,
+                knowledge_profile="knowledge_light" if knowledge_light else None,
             )
         except Exception as exc:
             result = {
@@ -296,6 +298,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--budget", type=float, help="Override budget limit in USD")
     parser.add_argument("--model", default="gpt-5.4-mini")
     parser.add_argument("--validation", default="standard")
+    parser.add_argument(
+        "--knowledge-light",
+        action="store_true",
+        help="Use the compiler-first minimal knowledge profile during canary builds",
+    )
     parser.add_argument("--output", help="Output file path for results JSON")
     parser.add_argument("--check-drift", action="store_true", help="Compare results against golden traces and report drift")
     parser.add_argument("--update-golden", action="store_true", help="Promote passing results to golden traces (requires all pass)")
@@ -325,6 +332,7 @@ def main(argv: list[str] | None = None) -> int:
         model=args.model,
         budget_override=args.budget,
         validation=args.validation,
+        knowledge_light=args.knowledge_light,
         output_file=output_file,
     )
 

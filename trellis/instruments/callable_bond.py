@@ -55,7 +55,7 @@ class CallableBondPayoff:
     @property
     def requirements(self) -> set[str]:
         """Needs a discount curve and an interest rate volatility surface."""
-        return {"discount", "black_vol"}
+        return {"discount_curve", "black_vol_surface"}
 
     def evaluate(self, market_state: MarketState) -> float:
         """Build a Hull-White tree through the checked-in callable-bond helper."""

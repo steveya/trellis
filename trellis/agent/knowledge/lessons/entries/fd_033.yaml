@@ -2,7 +2,7 @@ category: finite_differences
 title: Undefined boundary-condition identifier
 severity: critical
 status: validated
-confidence: 0.6
+confidence: 0.7
 created: '2026-03-29T08:38:49.564845'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260329_083850_barrier_option_pde_solver.yaml

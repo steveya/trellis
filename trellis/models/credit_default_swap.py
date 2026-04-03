@@ -13,6 +13,13 @@ from typing import Protocol
 from trellis.core.date_utils import build_period_schedule
 from trellis.core.differentiable import get_numpy
 from trellis.core.types import DayCountConvention, EventSchedule, Frequency
+from trellis.models.contingent_cashflows import (
+    CouponAccrual,
+    ProtectionPayment,
+    coupon_cashflow_pv,
+    interval_default_probability_from_survival,
+    protection_payment_pv,
+)
 
 np = get_numpy()
 
@@ -76,9 +83,7 @@ def interval_default_probability(
     """Return the conditional default probability over ``[t_start, t_end]``."""
     survival_start = float(credit_curve.survival_probability(max(float(t_start), 0.0)))
     survival_end = float(credit_curve.survival_probability(max(float(t_end), 0.0)))
-    if survival_start <= 0.0:
-        return 0.0
-    return max(0.0, min(1.0, 1.0 - survival_end / survival_start))
+    return interval_default_probability_from_survival(survival_start, survival_end)
 
 
 def _require_period_measurements(schedule: EventSchedule) -> tuple:
@@ -126,8 +131,23 @@ def price_cds_analytical(
         default_prob = max(0.0, survival_prev - survival)
         discount = float(discount_curve.discount(t_pay))
 
-        premium_leg += notional * spread * accrual * discount * survival
-        protection_leg += notional * (1.0 - recovery) * default_prob * discount
+        premium_leg += coupon_cashflow_pv(
+            CouponAccrual(
+                notional=notional,
+                rate=spread,
+                accrual=accrual,
+                discount_factor=discount,
+                weight=survival,
+            )
+        )
+        protection_leg += protection_payment_pv(
+            ProtectionPayment(
+                notional=notional,
+                recovery=recovery,
+                default_probability=default_prob,
+                discount_factor=discount,
+            )
+        )
         survival_prev = survival
 
     return float(protection_leg - premium_leg)
@@ -167,12 +187,22 @@ def price_cds_monte_carlo(
         default_in_interval = alive & (rng.uniform(size=n_paths) < default_prob)
         alive = alive & (~default_in_interval)
 
-        premium_leg += notional * spread * accrual * discount * float(np.mean(alive))
-        protection_leg += (
-            notional
-            * (1.0 - recovery)
-            * discount
-            * float(np.mean(default_in_interval))
+        premium_leg += coupon_cashflow_pv(
+            CouponAccrual(
+                notional=notional,
+                rate=spread,
+                accrual=accrual,
+                discount_factor=discount,
+                weight=float(np.mean(alive)),
+            )
+        )
+        protection_leg += protection_payment_pv(
+            ProtectionPayment(
+                notional=notional,
+                recovery=recovery,
+                default_probability=float(np.mean(default_in_interval)),
+                discount_factor=discount,
+            )
         )
         t_prev = t_end
 

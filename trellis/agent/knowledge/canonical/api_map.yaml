@@ -30,13 +30,12 @@ market_state:
     hazard_rate: "market_state.credit_curve.hazard_rate(T)"
     risky_discount: "market_state.credit_curve.risky_discount(T, market_state.discount)"
   capabilities:
-    - "discount → discount is not None"
-    - "forward_rate → forward_curve is not None (auto from discount)"
-    - "black_vol → vol_surface is not None"
+    - "discount_curve → discount is not None"
+    - "forward_curve → forward_curve is not None (auto from discount)"
+    - "black_vol_surface → vol_surface is not None"
     - "state_space → state_space is not None"
-    - "credit → credit_curve is not None"
-    - "forecast_rate → forecast_curves is not None"
-    - "fx → fx_rates is not None"
+    - "credit_curve → credit_curve is not None"
+    - "fx_rates → fx_rates is not None"
 
 # ---------------------------------------------------------------------------
 # Payoff protocol
@@ -147,9 +146,11 @@ copulas:
 analytical:
   module: trellis.models.zcb_option
   key_imports:
-    - "from trellis.models.zcb_option import price_zcb_option_jamshidian"
+    - "from trellis.models.zcb_option import resolve_zcb_option_hw_inputs, price_zcb_option_jamshidian"
+    - "from trellis.models.analytical.jamshidian import ResolvedJamshidianInputs, zcb_option_hw_raw"
     - "from trellis.models.analytical import zcb_option_hw"
     - "from trellis.models.analytical import terminal_vanilla_from_basis"
+    - "from trellis.models.rate_style_swaption import ResolvedSwaptionBlack76Inputs, resolve_swaption_black76_inputs, price_swaption_black76_raw, price_bermudan_swaption_black76_lower_bound"
 
 # ---------------------------------------------------------------------------
 # Model imports — calibration
@@ -171,10 +172,20 @@ utilities:
     imports:
       - "from trellis.models.black import black76_call, black76_put, black76_asset_or_nothing_call, black76_asset_or_nothing_put, black76_cash_or_nothing_call, black76_cash_or_nothing_put"
   garman_kohlhagen:
-    module: trellis.models.black
+    module: trellis.models.analytical.fx
     imports:
-      - "from trellis.models.black import black76_asset_or_nothing_call, black76_asset_or_nothing_put, black76_cash_or_nothing_call, black76_cash_or_nothing_put, garman_kohlhagen_call, garman_kohlhagen_put"
-      - "from trellis.models.analytical import terminal_vanilla_from_basis"
+      - "from trellis.models.analytical.fx import ResolvedGarmanKohlhagenInputs, garman_kohlhagen_price_raw"
+      - "from trellis.models.black import garman_kohlhagen_call, garman_kohlhagen_put"
+  rate_style_swaption:
+    module: trellis.models.rate_style_swaption
+    imports:
+      - "from trellis.models.rate_style_swaption import ResolvedSwaptionBlack76Inputs, resolve_swaption_black76_inputs, price_swaption_black76_raw, price_swaption_black76"
+      - "from trellis.models.rate_style_swaption import price_bermudan_swaption_black76_lower_bound"
+  jamshidian_zcb_option:
+    module: trellis.models.zcb_option
+    imports:
+      - "from trellis.models.zcb_option import ResolvedZCBOptionInputs, resolve_zcb_option_hw_inputs, price_zcb_option_jamshidian"
+      - "from trellis.models.analytical.jamshidian import ResolvedJamshidianInputs, zcb_option_hw_raw"
   schedule:
     module: trellis.core.date_utils
     imports:

@@ -104,6 +104,19 @@ class ProductIR:
     event_machine: object | None = None  # EventMachine when typed, None for legacy
 
 
+@dataclass(frozen=True)
+class SimilarProductMatch:
+    """One deterministic near-match to a sparse or novel product request."""
+
+    instrument: str
+    method: str
+    score: float
+    shared_features: tuple[str, ...] = ()
+    query_only_features: tuple[str, ...] = ()
+    candidate_only_features: tuple[str, ...] = ()
+    promoted_routes: tuple[str, ...] = ()
+
+
 # ---------------------------------------------------------------------------
 # Build gate
 # ---------------------------------------------------------------------------
@@ -426,6 +439,8 @@ class SkillRecord:
     precedence_rank: int = 0
     instruction_type: str = ""
     source_kind: str = ""
+    lineage_status: str = ""
+    lineage_evidence: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

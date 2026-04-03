@@ -64,7 +64,10 @@ class PlatformTrace:
     sample_source: dict[str, Any] | None = None
     sample_indexing: dict[str, Any] | None = None
     simulation_stream_id: str | None = None
+    semantic_checkpoint: dict[str, Any] | None = None
+    generation_boundary: dict[str, Any] | None = None
     semantic_role_ownership: dict[str, Any] | None = None
+    validation_contract: dict[str, Any] | None = None
     details: dict[str, Any] | None = None
     events: tuple[PlatformTraceEvent, ...] = ()
     linear_issue_id: str | None = None
@@ -111,7 +114,10 @@ def ensure_platform_trace(
             "sample_source",
             "sample_indexing",
             "simulation_stream_id",
+            "semantic_checkpoint",
+            "generation_boundary",
             "semantic_role_ownership",
+            "validation_contract",
             "request_metadata",
         ):
             trace[key] = base[key]
@@ -205,6 +211,20 @@ def attach_platform_trace_token_usage(
     return path
 
 
+def load_platform_trace_boundary(trace_path: str | Path) -> dict[str, Any]:
+    """Load the compact semantic/route/validation boundary from a trace file."""
+    data = _load_trace_dict(Path(trace_path))
+    return {
+        "semantic_checkpoint": dict(data.get("semantic_checkpoint") or {}),
+        "generation_boundary": dict(data.get("generation_boundary") or {}),
+        "validation_contract": dict(data.get("validation_contract") or {}),
+        "request_metadata": dict(data.get("request_metadata") or {}),
+        "route_method": data.get("route_method"),
+        "instrument_type": data.get("instrument_type"),
+        "product_instrument": data.get("product_instrument"),
+    }
+
+
 def load_platform_traces(*, root: Path | None = None) -> list[PlatformTrace]:
     """Load request traces from disk."""
     root = root or TRACE_ROOT
@@ -240,7 +260,10 @@ def load_platform_traces(*, root: Path | None = None) -> list[PlatformTrace]:
                 sample_source=data.get("sample_source") or {},
                 sample_indexing=data.get("sample_indexing") or {},
                 simulation_stream_id=data.get("simulation_stream_id"),
+                semantic_checkpoint=data.get("semantic_checkpoint") or {},
+                generation_boundary=data.get("generation_boundary") or {},
                 semantic_role_ownership=data.get("semantic_role_ownership") or {},
+                validation_contract=data.get("validation_contract") or {},
                 details=data.get("details") or {},
                 events=tuple(
                     PlatformTraceEvent(
@@ -283,6 +306,14 @@ def _base_trace_dict(compiled_request) -> dict[str, Any]:
     request = compiled_request.request
     execution_plan = compiled_request.execution_plan
     request_metadata = dict(request.metadata or {})
+    semantic_checkpoint = _semantic_checkpoint_summary(
+        request=request,
+        request_metadata=request_metadata,
+    )
+    generation_boundary = _generation_boundary_summary(
+        compiled_request,
+        request_metadata=request_metadata,
+    )
     runtime_contract = dict(request_metadata.get("runtime_contract") or {})
     simulation_identity = dict(
         runtime_contract.get("simulation_identity")
@@ -343,12 +374,193 @@ def _base_trace_dict(compiled_request) -> dict[str, Any]:
             runtime_contract.get("simulation_stream_id"),
             request_metadata.get("simulation_stream_id"),
         ),
+        "semantic_checkpoint": semantic_checkpoint,
+        "generation_boundary": generation_boundary,
         "semantic_role_ownership": dict(
             request_metadata.get("semantic_role_ownership") or {}
+        ),
+        "validation_contract": dict(
+            request_metadata.get("validation_contract") or {}
         ),
         "request_metadata": request_metadata,
         "token_usage": {},
     }
+
+
+def _semantic_checkpoint_summary(
+    *,
+    request,
+    request_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    """Summarize the canonical semantic identity and wrapper status."""
+    semantic_contract = dict(request_metadata.get("semantic_contract") or {})
+    if not semantic_contract:
+        return {}
+    concept = dict(semantic_contract.get("semantic_concept") or {})
+    product = dict(semantic_contract.get("product") or {})
+    methods = dict(semantic_contract.get("methods") or {})
+    market_data = dict(semantic_contract.get("market_data") or {})
+    requested_instrument = str(getattr(request, "instrument_type", "") or "")
+    compatibility_wrappers = tuple(
+        str(item)
+        for item in (concept.get("compatibility_wrappers") or ())
+        if str(item).strip()
+    )
+    bridge_status = _compatibility_bridge_status(
+        requested_instrument=requested_instrument,
+        semantic_id=semantic_contract.get("semantic_id"),
+        compatibility_wrappers=compatibility_wrappers,
+    )
+    return {
+        "semantic_id": semantic_contract.get("semantic_id"),
+        "semantic_version": semantic_contract.get("semantic_version"),
+        "requested_instrument_type": requested_instrument or None,
+        "product_instrument_class": product.get("instrument_class"),
+        "payoff_family": product.get("payoff_family"),
+        "underlier_structure": product.get("underlier_structure"),
+        "preferred_method": methods.get("preferred_method"),
+        "required_market_inputs": list(market_data.get("required_inputs") or ()),
+        "optional_market_inputs": list(market_data.get("optional_inputs") or ()),
+        "compatibility_bridge_status": bridge_status,
+        "matched_wrapper": (
+            requested_instrument
+            if bridge_status == "thin_compatibility_wrapper"
+            else ""
+        ),
+    }
+
+
+def _generation_boundary_summary(
+    compiled_request,
+    *,
+    request_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    """Summarize valuation, lowering, and approved-module route boundaries."""
+    from trellis.agent.route_registry import route_binding_authority_summary
+
+    generation_plan = getattr(compiled_request, "generation_plan", None)
+    semantic_blueprint = dict(request_metadata.get("semantic_blueprint") or {})
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    lane_plan = dict(semantic_blueprint.get("lane_plan") or {})
+    route_binding_authority = (
+        route_binding_authority_summary(
+            getattr(generation_plan, "route_binding_authority", None)
+        )
+        or dict(request_metadata.get("route_binding_authority") or {})
+    )
+    lowering = {
+        "route_id": (
+            getattr(generation_plan, "lowering_route_id", "")
+            or semantic_blueprint.get("dsl_route")
+            or getattr(getattr(compiled_request, "execution_plan", None), "route_method", None)
+        ),
+        "route_family": (
+            semantic_blueprint.get("dsl_route_family")
+            or getattr(primitive_plan, "route_family", "")
+            or getattr(primitive_plan, "engine_family", "")
+        ),
+        "primitive_routes": list(semantic_blueprint.get("primitive_routes") or ()),
+        "route_modules": list(semantic_blueprint.get("route_modules") or ()),
+        "expr_kind": (
+            getattr(generation_plan, "lowering_expr_kind", "")
+            or semantic_blueprint.get("dsl_expr_kind")
+        ),
+        "family_ir_type": (
+            getattr(generation_plan, "lowering_family_ir_type", "")
+            or semantic_blueprint.get("dsl_family_ir_type")
+        ),
+        "helper_refs": list(
+            getattr(generation_plan, "lowering_helper_refs", ())
+            or semantic_blueprint.get("dsl_helper_refs")
+            or ()
+        ),
+        "target_bindings": list(semantic_blueprint.get("dsl_target_bindings") or ()),
+        "lowering_errors": list(semantic_blueprint.get("dsl_lowering_errors") or ()),
+    }
+    summary = {
+        "method": (
+            getattr(generation_plan, "method", "")
+            or getattr(getattr(compiled_request, "execution_plan", None), "route_method", None)
+        ),
+        "approved_modules": list(getattr(generation_plan, "approved_modules", ()) or ()),
+        "inspected_modules": list(getattr(generation_plan, "inspected_modules", ()) or ()),
+        "symbols_to_reuse": list(getattr(generation_plan, "symbols_to_reuse", ()) or ()),
+        "valuation_context": dict(semantic_blueprint.get("valuation_context") or {}),
+        "required_data_spec": dict(semantic_blueprint.get("required_data_spec") or {}),
+        "market_binding_spec": dict(semantic_blueprint.get("market_binding_spec") or {}),
+        "lane_plan": (
+            {
+                "lane_family": getattr(generation_plan, "lane_family", "") or lane_plan.get("lane_family"),
+                "plan_kind": getattr(generation_plan, "lane_plan_kind", "") or lane_plan.get("plan_kind"),
+                "timeline_roles": list(
+                    getattr(generation_plan, "lane_timeline_roles", ()) or lane_plan.get("timeline_roles") or ()
+                ),
+                "market_requirements": list(
+                    getattr(generation_plan, "lane_market_requirements", ()) or lane_plan.get("market_requirements") or ()
+                ),
+                "state_obligations": list(
+                    getattr(generation_plan, "lane_state_obligations", ()) or lane_plan.get("state_obligations") or ()
+                ),
+                "control_obligations": list(
+                    getattr(generation_plan, "lane_control_obligations", ()) or lane_plan.get("control_obligations") or ()
+                ),
+                "construction_steps": list(
+                    getattr(generation_plan, "lane_construction_steps", ()) or lane_plan.get("construction_steps") or ()
+                ),
+                "exact_target_refs": list(
+                    getattr(generation_plan, "lane_exact_binding_refs", ()) or lane_plan.get("exact_target_refs") or ()
+                ),
+                "unresolved_primitives": list(
+                    getattr(generation_plan, "lane_unresolved_primitives", ()) or lane_plan.get("unresolved_primitives") or ()
+                ),
+            }
+            if generation_plan is not None or lane_plan
+            else {}
+        ),
+        "lowering": lowering,
+        "route_binding_authority": route_binding_authority,
+        "primitive_plan": (
+            {
+                "route": getattr(primitive_plan, "route", ""),
+                "engine_family": getattr(primitive_plan, "engine_family", ""),
+                "route_family": getattr(primitive_plan, "route_family", ""),
+                "adapters": list(getattr(primitive_plan, "adapters", ()) or ()),
+                "blockers": list(getattr(primitive_plan, "blockers", ()) or ()),
+            }
+            if primitive_plan is not None
+            else {}
+        ),
+    }
+    if not any(summary.values()):
+        return {}
+    return summary
+
+
+def _compatibility_bridge_status(
+    *,
+    requested_instrument: str,
+    semantic_id: object,
+    compatibility_wrappers: tuple[str, ...],
+) -> str:
+    """Classify whether the request came through a compatibility wrapper."""
+    normalized_request = _normalize_semantic_token(requested_instrument)
+    if not normalized_request:
+        return "implicit_semantic_request"
+    if normalized_request == _normalize_semantic_token(semantic_id):
+        return "canonical_semantic"
+    wrapper_tokens = {
+        _normalize_semantic_token(item)
+        for item in compatibility_wrappers
+        if _normalize_semantic_token(item)
+    }
+    if normalized_request in wrapper_tokens:
+        return "thin_compatibility_wrapper"
+    return "request_alias"
+
+
+def _normalize_semantic_token(value: object) -> str:
+    """Normalize semantic identifiers for stable wrapper comparisons."""
+    return str(value or "").strip().lower().replace(" ", "_")
 
 
 def _load_trace_dict(path: Path) -> dict[str, Any]:

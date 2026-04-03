@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -9,6 +10,11 @@ import yaml
 def _write_trace(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(payload, sort_keys=False))
+
+
+def _write_json_trace(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2))
 
 
 def test_persist_task_run_record_writes_latest_and_enriches_traces(tmp_path):
@@ -43,6 +49,17 @@ def test_persist_task_run_record_writes_latest_and_enriches_traces(tmp_path):
                 "selected_role": "quant",
                 "trigger_condition": "pricing_plan_selection",
                 "artifact_kind": "GenerationPlan",
+            },
+            "generation_boundary": {
+                "route_binding_authority": {
+                    "route_id": "fft_black_scholes",
+                    "route_family": "fft_pricing",
+                    "engine_family": "fft_pricing",
+                    "authority_kind": "route_registry_binding",
+                    "exact_backend_fit": False,
+                    "validation_bundle_id": "fft_pricing:european_option",
+                    "canary_task_ids": ["T39"],
+                }
             },
             "token_usage": {
                 "call_count": 2,
@@ -203,6 +220,8 @@ def test_persist_task_run_record_writes_latest_and_enriches_traces(tmp_path):
     assert latest["summary"]["prices"]["fft"] == 10.12
     assert latest["method_runs"]["fft"]["trace_summary"]["linear_issue"]["identifier"] == "QUA-99"
     assert latest["method_runs"]["fft"]["trace_summary"]["semantic_role_ownership"]["selected_role"] == "quant"
+    assert latest["method_runs"]["fft"]["trace_summary"]["route_binding_authority"]["route_id"] == "fft_black_scholes"
+    assert latest["trace_summaries"][0]["route_binding_authority"]["canary_task_ids"] == ["T39"]
     assert latest["method_runs"]["fft"]["issue_refs"]["github"]["number"] == 77
     assert latest["method_runs"]["fft"]["token_usage"]["total_tokens"] == 250
     assert latest["trace_summaries"][0]["token_usage"]["total_tokens"] == 250
@@ -263,6 +282,120 @@ def test_persist_task_run_record_treats_terminal_result_as_not_running_even_with
 
     assert latest["workflow"]["status"] == "failed"
     assert latest["workflow"]["active_trace_count"] == 1
+
+
+def test_skill_telemetry_rollups_capture_selected_artifacts_and_route_health(tmp_path):
+    from trellis.agent.task_run_store import (
+        load_latest_route_ranking_inputs,
+        load_latest_route_health_rollup,
+        load_latest_skill_ranking_inputs,
+        load_latest_telemetry_rollups,
+        load_latest_skill_telemetry_rollup,
+        persist_task_run_record,
+    )
+
+    analytical_trace = tmp_path / "task_runs" / "traces" / "analytical_demo.json"
+    _write_json_trace(
+        analytical_trace,
+        {
+            "trace_id": "trace_analytical_demo",
+            "trace_type": "analytical",
+            "status": "succeeded",
+            "created_at": "2026-03-29T12:00:00+00:00",
+            "updated_at": "2026-03-29T12:00:05+00:00",
+            "route": {
+                "family": "analytical",
+                "name": "analytical_black76",
+                "model": "black76",
+            },
+            "steps": [],
+            "context": {
+                "generation_plan": {
+                    "instruction_resolution": {
+                        "effective_instructions": [
+                            {
+                                "id": "route_hint:analytical_black76",
+                                "instruction_type": "hard_constraint",
+                            }
+                        ],
+                        "conflicts": [{"winner": "route_hint:analytical_black76"}],
+                    }
+                }
+            },
+        },
+    )
+
+    task = {
+        "id": "T301",
+        "title": "Telemetry demo",
+        "construct": "analytical",
+    }
+    result = {
+        "task_id": "T301",
+        "success": True,
+        "attempts": 2,
+        "cross_validation": {"status": "passed"},
+        "artifacts": {"analytical_trace_paths": [str(analytical_trace)]},
+        "knowledge_summary": {
+            "selected_artifact_ids": ["route_hint:analytical_black76"],
+            "selected_artifact_titles": ["Analytical Black76 route"],
+            "selected_artifacts_by_audience": {
+                "builder": [
+                    {
+                        "id": "route_hint:analytical_black76",
+                        "title": "Analytical Black76 route",
+                        "kind": "route_hint",
+                    }
+                ]
+            },
+        },
+        "reflection": {},
+    }
+
+    persist_task_run_record(
+        task,
+        result,
+        root=tmp_path,
+        persisted_at=datetime(2026, 3, 29, 12, 1, 0, tzinfo=timezone.utc),
+    )
+
+    skill_rollup = load_latest_skill_telemetry_rollup(root=tmp_path)
+    route_rollup = load_latest_route_health_rollup(root=tmp_path)
+    bundle = load_latest_telemetry_rollups(root=tmp_path)
+    skill_ranking = load_latest_skill_ranking_inputs(root=tmp_path)
+    route_ranking = load_latest_route_ranking_inputs(root=tmp_path)
+
+    assert skill_rollup["run_count"] == 1
+    assert skill_rollup["artifacts"][0]["artifact_id"] == "route_hint:analytical_black76"
+    assert skill_rollup["artifacts"][0]["selection_count"] == 1
+    assert skill_rollup["artifacts"][0]["success_count"] == 1
+    assert skill_rollup["artifacts"][0]["retried_count"] == 1
+    assert skill_rollup["artifacts"][0]["retry_count_total"] == 1
+    assert skill_rollup["artifacts"][0]["audiences"] == ["builder"]
+    assert skill_rollup["artifacts"][0]["first_seen_at"] == "2026-03-29T12:01:00+00:00"
+    assert skill_rollup["artifacts"][0]["last_seen_at"] == "2026-03-29T12:01:00+00:00"
+    assert skill_rollup["ranking_inputs"][0]["success_rate"] == 1.0
+    assert skill_rollup["ranking_inputs"][0]["retry_rate"] == 1.0
+    assert skill_rollup["ranking_inputs"][0]["avg_retry_count"] == 1.0
+
+    assert route_rollup["run_count"] == 1
+    assert route_rollup["routes"][0]["route_id"] == "analytical_black76"
+    assert route_rollup["routes"][0]["route_family"] == "analytical"
+    assert route_rollup["routes"][0]["success_count"] == 1
+    assert route_rollup["routes"][0]["retried_count"] == 1
+    assert route_rollup["routes"][0]["retry_count_total"] == 1
+    assert route_rollup["routes"][0]["hard_constraint_count_total"] == 1
+    assert route_rollup["routes"][0]["conflict_count_total"] == 1
+    assert route_rollup["ranking_inputs"][0]["avg_effective_instruction_count"] == 1.0
+    assert route_rollup["ranking_inputs"][0]["avg_hard_constraint_count"] == 1.0
+    assert route_rollup["ranking_inputs"][0]["avg_conflict_count"] == 1.0
+
+    assert bundle["skill_telemetry"]["artifacts"][0]["artifact_id"] == "route_hint:analytical_black76"
+    assert bundle["route_health"]["routes"][0]["route_id"] == "analytical_black76"
+    assert skill_ranking["artifacts"][0]["artifact_id"] == "route_hint:analytical_black76"
+    assert skill_ranking["artifacts"][0]["last_seen_at"] == "2026-03-29T12:01:00+00:00"
+    assert route_ranking["routes"][0]["route_id"] == "analytical_black76"
+    assert route_ranking["routes"][0]["last_seen_at"] == "2026-03-29T12:01:00+00:00"
 
 
 def test_persist_task_run_record_supports_framework_task_contract(tmp_path):

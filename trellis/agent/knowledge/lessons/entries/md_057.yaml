@@ -1,8 +1,8 @@
 category: market_data
 title: Transient request failure
 severity: high
-status: candidate
-confidence: 0.5
+status: validated
+confidence: 0.6
 created: '2026-04-01T18:27:00.276890'
 version: ''
 source_trace: null

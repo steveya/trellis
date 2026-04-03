@@ -47,6 +47,8 @@ def test_api_map_key_imports_are_registry_valid():
     for utility_name in (
         "black76",
         "garman_kohlhagen",
+        "rate_style_swaption",
+        "jamshidian_zcb_option",
         "schedule",
         "day_count",
         "vol_surface",

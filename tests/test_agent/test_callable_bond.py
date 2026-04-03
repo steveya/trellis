@@ -66,7 +66,7 @@ class TestCallableBondInvariants:
         class BadCallable:
             @property
             def requirements(self):
-                return {"discount"}
+                return {"discount_curve"}
 
             def evaluate(self, ms):
                 # Returns more than the straight bond — should fail bounding
@@ -124,7 +124,7 @@ class TestCallableBondBuild:
 
         PayoffCls = build_payoff(
             "Callable bond with a call schedule (Bermudan callable)",
-            {"discount", "forward_rate", "black_vol"},
+            {"discount_curve", "forward_curve", "black_vol_surface"},
             force_rebuild=True,
             validation="standard",
         )
@@ -143,7 +143,7 @@ class TestCallableBondBuild:
 
         PayoffCls = build_payoff(
             "Callable bond with a call schedule (Bermudan callable)",
-            {"discount", "forward_rate", "black_vol"},
+            {"discount_curve", "forward_curve", "black_vol_surface"},
             force_rebuild=False,
         )
 

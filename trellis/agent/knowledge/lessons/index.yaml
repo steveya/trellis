@@ -84,7 +84,7 @@ entries:
   title: Undefined tree import/name error
   severity: critical
   category: backward_induction
-  status: validated
+  status: promoted
   applies_when:
     method:
     - analytical
@@ -98,7 +98,7 @@ entries:
   title: Payoff must call lattice_backward_induction primitives
   severity: critical
   category: backward_induction
-  status: validated
+  status: promoted
   applies_when:
     method:
     - rate_tree
@@ -112,7 +112,7 @@ entries:
   title: Use exported timeline helpers
   severity: high
   category: backward_induction
-  status: candidate
+  status: validated
   applies_when:
     method:
     - rate_tree
@@ -126,7 +126,7 @@ entries:
   title: Guard try-except indentation
   severity: high
   category: backward_induction
-  status: candidate
+  status: validated
   applies_when:
     method:
     - rate_tree
@@ -140,7 +140,7 @@ entries:
   title: Keep fallback paths indented
   severity: high
   category: backward_induction
-  status: candidate
+  status: validated
   applies_when:
     method:
     - rate_tree
@@ -154,7 +154,7 @@ entries:
   title: Guard all fallback blocks
   severity: high
   category: backward_induction
-  status: candidate
+  status: validated
   applies_when:
     method:
     - rate_tree
@@ -162,6 +162,151 @@ entries:
     - bermudan
     - floating_coupons
     - mean_reversion
+    instrument: []
+    error_signature: null
+- id: bi_012
+  title: Puttable bond requires bermudan exercise_type and exercise_steps
+  severity: critical
+  category: backward_induction
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - puttable
+    - fixed_coupons
+    - mean_reversion
+    - bermudan
+    - early_exercise
+    - backward_induction
+    - callable
+    instrument: []
+    error_signature: null
+- id: bi_013
+  title: resolve_lattice_exercise_policy does not accept exercise_fn kwarg
+  severity: critical
+  category: backward_induction
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - puttable
+    - bermudan
+    - early_exercise
+    - fixed_coupons
+    - mean_reversion
+    - backward_induction
+    instrument: []
+    error_signature: null
+- id: bi_014
+  title: Puttable bond requires exercise_fn=max not min
+  severity: critical
+  category: backward_induction
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - puttable
+    - fixed_coupons
+    - mean_reversion
+    - early_exercise
+    - backward_induction
+    - bermudan
+    instrument: []
+    error_signature: null
+- id: bi_015
+  title: '`build_exercise_timeline_from_dates` not exported by control module'
+  severity: critical
+  category: backward_induction
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - puttable
+    - fixed_coupons
+    - mean_reversion
+    - early_exercise
+    - bermudan
+    - backward_induction
+    instrument: []
+    error_signature: null
+- id: bi_016
+  title: build_exercise_timeline_from_dates not exported by trellis.models.trees.control
+  severity: critical
+  category: backward_induction
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - puttable
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    - early_exercise
+    - bermudan
+    - backward_induction
+    instrument: []
+    error_signature: null
+- id: bi_017
+  title: Integer required for lattice step index, not float
+  severity: critical
+  category: backward_induction
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - puttable
+    - fixed_coupons
+    - mean_reversion
+    - early_exercise
+    - backward_induction
+    instrument: []
+    error_signature: null
+- id: bi_018
+  title: Puttable Bond Exercise Value Uses Wrong Comparison Direction
+  severity: high
+  category: backward_induction
+  status: validated
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - puttable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: bi_019
+  title: Pass spec-like object, not invented keyword arguments
+  severity: high
+  category: backward_induction
+  status: validated
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - early_exercise
+    - puttable
+    - discounting
+    instrument: []
+    error_signature: null
+- id: bi_020
+  title: Wrong keyword args passed to lattice pricing helper
+  severity: high
+  category: backward_induction
+  status: validated
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - early_exercise
+    - puttable
+    - discounting
     instrument: []
     error_signature: null
 - id: cal_001
@@ -249,7 +394,112 @@ entries:
   title: Payer Swaption Sign Convention Causes Negative Value
   severity: high
   category: calibration
-  status: candidate
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: cal_008
+  title: Invalid Module Reference Causes Swaption Pricing Failure
+  severity: high
+  category: calibration
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: cal_009
+  title: Payer Swaption Sign Convention for Analytical Pricing
+  severity: high
+  category: calibration
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: cal_010
+  title: Payer Swaption Sign Convention and Strike Alignment
+  severity: high
+  category: calibration
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: cal_011
+  title: Swaption Analytical Pricing Requires Proper Engine Setup
+  severity: high
+  category: calibration
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: cal_012
+  title: Payer Swaption Sign Convention Misalignment
+  severity: high
+  category: calibration
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: cal_013
+  title: Always verify Trellis module names before referencing
+  severity: high
+  category: calibration
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: cal_014
+  title: Importing non-exported functions from internal modules
+  severity: high
+  category: calibration
+  status: validated
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: cal_015
+  title: Invalid Module Reference Breaks Analytical Swaption Setup
+  severity: high
+  category: calibration
+  status: validated
   applies_when:
     method:
     - analytical
@@ -363,7 +613,7 @@ entries:
   title: Use exact module import paths
   severity: critical
   category: convention
-  status: validated
+  status: promoted
   applies_when:
     method:
     - fft_pricing
@@ -376,7 +626,7 @@ entries:
   title: Exact module import naming
   severity: critical
   category: convention
-  status: validated
+  status: promoted
   applies_when:
     method:
     - fft_pricing
@@ -403,7 +653,7 @@ entries:
   title: Undefined measure symbol 'physical'
   severity: critical
   category: convention
-  status: validated
+  status: promoted
   applies_when:
     method:
     - fft_pricing
@@ -418,7 +668,7 @@ entries:
   title: Undefined instrument class reference
   severity: critical
   category: convention
-  status: validated
+  status: promoted
   applies_when:
     method:
     - analytical
@@ -504,7 +754,7 @@ entries:
   title: Missing required date-schedule primitive usage
   severity: critical
   category: convention
-  status: validated
+  status: promoted
   applies_when:
     method:
     - analytical
@@ -521,7 +771,7 @@ entries:
   title: Day-count mismatch in payoff evaluation
   severity: critical
   category: convention
-  status: validated
+  status: promoted
   applies_when:
     method:
     - analytical
@@ -541,7 +791,7 @@ entries:
   title: Undefined symbol used in spec defaults
   severity: critical
   category: convention
-  status: validated
+  status: promoted
   applies_when:
     method:
     - analytical
@@ -652,7 +902,7 @@ entries:
   title: Undefined exercise-style constant in spec
   severity: critical
   category: convention
-  status: validated
+  status: promoted
   applies_when:
     method:
     - monte_carlo
@@ -758,6 +1008,19 @@ entries:
     - analytical
     features:
     - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: con_035
+  title: Clarify payoff and schedule
+  severity: critical
+  category: convention
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
     - vol_surface_dependence
     instrument: []
     error_signature: null
@@ -1303,7 +1566,7 @@ entries:
   title: Unchecked None from PDE solver
   severity: high
   category: finite_differences
-  status: candidate
+  status: validated
   applies_when:
     method:
     - pde_solver
@@ -1321,7 +1584,7 @@ entries:
   title: Initialize intrinsic before branching
   severity: high
   category: finite_differences
-  status: candidate
+  status: validated
   applies_when:
     method:
     - pde_solver
@@ -1339,7 +1602,7 @@ entries:
   title: Indent fallback blocks correctly
   severity: high
   category: finite_differences
-  status: candidate
+  status: validated
   applies_when:
     method:
     - pde_solver
@@ -1348,6 +1611,21 @@ entries:
     - vol_surface_dependence
     - pde_grid
     - convergence_order_diagnostic
+    instrument: []
+    error_signature: null
+- id: fd_040
+  title: PDE payoff must wrap primitive not reimplement from scratch
+  severity: critical
+  category: finite_differences
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - early_exercise
+    - puttable
+    - discounting
+    - pde_grid
     instrument: []
     error_signature: null
 - id: mc_001
@@ -1460,7 +1738,7 @@ entries:
   title: Missing Monte Carlo implementation symbol
   severity: critical
   category: monte_carlo
-  status: validated
+  status: promoted
   applies_when:
     method:
     - monte_carlo
@@ -1473,7 +1751,7 @@ entries:
   title: Unexpected indent in generated module
   severity: critical
   category: monte_carlo
-  status: validated
+  status: promoted
   applies_when:
     method:
     - monte_carlo
@@ -1492,7 +1770,7 @@ entries:
   title: Payoff shape / indentation bug in MC generator
   severity: critical
   category: monte_carlo
-  status: validated
+  status: promoted
   applies_when:
     method:
     - monte_carlo
@@ -1510,7 +1788,7 @@ entries:
   title: Syntax & API errors in MC quanto pricer
   severity: critical
   category: monte_carlo
-  status: validated
+  status: promoted
   applies_when:
     method:
     - monte_carlo
@@ -1547,7 +1825,7 @@ entries:
   title: Himalaya basket must delegate to price_ranked_observation_basket_monte_carlo
   severity: critical
   category: monte_carlo
-  status: validated
+  status: promoted
   applies_when:
     method:
     - monte_carlo
@@ -1567,7 +1845,7 @@ entries:
   title: CorrelatedGBM requires 'spot_prices' not 'spots' keyword
   severity: critical
   category: monte_carlo
-  status: validated
+  status: promoted
   applies_when:
     method:
     - monte_carlo
@@ -1721,7 +1999,7 @@ entries:
   title: Zero vega from MC payoff
   severity: critical
   category: monte_carlo
-  status: validated
+  status: promoted
   applies_when:
     method:
     - monte_carlo
@@ -1825,7 +2103,7 @@ entries:
   title: Do not import unapproved correlated_gbm module in payoff
   severity: critical
   category: monte_carlo
-  status: validated
+  status: promoted
   applies_when:
     method:
     - monte_carlo
@@ -2347,7 +2625,7 @@ entries:
   title: Check indentation in generated Python code
   severity: high
   category: monte_carlo
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -2361,7 +2639,7 @@ entries:
   title: Missing process argument in MonteCarloEngine
   severity: high
   category: monte_carlo
-  status: candidate
+  status: validated
   applies_when:
     method:
     - monte_carlo
@@ -2375,7 +2653,7 @@ entries:
   title: Avoid scalar checks on arrays
   severity: high
   category: monte_carlo
-  status: candidate
+  status: validated
   applies_when:
     method:
     - monte_carlo
@@ -2389,7 +2667,7 @@ entries:
   title: Array Truth Check Bug
   severity: high
   category: monte_carlo
-  status: candidate
+  status: validated
   applies_when:
     method:
     - monte_carlo
@@ -2403,7 +2681,7 @@ entries:
   title: Bypass Required Pricing Primitives
   severity: high
   category: monte_carlo
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -2417,7 +2695,7 @@ entries:
   title: Use Required Primitives Directly
   severity: high
   category: monte_carlo
-  status: candidate
+  status: validated
   applies_when:
     method:
     - monte_carlo
@@ -2431,7 +2709,7 @@ entries:
   title: Bypass Required Primitives
   severity: high
   category: monte_carlo
-  status: candidate
+  status: validated
   applies_when:
     method:
     - monte_carlo
@@ -2439,6 +2717,184 @@ entries:
     - credit_risk
     - fixed_coupons
     - discounting
+    instrument: []
+    error_signature: null
+- id: mc_068
+  title: MC CDS payoff must wrap required primitive directly
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - fixed_coupons
+    - floating_coupons
+    - discounting
+    - credit_risk
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: mc_069
+  title: Use Required Primitives
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_070
+  title: Match GBM init signature
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - coupons
+    - discounting
+    - maturity_settlement
+    - greeks
+    instrument: []
+    error_signature: null
+- id: mc_071
+  title: Clarify payoff shape first
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_072
+  title: FXRate object cannot multiply with float directly
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_073
+  title: Passing Invalid Keyword Arguments to MC Engine Constructor
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - forward_rate
+    - greeks
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_074
+  title: Clarify payoff shape upfront
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_075
+  title: Wrong keyword argument passed to GBM constructor
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - early_exercise
+    - puttable
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_076
+  title: Avoid string-splitting numeric state
+  severity: critical
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - discounting
+    - maturity_settlement
+    - multi_asset
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: mc_077
+  title: MC CDS payoff must wrap required credit primitives
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_078
+  title: Passing Invalid Keyword Args to MonteCarloEngine
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - forward_rate
+    - vol_surface_dependence
+    - delta_space_interpolation
+    - greeks
+    - garman_kohlhagen_formula
+    instrument: []
+    error_signature: null
+- id: mc_079
+  title: Wrong constructor argument name for GBM spot price
+  severity: high
+  category: monte_carlo
+  status: validated
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - forward_rate
+    - vol_surface_dependence
+    - greeks
+    - gamma
+    - multi_asset
+    - maturity_settlement
     instrument: []
     error_signature: null
 - id: md_001
@@ -2559,7 +3015,7 @@ entries:
   title: Missing Market Data in LSM Pricing
   severity: critical
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - monte_carlo
@@ -2662,7 +3118,7 @@ entries:
   title: Missing valuation_date in ResolvedQuantoInputs
   severity: critical
   category: market_data
-  status: validated
+  status: promoted
   applies_when:
     method:
     - monte_carlo
@@ -2758,7 +3214,7 @@ entries:
   title: ResolvedBasketSemantics missing rates attribute access
   severity: critical
   category: market_data
-  status: validated
+  status: promoted
   applies_when:
     method:
     - monte_carlo
@@ -3034,7 +3490,7 @@ entries:
   title: Missing black vol surface
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - pde_solver
@@ -3051,7 +3507,7 @@ entries:
   title: Missing vol surface access
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - pde_solver
@@ -3067,7 +3523,7 @@ entries:
   title: Invalid Trellis module reference causes validation failure
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -3080,7 +3536,7 @@ entries:
   title: Missing market data accessors
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - pde_solver
@@ -3096,7 +3552,7 @@ entries:
   title: Missing curve access wiring
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -3110,7 +3566,7 @@ entries:
   title: Indentation after guard
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -3124,7 +3580,7 @@ entries:
   title: Normalize enum-like inputs
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - rate_tree
@@ -3138,7 +3594,7 @@ entries:
   title: Timeline API mismatch
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - rate_tree
@@ -3152,7 +3608,7 @@ entries:
   title: Use market discount curve
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - rate_tree
@@ -3166,7 +3622,7 @@ entries:
   title: Use market state discounts
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - rate_tree
@@ -3180,7 +3636,7 @@ entries:
   title: Match tree API to inputs
   severity: high
   category: market_data
-  status: candidate
+  status: promoted
   applies_when:
     method:
     - rate_tree
@@ -3195,7 +3651,7 @@ entries:
   title: Missing market state wiring
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - rate_tree
@@ -3207,7 +3663,7 @@ entries:
   title: Missing Curve and Vol Access
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - rate_tree
@@ -3219,7 +3675,7 @@ entries:
   title: Missing market state access
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - pde_solver
@@ -3237,7 +3693,7 @@ entries:
   title: Date-Type Comparison Bug
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - rate_tree
@@ -3251,7 +3707,7 @@ entries:
   title: Date-Number Type Mismatch
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -3265,7 +3721,7 @@ entries:
   title: Invalid Model Import
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -3278,13 +3734,876 @@ entries:
   title: Transient request failure
   severity: high
   category: market_data
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
     features:
     - floating_coupons
     - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_058
+  title: Invalid module reference
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_059
+  title: Handle upstream request failures
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_060
+  title: Invalid module path
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_061
+  title: Handle request failures gracefully
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_062
+  title: Check request reliability
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_063
+  title: Payer Swaption Requires Correct Fixed/Float Leg Setup
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_064
+  title: External request failure
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_065
+  title: API request failed
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_066
+  title: Missing model response
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_067
+  title: API failure masked as validation error
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_068
+  title: Invalid model import path
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_069
+  title: Missing external request fallback
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_070
+  title: Handle external request failures
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_071
+  title: Date field stored as string instead of date object
+  severity: critical
+  category: market_data
+  status: promoted
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - puttable
+    - fixed_coupons
+    - mean_reversion
+    - early_exercise
+    - backward_induction
+    - discrete_coupons
+    instrument: []
+    error_signature: null
+- id: md_072
+  title: Payoff must wrap price_cds_analytical primitive directly
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - fixed_coupons
+    - floating_coupons
+    - discounting
+    - credit_risk
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: md_073
+  title: Resolved inputs object missing expected volatility attribute
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - multi_asset
+    - discounting
+    - forward_rate
+    - vol_surface_dependence
+    - greeks
+    - quanto_adjustment
+    - cross_currency
+    instrument: []
+    error_signature: null
+- id: md_074
+  title: Validate module references
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_075
+  title: Model-data request failure
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_076
+  title: Missing Fallback for API Failure
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_077
+  title: Bad module reference
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_078
+  title: API Call Resilience
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_079
+  title: Invalid Module Import
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_080
+  title: Missing Service Retry
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_081
+  title: Retry external requests
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_082
+  title: API Request Robustness
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_083
+  title: Import Valid Modules
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_084
+  title: Guard against upstream request failures
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_085
+  title: Model I/O failure
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_086
+  title: Missing API retry handling
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_087
+  title: Import valid model module
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_088
+  title: Request Fallback Needed
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_089
+  title: Handle transient request failures
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_090
+  title: Check module imports
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_091
+  title: Retry failed API call
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_092
+  title: External service fallback
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_093
+  title: Verify module names
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_094
+  title: Handle API request failures
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_095
+  title: Use valid model imports
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_096
+  title: Dependency failure
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_097
+  title: Payer Swaption Sign Convention and Market Data Setup
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_098
+  title: Valid Module Import
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_099
+  title: API request failure
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_100
+  title: Handle Request Failures
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_101
+  title: Valid module references only
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_102
+  title: Check data request reliability
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_103
+  title: Valid module references
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_104
+  title: Match Market Interface
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: md_105
+  title: Validate Model Imports
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_106
+  title: Valid module imports
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_107
+  title: External request fallback
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_108
+  title: Upstream API request failure
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_109
+  title: Retry External Request Failures
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_110
+  title: Comparing float to date object in market state
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - forward_rate
+    - vol_surface_dependence
+    - delta_space_interpolation
+    - greeks
+    - multi_asset
+    instrument: []
+    error_signature: null
+- id: md_111
+  title: Spec missing spot field
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - vol_surface_dependence
+    - local_vol
+    - pde_grid
+    instrument: []
+    error_signature: null
+- id: md_112
+  title: API Connectivity Failure Masks Underlying Pricing Logic
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_113
+  title: Request Failure Handling
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_114
+  title: Wrong field name passed to resolved inputs dataclass
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - forward_rate
+    - vol_surface_dependence
+    - delta_space_interpolation
+    - greeks
+    - gamma
+    instrument: []
+    error_signature: null
+- id: md_115
+  title: Clarify cap product shape
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_116
+  title: Missing credit curve contract
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - discounting
+    - maturity_settlement
+    - multi_asset
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: md_117
+  title: ForwardCurve missing .forward() method breaks analytical pricer
+  severity: critical
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - early_exercise
+    - puttable
+    - discounting
+    instrument: []
+    error_signature: null
+- id: md_118
+  title: Analytical impl ignored required primitive adapter pattern
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: md_119
+  title: Dependency/API request failure
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_120
+  title: Correct Trellis module path
+  severity: high
+  category: market_data
+  status: validated
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_121
+  title: Missing CDS curve inputs
+  severity: critical
+  category: market_data
+  status: promoted
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - discounting
+    - coupons
+    - fixed_coupons
+    - floating_coupons
     instrument: []
     error_signature: null
 - id: num_001
@@ -3403,7 +4722,7 @@ entries:
   title: Undefined tree constructor 'crr_tree'
   severity: critical
   category: numerical
-  status: validated
+  status: promoted
   applies_when:
     method:
     - rate_tree
@@ -3417,7 +4736,7 @@ entries:
   title: Undefined COS pricer symbol
   severity: critical
   category: numerical
-  status: validated
+  status: promoted
   applies_when:
     method:
     - fft_pricing
@@ -3499,7 +4818,7 @@ entries:
   title: Generated code indentation error
   severity: critical
   category: numerical
-  status: validated
+  status: promoted
   applies_when:
     method:
     - analytical
@@ -3514,7 +4833,7 @@ entries:
   title: Wall-clock valuation and syntax generation errors
   severity: critical
   category: numerical
-  status: validated
+  status: promoted
   applies_when:
     method:
     - analytical
@@ -3642,7 +4961,7 @@ entries:
   title: Undefined method token 'three_way'
   severity: high
   category: numerical
-  status: validated
+  status: promoted
   applies_when:
     method:
     - rate_tree
@@ -3672,7 +4991,7 @@ entries:
   title: Undefined method identifier breaks build
   severity: critical
   category: numerical
-  status: validated
+  status: promoted
   applies_when:
     method:
     - rate_tree
@@ -3710,6 +5029,35 @@ entries:
   applies_when:
     method:
     - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_031
+  title: build_rate_lattice does not accept maturity keyword argument
+  severity: critical
+  category: numerical
+  status: validated
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - puttable
+    - fixed_coupons
+    - mean_reversion
+    - early_exercise
+    - bermudan
+    instrument: []
+    error_signature: null
+- id: num_032
+  title: Uninitialized intrinsic variable
+  severity: critical
+  category: numerical
+  status: promoted
+  applies_when:
+    method:
+    - fft_pricing
     features:
     - discounting
     - vol_surface_dependence
@@ -4021,6 +5369,22 @@ entries:
     instrument:
     - callable_bond
     error_signature: null
+- id: sem_017
+  title: _semantic_extension_decision_knowledge_artifact_concept_nth_to_defau
+  severity: medium
+  category: semantic
+  status: validated
+  applies_when:
+    method:
+    - knowledge_artifact
+    features:
+    - underlier_structure
+    - payoff_rule
+    - settlement_rule
+    - semantic_contract_lesson
+    instrument:
+    - nth_to_default
+    error_signature: null
 - id: tst_001
   title: Measure actual gap before setting test tolerance
   severity: medium
@@ -4083,7 +5447,7 @@ entries:
   title: Zero vega from mis-specified digital payoff
   severity: critical
   category: volatility
-  status: validated
+  status: promoted
   applies_when:
     method:
     - fft_pricing
@@ -4130,7 +5494,7 @@ entries:
   title: Source volatility from vol_surface
   severity: high
   category: volatility
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -4149,7 +5513,7 @@ entries:
   title: Missing surface volatility source
   severity: high
   category: volatility
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -4166,7 +5530,7 @@ entries:
   title: Missing vol source in analytic path
   severity: high
   category: volatility
-  status: candidate
+  status: validated
   applies_when:
     method:
     - analytical
@@ -4178,6 +5542,22 @@ entries:
     - pde_grid
     - convergence_order_diagnostic
     - analytical_benchmark
+    instrument: []
+    error_signature: null
+- id: vol_010
+  title: Volatility Not Propagated
+  severity: high
+  category: volatility
+  status: validated
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - coupons
+    - fixed_coupons
+    - discrete_coupons
+    - discounting
+    - greeks
     instrument: []
     error_signature: null
 settings:

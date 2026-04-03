@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
+from trellis.core.date_utils import normalize_explicit_dates
 from trellis.core.market_state import MarketState
-from trellis.core.types import DayCountConvention, Frequency
+from trellis.core.types import ContractTimeline, DayCountConvention, Frequency
 from trellis.models.black import black76_call, black76_put
 from trellis.models.calibration.rates import swaption_terms
 
@@ -35,7 +36,7 @@ class EuropeanSwaptionSpecLike(RateStyleSwaptionSpecLike, Protocol):
 class BermudanSwaptionLowerBoundSpecLike(RateStyleSwaptionSpecLike, Protocol):
     """Protocol for Bermudan-style specs that expose exercise dates."""
 
-    exercise_dates: str | Iterable[date | str]
+    exercise_dates: ContractTimeline | Iterable[date | str]
 
 
 @dataclass(frozen=True)
@@ -70,17 +71,7 @@ class _EuropeanSwaptionView:
 
 def _normalized_exercise_dates(raw: str | Iterable[date | str]) -> tuple[date, ...]:
     """Return a sorted tuple of unique exercise dates."""
-    if isinstance(raw, str):
-        items = [chunk.strip() for chunk in raw.split(",") if chunk.strip()]
-    else:
-        items = list(raw)
-    normalized: list[date] = []
-    for item in items:
-        if isinstance(item, date):
-            normalized.append(item)
-        else:
-            normalized.append(date.fromisoformat(str(item).strip()))
-    return tuple(sorted(dict.fromkeys(normalized)))
+    return normalize_explicit_dates(raw)
 
 
 def _resolve_expiry_date(
@@ -152,19 +143,15 @@ def resolve_swaption_black76_inputs(
     )
 
 
-def price_swaption_black76(
-    market_state: MarketState,
-    spec: EuropeanSwaptionSpecLike | RateStyleSwaptionSpecLike,
-    *,
-    expiry_date: date | None = None,
+def price_swaption_black76_raw(
+    resolved: ResolvedSwaptionBlack76Inputs,
 ) -> float:
-    """Price a single-exercise rate-style swaption with Black76."""
-    resolved = resolve_swaption_black76_inputs(
-        market_state,
-        spec,
-        expiry_date=expiry_date,
-    )
-    if resolved.expiry_years <= 0.0 or resolved.annuity <= 0.0 or resolved.payment_count <= 0:
+    """Raw Black76 kernel over resolved swaption inputs."""
+    if (
+        resolved.expiry_years <= 0.0
+        or resolved.annuity <= 0.0
+        or resolved.payment_count <= 0
+    ):
         return 0.0
     option_value = (
         black76_call(
@@ -181,7 +168,22 @@ def price_swaption_black76(
             resolved.expiry_years,
         )
     )
-    return float(resolved.notional * resolved.annuity * float(option_value))
+    return resolved.notional * resolved.annuity * option_value
+
+
+def price_swaption_black76(
+    market_state: MarketState,
+    spec: EuropeanSwaptionSpecLike | RateStyleSwaptionSpecLike,
+    *,
+    expiry_date: date | None = None,
+) -> float:
+    """Price a single-exercise rate-style swaption with Black76."""
+    resolved = resolve_swaption_black76_inputs(
+        market_state,
+        spec,
+        expiry_date=expiry_date,
+    )
+    return float(price_swaption_black76_raw(resolved))
 
 
 def price_bermudan_swaption_black76_lower_bound(
@@ -202,13 +204,12 @@ def price_bermudan_swaption_black76_lower_bound(
     )
     if not exercise_dates:
         return 0.0
-    return float(
-        price_swaption_black76(
-            market_state,
-            spec,
-            expiry_date=exercise_dates[-1],
-        )
+    resolved = resolve_swaption_black76_inputs(
+        market_state,
+        spec,
+        expiry_date=exercise_dates[-1],
     )
+    return float(price_swaption_black76_raw(resolved))
 
 
 __all__ = [
@@ -217,6 +218,7 @@ __all__ = [
     "RateStyleSwaptionSpecLike",
     "ResolvedSwaptionBlack76Inputs",
     "price_bermudan_swaption_black76_lower_bound",
+    "price_swaption_black76_raw",
     "price_swaption_black76",
     "resolve_swaption_black76_inputs",
 ]

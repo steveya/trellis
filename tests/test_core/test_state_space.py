@@ -148,7 +148,7 @@ class TestScenarioWeightedPayoff:
 
         with pytest.raises(MissingCapabilityError) as exc_info:
             price_payoff(ScenarioWeightedPayoff(cap), outer_ms)
-        assert "black_vol" in exc_info.value.missing
+        assert "black_vol_surface" in exc_info.value.missing
 
 
 class TestSessionWithStateSpace:

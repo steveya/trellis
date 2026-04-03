@@ -87,11 +87,46 @@ class CorrelatedBasketMonteCarloIR(BaseFamilyLoweringIR):
     binding_sources: tuple[tuple[str, str], ...] = ()
 
 
+@dataclass(frozen=True)
+class CreditDefaultSwapIR(BaseFamilyLoweringIR):
+    """Typed lowering payload for single-name CDS helper-backed routes."""
+
+    pricing_mode: str = "analytical"
+    schedule_builder_symbol: str = "build_cds_schedule"
+    helper_symbol: str = "price_cds_analytical"
+    market_mapping: str = "discount_curve_credit_curve_to_cds_legs"
+    schedule_role: str = "payment_dates"
+    leg_semantics: tuple[str, ...] = ("premium_leg", "protection_leg")
+    payment_dates: tuple[str, ...] = ()
+    observable_ids: tuple[str, ...] = ()
+    observable_types: tuple[str, ...] = ()
+    state_field_names: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class NthToDefaultIR(BaseFamilyLoweringIR):
+    """Typed lowering payload for nth-to-default helper-backed copula routes."""
+
+    helper_symbol: str = "price_nth_to_default_basket"
+    copula_symbol: str = "GaussianCopula"
+    schedule_role: str = "observation_dates"
+    trigger_rank: int = 1
+    reference_entities: tuple[str, ...] = ()
+    observation_dates: tuple[str, ...] = ()
+    observable_ids: tuple[str, ...] = ()
+    observable_types: tuple[str, ...] = ()
+    state_field_names: tuple[str, ...] = ()
+    state_tags: tuple[str, ...] = ()
+    automatic_event_names: tuple[str, ...] = ()
+
+
 FamilyLoweringIR = (
     AnalyticalBlack76IR
     | VanillaEquityPDEIR
     | ExerciseLatticeIR
     | CorrelatedBasketMonteCarloIR
+    | CreditDefaultSwapIR
+    | NthToDefaultIR
 )
 
 
@@ -137,6 +172,18 @@ def build_family_lowering_ir(
             contract,
             product_ir=product_ir,
             market_binding_spec=market_binding_spec,
+            **common_kwargs,
+        )
+    if route_id in {"credit_default_swap_analytical", "credit_default_swap_monte_carlo"}:
+        return _build_credit_default_swap_ir(
+            contract,
+            product_ir=product_ir,
+            **common_kwargs,
+        )
+    if route_id == "nth_to_default_monte_carlo":
+        return _build_nth_to_default_ir(
+            contract,
+            product_ir=product_ir,
             **common_kwargs,
         )
 
@@ -352,6 +399,145 @@ def _build_correlated_basket_monte_carlo_ir(
     )
 
 
+def _build_credit_default_swap_ir(
+    contract,
+    *,
+    product_ir,
+    route_id: str,
+    route_family: str,
+    product_instrument: str,
+    payoff_family: str,
+    required_input_ids: tuple[str, ...],
+    market_data_requirements: frozenset[str],
+    timeline_roles: frozenset[TimelineRole],
+    requested_outputs: tuple[str, ...],
+    reporting_currency: str,
+) -> CreditDefaultSwapIR | None:
+    """Build the typed CDS family IR for helper-backed analytical and MC routes."""
+    if not _is_credit_default_swap_contract(contract, product_ir):
+        return None
+
+    product = contract.product
+    control_style = _normalized_control_style(product.controller_protocol.controller_style)
+    if control_style != "identity":
+        raise ValueError(
+            "Credit-default-swap semantics must remain automatic and cannot declare a strategic controller."
+        )
+    _require_observables(
+        product,
+        required_types=("credit_curve", "cashflow_schedule"),
+        route_name="Credit-default-swap",
+    )
+    _require_required_inputs(
+        required_input_ids,
+        required=("discount_curve", "credit_curve"),
+        route_name="Credit-default-swap",
+    )
+
+    helper_symbol = (
+        "price_cds_monte_carlo"
+        if route_id == "credit_default_swap_monte_carlo"
+        else "price_cds_analytical"
+    )
+    pricing_mode = "monte_carlo" if route_id == "credit_default_swap_monte_carlo" else "analytical"
+
+    return CreditDefaultSwapIR(
+        route_id=route_id,
+        route_family=route_family,
+        product_instrument=product_instrument,
+        payoff_family=payoff_family,
+        required_input_ids=required_input_ids,
+        market_data_requirements=market_data_requirements,
+        timeline_roles=timeline_roles,
+        requested_outputs=requested_outputs,
+        reporting_currency=reporting_currency,
+        pricing_mode=pricing_mode,
+        helper_symbol=helper_symbol,
+        payment_dates=tuple(product.timeline.observation_dates or product.observation_schedule),
+        observable_ids=tuple(item.observable_id for item in product.observables),
+        observable_types=tuple(item.observable_type for item in product.observables),
+        state_field_names=tuple(item.field_name for item in product.state_fields),
+    )
+
+
+def _build_nth_to_default_ir(
+    contract,
+    *,
+    product_ir,
+    route_id: str,
+    route_family: str,
+    product_instrument: str,
+    payoff_family: str,
+    required_input_ids: tuple[str, ...],
+    market_data_requirements: frozenset[str],
+    timeline_roles: frozenset[TimelineRole],
+    requested_outputs: tuple[str, ...],
+    reporting_currency: str,
+) -> NthToDefaultIR | None:
+    """Build the typed nth-to-default family IR for helper-backed copula routes."""
+    if not _is_nth_to_default_contract(contract, product_ir):
+        return None
+
+    product = contract.product
+    control_style = _normalized_control_style(product.controller_protocol.controller_style)
+    if control_style != "identity":
+        raise ValueError(
+            "Nth-to-default semantics must remain automatic and cannot declare a strategic controller."
+        )
+    _require_observables(
+        product,
+        required_types=("credit_curve",),
+        route_name="Nth-to-default",
+    )
+    _require_required_inputs(
+        required_input_ids,
+        required=("discount_curve", "credit_curve"),
+        route_name="Nth-to-default",
+    )
+    _require_state_tags(
+        product,
+        required=("pathwise_only", "remaining_pool", "schedule_state"),
+        route_name="Nth-to-default",
+    )
+
+    reference_entities = tuple(product.constituents)
+    if len(reference_entities) < 2:
+        raise ValueError(
+            "Nth-to-default semantics require at least two reference entities."
+        )
+    trigger_rank = max(int(product.selection_count or 1), 1)
+    if trigger_rank > len(reference_entities):
+        raise ValueError(
+            "Nth-to-default trigger rank cannot exceed the reference-entity pool."
+        )
+
+    automatic_event_names = _automatic_event_names(product)
+    if not automatic_event_names:
+        raise ValueError(
+            "Nth-to-default semantics require typed event-machine transitions for default-order tracking."
+        )
+
+    return NthToDefaultIR(
+        route_id=route_id,
+        route_family=route_family,
+        product_instrument=product_instrument,
+        payoff_family=payoff_family,
+        required_input_ids=required_input_ids,
+        market_data_requirements=market_data_requirements,
+        timeline_roles=timeline_roles,
+        requested_outputs=requested_outputs,
+        reporting_currency=reporting_currency,
+        trigger_rank=trigger_rank,
+        reference_entities=reference_entities,
+        observation_dates=tuple(product.timeline.observation_dates or product.observation_schedule),
+        observable_ids=tuple(item.observable_id for item in product.observables),
+        observable_types=tuple(item.observable_type for item in product.observables),
+        state_field_names=tuple(item.field_name for item in product.state_fields),
+        state_tags=_state_tags(product),
+        automatic_event_names=automatic_event_names,
+    )
+
+
 def _is_vanilla_european_contract(contract, product_ir) -> bool:
     """Whether the semantic contract fits the tranche-1 vanilla family IR slice."""
     instrument = str(getattr(product_ir, "instrument", ""))
@@ -390,6 +576,34 @@ def _is_ranked_observation_basket_contract(contract, product_ir) -> bool:
         and product_instrument == "basket_path_payoff"
         and product_payoff_family == "basket_path_payoff"
         and "ranked_observation" in payoff_traits
+    )
+
+
+def _is_credit_default_swap_contract(contract, product_ir) -> bool:
+    """Whether the semantic contract fits the single-name CDS family IR slice."""
+    instrument = str(getattr(product_ir, "instrument", ""))
+    payoff_family = str(getattr(product_ir, "payoff_family", ""))
+    product_instrument = str(getattr(contract.product, "instrument_class", ""))
+    product_payoff_family = str(getattr(contract.product, "payoff_family", ""))
+    return (
+        instrument == "cds"
+        and payoff_family == "credit_default_swap"
+        and product_instrument == "cds"
+        and product_payoff_family == "credit_default_swap"
+    )
+
+
+def _is_nth_to_default_contract(contract, product_ir) -> bool:
+    """Whether the semantic contract fits the nth-to-default family IR slice."""
+    instrument = str(getattr(product_ir, "instrument", ""))
+    payoff_family = str(getattr(product_ir, "payoff_family", ""))
+    product_instrument = str(getattr(contract.product, "instrument_class", ""))
+    product_payoff_family = str(getattr(contract.product, "payoff_family", ""))
+    return (
+        instrument == "nth_to_default"
+        and payoff_family == "nth_to_default"
+        and product_instrument == "nth_to_default"
+        and product_payoff_family == "nth_to_default"
     )
 
 

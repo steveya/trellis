@@ -1,8 +1,8 @@
 category: monte_carlo
 title: Missing process argument in MonteCarloEngine
 severity: high
-status: candidate
-confidence: 0.5
+status: validated
+confidence: 0.6
 created: '2026-03-31T18:09:11.552634'
 version: ''
 source_trace: null

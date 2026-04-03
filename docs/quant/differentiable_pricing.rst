@@ -16,17 +16,25 @@ FX vanilla under Garman-Kohlhagen is the clearest example of the basis
 assembly engine in action: spot FX and domestic/foreign discount factors are
 bridged to a forward, the option is valued from Black76 asset-or-nothing and
 cash-or-nothing basis claims, and the terminal vanilla payoff is assembled with
-``terminal_vanilla_from_basis(...)``. Trellis still exposes the compatibility
-helpers, but the route itself is expressed in reusable analytical primitives so
-the decomposition is visible to tracing, code generation, and downstream
-consumers.
+``terminal_vanilla_from_basis(...)``. The checked helper-facing entrypoint for
+that route is now ``trellis.models.analytical.fx.garman_kohlhagen_price_raw(...)``,
+so the decomposition stays explicit without asking every adapter to rebuild the
+same payoff algebra inline.
 
 The reusable closed-form support surface now lives under
 ``trellis.models.analytical.support``. Raw analytical helpers such as
+``trellis.models.analytical.fx.garman_kohlhagen_price_raw``,
 ``trellis.models.analytical.quanto.price_quanto_option_raw``,
-``trellis.models.analytical.jamshidian.zcb_option_hw_raw``, and the barrier
-route kernels compose that support layer rather than re-implementing the same
-discounting, forward, and terminal-payoff glue in each route.
+``trellis.models.analytical.jamshidian.zcb_option_hw_raw``,
+``trellis.models.rate_style_swaption.price_swaption_black76_raw``, and the
+barrier route kernels compose that support layer rather than re-implementing
+the same discounting, forward, and terminal-payoff glue in each route.
+
+For quanto, the raw kernel is intentionally paired with a stricter runtime
+resolver boundary: ``resolve_quanto_inputs(...)`` now records per-input
+provenance for the underlier spot, FX spot, domestic curve, foreign curve,
+volatility lookups, and correlation, and it only accepts noncanonical foreign
+carry reuse when an explicit ``quanto_foreign_curve_policy`` bridge is present.
 
 The goal is not to make every numerical routine differentiable. It is to remove
 unnecessary bump/reprice loops, stabilize calibration, and keep the exact same
@@ -43,7 +51,9 @@ Where Autograd Helps
 - quanto adjustment and resolved quanto pricing inputs
 - the T09 barrier kernel pack for the down-and-out / down-and-in call route
 - raw resolved-input analytical helpers such as
+  ``trellis.models.analytical.fx.garman_kohlhagen_price_raw``,
   ``trellis.models.analytical.jamshidian.zcb_option_hw_raw``,
+  ``trellis.models.rate_style_swaption.price_swaption_black76_raw``,
   ``trellis.models.analytical.quanto.price_quanto_option_raw``, and
   ``trellis.models.analytical.barrier.down_and_out_call_raw`` /
   ``trellis.models.analytical.barrier.down_and_in_call_raw``
@@ -90,8 +100,10 @@ Implementation References
 
 .. autofunction:: trellis.models.black.black76_call
 .. autofunction:: trellis.models.black.garman_kohlhagen_call
+.. autofunction:: trellis.models.analytical.fx.garman_kohlhagen_price_raw
 .. autofunction:: trellis.models.analytical.terminal_vanilla_from_basis
 .. autofunction:: trellis.models.analytical.jamshidian.zcb_option_hw_raw
+.. autofunction:: trellis.models.rate_style_swaption.price_swaption_black76_raw
 .. autofunction:: trellis.models.analytical.quanto.price_quanto_option_raw
 .. autofunction:: trellis.models.analytical.barrier.down_and_out_call_raw
 .. autofunction:: trellis.models.analytical.barrier.down_and_in_call_raw

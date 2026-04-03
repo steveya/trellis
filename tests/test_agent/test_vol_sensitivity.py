@@ -30,7 +30,7 @@ class TestVolSensitivityInvariant:
         class VolInsensitive:
             @property
             def requirements(self):
-                return {"discount", "black_vol"}
+                return {"discount_curve", "black_vol_surface"}
 
             def evaluate(self, market_state):
                 # Ignores vol entirely — just discounts notional

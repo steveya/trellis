@@ -29,7 +29,7 @@ def _american_generation_plan():
         pricing_plan=PricingPlan(
             method="monte_carlo",
             method_modules=["trellis.models.monte_carlo.engine"],
-            required_market_data={"discount", "black_vol"},
+            required_market_data={"discount_curve", "black_vol_surface"},
             model_to_build="american_option",
             reasoning="test",
         ),

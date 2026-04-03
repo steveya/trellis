@@ -12,7 +12,7 @@ def test_builds_primitive_plan_for_american_put():
     pricing_plan = PricingPlan(
         method="monte_carlo",
         method_modules=["trellis.models.monte_carlo.engine"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="american_option",
         reasoning="test",
     )
@@ -148,7 +148,7 @@ def test_builds_primitive_plan_for_swaption():
     pricing_plan = PricingPlan(
         method="analytical",
         method_modules=["trellis.models.black"],
-        required_market_data={"discount", "forward_rate", "black_vol"},
+        required_market_data={"discount_curve", "forward_curve", "black_vol_surface"},
         model_to_build="swaption",
         reasoning="test",
     )
@@ -163,7 +163,11 @@ def test_builds_primitive_plan_for_swaption():
     assert plan.primitive_plan is not None
     assert plan.primitive_plan.route == "analytical_black76"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert {"black76_call", "black76_put", "generate_schedule", "year_fraction"} <= primitive_symbols
+    assert {
+        "resolve_swaption_black76_inputs",
+        "price_swaption_black76_raw",
+    } <= primitive_symbols
+    assert "black76_call" not in primitive_symbols
     assert plan.primitive_plan.blockers == ()
 
 
@@ -204,7 +208,7 @@ def test_builds_equity_analytical_plan_for_european_option():
     pricing_plan = PricingPlan(
         method="analytical",
         method_modules=["trellis.models.black"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="european_option",
         reasoning="test",
     )
@@ -252,11 +256,7 @@ def test_builds_fx_analytical_plan_for_fx_option_context():
     assert plan.primitive_plan.route == "analytical_garman_kohlhagen"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert {
-        "black76_asset_or_nothing_call",
-        "black76_asset_or_nothing_put",
-        "black76_cash_or_nothing_call",
-        "black76_cash_or_nothing_put",
-        "terminal_vanilla_from_basis",
+        "garman_kohlhagen_price_raw",
         "year_fraction",
     } <= primitive_symbols
     assert "map_fx_spot_and_curves_to_garman_kohlhagen_inputs" in plan.primitive_plan.adapters
@@ -403,7 +403,7 @@ def test_builds_exercise_lattice_plan_for_callable_bond():
     pricing_plan = PricingPlan(
         method="rate_tree",
         method_modules=["trellis.models.trees.lattice"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="callable_bond",
         reasoning="test",
     )
@@ -427,6 +427,37 @@ def test_builds_exercise_lattice_plan_for_callable_bond():
     assert plan.primitive_plan.blockers == ()
 
 
+def test_builds_exercise_lattice_plan_for_puttable_bond():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="rate_tree",
+        method_modules=["trellis.models.trees.lattice"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="puttable_bond",
+        reasoning="test",
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="puttable_bond",
+        inspected_modules=("trellis.models.trees.lattice",),
+        product_ir=decompose_to_ir(
+            "Puttable bond with semiannual coupon and put schedule",
+            instrument_type="puttable_bond",
+        ),
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "exercise_lattice"
+    assert plan.primitive_plan.engine_family == "lattice"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert primitive_symbols == {"price_callable_bond_tree"}
+    assert "trellis.models.callable_bond_tree" in plan.approved_modules
+    assert "tests/test_tasks/test_t05_puttable_bond.py" in plan.proposed_tests
+
+
 def test_builds_exercise_lattice_plan_for_bermudan_swaption():
     from trellis.agent.codegen_guardrails import build_generation_plan
     from trellis.agent.knowledge.decompose import decompose_to_ir
@@ -434,7 +465,7 @@ def test_builds_exercise_lattice_plan_for_bermudan_swaption():
     pricing_plan = PricingPlan(
         method="rate_tree",
         method_modules=["trellis.models.trees.lattice"],
-        required_market_data={"discount", "black_vol", "forward_rate"},
+        required_market_data={"discount_curve", "black_vol_surface", "forward_curve"},
         model_to_build="bermudan_swaption",
         reasoning="test",
     )
@@ -465,7 +496,7 @@ def test_builds_analytical_plan_for_bermudan_swaption_lower_bound():
     pricing_plan = PricingPlan(
         method="analytical",
         method_modules=["trellis.models.rate_style_swaption"],
-        required_market_data={"discount", "black_vol", "forward_rate"},
+        required_market_data={"discount_curve", "black_vol_surface", "forward_curve"},
         model_to_build="bermudan_swaption",
         reasoning="test",
     )
@@ -496,7 +527,7 @@ def test_unsupported_composite_primitive_plan_surfaces_blockers():
     pricing_plan = PricingPlan(
         method="monte_carlo",
         method_modules=["trellis.models.monte_carlo.engine"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build=None,
         reasoning="test",
     )
@@ -522,7 +553,7 @@ def test_render_generation_plan_includes_primitive_plan_section():
     pricing_plan = PricingPlan(
         method="monte_carlo",
         method_modules=["trellis.models.monte_carlo.engine"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="american_option",
         reasoning="test",
     )
@@ -535,7 +566,7 @@ def test_render_generation_plan_includes_primitive_plan_section():
     )
 
     text = render_generation_plan(plan)
-    assert "Primitive route" in text
+    assert "Backend binding" in text
     assert "exercise_monte_carlo" in text
     assert "Route score" in text
     assert "longstaff_schwartz" in text
@@ -555,7 +586,7 @@ def test_build_generation_plan_uses_deterministic_cache():
     pricing_plan = PricingPlan(
         method="monte_carlo",
         method_modules=["trellis.models.monte_carlo.engine"],
-        required_market_data={"discount", "black_vol"},
+        required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="american_option",
         reasoning="test",
     )

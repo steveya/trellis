@@ -47,7 +47,7 @@ def _plan(method: str = "analytical", instrument_type: str | None = "swaption"):
     pricing_plan = PricingPlan(
         method=method,
         method_modules=["trellis.models.black"] if method == "analytical" else [],
-        required_market_data={"discount"},
+        required_market_data={"discount_curve"},
         model_to_build=instrument_type,
         reasoning="test",
     )
@@ -87,14 +87,20 @@ def test_grade_generated_module_reports_import_correctness():
     from trellis.agent.evals import grade_generated_module
 
     source = """\
-from trellis.core.date_utils import generate_schedule, year_fraction
+from trellis.core.date_utils import build_payment_timeline, year_fraction
 from trellis.models.black import black76_call, black76_put
 
 
 def evaluate(settlement, expiry, start, end, freq, day_count):
-    schedule = generate_schedule(start, end, freq)
+    timeline = build_payment_timeline(
+        start,
+        end,
+        freq,
+        day_count=day_count,
+        time_origin=settlement,
+    )
     t = year_fraction(settlement, expiry, day_count)
-    if schedule:
+    if timeline:
         return black76_call(0.05, 0.04, 0.2, t)
     return black76_put(0.05, 0.04, 0.2, t)
     """
@@ -165,9 +171,24 @@ def test_grade_stress_task_preflight_keeps_fft_and_cos_distinct():
         load_stress_task_manifest()["E28"],
     )
 
+    assert report["task_contract_alignment"].passed
     assert report["market_capability_alignment"].passed
     assert report["comparison_target_inventory"].passed
     assert report["comparison_target_separation"].passed
+
+
+def test_grade_stress_task_preflight_flags_task_contract_drift():
+    from trellis.agent.evals import grade_stress_task_preflight, load_stress_task_manifest
+    from trellis.agent.task_runtime import load_tasks
+
+    task = next(task for task in load_tasks("E25", "E25", status=None) if task["id"] == "E25")
+    expectation = dict(load_stress_task_manifest()["E25"])
+    expectation["required_mock_capabilities"] = ["discount_curve", "fx_rates"]
+
+    report = grade_stress_task_preflight(task, expectation)
+
+    assert not report["task_contract_alignment"].passed
+    assert "required mock capabilities drift" in report["task_contract_alignment"].details[0]
 
 
 def test_grade_stress_task_result_flags_forbidden_market_data_failures():
@@ -188,6 +209,63 @@ def test_grade_stress_task_result_flags_forbidden_market_data_failures():
 
     assert not report["forbidden_failure_patterns"].passed
     assert not report["outcome_class_alignment"].passed
+    assert report["blocker_category_alignment"].passed
+
+
+def test_grade_stress_task_result_flags_compare_ready_blocked_failure():
+    from trellis.agent.evals import grade_stress_task_result, load_stress_task_manifest
+    from trellis.agent.task_runtime import load_tasks
+
+    task = next(task for task in load_tasks("E22", "E22", status=None) if task["id"] == "E22")
+    expectation = load_stress_task_manifest()["E22"]
+    report = grade_stress_task_result(
+        task,
+        expectation,
+        {
+            "task_id": "E22",
+            "success": False,
+            "cross_validation": {"status": "insufficient_results"},
+            "method_results": {
+                "black76_cap": {
+                    "success": False,
+                    "blocker_details": {"reason": "semantic_clarification_required"},
+                }
+            },
+        },
+    )
+
+    assert not report["outcome_class_alignment"].passed
+    assert not report["blocker_category_alignment"].passed
+    assert "compare-ready task did not succeed" in report["outcome_class_alignment"].details[0]
+
+
+def test_grade_stress_task_result_accepts_expected_honest_block_categories():
+    from trellis.agent.evals import grade_stress_task_result, load_stress_task_manifest
+    from trellis.agent.task_runtime import load_tasks
+
+    task = next(task for task in load_tasks("E26", "E26", status=None) if task["id"] == "E26")
+    expectation = load_stress_task_manifest()["E26"]
+    report = grade_stress_task_result(
+        task,
+        expectation,
+        {
+            "task_id": "E26",
+            "success": False,
+            "blocker_details": {
+                "blocker_report": {
+                    "blockers": [
+                        {
+                            "id": "missing_module:trellis.models.local_vol",
+                            "category": "implementation_gap",
+                        }
+                    ]
+                }
+            },
+        },
+    )
+
+    assert report["outcome_class_alignment"].passed
+    assert report["blocker_category_alignment"].passed
 
 
 def test_summarize_stress_tranche_reports_gate_failures_and_buckets():
@@ -202,7 +280,14 @@ def test_summarize_stress_tranche_reports_gate_failures_and_buckets():
     summary = summarize_stress_tranche(
         tasks,
         [
-            {"task_id": "E21", "success": True, "cross_validation": {"status": "passed"}},
+            {
+                "task_id": "E21",
+                "success": True,
+                "cross_validation": {
+                    "status": "passed",
+                    "reference_target": "black_scholes",
+                },
+            },
             {
                 "task_id": "E22",
                 "success": False,
@@ -218,6 +303,77 @@ def test_summarize_stress_tranche_reports_gate_failures_and_buckets():
     assert summary["by_task"]["E21"]["passed_gate"] is True
     assert summary["by_task"]["E22"]["passed_gate"] is False
     assert summary["by_task"]["E22"]["failure_bucket"] == "missing_market_data"
+    assert summary["preflight_summary"]["totals"]["passed"] == 2
+    assert summary["artifact_inventory"]["latest_run_records"] == 0
+    assert summary["follow_on_candidates"] == []
+
+
+def test_render_stress_tranche_report_surfaces_packets_and_follow_ons():
+    from trellis.agent.evals import render_stress_tranche_report
+
+    text = render_stress_tranche_report(
+        {
+            "status": "completed",
+            "model": "gpt-5.4-mini",
+            "validation": "standard",
+            "fresh_build": False,
+            "task_ids": ["E21", "E23"],
+            "raw_results_path": "/tmp/stress.json",
+            "report_json_path": "/tmp/stress_report.json",
+            "report_md_path": "/tmp/stress_report.md",
+            "preflight_summary": {
+                "totals": {"passed": 2, "failed": 0},
+                "failed_tasks": [],
+                "by_task": {},
+            },
+            "stress_summary": {
+                "totals": {
+                    "passed_gate": 1,
+                    "failed_gate": 1,
+                    "compare_ready": 1,
+                    "honest_block": 1,
+                },
+                "by_task": {
+                    "E23": {
+                        "title": "European equity call under local vol: PDE vs MC",
+                        "outcome_class": "honest_block",
+                        "passed_gate": False,
+                        "success": False,
+                        "failure_bucket": "blocked",
+                        "comparison_status": "insufficient_results",
+                        "observed_blocker_categories": ["missing_foundational_primitive"],
+                        "diagnosis_latest_dossier_path": "/tmp/task_runs/diagnostics/latest/E23.md",
+                        "diagnosis_latest_packet_path": "/tmp/task_runs/diagnostics/latest/E23.json",
+                        "live_checks": {
+                            "blocker_category_alignment": {
+                                "passed": False,
+                                "details": ["expected blocker categories were not surfaced in the result"],
+                            }
+                        },
+                        "follow_on": {
+                            "action": "create_follow_on",
+                            "repeat_count": 3,
+                            "signature": "E23::blocked::missing_foundational_primitive",
+                            "suggested_title": "Connector stress: E23",
+                        },
+                    }
+                },
+                "follow_on_candidates": [
+                    {
+                        "task_id": "E23",
+                        "action": "create_follow_on",
+                        "repeat_count": 3,
+                        "signature": "E23::blocked::missing_foundational_primitive",
+                    }
+                ],
+            },
+        }
+    )
+
+    assert "## Task View" in text
+    assert "/tmp/task_runs/diagnostics/latest/E23.md" in text
+    assert "## Follow-on Candidates" in text
+    assert "create_follow_on" in text
 
 
 def test_classify_task_result_buckets_market_data_blocked_and_comparison_failures():

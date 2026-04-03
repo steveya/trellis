@@ -70,3 +70,30 @@ def test_analytical_trace_round_trip_and_render(tmp_path):
     assert "Analytical Trace" in rendered
     assert "analytical_black76" in rendered
     assert "black76_call" in rendered
+
+
+def test_route_health_snapshot_reports_instruction_counts():
+    from trellis.agent.analytical_traces import build_analytical_trace_from_generation_plan, route_health_snapshot
+    from trellis.agent.codegen_guardrails import build_generation_plan
+
+    plan = build_generation_plan(
+        pricing_plan=_black76_pricing_plan(),
+        instrument_type="vanilla_option",
+        inspected_modules=("trellis.models.black",),
+        product_ir=None,
+    )
+
+    trace = build_analytical_trace_from_generation_plan(
+        plan,
+        trace_id="trace_black76",
+        task_id="T97",
+        issue_id="QUA-452",
+    )
+    snapshot = route_health_snapshot(trace)
+
+    assert snapshot["route_id"] == "analytical_black76"
+    assert snapshot["route_family"] == "analytical"
+    assert snapshot["effective_instruction_count"] >= 1
+    assert snapshot["hard_constraint_count"] == 0
+    assert snapshot["conflict_count"] == 0
+    assert "analytical_black76:schedule-builder" in snapshot["effective_instruction_ids"]

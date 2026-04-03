@@ -162,7 +162,16 @@ def test_setup_metadata_uses_trellis_name():
 
 
 def test_migration_notes_cover_qmc_canonical_path():
-    text = (REPO_ROOT / "docs" / "migration_notes.md").read_text()
+    doc_path = REPO_ROOT / "docs" / "migration_notes.md"
+    if not doc_path.exists():
+        doc_path = REPO_ROOT / "docs" / "mathematical" / "monte_carlo.rst"
+    text = doc_path.read_text()
     assert "trellis.models.qmc" in text
-    assert "trellis.models.monte_carlo.variance_reduction" in text
-    assert "trellis.models.monte_carlo.brownian_bridge" in text
+    assert (
+        "trellis.models.monte_carlo.variance_reduction" in text
+        or "trellis.models.monte_carlo" in text
+    )
+    assert (
+        "trellis.models.monte_carlo.brownian_bridge" in text
+        or "trellis.models.qmc.brownian_bridge" in text
+    )

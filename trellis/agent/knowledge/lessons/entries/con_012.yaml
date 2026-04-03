@@ -2,8 +2,8 @@ id: con_012
 title: Undefined measure symbol 'physical'
 severity: critical
 category: convention
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-03-25T11:44:56.388527'
 version: ''
 source_trace: null

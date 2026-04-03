@@ -3,7 +3,7 @@ title: Himalaya payoff must wrap GBM and MonteCarloEngine primitives
 severity: critical
 category: monte_carlo
 status: validated
-confidence: 0.6
+confidence: 0.7
 created: '2026-03-28T08:47:11.241325'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_084711_basket_option_monte_carlo.yaml

@@ -60,41 +60,35 @@ The current proving-ground task groups are:
 
 ## Immediate Top Priority
 
-Before more family-specific primitives, the next highest-priority tranche is:
+The current design work in this area is no longer best read as the old
+`C0/C1/C2` phase-plan sequence. The useful material now lives in the following
+design references:
 
-- `C0` AI contract synthesis for known product families
+- [design_semantic_product_synthesis.md](design_semantic_product_synthesis.md)
+- [design_quanto_runtime_contract.md](design_quanto_runtime_contract.md)
+- [design_ranked_observation_basket_semantics.md](design_ranked_observation_basket_semantics.md)
+- [design_generation_glue_surfaces.md](design_generation_glue_surfaces.md)
+- [design_analytical_support_substrate.md](design_analytical_support_substrate.md)
+- [design_connector_stress_regression_gate.md](design_connector_stress_regression_gate.md)
 
-This is the bridge from "agents generate payoff code" to "agents define the
-guardrailed contract layers that let the library grow safely."
+Current authoritative boundaries:
 
-The concrete handoff note is:
+- `quanto_option` remains a migrated semantic and compatibility path
+- the former Himalaya proving case now lives as ranked-observation basket
+  semantics rather than a `himalaya_option` runtime family
 
-- [phase_contract_synthesis_quanto_himalaya_handoff.md](phase_contract_synthesis_quanto_himalaya_handoff.md)
+Linear status snapshot as of 2026-04-02:
 
-Checked-in implementation plans for this tranche:
+- the current semantic and DSL direction is reflected by `QUA-284`, `QUA-329`,
+  `QUA-333`, `QUA-334`, `QUA-397`, and `QUA-409` through `QUA-439`, all
+  `Done`
+- `QUA-286` and `QUA-287` remain `Backlog`; they match the older family-
+  contract framing and should not be treated as the current authority
+- `QUA-289`, `QUA-291`, `QUA-292`, and `QUA-293` are `Done` and map to the
+  analytical-support follow-on
+- umbrella issue `QUA-277` remains `In Progress`
 
-- [phase_c0_contract_synthesis_implementation_plan.md](phase_c0_contract_synthesis_implementation_plan.md)
-- [phase_c0_quanto_contract_plan.md](phase_c0_quanto_contract_plan.md)
-- [phase_c0_himalaya_contract_plan.md](phase_c0_himalaya_contract_plan.md)
-- [phase_c0_glue_surface_sweep.md](phase_c0_glue_surface_sweep.md)
-- [phase_c1_analytical_support_plan.md](phase_c1_analytical_support_plan.md)
-- [phase_c2_family_name_free_semantic_synthesis_plan.md](phase_c2_family_name_free_semantic_synthesis_plan.md)
-
-Recommended execution order:
-
-- `C0.1` shared contract schema, validator, templates, and compiler
-- `C0.2` quanto family path tied to `T105`
-- `C0.3` future Himalaya runtime-request path for term-sheet requests
-
-Current checked-in family template:
-
-- `quanto`
-
-Reserved next family request case:
-
-- `Himalaya`
-
-Current checked-in progress:
+Historical tranche status kept for roadmap continuity:
 
 - `C0.1` shared family-contract substrate is implemented.
 - `C0.2` core quanto routing is implemented through task/runtime detection,

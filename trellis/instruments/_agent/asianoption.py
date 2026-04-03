@@ -44,7 +44,7 @@ class AsianOptionPayoff:
     @property
     def requirements(self) -> set[str]:
         """Declare that valuation needs discounting and Black volatility."""
-        return {"black_vol", "discount"}
+        return {"black_vol_surface", "discount_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
         """Price the generated Asian option from Monte Carlo path averages."""

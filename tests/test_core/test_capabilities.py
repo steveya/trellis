@@ -75,7 +75,7 @@ class TestAnalyzeGap:
         assert satisfied == set()
         assert missing == set()
 
-    def test_aliases_and_extended_market_data_are_known(self):
+    def test_legacy_aliases_are_not_treated_as_known_capabilities(self):
         satisfied, missing = analyze_gap({
             "discount",
             "forward_rate",
@@ -96,17 +96,24 @@ class TestAnalyzeGap:
         })
         assert satisfied == {
             "discount_curve",
-            "forward_curve",
             "black_vol_surface",
-            "credit_curve",
-            "fx_rates",
-            "discount_curve",
             "spot",
             "local_vol_surface",
             "jump_parameters",
             "model_parameters",
         }
-        assert missing == set()
+        assert missing == {
+            "discount",
+            "forward_rate",
+            "black_vol",
+            "credit",
+            "forecast_rate",
+            "fx",
+            "yield_curve",
+            "risk_free_curve",
+            "forward_rate_curve",
+            "volatility_surface",
+        }
 
 
 class TestCheckMarketData:
@@ -139,7 +146,7 @@ class TestCheckMarketData:
         errors = check_market_data({"discount_curve", "rate_tree"}, ms)
         assert errors == []
 
-    def test_aliases_resolve_against_runtime_capabilities(self):
+    def test_unknown_requirement_names_raise(self):
         ms = MarketState(
             as_of=SETTLE,
             settlement=SETTLE,
@@ -147,18 +154,18 @@ class TestCheckMarketData:
             vol_surface=FlatVol(0.20),
             forecast_curves={"USD-SOFR-3M": YieldCurve.flat(0.051)},
         )
-        errors = check_market_data(
-            {
-                "discount_curve",
-                "yield_curve",
-                "risk_free_curve",
-                "forward_rate_curve",
-                "volatility_surface",
-                "black_vol_surface",
-            },
-            ms,
-        )
-        assert errors == []
+        with pytest.raises(ValueError, match="Unknown market-data requirements"):
+            check_market_data(
+                {
+                    "discount_curve",
+                    "yield_curve",
+                    "risk_free_curve",
+                    "forward_rate_curve",
+                    "volatility_surface",
+                    "black_vol_surface",
+                },
+                ms,
+            )
 
     def test_market_state_exposes_valuation_date_alias(self):
         ms = MarketState(

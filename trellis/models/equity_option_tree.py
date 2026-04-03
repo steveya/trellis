@@ -6,20 +6,10 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
+import trellis.models.trees.algebra as lattice_algebra
+
 from trellis.core.date_utils import year_fraction
 from trellis.core.types import DayCountConvention
-from trellis.models.trees.algebra import (
-    BINOMIAL_1F_TOPOLOGY,
-    LOG_SPOT_MESH,
-    NO_CALIBRATION_TARGET,
-    LATTICE_MODEL_REGISTRY,
-    LatticeContractSpec,
-    build_lattice,
-    compile_lattice_recipe,
-    equity_tree,
-    price_on_lattice,
-    with_control,
-)
 
 
 class DiscountCurveLike(Protocol):
@@ -78,11 +68,11 @@ def build_vanilla_equity_lattice(
     model: str = "crr",
 ):
     """Build a one-factor equity lattice on the shared lattice substrate."""
-    return build_lattice(
-        BINOMIAL_1F_TOPOLOGY,
-        LOG_SPOT_MESH,
-        LATTICE_MODEL_REGISTRY[str(model).strip().lower()],
-        calibration_target=NO_CALIBRATION_TARGET(),
+    return lattice_algebra.build_lattice(
+        lattice_algebra.BINOMIAL_1F_TOPOLOGY,
+        lattice_algebra.LOG_SPOT_MESH,
+        lattice_algebra.LATTICE_MODEL_REGISTRY[str(model).strip().lower()],
+        calibration_target=lattice_algebra.NO_CALIBRATION_TARGET(),
         spot=spot,
         rate=rate,
         sigma=sigma,
@@ -96,17 +86,17 @@ def compile_vanilla_equity_contract_spec(
     strike: float,
     option_type: str = "call",
     exercise_style: str = "european",
-) -> LatticeContractSpec:
+) -> lattice_algebra.LatticeContractSpec:
     """Compile a vanilla equity option into the generalized lattice contract surface."""
-    recipe = equity_tree(
+    recipe = lattice_algebra.equity_tree(
         model_family="crr",
         strike=float(strike),
         option_type=str(option_type).strip().lower(),
     )
     normalized_exercise = str(exercise_style).strip().lower()
     if normalized_exercise in {"american", "bermudan"}:
-        recipe = with_control(recipe, normalized_exercise)
-    _, _, _, contract = compile_lattice_recipe(recipe)
+        recipe = lattice_algebra.with_control(recipe, normalized_exercise)
+    _, _, _, contract = lattice_algebra.compile_lattice_recipe(recipe)
     return contract
 
 
@@ -125,7 +115,7 @@ def price_vanilla_equity_option_on_lattice(
     if exercise_kind not in {"european", "american", "bermudan"}:
         raise ValueError(f"Unsupported exercise_style {exercise_style!r}")
     return float(
-        price_on_lattice(
+        lattice_algebra.price_on_lattice(
             lattice,
             compile_vanilla_equity_contract_spec(
                 strike=float(strike),

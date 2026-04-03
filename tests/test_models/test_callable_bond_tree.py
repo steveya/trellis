@@ -13,6 +13,7 @@ from trellis.models.callable_bond_tree import (
     compile_callable_bond_contract_spec,
     price_callable_bond_tree,
     price_callable_bond_on_lattice,
+    straight_bond_present_value,
 )
 from trellis.models.vol_surface import FlatVol
 
@@ -37,6 +38,18 @@ def _market_state(vol: float) -> MarketState:
         discount=YieldCurve.flat(0.05),
         vol_surface=FlatVol(vol),
     )
+
+
+class _PuttableSpec:
+    def __init__(self) -> None:
+        self.notional = 100.0
+        self.coupon = 0.05
+        self.start_date = date(2025, 1, 15)
+        self.end_date = date(2035, 1, 15)
+        self.put_dates = (date(2028, 1, 15), date(2030, 1, 15), date(2032, 1, 15))
+        self.put_price = 100.0
+        self.frequency = Frequency.SEMI_ANNUAL
+        self.day_count = DayCountConvention.ACT_365
 
 
 def test_price_callable_bond_tree_hull_white_has_negative_vega():
@@ -89,3 +102,17 @@ def test_compile_callable_bond_contract_spec_matches_helper_price():
         lattice,
         contract_spec=contract,
     )
+
+
+def test_price_callable_bond_tree_supports_puttable_specs_and_floors_straight_value():
+    market_state = _market_state(0.20)
+    spec = _PuttableSpec()
+
+    puttable_price = price_callable_bond_tree(market_state, spec, model="hull_white")
+    straight_price = straight_bond_present_value(
+        market_state,
+        spec,
+        settlement=market_state.settlement,
+    )
+
+    assert puttable_price >= straight_price

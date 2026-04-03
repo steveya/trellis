@@ -57,6 +57,61 @@ an import, do not use it.
 """
 
 
+def _ordered_unique_modules(modules) -> tuple[str, ...]:
+    """Preserve first-seen module order while removing blanks and duplicates."""
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for module in modules or ():
+        module_path = str(module or "").strip()
+        if not module_path or module_path in seen:
+            continue
+        seen.add(module_path)
+        ordered.append(module_path)
+    return tuple(ordered)
+
+
+def _route_bound_modules(generation_plan) -> tuple[str, ...]:
+    """Return exact route modules when the compiler resolved a primitive binding."""
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    if primitive_plan is None:
+        return ()
+    return _ordered_unique_modules(
+        getattr(primitive, "module", "")
+        for primitive in (getattr(primitive_plan, "primitives", ()) or ())
+        if not getattr(primitive, "excluded", False)
+    )
+
+
+def _render_prompt_module_requirements(pricing_plan=None, generation_plan=None) -> str:
+    """Render the module requirements block for builder prompts."""
+    route_modules = _route_bound_modules(generation_plan)
+    if route_modules:
+        modules_block = "\n".join(f"- `{module}`" for module in route_modules)
+        return (
+            "Route-bound modules to import and use:\n"
+            f"{modules_block}\n\n"
+            "You MUST import and use these route-bound modules in your implementation.\n"
+            "Do not import a generic parent package such as `from trellis.models import ...` "
+            "just to satisfy the method family.\n\n"
+        )
+
+    plan_modules = _ordered_unique_modules(getattr(pricing_plan, "method_modules", ()) or ())
+    modules_block = (
+        "\n".join(f"- `{module}`" for module in plan_modules)
+        if plan_modules
+        else "No special modules needed — use standard discounting."
+    )
+    return (
+        "Modules to import and use:\n"
+        f"{modules_block}\n\n"
+        + (
+            "You MUST import and use these modules in your implementation.\n\n"
+            if plan_modules
+            else "No special modules needed — use standard discounting.\n\n"
+        )
+    )
+
+
 # ---------------------------------------------------------------------------
 # Two-step structured code generation prompts
 # ---------------------------------------------------------------------------
@@ -85,6 +140,10 @@ This payoff requires these MarketState capabilities: {sorted(requirements)}
 - "bool" — boolean flag
 - "date" — from datetime import date
 - "str | None" — optional string
+- "float | None" — optional numeric value
+- "int | None" — optional integer value
+- "tuple[date, ...]" — ordered explicit schedule dates
+- "tuple[date, ...] | None" — optional ordered explicit schedule dates
 - "Frequency" — from trellis.core.types (ANNUAL, SEMI_ANNUAL, QUARTERLY, MONTHLY)
 - "DayCountConvention" — from trellis.core.types (ACT_360, ACT_365, THIRTY_360)
 
@@ -104,6 +163,7 @@ Follow these exact naming conventions:
 - is_payer (bool, True = pay fixed)
 - day_count (DayCountConvention)
 - frequency or swap_frequency (Frequency)
+- call_dates / put_dates / exercise_dates / observation_dates should use `tuple[date, ...]`, not comma-separated strings
 
 ## Output
 Return a JSON object with this exact structure:
@@ -162,19 +222,15 @@ def evaluate_prompt(
             from trellis.agent.knowledge.methods import normalize_method
             method_name = normalize_method(pricing_plan.method)
             selection_notes = _render_pricing_plan_selection_notes(pricing_plan)
-            modules_block = (
-                "\n".join(f"- `{m}`" for m in pricing_plan.method_modules)
-                if pricing_plan.method_modules
-                else "No special modules needed — use standard discounting."
-            )
             method_guidance = (
                 f"\n## Pricing Method (selected by the quant agent — you MUST use this)\n"
                 f"Method: **{method_name}**\n"
                 f"Reasoning: {pricing_plan.reasoning}\n"
                 f"{selection_notes}\n"
-                f"Modules to import and use:\n"
-                + modules_block
-                + "\n\nYou MUST import and use these modules in your implementation.\n\n"
+                + _render_prompt_module_requirements(
+                    pricing_plan=pricing_plan,
+                    generation_plan=generation_plan,
+                )
                 + method_guidance
             )
     elif pricing_plan:
@@ -184,7 +240,7 @@ def evaluate_prompt(
         shared_knowledge_text = ""
         try:
             from trellis.agent.knowledge import (
-                format_knowledge_for_prompt,
+                build_shared_knowledge_payload,
                 retrieve_for_task,
             )
 
@@ -192,7 +248,10 @@ def evaluate_prompt(
                 method=method_name,
                 instrument=pricing_plan.model_to_build,
             )
-            shared_knowledge_text = format_knowledge_for_prompt(shared_knowledge, compact=True)
+            shared_knowledge_text = build_shared_knowledge_payload(
+                shared_knowledge,
+                pricing_method=method_name,
+            )["builder_text_distilled"]
         except Exception:
             shared_knowledge_text = ""
 
@@ -201,10 +260,10 @@ def evaluate_prompt(
 Method: **{method_name}**
 Reasoning: {pricing_plan.reasoning}
 {selection_notes}
-Modules to import and use:
-{chr(10).join(f'- `{m}`' for m in pricing_plan.method_modules)}
-
-{"You MUST import and use these modules in your implementation." if pricing_plan.method_modules else "No special modules needed — use standard discounting."}
+{_render_prompt_module_requirements(
+    pricing_plan=pricing_plan,
+    generation_plan=generation_plan,
+).rstrip()}
         """
         if shared_knowledge_text:
             method_guidance += (
@@ -254,7 +313,8 @@ Write ONLY the body of the `evaluate()` method. The signature is already defined
 - For forward rates: `market_state.forecast_forward_curve(self._spec.rate_index)`
 - For vol: `market_state.vol_surface.black_vol(T, strike)`
 - For discount factors: `market_state.discount.discount(t)`
-- Schedule generation: `generate_schedule(start, end, freq)` returns `list[date]`; for event/accrual routes prefer `build_period_schedule(start, end, freq, day_count=..., time_origin=...)`
+- `market_state.fx_rates[pair]` returns an `FXRate` wrapper; extract `.spot` before scalar arithmetic or process seeding
+- Schedule generation: prefer `build_payment_timeline(...)`, `build_observation_timeline(...)`, or `build_period_schedule(...)` for accrual/event routes; use `generate_schedule(start, end, freq)` only for plain date lists with no period semantics
 - Year fractions: `year_fraction(date1, date2, day_count)`
 - Never use wall-clock dates such as `date.today()` or `datetime.now()` inside `evaluate()`; derive valuation time from `market_state` or shared resolver outputs.
 - Black76: `black76_call(F, K, sigma, T)`, `black76_put(F, K, sigma, T)` — undiscounted
@@ -273,12 +333,12 @@ Write ONLY the body of the `evaluate()` method. The signature is already defined
 - For FFT/COS pricing, characteristic functions must accept vector `u` and use array-safe numerics such as `numpy`, not scalar `math`/`cmath`.
 - Black76 basis: `black76_asset_or_nothing_call(F, K, sigma, T)`, `black76_asset_or_nothing_put(F, K, sigma, T)`, `black76_cash_or_nothing_call(F, K, sigma, T)`, `black76_cash_or_nothing_put(F, K, sigma, T)` — exact terminal basis claims.
 - For terminal vanilla payoffs, prefer exact basis assembly via `terminal_vanilla_from_basis(...)` from `trellis.models.analytical`.
-- For FX vanilla options, map spot FX and domestic/foreign discount factors to a forward, then assemble the terminal payoff from the same Black76 basis claims via `terminal_vanilla_from_basis(...)`; keep Garman-Kohlhagen as the model identity and compatibility surface, not the place where payoff algebra is duplicated.
+- For FX vanilla options, treat the route as Garman-Kohlhagen: map spot FX and domestic/foreign discount factors to `ResolvedGarmanKohlhagenInputs`, then prefer `garman_kohlhagen_price_raw(spec.option_type, resolved)` from `trellis.models.analytical.fx`; use explicit basis-claim assembly only when the request explicitly needs the decomposition.
 - For cash-or-nothing digital options, use the Black76 digital helpers directly; do not approximate them with vanilla call/put prices or divide by spot.
 - You MUST use only real, approved `trellis.*` imports from the structured generation plan and import registry
-- Treat the selected primitive route in the structured generation plan as the backbone of the implementation.
-- Reuse the listed required primitives directly and write only the thinnest adapter/orchestration layer around them.
-- Do not replace selected primitives with bespoke numerical kernels or alternative Trellis routes unless the plan explicitly permits it.
+- Treat the compiler-emitted lane obligations in the structured generation plan as the backbone of the implementation.
+- Reuse the listed exact backend bindings when present; otherwise build the smallest lane-consistent kernel that satisfies the construction steps.
+- Do not replace selected primitives with bespoke numerical kernels or alternative Trellis routes unless the plan explicitly permits a new lane implementation.
 - Do not add wildcard imports
 - If the approved modules do not contain what you need, reuse the closest existing implementation and keep the gap explicit instead of inventing a path
 
@@ -408,6 +468,9 @@ def _render_family_route_guidance(
             lines.extend([
                 "- For single-name CDS Monte Carlo routes, keep the premium leg and protection leg on an explicit payment/default schedule for one reference entity.",
                 "- Prefer `build_cds_schedule` and `price_cds_monte_carlo` from `trellis.models.credit_default_swap` so the adapter delegates to checked-in CDS helpers instead of open-coding the leg loop.",
+                "- If the spec exposes `n_paths`, pass `spec.n_paths` through to `price_cds_monte_carlo(...)` instead of hard-coding a smaller path count in the adapter.",
+                "- Do not hard-code `n_paths=50000` for a comparison-quality CDS route. Use `spec.n_paths` when available; otherwise pick a comparison-stable path count such as `250000`.",
+                "- Keep comparison-task randomness reproducible with `seed=42` unless the spec explicitly carries a different seed input.",
                 "- Do not import or instantiate `MonteCarloEngine` for this route. Here Monte Carlo means direct random default-time draws, not a generic diffusion-engine wrapper.",
                 "- CDS running spreads are often quoted in basis points in task text. Normalize them at the top of `evaluate()` with `spread = float(spec.spread)` and `if spread > 1.0: spread *= 1e-4`, for example `150 bp -> 0.015`.",
                 "- After that normalization step, use only the local `spread` variable in the premium leg. Do not read raw `spec.spread` again later in the body.",
@@ -467,6 +530,18 @@ def _render_family_route_guidance(
             "- Do not invent a local exercise convention or holder-maximizing objective for callable bonds. `issuer_call` must map to Bermudan schedule control with the issuer minimizing liability.",
         ])
 
+    if instrument_type == "puttable_bond" and method == "rate_tree":
+        lines.append("## Family Route Guidance")
+        lines.extend([
+            "- Prefer the checked-in embedded-bond helper surface in `trellis.models.callable_bond_tree`: `price_callable_bond_tree(market_state, spec, model=\"hull_white\"|\"bdt\")` supports puttable bond specs with `put_dates` and `put_price`.",
+            "- If you need the lower-level lattice path, keep `trellis.models.trees.control` as the canonical lattice-timeline facade: use `build_exercise_timeline_from_dates(...)`, `lattice_steps_from_timeline(...)`, and `resolve_lattice_exercise_policy(\"holder_put\", exercise_steps=...)`.",
+            "- Do not pass `exercise_fn=` into `resolve_lattice_exercise_policy(...)`. Holder-put max/min semantics are already encoded by `resolve_lattice_exercise_policy(\"holder_put\", ...)`.",
+            "- If you call `lattice_backward_induction(...)` directly, pass `exercise_policy=exercise_policy` and let the checked-in policy carry the holder-max objective. Do not open-code a second holder exercise function or drift to issuer-minimizing semantics.",
+            "- Keep rate-vol access explicit in the body with `market_state.vol_surface.black_vol(...)`, and read the short-rate seed from `market_state.discount.zero_rate(...)`.",
+            "- Build the put exercise schedule from explicit dates only. Use the typed `put_dates` tuple directly or normalize it through `build_exercise_timeline_from_dates(...)`; do not rebuild comma-separated strings.",
+            "- Treat the puttable route as a thin adapter over the shared embedded-bond helper or the checked-in lattice-control contract. Do not invent bespoke exercise conventions inline.",
+        ])
+
     if instrument_type == "bermudan_swaption" and method == "rate_tree":
         lines.append("## Family Route Guidance")
         lines.extend([
@@ -488,6 +563,15 @@ def _render_family_route_guidance(
             "- Do not rebuild co-terminal swap schedule loops, annuity extraction, or forward-swap-rate assembly inline when the checked-in helper already owns that route.",
         ])
 
+    if instrument_type == "swaption" and method == "analytical":
+        lines.append("## Family Route Guidance")
+        lines.extend([
+            "- For European rate-style swaptions, prefer `resolve_swaption_black76_inputs(market_state, self._spec)` and `price_swaption_black76_raw(resolved)` from `trellis.models.rate_style_swaption`.",
+            "- Treat `ResolvedSwaptionBlack76Inputs` as the resolved contract for expiry, annuity, forward swap rate, strike, volatility, notional, payer/receiver direction, and payment count.",
+            "- Keep the adapter thin: validate discount/vol access, resolve once, and delegate to the helper-backed raw kernel.",
+            "- Do not rebuild annuity, forward-swap-rate, expiry year-fraction, or payment-count loops inline when the checked-in helper already owns that binding.",
+        ])
+
     if instrument_type == "zcb_option":
         lines.append("## Family Route Guidance")
         if method == "rate_tree":
@@ -501,6 +585,8 @@ def _render_family_route_guidance(
         elif method == "analytical":
             lines.extend([
                 "- For Jamshidian analytical routes, prefer `price_zcb_option_jamshidian(market_state, self._spec, mean_reversion=0.1)` from `trellis.models.zcb_option`.",
+                "- If you need the resolved-input lane under that wrapper, use `resolve_zcb_option_hw_inputs(...)` from `trellis.models.zcb_option`, then pass `resolved.jamshidian` into `zcb_option_hw_raw(...)` from `trellis.models.analytical.jamshidian`.",
+                "- Treat `ResolvedJamshidianInputs` as the traced contract for expiry discounting, bond discounting, normalized strike, expiry, bond maturity, volatility, and mean reversion.",
                 "- Do not degrade this route to generic Black76 on a forward bond price when the task explicitly asks for Jamshidian / Hull-White.",
                 "- Normalize strike quotes to unit face before the closed-form kernel. Treat `63` on `100` face as `0.63`.",
                 "- Use `spec.expiry_date` and `spec.bond_maturity_date`; validate that the bond maturity is strictly after expiry.",
@@ -596,10 +682,14 @@ def _render_assembly_context(
         pricing_plan=pricing_plan,
     )
     lookup_lines = [
-        "## Primitive Lookup",
+        "## Backend Lookup (Secondary To Lane Obligations)",
         f"- Method family: `{lookup.method}`",
         f"- Route: `{lookup.route or 'unknown'}`",
     ]
+    if generation_plan is not None and getattr(generation_plan, "lane_family", ""):
+        lookup_lines.insert(1, f"- Lane family: `{generation_plan.lane_family}`")
+        if getattr(generation_plan, "lane_plan_kind", ""):
+            lookup_lines.insert(2, f"- Lane plan kind: `{generation_plan.lane_plan_kind}`")
     if lookup.engine_family:
         lookup_lines.append(f"- Engine family: `{lookup.engine_family}`")
     if lookup.primitives:

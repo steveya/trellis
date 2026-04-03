@@ -9,7 +9,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from trellis.agent.knowledge.schema import ProductDecomposition, RetrievalSpec
+from trellis.agent.knowledge.schema import (
+    ProductDecomposition,
+    RetrievalSpec,
+    SimilarProductMatch,
+)
 from trellis.agent.knowledge.store import KnowledgeStore, expand_features
 
 
@@ -38,6 +42,7 @@ class GapReport:
     missing: list[str] = field(default_factory=list)
     confidence: float = 0.0
     retrieved_lesson_ids: list[str] = field(default_factory=list)
+    similar_products: tuple[SimilarProductMatch, ...] = ()
 
 
 def gap_check(
@@ -142,6 +147,21 @@ def gap_check(
     # Compute confidence score
     report.confidence = _score(report)
 
+    if (
+        report.route_gap is not None
+        or report.confidence < 0.7
+        or not report.has_decomposition
+    ):
+        report.similar_products = tuple(
+            store.find_similar_products(
+                RetrievalSpec(
+                    method=decomposition.method,
+                    features=list(decomposition.features),
+                    instrument=decomposition.instrument,
+                )
+            )
+        )
+
     return report
 
 
@@ -239,16 +259,34 @@ def _score(report: GapReport) -> float:
 
 def format_gap_warnings(report: GapReport) -> str:
     """Format gap report as warnings for prompt injection."""
-    if not report.missing:
+    missing = list(getattr(report, "missing", []) or [])
+    similar_products = tuple(getattr(report, "similar_products", ()) or ())
+
+    if not missing and not similar_products:
         return ""
 
-    lines = [
-        f"## KNOWLEDGE GAPS (confidence: {report.confidence:.0%})\n",
-        "The following knowledge is MISSING for this task. "
-        "Proceed with extra caution in these areas:\n",
-    ]
-    for gap in report.missing:
-        lines.append(f"- **WARNING**: {gap}")
+    lines = [f"## KNOWLEDGE GAPS (confidence: {float(getattr(report, 'confidence', 0.0)):.0%})\n"]
+    if missing:
+        lines.append(
+            "The following knowledge is MISSING for this task. "
+            "Proceed with extra caution in these areas:\n",
+        )
+        for gap in missing:
+            lines.append(f"- **WARNING**: {gap}")
+
+    if similar_products:
+        lines.append("\n## Similar Products")
+        for match in similar_products[:3]:
+            shared = ", ".join(f"`{feature}`" for feature in match.shared_features[:4])
+            route_hint = (
+                " via "
+                + ", ".join(f"`{route}`" for route in match.promoted_routes[:2])
+                if match.promoted_routes
+                else ""
+            )
+            lines.append(
+                f"- `{match.instrument}` ({match.score:.0%} match): shared features {shared}{route_hint}"
+            )
 
     if not report.has_cookbook:
         lines.append(

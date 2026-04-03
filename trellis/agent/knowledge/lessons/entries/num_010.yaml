@@ -2,8 +2,8 @@ id: num_010
 title: Undefined COS pricer symbol
 severity: critical
 category: numerical
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-03-25T11:47:42.446478'
 version: ''
 source_trace: null
