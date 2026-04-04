@@ -3,10 +3,12 @@
 import tempfile
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from trellis.book import Book, BookResult
+from trellis.core.types import PricingResult
 from trellis.data.schema import MarketSnapshot
 from trellis.curves.yield_curve import YieldCurve
 from trellis.instruments.bond import Bond
@@ -158,3 +160,166 @@ class TestPipeline:
             .run()
         )
         assert results["base"].total_mv > 0
+
+    def test_run_projects_executor_results_without_calling_session_price(self):
+        from trellis.platform.results import ExecutionResult
+
+        pipeline = (
+            Pipeline()
+            .instruments(_book())
+            .market_data(curve=_curve())
+            .scenarios([
+                {"name": "base", "shift_bps": 0},
+                {"name": "up100", "shift_bps": 100},
+            ])
+        )
+        executor_results = iter(
+            (
+                BookResult(
+                    {
+                        "10Y": PricingResult(
+                            clean_price=100.0,
+                            dirty_price=100.0,
+                            accrued_interest=0.0,
+                            greeks={"dv01": 0.10},
+                            curve_sensitivities={},
+                        )
+                    },
+                    _book(),
+                ),
+                BookResult(
+                    {
+                        "10Y": PricingResult(
+                            clean_price=95.0,
+                            dirty_price=95.0,
+                            accrued_interest=0.0,
+                            greeks={"dv01": 0.09},
+                            curve_sensitivities={},
+                        )
+                    },
+                    _book(),
+                ),
+            )
+        )
+        calls = []
+
+        def fake_execute(compiled_request, execution_context, *, handlers=None):
+            calls.append(compiled_request.execution_plan.action)
+            result = next(executor_results)
+            return ExecutionResult(
+                run_id=f"run_pipeline_{len(calls)}",
+                request_id=compiled_request.request.request_id,
+                status="succeeded",
+                action=compiled_request.execution_plan.action,
+                output_mode=execution_context.default_output_mode,
+                result_payload={"result": result},
+                provenance={"run_mode": execution_context.run_mode.value},
+                policy_outcome={"allowed": True},
+            )
+
+        with patch("trellis.platform.executor.execute_compiled_request", side_effect=fake_execute):
+            with patch("trellis.session.Session.price", side_effect=AssertionError("pipeline should execute through the platform core")):
+                results = pipeline.run()
+
+        assert calls == ["price_book", "price_book"]
+        assert results["base"].total_mv == pytest.approx(100.0)
+        assert results["up100"].total_mv == pytest.approx(95.0)
+
+    def test_run_failure_records_platform_trace(self):
+        from trellis.platform.results import ExecutionResult
+
+        pipeline = (
+            Pipeline()
+            .instruments(_book())
+            .market_data(curve=_curve())
+        )
+        recorded = []
+
+        def fake_execute(compiled_request, execution_context, *, handlers=None):
+            return ExecutionResult(
+                run_id="run_pipeline_failed",
+                request_id=compiled_request.request.request_id,
+                status="failed",
+                action=compiled_request.execution_plan.action,
+                output_mode=execution_context.default_output_mode,
+                result_payload={
+                    "error_type": "ValueError",
+                    "error": "boom",
+                },
+                provenance={"run_mode": execution_context.run_mode.value},
+                policy_outcome={"allowed": True},
+            )
+
+        def fake_record(compiled_request, *, success, outcome, details=None, root=None):
+            recorded.append(
+                {
+                    "request_id": compiled_request.request.request_id,
+                    "success": success,
+                    "outcome": outcome,
+                    "details": details,
+                }
+            )
+
+        with patch("trellis.platform.executor.execute_compiled_request", side_effect=fake_execute):
+            with patch("trellis.agent.platform_traces.record_platform_trace", side_effect=fake_record):
+                with pytest.raises(ValueError, match="Governed pipeline execution failed."):
+                    pipeline.run()
+
+        assert recorded
+        assert recorded[-1]["success"] is False
+        assert recorded[-1]["outcome"] == "pipeline_failed"
+        assert recorded[-1]["details"]["run_id"] == "run_pipeline_failed"
+
+    def test_run_delegates_scenarios_to_session_shared_governed_runner(self):
+        pipeline = (
+            Pipeline()
+            .instruments(_book())
+            .market_data(curve=_curve())
+            .scenarios([
+                {"name": "base", "shift_bps": 0},
+                {"name": "up100", "shift_bps": 100},
+            ])
+        )
+        projected_results = iter(
+            (
+                BookResult(
+                    {
+                        "10Y": PricingResult(
+                            clean_price=100.0,
+                            dirty_price=100.0,
+                            accrued_interest=0.0,
+                            greeks={},
+                            curve_sensitivities={},
+                        )
+                    },
+                    _book(),
+                ),
+                BookResult(
+                    {
+                        "10Y": PricingResult(
+                            clean_price=95.0,
+                            dirty_price=95.0,
+                            accrued_interest=0.0,
+                            greeks={},
+                            curve_sensitivities={},
+                        )
+                    },
+                    _book(),
+                ),
+            )
+        )
+        calls = []
+
+        def fake_run(session, **kwargs):
+            calls.append(kwargs)
+            return next(projected_results)
+
+        with patch("trellis.pipeline.Session._run_governed_request", autospec=True, side_effect=fake_run):
+            with patch("trellis.pipeline.Session._compile_platform_request", side_effect=AssertionError("pipeline should delegate through Session._run_governed_request")):
+                results = pipeline.run()
+
+        assert results["base"].total_mv == pytest.approx(100.0)
+        assert results["up100"].total_mv == pytest.approx(95.0)
+        assert [call["request_type"] for call in calls] == ["price", "price"]
+        assert [call["success_outcome"] for call in calls] == ["pipeline_priced", "pipeline_priced"]
+        assert all(call["book"] == pipeline._book for call in calls)

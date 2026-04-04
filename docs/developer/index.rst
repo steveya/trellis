@@ -52,3 +52,4 @@ Planning Notes
 
    ../plans/unified-platform-migration
    ../plans/trellis-mcp-implementation
+   ../plans/exotic-desk-roadmap

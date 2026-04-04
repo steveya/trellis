@@ -1,8 +1,12 @@
-"""Tests for tranche-1 valuation-context normalization."""
+"""Tests for valuation-context normalization."""
 
 from __future__ import annotations
 
+from datetime import date
 from types import SimpleNamespace
+
+from trellis.curves.yield_curve import YieldCurve
+from trellis.data.schema import MarketSnapshot
 
 
 def test_build_valuation_context_normalizes_requested_outputs_and_snapshot_metadata():
@@ -43,3 +47,25 @@ def test_normalize_valuation_context_merges_legacy_requested_measures():
     assert normalized.market_source == "manual"
     assert normalized.reporting_policy.reporting_currency == "USD"
     assert normalized.requested_outputs == ("price", "delta")
+
+
+def test_build_valuation_context_uses_snapshot_id_when_available():
+    from trellis.agent.valuation_context import build_valuation_context
+
+    snapshot = MarketSnapshot(
+        as_of=date(2024, 11, 15),
+        source="mock",
+        discount_curves={"discount": YieldCurve.flat(0.045)},
+        default_discount_curve="discount",
+        provenance={
+            "source": "mock",
+            "source_kind": "synthetic_snapshot",
+            "provider_id": "market_data.mock",
+            "snapshot_id": "snapshot_mock_20241115",
+        },
+    )
+
+    context = build_valuation_context(market_snapshot=snapshot)
+
+    assert context.market_source == "mock"
+    assert context.market_snapshot_handle == "snapshot_mock_20241115"

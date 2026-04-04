@@ -1,0 +1,28 @@
+category: monte_carlo
+title: Clarify payoff shape first
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:12:55.431549'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260403_001257_cap_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Build aborts with semantic clarification required for missing contract field
+  semantic_product_shape before payoff generation.
+root_cause: The Monte Carlo pricer could not infer the exact instrument payoff contract
+  from the request, especially the product shape, schedule, and payoff assumptions.
+  Without those semantics, the generator cannot construct a valid caplet-stack payoff
+  in the DSL.
+fix: Require explicit contract fields for semantic_product_shape, reset/payment schedule,
+  accrual convention, and payoff definition before code generation. Add a clarification
+  gate that blocks MC payoff synthesis until the instrument-specific lesson and cookbook
+  template are available.
+validation: Discovered during build (attempt 0)
+id: mc_071

@@ -1,0 +1,25 @@
+category: market_data
+title: Validate Model Imports
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T23:30:43.936510'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The swaption validation referenced an invalid Trellis module path, so the
+  pricing setup could not resolve the required model.
+root_cause: This happens when the implementation is wired to a nonexistent or misspelled
+  dependency instead of a supported analytical model. The mental model failure is
+  assuming the framework will infer or tolerate bad module names.
+fix: Replace the invalid module reference with a valid Trellis analytical model module
+  and verify the import path matches the installed package.
+validation: Resolved during build of European payer swaption
+id: md_105

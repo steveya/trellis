@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from uuid import uuid4
 
 from trellis.book import Book, BookResult
 from trellis.curves.yield_curve import YieldCurve
@@ -27,6 +28,7 @@ class Pipeline:
 
     def __init__(self):
         """Initialize an empty pipeline with no instruments or scenarios yet."""
+        self._session_id: str = f"pipeline_{uuid4().hex[:12]}"
         self._book: Book | None = None
         self._curve: YieldCurve | None = None
         self._market_snapshot: MarketSnapshot | None = None
@@ -131,7 +133,41 @@ class Pipeline:
             metadata={
                 "scenario_count": len(self._scenarios or [{"name": "base"}]),
                 "data_source": self._data_source,
+                "greeks_mode": self._pricing_greeks_mode(),
+                "discount_curve_name": self._discount_curve_name,
+                "vol_surface_name": self._vol_surface_name,
             },
+        )
+
+    def to_execution_context(
+        self,
+        *,
+        run_mode=None,
+        provider_bindings=None,
+        policy_bundle_id: str | None = None,
+        allow_mock_data: bool | None = None,
+        require_provider_disclosure: bool | None = None,
+        default_output_mode: str = "result_only",
+        default_audit_mode: str = "summary",
+        requested_persistence: str = "ephemeral",
+        requested_snapshot_policy: str = "prefer_bound_snapshot",
+        metadata: dict | None = None,
+    ):
+        """Normalize the pipeline configuration into explicit governed runtime context."""
+        from trellis.platform.context import execution_context_from_pipeline
+
+        return execution_context_from_pipeline(
+            self,
+            run_mode=run_mode,
+            provider_bindings=provider_bindings,
+            policy_bundle_id=policy_bundle_id,
+            allow_mock_data=allow_mock_data,
+            require_provider_disclosure=require_provider_disclosure,
+            default_output_mode=default_output_mode,
+            default_audit_mode=default_audit_mode,
+            requested_persistence=requested_persistence,
+            requested_snapshot_policy=requested_snapshot_policy,
+            metadata=metadata,
         )
 
     def run(self) -> dict[str, BookResult]:
@@ -150,82 +186,36 @@ class Pipeline:
             as_of=self._as_of,
             data_source=self._data_source,
         )
-        compiled_request = None
-        terminal_recorded = False
-        try:
-            from trellis.agent.platform_requests import compile_platform_request
-            from trellis.agent.platform_traces import append_platform_trace_event
-
-            compiled_request = compile_platform_request(self.compile_request())
-            append_platform_trace_event(
-                compiled_request,
-                "request_compiled",
-                status="ok",
-                details={
-                    "action": compiled_request.execution_plan.action,
-                    "route_method": compiled_request.execution_plan.route_method,
-                },
-            )
-        except Exception:
-            compiled_request = None
-
-        # Determine greeks spec from measures
-        greeks_spec = self._resolve_greeks_spec()
-
         # Build scenario list
         scenario_list = self._scenarios or [{"name": "base"}]
 
-        try:
-            results: dict[str, BookResult] = {}
-            for spec in scenario_list:
-                name = spec.get("name", self._scenario_name(spec))
-                session = self._apply_scenario(base, spec)
-                br = session.price(self._book, greeks=greeks_spec)
-                results[name] = br
+        results: dict[str, BookResult] = {}
+        for spec in scenario_list:
+            name = spec.get("name", self._scenario_name(spec))
+            session = self._apply_scenario(base, spec)
+            projected = session._run_governed_request(
+                book=self._book,
+                request_type="price",
+                measures=self._measures or ["price"],
+                metadata={"greeks_mode": self._pricing_greeks_mode()},
+                success_outcome="pipeline_priced",
+                failure_outcome="pipeline_failed",
+                default_message="Governed pipeline execution failed.",
+                success_details={"scenario_name": name},
+            )
+            results[name] = projected
 
-                # Write outputs
-                for out in self._outputs:
-                    self._write_output(out, name, br)
+            # Write outputs
+            for out in self._outputs:
+                self._write_output(out, name, projected)
 
-            try:
-                if compiled_request is not None:
-                    from trellis.agent.platform_traces import record_platform_trace
+        return results
 
-                    record_platform_trace(
-                        compiled_request,
-                        success=True,
-                        outcome="pipeline_priced",
-                        details={"scenario_names": list(results.keys())},
-                    )
-                    terminal_recorded = True
-            except Exception:
-                pass
-
-            return results
-        except Exception as exc:
-            if compiled_request is not None and not terminal_recorded:
-                try:
-                    from trellis.agent.platform_traces import record_platform_trace
-
-                    record_platform_trace(
-                        compiled_request,
-                        success=False,
-                        outcome="pipeline_failed",
-                        details={
-                            "error_type": type(exc).__name__,
-                            "error": str(exc),
-                        },
-                    )
-                except Exception:
-                    pass
-            raise
-
-    def _resolve_greeks_spec(self):
-        """Translate requested measures into the greeks spec used by pricing."""
+    def _pricing_greeks_mode(self) -> str:
+        """Return the pricing greeks mode implied by configured pipeline measures."""
         if self._measures is None:
             return "all"
-        greek_names = [m for m in self._measures if m != "price"]
-        return greek_names if greek_names else None
+        return "none" if not [measure for measure in self._measures if measure != "price"] else "explicit"
 
     @staticmethod
     def _scenario_name(spec: dict) -> str:

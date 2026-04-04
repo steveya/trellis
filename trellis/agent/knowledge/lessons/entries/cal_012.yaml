@@ -1,0 +1,25 @@
+category: calibration
+title: Payer Swaption Sign Convention Misalignment
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T15:32:07.871102'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The payer swaption payoff or rate direction was incorrectly specified, causing
+  the analytical formula to return zero or negative value.
+root_cause: A payer swaption gives the right to pay fixed and receive floating, so
+  the intrinsic payoff is max(swap_rate - strike, 0); confusing this with a receiver
+  swaption flips the sign and produces nonsensical results.
+fix: Ensure the payoff is defined as annuity * max(forward_swap_rate - strike, 0)
+  and that the Black/Bachelier formula uses omega=+1 for payer and omega=-1 for receiver.
+validation: Resolved during build of European payer swaption
+id: cal_012

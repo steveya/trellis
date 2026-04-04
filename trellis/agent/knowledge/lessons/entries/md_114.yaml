@@ -1,0 +1,35 @@
+category: market_data
+title: Wrong field name passed to resolved inputs dataclass
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:38:17.007677'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - forward_rate
+  - vol_surface_dependence
+  - delta_space_interpolation
+  - greeks
+  - gamma
+  instrument: []
+  error_signature: null
+symptom: The constructor was called with 'domestic_df' but the dataclass field was
+  named differently (e.g., 'discount_factor' or 'df_domestic').
+root_cause: When mapping market state quantities to a resolved inputs dataclass, it
+  is easy to guess field names rather than checking the actual dataclass definition,
+  leading to a silent naming mismatch that only surfaces at runtime.
+fix: Always derive constructor calls directly from the dataclass field names using
+  dataclasses.fields() or by reading the class definition, never from assumptions
+  about naming conventions.
+validation: "Resolved during build of Build a pricer for: FX vanilla option: Garman-Kohlhagen\
+  \ vs MC\n\nConstruct methods: analytical, monte_carlo\nComparison targets: gk_analytical\
+  \ (analytical), mc_fx_option (monte_carlo)\nCross-validation harness:\n  internal\
+  \ targets: gk_analytical, mc_fx_option\n  external targets: quantlib, financepy\n\
+  New component: garman_kohlhagen_formula\n\nImplementation target: gk_analytical\n\
+  Preferred method family: analytical\n\nImplementation target: gk_analytical"
+id: md_114

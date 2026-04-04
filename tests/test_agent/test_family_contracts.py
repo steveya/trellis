@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+import pytest
+
 
 def test_quanto_contract_template_validates():
     from trellis.agent.family_contract_templates import get_family_contract_template
@@ -40,6 +42,7 @@ def test_quanto_contract_rejects_missing_correlation():
     assert any("underlier_fx_correlation" in error for error in report.errors)
 
 
+@pytest.mark.legacy_compat
 def test_quanto_contract_compiles_to_expected_blueprint():
     from trellis.agent.family_contract_compiler import compile_family_contract
     from trellis.agent.family_contract_templates import get_family_contract_template
@@ -67,4 +70,3 @@ def test_quanto_contract_compiles_to_expected_blueprint():
     assert "quanto_adjustment_analytical" in compiled.primitive_routes
     assert "correlated_gbm_monte_carlo" in compiled.primitive_routes
     assert compiled.spec_schema_hint == "QuantoOptionAnalyticalPayoff"
-

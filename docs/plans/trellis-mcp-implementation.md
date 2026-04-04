@@ -43,6 +43,60 @@ These are the non-negotiable product rules the implementation must enforce:
    model version, and engine version
 5. every governed output can be rendered in concise, structured, or audit mode
 
+## Linear Ticket Mirror
+
+These tables mirror the current Linear MCP tickets and their intended
+implementation order.
+
+Rules for coding agents:
+
+- Linear is the source of truth for ticket state.
+- This plan file is the repo-local mirror for subsequent agents.
+- Implement the earliest ticket in the ordered queue below whose status is not
+  `Done` and whose blockers are already satisfied.
+- Skip tickets whose table row is `Done`.
+- Workstream tickets are tracking rows. Do not pick them up before their
+  earlier child rows unless the row has no remaining child slices.
+- After a ticket is closed in Linear, update the corresponding row in this
+  table in the same implementation closeout.
+- Keep the first `price.trade` milestone narrow: approved-model-only governed
+  execution. Do not widen it to candidate generation in the MVP slice.
+
+Status mirror last synced: `2026-04-04`
+
+### MCP Workstream Tickets
+
+| Ticket | Status |
+| --- | --- |
+| `QUA-559` MCP server: governed orchestration surface for Trellis | Done |
+| `QUA-560` MCP foundation: state root, bootstrap config, and durable platform records | Done |
+| `QUA-561` MCP session/provider tools: governed context and binding control | Done |
+| `QUA-562` Semantic trade contract: typed parse and deterministic model matching services | Done |
+| `QUA-567` MCP pricing tool: governed price.trade, run status, and audit retrieval | Done |
+
+### Ordered MCP MVP Queue
+
+| Ticket | Status |
+| --- | --- |
+| `QUA-571` MCP foundation: state root, config loader, and service bootstrap | Done |
+| `QUA-572` Semantic trade.parse: typed contract normalization and missing-field reporting | Done |
+| `QUA-577` MCP session/provider tools: context, run mode, list, and configure endpoints | Done |
+| `QUA-578` Model match: deterministic approved-model selection and explain-match surface | Done |
+| `QUA-580` MCP run APIs: run.get and run.get_audit over canonical ledger | Done |
+| `QUA-581` MCP price.trade MVP: approved-model-only governed execution | Done |
+
+### Ordered MCP Follow-On Queue
+
+| Ticket | Status |
+| --- | --- |
+| `QUA-563` MCP lifecycle tools: candidate generation, validation, and approval controls | Done |
+| `QUA-564` MCP model store tools: persistence, version history, diff, and reproducibility bundles | Done |
+| `QUA-565` MCP resources: durable URIs for runs, models, snapshots, providers, and policies | Done |
+| `QUA-566` MCP prompts and host packaging: thin workflows over stable Trellis tool contracts | Done |
+| `QUA-587` MCP model lifecycle: require per-version validation evidence and preserve version audit artifacts | Done |
+| `QUA-588` MCP transport: local streamable HTTP server for Codex and Claude Code | Done |
+| `QUA-622` MCP local demo mode: sandbox mock prompt-flow bootstrap | Done |
+
 ## Preconditions
 
 Do not start this implementation until the migration plan has produced:
@@ -338,6 +392,11 @@ Minimum fields:
 - `supports_snapshots`
 - `supports_streaming`
 
+The current local-first substrate is implemented in `trellis.platform.providers`.
+`ProviderRegistry` now exposes stable governed market-data provider ids and
+`resolve_governed_market_snapshot()` enforces explicit provider binding with
+canonical `snapshot_id` provenance instead of silent mock fallback.
+
 ### PolicyBundleRecord
 
 Minimum fields:
@@ -351,6 +410,12 @@ Minimum fields:
 - `candidate_generation_policy`
 - `audit_retention_policy`
 - `lifecycle_rules`
+
+The current local-first substrate is implemented in `trellis.platform.policies`.
+`PolicyBundle` now has executable default sandbox, research, and production
+bundles, while `evaluate_execution_policy()` and `enforce_execution_policy()`
+return structured blocker outcomes that later executor and MCP surfaces can
+attach to run records and audit responses.
 
 ### ModelRecord
 
@@ -366,6 +431,12 @@ Minimum fields:
 - `updated_at`
 - `tags`
 
+The current local-first substrate is implemented in `trellis.platform.models`.
+`ModelRecord` now persists the typed match basis plus the latest overall,
+validated, and approved version pointers, and the same module now exposes the
+execution-time lifecycle gate that enforces approved-only production execution
+while keeping lower-mode exceptions explicit and policy-controlled.
+
 ### ModelVersionRecord
 
 Minimum fields:
@@ -380,6 +451,13 @@ Minimum fields:
 - `lineage`
 - `artifacts`
 - `created_at`
+
+The first governed implementation also persists:
+
+- explicit lifecycle-transition history
+- validation references separate from validation summaries
+- lineage back to audit/run/request artifacts without treating those artifacts
+  as approval state
 
 ### RunRecord
 
@@ -402,6 +480,22 @@ Minimum fields:
 - `artifact_paths`
 - `created_at`
 - `updated_at`
+
+The current local-first substrate is implemented in `trellis.platform.runs`.
+It persists canonical `RunRecord` files plus normalized `ArtifactReference`
+entries so later audit and MCP run APIs can resolve existing traces, model
+audits, and task-run artifacts from one run-ledger record instead of scraping
+those stores independently.
+
+The governed audit package that now sits on top of that ledger is
+`trellis.platform.audits.RunAuditBundle`. Its stable sections are:
+
+- `run`
+- `inputs`
+- `execution`
+- `outputs`
+- `diagnostics`
+- `artifacts`
 
 ## Service Architecture
 
@@ -509,6 +603,22 @@ Responsibilities:
 - enforce execution policy
 - project output into concise, structured, or audit modes
 
+The current executor substrate under this service is now:
+
+- `trellis.platform.executor.execute_compiled_request(...)`
+- `trellis.platform.results.ExecutionResult`
+
+The thin executor adapters currently cover:
+
+- direct instrument pricing
+- direct book pricing
+- direct Greeks
+- direct analytics
+- matched-existing-payoff pricing
+- candidate-generation ``build_then_price`` execution for legacy ask-style compatibility
+
+Comparison flows still remain pending at the executor layer.
+
 Important implementation rule:
 
 `trellis.price.trade` must stay thin. It is an orchestrator over explicit
@@ -534,7 +644,7 @@ Feeds MCP tools:
 Responsibilities:
 
 - return run summaries
-- build full audit packages
+- build full audit packages from `RunAuditBundle`
 - return run logs and events
 
 Feeds MCP tools:
@@ -971,6 +1081,9 @@ The provenance block must include:
 
 - a governed pricing run can be executed end to end through MCP
 - the run can be fetched later by id and reconstructed from the audit package
+
+That audit package is now concretely the canonical `RunAuditBundle`, not an
+ad hoc synthesis step at the MCP layer.
 
 ## Tranche 4: Candidate Generation, Validation, And Lifecycle Control
 

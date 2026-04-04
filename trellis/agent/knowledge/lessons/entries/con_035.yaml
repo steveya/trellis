@@ -1,0 +1,28 @@
+category: convention
+title: Clarify payoff and schedule
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:13:21.074063'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260403_001322_cap_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Build stops with decision=clarification and missing contract field semantic_product_shape
+  before any payoff code is generated.
+root_cause: The pricing request did not specify the exact product shape, schedule,
+  or payoff assumptions required to map a cap/floor into the DSL. Without those contract
+  fields, the analytical pricer cannot determine whether it is pricing caplets, a
+  caplet stack, or a cash-settled cap/floor variant.
+fix: Require the instrument-specific product shape, accrual/payment schedule, and
+  payoff conventions up front before extending the DSL. For cap/floor analytics, explicitly
+  provide caplet schedule, day count, floating coupon definition, and whether Black76
+  is applied to each caplet or to an aggregate cap.
+validation: Discovered during build (attempt 0)
+id: con_035

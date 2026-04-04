@@ -257,6 +257,125 @@ and the concrete artifact it should produce.
 - If the plan cannot be explained as a few reviewable phases, the issue is too
   large and should be split.
 
+## Ticket Implementation Workflow
+
+All coding agents working from Linear must follow this workflow for every
+implementation ticket unless the user explicitly overrides it.
+
+### Required execution order
+
+1. Review upstream context before coding.
+2. Announce the current ticket number and its plain-English goal on screen.
+3. Implement the current ticket with test-driven development.
+4. Update the relevant docs after the implementation and tests pass.
+5. Leave a handoff note in Linear describing what changed and any caveats.
+6. Mark the ticket `Done`, then update the mirrored ticket table in the
+   relevant plan doc.
+
+### Step 1: Review upstream context
+
+Before writing code, the implementer must:
+
+- read the current ticket body in full
+- read all hard-blocking upstream tickets and their completion notes
+- read recent comments on the parent issue when the parent is an active epic
+- inspect the referenced plan docs and the current code paths in scope
+- identify the exact files, tests, and docs that are likely to change
+
+If an upstream ticket is not done, do not start implementation unless the user
+explicitly approves working around the blocker.
+
+### Step 2: Announce the current ticket on screen
+
+Before coding, print the ticket number and a short plain-English explanation
+of what the ticket aims to do in the current terminal/chat session.
+
+Minimum expectation:
+
+- include the Linear ticket id, for example `QUA-568`
+- explain the ticket goal in one or two plain-English sentences
+- do this after reading upstream tickets and before writing code
+
+### Step 3: Implement with TDD
+
+For code-changing tickets:
+
+- start by adding or updating the tests that define the target behavior
+- run the tests and confirm they fail for the expected reason
+- implement the smallest coherent code change that makes the tests pass
+- rerun the targeted tests, then rerun the broader validation required by the
+  ticket or module owner rules
+
+Minimum expectation:
+
+- targeted tests for the changed behavior
+- broader regression coverage for the touched subsystem when practical
+
+For documentation-only or planning-only tickets, state explicitly in the ticket
+that TDD does not apply.
+
+### Step 4: Update docs after tests pass
+
+When behavior, APIs, runtime flow, governance, validation, or operator workflow
+changes, update the relevant official docs after the implementation is stable:
+
+- `docs/quant/` for mathematical and pricing-stack behavior
+- `docs/developer/` for runtime, agent, platform, observability, and
+  operational flow changes
+- `docs/user_guide/` for user-facing behavior and workflows
+
+Doc updates are part of completing the ticket, not optional follow-up work,
+unless the ticket is explicitly scoped as doc-free.
+
+### Step 5: Leave a Linear handoff note
+
+Before marking the ticket done, add a Linear comment with this information:
+
+- what was implemented
+- which tests were added or updated
+- which test commands were run and whether they passed
+- which docs were updated
+- any caveats, deferred work, follow-on risks, or compatibility notes that the
+  next implementer should know
+
+If the ticket is blocked or only partially complete, leave the same note but do
+not mark it done.
+
+### Step 6: Mark done and update the mirrored plan table
+
+Linear is the source of truth for ticket state. The plan tables in:
+
+- `docs/plans/unified-platform-migration.md`
+- `docs/plans/trellis-mcp-implementation.md`
+
+are a repo-local mirror for subsequent coding agents.
+
+Mark the ticket `Done` only when:
+
+- the code is landed
+- the agreed validation passed
+- the relevant docs are updated or the ticket explicitly records why no docs
+  changed
+- the Linear handoff note is written
+
+After the ticket is moved to `Done` in Linear:
+
+- update the corresponding plan-table row in the relevant plan doc
+- keep the table sorted in implementation order
+- skip tickets already marked `Done` when selecting the next ticket
+- do not mark the plan-table row `Done` before the Linear ticket is actually
+  closed
+
+### Recommended Linear closeout template
+
+Use this structure for the final implementation note:
+
+- Implemented:
+- Tests:
+- Docs:
+- Caveats:
+- Follow-ons:
+
 ## Current State (March 2026)
 
 - **131 priceable tasks** in `TASKS.yaml`

@@ -29,10 +29,8 @@ from trellis.agent.introspection import (
     search_package,
     search_tests,
 )
-from trellis.agent.prompts import system_prompt
 from trellis.agent.analytical_traces import emit_analytical_trace_from_generation_plan
 from trellis.agent.semantic_validation import validate_semantics
-from trellis.agent.tools import TOOLS
 from trellis.agent.builder import write_module, run_tests
 from trellis.agent.knowledge.import_registry import resolve_import_candidates
 from trellis.agent.knowledge.api_map import format_api_map_for_prompt
@@ -358,44 +356,6 @@ def _handle_tool_call(name: str, input_data: dict) -> str:
         }, indent=2, default=str)
 
     return f"Unknown tool: {name}"
-
-
-def execute(query: str, max_turns: int = 10, model: str = "claude-sonnet-4-6") -> dict:
-    """Run the full agent loop for a natural-language pricing request."""
-    from trellis.agent.config import get_anthropic_client
-
-    client = get_anthropic_client()
-    messages = [{"role": "user", "content": query}]
-    sys_prompt = system_prompt()
-
-    for turn in range(max_turns):
-        response = client.messages.create(
-            model=model,
-            max_tokens=4096,
-            system=sys_prompt,
-            tools=TOOLS,
-            messages=messages,
-        )
-
-        assistant_content = response.content
-        messages.append({"role": "assistant", "content": assistant_content})
-
-        tool_uses = [b for b in assistant_content if b.type == "tool_use"]
-        if not tool_uses:
-            text_parts = [b.text for b in assistant_content if hasattr(b, "text")]
-            return {"response": "\n".join(text_parts), "turns": turn + 1}
-
-        tool_results = []
-        for tool_use in tool_uses:
-            result = _handle_tool_call(tool_use.name, tool_use.input)
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": tool_use.id,
-                "content": result,
-            })
-        messages.append({"role": "user", "content": tool_results})
-
-    return {"response": "Max turns reached", "turns": max_turns}
 
 
 def _record_platform_event(

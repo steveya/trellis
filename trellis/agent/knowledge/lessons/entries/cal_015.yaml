@@ -1,0 +1,25 @@
+category: calibration
+title: Invalid Module Reference Breaks Analytical Swaption Setup
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T01:11:57.492434'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: A non-existent Trellis module `trellis.models.not_a_real_module` was referenced,
+  causing validation failures.
+root_cause: Developers sometimes copy or guess module paths without verifying they
+  exist in the framework, leading to broken imports that silently misconfigure the
+  pricing pipeline.
+fix: Replace `trellis.models.not_a_real_module` with the correct, existing Trellis
+  model module path confirmed from the framework documentation.
+validation: Resolved during build of European payer swaption
+id: cal_015

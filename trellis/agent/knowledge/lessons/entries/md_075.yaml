@@ -1,0 +1,26 @@
+category: market_data
+title: Model-data request failure
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T16:30:44.048094'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation failed because the analytical pricing run depended on an OpenAI
+  text request that timed out or failed immediately.
+root_cause: The mental model assumed the pricing workflow would always have a reliable
+  upstream data/service call, but external requests can fail independently of the
+  model logic. When that happens, the valuation never reaches the analytical method
+  and the test fails before any pricing can occur.
+fix: Add retry, fallback, and explicit error handling for the external request so
+  the pricing path can proceed or fail gracefully.
+validation: Resolved during build of European payer swaption
+id: md_075

@@ -2,7 +2,7 @@ category: finite_differences
 title: Undefined symbol in dataclass defaults
 severity: critical
 status: validated
-confidence: 0.6
+confidence: 0.7
 created: '2026-03-28T23:11:22.352553'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_231123_barrier_option_analytical.yaml

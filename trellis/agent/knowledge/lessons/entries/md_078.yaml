@@ -1,0 +1,26 @@
+category: market_data
+title: API Call Resilience
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T16:53:24.584798'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The valuation failed because the external text request errored out on the
+  first attempt.
+root_cause: 'This is a reliability rather than pricing issue: the model assumed the
+  supporting request would succeed once, but transient API/network failures can interrupt
+  the workflow before any analytical calculation runs. The mental model failure is
+  treating upstream service calls as guaranteed instead of fallible dependencies.'
+fix: Add retry handling with backoff and fallback behavior so transient request failures
+  do not abort the swaption valuation.
+validation: Resolved during build of European payer swaption
+id: md_078

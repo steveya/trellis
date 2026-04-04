@@ -1,0 +1,30 @@
+category: backward_induction
+title: Integer required for lattice step index, not float
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-02T22:06:52.047352'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260402_220653_puttable_bond_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - puttable
+  - fixed_coupons
+  - mean_reversion
+  - early_exercise
+  - backward_induction
+  instrument: []
+  error_signature: null
+symptom: Build fails with 'float object cannot be interpreted as an integer' during
+  payoff construction or backward induction on rate tree.
+root_cause: When computing the lattice step index from a time value (e.g. via `lattice_step_from_time`),
+  the result is returned as a float and passed directly to an array indexing operation
+  that requires an integer. This typically happens when `num_steps * t / T` is not
+  explicitly cast to int.
+fix: 'Wrap any lattice step index computation with `int(round(...))` before using
+  it as an array index. Ensure `lattice_step_from_time` return value is explicitly
+  cast: `step = int(round(lattice_step_from_time(...)))`.'
+validation: Discovered during build (attempt 3)
+id: bi_017

@@ -1,0 +1,27 @@
+category: market_data
+title: ForwardCurve missing .forward() method breaks analytical pricer
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:53:18.075847'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260403_005319_american_put_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - early_exercise
+  - puttable
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: 'AttributeError: ''ForwardCurve'' object has no attribute ''forward'' raised
+  during smoke test of market state access.'
+root_cause: The analytical pricing path called `.forward()` on a ForwardCurve object,
+  but the ForwardCurve primitive exposes a different method name (e.g., `.forward_rate()`
+  or index-based access), causing an AttributeError at runtime.
+fix: Replace `.forward(t)` calls with the correct ForwardCurve API (e.g., `.forward_rate(t)`
+  or `.spot_rate(t)`); inspect the ForwardCurve class interface before use and add
+  a thin adapter if needed.
+validation: Discovered during build (attempt 3)
+id: md_117

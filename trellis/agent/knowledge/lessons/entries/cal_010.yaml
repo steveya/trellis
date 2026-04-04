@@ -1,0 +1,25 @@
+category: calibration
+title: Payer Swaption Sign Convention and Strike Alignment
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T15:22:34.465190'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The payer swaption value was computed with incorrect sign convention or misaligned
+  strike relative to the forward swap rate.
+root_cause: A payer swaption gives the right to pay fixed, so its intrinsic value
+  is max(S-K,0) scaled by annuity; confusing payer/receiver or swapping strike and
+  forward inverts the payoff direction and yields nonsensical prices.
+fix: Ensure the Black/normal formula uses (forwardRate - strikeRate) for payer swaptions
+  and verify the annuity discount factor is applied consistently.
+validation: Resolved during build of European payer swaption
+id: cal_010

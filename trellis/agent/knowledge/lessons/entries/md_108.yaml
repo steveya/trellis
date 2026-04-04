@@ -1,0 +1,26 @@
+category: market_data
+title: Upstream API request failure
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T23:50:30.600267'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation failed because the pricing run depended on an external OpenAI
+  text request that errored before any model results were produced.
+root_cause: This is a mental model failure about assuming the full workflow is deterministic
+  and self-contained when it actually includes a fragile external dependency. If that
+  upstream service is unavailable or times out, the analytical pricing logic never
+  gets a chance to execute.
+fix: Add resilient retry and fallback handling for external requests, or remove the
+  dependency from the validation path so the analytical swaption pricer can run independently.
+validation: Resolved during build of European payer swaption
+id: md_108

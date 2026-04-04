@@ -1,0 +1,25 @@
+category: market_data
+title: Invalid Module Import
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T19:56:30.863671'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The swaption setup referenced a non-existent Trellis module, causing validation
+  to fail before the analytical pricing logic could run.
+root_cause: This happens when the input configuration points to an incorrect or outdated
+  module path, so the model loader cannot resolve the required component. The failure
+  is not in the pricing method itself but in the plumbing that wires the model to
+  its dependencies.
+fix: Replace the bad module path with a valid Trellis module import and re-run validation.
+validation: Resolved during build of European payer swaption
+id: md_079

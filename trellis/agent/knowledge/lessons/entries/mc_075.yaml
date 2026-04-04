@@ -1,0 +1,32 @@
+category: monte_carlo
+title: Wrong keyword argument passed to GBM constructor
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:49:30.860849'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - early_exercise
+  - puttable
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: The GBM process was instantiated with 'spot' as a keyword argument, but the
+  constructor expects a different parameter name (e.g., 'S0' or 's0').
+root_cause: The caller assumed a parameter name without checking the actual constructor
+  signature, a common mismatch when switching between libraries or custom classes
+  that use different naming conventions for the initial asset price.
+fix: Replace 'spot=...' with the correct parameter name used by the GBM constructor,
+  such as 'S0=...' or 's0=...'.
+validation: "Resolved during build of Build a pricer for: American put: tree vs PDE\
+  \ vs LSM at 3 vol levels\n\nConstruct methods: rate_tree, pde_solver, monte_carlo\n\
+  Comparison targets: crr_tree (rate_tree), psor_pde (pde_solver), lsm_mc (monte_carlo),\
+  \ high_step_tree_2000 (analytical)\nCross-validation harness:\n  internal targets:\
+  \ crr_tree, psor_pde, lsm_mc\n  analytical benchmark: high_step_tree_2000\n  external\
+  \ targets: quantlib\n\nImplementation target: lsm_mc\nPreferred method family: monte_carlo\n\
+  \nImplementation target: lsm_mc"
+id: mc_075

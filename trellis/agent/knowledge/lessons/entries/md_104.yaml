@@ -1,0 +1,32 @@
+category: market_data
+title: Match Market Interface
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T23:28:40.420931'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: The analytical CDS pricer used a different argument name than the market-facing
+  API, so the smoke test passed 'spread' into a function that did not accept it.
+root_cause: 'This is a mental model failure about interface consistency: the pricing
+  logic may be correct, but if the function signature does not mirror the expected
+  market data contract, integration fails before pricing can even run. It often happens
+  when refactoring internal methods without updating the external wrapper or tests.'
+fix: Align the analytical pricer signature with the expected market interface, or
+  add a thin adapter that maps 'spread' to the internal parameter name.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: analytical_cds\nPreferred method\
+  \ family: analytical\n\nImplementation target: analytical_cds"
+id: md_104

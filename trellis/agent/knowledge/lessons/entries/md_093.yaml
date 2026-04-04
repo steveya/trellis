@@ -1,0 +1,26 @@
+category: market_data
+title: Verify module names
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T22:02:17.970537'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The swaption validation referenced a non-existent Trellis module path, causing
+  the analytical method setup to fail.
+root_cause: This usually happens when the model configuration is copied or edited
+  with an invalid import/reference, so the engine cannot resolve the requested pricing
+  component. The mental model failure is assuming a module name is valid without checking
+  it exists in the library.
+fix: Replace the invalid module reference with a valid Trellis module name and revalidate
+  the setup.
+validation: Resolved during build of European payer swaption
+id: md_093

@@ -1,0 +1,25 @@
+category: calibration
+title: Always verify Trellis module names before referencing
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T15:43:04.331308'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: A non-existent Trellis module `trellis.models.not_a_real_module` was referenced
+  in the configuration, causing validation failures.
+root_cause: The developer assumed a module existed without checking the Trellis module
+  registry, likely copying or guessing a name rather than consulting authoritative
+  documentation.
+fix: Replace the invalid module path with a verified, existing Trellis module name
+  drawn directly from the official module registry or documentation.
+validation: Resolved during build of European payer swaption
+id: cal_013

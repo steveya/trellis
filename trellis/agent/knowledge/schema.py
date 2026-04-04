@@ -180,6 +180,7 @@ class LessonIndex:
     category: str
     applies_when: AppliesWhen
     status: LessonStatus = LessonStatus.PROMOTED
+    supersedes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

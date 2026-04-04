@@ -161,7 +161,7 @@ def build_audit_record(
             token_usage=dict(token_usage or {}),
             wall_clock_seconds=wall_clock_seconds,
         ),
-        approval_status="auto_approved" if all_passed else "pending_review",
+        approval_status="pending_review",
     )
 
 

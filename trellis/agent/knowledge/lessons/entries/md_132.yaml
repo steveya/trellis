@@ -1,0 +1,23 @@
+category: market_data
+title: Request resilience
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-04T01:58:12.165101'
+version: ''
+source_trace: null
+applies_when:
+  method: []
+  features: []
+  instrument: []
+  error_signature: null
+symptom: The pricing run failed because the text/request layer had no retry or fallback
+  handling and the swaption validation stopped immediately.
+root_cause: The mental model mistake is assuming external request dependencies will
+  always succeed on the first try. In practice, transient transport or service failures
+  are common, so pricing workflows need graceful recovery around data/request access.
+fix: Add retries, fallback paths, or cached inputs for external requests so transient
+  failures do not abort the valuation.
+validation: Resolved during build of European payer swaption
+supersedes: []
+id: md_132

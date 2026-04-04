@@ -37,7 +37,9 @@ The promotion pipeline in ``trellis.agent.knowledge.promotion`` is explicit:
 The lesson index is generated from the entry files after each mutation, so
 ``lessons/index.yaml`` should be treated as a cache artifact rather than a
 manual edit target. Retrieval also suppresses lessons that are marked as
-``supersedes`` by newer entries.
+``supersedes`` by newer entries. The generated hot-tier index now carries those
+``supersedes`` links as metadata so retrieval can prune stale lessons before it
+hydrates full lesson payloads from disk.
 
 Replay and reflection traces now persist a ``lesson_contract`` validation
 report plus a ``lesson_promotion_outcome`` field, so a task run can show the

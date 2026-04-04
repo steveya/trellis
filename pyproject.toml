@@ -31,7 +31,8 @@ data = ["requests>=2.28", "fredapi>=0.5"]
 bloomberg = ["blpapi>=3.19"]
 agent = ["anthropic>=0.40", "openai>=1.0"]
 pipeline = ["pandas>=1.5", "pyarrow>=10"]
-dev = ["pytest>=7.0", "pytest-cov"]
+mcp = ["mcp>=1.27"]
+dev = ["pytest>=7.0", "pytest-cov", "mcp>=1.27"]
 crossval = ["QuantLib>=1.30", "financepy>=1.0", "rateslib>=2.0"]
 tfq = ["tf-quant-finance", "tensorflow>=2.15", "tf-keras"]
 
@@ -45,5 +46,6 @@ include = ["trellis*"]
 testpaths = ["tests"]
 markers = [
     "integration: tests that require ANTHROPIC_API_KEY and make real LLM calls",
+    "legacy_compat: tests that cover deprecated or compatibility-only paths slated for retirement",
 ]
 addopts = "-m 'not integration'"

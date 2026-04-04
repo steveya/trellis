@@ -1,0 +1,27 @@
+category: market_data
+title: Payer Swaption Requires Correct Fixed/Float Leg Setup
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T08:42:06.236129'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The swaption failed because the fixed and floating leg parameters were misconfigured
+  or market data handles were not properly linked.
+root_cause: A payer swaption gives the right to pay fixed and receive floating, so
+  the engine requires a correctly oriented swap with consistent day count, calendar,
+  and rate term structure handles; mismatches cause the analytical engine to throw
+  a runtime error during pricing.
+fix: Ensure the swap is constructed as pay-fixed with matching conventions and that
+  both the discount curve and the forward curve are linked to the pricing engine before
+  calling NPV.
+validation: Resolved during build of European payer swaption
+id: md_063

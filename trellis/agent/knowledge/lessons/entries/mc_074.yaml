@@ -1,0 +1,28 @@
+category: monte_carlo
+title: Clarify payoff shape upfront
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:46:03.169764'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260403_004604_cap_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Build aborts with decision=clarification and missing contract fields: semantic_product_shape
+  before payoff generation.'
+root_cause: The MC pricer generator tried to build a payoff without an instrument-specific
+  semantic shape and schedule definition. The request was too vague for the DSL, so
+  the generator could not determine coupon structure, accrual handling, or caplet
+  stack layout.
+fix: Ask for the missing product shape, payment schedule, and payoff assumptions before
+  extending the DSL. For cap/floor MC routes, require explicit fields for caplet schedule,
+  floating coupon basis, fixing/payment dates, and whether the stack is priced as
+  individual caplets or an aggregate cap.
+validation: Discovered during build (attempt 0)
+id: mc_074

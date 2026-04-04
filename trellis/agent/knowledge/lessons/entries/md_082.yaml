@@ -1,0 +1,26 @@
+category: market_data
+title: API Request Robustness
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T20:04:30.738163'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The analytical valuation never completed because the OpenAI text request
+  failed on the first attempt.
+root_cause: 'The mental model failed to account for external API instability: even
+  correct pricing logic can be blocked by transient network, rate-limit, or service
+  errors. In validation workflows, a single request attempt is not enough when the
+  dependency is outside the model''s control.'
+fix: Add retry logic with backoff and fallback handling so transient request failures
+  do not stop the validation run.
+validation: Resolved during build of European payer swaption
+id: md_082

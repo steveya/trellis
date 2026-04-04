@@ -1,0 +1,26 @@
+category: market_data
+title: Retry External Request Failures
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:03:11.659437'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation failed because the analytical swaption run depended on an
+  external OpenAI text request that failed immediately.
+root_cause: This is a mental model failure of assuming the pricing/validation pipeline
+  is self-contained when it actually relies on a networked service that can fail independently
+  of the model logic. If that dependency is unavailable, the analytical method cannot
+  complete even if the core calculation is correct.
+fix: Add retry and fallback handling for external requests, or remove the dependency
+  from the validation path so the analytical calculation can run offline.
+validation: Resolved during build of European payer swaption
+id: md_109

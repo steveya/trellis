@@ -1,0 +1,25 @@
+category: market_data
+title: Missing Service Retry
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T19:56:42.380006'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The valuation failed because the OpenAI text request had no successful retry
+  path and the model could not return a result.
+root_cause: The mental model error is treating an external data/service call as if
+  it were reliable and always available. In practice, transient API failures can abort
+  the entire pricing workflow unless they are handled explicitly.
+fix: Add robust retry and fallback handling for external requests so transient API
+  failures do not stop the valuation.
+validation: Resolved during build of European payer swaption
+id: md_080

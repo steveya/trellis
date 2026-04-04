@@ -1,0 +1,32 @@
+category: backward_induction
+title: Puttable bond requires exercise_fn=max not min
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-02T21:47:08.068601'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260402_214709_puttable_bond_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - puttable
+  - fixed_coupons
+  - mean_reversion
+  - early_exercise
+  - backward_induction
+  - bermudan
+  instrument: []
+  error_signature: null
+symptom: Build fails with `lattice.exercise_objective_mismatch` stating expected `exercise_fn=max`
+  for `holder_put` products.
+root_cause: A puttable bond gives the holder the right to sell back (put) the bond
+  at par, so at each exercise node the holder chooses the maximum of the put price
+  and continuation value (exercise_fn=max). Using exercise_fn=min (the callable issuer
+  logic) inverts the exercise decision and violates the product semantics.
+fix: Set exercise_fn=max for puttable bonds so that at each put date the bond value
+  is max(put_price, continuation_value). When implementing callable_tree_symmetry,
+  derive puttable price via put-call symmetry rather than re-using the callable exercise
+  objective directly.
+validation: Discovered during build (attempt 3)
+id: bi_014

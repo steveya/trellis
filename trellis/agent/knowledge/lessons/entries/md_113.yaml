@@ -1,0 +1,26 @@
+category: market_data
+title: Request Failure Handling
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:23:16.362340'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The pricing run failed because the OpenAI text request errored out and the
+  validation path did not recover from the failed external call.
+root_cause: This is a mental model failure around assuming the upstream service will
+  always respond successfully. Analytical pricing still depends on reliable access
+  to supporting external requests, so a single transient API failure can stop the
+  whole validation.
+fix: Add retry, timeout, and fallback handling for text requests so transient upstream
+  failures do not abort validation.
+validation: Resolved during build of European payer swaption
+id: md_113

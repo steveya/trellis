@@ -3,7 +3,7 @@ title: Undefined tree constructor 'crr_tree'
 severity: critical
 category: numerical
 status: promoted
-confidence: 0.8
+confidence: 1.0
 created: '2026-03-25T11:28:00.085671'
 version: ''
 source_trace: null

@@ -1,0 +1,26 @@
+category: market_data
+title: API request failure
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T22:09:38.505115'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation failed because the OpenAI text request itself errored out
+  before the swaption could be priced.
+root_cause: 'This is a process failure, not a model failure: the pricing logic was
+  never reached because the external request dependency was unavailable or failed
+  immediately. The mental model mistake is treating the output issue as if it were
+  a valuation problem instead of a service/integration problem.'
+fix: Retry or harden the API call path, verify credentials/connectivity, and ensure
+  a fallback or graceful error handling before running validation.
+validation: Resolved during build of European payer swaption
+id: md_099

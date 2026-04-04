@@ -1,0 +1,26 @@
+category: market_data
+title: Correct Trellis module path
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T01:20:28.411339'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation failed because the swaption referenced a non-existent Trellis
+  model module path.
+root_cause: This happens when a model configuration points to an invalid or outdated
+  import path, so the framework cannot resolve the required pricing component. The
+  mental model failure is assuming any module-like string is acceptable instead of
+  matching an actual available Trellis module.
+fix: Replace the invalid module path with a valid Trellis model module that exists
+  in the environment.
+validation: Resolved during build of European payer swaption
+id: md_120

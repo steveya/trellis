@@ -1,0 +1,26 @@
+category: market_data
+title: Model I/O failure
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T20:43:43.317212'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation failed because the pricing request could not be executed,
+  so no analytical swaption result was produced.
+root_cause: The mental model mistake is assuming pricing logic is the only failure
+  point; in practice, upstream data/model service or API call errors can stop the
+  valuation before any finance-specific computation begins. Even a correct implementation
+  will fail if the request layer is unavailable or misconfigured.
+fix: Add robust retry, timeout, and fallback handling for the request path, and verify
+  the pricing service is reachable before running validation.
+validation: Resolved during build of European payer swaption
+id: md_085

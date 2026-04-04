@@ -1,0 +1,25 @@
+category: market_data
+title: Retry failed API call
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T21:38:19.402953'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation failed because the OpenAI text request hit a transient runtime
+  error and was not recovered with a retry path.
+root_cause: The mental model mistake is treating an external model/API call as if
+  it were deterministic and always available. In practice, network, rate-limit, or
+  service hiccups can interrupt an otherwise correct analytical pricing run.
+fix: Add robust retry and fallback handling for external requests so transient API
+  errors do not fail the validation outright.
+validation: Resolved during build of European payer swaption
+id: md_091

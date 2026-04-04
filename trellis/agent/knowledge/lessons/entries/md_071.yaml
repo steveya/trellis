@@ -1,0 +1,30 @@
+category: market_data
+title: Date field stored as string instead of date object
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-02T16:05:37.572945'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260402_160539_puttable_bond_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - puttable
+  - fixed_coupons
+  - mean_reversion
+  - early_exercise
+  - backward_induction
+  - discrete_coupons
+  instrument: []
+  error_signature: null
+symptom: 'Build fails with ''unsupported operand type(s) for -: str and datetime.date''
+  during smoke test when computing year fractions or date differences.'
+root_cause: A date-typed field (e.g. put_dates, start_date, end_date) was passed or
+  stored as a raw string rather than a datetime.date object, so arithmetic operations
+  between it and a date fail at runtime.
+fix: Parse all date inputs to datetime.date (e.g. via datetime.strptime or date.fromisoformat)
+  before storing them in the spec dataclass or passing them to schedule/year-fraction
+  utilities.
+validation: Discovered during build (attempt 3)
+id: md_071

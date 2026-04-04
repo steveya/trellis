@@ -1,0 +1,31 @@
+category: market_data
+title: Missing CDS curve inputs
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-03T10:30:59.875647'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260403_103101_swap_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - discounting
+  - coupons
+  - fixed_coupons
+  - floating_coupons
+  instrument: []
+  error_signature: null
+symptom: Build fails because the analytical CDS pricer cannot be constructed without
+  a credit_curve and discount_curve, and the generated code imports an unavailable
+  Trellis module.
+root_cause: The implementation tried to assemble a CDS payoff before a valid credit-curve-driven
+  pricing route and primitive adapter were available. It also lacked an explicit CDS
+  contract specification and relied on an unresolved module path.
+fix: Define a CDS-specific contract spec plus validated credit and discount curve
+  inputs, then route analytical pricing through the supported CDS pricing kernel.
+  Add a primitive adapter layer that maps the product spec to the actual Trellis CDS
+  schedule and pricing functions.
+validation: Discovered during build (attempt 3)
+id: md_121

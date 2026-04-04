@@ -80,6 +80,7 @@ class TestRunCriticTests:
         failures = run_critic_tests(concerns, payoff)
         assert failures == []  # warnings are not run
 
+    @pytest.mark.legacy_compat
     def test_legacy_test_code_still_supported(self):
         concerns = [
             CriticConcern(
@@ -97,6 +98,7 @@ class TestRunCriticTests:
         assert len(failures) == 1
         assert "price should exceed 200" in failures[0]
 
+    @pytest.mark.legacy_compat
     def test_broken_legacy_test_code_skipped(self):
         concerns = [
             CriticConcern(
@@ -192,6 +194,7 @@ def test_critique_can_disable_text_fallback(monkeypatch):
         )
 
 
+@pytest.mark.legacy_compat
 def test_critique_filters_legacy_test_code_payload_by_default(monkeypatch):
     from trellis.agent.critic import critique
 
@@ -215,6 +218,7 @@ def test_critique_filters_legacy_test_code_payload_by_default(monkeypatch):
     assert concerns == []
 
 
+@pytest.mark.legacy_compat
 def test_critique_can_opt_in_legacy_test_code_payload(monkeypatch):
     from trellis.agent.critic import critique
 
@@ -286,6 +290,7 @@ def test_available_critic_checks_can_be_restricted_by_validation_contract():
     ]
 
 
+@pytest.mark.legacy_compat
 def test_run_critic_tests_respects_allowed_check_ids():
     concerns = [
         CriticConcern(

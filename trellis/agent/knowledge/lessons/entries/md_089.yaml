@@ -1,0 +1,26 @@
+category: market_data
+title: Handle transient request failures
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T21:26:47.599820'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation run failed because the OpenAI text request was treated as
+  a single-shot dependency and no retry or fallback path was available.
+root_cause: 'This reflects a brittle orchestration mental model: external text/API
+  calls can fail independently of the pricing logic, so success depends on infrastructure
+  resilience as well as model correctness. Without retries or graceful degradation,
+  a transient service issue becomes a hard validation failure.'
+fix: Add retry logic with backoff and a fallback path so temporary OpenAI request
+  failures do not abort the validation run.
+validation: Resolved during build of European payer swaption
+id: md_089

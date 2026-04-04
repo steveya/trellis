@@ -3,7 +3,7 @@ title: Payoff must call lattice_backward_induction primitives
 severity: critical
 category: backward_induction
 status: promoted
-confidence: 0.8
+confidence: 1.0
 created: '2026-03-25T11:28:30.082940'
 version: ''
 source_trace: null

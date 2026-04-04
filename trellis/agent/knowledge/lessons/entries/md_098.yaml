@@ -1,0 +1,23 @@
+category: market_data
+title: Valid Module Import
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T22:09:25.502135'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The model referenced a nonexistent Trellis module in the validation setup.
+root_cause: This happens when the pricing configuration or test fixture points to
+  an invalid or outdated module path. The mental model failure is assuming the analytical
+  method can run even if its dependencies are not correctly registered or importable.
+fix: Replace the invalid module path with a supported Trellis module and rerun validation.
+validation: Resolved during build of European payer swaption
+id: md_098

@@ -1,0 +1,26 @@
+category: market_data
+title: Handle upstream request failures
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T08:24:24.216760'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The valuation failed because the pricing workflow depended on a text request
+  that errored out instead of completing the swaption calculation.
+root_cause: The mental model failure is treating the analytics call as if it were
+  guaranteed to return results, when in reality upstream service or request errors
+  can interrupt the pricing path before any financial logic runs. Even a correct analytical
+  method cannot produce a price if the required request is not successfully executed.
+fix: Add robust retry, fallback, or offline computation handling so the pricing engine
+  can proceed or fail gracefully when the upstream request fails.
+validation: Resolved during build of European payer swaption
+id: md_059

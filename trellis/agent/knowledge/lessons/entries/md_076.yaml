@@ -1,0 +1,26 @@
+category: market_data
+title: Missing Fallback for API Failure
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T16:32:39.289701'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The pricing run failed because it depended on a single OpenAI text request
+  that errored out with no retry or fallback path.
+root_cause: The mental model mistake is treating an external service call as guaranteed
+  instead of recognizing it as an unreliable dependency. When that dependency fails,
+  the analytical pricing workflow cannot proceed unless the code handles the failure
+  explicitly.
+fix: Add robust retry, timeout, and fallback handling for the external request so
+  the valuation can continue or fail gracefully with a clear diagnostic.
+validation: Resolved during build of European payer swaption
+id: md_076

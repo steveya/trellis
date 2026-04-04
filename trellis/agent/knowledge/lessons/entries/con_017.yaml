@@ -1,8 +1,8 @@
 category: convention
 title: Undefined identifiers in spec dataclass
 severity: high
-status: validated
-confidence: 0.7
+status: promoted
+confidence: 0.8
 created: '2026-03-28T23:02:15.957642'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_230216_american_put_analytical.yaml
@@ -28,3 +28,4 @@ fix: Use quoted strings or defined Enum/constants for method/config fields (or i
   early.
 validation: Discovered during build (attempt 3)
 id: con_017
+supersedes: []

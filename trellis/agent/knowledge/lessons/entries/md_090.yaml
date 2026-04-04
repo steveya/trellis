@@ -1,0 +1,25 @@
+category: market_data
+title: Check module imports
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T21:38:07.019565'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The swaption validation referenced a nonexistent Trellis module import.
+root_cause: This happens when the model configuration points to an invalid or outdated
+  module path, so the validation fails before any pricing logic runs. The mental model
+  failure is assuming a named dependency exists without verifying the actual available
+  package or registry entry.
+fix: Replace the bad module reference with a valid Trellis module path or add the
+  missing module implementation.
+validation: Resolved during build of European payer swaption
+id: md_090

@@ -1,0 +1,33 @@
+category: monte_carlo
+title: MC CDS payoff must wrap required credit primitives
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:58:52.730905'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: The generated Monte Carlo CDS implementation computed default probabilities
+  and pricing logic from scratch instead of delegating to the mandated primitives
+  interval_default_probability and price_cds_monte_carlo.
+root_cause: When an assembly route specifies required primitives, the implementation
+  must act as a thin adapter around them; writing independent logic bypasses the validated
+  primitive layer and violates the assembly contract.
+fix: Rebuild the payoff function as a thin adapter that calls trellis.models.credit_default_swap.interval_default_probability
+  and price_cds_monte_carlo directly, adding only the minimal glue code needed to
+  pass inputs and collect outputs.
+validation: "Resolved during build of Build a pricer for: CDS pricing: hazard rate\
+  \ MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
+  \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
+  \  internal targets: mc_cds, analytical_cds\n  external targets: quantlib, financepy\n\
+  New component: cds_pricing\n\nImplementation target: mc_cds\nPreferred method family:\
+  \ monte_carlo\n\nImplementation target: mc_cds"
+id: mc_077

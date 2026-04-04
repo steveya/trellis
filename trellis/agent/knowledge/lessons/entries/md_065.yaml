@@ -1,0 +1,26 @@
+category: market_data
+title: API request failed
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T08:47:08.026958'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The pricing run failed because the OpenAI text request could not complete,
+  so no analytical valuation result was produced.
+root_cause: 'This is a tooling and data-access failure, not a model issue: the valuation
+  pipeline depends on an external request succeeding before it can proceed. The mental
+  model mistake is treating a transient service failure as if the pricing logic itself
+  were invalid.'
+fix: Retry the request with proper fallback handling and only validate the swaption
+  result after the external call returns successfully.
+validation: Resolved during build of European payer swaption
+id: md_065

@@ -1,0 +1,32 @@
+category: backward_induction
+title: build_exercise_timeline_from_dates not exported by trellis.models.trees.control
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-02T22:01:32.680769'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260402_220134_puttable_bond_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - puttable
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  - early_exercise
+  - bermudan
+  - backward_induction
+  instrument: []
+  error_signature: null
+symptom: ImportError or AttributeError on `build_exercise_timeline_from_dates` when
+  importing from `trellis.models.trees.control`.
+root_cause: '`build_exercise_timeline_from_dates` does not exist in `trellis.models.trees.control`;
+  the function is either named differently or located in a different module, causing
+  all import attempts to fail.'
+fix: Do not import `build_exercise_timeline_from_dates` from `trellis.models.trees.control`.
+  Instead, construct the exercise timeline manually by mapping put/call dates to lattice
+  step indices using `lattice_step_from_time` or equivalent utility, and pass the
+  resulting step-indexed schedule directly to `resolve_lattice_exercise_policy`.
+validation: Discovered during build (attempt 3)
+id: bi_016

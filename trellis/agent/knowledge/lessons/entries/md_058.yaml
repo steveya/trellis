@@ -1,0 +1,26 @@
+category: market_data
+title: Invalid module reference
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T08:24:11.789593'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation failed because the swaption setup referenced a non-existent
+  Trellis module path.
+root_cause: This usually happens when a model configuration points to a typo, stale
+  import, or copy-pasted placeholder instead of a real library module. The mental
+  model failure is assuming the referenced component exists and is loadable without
+  verifying the exact module name.
+fix: Replace the invalid module reference with a valid Trellis module path and re-run
+  validation.
+validation: Resolved during build of European payer swaption
+id: md_058

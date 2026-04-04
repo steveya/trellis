@@ -1,0 +1,33 @@
+category: backward_induction
+title: Puttable Bond Exercise Value Uses Wrong Comparison Direction
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T22:46:45.232648'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - puttable
+  - fixed_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: The puttable bond used min() instead of max() for the exercise function,
+  causing the holder's right to sell at par to be ignored when bond value falls below
+  par.
+root_cause: A puttable bond gives the holder the right to sell back at par, so the
+  holder maximizes value by choosing max(continuation, put_price); confusing put exercise
+  logic with callable bond (issuer calls, so min) inverts the optimization direction.
+fix: Apply exercise_fn=max(continuation_value, put_strike) at each node during backward
+  induction so the bondholder exercises the put whenever continuation value falls
+  below the put price.
+validation: "Resolved during build of Build a pricer for: Puttable bond: exercise_fn=max\
+  \ and puttable-callable symmetry\n\nConstruct methods: rate_tree\nComparison targets:\
+  \ puttable_tree (rate_tree), callable_tree_symmetry (rate_tree)\nCross-validation\
+  \ harness:\n  internal targets: puttable_tree, callable_tree_symmetry\n  external\
+  \ targets: quantlib, financepy\n\nImplementation target: puttable_tree\nPreferred\
+  \ method family: rate_tree\n\nImplementation target: puttable_tree"
+id: bi_018

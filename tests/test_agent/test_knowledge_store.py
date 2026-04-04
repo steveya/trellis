@@ -116,6 +116,144 @@ class TestKnowledgeStore:
         categories = {l.category for l in lessons}
         assert "backward_induction" in categories or "calibration" in categories
 
+    def test_query_lessons_uses_indexed_supersedes_before_hydration(self, monkeypatch):
+        from trellis.agent.knowledge.schema import (
+            AppliesWhen,
+            Lesson,
+            LessonIndex,
+            LessonStatus,
+            RetrievalSpec,
+            Severity,
+        )
+        from trellis.agent.knowledge.store import KnowledgeStore
+
+        store = KnowledgeStore()
+        store._lesson_index = [
+            LessonIndex(
+                id="lesson_old",
+                title="Old lesson",
+                severity=Severity.MEDIUM,
+                category="testing",
+                applies_when=AppliesWhen(
+                    method=("rate_tree",),
+                    features=("callable",),
+                ),
+                status=LessonStatus.PROMOTED,
+            ),
+            LessonIndex(
+                id="lesson_new",
+                title="New lesson",
+                severity=Severity.HIGH,
+                category="testing",
+                applies_when=AppliesWhen(
+                    method=("rate_tree",),
+                    features=("callable",),
+                ),
+                status=LessonStatus.PROMOTED,
+                supersedes=("lesson_old",),
+            ),
+        ]
+
+        load_calls: list[str] = []
+
+        def fake_load(lesson_id: str) -> Lesson:
+            load_calls.append(lesson_id)
+            return Lesson(
+                id=lesson_id,
+                title=lesson_id,
+                severity=Severity.HIGH,
+                category="testing",
+                applies_when=AppliesWhen(
+                    method=("rate_tree",),
+                    features=("callable",),
+                ),
+                symptom="symptom",
+                root_cause="root_cause",
+                fix="fix",
+                validation="validation",
+            )
+
+        monkeypatch.setattr(store, "_load_lesson", fake_load)
+
+        lessons = store._query_lessons(
+            ["callable"],
+            RetrievalSpec(
+                method="rate_tree",
+                features=["callable"],
+                instrument="callable_bond",
+                max_lessons=1,
+            ),
+            1,
+        )
+
+        assert [lesson.id for lesson in lessons] == ["lesson_new"]
+        assert load_calls == ["lesson_new"]
+
+    def test_query_lessons_hydrates_only_ranked_window(self, monkeypatch):
+        from trellis.agent.knowledge.schema import (
+            AppliesWhen,
+            Lesson,
+            LessonIndex,
+            LessonStatus,
+            RetrievalSpec,
+            Severity,
+        )
+        from trellis.agent.knowledge.store import KnowledgeStore
+
+        store = KnowledgeStore()
+        store._lesson_index = [
+            LessonIndex(
+                id=f"lesson_{index}",
+                title=f"Lesson {index}",
+                severity=Severity.MEDIUM,
+                category="testing",
+                applies_when=AppliesWhen(
+                    method=("analytical",),
+                    features=("vol_surface_dependence",)
+                    if index < 3
+                    else ("irrelevant",),
+                ),
+                status=LessonStatus.PROMOTED,
+            )
+            for index in range(8)
+        ]
+
+        load_calls: list[str] = []
+
+        def fake_load(lesson_id: str) -> Lesson:
+            load_calls.append(lesson_id)
+            return Lesson(
+                id=lesson_id,
+                title=lesson_id,
+                severity=Severity.MEDIUM,
+                category="testing",
+                applies_when=AppliesWhen(
+                    method=("analytical",),
+                    features=("vol_surface_dependence",),
+                ),
+                symptom="symptom",
+                root_cause="root_cause",
+                fix="fix",
+                validation="validation",
+            )
+
+        monkeypatch.setattr(store, "_load_lesson", fake_load)
+
+        lessons = store._query_lessons(
+            ["vol_surface_dependence"],
+            RetrievalSpec(
+                method="analytical",
+                features=["vol_surface_dependence"],
+                instrument="cap",
+                max_lessons=2,
+            ),
+            2,
+        )
+
+        assert [lesson.id for lesson in lessons] == ["lesson_0", "lesson_1"]
+        assert load_calls == ["lesson_0", "lesson_1"]
+        assert len(load_calls) < len(store._lesson_index)
+
     def test_retrieve_cookbook(self):
         from trellis.agent.knowledge import retrieve_for_task
         k = retrieve_for_task("rate_tree", features=["callable"])
@@ -983,6 +1121,29 @@ class TestPromotion:
         assert persisted["entries"][0]["title"] == "Earlier lesson"
         assert persisted["entries"][0]["applies_when"]["features"] == ["alpha"]
 
+    def test_rebuild_index_persists_supersedes(self):
+        import trellis.agent.knowledge.promotion as promotion_module
+
+        self._write_lesson_entry(
+            "md_001",
+            title="Superseding lesson",
+            status="promoted",
+            category="market_data",
+            supersedes=["md_000"],
+            applies_when={
+                "method": ["analytical"],
+                "features": ["floating_coupons", "vol_surface_dependence"],
+                "instrument": ["swaption"],
+                "error_signature": None,
+            },
+        )
+
+        index = promotion_module.rebuild_index()
+        persisted = yaml.safe_load(promotion_module._INDEX_PATH.read_text())
+
+        assert index["entries"][0]["supersedes"] == ["md_000"]
+        assert persisted["entries"][0]["supersedes"] == ["md_000"]
+
     def test_rebuild_index_skips_corrupt_files(self):
         import trellis.agent.knowledge.promotion as promotion_module
 
@@ -1457,3 +1618,40 @@ class TestAnalyticalSolutionContracts:
         assert "assumption" in prompt_text.lower() or "Assumptions" in prompt_text, (
             "Builder prompt should include assumption text for analytical contracts"
         )
+
+    def test_market_data_candidate_swaption_cluster_is_deduplicated(self):
+        root = Path(__file__).resolve().parents[2]
+        experience = yaml.safe_load((root / "trellis" / "agent" / "experience.yaml").read_text())
+        candidate_index = yaml.safe_load(
+            (root / "trellis" / "agent" / "knowledge" / "lessons" / "index.yaml").read_text()
+        )["entries"]
+
+        experience_titles = {
+            entry["title"]
+            for entry in experience
+            if entry.get("category") == "market_data"
+            and entry.get("title") in {
+                "Module reference typo",
+                "Transient API failure",
+                "Use valid model modules",
+                "External API fallback",
+                "Request failure fallback",
+                "Handle request failures robustly",
+                "Validate model import paths",
+                "API Request Failure",
+                "Invalid model reference",
+            }
+        }
+        index_titles = {
+            entry["title"]
+            for entry in candidate_index
+            if entry.get("status") == "candidate"
+            and entry.get("category") == "market_data"
+            and entry.get("applies_when", {}).get("method") == ["analytical"]
+            and entry.get("applies_when", {}).get("features")
+            == ["floating_coupons", "vol_surface_dependence"]
+        }
+
+        assert experience_titles == {"Module reference typo", "Transient API failure"}
+        assert index_titles <= {"Module reference typo", "Transient API failure"}
+        assert len(index_titles) <= 2

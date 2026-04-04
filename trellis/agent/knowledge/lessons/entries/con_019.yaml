@@ -2,7 +2,7 @@ category: convention
 title: Day-count mismatch in payoff evaluation
 severity: critical
 status: promoted
-confidence: 0.8
+confidence: 0.9
 created: '2026-03-28T23:17:40.986751'
 version: ''
 source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_231741_build_a_pricer_for:_crank_nicolson_rannacher_smoothing_for_discontinuous_payoffs

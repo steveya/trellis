@@ -95,6 +95,156 @@ class TestSessionPricing:
         assert result.convexity > 0
         assert sum(result.key_rate_durations.values()) == pytest.approx(result.duration, rel=0.05)
 
+    def test_price_projects_executor_result(self):
+        from trellis.platform.results import ExecutionResult
+
+        projected = PricingResult(
+            clean_price=101.25,
+            dirty_price=102.00,
+            accrued_interest=0.75,
+            ytm=0.041,
+            greeks={"dv01": 0.08},
+            curve_sensitivities={"10.0": -0.8},
+        )
+        s = Session(curve=_curve(), settlement=SETTLE)
+
+        def fake_execute(compiled_request, execution_context, *, handlers=None):
+            assert compiled_request.execution_plan.action == "price_existing_instrument"
+            assert execution_context.session_id == s.session_id
+            return ExecutionResult(
+                run_id="run_session_price",
+                request_id=compiled_request.request.request_id,
+                status="succeeded",
+                action=compiled_request.execution_plan.action,
+                output_mode=execution_context.default_output_mode,
+                result_payload={"result": projected},
+                provenance={"run_mode": execution_context.run_mode.value},
+                policy_outcome={"allowed": True},
+            )
+
+        with patch("trellis.platform.executor.execute_compiled_request", side_effect=fake_execute):
+            with patch("trellis.session.price_instrument", side_effect=AssertionError("direct pricer should not run")):
+                result = s.price(_bond(), greeks=["dv01"])
+
+        assert result is projected
+
+    def test_greeks_projects_executor_result(self):
+        from trellis.platform.results import ExecutionResult
+
+        projected = {"dv01": 0.12, "duration": 4.8}
+        s = Session(curve=_curve(), settlement=SETTLE)
+
+        def fake_execute(compiled_request, execution_context, *, handlers=None):
+            assert compiled_request.execution_plan.action == "compute_greeks"
+            return ExecutionResult(
+                run_id="run_session_greeks",
+                request_id=compiled_request.request.request_id,
+                status="succeeded",
+                action=compiled_request.execution_plan.action,
+                output_mode=execution_context.default_output_mode,
+                result_payload={"result": projected},
+                provenance={"run_mode": execution_context.run_mode.value},
+                policy_outcome={"allowed": True},
+            )
+
+        with patch("trellis.platform.executor.execute_compiled_request", side_effect=fake_execute):
+            with patch("trellis.session.price_instrument", side_effect=AssertionError("direct greeks path should not run")):
+                result = s.greeks(_bond(), measures=["dv01", "duration"])
+
+        assert result == projected
+
+    def test_analyze_projects_executor_result(self):
+        from trellis.analytics.result import AnalyticsResult
+        from trellis.core.payoff import DeterministicCashflowPayoff
+        from trellis.platform.results import ExecutionResult
+
+        projected = AnalyticsResult({"price": 98.2, "duration": 5.4})
+        s = Session(curve=_curve(), settlement=SETTLE)
+        payoff = DeterministicCashflowPayoff(_bond())
+
+        def fake_execute(compiled_request, execution_context, *, handlers=None):
+            assert compiled_request.execution_plan.action == "analyze_existing_instrument"
+            return ExecutionResult(
+                run_id="run_session_analyze",
+                request_id=compiled_request.request.request_id,
+                status="succeeded",
+                action=compiled_request.execution_plan.action,
+                output_mode=execution_context.default_output_mode,
+                result_payload={"result": projected},
+                provenance={"run_mode": execution_context.run_mode.value},
+                policy_outcome={"allowed": True},
+            )
+
+        with patch("trellis.platform.executor.execute_compiled_request", side_effect=fake_execute):
+            result = s.analyze(payoff, measures=["price", "duration"])
+
+        assert result is projected
+
+    def test_analyze_forwards_shared_measure_kwargs(self):
+        from trellis.core.payoff import DeterministicCashflowPayoff
+
+        class CaptureMarketPriceMeasure:
+
+            name = "capture_market_price"
+            requires = set()
+
+            def compute(self, payoff, market_state, **context):
+                return context["market_price"]
+
+        s = Session(curve=_curve(), settlement=SETTLE)
+        payoff = DeterministicCashflowPayoff(_bond())
+        actual = s.analyze(
+            payoff,
+            measures=[CaptureMarketPriceMeasure()],
+            market_price=92.0,
+        )
+
+        assert actual.capture_market_price == pytest.approx(92.0)
+
+    def test_public_governed_entrypoints_delegate_to_shared_runner(self):
+        from trellis.analytics.result import AnalyticsResult
+        from trellis.core.payoff import DeterministicCashflowPayoff
+
+        projected_price = PricingResult(
+            clean_price=100.0,
+            dirty_price=100.0,
+            accrued_interest=0.0,
+            greeks={"dv01": 0.1},
+            curve_sensitivities={},
+        )
+        projected_analytics = AnalyticsResult({"price": 100.0, "duration": 4.5})
+        s = Session(curve=_curve(), settlement=SETTLE)
+        payoff = DeterministicCashflowPayoff(_bond())
+        calls = []
+
+        def fake_run(session, **kwargs):
+            calls.append(kwargs)
+            if kwargs["request_type"] == "price":
+                return projected_price
+            if kwargs["request_type"] == "greeks":
+                return {"dv01": 0.12}
+            return projected_analytics
+
+        with patch.object(Session, "_run_governed_request", autospec=True, side_effect=fake_run):
+            price_result = s.price(_bond(), greeks=["dv01"])
+            greeks_result = s.greeks(_bond(), measures=["dv01"])
+            analytics_result = s.analyze(payoff, measures=["price", "duration"])
+
+        assert price_result is projected_price
+        assert greeks_result == {"dv01": 0.12}
+        assert analytics_result is projected_analytics
+        assert [call["request_type"] for call in calls] == ["price", "greeks", "analytics"]
+        assert [call["success_outcome"] for call in calls] == [
+            "priced",
+            "greeks_computed",
+            "analytics_computed",
+        ]
+        assert [call["failure_outcome"] for call in calls] == [
+            "price_failed",
+            "greeks_failed",
+            "analytics_failed",
+        ]
+
     def test_price_failure_records_platform_trace(self):
         s = Session(as_of="2024-11-15", data_source="mock", settlement=SETTLE)
         recorded = []
@@ -109,7 +259,7 @@ class TestSessionPricing:
                 }
             )
 
-        with patch("trellis.session.price_instrument", side_effect=ValueError("boom")):
+        with patch("trellis.engine.pricer.price_instrument", side_effect=ValueError("boom")):
             with patch("trellis.agent.platform_traces.record_platform_trace", side_effect=fake_record):
                 with pytest.raises(ValueError, match="boom"):
                     s.price(_bond())

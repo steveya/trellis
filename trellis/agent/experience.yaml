@@ -2451,3 +2451,97 @@
     to a keyword mismatch.
   fix: Replace 'spot=' with the correct parameter name used in the GBM class constructor,
     confirmed by reading its signature or documentation.
+
+- category: market_data
+  title: Module reference typo
+  symptoms:
+  - The swaption file referenced a non-existent Trellis module path, causing validation
+    to fail.
+  - Run validation or import checks to catch unknown module names before pricing.
+  explanation: This usually happens when a model is copied or edited and an import/module
+    name is left stale or misspelled. The mental model failure is assuming the named
+    component exists without checking the exact registered Trellis path.
+  fix: Replace the invalid module reference with the correct registered Trellis module
+    path.
+
+- category: market_data
+  title: Transient API failure
+  symptoms:
+  - The pricing validation failed because the OpenAI text request could not complete
+    on the first attempt.
+  - Look for runtime errors tied to external requests rather than model outputs, especially
+    when failures are intermittent.
+  explanation: The mental model failure was assuming the external dependency would
+    always respond successfully during validation. In practice, network, rate-limit,
+    or service hiccups can interrupt otherwise correct pricing logic.
+  fix: Retry the request with backoff and add fallback handling so transient API failures
+    do not stop validation.
+
+- category: market_data
+  title: LLM request fallback
+  symptoms:
+  - The validation failed because the OpenAI text request had no successful retry
+    path and returned a runtime error immediately.
+  - Look for runtime errors from external API calls with zero successful attempts
+    or missing retry/logging coverage.
+  explanation: 'This is a process failure, not a pricing-model issue: the system assumed
+    the external text service would respond on the first try. When a single dependency
+    is treated as infallible, transient network or service errors become hard failures
+    instead of recoverable ones.'
+  fix: Add robust retry, timeout, and fallback handling for external requests so transient
+    failures do not abort validation.
+
+- category: market_data
+  title: Use valid model module paths
+  symptoms:
+  - The swaption validation referenced a nonexistent Trellis module path, causing
+    the analytical setup to fail.
+  - Check for repeated "unknown module" errors in validation logs and verify every
+    configured module path against the installed package.
+  explanation: This happens when the model configuration points to a typo, stale import,
+    or module name that does not exist in the installed Trellis package. The mental
+    model failure is treating configuration strings like code comments instead of
+    strict, resolvable identifiers.
+  fix: Replace the invalid Trellis module reference with a real, importable module
+    path and rerun validation.
+
+- category: market_data
+  title: Request resilience
+  symptoms:
+  - The pricing run failed because the text/request layer had no retry or fallback
+    handling and the swaption validation stopped immediately.
+  - Look for validation failures that occur before any model calculation starts, especially
+    single-attempt external request errors.
+  explanation: The mental model mistake is assuming external request dependencies
+    will always succeed on the first try. In practice, transient transport or service
+    failures are common, so pricing workflows need graceful recovery around data/request
+    access.
+  fix: Add retries, fallback paths, or cached inputs for external requests so transient
+    failures do not abort the valuation.
+
+- category: market_data
+  title: Handle transient API failures
+  symptoms:
+  - The pricing run failed because the OpenAI text request errored out and there was
+    no retry or fallback handling.
+  - Look for intermittent runtime errors from external requests, especially single-attempt
+    failures that disappear on rerun.
+  explanation: The mental model assumed the external request would always succeed,
+    but analytical valuation still depends on reliable upstream data and service calls.
+    Transient network or API issues can interrupt an otherwise correct model if they
+    are not treated as recoverable failures.
+  fix: Add retries with backoff and a graceful fallback or cached input path for external
+    request failures.
+
+- category: market_data
+  title: External Request Failure
+  symptoms:
+  - The validation failed because the pricing step depended on an OpenAI text request
+    that timed out or failed immediately.
+  - Look for runtime errors from external API calls before any pricing or calibration
+    output is produced.
+  explanation: The mental model error is treating an external service call as a reliable
+    part of core pricing logic. When the request layer fails, the model cannot proceed,
+    so the analytical method never gets a chance to run.
+  fix: Remove or bypass the external dependency for validation runs, and ensure the
+    pricer can execute offline with deterministic inputs.

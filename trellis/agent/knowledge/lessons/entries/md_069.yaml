@@ -1,0 +1,26 @@
+category: market_data
+title: Missing external request fallback
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T15:38:51.933962'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The valuation failed because the OpenAI text request was treated as a hard
+  dependency and no retry or fallback path was available.
+root_cause: The mental model assumed the external text service would always respond,
+  but analytical pricing still depends on reliable upstream data and infrastructure.
+  When that single call failed, the whole validation run aborted instead of degrading
+  gracefully.
+fix: Add retries, timeout handling, and a local fallback or cached data path so a
+  transient request failure does not stop validation.
+validation: Resolved during build of European payer swaption
+id: md_069

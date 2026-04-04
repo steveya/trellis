@@ -1,0 +1,26 @@
+category: monte_carlo
+title: FXRate object cannot multiply with float directly
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:15:32.464903'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260403_001534_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'RuntimeError or TypeError: ''unsupported operand type(s) for *: FXRate and
+  float'' raised during MC payoff evaluation smoke test.'
+root_cause: The FX spot retrieved from MarketState is returned as an FXRate wrapper
+  object rather than a plain float. Multiplying it directly with a numpy float or
+  scalar fails because FXRate does not implement __mul__ with float.
+fix: Extract the scalar value from the FXRate object before using it in arithmetic,
+  e.g. call float(fx_rate) or fx_rate.value (depending on the FXRate API) before performing
+  any multiplication or comparison operations in the payoff.
+validation: Discovered during build (attempt 3)
+id: mc_072

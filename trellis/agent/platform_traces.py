@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 from typing import Any
 
@@ -91,7 +92,7 @@ def ensure_platform_trace(
     root.mkdir(parents=True, exist_ok=True)
     path = root / f"{compiled_request.request.request_id}.yaml"
 
-    trace = _load_trace_dict(path)
+    trace = _prepare_trace_summary_for_write(path, _load_trace_summary_dict(path))
     base = _base_trace_dict(compiled_request)
     if not trace:
         trace = base
@@ -127,10 +128,10 @@ def ensure_platform_trace(
         trace.setdefault("timestamp", base["timestamp"])
     trace["updated_at"] = _now_utc()
     trace["details"] = _merge_details(trace.get("details"), details)
-    trace.setdefault("events", [])
     trace.setdefault("linear_issue", {})
     trace.setdefault("github_issue", {})
-    _write_trace_dict(path, trace)
+    trace.setdefault("token_usage", {})
+    _write_trace_summary_dict(path, trace)
     return path
 
 
@@ -146,15 +147,15 @@ def append_platform_trace_event(
 ) -> Path:
     """Append one lifecycle event to the request trace."""
     path = ensure_platform_trace(compiled_request, root=root)
-    trace = _load_trace_dict(path)
+    trace = _prepare_trace_summary_for_write(path, _load_trace_summary_dict(path))
 
-    event_record = {
+    event_record = _normalize_event_record({
         "event": event,
         "status": status,
         "timestamp": _now_utc(),
         "details": details or {},
-    }
-    trace.setdefault("events", []).append(event_record)
+    })
+    _append_trace_event(path, event_record)
     trace["updated_at"] = event_record["timestamp"]
 
     if outcome is not None:
@@ -171,7 +172,7 @@ def append_platform_trace_event(
         if issue_ref:
             trace[key] = issue_ref
 
-    _write_trace_dict(path, trace)
+    _write_trace_summary_dict(path, trace)
     return path
 
 
@@ -204,16 +205,16 @@ def attach_platform_trace_token_usage(
     path = Path(trace_path)
     if not path.exists():
         raise FileNotFoundError(path)
-    trace = _load_trace_dict(path)
+    trace = _prepare_trace_summary_for_write(path, _load_trace_summary_dict(path))
     trace["token_usage"] = dict(token_usage or {})
     trace["updated_at"] = _now_utc()
-    _write_trace_dict(path, trace)
+    _write_trace_summary_dict(path, trace)
     return path
 
 
 def load_platform_trace_boundary(trace_path: str | Path) -> dict[str, Any]:
     """Load the compact semantic/route/validation boundary from a trace file."""
-    data = _load_trace_dict(Path(trace_path))
+    data = _load_trace_summary_dict(Path(trace_path))
     return {
         "semantic_checkpoint": dict(data.get("semantic_checkpoint") or {}),
         "generation_boundary": dict(data.get("generation_boundary") or {}),
@@ -225,17 +226,44 @@ def load_platform_trace_boundary(trace_path: str | Path) -> dict[str, Any]:
     }
 
 
-def load_platform_traces(*, root: Path | None = None) -> list[PlatformTrace]:
-    """Load request traces from disk."""
+def load_platform_trace_payload(trace_path: str | Path) -> dict[str, Any]:
+    """Load the full normalized trace payload for one persisted platform trace."""
+    return _load_trace_payload_dict(Path(trace_path))
+
+
+def load_platform_trace_events(trace_path: str | Path) -> tuple[PlatformTraceEvent, ...]:
+    """Load the full lifecycle event history for one platform trace."""
+    return tuple(
+        PlatformTraceEvent(
+            event=item.get("event", ""),
+            status=item.get("status", "info"),
+            timestamp=item.get("timestamp", ""),
+            details=item.get("details") or {},
+        )
+        for item in _load_trace_event_dicts(Path(trace_path))
+    )
+
+def load_platform_traces(
+    *,
+    root: Path | None = None,
+    include_events: bool = False,
+) -> list[PlatformTrace]:
+    """Load request traces from disk.
+
+    By default this returns the cheaper summary view and skips event hydration.
+    Call ``load_platform_trace_events()`` or set ``include_events=True`` when
+    full lifecycle history is needed.
+    """
     root = root or TRACE_ROOT
     if not root.exists():
         return []
 
     traces: list[PlatformTrace] = []
     for path in sorted(root.glob("*.yaml")):
-        data = _load_trace_dict(path)
+        data = _load_trace_summary_dict(path)
         issue = data.get("linear_issue") or {}
         github_issue = data.get("github_issue") or {}
+        events = load_platform_trace_events(path) if include_events else ()
         traces.append(
             PlatformTrace(
                 request_id=data.get("request_id", path.stem),
@@ -265,15 +293,7 @@ def load_platform_traces(*, root: Path | None = None) -> list[PlatformTrace]:
                 semantic_role_ownership=data.get("semantic_role_ownership") or {},
                 validation_contract=data.get("validation_contract") or {},
                 details=data.get("details") or {},
-                events=tuple(
-                    PlatformTraceEvent(
-                        event=item.get("event", ""),
-                        status=item.get("status", "info"),
-                        timestamp=item.get("timestamp", ""),
-                        details=item.get("details") or {},
-                    )
-                    for item in data.get("events", [])
-                ),
+                events=events,
                 linear_issue_id=issue.get("id"),
                 linear_issue_identifier=issue.get("identifier"),
                 linear_issue_url=issue.get("url"),
@@ -564,15 +584,20 @@ def _normalize_semantic_token(value: object) -> str:
 
 
 def _load_trace_dict(path: Path) -> dict[str, Any]:
-    """Load a trace YAML file, returning an empty mapping when absent."""
+    """Load a trace payload with events, returning an empty mapping when absent."""
+    return _load_trace_payload_dict(path)
+
+
+def _load_trace_summary_dict(path: Path) -> dict[str, Any]:
+    """Load one trace summary YAML file, returning an empty mapping when absent."""
     if not path.exists():
         return {}
     data = yaml.safe_load(path.read_text())
     return data or {}
 
 
-def _write_trace_dict(path: Path, trace: dict[str, Any]) -> None:
-    """Persist a trace dictionary to YAML using stable readable formatting."""
+def _write_trace_summary_dict(path: Path, trace: dict[str, Any]) -> None:
+    """Persist a trace summary dictionary to YAML using stable readable formatting."""
     with open(path, "w") as fh:
         yaml.safe_dump(
             _normalize_yaml_value(trace),
@@ -581,6 +606,88 @@ def _write_trace_dict(path: Path, trace: dict[str, Any]) -> None:
             sort_keys=False,
             allow_unicode=True,
         )
+
+
+def _load_trace_payload_dict(path: Path) -> dict[str, Any]:
+    """Load one full trace payload by combining summary YAML with event history."""
+    summary = _load_trace_summary_dict(path)
+    if not summary:
+        return {}
+    payload = dict(summary)
+    payload["events"] = _load_trace_event_dicts(path, trace=summary)
+    return payload
+
+
+def _load_trace_event_dicts(
+    path: Path,
+    *,
+    trace: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Load event records from the append-only log or legacy inline YAML."""
+    events_path = _trace_events_path(path)
+    if events_path.exists():
+        events: list[dict[str, Any]] = []
+        for line in events_path.read_text().splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                payload = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                events.append(_normalize_event_record(payload))
+        return events
+
+    summary = trace if trace is not None else _load_trace_summary_dict(path)
+    return [
+        _normalize_event_record(item)
+        for item in summary.get("events", [])
+        if isinstance(item, dict)
+    ]
+
+
+def _append_trace_event(path: Path, event_record: dict[str, Any]) -> None:
+    """Append one normalized lifecycle event to the trace NDJSON log."""
+    events_path = _trace_events_path(path)
+    events_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(events_path, "a") as fh:
+        fh.write(json.dumps(_normalize_yaml_value(event_record), sort_keys=False))
+        fh.write("\n")
+
+
+def _write_trace_events(path: Path, events: list[dict[str, Any]]) -> None:
+    """Persist a full normalized event list into the append-only trace log."""
+    events_path = _trace_events_path(path)
+    events_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(events_path, "w") as fh:
+        for event in events:
+            fh.write(json.dumps(_normalize_yaml_value(_normalize_event_record(event)), sort_keys=False))
+            fh.write("\n")
+
+
+def _prepare_trace_summary_for_write(path: Path, trace: dict[str, Any]) -> dict[str, Any]:
+    """Externalize legacy inline events before mutating or rewriting a summary."""
+    normalized = dict(trace or {})
+    legacy_events = normalized.pop("events", None) or []
+    if legacy_events and not _trace_events_path(path).exists():
+        _write_trace_events(path, list(legacy_events))
+    return normalized
+
+
+def _trace_events_path(path: Path) -> Path:
+    """Return the append-only event log path for one summary YAML trace."""
+    return path.with_suffix(".events.ndjson")
+
+
+def _normalize_event_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Normalize one persisted event record into stable JSON/YAML primitives."""
+    return {
+        "event": str(record.get("event", "") or ""),
+        "status": str(record.get("status", "info") or "info"),
+        "timestamp": str(record.get("timestamp", "") or ""),
+        "details": _normalize_yaml_value(record.get("details") or {}),
+    }
 
 
 def _normalize_yaml_value(value: Any) -> Any:

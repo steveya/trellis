@@ -2,7 +2,7 @@ category: market_data
 title: Date-Number Type Mismatch
 severity: high
 status: validated
-confidence: 0.6
+confidence: 0.7
 created: '2026-04-01T12:52:52.804336'
 version: ''
 source_trace: null

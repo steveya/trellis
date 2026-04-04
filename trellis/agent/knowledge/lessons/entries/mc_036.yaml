@@ -3,7 +3,7 @@ title: Analytical Himalaya pricer must wrap required primitives explicitly
 severity: critical
 category: monte_carlo
 status: validated
-confidence: 0.6
+confidence: 0.7
 created: '2026-03-28T15:16:49.135160'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_151649_basket_option_analytical.yaml

@@ -1,0 +1,26 @@
+category: market_data
+title: Invalid module path
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T08:28:04.613655'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation failed because the swaption referenced a non-existent Trellis
+  module path.
+root_cause: This happens when the instrument configuration points to a typo, stale
+  package name, or unsupported model identifier instead of a valid module. The mental
+  model failure is assuming the analytical method will resolve any string, when it
+  only accepts registered modules.
+fix: Replace the invalid module reference with a supported Trellis model module and
+  re-run validation.
+validation: Resolved during build of European payer swaption
+id: md_060

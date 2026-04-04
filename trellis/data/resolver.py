@@ -94,6 +94,7 @@ def resolve_market_snapshot(
     as_of: date | str | None = None,
     source: str = "treasury_gov",
     *,
+    provider=None,
     vol_surface=None,
     vol_surfaces: dict | None = None,
     default_vol_surface: str | None = None,
@@ -128,7 +129,7 @@ def resolve_market_snapshot(
         ``"treasury_gov"``, ``"fred"``, or ``"mock"``.
     """
     resolved_date = _normalize_as_of(as_of)
-    provider = _provider_for_source(source)
+    provider = provider or _provider_for_source(source)
 
     if vol_surface is not None and vol_surfaces is not None:
         raise ValueError("Pass either vol_surface= or vol_surfaces=, not both")

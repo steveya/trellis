@@ -1,0 +1,33 @@
+category: monte_carlo
+title: Match GBM init signature
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:10:19.109946'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - coupons
+  - discounting
+  - maturity_settlement
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: The Monte Carlo pricer passed a spot keyword that the GBM model constructor
+  did not accept.
+root_cause: This usually comes from assuming a generic market-state API instead of
+  checking the exact model signature. The mental model failure is treating all stochastic-process
+  classes as interchangeable when their parameter names differ.
+fix: Align the pricer to the GBM constructor's exact parameter names or add a thin
+  adapter that maps spot to the expected input.
+validation: "Resolved during build of Build a pricer for: European equity call: 5-way\
+  \ (tree, PDE, MC, FFT, COS)\n\nConstruct methods: rate_tree, pde_solver, monte_carlo,\
+  \ fft_pricing\nComparison targets: crr_tree (rate_tree), bs_pde (pde_solver), mc_exact\
+  \ (monte_carlo), fft (fft_pricing), cos (fft_pricing), black_scholes (analytical)\n\
+  Cross-validation harness:\n  internal targets: crr_tree, bs_pde, mc_exact, fft,\
+  \ cos\n  analytical benchmark: black_scholes\n\nImplementation target: mc_exact\n\
+  Preferred method family: monte_carlo\n\nImplementation target: mc_exact"
+id: mc_070

@@ -49,7 +49,7 @@ def test_build_and_write_audit_record(tmp_path):
 
     assert rec.audit_id == "executor_build_20260329T120000_analytical"
     assert rec.all_gates_passed is True
-    assert rec.approval_status == "auto_approved"
+    assert rec.approval_status == "pending_review"
     assert len(rec.source_code_hash) == 16
     assert rec.build_metrics.wall_clock_seconds == pytest.approx(4.2)
 
@@ -59,7 +59,7 @@ def test_build_and_write_audit_record(tmp_path):
     loaded = load_model_audit_record(path)
     assert loaded["task_id"] == "T99"
     assert loaded["all_gates_passed"] is True
-    assert loaded["approval_status"] == "auto_approved"
+    assert loaded["approval_status"] == "pending_review"
 
 
 def test_pending_review_when_gate_fails(tmp_path):

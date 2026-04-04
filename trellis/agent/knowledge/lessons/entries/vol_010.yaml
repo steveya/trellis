@@ -1,0 +1,35 @@
+category: volatility
+title: Volatility Not Propagated
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:08:53.358545'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - coupons
+  - fixed_coupons
+  - discrete_coupons
+  - discounting
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: The tree pricing stayed at zero across low and high volatilities, so the
+  option value did not respond to volatility changes.
+root_cause: This usually means the volatility input is not being used in the branch
+  dynamics or discounting logic, so the model behaves like a degenerate deterministic
+  tree. The mental model failure is treating vol as an optional parameter instead
+  of a core driver of state evolution and option convexity.
+fix: Thread volatility into the tree step probabilities/step sizes and validate the
+  output against known vega-sensitive benchmarks.
+validation: "Resolved during build of Build a pricer for: European equity call: 5-way\
+  \ (tree, PDE, MC, FFT, COS)\n\nConstruct methods: rate_tree, pde_solver, monte_carlo,\
+  \ fft_pricing\nComparison targets: crr_tree (rate_tree), bs_pde (pde_solver), mc_exact\
+  \ (monte_carlo), fft (fft_pricing), cos (fft_pricing), black_scholes (analytical)\n\
+  Cross-validation harness:\n  internal targets: crr_tree, bs_pde, mc_exact, fft,\
+  \ cos\n  analytical benchmark: black_scholes\n\nImplementation target: crr_tree\n\
+  Preferred method family: rate_tree\n\nImplementation target: crr_tree"
+id: vol_010

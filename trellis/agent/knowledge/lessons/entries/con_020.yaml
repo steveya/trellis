@@ -2,7 +2,7 @@ category: convention
 title: Undefined symbol used in spec defaults
 severity: critical
 status: promoted
-confidence: 0.8
+confidence: 0.9
 created: '2026-03-28T23:21:31.912786'
 version: ''
 source_trace: '/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_232132_build_a_pricer_for:_finite_element_method_(fem)_vs_finite_difference_for_european

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import date
+from uuid import uuid4
 
 from trellis.book import Book, BookResult
 from trellis.core.market_state import MarketState
@@ -14,6 +15,24 @@ from trellis.data.schema import MarketSnapshot
 from trellis.engine.payoff_pricer import price_payoff as _price_payoff
 from trellis.engine.pricer import price_instrument
 from trellis.instruments.bond import Bond
+
+
+def _execution_result_trace_details_or_empty(result) -> dict[str, object]:
+    """Return trace details for one execution result when available."""
+    if result is None:
+        return {}
+    from trellis.platform.results import execution_result_trace_details
+
+    return execution_result_trace_details(result)
+
+
+def _platform_failure_details(exc: Exception, result) -> dict[str, object]:
+    """Build the common trace payload for one governed session failure."""
+    return {
+        **_execution_result_trace_details_or_empty(result),
+        "error_type": type(exc).__name__,
+        "error": str(exc),
+    }
 
 
 class Session:
@@ -48,6 +67,7 @@ class Session:
         "_vol_surface", "_state_space",
         "_credit_curve", "_forecast_curves", "_fx_rates",
         "_market_snapshot", "_discount_curve_name", "_vol_surface_name",
+        "_session_id",
     )
 
     def __init__(
@@ -146,6 +166,7 @@ class Session:
         object.__setattr__(self, "_market_snapshot", market_snapshot)
         object.__setattr__(self, "_discount_curve_name", discount_curve)
         object.__setattr__(self, "_vol_surface_name", vol_surface_name)
+        object.__setattr__(self, "_session_id", f"session_{uuid4().hex[:12]}")
 
     def __setattr__(self, name, value):
         """Reject in-place mutation and preserve session immutability."""
@@ -164,6 +185,11 @@ class Session:
     def settlement(self) -> date:
         """Cash settlement date used for pricing and time-to-maturity math."""
         return self._settlement
+
+    @property
+    def session_id(self) -> str:
+        """Stable identifier for the immutable session state object."""
+        return self._session_id
 
     @property
     def agent_enabled(self) -> bool:
@@ -221,89 +247,15 @@ class Session:
         greeks: GreeksSpec = "all",
     ) -> PricingResult | BookResult:
         """Price a single instrument or a Book."""
-        compiled_request = None
-        try:
-            compiled_request = self.to_platform_request(
-                instrument if not isinstance(instrument, Book) else None,
-                book=instrument if isinstance(instrument, Book) else None,
-                request_type="price",
-                measures=["price"] if greeks is None else ["price", *([*greeks] if isinstance(greeks, list) else ([] if greeks == "all" else []))],
-            )
-            from trellis.agent.platform_requests import compile_platform_request
-            compiled_request = compile_platform_request(compiled_request)
-            self._append_platform_event(
-                compiled_request,
-                "request_compiled",
-                status="ok",
-                details={
-                    "action": compiled_request.execution_plan.action,
-                    "route_method": compiled_request.execution_plan.route_method,
-                    "requires_build": compiled_request.execution_plan.requires_build,
-                },
-            )
-        except Exception:
-            compiled_request = None
-
-        if isinstance(instrument, Book):
-            try:
-                result = self._price_book(instrument, greeks=greeks)
-                self._record_platform_trace(compiled_request, success=True, outcome="priced")
-                return result
-            except Exception as exc:
-                self._record_platform_trace(
-                    compiled_request,
-                    success=False,
-                    outcome="price_failed",
-                    details={"error_type": type(exc).__name__, "error": str(exc)},
-                )
-                raise
-        try:
-            result = price_instrument(
-                instrument, self._curve, self._settlement, greeks=greeks,
-            )
-            self._record_platform_trace(compiled_request, success=True, outcome="priced")
-            return result
-        except (NotImplementedError, TypeError) as exc:
-            if self._agent:
-                try:
-                    result = self._agent_price(instrument)
-                    self._record_platform_trace(compiled_request, success=True, outcome="agent_priced")
-                    return result
-                except Exception as agent_exc:
-                    self._record_platform_trace(
-                        compiled_request,
-                        success=False,
-                        outcome="price_failed",
-                        details={
-                            "error_type": type(agent_exc).__name__,
-                            "error": str(agent_exc),
-                        },
-                    )
-                    raise
-            self._record_platform_trace(
-                compiled_request,
-                success=False,
-                outcome="price_failed",
-                details={"error_type": type(exc).__name__, "error": str(exc)},
-            )
-            raise
-        except Exception as exc:
-            self._record_platform_trace(
-                compiled_request,
-                success=False,
-                outcome="price_failed",
-                details={"error_type": type(exc).__name__, "error": str(exc)},
-            )
-            raise
-
-    def _price_book(self, book: Book, *, greeks: GreeksSpec = "all") -> BookResult:
-        """Price each position in a book under the current session state."""
-        results = {}
-        for name in book:
-            results[name] = price_instrument(
-                book[name], self._curve, self._settlement, greeks=greeks,
-            )
-        return BookResult(results, book)
+        return self._run_governed_request(
+            instrument=instrument if not isinstance(instrument, Book) else None,
+            book=instrument if isinstance(instrument, Book) else None,
+            request_type="price",
+            measures=["price"] if greeks is None else ["price", *([*greeks] if isinstance(greeks, list) else ([] if greeks == "all" else []))],
+            metadata={"greeks_mode": _pricing_greeks_mode(greeks)},
+            success_outcome="priced",
+            failure_outcome="price_failed",
+        )
 
     def price_payoff(
         self,
@@ -374,11 +326,6 @@ class Session:
         payoff = payoff_cls(**payoff_kwargs)
         return self.price_payoff(payoff, day_count=day_count)
 
-    def _agent_price(self, instrument):
-        """Delegate unsupported direct pricing to the agent executor."""
-        from trellis.agent.executor import execute
-        return execute(f"Price instrument: {instrument!r}")
-
     def greeks(
         self,
         instrument: Bond,
@@ -386,41 +333,13 @@ class Session:
         measures: list[str] | None = None,
     ) -> dict:
         """Compute Greeks for an instrument."""
-        compiled_request = None
-        try:
-            compiled_request = self.to_platform_request(
-                instrument,
-                request_type="greeks",
-                measures=measures or ["dv01"],
-            )
-            from trellis.agent.platform_requests import compile_platform_request
-            compiled_request = compile_platform_request(compiled_request)
-            self._append_platform_event(
-                compiled_request,
-                "request_compiled",
-                status="ok",
-                details={
-                    "action": compiled_request.execution_plan.action,
-                    "route_method": compiled_request.execution_plan.route_method,
-                },
-            )
-        except Exception:
-            compiled_request = None
-        spec = list(measures) if measures else "all"
-        try:
-            result = price_instrument(
-                instrument, self._curve, self._settlement, greeks=spec,
-            )
-            self._record_platform_trace(compiled_request, success=True, outcome="greeks_computed")
-            return result.greeks
-        except Exception as exc:
-            self._record_platform_trace(
-                compiled_request,
-                success=False,
-                outcome="greeks_failed",
-                details={"error_type": type(exc).__name__, "error": str(exc)},
-            )
-            raise
+        return self._run_governed_request(
+            instrument=instrument,
+            request_type="greeks",
+            measures=measures or ["dv01"],
+            success_outcome="greeks_computed",
+            failure_outcome="greeks_failed",
+        )
 
     # ------------------------------------------------------------------
     # Scenario methods (return new Session)
@@ -542,90 +461,17 @@ class Session:
         -------
         AnalyticsResult or BookAnalyticsResult
         """
-        from trellis.analytics.measures import resolve_measures
-        from trellis.analytics.result import AnalyticsResult, BookAnalyticsResult
-
         if measures is None:
             measures = ["price", "dv01", "duration"]
 
-        resolved = resolve_measures(measures)
-
-        compiled_request = None
-        try:
-            compiled_request = self.to_platform_request(
-                instrument if not isinstance(instrument, Book) else None,
-                book=instrument if isinstance(instrument, Book) else None,
-                request_type="analytics",
-                measures=measures,
-            )
-            from trellis.agent.platform_requests import compile_platform_request
-            compiled_request = compile_platform_request(compiled_request)
-            self._append_platform_event(
-                compiled_request,
-                "request_compiled",
-                status="ok",
-                details={
-                    "action": compiled_request.execution_plan.action,
-                    "route_method": compiled_request.execution_plan.route_method,
-                },
-            )
-        except Exception:
-            compiled_request = None
-
-        try:
-            if isinstance(instrument, Book):
-                result = self._analyze_book(instrument, resolved, **kwargs)
-                self._record_platform_trace(compiled_request, success=True, outcome="analytics_computed")
-                return result
-
-            # Single payoff
-            ms = self._build_market_state()
-            ctx = dict(kwargs)
-            ctx.setdefault("_cache", {})
-            data = {}
-            for m in resolved:
-                data[m.name] = m.compute(instrument, ms, **ctx)
-            result = AnalyticsResult(data)
-            self._record_platform_trace(compiled_request, success=True, outcome="analytics_computed")
-            return result
-        except Exception as exc:
-            self._record_platform_trace(
-                compiled_request,
-                success=False,
-                outcome="analytics_failed",
-                details={"error_type": type(exc).__name__, "error": str(exc)},
-            )
-            raise
-
-    def _analyze_book(self, book, measures, **kwargs):
-        """Compute the requested analytics measures for every book position."""
-        from trellis.analytics.result import AnalyticsResult, BookAnalyticsResult
-
-        ms = self._build_market_state()
-        positions = {}
-        for name in book:
-            payoff = book[name]
-            ctx = dict(kwargs)
-            ctx.setdefault("_cache", {})
-            data = {}
-            for m in measures:
-                data[m.name] = m.compute(payoff, ms, **ctx)
-            positions[name] = AnalyticsResult(data)
-
-        notionals = {name: book.notional(name) for name in book}
-        return BookAnalyticsResult(positions, notionals)
-
-    def _build_market_state(self) -> MarketState:
-        """Materialize the session's pricing inputs as a ``MarketState``."""
-        return MarketState(
-            as_of=self._market_snapshot.as_of if self._market_snapshot is not None else self._settlement,
-            settlement=self._settlement,
-            discount=self._curve,
-            vol_surface=self._vol_surface,
-            state_space=self._state_space,
-            credit_curve=self._credit_curve,
-            forecast_curves=self._forecast_curves,
-            fx_rates=self._fx_rates,
+        return self._run_governed_request(
+            instrument=instrument if not isinstance(instrument, Book) else None,
+            book=instrument if isinstance(instrument, Book) else None,
+            request_type="analytics",
+            measures=measures,
+            measure_context=kwargs,
+            success_outcome="analytics_computed",
+            failure_outcome="analytics_failed",
         )
 
     def _replace_snapshot_discount_curve(self, curve: YieldCurve):
@@ -720,7 +566,7 @@ class Session:
         rate durations. It is intended as a lightweight portfolio summary for
         notebook or API use rather than a full reporting engine.
         """
-        br = self._price_book(book, greeks="all")
+        br = self.price(book, greeks="all")
         agg_krd: dict[str, float] = {}
         tmv = br.total_mv
         positions = {}
@@ -755,8 +601,10 @@ class Session:
         book=None,
         request_type: str = "price",
         measures: list | None = None,
+        measure_context: dict | None = None,
         description: str | None = None,
         model: str | None = None,
+        metadata: dict | None = None,
     ):
         """Compile the current session context into a canonical platform request.
 
@@ -772,8 +620,148 @@ class Session:
             book=book,
             request_type=request_type,
             measures=measures,
+            measure_context=measure_context,
             description=description,
             model=model,
+            metadata=metadata,
+        )
+
+    def _compile_platform_request(
+        self,
+        instrument=None,
+        *,
+        book=None,
+        request_type: str = "price",
+        measures: list | None = None,
+        measure_context: dict | None = None,
+        description: str | None = None,
+        model: str | None = None,
+        metadata: dict | None = None,
+    ):
+        """Compile and trace one governed request for a public Session entry point."""
+        from trellis.agent.platform_requests import compile_platform_request
+
+        compiled_request = compile_platform_request(
+            self.to_platform_request(
+                instrument,
+                book=book,
+                request_type=request_type,
+                measures=measures,
+                measure_context=measure_context,
+                description=description,
+                model=model,
+                metadata=metadata,
+            )
+        )
+        self._append_platform_event(
+            compiled_request,
+            "request_compiled",
+            status="ok",
+            details={
+                "action": compiled_request.execution_plan.action,
+                "route_method": compiled_request.execution_plan.route_method,
+                "requires_build": compiled_request.execution_plan.requires_build,
+            },
+        )
+        return compiled_request
+
+    def _execute_platform_request(self, compiled_request):
+        """Execute one compiled request through the governed platform core."""
+        from trellis.platform.executor import execute_compiled_request
+
+        return execute_compiled_request(
+            compiled_request,
+            self.to_execution_context(),
+        )
+
+    def _run_governed_request(
+        self,
+        instrument=None,
+        *,
+        book=None,
+        request_type: str = "price",
+        measures: list | None = None,
+        measure_context: dict | None = None,
+        description: str | None = None,
+        model: str | None = None,
+        metadata: dict | None = None,
+        success_outcome: str,
+        failure_outcome: str,
+        default_message: str | None = None,
+        success_details: dict | None = None,
+    ):
+        """Compile, execute, project, and trace one governed Session request."""
+        compiled_request = None
+        result = None
+        try:
+            compiled_request = self._compile_platform_request(
+                instrument,
+                book=book,
+                request_type=request_type,
+                measures=measures,
+                measure_context=measure_context,
+                description=description,
+                model=model,
+                metadata=metadata,
+            )
+            result = self._execute_platform_request(compiled_request)
+            from trellis.platform.results import (
+                execution_result_trace_details,
+                project_execution_result_value,
+            )
+
+            projected = project_execution_result_value(
+                result,
+                default_message=default_message,
+            )
+            details = dict(execution_result_trace_details(result))
+            if success_details:
+                details.update(success_details)
+            self._record_platform_trace(
+                compiled_request,
+                success=True,
+                outcome=success_outcome,
+                details=details,
+            )
+            return projected
+        except Exception as exc:
+            self._record_platform_trace(
+                compiled_request,
+                success=False,
+                outcome=failure_outcome,
+                details=_platform_failure_details(exc, result),
+            )
+            raise
+
+    def to_execution_context(
+        self,
+        *,
+        run_mode=None,
+        provider_bindings=None,
+        policy_bundle_id: str | None = None,
+        allow_mock_data: bool | None = None,
+        require_provider_disclosure: bool | None = None,
+        default_output_mode: str = "result_only",
+        default_audit_mode: str = "summary",
+        requested_persistence: str = "ephemeral",
+        requested_snapshot_policy: str = "prefer_bound_snapshot",
+        metadata: dict | None = None,
+    ):
+        """Normalize the session's convenience state into explicit governed runtime context."""
+        from trellis.platform.context import execution_context_from_session
+
+        return execution_context_from_session(
+            self,
+            run_mode=run_mode,
+            provider_bindings=provider_bindings,
+            policy_bundle_id=policy_bundle_id,
+            allow_mock_data=allow_mock_data,
+            require_provider_disclosure=require_provider_disclosure,
+            default_output_mode=default_output_mode,
+            default_audit_mode=default_audit_mode,
+            requested_persistence=requested_persistence,
+            requested_snapshot_policy=requested_snapshot_policy,
+            metadata=metadata,
         )
 
     @staticmethod
@@ -832,3 +820,12 @@ def _resolve_as_of(as_of: date | str | None, settlement: date | None) -> date:
             return date.today()
         return date.fromisoformat(as_of)
     return as_of
+
+
+def _pricing_greeks_mode(greeks: GreeksSpec) -> str:
+    """Return the pricing greeks mode implied by the public Session API."""
+    if greeks is None:
+        return "none"
+    if isinstance(greeks, list):
+        return "explicit"
+    return "all"

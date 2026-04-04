@@ -275,6 +275,7 @@ class KnowledgeStore:
                     error_signature=aw.get("error_signature"),
                 ),
                 status=LessonStatus(entry.get("status", "promoted")),
+                supersedes=tuple(entry.get("supersedes", [])),
             ))
 
     def _load_failure_signatures(self) -> None:
@@ -460,35 +461,47 @@ class KnowledgeStore:
         from disk (hydrated) and returned.
         """
         basket_superseded_ids = basket_superseded_ids or set()
-        hydrated: list[tuple[LessonIndex, Lesson]] = []
-        for idx in self._lesson_index:
-            if idx.status not in (LessonStatus.PROMOTED, LessonStatus.VALIDATED):
-                continue
-            if idx.id in basket_superseded_ids:
-                continue
-            lesson = self._load_lesson(idx.id)
-            if lesson is not None:
-                hydrated.append((idx, lesson))
-
+        active_entries = [
+            idx
+            for idx in self._lesson_index
+            if idx.status in (LessonStatus.PROMOTED, LessonStatus.VALIDATED)
+            and idx.id not in basket_superseded_ids
+        ]
         superseded_ids = {
             superseded_id
-            for _, lesson in hydrated
-            for superseded_id in lesson.supersedes
+            for idx in active_entries
+            for superseded_id in idx.supersedes
         }
 
-        scored: list[tuple[float, LessonIndex, Lesson]] = []
-        for idx, lesson in hydrated:
+        scored: list[tuple[float, LessonIndex]] = []
+        for idx in active_entries:
             if idx.id in superseded_ids:
                 continue
             score = self._relevance_score(idx, expanded_features, spec)
             if score > 0:
-                scored.append((score, idx, lesson))
+                scored.append((score, idx))
 
-        scored.sort(key=lambda x: (-x[0], _SEVERITY_ORDER.get(x[1].severity, 3)))
+        scored.sort(key=lambda item: (-item[0], _SEVERITY_ORDER.get(item[1].severity, 3)))
 
+        overfetch_n = max(max_n * 2, max_n + 1)
+        candidate_entries = [idx for _, idx in scored[:overfetch_n]]
         lessons: list[Lesson] = []
-        for _, _, lesson in scored[:max_n]:
+
+        for idx in candidate_entries:
+            lesson = self._load_lesson(idx.id)
+            if lesson is None:
+                continue
             lessons.append(lesson)
+            if len(lessons) >= max_n:
+                return lessons
+
+        for _, idx in scored[overfetch_n:]:
+            lesson = self._load_lesson(idx.id)
+            if lesson is None:
+                continue
+            lessons.append(lesson)
+            if len(lessons) >= max_n:
+                break
         return lessons
 
     def _should_surface_similar_products(

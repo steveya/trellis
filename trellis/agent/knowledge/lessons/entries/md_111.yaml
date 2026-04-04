@@ -1,0 +1,28 @@
+category: market_data
+title: Spec missing spot field
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:13:59.803418'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260403_001401_european_option_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - vol_surface_dependence
+  - local_vol
+  - pde_grid
+  instrument: []
+  error_signature: null
+symptom: 'The smoke test raises AttributeError: ''EuropeanLocalVolOptionSpec'' object
+  has no attribute ''spot''.'
+root_cause: The pricing build assumed the instrument spec exposed spot, but the actual
+  spec only carried strike/expiry and related fields. This mismatch prevents the payoff
+  and PDE state initialization from accessing the current underlying level.
+fix: Add an explicit spot field to the market-facing spec or route spot through MarketState
+  instead of the option spec. Then validate the constructor against the actual market-state
+  schema before assembling the PDE payoff.
+validation: Discovered during build (attempt 3)
+id: md_111

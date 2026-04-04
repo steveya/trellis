@@ -114,6 +114,21 @@ class MarketSnapshot:
             kind="credit curve",
         )
 
+    @property
+    def provider_id(self) -> str:
+        """Return the stable provider id recorded in provenance, if present."""
+        return str(self.provenance.get("provider_id", "")).strip()
+
+    @property
+    def snapshot_id(self) -> str:
+        """Return the canonical snapshot id recorded in provenance, if present."""
+        return str(self.provenance.get("snapshot_id", "")).strip()
+
+    @property
+    def market_snapshot_id(self) -> str:
+        """Backward-compatible alias for canonical snapshot identity."""
+        return self.snapshot_id
+
     def state_space(self, name: str | None = None):
         """Return a selected state-space object or factory, if available."""
         return self._select_mapping_entry(

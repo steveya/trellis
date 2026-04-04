@@ -1,0 +1,26 @@
+category: market_data
+title: Handle external request failures
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T15:45:08.155205'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The pricing run failed because an external OpenAI text request errored and
+  was not retried or handled gracefully.
+root_cause: The mental model assumed the dependency would always return a result,
+  but analytical pricing still depends on upstream services for inputs or processing.
+  When a single external call fails, the whole validation can abort unless retries,
+  fallbacks, or clear error handling are in place.
+fix: Add retry and fallback handling for external requests, and isolate them so a
+  service outage does not stop the analytical pricing workflow.
+validation: Resolved during build of European payer swaption
+id: md_070

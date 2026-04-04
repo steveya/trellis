@@ -347,6 +347,7 @@ def _normalize_lesson_payload(payload: Mapping[str, object]) -> dict[str, object
         "root_cause": _normalize_text(payload.get("root_cause")),
         "fix": _normalize_text(payload.get("fix")),
         "validation": _normalize_text(payload.get("validation")),
+        "supersedes": _normalize_text_list(payload.get("supersedes")),
     }
 
     lesson_id = _normalize_text(payload.get("id"))
@@ -2020,6 +2021,7 @@ def _scan_entry_metadata() -> list[dict[str, object]]:
                 "severity": severity,
                 "category": category,
                 "status": status,
+                "supersedes": _as_list(data.get("supersedes")),
                 "applies_when": {
                     "method": _as_list(applies_when.get("method")),
                     "features": _as_list(applies_when.get("features")),

@@ -1,0 +1,25 @@
+category: market_data
+title: Retry external requests
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T20:00:41.690081'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The valuation failed because the OpenAI text request errored out and was
+  not retried or handled gracefully.
+root_cause: The mental model failure is assuming an external service call will always
+  succeed during validation. In reality, transient network or API issues can abort
+  an otherwise valid pricing workflow.
+fix: Add retry, timeout, and fallback handling for external requests so transient
+  API failures do not fail validation.
+validation: Resolved during build of European payer swaption
+id: md_081

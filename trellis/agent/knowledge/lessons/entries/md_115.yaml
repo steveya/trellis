@@ -1,0 +1,27 @@
+category: market_data
+title: Clarify cap product shape
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:46:30.315910'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260403_004631_cap_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Build aborts with decision=clarification and missing contract field semantic_product_shape
+  before payoff generation.
+root_cause: The pricing DSL could not infer the exact cap/floor contract shape, schedule,
+  and payoff conventions from the request. Without those instrument-specific fields,
+  the analytical caplet stack cannot be assembled safely.
+fix: 'Require explicit product-shape inputs before code generation: reset dates, accrual
+  schedule, floating leg index convention, strike, notional, day count, and settlement
+  rules. Add a cap/floor cookbook entry that maps these fields into the analytical
+  payoff stack.'
+validation: Discovered during build (attempt 0)
+id: md_115

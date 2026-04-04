@@ -1,0 +1,37 @@
+category: market_data
+title: Resolved inputs object missing expected volatility attribute
+severity: high
+status: validated
+confidence: 0.7
+created: '2026-04-02T16:16:03.379086'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - multi_asset
+  - discounting
+  - forward_rate
+  - vol_surface_dependence
+  - greeks
+  - quanto_adjustment
+  - cross_currency
+  instrument: []
+  error_signature: null
+symptom: The code accessed `.sigma` directly on `ResolvedQuantoInputs` but the resolved
+  object stores volatility under a different attribute name.
+root_cause: When building a resolver that bundles multiple vol surfaces (domestic,
+  foreign, FX), the developer assumes a flat `.sigma` field exists but the resolved
+  dataclass uses more specific names like `.sigma_d`, `.sigma_f`, or `.vol` to disambiguate
+  sources.
+fix: Inspect the `ResolvedQuantoInputs` dataclass definition and replace `.sigma`
+  with the correct field name (e.g., `.sigma_d` for domestic vol) wherever the analytical
+  pricer reads volatility.
+validation: "Resolved during build of Build a pricer for: Quanto option: quanto-adjusted\
+  \ BS vs MC cross-currency\n\nConstruct methods: analytical, monte_carlo\nComparison\
+  \ targets: quanto_bs (analytical), mc_quanto (monte_carlo)\nCross-validation harness:\n\
+  \  internal targets: quanto_bs, mc_quanto\n  external targets: quantlib\nNew component:\
+  \ ['quanto_adjustment', 'cross_currency_mc']\n\nImplementation target: quanto_bs\n\
+  Preferred method family: analytical\n\nImplementation target: quanto_bs"
+id: md_073

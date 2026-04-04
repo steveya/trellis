@@ -1,0 +1,26 @@
+category: market_data
+title: Payer Swaption Sign Convention and Market Data Setup
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T22:07:59.757124'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The payer swaption was mispriced due to incorrect sign convention or missing
+  market data linkage when constructing the analytical pricing engine.
+root_cause: A payer swaption gives the right to pay fixed and receive floating, so
+  the underlying swap must be constructed with the correct VanillaSwap.Payer type;
+  confusing payer/receiver or failing to attach a valid term structure causes the
+  engine to return zero or negative value.
+fix: Ensure the swap is instantiated with VanillaSwap.Payer, the discount and forward
+  curves are properly linked, and the Black volatility is passed correctly to BlackSwaptionEngine.
+validation: Resolved during build of European payer swaption
+id: md_097

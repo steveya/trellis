@@ -1,0 +1,26 @@
+category: market_data
+title: Valid module imports
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T23:40:53.759911'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The valuation failed because the model referenced a nonexistent Trellis module
+  path.
+root_cause: 'This is usually a configuration or naming mistake, not a pricing logic
+  issue: the engine tries to load a module by string name and cannot resolve it if
+  the path is invalid. The mental model failure is assuming the referenced package/module
+  exists or is spelled correctly without verifying the registered module name.'
+fix: Replace the invalid module reference with a valid, registered Trellis module
+  name and rerun validation.
+validation: Resolved during build of European payer swaption
+id: md_106

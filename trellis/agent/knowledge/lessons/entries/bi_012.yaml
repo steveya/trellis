@@ -1,0 +1,33 @@
+category: backward_induction
+title: Puttable bond requires bermudan exercise_type and exercise_steps
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-02T16:08:19.984375'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260402_160821_puttable_bond_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - puttable
+  - fixed_coupons
+  - mean_reversion
+  - bermudan
+  - early_exercise
+  - backward_induction
+  - callable
+  instrument: []
+  error_signature: null
+symptom: Build fails with lattice.exercise_type_mismatch, lattice.exercise_schedule_missing,
+  or lattice.exercise_objective_mismatch errors during lattice_backward_induction.
+root_cause: Schedule-dependent lattice products like puttable bonds must specify exercise_type='bermudan'
+  and pass exercise_steps to lattice_backward_induction; omitting these or using a
+  mismatched exercise_fn causes the lattice engine to reject the configuration. For
+  holder_put products, exercise_fn must be max (holder chooses to put if put price
+  exceeds continuation value).
+fix: Always set exercise_type='bermudan' and compute exercise_steps from the put schedule
+  when calling lattice_backward_induction for puttable bonds; ensure exercise_fn=max
+  is passed to reflect the holder's put optionality.
+validation: Discovered during build (attempt 3)
+id: bi_012

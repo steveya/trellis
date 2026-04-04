@@ -1,0 +1,25 @@
+category: calibration
+title: Payer Swaption Sign Convention for Analytical Pricing
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T15:16:16.234289'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The payer swaption payoff sign or strike/swap-rate ordering was inverted,
+  producing a negative or zero analytical price.
+root_cause: A payer swaption pays max(S - K, 0) on the swap rate, so confusing payer
+  vs receiver or passing arguments in wrong order to Black/Bachelier formula flips
+  the in-the-money direction and yields nonsense prices.
+fix: Ensure the Black formula is called as annuity * Black76_call(forward=swap_rate,
+  strike=K, ...) and that payer/receiver flag selects call, not put.
+validation: Resolved during build of European payer swaption
+id: cal_009

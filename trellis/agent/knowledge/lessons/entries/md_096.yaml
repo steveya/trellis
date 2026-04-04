@@ -1,0 +1,25 @@
+category: market_data
+title: Dependency failure
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T22:06:49.385819'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation failed because the pricing step depended on an OpenAI text
+  request that errored out instead of using a self-contained analytical workflow.
+root_cause: The mental model failure is treating an external AI/text service as part
+  of the core pricing path. For validation, pricing logic must be deterministic and
+  independent of brittle network or API dependencies.
+fix: Remove the external request from the pricing path or add a reliable fallback
+  so the analytical swaption valuation can run locally and deterministically.
+validation: Resolved during build of European payer swaption
+id: md_096

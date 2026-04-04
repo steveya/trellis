@@ -1,0 +1,34 @@
+category: backward_induction
+title: Pass spec-like object, not invented keyword arguments
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:43:48.825137'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - early_exercise
+  - puttable
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Extra helper keywords like `spot`, `strike`, or `expiry` were passed directly
+  to `price_vanilla_equity_option_tree` instead of bundling them into a spec-like
+  object.
+root_cause: The function signature expects a structured spec-like object carrying
+  all option details; passing flat keyword arguments bypasses the expected interface
+  and causes unexpected parameter errors.
+fix: Construct a spec-like object (e.g., a dataclass or namedtuple) with `spot`, `strike`,
+  `expiry_date`, and optional exercise fields, then pass it as the second positional
+  argument.
+validation: "Resolved during build of Build a pricer for: American put: tree vs PDE\
+  \ vs LSM at 3 vol levels\n\nConstruct methods: rate_tree, pde_solver, monte_carlo\n\
+  Comparison targets: crr_tree (rate_tree), psor_pde (pde_solver), lsm_mc (monte_carlo),\
+  \ high_step_tree_2000 (analytical)\nCross-validation harness:\n  internal targets:\
+  \ crr_tree, psor_pde, lsm_mc\n  analytical benchmark: high_step_tree_2000\n  external\
+  \ targets: quantlib\n\nImplementation target: crr_tree\nPreferred method family:\
+  \ rate_tree\n\nImplementation target: crr_tree"
+id: bi_019

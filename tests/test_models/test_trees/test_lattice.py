@@ -135,6 +135,7 @@ class TestRateLattice:
         total_change = abs(prices[-1] - prices[0])
         assert total_change > 0.01, f"Prices nearly unchanged with vol: {prices}"
 
+    @pytest.mark.legacy_compat
     def test_exercise_policy_matches_legacy_kwargs(self):
         lattice = build_rate_lattice(0.05, 0.01, 0.1, 10.0, 100)
         dt = 10.0 / 100
@@ -167,6 +168,7 @@ class TestRateLattice:
 
         assert policy_price == pytest.approx(legacy)
 
+    @pytest.mark.legacy_compat
     def test_lattice_backward_induction_accepts_legacy_terminal_value_and_exercise_value_fn(self):
         lattice = build_rate_lattice(0.05, 0.01, 0.1, 1.0, 4)
         policy = resolve_lattice_exercise_policy("issuer_call", exercise_steps=[2, 3])
@@ -187,6 +189,7 @@ class TestRateLattice:
 
         assert price > 0.0
 
+    @pytest.mark.legacy_compat
     def test_lattice_backward_induction_accepts_legacy_callable_signatures(self):
         lattice = build_rate_lattice(0.05, 0.01, 0.1, 1.0, 4)
         policy = resolve_lattice_exercise_policy("issuer_call", exercise_steps=[2, 3])

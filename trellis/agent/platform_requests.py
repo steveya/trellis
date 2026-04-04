@@ -81,6 +81,8 @@ class PlatformRequest:
     instrument_type: str | None = None
     measures: tuple[str, ...] = ()
     requested_outputs: tuple[str, ...] = ()
+    measure_specs: tuple[Any, ...] = ()
+    measure_context: Mapping[str, object] = field(default_factory=dict)
     model: str | None = None
     term_sheet: Any | None = None
     product_spec: Any | None = None
@@ -95,6 +97,8 @@ class PlatformRequest:
         normalized_measures = _normalize_measures(self.measures or normalized_outputs)
         object.__setattr__(self, "requested_outputs", normalized_outputs)
         object.__setattr__(self, "measures", normalized_measures)
+        object.__setattr__(self, "measure_specs", _freeze_tuple(self.measure_specs))
+        object.__setattr__(self, "measure_context", _freeze_mapping(self.measure_context))
         object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
 
 
@@ -200,6 +204,7 @@ def make_term_sheet_request(
         description=description,
         instrument_type=term_sheet.instrument_type,
         measures=_normalize_measures(measures),
+        measure_specs=_freeze_tuple(measures),
         model=model,
         term_sheet=term_sheet,
     )
@@ -218,6 +223,7 @@ def make_user_defined_request(
         request_type=request_type,
         entry_point="user_defined",
         measures=_normalize_measures(measures),
+        measure_specs=_freeze_tuple(measures),
         model=model,
         product_spec=spec,
     )
@@ -260,8 +266,10 @@ def make_session_request(
     book=None,
     request_type: str = "price",
     measures: list | None = None,
+    measure_context: Mapping[str, object] | None = None,
     description: str | None = None,
     model: str | None = None,
+    metadata: Mapping[str, object] | None = None,
 ) -> PlatformRequest:
     """Create the canonical request shape for direct ``Session`` entry points."""
     return PlatformRequest(
@@ -272,10 +280,17 @@ def make_session_request(
         market_snapshot=session.market_snapshot,
         description=description,
         measures=_normalize_measures(measures),
+        measure_specs=_freeze_tuple(measures),
+        measure_context=measure_context or {},
         model=model,
         instrument=instrument,
         book=book,
-        metadata={"agent_enabled": bool(getattr(session, "agent_enabled", False))},
+        metadata={
+            "agent_enabled": bool(getattr(session, "agent_enabled", False)),
+            "discount_curve_name": getattr(session, "discount_curve_name", None),
+            "vol_surface_name": getattr(session, "vol_surface_name", None),
+            **dict(metadata or {}),
+        },
     )
 
 
@@ -285,6 +300,7 @@ def make_pipeline_request(
     market_snapshot=None,
     settlement: date | None = None,
     measures: list | None = None,
+    measure_context: Mapping[str, object] | None = None,
     metadata: Mapping[str, object] | None = None,
 ) -> PlatformRequest:
     """Create the canonical request shape for batch ``Pipeline`` execution."""
@@ -295,6 +311,8 @@ def make_pipeline_request(
         settlement=settlement,
         market_snapshot=market_snapshot,
         measures=_normalize_measures(measures),
+        measure_specs=_freeze_tuple(measures),
+        measure_context=measure_context or {},
         book=book,
         metadata=metadata or {},
     )

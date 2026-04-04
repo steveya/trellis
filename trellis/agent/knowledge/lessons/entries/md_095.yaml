@@ -1,0 +1,26 @@
+category: market_data
+title: Use valid model imports
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T22:06:35.940054'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The swaption validation failed because the input referenced a nonexistent
+  Trellis module name.
+root_cause: 'This is usually a configuration/metadata mistake: the pricing setup points
+  to a module path that cannot be resolved, so validation fails before the analytical
+  pricing logic can run. The mental model error is assuming any module string is acceptable
+  instead of checking it against the registered Trellis modules.'
+fix: Replace the invalid module reference with a valid Trellis module name and rerun
+  validation.
+validation: Resolved during build of European payer swaption
+id: md_095

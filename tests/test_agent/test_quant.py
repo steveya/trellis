@@ -298,6 +298,7 @@ class TestPricingPlan:
         assert plan.sensitivity_support is not None
         assert plan.sensitivity_support.level == "experimental"
 
+    @pytest.mark.legacy_compat
     def test_family_blueprint_quant_plan_preserves_quanto_routes(self):
         from trellis.agent.family_contract_compiler import compile_family_contract
         from trellis.agent.family_contract_templates import get_family_contract_template

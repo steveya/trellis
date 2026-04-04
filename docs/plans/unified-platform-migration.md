@@ -205,6 +205,11 @@ execute_compiled_request(
 
 `ExecutionContext` should carry governed runtime state, not user intent.
 
+The first governed-runtime tranche now lives in `trellis.platform.context`.
+Current convenience surfaces normalize into this record through
+`Session.to_execution_context()` and `Pipeline.to_execution_context()` while
+leaving request compilation intent-focused.
+
 Minimum fields:
 
 - `session_id`
@@ -235,6 +240,13 @@ Typed binding slots should exist for at least:
 - `pricing_engine.primary`
 - `model_store.primary`
 - `validation_engine.primary`
+
+The concrete record model uses:
+
+- `ProviderBinding` for one stable provider id
+- `ProviderBindingSet` for primary/fallback slots within one provider family
+- `ProviderBindings` for the grouped market-data, pricing-engine, model-store,
+  and validation-engine bindings carried by `ExecutionContext`
 
 ### ExecutionResult
 
@@ -279,6 +291,61 @@ Every governed result should carry:
    execution paths
 6. separate route promotion from model lifecycle
 7. prefer additive refactors before mass moves or renames
+
+## Linear Ticket Mirror
+
+These tables mirror the current Linear migration tickets and their
+implementation order.
+
+Rules for coding agents:
+
+- Linear is the source of truth for ticket state.
+- This plan file is the repo-local mirror for subsequent agents.
+- Implement the earliest ticket in the ordered queue below whose status is not
+  `Done` and whose blockers are already satisfied.
+- Skip tickets whose table row is `Done`.
+- Workstream tickets are tracking rows. Do not pick them up before their
+  earlier child rows unless the row has no remaining child slices.
+- After a ticket is closed in Linear, update the corresponding row in this
+  table in the same implementation closeout.
+
+Status mirror last synced: `2026-04-04`
+
+### Migration Workstream Tickets
+
+| Ticket | Status |
+| --- | --- |
+| `QUA-551` Platform migration: unified governed execution spine | Done |
+| `QUA-552` Platform executor: authoritative compiled-request dispatcher and result envelope | Done |
+| `QUA-553` Platform governance: ExecutionContext, RunMode, and PolicyBundle enforcement | Done |
+| `QUA-555` Run ledger: canonical provenance and audit packaging for governed execution | Done |
+| `QUA-556` Model registry: lifecycle boundary and candidate-vs-approved execution | Done |
+
+### Ordered Migration Implementation Queue
+
+| Ticket | Status |
+| --- | --- |
+| `QUA-568` Governed runtime: RunMode, ProviderBindings, and ExecutionContext records | Done |
+| `QUA-569` Model registry: record schema, local store, and lifecycle transitions | Done |
+| `QUA-570` Run ledger: canonical RunRecord and artifact persistence surface | Done |
+| `QUA-554` Provider registry: governed snapshot resolution and no silent mock fallback | Done |
+| `QUA-573` Governed runtime: PolicyBundle evaluation and execution guards | Done |
+| `QUA-574` Model execution gate: approved-model selection and lifecycle enforcement | Done |
+| `QUA-575` Audit bundle: governed provenance, inputs, outputs, and policy outcomes | Done |
+| `QUA-576` Platform executor: ExecutionResult envelope and action dispatcher skeleton | Done |
+| `QUA-579` Platform executor: route adapters for existing compiled actions | Done |
+| `QUA-557` API cutover: route ask, Session, analytics, and Pipeline through platform executor | Done |
+| `QUA-558` Legacy runtime: remove free-form executor and trace-only execution branches | Done |
+
+### Post-Migration Cleanup Queue
+
+| Ticket | Status |
+| --- | --- |
+| `QUA-582` Platform cleanup: simplify governed error handling and remove executor model literal | Done |
+| `QUA-583` Knowledge lessons: deduplicate repeated market-data candidate entries | Done |
+| `QUA-584` Governed runtime cleanup: shared Session request runner and transition-path deletion | Done |
+| `QUA-585` Knowledge retrieval: index supersedes and reduce cold-path lesson hydration | Done |
+| `QUA-586` Platform traces: summary YAML plus append-only event log compatibility | Done |
 
 ## Detailed Phase Plan
 
@@ -365,6 +432,28 @@ still execute under the same result envelope and provenance model.
 - convert `Session.greeks()` and `Session.analyze()` similarly
 - convert `Pipeline.run()` to call the executor directly instead of looping
   through a separate runtime path
+
+The first governed executor substrate now exists as:
+
+- `trellis.platform.results.ExecutionResult`
+- `trellis.platform.executor.execute_compiled_request(...)`
+- a default dispatcher table covering the full current compiled action space
+
+At this stage, `compile_only` and `block` are concretely shaped outcomes and
+the remaining action families intentionally return structured blocked envelopes
+until the route-adapter ticket lands.
+
+The next executor slice now wires thin adapters for:
+
+- `price_book`
+- `price_existing_instrument`
+- `compute_greeks`
+- `analyze_existing_instrument`
+- `price_existing_payoff`
+
+`build_then_price` and `compare_methods` intentionally remain structured
+pending envelopes until the candidate-generation and comparison paths are
+cut over.
 
 ### Adapter Strategy
 
@@ -522,6 +611,26 @@ The canonical run ledger should capture:
 - warnings
 - logs and linked artifacts
 
+The first governed substrate now lives in `trellis.platform.runs` with:
+
+- `RunRecord` as the canonical persisted run envelope
+- `ArtifactReference` for durable links to traces, audits, and task-run files
+- `RunLedgerStore` as the local-first persistence layer under `.trellis_state/runs`
+
+The canonical governed review package now also lives in `trellis.platform.audits`
+as `RunAuditBundle`, with stable sections for:
+
+- `run`
+- `inputs`
+- `execution`
+- `outputs`
+- `diagnostics`
+- `artifacts`
+
+During migration, existing trace and task-run artifacts remain valid, but they
+should be linked from the run ledger rather than treated as a separate source
+of truth.
+
 ### Storage Direction
 
 Introduce a configurable runtime state root, for example:
@@ -568,7 +677,12 @@ selection deterministic and typed.
   - `draft`
   - `validated`
   - `approved`
-  - `deprecated`
+- `deprecated`
+
+The first governed substrate now lives in `trellis.platform.models` with a
+local-first `ModelRegistryStore`. Research build audit remains in
+`trellis.agent.model_audit`, but successful audits no longer imply governed
+approval by themselves.
 
 ### Specific Work
 

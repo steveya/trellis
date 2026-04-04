@@ -141,6 +141,7 @@ def test_build_payoff_blocks_on_semantic_clarification(monkeypatch):
         )
 
 
+@pytest.mark.legacy_compat
 def test_record_lesson_maps_why_to_legacy_explanation(monkeypatch):
     from trellis.agent.test_resolution import Lesson, record_lesson
 

@@ -1,0 +1,23 @@
+category: market_data
+title: Validate module references
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T16:30:33.517869'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The swaption setup referenced a non-existent Trellis module path.
+root_cause: 'This is a configuration/typing error: the model is fine, but the input
+  points to a module name that cannot be resolved. The mental model failure is assuming
+  any dotted path will load without checking the available Trellis modules.'
+fix: Replace the invalid module path with a valid Trellis module name and re-run validation.
+validation: Resolved during build of European payer swaption
+id: md_074

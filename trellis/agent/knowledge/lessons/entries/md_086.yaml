@@ -1,0 +1,25 @@
+category: market_data
+title: Missing API retry handling
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T21:03:44.868096'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The pricing attempt failed because the OpenAI text request error was not
+  retried or recovered from.
+root_cause: The mental model failure is assuming a single external request will succeed
+  reliably during validation. In practice, transient API or network failures are common
+  and must be handled as part of the workflow, not treated as model errors.
+fix: Add robust retry, timeout, and fallback handling for external requests so transient
+  service errors do not stop validation.
+validation: Resolved during build of European payer swaption
+id: md_086

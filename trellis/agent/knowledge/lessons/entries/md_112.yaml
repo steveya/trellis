@@ -1,0 +1,25 @@
+category: market_data
+title: API Connectivity Failure Masks Underlying Pricing Logic
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:19:56.419740'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation failed due to an API request error rather than any fault in
+  the swaption pricing logic itself.
+root_cause: Transient network or service failures can surface as cryptic RuntimeErrors
+  that are mistaken for model or calibration bugs, causing unnecessary investigation
+  of correct code.
+fix: Implement retry logic with exponential backoff for external API calls and isolate
+  connectivity failures from model validation failures in error reporting.
+validation: Resolved during build of European payer swaption
+id: md_112

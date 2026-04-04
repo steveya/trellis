@@ -1,0 +1,32 @@
+category: monte_carlo
+title: Passing Invalid Keyword Arguments to MC Engine Constructor
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:40:57.463613'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - forward_rate
+  - greeks
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The MonteCarloEngine was instantiated with a 'dt' keyword argument that its
+  __init__ method does not accept.
+root_cause: The developer assumed the engine exposes time-step granularity as a constructor
+  parameter, but the engine derives 'dt' internally from 'T' and 'n_steps', making
+  'dt' a redundant/unsupported argument.
+fix: Remove 'dt' from the constructor call and let the engine compute it internally,
+  or pass the underlying parameters (T, n_steps) that the engine actually accepts.
+validation: "Resolved during build of Build a pricer for: FX vanilla option: Garman-Kohlhagen\
+  \ vs MC\n\nConstruct methods: analytical, monte_carlo\nComparison targets: gk_analytical\
+  \ (analytical), mc_fx_option (monte_carlo)\nCross-validation harness:\n  internal\
+  \ targets: gk_analytical, mc_fx_option\n  external targets: quantlib, financepy\n\
+  New component: garman_kohlhagen_formula\n\nImplementation target: mc_fx_option\n\
+  Preferred method family: monte_carlo\n\nImplementation target: mc_fx_option"
+id: mc_073

@@ -1,0 +1,24 @@
+category: market_data
+title: Use valid model module paths
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-04T01:57:59.062125'
+version: ''
+source_trace: null
+applies_when:
+  method: []
+  features: []
+  instrument: []
+  error_signature: null
+symptom: The swaption validation referenced a nonexistent Trellis module path, causing
+  the analytical setup to fail.
+root_cause: This happens when the model configuration points to a typo, stale import,
+  or module name that does not exist in the installed Trellis package. The mental
+  model failure is treating configuration strings like code comments instead of strict,
+  resolvable identifiers.
+fix: Replace the invalid Trellis module reference with a real, importable module path
+  and rerun validation.
+validation: Resolved during build of European payer swaption
+supersedes: []
+id: md_131

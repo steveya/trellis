@@ -1,0 +1,24 @@
+category: market_data
+title: LLM request fallback
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-04T01:54:43.209784'
+version: ''
+source_trace: null
+applies_when:
+  method: []
+  features: []
+  instrument: []
+  error_signature: null
+symptom: The validation failed because the OpenAI text request had no successful retry
+  path and returned a runtime error immediately.
+root_cause: 'This is a process failure, not a pricing-model issue: the system assumed
+  the external text service would respond on the first try. When a single dependency
+  is treated as infallible, transient network or service errors become hard failures
+  instead of recoverable ones.'
+fix: Add robust retry, timeout, and fallback handling for external requests so transient
+  failures do not abort validation.
+validation: Resolved during build of European payer swaption
+supersedes: []
+id: md_130

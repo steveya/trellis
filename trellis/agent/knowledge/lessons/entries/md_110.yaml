@@ -1,0 +1,37 @@
+category: market_data
+title: Comparing float to date object in market state
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:12:51.556550'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - forward_rate
+  - vol_surface_dependence
+  - delta_space_interpolation
+  - greeks
+  - multi_asset
+  instrument: []
+  error_signature: null
+symptom: A numeric comparison (>=) was attempted between a float and a datetime.date
+  object, likely when validating or processing a market state field such as expiry
+  or settlement date.
+root_cause: Market state containers mix numeric fields (spot, rate, vol) with date
+  fields (expiry, value_date), and generic validation loops or comparisons treat all
+  fields uniformly without type-checking, causing silent type mismatches when Python
+  tries to compare them.
+fix: Separate date fields from numeric fields in validation logic and ensure expiry/settlement
+  inputs are parsed into datetime.date (or converted to a time-to-expiry float) before
+  any numerical comparison is performed.
+validation: "Resolved during build of Build a pricer for: FX vanilla option: Garman-Kohlhagen\
+  \ vs MC\n\nConstruct methods: analytical, monte_carlo\nComparison targets: gk_analytical\
+  \ (analytical), mc_fx_option (monte_carlo)\nCross-validation harness:\n  internal\
+  \ targets: gk_analytical, mc_fx_option\n  external targets: quantlib, financepy\n\
+  New component: garman_kohlhagen_formula\n\nImplementation target: gk_analytical\n\
+  Preferred method family: analytical\n\nImplementation target: gk_analytical"
+id: md_110

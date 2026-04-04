@@ -2,8 +2,8 @@ id: mc_013
 title: Himalaya payoff must wrap GBM and MonteCarloEngine primitives
 severity: critical
 category: monte_carlo
-status: validated
-confidence: 0.7
+status: promoted
+confidence: 0.8
 created: '2026-03-28T08:47:11.241325'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_084711_basket_option_monte_carlo.yaml
@@ -32,3 +32,4 @@ fix: 'Implement the payoff as a thin adapter: instantiate trellis.models.process
   and implement the Himalaya selection logic inside the payoff_fn callback that receives
   the simulated path matrix.'
 validation: Discovered during build (attempt 2)
+supersedes: []

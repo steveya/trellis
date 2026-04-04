@@ -1,0 +1,24 @@
+category: market_data
+title: API failure masked as validation error
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T15:19:14.641753'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation failure was caused by an upstream API timeout, not a logic
+  error in the swaption pricing code.
+root_cause: Transient network or service failures can surface as cryptic RuntimeErrors
+  that look like model bugs, leading to wasted debugging effort on correct code.
+fix: Implement retry logic with exponential backoff and distinguish API connectivity
+  errors from model validation errors in error handling.
+validation: Resolved during build of European payer swaption
+id: md_067

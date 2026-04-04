@@ -1,0 +1,29 @@
+category: monte_carlo
+title: MC CDS payoff must wrap required primitive directly
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-02T16:10:33.915784'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260402_161035_swap_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - fixed_coupons
+  - floating_coupons
+  - discounting
+  - credit_risk
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: Build fails with assembly.required_primitive_missing because generated payoff
+  code imports black76 or other non-CDS primitives instead of trellis.models.credit_default_swap.price_cds_monte_carlo.
+root_cause: The code generator defaults to familiar MC primitives (e.g. black76, generic
+  engine) instead of the assembly-route-mandated CDS-specific primitive, violating
+  the thin-adapter contract enforced by the harness.
+fix: Always import and call trellis.models.credit_default_swap.price_cds_monte_carlo
+  as the single pricing kernel inside evaluate(); do not substitute any other module
+  even if the signature looks compatible.
+validation: Discovered during build (attempt 3)
+id: mc_068

@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 
 def test_platform_trace_round_trip_preserves_simulation_identity(tmp_path):
@@ -118,6 +119,168 @@ def test_platform_trace_writer_normalizes_tuples_for_yaml_round_trip(tmp_path):
     assert "!!python/tuple" not in raw
     assert len(traces) == 1
     assert traces[0].request_id == "executor_build_tuple_safe"
+    assert traces[0].events == ()
+
+
+def test_platform_trace_writes_summary_yaml_and_append_only_events_log(tmp_path):
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.platform_traces import (
+        load_platform_trace_events,
+        load_platform_trace_payload,
+        load_platform_traces,
+        record_platform_trace,
+    )
+
+    compiled = compile_build_request(
+        "Build a pricer for: American put option on equity",
+        instrument_type="american_option",
+        preferred_method="monte_carlo",
+    )
+
+    trace_path = record_platform_trace(
+        compiled,
+        success=True,
+        outcome="build_completed",
+        root=tmp_path,
+    )
+
+    summary = yaml.safe_load(Path(trace_path).read_text())
+    events_path = Path(trace_path).with_suffix(".events.ndjson")
+    payload = load_platform_trace_payload(trace_path)
+    traces = load_platform_traces(root=tmp_path)
+    events = load_platform_trace_events(trace_path)
+
+    assert summary.get("events") in (None, [])
+    assert events_path.exists()
+    assert len(events_path.read_text().splitlines()) == 1
+    assert [event.event for event in events] == ["request_succeeded"]
+    assert [event["event"] for event in payload["events"]] == ["request_succeeded"]
+    assert traces[0].events == ()
+
+
+def test_platform_trace_payload_reads_legacy_inline_events(tmp_path):
+    from trellis.agent.platform_traces import (
+        load_platform_trace_events,
+        load_platform_trace_payload,
+    )
+
+    trace_path = tmp_path / "legacy_trace.yaml"
+    trace_path.write_text(
+        yaml.safe_dump(
+            {
+                "request_id": "legacy_trace",
+                "request_type": "price",
+                "entry_point": "session",
+                "action": "price_existing_instrument",
+                "status": "failed",
+                "outcome": "price_failed",
+                "success": False,
+                "timestamp": "2026-04-04T12:00:00+00:00",
+                "updated_at": "2026-04-04T12:00:01+00:00",
+                "events": [
+                    {
+                        "event": "request_compiled",
+                        "status": "ok",
+                        "timestamp": "2026-04-04T12:00:00+00:00",
+                        "details": {"action": "price_existing_instrument"},
+                    },
+                    {
+                        "event": "request_failed",
+                        "status": "error",
+                        "timestamp": "2026-04-04T12:00:01+00:00",
+                        "details": {"error": "boom"},
+                    },
+                ],
+            },
+            sort_keys=False,
+        )
+    )
+
+    payload = load_platform_trace_payload(trace_path)
+    events = load_platform_trace_events(trace_path)
+
+    assert [event["event"] for event in payload["events"]] == [
+        "request_compiled",
+        "request_failed",
+    ]
+    assert [event.event for event in events] == [
+        "request_compiled",
+        "request_failed",
+    ]
+
+
+def test_platform_trace_writer_migrates_legacy_inline_events_on_append(tmp_path):
+    from trellis.agent.platform_traces import (
+        append_platform_trace_event,
+        load_platform_trace_payload,
+    )
+
+    trace_path = tmp_path / "executor_build_legacy.yaml"
+    trace_path.write_text(
+        yaml.safe_dump(
+            {
+                "request_id": "executor_build_legacy",
+                "request_type": "build",
+                "entry_point": "executor",
+                "action": "build_then_price",
+                "status": "running",
+                "outcome": "",
+                "success": None,
+                "timestamp": "2026-04-04T12:00:00+00:00",
+                "updated_at": "2026-04-04T12:00:00+00:00",
+                "events": [
+                    {
+                        "event": "request_compiled",
+                        "status": "ok",
+                        "timestamp": "2026-04-04T12:00:00+00:00",
+                        "details": {"action": "build_then_price"},
+                    }
+                ],
+            },
+            sort_keys=False,
+        )
+    )
+
+    compiled = SimpleNamespace(
+        request=SimpleNamespace(
+            request_id="executor_build_legacy",
+            request_type="build",
+            entry_point="executor",
+            instrument_type="european_option",
+            metadata={},
+        ),
+        execution_plan=SimpleNamespace(
+            action="build_then_price",
+            route_method="analytical",
+            measures=(),
+            requires_build=True,
+        ),
+        pricing_plan=SimpleNamespace(sensitivity_support=None),
+        product_ir=SimpleNamespace(instrument="european_option"),
+        blocker_report=None,
+        knowledge_summary={},
+    )
+
+    append_platform_trace_event(
+        compiled,
+        "request_failed",
+        status="error",
+        success=False,
+        outcome="request_failed",
+        details={"error": "boom"},
+        root=tmp_path,
+    )
+
+    payload = load_platform_trace_payload(trace_path)
+    summary = yaml.safe_load(Path(trace_path).read_text())
+    events_path = trace_path.with_suffix(".events.ndjson")
+
+    assert summary.get("events") in (None, [])
+    assert events_path.exists()
+    assert [event["event"] for event in payload["events"]] == [
+        "request_compiled",
+        "request_failed",
+    ]
 
 
 def test_platform_trace_persists_dsl_family_ir_summary(tmp_path):

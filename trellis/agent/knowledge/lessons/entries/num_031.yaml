@@ -1,0 +1,29 @@
+category: numerical
+title: build_rate_lattice does not accept maturity keyword argument
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-02T22:09:27.119295'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260402_220928_puttable_bond_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - puttable
+  - fixed_coupons
+  - mean_reversion
+  - early_exercise
+  - bermudan
+  instrument: []
+  error_signature: null
+symptom: 'Build fails with: build_rate_lattice() got an unexpected keyword argument
+  ''maturity'''
+root_cause: The build_rate_lattice function signature does not include a 'maturity'
+  parameter; the lattice horizon must be specified through a different argument name
+  or inferred from the schedule/steps argument.
+fix: Remove the 'maturity' keyword argument from calls to build_rate_lattice and pass
+  the time horizon via the correct parameter (e.g., 'n_steps', 'schedule', or 'T'
+  depending on the actual function signature).
+validation: Discovered during build (attempt 3)
+id: num_031

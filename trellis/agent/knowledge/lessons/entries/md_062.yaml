@@ -1,0 +1,25 @@
+category: market_data
+title: Check request reliability
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T08:32:34.500129'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The pricing run failed because the external OpenAI text request did not succeed
+  on the first attempt.
+root_cause: The mental model failure is assuming the helper service will always respond
+  once called. In reality, transient API/network issues can interrupt the validation
+  pipeline before pricing logic is even reached.
+fix: Add retry handling and fallback behavior for external requests so transient failures
+  do not stop validation.
+validation: Resolved during build of European payer swaption
+id: md_062

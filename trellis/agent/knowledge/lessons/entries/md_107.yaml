@@ -1,0 +1,26 @@
+category: market_data
+title: External request fallback
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T23:41:05.526129'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The pricing run failed because the validation step depended on an external
+  text request that was not available or retried properly.
+root_cause: This reflects a mental model failure where the workflow assumes an upstream
+  service will always respond, but network or service issues can interrupt even deterministic
+  analytical pricing. When a model relies on external calls for inputs or validation,
+  a single request failure can stop the whole valuation path.
+fix: Add retries with backoff and a local fallback path so analytical pricing does
+  not depend on one external request succeeding.
+validation: Resolved during build of European payer swaption
+id: md_107

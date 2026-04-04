@@ -1,0 +1,26 @@
+category: market_data
+title: Guard against upstream request failures
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T20:34:16.060527'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation failed because the pricing workflow depended on a text request
+  that could fail before any swaption logic ran.
+root_cause: The mental model error is assuming the analytical pricer is the only source
+  of failure, when in reality upstream data or service calls can abort the run first.
+  If those requests are not retried or handled gracefully, the model never gets a
+  chance to validate the instrument itself.
+fix: Add retry, fallback, or offline handling for external requests so the valuation
+  can proceed or fail with a clear diagnostic.
+validation: Resolved during build of European payer swaption
+id: md_084

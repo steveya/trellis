@@ -1,0 +1,26 @@
+category: market_data
+title: Module reference typo
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T19:38:08.979555'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The swaption file referenced a non-existent Trellis module path, causing
+  validation to fail.
+root_cause: This usually happens when a model is copied or edited and an import/module
+  name is left stale or misspelled. The mental model failure is assuming the named
+  component exists without checking the exact registered Trellis path.
+fix: Replace the invalid module reference with the correct registered Trellis module
+  path.
+validation: Resolved during build of European payer swaption
+id: md_122
+supersedes: []

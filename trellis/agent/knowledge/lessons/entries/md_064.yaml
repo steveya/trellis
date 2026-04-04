@@ -1,0 +1,26 @@
+category: market_data
+title: External request failure
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T08:45:01.106853'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The pricing workflow failed because the OpenAI text request could not be
+  completed, so no valuation result was produced.
+root_cause: The mental model failure is assuming the analytical pricing path is self-contained,
+  when it actually depends on an external service call that can fail independently
+  of the model logic. If that dependency is unavailable or not retried robustly, validation
+  fails before any swaption math is evaluated.
+fix: Add resilient request handling with retries, fallback behavior, and clear error
+  propagation so the pricing engine can still complete or fail gracefully.
+validation: Resolved during build of European payer swaption
+id: md_064

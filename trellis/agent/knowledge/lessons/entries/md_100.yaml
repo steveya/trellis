@@ -1,0 +1,25 @@
+category: market_data
+title: Handle Request Failures
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T22:31:43.573799'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation failed because the OpenAI text request failed and was not
+  successfully retried or recovered.
+root_cause: The mental model assumed the external request would succeed on the first
+  try, but network or service errors can break the pricing/validation flow before
+  any model logic runs. This is a robustness failure, not a quantitative one.
+fix: Add retries, timeout handling, and a graceful fallback path when the text request
+  fails.
+validation: Resolved during build of European payer swaption
+id: md_100

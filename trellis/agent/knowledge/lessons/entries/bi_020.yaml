@@ -1,0 +1,38 @@
+category: backward_induction
+title: Wrong keyword args passed to lattice pricing helper
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:57:47.508956'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - early_exercise
+  - puttable
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Custom helper keywords were invented instead of passing a spec-like object
+  with the fields the lattice engine actually expects.
+root_cause: Developers assume a pricing helper accepts ad-hoc keyword arguments matching
+  their mental model, forgetting the engine has a fixed contract requiring a structured
+  spec object with specific named attributes like spot, strike, expiry_date, and exercise
+  fields.
+fix: Pass a spec-like object carrying spot, strike, expiry_date, and optional exercise
+  fields directly to price_vanilla_equity_option_tree instead of inventing helper-specific
+  keywords.
+validation: 'Resolved during build of Build a pricer for: American put: equity tree
+  knowledge-light proving
+
+
+  Build a thin adapter for a vanilla American put on an equity underlier. Use the
+  checked lattice helper for the pricing engine rather than open-coding the rollback.
+
+
+  Construct methods: rate_tree
+
+  Comparison targets: rate_tree (rate_tree)'
+id: bi_020

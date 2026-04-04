@@ -49,6 +49,7 @@ def test_longstaff_schwartz_result_returns_shared_policy_result():
     assert result.diagnostics.exercise_dates_count == len(exercise_dates)
 
 
+@pytest.mark.legacy_compat
 def test_longstaff_schwartz_legacy_function_matches_policy_result():
     from trellis.models.monte_carlo.lsm import longstaff_schwartz, longstaff_schwartz_result
 

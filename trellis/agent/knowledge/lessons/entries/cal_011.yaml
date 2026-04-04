@@ -1,0 +1,25 @@
+category: calibration
+title: Swaption Analytical Pricing Requires Proper Engine Setup
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T15:28:57.944318'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The analytical payer swaption pricing failed due to missing or misconfigured
+  volatility term structure and pricing engine attachment.
+root_cause: Analysts assume QuantLib objects self-configure, but swaption instruments
+  require an explicit Black or Bachelier engine with a calibrated vol handle attached
+  before pricing calls are made.
+fix: Instantiate a BlackSwaptionEngine or BachelierSwaptionEngine with a valid SwaptionVolatilityStructure
+  handle and attach it to the swaption before pricing.
+validation: Resolved during build of European payer swaption
+id: cal_011

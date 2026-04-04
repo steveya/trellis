@@ -1,0 +1,29 @@
+category: finite_differences
+title: PDE payoff must wrap primitive not reimplement from scratch
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:46:58.158601'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260403_004659_american_put_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - early_exercise
+  - puttable
+  - discounting
+  - pde_grid
+  instrument: []
+  error_signature: null
+symptom: Build fails with assembly.required_primitive_missing because generated code
+  imports black76_put instead of price_vanilla_equity_option_pde.
+root_cause: The agent reimplemented the PDE logic from scratch (or used unrelated
+  Black-76 primitives) instead of wrapping the designated assembly primitive trellis.models.equity_option_pde.price_vanilla_equity_option_pde.
+  The assembly harness validates that the required primitive symbol is actually called
+  in the generated code.
+fix: Always import and delegate to price_vanilla_equity_option_pde from trellis.models.equity_option_pde
+  as the pricing kernel; the evaluate() method must be a thin adapter that maps spec
+  fields and MarketState onto that function's signature and returns its result directly.
+validation: Discovered during build (attempt 3)
+id: fd_040

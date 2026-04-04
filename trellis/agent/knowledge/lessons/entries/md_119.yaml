@@ -1,0 +1,26 @@
+category: market_data
+title: Dependency/API request failure
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T01:01:41.489455'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The valuation failed because a required OpenAI text request could not be
+  completed on the first attempt.
+root_cause: The mental model failure is treating an external API call as a guaranteed
+  input instead of a fallible dependency. Analytical pricing logic can be correct,
+  but if upstream data or service access fails, the swaption validation still cannot
+  complete.
+fix: Add retries, fallback handling, and clear error reporting for external data or
+  service calls before running the valuation.
+validation: Resolved during build of European payer swaption
+id: md_119

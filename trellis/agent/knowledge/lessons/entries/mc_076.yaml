@@ -1,0 +1,29 @@
+category: monte_carlo
+title: Avoid string-splitting numeric state
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-03T00:50:04.801539'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260403_005006_basket_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - credit_risk
+  - discounting
+  - maturity_settlement
+  - multi_asset
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: Smoke test fails with "'float' object has no attribute 'split'" when evaluating
+  market state or instrument fields.
+root_cause: A numeric field was treated like a delimited string during payoff/state
+  parsing. The implementation likely passed a float into a helper that expects text
+  tokens for multi-asset basket construction or default-time inputs.
+fix: Keep market-state and instrument fields strongly typed and do not parse numeric
+  values with string helpers. Add explicit adapters for basket inputs so route code
+  consumes lists/arrays for assets and floats only where numeric parameters are required.
+validation: Discovered during build (attempt 3)
+id: mc_076

@@ -1,0 +1,26 @@
+category: market_data
+title: Missing model response
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T14:28:13.578872'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The valuation failed because the OpenAI text request could not be completed,
+  so the swaption calculation never produced a result.
+root_cause: The mental model error is treating the pricing engine as always available;
+  in practice, external service calls can fail due to transient outages, timeouts,
+  or connectivity issues. A pricing workflow must assume missing upstream data or
+  responses and handle them explicitly.
+fix: Add retry, timeout, and fallback handling for external requests so the pricing
+  path can recover or fail gracefully with a clear error.
+validation: Resolved during build of European payer swaption
+id: md_066

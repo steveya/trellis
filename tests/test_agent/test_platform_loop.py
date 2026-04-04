@@ -191,6 +191,7 @@ def test_compile_build_request_enriches_fx_analytical_route_inputs():
 def test_platform_trace_round_trip(tmp_path):
     from trellis.agent.platform_requests import compile_build_request
     from trellis.agent.platform_traces import (
+        load_platform_trace_events,
         load_platform_traces,
         record_platform_trace,
         summarize_platform_traces,
@@ -215,7 +216,7 @@ def test_platform_trace_round_trip(tmp_path):
     assert len(traces) == 1
     assert traces[0].request_id == compiled.request.request_id
     assert summary["compile_only"] == 1
-    assert traces[0].events[-1].event == "request_succeeded"
+    assert [event.event for event in load_platform_trace_events(trace_path)] == ["request_succeeded"]
     assert traces[0].knowledge_summary["instrument"] == compiled.product_ir.instrument
     assert traces[0].knowledge_summary["lesson_count"] >= 1
 
@@ -247,6 +248,7 @@ def test_platform_trace_appends_failure_events(tmp_path):
     from trellis.agent.platform_requests import compile_platform_request
     from trellis.agent.platform_traces import (
         append_platform_trace_event,
+        load_platform_trace_events,
         load_platform_traces,
         record_platform_trace,
     )
@@ -275,7 +277,7 @@ def test_platform_trace_appends_failure_events(tmp_path):
     assert len(traces) == 1
     assert traces[0].status == "failed"
     assert traces[0].outcome == "price_failed"
-    assert [event.event for event in traces[0].events] == [
+    assert [event.event for event in load_platform_trace_events(tmp_path / f"{compiled.request.request_id}.yaml")] == [
         "request_compiled",
         "request_failed",
     ]

@@ -1,0 +1,26 @@
+category: market_data
+title: Import valid model module
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T21:07:25.357906'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The validation failed because the swaption referenced a Trellis model module
+  that does not exist.
+root_cause: This usually means the product configuration points to a stale or mistyped
+  model path instead of an installed, supported module. The mental model failure is
+  assuming any module string is acceptable without verifying it resolves in the runtime
+  environment.
+fix: Replace the invalid module path with a valid Trellis model module that is available
+  in the environment.
+validation: Resolved during build of European payer swaption
+id: md_087

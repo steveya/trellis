@@ -1,0 +1,30 @@
+category: market_data
+title: Payoff must wrap price_cds_analytical primitive directly
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-02T16:12:45.823944'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260402_161247_swap_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - fixed_coupons
+  - floating_coupons
+  - discounting
+  - credit_risk
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: Build fails with assembly.required_primitive_missing because generated code
+  imports black76_call/black76_put instead of trellis.models.credit_default_swap.price_cds_analytical.
+root_cause: The agent selected the analytical method but routed through the IR/Black
+  primitive family instead of the credit_default_swap module. The payoff class never
+  calls the required primitive price_cds_analytical, so the assembly validation rejects
+  it.
+fix: Always import and call trellis.models.credit_default_swap.price_cds_analytical
+  as the sole pricing kernel in the evaluate() method. The payoff should be a thin
+  adapter that maps CDSSpec and MarketState fields to that primitive's arguments.
+validation: Discovered during build (attempt 3)
+id: md_072

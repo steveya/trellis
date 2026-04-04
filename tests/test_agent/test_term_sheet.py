@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from trellis.analytics.result import AnalyticsResult
 from trellis.agent.term_sheet import TermSheet, parse_term_sheet
 from trellis.agent.ask import match_payoff, ask_session, AskResult
 
@@ -203,3 +204,116 @@ class TestAskSessionMocked:
         assert result.price > 0
         assert result.matched_existing is True
         assert result.payoff_class == "CapPayoff"
+
+    def test_ask_session_projects_executor_result(self):
+        from trellis.platform.results import ExecutionResult
+        from trellis.session import Session
+        from trellis.curves.yield_curve import YieldCurve
+
+        term_sheet = TermSheet(
+            instrument_type="bond",
+            notional=100,
+            currency="USD",
+            parameters={"coupon": 0.05, "maturity": 10},
+            raw_description="10Y 5% bond",
+        )
+        analytics = AnalyticsResult({"price": 101.0, "dv01": 0.08})
+        session = Session(curve=YieldCurve.flat(0.05), settlement=SETTLE)
+
+        def fake_execute(compiled_request, execution_context, *, handlers=None):
+            assert compiled_request.execution_plan.action == "price_existing_payoff"
+            return ExecutionResult(
+                run_id="run_ask_existing",
+                request_id=compiled_request.request.request_id,
+                status="succeeded",
+                action=compiled_request.execution_plan.action,
+                output_mode=execution_context.default_output_mode,
+                result_payload={
+                    "price": 101.0,
+                    "analytics": analytics,
+                    "payoff_class": "DeterministicCashflowPayoff",
+                    "matched_existing": True,
+                    "term_sheet": compiled_request.request.term_sheet,
+                },
+                provenance={"run_mode": execution_context.run_mode.value},
+                policy_outcome={"allowed": True},
+            )
+
+        with patch("trellis.agent.ask.parse_term_sheet", return_value=term_sheet):
+            with patch("trellis.platform.executor.execute_compiled_request", side_effect=fake_execute):
+                with patch.object(Session, "price_payoff", side_effect=AssertionError("ask_session should project executor output")):
+                    with patch.object(Session, "analyze", side_effect=AssertionError("ask_session should project executor analytics")):
+                        result = ask_session(
+                            "10Y 5% bond",
+                            session,
+                            measures=["price", "dv01"],
+                        )
+
+        assert isinstance(result, AskResult)
+        assert result.price == pytest.approx(101.0)
+        assert result.matched_existing is True
+        assert result.payoff_class == "DeterministicCashflowPayoff"
+        assert result.analytics is analytics
+
+    def test_ask_session_blocked_request_surfaces_rendered_blocker_details(self):
+        from trellis.agent.blocker_planning import plan_blockers
+        from trellis.agent.platform_requests import (
+            CompiledPlatformRequest,
+            ExecutionPlan,
+            PlatformRequest,
+        )
+        from trellis.curves.yield_curve import YieldCurve
+        from trellis.platform.results import ExecutionResult
+        from trellis.session import Session
+
+        term_sheet = TermSheet(
+            instrument_type="bond",
+            notional=100,
+            currency="USD",
+            parameters={"coupon": 0.05, "maturity": 10},
+            raw_description="10Y 5% bond",
+        )
+        blocker_report = plan_blockers(("missing_module:trellis.models.exercise",))
+        session = Session(curve=YieldCurve.flat(0.05), settlement=SETTLE)
+        compiled_request = CompiledPlatformRequest(
+            request=PlatformRequest(
+                request_id="ask_price_blocked",
+                request_type="price",
+                entry_point="ask",
+                settlement=SETTLE,
+                market_snapshot=session.market_snapshot,
+                description="10Y 5% bond",
+                instrument_type=term_sheet.instrument_type,
+                term_sheet=term_sheet,
+            ),
+            market_snapshot=session.market_snapshot,
+            execution_plan=ExecutionPlan(
+                action="block",
+                reason="structured_test_block",
+                route_method="unit_test",
+            ),
+            blocker_report=blocker_report,
+        )
+
+        blocked = ExecutionResult(
+            run_id="run_blocked",
+            request_id=compiled_request.request.request_id,
+            status="blocked",
+            action=compiled_request.execution_plan.action,
+            output_mode="result_only",
+            result_payload={
+                "reason": "compiled_request_blocked",
+                "blocker_codes": ["missing_module:trellis.models.exercise"],
+            },
+            warnings=("compiled_request_blocked",),
+            provenance={"run_mode": "governed"},
+            policy_outcome={"allowed": True},
+        )
+
+        with patch("trellis.agent.ask.parse_term_sheet", return_value=term_sheet):
+            with patch("trellis.agent.platform_requests.compile_platform_request", return_value=compiled_request):
+                with patch("trellis.platform.executor.execute_compiled_request", return_value=blocked):
+                    with patch("trellis.agent.platform_traces.append_platform_trace_event"):
+                        with patch("trellis.agent.platform_traces.record_platform_trace"):
+                            with pytest.raises(RuntimeError, match="Structured blocker report"):
+                                ask_session("10Y 5% bond", session)

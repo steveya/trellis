@@ -1,0 +1,25 @@
+category: market_data
+title: Bad module reference
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T16:53:11.164453'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The model pointed to a non-existent Trellis module in the validation setup.
+root_cause: This happens when the pricing configuration references an invalid or stale
+  module path, so the framework cannot resolve the model definition. The mental model
+  failure is assuming the configured component name matches an available implementation
+  without verifying it.
+fix: Replace the invalid module reference with a valid Trellis module path and rerun
+  validation.
+validation: Resolved during build of European payer swaption
+id: md_077

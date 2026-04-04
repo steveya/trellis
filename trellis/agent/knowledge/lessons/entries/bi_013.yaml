@@ -1,0 +1,32 @@
+category: backward_induction
+title: resolve_lattice_exercise_policy does not accept exercise_fn kwarg
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-02T21:44:31.926828'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260402_214433_puttable_bond_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - puttable
+  - bermudan
+  - early_exercise
+  - fixed_coupons
+  - mean_reversion
+  - backward_induction
+  instrument: []
+  error_signature: null
+symptom: 'Build fails with TypeError: resolve_lattice_exercise_policy() got an unexpected
+  keyword argument ''exercise_fn'''
+root_cause: The internal trellis API `resolve_lattice_exercise_policy` does not expose
+  an `exercise_fn` keyword argument; the puttable/callable exercise logic must be
+  expressed through the `exercise_type` and `exercise_style` parameters (e.g. bermudan)
+  with the comparison direction encoded via a separate `holder_maximises` or `put_call`
+  flag, not a raw callable.
+fix: Remove `exercise_fn=max` from the call to `resolve_lattice_exercise_policy` and
+  instead pass `exercise_type='bermudan'` with `put_call='put'` (or equivalent holder-direction
+  flag) so the library applies the correct max/min comparison internally.
+validation: Discovered during build (attempt 3)
+id: bi_013

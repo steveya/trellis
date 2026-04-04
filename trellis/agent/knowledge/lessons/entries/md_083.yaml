@@ -1,0 +1,24 @@
+category: market_data
+title: Import Valid Modules
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T20:34:03.686052'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The model referenced a non-existent Trellis module in its validation setup.
+root_cause: This is a mental model failure of assuming any module path is acceptable,
+  when the analytical method must point to a real, supported implementation. Validation
+  catches this because the model cannot resolve invalid dependencies.
+fix: Replace the invalid module reference with a valid Trellis module path supported
+  by the analytical swaption method.
+validation: Resolved during build of European payer swaption
+id: md_083

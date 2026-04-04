@@ -1,0 +1,35 @@
+category: monte_carlo
+title: Wrong constructor argument name for GBM spot price
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T01:24:28.585299'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - forward_rate
+  - vol_surface_dependence
+  - greeks
+  - gamma
+  - multi_asset
+  - maturity_settlement
+  instrument: []
+  error_signature: null
+symptom: The GBM process was instantiated with 'spot' as a keyword argument, but the
+  class expects a different parameter name (e.g., 'S0' or 's0').
+root_cause: The developer assumed the GBM class API matched a generic mental model
+  of spot-price processes without checking the actual constructor signature, leading
+  to a keyword mismatch.
+fix: Replace 'spot=' with the correct parameter name used in the GBM class constructor,
+  confirmed by reading its signature or documentation.
+validation: "Resolved during build of Build a pricer for: FX vanilla option: Garman-Kohlhagen\
+  \ vs MC\n\nConstruct methods: analytical, monte_carlo\nComparison targets: gk_analytical\
+  \ (analytical), mc_fx_option (monte_carlo)\nCross-validation harness:\n  internal\
+  \ targets: gk_analytical, mc_fx_option\n  external targets: quantlib, financepy\n\
+  New component: garman_kohlhagen_formula\n\nImplementation target: mc_fx_option\n\
+  Preferred method family: monte_carlo\n\nImplementation target: mc_fx_option"
+id: mc_079

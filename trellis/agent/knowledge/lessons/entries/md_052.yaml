@@ -1,8 +1,8 @@
 category: market_data
 title: Missing Curve and Vol Access
 severity: high
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 0.8
 created: '2026-04-01T08:03:40.027112'
 version: ''
 source_trace: null
@@ -29,3 +29,4 @@ validation: "Resolved during build of Build a pricer for: ZCB option: Ho-Lee vs 
   \ jamshidian_decomposition\n\nImplementation target: hull_white_tree\nPreferred\
   \ method family: rate_tree\n\nImplementation target: hull_white_tree"
 id: md_052
+supersedes: []

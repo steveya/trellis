@@ -100,6 +100,7 @@ def test_price_on_lattice_warns_when_overlay_forces_python_fallback():
     assert lattice._lattice_last_pricing_path == "python_overlay_fallback"
 
 
+@pytest.mark.legacy_compat
 def test_legacy_tree_entry_points_emit_deprecation_warnings():
     curve = YieldCurve.flat(0.03)
 

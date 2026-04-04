@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from trellis.agent.quant import PricingPlan
 
 
@@ -263,6 +265,7 @@ def test_builds_fx_analytical_plan_for_fx_option_context():
     assert plan.primitive_plan.blockers == ()
 
 
+@pytest.mark.legacy_compat
 def test_builds_quanto_analytical_plan_with_shared_resolution_and_black76():
     from types import SimpleNamespace
 

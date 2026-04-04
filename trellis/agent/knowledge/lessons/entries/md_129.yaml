@@ -1,0 +1,26 @@
+category: market_data
+title: Transient API failure
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-03T21:42:07.667874'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The pricing validation failed because the OpenAI text request could not complete
+  on the first attempt.
+root_cause: The mental model failure was assuming the external dependency would always
+  respond successfully during validation. In practice, network, rate-limit, or service
+  hiccups can interrupt otherwise correct pricing logic.
+fix: Retry the request with backoff and add fallback handling so transient API failures
+  do not stop validation.
+validation: Resolved during build of European payer swaption
+id: md_129
+supersedes: []

@@ -1,0 +1,25 @@
+category: market_data
+title: Request Fallback Needed
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T21:07:37.247942'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The valuation workflow depended on a single OpenAI text request, so a transient
+  request failure caused the swaption validation to fail immediately.
+root_cause: This is a mental model failure of treating an external service as guaranteed
+  rather than unreliable. Analytical pricing can still be blocked if supporting data
+  or orchestration requests have no retry, fallback, or cached alternative.
+fix: Add retries with backoff and a local fallback path so temporary request failures
+  do not stop the valuation.
+validation: Resolved during build of European payer swaption
+id: md_088

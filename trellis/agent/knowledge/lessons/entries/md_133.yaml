@@ -1,0 +1,24 @@
+category: market_data
+title: Handle transient API failures
+severity: high
+status: candidate
+confidence: 0.5
+created: '2026-04-04T02:08:29.300941'
+version: ''
+source_trace: null
+applies_when:
+  method: []
+  features: []
+  instrument: []
+  error_signature: null
+symptom: The pricing run failed because the OpenAI text request errored out and there
+  was no retry or fallback handling.
+root_cause: The mental model assumed the external request would always succeed, but
+  analytical valuation still depends on reliable upstream data and service calls.
+  Transient network or API issues can interrupt an otherwise correct model if they
+  are not treated as recoverable failures.
+fix: Add retries with backoff and a graceful fallback or cached input path for external
+  request failures.
+validation: Resolved during build of European payer swaption
+supersedes: []
+id: md_133

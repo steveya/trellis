@@ -1,0 +1,31 @@
+category: market_data
+title: Missing credit curve contract
+severity: critical
+status: validated
+confidence: 0.7
+created: '2026-04-03T00:49:18.959790'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260403_004920_basket_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - discounting
+  - maturity_settlement
+  - multi_asset
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: Build failed with missing required primitive and missing credit curve input
+  errors during analytical basket construction.
+root_cause: The pricer assembly expected a credit-risk contract, but the generated
+  payoff was not a thin adapter around the required primitives and did not bind the
+  required credit_curve/contract specification. As a result, the route could not validate
+  or price the nth-to-default basket consistently.
+fix: Add an explicit credit curve input and contract validation before pricing, then
+  wrap the analytical payoff as a thin adapter around the required route primitives.
+  Ensure the generated code directly uses the mandated primitives from the selected
+  assembly path so the compiler can recognize the route.
+validation: Discovered during build (attempt 3)
+id: md_116

@@ -1,0 +1,32 @@
+category: calibration
+title: Importing non-exported functions from internal modules
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-02T16:00:45.506987'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: The code imported `build_payment_timeline` and `build_exercise_timeline_from_dates`
+  from `trellis.models.trees.control`, but those functions are not part of that module's
+  public exports.
+root_cause: The developer assumed helper utilities visible elsewhere in the codebase
+  lived in a central control module, without verifying the actual public API surface
+  of that module.
+fix: Import only symbols confirmed to exist in `trellis.models.trees.control`, and
+  source timeline-building utilities from whichever module actually exports them.
+validation: "Resolved during build of Build a pricer for: Callable bond: BDT lognormal\
+  \ vs HW normal tree\n\nConstruct methods: rate_tree\nComparison targets: bdt_tree\
+  \ (rate_tree), hull_white_tree (rate_tree)\nCross-validation harness:\n  internal\
+  \ targets: bdt_tree, hull_white_tree\n  external targets: financepy, quantlib\n\
+  New component: bdt_calibration_via_generic_lattice\n\nImplementation target: bdt_tree\n\
+  Preferred method family: rate_tree\n\nImplementation target: bdt_tree"
+id: cal_014
