@@ -299,8 +299,6 @@ def save_risk_benchmark_report(
     json_path = root / f"{stem}.json"
     text_path = root / f"{stem}.md"
     payload = dict(report)
-    payload["json_path"] = str(json_path)
-    payload["text_path"] = str(text_path)
     json_path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str))
     text_path.write_text(render_risk_benchmark_report(payload))
     return RiskBenchmarkArtifacts(report=payload, json_path=json_path, text_path=text_path)

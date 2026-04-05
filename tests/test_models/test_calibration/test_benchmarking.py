@@ -74,8 +74,9 @@ def test_build_and_save_calibration_benchmark_report(tmp_path):
     artifacts = save_calibration_benchmark_report(report, root=tmp_path, stem="supported_calibration_workflows")
     assert artifacts.json_path.exists()
     assert artifacts.text_path.exists()
-    assert artifacts.report["json_path"] == str(artifacts.json_path)
-    assert artifacts.report["text_path"] == str(artifacts.text_path)
+    assert "json_path" not in artifacts.report
+    assert "text_path" not in artifacts.report
+    assert str(tmp_path) not in artifacts.json_path.read_text()
 
 
 def test_supported_calibration_benchmark_scenarios_cover_workflows():

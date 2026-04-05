@@ -85,7 +85,9 @@ Calibration throughput now also has a checked benchmark surface in
 ``trellis.models.calibration.benchmarking``. The supported workflow fixtures
 cover Hull-White, SABR, Heston, and local-vol runs, and the persisted report in
 ``docs/benchmarks/calibration_workflows.{json,md}`` keeps cold-start versus
-warm-start timing baselines in a stable comparison shape.
+warm-start timing baselines in a stable comparison shape. The benchmark folder
+now carries its own ``README.md`` contract note so checked artifacts stay
+portable and do not accumulate machine-local scratch metadata.
 
 The rates market-input side now has a similarly typed bootstrap surface in
 ``trellis.curves.bootstrap``. ``BootstrapCurveInputBundle`` and
@@ -194,7 +196,9 @@ Pod-risk throughput now has a checked benchmark surface as well.
 ``trellis.analytics.benchmarking`` measures the supported scenario-cube,
 rebuild-based rates-risk, bucketed-vega, and spot-risk workflows through the
 same public/runtime entrypoints that desk code uses, and persists the current
-baseline under ``docs/benchmarks/pod_risk_workflows.{json,md}``.
+baseline under ``docs/benchmarks/pod_risk_workflows.{json,md}``. The same
+folder-level contract applies there: checked benchmark payloads are repo
+artifacts, not ad hoc local output dumps.
 
 The first supported model-parameter calibration workflow now sits on top of the
 same substrate. ``calibrate_hull_white(...)`` packages a supported strip of

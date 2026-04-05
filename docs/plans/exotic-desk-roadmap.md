@@ -107,6 +107,12 @@ Status mirror last synced: `2026-04-05`
 | `QUA-631` Calibration performance: throughput benchmark and warm-start baseline | Done |
 | `QUA-604` Validation: calibration replay and tolerance fixtures | Done |
 
+### Ordered Benchmark Hygiene Queue
+
+| Ticket | Status |
+| --- | --- |
+| `QUA-680` Benchmark artifacts: portable checked baselines and folder guidance | Done |
+
 ### Ordered Pod Risk And Explain Queue
 
 | Ticket | Status |
