@@ -1427,6 +1427,7 @@ def _validate_semantic_shape(
         "vanilla_option": _validate_vanilla_option_shape,
         "quanto_option": _validate_quanto_option_shape,
         "callable_bond": _validate_callable_bond_shape,
+        "range_accrual": _validate_range_accrual_shape,
         "rate_style_swaption": _validate_rate_style_swaption_shape,
         "credit_default_swap": _validate_credit_default_swap_shape,
         "nth_to_default": _validate_nth_to_default_shape,
@@ -1724,6 +1725,96 @@ def _validate_callable_bond_shape(
     )
     if not contract.product.observation_schedule:
         errors.append("Semantic callable bond requires a call schedule.")
+    if not contract.blueprint.primitive_families:
+        warnings.append(
+            f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."
+        )
+
+
+def _validate_range_accrual_shape(
+    contract: SemanticContract,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate the first range-accrual trade-entry semantic shape."""
+    required_capabilities = _validate_market_capabilities(
+        contract,
+        errors,
+        frozenset({"discount_curve", "forward_curve"}),
+    )
+    _validate_profile_fields(
+        contract,
+        errors,
+        expected_instrument_class="range_accrual",
+        expected_payoff_family="range_accrual_coupon",
+        expected_underlier_structure="single_curve_rate_style",
+        expected_payoff_rule="range_accrual_coupon_payment",
+        expected_settlement_rule="coupon_period_cash_settlement",
+        expected_exercise_style="none",
+        expected_multi_asset=False,
+        require_schedule=True,
+        require_constituents=1,
+        path_dependence="schedule_dependent",
+        state_dependence="schedule_dependent",
+        schedule_dependence=True,
+    )
+    if "forward_curve" not in required_capabilities:
+        errors.append("Range-accrual semantics require a forward curve input.")
+    required_input_ids = {item.input_id for item in contract.market_data.required_inputs}
+    if "fixing_history" not in required_input_ids:
+        errors.append("Range-accrual semantics require a fixing_history input.")
+
+    product = contract.product
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
+    reference_index = str(term_fields.get("reference_index", "")).strip()
+    if not reference_index:
+        errors.append("Range-accrual semantics require term_fields.reference_index.")
+
+    coupon_definition = dict(term_fields.get("coupon_definition") or {})
+    coupon_rate = coupon_definition.get("coupon_rate")
+    if coupon_rate is None:
+        errors.append("Range-accrual semantics require term_fields.coupon_definition.coupon_rate.")
+    if not str(coupon_definition.get("coupon_style", "")).strip():
+        errors.append("Range-accrual semantics require term_fields.coupon_definition.coupon_style.")
+
+    range_condition = dict(term_fields.get("range_condition") or {})
+    lower_bound = range_condition.get("lower_bound")
+    upper_bound = range_condition.get("upper_bound")
+    if lower_bound is None or upper_bound is None:
+        errors.append("Range-accrual semantics require lower and upper accrual bounds.")
+    elif float(lower_bound) > float(upper_bound):
+        errors.append("Range-accrual semantics require lower_bound <= upper_bound.")
+
+    settlement_profile = dict(term_fields.get("settlement_profile") or {})
+    if not str(settlement_profile.get("coupon_settlement", "")).strip():
+        errors.append("Range-accrual semantics require term_fields.settlement_profile.coupon_settlement.")
+    if not str(settlement_profile.get("principal_settlement", "")).strip():
+        errors.append("Range-accrual semantics require term_fields.settlement_profile.principal_settlement.")
+
+    callability = dict(term_fields.get("callability") or {})
+    if callability and not callability.get("call_schedule"):
+        errors.append("Range-accrual callability hooks must include call_schedule when present.")
+
+    observable_types = {
+        str(getattr(item, "observable_type", "")).strip().lower()
+        for item in product.observables
+    }
+    if "forward_rate" not in observable_types:
+        errors.append("Range-accrual semantics require a typed forward_rate observable.")
+    if "cashflow_schedule" not in observable_types:
+        errors.append("Range-accrual semantics require a typed cashflow_schedule observable.")
+
+    obligation_ids = {item.obligation_id for item in product.obligations}
+    if "coupon_period_cashflow" not in obligation_ids:
+        errors.append("Range-accrual semantics require a typed coupon-period obligation.")
+    if "principal_repayment" not in obligation_ids:
+        errors.append("Range-accrual semantics require a typed principal repayment obligation.")
+    if product.controller_protocol.controller_style != "identity":
+        errors.append("Range-accrual semantics cannot declare a strategic controller in the first slice.")
+    if callability:
+        warnings.append(
+            "Range-accrual callability hooks are captured as trade-entry metadata; callable execution remains a later slice."
+        )
     if not contract.blueprint.primitive_families:
         warnings.append(
             f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."

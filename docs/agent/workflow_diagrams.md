@@ -103,7 +103,7 @@ flowchart TD
 ```mermaid
 flowchart LR
     A["Canonical YAML<br/>principles / decompositions / cookbooks / contracts / requirements"] --> B["KnowledgeStore<br/>trellis/agent/knowledge/store.py"]
-    C["Lessons / experience index and entries"] --> B
+    C["Canonical lesson index and entries"] --> B
     D["Import registry<br/>trellis/agent/knowledge/import_registry.py"] --> B
 
     B --> E["retrieve_for_product_ir(...) / retrieve_for_task(...)"]
@@ -144,7 +144,7 @@ document refer to one of those two concepts.
 ## Component Roles
 
 - `cookbook`: positive construction pattern from canonical policy.
-- `experience`: ranked lessons from past failures and fixes.
+- `lessons`: ranked guidance from past failures and fixes.
 - `ProductIR`: typed product meaning from Phase 1.
 - `GenerationPlan`: repo-backed import/test/reuse constraints from Tranche 2B.
 - `PrimitivePlan`: deterministic route and primitive selection from Phase 3,
@@ -328,7 +328,7 @@ What is already true:
 - missing-primitive workflows exist for unsupported foundational gaps
 - semantic validation exists
 - import validation exists
-- cookbook and experience retrieval are unified through the knowledge store
+- cookbook and lesson retrieval are unified through the knowledge store
 
 What is still transitional:
 
@@ -365,7 +365,7 @@ route selection quality and use the new assembly-first path to regenerate the
 problematic exercise/control artifacts. The same typed product representation now drives:
 
 - cookbook selection
-- experience selection
+- lesson selection
 - primitive-route selection
 - method compatibility
 - semantic validation

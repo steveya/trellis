@@ -567,7 +567,7 @@ class Session:
         notebook or API use rather than a full reporting engine.
         """
         br = self.price(book, greeks="all")
-        agg_krd: dict[str, float] = {}
+        agg_krd: dict[float, float] = {}
         tmv = br.total_mv
         positions = {}
         for name in br:

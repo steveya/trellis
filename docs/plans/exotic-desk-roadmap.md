@@ -63,16 +63,16 @@ Rules for coding agents:
   - only then update the corresponding row in this file
 - Update this table only after the ticket is closed in Linear.
 
-Status mirror last synced: `2026-04-04`
+Status mirror last synced: `2026-04-05`
 
 ### Ordered Epic Queue
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-589` Exotic desk MVP | Backlog |
-| `QUA-590` Calibration and market realism | Backlog |
-| `QUA-591` Pod risk and explain | Backlog |
-| `QUA-592` Book ingestion | Backlog |
+| `QUA-589` Exotic desk MVP | Done |
+| `QUA-590` Calibration and market realism | Done |
+| `QUA-591` Pod risk and explain | Done |
+| `QUA-592` Book ingestion | Done |
 | `QUA-593` Enterprise integration | Backlog |
 | `QUA-594` Institutional valuation stack | Backlog |
 
@@ -80,58 +80,62 @@ Status mirror last synced: `2026-04-04`
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-595` Semantic contract: range accrual trade entry | Backlog |
-| `QUA-313` Market snapshot: file-based curves, surfaces, and fixings import | Backlog |
-| `QUA-596` Range accrual pricing: checked route and validation bundle | Backlog |
-| `QUA-598` Pricing output: trader audit bundle and assumptions summary | Backlog |
-| `QUA-599` HTTP/MCP surface: one-trade pricing workflow | Backlog |
-| `QUA-597` Callable rates structures: exercise schedule and state binding | Backlog |
+| `QUA-595` Semantic contract: range accrual trade entry | Done |
+| `QUA-313` Market snapshot: file-based curves, surfaces, and fixings import | Done |
+| `QUA-596` Range accrual pricing: checked route and validation bundle | Done |
+| `QUA-598` Pricing output: trader audit bundle and assumptions summary | Done |
+| `QUA-599` HTTP/MCP surface: one-trade pricing workflow | Done |
+| `QUA-597` Callable rates structures: exercise schedule and state binding | Done |
 
 ### Ordered Calibration And Market Realism Queue
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-317` Market data: fixing and rate-history schema | Backlog |
-| `QUA-603` Market conventions: accrued interest and YTM completion | Backlog |
-| `QUA-623` Calibration substrate: typed solve request and objective bundle | Backlog |
-| `QUA-624` Calibration substrate: optimizer backend registry and capability checks | Backlog |
-| `QUA-625` Calibration governance: solver provenance and replay artifacts | Backlog |
-| `QUA-626` Rates calibration: bootstrap convention bundle and market instrument surface | Backlog |
-| `QUA-627` Rates calibration: Jacobian-aware bootstrap solve path | Backlog |
-| `QUA-600` Rates calibration: Hull-White term-structure fit | Backlog |
-| `QUA-628` Volatility calibration: SABR smile surface assembly and fit diagnostics | Backlog |
-| `QUA-601` Volatility calibration: SABR smile workflow | Backlog |
-| `QUA-629` Equity-vol process: Heston runtime process and parameter binding | Backlog |
-| `QUA-630` Local-vol calibration: surface hardening and stability checks | Backlog |
-| `QUA-602` Equity-vol calibration: Heston and local-vol workflow | Backlog |
-| `QUA-631` Calibration performance: throughput benchmark and warm-start baseline | Backlog |
-| `QUA-604` Validation: calibration replay and tolerance fixtures | Backlog |
+| `QUA-317` Market data: fixing and rate-history schema | Done |
+| `QUA-603` Market conventions: accrued interest and YTM completion | Done |
+| `QUA-623` Calibration substrate: typed solve request and objective bundle | Done |
+| `QUA-624` Calibration substrate: optimizer backend registry and capability checks | Done |
+| `QUA-625` Calibration governance: solver provenance and replay artifacts | Done |
+| `QUA-626` Rates calibration: bootstrap convention bundle and market instrument surface | Done |
+| `QUA-627` Rates calibration: Jacobian-aware bootstrap solve path | Done |
+| `QUA-600` Rates calibration: Hull-White term-structure fit | Done |
+| `QUA-628` Volatility calibration: SABR smile surface assembly and fit diagnostics | Done |
+| `QUA-601` Volatility calibration: SABR smile workflow | Done |
+| `QUA-629` Equity-vol process: Heston runtime process and parameter binding | Done |
+| `QUA-630` Local-vol calibration: surface hardening and stability checks | Done |
+| `QUA-602` Equity-vol calibration: Heston and local-vol workflow | Done |
+| `QUA-631` Calibration performance: throughput benchmark and warm-start baseline | Done |
+| `QUA-604` Validation: calibration replay and tolerance fixtures | Done |
 
 ### Ordered Pod Risk And Explain Queue
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-632` Risk substrate: interpolation-aware curve shock engine | Backlog |
-| `QUA-605` Risk analytics: interpolation-aware key rate durations | Backlog |
-| `QUA-606` Risk analytics: twist and butterfly scenario packs | Backlog |
-| `QUA-633` Risk substrate: volatility surface bucket and bump engine | Backlog |
-| `QUA-607` Volatility risk: bucketed vega by expiry and strike | Backlog |
-| `QUA-634` Risk runtime: delta gamma theta measure implementations | Backlog |
-| `QUA-608` Callable analytics: OAS duration and callable scenario explain | Backlog |
-| `QUA-635` Portfolio risk: scenario result cube and aggregation substrate | Backlog |
-| `QUA-609` Portfolio explain: book P&L attribution | Backlog |
-| `QUA-610` Trade explain: driver narrative and scenario commentary | Backlog |
-| `QUA-636` Risk performance: scenario and sensitivity throughput benchmark pack | Backlog |
+| `QUA-632` Risk substrate: interpolation-aware curve shock engine | Done |
+| `QUA-605` Risk analytics: interpolation-aware key rate durations | Done |
+| `QUA-606` Risk analytics: twist and butterfly scenario packs | Done |
+| `QUA-643` Risk analytics: retire legacy exact-knot KRD path | Done |
+| `QUA-644` Risk analytics: quote-space rebuilt curve KRD workflow | Done |
+| `QUA-645` Risk outputs: methodology and bucket-convention disclosure | Done |
+| `QUA-646` Risk analytics: rebuild-based rates scenario packs | Done |
+| `QUA-633` Risk substrate: volatility surface bucket and bump engine | Done |
+| `QUA-607` Volatility risk: bucketed vega by expiry and strike | Done |
+| `QUA-634` Risk runtime: delta gamma theta measure implementations | Done |
+| `QUA-608` Callable analytics: OAS duration and callable scenario explain | Done |
+| `QUA-635` Portfolio risk: scenario result cube and aggregation substrate | Done |
+| `QUA-609` Portfolio explain: book P&L attribution | Done |
+| `QUA-610` Trade explain: driver narrative and scenario commentary | Done |
+| `QUA-636` Risk performance: scenario and sensitivity throughput benchmark pack | Done |
 
 ### Ordered Book Ingestion Queue
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-611` Position schema: generic exotic trade import contract | Backlog |
-| `QUA-612` Book ingestion: mixed-instrument CSV/JSON loaders | Backlog |
-| `QUA-613` Snapshot resolution: request-driven component selection | Backlog |
-| `QUA-637` Book execution: scenario batching and reusable compute plan | Backlog |
-| `QUA-614` Book execution: saved scenario templates and batch outputs | Backlog |
+| `QUA-611` Position schema: generic exotic trade import contract | Done |
+| `QUA-612` Book ingestion: mixed-instrument CSV/JSON loaders | Done |
+| `QUA-613` Snapshot resolution: request-driven component selection | Done |
+| `QUA-637` Book execution: scenario batching and reusable compute plan | Done |
+| `QUA-614` Book execution: saved scenario templates and batch outputs | Done |
 
 ### Ordered Enterprise Integration Queue
 

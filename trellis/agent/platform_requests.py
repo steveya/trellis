@@ -163,7 +163,6 @@ class CompiledPlatformRequest:
     request: PlatformRequest
     market_snapshot: Any | None
     execution_plan: ExecutionPlan
-    family_blueprint: Any | None = None
     semantic_contract: Any | None = None
     semantic_blueprint: Any | None = None
     product_ir: ProductIR | None = None
@@ -683,7 +682,6 @@ def _finalize_compiled_request(
     request: PlatformRequest,
     market_snapshot,
     execution_plan: ExecutionPlan,
-    family_blueprint=None,
     semantic_contract=None,
     semantic_blueprint=None,
     product_ir=None,
@@ -713,7 +711,7 @@ def _finalize_compiled_request(
     validation_contract = None
     if any(
         item is not None
-        for item in (pricing_plan, product_ir, family_blueprint, semantic_blueprint)
+        for item in (pricing_plan, product_ir, semantic_blueprint)
     ):
         from trellis.agent.validation_contract import (
             compile_validation_contract,
@@ -725,7 +723,6 @@ def _finalize_compiled_request(
             product_ir=product_ir,
             pricing_plan=pricing_plan,
             generation_plan=generation_plan,
-            family_blueprint=family_blueprint,
             semantic_blueprint=semantic_blueprint,
             comparison_spec=comparison_spec,
             instrument_type=request.instrument_type,
@@ -768,7 +765,6 @@ def _finalize_compiled_request(
         request=request,
         market_snapshot=market_snapshot,
         execution_plan=execution_plan,
-        family_blueprint=family_blueprint,
         semantic_contract=semantic_contract,
         semantic_blueprint=semantic_blueprint,
         product_ir=product_ir,
@@ -825,6 +821,22 @@ def _compile_semantic_request(
         inspected_modules=inspected_modules,
         product_ir=semantic_blueprint.product_ir,
     )
+    if not getattr(semantic_blueprint, "primitive_routes", ()):
+        uncertainty_flags = tuple(
+            dict.fromkeys(
+                (
+                    *getattr(generation_plan, "uncertainty_flags", ()),
+                    "primitive_plan_not_available",
+                )
+            )
+        )
+        generation_plan = replace(
+            generation_plan,
+            primitive_plan=None,
+            blocker_report=None,
+            new_primitive_workflow=None,
+            uncertainty_flags=uncertainty_flags,
+        )
     knowledge_bundle = _shared_knowledge_bundle(
         semantic_blueprint.product_ir,
         preferred_method=pricing_plan.method,

@@ -744,8 +744,10 @@ def compact_traces(older_than_days: int = 30) -> dict[str, int]:
     """Compact cold-tier traces older than *older_than_days*.
 
     Groups trace files by (instrument, method) cohort, writes a summary
-    YAML per cohort under ``traces/summaries/``, and removes the original
-    files.  Returns ``{cohorts_summarized, traces_compacted, traces_kept}``.
+    YAML per cohort under ``traces/summaries/``, removes the original
+    legacy flat trace files, and inlines old platform event sidecars back
+    into their summary YAML. Returns
+    ``{cohorts_summarized, traces_compacted, traces_kept}``.
     """
     from collections import defaultdict
 
@@ -820,11 +822,94 @@ def compact_traces(older_than_days: int = 30) -> dict[str, int]:
             path.unlink(missing_ok=True)
             compacted += 1
 
+    platform_compacted, platform_kept = _compact_platform_trace_sidecars(
+        older_than_days=older_than_days,
+        cutoff=cutoff,
+    )
+
     return {
         "cohorts_summarized": len(cohorts),
-        "traces_compacted": compacted,
-        "traces_kept": kept,
+        "traces_compacted": compacted + platform_compacted,
+        "traces_kept": kept + platform_kept,
     }
+
+
+def _compact_platform_trace_sidecars(
+    *,
+    older_than_days: int,
+    cutoff: datetime,
+) -> tuple[int, int]:
+    """Inline old platform event logs back into summary YAML and drop the sidecar."""
+    try:
+        from trellis.agent.platform_traces import (
+            _load_trace_event_dicts,
+            _load_trace_summary_dict,
+            _write_trace_summary_dict,
+        )
+    except Exception:
+        return 0, 0
+
+    platform_dir = _TRACES_DIR / "platform"
+    if not platform_dir.is_dir():
+        return 0, 0
+
+    compacted = 0
+    kept = 0
+    for summary_path in sorted(platform_dir.glob("*.yaml")):
+        events_path = summary_path.with_suffix(".events.ndjson")
+        if not events_path.exists():
+            continue
+        latest_mtime = max(summary_path.stat().st_mtime, events_path.stat().st_mtime)
+        age_days = (cutoff.timestamp() - latest_mtime) / 86400
+        if age_days < older_than_days:
+            kept += 1
+            continue
+
+        summary = _load_trace_summary_dict(summary_path)
+        if not summary:
+            kept += 1
+            continue
+
+        events = _load_trace_event_dicts(summary_path, trace=summary)
+        summary["events"] = [
+            _normalize_trace_event_payload(event)
+            for event in events
+            if isinstance(event, Mapping)
+        ]
+        _write_trace_summary_dict(summary_path, summary)
+        events_path.unlink(missing_ok=True)
+        compacted += 1
+
+    return compacted, kept
+
+
+def _normalize_trace_event_payload(event: Mapping[str, object]) -> dict[str, object]:
+    """Normalize one persisted trace event into stable YAML-safe primitives."""
+    details = event.get("details") or {}
+    if not isinstance(details, Mapping):
+        details = {}
+    return {
+        "event": str(event.get("event") or ""),
+        "status": str(event.get("status") or "info"),
+        "timestamp": str(event.get("timestamp") or ""),
+        "details": _normalize_trace_yaml_value(details),
+    }
+
+
+def _normalize_trace_yaml_value(value: object) -> object:
+    """Convert nested trace payloads into YAML-friendly primitives."""
+    if isinstance(value, Mapping):
+        return {
+            str(key): _normalize_trace_yaml_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, tuple):
+        return [_normalize_trace_yaml_value(item) for item in value]
+    if isinstance(value, list):
+        return [_normalize_trace_yaml_value(item) for item in value]
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    return str(value)
 
 
 def _record_gap_aggregated(
@@ -1085,7 +1170,10 @@ def resolve_adapter_lifecycle_records(
     for record in list(records) + _load_adapter_lifecycle_artifact_records():
         key = _adapter_lifecycle_record_key(record)
         existing = merged.get(key)
-        if existing is None or _adapter_lifecycle_status_rank(record.status) >= _adapter_lifecycle_status_rank(existing.status):
+        # Keep the first record we see for equal-status ties. Live records are
+        # processed before artifacts, and artifacts are loaded newest-first, so
+        # this preserves current live state and the newest persisted review.
+        if existing is None or _adapter_lifecycle_status_rank(record.status) > _adapter_lifecycle_status_rank(existing.status):
             merged[key] = record
 
     resolved = list(merged.values())

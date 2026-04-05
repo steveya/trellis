@@ -12,6 +12,7 @@ class PromptRegistry:
         return (
             "compare_model_versions",
             "configure_market_data",
+            "exotic_desk_one_trade",
             "explain_model_selection",
             "persist_current_model",
             "price_trade",
@@ -27,6 +28,7 @@ class PromptRegistry:
             "price_trade_audit": self._price_trade_audit,
             "persist_current_model": self._persist_current_model,
             "compare_model_versions": self._compare_model_versions,
+            "exotic_desk_one_trade": self._exotic_desk_one_trade,
             "explain_model_selection": self._explain_model_selection,
             "configure_market_data": self._configure_market_data,
             "validate_candidate_model": self._validate_candidate_model,
@@ -51,19 +53,53 @@ class PromptRegistry:
                 "trellis.session.get_context",
                 "trellis.providers.list",
                 "trellis.providers.configure",
+                "trellis.snapshot.import_files",
                 "trellis.trade.parse",
                 "trellis.model.match",
                 "trellis.price.trade",
             ],
             "resources": [
+                "trellis://market-snapshots/{snapshot_id}",
                 "trellis://runs/{run_id}",
                 "trellis://runs/{run_id}/audit",
             ],
             "prompt": (
                 f"Use governed session {session_id!r}. Confirm provider bindings first, "
+                "import an explicit market snapshot when the trade depends on desk-supplied files, "
                 "parse the trade, inspect deterministic model matching, then call "
                 "`trellis.price.trade`. If the run succeeds or blocks, inspect the persisted "
-                "run and audit resources rather than rerunning ad hoc helper code."
+                "run and audit resources rather than rerunning ad hoc helper code, and read "
+                "the returned `desk_review` bundle before drilling into raw audit payloads."
+            ),
+        }
+
+    @staticmethod
+    def _exotic_desk_one_trade(arguments):
+        session_id = str(arguments.get("session_id", "default")).strip() or "default"
+        return {
+            "name": "exotic_desk_one_trade",
+            "description": "Guide one host through the first supported explicit-input exotic-desk pricing workflow.",
+            "tools": [
+                "trellis.session.get_context",
+                "trellis.snapshot.import_files",
+                "trellis.trade.parse",
+                "trellis.model.match",
+                "trellis.price.trade",
+                "trellis.run.get",
+                "trellis.run.get_audit",
+            ],
+            "resources": [
+                "trellis://market-snapshots/{snapshot_id}",
+                "trellis://runs/{run_id}",
+                "trellis://runs/{run_id}/audit",
+            ],
+            "prompt": (
+                f"Use governed session {session_id!r}. The first supported explicit-input exotic desk path is "
+                "`range_accrual`: import the desk snapshot with `trellis.snapshot.import_files`, "
+                "parse and match the range_accrual trade, then call `trellis.price.trade` with "
+                "`output_mode='audit'`. Read the returned `desk_review` bundle first for route, "
+                "assumption, schedule, and scenario context, then inspect the persisted run and audit "
+                "resources for deeper review."
             ),
         }
 
@@ -146,15 +182,18 @@ class PromptRegistry:
                 "trellis.session.get_context",
                 "trellis.providers.list",
                 "trellis.providers.configure",
+                "trellis.snapshot.import_files",
                 "trellis.run_mode.set",
             ],
             "resources": [
+                "trellis://market-snapshots/{snapshot_id}",
                 "trellis://providers/{provider_id}",
                 "trellis://policies/{policy_id}",
             ],
             "prompt": (
                 f"Inspect governed session {session_id!r}, list visible providers, then persist "
-                "explicit provider bindings and run mode changes without relying on hidden source defaults."
+                "explicit provider bindings, imported market snapshots, and run mode changes "
+                "without relying on hidden source defaults."
             ),
         }
 

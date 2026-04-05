@@ -1,9 +1,9 @@
-"""Risk sensitivity (Greek) computation via automatic differentiation.
+"""Scalar risk sensitivity (Greek) computation via automatic differentiation.
 
-Greeks measure how a bond's price changes when interest rates move.
-This module uses autograd to differentiate the pricing function with
-respect to the curve rates, giving exact sensitivities without
-finite-difference approximation.
+This module computes parallel-rate sensitivities such as DV01, duration, and
+convexity directly from the pricing function. Bucketed key-rate durations are
+now owned by the shared analytics measure substrate rather than synthesized
+here from the raw curve knots.
 """
 
 from __future__ import annotations
@@ -29,15 +29,16 @@ def compute_greeks(
     curve_rates : array-like
         Current curve rates (1-D).
     tenors : array-like or None
-        Corresponding tenors in years (used for DV01 scaling).
+        Deprecated compatibility argument retained for older call sites.
+        Key-rate durations are no longer emitted by this helper.
     measures : list[str] or None
         Specific Greeks to compute.  ``None`` → compute everything (backward
         compatible).  When provided, only the requested keys are returned.
 
     Returns
     -------
-    dict with keys: dv01, duration, modified_duration, convexity,
-    and per-tenor sensitivities (key_rate_durations).
+    dict with keys drawn from: price, dv01, duration, modified_duration,
+    and convexity.
     """
     import numpy as _np
     rates = _np.asarray(curve_rates, dtype=float)
@@ -50,7 +51,7 @@ def compute_greeks(
 
     # First-order Greeks need the gradient
     need_grad = need_all or bool(
-        need & {"dv01", "duration", "modified_duration", "key_rate_durations"}
+        need & {"dv01", "duration", "modified_duration"}
     )
 
     dP_dr = None
@@ -75,15 +76,5 @@ def compute_greeks(
         second_derivative = gradient(gradient(shifted_price, 0), 0)
         d2p_dy2 = float(second_derivative(0.0))
         greeks["convexity"] = 0.0 if price == 0 else d2p_dy2 / price
-
-    # Key-rate durations
-    if tenors is not None and (need_all or "key_rate_durations" in need):
-        if dP_dr is None:
-            grad_fn = gradient(price_fn, 0)
-            dP_dr = grad_fn(rates)
-        krd = {}
-        for i, t in enumerate(tenors):
-            krd[f"KRD_{t}y"] = -float(dP_dr[i]) / price
-        greeks["key_rate_durations"] = krd
 
     return greeks

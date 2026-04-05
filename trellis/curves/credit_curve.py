@@ -19,6 +19,15 @@ class CreditCurve:
         """Store tenor and hazard-rate grids for interpolation-based survival queries."""
         self.tenors = np.asarray(tenors, dtype=float)
         self.hazard_rates = np.asarray(hazard_rates, dtype=float)
+        if self.tenors.ndim != 1 or self.hazard_rates.ndim != 1:
+            raise ValueError("CreditCurve tenors and hazard_rates must be one-dimensional")
+        if len(self.tenors) == 0:
+            raise ValueError("CreditCurve requires at least one tenor/hazard-rate knot")
+        if len(self.tenors) != len(self.hazard_rates):
+            raise ValueError("CreditCurve tenors and hazard_rates must have the same length")
+        for index in range(len(self.tenors) - 1):
+            if float(self.tenors[index + 1]) <= float(self.tenors[index]):
+                raise ValueError("CreditCurve tenors must be strictly increasing")
 
     def hazard_rate(self, t: float) -> float:
         """Interpolated hazard rate at time t."""

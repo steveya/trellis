@@ -73,9 +73,9 @@ class TestFXForwardPayoff:
         fx_payoff = FXForwardPayoff(inner, "EURUSD", "EUR-DISC")
         pv = price_payoff(fx_payoff, ms)
 
-        # Inner payoff discounts at domestic rate (ms.discount = dom = 5%)
-        # FXForwardPayoff multiplies by spot: PV = 100*exp(-0.05*5) * 1.10
-        inner_pv = 100 * np.exp(-0.05 * 5)
+        # The inner payoff should be repriced on the foreign discount curve
+        # before conversion into domestic currency.
+        inner_pv = 100 * np.exp(-0.03 * 5)
         expected = inner_pv * 1.10
         assert pv == pytest.approx(expected, rel=0.02)
 
@@ -88,3 +88,17 @@ class TestFXForwardPayoff:
         assert "fx_rates" in fx_payoff.requirements
         assert "discount_curve" in fx_payoff.requirements
         assert "forward_curve" in fx_payoff.requirements
+
+    def test_missing_foreign_discount_curve_raises_helpful_error(self):
+        inner = DeterministicCashflowPayoff(
+            Bond(face=100, coupon=0.0, maturity_date=date(2029, 11, 15),
+                 maturity=5, frequency=2, issue_date=SETTLE)
+        )
+        ms = MarketState(
+            as_of=SETTLE, settlement=SETTLE,
+            discount=YieldCurve.flat(0.05),
+            fx_rates={"EURUSD": _fx_rate()},
+        )
+
+        with pytest.raises(ValueError, match="foreign discount key"):
+            FXForwardPayoff(inner, "EURUSD", "EUR-DISC").evaluate(ms)

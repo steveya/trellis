@@ -14,8 +14,6 @@ from scipy.stats import norm
 from trellis.curves.yield_curve import YieldCurve
 from trellis.models.trees.lattice import (
     RecombiningLattice,
-    build_rate_lattice,
-    build_spot_lattice,
     calibrate_lattice,
     lattice_backward_induction,
 )
@@ -29,6 +27,7 @@ from trellis.models.pde.crank_nicolson import crank_nicolson_1d
 from trellis.models.pde.operator import BlackScholesOperator
 from trellis.models.pde.theta_method import theta_method_1d
 from trellis.models.pde.psor import psor_1d
+from tests.lattice_builders import build_equity_lattice, build_short_rate_lattice
 
 
 # Common parameters
@@ -64,8 +63,7 @@ class TestRateTreeCalibration:
         curve = YieldCurve.flat(0.05)
         n_steps = max(50, int(tenor * 20))
         sigma_hw = 0.01  # 1% HW vol
-        lattice = build_rate_lattice(0.05, sigma_hw, 0.1, tenor, n_steps,
-                                      discount_curve=curve)
+        lattice = build_short_rate_lattice(0.05, sigma_hw, 0.1, tenor, n_steps, discount_curve=curve)
         tree_zcb = lattice_backward_induction(lattice, lambda s, n, l: 1.0)
         market_zcb = float(curve.discount(tenor))
         assert tree_zcb == pytest.approx(market_zcb, abs=1e-10), (
@@ -81,8 +79,7 @@ class TestRateTreeCalibration:
         curve = YieldCurve(tenors, rates)
         r0 = float(curve.zero_rate(0.01))
         n_steps = max(50, int(tenor * 20))
-        lattice = build_rate_lattice(r0, 0.01, 0.1, tenor, n_steps,
-                                      discount_curve=curve)
+        lattice = build_short_rate_lattice(r0, 0.01, 0.1, tenor, n_steps, discount_curve=curve)
         tree_zcb = lattice_backward_induction(lattice, lambda s, n, l: 1.0)
         market_zcb = float(curve.discount(tenor))
         assert tree_zcb == pytest.approx(market_zcb, abs=1e-8), (
@@ -98,8 +95,7 @@ class TestRateTreeCalibration:
         notional = 100.0
         dt = T_bond / n_steps
 
-        lattice = build_rate_lattice(0.05, 0.01, 0.1, T_bond, n_steps,
-                                      discount_curve=curve)
+        lattice = build_short_rate_lattice(0.05, 0.01, 0.1, T_bond, n_steps, discount_curve=curve)
         coupon_per_step = notional * coupon * dt
 
         def payoff(step, node, lat):
@@ -128,8 +124,7 @@ class TestRateTreeCalibration:
         """Calibration remains stable with high rate vol."""
         curve = YieldCurve.flat(0.05)
         sigma_hw = 0.03  # 3% — quite high
-        lattice = build_rate_lattice(0.05, sigma_hw, 0.05, 10.0, 200,
-                                      discount_curve=curve)
+        lattice = build_short_rate_lattice(0.05, sigma_hw, 0.05, 10.0, 200, discount_curve=curve)
         tree_zcb = lattice_backward_induction(lattice, lambda s, n, l: 1.0)
         market_zcb = float(curve.discount(10.0))
         assert tree_zcb == pytest.approx(market_zcb, abs=1e-8)
@@ -137,8 +132,7 @@ class TestRateTreeCalibration:
     def test_calibration_with_zero_vol(self):
         """Zero vol → all rates equal to forward rates."""
         curve = YieldCurve.flat(0.05)
-        lattice = build_rate_lattice(0.05, 1e-10, 0.1, 5.0, 100,
-                                      discount_curve=curve)
+        lattice = build_short_rate_lattice(0.05, 1e-10, 0.1, 5.0, 100, discount_curve=curve)
         # At any step, all nodes should have nearly the same rate
         for step in [10, 50, 100]:
             n = lattice.n_nodes(step)
@@ -162,8 +156,7 @@ class TestCallableBondTree:
         call_price = 100.0
         dt = T / n_steps
 
-        lattice = build_rate_lattice(rate, vol_hw, 0.1, T, n_steps,
-                                      discount_curve=curve)
+        lattice = build_short_rate_lattice(rate, vol_hw, 0.1, T, n_steps, discount_curve=curve)
 
         exercise_steps = [int(round(y / dt)) for y in [3, 5, 7]]
         exercise_steps = [s for s in exercise_steps if 0 < s < n_steps]
@@ -224,8 +217,7 @@ class TestCallableBondTree:
         notional, coupon = 100.0, 0.05
         coupon_per_step = notional * coupon * dt
 
-        lattice = build_rate_lattice(0.05, 0.01, 0.1, T, n_steps,
-                                      discount_curve=curve)
+        lattice = build_short_rate_lattice(0.05, 0.01, 0.1, T, n_steps, discount_curve=curve)
         exercise_steps = [30, 50, 70]
 
         def payoff(s, n, l):
@@ -259,7 +251,7 @@ class TestSpotLatticeConvergence:
 
     @pytest.mark.parametrize("strike", [80, 100, 120])
     def test_call_at_various_strikes(self, strike):
-        lattice = build_spot_lattice(S0, r, sigma, T, 300)
+        lattice = build_equity_lattice(S0, r, sigma, T, 300)
 
         def payoff(step, node, lat):
             return max(lat.get_state(step, node) - strike, 0)
@@ -271,7 +263,7 @@ class TestSpotLatticeConvergence:
     @pytest.mark.parametrize("maturity", [0.25, 0.5, 1.0, 2.0])
     def test_call_at_various_maturities(self, maturity):
         n = max(100, int(maturity * 200))
-        lattice = build_spot_lattice(S0, r, sigma, maturity, n)
+        lattice = build_equity_lattice(S0, r, sigma, maturity, n)
 
         def payoff(step, node, lat):
             return max(lat.get_state(step, node) - K, 0)
@@ -282,7 +274,7 @@ class TestSpotLatticeConvergence:
 
     def test_put_call_parity(self):
         """C - P = S0 - K*exp(-rT) on the lattice."""
-        lattice = build_spot_lattice(S0, r, sigma, T, 300)
+        lattice = build_equity_lattice(S0, r, sigma, T, 300)
 
         def call_payoff(s, n, l):
             return max(l.get_state(s, n) - K, 0)
@@ -301,7 +293,7 @@ class TestSpotLatticeConvergence:
         ref = bs_call(S0, K, T, r, sigma)
         errors = []
         for n in [50, 100, 200, 400]:
-            lattice = build_spot_lattice(S0, r, sigma, T, n)
+            lattice = build_equity_lattice(S0, r, sigma, T, n)
 
             def payoff(s, nd, l):
                 return max(l.get_state(s, nd) - K, 0)
@@ -490,7 +482,7 @@ class TestCrossMethodConsistency:
         ref = BS_CALL
 
         # Tree
-        lattice = build_spot_lattice(S0, r, sigma, T, 300)
+        lattice = build_equity_lattice(S0, r, sigma, T, 300)
 
         def payoff(s, n, l):
             return max(l.get_state(s, n) - K, 0)
@@ -536,7 +528,7 @@ class TestCrossMethodConsistency:
         """Tree and MC agree on European put."""
         ref = BS_PUT
 
-        lattice = build_spot_lattice(S0, r, sigma, T, 300)
+        lattice = build_equity_lattice(S0, r, sigma, T, 300)
 
         def payoff(s, n, l):
             return max(K - l.get_state(s, n), 0)
@@ -612,8 +604,8 @@ class TestGreeksSigns:
 
     def test_call_delta_positive(self):
         """Call delta > 0: price increases with spot."""
-        lattice_lo = build_spot_lattice(S0 - 1, r, sigma, T, 200)
-        lattice_hi = build_spot_lattice(S0 + 1, r, sigma, T, 200)
+        lattice_lo = build_equity_lattice(S0 - 1, r, sigma, T, 200)
+        lattice_hi = build_equity_lattice(S0 + 1, r, sigma, T, 200)
 
         def payoff(s, n, l):
             return max(l.get_state(s, n) - K, 0)
@@ -624,8 +616,8 @@ class TestGreeksSigns:
 
     def test_put_delta_negative(self):
         """Put delta < 0: price decreases with spot."""
-        lattice_lo = build_spot_lattice(S0 - 1, r, sigma, T, 200)
-        lattice_hi = build_spot_lattice(S0 + 1, r, sigma, T, 200)
+        lattice_lo = build_equity_lattice(S0 - 1, r, sigma, T, 200)
+        lattice_hi = build_equity_lattice(S0 + 1, r, sigma, T, 200)
 
         def payoff(s, n, l):
             return max(K - l.get_state(s, n), 0)
@@ -637,7 +629,7 @@ class TestGreeksSigns:
     def test_option_vega_positive(self):
         """Call vega > 0: price increases with vol."""
         def price_at_vol(v):
-            lat = build_spot_lattice(S0, r, v, T, 200)
+            lat = build_equity_lattice(S0, r, v, T, 200)
 
             def payoff(s, n, l):
                 return max(l.get_state(s, n) - K, 0)
@@ -656,8 +648,7 @@ class TestGreeksSigns:
         def price_bond(rate):
             curve = YieldCurve.flat(rate)
             dt = T_bond / n_steps
-            lattice = build_rate_lattice(rate, 0.01, 0.1, T_bond, n_steps,
-                                          discount_curve=curve)
+            lattice = build_short_rate_lattice(rate, 0.01, 0.1, T_bond, n_steps, discount_curve=curve)
             cpn = notional * coupon * dt
 
             def payoff(s, n, l):

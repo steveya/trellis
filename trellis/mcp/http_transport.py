@@ -31,6 +31,7 @@ _RESOURCE_PARAM_PATTERN = re.compile(r"{([^{}]+)}")
 _PROMPT_ARGUMENT_NAMES: dict[str, tuple[str, ...]] = {
     "compare_model_versions": ("model_id",),
     "configure_market_data": ("session_id",),
+    "exotic_desk_one_trade": ("session_id",),
     "explain_model_selection": (),
     "persist_current_model": ("model_id",),
     "price_trade": ("session_id",),

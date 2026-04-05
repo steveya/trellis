@@ -33,8 +33,16 @@ Sessions are immutable — scenario methods return new sessions:
 
    s_up = s.with_curve_shift(+100)       # +100bp parallel shift
    s_bumped = s.with_tenor_bumps({10.0: +50})  # +50bp at 10Y
+   s_off_grid = s.with_tenor_bumps({7.0: +25})  # inserts a local 7Y shock node
    s_new = s.with_curve(other_curve)     # replace curve entirely
    s_vol = s.with_vol_surface(FlatVol(0.30))
+
+``with_tenor_bumps(...)`` now routes through the shared curve-shock substrate.
+Exact tenor requests still move the matching knot directly, while off-grid
+tenors insert a bumped node into the shocked curve so repricing follows the
+same interpolation logic as the base curve. The resulting curve keeps optional
+``curve_shock_surface`` and ``curve_shock_warnings`` metadata for callers that
+need to inspect sparse-support or endpoint-extension warnings.
 
 Pipeline
 --------
@@ -56,6 +64,29 @@ For batch pricing with scenarios:
        .output_csv("output/{scenario}.csv")
        .run()
    )
+
+Named rate scenario packs are also available for desk-style curve stresses:
+
+.. code-block:: python
+
+   results = (
+       Pipeline()
+       .instruments(book)
+       .market_data(curve=curve)
+       .scenarios([
+           {
+               "scenario_pack": "twist",
+               "bucket_tenors": (2.0, 5.0, 10.0, 30.0),
+               "amplitude_bps": 25.0,
+           }
+       ])
+       .run()
+   )
+
+The current built-in packs are ``"twist"`` (steepener + flattener) and
+``"butterfly"`` (belly-up + belly-down). Each pack expands into named
+``tenor_bumps`` scenarios on the shared bucket-shock substrate, so the same
+assumptions flow through both pipeline and one-trade analytics surfaces.
 
 Book & BookResult
 -----------------

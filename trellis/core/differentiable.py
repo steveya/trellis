@@ -23,3 +23,8 @@ def gradient(fn, argnum: int = 0):
 def hessian(fn, argnum: int = 0):
     """Return a function that computes the Hessian of *fn* w.r.t. ``argnum``."""
     return autograd.hessian(fn, argnum)
+
+
+def jacobian(fn, argnum: int = 0):
+    """Return a function that computes the Jacobian of *fn* w.r.t. ``argnum``."""
+    return autograd.jacobian(fn, argnum)

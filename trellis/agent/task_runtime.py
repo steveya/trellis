@@ -482,7 +482,7 @@ def task_to_instrument_type(task: dict) -> str | None:
         ("floor", "floor"),
         ("convertible", "callable_bond"),
         ("mbs", "mbs"),
-        ("range accrual", "callable_bond"),
+        ("range accrual", "range_accrual"),
         ("digital", "european_option"),
         ("compound option", "european_option"),
         ("chooser", "european_option"),

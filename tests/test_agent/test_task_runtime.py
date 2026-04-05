@@ -300,6 +300,7 @@ def test_run_task_attaches_runtime_contract_snapshot_and_trace_metadata():
         "discount_curve": "usd_ois",
         "forecast_curve": "USD-SOFR-3M",
         "credit_curve": "usd_ig",
+        "fixing_history": "USD-SOFR-3M",
     }
     assert runtime_contract["market_provenance"]["source_kind"] == "synthetic_snapshot"
     assert runtime_contract["market_provenance"]["prior_family"] == "embedded_market_regime"
@@ -307,6 +308,7 @@ def test_run_task_attaches_runtime_contract_snapshot_and_trace_metadata():
         "discount_curve": "usd_ois",
         "forecast_curve": "USD-SOFR-3M",
         "credit_curve": "usd_ig",
+        "fixing_history": "USD-SOFR-3M",
     }
     assert "task_runtime" in runtime_contract["evaluation_tags"]
     assert "semantic:ranked_observation_basket" in runtime_contract["evaluation_tags"]
@@ -316,11 +318,13 @@ def test_run_task_attaches_runtime_contract_snapshot_and_trace_metadata():
         "discount_curve": "usd_ois",
         "forecast_curve": "USD-SOFR-3M",
         "credit_curve": "usd_ig",
+        "fixing_history": "USD-SOFR-3M",
     }
     assert result["market_context"]["selected_curve_names"] == {
         "discount_curve": "usd_ois",
         "forecast_curve": "USD-SOFR-3M",
         "credit_curve": "usd_ig",
+        "fixing_history": "USD-SOFR-3M",
     }
     assert result["market_context"]["provenance"]["source_kind"] == "synthetic_snapshot"
     assert result["market_context"]["provenance"]["prior_seed"] == runtime_contract["market_provenance"]["prior_seed"]

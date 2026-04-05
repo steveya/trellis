@@ -70,6 +70,14 @@ def test_api_map_formatter_includes_navigation_guidance():
     assert "inspect_api_map" not in text
 
 
+def test_api_map_formatter_includes_all_canonical_utilities():
+    text = format_api_map_for_prompt(compact=True)
+
+    assert "rate_style_swaption" in text
+    assert "jamshidian_zcb_option" in text
+    assert "credit_curve" in text
+
+
 def _assert_import_statements_valid(import_statements: list[str]) -> None:
     for statement in import_statements:
         cleaned = statement.split("#", 1)[0].strip()

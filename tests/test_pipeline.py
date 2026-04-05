@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from trellis.book import Book, BookResult
+from trellis.book import Book, BookResult, ScenarioResultCube
 from trellis.core.types import PricingResult
 from trellis.data.schema import MarketSnapshot
 from trellis.curves.yield_curve import YieldCurve
@@ -74,6 +74,71 @@ class TestPipeline:
         assert "base" in results
         assert "up100" in results
         assert results["up100"].total_mv < results["base"].total_mv
+
+    def test_run_returns_scenario_result_cube_with_aggregation_metadata(self):
+        results = (
+            Pipeline()
+            .instruments(_book())
+            .market_data(curve=_curve())
+            .scenarios([
+                {"name": "base", "shift_bps": 0},
+                {"name": "up100", "shift_bps": 100},
+            ])
+            .run()
+        )
+
+        assert isinstance(results, ScenarioResultCube)
+        assert results.scenario_specs["up100"]["shift_bps"] == pytest.approx(100.0)
+        ladder = results.book_ladder("total_mv")
+        assert ladder["up100"] < ladder["base"]
+        assert ladder.metadata["scenario_provenance"]["up100"]["data_source"] == "treasury_gov"
+
+    def test_named_scenario_pack_expands_into_twist_templates(self):
+        results = (
+            Pipeline()
+            .instruments(_book())
+            .market_data(curve=_curve())
+            .scenarios(
+                [
+                    {
+                        "scenario_pack": "twist",
+                        "bucket_tenors": (2.0, 5.0, 10.0, 30.0),
+                        "amplitude_bps": 25.0,
+                    }
+                ]
+            )
+            .run()
+        )
+
+        assert "twist_steepener_25bp" in results
+        assert "twist_flattener_25bp" in results
+        assert (
+            results.scenario_provenance["twist_steepener_25bp"]["expanded_from"]["scenario_pack"]
+            == "twist"
+        )
+
+    def test_named_scenario_pack_supports_off_grid_bucket_workflow(self):
+        results = (
+            Pipeline()
+            .instruments(_book())
+            .market_data(curve=YieldCurve([1.0, 5.0, 10.0, 30.0], [0.04, 0.042, 0.045, 0.047]))
+            .scenarios(
+                [
+                    {
+                        "scenario_pack": "twist",
+                        "bucket_tenors": (2.0, 7.0, 10.0, 30.0),
+                        "amplitude_bps": 25.0,
+                    }
+                ]
+            )
+            .run()
+        )
+
+        assert "twist_steepener_25bp" in results
+        assert "twist_flattener_25bp" in results
+        assert results["twist_steepener_25bp"].total_mv != pytest.approx(
+            results["twist_flattener_25bp"].total_mv
+        )
 
     def test_compute_price_only(self):
         results = (
@@ -160,6 +225,82 @@ class TestPipeline:
             .run()
         )
         assert results["base"].total_mv > 0
+
+    def test_compile_compute_plan_expands_scenarios_and_preserves_market_metadata(self):
+        pipeline = (
+            Pipeline()
+            .instruments(_book())
+            .market_data(snapshot=_snapshot(), discount_curve="eur_ois", vol_surface_name="smile")
+            .compute(["price", "dv01"])
+            .scenarios(
+                [
+                    {"name": "base", "shift_bps": 0},
+                    {
+                        "scenario_pack": "twist",
+                        "bucket_tenors": (2.0, 5.0, 10.0, 30.0),
+                        "amplitude_bps": 25.0,
+                    },
+                ]
+            )
+        )
+
+        plan = pipeline.compile_compute_plan()
+
+        assert plan.to_dict()["plan_type"] == "book_scenario_batch"
+        assert plan.to_dict()["scenario_count"] == 3
+        assert plan.to_dict()["discount_curve_name"] == "eur_ois"
+        assert plan.to_dict()["vol_surface_name"] == "smile"
+        assert plan.to_dict()["measures"] == ["price", "dv01"]
+        assert plan.to_dict()["scenarios"][1]["expanded_from"]["scenario_pack"] == "twist"
+
+    def test_run_attaches_reusable_compute_plan_to_scenario_result_cube(self):
+        results = (
+            Pipeline()
+            .instruments(_book())
+            .market_data(curve=_curve())
+            .scenarios([
+                {"name": "base", "shift_bps": 0},
+                {"name": "up100", "shift_bps": 100},
+            ])
+            .run()
+        )
+
+        assert results.compute_plan["plan_type"] == "book_scenario_batch"
+        assert results.compute_plan["scenario_count"] == 2
+        assert results.compute_plan["scenarios"][1]["name"] == "up100"
+
+    def test_saved_scenario_template_expands_into_named_batch_plan(self):
+        snapshot = _snapshot()
+        snapshot = MarketSnapshot(
+            as_of=snapshot.as_of,
+            source=snapshot.source,
+            discount_curves=snapshot.discount_curves,
+            vol_surfaces=snapshot.vol_surfaces,
+            default_discount_curve=snapshot.default_discount_curve,
+            default_vol_surface=snapshot.default_vol_surface,
+            metadata={
+                "scenario_templates": {
+                    "desk_twist": {
+                        "scenario_pack": "twist",
+                        "bucket_tenors": (2.0, 5.0, 10.0, 30.0),
+                        "amplitude_bps": 25.0,
+                    }
+                }
+            },
+        )
+        plan = (
+            Pipeline()
+            .instruments(_book())
+            .market_data(snapshot=snapshot)
+            .scenarios([{"scenario_template": "desk_twist"}])
+            .compile_compute_plan()
+        )
+
+        assert plan.to_dict()["scenario_count"] == 2
+        assert plan.to_dict()["scenarios"][0]["expanded_from"]["scenario_template"] == "desk_twist"
+        assert "twist_steepener_25bp" in {
+            scenario["name"] for scenario in plan.to_dict()["scenarios"]
+        }
 
     def test_run_projects_executor_results_without_calling_session_price(self):
         from trellis.platform.results import ExecutionResult
@@ -322,4 +463,8 @@ class TestPipeline:
         assert results["up100"].total_mv == pytest.approx(95.0)
         assert [call["request_type"] for call in calls] == ["price", "price"]
         assert [call["success_outcome"] for call in calls] == ["pipeline_priced", "pipeline_priced"]
+        assert [call["failure_outcome"] for call in calls] == ["pipeline_failed", "pipeline_failed"]
         assert all(call["book"] == pipeline._book for call in calls)
+
+    def test_pipeline_suite_is_marked_global_workflow(self, request):
+        assert request.node.get_closest_marker("global_workflow") is not None

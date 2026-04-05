@@ -89,6 +89,7 @@ class TestMockDataProvider:
         snapshot = provider.fetch_market_snapshot(date(2024, 11, 15))
         assert snapshot.default_discount_curve == "usd_ois"
         assert snapshot.default_vol_surface == "usd_rates_smile"
+        assert snapshot.default_fixing_history == "USD-SOFR-3M"
         assert snapshot.default_credit_curve == "usd_ig"
         assert snapshot.default_state_space == "macro_regime"
         assert snapshot.default_underlier_spot == "SPX"
@@ -100,6 +101,7 @@ class TestMockDataProvider:
         assert "EURUSD" in snapshot.fx_rates
         assert "macro_regime" in snapshot.state_spaces
         assert "SPX" in snapshot.underlier_spots
+        assert "USD-SOFR-3M" in snapshot.fixing_histories
         assert "spx_local_vol" in snapshot.local_vol_surfaces
         assert "merton_equity" in snapshot.jump_parameter_sets
         assert "heston_equity" in snapshot.model_parameter_sets
@@ -109,6 +111,7 @@ class TestMockDataProvider:
         assert snapshot.provenance["prior_seed"] > 0
         assert snapshot.vol_surface().black_vol(1.0, 0.05) > 0
         assert snapshot.credit_curve() is not None
+        assert snapshot.fixing_history()[date(2024, 11, 14)] > 0.0
 
 
 class TestResolverMockSource:
@@ -129,6 +132,7 @@ class TestResolverMockSource:
         assert snapshot.discount_curve() is not None
         assert snapshot.vol_surface() is not None
         assert snapshot.credit_curve() is not None
+        assert snapshot.fixing_history() is not None
         assert snapshot.state_space() is not None
         assert "USD-SOFR-3M" in snapshot.forecast_curves
         assert "EURUSD" in snapshot.fx_rates

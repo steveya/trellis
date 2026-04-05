@@ -700,3 +700,88 @@ def test_collect_trace_summaries_reads_analytical_trace_json(tmp_path):
     assert summary["instruction_resolution"]["route"] == "analytical_black76"
     assert summary["instruction_resolution_effective_count"] == 1
     assert summary["instruction_resolution_conflict_count"] == 0
+
+
+def test_persist_task_run_record_does_not_promote_platform_action_to_fake_route_id(tmp_path):
+    from trellis.agent.task_run_store import load_task_run_record, persist_task_run_record
+
+    trace_root = tmp_path / "trellis" / "agent" / "knowledge" / "traces" / "platform"
+    trace_path = trace_root / "executor_build_range_accrual.yaml"
+    _write_trace(
+        trace_path,
+        {
+            "request_id": "executor_build_range_accrual",
+            "status": "failed",
+            "outcome": "request_blocked",
+            "action": "build_then_price",
+            "route_method": "analytical",
+            "updated_at": "2026-04-05T12:00:00+00:00",
+            "request_metadata": {
+                "task_id": "T301",
+                "task_title": "Range accrual route gap",
+                "semantic_blueprint": {
+                    "dsl_route": None,
+                    "dsl_route_family": None,
+                },
+            },
+            "generation_boundary": {
+                "method": "analytical",
+                "lowering": {
+                    "route_id": None,
+                    "route_family": None,
+                    "primitive_routes": [],
+                    "route_modules": [
+                        "trellis.models.range_accrual",
+                        "trellis.models.contingent_cashflows",
+                    ],
+                    "expr_kind": "RangeAccrualCouponExpr",
+                    "family_ir_type": "RangeAccrualIR",
+                    "helper_refs": [],
+                    "target_bindings": [],
+                    "lowering_errors": [
+                        {
+                            "code": "missing_primitive_routes",
+                        }
+                    ],
+                },
+                "route_binding_authority": {},
+                "primitive_plan": {},
+            },
+            "events": [
+                {
+                    "event": "request_blocked",
+                    "status": "error",
+                    "timestamp": "2026-04-05T12:00:00+00:00",
+                    "details": {"blocker": "missing primitive route"},
+                }
+            ],
+        },
+    )
+
+    task = {
+        "id": "T301",
+        "title": "Range accrual route gap",
+        "construct": ["analytical"],
+    }
+    result = {
+        "task_id": "T301",
+        "title": "Range accrual route gap",
+        "success": False,
+        "failures": ["missing primitive route"],
+        "cross_validation": {"status": "insufficient_results"},
+        "artifacts": {"platform_trace_paths": [str(trace_path)]},
+        "reflection": {},
+    }
+
+    persisted = persist_task_run_record(
+        task,
+        result,
+        root=tmp_path,
+        persisted_at=datetime(2026, 4, 5, 12, 1, 0, tzinfo=timezone.utc),
+    )
+    latest = load_task_run_record(persisted["latest_path"])
+
+    assert latest["trace_summaries"][0]["route_health"]["route_id"] == ""
+    assert latest["trace_summaries"][0]["route_health"]["route_family"] == "analytical"
+    assert latest["telemetry"]["route_observations"][0]["route_id"] == ""
+    assert latest["telemetry"]["route_observations"][0]["route_family"] == "analytical"

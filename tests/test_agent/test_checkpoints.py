@@ -99,7 +99,7 @@ def _semantic_checkpoint(
 
 def _generation_boundary(
     *,
-    route_id: str = "analytical_black76",
+    route_id: str | None = "analytical_black76",
     approved_modules: tuple[str, ...] = ("trellis.models.black",),
 ):
     return {
@@ -121,38 +121,46 @@ def _generation_boundary(
         },
         "lowering": {
             "route_id": route_id,
-            "route_family": "analytical",
-            "primitive_routes": [route_id],
-            "route_modules": ["trellis.models.black"],
+            "route_family": "analytical" if route_id else None,
+            "primitive_routes": [route_id] if route_id else [],
+            "route_modules": list(approved_modules),
             "expr_kind": "TerminalVanillaOptionExpr",
             "family_ir_type": "VanillaOptionIR",
             "helper_refs": [],
             "target_bindings": [],
             "lowering_errors": [],
         },
-        "primitive_plan": {
-            "route": route_id,
-            "engine_family": "analytical",
-            "route_family": "analytical",
-            "adapters": [],
-            "blockers": [],
-        },
-        "route_binding_authority": {
-            "route_id": route_id,
-            "route_family": "analytical",
-            "engine_family": "analytical",
-            "authority_kind": "exact_backend_fit",
-            "exact_backend_fit": True,
-            "validation_bundle_id": "analytical:vanilla_option",
-            "canary_task_ids": ["T73"],
-            "helper_refs": ["trellis.models.black.black76_call"],
-        },
+        "primitive_plan": (
+            {
+                "route": route_id,
+                "engine_family": "analytical",
+                "route_family": "analytical",
+                "adapters": [],
+                "blockers": [],
+            }
+            if route_id
+            else {}
+        ),
+        "route_binding_authority": (
+            {
+                "route_id": route_id,
+                "route_family": "analytical",
+                "engine_family": "analytical",
+                "authority_kind": "exact_backend_fit",
+                "exact_backend_fit": True,
+                "validation_bundle_id": "analytical:vanilla_option",
+                "canary_task_ids": ["T73"],
+                "helper_refs": ["trellis.models.black.black76_call"],
+            }
+            if route_id
+            else {}
+        ),
     }
 
 
 def _validation_contract(
     *,
-    route_id: str = "analytical_black76",
+    route_id: str | None = "analytical_black76",
     bundle_id: str = "analytical:vanilla_option",
 ):
     return {
@@ -245,6 +253,41 @@ def test_capture_checkpoint_threads_route_binding_authority_into_route_stage():
     assert route_stage.decision == "analytical_black76"
     assert route_stage.metadata["route_binding_authority"]["authority_kind"] == "exact_backend_fit"
     assert route_stage.metadata["route_binding_authority"]["canary_task_ids"] == ["T73"]
+
+
+def test_capture_checkpoint_keeps_route_stage_unknown_when_lowering_has_no_route():
+    checkpoint = capture_checkpoint(
+        task_id="T301",
+        instrument_type="range_accrual",
+        pricing_plan=_fake_pricing_plan(
+            method="analytical",
+            modules=("trellis.models.range_accrual", "trellis.models.contingent_cashflows"),
+        ),
+        semantic_checkpoint=_semantic_checkpoint(
+            semantic_id="range_accrual",
+            bridge_status="canonical_semantic",
+            requested_instrument_type="range_accrual",
+        ),
+        generation_boundary=_generation_boundary(
+            route_id=None,
+            approved_modules=(
+                "trellis.models.range_accrual",
+                "trellis.models.contingent_cashflows",
+            ),
+        ),
+        validation_contract=_validation_contract(
+            route_id=None,
+            bundle_id="analytical:range_accrual",
+        ),
+        outcome="fail_build",
+    )
+
+    route_stage = next(stage for stage in checkpoint.stages if stage.agent == "route")
+
+    assert route_stage.decision == "unknown"
+    assert route_stage.metadata["method"] == "analytical"
+    assert route_stage.metadata["lowering"]["route_id"] is None
+    assert "route_binding_authority" not in route_stage.metadata
 
 
 # ---------------------------------------------------------------------------

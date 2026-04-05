@@ -3,11 +3,20 @@
 import numpy as raw_np
 import pytest
 
+from trellis.core.market_state import MarketState
+from trellis.curves.yield_curve import YieldCurve
+from trellis.models.processes.base import StochasticProcess
 from trellis.models.processes.gbm import GBM
 from trellis.models.processes.correlated_gbm import CorrelatedGBM
 from trellis.models.processes.vasicek import Vasicek
 from trellis.models.processes.cir import CIR
 from trellis.models.processes.hull_white import HullWhite
+from trellis.models.processes.heston import (
+    Heston,
+    HestonRuntimeBinding,
+    build_heston_parameter_payload,
+    resolve_heston_runtime_binding,
+)
 from trellis.models.processes.jump_diffusion import MertonJumpDiffusion
 from trellis.models.processes.sabr import SABRProcess
 from trellis.models.processes.local_vol import LocalVol
@@ -238,6 +247,77 @@ class TestHullWhite:
     def test_theta_fn_used_when_provided(self):
         hw = HullWhite(a=0.1, sigma=0.01, theta_fn=lambda t: 0.05 + 0.01 * t)
         assert hw.drift(0.03, 1.0) == pytest.approx(0.06 - 0.1 * 0.03, rel=1e-12)
+
+
+# ---------------------------------------------------------------------------
+# Heston
+# ---------------------------------------------------------------------------
+
+
+class TestHeston:
+    def test_heston_is_runtime_process_with_two_state_and_factor_dims(self):
+        process = Heston(mu=0.05, kappa=2.0, theta=0.04, xi=0.3, rho=-0.7, v0=0.04)
+
+        assert isinstance(process, StochasticProcess)
+        assert process.state_dim == 2
+        assert process.factor_dim == 2
+
+        state = raw_np.array([[100.0, 0.04], [105.0, 0.05]])
+        drift = process.drift(state, 0.0)
+        diffusion = process.diffusion(state, 0.0)
+
+        assert drift.shape == (2, 2)
+        assert diffusion.shape == (2, 2, 2)
+        assert raw_np.all(raw_np.isfinite(drift))
+        assert raw_np.all(raw_np.isfinite(diffusion))
+
+    def test_resolve_heston_runtime_binding_from_market_state_model_parameters(self):
+        market_state = MarketState(
+            as_of=None,
+            settlement=None,
+            discount=YieldCurve.flat(0.05),
+            model_parameters=build_heston_parameter_payload(
+                kappa=2.0,
+                theta=0.04,
+                xi=0.3,
+                rho=-0.7,
+                v0=0.04,
+            ),
+        )
+
+        binding = resolve_heston_runtime_binding(market_state)
+
+        assert isinstance(binding, HestonRuntimeBinding)
+        assert isinstance(binding.process, Heston)
+        assert binding.process.mu == pytest.approx(0.05)
+        assert binding.process.kappa == pytest.approx(2.0)
+        assert binding.model_parameters["model_family"] == "heston"
+        assert binding.provenance["source_kind"] == "market_state"
+        assert "discount curve" in binding.warnings[0].lower()
+
+    def test_resolve_heston_runtime_binding_prefers_explicit_over_market_defaults(self):
+        market_state = MarketState(
+            as_of=None,
+            settlement=None,
+            discount=YieldCurve.flat(0.05),
+            model_parameters=build_heston_parameter_payload(
+                mu=0.02,
+                kappa=2.0,
+                theta=0.04,
+                xi=0.3,
+                rho=-0.7,
+                v0=0.04,
+            ),
+        )
+
+        binding = resolve_heston_runtime_binding(
+            market_state,
+            mu=0.03,
+            rho=-0.4,
+        )
+
+        assert binding.process.mu == pytest.approx(0.03)
+        assert binding.process.rho == pytest.approx(-0.4)
 
 
 # ---------------------------------------------------------------------------

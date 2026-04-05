@@ -65,7 +65,6 @@ def select_validation_bundle(
     instrument_type: str | None,
     method: str,
     product_ir=None,
-    family_blueprint=None,
     semantic_blueprint=None,
 ) -> ValidationBundle:
     """Pick the validation checks that apply to the given method and instrument type."""
@@ -73,7 +72,6 @@ def select_validation_bundle(
     normalized_instrument = _resolve_validation_instrument(
         instrument_type=instrument_type,
         product_ir=product_ir,
-        family_blueprint=family_blueprint,
         semantic_blueprint=semantic_blueprint,
     )
     pack = select_invariant_pack(
@@ -87,7 +85,6 @@ def select_validation_bundle(
                 *pack.checks,
                 *_family_checks_for(
                     normalized_instrument,
-                    family_blueprint=family_blueprint,
                     semantic_blueprint=semantic_blueprint,
                 ),
             )
@@ -342,15 +339,12 @@ def _resolve_validation_instrument(
     *,
     instrument_type: str | None,
     product_ir=None,
-    family_blueprint=None,
     semantic_blueprint=None,
 ) -> str:
     """Resolve the most specific instrument id available for validation."""
     normalized = (instrument_type or "").strip().lower().replace(" ", "_")
     if normalized and normalized != "unknown":
         return normalized
-    if family_blueprint is not None and getattr(family_blueprint, "family_id", None):
-        return str(family_blueprint.family_id).strip().lower().replace(" ", "_")
     if semantic_blueprint is not None and getattr(semantic_blueprint, "semantic_id", None):
         return str(semantic_blueprint.semantic_id).strip().lower().replace(" ", "_")
     if product_ir is not None and getattr(product_ir, "instrument", None):
@@ -361,21 +355,9 @@ def _resolve_validation_instrument(
 def _family_checks_for(
     normalized_instrument: str,
     *,
-    family_blueprint=None,
     semantic_blueprint=None,
 ) -> tuple[str, ...]:
-    """Return extra family-specific validation checks for known contract families.
-
-    Supports both legacy ``FamilyImplementationBlueprint`` (``family_checks``)
-    and unified ``SemanticImplementationBlueprint`` (``semantic_checks``)
-    contracts.
-    """
-    # Legacy family blueprint path.
-    contract = getattr(family_blueprint, "contract", None)
-    validation = getattr(contract, "validation", None)
-    if validation is not None and getattr(validation, "family_checks", None):
-        return tuple(validation.family_checks)
-    # Unified semantic blueprint path.
+    """Return extra semantic-family validation checks for known contracts."""
     sem_contract = getattr(semantic_blueprint, "contract", None)
     sem_validation = getattr(sem_contract, "validation", None)
     if sem_validation is not None and getattr(sem_validation, "semantic_checks", None):

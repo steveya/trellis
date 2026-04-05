@@ -21,6 +21,14 @@ The runtime helpers cover:
 - benchmarking cached task payoffs
 - normalizing task descriptions into request/build inputs
 
+The non-integration pytest surface is also grouped into explicit reviewable
+strata:
+
+- ``crossval`` for independent-library cross-checks
+- ``verification`` for numerical or analytical reference tests
+- ``global_workflow`` for user-facing workflow tests that span modules
+- ``legacy_compat`` for deprecated or compatibility-only behavior
+
 Operational Scripts
 -------------------
 
@@ -153,6 +161,9 @@ Useful commands:
    /Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py T13 T24
    /Users/steveyang/miniforge3/bin/python3 scripts/rerun_ids.py T54 T62
    /Users/steveyang/miniforge3/bin/python3 scripts/remediate.py --analyze-only
+   /Users/steveyang/miniforge3/bin/python3 -m pytest tests -x -q -m "crossval and not integration"
+   /Users/steveyang/miniforge3/bin/python3 -m pytest tests -x -q -m "verification and not integration"
+   /Users/steveyang/miniforge3/bin/python3 -m pytest tests -x -q -m "global_workflow and not integration"
 
 Related Reading
 ---------------

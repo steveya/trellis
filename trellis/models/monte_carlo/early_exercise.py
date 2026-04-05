@@ -65,6 +65,21 @@ class ContinuationEstimator(Protocol):
         ...
 
 
+def normalize_exercise_steps(
+    exercise_dates,
+    n_steps: int,
+) -> tuple[int, ...]:
+    """Return sorted unique exercise steps and always include maturity."""
+    steps = {
+        int(step)
+        for step in exercise_dates
+        if 0 < int(step) <= int(n_steps)
+    }
+    if n_steps > 0:
+        steps.add(int(n_steps))
+    return tuple(sorted(steps))
+
+
 def polynomial_basis(states: raw_np.ndarray) -> raw_np.ndarray:
     """Default polynomial basis: 1, S, S^2."""
     return raw_np.column_stack([raw_np.ones_like(states), states, states ** 2])

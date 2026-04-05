@@ -75,6 +75,7 @@ def _snapshot_identity_payload(snapshot: MarketSnapshot, *, provider_id: str) ->
         "default_discount_curve": snapshot.default_discount_curve,
         "default_vol_surface": snapshot.default_vol_surface,
         "default_credit_curve": snapshot.default_credit_curve,
+        "default_fixing_history": snapshot.default_fixing_history,
         "default_state_space": snapshot.default_state_space,
         "default_underlier_spot": snapshot.default_underlier_spot,
         "default_local_vol_surface": snapshot.default_local_vol_surface,
@@ -91,6 +92,9 @@ def _snapshot_identity_payload(snapshot: MarketSnapshot, *, provider_id: str) ->
         },
         "credit_curves": {
             key: _json_safe(value) for key, value in sorted(snapshot.credit_curves.items())
+        },
+        "fixing_histories": {
+            key: _json_safe(value) for key, value in sorted(snapshot.fixing_histories.items())
         },
         "fx_rates": {
             key: _json_safe(value) for key, value in sorted(snapshot.fx_rates.items())
@@ -218,6 +222,7 @@ def _default_provider_records() -> tuple[ProviderRecord, ...]:
             capabilities=(
                 "discount_curve",
                 "market_snapshot",
+                "fixing_history",
                 "forecast_curve",
                 "vol_surface",
                 "credit_curve",
@@ -245,6 +250,24 @@ def _default_provider_records() -> tuple[ProviderRecord, ...]:
             connection_mode="http_pull",
             supports_snapshots=True,
             source="fred",
+        ),
+        ProviderRecord(
+            provider_id="market_data.file_import",
+            kind="market_data",
+            display_name="Explicit File Import",
+            capabilities=(
+                "discount_curve",
+                "forecast_curve",
+                "vol_surface",
+                "credit_curve",
+                "fx_rates",
+                "market_snapshot",
+                "fixing_history",
+                "underlier_spot",
+            ),
+            connection_mode="local_file",
+            supports_snapshots=True,
+            source="explicit_input",
         ),
     )
 

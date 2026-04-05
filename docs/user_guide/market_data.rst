@@ -9,6 +9,7 @@ the canonical capability names rather than older aliases:
 
 - ``discount_curve``
 - ``forward_curve``
+- ``fixing_history``
 - ``black_vol_surface``
 - ``credit_curve``
 - ``fx_rates``
@@ -33,14 +34,39 @@ Yield Curves
        5.0: 0.045, 10.0: 0.044, 30.0: 0.046,
    })
 
-   # From bootstrap
-   from trellis import BootstrapInstrument, bootstrap_yield_curve
-   instruments = [
-       BootstrapInstrument(0.25, 0.04, "deposit"),
-       BootstrapInstrument(2.0, 0.045, "swap"),
-       BootstrapInstrument(5.0, 0.048, "swap"),
-   ]
-   curve = bootstrap_yield_curve(instruments)
+   # From bootstrap with explicit curve conventions
+   from trellis import (
+       BootstrapConventionBundle,
+       BootstrapCurveInputBundle,
+       BootstrapInstrument,
+       bootstrap_yield_curve,
+   )
+   from trellis.curves.bootstrap import bootstrap_curve_result
+   from trellis.core.types import Frequency
+
+   bundle = BootstrapCurveInputBundle(
+       curve_name="usd_ois_boot",
+       currency="USD",
+       rate_index="USD-SOFR-3M",
+       conventions=BootstrapConventionBundle(
+           swap_fixed_frequency=Frequency.ANNUAL,
+           swap_float_frequency=Frequency.QUARTERLY,
+       ),
+       instruments=(
+           BootstrapInstrument(0.25, 0.04, "deposit", label="DEP3M"),
+           BootstrapInstrument(2.0, 0.045, "swap", label="SWAP2Y"),
+           BootstrapInstrument(5.0, 0.048, "swap", label="SWAP5Y"),
+       ),
+   )
+   curve = bootstrap_yield_curve(bundle)
+   result = bootstrap_curve_result(bundle)
+
+   assert result.solver_provenance.backend["backend_id"] == "scipy"
+   assert result.diagnostics.max_abs_residual < 1e-8
+
+Legacy lists of ``BootstrapInstrument`` still work, but Trellis now
+normalizes them onto the same typed bundle surface with explicit default
+conventions.
 
 Data Providers
 --------------
@@ -73,9 +99,224 @@ Resolved market snapshots keep a ``provenance`` payload alongside the market
 objects so replay and calibration traces can tell whether a curve came from a
 direct quote, a resolver merge, or a bootstrap input bundle.
 
+When a snapshot uses ``discount_curve_bootstraps`` or
+``forecast_curve_bootstraps``, the provenance now records both the full
+bootstrap bundle and the executed bootstrap solve artifacts for each named
+curve.
+
+The ``bootstrap_inputs`` section keeps the market-input contract:
+
+- curve identity such as ``curve_name``, ``currency``, and ``rate_index``
+- the explicit ``BootstrapConventionBundle`` used for deposits, futures, and swaps
+- the ordered market-instrument surface with instrument labels and tenor inputs
+
+The sibling ``bootstrap_runs`` section keeps the realized solve path:
+
+- the typed ``solve_request`` and normalized ``solve_result``
+- governed ``solver_provenance`` and replay artifacts
+- bootstrap diagnostics including residuals and Jacobian metadata
+
+This replaces the old flat list of anonymous bootstrap instruments and gives
+later calibration, replay, and validation workflows a stable curve-input plus
+solve-output contract.
+
+That same provenance now also powers the rebuild-based rates-risk workflows.
+When ``Session.analyze(...)`` requests ``methodology="curve_rebuild"`` for
+``key_rate_durations`` or ``scenario_pnl``, Trellis reconstructs the quoted
+bootstrap bundle from this stored payload, bumps the relevant market quotes,
+rebuilds the curve, and then reprices on the rebuilt discount surface.
+
+Trellis also exposes a reusable expiry/strike bucket substrate for implied
+volatility surfaces. Use ``build_vol_surface_shock_surface(...)`` to
+re-express a supported surface on a requested bucket grid and then apply
+bucket bumps in volatility basis points:
+
+.. code-block:: python
+
+   from trellis.models import GridVolSurface, build_vol_surface_shock_surface
+
+   surface = GridVolSurface(
+       expiries=(1.0, 2.0),
+       strikes=(90.0, 110.0),
+       vols=((0.25, 0.22), (0.27, 0.24)),
+   )
+
+   shock_surface = build_vol_surface_shock_surface(
+       surface,
+       expiries=(1.0, 1.5, 2.0),
+       strikes=(90.0, 100.0, 110.0),
+   )
+   bucketed = shock_surface.bucketed_surface()
+   bumped = shock_surface.apply_bumps({(1.5, 100.0): 25.0})
+
+Each bucket records whether it matches an exact surface node plus the expiry
+and strike support brackets used to anchor interpolation. The helper also
+surfaces explicit warnings for approximate inputs. Today ``GridVolSurface`` and
+``FlatVol`` are supported; when a flat surface is expanded onto the bucket
+grid, Trellis emits the warning code ``flat_surface_expanded`` so later vega
+and scenario routes can disclose that the bucket surface was synthesized.
+
+That same market-data surface now carries reusable model parameter payloads as
+well. Calibration workflows can attach a supported parameter set to
+``MarketState.model_parameters`` and ``MarketState.model_parameter_sets`` so
+later pricing helpers consume the calibrated model inputs instead of relying on
+route-local constants.
+
+For example, the supported Hull-White strip workflow can calibrate one
+parameter set and project it back onto the runtime state:
+
+.. code-block:: python
+
+   calibrated = calibrate_hull_white(instruments, market_state)
+   market_state = calibrated.apply_to_market_state(market_state)
+
+   assert market_state.model_parameters["model_family"] == "hull_white"
+   assert market_state.model_parameter_sets["hull_white"]["sigma"] > 0.0
+
+The same ``model_parameters`` surface can carry runtime Heston parameters for
+later pricing or simulation workflows:
+
+.. code-block:: python
+
+   from dataclasses import replace
+
+   from trellis.models.processes.heston import (
+       build_heston_parameter_payload,
+       resolve_heston_runtime_binding,
+   )
+
+   market_state = replace(
+       market_state,
+       model_parameters=build_heston_parameter_payload(
+           kappa=2.0,
+           theta=0.04,
+           xi=0.3,
+           rho=-0.7,
+           v0=0.04,
+       ),
+   )
+   binding = resolve_heston_runtime_binding(market_state)
+
+   assert binding.process.state_dim == 2
+   assert binding.model_parameters["model_family"] == "heston"
+
+The supported Heston calibration workflow can now write that same payload back
+onto runtime state directly:
+
+.. code-block:: python
+
+   from trellis.models.calibration import calibrate_heston_smile_workflow
+
+   calibrated = calibrate_heston_smile_workflow(
+       100.0,
+       1.0,
+       [80.0, 90.0, 100.0, 110.0, 120.0],
+       [0.24, 0.22, 0.20, 0.19, 0.18],
+       rate=0.02,
+       parameter_set_name="heston_equity",
+   )
+   market_state = calibrated.apply_to_market_state(market_state)
+
+   assert market_state.model_parameter_sets["heston_equity"]["model_family"] == "heston"
+
+Local-vol workflows use the same canonical runtime handoff:
+
+.. code-block:: python
+
+   from trellis.models.calibration import calibrate_local_vol_surface_workflow
+
+   local_vol = calibrate_local_vol_surface_workflow(
+       strikes=[80.0, 90.0, 100.0, 110.0],
+       expiries=[0.25, 0.5, 1.0, 2.0],
+       implied_vols=[
+           [0.22, 0.21, 0.20, 0.19],
+           [0.23, 0.21, 0.20, 0.19],
+           [0.24, 0.22, 0.21, 0.20],
+           [0.25, 0.23, 0.22, 0.21],
+       ],
+       S0=100.0,
+       r=0.02,
+       surface_name="equity_local_vol",
+   )
+   market_state = local_vol.apply_to_market_state(market_state)
+
+   assert "equity_local_vol" in market_state.local_vol_surfaces
+
 Mock snapshots also expose the synthetic-prior family, seed, and parameter set
 used to build the embedded regime bundle, so proving and replay runs can show
 exactly which prior was sampled.
+
+For schedule-bound rates workflows, the mock provider also ships deterministic
+recent fixing histories for the named rate indices in the snapshot. Those
+histories are first-class snapshot components, not opaque metadata blobs:
+``MarketSnapshot.fixing_histories`` holds the named history family,
+``default_fixing_history`` selects the default history when one exists, and
+``MarketState.fixing_histories`` carries the same surface into runtime pricing.
+
+File-Based Snapshot Import
+--------------------------
+
+The exotic-desk workflow can now import an explicit market snapshot from a
+local YAML or JSON manifest and persist it as a governed snapshot record.
+
+The manifest supports named families for:
+
+- ``discount_curves``
+- ``forecast_curves``
+- ``vol_surfaces``
+- ``credit_curves``
+- ``fx_rates``
+- ``underlier_spots``
+- ``fixing_histories``
+
+Curve, surface, FX, and credit components can be supplied inline or by
+referencing component files relative to the manifest. Fixing histories can be
+loaded from structured YAML/JSON payloads or simple ``date,value`` CSV files.
+
+The persisted snapshot keeps:
+
+- the resolved component contract
+- source-file paths for audit and replay
+- stable named-component summaries
+- typed named fixing histories plus the default fixing-history selection when
+  provided
+- warnings for missing expected families, synthetic inputs, defaulted
+  selections, and stale ``as_of`` dates
+
+The MCP/HTTP surface exposes this through ``trellis.snapshot.import_files``.
+When called with ``activate_session=true``, the imported snapshot becomes the
+active market-data source for that governed session and later
+``trellis.price.trade`` calls reuse the persisted snapshot instead of resolving
+an external provider.
+
+If the manifest includes fixing histories, Trellis normalizes them into the
+canonical typed market-data surface:
+
+- ``MarketSnapshot.fixing_history(name=None)`` resolves the selected or named
+  history as a ``date -> fixing`` mapping
+- ``MarketSnapshot.to_market_state(..., fixing_history=\"SOFR\")`` carries the
+  selected fixing history into runtime state and records the selected name in
+  ``MarketState.selected_curve_names``
+- ``MarketState.available_capabilities`` includes ``fixing_history`` whenever
+  the runtime state carries any historical fixings
+
+Named component requests now sit on top of that same snapshot surface.
+``MarketSnapshot.resolve_request(...)`` accepts a request-time selection such
+as ``discount_curve``, ``forecast_curve``, ``vol_surface``, or
+``fixing_history`` plus optional named ``scenario_templates`` and returns a
+stable ``SnapshotSelectionResult`` with:
+
+- the requested component names
+- the resolved runtime ``selected_curve_names``
+- the available named components on the snapshot
+- resolved scenario-template specs from ``snapshot.metadata``
+- explicit warnings when a requested component/template is missing or the
+  snapshot is stale for the requested reference date
+
+For persisted imported snapshots, ``SnapshotService.resolve_market_state(...)``
+wraps that same request-driven selection flow and merges the import-manifest
+warning surface so later book workflows can reuse named components without
+hand-assembling a ``MarketState`` first.
 
 Correlation Sources
 -------------------

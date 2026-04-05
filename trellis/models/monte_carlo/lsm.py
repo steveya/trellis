@@ -13,6 +13,7 @@ from trellis.models.monte_carlo.early_exercise import (
     EarlyExerciseDiagnostics,
     EarlyExercisePolicyResult,
     default_continuation_estimator,
+    normalize_exercise_steps,
     polynomial_basis,
 )
 
@@ -31,13 +32,8 @@ def longstaff_schwartz_result(
     n_steps = n_steps_plus_1 - 1
     df_step = raw_np.exp(-discount_rate * dt)
     discount_powers = df_step ** raw_np.arange(n_steps + 1)
-    exercise_steps = sorted(
-        {
-            int(step) for step in exercise_dates
-            if 0 < int(step) <= n_steps
-        },
-        reverse=True,
-    )
+    effective_exercise_steps = normalize_exercise_steps(exercise_dates, n_steps)
+    exercise_steps = sorted(effective_exercise_steps, reverse=True)
 
     if continuation_estimator is None:
         continuation_estimator = default_continuation_estimator(
@@ -83,7 +79,7 @@ def longstaff_schwartz_result(
     price = float(raw_np.mean(cashflows * total_discount))
     diagnostics = EarlyExerciseDiagnostics(
         policy_class="longstaff_schwartz",
-        exercise_dates_count=len(exercise_steps),
+        exercise_dates_count=len(effective_exercise_steps),
         exercised_paths_fraction=float(raw_np.mean(cashflow_time < n_steps)),
         regression_failures=regression_failures,
         estimator_name=getattr(continuation_estimator, "name", None),

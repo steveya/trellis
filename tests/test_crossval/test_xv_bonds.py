@@ -17,16 +17,17 @@ from trellis.engine.pricer import price_instrument
 from trellis.instruments.bond import Bond
 
 SETTLE = date(2024, 11, 15)
+SETTLE_OFF_CYCLE = date(2025, 2, 15)
 MATURITY = date(2034, 11, 15)
 COUPON = 0.05
 FACE = 100.0
 RATE = 0.05
 
 
-def trellis_bond_price(rate=RATE):
+def trellis_bond_price(rate=RATE, settle=SETTLE):
     bond = Bond(face=FACE, coupon=COUPON, maturity_date=MATURITY,
                 maturity=10, frequency=2)
-    result = price_instrument(bond, YieldCurve.flat(rate), SETTLE, greeks="all")
+    result = price_instrument(bond, YieldCurve.flat(rate), settle, greeks="all")
     return result
 
 
@@ -34,15 +35,15 @@ def trellis_bond_price(rate=RATE):
 # QuantLib reference
 # ---------------------------------------------------------------------------
 
-def quantlib_bond_price(rate=RATE):
+def quantlib_bond_price(rate=RATE, settle=SETTLE):
     import QuantLib as ql
 
-    settle_ql = ql.Date(15, 11, 2024)
+    settle_ql = ql.Date(settle.day, settle.month, settle.year)
     maturity_ql = ql.Date(15, 11, 2034)
     ql.Settings.instance().evaluationDate = settle_ql
 
     schedule = ql.Schedule(
-        settle_ql, maturity_ql,
+        ql.Date(15, 11, 2024), maturity_ql,
         ql.Period(ql.Semiannual),
         ql.UnitedStates(ql.UnitedStates.GovernmentBond),
         ql.Unadjusted, ql.Unadjusted,
@@ -116,6 +117,17 @@ class TestBondCrossValidation:
         ql_ref = quantlib_bond_price()
         fp_ref = financepy_bond_price()
         assert ql_ref["dirty_price"] == pytest.approx(fp_ref["dirty_price"], rel=0.02)
+
+    def test_clean_price_and_accrued_interest_quantlib_off_cycle(self):
+        """Off-cycle clean price and accrued interest stay close to QuantLib."""
+        trellis = trellis_bond_price(settle=SETTLE_OFF_CYCLE)
+        ql_ref = quantlib_bond_price(settle=SETTLE_OFF_CYCLE)
+
+        assert trellis.clean_price == pytest.approx(ql_ref["clean_price"], rel=0.01)
+        assert trellis.accrued_interest == pytest.approx(
+            ql_ref["dirty_price"] - ql_ref["clean_price"],
+            rel=0.05,
+        )
 
     def test_zero_coupon_bond(self):
         """ZCB: all three should give face * exp(-r*T) ≈ face * df(T)."""

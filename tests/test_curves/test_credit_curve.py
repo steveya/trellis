@@ -11,6 +11,9 @@ from trellis.curves.yield_curve import YieldCurve
 
 
 class TestCreditCurve:
+    def test_rejects_unsorted_tenors(self):
+        with pytest.raises(ValueError, match="strictly increasing"):
+            CreditCurve([5.0, 1.0, 10.0], [0.02, 0.01, 0.03])
 
     def test_flat_survival(self):
         cc = CreditCurve.flat(0.02)

@@ -1072,6 +1072,36 @@ def test_evaluate_prompt_cds_analytical_prefers_route_bound_modules_over_generic
     assert "Do not import a generic parent package such as `from trellis.models import ...`" in prompt
 
 
+def test_evaluate_prompt_route_less_semantic_request_prefers_compiler_inspected_modules():
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.prompts import evaluate_prompt
+
+    compiled = compile_build_request(
+        (
+            "Range accrual note on SOFR paying 5.25% when SOFR stays between 1.50% "
+            "and 3.25% on 2026-01-15, 2026-04-15, 2026-07-15, and 2026-10-15."
+        ),
+        instrument_type="range_accrual",
+    )
+
+    prompt = evaluate_prompt(
+        skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
+        spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
+        reference_sources={},
+        pricing_plan=compiled.pricing_plan,
+        knowledge_context="## Shared Knowledge\n- Range accrual semantic route pending.",
+        generation_plan=compiled.generation_plan,
+        prompt_surface="compact",
+    )
+
+    marker = "Modules to import and use:"
+    assert marker in prompt
+    modules_block = prompt.split(marker, 1)[1].split("\n\n", 1)[0]
+    assert "`trellis.models.range_accrual`" in modules_block
+    assert "`trellis.models.contingent_cashflows`" in modules_block
+    assert "`trellis.models.black`" not in modules_block
+
+
 def test_executor_callable_bond_rate_tree_retry_pins_vol_surface_and_control_policy():
     from types import SimpleNamespace
 
@@ -1693,7 +1723,7 @@ def test_evaluate_prompt_quanto_analytical_surface_includes_resolution_guidance(
             ],
             required_market_data={"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot", "model_parameters"},
             model_to_build="quanto_option",
-            reasoning="family_blueprint:quanto_option",
+            reasoning="product_ir_compiler",
         ),
         knowledge_context="## Shared Knowledge\n- Quanto analytical route",
         generation_plan=plan,
@@ -1776,7 +1806,7 @@ def test_evaluate_prompt_quanto_monte_carlo_surface_includes_joint_state_guidanc
             ],
             required_market_data={"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot", "model_parameters"},
             model_to_build="quanto_option",
-            reasoning="family_blueprint:quanto_option",
+            reasoning="product_ir_compiler",
         ),
         knowledge_context="## Shared Knowledge\n- Quanto MC route",
         generation_plan=plan,

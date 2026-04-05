@@ -4,11 +4,11 @@ This module is invoked whenever a test fails during the build/validate cycle.
 It:
 1. Diagnoses the failure (categorizes, identifies root cause)
 2. Suggests a fix
-3. After the fix, records the lesson in experience.py so the agent never
-   repeats the same mistake
+3. After the fix, records the lesson in the canonical knowledge store so the
+   agent can reuse it on future builds
 
 The workflow:
-    fail → diagnose → fix → verify → record experience → continue
+    fail → diagnose → fix → verify → record canonical lesson → continue
 
 Usage by agents:
     from trellis.agent.test_resolution import (
@@ -21,7 +21,6 @@ Usage by agents:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -43,7 +42,7 @@ class Diagnosis:
     root_cause: str       # what went wrong
     magnitude: str        # "catastrophic" (>10x), "significant" (>10%), "minor" (<10%)
     suggested_fix: str
-    related_experience: list[str]  # titles of existing experience entries
+    related_lessons: list[str]  # canonical lesson titles related to the failure
 
 
 @dataclass(frozen=True)
@@ -155,10 +154,49 @@ def _expected_float(f: TestFailure) -> float | None:
     return None
 
 
+def _matched_failure_signatures(failure: TestFailure):
+    """Return canonical failure signatures relevant to this failure."""
+    try:
+        from trellis.agent.knowledge import get_store
+        from trellis.agent.knowledge.signatures import match_failure
+
+        search_text = "\n".join(
+            part
+            for part in (
+                failure.test_name,
+                failure.error_message,
+                failure.expected,
+                failure.actual,
+            )
+            if part
+        )
+        return match_failure(search_text, get_store()._failure_signatures)
+    except Exception:
+        return []
+
+
+def _related_lesson_titles(matched_signatures) -> list[str]:
+    """Resolve canonical lesson titles from matched failure signatures."""
+    try:
+        from trellis.agent.knowledge import get_store
+
+        store = get_store()
+        titles: list[str] = []
+        for sig in matched_signatures:
+            for lesson_id in sig.probable_causes:
+                lesson = store._load_lesson(lesson_id)
+                if lesson is None or lesson.title in titles:
+                    continue
+                titles.append(lesson.title)
+        return titles
+    except Exception:
+        return []
+
+
 def diagnose_failure(failure: TestFailure) -> Diagnosis:
     """Run heuristic diagnosis on a test failure."""
-    from trellis.agent.experience import EXPERIENCE
-
+    matched_signatures = _matched_failure_signatures(failure)
+    related_lessons = _related_lesson_titles(matched_signatures)
     suspects = []
     for pattern in _DIAGNOSTIC_PATTERNS:
         try:
@@ -167,41 +205,85 @@ def diagnose_failure(failure: TestFailure) -> Diagnosis:
         except Exception:
             continue
 
-    # Find related existing experience
-    related = []
-    for exp in EXPERIENCE:
-        if any(exp["category"] == cat for cat, _ in suspects):
-            related.append(exp["title"])
-
     if suspects:
         category, root_cause = suspects[0]
+        magnitude = _magnitude(failure)
+    elif matched_signatures:
+        sig = matched_signatures[0]
+        category = sig.category
+        root_cause = sig.diagnostic_hint or "Matched known failure signature."
+        magnitude = sig.magnitude
     else:
         category = "unknown"
         root_cause = "No matching diagnostic pattern. Manual investigation needed."
+        magnitude = _magnitude(failure)
 
     return Diagnosis(
         category=category,
         root_cause=root_cause,
-        magnitude=_magnitude(failure),
+        magnitude=magnitude,
         suggested_fix=root_cause,
-        related_experience=related,
+        related_lessons=related_lessons,
     )
 
 
-def record_lesson(lesson: Lesson) -> None:
-    """Append a new lesson to experience.yaml."""
-    from trellis.agent.experience import append_lesson
-    append_lesson({
-        "category": lesson.category,
-        "title": lesson.title,
-        "symptoms": [
-            symptom
-            for symptom in (lesson.mistake, lesson.detect)
-            if str(symptom).strip()
-        ],
-        "explanation": lesson.why,
-        "fix": lesson.fix,
-    })
+def record_lesson(
+    lesson: Lesson,
+    *,
+    severity: str = "high",
+    method: str | None = None,
+    instrument: str | None = None,
+    features: list[str] | None = None,
+    error_signature: str | None = None,
+    confidence: float = 0.5,
+    validation: str = "",
+    source_trace: str | None = None,
+    version: str = "",
+) -> str | None:
+    """Capture a lesson in the canonical knowledge store."""
+    from trellis.agent.knowledge.promotion import (
+        build_lesson_payload,
+        capture_lesson,
+        validate_lesson_payload,
+    )
+
+    symptom = str(lesson.mistake).strip() or str(lesson.detect).strip()
+    payload = build_lesson_payload(
+        category=lesson.category,
+        title=lesson.title,
+        severity=severity,
+        symptom=symptom,
+        root_cause=lesson.why,
+        fix=lesson.fix,
+        validation=validation,
+        method=method,
+        instrument=instrument,
+        features=features,
+        error_signature=error_signature,
+        confidence=confidence,
+        source_trace=source_trace,
+        version=version,
+    )
+    report = validate_lesson_payload(payload)
+    if not report.valid:
+        raise ValueError("Lesson payload failed validation: " + "; ".join(report.errors))
+
+    return capture_lesson(
+        category=lesson.category,
+        title=lesson.title,
+        severity=severity,
+        symptom=symptom,
+        root_cause=lesson.why,
+        fix=lesson.fix,
+        validation=validation,
+        method=method,
+        instrument=instrument,
+        features=features,
+        error_signature=error_signature,
+        confidence=confidence,
+        source_trace=source_trace,
+        version=version,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -229,7 +311,7 @@ def format_diagnosis_prompt(failure: TestFailure) -> str:
 - Category: {heuristic.category}
 - Magnitude: {heuristic.magnitude}
 - Suspected root cause: {heuristic.root_cause}
-- Related experience: {', '.join(heuristic.related_experience) or 'None'}
+- Related lessons: {', '.join(heuristic.related_lessons) or 'None'}
 
 **Traceback:**
 ```
@@ -240,7 +322,7 @@ def format_diagnosis_prompt(failure: TestFailure) -> str:
 1. Confirm or revise the heuristic diagnosis
 2. Identify the exact root cause
 3. Suggest a specific fix (code change)
-4. Write a one-paragraph lesson learned for the experience playbook
+4. Write a one-paragraph lesson learned for the canonical knowledge store
 
 Format your response as:
 - **Root cause:** ...

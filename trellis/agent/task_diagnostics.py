@@ -592,7 +592,10 @@ def _telemetry_section(record: Mapping[str, Any]) -> dict[str, Any]:
             continue
         route_health = dict(trace.get("route_health") or {})
         route_binding_authority = dict(trace.get("route_binding_authority") or {})
-        route_id = str(route_health.get("route_id") or trace.get("action") or "").strip()
+        trace_kind = str(trace.get("trace_kind") or "").strip()
+        route_id = str(route_health.get("route_id") or "").strip()
+        if not route_id and trace_kind != "platform":
+            route_id = str(trace.get("action") or "").strip()
         route_family = str(
             route_health.get("route_family")
             or trace.get("route_method")
@@ -652,7 +655,10 @@ def _enrich_telemetry_route_observations(
             continue
         route_health = dict(trace.get("route_health") or {})
         route_binding_authority = dict(trace.get("route_binding_authority") or {})
-        route_id = str(route_health.get("route_id") or trace.get("action") or "").strip()
+        trace_kind = str(trace.get("trace_kind") or "").strip()
+        route_id = str(route_health.get("route_id") or "").strip()
+        if not route_id and trace_kind != "platform":
+            route_id = str(trace.get("action") or "").strip()
         route_family = str(route_health.get("route_family") or trace.get("route_method") or "").strip()
         task_ids = list(
             route_binding_authority.get("canary_task_ids")

@@ -103,10 +103,96 @@ Those same canonical stores now sit behind stable MCP resources:
   governed market snapshot or the later reproducibility bundle snapshot written
   for replay and review
 
+Calibration outputs now follow the same pattern. Rates and SABR workflows keep
+their typed solve input, raw solve result, normalized ``solver_provenance``,
+and ``solver_replay_artifact`` together so governed review surfaces can show
+backend identity, requested options, termination reason, and residual
+diagnostics without scraping model-local metadata fragments.
+
+The supported Hull-White strip workflow adds one more reusable audit artifact:
+the calibrated ``model_parameters`` payload that can be reapplied to
+``MarketState``. That keeps the solver replay story and the later tree-pricing
+story aligned on one explicit calibrated parameter set instead of route-local
+constants.
+
+SABR smile fitting now follows the same explicit-artifact rule. The reusable
+smile-surface input, fit diagnostics, and warning list are persisted alongside
+the solve artifacts so review tools can explain not just which parameters were
+solved, but also whether the input smile bracketed ATM and where the fitted
+surface missed the market quotes.
+
+Heston smile fitting now uses the same governed calibration contract. The
+workflow persists the reusable smile surface, typed solve request, normalized
+solve result, governed solver provenance/replay artifacts, and per-strike fit
+diagnostics together with the calibrated Heston parameter payload and resolved
+runtime binding. That lets later review or replay surfaces explain both how the
+fit converged and exactly which runtime parameter set was handed off.
+
+Dupire local-vol construction now emits a comparable diagnostic payload even
+though it is not itself a nonlinear optimizer solve. The calibration result
+persists the calibration target, sampled unstable grid points, term-level
+stability diagnostics, and warnings about any fallback regions, and the
+callable compatibility wrapper mirrors those artifacts on
+``calibration_provenance``, ``calibration_diagnostics``, and
+``calibration_warnings`` for downstream runtime consumers.
+
+The supported local-vol workflow now also persists the named surface handoff.
+Because ``LocalVolCalibrationResult.apply_to_market_state(...)`` projects the
+surface back onto the canonical runtime state, the same audit payload can
+explain both the calibration diagnostics and which named local-vol surface was
+later consumed by pricing routes.
+
+Calibration throughput now has a sibling persisted artifact as well. The
+benchmark helper in ``trellis.models.calibration.benchmarking`` writes checked
+JSON and Markdown reports under ``docs/benchmarks/calibration_workflows.*`` so
+solver/backend changes can be compared on cold-start and warm-start latency,
+not just fit residuals and replay payloads.
+
+Those benchmark artifacts are now paired with an explicit replay/tolerance
+validation pack. The supported calibration workflows have deterministic replay
+fixtures that lock:
+
+- the expected ``solver_provenance`` / ``solver_replay_artifact`` request ids
+  and backend identity
+- fit-quality tolerances for the checked synthetic Hull-White, SABR, Heston,
+  and local-vol fixtures
+- warm-start presence and checked benchmark-report shape for the workflows that
+  support warm-start seeds
+
+That means replay, validation, and performance review all point at the same
+governed payloads instead of drifting into separate model-local checks.
+
+Runtime model binding now exposes a similar review surface. The Heston runtime
+binding helper records where each parameter came from and warns when the drift
+had to be defaulted from the discount curve, so later runtime consumers do not
+silently treat an implicit risk-neutral drift assumption as a user-supplied
+model parameter.
+
 Those tools do not reconstruct status from ad hoc trace scraping. If the run is
 persisted in the ledger, the MCP layer reads the ledger and audit builder; if
 the run id is unknown, it fails with a structured MCP error instead of a raw
 filesystem exception.
+
+``trellis.price.trade`` now also projects a derived ``desk_review`` bundle on
+top of that canonical state for one-trade desk workflows. That bundle is
+intentionally not a second source of truth:
+
+- canonical replay and review state still lives in ``RunRecord`` and
+  ``RunAuditBundle``
+- ``desk_review`` is assembled from the persisted run summary, warnings,
+  selected model/engine, trade identity, and audit references
+- assumptions are grouped into explicit/defaulted/synthetic/missing buckets so
+  desk users do not have to parse raw warning text themselves
+- deterministic ``driver_narrative`` and ``scenario_commentary`` text is built
+  from those same persisted fields rather than a second free-form explain path
+- schedule and scenario highlights are projected from the same stored result
+  payload that powers ``trellis.run.get`` and ``trellis.run.get_audit``
+- callable desk routes now use that same projection layer to surface typed
+  exercise schedules and projected decision/maturity events without creating a
+  second persisted state model
+
+This keeps the trader-facing review surface thin while preserving the audit
+builder as the authoritative replay and observability package.
 
 Governed Provider Provenance
 ----------------------------
@@ -163,7 +249,9 @@ Use ``load_platform_traces()`` for the cheaper summary view,
 ``load_platform_trace_events()`` when full lifecycle history is needed, and
 ``summarize_platform_traces()`` for coarse action counts. Legacy single-file
 YAML traces remain readable and are migrated to the split layout on the next
-writer update.
+writer update. Older platform traces can also move in the other direction
+during retention compaction: the sidecar event log is inlined back into the
+summary YAML so the payload stays readable while the file count drops.
 
 For migrated semantic families, the trace payload is now deep enough to replay
 the route-selection decision:

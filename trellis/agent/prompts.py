@@ -95,6 +95,18 @@ def _render_prompt_module_requirements(pricing_plan=None, generation_plan=None) 
             "just to satisfy the method family.\n\n"
         )
 
+    inspected_modules = _ordered_unique_modules(
+        getattr(generation_plan, "inspected_modules", ()) if generation_plan is not None else ()
+    )
+    if inspected_modules:
+        modules_block = "\n".join(f"- `{module}`" for module in inspected_modules)
+        return (
+            "Modules to import and use:\n"
+            f"{modules_block}\n\n"
+            "You MUST import and use these compiler-selected modules in your implementation.\n"
+            "Do not fall back to a generic family module when the compiler already narrowed the inspected surface.\n\n"
+        )
+
     plan_modules = _ordered_unique_modules(getattr(pricing_plan, "method_modules", ()) or ())
     modules_block = (
         "\n".join(f"- `{module}`" for module in plan_modules)
@@ -199,7 +211,7 @@ def evaluate_prompt(
     knowledge_context : str
         Pre-formatted knowledge from the KnowledgeStore.  When provided,
         replaces the inline method_guidance construction (cookbook, contracts,
-        requirements, experience).
+        requirements, lessons).
     """
     field_descs = "\n".join(
         f"- `self._spec.{f.name}` ({f.type}): {f.description}"

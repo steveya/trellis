@@ -689,7 +689,7 @@ Why now:
 
 Concrete work:
 - audit and tighten:
-  - `trellis/agent/experience.yaml`
+  - the historical `trellis/agent/experience.yaml` artifact before retirement
   - older lesson entries under `trellis/agent/knowledge/lessons`
 - normalize overly specific or inaccurate contracts to the right abstraction
   level

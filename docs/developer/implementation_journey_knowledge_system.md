@@ -14,7 +14,7 @@ knowledge being visible to the rest of the platform:
 - the builder had one view of retrieved lessons
 - the critic had a narrower or differently formatted view
 - the model validator often reasoned from a separate context
-- prompt fallback paths could assemble cookbook and experience context
+- prompt fallback paths could assemble cookbook and lesson context
   differently from the main build path
 - task runs and traces could preserve only fragments of what an agent had
   actually seen
@@ -95,8 +95,7 @@ Even after the shared-memory upgrades, a few mechanisms remain partly outside
 the fully unified substrate:
 
 - `analytics_cookbook.py` is still a more standalone guidance source
-- `experience.py` survives as a compatibility wrapper
-- `test_resolution.py` still reflects an older remediation style
+- `test_resolution.py` still carries older heuristic diagnosis logic
 - direct deterministic `Session` and `Pipeline` flows do not always synthesize
   the full semantic shared-knowledge context unless they go through compile/build
 

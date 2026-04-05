@@ -42,31 +42,24 @@ def test_quanto_contract_rejects_missing_correlation():
     assert any("underlier_fx_correlation" in error for error in report.errors)
 
 
-@pytest.mark.legacy_compat
-def test_quanto_contract_compiles_to_expected_blueprint():
-    from trellis.agent.family_contract_compiler import compile_family_contract
-    from trellis.agent.family_contract_templates import get_family_contract_template
+def test_quanto_family_template_bridges_to_semantic_contract():
+    from trellis.agent.family_contract_templates import family_template_as_semantic_contract
 
-    compiled = compile_family_contract(get_family_contract_template("quanto_option"))
+    contract = family_template_as_semantic_contract("quanto_option")
 
-    assert compiled.family_id == "quanto_option"
-    assert compiled.preferred_method == "analytical"
-    assert compiled.candidate_methods == ("analytical", "monte_carlo")
-    assert compiled.product_ir.instrument == "quanto_option"
-    assert compiled.product_ir.payoff_family == "vanilla_option"
-    assert compiled.product_ir.schedule_dependence is False
-    assert compiled.product_ir.state_dependence == "terminal_markov"
-    assert set(compiled.product_ir.required_market_data) >= {
-        "discount_curve",
-        "forward_curve",
-        "black_vol_surface",
-        "fx_rates",
-        "spot",
-        "model_parameters",
-    }
-    assert "underlier_fx_correlation" in compiled.required_market_data
-    assert "fx_vol" in compiled.required_market_data
-    assert "trellis.models.processes.correlated_gbm" in compiled.target_modules
-    assert "quanto_adjustment_analytical" in compiled.primitive_routes
-    assert "correlated_gbm_monte_carlo" in compiled.primitive_routes
-    assert compiled.spec_schema_hint == "QuantoOptionAnalyticalPayoff"
+    assert contract is not None
+    assert contract.product.semantic_id == "quanto_option"
+    assert contract.product.instrument_class == "quanto_option"
+    assert contract.product.payoff_family == "vanilla_option"
+    assert contract.methods.preferred_method == "analytical"
+    assert contract.methods.candidate_methods == ("analytical", "monte_carlo")
+    required_inputs = {item.input_id for item in contract.market_data.required_inputs}
+    assert "underlier_fx_correlation" in required_inputs
+    assert "fx_vol" in required_inputs
+    assert "trellis.models.processes.correlated_gbm" in contract.blueprint.target_modules
+    assert "quanto_adjustment_analytical" in contract.blueprint.primitive_families
+    assert "correlated_gbm_monte_carlo" in contract.blueprint.primitive_families
+    assert contract.validation.semantic_checks == (
+        "check_quanto_required_inputs",
+        "check_quanto_cross_currency_semantics",
+    )

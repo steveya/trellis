@@ -1,8 +1,6 @@
 """Arbiter: runs invariant suite + deterministic critic-selected checks.
 
 No LLM judgment — just execute deterministic checks and report pass/fail.
-Legacy critic-authored ``test_code`` is available only through an explicit
-compatibility flag and is disabled in the standard path.
 """
 
 from __future__ import annotations
@@ -40,7 +38,6 @@ def run_critic_tests(
     spec_kwargs: dict | None = None,
     *,
     allowed_check_ids: set[str] | None = None,
-    allow_legacy_test_code: bool = False,
 ) -> list[str]:
     """Execute critic-selected checks in a controlled namespace.
 
@@ -107,32 +104,12 @@ def run_critic_tests(
             continue
         check_id = str(getattr(concern, "check_id", "") or "").strip()
         if allowed_check_ids is not None and check_id not in allowed_check_ids:
-            if not (allow_legacy_test_code and check_id == "legacy_test_code"):
-                continue
+            continue
         dispatched = _run_structured_critic_check(concern, namespace)
         if dispatched is not None:
             if dispatched:
                 failures.append(_format_structured_failure(concern, dispatched))
             continue
-        if not allow_legacy_test_code:
-            continue
-        test_code = concern.test_code
-        if not test_code.strip():
-            continue
-        if _should_skip_critic_test(test_code):
-            continue
-        try:
-            exec(test_code, namespace)
-        except AssertionError as e:
-            failures.append(
-                f"Critic concern FAILED: {concern.description}\n"
-                f"  Test: {test_code}\n"
-                f"  Error: {e}"
-            )
-        except Exception as e:
-            # Test code itself errored — this is a critic quality issue, not a pricer bug
-            # We skip rather than fail
-            pass
 
     return failures
 
@@ -153,14 +130,13 @@ def _run_structured_critic_check(concern, namespace: dict) -> str | None:
     """Run one structured critic-selected check.
 
     Returns:
-    - ``None`` when the concern is unsupported and the caller may try legacy
-      ``test_code`` execution.
+    - ``None`` when the concern is unsupported.
     - ``""`` when the check passed.
     - non-empty string when the check failed.
     """
 
     check_id = str(getattr(concern, "check_id", "") or "").strip()
-    if not check_id or check_id == "legacy_test_code":
+    if not check_id:
         return None
     checker = _CRITIC_CHECK_DISPATCH.get(check_id)
     if checker is None:
@@ -235,19 +211,6 @@ _CRITIC_CHECK_DISPATCH = {
     "callable_bound_vs_straight_bond": _check_callable_bound_vs_straight_bond,
     "puttable_bound_vs_straight_bond": _check_puttable_bound_vs_straight_bond,
 }
-
-
-def _should_skip_critic_test(test_code: str) -> bool:
-    """Return True for critic tests that are not executable price checks.
-
-    The arbiter should execute behavioral checks on price outputs and market
-    state sensitivity, not brittle source-inspection assertions or static spec
-    assertions that depend on the exact validation fixture.
-    """
-    lowered = test_code.lower()
-    if "inspect.signature" in lowered or "inspect.getsource" in lowered:
-        return True
-    return "price_payoff(" not in lowered and ".evaluate(" not in lowered
 
 
 def validate(

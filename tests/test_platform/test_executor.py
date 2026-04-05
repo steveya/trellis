@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from unittest.mock import patch
 
 import pytest
 
@@ -345,15 +346,15 @@ def test_execute_compiled_request_builds_and_prices_candidate_path_via_default_a
         def evaluate(self, market_state):
             return 42.0
 
-    with __import__("unittest").mock.patch(
+    with patch(
         "trellis.agent.executor.build_payoff",
         return_value=GeneratedPayoff,
     ):
-        with __import__("unittest").mock.patch(
+        with patch(
             "trellis.agent.planner.plan_build",
             return_value=SimpleNamespace(spec_schema=object()),
         ):
-            with __import__("unittest").mock.patch(
+            with patch(
                 "trellis.agent.executor._make_test_payoff",
                 return_value=GeneratedPayoff(),
             ):

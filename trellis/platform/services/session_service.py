@@ -18,10 +18,12 @@ class SessionService:
         store: SessionContextStore,
         config: TrellisServerConfig,
         provider_registry,
+        snapshot_store=None,
     ):
         self.store = store
         self.config = config
         self.provider_registry = provider_registry
+        self.snapshot_store = snapshot_store
 
     def get_context(self, session_id: str | None = None) -> dict[str, object]:
         """Load or create one governed session context."""
@@ -54,6 +56,48 @@ class SessionService:
             active_policy=f"policy_bundle.{normalized_mode.value}.default",
             allow_mock_data=normalized_mode is RunMode.SANDBOX,
             require_provider_disclosure=normalized_mode is not RunMode.SANDBOX,
+        )
+        persisted = self.store.save_session(updated)
+        return self._payload(persisted)
+
+    def activate_market_snapshot(
+        self,
+        *,
+        session_id: str | None = None,
+        snapshot_id: str,
+        provider_id: str = "market_data.file_import",
+    ) -> dict[str, object]:
+        """Bind one persisted imported market snapshot onto a governed session."""
+        from trellis.mcp.errors import TrellisMcpError
+
+        record = self._get_or_create(session_id)
+        resolved_snapshot_id = str(snapshot_id or "").strip()
+        snapshot_record = None
+        if self.snapshot_store is not None:
+            snapshot_record = self.snapshot_store.get_snapshot(resolved_snapshot_id)
+            if snapshot_record is None:
+                raise TrellisMcpError(
+                    code="unknown_market_snapshot",
+                    message=f"Unknown market snapshot id: {snapshot_id!r}",
+                    details={"snapshot_id": resolved_snapshot_id},
+                )
+
+        resolved_provider_id = str(
+            getattr(snapshot_record, "provider_id", "") or provider_id or ""
+        ).strip()
+        updated_metadata = dict(record.metadata)
+        updated_metadata["active_market_snapshot_id"] = resolved_snapshot_id
+        updated_metadata["active_market_snapshot_provider_id"] = resolved_provider_id
+        updated = replace(
+            record,
+            provider_bindings=replace(
+                record.provider_bindings,
+                market_data=ProviderBindingSet(
+                    primary=ProviderBinding(resolved_provider_id),
+                    fallback=record.provider_bindings.market_data.fallback,
+                ),
+            ),
+            metadata=updated_metadata,
         )
         persisted = self.store.save_session(updated)
         return self._payload(persisted)

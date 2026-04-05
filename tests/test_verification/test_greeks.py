@@ -172,7 +172,7 @@ class TestBondKeyRateDurations:
         curve = YieldCurve(tenors, rates)
         result = price_instrument(_bond(maturity=10), curve, SETTLE, greeks="all")
         krd = result.greeks["key_rate_durations"]
-        krd_10y = krd.get("KRD_10.0y", 0)
+        krd_10y = krd.get(10.0, 0)
         krd_sum = sum(abs(v) for v in krd.values())
         # 10Y KRD should be the largest contributor
         assert abs(krd_10y) > krd_sum * 0.3

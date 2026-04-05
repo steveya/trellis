@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
+
+import pytest
 
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
@@ -130,3 +133,74 @@ def test_compile_bermudan_swaption_contract_spec_matches_helper_price():
         lattice,
         contract_spec=contract,
     )
+
+
+def test_price_bermudan_swaption_tree_ignores_expired_exercise_dates_after_settlement():
+    market_state = MarketState(
+        as_of=date(2026, 1, 15),
+        settlement=date(2026, 1, 15),
+        discount=YieldCurve.flat(0.05, max_tenor=31.0),
+        vol_surface=FlatVol(0.20),
+    )
+    full_schedule = _Spec(
+        exercise_dates=(
+            date(2025, 11, 15),
+            date(2026, 11, 15),
+            date(2027, 11, 15),
+            date(2028, 11, 15),
+            date(2029, 11, 15),
+        ),
+    )
+    remaining_schedule = _Spec(
+        exercise_dates=(
+            date(2026, 11, 15),
+            date(2027, 11, 15),
+            date(2028, 11, 15),
+            date(2029, 11, 15),
+        ),
+    )
+
+    full_price = price_bermudan_swaption_tree(
+        market_state,
+        full_schedule,
+        model="hull_white",
+        n_steps=120,
+    )
+    remaining_price = price_bermudan_swaption_tree(
+        market_state,
+        remaining_schedule,
+        model="hull_white",
+        n_steps=120,
+    )
+
+    assert full_price == pytest.approx(remaining_price, rel=1e-9)
+
+
+def test_price_bermudan_swaption_tree_uses_market_state_hull_white_params():
+    market_state = _market_state()
+    spec = _Spec(exercise_dates=(date(2026, 11, 15),), swap_end=date(2031, 11, 15))
+    calibrated_state = replace(
+        market_state,
+        model_parameters={
+            "model_family": "hull_white",
+            "mean_reversion": 0.03,
+            "sigma": 0.004,
+        },
+    )
+
+    via_market_state = price_bermudan_swaption_tree(
+        calibrated_state,
+        spec,
+        model="hull_white",
+        n_steps=120,
+    )
+    via_explicit = price_bermudan_swaption_tree(
+        market_state,
+        spec,
+        model="hull_white",
+        mean_reversion=0.03,
+        sigma=0.004,
+        n_steps=120,
+    )
+
+    assert via_market_state == pytest.approx(via_explicit, rel=1e-10)

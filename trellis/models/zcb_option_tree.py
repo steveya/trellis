@@ -9,6 +9,7 @@ import trellis.models.trees.models as tree_models
 
 from trellis.core.date_utils import year_fraction
 from trellis.core.types import DayCountConvention
+from trellis.models.hull_white_parameters import resolve_hull_white_parameters
 from trellis.models.trees.lattice import RecombiningLattice, build_generic_lattice
 from trellis.models.zcb_option import (
     VolSurfaceLike,
@@ -51,7 +52,8 @@ def build_zcb_option_lattice(
     spec: ZCBOptionSpecLike,
     *,
     model: str = "hull_white",
-    mean_reversion: float = 0.1,
+    mean_reversion: float | None = None,
+    sigma: float | None = None,
     n_steps: int | None = None,
 ) -> RecombiningLattice:
     """Build the calibrated rate tree used by a ZCB option."""
@@ -60,7 +62,8 @@ def build_zcb_option_lattice(
     if discount_curve is None:
         raise ValueError("ZCB option tree pricing requires market_state.discount")
     if market_state.vol_surface is None:
-        raise ValueError("ZCB option tree pricing requires market_state.vol_surface")
+        if sigma is None:
+            raise ValueError("ZCB option tree pricing requires market_state.vol_surface")
 
     day_count = getattr(spec, "day_count", DayCountConvention.ACT_365)
     t_exp = year_fraction(settlement, spec.expiry_date, day_count)
@@ -72,13 +75,22 @@ def build_zcb_option_lattice(
 
     strike_unit = normalize_zcb_option_strike(spec.strike, spec.notional)
     r0 = float(discount_curve.zero_rate(max(min(t_exp, t_bond), 1e-6)))
-    sigma = float(market_state.vol_surface.black_vol(max(t_exp, 1e-6), strike_unit))
+    default_sigma = sigma
+    if market_state.vol_surface is not None:
+        default_sigma = float(market_state.vol_surface.black_vol(max(t_exp, 1e-6), strike_unit))
+    resolved_mean_reversion, resolved_sigma = resolve_hull_white_parameters(
+        market_state,
+        mean_reversion=mean_reversion,
+        sigma=sigma,
+        default_mean_reversion=0.1,
+        default_sigma=default_sigma,
+    )
     step_count = int(n_steps or min(400, max(100, int(t_bond * 24))))
     return build_generic_lattice(
         tree_models.MODEL_REGISTRY[str(model).strip().lower()],
         r0=r0,
-        sigma=sigma,
-        a=float(mean_reversion),
+        sigma=resolved_sigma,
+        a=resolved_mean_reversion,
         T=float(t_bond),
         n_steps=step_count,
         discount_curve=discount_curve,
@@ -145,7 +157,8 @@ def price_zcb_option_tree(
     spec: ZCBOptionSpecLike,
     *,
     model: str = "hull_white",
-    mean_reversion: float = 0.1,
+    mean_reversion: float | None = None,
+    sigma: float | None = None,
     n_steps: int | None = None,
 ) -> float:
     """Build the requested tree and return the ZCB option PV."""
@@ -155,6 +168,7 @@ def price_zcb_option_tree(
         spec,
         model=model,
         mean_reversion=mean_reversion,
+        sigma=sigma,
         n_steps=n_steps,
     )
     return price_zcb_option_on_lattice(

@@ -1328,6 +1328,126 @@ class TestPromotion:
         assert stats["archived"] == 1
         assert rebuild_calls["count"] == 1
 
+    def test_resolve_adapter_lifecycle_records_prefers_newest_persisted_artifact(self):
+        import trellis.agent.knowledge.promotion as promotion_module
+        from trellis.agent.knowledge.promotion import resolve_adapter_lifecycle_records
+        from trellis.agent.knowledge.schema import (
+            AdapterLifecycleRecord,
+            AdapterLifecycleStatus,
+        )
+
+        review_dir = promotion_module._TRACES_DIR / "promotion_reviews"
+        review_dir.mkdir(parents=True, exist_ok=True)
+        adapter_id = "trellis.instruments._agent.demo_route"
+
+        def _artifact_payload(*, revision: str, reason: str) -> dict[str, object]:
+            return {
+                "adapter_lifecycle": {
+                    "resolved": {
+                        "records": [
+                            {
+                                "adapter_id": adapter_id,
+                                "status": "deprecated",
+                                "module_path": adapter_id,
+                                "validated_against_repo_revision": revision,
+                                "supersedes": [],
+                                "replacement": "trellis.instruments._agent._fresh.demo_route",
+                                "reason": reason,
+                                "code_hash": revision,
+                            }
+                        ]
+                    }
+                }
+            }
+
+        (review_dir / "20260405_120001_demo_approved.yaml").write_text(
+            yaml.safe_dump(_artifact_payload(revision="rev-new", reason="newer review"), sort_keys=False)
+        )
+        (review_dir / "20260405_115959_demo_approved.yaml").write_text(
+            yaml.safe_dump(_artifact_payload(revision="rev-old", reason="older review"), sort_keys=False)
+        )
+
+        resolved = resolve_adapter_lifecycle_records(
+            [
+                AdapterLifecycleRecord(
+                    adapter_id=adapter_id,
+                    status=AdapterLifecycleStatus.STALE,
+                    module_path=adapter_id,
+                    validated_against_repo_revision="rev-live",
+                    replacement="trellis.instruments._agent._fresh.demo_route",
+                    reason="live stale record",
+                    code_hash="live",
+                )
+            ]
+        )
+
+        record = next(item for item in resolved if item.adapter_id == adapter_id)
+        assert record.status == AdapterLifecycleStatus.DEPRECATED
+        assert record.validated_against_repo_revision == "rev-new"
+        assert record.reason == "newer review"
+
+    def test_format_knowledge_for_prompt_uses_latest_adapter_lifecycle_review(self, monkeypatch):
+        import trellis.agent.knowledge.retrieval as retrieval_module
+        import trellis.agent.knowledge.promotion as promotion_module
+        from trellis.agent.knowledge.schema import (
+            AdapterLifecycleRecord,
+            AdapterLifecycleStatus,
+        )
+
+        review_dir = promotion_module._TRACES_DIR / "promotion_reviews"
+        review_dir.mkdir(parents=True, exist_ok=True)
+        adapter_id = "trellis.instruments._agent.demo_route"
+
+        for filename, revision, reason in (
+            ("20260405_120001_demo_approved.yaml", "rev-new", "newer review"),
+            ("20260405_115959_demo_approved.yaml", "rev-old", "older review"),
+        ):
+            (review_dir / filename).write_text(
+                yaml.safe_dump(
+                    {
+                        "adapter_lifecycle": {
+                            "resolved": {
+                                "records": [
+                                    {
+                                        "adapter_id": adapter_id,
+                                        "status": "deprecated",
+                                        "module_path": adapter_id,
+                                        "validated_against_repo_revision": revision,
+                                        "supersedes": [],
+                                        "replacement": "trellis.instruments._agent._fresh.demo_route",
+                                        "reason": reason,
+                                        "code_hash": revision,
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    sort_keys=False,
+                )
+            )
+
+        monkeypatch.setattr(
+            retrieval_module,
+            "detect_adapter_lifecycle_records",
+            lambda: [
+                AdapterLifecycleRecord(
+                    adapter_id=adapter_id,
+                    status=AdapterLifecycleStatus.STALE,
+                    module_path=adapter_id,
+                    validated_against_repo_revision="rev-live",
+                    replacement="trellis.instruments._agent._fresh.demo_route",
+                    reason="live stale record",
+                    code_hash="live",
+                )
+            ],
+        )
+
+        text = retrieval_module.format_knowledge_for_prompt({})
+
+        assert "**DEPRECATED**" in text
+        assert "newer review" in text
+        assert "older review" not in text
+
 
 # ---------------------------------------------------------------------------
 # Signatures
@@ -1621,26 +1741,18 @@ class TestAnalyticalSolutionContracts:
 
     def test_market_data_candidate_swaption_cluster_is_deduplicated(self):
         root = Path(__file__).resolve().parents[2]
-        experience = yaml.safe_load((root / "trellis" / "agent" / "experience.yaml").read_text())
         candidate_index = yaml.safe_load(
             (root / "trellis" / "agent" / "knowledge" / "lessons" / "index.yaml").read_text()
         )["entries"]
 
-        experience_titles = {
+        validated_titles = {
             entry["title"]
-            for entry in experience
-            if entry.get("category") == "market_data"
-            and entry.get("title") in {
-                "Module reference typo",
-                "Transient API failure",
-                "Use valid model modules",
-                "External API fallback",
-                "Request failure fallback",
-                "Handle request failures robustly",
-                "Validate model import paths",
-                "API Request Failure",
-                "Invalid model reference",
-            }
+            for entry in candidate_index
+            if entry.get("status") in {"validated", "promoted"}
+            and entry.get("category") == "market_data"
+            and entry.get("applies_when", {}).get("method") == ["analytical"]
+            and entry.get("applies_when", {}).get("features")
+            == ["floating_coupons", "vol_surface_dependence"]
         }
         index_titles = {
             entry["title"]
@@ -1652,6 +1764,6 @@ class TestAnalyticalSolutionContracts:
             == ["floating_coupons", "vol_surface_dependence"]
         }
 
-        assert experience_titles == {"Module reference typo", "Transient API failure"}
+        assert {"Module reference typo", "Transient API failure"} <= validated_titles
         assert index_titles <= {"Module reference typo", "Transient API failure"}
         assert len(index_titles) <= 2

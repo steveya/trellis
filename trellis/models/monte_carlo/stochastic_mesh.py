@@ -7,6 +7,7 @@ import numpy as raw_np
 from trellis.models.monte_carlo.early_exercise import (
     EarlyExerciseDiagnostics,
     EarlyExercisePolicyResult,
+    normalize_exercise_steps,
 )
 
 
@@ -24,15 +25,16 @@ def stochastic_mesh_result(
     n_steps = n_steps_plus_1 - 1
     df_step = raw_np.exp(-discount_rate * dt)
 
+    effective_exercise_steps = normalize_exercise_steps(exercise_dates, n_steps)
     cashflows = raw_np.zeros(n_paths)
     cashflow_time = raw_np.full(n_paths, n_steps)
     weighting_failures = 0
 
-    if n_steps in exercise_dates:
+    if n_steps in effective_exercise_steps:
         cashflows = payoff_fn(paths[:, -1])
         cashflow_time[:] = n_steps
 
-    for step in sorted(set(exercise_dates), reverse=True):
+    for step in sorted(effective_exercise_steps, reverse=True):
         if step >= n_steps:
             continue
 
@@ -70,7 +72,7 @@ def stochastic_mesh_result(
     price = float(raw_np.mean(cashflows * (df_step ** cashflow_time)))
     diagnostics = EarlyExerciseDiagnostics(
         policy_class="stochastic_mesh",
-        exercise_dates_count=len(exercise_dates),
+        exercise_dates_count=len(effective_exercise_steps),
         exercised_paths_fraction=float(raw_np.mean(cashflow_time < n_steps)),
         regression_failures=weighting_failures,
         estimator_name="gaussian_mesh_weights",

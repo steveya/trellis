@@ -18,6 +18,7 @@ from trellis.models.analytical.jamshidian import (
     ResolvedJamshidianInputs,
     zcb_option_hw_raw,
 )
+from trellis.models.hull_white_parameters import resolve_hull_white_mean_reversion
 
 
 class DiscountCurveLike(Protocol):
@@ -81,7 +82,7 @@ def resolve_zcb_option_hw_inputs(
     market_state: ZCBOptionMarketStateLike,
     spec: ZCBOptionSpecLike,
     *,
-    mean_reversion: float = 0.1,
+    mean_reversion: float | None = None,
 ) -> ResolvedZCBOptionInputs:
     """Resolve dates, strike units, vol, and discount factors for Jamshidian."""
     settlement = _settlement_date(market_state, spec)
@@ -90,6 +91,11 @@ def resolve_zcb_option_hw_inputs(
         raise ValueError("ZCB option pricing requires market_state.discount")
     if market_state.vol_surface is None:
         raise ValueError("ZCB option pricing requires market_state.vol_surface")
+    resolved_mean_reversion = resolve_hull_white_mean_reversion(
+        market_state,
+        mean_reversion=mean_reversion,
+        default_mean_reversion=0.1,
+    )
 
     day_count = getattr(spec, "day_count", DayCountConvention.ACT_365)
     t_exp = year_fraction(settlement, spec.expiry_date, day_count)
@@ -105,7 +111,7 @@ def resolve_zcb_option_hw_inputs(
                 T_exp=max(t_exp, 0.0),
                 T_bond=max(t_bond, 0.0),
                 sigma=0.0,
-                a=float(mean_reversion),
+                a=float(resolved_mean_reversion),
             ),
         )
     if t_bond <= t_exp:
@@ -124,7 +130,7 @@ def resolve_zcb_option_hw_inputs(
             T_exp=float(t_exp),
             T_bond=float(t_bond),
             sigma=sigma,
-            a=float(mean_reversion),
+            a=float(resolved_mean_reversion),
         ),
     )
 
@@ -133,7 +139,7 @@ def price_zcb_option_jamshidian(
     market_state: ZCBOptionMarketStateLike,
     spec: ZCBOptionSpecLike,
     *,
-    mean_reversion: float = 0.1,
+    mean_reversion: float | None = None,
 ) -> float:
     """Price a European zero-coupon-bond option with Jamshidian/Hull-White."""
     resolved = resolve_zcb_option_hw_inputs(

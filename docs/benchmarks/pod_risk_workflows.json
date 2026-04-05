@@ -1,0 +1,321 @@
+{
+  "benchmark_name": "pod_risk_workflows",
+  "cases": [
+    {
+      "cold": {
+        "label": "twist_cube",
+        "max_seconds": 0.036746,
+        "mean_seconds": 0.036345,
+        "median_seconds": 0.036345,
+        "metadata": {
+          "position_count": 2,
+          "scenario_count": 2
+        },
+        "min_seconds": 0.035944,
+        "mode": "cold",
+        "notes": [
+          "scenario_cube",
+          "twist_pack"
+        ],
+        "repeats": 2,
+        "run_seconds": [
+          0.036746,
+          0.035944
+        ],
+        "runs_per_second": 27.514,
+        "warmups": 1
+      },
+      "label": "twist_cube",
+      "metadata": {
+        "position_count": 2,
+        "scenario_count": 2
+      },
+      "notes": [
+        "scenario_cube",
+        "twist_pack"
+      ],
+      "steady": {
+        "label": "twist_cube",
+        "max_seconds": 0.034429,
+        "mean_seconds": 0.033873,
+        "median_seconds": 0.033873,
+        "metadata": {
+          "position_count": 2,
+          "scenario_count": 2
+        },
+        "min_seconds": 0.033318,
+        "mode": "steady_state",
+        "notes": [
+          "scenario_cube",
+          "twist_pack"
+        ],
+        "repeats": 2,
+        "run_seconds": [
+          0.034429,
+          0.033318
+        ],
+        "runs_per_second": 29.522,
+        "warmups": 1
+      },
+      "steady_speedup": 1.073,
+      "workflow": "pipeline_scenarios"
+    },
+    {
+      "cold": {
+        "label": "curve_rebuild_buckets",
+        "max_seconds": 1.604299,
+        "mean_seconds": 1.553535,
+        "median_seconds": 1.553535,
+        "metadata": {
+          "bucket_count": 4,
+          "methodology": "curve_rebuild"
+        },
+        "min_seconds": 1.50277,
+        "mode": "cold",
+        "notes": [
+          "curve_rebuild",
+          "rates_risk"
+        ],
+        "repeats": 2,
+        "run_seconds": [
+          1.604299,
+          1.50277
+        ],
+        "runs_per_second": 0.644,
+        "warmups": 1
+      },
+      "label": "curve_rebuild_buckets",
+      "metadata": {
+        "bucket_count": 4,
+        "methodology": "curve_rebuild"
+      },
+      "notes": [
+        "curve_rebuild",
+        "rates_risk"
+      ],
+      "steady": {
+        "label": "curve_rebuild_buckets",
+        "max_seconds": 1.350307,
+        "mean_seconds": 1.35,
+        "median_seconds": 1.35,
+        "metadata": {
+          "bucket_count": 4,
+          "methodology": "curve_rebuild"
+        },
+        "min_seconds": 1.349694,
+        "mode": "steady_state",
+        "notes": [
+          "curve_rebuild",
+          "rates_risk"
+        ],
+        "repeats": 2,
+        "run_seconds": [
+          1.350307,
+          1.349694
+        ],
+        "runs_per_second": 0.741,
+        "warmups": 1
+      },
+      "steady_speedup": 1.151,
+      "workflow": "key_rate_durations"
+    },
+    {
+      "cold": {
+        "label": "rebuild_pack",
+        "max_seconds": 0.862396,
+        "mean_seconds": 0.846134,
+        "median_seconds": 0.846134,
+        "metadata": {
+          "methodology": "curve_rebuild",
+          "scenario_count": 4
+        },
+        "min_seconds": 0.829871,
+        "mode": "cold",
+        "notes": [
+          "curve_rebuild",
+          "named_scenarios"
+        ],
+        "repeats": 2,
+        "run_seconds": [
+          0.862396,
+          0.829871
+        ],
+        "runs_per_second": 1.182,
+        "warmups": 1
+      },
+      "label": "rebuild_pack",
+      "metadata": {
+        "methodology": "curve_rebuild",
+        "scenario_count": 4
+      },
+      "notes": [
+        "curve_rebuild",
+        "named_scenarios"
+      ],
+      "steady": {
+        "label": "rebuild_pack",
+        "max_seconds": 0.684988,
+        "mean_seconds": 0.675639,
+        "median_seconds": 0.675639,
+        "metadata": {
+          "methodology": "curve_rebuild",
+          "scenario_count": 4
+        },
+        "min_seconds": 0.66629,
+        "mode": "steady_state",
+        "notes": [
+          "curve_rebuild",
+          "named_scenarios"
+        ],
+        "repeats": 2,
+        "run_seconds": [
+          0.684988,
+          0.66629
+        ],
+        "runs_per_second": 1.48,
+        "warmups": 1
+      },
+      "steady_speedup": 1.252,
+      "workflow": "scenario_pnl"
+    },
+    {
+      "cold": {
+        "label": "bucketed_surface",
+        "max_seconds": 0.018225,
+        "mean_seconds": 0.018114,
+        "median_seconds": 0.018114,
+        "metadata": {
+          "grid_shape": [
+            3,
+            3
+          ]
+        },
+        "min_seconds": 0.018003,
+        "mode": "cold",
+        "notes": [
+          "vol_surface",
+          "bucketed_vega"
+        ],
+        "repeats": 2,
+        "run_seconds": [
+          0.018225,
+          0.018003
+        ],
+        "runs_per_second": 55.205,
+        "warmups": 1
+      },
+      "label": "bucketed_surface",
+      "metadata": {
+        "grid_shape": [
+          3,
+          3
+        ]
+      },
+      "notes": [
+        "vol_surface",
+        "bucketed_vega"
+      ],
+      "steady": {
+        "label": "bucketed_surface",
+        "max_seconds": 0.018091,
+        "mean_seconds": 0.017966,
+        "median_seconds": 0.017966,
+        "metadata": {
+          "grid_shape": [
+            3,
+            3
+          ]
+        },
+        "min_seconds": 0.01784,
+        "mode": "steady_state",
+        "notes": [
+          "vol_surface",
+          "bucketed_vega"
+        ],
+        "repeats": 2,
+        "run_seconds": [
+          0.018091,
+          0.01784
+        ],
+        "runs_per_second": 55.662,
+        "warmups": 1
+      },
+      "steady_speedup": 1.008,
+      "workflow": "vega"
+    },
+    {
+      "cold": {
+        "label": "delta_gamma_theta_bundle",
+        "max_seconds": 0.013554,
+        "mean_seconds": 0.013524,
+        "median_seconds": 0.013524,
+        "metadata": {
+          "measure_count": 3
+        },
+        "min_seconds": 0.013495,
+        "mode": "cold",
+        "notes": [
+          "spot_risk",
+          "bundle"
+        ],
+        "repeats": 2,
+        "run_seconds": [
+          0.013554,
+          0.013495
+        ],
+        "runs_per_second": 73.942,
+        "warmups": 1
+      },
+      "label": "delta_gamma_theta_bundle",
+      "metadata": {
+        "measure_count": 3
+      },
+      "notes": [
+        "spot_risk",
+        "bundle"
+      ],
+      "steady": {
+        "label": "delta_gamma_theta_bundle",
+        "max_seconds": 0.013885,
+        "mean_seconds": 0.013805,
+        "median_seconds": 0.013805,
+        "metadata": {
+          "measure_count": 3
+        },
+        "min_seconds": 0.013724,
+        "mode": "steady_state",
+        "notes": [
+          "spot_risk",
+          "bundle"
+        ],
+        "repeats": 2,
+        "run_seconds": [
+          0.013885,
+          0.013724
+        ],
+        "runs_per_second": 72.44,
+        "warmups": 1
+      },
+      "steady_speedup": 0.98,
+      "workflow": "spot_greeks"
+    }
+  ],
+  "created_at": "2026-04-05T19:51:03Z",
+  "environment": {
+    "platform": "macOS-26.3.1-arm64-arm-64bit",
+    "python_version": "3.10.6"
+  },
+  "json_path": "/Users/steveyang/Projects/steveya/trellis/docs/benchmarks/pod_risk_workflows.json",
+  "notes": [
+    "Cold runs rebuild sessions or pipelines for each sample, while steady-state runs reuse prebuilt runtime objects when the workflow allows it.",
+    "Coverage includes shared scenario-result cube execution plus supported rates, volatility, and spot-risk analytics."
+  ],
+  "summary": {
+    "average_steady_speedup": 1.093,
+    "cold_mean_seconds": 0.49353,
+    "steady_mean_seconds": 0.418257,
+    "steady_state_workflow_count": 5,
+    "workflow_count": 5
+  },
+  "text_path": "/Users/steveyang/Projects/steveya/trellis/docs/benchmarks/pod_risk_workflows.md"
+}

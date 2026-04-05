@@ -80,10 +80,16 @@ def _chi(k, a, b, c, d):
 
 def _psi(k, a, b, c, d):
     """Psi_k(c, d) = integral of cos(k*pi*(y-a)/(b-a)) dy from c to d."""
-    return raw_np.where(
-        k == 0,
-        d - c,
-        (raw_np.sin(k * raw_np.pi * (d - a) / (b - a))
-         - raw_np.sin(k * raw_np.pi * (c - a) / (b - a)))
-        * (b - a) / (k * raw_np.pi),
-    )
+    k_arr = raw_np.asarray(k)
+    result = raw_np.empty_like(k_arr, dtype=float)
+    zero_mask = k_arr == 0
+    result[zero_mask] = d - c
+
+    nonzero = ~zero_mask
+    if raw_np.any(nonzero):
+        k_nonzero = k_arr[nonzero]
+        result[nonzero] = (
+            raw_np.sin(k_nonzero * raw_np.pi * (d - a) / (b - a))
+            - raw_np.sin(k_nonzero * raw_np.pi * (c - a) / (b - a))
+        ) * (b - a) / (k_nonzero * raw_np.pi)
+    return result

@@ -169,7 +169,6 @@ def _selection_reason_for_method(
     explicit_preference: bool = False,
     requested_measures: tuple[str, ...] | list[str] | None = None,
     candidate_methods: tuple[str, ...] | list[str] | None = None,
-    source: str = "product_ir",
 ) -> str:
     """Return the canonical explanation label for one pricing-method choice."""
     if explicit_preference:
@@ -177,8 +176,6 @@ def _selection_reason_for_method(
     if requested_measures:
         return "measure_priority"
     candidate_count = len(tuple(candidate_methods or ()))
-    if source == "family_blueprint":
-        return "canonical_family_default"
     if candidate_count > 1:
         return "simplest_valid_default"
     if candidate_count == 1:
@@ -301,64 +298,14 @@ def select_pricing_method(
     )
 
 
-def select_pricing_method_for_family_blueprint(
-    blueprint,
-    *,
-    preferred_method: str | None = None,
-) -> PricingPlan:
-    """Build a pricing plan directly from a compiled family blueprint.
-
-    This is now a thin wrapper around ``select_pricing_method_for_product_ir``
-    with ``source="family_blueprint"`` for backward compatibility.  New code
-    should prefer the product_ir path directly.
-    """
-    candidate_methods = tuple(normalize_method(method) for method in blueprint.candidate_methods)
-    method = normalize_method(preferred_method or blueprint.preferred_method)
-    if method not in blueprint.candidate_methods:
-        raise ValueError(
-            f"Method `{method}` is not a candidate for family `{blueprint.family_id}`."
-        )
-    selection_reason = _selection_reason_for_method(
-        explicit_preference=preferred_method is not None,
-        candidate_methods=candidate_methods,
-        source="family_blueprint",
-    )
-    assumption_summary = _assumption_summary_for_method(
-        method,
-        candidate_methods=candidate_methods,
-        product_ir=getattr(blueprint, "product_ir", None),
-    )
-    return PricingPlan(
-        method=method,
-        method_modules=_method_modules_for_family_blueprint(blueprint, method),
-        required_market_data=normalize_market_data_requirements(
-            getattr(blueprint.product_ir, "required_market_data", ()) or ()
-        ),
-        model_to_build=getattr(blueprint.product_ir, "instrument", None),
-        reasoning=f"family_blueprint:{blueprint.family_id}",
-        sensitivity_support=support_for_method(method),
-        selection_reason=selection_reason,
-        assumption_summary=assumption_summary,
-    )
-
-
 def select_pricing_method_for_product_ir(
     product_ir,
     *,
     preferred_method: str | None = None,
     requested_measures: list[str] | tuple[str, ...] | None = None,
     context_description: str | None = None,
-    source: str = "product_ir",
 ) -> PricingPlan:
-    """Build a pricing plan directly from ``ProductIR`` semantics.
-
-    Parameters
-    ----------
-    source:
-        Label for the selection-reason trace.  Callers from the unified
-        semantic pipeline pass ``"family_blueprint"`` so that existing
-        reason labels stay stable during the family-to-semantic migration.
-    """
+    """Build a pricing plan directly from ``ProductIR`` semantics."""
     store = get_store()
     requested = normalize_requested_measures(requested_measures)
     candidate_methods = _candidate_methods_from_engine_families(
@@ -375,7 +322,6 @@ def select_pricing_method_for_product_ir(
         explicit_preference=preferred_method is not None,
         requested_measures=requested,
         candidate_methods=candidate_methods,
-        source=source,
     )
     assumption_summary = _assumption_summary_for_method(
         method,
@@ -466,24 +412,6 @@ def _choose_method_from_candidates(
 def known_methods() -> tuple[str, ...]:
     """Return the canonical method-family labels understood by the quant agent."""
     return tuple(sorted(CANONICAL_METHODS))
-
-
-def _method_modules_for_family_blueprint(blueprint, method: str) -> list[str]:
-    """Return method modules enriched by deterministic family-route hints.
-
-    Reads route → module mappings from the route registry.
-    """
-    from trellis.agent.route_registry import get_route_modules
-
-    modules = list(_DEFAULT_METHOD_MODULES.get(method, ()))
-    for route in getattr(blueprint, "primitive_routes", ()) or ():
-        registry_modules = get_route_modules(route)
-        for module in registry_modules:
-            if module not in modules:
-                modules.append(module)
-    return modules
-
-
 def _apply_contextual_overrides(
     plan: PricingPlan,
     description: str | None,

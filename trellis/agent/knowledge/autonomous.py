@@ -711,10 +711,26 @@ def _assess_consolidation_needs() -> tuple[list[int], list[str]]:
 
     # --- Tier 2: trace bloat ---
     if traces_dir.is_dir():
-        trace_count = sum(1 for f in traces_dir.glob("*.yaml") if f.is_file())
+        legacy_trace_count = sum(
+            1
+            for f in traces_dir.glob("*.yaml")
+            if f.is_file() and f.name not in {".gitignore", "consolidation_log.yaml", "gap_registry.yaml"}
+        )
+        platform_trace_dir = traces_dir / "platform"
+        platform_event_log_count = (
+            sum(1 for f in platform_trace_dir.glob("*.events.ndjson") if f.is_file())
+            if platform_trace_dir.is_dir()
+            else 0
+        )
+        trace_count = legacy_trace_count + platform_event_log_count
         if trace_count > _TRACE_BLOAT_COUNT:
             tiers.append(2)
-            reasons.append(f"trace_bloat ({trace_count} files)")
+            reasons.append(
+                "trace_bloat "
+                f"({trace_count} compactable artifacts: "
+                f"{legacy_trace_count} legacy traces, "
+                f"{platform_event_log_count} platform event logs)"
+            )
 
     # --- Tier 3: supersedes gap ---
     if entries_dir.is_dir():

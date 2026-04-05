@@ -2,8 +2,7 @@
 
 The critic sees ONLY the generated code (not the builder's reasoning).
 Its job is to select from a bounded menu of deterministic checks that the
-arbiter can execute cheaply. Legacy ``test_code`` payloads are available only
-through an explicit compatibility flag and are disabled by default.
+arbiter can execute cheaply.
 """
 
 from __future__ import annotations
@@ -24,7 +23,6 @@ class CriticConcern:
     evidence: str = ""
     remediation: str = ""
     status: str = "suspect"
-    test_code: str = ""
 
 
 @dataclass(frozen=True)
@@ -272,7 +270,6 @@ def critique(
     json_max_retries: int | None = None,
     allow_text_fallback: bool = True,
     text_max_retries: int | None = None,
-    allow_legacy_test_code: bool = False,
 ) -> list[CriticConcern]:
     """Run the critic agent on generated code.
 
@@ -330,10 +327,10 @@ def critique(
         for item in data:
             if not isinstance(item, dict):
                 continue
-            check_id = str(item.get("check_id") or ("legacy_test_code" if item.get("test_code") else "")).strip()
-            if check_id == "legacy_test_code" and not allow_legacy_test_code:
+            check_id = str(item.get("check_id", "") or "").strip()
+            if not check_id:
                 continue
-            if allowed_check_ids and check_id not in allowed_check_ids and check_id != "legacy_test_code":
+            if allowed_check_ids and check_id not in allowed_check_ids:
                 continue
             concerns.append(
                 CriticConcern(
@@ -343,7 +340,6 @@ def critique(
                     evidence=str(item.get("evidence", "") or "").strip(),
                     remediation=str(item.get("remediation", "") or "").strip(),
                     status=str(item.get("status", "suspect") or "suspect").strip(),
-                    test_code=str(item.get("test_code", "") or "").strip(),
                 )
             )
     return concerns

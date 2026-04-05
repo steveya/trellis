@@ -1,8 +1,31 @@
-"""Tests for cookbook patterns."""
+"""Tests for canonical cookbook patterns."""
 
-import pytest
+from pathlib import Path
 
-from trellis.agent.cookbooks import COOKBOOKS, get_cookbook, get_all_cookbooks
+import yaml
+
+from trellis.agent.knowledge.methods import normalize_method
+
+
+def _load_cookbooks() -> dict[str, str]:
+    root = Path(__file__).resolve().parents[2]
+    path = root / "trellis" / "agent" / "knowledge" / "canonical" / "cookbooks.yaml"
+    data = yaml.safe_load(path.read_text()) or {}
+    return {
+        normalize_method(method): entry.get("template", "")
+        for method, entry in data.items()
+    }
+
+
+COOKBOOKS = _load_cookbooks()
+
+
+def get_cookbook(method: str) -> str:
+    return COOKBOOKS.get(normalize_method(method), "")
+
+
+def get_all_cookbooks() -> str:
+    return "\n\n".join(COOKBOOKS[key] for key in sorted(COOKBOOKS))
 
 
 class TestCookbooks:

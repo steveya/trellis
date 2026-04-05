@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
+
+import pytest
 
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
@@ -116,3 +119,30 @@ def test_price_callable_bond_tree_supports_puttable_specs_and_floors_straight_va
     )
 
     assert puttable_price >= straight_price
+
+
+def test_price_callable_bond_tree_uses_market_state_hull_white_params():
+    market_state = _market_state(0.20)
+    calibrated_state = replace(
+        market_state,
+        model_parameters={
+            "model_family": "hull_white",
+            "mean_reversion": 0.03,
+            "sigma": 0.004,
+        },
+    )
+
+    via_market_state = price_callable_bond_tree(
+        calibrated_state,
+        _spec(),
+        model="hull_white",
+    )
+    via_explicit = price_callable_bond_tree(
+        market_state,
+        _spec(),
+        model="hull_white",
+        mean_reversion=0.03,
+        sigma=0.004,
+    )
+
+    assert via_market_state == pytest.approx(via_explicit, rel=1e-10)

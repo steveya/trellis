@@ -78,6 +78,25 @@ def test_http_transport_dispatches_tools_resources_and_prompts(tmp_path):
     assert "trellis://runs/{run_id}/audit" in message_text
 
 
+def test_http_transport_renders_exotic_desk_one_trade_prompt(tmp_path):
+    from trellis.mcp.http_transport import bootstrap_http_mcp_server
+
+    server = bootstrap_http_mcp_server(state_root=tmp_path / "mcp_state")
+
+    prompt = server.transport._prompt_manager.get_prompt("exotic_desk_one_trade")
+    assert prompt is not None
+    messages = asyncio.run(prompt.render({"session_id": "desk_http"}))
+    message_text = "\n".join(
+        getattr(getattr(message, "content", None), "text", "")
+        for message in messages
+    )
+
+    assert "trellis.snapshot.import_files" in message_text
+    assert "range_accrual" in message_text
+    assert "desk_review" in message_text
+    assert "trellis.price.trade" in message_text
+
+
 def test_http_transport_demo_mode_seeds_mock_sandbox_session_and_model(tmp_path):
     from trellis.mcp.http_transport import bootstrap_http_mcp_server
 

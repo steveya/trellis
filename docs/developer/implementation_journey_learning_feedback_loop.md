@@ -4,6 +4,9 @@ This note records how the task loop evolved from a benchmark harness into the
 main mechanism by which Trellis learns what is missing, what improved, and what
 the "Library Developer" should build next.
 
+For the current operational mechanism, see
+[`learning_mechanism.rst`](./learning_mechanism.rst).
+
 ## The Original Role Of Tasks
 
 At first, the task corpus mainly answered a narrow question:

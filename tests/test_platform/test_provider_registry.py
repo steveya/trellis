@@ -77,6 +77,7 @@ def test_provider_registry_exposes_stable_market_data_records():
     assert record.is_mock is True
     assert record.supports_snapshots is True
     assert "market_snapshot" in record.capabilities
+    assert "fixing_history" in record.capabilities
 
 
 def test_governed_resolution_assigns_provider_and_snapshot_identity():

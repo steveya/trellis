@@ -12,7 +12,7 @@ from trellis.core.date_utils import (
     year_fraction,
 )
 from trellis.core.differentiable import get_numpy
-from trellis.core.types import ContractTimeline, DayCountConvention
+from trellis.core.types import ContractTimeline, DayCountConvention, Frequency
 import trellis.models.trees.algebra as lattice_algebra
 import trellis.models.trees.models as tree_models
 from trellis.models.trees.control import (
@@ -25,6 +25,7 @@ from trellis.models.trees.lattice import (
     build_lattice,
     price_on_lattice,
 )
+from trellis.models.hull_white_parameters import resolve_hull_white_parameters
 
 
 class DiscountCurveLike(Protocol):
@@ -69,6 +70,20 @@ class BermudanSwaptionSpecLike(Protocol):
 
 
 @dataclass(frozen=True)
+class BermudanSwaptionTreeSpec:
+    """Stable typed spec for the supported Bermudan swaption tree route."""
+
+    notional: float
+    strike: float
+    exercise_dates: tuple[date, ...]
+    swap_end: date
+    swap_frequency: Frequency = Frequency.SEMI_ANNUAL
+    day_count: DayCountConvention = DayCountConvention.ACT_360
+    rate_index: str | None = None
+    is_payer: bool = True
+
+
+@dataclass(frozen=True)
 class ResolvedBermudanSwaptionTreeInputs:
     """Resolved market and schedule inputs for a Bermudan swaption tree."""
 
@@ -88,22 +103,17 @@ def resolve_bermudan_swaption_tree_inputs(
     spec: BermudanSwaptionSpecLike,
     *,
     model: str = "hull_white",
-    mean_reversion: float = 0.1,
+    mean_reversion: float | None = None,
+    sigma: float | None = None,
     n_steps: int | None = None,
 ) -> ResolvedBermudanSwaptionTreeInputs:
     """Resolve settlement, exercise schedule, and lattice calibration inputs."""
-    del mean_reversion  # reserved for API symmetry with other helpers
-
     settlement = _settlement_date(market_state, spec)
     discount_curve = market_state.discount
     if discount_curve is None:
         raise ValueError("Bermudan swaption tree pricing requires market_state.discount")
-    if market_state.vol_surface is None:
-        raise ValueError("Bermudan swaption tree pricing requires market_state.vol_surface")
 
-    exercise_dates = tuple(
-        d for d in _normalized_exercise_dates(spec.exercise_dates) if settlement < d < spec.swap_end
-    )
+    exercise_dates = _effective_exercise_dates(spec, settlement)
     if not exercise_dates:
         raise ValueError("Bermudan swaption tree pricing requires exercise dates before swap_end")
 
@@ -125,11 +135,20 @@ def resolve_bermudan_swaption_tree_inputs(
         raise ValueError("swap_end must be after the first Bermudan exercise date")
 
     r0 = float(discount_curve.zero_rate(max(tree_horizon / 2.0, 1e-6)))
-    black_vol = float(
-        market_state.vol_surface.black_vol(max(option_horizon, 1e-6), max(abs(float(spec.strike)), 1e-6))
-    )
     tree_model = tree_models.MODEL_REGISTRY[str(model).strip().lower()]
-    sigma = black_vol if tree_model.vol_type == "lognormal" else black_vol * max(abs(r0), 1e-6)
+    default_sigma = None
+    if market_state.vol_surface is not None:
+        black_vol = float(
+            market_state.vol_surface.black_vol(max(option_horizon, 1e-6), max(abs(float(spec.strike)), 1e-6))
+        )
+        default_sigma = black_vol if tree_model.vol_type == "lognormal" else black_vol * max(abs(r0), 1e-6)
+    resolved_mean_reversion, resolved_sigma = resolve_hull_white_parameters(
+        market_state,
+        mean_reversion=mean_reversion,
+        sigma=sigma,
+        default_mean_reversion=0.1,
+        default_sigma=default_sigma,
+    )
     step_count = int(n_steps or min(400, max(100, int(tree_horizon * 20.0))))
     return ResolvedBermudanSwaptionTreeInputs(
         settlement=settlement,
@@ -139,7 +158,7 @@ def resolve_bermudan_swaption_tree_inputs(
         tree_horizon=tree_horizon,
         option_horizon=option_horizon,
         r0=r0,
-        sigma=float(sigma),
+        sigma=float(resolved_sigma),
         n_steps=step_count,
     )
 
@@ -149,7 +168,8 @@ def build_bermudan_swaption_lattice(
     spec: BermudanSwaptionSpecLike,
     *,
     model: str = "hull_white",
-    mean_reversion: float = 0.1,
+    mean_reversion: float | None = None,
+    sigma: float | None = None,
     n_steps: int | None = None,
 ) -> RecombiningLattice:
     """Build the calibrated tree used by a Bermudan swaption."""
@@ -158,6 +178,7 @@ def build_bermudan_swaption_lattice(
         spec,
         model=model,
         mean_reversion=mean_reversion,
+        sigma=sigma,
         n_steps=n_steps,
     )
     tree_model = tree_models.MODEL_REGISTRY[str(model).strip().lower()]
@@ -168,7 +189,13 @@ def build_bermudan_swaption_lattice(
         calibration_target=lattice_algebra.TERM_STRUCTURE_TARGET(market_state.discount),
         r0=resolved.r0,
         sigma=resolved.sigma,
-        a=float(mean_reversion),
+        a=float(resolve_hull_white_parameters(
+            market_state,
+            mean_reversion=mean_reversion,
+            sigma=resolved.sigma,
+            default_mean_reversion=0.1,
+            default_sigma=resolved.sigma,
+        )[0]),
         T=resolved.tree_horizon,
         n_steps=resolved.n_steps,
     )
@@ -228,7 +255,7 @@ def build_bermudan_swaption_exercise_policy(
     n_steps: int,
 ):
     """Resolve Bermudan exercise dates into a checked-in lattice policy."""
-    exercise_dates = [d for d in _normalized_exercise_dates(spec.exercise_dates) if settlement < d < spec.swap_end]
+    exercise_dates = list(_effective_exercise_dates(spec, settlement))
     if not exercise_dates:
         return resolve_lattice_exercise_policy_from_control_style(
             "holder_max",
@@ -276,7 +303,13 @@ def compile_bermudan_swaption_contract_spec(
             control=None,
         )
 
-    swap_start = min(_normalized_exercise_dates(spec.exercise_dates))
+    effective_exercise_dates = _effective_exercise_dates(spec, settlement)
+    if not effective_exercise_dates:
+        return lattice_algebra.LatticeContractSpec(
+            claim=lattice_algebra.LatticeLinearClaimSpec(terminal_payoff=lambda step, node, lattice_, obs: 0.0),
+            control=None,
+        )
+    swap_start = min(effective_exercise_dates)
     coupon_by_step = build_bermudan_swaption_coupon_map(
         spec,
         settlement=settlement,
@@ -366,7 +399,8 @@ def price_bermudan_swaption_tree(
     spec: BermudanSwaptionSpecLike,
     *,
     model: str = "hull_white",
-    mean_reversion: float = 0.1,
+    mean_reversion: float | None = None,
+    sigma: float | None = None,
     n_steps: int | None = None,
 ) -> float:
     """Build the requested tree and return the Bermudan swaption PV."""
@@ -375,6 +409,7 @@ def price_bermudan_swaption_tree(
         spec,
         model=model,
         mean_reversion=mean_reversion,
+        sigma=sigma,
         n_steps=n_steps,
     )
     lattice = build_bermudan_swaption_lattice(
@@ -382,6 +417,7 @@ def price_bermudan_swaption_tree(
         spec,
         model=model,
         mean_reversion=mean_reversion,
+        sigma=sigma,
         n_steps=resolved.n_steps,
     )
     return price_bermudan_swaption_on_lattice(
@@ -457,6 +493,15 @@ def _normalized_exercise_dates(exercise_dates: ContractTimeline | Iterable[date 
     return normalize_explicit_dates(exercise_dates)
 
 
+def _effective_exercise_dates(spec: BermudanSwaptionSpecLike, settlement: date) -> tuple[date, ...]:
+    """Return the live Bermudan exercise dates after settlement and before swap end."""
+    return tuple(
+        exercise_date
+        for exercise_date in _normalized_exercise_dates(spec.exercise_dates)
+        if settlement < exercise_date < spec.swap_end
+    )
+
+
 def _settlement_date(market_state, spec) -> date:
     settlement = getattr(market_state, "settlement", None) or getattr(market_state, "as_of", None)
     if settlement is not None:
@@ -494,6 +539,7 @@ def _quantize_time(value: float, *, frequency: int) -> float:
 
 
 __all__ = [
+    "BermudanSwaptionTreeSpec",
     "ResolvedBermudanSwaptionTreeInputs",
     "build_bermudan_swaption_coupon_map",
     "build_bermudan_swaption_exercise_policy",

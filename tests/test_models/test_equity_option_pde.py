@@ -165,3 +165,21 @@ def test_solve_vanilla_equity_option_pde_surface_returns_grid_aligned_values():
     assert resolved.option_type == "put"
     assert len(grid.x) == len(values)
     assert float(values[0]) >= 0.0
+
+
+def test_price_vanilla_equity_option_pde_returns_intrinsic_after_expiry_without_market_data():
+    expired_spec = VanillaEquitySpec(
+        notional=2.0,
+        spot=90.0,
+        strike=100.0,
+        expiry_date=date(2024, 11, 14),
+        option_type="put",
+    )
+    expired_market_state = MarketState(
+        as_of=date(2024, 11, 15),
+        settlement=date(2024, 11, 15),
+    )
+
+    price = price_vanilla_equity_option_pde(expired_market_state, expired_spec)
+
+    assert price == pytest.approx(20.0)

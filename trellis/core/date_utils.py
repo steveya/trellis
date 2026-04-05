@@ -214,12 +214,13 @@ def get_bracketing_dates(start: DateLike, end: DateLike,
     if query_d < start_d or query_d > end_d:
         raise ValueError("Date is not in the schedule")
     months_per_period = 12 // frequency.value
-    for i in range(1, frequency.value + 1):
+    i = 1
+    while True:
         upper = add_months(start_d, months_per_period * i)
         if query_d <= upper:
             lower = add_months(start_d, months_per_period * (i - 1))
             return (lower, upper)
-    raise ValueError("Date is not in the schedule")
+        i += 1
 
 
 def get_accrual_fraction(start: DateLike, end: DateLike,

@@ -59,6 +59,8 @@ class MarketState:
         Discrete states with probabilities for scenario-weighted pricing.
     credit_curve : CreditCurve or None
         Credit / survival probability curve.
+    fixing_histories : dict[str, dict[date, float]] or None
+        Historical observed fixings keyed by rate index or fixing-history name.
     forecast_curves : dict[str, DiscountCurve] or None
         Forecast curves keyed by rate index name (e.g. ``"USD-SOFR-3M"``).
         Also used for foreign discount curves (e.g. ``"EUR-DISC"``).
@@ -96,6 +98,7 @@ class MarketState:
     vol_surface: VolSurface | None = None
     state_space: StateSpace | None = None
     credit_curve: CreditCurve | None = None
+    fixing_histories: dict[str, dict[date, float]] | None = None
     forecast_curves: dict[str, DiscountCurve] | None = None
     fx_rates: dict[str, FXRate] | None = None
     spot: float | None = None
@@ -162,6 +165,21 @@ class MarketState:
             return self.forward_curve
         raise ValueError("No forward curve available")
 
+    def fixing_history(self, rate_index: str | None = None):
+        """Return a selected fixing history, if one is available."""
+        if not self.fixing_histories:
+            return None
+        if rate_index is not None:
+            if rate_index in self.fixing_histories:
+                return self.fixing_histories[rate_index]
+            raise ValueError(f"Unknown fixing history: {rate_index}")
+        selected_name = self.selected_curve_name("fixing_history")
+        if selected_name is not None and selected_name in self.fixing_histories:
+            return self.fixing_histories[selected_name]
+        if len(self.fixing_histories) == 1:
+            return next(iter(self.fixing_histories.values()))
+        raise ValueError("Multiple fixing histories available; set a default fixing history name")
+
     def selected_curve_name(self, kind: str) -> str | None:
         """Return the selected canonical curve name for a curve kind."""
         if self.selected_curve_names is None:
@@ -180,7 +198,7 @@ class MarketState:
         if self.discount is not None:
             caps.add("discount_curve")
             caps.add("forward_curve")
-        if self.forward_curve is not None or self.forecast_curves is not None:
+        if self.forward_curve is not None or self.forecast_curves:
             caps.add("forward_curve")
         if self.vol_surface is not None:
             caps.add("black_vol_surface")
@@ -188,15 +206,17 @@ class MarketState:
             caps.add("state_space")
         if self.credit_curve is not None:
             caps.add("credit_curve")
-        if self.fx_rates is not None:
+        if self.fixing_histories:
+            caps.add("fixing_history")
+        if self.fx_rates:
             caps.add("fx_rates")
-        if self.spot is not None or self.underlier_spots is not None:
+        if self.spot is not None or self.underlier_spots:
             caps.add("spot")
-        if self.local_vol_surface is not None or self.local_vol_surfaces is not None:
+        if self.local_vol_surface is not None or self.local_vol_surfaces:
             caps.add("local_vol_surface")
-        if self.jump_parameters is not None or self.jump_parameter_sets is not None:
+        if self.jump_parameters is not None or self.jump_parameter_sets:
             caps.add("jump_parameters")
-        if self.model_parameters is not None or self.model_parameter_sets is not None:
+        if self.model_parameters is not None or self.model_parameter_sets:
             caps.add("model_parameters")
         return caps
 
@@ -245,5 +265,13 @@ class MarketState:
         if self.fx_rates:
             summary["fx_rates"] = {
                 k: float(v.spot) for k, v in self.fx_rates.items()
+            }
+        if self.fixing_histories:
+            summary["fixing_histories"] = {
+                name: {
+                    fix_date.isoformat(): float(value)
+                    for fix_date, value in sorted(history.items())
+                }
+                for name, history in sorted(self.fixing_histories.items())
             }
         return summary

@@ -5,8 +5,10 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
+from trellis.conventions.day_count import DayCountConvention
+from trellis.core.types import Frequency
 from trellis.data.resolver import resolve_curve, resolve_market_snapshot
-from trellis.curves.bootstrap import BootstrapInstrument
+from trellis.curves.bootstrap import BootstrapConventionBundle, BootstrapCurveInputBundle, BootstrapInstrument
 from trellis.instruments.fx import FXRate
 from trellis.models.vol_surface import FlatVol, GridVolSurface
 
@@ -112,19 +114,45 @@ class TestResolveMarketSnapshot:
     def test_supports_named_bootstrap_curve_sources(self, MockProvider):
         mock = MockProvider.return_value
         mock.fetch_yields.return_value = SAMPLE_YIELDS
+        discount_bundle = BootstrapCurveInputBundle(
+            curve_name="usd_ois_boot",
+            currency="USD",
+            rate_index="USD-SOFR-3M",
+            conventions=BootstrapConventionBundle(
+                deposit_day_count=DayCountConvention.ACT_360,
+                swap_fixed_frequency=Frequency.ANNUAL,
+                swap_fixed_day_count=DayCountConvention.THIRTY_360_US,
+                swap_float_frequency=Frequency.QUARTERLY,
+                swap_float_day_count=DayCountConvention.ACT_360,
+            ),
+            instruments=(
+                BootstrapInstrument(tenor=1.0, quote=0.05, instrument_type="deposit", label="DEP1Y"),
+            ),
+        )
+        forecast_bundle = BootstrapCurveInputBundle(
+            curve_name="USD-SOFR-3M",
+            currency="USD",
+            rate_index="USD-SOFR-3M",
+            conventions=BootstrapConventionBundle(
+                deposit_day_count=DayCountConvention.ACT_360,
+                swap_fixed_frequency=Frequency.SEMI_ANNUAL,
+                swap_fixed_day_count=DayCountConvention.THIRTY_360_US,
+                swap_float_frequency=Frequency.QUARTERLY,
+                swap_float_day_count=DayCountConvention.ACT_360,
+            ),
+            instruments=(
+                BootstrapInstrument(tenor=1.0, quote=0.052, instrument_type="deposit", label="SOFR1Y"),
+            ),
+        )
 
         snapshot = resolve_market_snapshot(
             as_of=date(2024, 11, 15),
             source="treasury_gov",
             discount_curve_bootstraps={
-                "usd_ois_boot": [
-                    BootstrapInstrument(tenor=1.0, quote=0.05, instrument_type="deposit"),
-                ],
+                "usd_ois_boot": discount_bundle,
             },
             forecast_curve_bootstraps={
-                "USD-SOFR-3M": [
-                    BootstrapInstrument(tenor=1.0, quote=0.052, instrument_type="deposit"),
-                ],
+                "USD-SOFR-3M": forecast_bundle,
             },
         )
 
@@ -133,12 +161,37 @@ class TestResolveMarketSnapshot:
         assert "USD-SOFR-3M" in snapshot.forecast_curves
         assert snapshot.provenance["source_kind"] == "mixed"
         assert snapshot.provenance["source_ref"] == "resolver.merged_snapshot"
-        assert snapshot.provenance["bootstrap_inputs"]["discount_curves"]["usd_ois_boot"][0][
-            "tenor"
-        ] == pytest.approx(1.0)
-        assert snapshot.provenance["bootstrap_inputs"]["forecast_curves"]["USD-SOFR-3M"][0][
-            "instrument_type"
-        ] == "deposit"
+        assert snapshot.provenance["bootstrap_inputs"]["discount_curves"]["usd_ois_boot"]["currency"] == "USD"
+        assert (
+            snapshot.provenance["bootstrap_runs"]["discount_curves"]["usd_ois_boot"]["solver_provenance"][
+                "backend"
+            ]["backend_id"]
+            == "scipy"
+        )
+        assert (
+            snapshot.provenance["bootstrap_runs"]["forecast_curves"]["USD-SOFR-3M"]["diagnostics"][
+                "jacobian_rank"
+            ]
+            == 1
+        )
+        assert (
+            snapshot.provenance["bootstrap_inputs"]["discount_curves"]["usd_ois_boot"]["conventions"][
+                "swap_fixed_frequency"
+            ]
+            == "ANNUAL"
+        )
+        assert (
+            snapshot.provenance["bootstrap_inputs"]["discount_curves"]["usd_ois_boot"]["instruments"][0][
+                "label"
+            ]
+            == "DEP1Y"
+        )
+        assert (
+            snapshot.provenance["bootstrap_inputs"]["forecast_curves"]["USD-SOFR-3M"]["conventions"][
+                "swap_float_frequency"
+            ]
+            == "QUARTERLY"
+        )
         assert float(snapshot.discount_curve("usd_ois_boot").discount(1.0)) == pytest.approx(
             1.0 / 1.05
         )
@@ -191,6 +244,23 @@ class TestResolveMarketSnapshot:
         assert snapshot.vol_surface() is smile
         assert snapshot.vol_surface("atm") is atm
 
+    @patch("trellis.data.treasury_gov.TreasuryGovDataProvider")
+    def test_single_vol_surface_respects_explicit_default_name(self, MockProvider):
+        mock = MockProvider.return_value
+        mock.fetch_yields.return_value = SAMPLE_YIELDS
+        override = FlatVol(0.24)
+
+        snapshot = resolve_market_snapshot(
+            as_of=date(2024, 11, 15),
+            source="treasury_gov",
+            vol_surface=override,
+            default_vol_surface="atm_override",
+        )
+
+        assert snapshot.default_vol_surface == "atm_override"
+        assert snapshot.vol_surface() is override
+        assert snapshot.vol_surface("atm_override") is override
+
     def test_mock_source_merges_explicit_overrides(self):
         override_vol = FlatVol(0.35)
         snapshot = resolve_market_snapshot(
@@ -205,9 +275,22 @@ class TestResolveMarketSnapshot:
         assert "EUR-DISC" in snapshot.forecast_curves
         assert "EURUSD" in snapshot.fx_rates
         assert snapshot.provenance["source_kind"] == "mixed"
+
+    def test_mock_source_named_vol_override_does_not_clobber_provider_default_surface(self):
+        override_vol = FlatVol(0.35)
+        snapshot = resolve_market_snapshot(
+            as_of=date(2024, 11, 15),
+            source="mock",
+            vol_surface=override_vol,
+            default_vol_surface="override_atm",
+        )
+
+        assert snapshot.default_vol_surface == "override_atm"
+        assert snapshot.vol_surface() is override_vol
+        assert snapshot.vol_surface("override_atm") is override_vol
+        assert snapshot.vol_surface("usd_rates_smile") is not override_vol
         assert snapshot.provenance["prior_family"] == "embedded_market_regime"
         assert snapshot.provenance["prior_parameters"]["regime"] == "easing_cycle"
-        assert snapshot.fx_rates["AUDUSD"].spot == pytest.approx(0.66)
 
     def test_mock_source_preserves_spots_and_parameter_packs(self):
         snapshot = resolve_market_snapshot(

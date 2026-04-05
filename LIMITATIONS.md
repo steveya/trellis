@@ -18,8 +18,12 @@ ground truth until revalidated.
 |---|-----------|-----------|
 | L1 | ~~Trinomial trees not implemented~~ | `build_rate_lattice()` and `build_generic_lattice()` now support `branching=3`. HW trinomial with mean-reversion probabilities. |
 | L4 | ~~Old CN/implicit FD still have coefficient bug~~ | `__init__.py` now imports from `theta_method_1d`. Old names are backward-compat wrappers. Capabilities updated. |
+| L9 | ~~YTM not computed~~ | `trellis.engine.pricer.price_instrument()` now solves a coupon-frequency nominal yield-to-maturity from the reported dirty price and projects it through the direct/session pricing surfaces. |
 | L15 | ~~Critic/validator failures silently caught~~ | All `except Exception: pass` blocks in `_validate_build()` now log warnings via `logging.warning()`. |
 | L16 | ~~Experience recording silently fails~~ | `_record_resolved_failures()` now validates LLM output, logs errors at each stage. Knowledge system capture logged separately. |
+| L10 | ~~Accrued interest simplified~~ | Bond accrued interest now uses the explicit coupon schedule plus the selected day-count convention instead of a flat period approximation. |
+| L5 | ~~Hull-White helper routes still default mean reversion to `0.1`~~ | Callable-bond, Bermudan-swaption, and ZCB-option helpers now resolve Hull-White parameters from explicit inputs or `MarketState.model_parameters` / `model_parameter_sets`, with legacy heuristics only as fallback. |
+| L2 | ~~`YieldCurve.bump()` only hits exact tenor matches~~ | The shared curve-shock substrate now supports off-grid bucket nodes, and `KeyRateDurations` consumes the same bucket grid so interpolation-aware KRD requests no longer collapse to exact-knot-only sensitivities. |
 
 ## Revalidated Open Limitations
 
@@ -27,23 +31,21 @@ ground truth until revalidated.
 
 | # | Limitation | Impact | Files |
 |---|-----------|--------|-------|
-| L2 | **`YieldCurve.bump()` only hits exact tenor matches** — key-rate shocks do not propagate through interpolation, so off-grid tenors are effectively ignored | KRDs and tenor scenarios are unreliable on sparse or flat curves | `trellis/curves/yield_curve.py`, `trellis/analytics/measures.py` |
 | L3 | **Runtime vega is flat-vol centric** — true autodiff is only used for `FlatVol`; non-flat surfaces are reduced to one representative scalar vol and rewrapped as `FlatVol` | Smile/surface vega is materially wrong for anything beyond flat vol | `trellis/analytics/measures.py` |
 | L11 | **Barrier monitoring is discrete fixed-step Monte Carlo** — continuous barriers are approximated by checking a finite path grid | Barrier prices and Greeks require many steps to converge and are not desk-grade for tight barrier risk | `trellis/instruments/barrier_option.py` |
-| L12 | **Runtime risk surface is still incomplete and bump-heavy** — duration/convexity remain finite-difference; `delta`, `gamma`, and `theta` have no runtime implementation; scenario support is centered on simple rate shifts | Risk coverage is too thin for daily exotic-book risk or explain workflows | `trellis/analytics/measures.py`, `tests/test_agent/test_measure_protocol.py`, `trellis/pipeline.py` |
+| L12 | **Runtime risk surface is still incomplete and bump-heavy** — duration/convexity remain finite-difference; `delta`, `gamma`, and `theta` have no runtime implementation; rate scenarios now include named twist/butterfly packs, but the broader scenario and explain surface is still narrow | Risk coverage is stronger than simple parallel-rate shifts alone, but still too thin for full daily exotic-book risk or explain workflows | `trellis/analytics/measures.py`, `tests/test_agent/test_measure_protocol.py`, `trellis/pipeline.py` |
 | L25 | **Early-exercise Monte Carlo upper bounds are diagnostic, not production dual bounds** — the current upper bound is a perfect-information pathwise maximum, not a full Andersen-Broadie-style nested dual construction | American/Bermudan MC error control is not strong enough for institutional exercise risk | `trellis/models/monte_carlo/primal_dual.py` |
 
 ### Calibration And Model Realism
 
 | # | Limitation | Impact | Files |
 |---|-----------|--------|-------|
-| L5 | **Hull-White helper routes still default mean reversion to `0.1`** instead of calibrating or requiring an explicit market-fitted input | Rates optionality can be mispriced across regimes and tenors | `trellis/instruments/callable_bond.py`, `trellis/models/callable_bond_tree.py`, `trellis/models/zcb_option.py`, `trellis/models/zcb_option_tree.py`, `trellis/models/bermudan_swaption_tree.py` |
-| L6 | **Hull-White / rate-tree volatility calibration is still flat-Black conversion, not a term-structure fit** | Tree-based rates pricing is not calibrated to a real cap/floor or swaption surface | `trellis/models/calibration/rates.py`, `trellis/agent/data_contract.py`, `trellis/agent/executor.py` |
-| L17 | **Dupire local vol falls back to implied vol when the denominator becomes non-positive** | Local-vol surfaces can become discontinuous or unstable exactly where robust production smoothing is needed | `trellis/models/calibration/local_vol.py` |
+| L6 | **Supported Hull-White calibration is still constant-parameter only** — the checked workflow fits one `(mean_reversion, sigma)` pair across the strip rather than a time-dependent sigma term structure or cap-surface fit | Tree-based rates pricing now supports a reusable calibrated parameter set, but not a full term-structure calibration workflow | `trellis/models/calibration/rates.py` |
+| L17 | **Dupire local vol now flags unstable regions, but still repairs them with implied-vol fallback rather than a regularized surface fit** | Review tools can now inspect explicit diagnostics and warnings, but the checked path is still a hardening layer rather than a production arbitrage-repair workflow | `trellis/models/calibration/local_vol.py` |
 | L26 | **Curve bootstrap is not actually fully differentiable or desk-complete** — Jacobians are finite-difference, Newton solves use raw NumPy, and the instrument setup hardcodes simple deposit/future/swap assumptions | Curve construction is too simplified for production multi-curve calibration or stable adjoint sensitivities | `trellis/curves/bootstrap.py` |
-| L27 | **Rates calibration is helper-grade, not workflow-grade** — cap/floor and swaption calibration solve one flat Black vol per quote rather than a surface or model parameter set | No desk-usable rates calibration stack for replay, regularization, or market-surface fitting | `trellis/models/calibration/rates.py` |
-| L28 | **SABR calibration is slice-level only** — it fits `(alpha, rho, nu)` for one expiry/strike smile with fixed `beta` | No term-structure or surface calibration workflow for rates/equity vol desks | `trellis/models/calibration/sabr_fit.py` |
-| L29 | **Advanced stochastic-vol models are not fully integrated into the generic process stack** — `Heston` and `SABRProcess` exist as model/formula helpers, but they are not wired into the common `StochasticProcess` interface used by the Monte Carlo engine | Model breadth exists on paper, but cross-engine calibration/risk reuse is limited | `trellis/models/processes/base.py`, `trellis/models/processes/heston.py`, `trellis/models/processes/sabr.py` |
+| L27 | **Flat-Black rates helpers are still quote-local** — cap/floor and European swaption helpers solve one flat Black vol per quote instead of assembling a reusable surface or regularized workflow | Hull-White strip calibration is now supported, but broader rates-vol surface calibration remains incomplete | `trellis/models/calibration/rates.py` |
+| L28 | **SABR calibration is still single-smile only** — the smile-input assembly and fit diagnostics are now explicit, but the supported fit still calibrates one expiry smile with fixed `beta` at a time | No full SABR term-structure or multi-expiry surface workflow yet | `trellis/models/calibration/sabr_fit.py` |
+| L29 | **Advanced stochastic-vol integration is still partial** — supported Heston smile calibration and runtime binding now exist, but the checked path is still single-smile only and broader cross-engine stochastic-vol reuse remains incomplete | Trellis can now fit and reuse one Heston smile parameter set, but not a full stochastic-vol surface plant or uniform reuse across all stochastic-vol families | `trellis/models/calibration/heston_fit.py`, `trellis/models/processes/heston.py`, `trellis/models/processes/sabr.py` |
 
 ### Autograd And Sensitivities
 
@@ -65,7 +67,7 @@ ground truth until revalidated.
 | # | Limitation | Impact | Files |
 |---|-----------|--------|-------|
 | L35 | **Performance acceleration is local and selective** — there is optional Numba on some kernels, but no multicore, distributed, or GPU execution path | Calibration sweeps, large scenario sets, and portfolio risk runs will hit a scaling ceiling quickly | `trellis/models/_numba.py`, `trellis/models/monte_carlo/engine.py` |
-| L36 | **Benchmark coverage is too narrow** — the checked-in benchmark surface only measures small GBM path kernels | There is no evidence trail for calibration throughput, exotic pricing throughput, or book-scale risk performance | `docs/benchmarks/monte_carlo_path_kernels.json` |
+| L36 | **Benchmark coverage is still too narrow** — checked calibration throughput baselines now exist alongside the Monte Carlo path-kernel benchmark, but exotic-pricing, scenario, and book-risk benchmark surfaces are still missing | Trellis can now compare supported calibration workflows over time, but there is still no broad evidence trail for exotic pricing throughput or book-scale risk performance | `docs/benchmarks/monte_carlo_path_kernels.json`, `docs/benchmarks/calibration_workflows.json` |
 | L37 | **QMC / variance-reduction tooling is still basic** — Sobol normals, Brownian bridge, antithetics, and a simple control variate exist, but there is no broader simulation-optimization toolkit around them | Useful building blocks exist, but not yet a comprehensive industrial simulation stack | `trellis/models/qmc/__init__.py`, `trellis/models/monte_carlo/variance_reduction.py` |
 
 ## Needs Revalidation
@@ -77,8 +79,6 @@ the 2026-04-04 mathematical/numerical/computational pass.
 |---|-------------|------------------|
 | L7 | Prepayment CPR hard-coded to 6% | mortgage / prepayment |
 | L8 | Recovery rate hard-coded to 40% | credit products |
-| L9 | YTM not computed | bond analytics |
-| L10 | Accrued interest simplified | bond conventions |
 | L13 | Bloomberg provider is a placeholder | data integration |
 | L14 | Agent tests require API key | CI / infrastructure |
 | L18 | Heston class naming confusion | knowledge system |
