@@ -698,13 +698,14 @@ class TradeService:
     ) -> Mapping[str, object] | None:
         if self._callable_bond_missing_fields(structured_trade):
             return None
+        call_price = structured_trade.get("call_price")
         return _freeze_mapping(
             {
                 "notional": float(structured_trade.get("notional")),
                 "coupon": float(structured_trade.get("coupon")),
                 "start_date": str(structured_trade.get("start_date")).strip(),
                 "end_date": str(structured_trade.get("end_date")).strip(),
-                "call_price": float(structured_trade.get("call_price", 100.0) or 100.0),
+                "call_price": 100.0 if call_price in {None, ""} else float(call_price),
                 "frequency": self._normalized_frequency_name(
                     structured_trade.get("frequency"),
                     field_name="frequency",

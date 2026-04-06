@@ -1538,6 +1538,7 @@ class PricingService:
             assumptions.append("Defaulted frequency to semi_annual for callable bond tree route.")
         if pricing_input.get("day_count") in {None, ""}:
             assumptions.append("Defaulted day_count to ACT_365 for callable bond tree route.")
+        call_price = term_fields.get("call_price", pricing_input.get("call_price"))
 
         return (
             CallableBondSpec(
@@ -1555,7 +1556,7 @@ class PricingService:
                     PricingService._coerce_iso_date(value, field_name="call_dates")
                     for value in schedule
                 ],
-                call_price=float(term_fields.get("call_price", pricing_input.get("call_price", 100.0)) or 100.0),
+                call_price=100.0 if call_price in {None, ""} else float(call_price),
                 frequency=PricingService._coerce_frequency(
                     term_fields.get("frequency", pricing_input.get("frequency")),
                     field_name="frequency",
@@ -1662,7 +1663,11 @@ class PricingService:
             observation_dates=observation_dates,
             accrual_start_dates=accrual_start_dates,
             payment_dates=payment_dates,
-            principal_redemption=float(pricing_input.get("principal_redemption", 1.0) or 1.0),
+            principal_redemption=(
+                1.0
+                if pricing_input.get("principal_redemption") in {None, ""}
+                else float(pricing_input.get("principal_redemption"))
+            ),
             inclusive_lower=bool(range_condition.get("inclusive_lower", True)),
             inclusive_upper=bool(range_condition.get("inclusive_upper", True)),
         )

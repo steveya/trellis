@@ -189,6 +189,25 @@ def test_trade_parse_supports_structured_callable_bond_call_schedule_alias():
     ]
 
 
+def test_trade_parse_preserves_explicit_zero_callable_bond_call_price():
+    from trellis.platform.services.trade_service import TradeService
+
+    result = TradeService().parse_trade(
+        structured_trade={
+            "instrument_type": "callable_bond",
+            "notional": 1_000_000.0,
+            "coupon": 0.05,
+            "start_date": "2025-01-15",
+            "end_date": "2035-01-15",
+            "call_dates": ("2028-01-15", "2030-01-15"),
+            "call_price": 0.0,
+        }
+    )
+
+    assert result.parse_status == "parsed"
+    assert result.contract_summary["product"]["term_fields"]["call_price"] == 0.0
+
+
 def test_trade_parse_supports_structured_callable_bond_day_count_aliases():
     from trellis.platform.services.trade_service import TradeService
 
