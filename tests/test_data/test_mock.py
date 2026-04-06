@@ -4,6 +4,12 @@ from datetime import date
 
 import pytest
 
+from trellis.models.calibration.credit import (
+    CreditHazardCalibrationQuote,
+    calibrate_single_name_credit_curve_workflow,
+)
+from trellis.models.credit_default_swap import build_cds_schedule, price_cds_analytical
+from trellis.core.types import DayCountConvention, Frequency
 from trellis.data.mock import MockDataProvider, SNAPSHOTS, _TENOR_GRID
 from trellis.data.resolver import resolve_curve, resolve_market_snapshot
 
@@ -112,6 +118,104 @@ class TestMockDataProvider:
         assert snapshot.vol_surface().black_vol(1.0, 0.05) > 0
         assert snapshot.credit_curve() is not None
         assert snapshot.fixing_history()[date(2024, 11, 14)] > 0.0
+
+    def test_fetch_market_snapshot_exposes_model_consistency_contract(self):
+        provider = MockDataProvider()
+        snapshot = provider.fetch_market_snapshot(date(2024, 11, 15))
+
+        contract = snapshot.provenance["prior_parameters"]["model_consistency_contract"]
+        assert contract["version"] == "v1"
+        assert contract["seed"] == snapshot.provenance["prior_seed"]
+        assert contract["rates"]["curve_roles"]["discount_curve"] == "usd_ois"
+        assert contract["rates"]["curve_roles"]["forecast_curve"] == "USD-SOFR-3M"
+        assert contract["credit"]["workflow"] == "calibrate_single_name_credit_curve_workflow"
+        assert contract["volatility"]["workflow"] == "calibration_surface_bundle"
+        assert "heston_equity" in contract["volatility"]["model_parameter_sets"]
+
+    def test_model_consistency_contract_preserves_multi_curve_basis(self):
+        provider = MockDataProvider()
+        snapshot = provider.fetch_market_snapshot(date(2024, 11, 15))
+        contract = snapshot.provenance["prior_parameters"]["model_consistency_contract"]
+        basis_bps = contract["rates"]["forecast_basis_bps"]["USD-SOFR-3M"]
+
+        discount = snapshot.discount_curve("usd_ois")
+        forecast = snapshot.forecast_curves["USD-SOFR-3M"]
+        for tenor in (0.25, 1.0, 5.0):
+            observed_basis_bps = (forecast.zero_rate(tenor) - discount.zero_rate(tenor)) * 10000.0
+            assert observed_basis_bps == pytest.approx(basis_bps)
+
+    def test_model_consistency_contract_credit_spreads_match_hazard_curve_knots(self):
+        provider = MockDataProvider()
+        snapshot = provider.fetch_market_snapshot(date(2024, 11, 15))
+        contract = snapshot.provenance["prior_parameters"]["model_consistency_contract"]
+        recovery = contract["credit"]["recovery"]
+        spread_grid = contract["credit"]["spread_inputs_decimal"]["usd_ig"]
+        ig_curve = snapshot.credit_curves["usd_ig"]
+
+        for tenor_text, spread in spread_grid.items():
+            tenor = float(tenor_text)
+            expected_hazard = float(spread) / (1.0 - recovery)
+            assert ig_curve.hazard_rate(tenor) == pytest.approx(expected_hazard)
+
+    def test_model_consistency_contract_credit_inputs_drive_calibration_handoff(self):
+        provider = MockDataProvider()
+        snapshot = provider.fetch_market_snapshot(date(2024, 11, 15))
+        contract = snapshot.provenance["prior_parameters"]["model_consistency_contract"]
+        state = snapshot.to_market_state(
+            settlement=date(2024, 11, 15),
+            discount_curve="usd_ois",
+            forecast_curve="USD-SOFR-3M",
+            credit_curve="usd_ig",
+        )
+        quotes = tuple(
+            CreditHazardCalibrationQuote(
+                maturity_years=float(tenor_text),
+                quote=float(spread),
+                quote_kind="spread",
+                label=f"synthetic_{tenor_text}y",
+            )
+            for tenor_text, spread in contract["credit"]["spread_inputs_decimal"]["usd_ig"].items()
+        )
+
+        result = calibrate_single_name_credit_curve_workflow(
+            quotes,
+            state,
+            recovery=float(contract["credit"]["recovery"]),
+            curve_name="synthetic_ig_credit",
+        )
+        calibrated_state = result.apply_to_market_state(state)
+        record = calibrated_state.materialized_calibrated_object(object_kind="credit_curve")
+
+        assert record is not None
+        assert record["object_name"] == "synthetic_ig_credit"
+        assert record["selected_curve_roles"]["discount_curve"] == "usd_ois"
+        assert result.max_abs_hazard_residual == pytest.approx(0.0)
+
+        schedule = build_cds_schedule(
+            date(2024, 11, 15),
+            date(2029, 11, 15),
+            Frequency.QUARTERLY,
+            DayCountConvention.ACT_360,
+        )
+        observed = price_cds_analytical(
+            notional=1_000_000.0,
+            spread_quote=contract["credit"]["spread_inputs_decimal"]["usd_ig"]["5.0"],
+            recovery=float(contract["credit"]["recovery"]),
+            schedule=schedule,
+            credit_curve=calibrated_state.credit_curve,
+            discount_curve=calibrated_state.discount,
+        )
+
+        assert observed == pytest.approx(
+            price_cds_analytical(
+                notional=1_000_000.0,
+                spread_quote=contract["credit"]["spread_inputs_decimal"]["usd_ig"]["5.0"],
+                recovery=float(contract["credit"]["recovery"]),
+                schedule=schedule,
+                credit_curve=snapshot.credit_curve("usd_ig"),
+                discount_curve=snapshot.discount_curve("usd_ois"),
+            )
+        )
 
 
 class TestResolverMockSource:

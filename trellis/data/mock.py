@@ -136,6 +136,15 @@ def _build_rate_vol_surfaces(
 
 def _build_credit_curves(regime: str) -> dict[str, CreditCurve]:
     """Build simple regime-dependent IG and HY credit curves from spread grids."""
+    ig_spreads, hy_spreads, recovery = _credit_spread_inputs(regime)
+    return {
+        "usd_ig": CreditCurve.from_spreads(ig_spreads, recovery=recovery),
+        "usd_hy": CreditCurve.from_spreads(hy_spreads, recovery=recovery),
+    }
+
+
+def _credit_spread_inputs(regime: str) -> tuple[dict[float, float], dict[float, float], float]:
+    """Return deterministic spread grids and recovery used for mock credit curves."""
     spreads = {
         "covid_crisis": (
             {1.0: 0.0120, 3.0: 0.0160, 5.0: 0.0180, 10.0: 0.0200},
@@ -155,9 +164,70 @@ def _build_credit_curves(regime: str) -> dict[str, CreditCurve]:
         ),
     }
     ig_spreads, hy_spreads = spreads[regime]
+    return dict(ig_spreads), dict(hy_spreads), 0.4
+
+
+def _build_model_consistency_contract(
+    *,
+    regime: str,
+    seed: int,
+    snapshot_date: date,
+    requested_as_of: date | None,
+    source_kind: str,
+    forecast_basis_bps: dict[str, float],
+    ig_spreads: dict[float, float],
+    hy_spreads: dict[float, float],
+    recovery: float,
+    model_parameter_sets: dict[str, dict[str, float]],
+    local_vol_surfaces: tuple[str, ...],
+    rate_vol_surfaces: tuple[str, ...],
+) -> dict[str, object]:
+    """Return a deterministic synthetic model-consistency contract payload."""
     return {
-        "usd_ig": CreditCurve.from_spreads(ig_spreads, recovery=0.4),
-        "usd_hy": CreditCurve.from_spreads(hy_spreads, recovery=0.4),
+        "version": "v1",
+        "seed": int(seed),
+        "source_kind": source_kind,
+        "regime": regime,
+        "snapshot_date": snapshot_date.isoformat(),
+        "requested_as_of": requested_as_of.isoformat() if requested_as_of is not None else None,
+        "rates": {
+            "workflow": "curve_shifted_from_discount",
+            "curve_roles": {
+                "discount_curve": "usd_ois",
+                "forecast_curve": "USD-SOFR-3M",
+            },
+            "forecast_basis_bps": {
+                name: float(shift)
+                for name, shift in forecast_basis_bps.items()
+            },
+            "quote_families": ("price", "implied_vol"),
+            "materialization_targets": ("discount_curves", "forecast_curves"),
+        },
+        "credit": {
+            "workflow": "calibrate_single_name_credit_curve_workflow",
+            "quote_families": ("spread", "hazard"),
+            "recovery": float(recovery),
+            "spread_inputs_decimal": {
+                "usd_ig": {str(tenor): float(spread) for tenor, spread in ig_spreads.items()},
+                "usd_hy": {str(tenor): float(spread) for tenor, spread in hy_spreads.items()},
+            },
+            "materialization_targets": ("credit_curve",),
+        },
+        "volatility": {
+            "workflow": "calibration_surface_bundle",
+            "quote_families": ("implied_vol",),
+            "rate_vol_surfaces": tuple(rate_vol_surfaces),
+            "local_vol_surfaces": tuple(local_vol_surfaces),
+            "model_parameter_sets": {
+                name: dict(params)
+                for name, params in model_parameter_sets.items()
+            },
+            "materialization_targets": (
+                "vol_surface",
+                "local_vol_surface",
+                "model_parameters",
+            ),
+        },
     }
 
 
@@ -530,6 +600,14 @@ class MockDataProvider(BaseDataProvider):
         }
         fixing_histories = _build_fixing_histories(best, forecast_curves)
         underlier_spots = _build_underlier_spots(regime)
+        rate_vol_surfaces = _build_rate_vol_surfaces(usd_ois, regime)
+        credit_curves = _build_credit_curves(regime)
+        local_vol_surfaces = _build_local_vol_surfaces(
+            regime=regime,
+            underlier_spots=underlier_spots,
+        )
+        jump_parameter_sets = _build_jump_parameter_sets(regime)
+        model_parameter_sets = _build_model_parameter_sets(regime)
         prior_seed_payload = "|".join(
             (
                 self._provenance_prior_family,
@@ -573,6 +651,27 @@ class MockDataProvider(BaseDataProvider):
                     },
                 }
             )
+            forecast_basis_bps = {
+                "USD-SOFR-3M": 35.0,
+                "USD-LIBOR-3M": 55.0,
+                "EUR-EURIBOR-3M": 30.0,
+                "GBP-SONIA-3M": 18.0,
+            }
+            ig_spreads, hy_spreads, recovery = _credit_spread_inputs(regime)
+            prior_parameters["model_consistency_contract"] = _build_model_consistency_contract(
+                regime=regime,
+                seed=prior_seed,
+                snapshot_date=best,
+                requested_as_of=as_of,
+                source_kind=self._provenance_source_kind,
+                forecast_basis_bps=forecast_basis_bps,
+                ig_spreads=ig_spreads,
+                hy_spreads=hy_spreads,
+                recovery=recovery,
+                model_parameter_sets=model_parameter_sets,
+                local_vol_surfaces=tuple(local_vol_surfaces.keys()),
+                rate_vol_surfaces=tuple(rate_vol_surfaces.keys()),
+            )
         else:
             prior_parameters.update(
                 {
@@ -590,18 +689,15 @@ class MockDataProvider(BaseDataProvider):
                 "gbp_ois": gbp_ois,
             },
             forecast_curves=forecast_curves,
-            vol_surfaces=_build_rate_vol_surfaces(usd_ois, regime),
-            credit_curves=_build_credit_curves(regime),
+            vol_surfaces=rate_vol_surfaces,
+            credit_curves=credit_curves,
             fixing_histories=fixing_histories,
             fx_rates=_build_fx_rates(regime),
             state_spaces=_build_state_spaces(regime),
             underlier_spots=underlier_spots,
-            local_vol_surfaces=_build_local_vol_surfaces(
-                regime=regime,
-                underlier_spots=underlier_spots,
-            ),
-            jump_parameter_sets=_build_jump_parameter_sets(regime),
-            model_parameter_sets=_build_model_parameter_sets(regime),
+            local_vol_surfaces=local_vol_surfaces,
+            jump_parameter_sets=jump_parameter_sets,
+            model_parameter_sets=model_parameter_sets,
             metadata=metadata,
             provenance={
                 "source": "mock",

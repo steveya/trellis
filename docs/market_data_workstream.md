@@ -46,6 +46,19 @@ Those mock snapshots now carry explicit synthetic-prior provenance, including
 the prior family, a stable seed, and the parameterization used to build the
 regime bundle.
 
+`QUA-693` adds one more bounded authority packet to that synthetic path:
+``prior_parameters.model_consistency_contract``. The contract records the
+deterministic rates, credit, and volatility assumptions used to build the mock
+snapshot, including:
+
+- explicit discount/forecast curve roles plus forecast-basis inputs
+- reduced-form credit spread grids, recovery, and the aligned credit workflow
+- volatility/model-parameter families and their runtime materialization targets
+
+This contract is descriptive synthetic metadata only. It exists so proving and
+demo runs can explain which bounded model assumptions were used, and it should
+not be treated as production market data.
+
 Basket and quanto correlation now follow the same provenance discipline:
 
 - explicit correlation matrices and scalar correlation inputs are traced as

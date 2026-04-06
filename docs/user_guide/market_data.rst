@@ -299,6 +299,20 @@ Mock snapshots also expose the synthetic-prior family, seed, and parameter set
 used to build the embedded regime bundle, so proving and replay runs can show
 exactly which prior was sampled.
 
+For the migrated calibration workflows, mock snapshots now also include a
+bounded ``model_consistency_contract`` under
+``snapshot.provenance["prior_parameters"]``. That contract records the
+deterministic rates, credit, and volatility assumptions used to build the
+synthetic snapshot:
+
+- rates curve roles and forecast-basis inputs
+- reduced-form credit spread grids and recovery
+- the named vol/local-vol/model-parameter packs included in the snapshot
+
+This is synthetic provenance for proving, demos, and regression fixtures. It
+is intentionally explicit so downstream tooling can show which bounded model
+assumptions were used, and it should not be treated as live market data.
+
 For schedule-bound rates workflows, the mock provider also ships deterministic
 recent fixing histories for the named rate indices in the snapshot. Those
 histories are first-class snapshot components, not opaque metadata blobs:
