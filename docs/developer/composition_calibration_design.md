@@ -327,6 +327,11 @@ route-local exceptions. That matters especially for implied-vol inversion and
 for rates workflows where the quote contract must preserve explicit
 discount-curve and forecast-curve roles under multi-curve pricing.
 
+Reduced-form credit now uses the same surface. In practice that means the
+``Spread`` and ``Hazard`` quote maps also carry the potential-binding metadata
+needed by CDS-style workflows: recovery, discount-curve role, default-curve
+role, and the risky-discount contract that combines discounting with survival.
+
 ### Output binding as MarketState capabilities
 
 Calibrated parameters are materialized as `MarketState` capabilities:

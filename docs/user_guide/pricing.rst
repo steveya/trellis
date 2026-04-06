@@ -146,6 +146,14 @@ fields populated, but the authoritative binding metadata lives under
 to inspect which calibrated parameter set or surface is currently selected,
 which workflow produced it, and which multi-curve roles were bound at runtime.
 
+Single-name CDS calibration now follows that same pattern. The supported entry
+point is ``calibrate_single_name_credit_curve_workflow(...)``, which accepts
+tenor quotes in spread or hazard form, records the discount-plus-default
+potential binding explicitly, and materializes the calibrated ``CreditCurve``
+through the shared runtime binding surface. The current slice is intentionally
+bounded to reduced-form single-name credit; basket credit and hybrid credit
+calibration remain out of scope.
+
 Those supported calibration paths now also have a checked replay/tolerance
 pack. In practice that means the workflow-level solver provenance, replay
 artifacts, fit-quality tolerances, and cold-versus-warm benchmark baselines are

@@ -1,4 +1,4 @@
-"""Calibration primitives: implied vol, SABR/Heston fitting, local vol, and rates calibration."""
+"""Calibration primitives: implied vol, vol/rates fits, local vol, and typed credit calibration."""
 
 from trellis.models.calibration.implied_vol import implied_vol, implied_vol_jaeckel
 from trellis.models.calibration.heston_fit import (
@@ -38,6 +38,11 @@ from trellis.models.calibration.local_vol import (
     calibrate_local_vol_surface_workflow,
     dupire_local_vol,
     dupire_local_vol_result,
+)
+from trellis.models.calibration.credit import (
+    CreditHazardCalibrationQuote,
+    CreditHazardCalibrationResult,
+    calibrate_single_name_credit_curve_workflow,
 )
 from trellis.models.calibration.quote_maps import (
     CalibrationQuoteMap,
@@ -104,6 +109,9 @@ __all__ = [
     "calibrate_local_vol_surface_workflow",
     "dupire_local_vol_result",
     "dupire_local_vol",
+    "CreditHazardCalibrationQuote",
+    "CreditHazardCalibrationResult",
+    "calibrate_single_name_credit_curve_workflow",
     "CalibrationQuoteMap",
     "QuoteMapSpec",
     "QuoteTransformResult",

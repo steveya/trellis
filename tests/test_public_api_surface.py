@@ -131,6 +131,8 @@ def test_models_package_exports():
     )
     from trellis.models.calibration import (
         ConstraintSpec,
+        CreditHazardCalibrationQuote,
+        CreditHazardCalibrationResult,
         HestonSmileCalibrationResult,
         HestonSmileFitDiagnostics,
         HestonSmilePoint,
@@ -161,6 +163,7 @@ def test_models_package_exports():
         calibrate_heston_smile_workflow,
         calibrate_hull_white,
         calibrate_local_vol_surface_workflow,
+        calibrate_single_name_credit_curve_workflow,
         calibrate_sabr_smile_workflow,
         calibrate_cap_floor_black_vol,
         calibrate_swaption_black_vol,
@@ -190,6 +193,8 @@ def test_models_package_exports():
     assert models.calibration.HullWhiteCalibrationInstrument is HullWhiteCalibrationInstrument
     assert models.calibration.HullWhiteCalibrationResult is HullWhiteCalibrationResult
     assert models.calibration.LocalVolCalibrationResult is LocalVolCalibrationResult
+    assert models.calibration.CreditHazardCalibrationQuote is CreditHazardCalibrationQuote
+    assert models.calibration.CreditHazardCalibrationResult is CreditHazardCalibrationResult
     assert models.calibration.SABRSmilePoint is SABRSmilePoint
     assert models.calibration.SABRSmileSurface is SABRSmileSurface
     assert models.calibration.SABRSmileFitDiagnostics is SABRSmileFitDiagnostics
@@ -214,6 +219,10 @@ def test_models_package_exports():
     assert models.calibration.calibrate_heston_smile_workflow is calibrate_heston_smile_workflow
     assert models.calibration.calibrate_hull_white is calibrate_hull_white
     assert models.calibration.calibrate_local_vol_surface_workflow is calibrate_local_vol_surface_workflow
+    assert (
+        models.calibration.calibrate_single_name_credit_curve_workflow
+        is calibrate_single_name_credit_curve_workflow
+    )
     assert models.calibration.calibrate_sabr_smile_workflow is calibrate_sabr_smile_workflow
     assert models.calibration.calibrate_cap_floor_black_vol is calibrate_cap_floor_black_vol
     assert models.calibration.calibrate_swaption_black_vol is calibrate_swaption_black_vol

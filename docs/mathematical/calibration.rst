@@ -429,6 +429,42 @@ parameters before falling back to legacy heuristics.
 This remains a constant-parameter Hull-White fit across the supported strip,
 not a full time-dependent :math:`\sigma(t)` calibration.
 
+Reduced-Form Credit Calibration
+-------------------------------
+
+The supported credit slice is intentionally bounded to single-name reduced-form
+hazard calibration for CDS-style quotes. Trellis now exposes
+``calibrate_single_name_credit_curve_workflow(...)`` as the typed entry point.
+
+The workflow accepts tenor-labeled quotes in either of the shipped credit quote
+families:
+
+- ``Spread`` for running-spread quotes, normalized through
+  :math:`\lambda \approx s / (1 - R)`
+- ``Hazard`` for direct hazard-rate targets
+
+The pricing semantics are explicit in provenance. The credit workflow records a
+potential-binding payload that makes the reduced-form discount/default contract
+visible:
+
+.. math::
+
+   D_{\text{risky}}(t) = D(t)\,S(t)
+
+where the selected discount curve and the calibrated credit curve are both
+named in the runtime binding metadata.
+
+Like the other migrated calibration helpers, the credit workflow returns:
+
+- the typed ``solve_request`` and normalized ``solve_result``
+- governed ``solver_provenance`` and ``solver_replay_artifact``
+- quote-map metadata and any inverse-transform warnings
+- a reusable ``CreditCurve`` together with ``apply_to_market_state(...)`` for
+  shared runtime materialization
+
+This slice does not yet widen into basket credit, structural-credit, or hybrid
+credit-equity calibration.
+
 Implementation
 --------------
 
@@ -446,6 +482,7 @@ Implementation
 .. autofunction:: trellis.models.calibration.rates.calibrate_cap_floor_black_vol
 .. autofunction:: trellis.models.calibration.rates.calibrate_swaption_black_vol
 .. autofunction:: trellis.models.calibration.rates.calibrate_hull_white
+.. autofunction:: trellis.models.calibration.credit.calibrate_single_name_credit_curve_workflow
 .. autoclass:: trellis.models.calibration.heston_fit.HestonSmileSurface
    :members:
 .. autoclass:: trellis.models.calibration.heston_fit.HestonSmileFitDiagnostics
@@ -459,6 +496,10 @@ Implementation
 .. autoclass:: trellis.models.calibration.sabr_fit.SABRSmileCalibrationResult
    :members:
 .. autoclass:: trellis.models.calibration.local_vol.LocalVolCalibrationResult
+   :members:
+.. autoclass:: trellis.models.calibration.credit.CreditHazardCalibrationQuote
+   :members:
+.. autoclass:: trellis.models.calibration.credit.CreditHazardCalibrationResult
    :members:
 .. autoclass:: trellis.models.calibration.solve_request.SolveRequest
    :members:
