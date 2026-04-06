@@ -13,7 +13,7 @@ and forecast curves were used in the calibration run.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Callable, Literal, Protocol, Sequence
 
@@ -41,6 +41,7 @@ from trellis.models.calibration.quote_maps import (
     build_identity_quote_map,
     build_implied_vol_quote_map,
 )
+from trellis.models.calibration.materialization import materialize_model_parameter_set
 from trellis.models.hull_white_parameters import build_hull_white_parameter_payload
 
 
@@ -195,12 +196,36 @@ class HullWhiteCalibrationResult:
 
     def apply_to_market_state(self, market_state: MarketState) -> MarketState:
         """Return ``market_state`` enriched with the calibrated Hull-White parameters."""
-        parameter_sets = dict(market_state.model_parameter_sets or {})
-        parameter_sets[self.parameter_set_name] = dict(self.model_parameters)
-        return replace(
+        selected_curve_roles: dict[str, str] = {}
+        calibration_target = self.provenance.get("calibration_target", {})
+        if isinstance(calibration_target, dict):
+            quote_maps = calibration_target.get("quote_maps", ())
+            if isinstance(quote_maps, Sequence) and quote_maps:
+                first_quote_map = quote_maps[0]
+                if isinstance(first_quote_map, dict):
+                    selected_curve_roles = {
+                        str(key): str(value)
+                        for key, value in dict(first_quote_map.get("multi_curve_roles", {})).items()
+                        if str(key).strip() and str(value).strip()
+                    }
+        if not selected_curve_roles:
+            selected_curve_roles = {
+                str(key): str(value)
+                for key, value in dict(market_state.selected_curve_names or {}).items()
+                if str(key).strip() and str(value).strip()
+            }
+        return materialize_model_parameter_set(
             market_state,
+            parameter_set_name=self.parameter_set_name,
             model_parameters=dict(self.model_parameters),
-            model_parameter_sets=parameter_sets,
+            source_kind=str(self.model_parameters.get("source_kind", "calibrated")),
+            source_ref="calibrate_hull_white",
+            selected_curve_roles=selected_curve_roles,
+            metadata={
+                "instrument_family": "rates",
+                "instrument_kind": "hull_white",
+                "parameter_set_name": self.parameter_set_name,
+            },
         )
 
     def to_payload(self) -> dict[str, object]:

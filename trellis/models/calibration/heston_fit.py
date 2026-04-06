@@ -12,6 +12,7 @@ import numpy as raw_np
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
 from trellis.models.calibration.implied_vol import implied_vol
+from trellis.models.calibration.materialization import materialize_model_parameter_set
 from trellis.models.calibration.quote_maps import QuoteMapSpec
 from trellis.models.calibration.solve_request import (
     ObjectiveBundle,
@@ -240,12 +241,19 @@ class HestonSmileCalibrationResult:
 
     def apply_to_market_state(self, market_state: MarketState) -> MarketState:
         """Return ``market_state`` enriched with the calibrated Heston parameters."""
-        parameter_sets = dict(market_state.model_parameter_sets or {})
-        parameter_sets[self.parameter_set_name] = dict(self.model_parameters)
-        return replace(
+        return materialize_model_parameter_set(
             market_state,
+            parameter_set_name=self.parameter_set_name,
             model_parameters=dict(self.model_parameters),
-            model_parameter_sets=parameter_sets,
+            source_kind=str(self.provenance.get("source_kind", "calibrated_surface")),
+            source_ref=str(self.provenance.get("source_ref", "fit_heston_smile_surface")),
+            selected_curve_roles=dict(self.provenance.get("selected_curve_names", {})),
+            metadata={
+                "instrument_family": "equity_vol",
+                "model_family": "heston",
+                "parameter_set_name": self.parameter_set_name,
+                "runtime_binding": self.runtime_binding.to_payload(),
+            },
         )
 
     def to_payload(self) -> dict[str, object]:

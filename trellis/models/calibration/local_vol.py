@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 import numpy as raw_np
 
+from trellis.models.calibration.materialization import materialize_local_vol_surface
 from trellis.models.calibration.quote_maps import QuoteMapSpec
 
 
@@ -54,12 +55,20 @@ class LocalVolCalibrationResult:
 
     def apply_to_market_state(self, market_state):
         """Return ``market_state`` enriched with the calibrated local-vol surface."""
-        surface_map = dict(market_state.local_vol_surfaces or {})
-        surface_map[self.surface_name] = self.local_vol_surface
-        return replace(
+        return materialize_local_vol_surface(
             market_state,
+            surface_name=self.surface_name,
             local_vol_surface=self.local_vol_surface,
-            local_vol_surfaces=surface_map,
+            source_kind=str(self.provenance.get("source_kind", "calibrated_surface")),
+            source_ref=str(self.provenance.get("source_ref", "calibrate_local_vol_surface_workflow")),
+            selected_curve_roles=dict(self.provenance.get("selected_curve_names", {})),
+            metadata={
+                "target_kind": "option_surface",
+                "surface_name": self.surface_name,
+                "surface_shape": [
+                    int(value) for value in tuple(self.calibration_target.get("surface_shape", ()))
+                ],
+            },
         )
 
     def to_payload(self) -> dict[str, object]:

@@ -50,6 +50,36 @@ quote-map provenance (discount curve, forecast curve, and rate-index binding),
 which keeps quote semantics aligned with OIS discounting and forward-curve
 selection used by the pricing kernels.
 
+Typed Materialization Onto ``MarketState``
+------------------------------------------
+
+Migrated calibration workflows now materialize runtime outputs through the
+bounded helpers in ``trellis.models.calibration.materialization`` instead of
+open-coding route-local ``MarketState`` mutation.
+
+The shipped materialization kinds are intentionally narrow:
+
+- ``model_parameter_set``
+- ``black_vol_surface``
+- ``local_vol_surface``
+- ``credit_curve``
+
+Each materialization writes the compatibility fields that existing pricing code
+already consumes, but it also records one typed provenance packet under
+``market_provenance["calibrated_objects"]`` together with the current selection
+under ``market_provenance["selected_calibrated_objects"]``.
+
+That means migrated workflows can preserve:
+
+- the bound runtime object family
+- the named runtime object that was selected
+- source-kind / source-ref metadata
+- multi-curve discount and forecast role selections where applicable
+- workflow-specific metadata such as model family or surface shape
+
+``MarketState.materialized_calibrated_object(...)`` is the supported lookup
+surface for those authoritative records.
+
 Backend Registry And Capability Policy
 --------------------------------------
 

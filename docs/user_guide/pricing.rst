@@ -137,6 +137,15 @@ result and can project the named local-vol surface back onto
 ``MarketState.local_vol_surface`` / ``local_vol_surfaces`` for later runtime
 consumers.
 
+Those migrated calibration workflows now share one typed runtime binding
+surface as well. ``apply_to_market_state(...)`` still keeps the compatibility
+fields populated, but the authoritative binding metadata lives under
+``MarketState.market_provenance["calibrated_objects"]`` and
+``MarketState.market_provenance["selected_calibrated_objects"]``. Use
+``MarketState.materialized_calibrated_object(object_kind=...)`` when you need
+to inspect which calibrated parameter set or surface is currently selected,
+which workflow produced it, and which multi-curve roles were bound at runtime.
+
 Those supported calibration paths now also have a checked replay/tolerance
 pack. In practice that means the workflow-level solver provenance, replay
 artifacts, fit-quality tolerances, and cold-versus-warm benchmark baselines are

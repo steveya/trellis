@@ -186,6 +186,21 @@ class MarketState:
             return None
         return self.selected_curve_names.get(kind)
 
+    def materialized_calibrated_object(
+        self,
+        *,
+        object_kind: str,
+        object_name: str | None = None,
+    ) -> dict[str, object] | None:
+        """Return one calibrated-object materialization record, when available."""
+        from trellis.models.calibration.materialization import resolve_materialized_object
+
+        return resolve_materialized_object(
+            self,
+            object_kind=object_kind,
+            object_name=object_name,
+        )
+
     @property
     def valuation_date(self) -> date:
         """Backward-compatible alias used by generated pricers for valuation time."""
@@ -236,6 +251,13 @@ class MarketState:
                 k: str(v) for k, v in (self.market_provenance or {}).items()
             },
         }
+        selected_calibrated = (
+            dict(self.market_provenance.get("selected_calibrated_objects", {}))
+            if isinstance(self.market_provenance, dict)
+            else {}
+        )
+        if selected_calibrated:
+            summary["selected_calibrated_objects"] = selected_calibrated
         if self.discount is not None:
             try:
                 summary["discount_factors"] = {

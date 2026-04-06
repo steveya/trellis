@@ -345,6 +345,23 @@ hw_params = market_state.hw_short_rate_params
 This is consistent with how `market_state.discount`, `market_state.vol_surface`,
 etc. already work. No new infrastructure needed.
 
+For the migrated workflow surface, that handoff is now explicit in
+`trellis.models.calibration.materialization`. Those helpers still populate the
+compatibility fields that existing pricing code expects, but they also record a
+typed binding record under `market_provenance["calibrated_objects"]` and the
+current selection under `market_provenance["selected_calibrated_objects"]`.
+
+That gives downstream review and replay tooling one authoritative place to
+inspect:
+
+- what calibrated object family was materialized
+- which named runtime object is selected
+- the source kind and source ref for the binding
+- any explicit multi-curve discount / forecast role selections
+
+The supported lookup surface is
+`MarketState.materialized_calibrated_object(object_kind=..., object_name=...)`.
+
 ### Integration with GenerationPlan
 
 ```python

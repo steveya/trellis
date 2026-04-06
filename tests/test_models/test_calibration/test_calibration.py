@@ -382,6 +382,11 @@ class TestDupireLocalVol:
         assert result.provenance["source_ref"] == "calibrate_local_vol_surface_workflow"
         assert "equity_local_vol" in enriched_state.local_vol_surfaces
         assert enriched_state.local_vol_surface(100.0, 1.0) == pytest.approx(sigma_flat, abs=0.02)
+        local_vol_materialization = enriched_state.materialized_calibrated_object(object_kind="local_vol_surface")
+        assert local_vol_materialization is not None
+        assert local_vol_materialization["object_name"] == "equity_local_vol"
+        assert local_vol_materialization["source_ref"] == "calibrate_local_vol_surface_workflow"
+        assert local_vol_materialization["metadata"]["surface_shape"] == [15, 30]
 
 
 class TestHestonCalibration:
@@ -487,6 +492,11 @@ class TestHestonCalibration:
         assert result.diagnostics.max_abs_vol_error < 0.005
         assert result.model_parameters["model_family"] == "heston"
         assert enriched_state.model_parameter_sets["heston_equity"]["model_family"] == "heston"
+        heston_materialization = enriched_state.materialized_calibrated_object(object_kind="model_parameter_set")
+        assert heston_materialization is not None
+        assert heston_materialization["object_name"] == "heston_equity"
+        assert heston_materialization["source_kind"] == "calibrated_surface"
+        assert heston_materialization["metadata"]["model_family"] == "heston"
         assert result.provenance["fit_diagnostics"]["point_count"] == len(strikes)
         assert result.provenance["calibration_target"]["quote_map"]["quote_family"] == "implied_vol"
         assert result.provenance["calibration_target"]["quote_map"]["convention"] == "black"
@@ -810,6 +820,12 @@ class TestRatesCalibration:
         calibrated_state = result.apply_to_market_state(market_state)
         assert calibrated_state.model_parameters["model_family"] == "hull_white"
         assert calibrated_state.model_parameter_sets["hw_calibrated"]["sigma"] == pytest.approx(result.sigma)
+        hw_materialization = calibrated_state.materialized_calibrated_object(object_kind="model_parameter_set")
+        assert hw_materialization is not None
+        assert hw_materialization["object_name"] == "hw_calibrated"
+        assert hw_materialization["metadata"]["instrument_family"] == "rates"
+        assert hw_materialization["selected_curve_roles"]["discount_curve"] == "usd_ois_boot"
+        assert hw_materialization["selected_curve_roles"]["forecast_curve"] == BOOTSTRAPPED_SOFR_CURVE
         assert price_bermudan_swaption_tree(
             calibrated_state,
             tree_specs[0],

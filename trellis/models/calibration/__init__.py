@@ -47,6 +47,15 @@ from trellis.models.calibration.quote_maps import (
     build_implied_vol_quote_map,
     supported_quote_map_surface,
 )
+from trellis.models.calibration.materialization import (
+    CalibratedObjectKind,
+    CalibratedObjectMaterialization,
+    materialize_black_vol_surface,
+    materialize_credit_curve,
+    materialize_local_vol_surface,
+    materialize_model_parameter_set,
+    resolve_materialized_object,
+)
 from trellis.models.calibration.solve_request import (
     ConstraintSpec,
     ObjectiveBundle,
@@ -101,6 +110,13 @@ __all__ = [
     "build_identity_quote_map",
     "build_implied_vol_quote_map",
     "supported_quote_map_surface",
+    "CalibratedObjectKind",
+    "CalibratedObjectMaterialization",
+    "materialize_model_parameter_set",
+    "materialize_black_vol_surface",
+    "materialize_local_vol_surface",
+    "materialize_credit_curve",
+    "resolve_materialized_object",
     "ConstraintSpec",
     "ObjectiveBundle",
     "SolveBackendRecord",
