@@ -39,6 +39,14 @@ from trellis.models.calibration.local_vol import (
     dupire_local_vol,
     dupire_local_vol_result,
 )
+from trellis.models.calibration.quote_maps import (
+    CalibrationQuoteMap,
+    QuoteMapSpec,
+    QuoteTransformResult,
+    build_identity_quote_map,
+    build_implied_vol_quote_map,
+    supported_quote_map_surface,
+)
 from trellis.models.calibration.solve_request import (
     ConstraintSpec,
     ObjectiveBundle,
@@ -87,6 +95,12 @@ __all__ = [
     "calibrate_local_vol_surface_workflow",
     "dupire_local_vol_result",
     "dupire_local_vol",
+    "CalibrationQuoteMap",
+    "QuoteMapSpec",
+    "QuoteTransformResult",
+    "build_identity_quote_map",
+    "build_implied_vol_quote_map",
+    "supported_quote_map_surface",
     "ConstraintSpec",
     "ObjectiveBundle",
     "SolveBackendRecord",

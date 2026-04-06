@@ -21,6 +21,7 @@ from trellis.models.calibration.solve_request import (
     build_solve_replay_artifact,
     execute_solve_request,
 )
+from trellis.models.calibration.quote_maps import QuoteMapSpec
 from trellis.models.processes.sabr import SABRProcess
 
 np = get_numpy()
@@ -34,6 +35,11 @@ def _freeze_mapping(mapping: Mapping[str, object] | None) -> Mapping[str, object
 def _normalize_float_tuple(values: Sequence[float]) -> tuple[float, ...]:
     """Normalize numeric sequences onto immutable float tuples."""
     return tuple(float(value) for value in values)
+
+
+def _default_implied_vol_quote_map_spec() -> QuoteMapSpec:
+    """Return the shared implied-vol quote-map spec used by vol workflows."""
+    return QuoteMapSpec(quote_family="implied_vol", convention="black")
 
 
 @dataclass(frozen=True)
@@ -84,6 +90,7 @@ class SABRSmileSurface:
     source_kind: str = "option_surface"
     source_ref: str = "build_sabr_smile_surface"
     warnings: tuple[str, ...] = ()
+    quote_map_spec: QuoteMapSpec = field(default_factory=_default_implied_vol_quote_map_spec)
     metadata: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -93,6 +100,8 @@ class SABRSmileSurface:
             raise ValueError("expiry_years must be finite and positive")
         if len(self.points) < 3:
             raise ValueError("SABR smile surfaces require at least three points")
+        if self.quote_map_spec.quote_family != "implied_vol":
+            raise ValueError("SABR smile surfaces require an implied-vol quote map")
         object.__setattr__(self, "forward", float(self.forward))
         object.__setattr__(self, "expiry_years", float(self.expiry_years))
         object.__setattr__(self, "beta", float(self.beta))
@@ -149,6 +158,7 @@ class SABRSmileSurface:
             "atm_strike": float(self.strikes[atm_idx]),
             "atm_market_vol": float(self.market_vols[atm_idx]),
             "warnings": list(self.warnings),
+            "quote_map": self.quote_map_spec.to_payload(),
             "metadata": dict(self.metadata),
         }
 
@@ -414,6 +424,7 @@ def fit_sabr_smile_surface(
                 "expiry_years": float(surface.expiry_years),
                 "beta": float(surface.beta),
                 "surface_name": surface.surface_name,
+                "quote_map": surface.quote_map_spec.to_payload(),
             },
         ),
         bounds=SolveBounds(lower=(1e-6, -0.999, 1e-6), upper=(None, 0.999, None)),
@@ -470,6 +481,8 @@ def fit_sabr_smile_surface(
         "objective_value": float(solve_result.objective_value),
         "optimizer_success": bool(solve_result.success),
         "surface_name": surface.surface_name,
+        "quote_family": surface.quote_map_spec.quote_family,
+        "quote_convention": surface.quote_map_spec.convention,
     }
     return SABRSmileCalibrationResult(
         surface=surface,

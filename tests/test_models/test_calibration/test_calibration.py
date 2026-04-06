@@ -52,6 +52,12 @@ from trellis.models.calibration.heston_fit import (
     calibrate_heston_smile_workflow,
     fit_heston_smile_surface,
 )
+from trellis.models.calibration.quote_maps import (
+    QuoteMapSpec,
+    build_identity_quote_map,
+    build_implied_vol_quote_map,
+    supported_quote_map_surface,
+)
 from trellis.models.vol_surface import FlatVol
 
 
@@ -104,6 +110,44 @@ class TestImpliedVolJaeckel:
         vol_brent = implied_vol(price, S, K, T, r, option_type="call")
         vol_jaeckel = implied_vol_jaeckel(price, S, K, T, r, option_type="call")
         assert vol_jaeckel == pytest.approx(vol_brent, abs=1e-4)
+
+
+class TestQuoteMaps:
+    def test_supported_quote_map_surface_covers_bounded_variants(self):
+        specs = supported_quote_map_surface()
+        variants = {(spec.quote_family, spec.convention) for spec in specs}
+        assert ("price", "") in variants
+        assert ("implied_vol", "black") in variants
+        assert ("implied_vol", "normal") in variants
+        assert ("par_rate", "") in variants
+        assert ("spread", "") in variants
+        assert ("hazard", "") in variants
+
+    def test_identity_quote_map_round_trips_price_quotes(self):
+        quote_map = build_identity_quote_map(
+            QuoteMapSpec(quote_family="price"),
+            source_ref="unit_test",
+        )
+        target = quote_map.target_price(123.45)
+        model = quote_map.model_quote(123.45)
+        assert target.failure is None
+        assert model.failure is None
+        assert target.value == pytest.approx(123.45)
+        assert model.value == pytest.approx(123.45)
+
+    def test_implied_vol_quote_map_surfaces_inverse_failures(self):
+        quote_map = build_implied_vol_quote_map(
+            convention="black",
+            quote_to_price_fn=lambda quote: 10.0 + float(quote),
+            price_to_quote_fn=lambda _price: (_ for _ in ()).throw(ValueError("solver failed")),
+            source_ref="unit_test",
+        )
+        target = quote_map.target_price(0.25)
+        model = quote_map.model_quote(10.25)
+        assert target.failure is None
+        assert target.value == pytest.approx(10.25)
+        assert model.failure is not None
+        assert "solver failed" in model.failure
 
 
 # ---------------------------------------------------------------------------
@@ -159,6 +203,8 @@ class TestSABRCalibration:
         assert result.diagnostics.warning_count == 0
         assert result.summary["surface_name"] == "usd_rates_smile"
         assert result.provenance["fit_diagnostics"]["point_count"] == len(strikes)
+        assert result.provenance["calibration_target"]["quote_map"]["quote_family"] == "implied_vol"
+        assert result.provenance["calibration_target"]["quote_map"]["convention"] == "black"
         assert result.provenance["warnings"] == []
 
     def test_calibrate_sabr_smile_workflow_returns_supported_result(self):
@@ -220,6 +266,8 @@ class TestSABRCalibration:
         )
         assert sabr_fit.calibration_provenance["fit_diagnostics"]["point_count"] == len(strikes)
         assert sabr_fit.calibration_provenance["fit_diagnostics"]["max_abs_vol_error"] < 0.005
+        assert sabr_fit.calibration_provenance["calibration_target"]["quote_map"]["quote_family"] == "implied_vol"
+        assert sabr_fit.calibration_provenance["calibration_target"]["quote_map"]["convention"] == "black"
         assert sabr_fit.calibration_provenance["warnings"] == []
         assert sabr_fit.calibration_summary["optimizer_success"] is True
 
@@ -294,6 +342,8 @@ class TestDupireLocalVol:
         assert "unstable" in result.warnings[0].lower()
         assert payload["fit_diagnostics"]["unstable_point_count"] == result.diagnostics.unstable_point_count
         assert payload["warnings"] == list(result.warnings)
+        assert payload["calibration_target"]["quote_map"]["quote_family"] == "implied_vol"
+        assert payload["calibration_target"]["quote_map"]["convention"] == "black"
         assert result.local_vol_surface(100.0, 1.0) >= 0.0
 
     def test_rejects_mismatched_surface_shape(self):
@@ -438,6 +488,8 @@ class TestHestonCalibration:
         assert result.model_parameters["model_family"] == "heston"
         assert enriched_state.model_parameter_sets["heston_equity"]["model_family"] == "heston"
         assert result.provenance["fit_diagnostics"]["point_count"] == len(strikes)
+        assert result.provenance["calibration_target"]["quote_map"]["quote_family"] == "implied_vol"
+        assert result.provenance["calibration_target"]["quote_map"]["convention"] == "black"
 
     def test_calibrate_heston_smile_workflow_returns_supported_result(self):
         spot = 100.0
@@ -473,6 +525,8 @@ class TestHestonCalibration:
         assert isinstance(result, HestonSmileCalibrationResult)
         assert result.provenance["source_ref"] == "calibrate_heston_smile_workflow"
         assert result.summary["surface_name"] == "equity_heston_workflow"
+        assert result.provenance["calibration_target"]["quote_map"]["quote_family"] == "implied_vol"
+        assert result.provenance["calibration_target"]["quote_map"]["convention"] == "black"
         assert result.solve_request.warm_start is not None
         assert result.solve_request.warm_start.parameter_values == pytest.approx((1.2, 0.05, 0.25, -0.3, 0.04))
         assert result.runtime_binding.process.theta == pytest.approx(true_params["theta"], abs=0.02)
@@ -605,6 +659,8 @@ class TestRatesCalibration:
         assert result.provenance["rate_index"] == "USD-SOFR-3M"
         assert result.provenance["vol_surface_name"] == "rates_cap_surface"
         assert result.provenance["correlation_source"] == "not_used"
+        assert result.provenance["quote_map"]["quote_family"] == "implied_vol"
+        assert result.provenance["quote_map"]["convention"] == "black"
         assert result.provenance["solve_request"]["problem_kind"] == "root_scalar"
         assert result.provenance["solve_request"]["objective"]["labels"] == ["price_residual"]
         assert result.provenance["solve_result"]["metadata"]["backend_id"] == "scipy"
@@ -659,6 +715,8 @@ class TestRatesCalibration:
         assert result.provenance["rate_index"] == "USD-SOFR-3M"
         assert result.provenance["vol_surface_name"] == "rates_swaption_surface"
         assert result.provenance["correlation_source"] == "corr_pack_A"
+        assert result.provenance["quote_map"]["quote_family"] == "implied_vol"
+        assert result.provenance["quote_map"]["convention"] == "black"
         assert result.provenance["solve_request"]["problem_kind"] == "root_scalar"
         assert result.provenance["solve_request"]["objective"]["labels"] == ["price_residual"]
         assert result.provenance["solve_result"]["metadata"]["backend_id"] == "scipy"
@@ -745,6 +803,9 @@ class TestRatesCalibration:
         assert result.provenance["solve_request"]["problem_kind"] == "least_squares"
         assert result.provenance["solve_result"]["metadata"]["backend_id"] == "scipy"
         assert result.provenance["solver_provenance"]["backend"]["backend_id"] == "scipy"
+        assert result.provenance["calibration_target"]["quote_maps"][0]["quote_family"] == "price"
+        assert result.provenance["calibration_target"]["quote_maps"][0]["multi_curve_roles"]["discount_curve"]
+        assert result.provenance["calibration_target"]["quote_maps"][0]["multi_curve_roles"]["forecast_curve"]
 
         calibrated_state = result.apply_to_market_state(market_state)
         assert calibrated_state.model_parameters["model_family"] == "hull_white"

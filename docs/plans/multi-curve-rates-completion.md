@@ -200,7 +200,7 @@ Status mirror last synced: `2026-04-06`
 | Ticket | Slice | Status |
 | --- | --- | --- |
 | `QUA-356` | Trace propagation and cashflow curve selection | Done |
-| `QUA-381` | Shared rates term builder and tolerance policy | In Progress |
+| `QUA-381` | Shared rates term builder and tolerance policy | Done |
 | `QUA-358` | Direct quotes and bootstrap source kinds | Backlog |
 | `QUA-362` | Market-parameter provenance trace schema | Backlog |
 

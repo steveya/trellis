@@ -12,6 +12,7 @@ import numpy as raw_np
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
 from trellis.models.calibration.implied_vol import implied_vol
+from trellis.models.calibration.quote_maps import QuoteMapSpec
 from trellis.models.calibration.solve_request import (
     ObjectiveBundle,
     SolveBounds,
@@ -41,6 +42,11 @@ def _freeze_mapping(mapping: Mapping[str, object] | None) -> Mapping[str, object
 def _normalize_float_tuple(values: Sequence[float]) -> tuple[float, ...]:
     """Normalize numeric sequences onto immutable float tuples."""
     return tuple(float(value) for value in values)
+
+
+def _default_implied_vol_quote_map_spec() -> QuoteMapSpec:
+    """Return the shared implied-vol quote-map spec used by vol workflows."""
+    return QuoteMapSpec(quote_family="implied_vol", convention="black")
 
 
 @dataclass(frozen=True)
@@ -92,6 +98,7 @@ class HestonSmileSurface:
     source_kind: str = "option_surface"
     source_ref: str = "build_heston_smile_surface"
     warnings: tuple[str, ...] = ()
+    quote_map_spec: QuoteMapSpec = field(default_factory=_default_implied_vol_quote_map_spec)
     metadata: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -103,6 +110,8 @@ class HestonSmileSurface:
             raise ValueError("expiry_years must be finite and positive")
         if len(self.points) < 5:
             raise ValueError("Heston smile surfaces require at least five points")
+        if self.quote_map_spec.quote_family != "implied_vol":
+            raise ValueError("Heston smile surfaces require an implied-vol quote map")
         object.__setattr__(self, "spot", float(self.spot))
         object.__setattr__(self, "rate", float(self.rate))
         object.__setattr__(self, "expiry_years", float(self.expiry_years))
@@ -159,6 +168,7 @@ class HestonSmileSurface:
             "atm_strike": float(self.strikes[atm_index]),
             "atm_market_vol": float(self.market_vols[atm_index]),
             "warnings": list(self.warnings),
+            "quote_map": self.quote_map_spec.to_payload(),
             "metadata": dict(self.metadata),
         }
 
@@ -485,6 +495,7 @@ def fit_heston_smile_surface(
             "model_family": "heston",
             "surface_name": surface.surface_name,
             "fit_space": "implied_vol",
+            "quote_map": surface.quote_map_spec.to_payload(),
         },
     )
     request = SolveRequest(
@@ -566,6 +577,8 @@ def fit_heston_smile_surface(
         "point_count": len(surface.points),
         "optimizer_success": bool(solve_result.success),
         "max_abs_vol_error": diagnostics.max_abs_vol_error,
+        "quote_family": surface.quote_map_spec.quote_family,
+        "quote_convention": surface.quote_map_spec.convention,
     }
     return HestonSmileCalibrationResult(
         surface=surface,

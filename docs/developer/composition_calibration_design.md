@@ -280,6 +280,7 @@ class CalibrationTarget:
     """What parameter to calibrate."""
     parameter: str        # "hw_mean_reversion", "sabr_alpha", "local_vol_surface"
     output_capability: str  # MarketState capability name for the result
+    quote_map: QuoteMapSpec | None = None  # "Price", "ImpliedVol(Black)", "Spread", ...
 
 @dataclass(frozen=True)
 class CalibrationContract:
@@ -301,6 +302,30 @@ class CalibrationAcceptanceCriteria:
     stability_check: bool = True
     max_fitting_error_bps: float = 5.0
 ```
+
+### Quote maps as first-class calibration semantics
+
+The calibration contract now assumes that quote conventions are explicit rather
+than buried inside each workflow. Trellis uses a bounded quote-map surface in
+``trellis.models.calibration.quote_maps`` to describe how a calibration target
+is assembled and how repriced residuals are reported:
+
+- ``Price``
+- ``ImpliedVol(Black)``
+- ``ImpliedVol(Normal)``
+- ``ParRate``
+- ``Spread``
+- ``Hazard``
+
+Each quote map is two-sided where applicable:
+
+- quote-to-price for objective-target assembly
+- price-to-quote for residual reporting back in market quote units
+
+Transform failures are explicit and become calibration provenance instead of
+route-local exceptions. That matters especially for implied-vol inversion and
+for rates workflows where the quote contract must preserve explicit
+discount-curve and forecast-curve roles under multi-curve pricing.
 
 ### Output binding as MarketState capabilities
 

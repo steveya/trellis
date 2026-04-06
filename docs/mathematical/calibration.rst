@@ -20,6 +20,36 @@ now explicit and serializable before backend dispatch. That means calibration
 results can record the solve request itself in provenance instead of forcing
 replay tools to infer solver inputs from ad hoc backend calls.
 
+Quote Maps And Target Transforms
+--------------------------------
+
+Calibration workflows now use an explicit bounded quote-map surface in
+``trellis.models.calibration.quote_maps`` to separate quote conventions from
+the stochastic/pricing kernels.
+
+The shipped quote-map vocabulary is intentionally bounded:
+
+- ``Price``
+- ``ImpliedVol(Black)``
+- ``ImpliedVol(Normal)``
+- ``ParRate``
+- ``Spread``
+- ``Hazard``
+
+Each quote map carries two directional transforms where applicable:
+
+- quote-to-price (for objective-target assembly)
+- price-to-quote (for residual reporting in market quote units)
+
+Transform outputs are explicit about failure and warnings, so inverse-transform
+issues are surfaced in calibration provenance rather than being hidden inside
+route-local helper logic.
+
+Rates calibration workflows now record multi-curve role assumptions directly in
+quote-map provenance (discount curve, forecast curve, and rate-index binding),
+which keeps quote semantics aligned with OIS discounting and forward-curve
+selection used by the pricing kernels.
+
 Backend Registry And Capability Policy
 --------------------------------------
 
@@ -289,10 +319,25 @@ reported residual as the primary success criteria. Small PV drift at the level
 of the root-finding tolerance is expected, so route-appropriate tolerances are
 preferred over machine-epsilon equality on the repriced present value.
 
-The swaption payoff route and the swaption calibration helper share the same
-term builder for expiry, annuity, forward swap rate, and payment count. That
-shared algebra keeps route pricing and calibration aligned while still letting
-the calibration result report a small numerical residual.
+The rates Black-vol helpers now use explicit shared term builders for both
+supported routes:
+
+- cap/floor calibration resolves one period-term strip
+  (:math:`\tau`, fixing time, payment time, discount factor, forward) and
+  reuses it for both repricing and result summaries
+- swaption calibration resolves the shared expiry/annuity/forward/payment-count
+  tuple through the same term-builder used by the analytical swaption route
+
+This keeps route pricing and calibration aligned while still letting the
+calibration result report a small numerical residual.
+
+Both helpers also expose the same residual policy fields in
+``RatesCalibrationResult.summary``:
+
+- ``residual_tolerance_abs`` gives the route-appropriate absolute PV tolerance
+  derived from the solve tolerance and quote scale
+- ``residual_within_tolerance`` reports whether the repricing residual is
+  within that shared bound
 
 Both the rates helpers and the SABR least-squares helper now record their typed
 solve-request payloads in provenance. The cap/floor and swaption workflows use

@@ -6,6 +6,13 @@ from dataclasses import dataclass, field, replace
 
 import numpy as raw_np
 
+from trellis.models.calibration.quote_maps import QuoteMapSpec
+
+
+def _default_implied_vol_quote_map_spec() -> QuoteMapSpec:
+    """Return the shared implied-vol quote-map spec used by vol workflows."""
+    return QuoteMapSpec(quote_family="implied_vol", convention="black")
+
 
 @dataclass(frozen=True)
 class LocalVolSurfaceDiagnostics:
@@ -106,10 +113,12 @@ def _local_vol_calibration_target(
     r: float,
 ) -> dict[str, object]:
     """Return a compact description of the Dupire calibration target."""
+    quote_map = _default_implied_vol_quote_map_spec()
     return {
         "source_kind": "option_surface",
         "spot": float(S0),
         "rate": float(r),
+        "quote_map": quote_map.to_payload(),
         "strike_count": int(strikes.size),
         "expiry_count": int(expiries.size),
         "surface_shape": (int(expiries.size), int(strikes.size)),

@@ -100,6 +100,12 @@ the typed ``SolveRequest`` payload and solved result metadata used for the
 scalar root solve, so the calibration run is replayable without re-resolving
 market data or reverse-engineering solver inputs from backend-specific calls.
 
+Calibration workflows now also expose an explicit quote-map contract. Supported
+quote families are ``Price``, ``ImpliedVol(Black)``, ``ImpliedVol(Normal)``,
+``ParRate``, ``Spread``, and ``Hazard``. When a workflow needs an inverse
+transform, failures are reported in calibration provenance instead of being
+hidden inside helper logic.
+
 Under the hood, those solve requests now dispatch through a backend registry.
 The default backend is still SciPy, but backend capability checks now block
 unsupported constraints, derivative hooks, or other solve features unless the

@@ -21,7 +21,7 @@ from trellis.models.bermudan_swaption_tree import BermudanSwaptionTreeSpec, pric
 from trellis.core.date_utils import build_payment_timeline, year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.instruments.cap import CapFloorSpec, CapPayoff, FloorPayoff
+from trellis.instruments.cap import CapFloorSpec
 from trellis.models.black import black76_call, black76_put
 from trellis.models.calibration.solve_request import (
     ObjectiveBundle,
@@ -35,8 +35,13 @@ from trellis.models.calibration.solve_request import (
     build_solve_replay_artifact,
     execute_solve_request,
 )
+from trellis.models.calibration.quote_maps import (
+    CalibrationQuoteMap,
+    QuoteMapSpec,
+    build_identity_quote_map,
+    build_implied_vol_quote_map,
+)
 from trellis.models.hull_white_parameters import build_hull_white_parameter_payload
-from trellis.models.vol_surface import FlatVol
 
 
 class SwaptionLike(Protocol):
@@ -51,6 +56,17 @@ class SwaptionLike(Protocol):
     day_count: DayCountConvention
     rate_index: str | None
     is_payer: bool
+
+
+@dataclass(frozen=True)
+class _CapFloorTerm:
+    """One surviving cap/floor period resolved onto pricing terms."""
+
+    accrual_fraction: float
+    fixing_years: float
+    payment_years: float
+    discount_factor: float
+    forward_rate: float
 
 
 @dataclass(frozen=True)
@@ -349,6 +365,49 @@ def _solver_artifacts(
     )
 
 
+def _rates_residual_tolerance_abs(
+    target_price: float,
+    *,
+    solve_tol: float,
+) -> float:
+    """Return the shared absolute residual tolerance for rates-vol calibration checks."""
+    target_scale = max(abs(float(target_price)), 1.0)
+    return max(1e-5, target_scale * max(float(solve_tol), 0.0))
+
+
+def _attach_residual_tolerance_policy(
+    summary: dict[str, object],
+    *,
+    target_price: float,
+    residual: float,
+    solve_tol: float,
+) -> dict[str, object]:
+    """Attach residual/tolerance diagnostics using the shared rates policy."""
+    tolerance_abs = _rates_residual_tolerance_abs(target_price, solve_tol=solve_tol)
+    summary["residual_tolerance_abs"] = float(tolerance_abs)
+    summary["residual_within_tolerance"] = abs(float(residual)) <= float(tolerance_abs)
+    return summary
+
+
+def _rates_implied_vol_quote_map(
+    market_state: MarketState,
+    *,
+    rate_index: str | None,
+    quote_to_price_fn: Callable[[float], float],
+    price_to_quote_fn: Callable[[float], float] | None,
+    source_ref: str,
+) -> CalibrationQuoteMap:
+    """Return the shared implied-vol quote map for rates workflows."""
+    return build_implied_vol_quote_map(
+        convention="black",
+        quote_to_price_fn=quote_to_price_fn,
+        price_to_quote_fn=price_to_quote_fn,
+        source_ref=source_ref,
+        assumptions=_rates_quote_assumptions(market_state, rate_index=rate_index),
+        metadata={"multi_curve_roles": _rates_multi_curve_roles(market_state, rate_index=rate_index)},
+    )
+
+
 def _hull_white_swaption_like(instrument: HullWhiteCalibrationInstrument) -> _HullWhiteSwaptionLike:
     """Return the Black76-style swaption view used for quote normalization."""
     return _HullWhiteSwaptionLike(
@@ -364,36 +423,70 @@ def _hull_white_swaption_like(instrument: HullWhiteCalibrationInstrument) -> _Hu
     )
 
 
-def _hull_white_target_price(
-    instrument: HullWhiteCalibrationInstrument,
+def _rates_multi_curve_roles(
     market_state: MarketState,
-) -> float:
-    """Return the target PV corresponding to one market quote."""
-    if instrument.quote_kind == "price":
-        return float(instrument.quote)
-    target_price, _summary = _swaption_black76_price(
-        _hull_white_swaption_like(instrument),
-        market_state,
-        float(instrument.quote),
-    )
-    return float(target_price)
+    *,
+    rate_index: str | None,
+) -> dict[str, object]:
+    """Return explicit multi-curve role bindings used by rates quote maps."""
+    selected = dict(market_state.selected_curve_names or {})
+    return {
+        "discount_curve": selected.get("discount_curve"),
+        "forecast_curve": selected.get("forecast_curve"),
+        "rate_index": rate_index,
+    }
 
 
-def _hull_white_quote_from_price(
+def _rates_quote_assumptions(
+    market_state: MarketState,
+    *,
+    rate_index: str | None,
+) -> tuple[str, ...]:
+    """Return standardized rates quote-assumption labels."""
+    roles = _rates_multi_curve_roles(market_state, rate_index=rate_index)
+    return (
+        "Rates quote transforms use explicit multi-curve discount/forecast roles.",
+        (
+            "Discount curve role: "
+            f"{roles.get('discount_curve') or '<unbound>'}; "
+            f"forecast curve role: {roles.get('forecast_curve') or '<unbound>'}."
+        ),
+        f"Rate-index binding: {roles.get('rate_index') or '<unbound>'}.",
+    )
+
+
+def _hull_white_quote_map(
     instrument: HullWhiteCalibrationInstrument,
     market_state: MarketState,
-    price: float,
-) -> float:
-    """Return the repriced quote in the same units as the calibration input."""
+) -> CalibrationQuoteMap:
+    """Return the explicit quote map for one Hull-White calibration instrument."""
+    roles = _rates_multi_curve_roles(market_state, rate_index=instrument.rate_index)
+    assumptions = _rates_quote_assumptions(market_state, rate_index=instrument.rate_index)
+    metadata = {
+        "multi_curve_roles": roles,
+        "quote_kind": instrument.quote_kind,
+    }
     if instrument.quote_kind == "price":
-        return float(price)
-    result = calibrate_swaption_black_vol(
-        _hull_white_swaption_like(instrument),
-        market_state,
-        float(price),
-        tol=1e-10,
+        return build_identity_quote_map(
+            QuoteMapSpec(quote_family="price"),
+            source_ref="_hull_white_quote_map",
+            assumptions=assumptions,
+            metadata=metadata,
+        )
+    swaption_like = _hull_white_swaption_like(instrument)
+    return build_implied_vol_quote_map(
+        convention="black",
+        quote_to_price_fn=lambda quote: _swaption_black76_price(swaption_like, market_state, float(quote))[0],
+        price_to_quote_fn=lambda price: calibrate_swaption_black_vol(
+            swaption_like,
+            market_state,
+            float(price),
+            tol=1e-10,
+        ).calibrated_vol,
+        source_ref="_hull_white_quote_map",
+        assumptions=assumptions,
+        metadata=metadata,
     )
-    return float(result.calibrated_vol)
 
 
 def _initial_hull_white_guess(
@@ -443,7 +536,17 @@ def calibrate_hull_white(
         raise ValueError("Hull-White calibration requires at least two instruments")
 
     labels = tuple(instrument.resolved_label(index) for index, instrument in enumerate(resolved_instruments))
-    target_prices = tuple(_hull_white_target_price(instrument, market_state) for instrument in resolved_instruments)
+    quote_maps = tuple(_hull_white_quote_map(instrument, market_state) for instrument in resolved_instruments)
+    target_price_values: list[float] = []
+    quote_transform_warnings: list[str] = []
+    for label, instrument, quote_map in zip(labels, resolved_instruments, quote_maps):
+        target_transform = quote_map.target_price(float(instrument.quote))
+        if target_transform.failure is not None:
+            raise ValueError(f"Hull-White quote_to_price failed for `{label}`: {target_transform.failure}")
+        for warning in target_transform.warnings:
+            quote_transform_warnings.append(f"{label}: {warning}")
+        target_price_values.append(float(target_transform.value))
+    target_prices = tuple(target_price_values)
     weights = tuple(float(instrument.weight) for instrument in resolved_instruments)
     start = _initial_hull_white_guess(
         resolved_instruments,
@@ -512,20 +615,31 @@ def calibrate_hull_white(
         for instrument in resolved_instruments
     )
     target_quotes = tuple(float(instrument.quote) for instrument in resolved_instruments)
-    model_quotes = tuple(
-        _hull_white_quote_from_price(instrument, market_state, price)
-        for instrument, price in zip(resolved_instruments, model_prices)
-    )
+    model_quote_values: list[float] = []
+    quote_inverse_failures: list[str] = []
+    for label, quote_map, model_price in zip(labels, quote_maps, model_prices):
+        model_transform = quote_map.model_quote(float(model_price))
+        if model_transform.failure is not None:
+            quote_inverse_failures.append(f"{label}: {model_transform.failure}")
+            model_quote_values.append(float("nan"))
+            continue
+        for warning in model_transform.warnings:
+            quote_transform_warnings.append(f"{label}: {warning}")
+        model_quote_values.append(float(model_transform.value))
+    model_quotes = tuple(model_quote_values)
     price_residuals = tuple(model_price - target_price for model_price, target_price in zip(model_prices, target_prices))
     quote_residuals = tuple(model_quote - target_quote for model_quote, target_quote in zip(model_quotes, target_quotes))
     max_abs_price_residual = max((abs(value) for value in price_residuals), default=0.0)
-    max_abs_quote_residual = max((abs(value) for value in quote_residuals), default=0.0)
+    finite_quote_residuals = tuple(abs(value) for value in quote_residuals if value == value)
+    max_abs_quote_residual = max(finite_quote_residuals, default=0.0)
 
     solver_provenance, solver_replay_artifact = _solver_artifacts(solve_request, solve_result)
     assumptions = (
         "Supported Hull-White calibration quotes assume the underlying swap starts on the exercise date.",
     )
     warnings: list[str] = []
+    warnings.extend(quote_transform_warnings)
+    warnings.extend(quote_inverse_failures)
     market_provenance = dict(getattr(market_state, "market_provenance", None) or {})
     if "bootstrap_runs" not in market_provenance:
         warnings.append(
@@ -553,6 +667,8 @@ def calibrate_hull_white(
         "target_prices": list(target_prices),
         "target_quotes": list(target_quotes),
         "quote_kinds": [instrument.quote_kind for instrument in resolved_instruments],
+        "quote_maps": [quote_map.to_payload() for quote_map in quote_maps],
+        "quote_inverse_failures": list(quote_inverse_failures),
         "parameter_set_name": parameter_set_name,
         "n_steps": n_steps,
     }
@@ -567,6 +683,8 @@ def calibrate_hull_white(
         "max_abs_price_residual": float(max_abs_price_residual),
         "max_abs_quote_residual": float(max_abs_quote_residual),
         "quote_kinds": [instrument.quote_kind for instrument in resolved_instruments],
+        "quote_families": [quote_map.spec.quote_family for quote_map in quote_maps],
+        "quote_conventions": [quote_map.spec.convention for quote_map in quote_maps],
     }
     return HullWhiteCalibrationResult(
         instruments=resolved_instruments,
@@ -593,8 +711,11 @@ def calibrate_hull_white(
     )
 
 
-def _cap_floor_summary(spec: CapFloorSpec, market_state: MarketState) -> dict[str, object]:
-    """Return a compact summary of the cap/floor calibration inputs."""
+def _cap_floor_terms(
+    spec: CapFloorSpec,
+    market_state: MarketState,
+) -> tuple[_CapFloorTerm, ...]:
+    """Resolve surviving cap/floor periods onto forward/discount pricing terms."""
     timeline = build_payment_timeline(
         spec.start_date,
         spec.end_date,
@@ -603,22 +724,84 @@ def _cap_floor_summary(spec: CapFloorSpec, market_state: MarketState) -> dict[st
         time_origin=market_state.settlement,
         label="cap_floor_calibration_timeline",
     )
-    first_fix = None
-    first_pay = None
-    last_pay = None
-    if timeline:
-        first_fix = timeline[0].t_start
-        first_pay = timeline[0].t_payment
-        last_pay = timeline[-1].t_payment
+    fwd_curve = market_state.forecast_forward_curve(spec.rate_index)
+    terms: list[_CapFloorTerm] = []
+    for period in timeline:
+        if period.payment_date <= market_state.settlement:
+            continue
+        accrual_fraction = float(period.accrual_fraction or 0.0)
+        fixing_years = float(period.t_start or 0.0)
+        payment_years = float(period.t_payment or 0.0)
+        if fixing_years <= 0.0:
+            continue
+        fixing_years = max(fixing_years, 1e-6)
+        payment_years = max(payment_years, fixing_years)
+        discount_factor = float(market_state.discount.discount(payment_years))
+        forward_rate = float(fwd_curve.forward_rate(fixing_years, payment_years))
+        terms.append(
+            _CapFloorTerm(
+                accrual_fraction=accrual_fraction,
+                fixing_years=fixing_years,
+                payment_years=payment_years,
+                discount_factor=discount_factor,
+                forward_rate=forward_rate,
+            )
+        )
+    return tuple(terms)
+
+
+def _cap_floor_summary(
+    spec: CapFloorSpec,
+    market_state: MarketState,
+    terms: Sequence[_CapFloorTerm] | None = None,
+) -> dict[str, object]:
+    """Return a compact summary of cap/floor calibration terms."""
+    resolved_terms = tuple(terms) if terms is not None else _cap_floor_terms(spec, market_state)
+    first_fix = resolved_terms[0].fixing_years if resolved_terms else None
+    first_pay = resolved_terms[0].payment_years if resolved_terms else None
+    last_pay = resolved_terms[-1].payment_years if resolved_terms else None
+    annuity = sum(term.accrual_fraction * term.discount_factor for term in resolved_terms)
+    float_leg_pv = sum(term.forward_rate * term.accrual_fraction * term.discount_factor for term in resolved_terms)
+    forward_rate = float_leg_pv / annuity if annuity > 0.0 else 0.0
     return {
-        "period_count": len(timeline),
+        "period_count": len(resolved_terms),
+        "payment_count": len(resolved_terms),
         "frequency": spec.frequency.name,
         "day_count": getattr(spec.day_count, "name", str(spec.day_count)),
         "rate_index": spec.rate_index,
+        "expiry_years": float(first_fix) if first_fix is not None else None,
+        "annuity": float(annuity),
+        "forward_rate": float(forward_rate),
         "first_fix_years": float(first_fix) if first_fix is not None else None,
         "first_pay_years": float(first_pay) if first_pay is not None else None,
         "last_pay_years": float(last_pay) if last_pay is not None else None,
     }
+
+
+def _cap_floor_black76_price(
+    spec: CapFloorSpec,
+    market_state: MarketState,
+    vol: float,
+    *,
+    kind: Literal["cap", "floor"],
+) -> tuple[float, dict[str, object]]:
+    """Return Black76 cap/floor PV and term summary from shared cap/floor terms."""
+    if kind not in {"cap", "floor"}:
+        raise ValueError(f"kind must be 'cap' or 'floor', got {kind!r}")
+    terms = _cap_floor_terms(spec, market_state)
+    if not terms:
+        summary = _cap_floor_summary(spec, market_state, terms=terms)
+        summary["option_type"] = kind
+        return 0.0, summary
+
+    option_kernel = black76_call if kind == "cap" else black76_put
+    pv = 0.0
+    for term in terms:
+        option_value = float(option_kernel(term.forward_rate, spec.strike, vol, term.fixing_years))
+        pv += spec.notional * term.accrual_fraction * term.discount_factor * option_value
+    summary = _cap_floor_summary(spec, market_state, terms=terms)
+    summary["option_type"] = kind
+    return float(pv), summary
 
 
 def swaption_terms(
@@ -711,12 +894,23 @@ def calibrate_cap_floor_black_vol(
     if kind not in {"cap", "floor"}:
         raise ValueError(f"kind must be 'cap' or 'floor', got {kind!r}")
 
-    payoff = CapPayoff(spec) if kind == "cap" else FloorPayoff(spec)
-
     def price_at(vol: float) -> float:
-        scenario = replace(market_state, vol_surface=FlatVol(float(vol)))
-        return float(payoff.evaluate(scenario))
+        pv, _summary = _cap_floor_black76_price(spec, market_state, float(vol), kind=kind)
+        return float(pv)
 
+    quote_map = _rates_implied_vol_quote_map(
+        market_state,
+        rate_index=spec.rate_index,
+        quote_to_price_fn=price_at,
+        price_to_quote_fn=lambda price: _implied_flat_vol(
+            price_at,
+            float(price),
+            lower=vol_lower,
+            upper=vol_upper,
+            tol=tol,
+        )[0],
+        source_ref="calibrate_cap_floor_black_vol",
+    )
     calibrated_vol, solve_request, solve_result = _implied_flat_vol(
         price_at,
         target_price,
@@ -724,7 +918,17 @@ def calibrate_cap_floor_black_vol(
         upper=vol_upper,
         tol=tol,
     )
-    repriced_price = price_at(calibrated_vol)
+    repriced_price, summary = _cap_floor_black76_price(spec, market_state, calibrated_vol, kind=kind)
+    residual = float(repriced_price - target_price)
+    summary["rate_index"] = spec.rate_index
+    summary["strike"] = float(spec.strike)
+    summary["notional"] = float(spec.notional)
+    summary = _attach_residual_tolerance_policy(
+        summary,
+        target_price=target_price,
+        residual=residual,
+        solve_tol=tol,
+    )
     provenance = _build_provenance(
         market_state,
         rate_index=spec.rate_index,
@@ -736,15 +940,18 @@ def calibrate_cap_floor_black_vol(
     provenance["solve_result"] = solve_result.to_payload()
     provenance["solver_provenance"] = solver_provenance.to_payload()
     provenance["solver_replay_artifact"] = solver_replay_artifact.to_payload()
+    provenance["quote_map"] = quote_map.to_payload()
+    summary["quote_family"] = quote_map.spec.quote_family
+    summary["quote_convention"] = quote_map.spec.convention
     return RatesCalibrationResult(
         instrument_family="cap_floor",
         instrument_kind=kind,
         target_price=float(target_price),
         calibrated_vol=float(calibrated_vol),
         repriced_price=float(repriced_price),
-        residual=float(repriced_price - target_price),
+        residual=float(residual),
         provenance=provenance,
-        summary=_cap_floor_summary(spec, market_state),
+        summary=summary,
     )
 
 
@@ -765,6 +972,19 @@ def calibrate_swaption_black_vol(
         pv, _summary = _swaption_black76_price(spec, market_state, float(vol))
         return pv
 
+    quote_map = _rates_implied_vol_quote_map(
+        market_state,
+        rate_index=spec.rate_index,
+        quote_to_price_fn=price_at,
+        price_to_quote_fn=lambda price: _implied_flat_vol(
+            price_at,
+            float(price),
+            lower=vol_lower,
+            upper=vol_upper,
+            tol=tol,
+        )[0],
+        source_ref="calibrate_swaption_black_vol",
+    )
     calibrated_vol, solve_request, solve_result = _implied_flat_vol(
         price_at,
         target_price,
@@ -773,6 +993,7 @@ def calibrate_swaption_black_vol(
         tol=tol,
     )
     repriced_price, summary = _swaption_black76_price(spec, market_state, calibrated_vol)
+    residual = float(repriced_price - target_price)
     provenance = _build_provenance(
         market_state,
         rate_index=spec.rate_index,
@@ -784,16 +1005,25 @@ def calibrate_swaption_black_vol(
     provenance["solve_result"] = solve_result.to_payload()
     provenance["solver_provenance"] = solver_provenance.to_payload()
     provenance["solver_replay_artifact"] = solver_replay_artifact.to_payload()
+    provenance["quote_map"] = quote_map.to_payload()
     summary["rate_index"] = spec.rate_index
     summary["strike"] = float(spec.strike)
     summary["notional"] = float(spec.notional)
+    summary["quote_family"] = quote_map.spec.quote_family
+    summary["quote_convention"] = quote_map.spec.convention
+    summary = _attach_residual_tolerance_policy(
+        summary,
+        target_price=target_price,
+        residual=residual,
+        solve_tol=tol,
+    )
     return RatesCalibrationResult(
         instrument_family="swaption",
         instrument_kind="payer" if spec.is_payer else "receiver",
         target_price=float(target_price),
         calibrated_vol=float(calibrated_vol),
         repriced_price=float(repriced_price),
-        residual=float(repriced_price - target_price),
+        residual=float(residual),
         provenance=provenance,
         summary=summary,
     )
