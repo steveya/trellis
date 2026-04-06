@@ -59,6 +59,11 @@ This contract is descriptive synthetic metadata only. It exists so proving and
 demo runs can explain which bounded model assumptions were used, and it should
 not be treated as production market data.
 
+`QUA-692` wires that same contract into calibration hardening as well: the
+supported single-name credit benchmark fixture now reads spread/recovery inputs
+from ``prior_parameters.model_consistency_contract`` and replays calibration on
+the same bounded synthetic assumptions used by mock/proving runs.
+
 Basket and quanto correlation now follow the same provenance discipline:
 
 - explicit correlation matrices and scalar correlation inputs are traced as

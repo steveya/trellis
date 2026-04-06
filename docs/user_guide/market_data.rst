@@ -313,6 +313,11 @@ This is synthetic provenance for proving, demos, and regression fixtures. It
 is intentionally explicit so downstream tooling can show which bounded model
 assumptions were used, and it should not be treated as live market data.
 
+The calibration benchmark/replay pack now consumes the same contract for the
+single-name credit fixture, so synthetic spread/recovery assumptions used by
+mock snapshots line up with the checked calibration boundary in
+``docs/benchmarks/calibration_workflows.{json,md}``.
+
 For schedule-bound rates workflows, the mock provider also ships deterministic
 recent fixing histories for the named rate indices in the snapshot. Those
 histories are first-class snapshot components, not opaque metadata blobs:

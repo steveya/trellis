@@ -1,10 +1,10 @@
 # Calibration Benchmark: `supported_calibration_workflows`
-- Created at: `2026-04-05T00:19:22Z`
-- Workflows: `4`
+- Created at: `2026-04-06T14:56:54Z`
+- Workflows: `5`
 - Warm-start workflows: `3`
-- Avg cold mean seconds: `0.759798`
-- Avg warm mean seconds: `0.110528`
-- Avg warm speedup: `9.067`x
+- Avg cold mean seconds: `0.615926`
+- Avg warm mean seconds: `0.112254`
+- Avg warm speedup: `10.006`x
 
 ## Environment
 - Python: `3.10.6`
@@ -17,39 +17,47 @@
 ## Workflow Results
 
 ### `hull_white` swaption_strip
-- Cold mean: `2.770749` s
-- Cold throughput: `0.361` runs/s
-- Warm mean: `0.300092` s
-- Warm throughput: `3.332` runs/s
-- Warm speedup: `9.233`x
-- Metadata: `instrument_count`=2, `warm_start`=True
+- Cold mean: `2.795049` s
+- Cold throughput: `0.358` runs/s
+- Warm mean: `0.304904` s
+- Warm throughput: `3.28` runs/s
+- Warm speedup: `9.167`x
+- Metadata: `instrument_count`=2, `multi_curve_roles`={'discount_curve': 'usd_ois', 'forecast_curve': 'USD-SOFR-3M', 'rate_index': 'USD-SOFR-3M'}, `warm_start`=True
 - Note: least_squares
 - Note: tree_pricing
 
 ### `sabr` single_smile
-- Cold mean: `0.029773` s
-- Cold throughput: `33.587` runs/s
-- Warm mean: `0.003046` s
-- Warm throughput: `328.261` runs/s
-- Warm speedup: `9.773`x
+- Cold mean: `0.041607` s
+- Cold throughput: `24.034` runs/s
+- Warm mean: `0.003315` s
+- Warm throughput: `301.641` runs/s
+- Warm speedup: `12.55`x
 - Metadata: `point_count`=7, `warm_start`=True
 - Note: least_squares
 - Note: implied_vol_fit
 
 ### `heston` single_smile
-- Cold mean: `0.233085` s
-- Cold throughput: `4.29` runs/s
-- Warm mean: `0.028447` s
-- Warm throughput: `35.153` runs/s
-- Warm speedup: `8.194`x
+- Cold mean: `0.23695` s
+- Cold throughput: `4.22` runs/s
+- Warm mean: `0.028544` s
+- Warm throughput: `35.034` runs/s
+- Warm speedup: `8.301`x
 - Metadata: `point_count`=5, `warm_start`=True
 - Note: least_squares
 - Note: fft_pricing
 
 ### `local_vol` dupire_surface
-- Cold mean: `0.005586` s
-- Cold throughput: `179.031` runs/s
+- Cold mean: `0.005727` s
+- Cold throughput: `174.611` runs/s
 - Warm start: `n/a`
 - Metadata: `grid_shape`=[15, 30], `warm_start`=False
 - Note: dupire
 - Note: workflow_surface
+
+### `credit` single_name_curve
+- Cold mean: `0.000297` s
+- Cold throughput: `3364.485` runs/s
+- Warm start: `n/a`
+- Metadata: `curve_name`='usd_ig', `model_consistency_contract_version`='v1', `point_count`=4, `quote_family`='spread', `warm_start`=False
+- Note: least_squares
+- Note: model_consistency_contract_fixture

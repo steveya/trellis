@@ -347,7 +347,7 @@ Status mirror last synced: `2026-04-06`
 | `QUA-690` | Typed credit calibration and potential-term binding | Done |
 | `QUA-691` | Canonical model-grammar registry and planner lookup | Done |
 | `QUA-693` | Model-consistent synthetic mock snapshots for rates, credit, and vol | Done |
-| `QUA-692` | Replay, benchmark, canary, and docs hardening | Backlog |
+| `QUA-692` | Replay, benchmark, canary, and docs hardening | Done |
 
 ## Validation Posture
 

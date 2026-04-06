@@ -157,10 +157,19 @@ calibration remain out of scope.
 Those supported calibration paths now also have a checked replay/tolerance
 pack. In practice that means the workflow-level solver provenance, replay
 artifacts, fit-quality tolerances, and cold-versus-warm benchmark baselines are
-locked down for the supported Hull-White, SABR, Heston, and local-vol fixtures.
+locked down for the supported Hull-White, SABR, Heston, local-vol, and
+single-name credit fixtures. Warm-start baselines remain explicit for the
+three workflows that expose warm-seed hooks (Hull-White, SABR, Heston).
 If you change solver wiring or runtime consumers, review the calibration
 benchmark artifact in ``docs/benchmarks/calibration_workflows.md`` alongside the
 workflow tests before treating the change as desk-safe.
+
+Boundary hardening now also includes targeted negative canaries for:
+
+- missing calibration binding (for example no discount curve for credit fit)
+- unsupported quote-map families
+- invalid calibrated-object materialization kinds
+- rates multi-curve binding drift
 
 Unified Lattice Pricing
 -----------------------

@@ -117,3 +117,17 @@ def test_materialization_record_rejects_empty_object_name():
         assert "object_name" in str(exc)
     else:
         raise AssertionError("Expected ValueError for empty object_name")
+
+
+def test_materialization_record_rejects_unsupported_object_kind():
+    try:
+        CalibratedObjectMaterialization(
+            object_kind="invalid_kind",  # type: ignore[arg-type]
+            object_name="foo",
+            target_fields=("model_parameters",),
+            source_kind="calibrated",
+        )
+    except ValueError as exc:
+        assert "Unsupported calibrated object kind" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for unsupported object kind")

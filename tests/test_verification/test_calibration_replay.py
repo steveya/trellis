@@ -41,6 +41,17 @@ def test_supported_calibration_workflows_preserve_replay_contracts_and_fit_toler
     assert local_vol.diagnostics.unstable_point_count == 0
     assert local_vol.local_vol_surface(100.0, 1.0) == pytest.approx(0.20736772904577236, abs=1e-10)
 
+    credit = scenarios["credit"].cold_runner()
+    assert credit.solver_provenance.backend["backend_id"] == "scipy"
+    assert credit.solver_replay_artifact.request["request_id"] == "single_name_credit_hazard_least_squares"
+    assert credit.max_abs_hazard_residual < 1e-12
+    assert credit.max_abs_quote_residual < 1e-12
+    assert credit.provenance["potential_binding"]["discount_curve_name"] == "usd_ois"
+    assert credit.provenance["calibration_target"]["quote_maps"][0]["quote_family"] == "spread"
+    assert credit.provenance["calibration_target"]["quote_maps"][1]["quote_family"] == "spread"
+    assert credit.provenance["calibration_target"]["quote_maps"][2]["quote_family"] == "spread"
+    assert credit.provenance["calibration_target"]["quote_maps"][3]["quote_family"] == "spread"
+
 
 def test_supported_calibration_workflows_are_replay_stable_within_tolerance():
     scenarios = _scenario_map()
@@ -69,6 +80,13 @@ def test_supported_calibration_workflows_are_replay_stable_within_tolerance():
     assert second_local_vol.provenance["calibration_target"] == first_local_vol.provenance["calibration_target"]
     assert second_local_vol.diagnostics.to_payload() == first_local_vol.diagnostics.to_payload()
 
+    first_credit = scenarios["credit"].cold_runner()
+    second_credit = scenarios["credit"].cold_runner()
+    assert second_credit.solver_replay_artifact.request == first_credit.solver_replay_artifact.request
+    assert second_credit.target_hazards == pytest.approx(first_credit.target_hazards, abs=1e-12)
+    assert second_credit.model_hazards == pytest.approx(first_credit.model_hazards, abs=1e-12)
+    assert second_credit.provenance["potential_binding"] == first_credit.provenance["potential_binding"]
+
 
 def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
     from trellis.models.calibration.benchmarking import build_supported_calibration_benchmark_report
@@ -76,13 +94,18 @@ def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
     report = build_supported_calibration_benchmark_report(repeats=1, warmups=0)
     cases = {case["workflow"]: case for case in report["cases"]}
 
-    assert report["summary"]["workflow_count"] == 4
+    assert report["summary"]["workflow_count"] == 5
     assert report["summary"]["warm_start_workflow_count"] == 3
-    assert set(cases) == {"hull_white", "sabr", "heston", "local_vol"}
+    assert set(cases) == {"hull_white", "sabr", "heston", "local_vol", "credit"}
     assert cases["local_vol"]["warm"] is None
+    assert cases["credit"]["warm"] is None
     assert cases["hull_white"]["warm"] is not None
     assert cases["sabr"]["warm"] is not None
     assert cases["heston"]["warm"] is not None
+    roles = cases["hull_white"]["metadata"]["multi_curve_roles"]
+    assert roles["discount_curve"] == "usd_ois"
+    assert roles["forecast_curve"] == "USD-SOFR-3M"
+    assert roles["rate_index"] == "USD-SOFR-3M"
 
 
 def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
@@ -90,10 +113,15 @@ def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
     cases = {case["workflow"]: case for case in payload["cases"]}
 
     assert payload["benchmark_name"] == "supported_calibration_workflows"
-    assert payload["summary"]["workflow_count"] == 4
+    assert payload["summary"]["workflow_count"] == 5
     assert payload["summary"]["warm_start_workflow_count"] == 3
-    assert set(cases) == {"hull_white", "sabr", "heston", "local_vol"}
+    assert set(cases) == {"hull_white", "sabr", "heston", "local_vol", "credit"}
     assert cases["local_vol"]["warm"] is None
+    assert cases["credit"]["warm"] is None
     for workflow in ("hull_white", "sabr", "heston"):
         assert cases[workflow]["warm"] is not None
         assert cases[workflow]["warm_speedup"] > 1.0
+    roles = cases["hull_white"]["metadata"]["multi_curve_roles"]
+    assert roles["discount_curve"] == "usd_ois"
+    assert roles["forecast_curve"] == "USD-SOFR-3M"
+    assert roles["rate_index"] == "USD-SOFR-3M"

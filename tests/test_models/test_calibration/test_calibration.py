@@ -149,6 +149,10 @@ class TestQuoteMaps:
         assert model.failure is not None
         assert "solver failed" in model.failure
 
+    def test_quote_map_spec_rejects_unsupported_quote_family(self):
+        with pytest.raises(ValueError, match="unsupported quote_family"):
+            QuoteMapSpec(quote_family="variance_swap")
+
 
 # ---------------------------------------------------------------------------
 # SABR calibration

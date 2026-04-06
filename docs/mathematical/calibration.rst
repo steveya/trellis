@@ -268,10 +268,16 @@ benchmark fixtures used for workflow validation:
   checked single-smile fixture
 - Local-vol replay keeps the workflow provenance contract stable and requires
   zero unstable calibration-grid points on the checked stable surface fixture
+- Single-name credit replay keeps the same typed hazard solve-request contract
+  and requires near-zero hazard/quote residuals on the checked spread-grid
+  fixture
 
 The benchmark baseline in ``docs/benchmarks/calibration_workflows.{json,md}``
 complements those fit-quality gates with cold-start versus warm-start timing
-expectations for the supported workflows.
+expectations for the supported workflows. The benchmark pack now covers five
+workflows (Hull-White, SABR, Heston, local vol, and single-name credit), with
+warm-start timing tracked on the three workflows that expose explicit warm
+seeds (Hull-White, SABR, Heston).
 
 Curve Bootstrapping
 -------------------

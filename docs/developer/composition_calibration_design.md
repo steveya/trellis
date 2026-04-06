@@ -386,6 +386,21 @@ materialization helpers remain authoritative. The canonical registry mirrors
 that shipped boundary so the planner can look it up instead of reconstructing
 it from scratch.
 
+### Validation hardening at the model-grammar boundary
+
+The migrated calibration boundary is now defended by a fixed replay/benchmark
+pack plus targeted negative canaries:
+
+- replay and benchmark coverage includes Hull-White, SABR, Heston, local vol,
+  and single-name credit
+- rates replay and benchmark artifacts now carry explicit multi-curve
+  discount/forecast role metadata so contract drift is detectable
+- the single-name credit benchmark fixture is built from the mock
+  ``model_consistency_contract`` payload so synthetic fixture assumptions stay
+  aligned with the same bounded rates/credit/vol contract used by proving runs
+- negative tests explicitly defend missing calibration binding, unsupported
+  quote-map families, and invalid calibrated-object materialization kinds
+
 ### Integration with GenerationPlan
 
 ```python

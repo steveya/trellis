@@ -85,5 +85,10 @@ def test_supported_calibration_benchmark_scenarios_cover_workflows():
     scenarios = supported_calibration_benchmark_scenarios()
     workflows = {scenario.workflow for scenario in scenarios}
 
-    assert workflows == {"hull_white", "sabr", "heston", "local_vol"}
+    assert workflows == {"hull_white", "sabr", "heston", "local_vol", "credit"}
+    hull_white = next(s for s in scenarios if s.workflow == "hull_white")
+    assert hull_white.metadata["multi_curve_roles"]["discount_curve"] == "usd_ois"
+    assert hull_white.metadata["multi_curve_roles"]["forecast_curve"] == "USD-SOFR-3M"
+    assert hull_white.metadata["multi_curve_roles"]["rate_index"] == "USD-SOFR-3M"
     assert next(s for s in scenarios if s.workflow == "local_vol").warm_runner is None
+    assert next(s for s in scenarios if s.workflow == "credit").warm_runner is None

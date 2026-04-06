@@ -332,9 +332,14 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
     from trellis.core.market_state import MarketState
     from trellis.core.types import DayCountConvention, Frequency
     from trellis.curves.yield_curve import YieldCurve
+    from trellis.data.mock import MockDataProvider
     from trellis.data.schema import MarketSnapshot
     from trellis.instruments._agent.swaption import SwaptionSpec
     from trellis.models.bermudan_swaption_tree import BermudanSwaptionTreeSpec, price_bermudan_swaption_tree
+    from trellis.models.calibration.credit import (
+        CreditHazardCalibrationQuote,
+        calibrate_single_name_credit_curve_workflow,
+    )
     from trellis.models.calibration.heston_fit import calibrate_heston_smile_workflow
     from trellis.models.calibration.local_vol import calibrate_local_vol_surface_workflow
     from trellis.models.calibration.rates import HullWhiteCalibrationInstrument, calibrate_hull_white
@@ -360,6 +365,11 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
         )
 
     hw_state = market_state()
+    hw_roles = {
+        "discount_curve": dict(hw_state.selected_curve_names or {}).get("discount_curve"),
+        "forecast_curve": dict(hw_state.selected_curve_names or {}).get("forecast_curve"),
+        "rate_index": "USD-SOFR-3M",
+    }
     hw_mean_reversion = 0.08
     hw_sigma = 0.006
     hw_specs = (
@@ -454,6 +464,42 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
         local_vol_surface.ravel(),
     ).reshape(len(local_vol_expiries), len(local_vol_strikes))
 
+    mock_snapshot = MockDataProvider().fetch_market_snapshot(settle)
+    prior_parameters = dict(mock_snapshot.provenance.get("prior_parameters") or {})
+    model_consistency_contract = dict(prior_parameters.get("model_consistency_contract") or {})
+    rates_contract = dict(model_consistency_contract.get("rates") or {})
+    credit_contract = dict(model_consistency_contract.get("credit") or {})
+    curve_roles = dict(rates_contract.get("curve_roles") or {})
+    discount_curve_name = str(curve_roles.get("discount_curve") or mock_snapshot.default_discount_curve or "")
+    forecast_curve_name = str(curve_roles.get("forecast_curve") or mock_snapshot.default_forecast_curve or "")
+    spread_inputs = dict(credit_contract.get("spread_inputs_decimal") or {})
+    credit_curve_name = str(mock_snapshot.default_credit_curve or "")
+    if (not credit_curve_name or credit_curve_name not in spread_inputs) and spread_inputs:
+        credit_curve_name = str(next(iter(spread_inputs)))
+    spread_grid = dict(spread_inputs.get(credit_curve_name) or {})
+    if not spread_grid:
+        spread_grid = {"1.0": 0.012, "3.0": 0.014, "5.0": 0.016}
+    credit_quotes = tuple(
+        CreditHazardCalibrationQuote(
+            maturity_years=float(tenor_text),
+            quote=float(spread_quote),
+            quote_kind="spread",
+            label=f"{credit_curve_name}_{tenor_text}y",
+        )
+        for tenor_text, spread_quote in sorted(
+            spread_grid.items(),
+            key=lambda item: float(item[0]),
+        )
+    )
+    credit_recovery = float(credit_contract.get("recovery", 0.4))
+    credit_curve_name = credit_curve_name or "benchmark_credit_curve"
+    credit_state = mock_snapshot.to_market_state(
+        settlement=settle,
+        discount_curve=discount_curve_name or None,
+        forecast_curve=forecast_curve_name or None,
+        credit_curve=credit_curve_name,
+    )
+
     return (
         CalibrationBenchmarkScenario(
             workflow="hull_white",
@@ -465,7 +511,11 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
                 initial_guess=(hw_mean_reversion, hw_sigma),
             ),
             notes=("least_squares", "tree_pricing"),
-            metadata={"instrument_count": len(hw_instruments), "warm_start": True},
+            metadata={
+                "instrument_count": len(hw_instruments),
+                "warm_start": True,
+                "multi_curve_roles": hw_roles,
+            },
         ),
         CalibrationBenchmarkScenario(
             workflow="sabr",
@@ -530,6 +580,24 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
             metadata={
                 "grid_shape": [len(local_vol_expiries), len(local_vol_strikes)],
                 "warm_start": False,
+            },
+        ),
+        CalibrationBenchmarkScenario(
+            workflow="credit",
+            label="single_name_curve",
+            cold_runner=lambda: calibrate_single_name_credit_curve_workflow(
+                credit_quotes,
+                credit_state,
+                recovery=credit_recovery,
+                curve_name="benchmark_single_name_credit",
+            ),
+            notes=("least_squares", "model_consistency_contract_fixture"),
+            metadata={
+                "point_count": len(credit_quotes),
+                "quote_family": "spread",
+                "warm_start": False,
+                "model_consistency_contract_version": str(model_consistency_contract.get("version", "")),
+                "curve_name": credit_curve_name,
             },
         ),
     )

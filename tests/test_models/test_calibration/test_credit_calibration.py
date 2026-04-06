@@ -121,3 +121,23 @@ def test_credit_calibration_handoff_prices_cds_with_mixed_hazard_and_spread_quot
     assert result.summary["quote_families"] == ["hazard", "spread"]
     assert result.provenance["calibration_target"]["quote_maps"][0]["quote_family"] == "hazard"
     assert result.provenance["calibration_target"]["quote_maps"][1]["quote_family"] == "spread"
+
+
+def test_credit_calibration_rejects_missing_discount_curve_binding():
+    quotes = (
+        CreditHazardCalibrationQuote(1.0, 120.0, "spread", label="spread_1y"),
+        CreditHazardCalibrationQuote(5.0, 180.0, "spread", label="spread_5y"),
+    )
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=None,
+    )
+
+    with pytest.raises(ValueError, match="requires market_state.discount"):
+        calibrate_single_name_credit_curve_workflow(
+            quotes,
+            market_state,
+            recovery=0.4,
+            curve_name="missing_discount_credit",
+        )
