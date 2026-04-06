@@ -132,6 +132,46 @@ class TestMockDataProvider:
         assert contract["volatility"]["workflow"] == "calibration_surface_bundle"
         assert "heston_equity" in contract["volatility"]["model_parameter_sets"]
 
+    def test_fetch_market_snapshot_exposes_synthetic_generation_contract(self):
+        provider = MockDataProvider()
+        snapshot = provider.fetch_market_snapshot(date(2024, 11, 15))
+
+        contract = snapshot.provenance["prior_parameters"]["synthetic_generation_contract"]
+        assert contract["version"] == "v2"
+        assert contract["seed"] == snapshot.provenance["prior_seed"]
+        assert contract["model_packs"]["rates"]["family"] == "shifted_curve_bundle"
+        assert contract["model_packs"]["credit"]["family"] == "reduced_form_spread_grid"
+        assert contract["model_packs"]["volatility"]["family"] == "regime_surface_bundle"
+        assert contract["quote_bundles"]["credit"]["quote_families"] == ["spread", "hazard"]
+        assert "usd_ois" in contract["runtime_targets"]["discount_curves"]
+        assert "USD-SOFR-3M" in contract["runtime_targets"]["forecast_curves"]
+
+    def test_synthetic_generation_contract_is_deterministic_for_same_request(self):
+        provider = MockDataProvider()
+
+        first = provider.fetch_market_snapshot(date(2024, 11, 15))
+        second = provider.fetch_market_snapshot(date(2024, 11, 15))
+
+        assert (
+            first.provenance["prior_parameters"]["synthetic_generation_contract"]
+            == second.provenance["prior_parameters"]["synthetic_generation_contract"]
+        )
+
+    def test_model_consistency_contract_is_derived_from_synthetic_generation_contract(self):
+        provider = MockDataProvider()
+        snapshot = provider.fetch_market_snapshot(date(2024, 11, 15))
+
+        consistency = snapshot.provenance["prior_parameters"]["model_consistency_contract"]
+        generation = snapshot.provenance["prior_parameters"]["synthetic_generation_contract"]
+
+        assert consistency["rates"]["forecast_basis_bps"] == generation["quote_bundles"]["rates"]["forecast_basis_bps"]
+        assert consistency["credit"]["spread_inputs_decimal"] == generation["quote_bundles"]["credit"]["spread_inputs_decimal"]
+        assert consistency["volatility"]["rate_vol_surfaces"] == generation["runtime_targets"]["vol_surfaces"]
+        assert consistency["volatility"]["local_vol_surfaces"] == generation["runtime_targets"]["local_vol_surfaces"]
+        assert sorted(consistency["volatility"]["model_parameter_sets"]) == sorted(
+            generation["runtime_targets"]["model_parameter_sets"]
+        )
+
     def test_model_consistency_contract_preserves_multi_curve_basis(self):
         provider = MockDataProvider()
         snapshot = provider.fetch_market_snapshot(date(2024, 11, 15))
@@ -216,6 +256,12 @@ class TestMockDataProvider:
                 discount_curve=snapshot.discount_curve("usd_ois"),
             )
         )
+
+    def test_user_supplied_snapshot_keeps_synthetic_generation_contract_absent(self):
+        provider = MockDataProvider.from_dict({date(2025, 6, 1): {1.0: 0.04, 5.0: 0.042}})
+        snapshot = provider.fetch_market_snapshot(date(2025, 6, 1))
+
+        assert "synthetic_generation_contract" not in snapshot.provenance["prior_parameters"]
 
 
 class TestResolverMockSource:

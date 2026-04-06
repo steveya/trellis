@@ -46,18 +46,31 @@ Those mock snapshots now carry explicit synthetic-prior provenance, including
 the prior family, a stable seed, and the parameterization used to build the
 regime bundle.
 
-`QUA-693` adds one more bounded authority packet to that synthetic path:
-``prior_parameters.model_consistency_contract``. The contract records the
-deterministic rates, credit, and volatility assumptions used to build the mock
-snapshot, including:
+`QUA-693` first added a bounded descriptive packet to that synthetic path:
+``prior_parameters.model_consistency_contract``. That compatibility contract
+records the deterministic rates, credit, and volatility assumptions used to
+build the mock snapshot, including:
 
 - explicit discount/forecast curve roles plus forecast-basis inputs
 - reduced-form credit spread grids, recovery, and the aligned credit workflow
 - volatility/model-parameter families and their runtime materialization targets
 
-This contract is descriptive synthetic metadata only. It exists so proving and
-demo runs can explain which bounded model assumptions were used, and it should
-not be treated as production market data.
+`QUA-695` adds the new seeded authority surface underneath that compatibility
+layer: ``prior_parameters.synthetic_generation_contract``. This contract is the
+mock-path generator boundary and explicitly separates:
+
+- seeded model packs
+- synthetic quote bundles
+- runtime target names
+
+The older ``model_consistency_contract`` is now derived from the seeded
+generation contract so existing replay, benchmark, and proving consumers
+continue to work while the follow-on family-specific generators migrate onto
+the new authority surface.
+
+Both contracts are synthetic metadata only. They exist so proving and demo runs
+can explain which bounded model assumptions were used, and they should not be
+treated as production market data.
 
 `QUA-692` wires that same contract into calibration hardening as well: the
 supported single-name credit benchmark fixture now reads spread/recovery inputs

@@ -299,11 +299,23 @@ Mock snapshots also expose the synthetic-prior family, seed, and parameter set
 used to build the embedded regime bundle, so proving and replay runs can show
 exactly which prior was sampled.
 
-For the migrated calibration workflows, mock snapshots now also include a
-bounded ``model_consistency_contract`` under
-``snapshot.provenance["prior_parameters"]``. That contract records the
-deterministic rates, credit, and volatility assumptions used to build the
-synthetic snapshot:
+Mock snapshots now expose a seeded
+``synthetic_generation_contract`` under
+``snapshot.provenance["prior_parameters"]``. This is the generator-side
+authority contract for the bounded synthetic path, and it separates:
+
+- seeded model packs
+- synthetic quote bundles
+- runtime target names
+
+The older compatibility
+``model_consistency_contract`` is now derived from that seeded contract so the
+existing replay and benchmark fixtures keep working while the family-specific
+synthetic generators migrate.
+
+For the migrated calibration workflows, the derived
+``model_consistency_contract`` still records the bounded deterministic rates,
+credit, and volatility assumptions used to build the synthetic snapshot:
 
 - rates curve roles and forecast-basis inputs
 - reduced-form credit spread grids and recovery
