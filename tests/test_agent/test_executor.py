@@ -196,6 +196,8 @@ def test_record_lesson_maps_fields_into_canonical_payload(monkeypatch):
 def test_record_resolved_failures_fails_hard_on_missing_lesson_fields(monkeypatch):
     from trellis.agent.executor import _record_resolved_failures
 
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr("trellis.agent.config.get_provider", lambda: "openai")
     monkeypatch.setattr(
         "trellis.agent.config.llm_generate_json",
         lambda prompt, model=None: {
