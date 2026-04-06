@@ -19,6 +19,7 @@ setuptools.setup(
     install_requires=[
         "numpy>=1.24",
         "autograd>=1.7",
+        "PyYAML>=6.0",
         "scipy>=1.10",
     ],
     extras_require={
