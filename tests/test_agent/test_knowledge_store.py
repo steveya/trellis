@@ -1642,9 +1642,9 @@ class TestReflect:
 
     def test_attribute_success_boosts_confidence(self):
         from trellis.agent.knowledge.reflect import _attribute_success
+        import trellis.agent.knowledge.promotion as promotion_module
         from trellis.agent.knowledge.promotion import capture_lesson, boost_confidence
         import yaml
-        from pathlib import Path
 
         # Create a test lesson
         lid = capture_lesson(
@@ -1655,7 +1655,7 @@ class TestReflect:
         assert lid is not None
 
         # Read initial confidence
-        path = Path(f"/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/lessons/entries/{lid}.yaml")
+        path = promotion_module._LESSONS_DIR / "entries" / f"{lid}.yaml"
         data = yaml.safe_load(path.read_text())
         initial = data["confidence"]
 
@@ -1674,9 +1674,9 @@ class TestReflect:
 
     def test_auto_validate_and_promote(self):
         from trellis.agent.knowledge.reflect import _auto_validate_and_promote
+        import trellis.agent.knowledge.promotion as promotion_module
         from trellis.agent.knowledge.promotion import capture_lesson
         import yaml
-        from pathlib import Path
 
         lid = capture_lesson(
             category="vol_surface", title="_test_auto_promote",
@@ -1687,7 +1687,7 @@ class TestReflect:
 
         _auto_validate_and_promote(lid)
 
-        path = Path(f"/Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/lessons/entries/{lid}.yaml")
+        path = promotion_module._LESSONS_DIR / "entries" / f"{lid}.yaml"
         data = yaml.safe_load(path.read_text())
         assert data["status"] == "promoted"
 
