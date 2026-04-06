@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date
 
 from trellis.curves.bootstrap import (
@@ -11,6 +12,11 @@ from trellis.curves.bootstrap import (
 )
 from trellis.curves.yield_curve import YieldCurve
 from trellis.data.schema import MarketSnapshot
+
+
+def _normalize_token(value: object | None) -> str:
+    """Return a trimmed string token."""
+    return str(value or "").strip()
 
 
 def _normalize_as_of(as_of: date | str | None = None) -> date:
@@ -93,6 +99,234 @@ def _market_provenance(
     }
 
 
+def _required_float(
+    payload: Mapping[str, object],
+    *,
+    field: str,
+    source_name: str,
+    parameter_name: str,
+) -> float:
+    """Return one required float field from a bootstrap model-parameter entry."""
+    raw_value = payload.get(field)
+    if raw_value is None or _normalize_token(raw_value) == "":
+        raise ValueError(
+            f"Bootstrap model-parameter source {source_name!r} entry {parameter_name!r} requires {field!r}."
+        )
+    return float(raw_value)
+
+
+def _curve_family_map(
+    family: str,
+    *,
+    discount_curves: Mapping[str, object],
+    forecast_curves: Mapping[str, object],
+    source_name: str,
+    parameter_name: str,
+) -> Mapping[str, object]:
+    """Return the selected curve family mapping for one bootstrap source entry."""
+    if family == "discount_curves":
+        return discount_curves
+    if family == "forecast_curves":
+        return forecast_curves
+    raise ValueError(
+        f"Unsupported bootstrap curve family {family!r} for model-parameter source {source_name!r} entry {parameter_name!r}."
+    )
+
+
+def _resolve_bootstrap_parameter_entry(
+    entry: Mapping[str, object],
+    *,
+    source_name: str,
+    discount_curves: Mapping[str, object],
+    forecast_curves: Mapping[str, object],
+) -> tuple[str, float, dict[str, object]]:
+    """Resolve one bootstrap model-parameter entry onto a numeric parameter value."""
+    parameter_name = _normalize_token(entry.get("parameter"))
+    if not parameter_name:
+        raise ValueError(
+            f"Bootstrap model-parameter source {source_name!r} has an entry missing 'parameter'."
+        )
+    family = _normalize_token(entry.get("curve_family"))
+    curve_name = _normalize_token(entry.get("curve_name"))
+    measure = _normalize_token(entry.get("measure")).lower()
+    if not family or not curve_name or not measure:
+        raise ValueError(
+            f"Bootstrap model-parameter source {source_name!r} entry {parameter_name!r} requires curve_family, curve_name, and measure."
+        )
+    curve_map = _curve_family_map(
+        family,
+        discount_curves=discount_curves,
+        forecast_curves=forecast_curves,
+        source_name=source_name,
+        parameter_name=parameter_name,
+    )
+    if curve_name not in curve_map:
+        raise ValueError(
+            f"Unknown curve_name {curve_name!r} for model-parameter source {source_name!r} entry {parameter_name!r}."
+        )
+    curve = curve_map[curve_name]
+    if measure == "zero_rate":
+        tenor = _required_float(
+            entry,
+            field="tenor",
+            source_name=source_name,
+            parameter_name=parameter_name,
+        )
+        value = float(curve.zero_rate(tenor))
+        normalized_entry = {
+            "parameter": parameter_name,
+            "curve_family": family,
+            "curve_name": curve_name,
+            "measure": "zero_rate",
+            "tenor": tenor,
+        }
+    elif measure == "discount_factor":
+        tenor = _required_float(
+            entry,
+            field="tenor",
+            source_name=source_name,
+            parameter_name=parameter_name,
+        )
+        value = float(curve.discount(tenor))
+        normalized_entry = {
+            "parameter": parameter_name,
+            "curve_family": family,
+            "curve_name": curve_name,
+            "measure": "discount_factor",
+            "tenor": tenor,
+        }
+    elif measure == "forward_rate":
+        start_tenor = _required_float(
+            entry,
+            field="start_tenor",
+            source_name=source_name,
+            parameter_name=parameter_name,
+        )
+        end_tenor = _required_float(
+            entry,
+            field="end_tenor",
+            source_name=source_name,
+            parameter_name=parameter_name,
+        )
+        if end_tenor <= start_tenor:
+            raise ValueError(
+                f"Bootstrap model-parameter source {source_name!r} entry {parameter_name!r} requires end_tenor > start_tenor."
+            )
+        value = float(curve.forward_rate(start_tenor, end_tenor))
+        normalized_entry = {
+            "parameter": parameter_name,
+            "curve_family": family,
+            "curve_name": curve_name,
+            "measure": "forward_rate",
+            "start_tenor": start_tenor,
+            "end_tenor": end_tenor,
+        }
+    else:
+        raise ValueError(
+            f"Unsupported bootstrap model-parameter measure {measure!r} for source {source_name!r} entry {parameter_name!r}."
+        )
+    return parameter_name, value, normalized_entry
+
+
+def _resolve_model_parameter_source(
+    *,
+    source_name: str,
+    source_spec: Mapping[str, object],
+    discount_curves: Mapping[str, object],
+    forecast_curves: Mapping[str, object],
+) -> tuple[dict[str, object], dict[str, object], dict[str, object] | None]:
+    """Resolve one model-parameter source spec onto runtime parameters and provenance."""
+    source_kind = _normalize_token(source_spec.get("source_kind")).lower()
+    if source_kind not in {"direct_quote", "bootstrap"}:
+        raise ValueError(
+            f"Unsupported model-parameter source kind {source_kind!r} for source {source_name!r}."
+        )
+    source_ref = _normalize_token(source_spec.get("source_ref")) or f"resolver.model_parameter_sources.{source_name}"
+    if source_kind == "direct_quote":
+        if source_spec.get("bootstrap_inputs") is not None:
+            raise ValueError(
+                f"Unsupported source combination for model-parameter source {source_name!r}: direct_quote cannot declare bootstrap_inputs."
+            )
+        direct_parameters = source_spec.get("parameters")
+        if not isinstance(direct_parameters, Mapping):
+            raise ValueError(
+                f"Direct-quote model-parameter source {source_name!r} requires a mapping payload under 'parameters'."
+            )
+        parameters = {
+            _normalize_token(key): value
+            for key, value in dict(direct_parameters).items()
+            if _normalize_token(key)
+        }
+        if not parameters:
+            raise ValueError(
+                f"Direct-quote model-parameter source {source_name!r} must contain at least one parameter."
+            )
+        return (
+            dict(parameters),
+            {
+                "source_kind": "direct_quote",
+                "source_ref": source_ref,
+                "parameters": dict(parameters),
+            },
+            None,
+        )
+
+    if source_spec.get("parameters") is not None:
+        raise ValueError(
+            f"Unsupported source combination for model-parameter source {source_name!r}: bootstrap sources cannot declare direct parameters."
+        )
+    bootstrap_inputs = source_spec.get("bootstrap_inputs")
+    if not isinstance(bootstrap_inputs, Mapping):
+        raise ValueError(
+            f"Bootstrap model-parameter source {source_name!r} requires a mapping payload under 'bootstrap_inputs'."
+        )
+    raw_entries = bootstrap_inputs.get("entries")
+    if raw_entries is None:
+        raise ValueError(
+            f"Bootstrap model-parameter source {source_name!r} requires non-empty bootstrap_inputs.entries."
+        )
+    if isinstance(raw_entries, Mapping):
+        entry_items = (raw_entries,)
+    else:
+        entry_items = tuple(raw_entries)
+    if not entry_items:
+        raise ValueError(
+            f"Bootstrap model-parameter source {source_name!r} requires non-empty bootstrap_inputs.entries."
+        )
+    parameters: dict[str, object] = {}
+    normalized_entries: list[dict[str, object]] = []
+    for raw_entry in entry_items:
+        if not isinstance(raw_entry, Mapping):
+            raise ValueError(
+                f"Bootstrap model-parameter source {source_name!r} entries must be mapping payloads."
+            )
+        parameter_name, value, normalized_entry = _resolve_bootstrap_parameter_entry(
+            raw_entry,
+            source_name=source_name,
+            discount_curves=discount_curves,
+            forecast_curves=forecast_curves,
+        )
+        if parameter_name in parameters:
+            raise ValueError(
+                f"Duplicate bootstrap parameter {parameter_name!r} in model-parameter source {source_name!r}."
+            )
+        parameters[parameter_name] = value
+        normalized_entries.append(normalized_entry)
+    normalized_bootstrap_inputs = {
+        "entries": list(normalized_entries),
+    }
+    return (
+        dict(parameters),
+        {
+            "source_kind": "bootstrap",
+            "source_ref": source_ref,
+            "bootstrap_inputs": dict(normalized_bootstrap_inputs),
+            "parameters": dict(parameters),
+        },
+        normalized_bootstrap_inputs,
+    )
+
+
 def resolve_market_snapshot(
     as_of: date | str | None = None,
     source: str = "treasury_gov",
@@ -121,6 +355,7 @@ def resolve_market_snapshot(
     default_jump_parameters: str | None = None,
     model_parameters: dict | None = None,
     model_parameter_sets: dict | None = None,
+    model_parameter_sources: dict | None = None,
     default_model_parameters: str | None = None,
     metadata: dict | None = None,
 ) -> MarketSnapshot:
@@ -146,6 +381,12 @@ def resolve_market_snapshot(
         raise ValueError("Pass either jump_parameters= or jump_parameter_sets=, not both")
     if model_parameters is not None and model_parameter_sets is not None:
         raise ValueError("Pass either model_parameters= or model_parameter_sets=, not both")
+    if model_parameter_sources is not None and (
+        model_parameters is not None or model_parameter_sets is not None
+    ):
+        raise ValueError(
+            "Pass either model_parameter_sources= or model_parameters=/model_parameter_sets=, not both"
+        )
 
     used_provider_snapshot = False
     try:
@@ -237,6 +478,7 @@ def resolve_market_snapshot(
 
     bootstrap_inputs = dict(resolved_provenance.get("bootstrap_inputs") or {})
     bootstrap_runs = dict(resolved_provenance.get("bootstrap_runs") or {})
+    market_parameter_sources = dict(resolved_provenance.get("market_parameter_sources") or {})
     explicit_inputs_present = any(
         value is not None
         for value in (
@@ -255,6 +497,7 @@ def resolve_market_snapshot(
             jump_parameter_sets,
             model_parameters,
             model_parameter_sets,
+            model_parameter_sources,
         )
     )
 
@@ -384,9 +627,16 @@ def resolve_market_snapshot(
         resolved_jump_parameter_sets[resolved_default_jump_parameters] = dict(jump_parameters)
 
     if model_parameter_sets is not None:
-        resolved_model_parameter_sets.update({
+        legacy_sets = {
             key: dict(value) for key, value in model_parameter_sets.items()
-        })
+        }
+        resolved_model_parameter_sets.update(legacy_sets)
+        for name, params in legacy_sets.items():
+            market_parameter_sources[name] = {
+                "source_kind": "direct_quote",
+                "source_ref": "resolver.model_parameter_sets",
+                "parameters": dict(params),
+            }
         resolved_default_model_parameters = (
             default_model_parameters or resolved_default_model_parameters
         )
@@ -397,11 +647,51 @@ def resolve_market_snapshot(
             default_model_parameters or resolved_default_model_parameters or "default"
         )
         resolved_model_parameter_sets[resolved_default_model_parameters] = dict(model_parameters)
+        market_parameter_sources[resolved_default_model_parameters] = {
+            "source_kind": "direct_quote",
+            "source_ref": "resolver.model_parameters",
+            "parameters": dict(model_parameters),
+        }
+    elif model_parameter_sources is not None:
+        normalized_sources: dict[str, Mapping[str, object]] = {}
+        for raw_name, raw_spec in dict(model_parameter_sources).items():
+            source_name = _normalize_token(raw_name)
+            if not source_name:
+                raise ValueError("Model-parameter source names must be non-empty.")
+            if not isinstance(raw_spec, Mapping):
+                raise ValueError(
+                    f"Model-parameter source {source_name!r} must be a mapping payload."
+                )
+            normalized_sources[source_name] = raw_spec
+        overlap = set(normalized_sources) & set(resolved_model_parameter_sets)
+        if overlap:
+            raise ValueError(
+                f"Duplicate model parameter sources: {sorted(overlap)}"
+            )
+        for source_name, source_spec in normalized_sources.items():
+            parameters, source_provenance, bootstrap_source_inputs = _resolve_model_parameter_source(
+                source_name=source_name,
+                source_spec=source_spec,
+                discount_curves=resolved_discount_curves,
+                forecast_curves=resolved_forecast_curves,
+            )
+            resolved_model_parameter_sets[source_name] = dict(parameters)
+            market_parameter_sources[source_name] = dict(source_provenance)
+            if bootstrap_source_inputs is not None:
+                bootstrap_inputs.setdefault("model_parameters", {})
+                bootstrap_inputs["model_parameters"][source_name] = dict(bootstrap_source_inputs)
+        resolved_default_model_parameters = (
+            default_model_parameters or resolved_default_model_parameters
+        )
+        if resolved_default_model_parameters is None and len(resolved_model_parameter_sets) == 1:
+            resolved_default_model_parameters = next(iter(resolved_model_parameter_sets))
 
     if bootstrap_inputs:
         resolved_provenance["bootstrap_inputs"] = bootstrap_inputs
     if bootstrap_runs:
         resolved_provenance["bootstrap_runs"] = bootstrap_runs
+    if market_parameter_sources:
+        resolved_provenance["market_parameter_sources"] = market_parameter_sources
     if bootstrap_inputs or explicit_inputs_present:
         current_kind = str(resolved_provenance.get("source_kind") or "")
         if current_kind != "mixed":

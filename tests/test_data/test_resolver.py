@@ -303,3 +303,124 @@ class TestResolveMarketSnapshot:
         assert snapshot.local_vol_surface() is not None
         assert "merton_equity" in snapshot.jump_parameter_sets
         assert "heston_equity" in snapshot.model_parameter_sets
+
+    @patch("trellis.data.treasury_gov.TreasuryGovDataProvider")
+    def test_supports_direct_quote_model_parameter_sources(self, MockProvider):
+        mock = MockProvider.return_value
+        mock.fetch_yields.return_value = SAMPLE_YIELDS
+
+        snapshot = resolve_market_snapshot(
+            as_of=date(2024, 11, 15),
+            source="treasury_gov",
+            model_parameter_sources={
+                "quanto_direct": {
+                    "source_kind": "direct_quote",
+                    "source_ref": "unit_test.direct_quote_feed",
+                    "parameters": {
+                        "quanto_correlation": 0.35,
+                        "vol_fx": 0.12,
+                    },
+                }
+            },
+            default_model_parameters="quanto_direct",
+        )
+
+        assert snapshot.model_parameters("quanto_direct")["quanto_correlation"] == pytest.approx(0.35)
+        assert snapshot.default_model_parameters == "quanto_direct"
+        source_spec = snapshot.provenance["market_parameter_sources"]["quanto_direct"]
+        assert source_spec["source_kind"] == "direct_quote"
+        assert source_spec["source_ref"] == "unit_test.direct_quote_feed"
+        assert source_spec["parameters"]["vol_fx"] == pytest.approx(0.12)
+
+    @patch("trellis.data.treasury_gov.TreasuryGovDataProvider")
+    def test_supports_bootstrap_model_parameter_sources(self, MockProvider):
+        mock = MockProvider.return_value
+        mock.fetch_yields.return_value = SAMPLE_YIELDS
+        discount_bundle = BootstrapCurveInputBundle(
+            curve_name="usd_ois_boot",
+            currency="USD",
+            rate_index="USD-SOFR-3M",
+            conventions=BootstrapConventionBundle(
+                deposit_day_count=DayCountConvention.ACT_360,
+                swap_fixed_frequency=Frequency.ANNUAL,
+                swap_fixed_day_count=DayCountConvention.THIRTY_360_US,
+                swap_float_frequency=Frequency.QUARTERLY,
+                swap_float_day_count=DayCountConvention.ACT_360,
+            ),
+            instruments=(
+                BootstrapInstrument(tenor=1.0, quote=0.05, instrument_type="deposit", label="DEP1Y"),
+            ),
+        )
+
+        snapshot = resolve_market_snapshot(
+            as_of=date(2024, 11, 15),
+            source="treasury_gov",
+            discount_curve_bootstraps={"usd_ois_boot": discount_bundle},
+            model_parameter_sources={
+                "curve_bootstrap_pack": {
+                    "source_kind": "bootstrap",
+                    "source_ref": "unit_test.bootstrap_curve_samples",
+                    "bootstrap_inputs": {
+                        "entries": (
+                            {
+                                "parameter": "zero_1y",
+                                "curve_family": "discount_curves",
+                                "curve_name": "usd_ois_boot",
+                                "measure": "zero_rate",
+                                "tenor": 1.0,
+                            },
+                            {
+                                "parameter": "df_1y",
+                                "curve_family": "discount_curves",
+                                "curve_name": "usd_ois_boot",
+                                "measure": "discount_factor",
+                                "tenor": 1.0,
+                            },
+                        )
+                    },
+                }
+            },
+            default_model_parameters="curve_bootstrap_pack",
+        )
+
+        curve = snapshot.discount_curve("usd_ois_boot")
+        params = snapshot.model_parameters("curve_bootstrap_pack")
+        assert params["zero_1y"] == pytest.approx(curve.zero_rate(1.0))
+        assert params["df_1y"] == pytest.approx(curve.discount(1.0))
+        assert snapshot.provenance["market_parameter_sources"]["curve_bootstrap_pack"]["source_kind"] == "bootstrap"
+        assert (
+            snapshot.provenance["bootstrap_inputs"]["model_parameters"]["curve_bootstrap_pack"]["entries"][0][
+                "curve_name"
+            ]
+            == "usd_ois_boot"
+        )
+
+    @patch("trellis.data.treasury_gov.TreasuryGovDataProvider")
+    def test_rejects_unsupported_model_parameter_source_combinations(self, MockProvider):
+        mock = MockProvider.return_value
+        mock.fetch_yields.return_value = SAMPLE_YIELDS
+
+        with pytest.raises(ValueError, match="Unsupported model-parameter source kind"):
+            resolve_market_snapshot(
+                as_of=date(2024, 11, 15),
+                source="treasury_gov",
+                model_parameter_sources={
+                    "bad_pack": {
+                        "source_kind": "calibrated_surface",
+                        "parameters": {"rho": 0.25},
+                    }
+                },
+            )
+
+        with pytest.raises(ValueError, match="model_parameter_sources=.*not both"):
+            resolve_market_snapshot(
+                as_of=date(2024, 11, 15),
+                source="treasury_gov",
+                model_parameter_sources={
+                    "direct_pack": {
+                        "source_kind": "direct_quote",
+                        "parameters": {"rho": 0.25},
+                    }
+                },
+                model_parameter_sets={"legacy_pack": {"rho": 0.10}},
+            )

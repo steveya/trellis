@@ -253,6 +253,21 @@ Planned outputs:
 - snapshot-level caching
 - deterministic golden market fixtures for tests
 
+`QUA-358` now lands the first explicit market-parameter sourcing branch on the
+resolver path:
+
+- ``resolve_market_snapshot(...)`` accepts ``model_parameter_sources`` with
+  explicit ``source_kind`` declarations
+- supported source kinds are currently:
+  - ``direct_quote`` for quoted/provider parameter packs
+  - ``bootstrap`` for deterministic curve-derived parameter packs
+- bootstrap sources persist their entry contract under
+  ``provenance.bootstrap_inputs.model_parameters``
+- per-pack source metadata persists under
+  ``provenance.market_parameter_sources``
+- unsupported source kinds or mixed direct/bootstrap payloads fail closed with
+  explicit validation errors rather than silently merging ambiguous inputs
+
 ## Future Track: Reactive Dataflow
 
 This is explicitly a future design task.

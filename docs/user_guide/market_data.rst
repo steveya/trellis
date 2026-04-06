@@ -162,6 +162,59 @@ well. Calibration workflows can attach a supported parameter set to
 later pricing helpers consume the calibrated model inputs instead of relying on
 route-local constants.
 
+When parameter packs come from market-data resolution instead of calibration
+workflows, use ``resolve_market_snapshot(..., model_parameter_sources=...)``
+to declare the source kind explicitly. The resolver currently supports two
+branches:
+
+- ``direct_quote`` for quoted/provider parameter packs
+- ``bootstrap`` for deterministic curve-derived parameter packs
+
+Each resolved pack is recorded in ``snapshot.provenance["market_parameter_sources"]``.
+Bootstrap-derived packs also persist their entry contract in
+``snapshot.provenance["bootstrap_inputs"]["model_parameters"]`` so replay and
+tracing can reconstruct how each parameter was derived.
+
+.. code-block:: python
+
+   from datetime import date
+
+   from trellis.data.resolver import resolve_market_snapshot
+
+   snapshot = resolve_market_snapshot(
+       as_of=date(2024, 11, 15),
+       source="treasury_gov",
+       model_parameter_sources={
+           "quanto_direct": {
+               "source_kind": "direct_quote",
+               "source_ref": "market_feed.quanto",
+               "parameters": {"quanto_correlation": 0.35, "vol_fx": 0.12},
+           },
+           "curve_bootstrap_pack": {
+               "source_kind": "bootstrap",
+               "source_ref": "rates.curve_samples",
+               "bootstrap_inputs": {
+                   "entries": [
+                       {
+                           "parameter": "zero_1y",
+                           "curve_family": "discount_curves",
+                           "curve_name": "discount",
+                           "measure": "zero_rate",
+                           "tenor": 1.0,
+                       },
+                   ]
+               },
+           },
+       },
+       default_model_parameters="curve_bootstrap_pack",
+   )
+
+   assert snapshot.provenance["market_parameter_sources"]["quanto_direct"]["source_kind"] == "direct_quote"
+   assert snapshot.provenance["market_parameter_sources"]["curve_bootstrap_pack"]["source_kind"] == "bootstrap"
+
+Unsupported source kinds or mixed direct/bootstrap payloads fail closed with a
+``ValueError``.
+
 For example, the supported Hull-White strip workflow can calibrate one
 parameter set and project it back onto the runtime state:
 
