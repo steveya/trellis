@@ -281,6 +281,7 @@ def test_run_task_attaches_runtime_contract_snapshot_and_trace_metadata():
                 "discount_curve": "usd_ois",
                 "forecast_curve": "USD-SOFR-3M",
                 "vol_surface": "usd_rates_smile",
+                "model_parameters": "heston_equity",
             },
         },
         market_state=object(),
@@ -295,6 +296,7 @@ def test_run_task_attaches_runtime_contract_snapshot_and_trace_metadata():
         "discount_curve": "usd_ois",
         "forecast_curve": "USD-SOFR-3M",
         "vol_surface": "usd_rates_smile",
+        "model_parameters": "heston_equity",
     }
     assert runtime_contract["snapshot_reference"]["selected_curve_names"] == {
         "discount_curve": "usd_ois",
@@ -305,6 +307,13 @@ def test_run_task_attaches_runtime_contract_snapshot_and_trace_metadata():
     assert runtime_contract["market_provenance"]["source_kind"] == "synthetic_snapshot"
     assert runtime_contract["market_provenance"]["prior_family"] == "embedded_market_regime"
     assert runtime_contract["market_provenance"]["prior_parameters"]["synthetic_generation_contract"]["version"] == "v2"
+    assert runtime_contract["snapshot_reference"]["market_parameter_trace"]["selected_parameter_set"] == (
+        "heston_equity"
+    )
+    assert runtime_contract["snapshot_reference"]["market_parameter_trace"]["selected_source_kind"] == (
+        "synthetic_prior"
+    )
+    assert runtime_contract["market_parameter_trace"]["selected_parameter_set"] == "heston_equity"
     assert runtime_contract["selected_curve_names"] == {
         "discount_curve": "usd_ois",
         "forecast_curve": "USD-SOFR-3M",
@@ -333,6 +342,105 @@ def test_run_task_attaches_runtime_contract_snapshot_and_trace_metadata():
         result["market_context"]["provenance"]["prior_parameters"]["synthetic_generation_contract"]["quote_bundles"]["volatility"]["local_vol_surface_sources"]["spx_local_vol"]
         == "spx_heston_implied_vol"
     )
+    assert result["market_context"]["market_parameter_trace"]["selected_source_kind"] == "synthetic_prior"
+    assert result["runtime_contract"]["market_parameter_trace"]["selected_parameter_set"] == "heston_equity"
+
+
+def test_market_parameter_trace_summary_compacts_named_source_families():
+    from trellis.agent.task_runtime import _market_parameter_trace_summary
+
+    market_context = {
+        "selected_components": {"model_parameters": "heston_surface_fit"},
+        "provenance": {
+            "market_parameter_sources": {
+                "curve_bootstrap_pack": {
+                    "source_kind": "bootstrap",
+                    "source_ref": "rates.curve_samples",
+                    "parameters": {"zero_1y": 0.05},
+                },
+                "empirical_quanto": {
+                    "source_kind": "empirical",
+                    "source_ref": "historical.returns",
+                    "parameters": {"quanto_correlation": {"kind": "empirical", "value": 0.35}},
+                    "empirical_outputs": {
+                        "quanto_correlation": {
+                            "measure": "pairwise_correlation",
+                            "estimator": "sample_pearson",
+                            "sample_size": 60,
+                            "series_names": ["EUR", "EURUSD"],
+                        }
+                    },
+                },
+                "heston_surface_fit": {
+                    "source_kind": "calibration",
+                    "source_ref": "surfaces.equity_vol",
+                    "parameters": {"model_family": "heston", "theta": 0.04},
+                    "calibration_source": {
+                        "workflow": "heston_smile",
+                    },
+                    "calibration_result": {
+                        "calibration_target": {
+                            "source_kind": "option_surface",
+                            "surface_name": "equity_1y_smile",
+                            "quote_map": {
+                                "quote_family": "implied_vol",
+                                "convention": "black",
+                            },
+                        },
+                        "fit_diagnostics": {"point_count": 5},
+                    },
+                },
+            },
+            "bootstrap_inputs": {
+                "model_parameters": {
+                    "curve_bootstrap_pack": {
+                        "entries": [
+                            {
+                                "parameter": "zero_1y",
+                                "curve_family": "discount_curves",
+                                "curve_name": "usd_ois_boot",
+                                "measure": "zero_rate",
+                            }
+                        ]
+                    }
+                }
+            },
+        },
+    }
+
+    trace = _market_parameter_trace_summary(market_context)
+
+    assert trace["selected_parameter_set"] == "heston_surface_fit"
+    assert trace["selected_source_kind"] == "calibration"
+    assert trace["sources"]["curve_bootstrap_pack"]["details"]["entry_count"] == 1
+    assert trace["sources"]["empirical_quanto"]["details"]["outputs"]["quanto_correlation"]["sample_size"] == 60
+    assert trace["sources"]["heston_surface_fit"]["details"]["workflow"] == "heston_smile"
+    assert trace["sources"]["heston_surface_fit"]["details"]["quote_family"] == "implied_vol"
+
+
+def test_build_market_state_for_task_records_selected_mock_model_parameter_trace():
+    from trellis.agent.task_runtime import build_market_state_for_task
+
+    _, market_context = build_market_state_for_task({
+        "id": "E23",
+        "title": "Quanto option with mock Heston input",
+        "market": {
+            "source": "mock",
+            "as_of": "2024-11-15",
+            "discount_curve": "usd_ois",
+            "forecast_curve": "EUR-DISC",
+            "fx_rate": "EURUSD",
+            "underlier_spot": "SPX",
+            "model_parameters": "heston_equity",
+        },
+    })
+
+    trace = market_context["market_parameter_trace"]
+    assert trace["selected_parameter_set"] == "heston_equity"
+    assert trace["selected_source_kind"] == "synthetic_prior"
+    assert trace["sources"]["heston_equity"]["details"]["synthetic_generation_contract_version"] == "v2"
+    assert trace["sources"]["heston_equity"]["details"]["prior_seed"] == market_context["provenance"]["prior_seed"]
+    assert "theta" in trace["sources"]["heston_equity"]["parameter_keys"]
 
 
 def test_artifacts_from_payload_collects_analytical_trace_paths():

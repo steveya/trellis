@@ -162,6 +162,43 @@ def test_persist_task_run_record_writes_latest_and_enriches_traces(tmp_path):
             "deviations_pct": {"fft": 1.2, "cos": 0.2},
             "reference_target": "black_scholes",
         },
+        "market_context": {
+            "source": "mock",
+            "as_of": "2024-11-15",
+            "selected_components": {"model_parameters": "heston_equity"},
+            "selected_curve_names": {"discount_curve": "usd_ois"},
+            "available_capabilities": ["discount_curve", "model_parameters"],
+            "metadata": {},
+            "provenance": {"source_kind": "synthetic_snapshot", "prior_seed": 1337},
+            "market_parameter_trace": {
+                "selected_parameter_set": "heston_equity",
+                "selected_source_kind": "synthetic_prior",
+                "sources": {
+                    "heston_equity": {
+                        "source_kind": "synthetic_prior",
+                        "source_ref": "embedded_regime_snapshot",
+                        "parameter_keys": ["kappa", "theta", "xi", "rho", "v0"],
+                        "details": {
+                            "synthetic_generation_contract_version": "v2",
+                            "prior_seed": 1337,
+                        },
+                    }
+                },
+            },
+        },
+        "runtime_contract": {
+            "task_id": "T104",
+            "market_parameter_trace": {
+                "selected_parameter_set": "heston_equity",
+                "selected_source_kind": "synthetic_prior",
+                "sources": {
+                    "heston_equity": {
+                        "source_kind": "synthetic_prior",
+                        "parameter_keys": ["kappa", "theta", "xi", "rho", "v0"],
+                    }
+                },
+            },
+        },
         "artifacts": {
             "platform_trace_paths": [str(fft_trace), str(analytical_trace)],
         },
@@ -229,6 +266,10 @@ def test_persist_task_run_record_writes_latest_and_enriches_traces(tmp_path):
     assert latest["workflow"]["status"] == "failed"
     assert latest["workflow"]["linked_issues"]["linear"][0]["identifier"] == "QUA-99"
     assert latest["workflow"]["latest_trace"]["request_id"] == "executor_build_fft"
+    assert latest["market"]["market_parameter_trace"]["selected_parameter_set"] == "heston_equity"
+    assert latest["result"]["runtime_contract"]["market_parameter_trace"]["selected_source_kind"] == (
+        "synthetic_prior"
+    )
     assert Path(latest["storage"]["diagnosis_history_packet_path"]).parent.name == "T104"
     assert Path(latest["storage"]["diagnosis_history_packet_path"]).suffix == ".json"
     assert latest["storage"]["diagnosis_latest_packet_path"].endswith("/task_runs/diagnostics/latest/T104.json")

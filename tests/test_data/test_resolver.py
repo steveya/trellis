@@ -3,6 +3,7 @@
 from datetime import date
 from unittest.mock import patch, MagicMock
 
+import numpy as np
 import pytest
 
 from trellis.conventions.day_count import DayCountConvention
@@ -22,6 +23,40 @@ SAMPLE_YIELDS = {
     10.0: 0.044,
     30.0: 0.046,
 }
+
+
+def _synthetic_heston_market_vols(*, spot: float, rate: float, expiry_years: float, strikes):
+    from trellis.models.calibration.implied_vol import implied_vol
+    from trellis.models.processes.heston import Heston
+    from trellis.models.transforms.fft_pricer import fft_price
+
+    process = Heston(
+        mu=rate,
+        kappa=1.8,
+        theta=0.04,
+        xi=0.35,
+        rho=-0.6,
+        v0=0.05,
+    )
+    return [
+        implied_vol(
+            fft_price(
+                lambda u: process.characteristic_function(u, expiry_years, log_spot=np.log(spot)),
+                spot,
+                strike,
+                expiry_years,
+                rate,
+                N=1024,
+                eta=0.1,
+            ),
+            spot,
+            strike,
+            expiry_years,
+            rate,
+            option_type="call",
+        )
+        for strike in strikes
+    ]
 
 
 class TestResolveCurve:
@@ -396,6 +431,139 @@ class TestResolveMarketSnapshot:
         )
 
     @patch("trellis.data.treasury_gov.TreasuryGovDataProvider")
+    def test_supports_empirical_model_parameter_sources(self, MockProvider):
+        mock = MockProvider.return_value
+        mock.fetch_yields.return_value = SAMPLE_YIELDS
+
+        observations = {
+            "SPX": [0.01, 0.02, -0.01, 0.00],
+            "EURUSD": [0.015, 0.025, -0.005, 0.005],
+        }
+        expected_corr = float(
+            np.corrcoef(
+                np.array(
+                    [
+                        observations["SPX"],
+                        observations["EURUSD"],
+                    ],
+                    dtype=float,
+                ),
+                rowvar=True,
+            )[0, 1]
+        )
+
+        snapshot = resolve_market_snapshot(
+            as_of=date(2024, 11, 15),
+            source="treasury_gov",
+            model_parameter_sources={
+                "empirical_quanto": {
+                    "source_kind": "empirical",
+                    "source_ref": "unit_test.empirical_history",
+                    "empirical_inputs": {
+                        "observations": observations,
+                        "window": {"lookback_days": 60, "frequency": "daily"},
+                        "source_paths": {
+                            "SPX": "hist/SPX.csv",
+                            "EURUSD": "hist/EURUSD.csv",
+                        },
+                    },
+                    "entries": (
+                        {
+                            "parameter": "quanto_correlation",
+                            "measure": "pairwise_correlation",
+                            "series_names": ("SPX", "EURUSD"),
+                            "estimator": "sample_pearson",
+                            "descriptor": True,
+                        },
+                    ),
+                }
+            },
+            default_model_parameters="empirical_quanto",
+        )
+
+        params = snapshot.model_parameters("empirical_quanto")
+        quanto_corr = params["quanto_correlation"]
+        assert quanto_corr["kind"] == "empirical"
+        assert quanto_corr["value"] == pytest.approx(expected_corr)
+        assert quanto_corr["sample_size"] == 4
+        assert quanto_corr["estimator"] == "sample_pearson"
+        assert quanto_corr["source_ref"] == "unit_test.empirical_history"
+        assert quanto_corr["parameters"]["series_names"] == ["SPX", "EURUSD"]
+        assert quanto_corr["parameters"]["window"]["lookback_days"] == 60
+
+        source_spec = snapshot.provenance["market_parameter_sources"]["empirical_quanto"]
+        assert source_spec["source_kind"] == "empirical"
+        assert source_spec["source_ref"] == "unit_test.empirical_history"
+        assert source_spec["empirical_inputs"]["window"]["lookback_days"] == 60
+        assert source_spec["empirical_outputs"]["quanto_correlation"]["sample_size"] == 4
+        assert source_spec["empirical_outputs"]["quanto_correlation"]["series_names"] == [
+            "SPX",
+            "EURUSD",
+        ]
+        assert source_spec["empirical_outputs"]["quanto_correlation"]["source_paths"] == {
+            "SPX": "hist/SPX.csv",
+            "EURUSD": "hist/EURUSD.csv",
+        }
+
+    @patch("trellis.data.treasury_gov.TreasuryGovDataProvider")
+    def test_supports_calibration_model_parameter_sources(self, MockProvider):
+        mock = MockProvider.return_value
+        mock.fetch_yields.return_value = SAMPLE_YIELDS
+
+        spot = 100.0
+        rate = 0.02
+        expiry_years = 1.0
+        strikes = [80.0, 90.0, 100.0, 110.0, 120.0]
+        market_vols = _synthetic_heston_market_vols(
+            spot=spot,
+            rate=rate,
+            expiry_years=expiry_years,
+            strikes=strikes,
+        )
+
+        snapshot = resolve_market_snapshot(
+            as_of=date(2024, 11, 15),
+            source="treasury_gov",
+            model_parameter_sources={
+                "heston_surface_fit": {
+                    "source_kind": "calibration",
+                    "source_ref": "unit_test.option_surface",
+                    "calibration_inputs": {
+                        "workflow": "heston_smile",
+                        "surface": {
+                            "spot": spot,
+                            "rate": rate,
+                            "expiry_years": expiry_years,
+                            "strikes": strikes,
+                            "market_vols": market_vols,
+                            "surface_name": "equity_1y_smile",
+                        },
+                        "options": {
+                            "parameter_set_name": "heston_surface_fit",
+                            "warm_start": (1.2, 0.05, 0.25, -0.3, 0.04),
+                        },
+                    },
+                }
+            },
+            default_model_parameters="heston_surface_fit",
+        )
+
+        params = snapshot.model_parameters("heston_surface_fit")
+        assert params["model_family"] == "heston"
+        assert params["source_kind"] == "calibration_workflow"
+        assert params["theta"] == pytest.approx(0.04, abs=0.02)
+
+        source_spec = snapshot.provenance["market_parameter_sources"]["heston_surface_fit"]
+        assert source_spec["source_kind"] == "calibration"
+        assert source_spec["source_ref"] == "unit_test.option_surface"
+        assert source_spec["calibration_source"]["workflow"] == "heston_smile"
+        assert source_spec["calibration_result"]["source_kind"] == "calibrated_surface"
+        assert source_spec["calibration_result"]["calibration_target"]["quote_map"]["quote_family"] == (
+            "implied_vol"
+        )
+        assert source_spec["calibration_result"]["fit_diagnostics"]["point_count"] == len(strikes)
+
+    @patch("trellis.data.treasury_gov.TreasuryGovDataProvider")
     def test_rejects_unsupported_model_parameter_source_combinations(self, MockProvider):
         mock = MockProvider.return_value
         mock.fetch_yields.return_value = SAMPLE_YIELDS
@@ -423,4 +591,62 @@ class TestResolveMarketSnapshot:
                     }
                 },
                 model_parameter_sets={"legacy_pack": {"rho": 0.10}},
+            )
+
+        with pytest.raises(ValueError, match="requires a mapping payload under 'empirical_inputs'"):
+            resolve_market_snapshot(
+                as_of=date(2024, 11, 15),
+                source="treasury_gov",
+                model_parameter_sources={
+                    "bad_empirical": {
+                        "source_kind": "empirical",
+                        "entries": (
+                            {
+                                "parameter": "quanto_correlation",
+                                "measure": "pairwise_correlation",
+                                "series_names": ("SPX", "EURUSD"),
+                            },
+                        ),
+                    }
+                },
+            )
+
+        with pytest.raises(ValueError, match="Unsupported empirical estimator"):
+            resolve_market_snapshot(
+                as_of=date(2024, 11, 15),
+                source="treasury_gov",
+                model_parameter_sources={
+                    "bad_empirical": {
+                        "source_kind": "empirical",
+                        "empirical_inputs": {
+                            "observations": {
+                                "SPX": [0.01, 0.02, -0.01, 0.00],
+                                "EURUSD": [0.015, 0.025, -0.005, 0.005],
+                            },
+                        },
+                        "entries": (
+                            {
+                                "parameter": "quanto_correlation",
+                                "measure": "pairwise_correlation",
+                                "series_names": ("SPX", "EURUSD"),
+                                "estimator": "kendall_tau",
+                            },
+                        ),
+                    }
+                },
+            )
+
+        with pytest.raises(ValueError, match="Unsupported calibration workflow"):
+            resolve_market_snapshot(
+                as_of=date(2024, 11, 15),
+                source="treasury_gov",
+                model_parameter_sources={
+                    "bad_calibration": {
+                        "source_kind": "calibration",
+                        "calibration_inputs": {
+                            "workflow": "svi_surface",
+                            "surface": {},
+                        },
+                    }
+                },
             )

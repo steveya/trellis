@@ -329,10 +329,41 @@ resolver path:
 - supported source kinds are currently:
   - ``direct_quote`` for quoted/provider parameter packs
   - ``bootstrap`` for deterministic curve-derived parameter packs
+- ``QUA-359`` extends the same contract with an ``empirical`` branch for
+  parameters estimated from observed paths
+  - ``empirical_inputs.observations`` carries the observed or historical path
+    series used for estimation
+  - ``entries`` declare the requested empirical measure, such as
+    ``pairwise_correlation``, ``correlation_matrix``, or ``realized_vol``
+  - each resolved parameter pack records estimator, sample size, selected
+    source paths, and optional window metadata under
+    ``provenance.market_parameter_sources``
+  - malformed series, unsupported estimators, or ambiguous empirical payloads
+    fail closed before pricing rather than degrading into synthetic constants
+- ``QUA-360`` extends the same contract with a ``calibration`` branch for
+  parameters solved from liquid calibration targets
+  - ``calibration_inputs.workflow`` selects the supported calibration route
+  - the first supported workflow is ``heston_smile`` backed by the typed
+    Heston smile calibration surface in ``trellis.models.calibration``
+  - resolved packs persist the calibration target, solve request/result,
+    solver provenance, replay artifact, fit diagnostics, and solved parameter
+    payload under ``provenance.market_parameter_sources``
+  - unsupported workflows or malformed calibration contracts fail closed rather
+    than silently attaching ad hoc model constants
 - bootstrap sources persist their entry contract under
   ``provenance.bootstrap_inputs.model_parameters``
 - per-pack source metadata persists under
   ``provenance.market_parameter_sources``
+- ``QUA-362`` defines the stable replay/report summary for those fields as
+  ``market_parameter_trace``
+  - task runtime attaches the summary to ``market_context``
+  - runtime requests persist the same payload in
+    ``runtime_contract.market_parameter_trace`` and
+    ``runtime_contract.snapshot_reference.market_parameter_trace``
+  - the summary keeps the selected parameter-set name plus the minimal
+    source-family-specific details needed for review:
+    bootstrap bucket entries, empirical estimator/sample metadata,
+    calibration workflow/quote metadata, or the synthetic prior seed/contract
 - unsupported source kinds or mixed direct/bootstrap payloads fail closed with
   explicit validation errors rather than silently merging ambiguous inputs
 

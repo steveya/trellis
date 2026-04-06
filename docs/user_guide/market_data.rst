@@ -165,15 +165,20 @@ route-local constants.
 When parameter packs come from market-data resolution instead of calibration
 workflows, use ``resolve_market_snapshot(..., model_parameter_sources=...)``
 to declare the source kind explicitly. The resolver currently supports two
-branches:
+resolved branches plus the empirical estimation path:
 
 - ``direct_quote`` for quoted/provider parameter packs
 - ``bootstrap`` for deterministic curve-derived parameter packs
+- ``empirical`` for parameters estimated from observed or historical paths
+- ``calibration`` for parameters solved from supported liquid calibration targets
 
 Each resolved pack is recorded in ``snapshot.provenance["market_parameter_sources"]``.
 Bootstrap-derived packs also persist their entry contract in
 ``snapshot.provenance["bootstrap_inputs"]["model_parameters"]`` so replay and
-tracing can reconstruct how each parameter was derived.
+tracing can reconstruct how each parameter was derived. Empirical packs record
+their normalized input contract and per-parameter estimation metadata under the
+same provenance surface, including the estimator, sample size, selected source
+paths, and optional window metadata.
 
 .. code-block:: python
 
@@ -214,6 +219,116 @@ tracing can reconstruct how each parameter was derived.
 
 Unsupported source kinds or mixed direct/bootstrap payloads fail closed with a
 ``ValueError``.
+
+Empirical source packs use the same resolver surface but replace direct
+parameters with a deterministic estimation contract:
+
+.. code-block:: python
+
+   from datetime import date
+
+   from trellis.data.resolver import resolve_market_snapshot
+
+   snapshot = resolve_market_snapshot(
+       as_of=date(2024, 11, 15),
+       source="treasury_gov",
+       model_parameter_sources={
+           "empirical_quanto": {
+               "source_kind": "empirical",
+               "source_ref": "historical.returns",
+               "empirical_inputs": {
+                   "observations": {
+                       "EUR": [0.01, 0.02, -0.01, 0.00],
+                       "EURUSD": [0.015, 0.025, -0.005, 0.005],
+                   },
+                   "window": {"lookback_days": 60, "frequency": "daily"},
+                   "source_paths": {
+                       "EUR": "hist/EUR.csv",
+                       "EURUSD": "hist/EURUSD.csv",
+                   },
+               },
+               "entries": [
+                   {
+                       "parameter": "quanto_correlation",
+                       "measure": "pairwise_correlation",
+                       "series_names": ["EUR", "EURUSD"],
+                       "descriptor": True,
+                   },
+               ],
+           },
+       },
+       default_model_parameters="empirical_quanto",
+   )
+
+   source_spec = snapshot.provenance["market_parameter_sources"]["empirical_quanto"]
+   assert source_spec["source_kind"] == "empirical"
+   assert source_spec["empirical_outputs"]["quanto_correlation"]["sample_size"] == 4
+   assert snapshot.model_parameters("empirical_quanto")["quanto_correlation"]["kind"] == "empirical"
+
+Supported empirical measures are currently:
+
+- ``pairwise_correlation``
+- ``correlation_matrix``
+- ``realized_vol``
+
+Unsupported estimators or malformed empirical inputs fail closed with a
+``ValueError``.
+
+Calibration-backed parameter packs reuse the same ``model_parameter_sources``
+surface when the input is a liquid smile/surface rather than a directly quoted
+or empirically estimated parameter:
+
+.. code-block:: python
+
+   from datetime import date
+
+   from trellis.data.resolver import resolve_market_snapshot
+
+   snapshot = resolve_market_snapshot(
+       as_of=date(2024, 11, 15),
+       source="treasury_gov",
+       model_parameter_sources={
+           "heston_surface_fit": {
+               "source_kind": "calibration",
+               "source_ref": "surfaces.equity_vol",
+               "calibration_inputs": {
+                   "workflow": "heston_smile",
+                   "surface": {
+                       "spot": 100.0,
+                       "rate": 0.02,
+                       "expiry_years": 1.0,
+                       "strikes": [80.0, 90.0, 100.0, 110.0, 120.0],
+                       "market_vols": [0.31, 0.27, 0.24, 0.23, 0.25],
+                       "surface_name": "equity_1y_smile",
+                   },
+                   "options": {
+                       "parameter_set_name": "heston_surface_fit",
+                       "warm_start": [1.2, 0.05, 0.25, -0.3, 0.04],
+                   },
+               },
+           },
+       },
+       default_model_parameters="heston_surface_fit",
+   )
+
+   source_spec = snapshot.provenance["market_parameter_sources"]["heston_surface_fit"]
+   assert source_spec["source_kind"] == "calibration"
+   assert source_spec["calibration_source"]["workflow"] == "heston_smile"
+   assert source_spec["calibration_result"]["source_kind"] == "calibrated_surface"
+   assert snapshot.model_parameters("heston_surface_fit")["model_family"] == "heston"
+
+The first supported calibration workflow is currently ``heston_smile``. The
+resolver stores both the normalized calibration contract and the resulting
+solve/diagnostic payload so later tracing and replay can distinguish quoted,
+bootstrapped, empirical, calibrated, and synthetic market parameters.
+
+When a resolved or mock snapshot flows through task runtime, Trellis also
+builds a compact ``market_parameter_trace`` summary from that provenance. The
+same summary is attached to the returned ``market_context``, the
+``runtime_contract``, and the nested
+``runtime_contract["snapshot_reference"]`` payload so replay tooling can show
+which named parameter set was selected without re-reading the full snapshot
+provenance blob.
 
 For example, the supported Hull-White strip workflow can calibrate one
 parameter set and project it back onto the runtime state:

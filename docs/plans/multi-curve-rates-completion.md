@@ -193,7 +193,7 @@ Status mirror last synced: `2026-04-06`
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-694` Rates platform: multi-curve completion and calibration handoff | Backlog |
+| `QUA-694` Rates platform: multi-curve completion and calibration handoff | Done |
 
 ### Ordered Queue
 
@@ -202,7 +202,18 @@ Status mirror last synced: `2026-04-06`
 | `QUA-356` | Trace propagation and cashflow curve selection | Done |
 | `QUA-381` | Shared rates term builder and tolerance policy | Done |
 | `QUA-358` | Direct quotes and bootstrap source kinds | Done |
-| `QUA-362` | Market-parameter provenance trace schema | Backlog |
+| `QUA-362` | Market-parameter provenance trace schema | Done |
+
+### External Blockers For `QUA-362`
+
+These tickets are owned by the broader market-parameter workstream, but they
+must be closed before `QUA-362` can claim a stable trace/report schema.
+
+| Ticket | Slice | Status |
+| --- | --- | --- |
+| `QUA-359` | Empirical estimators from observed paths | Done |
+| `QUA-360` | Option-surface calibration sources | Done |
+| `QUA-361` | Synthetic priors for mock and proving runs | Done |
 
 ### Adjacent Shared Work
 

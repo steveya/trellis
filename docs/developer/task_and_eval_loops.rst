@@ -158,6 +158,17 @@ and proving tooling can recover not only which named curves or surfaces were
 selected, but also which bounded synthetic rates, credit, and volatility
 authority pack produced those runtime objects.
 
+For market-parameter sourcing specifically, downstream tooling should read the
+stable ``market_parameter_trace`` summary carried in ``market_context``,
+``runtime_contract``, and ``runtime_contract.snapshot_reference``. That compact
+surface is the replay/report contract for selected parameter packs: it records
+the chosen parameter-set name, the source kind, the selected source reference,
+the parameter keys, and the source-family-specific details that matter for
+review. Bootstrap entries expose their originating curve buckets, empirical
+entries expose estimator/sample metadata, calibration entries expose workflow
+and quote-family metadata, and seeded mock runs collapse to a synthetic-prior
+trace with the governing contract version and seed.
+
 Suggested Validation Order
 --------------------------
 

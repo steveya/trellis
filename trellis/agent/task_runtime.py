@@ -95,6 +95,145 @@ def _selected_curve_names_from_market_state(market_state) -> dict[str, str]:
     }
 
 
+def _compact_market_parameter_source_entry(
+    source_name: str,
+    source_spec: Mapping[str, Any],
+    *,
+    bootstrap_inputs: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return one compact trace entry for a named market-parameter source."""
+    parameter_keys = sorted(
+        str(key)
+        for key in dict(source_spec.get("parameters") or {}).keys()
+        if str(key).strip()
+    )
+    entry: dict[str, Any] = {
+        "source_kind": str(source_spec.get("source_kind") or "").strip(),
+        "source_ref": str(source_spec.get("source_ref") or "").strip(),
+        "parameter_keys": parameter_keys,
+    }
+
+    source_kind = entry["source_kind"]
+    if source_kind == "bootstrap":
+        source_bootstrap = dict(
+            dict(bootstrap_inputs.get("model_parameters") or {}).get(source_name) or {}
+        )
+        entries = tuple(source_bootstrap.get("entries") or ())
+        entry["details"] = {
+            "entry_count": len(entries),
+            "entries": [
+                {
+                    key: value
+                    for key, value in dict(item).items()
+                    if key in {"parameter", "curve_family", "curve_name", "measure"}
+                }
+                for item in entries
+                if isinstance(item, Mapping)
+            ],
+        }
+    elif source_kind == "empirical":
+        outputs = dict(source_spec.get("empirical_outputs") or {})
+        entry["details"] = {
+            "outputs": {
+                name: {
+                    key: value
+                    for key, value in dict(payload).items()
+                    if key in {"measure", "estimator", "sample_size", "series_names", "source_paths", "window"}
+                }
+                for name, payload in outputs.items()
+                if isinstance(payload, Mapping)
+            },
+        }
+    elif source_kind == "calibration":
+        calibration_source = dict(source_spec.get("calibration_source") or {})
+        calibration_result = dict(source_spec.get("calibration_result") or {})
+        calibration_target = dict(calibration_result.get("calibration_target") or {})
+        quote_map = dict(calibration_target.get("quote_map") or {})
+        fit_diagnostics = dict(calibration_result.get("fit_diagnostics") or {})
+        entry["details"] = {
+            "workflow": calibration_source.get("workflow"),
+            "target_kind": calibration_target.get("source_kind") or calibration_target.get("target_kind"),
+            "surface_name": calibration_target.get("surface_name"),
+            "quote_family": quote_map.get("quote_family"),
+            "quote_convention": quote_map.get("convention"),
+            "point_count": fit_diagnostics.get("point_count"),
+        }
+    return entry
+
+
+def _synthetic_market_parameter_trace(
+    market_context: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return a compact selected-parameter trace for synthetic mock/proving inputs."""
+    provenance = dict(market_context.get("provenance") or {})
+    selected_name = str(
+        dict(market_context.get("selected_components") or {}).get("model_parameters") or ""
+    ).strip()
+    if not selected_name:
+        return {}
+
+    prior_parameters = dict(provenance.get("prior_parameters") or {})
+    generation_contract = dict(prior_parameters.get("synthetic_generation_contract") or {})
+    model_consistency_contract = dict(prior_parameters.get("model_consistency_contract") or {})
+    model_pack = dict(dict(generation_contract.get("model_packs") or {}).get("volatility") or {})
+    model_parameter_sets = dict(model_pack.get("model_parameter_sets") or {})
+    selected_pack = dict(model_parameter_sets.get(selected_name) or {})
+    if not selected_pack:
+        return {}
+
+    details: dict[str, Any] = {
+        "prior_family": provenance.get("prior_family"),
+        "prior_seed": provenance.get("prior_seed"),
+        "synthetic_generation_contract_version": generation_contract.get("version"),
+    }
+    if model_consistency_contract:
+        details["model_consistency_contract_version"] = model_consistency_contract.get("version")
+    return {
+        "selected_parameter_set": selected_name,
+        "selected_source_kind": "synthetic_prior",
+        "sources": {
+            selected_name: {
+                "source_kind": "synthetic_prior",
+                "source_ref": str(provenance.get("source_ref") or "").strip(),
+                "parameter_keys": sorted(str(key) for key in selected_pack.keys()),
+                "details": details,
+            }
+        },
+    }
+
+
+def _market_parameter_trace_summary(
+    market_context: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return a stable trace/report summary for selected market-parameter sources."""
+    provenance = dict(market_context.get("provenance") or {})
+    source_specs = dict(provenance.get("market_parameter_sources") or {})
+    bootstrap_inputs = dict(provenance.get("bootstrap_inputs") or {})
+    selected_name = str(
+        dict(market_context.get("selected_components") or {}).get("model_parameters") or ""
+    ).strip()
+
+    if source_specs:
+        sources = {
+            source_name: _compact_market_parameter_source_entry(
+                source_name,
+                dict(source_spec),
+                bootstrap_inputs=bootstrap_inputs,
+            )
+            for source_name, source_spec in source_specs.items()
+            if isinstance(source_spec, Mapping)
+        }
+        summary: dict[str, Any] = {
+            "selected_parameter_set": selected_name or None,
+            "sources": sources,
+        }
+        if selected_name and selected_name in sources:
+            summary["selected_source_kind"] = sources[selected_name].get("source_kind")
+        return summary
+
+    return _synthetic_market_parameter_trace(market_context)
+
+
 def _task_requires_credit_curve(task: dict) -> bool:
     """Return True when the task contract needs a credit curve to be usable."""
     construct_methods = set(_task_construct_methods(task))
@@ -298,7 +437,7 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
         market_state = _inject_default_credit_curve_for_task(task, market_state)
         selected_curve_names = _selected_curve_names_from_market_state(market_state)
         market_provenance = dict(getattr(market_state, "market_provenance", None) or {})
-        return market_state, {
+        market_context = {
             "source": "default",
             "as_of": getattr(market_state, "as_of", None).isoformat() if getattr(market_state, "as_of", None) else None,
             "selected_components": {},
@@ -307,6 +446,10 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
             "metadata": {},
             "provenance": market_provenance,
         }
+        market_parameter_trace = _market_parameter_trace_summary(market_context)
+        if market_parameter_trace:
+            market_context["market_parameter_trace"] = market_parameter_trace
+        return market_state, market_context
 
     market_spec = task.get("market") or {}
     selected_components = {
@@ -350,6 +493,9 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
         "metadata": dict(snapshot.metadata),
         "provenance": market_provenance,
     }
+    market_parameter_trace = _market_parameter_trace_summary(market_context)
+    if market_parameter_trace:
+        market_context["market_parameter_trace"] = market_parameter_trace
     _validate_task_market_assertions(task, market_context)
     return market_state, market_context
 
@@ -519,7 +665,7 @@ def task_to_semantic_contract(task: dict):
 
 def _runtime_snapshot_reference(market_context: dict[str, Any]) -> dict[str, Any]:
     """Return a stable snapshot reference for runtime replay metadata."""
-    return {
+    payload = {
         "source": market_context.get("source"),
         "as_of": market_context.get("as_of"),
         "selected_components": dict(market_context.get("selected_components") or {}),
@@ -527,6 +673,9 @@ def _runtime_snapshot_reference(market_context: dict[str, Any]) -> dict[str, Any
         "available_capabilities": list(market_context.get("available_capabilities") or ()),
         "metadata": dict(market_context.get("metadata") or {}),
     }
+    if market_context.get("market_parameter_trace"):
+        payload["market_parameter_trace"] = dict(market_context.get("market_parameter_trace") or {})
+    return payload
 
 
 def _explicit_simulation_seed(task: dict, market_context: dict[str, Any]) -> tuple[int | None, str]:
@@ -684,6 +833,10 @@ def _runtime_contract_metadata(
         "simulation_stream_id": simulation_identity["simulation_stream_id"],
         "replay_key": simulation_identity["replay_key"],
     }
+    if market_context.get("market_parameter_trace"):
+        runtime_contract["market_parameter_trace"] = dict(
+            market_context.get("market_parameter_trace") or {}
+        )
     if trace_identifier is not None:
         runtime_contract["trace_identifier"] = trace_identifier
     if trace_path is not None:

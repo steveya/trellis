@@ -4,9 +4,11 @@ from datetime import date
 
 import numpy as np
 import pytest
+from unittest.mock import patch
 
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
+from trellis.data.resolver import resolve_market_snapshot
 from trellis.instruments.fx import FXRate
 from trellis.models.vol_surface import FlatVol
 
@@ -123,6 +125,87 @@ def test_resolve_quanto_inputs_requires_correlation():
 
     with pytest.raises(ValueError, match="underlier/FX correlation"):
         resolve_quanto_inputs(market_state, spec)
+
+
+@patch("trellis.data.treasury_gov.TreasuryGovDataProvider")
+def test_resolve_quanto_inputs_accepts_empirical_model_parameter_pack(MockProvider):
+    from trellis.instruments._agent.quantooptionanalytical import QuantoOptionSpec
+    from trellis.models.resolution.quanto import resolve_quanto_inputs
+
+    mock = MockProvider.return_value
+    mock.fetch_yields.return_value = {
+        0.25: 0.045,
+        0.5: 0.046,
+        1.0: 0.047,
+        2.0: 0.048,
+        5.0: 0.045,
+        10.0: 0.044,
+        30.0: 0.046,
+    }
+    observations = {
+        "EUR": [0.01, 0.02, -0.01, 0.00],
+        "EURUSD": [0.015, 0.025, -0.005, 0.005],
+    }
+    expected_corr = float(
+        np.corrcoef(
+            np.array(
+                [
+                    observations["EUR"],
+                    observations["EURUSD"],
+                ],
+                dtype=float,
+            ),
+            rowvar=True,
+        )[0, 1]
+    )
+
+    snapshot = resolve_market_snapshot(
+        as_of=SETTLE,
+        source="treasury_gov",
+        fx_rates={"EURUSD": FXRate(spot=1.10, domestic="USD", foreign="EUR")},
+        underlier_spots={"EUR": 100.0},
+        vol_surface=FlatVol(0.20),
+        forecast_curves={"EUR-DISC": YieldCurve.flat(0.03)},
+        model_parameter_sources={
+            "empirical_quanto": {
+                "source_kind": "empirical",
+                "source_ref": "unit_test.empirical_history",
+                "empirical_inputs": {
+                    "observations": observations,
+                    "window": {"lookback_days": 60, "frequency": "daily"},
+                },
+                "entries": (
+                    {
+                        "parameter": "quanto_correlation",
+                        "measure": "pairwise_correlation",
+                        "series_names": ("EUR", "EURUSD"),
+                        "descriptor": True,
+                    },
+                ),
+            }
+        },
+        default_model_parameters="empirical_quanto",
+    )
+    market_state = snapshot.to_market_state(
+        settlement=SETTLE,
+        model_parameters="empirical_quanto",
+    )
+    spec = QuantoOptionSpec(
+        notional=100_000,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        fx_pair="EURUSD",
+        underlier_currency="EUR",
+        domestic_currency="USD",
+    )
+
+    resolved = resolve_quanto_inputs(market_state, spec)
+
+    assert resolved.corr == pytest.approx(float(np.clip(expected_corr, -0.999, 0.999)))
+    assert resolved.provenance["correlation"]["source_family"] == "empirical"
+    assert resolved.provenance["correlation"]["source_kind"] == "empirical_scalar"
+    assert resolved.provenance["correlation"]["source_estimator"] == "sample_pearson"
+    assert resolved.provenance["correlation"]["source_parameters"]["sample_size"] == 4
 
 
 def test_resolve_quanto_inputs_rejects_noncanonical_single_forecast_curve_without_policy():

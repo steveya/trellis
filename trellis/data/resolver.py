@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import date
 
+from trellis.core.differentiable import get_numpy
 from trellis.curves.bootstrap import (
     BootstrapCurveInputBundle,
     BootstrapInstrument,
@@ -12,6 +13,8 @@ from trellis.curves.bootstrap import (
 )
 from trellis.curves.yield_curve import YieldCurve
 from trellis.data.schema import MarketSnapshot
+
+np = get_numpy()
 
 
 def _normalize_token(value: object | None) -> str:
@@ -113,6 +116,601 @@ def _required_float(
             f"Bootstrap model-parameter source {source_name!r} entry {parameter_name!r} requires {field!r}."
         )
     return float(raw_value)
+
+
+def _normalize_named_string_mapping(
+    payload: Mapping[str, object] | None,
+) -> dict[str, str]:
+    """Return a stable string-to-string mapping."""
+    normalized: dict[str, str] = {}
+    for raw_key, raw_value in dict(payload or {}).items():
+        key = _normalize_token(raw_key)
+        value = _normalize_token(raw_value)
+        if key and value:
+            normalized[key] = value
+    return normalized
+
+
+def _normalize_empirical_window(
+    empirical_inputs: Mapping[str, object],
+    *,
+    source_name: str,
+) -> dict[str, object]:
+    """Return a shallow normalized window payload for empirical sources."""
+    raw_window = empirical_inputs.get("window")
+    if raw_window is None:
+        return {}
+    if not isinstance(raw_window, Mapping):
+        raise ValueError(
+            f"Empirical model-parameter source {source_name!r} requires 'window' to be a mapping when provided."
+        )
+    return {
+        _normalize_token(key): value
+        for key, value in dict(raw_window).items()
+        if _normalize_token(key)
+    }
+
+
+def _normalize_empirical_series_names(value) -> tuple[str, ...]:
+    """Return one stable ordered tuple of series names."""
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        text = _normalize_token(value)
+        return (text,) if text else ()
+    names: list[str] = []
+    for raw_item in value:
+        item = _normalize_token(raw_item)
+        if item:
+            names.append(item)
+    return tuple(names)
+
+
+def _lookup_observation_series(
+    observations: Mapping[str, object],
+    *,
+    series_name: str,
+    source_name: str,
+    parameter_name: str,
+) -> tuple[str, object]:
+    """Resolve one named empirical series from an observation mapping."""
+    key_candidates = (
+        series_name,
+        series_name.upper(),
+        series_name.lower(),
+        series_name.replace(" ", "_"),
+    )
+    for candidate in key_candidates:
+        if candidate in observations:
+            return candidate, observations[candidate]
+    raise ValueError(
+        f"Empirical model-parameter source {source_name!r} entry {parameter_name!r} is missing observations for {series_name!r}."
+    )
+
+
+def _coerce_empirical_observation_matrix(
+    observations: object,
+    *,
+    source_name: str,
+    parameter_name: str,
+    series_names: tuple[str, ...] | None = None,
+) -> tuple[object, tuple[str, ...]]:
+    """Normalize empirical observations onto a samples-by-series array."""
+    requested_names = tuple(series_names or ())
+    if isinstance(observations, Mapping):
+        normalized_names = requested_names or tuple(
+            _normalize_token(name)
+            for name in observations
+            if _normalize_token(name)
+        )
+        if not normalized_names:
+            raise ValueError(
+                f"Empirical model-parameter source {source_name!r} requires at least one observed series."
+            )
+        series: list[object] = []
+        sample_size: int | None = None
+        for name in normalized_names:
+            _, raw_series = _lookup_observation_series(
+                observations,
+                series_name=name,
+                source_name=source_name,
+                parameter_name=parameter_name,
+            )
+            arr = np.asarray(raw_series, dtype=float).reshape(-1)
+            if arr.size < 2:
+                raise ValueError(
+                    f"Empirical model-parameter source {source_name!r} entry {parameter_name!r} requires at least two samples for {name!r}."
+                )
+            if sample_size is None:
+                sample_size = int(arr.size)
+            elif sample_size != int(arr.size):
+                raise ValueError(
+                    f"Empirical model-parameter source {source_name!r} entry {parameter_name!r} requires all observed series to share a common sample size."
+                )
+            series.append(arr)
+        return np.column_stack(series), normalized_names
+
+    data = np.asarray(observations, dtype=float)
+    if data.ndim == 1:
+        data = data.reshape(-1, 1)
+        if requested_names and len(requested_names) != 1:
+            raise ValueError(
+                f"Empirical model-parameter source {source_name!r} entry {parameter_name!r} requires exactly one series name for one-dimensional observations."
+            )
+        normalized_names = requested_names or ("series_0",)
+    elif data.ndim == 2:
+        if requested_names:
+            if data.shape[1] == len(requested_names):
+                normalized_names = requested_names
+            elif data.shape[0] == len(requested_names):
+                data = data.T
+                normalized_names = requested_names
+            else:
+                raise ValueError(
+                    f"Empirical model-parameter source {source_name!r} entry {parameter_name!r} observations must align with {len(requested_names)} named series; got {data.shape}."
+                )
+        else:
+            normalized_names = tuple(f"series_{index}" for index in range(int(data.shape[1])))
+    else:
+        raise ValueError(
+            f"Empirical model-parameter source {source_name!r} entry {parameter_name!r} observations must be one- or two-dimensional."
+        )
+
+    if data.shape[0] < 2:
+        raise ValueError(
+            f"Empirical model-parameter source {source_name!r} entry {parameter_name!r} requires at least two samples."
+        )
+    return data, normalized_names
+
+
+def _nearest_pd_correlation_matrix(
+    matrix,
+    *,
+    floor: float,
+):
+    """Project a symmetric matrix onto the nearest positive-definite correlation matrix."""
+    eigvals, eigvecs = np.linalg.eigh(matrix)
+    clipped = np.maximum(eigvals, floor)
+    repaired = eigvecs @ np.diag(clipped) @ eigvecs.T
+    repaired = 0.5 * (repaired + repaired.T)
+    scale = np.sqrt(np.clip(np.diag(repaired), floor, None))
+    repaired = repaired / np.outer(scale, scale)
+    repaired = 0.5 * (repaired + repaired.T)
+    np.fill_diagonal(repaired, 1.0)
+    return repaired
+
+
+def _build_empirical_descriptor(
+    value: object,
+    *,
+    estimator: str,
+    sample_size: int,
+    source_ref: str,
+    parameters: Mapping[str, object],
+) -> dict[str, object]:
+    """Wrap one empirical estimate in a portable runtime descriptor."""
+    payload: dict[str, object] = {
+        "kind": "empirical",
+        "estimator": estimator,
+        "sample_size": int(sample_size),
+        "source_ref": source_ref,
+        "parameters": dict(parameters),
+    }
+    if np.asarray(value, dtype=float).ndim == 0:
+        payload["value"] = float(value)
+    else:
+        payload["correlation_matrix"] = [
+            [float(cell) for cell in row]
+            for row in np.asarray(value, dtype=float)
+        ]
+    return payload
+
+
+def _resolve_empirical_parameter_entry(
+    entry: Mapping[str, object],
+    *,
+    source_name: str,
+    source_ref: str,
+    empirical_inputs: Mapping[str, object],
+) -> tuple[str, object, dict[str, object]]:
+    """Resolve one empirical model-parameter entry onto a runtime value."""
+    parameter_name = _normalize_token(entry.get("parameter"))
+    if not parameter_name:
+        raise ValueError(
+            f"Empirical model-parameter source {source_name!r} has an entry missing 'parameter'."
+        )
+    measure = _normalize_token(entry.get("measure")).lower()
+    if not measure:
+        raise ValueError(
+            f"Empirical model-parameter source {source_name!r} entry {parameter_name!r} requires 'measure'."
+        )
+    observations = empirical_inputs.get("observations")
+    if observations is None:
+        raise ValueError(
+            f"Empirical model-parameter source {source_name!r} requires empirical_inputs.observations."
+        )
+    window = _normalize_empirical_window(
+        empirical_inputs,
+        source_name=source_name,
+    )
+    source_paths = _normalize_named_string_mapping(empirical_inputs.get("source_paths"))
+    series_names = _normalize_empirical_series_names(
+        entry.get("series_names", entry.get("series_name"))
+    )
+    descriptor = bool(entry.get("descriptor", False))
+
+    if measure == "pairwise_correlation":
+        if len(series_names) != 2:
+            raise ValueError(
+                f"Empirical model-parameter source {source_name!r} entry {parameter_name!r} requires exactly two series_names for pairwise_correlation."
+            )
+        estimator = _normalize_token(entry.get("estimator") or "sample_pearson").lower()
+        if estimator != "sample_pearson":
+            raise ValueError(
+                f"Unsupported empirical estimator {estimator!r} for model-parameter source {source_name!r} entry {parameter_name!r}."
+            )
+        data, normalized_names = _coerce_empirical_observation_matrix(
+            observations,
+            source_name=source_name,
+            parameter_name=parameter_name,
+            series_names=series_names,
+        )
+        sample_size = int(data.shape[0])
+        value = float(np.corrcoef(data, rowvar=False)[0, 1])
+        metadata = {
+            "measure": "pairwise_correlation",
+            "estimator": estimator,
+            "sample_size": sample_size,
+            "series_names": list(normalized_names),
+            "observation_shape": [int(value) for value in data.shape],
+        }
+        filtered_paths = {
+            name: source_paths[name]
+            for name in normalized_names
+            if name in source_paths
+        }
+        if filtered_paths:
+            metadata["source_paths"] = filtered_paths
+        if window:
+            metadata["window"] = dict(window)
+        resolved_value: object = value
+        if descriptor:
+            resolved_value = _build_empirical_descriptor(
+                value,
+                estimator=estimator,
+                sample_size=sample_size,
+                source_ref=source_ref,
+                parameters=metadata,
+            )
+        return parameter_name, resolved_value, metadata
+
+    if measure == "realized_vol":
+        if len(series_names) not in {0, 1}:
+            raise ValueError(
+                f"Empirical model-parameter source {source_name!r} entry {parameter_name!r} requires at most one series name for realized_vol."
+            )
+        estimator = _normalize_token(entry.get("estimator") or "sample_std").lower()
+        if estimator != "sample_std":
+            raise ValueError(
+                f"Unsupported empirical estimator {estimator!r} for model-parameter source {source_name!r} entry {parameter_name!r}."
+            )
+        data, normalized_names = _coerce_empirical_observation_matrix(
+            observations,
+            source_name=source_name,
+            parameter_name=parameter_name,
+            series_names=series_names if series_names else None,
+        )
+        if data.shape[1] != 1:
+            raise ValueError(
+                f"Empirical model-parameter source {source_name!r} entry {parameter_name!r} realized_vol requires a single observed series."
+            )
+        annualization_factor = float(entry.get("annualization_factor", 252.0))
+        sample_size = int(data.shape[0])
+        value = float(np.std(data[:, 0], ddof=1) * np.sqrt(max(annualization_factor, 0.0)))
+        metadata = {
+            "measure": "realized_vol",
+            "estimator": estimator,
+            "sample_size": sample_size,
+            "series_names": list(normalized_names),
+            "annualization_factor": annualization_factor,
+            "observation_shape": [int(value) for value in data.shape],
+        }
+        filtered_paths = {
+            name: source_paths[name]
+            for name in normalized_names
+            if name in source_paths
+        }
+        if filtered_paths:
+            metadata["source_paths"] = filtered_paths
+        if window:
+            metadata["window"] = dict(window)
+        resolved_value = value
+        if descriptor:
+            resolved_value = _build_empirical_descriptor(
+                value,
+                estimator=estimator,
+                sample_size=sample_size,
+                source_ref=source_ref,
+                parameters=metadata,
+            )
+        return parameter_name, resolved_value, metadata
+
+    if measure == "correlation_matrix":
+        estimator = _normalize_token(entry.get("estimator") or "sample_pearson").lower()
+        if estimator != "sample_pearson":
+            raise ValueError(
+                f"Unsupported empirical estimator {estimator!r} for model-parameter source {source_name!r} entry {parameter_name!r}."
+            )
+        data, normalized_names = _coerce_empirical_observation_matrix(
+            observations,
+            source_name=source_name,
+            parameter_name=parameter_name,
+            series_names=series_names if series_names else None,
+        )
+        sample_size = int(data.shape[0])
+        matrix = np.corrcoef(data, rowvar=False)
+        regularization_meta: dict[str, object] = {}
+        regularization = entry.get("regularization")
+        if regularization is not None:
+            if not isinstance(regularization, Mapping):
+                raise ValueError(
+                    f"Empirical model-parameter source {source_name!r} entry {parameter_name!r} requires 'regularization' to be a mapping when provided."
+                )
+            regularization_kind = _normalize_token(regularization.get("kind") or "nearest_pd").lower()
+            if regularization_kind != "nearest_pd":
+                raise ValueError(
+                    f"Unsupported empirical regularization {regularization_kind!r} for model-parameter source {source_name!r} entry {parameter_name!r}."
+                )
+            floor = float(regularization.get("floor", 1e-12))
+            min_before = float(np.min(np.linalg.eigvalsh(matrix))) if matrix.size else 1.0
+            matrix = _nearest_pd_correlation_matrix(matrix, floor=floor)
+            min_after = float(np.min(np.linalg.eigvalsh(matrix))) if matrix.size else 1.0
+            regularization_meta = {
+                "kind": regularization_kind,
+                "floor": floor,
+                "min_eigenvalue_before": min_before,
+                "min_eigenvalue_after": min_after,
+            }
+        value = tuple(
+            tuple(float(cell) for cell in row)
+            for row in np.asarray(matrix, dtype=float)
+        )
+        metadata = {
+            "measure": "correlation_matrix",
+            "estimator": estimator,
+            "sample_size": sample_size,
+            "series_names": list(normalized_names),
+            "observation_shape": [int(value) for value in data.shape],
+        }
+        filtered_paths = {
+            name: source_paths[name]
+            for name in normalized_names
+            if name in source_paths
+        }
+        if filtered_paths:
+            metadata["source_paths"] = filtered_paths
+        if window:
+            metadata["window"] = dict(window)
+        if regularization_meta:
+            metadata["regularization"] = regularization_meta
+        resolved_value = value
+        if descriptor:
+            resolved_value = _build_empirical_descriptor(
+                value,
+                estimator=estimator,
+                sample_size=sample_size,
+                source_ref=source_ref,
+                parameters=metadata,
+            )
+        return parameter_name, resolved_value, metadata
+
+    raise ValueError(
+        f"Unsupported empirical measure {measure!r} for model-parameter source {source_name!r} entry {parameter_name!r}."
+    )
+
+
+def _resolve_empirical_parameter_source(
+    *,
+    source_name: str,
+    source_spec: Mapping[str, object],
+    source_ref: str,
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Resolve one empirical model-parameter source onto runtime parameters and provenance."""
+    if source_spec.get("parameters") is not None:
+        raise ValueError(
+            f"Unsupported source combination for model-parameter source {source_name!r}: empirical sources cannot declare direct parameters."
+        )
+    if source_spec.get("bootstrap_inputs") is not None:
+        raise ValueError(
+            f"Unsupported source combination for model-parameter source {source_name!r}: empirical sources cannot declare bootstrap_inputs."
+        )
+    empirical_inputs = source_spec.get("empirical_inputs")
+    if not isinstance(empirical_inputs, Mapping):
+        raise ValueError(
+            f"Empirical model-parameter source {source_name!r} requires a mapping payload under 'empirical_inputs'."
+        )
+    raw_entries = source_spec.get("entries")
+    if raw_entries is None:
+        raise ValueError(
+            f"Empirical model-parameter source {source_name!r} requires non-empty entries."
+        )
+    if isinstance(raw_entries, Mapping):
+        entry_items = (raw_entries,)
+    else:
+        entry_items = tuple(raw_entries)
+    if not entry_items:
+        raise ValueError(
+            f"Empirical model-parameter source {source_name!r} requires non-empty entries."
+        )
+
+    parameters: dict[str, object] = {}
+    empirical_outputs: dict[str, object] = {}
+    for raw_entry in entry_items:
+        if not isinstance(raw_entry, Mapping):
+            raise ValueError(
+                f"Empirical model-parameter source {source_name!r} entries must be mapping payloads."
+            )
+        parameter_name, value, metadata = _resolve_empirical_parameter_entry(
+            raw_entry,
+            source_name=source_name,
+            source_ref=source_ref,
+            empirical_inputs=empirical_inputs,
+        )
+        if parameter_name in parameters:
+            raise ValueError(
+                f"Duplicate empirical parameter {parameter_name!r} in model-parameter source {source_name!r}."
+            )
+        parameters[parameter_name] = value
+        empirical_outputs[parameter_name] = dict(metadata)
+
+    source_provenance = {
+        "source_kind": "empirical",
+        "source_ref": source_ref,
+        "empirical_inputs": {
+            "input_key": "observations",
+            "window": _normalize_empirical_window(empirical_inputs, source_name=source_name),
+            "source_paths": _normalize_named_string_mapping(empirical_inputs.get("source_paths")),
+        },
+        "empirical_outputs": empirical_outputs,
+        "parameters": dict(parameters),
+    }
+    return dict(parameters), source_provenance
+
+
+def _coerce_optional_mapping(
+    payload: object | None,
+    *,
+    field: str,
+    source_name: str,
+) -> Mapping[str, object]:
+    """Return one optional mapping field or raise with a clear source-specific error."""
+    if payload is None:
+        return {}
+    if not isinstance(payload, Mapping):
+        raise ValueError(
+            f"Calibration model-parameter source {source_name!r} requires {field!r} to be a mapping when provided."
+        )
+    return payload
+
+
+def _resolve_heston_calibration_source(
+    *,
+    source_name: str,
+    source_ref: str,
+    calibration_inputs: Mapping[str, object],
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Resolve one Heston smile calibration source onto runtime parameters and provenance."""
+    from trellis.models.calibration.heston_fit import calibrate_heston_smile_workflow
+
+    surface = calibration_inputs.get("surface")
+    if not isinstance(surface, Mapping):
+        raise ValueError(
+            f"Calibration model-parameter source {source_name!r} requires a mapping payload under calibration_inputs.surface."
+        )
+    options = _coerce_optional_mapping(
+        calibration_inputs.get("options"),
+        field="calibration_inputs.options",
+        source_name=source_name,
+    )
+    merged_metadata: dict[str, object] = {}
+    for metadata_payload in (
+        calibration_inputs.get("metadata"),
+        surface.get("metadata"),
+    ):
+        if metadata_payload is None:
+            continue
+        if not isinstance(metadata_payload, Mapping):
+            raise ValueError(
+                f"Calibration model-parameter source {source_name!r} requires metadata fields to be mappings when provided."
+            )
+        merged_metadata.update({
+            _normalize_token(key): value
+            for key, value in dict(metadata_payload).items()
+            if _normalize_token(key)
+        })
+
+    parameter_set_name = _normalize_token(options.get("parameter_set_name")) or source_name
+    initial_guess = options.get("initial_guess")
+    warm_start = options.get("warm_start")
+    result = calibrate_heston_smile_workflow(
+        float(surface.get("spot")),
+        float(surface.get("expiry_years")),
+        surface.get("strikes") or (),
+        surface.get("market_vols") or (),
+        rate=float(surface.get("rate")),
+        dividend_yield=float(surface.get("dividend_yield", 0.0)),
+        labels=surface.get("labels"),
+        weights=surface.get("weights"),
+        surface_name=_normalize_token(surface.get("surface_name")),
+        parameter_set_name=parameter_set_name,
+        initial_guess=tuple(initial_guess) if initial_guess is not None else None,
+        warm_start=tuple(warm_start) if warm_start is not None else None,
+        metadata=merged_metadata or None,
+    )
+    parameters = dict(result.model_parameters)
+    source_provenance = {
+        "source_kind": "calibration",
+        "source_ref": source_ref,
+        "calibration_source": {
+            "workflow": "heston_smile",
+            "surface": result.surface.to_payload(),
+            "options": {
+                "parameter_set_name": parameter_set_name,
+                "initial_guess": list(tuple(initial_guess)) if initial_guess is not None else None,
+                "warm_start": list(tuple(warm_start)) if warm_start is not None else None,
+            },
+        },
+        "calibration_result": {
+            "source_kind": str(result.provenance.get("source_kind", "calibrated_surface")),
+            "source_ref": str(result.provenance.get("source_ref", "calibrate_heston_smile_workflow")),
+            "calibration_target": dict(result.provenance.get("calibration_target", {})),
+            "solve_request": result.solve_request.to_payload(),
+            "solve_result": result.solve_result.to_payload(),
+            "solver_provenance": result.solver_provenance.to_payload(),
+            "solver_replay_artifact": result.solver_replay_artifact.to_payload(),
+            "fit_diagnostics": result.diagnostics.to_payload(),
+            "summary": dict(result.summary),
+            "warnings": list(result.warnings),
+        },
+        "parameters": dict(parameters),
+    }
+    return parameters, source_provenance
+
+
+def _resolve_calibration_parameter_source(
+    *,
+    source_name: str,
+    source_spec: Mapping[str, object],
+    source_ref: str,
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Resolve one calibration-backed model-parameter source."""
+    if source_spec.get("parameters") is not None:
+        raise ValueError(
+            f"Unsupported source combination for model-parameter source {source_name!r}: calibration sources cannot declare direct parameters."
+        )
+    if source_spec.get("bootstrap_inputs") is not None:
+        raise ValueError(
+            f"Unsupported source combination for model-parameter source {source_name!r}: calibration sources cannot declare bootstrap_inputs."
+        )
+    if source_spec.get("empirical_inputs") is not None:
+        raise ValueError(
+            f"Unsupported source combination for model-parameter source {source_name!r}: calibration sources cannot declare empirical_inputs."
+        )
+    calibration_inputs = source_spec.get("calibration_inputs")
+    if not isinstance(calibration_inputs, Mapping):
+        raise ValueError(
+            f"Calibration model-parameter source {source_name!r} requires a mapping payload under 'calibration_inputs'."
+        )
+    workflow = _normalize_token(calibration_inputs.get("workflow")).lower()
+    if workflow == "heston_smile":
+        return _resolve_heston_calibration_source(
+            source_name=source_name,
+            source_ref=source_ref,
+            calibration_inputs=calibration_inputs,
+        )
+    raise ValueError(
+        f"Unsupported calibration workflow {workflow!r} for model-parameter source {source_name!r}."
+    )
 
 
 def _curve_family_map(
@@ -237,7 +835,7 @@ def _resolve_model_parameter_source(
 ) -> tuple[dict[str, object], dict[str, object], dict[str, object] | None]:
     """Resolve one model-parameter source spec onto runtime parameters and provenance."""
     source_kind = _normalize_token(source_spec.get("source_kind")).lower()
-    if source_kind not in {"direct_quote", "bootstrap"}:
+    if source_kind not in {"direct_quote", "bootstrap", "empirical", "calibration"}:
         raise ValueError(
             f"Unsupported model-parameter source kind {source_kind!r} for source {source_name!r}."
         )
@@ -270,6 +868,22 @@ def _resolve_model_parameter_source(
             },
             None,
         )
+
+    if source_kind == "empirical":
+        parameters, source_provenance = _resolve_empirical_parameter_source(
+            source_name=source_name,
+            source_spec=source_spec,
+            source_ref=source_ref,
+        )
+        return parameters, source_provenance, None
+
+    if source_kind == "calibration":
+        parameters, source_provenance = _resolve_calibration_parameter_source(
+            source_name=source_name,
+            source_spec=source_spec,
+            source_ref=source_ref,
+        )
+        return parameters, source_provenance, None
 
     if source_spec.get("parameters") is not None:
         raise ValueError(
@@ -322,9 +936,9 @@ def _resolve_model_parameter_source(
             "source_ref": source_ref,
             "bootstrap_inputs": dict(normalized_bootstrap_inputs),
             "parameters": dict(parameters),
-        },
-        normalized_bootstrap_inputs,
-    )
+            },
+            normalized_bootstrap_inputs,
+        )
 
 
 def resolve_market_snapshot(

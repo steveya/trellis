@@ -2,9 +2,11 @@
 
 import numpy as raw_np
 import pytest
+from unittest.mock import patch
 
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
+from trellis.data.resolver import resolve_market_snapshot
 from trellis.models.processes.base import StochasticProcess
 from trellis.models.processes.gbm import GBM
 from trellis.models.processes.correlated_gbm import CorrelatedGBM
@@ -255,6 +257,39 @@ class TestHullWhite:
 
 
 class TestHeston:
+    @staticmethod
+    def _market_vols_from_heston(*, spot, rate, expiry_years, strikes):
+        from trellis.models.calibration.implied_vol import implied_vol
+        from trellis.models.transforms.fft_pricer import fft_price
+
+        process = Heston(
+            mu=rate,
+            kappa=1.8,
+            theta=0.04,
+            xi=0.35,
+            rho=-0.6,
+            v0=0.05,
+        )
+        return [
+            implied_vol(
+                fft_price(
+                    lambda u: process.characteristic_function(u, expiry_years, log_spot=raw_np.log(spot)),
+                    spot,
+                    strike,
+                    expiry_years,
+                    rate,
+                    N=1024,
+                    eta=0.1,
+                ),
+                spot,
+                strike,
+                expiry_years,
+                rate,
+                option_type="call",
+            )
+            for strike in strikes
+        ]
+
     def test_heston_is_runtime_process_with_two_state_and_factor_dims(self):
         process = Heston(mu=0.05, kappa=2.0, theta=0.04, xi=0.3, rho=-0.7, v0=0.04)
 
@@ -318,6 +353,66 @@ class TestHeston:
 
         assert binding.process.mu == pytest.approx(0.03)
         assert binding.process.rho == pytest.approx(-0.4)
+
+    @patch("trellis.data.treasury_gov.TreasuryGovDataProvider")
+    def test_resolve_heston_runtime_binding_accepts_resolver_calibration_source(self, MockProvider):
+        mock = MockProvider.return_value
+        mock.fetch_yields.return_value = {
+            0.25: 0.045,
+            0.5: 0.046,
+            1.0: 0.047,
+            2.0: 0.048,
+            5.0: 0.045,
+            10.0: 0.044,
+            30.0: 0.046,
+        }
+
+        spot = 100.0
+        rate = 0.02
+        expiry_years = 1.0
+        strikes = [80.0, 90.0, 100.0, 110.0, 120.0]
+        market_vols = self._market_vols_from_heston(
+            spot=spot,
+            rate=rate,
+            expiry_years=expiry_years,
+            strikes=strikes,
+        )
+        snapshot = resolve_market_snapshot(
+            as_of="2024-11-15",
+            source="treasury_gov",
+            model_parameter_sources={
+                "heston_surface_fit": {
+                    "source_kind": "calibration",
+                    "source_ref": "unit_test.option_surface",
+                    "calibration_inputs": {
+                        "workflow": "heston_smile",
+                        "surface": {
+                            "spot": spot,
+                            "rate": rate,
+                            "expiry_years": expiry_years,
+                            "strikes": strikes,
+                            "market_vols": market_vols,
+                            "surface_name": "equity_1y_smile",
+                        },
+                        "options": {
+                            "parameter_set_name": "heston_surface_fit",
+                            "warm_start": (1.2, 0.05, 0.25, -0.3, 0.04),
+                        },
+                    },
+                }
+            },
+            default_model_parameters="heston_surface_fit",
+        )
+        market_state = snapshot.to_market_state(
+            settlement=snapshot.as_of,
+            model_parameters="heston_surface_fit",
+        )
+
+        binding = resolve_heston_runtime_binding(market_state)
+
+        assert binding.process.theta == pytest.approx(0.04, abs=0.02)
+        assert binding.process.rho == pytest.approx(-0.6, abs=0.05)
+        assert binding.provenance["source_kind"] == "market_state"
 
 
 # ---------------------------------------------------------------------------
