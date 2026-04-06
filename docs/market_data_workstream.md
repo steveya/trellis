@@ -87,6 +87,19 @@ This means the spread grid is no longer the primary synthetic credit input.
 The hazard term structure is the authority, and both the quote bundle and the
 runtime curve are derived from it.
 
+`QUA-698` closes the same gap on the volatility side. Synthetic volatility
+fixtures now record:
+
+- seeded Heston parameter packs as the bounded stochastic-volatility authority
+- a named SPX implied-vol surface generated from those Heston parameters
+- a named local-vol surface derived from that stored implied-vol surface
+  through the Dupire workflow
+
+This means the mock volatility bundle is no longer "Heston parameters plus a
+separately guessed local-vol callable." The implied-vol surface, the
+`spx_local_vol` runtime fixture, and the `heston_equity` model-parameter pack
+now come from one seeded authority surface.
+
 The older ``model_consistency_contract`` is now derived from the seeded
 generation contract so existing replay, benchmark, and proving consumers
 continue to work while the follow-on family-specific generators migrate onto

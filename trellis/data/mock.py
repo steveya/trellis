@@ -19,7 +19,11 @@ from trellis.core.differentiable import get_numpy
 from trellis.data.base import BaseDataProvider
 from trellis.data.schema import MarketSnapshot
 from trellis.instruments.fx import FXRate
+from trellis.models.calibration.implied_vol import implied_vol
+from trellis.models.calibration.local_vol import calibrate_local_vol_surface_workflow
+from trellis.models.processes.heston import Heston, build_heston_parameter_payload
 from trellis.models.processes.sabr import SABRProcess
+from trellis.models.transforms.fft_pricer import fft_price
 from trellis.models.vol_surface import FlatVol, GridVolSurface
 
 np = get_numpy()
@@ -175,25 +179,30 @@ class SyntheticVolatilityModelPack:
     """Seeded volatility-side authority inputs for one synthetic snapshot."""
 
     family: str
+    implied_vol_surface_family: str
     local_vol_surface_family: str
     jump_parameter_family: str
     model_parameter_family: str
-    local_vol_parameters: Mapping[str, Mapping[str, float]]
+    implied_vol_surface_parameters: Mapping[str, Mapping[str, object]]
+    local_vol_surface_sources: Mapping[str, str]
     jump_parameter_sets: Mapping[str, Mapping[str, float]]
     model_parameter_sets: Mapping[str, Mapping[str, float]]
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "local_vol_parameters", _freeze_payload(self.local_vol_parameters))
+        object.__setattr__(self, "implied_vol_surface_parameters", _freeze_payload(self.implied_vol_surface_parameters))
+        object.__setattr__(self, "local_vol_surface_sources", _freeze_payload(self.local_vol_surface_sources))
         object.__setattr__(self, "jump_parameter_sets", _freeze_payload(self.jump_parameter_sets))
         object.__setattr__(self, "model_parameter_sets", _freeze_payload(self.model_parameter_sets))
 
     def to_payload(self) -> dict[str, object]:
         return {
             "family": self.family,
+            "implied_vol_surface_family": self.implied_vol_surface_family,
             "local_vol_surface_family": self.local_vol_surface_family,
             "jump_parameter_family": self.jump_parameter_family,
             "model_parameter_family": self.model_parameter_family,
-            "local_vol_parameters": _payload_to_json(self.local_vol_parameters),
+            "implied_vol_surface_parameters": _payload_to_json(self.implied_vol_surface_parameters),
+            "local_vol_surface_sources": _payload_to_json(self.local_vol_surface_sources),
             "jump_parameter_sets": _payload_to_json(self.jump_parameter_sets),
             "model_parameter_sets": _payload_to_json(self.model_parameter_sets),
         }
@@ -605,8 +614,11 @@ def _build_model_consistency_contract(
         "volatility": {
             "workflow": "calibration_surface_bundle",
             "quote_families": ("implied_vol",),
-            "rate_vol_surfaces": _payload_to_json(contract.runtime_targets.vol_surfaces),
+            "vol_surfaces": _payload_to_json(contract.runtime_targets.vol_surfaces),
+            "rate_vol_surfaces": _payload_to_json(contract.quote_bundles.rates["rate_vol_surface_names"]),
+            "equity_implied_vol_surfaces": _payload_to_json(contract.quote_bundles.volatility["implied_vol_surface_names"]),
             "local_vol_surfaces": _payload_to_json(contract.runtime_targets.local_vol_surfaces),
+            "local_vol_surface_sources": _payload_to_json(contract.quote_bundles.volatility["local_vol_surface_sources"]),
             "model_parameter_sets": _payload_to_json(contract.volatility.model_parameter_sets),
             "materialization_targets": (
                 "vol_surface",
@@ -667,42 +679,113 @@ def _build_fixing_histories(snapshot_date: date, forecast_curves: dict[str, Yiel
     }
 
 
-def _make_local_vol_surface(
+def _representative_equity_rate(discount_curve: YieldCurve) -> float:
+    """Return the representative equity discount rate used in synthetic vol generation."""
+    return float(discount_curve.zero_rate(1.0))
+
+
+def _build_equity_implied_vol_surfaces(
     *,
-    ref_spot: float,
-    base_sigma: float,
-    skew: float,
-    term_slope: float,
-):
-    """Return a smooth local-vol stand-in compatible with scalar/array inputs."""
-
-    def local_vol(spot, time):
-        """Return a smooth smile/term adjusted local volatility for spot/time inputs."""
-        clipped_spot = np.maximum(spot, 1e-8)
-        clipped_time = np.maximum(time, 0.0)
-        moneyness = np.abs(np.log(clipped_spot / ref_spot))
-        term = 1.0 + term_slope * np.minimum(clipped_time, 5.0) / 5.0
-        smile = 1.0 + skew * moneyness
-        return base_sigma * term * smile
-
-    return local_vol
+    volatility_pack: SyntheticVolatilityModelPack,
+    underlier_spots: Mapping[str, float],
+    discount_curve: YieldCurve,
+) -> dict[str, GridVolSurface]:
+    """Build equity implied-vol surfaces from the seeded Heston authority pack."""
+    representative_rate = _representative_equity_rate(discount_curve)
+    surfaces: dict[str, GridVolSurface] = {}
+    for surface_name, params in volatility_pack.implied_vol_surface_parameters.items():
+        parameter_set_name = str(params["parameter_set_name"])
+        model_parameters = volatility_pack.model_parameter_sets[parameter_set_name]
+        underlier = str(params["underlier"])
+        spot = float(underlier_spots[underlier])
+        expiries = tuple(float(expiry) for expiry in params["expiries"])
+        strike_multipliers = tuple(float(multiplier) for multiplier in params["strike_multipliers"])
+        strikes = tuple(round(spot * multiplier, 8) for multiplier in strike_multipliers)
+        heston = Heston(
+            mu=representative_rate,
+            kappa=float(model_parameters["kappa"]),
+            theta=float(model_parameters["theta"]),
+            xi=float(model_parameters["xi"]),
+            rho=float(model_parameters["rho"]),
+            v0=float(model_parameters["v0"]),
+        )
+        log_spot = float(np.log(spot))
+        smile_rows = []
+        for expiry in expiries:
+            row = []
+            char_fn = lambda u, _expiry=expiry, _log_spot=log_spot: heston.characteristic_function(
+                u,
+                _expiry,
+                log_spot=_log_spot,
+            )
+            for strike in strikes:
+                price = fft_price(
+                    char_fn,
+                    spot,
+                    strike,
+                    expiry,
+                    representative_rate,
+                    N=1024,
+                    eta=0.1,
+                )
+                row.append(
+                    round(
+                        float(
+                            implied_vol(
+                                price,
+                                spot,
+                                strike,
+                                expiry,
+                                representative_rate,
+                                option_type="call",
+                            )
+                        ),
+                        6,
+                    )
+                )
+            smile_rows.append(tuple(row))
+        surfaces[str(surface_name)] = GridVolSurface(
+            expiries=expiries,
+            strikes=strikes,
+            vols=tuple(smile_rows),
+        )
+    return surfaces
 
 
 def _build_local_vol_surfaces(
     *,
     volatility_pack: SyntheticVolatilityModelPack,
     underlier_spots: dict[str, float],
+    discount_curve: YieldCurve,
+    vol_surfaces: Mapping[str, object],
 ) -> dict[str, object]:
-    """Build callable local-vol stand-ins keyed by underlier name."""
+    """Build local-vol surfaces derived from the synthetic implied-vol authority."""
+    representative_rate = _representative_equity_rate(discount_curve)
     surfaces: dict[str, object] = {}
-    for surface_name, params in volatility_pack.local_vol_parameters.items():
-        underlier = "SPX" if surface_name.startswith("spx") else "AAPL"
-        surfaces[str(surface_name)] = _make_local_vol_surface(
-            ref_spot=underlier_spots[underlier],
-            base_sigma=float(params["base_sigma"]),
-            skew=float(params["skew"]),
-            term_slope=float(params["term_slope"]),
+    for surface_name, implied_surface_name in volatility_pack.local_vol_surface_sources.items():
+        implied_surface = vol_surfaces[str(implied_surface_name)]
+        implied_params = volatility_pack.implied_vol_surface_parameters[str(implied_surface_name)]
+        spot = float(underlier_spots[str(implied_params["underlier"])])
+        result = calibrate_local_vol_surface_workflow(
+            np.asarray(implied_surface.strikes, dtype=float),
+            np.asarray(implied_surface.expiries, dtype=float),
+            np.asarray(implied_surface.vols, dtype=float),
+            spot,
+            representative_rate,
+            surface_name=str(surface_name),
+            metadata={
+                "generation_family": volatility_pack.family,
+                "implied_vol_surface_name": str(implied_surface_name),
+                "parameter_set_name": str(implied_params["parameter_set_name"]),
+            },
         )
+        local_surface = result.local_vol_surface
+        local_surface.calibration_provenance = dict(result.provenance)
+        local_surface.calibration_target = dict(result.calibration_target)
+        local_surface.calibration_summary = dict(result.summary)
+        local_surface.calibration_diagnostics = result.diagnostics.to_payload()
+        local_surface.calibration_warnings = list(result.warnings)
+        surfaces[str(surface_name)] = local_surface
     return surfaces
 
 
@@ -712,13 +795,6 @@ def _build_synthetic_volatility_model_pack(
     seed: int,
 ) -> SyntheticVolatilityModelPack:
     """Return the seeded volatility model pack for one synthetic snapshot."""
-    local_base = {
-        "covid_crisis": {"base_sigma": 0.34, "skew": 0.22, "term_slope": 0.08},
-        "peak_inversion": {"base_sigma": 0.24, "skew": 0.15, "term_slope": 0.05},
-        "easing_cycle": {"base_sigma": 0.20, "skew": 0.12, "term_slope": 0.04},
-        "normal": {"base_sigma": 0.18, "skew": 0.10, "term_slope": 0.03},
-    }[regime]
-    local_scale = _seeded_scale(seed, f"local_vol::{regime}", amplitude=0.05)
     jump_params = {
         "covid_crisis": {
             "mu": 0.0,
@@ -752,7 +828,6 @@ def _build_synthetic_volatility_model_pack(
     jump_scale = _seeded_scale(seed, f"jump_pack::{regime}", amplitude=0.08)
     model_params = {
         "covid_crisis": {
-            "mu": 0.0,
             "kappa": 1.25,
             "theta": 0.085,
             "xi": 0.95,
@@ -760,7 +835,6 @@ def _build_synthetic_volatility_model_pack(
             "v0": 0.10,
         },
         "peak_inversion": {
-            "mu": 0.0,
             "kappa": 1.75,
             "theta": 0.055,
             "xi": 0.62,
@@ -768,7 +842,6 @@ def _build_synthetic_volatility_model_pack(
             "v0": 0.06,
         },
         "easing_cycle": {
-            "mu": 0.0,
             "kappa": 2.00,
             "theta": 0.040,
             "xi": 0.48,
@@ -776,7 +849,6 @@ def _build_synthetic_volatility_model_pack(
             "v0": 0.04,
         },
         "normal": {
-            "mu": 0.0,
             "kappa": 2.10,
             "theta": 0.032,
             "xi": 0.42,
@@ -786,22 +858,23 @@ def _build_synthetic_volatility_model_pack(
     }[regime]
     model_scale = _seeded_scale(seed, f"heston_pack::{regime}", amplitude=0.06)
     return SyntheticVolatilityModelPack(
-        family="regime_surface_bundle",
-        local_vol_surface_family="regime_local_vol_surface",
+        family="heston_implied_vol_bundle",
+        implied_vol_surface_family="heston_grid_surface",
+        local_vol_surface_family="dupire_local_vol_surface",
         jump_parameter_family="regime_jump_pack",
-        model_parameter_family="regime_model_pack",
-        local_vol_parameters={
-            "spx_local_vol": {
-                "base_sigma": round(local_base["base_sigma"] * local_scale, 6),
-                "skew": round(local_base["skew"], 6),
-                "term_slope": round(local_base["term_slope"], 6),
-            },
-            "aapl_local_vol": {
-                "base_sigma": round(local_base["base_sigma"] * 1.15 * local_scale, 6),
-                "skew": round(local_base["skew"] * 1.05, 6),
-                "term_slope": round(local_base["term_slope"], 6),
+        model_parameter_family="heston_runtime_payload",
+        implied_vol_surface_parameters={
+            "spx_heston_implied_vol": {
+                "underlier": "SPX",
+                "parameter_set_name": "heston_equity",
+                "expiries": (0.5, 1.0, 2.0, 3.0, 5.0),
+                "strike_multipliers": (0.85, 0.95, 1.0, 1.05, 1.15),
+                "quote_family": "implied_vol",
+                "convention": "black",
+                "rate_source": "usd_ois_1y_zero",
             },
         },
+        local_vol_surface_sources={"spx_local_vol": "spx_heston_implied_vol"},
         jump_parameter_sets={
             "merton_equity": {
                 "mu": float(jump_params["mu"]),
@@ -813,7 +886,6 @@ def _build_synthetic_volatility_model_pack(
         },
         model_parameter_sets={
             "heston_equity": {
-                "mu": float(model_params["mu"]),
                 "kappa": round(float(model_params["kappa"]), 6),
                 "theta": round(float(model_params["theta"]) * model_scale, 6),
                 "xi": round(float(model_params["xi"]) * model_scale, 6),
@@ -832,12 +904,32 @@ def _build_jump_parameter_sets(volatility_pack: SyntheticVolatilityModelPack) ->
     }
 
 
-def _build_model_parameter_sets(volatility_pack: SyntheticVolatilityModelPack) -> dict[str, dict[str, float]]:
+def _build_model_parameter_sets(
+    volatility_pack: SyntheticVolatilityModelPack,
+    discount_curve: YieldCurve,
+) -> dict[str, dict[str, object]]:
     """Return representative stochastic-volatility parameter sets from the volatility model pack."""
-    return {
-        str(name): {str(key): float(value) for key, value in params.items()}
-        for name, params in volatility_pack.model_parameter_sets.items()
-    }
+    representative_rate = _representative_equity_rate(discount_curve)
+    parameter_sets: dict[str, dict[str, object]] = {}
+    for name, params in volatility_pack.model_parameter_sets.items():
+        if {"kappa", "theta", "xi", "rho", "v0"}.issubset(params):
+            parameter_sets[str(name)] = build_heston_parameter_payload(
+                mu=representative_rate,
+                kappa=float(params["kappa"]),
+                theta=float(params["theta"]),
+                xi=float(params["xi"]),
+                rho=float(params["rho"]),
+                v0=float(params["v0"]),
+                parameter_set_name=str(name),
+                source_kind="synthetic_generation_contract",
+                metadata={
+                    "generation_family": volatility_pack.family,
+                    "rate_source": "usd_ois_1y_zero",
+                },
+            )
+        else:
+            parameter_sets[str(name)] = {str(key): float(value) for key, value in params.items()}
+    return parameter_sets
 
 
 def _build_synthetic_quote_bundles(
@@ -846,6 +938,7 @@ def _build_synthetic_quote_bundles(
     credit_pack: SyntheticCreditModelPack,
     volatility_pack: SyntheticVolatilityModelPack,
     rate_vol_surfaces: Mapping[str, object],
+    equity_vol_surfaces: Mapping[str, object],
     local_vol_surfaces: Mapping[str, object],
 ) -> SyntheticQuoteBundles:
     """Return the synthetic quote bundles derived from the model packs."""
@@ -875,13 +968,17 @@ def _build_synthetic_quote_bundles(
             },
         },
         volatility={
+            "quote_families": ("implied_vol", "local_vol"),
             "surface_families": {
                 "rate_vol_surface_family": rates_pack.rate_vol_surface_family,
+                "implied_vol_surface_family": volatility_pack.implied_vol_surface_family,
                 "local_vol_surface_family": volatility_pack.local_vol_surface_family,
                 "jump_parameter_family": volatility_pack.jump_parameter_family,
                 "model_parameter_family": volatility_pack.model_parameter_family,
             },
+            "implied_vol_surface_names": tuple(equity_vol_surfaces.keys()),
             "local_vol_surface_names": tuple(local_vol_surfaces.keys()),
+            "local_vol_surface_sources": _payload_to_json(volatility_pack.local_vol_surface_sources),
             "jump_parameter_set_names": tuple(volatility_pack.jump_parameter_sets.keys()),
             "model_parameter_set_names": tuple(volatility_pack.model_parameter_sets.keys()),
         },
@@ -893,17 +990,17 @@ def _build_synthetic_runtime_targets(
     discount_curves: Mapping[str, YieldCurve],
     forecast_curves: Mapping[str, YieldCurve],
     credit_curves: Mapping[str, CreditCurve],
-    rate_vol_surfaces: Mapping[str, object],
+    vol_surfaces: Mapping[str, object],
     local_vol_surfaces: Mapping[str, object],
     jump_parameter_sets: Mapping[str, Mapping[str, float]],
-    model_parameter_sets: Mapping[str, Mapping[str, float]],
+    model_parameter_sets: Mapping[str, Mapping[str, object]],
 ) -> SyntheticRuntimeTargets:
     """Return the runtime-facing object names built from the synthetic contract."""
     return SyntheticRuntimeTargets(
         discount_curves=tuple(discount_curves.keys()),
         forecast_curves=tuple(forecast_curves.keys()),
         credit_curves=tuple(credit_curves.keys()),
-        vol_surfaces=tuple(rate_vol_surfaces.keys()),
+        vol_surfaces=tuple(vol_surfaces.keys()),
         local_vol_surfaces=tuple(local_vol_surfaces.keys()),
         jump_parameter_sets=tuple(jump_parameter_sets.keys()),
         model_parameter_sets=tuple(model_parameter_sets.keys()),
@@ -1144,24 +1241,34 @@ class MockDataProvider(BaseDataProvider):
             forecast_curves = _build_forecast_curves(discount_curves, rates_pack)
             rate_vol_surfaces = _build_rate_vol_surfaces(forecast_curves["USD-SOFR-3M"], rates_pack)
             credit_curves = _build_credit_curves(credit_pack)
+            equity_vol_surfaces = _build_equity_implied_vol_surfaces(
+                volatility_pack=volatility_pack,
+                underlier_spots=underlier_spots,
+                discount_curve=discount_curves["usd_ois"],
+            )
+            vol_surfaces = dict(rate_vol_surfaces)
+            vol_surfaces.update(equity_vol_surfaces)
             local_vol_surfaces = _build_local_vol_surfaces(
                 volatility_pack=volatility_pack,
                 underlier_spots=underlier_spots,
+                discount_curve=discount_curves["usd_ois"],
+                vol_surfaces=vol_surfaces,
             )
             jump_parameter_sets = _build_jump_parameter_sets(volatility_pack)
-            model_parameter_sets = _build_model_parameter_sets(volatility_pack)
+            model_parameter_sets = _build_model_parameter_sets(volatility_pack, discount_curves["usd_ois"])
             quote_bundles = _build_synthetic_quote_bundles(
                 rates_pack=rates_pack,
                 credit_pack=credit_pack,
                 volatility_pack=volatility_pack,
                 rate_vol_surfaces=rate_vol_surfaces,
+                equity_vol_surfaces=equity_vol_surfaces,
                 local_vol_surfaces=local_vol_surfaces,
             )
             runtime_targets = _build_synthetic_runtime_targets(
                 discount_curves=discount_curves,
                 forecast_curves=forecast_curves,
                 credit_curves=credit_curves,
-                rate_vol_surfaces=rate_vol_surfaces,
+                vol_surfaces=vol_surfaces,
                 local_vol_surfaces=local_vol_surfaces,
                 jump_parameter_sets=jump_parameter_sets,
                 model_parameter_sets=model_parameter_sets,
@@ -1201,12 +1308,21 @@ class MockDataProvider(BaseDataProvider):
                 _build_synthetic_credit_model_pack(regime=regime, seed=prior_seed),
             )
             volatility_pack = _build_synthetic_volatility_model_pack(regime=regime, seed=prior_seed)
+            equity_vol_surfaces = _build_equity_implied_vol_surfaces(
+                volatility_pack=volatility_pack,
+                underlier_spots=underlier_spots,
+                discount_curve=discount_curves["usd_ois"],
+            )
+            vol_surfaces = dict(rate_vol_surfaces)
+            vol_surfaces.update(equity_vol_surfaces)
             local_vol_surfaces = _build_local_vol_surfaces(
                 volatility_pack=volatility_pack,
                 underlier_spots=underlier_spots,
+                discount_curve=discount_curves["usd_ois"],
+                vol_surfaces=vol_surfaces,
             )
             jump_parameter_sets = _build_jump_parameter_sets(volatility_pack)
-            model_parameter_sets = _build_model_parameter_sets(volatility_pack)
+            model_parameter_sets = _build_model_parameter_sets(volatility_pack, discount_curves["usd_ois"])
             synthetic_generation_contract = None
 
         fixing_histories = _build_fixing_histories(best, forecast_curves)
@@ -1234,7 +1350,10 @@ class MockDataProvider(BaseDataProvider):
                         "GBP-DISC": float(rates_pack.discount_curve_shifts_bps["gbp_ois"]),
                     },
                     "surface_sets": {
-                        "vol_surfaces": rates_pack.rate_vol_surface_family,
+                        "vol_surfaces": (
+                            rates_pack.rate_vol_surface_family,
+                            volatility_pack.implied_vol_surface_family,
+                        ),
                         "local_vol_surfaces": volatility_pack.local_vol_surface_family,
                         "jump_parameter_sets": volatility_pack.jump_parameter_family,
                         "model_parameter_sets": volatility_pack.model_parameter_family,
@@ -1258,7 +1377,7 @@ class MockDataProvider(BaseDataProvider):
             source="mock",
             discount_curves=discount_curves,
             forecast_curves=forecast_curves,
-            vol_surfaces=rate_vol_surfaces,
+            vol_surfaces=vol_surfaces,
             credit_curves=credit_curves,
             fixing_histories=fixing_histories,
             fx_rates=_build_fx_rates(regime),

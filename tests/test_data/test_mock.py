@@ -2,8 +2,11 @@
 
 from datetime import date
 
+import numpy as raw_np
 import pytest
 
+from trellis.models.calibration.heston_fit import calibrate_heston_smile_workflow
+from trellis.models.calibration.local_vol import calibrate_local_vol_surface_workflow
 from trellis.models.calibration.sabr_fit import calibrate_sabr_smile_workflow
 from trellis.models.calibration.credit import (
     CreditHazardCalibrationQuote,
@@ -112,6 +115,7 @@ class TestMockDataProvider:
         assert "spx_local_vol" in snapshot.local_vol_surfaces
         assert "merton_equity" in snapshot.jump_parameter_sets
         assert "heston_equity" in snapshot.model_parameter_sets
+        assert "spx_heston_implied_vol" in snapshot.vol_surfaces
         assert snapshot.provenance["source_kind"] == "synthetic_snapshot"
         assert snapshot.provenance["prior_family"] == "embedded_market_regime"
         assert snapshot.provenance["prior_parameters"]["regime"] == "easing_cycle"
@@ -142,13 +146,17 @@ class TestMockDataProvider:
         assert contract["seed"] == snapshot.provenance["prior_seed"]
         assert contract["model_packs"]["rates"]["family"] == "shifted_curve_bundle"
         assert contract["model_packs"]["credit"]["family"] == "reduced_form_hazard_curve"
-        assert contract["model_packs"]["volatility"]["family"] == "regime_surface_bundle"
+        assert contract["model_packs"]["volatility"]["family"] == "heston_implied_vol_bundle"
         assert "forecast_basis_parameters" in contract["model_packs"]["rates"]
         assert "rate_vol_model" in contract["model_packs"]["rates"]
         assert "hazard_rate_inputs" in contract["model_packs"]["credit"]
+        assert "implied_vol_surface_parameters" in contract["model_packs"]["volatility"]
+        assert "local_vol_surface_sources" in contract["model_packs"]["volatility"]
         assert contract["quote_bundles"]["credit"]["quote_families"] == ["spread", "hazard"]
         assert "usd_ois" in contract["runtime_targets"]["discount_curves"]
         assert "USD-SOFR-3M" in contract["runtime_targets"]["forecast_curves"]
+        assert "spx_heston_implied_vol" in contract["runtime_targets"]["vol_surfaces"]
+        assert "spx_local_vol" in contract["runtime_targets"]["local_vol_surfaces"]
 
     def test_synthetic_generation_contract_is_deterministic_for_same_request(self):
         provider = MockDataProvider()
@@ -171,8 +179,11 @@ class TestMockDataProvider:
         assert consistency["rates"]["forecast_basis_bps"] == generation["model_packs"]["rates"]["forecast_basis_bps"]
         assert consistency["rates"]["forecast_basis_by_tenor_bps"] == generation["quote_bundles"]["rates"]["forecast_basis_by_tenor_bps"]
         assert consistency["credit"]["spread_inputs_decimal"] == generation["quote_bundles"]["credit"]["spread_inputs_decimal"]
-        assert consistency["volatility"]["rate_vol_surfaces"] == generation["runtime_targets"]["vol_surfaces"]
+        assert consistency["volatility"]["vol_surfaces"] == generation["runtime_targets"]["vol_surfaces"]
+        assert consistency["volatility"]["rate_vol_surfaces"] == generation["quote_bundles"]["rates"]["rate_vol_surface_names"]
         assert consistency["volatility"]["local_vol_surfaces"] == generation["runtime_targets"]["local_vol_surfaces"]
+        assert consistency["volatility"]["equity_implied_vol_surfaces"] == generation["quote_bundles"]["volatility"]["implied_vol_surface_names"]
+        assert consistency["volatility"]["local_vol_surface_sources"] == generation["quote_bundles"]["volatility"]["local_vol_surface_sources"]
         assert sorted(consistency["volatility"]["model_parameter_sets"]) == sorted(
             generation["runtime_targets"]["model_parameter_sets"]
         )
@@ -240,6 +251,60 @@ class TestMockDataProvider:
 
         for tenor_text, hazard in hazard_grid.items():
             assert spread_grid[tenor_text] == pytest.approx(float(hazard) * (1.0 - recovery))
+
+    def test_synthetic_equity_smile_round_trips_through_heston_workflow(self):
+        provider = MockDataProvider()
+        snapshot = provider.fetch_market_snapshot(date(2024, 11, 15))
+        generation = snapshot.provenance["prior_parameters"]["synthetic_generation_contract"]
+        heston_model = generation["model_packs"]["volatility"]["model_parameter_sets"]["heston_equity"]
+        surface = snapshot.vol_surfaces["spx_heston_implied_vol"]
+        spot = snapshot.underlier_spots["SPX"]
+        rate = snapshot.discount_curve("usd_ois").zero_rate(1.0)
+        expiry = 1.0
+        strikes = list(surface.strikes)
+        market_vols = [surface.black_vol(expiry, strike) for strike in strikes]
+
+        result = calibrate_heston_smile_workflow(
+            spot,
+            expiry,
+            strikes,
+            market_vols,
+            rate=rate,
+            surface_name="synthetic_spx_heston",
+            parameter_set_name="synthetic_heston_equity",
+            warm_start=(
+                float(heston_model["kappa"]),
+                float(heston_model["theta"]),
+                float(heston_model["xi"]),
+                float(heston_model["rho"]),
+                float(heston_model["v0"]),
+            ),
+        )
+
+        assert result.diagnostics.max_abs_vol_error < 1e-4
+        assert result.runtime_binding.process.theta == pytest.approx(float(heston_model["theta"]), abs=0.02)
+
+    def test_synthetic_local_vol_surface_is_derived_from_spx_implied_vol_surface(self):
+        provider = MockDataProvider()
+        snapshot = provider.fetch_market_snapshot(date(2024, 11, 15))
+        generation = snapshot.provenance["prior_parameters"]["synthetic_generation_contract"]
+        surface = snapshot.vol_surfaces["spx_heston_implied_vol"]
+        local_surface = snapshot.local_vol_surfaces["spx_local_vol"]
+        spot = snapshot.underlier_spots["SPX"]
+        rate = snapshot.discount_curve("usd_ois").zero_rate(1.0)
+
+        result = calibrate_local_vol_surface_workflow(
+            raw_np.asarray(surface.strikes, dtype=float),
+            raw_np.asarray(surface.expiries, dtype=float),
+            raw_np.asarray(surface.vols, dtype=float),
+            spot,
+            rate,
+            surface_name="expected_spx_local_vol",
+        )
+
+        assert generation["quote_bundles"]["volatility"]["local_vol_surface_sources"]["spx_local_vol"] == "spx_heston_implied_vol"
+        assert local_surface(spot, 1.0) == pytest.approx(result.local_vol_surface(spot, 1.0), abs=1e-10)
+        assert local_surface(spot * 0.95, 2.0) == pytest.approx(result.local_vol_surface(spot * 0.95, 2.0), abs=1e-10)
 
     def test_model_consistency_contract_credit_inputs_drive_calibration_handoff(self):
         provider = MockDataProvider()

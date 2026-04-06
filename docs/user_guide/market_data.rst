@@ -333,13 +333,27 @@ For credit, the synthetic generator is now hazard-first:
 This keeps the synthetic credit path aligned with the typed reduced-form credit
 workflow instead of letting quote space and runtime space drift apart.
 
+For equity volatility, the synthetic generator now uses one bounded
+stochastic-volatility authority surface as well:
+
+- the volatility model pack stores seeded Heston parameters for
+  ``heston_equity``
+- the snapshot now carries a named ``spx_heston_implied_vol`` surface
+  generated from those parameters
+- ``spx_local_vol`` is derived from that stored implied-vol surface through the
+  supported Dupire workflow instead of being guessed independently
+
+This keeps the implied-vol surface, the local-vol fixture, and the runtime
+Heston parameter payload aligned off the same seeded assumptions.
+
 For the migrated calibration workflows, the derived
 ``model_consistency_contract`` still records the bounded deterministic rates,
 credit, and volatility assumptions used to build the synthetic snapshot:
 
 - rates curve roles and forecast-basis inputs
 - reduced-form credit spread grids and recovery
-- the named vol/local-vol/model-parameter packs included in the snapshot
+- the named vol/local-vol/model-parameter packs included in the snapshot,
+  including the derived SPX implied-vol to local-vol linkage
 
 This is synthetic provenance for proving, demos, and regression fixtures. It
 is intentionally explicit so downstream tooling can show which bounded model
