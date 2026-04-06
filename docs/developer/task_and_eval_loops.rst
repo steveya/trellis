@@ -150,6 +150,14 @@ resolver keeps that assembly step visible too: named bootstrap buckets become
 named curves in the snapshot, and the chosen curve name is preserved in the
 runtime state and replay metadata for validation.
 
+The same rule now applies to the seeded mock market path. When a task or
+proving run uses ``source="mock"``, the runtime contract and market-context
+provenance preserve the synthetic prior seed plus the nested
+``prior_parameters.synthetic_generation_contract`` payload. That means replay
+and proving tooling can recover not only which named curves or surfaces were
+selected, but also which bounded synthetic rates, credit, and volatility
+authority pack produced those runtime objects.
+
 Suggested Validation Order
 --------------------------
 

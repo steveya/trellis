@@ -3,11 +3,11 @@
   "cases": [
     {
       "cold": {
-        "calibrations_per_second": 0.358,
+        "calibrations_per_second": 0.378,
         "label": "swaption_strip",
-        "max_seconds": 2.798086,
-        "mean_seconds": 2.795049,
-        "median_seconds": 2.794706,
+        "max_seconds": 2.644463,
+        "mean_seconds": 2.644463,
+        "median_seconds": 2.644463,
         "metadata": {
           "instrument_count": 2,
           "multi_curve_roles": {
@@ -17,19 +17,17 @@
           },
           "warm_start": true
         },
-        "min_seconds": 2.792356,
+        "min_seconds": 2.644463,
         "mode": "cold",
         "notes": [
           "least_squares",
           "tree_pricing"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          2.792356,
-          2.798086,
-          2.794706
+          2.644463
         ],
-        "warmups": 1
+        "warmups": 0
       },
       "label": "swaption_strip",
       "metadata": {
@@ -46,11 +44,11 @@
         "tree_pricing"
       ],
       "warm": {
-        "calibrations_per_second": 3.28,
+        "calibrations_per_second": 3.445,
         "label": "swaption_strip",
-        "max_seconds": 0.305824,
-        "mean_seconds": 0.304904,
-        "median_seconds": 0.304494,
+        "max_seconds": 0.290246,
+        "mean_seconds": 0.290246,
+        "median_seconds": 0.290246,
         "metadata": {
           "instrument_count": 2,
           "multi_curve_roles": {
@@ -60,184 +58,198 @@
           },
           "warm_start": true
         },
-        "min_seconds": 0.304394,
+        "min_seconds": 0.290246,
         "mode": "warm",
         "notes": [
           "least_squares",
           "tree_pricing"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.304494,
-          0.305824,
-          0.304394
+          0.290246
         ],
-        "warmups": 1
+        "warmups": 0
       },
-      "warm_speedup": 9.167,
+      "warm_speedup": 9.111,
       "workflow": "hull_white"
     },
     {
       "cold": {
-        "calibrations_per_second": 24.034,
+        "calibrations_per_second": 10.955,
         "label": "single_smile",
-        "max_seconds": 0.063604,
-        "mean_seconds": 0.041607,
-        "median_seconds": 0.030982,
+        "max_seconds": 0.091279,
+        "mean_seconds": 0.091279,
+        "median_seconds": 0.091279,
         "metadata": {
           "point_count": 7,
+          "surface_name": "usd_rates_smile",
+          "synthetic_generation_contract_version": "v2",
           "warm_start": true
         },
-        "min_seconds": 0.030236,
+        "min_seconds": 0.091279,
         "mode": "cold",
         "notes": [
           "least_squares",
-          "implied_vol_fit"
+          "implied_vol_fit",
+          "synthetic_generation_contract_fixture"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.063604,
-          0.030236,
-          0.030982
+          0.091279
         ],
-        "warmups": 1
+        "warmups": 0
       },
       "label": "single_smile",
       "metadata": {
         "point_count": 7,
+        "surface_name": "usd_rates_smile",
+        "synthetic_generation_contract_version": "v2",
         "warm_start": true
       },
       "notes": [
         "least_squares",
-        "implied_vol_fit"
+        "implied_vol_fit",
+        "synthetic_generation_contract_fixture"
       ],
       "warm": {
-        "calibrations_per_second": 301.641,
+        "calibrations_per_second": 307.905,
         "label": "single_smile",
-        "max_seconds": 0.003713,
-        "mean_seconds": 0.003315,
-        "median_seconds": 0.00323,
+        "max_seconds": 0.003248,
+        "mean_seconds": 0.003248,
+        "median_seconds": 0.003248,
         "metadata": {
           "point_count": 7,
+          "surface_name": "usd_rates_smile",
+          "synthetic_generation_contract_version": "v2",
           "warm_start": true
         },
-        "min_seconds": 0.003003,
+        "min_seconds": 0.003248,
         "mode": "warm",
         "notes": [
           "least_squares",
-          "implied_vol_fit"
+          "implied_vol_fit",
+          "synthetic_generation_contract_fixture"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.003003,
-          0.003713,
-          0.00323
+          0.003248
         ],
-        "warmups": 1
+        "warmups": 0
       },
-      "warm_speedup": 12.55,
+      "warm_speedup": 28.105,
       "workflow": "sabr"
     },
     {
       "cold": {
-        "calibrations_per_second": 4.22,
+        "calibrations_per_second": 1.495,
         "label": "single_smile",
-        "max_seconds": 0.238199,
-        "mean_seconds": 0.23695,
-        "median_seconds": 0.237132,
+        "max_seconds": 0.669084,
+        "mean_seconds": 0.669084,
+        "median_seconds": 0.669084,
         "metadata": {
           "point_count": 5,
+          "surface_name": "spx_heston_implied_vol",
+          "synthetic_generation_contract_version": "v2",
           "warm_start": true
         },
-        "min_seconds": 0.235519,
+        "min_seconds": 0.669084,
         "mode": "cold",
         "notes": [
           "least_squares",
-          "fft_pricing"
+          "fft_pricing",
+          "synthetic_generation_contract_fixture"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.235519,
-          0.238199,
-          0.237132
+          0.669084
         ],
-        "warmups": 1
+        "warmups": 0
       },
       "label": "single_smile",
       "metadata": {
         "point_count": 5,
+        "surface_name": "spx_heston_implied_vol",
+        "synthetic_generation_contract_version": "v2",
         "warm_start": true
       },
       "notes": [
         "least_squares",
-        "fft_pricing"
+        "fft_pricing",
+        "synthetic_generation_contract_fixture"
       ],
       "warm": {
-        "calibrations_per_second": 35.034,
+        "calibrations_per_second": 23.733,
         "label": "single_smile",
-        "max_seconds": 0.028567,
-        "mean_seconds": 0.028544,
-        "median_seconds": 0.028567,
+        "max_seconds": 0.042135,
+        "mean_seconds": 0.042135,
+        "median_seconds": 0.042135,
         "metadata": {
           "point_count": 5,
+          "surface_name": "spx_heston_implied_vol",
+          "synthetic_generation_contract_version": "v2",
           "warm_start": true
         },
-        "min_seconds": 0.028498,
+        "min_seconds": 0.042135,
         "mode": "warm",
         "notes": [
           "least_squares",
-          "fft_pricing"
+          "fft_pricing",
+          "synthetic_generation_contract_fixture"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.028567,
-          0.028498,
-          0.028567
+          0.042135
         ],
-        "warmups": 1
+        "warmups": 0
       },
-      "warm_speedup": 8.301,
+      "warm_speedup": 15.88,
       "workflow": "heston"
     },
     {
       "cold": {
-        "calibrations_per_second": 174.611,
+        "calibrations_per_second": 2644.334,
         "label": "dupire_surface",
-        "max_seconds": 0.005755,
-        "mean_seconds": 0.005727,
-        "median_seconds": 0.005716,
+        "max_seconds": 0.000378,
+        "mean_seconds": 0.000378,
+        "median_seconds": 0.000378,
         "metadata": {
           "grid_shape": [
-            15,
-            30
+            5,
+            5
           ],
+          "source_surface_name": "spx_heston_implied_vol",
+          "surface_name": "spx_local_vol",
+          "synthetic_generation_contract_version": "v2",
           "warm_start": false
         },
-        "min_seconds": 0.005711,
+        "min_seconds": 0.000378,
         "mode": "cold",
         "notes": [
           "dupire",
-          "workflow_surface"
+          "workflow_surface",
+          "synthetic_generation_contract_fixture"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.005716,
-          0.005711,
-          0.005755
+          0.000378
         ],
-        "warmups": 1
+        "warmups": 0
       },
       "label": "dupire_surface",
       "metadata": {
         "grid_shape": [
-          15,
-          30
+          5,
+          5
         ],
+        "source_surface_name": "spx_heston_implied_vol",
+        "surface_name": "spx_local_vol",
+        "synthetic_generation_contract_version": "v2",
         "warm_start": false
       },
       "notes": [
         "dupire",
-        "workflow_surface"
+        "workflow_surface",
+        "synthetic_generation_contract_fixture"
       ],
       "warm": null,
       "warm_speedup": null,
@@ -245,11 +257,11 @@
     },
     {
       "cold": {
-        "calibrations_per_second": 3364.485,
+        "calibrations_per_second": 2764.019,
         "label": "single_name_curve",
-        "max_seconds": 0.000308,
-        "mean_seconds": 0.000297,
-        "median_seconds": 0.000295,
+        "max_seconds": 0.000362,
+        "mean_seconds": 0.000362,
+        "median_seconds": 0.000362,
         "metadata": {
           "curve_name": "usd_ig",
           "model_consistency_contract_version": "v1",
@@ -257,19 +269,17 @@
           "quote_family": "spread",
           "warm_start": false
         },
-        "min_seconds": 0.000289,
+        "min_seconds": 0.000362,
         "mode": "cold",
         "notes": [
           "least_squares",
           "model_consistency_contract_fixture"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.000308,
-          0.000295,
-          0.000289
+          0.000362
         ],
-        "warmups": 1
+        "warmups": 0
       },
       "label": "single_name_curve",
       "metadata": {
@@ -288,7 +298,7 @@
       "workflow": "credit"
     }
   ],
-  "created_at": "2026-04-06T14:56:54Z",
+  "created_at": "2026-04-06T18:34:55Z",
   "environment": {
     "platform": "macOS-26.3.1-arm64-arm-64bit",
     "python_version": "3.10.6"
@@ -298,9 +308,9 @@
     "Warm-start baselines use workflow-native seed hooks where the workflow supports them."
   ],
   "summary": {
-    "average_warm_speedup": 10.006,
-    "cold_mean_seconds": 0.615926,
-    "warm_mean_seconds": 0.112254,
+    "average_warm_speedup": 17.699,
+    "cold_mean_seconds": 0.681113,
+    "warm_mean_seconds": 0.111876,
     "warm_start_workflow_count": 3,
     "workflow_count": 5
   }

@@ -39,7 +39,7 @@ def test_supported_calibration_workflows_preserve_replay_contracts_and_fit_toler
     local_vol = scenarios["local_vol"].cold_runner()
     assert local_vol.provenance["source_ref"] == "calibrate_local_vol_surface_workflow"
     assert local_vol.diagnostics.unstable_point_count == 0
-    assert local_vol.local_vol_surface(100.0, 1.0) == pytest.approx(0.20736772904577236, abs=1e-10)
+    assert local_vol.local_vol_surface(100.0, 1.0) == pytest.approx(0.22274408792538325, abs=1e-10)
 
     credit = scenarios["credit"].cold_runner()
     assert credit.solver_provenance.backend["backend_id"] == "scipy"
@@ -106,6 +106,13 @@ def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
     assert roles["discount_curve"] == "usd_ois"
     assert roles["forecast_curve"] == "USD-SOFR-3M"
     assert roles["rate_index"] == "USD-SOFR-3M"
+    assert cases["sabr"]["metadata"]["surface_name"] == "usd_rates_smile"
+    assert cases["sabr"]["metadata"]["synthetic_generation_contract_version"] == "v2"
+    assert cases["heston"]["metadata"]["surface_name"] == "spx_heston_implied_vol"
+    assert cases["heston"]["metadata"]["synthetic_generation_contract_version"] == "v2"
+    assert cases["local_vol"]["metadata"]["source_surface_name"] == "spx_heston_implied_vol"
+    assert cases["local_vol"]["metadata"]["surface_name"] == "spx_local_vol"
+    assert cases["local_vol"]["metadata"]["synthetic_generation_contract_version"] == "v2"
 
 
 def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
@@ -125,3 +132,10 @@ def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
     assert roles["discount_curve"] == "usd_ois"
     assert roles["forecast_curve"] == "USD-SOFR-3M"
     assert roles["rate_index"] == "USD-SOFR-3M"
+    assert cases["sabr"]["metadata"]["surface_name"] == "usd_rates_smile"
+    assert cases["sabr"]["metadata"]["synthetic_generation_contract_version"] == "v2"
+    assert cases["heston"]["metadata"]["surface_name"] == "spx_heston_implied_vol"
+    assert cases["heston"]["metadata"]["synthetic_generation_contract_version"] == "v2"
+    assert cases["local_vol"]["metadata"]["source_surface_name"] == "spx_heston_implied_vol"
+    assert cases["local_vol"]["metadata"]["surface_name"] == "spx_local_vol"
+    assert cases["local_vol"]["metadata"]["synthetic_generation_contract_version"] == "v2"

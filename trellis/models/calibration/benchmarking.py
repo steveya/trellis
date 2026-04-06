@@ -344,9 +344,6 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
     from trellis.models.calibration.local_vol import calibrate_local_vol_surface_workflow
     from trellis.models.calibration.rates import HullWhiteCalibrationInstrument, calibrate_hull_white
     from trellis.models.calibration.sabr_fit import calibrate_sabr_smile_workflow
-    from trellis.models.processes.heston import Heston
-    from trellis.models.processes.sabr import SABRProcess
-    from trellis.models.transforms.fft_pricer import fft_price
 
     settle = date(2024, 11, 15)
 
@@ -416,62 +413,47 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
         for spec in hw_specs
     )
 
-    sabr_true = SABRProcess(0.20, 0.5, -0.3, 0.4)
-    sabr_strikes = [80.0, 90.0, 95.0, 100.0, 105.0, 110.0, 120.0]
-    sabr_forward = 100.0
-    sabr_expiry = 1.0
-    sabr_beta = 0.5
-    sabr_market_vols = [sabr_true.implied_vol(sabr_forward, strike, sabr_expiry) for strike in sabr_strikes]
-
-    heston_spot = 100.0
-    heston_rate = 0.02
-    heston_expiry = 1.0
-    heston_strikes = [80.0, 90.0, 100.0, 110.0, 120.0]
-    heston_true = Heston(mu=heston_rate, kappa=1.8, theta=0.04, xi=0.35, rho=-0.6, v0=0.05)
-    heston_market_vols = []
-    for strike in heston_strikes:
-        price = fft_price(
-            lambda u: heston_true.characteristic_function(u, heston_expiry, log_spot=raw_np.log(heston_spot)),
-            heston_spot,
-            strike,
-            heston_expiry,
-            heston_rate,
-            N=1024,
-            eta=0.1,
-        )
-        from trellis.models.calibration.implied_vol import implied_vol
-
-        heston_market_vols.append(
-            implied_vol(price, heston_spot, strike, heston_expiry, heston_rate, option_type="call")
-        )
-
-    local_vol_strikes = raw_np.linspace(60.0, 150.0, 30)
-    local_vol_expiries = raw_np.linspace(0.1, 3.0, 15)
-    local_vol_surface = raw_np.array(
-        [
-            [0.24, 0.23, 0.22, 0.21, 0.20, 0.19],
-            [0.245, 0.235, 0.225, 0.215, 0.205, 0.195],
-            [0.25, 0.24, 0.23, 0.22, 0.21, 0.20],
-            [0.255, 0.245, 0.235, 0.225, 0.215, 0.205],
-            [0.26, 0.25, 0.24, 0.23, 0.22, 0.21],
-            [0.265, 0.255, 0.245, 0.235, 0.225, 0.215],
-        ],
-        dtype=float,
-    )
-    local_vol_surface = raw_np.interp(
-        raw_np.linspace(0, 5, len(local_vol_expiries) * len(local_vol_strikes)),
-        raw_np.arange(local_vol_surface.size),
-        local_vol_surface.ravel(),
-    ).reshape(len(local_vol_expiries), len(local_vol_strikes))
-
     mock_snapshot = MockDataProvider().fetch_market_snapshot(settle)
     prior_parameters = dict(mock_snapshot.provenance.get("prior_parameters") or {})
+    synthetic_generation_contract = dict(prior_parameters.get("synthetic_generation_contract") or {})
     model_consistency_contract = dict(prior_parameters.get("model_consistency_contract") or {})
     rates_contract = dict(model_consistency_contract.get("rates") or {})
     credit_contract = dict(model_consistency_contract.get("credit") or {})
+    model_packs = dict(synthetic_generation_contract.get("model_packs") or {})
+    rates_pack = dict(model_packs.get("rates") or {})
+    volatility_pack = dict(model_packs.get("volatility") or {})
+    volatility_quotes = dict((synthetic_generation_contract.get("quote_bundles") or {}).get("volatility") or {})
     curve_roles = dict(rates_contract.get("curve_roles") or {})
     discount_curve_name = str(curve_roles.get("discount_curve") or mock_snapshot.default_discount_curve or "")
     forecast_curve_name = str(curve_roles.get("forecast_curve") or mock_snapshot.default_forecast_curve or "")
+    rate_vol_model = dict(rates_pack.get("rate_vol_model") or {})
+    rate_surface_name = "usd_rates_smile"
+    rate_surface = mock_snapshot.vol_surfaces[rate_surface_name]
+    sabr_expiry = 1.0
+    sabr_strikes = list(rate_surface.strikes)
+    sabr_forward = float(mock_snapshot.forecast_curves[forecast_curve_name].zero_rate(sabr_expiry))
+    sabr_beta = float(rate_vol_model.get("beta", 0.5))
+    sabr_market_vols = [rate_surface.black_vol(sabr_expiry, strike) for strike in sabr_strikes]
+
+    heston_surface_name = str(
+        next(iter(volatility_quotes.get("implied_vol_surface_names") or ("spx_heston_implied_vol",)))
+    )
+    heston_surface = mock_snapshot.vol_surfaces[heston_surface_name]
+    heston_model = dict((volatility_pack.get("model_parameter_sets") or {}).get("heston_equity") or {})
+    heston_spot = float(mock_snapshot.underlier_spots["SPX"])
+    heston_rate = float(mock_snapshot.discount_curves[discount_curve_name].zero_rate(1.0))
+    heston_expiry = 1.0
+    heston_strikes = list(heston_surface.strikes)
+    heston_market_vols = [heston_surface.black_vol(heston_expiry, strike) for strike in heston_strikes]
+
+    local_vol_sources = dict(volatility_quotes.get("local_vol_surface_sources") or {})
+    local_vol_surface_name = str(next(iter(local_vol_sources or {"spx_local_vol": heston_surface_name})))
+    local_vol_source_name = str(local_vol_sources.get(local_vol_surface_name, heston_surface_name))
+    local_vol_source_surface = mock_snapshot.vol_surfaces[local_vol_source_name]
+    local_vol_strikes = raw_np.asarray(local_vol_source_surface.strikes, dtype=float)
+    local_vol_expiries = raw_np.asarray(local_vol_source_surface.expiries, dtype=float)
+    local_vol_surface = raw_np.asarray(local_vol_source_surface.vols, dtype=float)
+
     spread_inputs = dict(credit_contract.get("spread_inputs_decimal") or {})
     credit_curve_name = str(mock_snapshot.default_credit_curve or "")
     if (not credit_curve_name or credit_curve_name not in spread_inputs) and spread_inputs:
@@ -526,7 +508,7 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
                 sabr_strikes,
                 sabr_market_vols,
                 beta=sabr_beta,
-                surface_name="benchmark_sabr",
+                surface_name=rate_surface_name,
             ),
             warm_runner=lambda: calibrate_sabr_smile_workflow(
                 sabr_forward,
@@ -534,11 +516,20 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
                 sabr_strikes,
                 sabr_market_vols,
                 beta=sabr_beta,
-                surface_name="benchmark_sabr",
-                initial_guess=(0.20, -0.3, 0.4),
+                surface_name=rate_surface_name,
+                initial_guess=(
+                    float(rate_vol_model.get("alpha", 0.20)),
+                    float(rate_vol_model.get("rho", -0.3)),
+                    float(rate_vol_model.get("nu", 0.4)),
+                ),
             ),
-            notes=("least_squares", "implied_vol_fit"),
-            metadata={"point_count": len(sabr_strikes), "warm_start": True},
+            notes=("least_squares", "implied_vol_fit", "synthetic_generation_contract_fixture"),
+            metadata={
+                "point_count": len(sabr_strikes),
+                "warm_start": True,
+                "surface_name": rate_surface_name,
+                "synthetic_generation_contract_version": str(synthetic_generation_contract.get("version", "")),
+            },
         ),
         CalibrationBenchmarkScenario(
             workflow="heston",
@@ -549,8 +540,8 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
                 heston_strikes,
                 heston_market_vols,
                 rate=heston_rate,
-                surface_name="benchmark_heston",
-                parameter_set_name="benchmark_heston",
+                surface_name=heston_surface_name,
+                parameter_set_name="heston_equity",
             ),
             warm_runner=lambda: calibrate_heston_smile_workflow(
                 heston_spot,
@@ -558,12 +549,23 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
                 heston_strikes,
                 heston_market_vols,
                 rate=heston_rate,
-                surface_name="benchmark_heston",
-                parameter_set_name="benchmark_heston",
-                warm_start=(1.8, 0.04, 0.35, -0.6, 0.05),
+                surface_name=heston_surface_name,
+                parameter_set_name="heston_equity",
+                warm_start=(
+                    float(heston_model.get("kappa", 1.8)),
+                    float(heston_model.get("theta", 0.04)),
+                    float(heston_model.get("xi", 0.35)),
+                    float(heston_model.get("rho", -0.6)),
+                    float(heston_model.get("v0", 0.05)),
+                ),
             ),
-            notes=("least_squares", "fft_pricing"),
-            metadata={"point_count": len(heston_strikes), "warm_start": True},
+            notes=("least_squares", "fft_pricing", "synthetic_generation_contract_fixture"),
+            metadata={
+                "point_count": len(heston_strikes),
+                "warm_start": True,
+                "surface_name": heston_surface_name,
+                "synthetic_generation_contract_version": str(synthetic_generation_contract.get("version", "")),
+            },
         ),
         CalibrationBenchmarkScenario(
             workflow="local_vol",
@@ -572,14 +574,17 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
                 local_vol_strikes,
                 local_vol_expiries,
                 local_vol_surface,
-                100.0,
-                0.02,
-                surface_name="benchmark_local_vol",
+                heston_spot,
+                heston_rate,
+                surface_name=local_vol_surface_name,
             ),
-            notes=("dupire", "workflow_surface"),
+            notes=("dupire", "workflow_surface", "synthetic_generation_contract_fixture"),
             metadata={
                 "grid_shape": [len(local_vol_expiries), len(local_vol_strikes)],
                 "warm_start": False,
+                "source_surface_name": local_vol_source_name,
+                "surface_name": local_vol_surface_name,
+                "synthetic_generation_contract_version": str(synthetic_generation_contract.get("version", "")),
             },
         ),
         CalibrationBenchmarkScenario(

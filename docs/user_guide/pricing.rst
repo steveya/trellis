@@ -160,6 +160,11 @@ artifacts, fit-quality tolerances, and cold-versus-warm benchmark baselines are
 locked down for the supported Hull-White, SABR, Heston, local-vol, and
 single-name credit fixtures. Warm-start baselines remain explicit for the
 three workflows that expose warm-seed hooks (Hull-White, SABR, Heston).
+Those checked baseline fixtures now come from the same bounded mock-snapshot
+contracts the rest of the proving path uses: rates, Heston, and local-vol
+canaries read the seeded ``synthetic_generation_contract`` surface, while the
+single-name credit canary reads the derived
+``model_consistency_contract`` compatibility payload.
 If you change solver wiring or runtime consumers, review the calibration
 benchmark artifact in ``docs/benchmarks/calibration_workflows.md`` alongside the
 workflow tests before treating the change as desk-safe.

@@ -83,12 +83,20 @@ def test_supported_calibration_benchmark_scenarios_cover_workflows():
     from trellis.models.calibration.benchmarking import supported_calibration_benchmark_scenarios
 
     scenarios = supported_calibration_benchmark_scenarios()
-    workflows = {scenario.workflow for scenario in scenarios}
+    scenario_map = {scenario.workflow: scenario for scenario in scenarios}
+    workflows = set(scenario_map)
 
     assert workflows == {"hull_white", "sabr", "heston", "local_vol", "credit"}
-    hull_white = next(s for s in scenarios if s.workflow == "hull_white")
+    hull_white = scenario_map["hull_white"]
     assert hull_white.metadata["multi_curve_roles"]["discount_curve"] == "usd_ois"
     assert hull_white.metadata["multi_curve_roles"]["forecast_curve"] == "USD-SOFR-3M"
     assert hull_white.metadata["multi_curve_roles"]["rate_index"] == "USD-SOFR-3M"
-    assert next(s for s in scenarios if s.workflow == "local_vol").warm_runner is None
-    assert next(s for s in scenarios if s.workflow == "credit").warm_runner is None
+    assert scenario_map["local_vol"].warm_runner is None
+    assert scenario_map["credit"].warm_runner is None
+    assert scenario_map["sabr"].metadata["surface_name"] == "usd_rates_smile"
+    assert scenario_map["sabr"].metadata["synthetic_generation_contract_version"] == "v2"
+    assert scenario_map["heston"].metadata["surface_name"] == "spx_heston_implied_vol"
+    assert scenario_map["heston"].metadata["synthetic_generation_contract_version"] == "v2"
+    assert scenario_map["local_vol"].metadata["source_surface_name"] == "spx_heston_implied_vol"
+    assert scenario_map["local_vol"].metadata["surface_name"] == "spx_local_vol"
+    assert scenario_map["local_vol"].metadata["synthetic_generation_contract_version"] == "v2"

@@ -279,6 +279,18 @@ workflows (Hull-White, SABR, Heston, local vol, and single-name credit), with
 warm-start timing tracked on the three workflows that expose explicit warm
 seeds (Hull-White, SABR, Heston).
 
+Those checked fixtures now read from the same bounded mock-snapshot contracts
+used by replay and proving paths instead of from a separate benchmark-only
+surface. The SABR canary reads the seeded ``usd_rates_smile`` surface and its
+rate-vol hints from ``prior_parameters.synthetic_generation_contract``. The
+Heston and local-vol canaries read the seeded ``spx_heston_implied_vol``
+surface and the derived ``spx_local_vol`` linkage from that same synthetic
+contract. The single-name credit canary continues to read spread/recovery
+inputs from the derived ``model_consistency_contract`` compatibility packet.
+
+This keeps the checked calibration boundary aligned with the same bounded
+synthetic market assumptions that task and proving workflows see at runtime.
+
 Curve Bootstrapping
 -------------------
 

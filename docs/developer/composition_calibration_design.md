@@ -395,9 +395,10 @@ pack plus targeted negative canaries:
   and single-name credit
 - rates replay and benchmark artifacts now carry explicit multi-curve
   discount/forecast role metadata so contract drift is detectable
-- the single-name credit benchmark fixture is built from the mock
-  ``model_consistency_contract`` payload so synthetic fixture assumptions stay
-  aligned with the same bounded rates/credit/vol contract used by proving runs
+- the benchmark fixtures now consume the same seeded mock-snapshot contracts
+  used by proving runs: SABR, Heston, and local-vol canaries read the
+  ``synthetic_generation_contract`` surface, while the single-name credit
+  canary reads the derived ``model_consistency_contract`` compatibility packet
 - negative tests explicitly defend missing calibration binding, unsupported
   quote-map families, and invalid calibrated-object materialization kinds
 

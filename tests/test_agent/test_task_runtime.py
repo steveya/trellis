@@ -304,6 +304,7 @@ def test_run_task_attaches_runtime_contract_snapshot_and_trace_metadata():
     }
     assert runtime_contract["market_provenance"]["source_kind"] == "synthetic_snapshot"
     assert runtime_contract["market_provenance"]["prior_family"] == "embedded_market_regime"
+    assert runtime_contract["market_provenance"]["prior_parameters"]["synthetic_generation_contract"]["version"] == "v2"
     assert runtime_contract["selected_curve_names"] == {
         "discount_curve": "usd_ois",
         "forecast_curve": "USD-SOFR-3M",
@@ -328,6 +329,10 @@ def test_run_task_attaches_runtime_contract_snapshot_and_trace_metadata():
     }
     assert result["market_context"]["provenance"]["source_kind"] == "synthetic_snapshot"
     assert result["market_context"]["provenance"]["prior_seed"] == runtime_contract["market_provenance"]["prior_seed"]
+    assert (
+        result["market_context"]["provenance"]["prior_parameters"]["synthetic_generation_contract"]["quote_bundles"]["volatility"]["local_vol_surface_sources"]["spx_local_vol"]
+        == "spx_heston_implied_vol"
+    )
 
 
 def test_artifacts_from_payload_collects_analytical_trace_paths():

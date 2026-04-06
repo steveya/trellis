@@ -1,10 +1,10 @@
 # Calibration Benchmark: `supported_calibration_workflows`
-- Created at: `2026-04-06T14:56:54Z`
+- Created at: `2026-04-06T18:34:55Z`
 - Workflows: `5`
 - Warm-start workflows: `3`
-- Avg cold mean seconds: `0.615926`
-- Avg warm mean seconds: `0.112254`
-- Avg warm speedup: `10.006`x
+- Avg cold mean seconds: `0.681113`
+- Avg warm mean seconds: `0.111876`
+- Avg warm speedup: `17.699`x
 
 ## Environment
 - Python: `3.10.6`
@@ -17,46 +17,49 @@
 ## Workflow Results
 
 ### `hull_white` swaption_strip
-- Cold mean: `2.795049` s
-- Cold throughput: `0.358` runs/s
-- Warm mean: `0.304904` s
-- Warm throughput: `3.28` runs/s
-- Warm speedup: `9.167`x
+- Cold mean: `2.644463` s
+- Cold throughput: `0.378` runs/s
+- Warm mean: `0.290246` s
+- Warm throughput: `3.445` runs/s
+- Warm speedup: `9.111`x
 - Metadata: `instrument_count`=2, `multi_curve_roles`={'discount_curve': 'usd_ois', 'forecast_curve': 'USD-SOFR-3M', 'rate_index': 'USD-SOFR-3M'}, `warm_start`=True
 - Note: least_squares
 - Note: tree_pricing
 
 ### `sabr` single_smile
-- Cold mean: `0.041607` s
-- Cold throughput: `24.034` runs/s
-- Warm mean: `0.003315` s
-- Warm throughput: `301.641` runs/s
-- Warm speedup: `12.55`x
-- Metadata: `point_count`=7, `warm_start`=True
+- Cold mean: `0.091279` s
+- Cold throughput: `10.955` runs/s
+- Warm mean: `0.003248` s
+- Warm throughput: `307.905` runs/s
+- Warm speedup: `28.105`x
+- Metadata: `point_count`=7, `surface_name`='usd_rates_smile', `synthetic_generation_contract_version`='v2', `warm_start`=True
 - Note: least_squares
 - Note: implied_vol_fit
+- Note: synthetic_generation_contract_fixture
 
 ### `heston` single_smile
-- Cold mean: `0.23695` s
-- Cold throughput: `4.22` runs/s
-- Warm mean: `0.028544` s
-- Warm throughput: `35.034` runs/s
-- Warm speedup: `8.301`x
-- Metadata: `point_count`=5, `warm_start`=True
+- Cold mean: `0.669084` s
+- Cold throughput: `1.495` runs/s
+- Warm mean: `0.042135` s
+- Warm throughput: `23.733` runs/s
+- Warm speedup: `15.88`x
+- Metadata: `point_count`=5, `surface_name`='spx_heston_implied_vol', `synthetic_generation_contract_version`='v2', `warm_start`=True
 - Note: least_squares
 - Note: fft_pricing
+- Note: synthetic_generation_contract_fixture
 
 ### `local_vol` dupire_surface
-- Cold mean: `0.005727` s
-- Cold throughput: `174.611` runs/s
+- Cold mean: `0.000378` s
+- Cold throughput: `2644.334` runs/s
 - Warm start: `n/a`
-- Metadata: `grid_shape`=[15, 30], `warm_start`=False
+- Metadata: `grid_shape`=[5, 5], `source_surface_name`='spx_heston_implied_vol', `surface_name`='spx_local_vol', `synthetic_generation_contract_version`='v2', `warm_start`=False
 - Note: dupire
 - Note: workflow_surface
+- Note: synthetic_generation_contract_fixture
 
 ### `credit` single_name_curve
-- Cold mean: `0.000297` s
-- Cold throughput: `3364.485` runs/s
+- Cold mean: `0.000362` s
+- Cold throughput: `2764.019` runs/s
 - Warm start: `n/a`
 - Metadata: `curve_name`='usd_ig', `model_consistency_contract_version`='v1', `point_count`=4, `quote_family`='spread', `warm_start`=False
 - Note: least_squares
