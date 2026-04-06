@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from copy import deepcopy
 from datetime import date
+from typing import Any
 
+from trellis.analytics.result import RiskMeasureOutput
 from trellis.core.types import Instrument, PricingResult
 
 
@@ -212,3 +215,321 @@ class BookResult:
                     rec[k] = v
             records.append(rec)
         return pd.DataFrame(records)
+
+
+class ScenarioResultCube(Mapping[str, BookResult]):
+    """Dict-like scenario result cube with explicit scenario metadata.
+
+    The cube preserves the concrete scenario specification and provenance for
+    each scenario while exposing reusable aggregation helpers for later
+    attribution and summary workflows.
+    """
+
+    def __init__(
+        self,
+        results: dict[str, BookResult],
+        *,
+        scenario_specs: dict[str, dict[str, Any]] | None = None,
+        scenario_provenance: dict[str, dict[str, Any]] | None = None,
+        compute_plan: dict[str, Any] | None = None,
+        base_scenario: str | None = None,
+        compute_plan_object: object | None = None,
+    ):
+        self._results = dict(results)
+        self._scenario_specs = {
+            str(name): deepcopy(spec)
+            for name, spec in (scenario_specs or {}).items()
+        }
+        self._scenario_provenance = {
+            str(name): deepcopy(spec)
+            for name, spec in (scenario_provenance or {}).items()
+        }
+        self._compute_plan = deepcopy(compute_plan or {})
+        self._base_scenario = base_scenario
+        self._compute_plan_object = compute_plan_object
+        if self._base_scenario is None and self._results:
+            self._base_scenario = "base" if "base" in self._results else next(iter(self._results))
+        if self._base_scenario is not None and self._base_scenario not in self._results:
+            raise KeyError(
+                f"Base scenario {self._base_scenario!r} is not present in the cube."
+            )
+        for name in self._results:
+            self._scenario_specs.setdefault(name, {"name": name})
+            self._scenario_provenance.setdefault(name, {})
+
+    def __getitem__(self, key: str) -> BookResult:
+        return self._results[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._results)
+
+    def __len__(self) -> int:
+        return len(self._results)
+
+    def __repr__(self) -> str:
+        return f"ScenarioResultCube({list(self._results)})"
+
+    @property
+    def base_name(self) -> str:
+        """Return the baseline scenario name used for deltas."""
+        if self._base_scenario is None:
+            raise ValueError("ScenarioResultCube is empty and has no base scenario.")
+        return self._base_scenario
+
+    @property
+    def scenario_specs(self) -> dict[str, dict[str, Any]]:
+        """Return a defensive copy of the scenario-spec map."""
+        return deepcopy(self._scenario_specs)
+
+    @property
+    def scenario_provenance(self) -> dict[str, dict[str, Any]]:
+        """Return a defensive copy of the per-scenario provenance map."""
+        return deepcopy(self._scenario_provenance)
+
+    @property
+    def compute_plan(self) -> dict[str, Any]:
+        """Return the serialized compute plan used to produce this cube."""
+        return deepcopy(self._compute_plan)
+
+    def book_ladder(
+        self,
+        metric: str,
+        *,
+        baseline_scenario: str | None = None,
+    ) -> RiskMeasureOutput:
+        """Return one aggregated book metric across scenarios plus deltas."""
+        baseline = self._resolve_baseline_scenario(baseline_scenario)
+        resolved_metric = self._resolve_book_metric_name(metric)
+        values = {
+            name: self._extract_book_metric(result, resolved_metric)
+            for name, result in self._results.items()
+        }
+        base_value = values[baseline]
+        deltas = {
+            name: float(value - base_value)
+            for name, value in values.items()
+        }
+        return RiskMeasureOutput(
+            values,
+            metadata=self._ladder_metadata(
+                metric=resolved_metric,
+                requested_metric=metric,
+                aggregation_level="book",
+                baseline_scenario=baseline,
+                deltas=deltas,
+            ),
+        )
+
+    def position_ladder(
+        self,
+        metric: str,
+        *,
+        baseline_scenario: str | None = None,
+    ) -> RiskMeasureOutput:
+        """Return one per-position metric across scenarios plus deltas."""
+        baseline = self._resolve_baseline_scenario(baseline_scenario)
+        position_names = self._position_names()
+        values: dict[str, dict[str, float]] = {name: {} for name in position_names}
+        for scenario_name, result in self._results.items():
+            for position_name in position_names:
+                values[position_name][scenario_name] = self._extract_position_metric(
+                    result,
+                    position_name,
+                    metric,
+                )
+        deltas = {
+            position_name: {
+                scenario_name: float(value - values[position_name][baseline])
+                for scenario_name, value in scenario_values.items()
+            }
+            for position_name, scenario_values in values.items()
+        }
+        return RiskMeasureOutput(
+            values,
+            metadata=self._ladder_metadata(
+                metric=metric,
+                requested_metric=metric,
+                aggregation_level="position",
+                baseline_scenario=baseline,
+                deltas=deltas,
+            ),
+        )
+
+    def book_pnl(self, *, baseline_scenario: str | None = None) -> RiskMeasureOutput:
+        """Return book-level market-value deltas across scenarios."""
+        ladder = self.book_ladder("total_mv", baseline_scenario=baseline_scenario)
+        metadata = dict(ladder.metadata)
+        metadata["levels"] = dict(ladder)
+        return RiskMeasureOutput(
+            dict(metadata["deltas"]),
+            metadata=metadata,
+        )
+
+    def position_pnl(self, *, baseline_scenario: str | None = None) -> RiskMeasureOutput:
+        """Return per-position market-value deltas across scenarios."""
+        ladder = self.position_ladder("mv", baseline_scenario=baseline_scenario)
+        metadata = dict(ladder.metadata)
+        metadata["levels"] = dict(ladder)
+        return RiskMeasureOutput(
+            dict(metadata["deltas"]),
+            metadata=metadata,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-friendly nested projection of the scenario cube."""
+        return {
+            "scenarios": {
+                name: result.to_dict()
+                for name, result in self._results.items()
+            },
+            "scenario_specs": self.scenario_specs,
+            "scenario_provenance": self.scenario_provenance,
+            "compute_plan": self.compute_plan,
+        }
+
+    def to_batch_output(
+        self,
+        *,
+        baseline_scenario: str | None = None,
+    ) -> dict[str, Any]:
+        """Project the cube into a stable batch-review payload."""
+        baseline = self._resolve_baseline_scenario(baseline_scenario)
+        return {
+            "baseline_scenario": baseline,
+            "compute_plan": self.compute_plan,
+            "scenario_specs": self.scenario_specs,
+            "scenario_provenance": self.scenario_provenance,
+            "book_pnl": self.book_pnl(baseline_scenario=baseline).to_payload(),
+            "position_pnl": self.position_pnl(baseline_scenario=baseline).to_payload(),
+            "pnl_attribution": self.pnl_attribution(baseline_scenario=baseline),
+        }
+
+    def pnl_attribution(
+        self,
+        *,
+        baseline_scenario: str | None = None,
+        top_positions: int = 5,
+    ) -> dict[str, Any]:
+        """Return a book-level P&L attribution view for scenario review."""
+        baseline = self._resolve_baseline_scenario(baseline_scenario)
+        resolved_top_positions = max(int(top_positions), 1)
+        book_pnl = self.book_pnl(baseline_scenario=baseline)
+        position_pnl = self.position_pnl(baseline_scenario=baseline)
+        net_position_pnl = {
+            position_name: 0.0
+            for position_name in position_pnl
+        }
+        scenario_attribution: dict[str, Any] = {}
+        for scenario_name in self._results:
+            total_pnl = float(book_pnl.metadata["deltas"][scenario_name])
+            contributors: list[dict[str, Any]] = []
+            for position_name in position_pnl:
+                pnl = float(position_pnl.metadata["deltas"][position_name][scenario_name])
+                net_position_pnl[position_name] += pnl
+                contributors.append(
+                    {
+                        "position_name": position_name,
+                        "pnl": pnl,
+                        "share_of_total": 0.0 if total_pnl == 0.0 else float(pnl / total_pnl),
+                    }
+                )
+            contributors.sort(
+                key=lambda item: (-abs(item["pnl"]), item["position_name"])
+            )
+            top_contributors = contributors[:resolved_top_positions]
+            scenario_attribution[scenario_name] = {
+                "total_pnl": total_pnl,
+                "top_contributors": top_contributors,
+                "residual_pnl": float(
+                    total_pnl - sum(item["pnl"] for item in top_contributors)
+                ),
+            }
+        return {
+            "baseline_scenario": baseline,
+            "scenario_order": list(self._results),
+            "net_position_pnl": net_position_pnl,
+            "scenario_attribution": scenario_attribution,
+            "book_pnl": book_pnl.to_payload(),
+            "position_pnl": position_pnl.to_payload(),
+        }
+
+    def _resolve_baseline_scenario(self, baseline_scenario: str | None) -> str:
+        if baseline_scenario is None:
+            return self.base_name
+        if baseline_scenario not in self._results:
+            raise KeyError(
+                f"Baseline scenario {baseline_scenario!r} is not present in the cube."
+            )
+        return baseline_scenario
+
+    @staticmethod
+    def _resolve_book_metric_name(metric: str) -> str:
+        aliases = {
+            "mv": "total_mv",
+            "dv01": "book_dv01",
+            "duration": "book_duration",
+        }
+        return aliases.get(metric, metric)
+
+    @staticmethod
+    def _extract_book_metric(result: BookResult, metric: str) -> float:
+        value = getattr(result, metric, None)
+        if not isinstance(value, (int, float)):
+            raise ValueError(
+                f"Book metric {metric!r} is not a scalar aggregated field."
+            )
+        return float(value)
+
+    def _extract_position_metric(
+        self,
+        result: BookResult,
+        position_name: str,
+        metric: str,
+    ) -> float:
+        pricing_result = result[position_name]
+        if metric == "mv":
+            return float(pricing_result.dirty_price * result._book.notional(position_name))
+        if metric == "notional":
+            return float(result._book.notional(position_name))
+        if metric in {"clean_price", "dirty_price", "accrued_interest"}:
+            return float(getattr(pricing_result, metric))
+        greek = pricing_result.greeks.get(metric)
+        if isinstance(greek, (int, float)):
+            return float(greek)
+        raise ValueError(
+            f"Position metric {metric!r} is not available as a scalar scenario ladder."
+        )
+
+    def _position_names(self) -> tuple[str, ...]:
+        if not self._results:
+            return ()
+        first_name = next(iter(self._results))
+        position_names = tuple(self._results[first_name])
+        expected = set(position_names)
+        for scenario_name, result in self._results.items():
+            actual = set(result)
+            if actual != expected:
+                raise ValueError(
+                    "ScenarioResultCube requires identical position names across scenarios; "
+                    f"{scenario_name!r} differs from {first_name!r}."
+                )
+        return position_names
+
+    def _ladder_metadata(
+        self,
+        *,
+        metric: str,
+        requested_metric: str,
+        aggregation_level: str,
+        baseline_scenario: str,
+        deltas: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "metric": metric,
+            "requested_metric": requested_metric,
+            "aggregation_level": aggregation_level,
+            "baseline_scenario": baseline_scenario,
+            "deltas": deepcopy(deltas),
+            "scenario_specs": self.scenario_specs,
+            "scenario_provenance": self.scenario_provenance,
+        }

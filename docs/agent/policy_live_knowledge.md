@@ -62,14 +62,16 @@ When policy and live knowledge disagree:
 
 ## Compatibility
 
-Some Python modules still expose compatibility shims for older callers, but
-those shims should load their content from canonical policy rather than keep
-their own hand-maintained copies.
+Some Python modules still expose thin compatibility surfaces for older callers,
+but policy should still come from canonical YAML rather than hand-maintained
+Python copies.
 
 Current examples:
 
 - `trellis.agent.quant` loads plans from canonical decompositions
-- `trellis.agent.cookbooks` loads templates from canonical cookbook YAML
+- builder and review flows read cookbook guidance from canonical cookbook YAML
+- diagnostic helpers and retry feedback draw related guidance from canonical
+  lesson and failure-signature records
 
 ## Import and Inspection Guardrails
 

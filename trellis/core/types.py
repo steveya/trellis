@@ -22,7 +22,15 @@ from typing import Protocol, runtime_checkable
 #   list[str]  — specific sensitivities by name (e.g. ["dv01", "duration"])
 GreeksSpec = None | list[str] | str
 KNOWN_GREEKS = frozenset({
-    "dv01", "duration", "modified_duration", "convexity", "key_rate_durations",
+    "dv01",
+    "duration",
+    "modified_duration",
+    "convexity",
+    "key_rate_durations",
+    "vega",
+    "delta",
+    "gamma",
+    "theta",
 })
 
 
@@ -233,14 +241,14 @@ class PricingResult:
             None if not computed.
         greeks: Risk sensitivities keyed by name (e.g. {"dv01": 0.045}).
         curve_sensitivities: Sensitivity of price to each curve tenor
-            (e.g. {"1Y": -0.02, "5Y": -0.08}).
+            (e.g. {1.0: -0.02, 5.0: -0.08}).
     """
     clean_price: float
     dirty_price: float
     accrued_interest: float
     ytm: float | None = None
     greeks: dict[str, float] = field(default_factory=dict)
-    curve_sensitivities: dict[str, float] = field(default_factory=dict)
+    curve_sensitivities: dict[float, float] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

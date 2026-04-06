@@ -15,6 +15,7 @@ Sources:
 import numpy as raw_np
 import pytest
 from scipy.stats import norm
+from tests.lattice_builders import build_equity_lattice, build_short_rate_lattice
 
 # ---------------------------------------------------------------------------
 # Helper: Black-Scholes
@@ -94,7 +95,7 @@ class TestLongstaffSchwartzTable1:
         # LSM has MC noise + basis function sensitivity.
         # High-vol OTM cases (σ=0.40, S>K) show ~20-25% upward bias with
         # polynomial basis vs LS paper's weighted Laguerre.
-        # This is a KNOWN LIMITATION — recorded in experience.py.
+        # This is a KNOWN LIMITATION — recorded in the canonical lessons.
         tol = 0.30 if (sigma >= 0.35 and S0 > self.K) else (0.20 if sigma >= 0.35 else 0.10)
         assert price == pytest.approx(ref_price, rel=tol), (
             f"S0={S0}, σ={sigma}, T={T}: LSM={price:.3f}, ref={ref_price:.3f}"
@@ -386,9 +387,9 @@ class TestTreeGreeksConvergence:
         return float(self.S0 * norm.pdf(d1) * raw_np.sqrt(self.T))
 
     def _tree_price(self, S0, sigma=None):
-        from trellis.models.trees.lattice import build_spot_lattice, lattice_backward_induction
+        from trellis.models.trees.lattice import lattice_backward_induction
         s = sigma or self.sigma
-        lattice = build_spot_lattice(S0, self.r, s, self.T, 500)
+        lattice = build_equity_lattice(S0, self.r, s, self.T, 500)
 
         def payoff(step, node, lat):
             return max(lat.get_state(step, node) - self.K, 0)
@@ -465,7 +466,7 @@ class TestHullWhiteZCBOption:
     def test_hull_table_28_3(self):
         """Replicate Hull Table 28.3: 3Y call on 9Y ZCB under HW."""
         from trellis.curves.yield_curve import YieldCurve
-        from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction
+        from trellis.models.trees.lattice import lattice_backward_induction
 
         # Hull's term structure (simplified: flat 5%)
         # The actual table uses a non-flat curve, but flat gives a clean test
@@ -487,8 +488,7 @@ class TestHullWhiteZCBOption:
         # Tree: build 9Y tree, price option that exercises at step T_exp
         n_steps = 200
         r0 = float(curve.zero_rate(0.01))
-        lattice = build_rate_lattice(r0, sigma, a, T_bond, n_steps,
-                                      discount_curve=curve)
+        lattice = build_short_rate_lattice(r0, sigma, a, T_bond, n_steps, discount_curve=curve)
         dt = T_bond / n_steps
         exp_step = int(round(T_exp / dt))
 
@@ -560,7 +560,7 @@ class TestRateTreeConvergence:
     def test_callable_bond_convergence(self):
         """Callable bond price stabilizes with increasing steps."""
         from trellis.curves.yield_curve import YieldCurve
-        from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction
+        from trellis.models.trees.lattice import lattice_backward_induction
 
         curve = YieldCurve.flat(0.05)
         T = 10.0
@@ -571,8 +571,7 @@ class TestRateTreeConvergence:
 
         prices = []
         for n_steps in [50, 100, 200, 400]:
-            lattice = build_rate_lattice(0.05, sigma_hw, a, T, n_steps,
-                                          discount_curve=curve)
+            lattice = build_short_rate_lattice(0.05, sigma_hw, a, T, n_steps, discount_curve=curve)
             dt = T / n_steps
             cpn = notional * coupon * dt
 
@@ -606,7 +605,7 @@ class TestRateTreeConvergence:
     def test_straight_bond_convergence_to_analytical(self):
         """Straight bond on tree converges to analytical PV."""
         from trellis.curves.yield_curve import YieldCurve
-        from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction
+        from trellis.models.trees.lattice import lattice_backward_induction
 
         curve = YieldCurve.flat(0.05)
         T = 10.0
@@ -621,8 +620,7 @@ class TestRateTreeConvergence:
 
         errors = []
         for n_steps in [50, 100, 200]:
-            lattice = build_rate_lattice(0.05, 0.01, 0.1, T, n_steps,
-                                          discount_curve=curve)
+            lattice = build_short_rate_lattice(0.05, 0.01, 0.1, T, n_steps, discount_curve=curve)
             dt = T / n_steps
             cpn = notional * coupon * dt
 
@@ -649,9 +647,9 @@ class TestAmericanOptionReference:
     S0, K, r, sigma, T = 100.0, 100.0, 0.05, 0.20, 1.0
 
     def _american_put_tree(self, n_steps):
-        from trellis.models.trees.lattice import build_spot_lattice, lattice_backward_induction
+        from trellis.models.trees.lattice import lattice_backward_induction
 
-        lattice = build_spot_lattice(self.S0, self.r, self.sigma, self.T, n_steps)
+        lattice = build_equity_lattice(self.S0, self.r, self.sigma, self.T, n_steps)
 
         def payoff(s, n, l):
             return max(self.K - l.get_state(s, n), 0)
@@ -684,9 +682,9 @@ class TestAmericanOptionReference:
     @pytest.mark.parametrize("S0", [80, 90, 100, 110, 120])
     def test_american_put_at_various_spots(self, S0):
         """American put is well-behaved across spot levels."""
-        from trellis.models.trees.lattice import build_spot_lattice, lattice_backward_induction
+        from trellis.models.trees.lattice import lattice_backward_induction
 
-        lattice = build_spot_lattice(S0, self.r, self.sigma, self.T, 500)
+        lattice = build_equity_lattice(S0, self.r, self.sigma, self.T, 500)
 
         def payoff(s, n, l):
             return max(self.K - l.get_state(s, n), 0)
@@ -702,10 +700,10 @@ class TestAmericanOptionReference:
 
     def test_american_put_high_vol_stress(self):
         """American put at high vol (σ=1.20) doesn't blow up — QuantLib tests this."""
-        from trellis.models.trees.lattice import build_spot_lattice, lattice_backward_induction
+        from trellis.models.trees.lattice import lattice_backward_induction
 
         sigma_high = 1.20
-        lattice = build_spot_lattice(self.S0, self.r, sigma_high, self.T, 200)
+        lattice = build_equity_lattice(self.S0, self.r, sigma_high, self.T, 200)
 
         def payoff(s, n, l):
             return max(self.K - l.get_state(s, n), 0)

@@ -7,24 +7,56 @@ import numpy as raw_np
 import pytest
 from scipy.stats import norm
 
+from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
+from trellis.curves.bootstrap import (
+    BootstrapConventionBundle,
+    BootstrapCurveInputBundle,
+    BootstrapInstrument,
+)
 from trellis.curves.yield_curve import YieldCurve
+from trellis.data.resolver import resolve_market_snapshot
 from trellis.data.schema import MarketSnapshot
 from trellis.instruments._agent.swaption import SwaptionPayoff, SwaptionSpec
 from trellis.instruments.cap import CapFloorSpec, CapPayoff, FloorPayoff
+from trellis.models.bermudan_swaption_tree import (
+    BermudanSwaptionTreeSpec,
+    price_bermudan_swaption_tree,
+)
 from trellis.models.calibration.rates import (
+    HullWhiteCalibrationInstrument,
+    HullWhiteCalibrationResult,
     RatesCalibrationResult,
+    calibrate_hull_white,
     calibrate_cap_floor_black_vol,
     calibrate_swaption_black_vol,
     swaption_terms,
 )
 from trellis.models.calibration.implied_vol import implied_vol, implied_vol_jaeckel, _bs_price
-from trellis.models.calibration.sabr_fit import calibrate_sabr
-from trellis.models.calibration.local_vol import dupire_local_vol
+from trellis.models.calibration.sabr_fit import (
+    SABRSmileCalibrationResult,
+    build_sabr_smile_surface,
+    calibrate_sabr_smile_workflow,
+    calibrate_sabr,
+    fit_sabr_smile_surface,
+)
+from trellis.models.calibration.local_vol import (
+    LocalVolCalibrationResult,
+    calibrate_local_vol_surface_workflow,
+    dupire_local_vol,
+    dupire_local_vol_result,
+)
+from trellis.models.calibration.heston_fit import (
+    HestonSmileCalibrationResult,
+    build_heston_smile_surface,
+    calibrate_heston_smile_workflow,
+    fit_heston_smile_surface,
+)
 from trellis.models.vol_surface import FlatVol
 
 
 SETTLE = date(2024, 11, 15)
+BOOTSTRAPPED_SOFR_CURVE = "USD-SOFR-3M-BOOT"
 
 
 # ---------------------------------------------------------------------------
@@ -80,6 +112,83 @@ class TestImpliedVolJaeckel:
 
 
 class TestSABRCalibration:
+    def test_build_sabr_smile_surface_reports_alignment_and_bracketing_warnings(self):
+        surface = build_sabr_smile_surface(
+            100.0,
+            1.0,
+            [80.0, 85.0, 90.0, 95.0],
+            [0.28, 0.25, 0.23, 0.22],
+            beta=0.5,
+            surface_name="usd_swaption_smile",
+        )
+
+        assert surface.surface_name == "usd_swaption_smile"
+        assert surface.labels == ("strike_80", "strike_85", "strike_90", "strike_95")
+        assert surface.weights == (1.0, 1.0, 1.0, 1.0)
+        assert surface.payload["strike_count"] == 4
+        assert surface.payload["atm_strike"] == pytest.approx(95.0)
+        assert "nearest strike" in surface.warnings[0].lower()
+        assert "does not bracket" in surface.warnings[1].lower()
+
+    def test_fit_sabr_smile_surface_returns_reusable_result_artifacts(self):
+        from trellis.models.processes.sabr import SABRProcess
+
+        F, T = 100.0, 1.0
+        alpha_true, beta, rho_true, nu_true = 0.20, 0.5, -0.3, 0.4
+        sabr_true = SABRProcess(alpha_true, beta, rho_true, nu_true)
+        strikes = [80.0, 90.0, 95.0, 100.0, 105.0, 110.0, 120.0]
+        market_vols = [sabr_true.implied_vol(F, K, T) for K in strikes]
+        surface = build_sabr_smile_surface(
+            F,
+            T,
+            strikes,
+            market_vols,
+            beta=beta,
+            surface_name="usd_rates_smile",
+        )
+
+        result = fit_sabr_smile_surface(surface)
+
+        assert isinstance(result, SABRSmileCalibrationResult)
+        assert result.surface.surface_name == "usd_rates_smile"
+        assert result.solve_request.request_id == "sabr_smile_least_squares"
+        assert result.solve_result.success is True
+        assert result.solver_provenance.backend["backend_id"] == "scipy"
+        assert result.diagnostics.point_count == len(strikes)
+        assert result.diagnostics.max_abs_vol_error < 0.005
+        assert result.diagnostics.warning_count == 0
+        assert result.summary["surface_name"] == "usd_rates_smile"
+        assert result.provenance["fit_diagnostics"]["point_count"] == len(strikes)
+        assert result.provenance["warnings"] == []
+
+    def test_calibrate_sabr_smile_workflow_returns_supported_result(self):
+        from trellis.models.processes.sabr import SABRProcess
+
+        F, T = 100.0, 1.0
+        alpha_true, beta, rho_true, nu_true = 0.20, 0.5, -0.3, 0.4
+        sabr_true = SABRProcess(alpha_true, beta, rho_true, nu_true)
+        strikes = [80.0, 90.0, 95.0, 100.0, 105.0, 110.0, 120.0]
+        market_vols = [sabr_true.implied_vol(F, K, T) for K in strikes]
+
+        result = calibrate_sabr_smile_workflow(
+            F,
+            T,
+            strikes,
+            market_vols,
+            beta=beta,
+            labels=[f"pt_{index}" for index in range(len(strikes))],
+            weights=[1.0, 1.0, 1.5, 2.0, 1.5, 1.0, 1.0],
+            surface_name="usd_rates_1y_smile",
+        )
+
+        assert isinstance(result, SABRSmileCalibrationResult)
+        assert result.surface.surface_name == "usd_rates_1y_smile"
+        assert result.surface.labels[0] == "pt_0"
+        assert result.surface.weights[3] == pytest.approx(2.0)
+        assert result.provenance["source_ref"] == "calibrate_sabr_smile_workflow"
+        assert result.summary["surface_name"] == "usd_rates_1y_smile"
+        assert result.warnings == ()
+
     def test_calibrated_vols_match_market(self):
         """Generate market vols from known SABR params, then calibrate back."""
         from trellis.models.processes.sabr import SABRProcess
@@ -99,6 +208,19 @@ class TestSABRCalibration:
         assert sabr_fit.calibration_provenance["source_kind"] == "calibrated_surface"
         assert sabr_fit.calibration_provenance["calibration_target"]["strike_count"] == len(strikes)
         assert sabr_fit.calibration_provenance["calibration_target"]["beta"] == pytest.approx(beta)
+        assert sabr_fit.calibration_provenance["solve_request"]["problem_kind"] == "least_squares"
+        assert sabr_fit.calibration_provenance["solve_request"]["objective"]["labels"] == [
+            f"strike_{float(strike):g}" for strike in strikes
+        ]
+        assert sabr_fit.calibration_provenance["solve_result"]["metadata"]["backend_id"] == "scipy"
+        assert sabr_fit.calibration_provenance["solver_provenance"]["backend"]["backend_id"] == "scipy"
+        assert sabr_fit.calibration_provenance["solver_provenance"]["termination"]["success"] is True
+        assert sabr_fit.calibration_provenance["solver_replay_artifact"]["request"]["request_id"] == (
+            "sabr_smile_least_squares"
+        )
+        assert sabr_fit.calibration_provenance["fit_diagnostics"]["point_count"] == len(strikes)
+        assert sabr_fit.calibration_provenance["fit_diagnostics"]["max_abs_vol_error"] < 0.005
+        assert sabr_fit.calibration_provenance["warnings"] == []
         assert sabr_fit.calibration_summary["optimizer_success"] is True
 
     def test_rejects_mismatched_inputs(self):
@@ -112,6 +234,20 @@ class TestSABRCalibration:
 
 
 class TestDupireLocalVol:
+    def test_dupire_local_vol_result_reports_stable_flat_surface(self):
+        sigma_flat = 0.20
+        S0, r = 100.0, 0.05
+        strikes = raw_np.linspace(60, 150, 30)
+        expiries = raw_np.linspace(0.1, 3.0, 15)
+        implied_vols = raw_np.full((len(expiries), len(strikes)), sigma_flat)
+
+        result = dupire_local_vol_result(strikes, expiries, implied_vols, S0, r)
+
+        assert isinstance(result, LocalVolCalibrationResult)
+        assert result.diagnostics.unstable_point_count == 0
+        assert result.warnings == ()
+        assert result.provenance["fit_diagnostics"]["unstable_point_count"] == 0
+
     def test_flat_vol_surface_gives_constant_local_vol(self):
         """If implied vol is flat (constant sigma), local vol = sigma everywhere."""
         sigma_flat = 0.20
@@ -132,6 +268,33 @@ class TestDupireLocalVol:
         assert local_vol_fn.calibration_provenance["source_kind"] == "calibrated_surface"
         assert local_vol_fn.calibration_target["surface_shape"] == (len(expiries), len(strikes))
         assert local_vol_fn.calibration_summary["spot"] == pytest.approx(S0)
+        assert local_vol_fn.calibration_diagnostics["unstable_point_count"] == 0
+        assert local_vol_fn.calibration_warnings == []
+
+    def test_dupire_local_vol_result_flags_unstable_regions(self):
+        strikes = raw_np.array([70.0, 90.0, 110.0, 130.0])
+        expiries = raw_np.array([0.25, 0.5, 1.0, 2.0])
+        implied_vols = raw_np.array(
+            [
+                [0.65, 0.18, 0.70, 0.22],
+                [0.62, 0.16, 0.68, 0.20],
+                [0.58, 0.14, 0.64, 0.18],
+                [0.54, 0.12, 0.60, 0.16],
+            ],
+            dtype=float,
+        )
+
+        result = dupire_local_vol_result(strikes, expiries, implied_vols, 100.0, 0.03)
+        payload = result.to_payload()
+
+        assert result.diagnostics.unstable_point_count > 0
+        assert result.diagnostics.unstable_point_count >= len(result.diagnostics.sample_unstable_points)
+        assert result.diagnostics.sample_unstable_points
+        assert result.warnings
+        assert "unstable" in result.warnings[0].lower()
+        assert payload["fit_diagnostics"]["unstable_point_count"] == result.diagnostics.unstable_point_count
+        assert payload["warnings"] == list(result.warnings)
+        assert result.local_vol_surface(100.0, 1.0) >= 0.0
 
     def test_rejects_mismatched_surface_shape(self):
         with pytest.raises(ValueError, match="shape"):
@@ -142,6 +305,177 @@ class TestDupireLocalVol:
                 100.0,
                 0.05,
             )
+
+    def test_local_vol_workflow_applies_surface_to_market_state(self):
+        sigma_flat = 0.20
+        strikes = raw_np.linspace(60, 150, 30)
+        expiries = raw_np.linspace(0.1, 3.0, 15)
+        implied_vols = raw_np.full((len(expiries), len(strikes)), sigma_flat)
+        market_state = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            spot=100.0,
+            discount=YieldCurve.flat(0.05),
+        )
+
+        result = calibrate_local_vol_surface_workflow(
+            strikes,
+            expiries,
+            implied_vols,
+            100.0,
+            0.05,
+            surface_name="equity_local_vol",
+        )
+        enriched_state = result.apply_to_market_state(market_state)
+
+        assert result.surface_name == "equity_local_vol"
+        assert result.provenance["source_ref"] == "calibrate_local_vol_surface_workflow"
+        assert "equity_local_vol" in enriched_state.local_vol_surfaces
+        assert enriched_state.local_vol_surface(100.0, 1.0) == pytest.approx(sigma_flat, abs=0.02)
+
+
+class TestHestonCalibration:
+    def test_build_heston_smile_surface_uses_forward_for_atm_diagnostics(self):
+        surface = build_heston_smile_surface(
+            spot=100.0,
+            rate=0.05,
+            dividend_yield=0.0,
+            expiry_years=1.0,
+            strikes=[95.0, 100.0, 105.0, 110.0, 115.0],
+            market_vols=[0.26, 0.24, 0.22, 0.23, 0.25],
+            surface_name="equity_heston_smile",
+        )
+
+        assert surface.payload["atm_strike"] == pytest.approx(105.0)
+        assert surface.payload["atm_market_vol"] == pytest.approx(0.22)
+        assert "nearest strike" in surface.warnings[0].lower()
+        assert "forward" in surface.warnings[0].lower()
+
+    @staticmethod
+    def _market_vols_from_heston(*, spot, rate, expiry_years, strikes, params):
+        from trellis.models.calibration.implied_vol import implied_vol
+        from trellis.models.processes.heston import Heston
+        from trellis.models.transforms.fft_pricer import fft_price
+
+        process = Heston(
+            mu=rate,
+            kappa=params["kappa"],
+            theta=params["theta"],
+            xi=params["xi"],
+            rho=params["rho"],
+            v0=params["v0"],
+        )
+        return [
+            implied_vol(
+                fft_price(
+                    lambda u: process.characteristic_function(u, expiry_years, log_spot=raw_np.log(spot)),
+                    spot,
+                    strike,
+                    expiry_years,
+                    rate,
+                    N=1024,
+                    eta=0.1,
+                ),
+                spot,
+                strike,
+                expiry_years,
+                rate,
+                option_type="call",
+            )
+            for strike in strikes
+        ]
+
+    def test_fit_heston_smile_surface_returns_runtime_binding_and_replay_artifacts(self):
+        spot = 100.0
+        rate = 0.02
+        expiry_years = 1.0
+        strikes = [80.0, 90.0, 100.0, 110.0, 120.0]
+        true_params = {
+            "kappa": 1.8,
+            "theta": 0.04,
+            "xi": 0.35,
+            "rho": -0.6,
+            "v0": 0.05,
+        }
+        market_vols = self._market_vols_from_heston(
+            spot=spot,
+            rate=rate,
+            expiry_years=expiry_years,
+            strikes=strikes,
+            params=true_params,
+        )
+
+        surface = build_heston_smile_surface(
+            spot,
+            expiry_years,
+            strikes,
+            market_vols,
+            rate=rate,
+            surface_name="equity_1y_smile",
+        )
+        result = fit_heston_smile_surface(
+            surface,
+            initial_guess=(1.2, 0.05, 0.25, -0.3, 0.04),
+            parameter_set_name="heston_equity",
+        )
+        market_state = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            spot=spot,
+            discount=YieldCurve.flat(rate),
+        )
+        enriched_state = result.apply_to_market_state(market_state)
+
+        assert isinstance(result, HestonSmileCalibrationResult)
+        assert result.surface.surface_name == "equity_1y_smile"
+        assert result.solve_request.request_id == "heston_smile_least_squares"
+        assert result.solve_result.success is True
+        assert result.solver_provenance.backend["backend_id"] == "scipy"
+        assert result.runtime_binding.parameter_set_name == "heston_equity"
+        assert result.runtime_binding.process.rho == pytest.approx(true_params["rho"], abs=0.05)
+        assert result.diagnostics.point_count == len(strikes)
+        assert result.diagnostics.max_abs_vol_error < 0.005
+        assert result.model_parameters["model_family"] == "heston"
+        assert enriched_state.model_parameter_sets["heston_equity"]["model_family"] == "heston"
+        assert result.provenance["fit_diagnostics"]["point_count"] == len(strikes)
+
+    def test_calibrate_heston_smile_workflow_returns_supported_result(self):
+        spot = 100.0
+        rate = 0.02
+        expiry_years = 1.0
+        strikes = [80.0, 90.0, 100.0, 110.0, 120.0]
+        true_params = {
+            "kappa": 1.8,
+            "theta": 0.04,
+            "xi": 0.35,
+            "rho": -0.6,
+            "v0": 0.05,
+        }
+        market_vols = self._market_vols_from_heston(
+            spot=spot,
+            rate=rate,
+            expiry_years=expiry_years,
+            strikes=strikes,
+            params=true_params,
+        )
+
+        result = calibrate_heston_smile_workflow(
+            spot,
+            expiry_years,
+            strikes,
+            market_vols,
+            rate=rate,
+            surface_name="equity_heston_workflow",
+            parameter_set_name="heston_equity",
+            warm_start=(1.2, 0.05, 0.25, -0.3, 0.04),
+        )
+
+        assert isinstance(result, HestonSmileCalibrationResult)
+        assert result.provenance["source_ref"] == "calibrate_heston_smile_workflow"
+        assert result.summary["surface_name"] == "equity_heston_workflow"
+        assert result.solve_request.warm_start is not None
+        assert result.solve_request.warm_start.parameter_values == pytest.approx((1.2, 0.05, 0.25, -0.3, 0.04))
+        assert result.runtime_binding.process.theta == pytest.approx(true_params["theta"], abs=0.02)
 
 
 # ---------------------------------------------------------------------------
@@ -172,6 +506,63 @@ def _multi_curve_state() -> tuple[MarketSnapshot, object]:
         settlement=SETTLE,
         discount_curve="usd_ois",
         forecast_curve="USD-SOFR-3M",
+    )
+    return snapshot, market_state
+
+
+def _bootstrap_bundle(
+    *,
+    curve_name: str,
+    rate_index: str,
+    deposit_quote: float,
+    swap_2y_quote: float,
+    swap_5y_quote: float,
+) -> BootstrapCurveInputBundle:
+    return BootstrapCurveInputBundle(
+        curve_name=curve_name,
+        currency="USD",
+        rate_index=rate_index,
+        conventions=BootstrapConventionBundle(
+            swap_fixed_frequency=Frequency.ANNUAL,
+            swap_float_frequency=Frequency.QUARTERLY,
+            swap_fixed_day_count=DayCountConvention.THIRTY_360_US,
+            swap_float_day_count=DayCountConvention.ACT_360,
+        ),
+        instruments=(
+            BootstrapInstrument(tenor=0.25, quote=deposit_quote, instrument_type="deposit", label=f"{curve_name}_DEP3M"),
+            BootstrapInstrument(tenor=2.0, quote=swap_2y_quote, instrument_type="swap", label=f"{curve_name}_SWAP2Y"),
+            BootstrapInstrument(tenor=5.0, quote=swap_5y_quote, instrument_type="swap", label=f"{curve_name}_SWAP5Y"),
+        ),
+    )
+
+
+def _bootstrapped_multi_curve_state():
+    snapshot = resolve_market_snapshot(
+        as_of=SETTLE,
+        source="mock",
+        discount_curve_bootstraps={
+            "usd_ois_boot": _bootstrap_bundle(
+                curve_name="usd_ois_boot",
+                rate_index=BOOTSTRAPPED_SOFR_CURVE,
+                deposit_quote=0.040,
+                swap_2y_quote=0.045,
+                swap_5y_quote=0.048,
+            ),
+        },
+        forecast_curve_bootstraps={
+            BOOTSTRAPPED_SOFR_CURVE: _bootstrap_bundle(
+                curve_name=BOOTSTRAPPED_SOFR_CURVE,
+                rate_index=BOOTSTRAPPED_SOFR_CURVE,
+                deposit_quote=0.041,
+                swap_2y_quote=0.046,
+                swap_5y_quote=0.049,
+            ),
+        },
+    )
+    market_state = snapshot.to_market_state(
+        settlement=SETTLE,
+        discount_curve="usd_ois_boot",
+        forecast_curve=BOOTSTRAPPED_SOFR_CURVE,
     )
     return snapshot, market_state
 
@@ -214,6 +605,15 @@ class TestRatesCalibration:
         assert result.provenance["rate_index"] == "USD-SOFR-3M"
         assert result.provenance["vol_surface_name"] == "rates_cap_surface"
         assert result.provenance["correlation_source"] == "not_used"
+        assert result.provenance["solve_request"]["problem_kind"] == "root_scalar"
+        assert result.provenance["solve_request"]["objective"]["labels"] == ["price_residual"]
+        assert result.provenance["solve_result"]["metadata"]["backend_id"] == "scipy"
+        assert result.provenance["solver_provenance"]["backend"]["backend_id"] == "scipy"
+        assert result.provenance["solver_provenance"]["options"]["tol"] == pytest.approx(1e-8)
+        assert result.provenance["solver_provenance"]["termination"]["success"] is True
+        assert result.provenance["solver_replay_artifact"]["request"]["request_id"] == (
+            "rates_flat_black_vol_root"
+        )
         assert result.provenance["market_provenance"]["source_kind"] == "explicit_input"
         assert result.summary["period_count"] > 0
 
@@ -259,6 +659,99 @@ class TestRatesCalibration:
         assert result.provenance["rate_index"] == "USD-SOFR-3M"
         assert result.provenance["vol_surface_name"] == "rates_swaption_surface"
         assert result.provenance["correlation_source"] == "corr_pack_A"
+        assert result.provenance["solve_request"]["problem_kind"] == "root_scalar"
+        assert result.provenance["solve_request"]["objective"]["labels"] == ["price_residual"]
+        assert result.provenance["solve_result"]["metadata"]["backend_id"] == "scipy"
+        assert result.provenance["solver_provenance"]["backend"]["backend_id"] == "scipy"
+        assert result.provenance["solver_provenance"]["termination"]["success"] is True
+        assert result.provenance["solver_replay_artifact"]["request"]["request_id"] == (
+            "rates_flat_black_vol_root"
+        )
         assert result.provenance["market_provenance"]["source_ref"] == "_multi_curve_state"
         assert result.summary["annuity"] > 0.0
         assert result.summary["forward_swap_rate"] > 0.0
+
+    def test_hull_white_calibration_round_trip_preserves_bootstrap_provenance(self):
+        _snapshot, market_state = _bootstrapped_multi_curve_state()
+        true_mean_reversion = 0.08
+        true_sigma = 0.006
+        tree_specs = (
+            BermudanSwaptionTreeSpec(
+                notional=1_000_000.0,
+                strike=0.047,
+                exercise_dates=(date(2025, 11, 15),),
+                swap_end=date(2030, 11, 15),
+                swap_frequency=Frequency.SEMI_ANNUAL,
+                day_count=DayCountConvention.ACT_360,
+                rate_index=BOOTSTRAPPED_SOFR_CURVE,
+                is_payer=True,
+            ),
+            BermudanSwaptionTreeSpec(
+                notional=1_000_000.0,
+                strike=0.048,
+                exercise_dates=(date(2026, 11, 15),),
+                swap_end=date(2031, 11, 15),
+                swap_frequency=Frequency.SEMI_ANNUAL,
+                day_count=DayCountConvention.ACT_360,
+                rate_index=BOOTSTRAPPED_SOFR_CURVE,
+                is_payer=True,
+            ),
+        )
+        target_prices = tuple(
+            price_bermudan_swaption_tree(
+                market_state,
+                spec,
+                model="hull_white",
+                mean_reversion=true_mean_reversion,
+                sigma=true_sigma,
+                n_steps=80,
+            )
+            for spec in tree_specs
+        )
+        instruments = tuple(
+            HullWhiteCalibrationInstrument(
+                label=f"ATM_{index + 1}",
+                notional=spec.notional,
+                strike=spec.strike,
+                exercise_date=spec.exercise_dates[0],
+                swap_end=spec.swap_end,
+                quote=target_price,
+                quote_kind="price",
+                swap_frequency=spec.swap_frequency,
+                day_count=spec.day_count,
+                rate_index=spec.rate_index,
+                is_payer=spec.is_payer,
+            )
+            for index, (spec, target_price) in enumerate(zip(tree_specs, target_prices))
+        )
+
+        result = calibrate_hull_white(
+            instruments,
+            market_state,
+            n_steps=80,
+            tol=1e-10,
+            mean_reversion_bounds=(0.01, 0.30),
+            sigma_bounds=(0.001, 0.02),
+            parameter_set_name="hw_calibrated",
+        )
+
+        assert isinstance(result, HullWhiteCalibrationResult)
+        assert result.mean_reversion == pytest.approx(true_mean_reversion, rel=0.05)
+        assert result.sigma == pytest.approx(true_sigma, rel=0.05)
+        assert result.max_abs_price_residual < 1e-5
+        assert result.provenance["market_provenance"]["bootstrap_runs"]["discount_curves"]["usd_ois_boot"][
+            "solver_provenance"
+        ]["backend"]["backend_id"] == "scipy"
+        assert result.provenance["solve_request"]["problem_kind"] == "least_squares"
+        assert result.provenance["solve_result"]["metadata"]["backend_id"] == "scipy"
+        assert result.provenance["solver_provenance"]["backend"]["backend_id"] == "scipy"
+
+        calibrated_state = result.apply_to_market_state(market_state)
+        assert calibrated_state.model_parameters["model_family"] == "hull_white"
+        assert calibrated_state.model_parameter_sets["hw_calibrated"]["sigma"] == pytest.approx(result.sigma)
+        assert price_bermudan_swaption_tree(
+            calibrated_state,
+            tree_specs[0],
+            model="hull_white",
+            n_steps=80,
+        ) == pytest.approx(target_prices[0], rel=1e-4)

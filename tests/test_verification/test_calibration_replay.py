@@ -1,0 +1,99 @@
+"""Replay and tolerance fixtures for supported calibration workflows."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _scenario_map():
+    from trellis.models.calibration.benchmarking import supported_calibration_benchmark_scenarios
+
+    return {scenario.workflow: scenario for scenario in supported_calibration_benchmark_scenarios()}
+
+
+def test_supported_calibration_workflows_preserve_replay_contracts_and_fit_tolerances():
+    scenarios = _scenario_map()
+
+    hull_white = scenarios["hull_white"].cold_runner()
+    assert hull_white.solver_provenance.backend["backend_id"] == "scipy"
+    assert hull_white.solver_replay_artifact.request["request_id"] == "hull_white_swaption_least_squares"
+    assert hull_white.max_abs_quote_residual < 1e-8
+
+    sabr = scenarios["sabr"].cold_runner()
+    assert sabr.solver_provenance.backend["backend_id"] == "scipy"
+    assert sabr.solver_replay_artifact.request["request_id"] == "sabr_smile_least_squares"
+    assert sabr.diagnostics.max_abs_vol_error < 5e-4
+
+    heston = scenarios["heston"].cold_runner()
+    assert heston.solver_provenance.backend["backend_id"] == "scipy"
+    assert heston.solver_replay_artifact.request["request_id"] == "heston_smile_least_squares"
+    assert heston.diagnostics.max_abs_vol_error < 1e-4
+    assert heston.runtime_binding.model_parameters["model_family"] == "heston"
+
+    local_vol = scenarios["local_vol"].cold_runner()
+    assert local_vol.provenance["source_ref"] == "calibrate_local_vol_surface_workflow"
+    assert local_vol.diagnostics.unstable_point_count == 0
+    assert local_vol.local_vol_surface(100.0, 1.0) == pytest.approx(0.20736772904577236, abs=1e-10)
+
+
+def test_supported_calibration_workflows_are_replay_stable_within_tolerance():
+    scenarios = _scenario_map()
+
+    first_hw = scenarios["hull_white"].cold_runner()
+    second_hw = scenarios["hull_white"].cold_runner()
+    assert second_hw.solver_replay_artifact.request == first_hw.solver_replay_artifact.request
+    assert second_hw.mean_reversion == pytest.approx(first_hw.mean_reversion, abs=1e-10)
+    assert second_hw.sigma == pytest.approx(first_hw.sigma, abs=1e-10)
+
+    first_sabr = scenarios["sabr"].cold_runner()
+    second_sabr = scenarios["sabr"].cold_runner()
+    assert second_sabr.solver_replay_artifact.request == first_sabr.solver_replay_artifact.request
+    assert second_sabr.sabr.alpha == pytest.approx(first_sabr.sabr.alpha, abs=1e-8)
+    assert second_sabr.sabr.rho == pytest.approx(first_sabr.sabr.rho, abs=1e-8)
+    assert second_sabr.sabr.nu == pytest.approx(first_sabr.sabr.nu, abs=1e-8)
+
+    first_heston = scenarios["heston"].cold_runner()
+    second_heston = scenarios["heston"].cold_runner()
+    assert second_heston.solver_replay_artifact.request == first_heston.solver_replay_artifact.request
+    for key in ("kappa", "theta", "xi", "rho", "v0"):
+        assert second_heston.model_parameters[key] == pytest.approx(first_heston.model_parameters[key], abs=1e-8)
+
+    first_local_vol = scenarios["local_vol"].cold_runner()
+    second_local_vol = scenarios["local_vol"].cold_runner()
+    assert second_local_vol.provenance["calibration_target"] == first_local_vol.provenance["calibration_target"]
+    assert second_local_vol.diagnostics.to_payload() == first_local_vol.diagnostics.to_payload()
+
+
+def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
+    from trellis.models.calibration.benchmarking import build_supported_calibration_benchmark_report
+
+    report = build_supported_calibration_benchmark_report(repeats=1, warmups=0)
+    cases = {case["workflow"]: case for case in report["cases"]}
+
+    assert report["summary"]["workflow_count"] == 4
+    assert report["summary"]["warm_start_workflow_count"] == 3
+    assert set(cases) == {"hull_white", "sabr", "heston", "local_vol"}
+    assert cases["local_vol"]["warm"] is None
+    assert cases["hull_white"]["warm"] is not None
+    assert cases["sabr"]["warm"] is not None
+    assert cases["heston"]["warm"] is not None
+
+
+def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
+    payload = json.loads((REPO_ROOT / "docs" / "benchmarks" / "calibration_workflows.json").read_text())
+    cases = {case["workflow"]: case for case in payload["cases"]}
+
+    assert payload["benchmark_name"] == "supported_calibration_workflows"
+    assert payload["summary"]["workflow_count"] == 4
+    assert payload["summary"]["warm_start_workflow_count"] == 3
+    assert set(cases) == {"hull_white", "sabr", "heston", "local_vol"}
+    assert cases["local_vol"]["warm"] is None
+    for workflow in ("hull_white", "sabr", "heston"):
+        assert cases[workflow]["warm"] is not None
+        assert cases[workflow]["warm_speedup"] > 1.0

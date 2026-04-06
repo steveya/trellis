@@ -159,15 +159,28 @@ class TestBlueprintPropagation:
 
 class TestDslMeasureToRuntime:
     def test_known_measures(self):
-        from trellis.analytics.measures import dsl_measure_to_runtime, DV01, Vega
+        from trellis.analytics.measures import (
+            CallableScenarioExplain,
+            Delta,
+            DV01,
+            Gamma,
+            OASDuration,
+            Theta,
+            Vega,
+            dsl_measure_to_runtime,
+        )
 
         assert dsl_measure_to_runtime("dv01") is DV01
         assert dsl_measure_to_runtime("vega") is Vega
+        assert dsl_measure_to_runtime("delta") is Delta
+        assert dsl_measure_to_runtime("gamma") is Gamma
+        assert dsl_measure_to_runtime("theta") is Theta
+        assert dsl_measure_to_runtime("oas_duration") is OASDuration
+        assert dsl_measure_to_runtime("callable_scenario_explain") is CallableScenarioExplain
 
     def test_unknown_returns_none(self):
         from trellis.analytics.measures import dsl_measure_to_runtime
 
-        assert dsl_measure_to_runtime("delta") is None
         assert dsl_measure_to_runtime("nonexistent") is None
 
     def test_dsl_enum_value_works(self):

@@ -33,10 +33,13 @@ _FAMILY_ORDER = (
 _UTILITY_ORDER = (
     "black76",
     "garman_kohlhagen",
+    "rate_style_swaption",
+    "jamshidian_zcb_option",
     "schedule",
     "day_count",
     "vol_surface",
     "cashflow_engine",
+    "credit_curve",
 )
 
 

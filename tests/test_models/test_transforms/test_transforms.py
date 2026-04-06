@@ -1,5 +1,7 @@
 """Tests for transform methods: FFT pricer, COS method, Heston characteristic function."""
 
+import warnings
+
 import numpy as raw_np
 import pytest
 from scipy.stats import norm
@@ -88,6 +90,16 @@ class TestCOSMethod:
         cos_call = cos_price(char_fn, S0, K, T, r, option_type="call")
         bs_ref = bs_call(S0, K, T, r, sigma)
         assert cos_call == pytest.approx(bs_ref, rel=0.02)
+
+    def test_gbm_call_emits_no_runtime_warning_at_zero_frequency(self):
+        S0, K, r, sigma, T = 100.0, 100.0, 0.05, 0.20, 1.0
+        char_fn = gbm_char_fn_log_ratio(r, sigma, T)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            price = cos_price(char_fn, S0, K, T, r, option_type="call")
+
+        assert price > 0.0
 
 
 # ---------------------------------------------------------------------------

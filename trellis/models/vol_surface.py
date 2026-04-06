@@ -22,6 +22,11 @@ class FlatVol:
 
     vol: float
 
+    def __post_init__(self):
+        """Validate the flat volatility quote."""
+        if self.vol < 0.0:
+            raise ValueError("flat volatility must be non-negative")
+
     def black_vol(self, expiry: float, strike: float) -> float:
         """Return the same volatility for every expiry/strike pair."""
         return self.vol
@@ -50,6 +55,12 @@ class GridVolSurface:
             raise ValueError("expiries must be sorted ascending")
         if tuple(sorted(self.strikes)) != self.strikes:
             raise ValueError("strikes must be sorted ascending")
+        if len(set(self.expiries)) != len(self.expiries):
+            raise ValueError("expiries must be strictly increasing")
+        if len(set(self.strikes)) != len(self.strikes):
+            raise ValueError("strikes must be strictly increasing")
+        if any(vol < 0.0 for row in self.vols for vol in row):
+            raise ValueError("vol nodes must be non-negative")
 
     def black_vol(self, expiry: float, strike: float) -> float:
         """Interpolate Black vol bilinearly with flat extrapolation beyond the grid.

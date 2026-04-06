@@ -7,7 +7,7 @@ so ``pip install trellis`` is immediately productive.
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 import hashlib
 
 from trellis.curves.credit_curve import CreditCurve
@@ -186,6 +186,29 @@ def _build_underlier_spots(regime: str) -> dict[str, float]:
         "normal": {"SPX": 3008.0, "AAPL": 55.0, "MSFT": 137.0},
     }
     return dict(spots[regime])
+
+
+def _build_fixing_histories(snapshot_date: date, forecast_curves: dict[str, YieldCurve]) -> dict[str, dict[date, float]]:
+    """Return deterministic recent fixing histories aligned to the mock rate regime."""
+    base_sofr = float(forecast_curves["USD-SOFR-3M"].zero_rate(0.25))
+    base_libor = float(forecast_curves["USD-LIBOR-3M"].zero_rate(0.25))
+    base_euribor = float(forecast_curves["EUR-EURIBOR-3M"].zero_rate(0.25))
+    base_sonia = float(forecast_curves["GBP-SONIA-3M"].zero_rate(0.25))
+
+    def _history(base_rate: float, *, scale: float) -> dict[date, float]:
+        return {
+            snapshot_date - timedelta(days=offset): round(base_rate + scale * offset, 6)
+            for offset in range(1, 6)
+        }
+
+    sofr_history = _history(base_sofr, scale=-0.00005)
+    return {
+        "USD-SOFR-3M": sofr_history,
+        "SOFR": dict(sofr_history),
+        "USD-LIBOR-3M": _history(base_libor, scale=-0.00004),
+        "EUR-EURIBOR-3M": _history(base_euribor, scale=-0.00003),
+        "GBP-SONIA-3M": _history(base_sonia, scale=-0.00002),
+    }
 
 
 def _make_local_vol_surface(
@@ -505,6 +528,7 @@ class MockDataProvider(BaseDataProvider):
             "EUR-EURIBOR-3M": _shifted_curve(eur_ois, 30),
             "GBP-SONIA-3M": _shifted_curve(gbp_ois, 18),
         }
+        fixing_histories = _build_fixing_histories(best, forecast_curves)
         underlier_spots = _build_underlier_spots(regime)
         prior_seed_payload = "|".join(
             (
@@ -568,6 +592,7 @@ class MockDataProvider(BaseDataProvider):
             forecast_curves=forecast_curves,
             vol_surfaces=_build_rate_vol_surfaces(usd_ois, regime),
             credit_curves=_build_credit_curves(regime),
+            fixing_histories=fixing_histories,
             fx_rates=_build_fx_rates(regime),
             state_spaces=_build_state_spaces(regime),
             underlier_spots=underlier_spots,
@@ -589,6 +614,7 @@ class MockDataProvider(BaseDataProvider):
             default_discount_curve="usd_ois",
             default_vol_surface="usd_rates_smile",
             default_credit_curve="usd_ig",
+            default_fixing_history="USD-SOFR-3M",
             default_state_space="macro_regime",
             default_underlier_spot="SPX",
             default_local_vol_surface="spx_local_vol",

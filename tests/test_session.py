@@ -7,6 +7,14 @@ import numpy as np
 import pytest
 
 from trellis.book import Book, BookResult
+from trellis.conventions.day_count import DayCountConvention
+from trellis.core.types import Frequency
+from trellis.curves.bootstrap import (
+    BootstrapConventionBundle,
+    BootstrapCurveInputBundle,
+    BootstrapInstrument,
+    bootstrap_curve_result,
+)
 from trellis.data.schema import MarketSnapshot
 from trellis.core.types import PricingResult
 from trellis.curves.yield_curve import YieldCurve
@@ -27,6 +35,35 @@ def _bond():
 SETTLE = date(2024, 11, 15)
 
 
+class _VolPointPayoff:
+    requirements = {"black_vol_surface"}
+
+    def __init__(self, expiry: float, strike: float):
+        self.expiry = float(expiry)
+        self.strike = float(strike)
+
+    def evaluate(self, market_state):
+        return float(market_state.vol_surface.black_vol(self.expiry, self.strike))
+
+
+class _SpotQuadraticPayoff:
+    requirements = {"spot"}
+
+    def evaluate(self, market_state):
+        spot = float(market_state.spot)
+        return spot**2 + 0.5 * spot
+
+
+class _LinearTimeDecayPayoff:
+    requirements = set()
+
+    def __init__(self, expiry_date: date):
+        self.expiry_date = expiry_date
+
+    def evaluate(self, market_state):
+        return float((self.expiry_date - market_state.settlement).days)
+
+
 def _snapshot():
     usd = YieldCurve.flat(0.045)
     eur = YieldCurve.flat(0.025)
@@ -45,6 +82,66 @@ def _snapshot():
         },
         default_discount_curve="usd_ois",
         default_vol_surface="usd_atm",
+    )
+
+
+def _bootstrapped_snapshot():
+    bundle = BootstrapCurveInputBundle(
+        curve_name="usd_ois_boot",
+        currency="USD",
+        rate_index="USD-SOFR-3M",
+        conventions=BootstrapConventionBundle(
+            deposit_day_count=DayCountConvention.ACT_360,
+            swap_fixed_frequency=Frequency.ANNUAL,
+            swap_fixed_day_count=DayCountConvention.THIRTY_360_US,
+            swap_float_frequency=Frequency.QUARTERLY,
+            swap_float_day_count=DayCountConvention.ACT_360,
+        ),
+        instruments=(
+            BootstrapInstrument(tenor=1.0, quote=0.045, instrument_type="deposit", label="DEP1Y"),
+            BootstrapInstrument(tenor=2.0, quote=0.046, instrument_type="swap", label="SWAP2Y"),
+            BootstrapInstrument(tenor=5.0, quote=0.0475, instrument_type="swap", label="SWAP5Y"),
+            BootstrapInstrument(tenor=10.0, quote=0.0485, instrument_type="swap", label="SWAP10Y"),
+        ),
+    )
+    result = bootstrap_curve_result(bundle, max_iter=75, tol=1e-12)
+    return MarketSnapshot(
+        as_of=SETTLE,
+        source="unit",
+        discount_curves={"usd_ois_boot": result.curve},
+        default_discount_curve="usd_ois_boot",
+        provenance={
+            "source": "unit",
+            "source_kind": "mixed",
+            "bootstrap_inputs": {"discount_curves": {"usd_ois_boot": bundle.to_payload()}},
+            "bootstrap_runs": {"discount_curves": {"usd_ois_boot": result.to_payload()}},
+        },
+    )
+
+
+def _spot_snapshot():
+    return MarketSnapshot(
+        as_of=SETTLE,
+        source="unit",
+        discount_curves={"usd_ois": YieldCurve.flat(0.045)},
+        underlier_spots={"AAPL": 100.0},
+        default_discount_curve="usd_ois",
+        default_underlier_spot="AAPL",
+    )
+
+
+def _callable_bond_spec():
+    from trellis.instruments.callable_bond import CallableBondSpec
+
+    return CallableBondSpec(
+        notional=100.0,
+        coupon=0.05,
+        start_date=date(2025, 1, 15),
+        end_date=date(2035, 1, 15),
+        call_dates=[date(2028, 1, 15), date(2030, 1, 15), date(2032, 1, 15)],
+        call_price=100.0,
+        frequency=Frequency.SEMI_ANNUAL,
+        day_count=DayCountConvention.ACT_365,
     )
 
 
@@ -81,6 +178,17 @@ class TestSessionPricing:
         assert "dv01" in g
         assert g["dv01"] > 0
 
+    def test_price_krd_exposes_zero_curve_methodology_metadata(self):
+        curve = YieldCurve([1.0, 2.0, 5.0, 10.0], [0.04, 0.042, 0.045, 0.047])
+        s = Session(curve=curve, settlement=SETTLE)
+
+        result = s.price(_bond(), greeks="all")
+
+        metadata = result.greeks["key_rate_durations"].metadata
+        assert metadata["resolved_methodology"] == "zero_curve"
+        assert metadata["bucket_convention"] == "curve_tenor"
+        assert metadata["bucket_tenors"] == [1.0, 2.0, 5.0, 10.0]
+
     def test_analyze_uses_autodiff_curve_sensitivities(self):
         from trellis.core.payoff import DeterministicCashflowPayoff
 
@@ -95,6 +203,243 @@ class TestSessionPricing:
         assert result.convexity > 0
         assert sum(result.key_rate_durations.values()) == pytest.approx(result.duration, rel=0.05)
 
+    def test_analyze_uses_interpolation_aware_krd_for_off_grid_buckets(self):
+        from trellis.core.payoff import DeterministicCashflowPayoff
+
+        curve = YieldCurve([1.0, 2.0, 5.0, 10.0], [0.04, 0.042, 0.045, 0.047])
+        s = Session(curve=curve, settlement=SETTLE)
+        result = s.analyze(
+            DeterministicCashflowPayoff(_bond()),
+            measures=[{"key_rate_durations": {"tenors": (7.0,), "bump_bps": 25.0}}],
+        )
+
+        assert result.key_rate_durations[7.0] > 0.0
+
+    def test_analyze_rebuild_krd_uses_bootstrap_quote_buckets(self):
+        from trellis.core.payoff import DeterministicCashflowPayoff
+
+        s = Session(market_snapshot=_bootstrapped_snapshot(), settlement=SETTLE)
+        result = s.analyze(
+            DeterministicCashflowPayoff(_bond()),
+            measures=[{"key_rate_durations": {"methodology": "curve_rebuild", "bump_bps": 25.0}}],
+        )
+
+        assert set(result.key_rate_durations) == {"DEP1Y", "SWAP2Y", "SWAP5Y", "SWAP10Y"}
+        metadata = result.key_rate_durations.metadata
+        assert metadata["resolved_methodology"] == "curve_rebuild"
+        assert metadata["bucket_convention"] == "bootstrap_quote"
+        assert metadata["selected_curve_name"] == "usd_ois_boot"
+
+    def test_analyze_rebuild_krd_falls_back_without_bootstrap_provenance(self):
+        from trellis.core.payoff import DeterministicCashflowPayoff
+
+        curve = YieldCurve([1.0, 2.0, 5.0, 10.0], [0.04, 0.042, 0.045, 0.047])
+        s = Session(curve=curve, settlement=SETTLE)
+        result = s.analyze(
+            DeterministicCashflowPayoff(_bond()),
+            measures=[
+                {
+                    "key_rate_durations": {
+                        "methodology": "curve_rebuild",
+                        "tenors": (2.0, 5.0, 10.0),
+                    }
+                }
+            ],
+        )
+
+        assert set(result.key_rate_durations) == {2.0, 5.0, 10.0}
+        metadata = result.key_rate_durations.metadata
+        assert metadata["requested_methodology"] == "curve_rebuild"
+        assert metadata["resolved_methodology"] == "zero_curve"
+        assert metadata["fallback_reason"]["code"] == "bootstrap_discount_curve_unavailable"
+
+    def test_analyze_custom_krd_buckets_still_sum_like_duration(self):
+        from trellis.core.payoff import DeterministicCashflowPayoff
+
+        curve = YieldCurve([1.0, 2.0, 5.0, 10.0], [0.04, 0.042, 0.045, 0.047])
+        s = Session(curve=curve, settlement=SETTLE)
+        result = s.analyze(
+            DeterministicCashflowPayoff(_bond()),
+            measures=[
+                "price",
+                "duration",
+                {"key_rate_durations": {"tenors": (1.0, 3.0, 7.0, 10.0), "bump_bps": 25.0}},
+            ],
+        )
+
+        assert sum(result.key_rate_durations.values()) == pytest.approx(result.duration, rel=0.10)
+
+    def test_analyze_supports_named_twist_and_butterfly_scenario_packs(self):
+        from trellis.core.payoff import DeterministicCashflowPayoff
+
+        curve = YieldCurve([1.0, 2.0, 5.0, 10.0, 30.0], [0.04, 0.041, 0.043, 0.046, 0.048])
+        s = Session(curve=curve, settlement=SETTLE)
+        result = s.analyze(
+            DeterministicCashflowPayoff(_bond()),
+            measures=[
+                {
+                    "scenario_pnl": {
+                        "scenario_packs": ("twist", "butterfly"),
+                        "bucket_tenors": (2.0, 5.0, 10.0, 30.0),
+                        "pack_amplitude_bps": 25.0,
+                    }
+                }
+            ],
+        )
+
+        assert "twist_steepener_25bp" in result.scenario_pnl
+        assert "twist_flattener_25bp" in result.scenario_pnl
+        assert "butterfly_belly_up_25bp" in result.scenario_pnl
+        assert "butterfly_belly_down_25bp" in result.scenario_pnl
+
+    def test_analyze_rebuild_scenario_pnl_uses_bootstrap_quote_methodology(self):
+        from trellis.core.payoff import DeterministicCashflowPayoff
+
+        s = Session(market_snapshot=_bootstrapped_snapshot(), settlement=SETTLE)
+        result = s.analyze(
+            DeterministicCashflowPayoff(_bond()),
+            measures=[
+                {
+                    "scenario_pnl": {
+                        "methodology": "curve_rebuild",
+                        "scenario_packs": ("twist", "butterfly"),
+                        "bucket_tenors": (1.0, 2.0, 5.0, 10.0),
+                    }
+                }
+            ],
+        )
+
+        assert "twist_steepener_25bp" in result.scenario_pnl
+        assert "butterfly_belly_up_25bp" in result.scenario_pnl
+        assert not any(isinstance(key, int) for key in result.scenario_pnl)
+        metadata = result.scenario_pnl.metadata
+        assert metadata["resolved_methodology"] == "curve_rebuild"
+        assert metadata["bucket_convention"] == "bootstrap_quote"
+        assert metadata["scenario_templates"][0]["methodology"] == "curve_rebuild"
+        assert metadata["scenario_templates"][0]["bucket_convention"] == "bootstrap_quote"
+        assert metadata["scenario_templates"][0]["quote_bucket_bumps"]["DEP1Y"] == pytest.approx(
+            -25.0
+        )
+
+    def test_analyze_bucketed_vega_returns_expiry_strike_surface(self):
+        s = Session(market_snapshot=_snapshot(), settlement=SETTLE).with_vol_surface_name("usd_smile")
+        result = s.analyze(
+            _VolPointPayoff(1.5, 100.0),
+            measures=[
+                {
+                    "vega": {
+                        "expiries": (1.0, 1.5, 2.0),
+                        "strikes": (90.0, 100.0, 110.0),
+                        "bump_pct": 1.0,
+                    }
+                }
+            ],
+        )
+
+        assert set(result.vega) == {1.0, 1.5, 2.0}
+        assert set(result.vega[1.5]) == {90.0, 100.0, 110.0}
+        assert result.vega[1.5][100.0] == pytest.approx(0.01, abs=1e-12)
+        assert result.vega[1.0][90.0] == pytest.approx(0.0, abs=1e-12)
+        metadata = result.vega.metadata
+        assert metadata["bucket_convention"] == "expiry_strike"
+        assert metadata["bucket_expiries"] == [1.0, 1.5, 2.0]
+        assert metadata["bucket_strikes"] == [90.0, 100.0, 110.0]
+        warnings = {warning["code"] for warning in metadata["warnings"]}
+        assert "interpolated_surface_bucket" in warnings
+
+    def test_analyze_bucketed_vega_records_flat_surface_expansion_warning(self):
+        s = Session(curve=_curve(), settlement=SETTLE, vol_surface=FlatVol(0.20))
+        result = s.analyze(
+            _VolPointPayoff(1.0, 90.0),
+            measures=[
+                {
+                    "vega": {
+                        "expiries": (1.0, 2.0),
+                        "strikes": (90.0, 110.0),
+                        "bump_pct": 1.0,
+                    }
+                }
+            ],
+        )
+
+        assert result.vega[1.0][90.0] == pytest.approx(0.01, abs=1e-12)
+        warnings = {warning["code"] for warning in result.vega.metadata["warnings"]}
+        assert "flat_surface_expanded" in warnings
+
+    def test_analyze_delta_and_gamma_use_selected_spot_binding(self):
+        s = Session(market_snapshot=_spot_snapshot(), settlement=SETTLE)
+        result = s.analyze(
+            _SpotQuadraticPayoff(),
+            measures=[
+                {"delta": {"bump_pct": 1.0}},
+                {"gamma": {"bump_pct": 1.0}},
+            ],
+        )
+
+        assert result.delta == pytest.approx(200.5, abs=1e-10)
+        assert result.gamma == pytest.approx(2.0, abs=1e-10)
+
+    def test_analyze_theta_rolls_one_day_forward(self):
+        s = Session(curve=_curve(), settlement=SETTLE)
+        result = s.analyze(
+            _LinearTimeDecayPayoff(date(2024, 11, 25)),
+            measures=[{"theta": {"day_step": 1}}],
+        )
+
+        assert result.theta == pytest.approx(-1.0, abs=1e-12)
+
+    def test_analyze_delta_fails_when_no_spot_binding_is_available(self):
+        from trellis.core.payoff import DeterministicCashflowPayoff
+
+        s = Session(curve=_curve(), settlement=SETTLE)
+        with pytest.raises(ValueError, match="spot"):
+            s.analyze(
+                DeterministicCashflowPayoff(_bond()),
+                measures=["delta"],
+            )
+
+    def test_analyze_callable_oas_duration_is_positive(self):
+        from trellis.instruments.callable_bond import CallableBondPayoff
+
+        payoff = CallableBondPayoff(_callable_bond_spec())
+        s = Session(curve=YieldCurve.flat(0.05), settlement=SETTLE, vol_surface=FlatVol(0.20))
+        result = s.analyze(
+            payoff,
+            measures=["price", {"oas_duration": {"bump_bps": 25.0}}],
+        )
+
+        assert result.price > 0.0
+        assert result.oas_duration > 0.0
+
+    def test_analyze_callable_scenario_explain_tracks_optionality_under_rate_shifts(self):
+        from trellis.instruments.callable_bond import CallableBondPayoff
+
+        payoff = CallableBondPayoff(_callable_bond_spec())
+        s = Session(curve=YieldCurve.flat(0.05), settlement=SETTLE, vol_surface=FlatVol(0.20))
+        result = s.analyze(
+            payoff,
+            measures=[{"callable_scenario_explain": {"shifts_bps": (-100, 100)}}],
+        )
+
+        assert set(result.callable_scenario_explain) == {-100.0, 100.0}
+        assert (
+            result.callable_scenario_explain[-100.0]["call_option_value"]
+            > result.callable_scenario_explain[100.0]["call_option_value"]
+        )
+        metadata = result.callable_scenario_explain.metadata
+        assert metadata["controller_role"] == "issuer"
+        assert metadata["exercise_dates"] == ["2028-01-15", "2030-01-15", "2032-01-15"]
+
+    def test_analyze_callable_specific_measures_fail_for_non_callable_payoff(self):
+        from trellis.core.payoff import DeterministicCashflowPayoff
+
+        s = Session(curve=_curve(), settlement=SETTLE, vol_surface=FlatVol(0.20))
+        with pytest.raises(ValueError, match="callable"):
+            s.analyze(
+                DeterministicCashflowPayoff(_bond()),
+                measures=["oas_duration"],
+            )
+
     def test_price_projects_executor_result(self):
         from trellis.platform.results import ExecutionResult
 
@@ -104,7 +449,7 @@ class TestSessionPricing:
             accrued_interest=0.75,
             ytm=0.041,
             greeks={"dv01": 0.08},
-            curve_sensitivities={"10.0": -0.8},
+            curve_sensitivities={10.0: -0.8},
         )
         s = Session(curve=_curve(), settlement=SETTLE)
 
@@ -300,6 +645,20 @@ class TestSessionScenarios:
         # Other rates unchanged
         assert float(s2.curve.rates[0]) == pytest.approx(0.04, abs=1e-9)
 
+    def test_with_tenor_bumps_supports_off_grid_bucket_shocks(self):
+        tenors = [1.0, 2.0, 5.0, 10.0, 30.0]
+        rates = [0.04, 0.042, 0.045, 0.047, 0.05]
+        curve = YieldCurve(tenors, rates)
+        s = Session(curve=curve, settlement=SETTLE)
+
+        base_price = s.price(_bond(), greeks=None).clean_price
+        s2 = s.with_tenor_bumps({7.0: +25})
+        shocked_price = s2.price(_bond(), greeks=None).clean_price
+
+        assert tuple(float(tenor) for tenor in s2.curve.tenors) == pytest.approx((1.0, 2.0, 5.0, 7.0, 10.0, 30.0))
+        assert s2.curve.zero_rate(7.0) == pytest.approx(curve.zero_rate(7.0) + 0.0025)
+        assert shocked_price < base_price
+
     def test_with_curve_replaces(self):
         s = Session(curve=_curve(), settlement=SETTLE)
         new_curve = YieldCurve.flat(0.06)
@@ -409,6 +768,15 @@ class TestRiskReport:
         assert "book_krd" in report
         assert "positions" in report
         assert "10Y" in report["positions"]
+
+    def test_risk_report_uses_canonical_numeric_krd_keys(self):
+        curve = YieldCurve([1.0, 2.0, 5.0, 10.0], [0.04, 0.042, 0.045, 0.047])
+        s = Session(curve=curve, settlement=SETTLE)
+        book = Book({"10Y": _bond()})
+
+        report = s.risk_report(book)
+
+        assert set(report["book_krd"]) == {1.0, 2.0, 5.0, 10.0}
 
 
 class TestSessionPricePayoff:

@@ -141,42 +141,63 @@ def test_build_payoff_blocks_on_semantic_clarification(monkeypatch):
         )
 
 
-@pytest.mark.legacy_compat
-def test_record_lesson_maps_why_to_legacy_explanation(monkeypatch):
+def test_record_lesson_maps_fields_into_canonical_payload(monkeypatch):
     from trellis.agent.test_resolution import Lesson, record_lesson
 
-    captured: dict[str, object] = {}
+    validated_payload: dict[str, object] = {}
+    captured_kwargs: dict[str, object] = {}
 
-    def fake_append_lesson(lesson: dict[str, object]) -> None:
-        captured.update(lesson)
+    def fake_validate_lesson_payload(payload: dict[str, object]):
+        validated_payload.update(payload)
+        return SimpleNamespace(valid=True, errors=(), normalized_payload=payload)
 
-    monkeypatch.setattr("trellis.agent.experience.append_lesson", fake_append_lesson)
+    def fake_capture_lesson(**kwargs):
+        captured_kwargs.update(kwargs)
+        return "mc_999"
 
-    record_lesson(
-        Lesson(
-            category="monte_carlo",
-            title="Bridge legacy lesson fields",
-            mistake="The bridge used the wrong field name.",
-            why="Legacy experience expects explanation, not why.",
-            detect="The append helper rejects missing explanation.",
-            fix="Map why into explanation before appending.",
-        )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.promotion.validate_lesson_payload",
+        fake_validate_lesson_payload,
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.promotion.capture_lesson",
+        fake_capture_lesson,
     )
 
-    assert captured["category"] == "monte_carlo"
-    assert captured["title"] == "Bridge legacy lesson fields"
-    assert captured["explanation"] == "Legacy experience expects explanation, not why."
-    assert captured["fix"] == "Map why into explanation before appending."
-    assert captured["symptoms"] == [
-        "The bridge used the wrong field name.",
-        "The append helper rejects missing explanation.",
-    ]
-    assert "why" not in captured
+    lesson_id = record_lesson(
+        Lesson(
+            category="monte_carlo",
+            title="Capture canonical lesson fields",
+            mistake="The helper used the wrong lesson field name.",
+            why="Canonical lessons store root_cause, not why.",
+            detect="The capture payload shape no longer matches the contract.",
+            fix="Map the distilled lesson into the canonical lesson schema.",
+        ),
+        method="monte_carlo",
+        features=["early_exercise"],
+        validation="Resolved during build of American put option",
+        confidence=0.5,
+    )
+
+    assert lesson_id == "mc_999"
+    assert validated_payload["category"] == "monte_carlo"
+    assert validated_payload["title"] == "Capture canonical lesson fields"
+    assert validated_payload["symptom"] == "The helper used the wrong lesson field name."
+    assert validated_payload["root_cause"] == "Canonical lessons store root_cause, not why."
+    assert validated_payload["fix"] == "Map the distilled lesson into the canonical lesson schema."
+    assert validated_payload["validation"] == "Resolved during build of American put option"
+    assert validated_payload["confidence"] == 0.5
+    assert validated_payload["applies_when"]["method"] == ["monte_carlo"]
+    assert validated_payload["applies_when"]["features"] == ["early_exercise"]
+    assert captured_kwargs["root_cause"] == "Canonical lessons store root_cause, not why."
+    assert captured_kwargs["symptom"] == "The helper used the wrong lesson field name."
 
 
 def test_record_resolved_failures_fails_hard_on_missing_lesson_fields(monkeypatch):
     from trellis.agent.executor import _record_resolved_failures
 
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr("trellis.agent.config.get_provider", lambda: "openai")
     monkeypatch.setattr(
         "trellis.agent.config.llm_generate_json",
         lambda prompt, model=None: {
@@ -189,7 +210,7 @@ def test_record_resolved_failures_fails_hard_on_missing_lesson_fields(monkeypatc
     )
     monkeypatch.setattr(
         "trellis.agent.test_resolution.record_lesson",
-        lambda lesson: pytest.fail("record_lesson should not be reached when fields are missing"),
+        lambda *args, **kwargs: pytest.fail("record_lesson should not be reached when fields are missing"),
     )
 
     with pytest.raises(RuntimeError, match="LLM lesson output missing fields"):
@@ -199,6 +220,68 @@ def test_record_resolved_failures_fails_hard_on_missing_lesson_fields(monkeypatc
             SimpleNamespace(method="analytical"),
             "gpt-5-mini",
         )
+
+
+def test_record_resolved_failures_skips_without_llm_credentials(monkeypatch, caplog):
+    from trellis.agent.executor import _record_resolved_failures
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("trellis.agent.config.get_provider", lambda: "openai")
+    monkeypatch.setattr(
+        "trellis.agent.config.llm_generate_json",
+        lambda *args, **kwargs: pytest.fail("llm_generate_json should not run without credentials"),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.test_resolution.record_lesson",
+        lambda *args, **kwargs: pytest.fail("record_lesson should not run without credentials"),
+    )
+
+    with caplog.at_level("WARNING"):
+        _record_resolved_failures(
+            ["example validation failure"],
+            "European call option",
+            SimpleNamespace(method="analytical"),
+            "gpt-5-mini",
+        )
+
+    assert "Skipping resolved-failure lesson distillation" in caplog.text
+
+
+def test_diagnose_failure_reads_related_lessons_from_canonical_signatures(monkeypatch):
+    from trellis.agent.knowledge.schema import FailureSignature
+    from trellis.agent.test_resolution import TestFailure, diagnose_failure
+
+    store = SimpleNamespace(
+        _failure_signatures=[
+            FailureSignature(
+                pattern="longstaff",
+                magnitude="significant",
+                category="monte_carlo",
+                probable_causes=("mc_001",),
+                features=("early_exercise",),
+                diagnostic_hint="LSM continuation regression is unstable here.",
+            )
+        ],
+        _load_lesson=lambda lesson_id: SimpleNamespace(
+            title="LSM high-vol bias with polynomial basis"
+        ) if lesson_id == "mc_001" else None,
+    )
+    monkeypatch.setattr("trellis.agent.knowledge.get_store", lambda: store)
+
+    diagnosis = diagnose_failure(
+        TestFailure(
+            test_name="test_longstaff_example",
+            test_file="tests/test_mc.py",
+            error_type="AssertionError",
+            error_message="longstaff price above benchmark",
+            expected=None,
+            actual=None,
+            traceback="",
+        )
+    )
+
+    assert diagnosis.category == "monte_carlo"
+    assert diagnosis.related_lessons == ["LSM high-vol bias with polynomial basis"]
 
 
 def test_generate_skeleton_quotes_string_defaults_but_keeps_symbolic_defaults():

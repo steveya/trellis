@@ -30,6 +30,7 @@ from trellis.models.trees.lattice import (
     build_lattice,
     price_on_lattice,
 )
+from trellis.models.hull_white_parameters import resolve_hull_white_parameters
 
 
 @dataclass(frozen=True)
@@ -48,7 +49,8 @@ def build_callable_bond_lattice(
     spec,
     *,
     model: str = "hull_white",
-    mean_reversion: float = 0.1,
+    mean_reversion: float | None = None,
+    sigma: float | None = None,
     n_steps: int | None = None,
 ) -> RecombiningLattice:
     """Build the calibrated tree used to price a callable bond."""
@@ -58,20 +60,29 @@ def build_callable_bond_lattice(
         raise ValueError("Callable bond maturity must be after settlement")
 
     r0 = float(market_state.discount.zero_rate(max(maturity / 2.0, 1e-6)))
-    black_vol = float(market_state.vol_surface.black_vol(max(maturity / 2.0, 1e-6), max(r0, 1e-6)))
+    default_sigma = None
+    if market_state.vol_surface is not None:
+        black_vol = float(market_state.vol_surface.black_vol(max(maturity / 2.0, 1e-6), max(r0, 1e-6)))
+        default_sigma = black_vol * max(abs(r0), 1e-6)
     step_count = int(n_steps or min(200, max(50, int(maturity * 50))))
     model_key = str(model).strip().lower()
 
     tree_model = tree_models.MODEL_REGISTRY[model_key]
-    sigma = black_vol if tree_model.vol_type == "lognormal" else black_vol * max(abs(r0), 1e-6)
+    resolved_mean_reversion, resolved_sigma = resolve_hull_white_parameters(
+        market_state,
+        mean_reversion=mean_reversion,
+        sigma=sigma,
+        default_mean_reversion=0.1,
+        default_sigma=default_sigma if tree_model.vol_type != "lognormal" else black_vol if market_state.vol_surface is not None else None,
+    )
     return build_lattice(
         lattice_algebra.BINOMIAL_1F_TOPOLOGY,
         lattice_algebra.UNIFORM_ADDITIVE_MESH,
         tree_model.as_lattice_model_spec(),
         calibration_target=lattice_algebra.TERM_STRUCTURE_TARGET(market_state.discount),
         r0=r0,
-        sigma=sigma,
-        a=mean_reversion,
+        sigma=resolved_sigma,
+        a=resolved_mean_reversion,
         T=maturity,
         n_steps=step_count,
     )
@@ -216,7 +227,8 @@ def price_callable_bond_tree(
     spec,
     *,
     model: str = "hull_white",
-    mean_reversion: float = 0.1,
+    mean_reversion: float | None = None,
+    sigma: float | None = None,
     n_steps: int | None = None,
 ) -> float:
     """Build the requested callable- or puttable-bond tree and return the holder PV."""
@@ -226,6 +238,7 @@ def price_callable_bond_tree(
         spec,
         model=model,
         mean_reversion=mean_reversion,
+        sigma=sigma,
         n_steps=n_steps,
     )
     tree_price = price_callable_bond_on_lattice(

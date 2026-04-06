@@ -16,6 +16,10 @@ class TestFlatVol:
     def test_satisfies_protocol(self):
         assert isinstance(FlatVol(0.20), VolSurface)
 
+    def test_rejects_negative_vol(self):
+        with pytest.raises(ValueError, match="non-negative"):
+            FlatVol(-0.01)
+
 
 class TestGridVolSurface:
 
@@ -52,3 +56,19 @@ class TestGridVolSurface:
             vols=((0.25, 0.22), (0.27, 0.24)),
         )
         assert isinstance(surface, VolSurface)
+
+    def test_rejects_duplicate_grid_coordinates(self):
+        with pytest.raises(ValueError, match="strictly increasing"):
+            GridVolSurface(
+                expiries=(1.0, 1.0, 2.0),
+                strikes=(90.0, 110.0),
+                vols=((0.25, 0.22), (0.26, 0.23), (0.27, 0.24)),
+            )
+
+    def test_rejects_negative_vol_nodes(self):
+        with pytest.raises(ValueError, match="non-negative"):
+            GridVolSurface(
+                expiries=(1.0, 2.0),
+                strikes=(90.0, 110.0),
+                vols=((0.25, -0.22), (0.27, 0.24)),
+            )

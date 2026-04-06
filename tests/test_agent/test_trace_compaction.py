@@ -100,6 +100,81 @@ class TestCompactTraces:
         assert summary["success_count"] == 1
         assert summary["failure_count"] == 1
 
+    def test_compact_old_platform_event_logs_into_summary_yaml(self, tmp_path, monkeypatch):
+        from types import SimpleNamespace
+
+        from trellis.agent.knowledge import promotion
+        from trellis.agent.platform_traces import (
+            append_platform_trace_event,
+            load_platform_trace_events,
+            load_platform_trace_payload,
+            record_platform_trace,
+        )
+
+        traces_dir = tmp_path / "traces"
+        platform_dir = traces_dir / "platform"
+        platform_dir.mkdir(parents=True)
+        monkeypatch.setattr(promotion, "_TRACES_DIR", traces_dir)
+        monkeypatch.setattr(promotion, "_SUMMARIES_DIR", traces_dir / "summaries")
+
+        compiled = SimpleNamespace(
+            request=SimpleNamespace(
+                request_id="executor_build_compaction_demo",
+                request_type="build",
+                entry_point="executor",
+                instrument_type="european_option",
+                metadata={},
+            ),
+            execution_plan=SimpleNamespace(
+                action="build_then_price",
+                route_method="analytical",
+                measures=(),
+                requires_build=True,
+            ),
+            pricing_plan=SimpleNamespace(sensitivity_support=None),
+            product_ir=SimpleNamespace(instrument="european_option"),
+            blocker_report=None,
+            knowledge_summary={},
+        )
+
+        trace_path = record_platform_trace(
+            compiled,
+            success=True,
+            outcome="build_completed",
+            root=platform_dir,
+        )
+        append_platform_trace_event(
+            compiled,
+            "review_completed",
+            status="ok",
+            details={"note": "kept for regression"},
+            root=platform_dir,
+        )
+
+        events_path = trace_path.with_suffix(".events.ndjson")
+        old_time = (datetime.now() - timedelta(days=45)).timestamp()
+        import os
+
+        os.utime(trace_path, (old_time, old_time))
+        os.utime(events_path, (old_time, old_time))
+
+        stats = promotion.compact_traces(older_than_days=30)
+        payload = load_platform_trace_payload(trace_path)
+        events = load_platform_trace_events(trace_path)
+
+        assert stats["cohorts_summarized"] == 0
+        assert stats["traces_compacted"] == 1
+        assert stats["traces_kept"] == 0
+        assert not events_path.exists()
+        assert [event["event"] for event in payload["events"]] == [
+            "request_succeeded",
+            "review_completed",
+        ]
+        assert [event.event for event in events] == [
+            "request_succeeded",
+            "review_completed",
+        ]
+
 
 class TestGapAggregation:
     """Verify _record_gap_aggregated deduplicates and increments."""

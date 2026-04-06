@@ -24,6 +24,14 @@ Three Ways to Price
 
    result = trellis.ask("Price a 5Y cap at 4%")
 
+For fixed-rate bonds, the returned ``PricingResult`` now includes a solved
+``ytm`` alongside ``clean_price``, ``dirty_price``, and
+``accrued_interest``. Trellis computes accrued interest from the bond's coupon
+schedule and day-count convention, and solves ``ytm`` as a nominal annual
+yield compounded at the bond coupon frequency. Current bond reporting does not
+model ex-coupon windows or settlement-lag conventions, so exact street parity
+outside that scope should still be validated explicitly.
+
 Unified Runtime Boundary
 ------------------------
 
@@ -87,8 +95,49 @@ Cap/floor and swaption quotes use the same explicit multi-curve discipline.
 The calibration helpers in ``trellis.models.calibration.rates`` solve for a
 flat Black volatility against the selected discount and forecast curves, and
 the returned calibration result keeps the selected curve names plus any caller
-labels for the volatility or correlation source. That makes the calibration run
-replayable without re-resolving market data.
+labels for the volatility or correlation source. Those helpers now also record
+the typed ``SolveRequest`` payload and solved result metadata used for the
+scalar root solve, so the calibration run is replayable without re-resolving
+market data or reverse-engineering solver inputs from backend-specific calls.
+
+Under the hood, those solve requests now dispatch through a backend registry.
+The default backend is still SciPy, but backend capability checks now block
+unsupported constraints, derivative hooks, or other solve features unless the
+caller explicitly requests a fallback backend. That keeps calibration behavior
+auditable instead of silently dropping unsupported solver features.
+
+Equity-vol calibration helpers follow the same audit-first approach. The
+supported Dupire local-vol workflow can now return a structured
+``LocalVolCalibrationResult`` whose diagnostics and warning list make unstable
+surface regions explicit. The legacy ``dupire_local_vol(...)`` helper still
+returns a callable for model consumers, but that callable now carries sibling
+``calibration_provenance``, ``calibration_diagnostics``, and
+``calibration_warnings`` attributes so downstream review tools do not have to
+guess whether a local-vol point came from a stable Dupire evaluation or a
+fallback to the implied-vol surface.
+
+The supported Heston smile workflow now follows the same pattern.
+``calibrate_heston_smile_workflow(...)`` fits one supported strike smile onto a
+runtime-ready Heston parameter set and returns a ``HestonSmileCalibrationResult``
+with the typed solve request, solver provenance/replay artifacts, fit
+diagnostics, and a reusable ``apply_to_market_state(...)`` helper. That means
+later simulation or pricing code can consume the calibrated parameters from the
+canonical ``model_parameters`` surface instead of rebuilding a route-local
+process object.
+
+The same MarketState handoff now exists for the local-vol workflow as well.
+``calibrate_local_vol_surface_workflow(...)`` returns the hardened Dupire
+result and can project the named local-vol surface back onto
+``MarketState.local_vol_surface`` / ``local_vol_surfaces`` for later runtime
+consumers.
+
+Those supported calibration paths now also have a checked replay/tolerance
+pack. In practice that means the workflow-level solver provenance, replay
+artifacts, fit-quality tolerances, and cold-versus-warm benchmark baselines are
+locked down for the supported Hull-White, SABR, Heston, and local-vol fixtures.
+If you change solver wiring or runtime consumers, review the calibration
+benchmark artifact in ``docs/benchmarks/calibration_workflows.md`` alongside the
+workflow tests before treating the change as desk-safe.
 
 Unified Lattice Pricing
 -----------------------
@@ -146,6 +195,51 @@ timeline shape: ``ContractTimeline`` internally and ``tuple[date, ...]`` at the
 agent-facing spec layer. Comma-separated date strings are no longer the
 supported way to express call, put, exercise, or observation schedules.
 
+Calibration Provenance
+----------------------
+
+Rates volatility calibration and SABR smile fitting now expose governed solver
+artifacts alongside the calibrated result. The raw typed ``solve_request`` and
+``solve_result`` are still present, but callers should treat
+``solver_provenance`` and ``solver_replay_artifact`` as the stable review
+surface.
+
+In practice that means downstream tools can inspect:
+
+- which solve backend ran
+- which explicit solver options were requested
+- whether the solve succeeded and why it terminated
+- the residual diagnostics associated with the solved point
+
+without knowing whether the underlying calibration came from a scalar rates
+root solve or a vector SABR least-squares fit.
+
+The supported Hull-White workflow uses that same governed surface, but its
+output is reusable by later tree helpers as well as inspectable by review
+tools. ``calibrate_hull_white(...)`` returns the solver artifacts, the repriced
+strip residuals, and a stable ``model_parameters`` payload; calling
+``result.apply_to_market_state(...)`` makes those calibrated parameters the
+runtime default for callable-bond, Bermudan-swaption, and ZCB-option helpers.
+
+SABR smile fitting now exposes an analogous review surface. Callers that need a
+reusable calibration artifact can build a ``SABRSmileSurface`` first and then
+run ``fit_sabr_smile_surface(...)`` to inspect:
+
+- the normalized smile-grid input with stable labels and optional weights
+- explicit warnings when the input smile does not bracket the forward or lacks
+  an exact ATM point
+- per-strike fit residuals plus RMS / weighted RMS diagnostics
+
+The older ``calibrate_sabr(...)`` helper remains available as a compatibility
+wrapper, but it now routes through that same smile-surface assembly and
+diagnostic layer.
+
+For new code, the supported entry point is
+``calibrate_sabr_smile_workflow(...)``. It accepts the raw smile inputs and
+returns the full ``SABRSmileCalibrationResult`` directly, so callers do not
+need to assemble the smile surface and fit stages by hand unless they
+explicitly want that intermediate reusable artifact.
+
 Typed Governed Parse And Match
 ------------------------------
 
@@ -156,8 +250,38 @@ That means:
 
 - ``trellis.platform.services.TradeService`` normalizes natural-language or
   structured requests into a typed semantic contract plus ``ProductIR``
+- schedule-bearing structured requests can use the same alias family the
+  semantic contract layer already recognizes, including
+  ``observation_schedule`` / ``observation_dates``,
+  ``fixing_schedule`` / ``fixing_dates``, ``exercise_schedule`` /
+  ``exercise_date``, ``call_schedule`` / ``call_dates``, and
+  ``expiry_date`` / ``expiry``; the governed parser normalizes those onto one
+  canonical schedule surface before model match
+- the first desk-oriented structured-rates trade-entry slice now includes
+  ``range_accrual`` requests with explicit ``reference_index``,
+  ``coupon_definition``, ``range_condition``, and ``observation_schedule``
+  fields; the canonical settlement profile is filled in automatically and
+  optional callability hooks are preserved as trade-entry metadata
+- that same governed structured surface now also accepts ``callable_bond`` and
+  ``bermudan_swaption`` requests with typed schedule-bearing term fields such
+  as notional, coupon or strike, start/end or swap-end dates, and explicit
+  exercise schedules; route defaults such as par call price, coupon frequency,
+  and day-count basis are surfaced later as reviewable assumptions instead of
+  being silently hidden
 - incomplete requests surface explicit ``missing_fields`` and ``warnings``
   instead of silently dropping back into an opaque parse step
+- the same contract family now has a generic imported-position wrapper:
+  ``TradeService.parse_position(...)`` normalizes one flat or nested book row
+  onto ``PositionImportContract`` with stable ``position_id``,
+  ``instrument_type``, ``quantity``, ``structured_trade``, and ``field_map``
+  fields before delegating to the same structured trade parser
+- that same ingestion boundary now accepts mixed supported desk books from
+  flat files: ``TradeService.load_positions(...)`` loads normalized row lists,
+  while ``TradeService.load_positions_csv(...)`` and
+  ``TradeService.load_positions_json(...)`` accept CSV and JSON inputs and
+  return ``ImportedBookLoadResult`` with a stable parsed-position book,
+  per-row ``row_results``, and deterministic ``parsed`` / ``partial`` /
+  ``incomplete`` / ``invalid`` load status for desk review
 - ``TermSheet`` parsing remains available for older ask-style compatibility, but
   it is not the canonical governed contract boundary
 - ``trellis.platform.services.ModelService`` performs deterministic model
@@ -176,6 +300,9 @@ This MVP is intentionally narrow:
 
 - it executes approved models only
 - it requires explicit governed session/provider state
+- it can reuse an activated imported market snapshot from
+  ``trellis.snapshot.import_files`` when the desk is working from explicit
+  local market-data files
 - it persists a canonical run record and canonical audit bundle for every
   successful or blocked call
 - it does not silently fall back to candidate generation when no approved model
@@ -186,12 +313,77 @@ The response can be projected in three modes:
 - ``concise`` returns status, result summary, warnings, and a minimal audit
   pointer
 - ``structured`` returns run id, structured result payload, warnings,
-  provenance, and audit URI
+  provenance, audit URI, and a trader-facing ``desk_review`` bundle
 - ``audit`` returns the structured payload plus the canonical audit bundle
+
+The ``desk_review`` bundle is the desk-readable projection layered on top of
+the canonical run record. It summarizes:
+
+- trade and route identity (semantic id, model, method, adapter, engine)
+- assumption categories for explicit, defaulted, synthetic/proxy, and missing
+  inputs
+- trader-facing warning items with stable categories
+- deterministic ``driver_narrative`` text linked back to the selected route,
+  assumptions, and warnings
+- deterministic ``scenario_commentary`` text linked back to the returned
+  scenario ladder, assumptions, and warnings
+- schedule/event highlights such as observation and call dates
+- the scenario ladder returned by the checked pricing route
+- stable run, audit, and market-snapshot references
 
 Blocked responses are part of the contract. Missing provider bindings,
 non-approved model matches, policy denial, and unsupported MVP execution
 adapters return persisted blocked runs rather than opaque transport errors.
+When that happens, ``desk_review`` is still returned, but its
+``driver_narrative`` is blocker-specific and explicitly says the run stopped
+before route selection or pricing execution rather than implying that an
+approved pricing path succeeded.
+
+The first desk-oriented checked structures on this surface are now:
+
+- ``range_accrual_discounted`` for the first single-index range-accrual note slice
+- ``callable_bond_tree`` for issuer-call fixed-income structures
+- ``bermudan_swaption_tree`` for the first supported Bermudan rates option slice
+
+When the approved model match selects the range-accrual adapter,
+``trellis.price.trade`` expects explicit ``notional`` plus the normalized
+range-accrual contract terms, resolves the discount curve, forecast-curve
+proxy, and optional fixing history from the active market snapshot, and
+returns:
+
+- total PV plus separate coupon-leg and principal-leg PV
+- a first parallel-shift risk measure as ``risk.parallel_curve_pv01``
+- a small trader-style scenario ladder for parallel curve moves
+- a deterministic validation bundle with fixing-coverage, reference-bound, and
+  PV-reconciliation checks
+
+If the active snapshot does not contain a dedicated forecast curve for the
+reference index, the route falls back to the selected discount curve as the
+projection proxy and surfaces that assumption in the response warnings and
+validation bundle. The same note is also grouped into
+``desk_review.assumptions.synthetic_inputs`` so the trader-facing output makes
+the proxy explicit without forcing the user to inspect the raw validation
+payload first.
+
+For callable bonds and Bermudan swaptions, the governed surface now packages
+the checked lattice helpers into the same run/audit contract. Those routes
+surface typed exercise schedules in ``desk_review.schedule_summary``, project
+reviewable event rows for exercise or maturity boundaries, and group defaulted
+route assumptions such as par call price, schedule frequency, or day-count
+basis into ``desk_review.assumptions.defaulted_inputs``.
+
+Callable-bond trade runs now also expose ``result.oas_duration`` plus
+``result.callable_scenario_explain``. The scenario explain payload is the
+callable-specific desk review surface: it shows how the callable price, the
+straight-bond reference price, and the embedded call option value move under a
+standard parallel rate ladder.
+
+The derived ``desk_review.driver_narrative`` and
+``desk_review.scenario_commentary`` fields are intentionally not free-form LLM
+output. They are deterministic text summaries built from the same stored route
+result, assumption buckets, warning pack, and scenario ladder that power the
+rest of the desk-review bundle, so the narrative surface stays traceable to the
+underlying evidence.
 
 Testing The Local MCP Server
 ----------------------------
@@ -301,6 +493,74 @@ This local host flow is intentionally thin:
 - public exposure, auth, and ChatGPT-facing remote deployment are separate
   follow-on concerns
 
+First Exotic Desk Workflow
+--------------------------
+
+The first packaged explicit-input exotic workflow is the imported-snapshot desk
+path for ``range_accrual``, ``callable_bond``, and ``bermudan_swaption``.
+
+In-process Python or notebook example:
+
+.. code-block:: python
+
+   from trellis.mcp.server import bootstrap_mcp_server
+
+   server = bootstrap_mcp_server(state_root="tmp/mcp_state")
+
+   imported = server.call_tool(
+       "trellis.snapshot.import_files",
+       {
+           "session_id": "desk_demo",
+           "manifest_path": "/abs/path/range_accrual_snapshot.yaml",
+           "activate_session": True,
+           "reference_date": "2026-04-04",
+       },
+   )
+   response = server.call_tool(
+       "trellis.price.trade",
+       {
+           "session_id": "desk_demo",
+           "structured_trade": {
+               "instrument_type": "range_accrual",
+               "reference_index": "SOFR",
+               "coupon_rate": 0.0525,
+               "lower_bound": 0.015,
+               "upper_bound": 0.0325,
+               "observation_schedule": (
+                   "2026-01-15",
+                   "2026-04-15",
+                   "2026-07-15",
+                   "2026-10-15",
+               ),
+               "notional": 1_000_000.0,
+               "payout_currency": "USD",
+               "reporting_currency": "USD",
+               "preferred_method": "analytical",
+           },
+           "output_mode": "audit",
+           "valuation_date": "2026-04-04",
+       },
+   )
+
+   response["result"]["price"]
+   response["desk_review"]["assumptions"]
+   response["desk_review"]["scenario_summary"]
+   response["desk_review"]["audit_refs"]["snapshot_uri"]
+
+For MCP hosts, use the guided prompt ``exotic_desk_one_trade`` with the target
+session id. That prompt walks the host through:
+
+1. importing the explicit market snapshot
+2. parsing and matching one supported desk trade
+3. calling ``trellis.price.trade`` with ``output_mode="audit"``
+4. reading ``desk_review`` first, then the persisted run/audit resources
+
+The same prompt is exposed over the local streamable HTTP transport after the
+host is attached to ``http://127.0.0.1:8000/mcp``. The goal is to keep the
+workflow identical across in-process Python, MCP, and local HTTP hosts: import
+the snapshot, price the supported trade, then review ``desk_review`` plus the
+canonical run/audit resources instead of reconstructing workflow state by hand.
+
 Governed Candidate Lifecycle
 ----------------------------
 
@@ -338,7 +598,9 @@ surface:
 - ``trellis.model.diff`` compares two governed versions across contract, code,
   methodology, validation, and lineage metadata
 - ``trellis.snapshot.persist_run`` turns a persisted governed run into a
-  reproducibility bundle snapshot that can be referenced later by run id
+  reproducibility bundle snapshot that can be referenced later by run id,
+  including a concrete governed market-snapshot contract that can be
+  rehydrated for replay or review
 
 The matching read surface is resource-based rather than write-tool based. The
 main URIs are:
@@ -347,7 +609,9 @@ main URIs are:
   and validation reports
 - ``trellis://runs/{run_id}``, ``.../audit``, ``.../inputs``, and ``.../outputs``
   for governed run inspection
-- ``trellis://market-snapshots/{snapshot_id}`` for persisted market snapshots
+- ``trellis://market-snapshots/{snapshot_id}`` for persisted market snapshots,
+  including imported snapshots and reproducibility bundles with their embedded
+  governed market data
 
 Versioning constraints matter here:
 
@@ -393,6 +657,230 @@ The same rule now applies to pipelines:
 - ``compute(["price"])`` keeps pricing-only results with empty Greeks
 - ``compute(["price", "dv01"])`` requests explicit risk outputs
 - omitting ``compute(...)`` still defaults to the full pricing Greek set
+
+``Pipeline.run()`` now returns a dict-like ``ScenarioResultCube`` rather than a
+plain ``dict``. Existing code can still index it by scenario name, but the cube
+also preserves ``scenario_specs`` plus per-scenario provenance and exposes
+aggregation helpers for later desk-review workflows. Pipeline execution now
+flows through a reusable compiled compute plan as well, so callers can inspect
+``Pipeline.compile_compute_plan().to_dict()`` before running or recover the
+serialized plan later from ``cube.compute_plan``. Named saved scenario
+templates can be loaded from ``market_snapshot.metadata["scenario_templates"]``
+by using ``{"scenario_template": "template_name"}`` inside ``scenarios(...)``,
+and the executed cube can be projected into a stable pod-review payload with
+``cube.to_batch_output()``. The same cube now also exposes
+``cube.pnl_attribution()`` for scenario-by-scenario top-contributor ranking:
+
+.. code-block:: python
+
+   cube = (
+       Pipeline()
+       .instruments(book)
+       .market_data(curve=curve)
+       .scenarios(
+           [
+               {"name": "base", "shift_bps": 0},
+               {"name": "up100", "shift_bps": 100},
+           ]
+       )
+       .run()
+   )
+
+   cube["up100"].total_mv
+   cube.scenario_specs["up100"]
+   cube.compute_plan["scenario_count"]
+   cube.book_ladder("total_mv").metadata["deltas"]["up100"]
+   cube.position_ladder("mv")["10Y"]["up100"]
+   cube.to_batch_output()["book_pnl"]["values"]["up100"]
+   cube.pnl_attribution()["scenario_attribution"]["up100"]["top_contributors"][0]
+
+The aggregation helpers preserve scenario provenance in their attached
+``.metadata`` payload, so downstream explain code does not have to reconstruct
+which scenario pack, shift template, or pipeline settings produced a ladder.
+The published ``book_pnl`` and ``position_pnl`` payloads now put actual P&L
+deltas in ``values`` and keep the underlying scenario levels under
+``metadata["levels"]``.
+
+The runtime analytics surface now also exposes spot ``delta`` and ``gamma``
+plus roll-down ``theta`` through ``Session.analyze(...)``. Delta and gamma use
+finite-difference repricing on one selected spot binding, while theta rolls the
+market-state dates forward and reports ``V(t + dt) - V(t)`` for the requested
+calendar-day step:
+
+.. code-block:: python
+
+   result = s.analyze(
+       payoff,
+       measures=[
+           {"delta": {"bump_pct": 1.0}},
+           {"gamma": {"bump_pct": 1.0}},
+           {"theta": {"day_step": 1}},
+       ],
+   )
+
+Delta and gamma require a usable spot binding. Trellis accepts either
+``market_state.spot`` or one selected underlier spot from the backing market
+snapshot. If no unambiguous spot binding exists, the runtime now raises an
+explicit error instead of silently omitting the measure.
+
+When you request ``key_rate_durations`` through ``Session.price(...)``,
+``Session.greeks(...)``, or ``Session.risk_report(...)``, Trellis now uses the
+same interpolation-aware bucket engine as ``Session.analyze(...)`` and returns
+numeric tenor keys on the active curve grid, for example ``{1.0: ..., 5.0:
+...}`` instead of legacy string labels such as ``"KRD_5.0y"``.
+
+Those risk surfaces are now dict-like objects with attached methodology
+metadata. In practice that means you can inspect
+``result.greeks["key_rate_durations"].metadata`` or
+``result.scenario_pnl.metadata`` to see whether Trellis used direct
+zero-curve bucket shocks or a rebuild-based quote-space workflow, which bucket
+grid it used, and whether any fallback occurred.
+
+For interpolation-aware custom KRD buckets, use ``Session.analyze(...)`` with
+an explicit ``key_rate_durations`` measure configuration. The requested tenor
+grid becomes the piecewise-linear risk grid, so off-grid buckets such as ``7Y``
+no longer collapse to zero just because the base curve only carries ``5Y`` and
+``10Y`` knots:
+
+.. code-block:: python
+
+   from trellis.core.payoff import DeterministicCashflowPayoff
+
+   krd = s.analyze(
+       DeterministicCashflowPayoff(bond),
+       measures=[
+           {
+               "key_rate_durations": {
+                   "tenors": (2.0, 5.0, 7.0, 10.0),
+                   "bump_bps": 25.0,
+               }
+           }
+       ],
+   ).key_rate_durations
+
+If the active discount curve came from a bootstrapped snapshot with recorded
+``bootstrap_runs`` provenance, ``Session.analyze(...)`` can also request a
+quote-space rebuild workflow:
+
+.. code-block:: python
+
+   rebuild_krd = s.analyze(
+       DeterministicCashflowPayoff(bond),
+       measures=[
+           {
+               "key_rate_durations": {
+                   "methodology": "curve_rebuild",
+                   "bump_bps": 25.0,
+               }
+           }
+       ],
+   ).key_rate_durations
+
+   assert rebuild_krd.metadata["resolved_methodology"] == "curve_rebuild"
+
+The same analytics surface now supports named twist and butterfly rate
+scenarios through ``scenario_pnl``:
+
+.. code-block:: python
+
+   scenario_pnl = s.analyze(
+       DeterministicCashflowPayoff(bond),
+       measures=[
+           {
+               "scenario_pnl": {
+                   "scenario_packs": ("twist", "butterfly"),
+                   "bucket_tenors": (2.0, 5.0, 10.0, 30.0),
+                   "pack_amplitude_bps": 25.0,
+               }
+           }
+       ],
+   ).scenario_pnl
+
+When you request scenario packs without an explicit parallel-shift ladder,
+Trellis now treats that as a pack-only request. Pass
+``"include_parallel_shifts": True`` if you want both the named scenarios and
+the parallel ``shifts_bps`` ladder in the same result.
+
+Bootstrap-backed sessions can also run the named packs through the rebuild
+workflow so the shocks follow the quoted curve instruments instead of only the
+final zero curve:
+
+.. code-block:: python
+
+   rebuild_scenarios = s.analyze(
+       DeterministicCashflowPayoff(bond),
+       measures=[
+           {
+               "scenario_pnl": {
+                   "methodology": "curve_rebuild",
+                   "scenario_packs": ("twist", "butterfly"),
+                   "bucket_tenors": (1.0, 2.0, 5.0, 10.0),
+               }
+           }
+       ],
+   ).scenario_pnl
+
+Each named entry reports P&L relative to the base valuation while keeping the
+bucket assumptions explicit in the scenario name, for example
+``"twist_steepener_25bp"`` or ``"butterfly_belly_up_25bp"``. The attached
+``.metadata`` payload records the resolved methodology, bucket conventions, and
+any fallback reason when a rebuild request had to drop back to zero-curve
+shocks. The saved ``scenario_templates`` emitted by that metadata now preserve
+the concrete methodology as well, so replaying a rebuild-based saved template
+through ``Pipeline.scenarios([{"scenario_template": ...}])`` stays in
+quote-space instead of silently degrading to a zero-curve bump.
+
+Bucketed vega now uses the same explicit substrate idea on the volatility
+side. Request ``vega`` with both ``expiries`` and ``strikes`` to get a
+dict-like expiry/strike surface instead of one coarse scalar:
+
+.. code-block:: python
+
+   vega_surface = s.analyze(
+       payoff,
+       measures=[
+           {
+               "vega": {
+                   "expiries": (1.0, 1.5, 2.0),
+                   "strikes": (90.0, 100.0, 110.0),
+                   "bump_pct": 1.0,
+               }
+           }
+       ],
+   ).vega
+
+   assert vega_surface[1.5][100.0] != 0.0
+   assert vega_surface.metadata["bucket_convention"] == "expiry_strike"
+
+The attached ``.metadata`` payload records the configured bucket grid, the
+resolved surface type, and any warnings. Two warning codes are especially
+useful in practice:
+
+- ``interpolated_surface_bucket`` means the requested bucket does not land on
+  an observed surface node and was synthesized from the surrounding grid
+- ``flat_surface_expanded`` means the runtime started from ``FlatVol`` and had
+  to expand it onto the requested bucket grid before shocking it
+
+When you omit ``expiries`` and ``strikes``, ``vega`` still returns the older
+coarse scalar sensitivity.
+
+The supported pod-risk workflows now also have a checked throughput baseline in
+``docs/benchmarks/pod_risk_workflows.md``. That report covers the shared
+scenario-result cube path, rebuild-based rates-risk workflows, bucketed vega,
+and the spot-risk measure bundle through the same public/runtime entrypoints
+shown above.
+
+Callable-bond analytics now have two dedicated runtime measures as well:
+
+- ``oas_duration`` reports effective duration on the callable tree, with an
+  optional market-price anchor if you want the current OAS solved first
+- ``callable_scenario_explain`` returns a callable-specific rate-shock ladder
+  showing callable price, straight-bond reference price, and the implied call
+  option value under each scenario
+
+These callable measures are intentionally explicit about scope. Today they are
+implemented for callable-bond payoffs with a real call schedule; non-callable
+payoffs fail with a direct error instead of silently returning an empty field.
 
 Trace Artifacts
 ---------------

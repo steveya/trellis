@@ -165,6 +165,54 @@ def test_ranked_observation_basket_emits_typed_semantic_surface():
     assert contract.product.event_machine is not None
 
 
+def test_range_accrual_trade_entry_contract_validates_and_surfaces_term_fields():
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import draft_semantic_contract, semantic_contract_summary
+
+    contract = draft_semantic_contract(
+        (
+            "Range accrual note on SOFR paying 5.25% when SOFR stays between 1.50% "
+            "and 3.25% on 2026-01-15, 2026-04-15, 2026-07-15, and 2026-10-15."
+        ),
+        instrument_type="range_accrual",
+    )
+    report = validate_semantic_contract(contract)
+
+    assert report.ok, report.errors
+    assert contract.product.semantic_id == "range_accrual"
+    assert contract.product.instrument_class == "range_accrual"
+    assert contract.product.observation_schedule == (
+        "2026-01-15",
+        "2026-04-15",
+        "2026-07-15",
+        "2026-10-15",
+    )
+    summary = semantic_contract_summary(contract)
+    assert summary["semantic_id"] == "range_accrual"
+    assert summary["product"]["term_fields"]["reference_index"] == "SOFR"
+    assert summary["product"]["term_fields"]["coupon_definition"] == {
+        "coupon_rate": 0.0525,
+        "coupon_style": "fixed_rate_if_in_range",
+    }
+    assert summary["product"]["term_fields"]["range_condition"] == {
+        "lower_bound": 0.015,
+        "upper_bound": 0.0325,
+        "inclusive_lower": True,
+        "inclusive_upper": True,
+    }
+    assert summary["product"]["term_fields"]["settlement_profile"] == {
+        "coupon_settlement": "coupon_period_cash_settlement",
+        "principal_settlement": "principal_at_maturity",
+    }
+    assert contract.methods.preferred_method == "analytical"
+    assert "range_accrual_checked_route_pending" not in contract.blueprint.blocked_by
+
+    compiled = compile_semantic_contract(contract)
+    assert compiled.pricing_plan.method == "analytical"
+    assert "trellis.models.range_accrual" in compiled.target_modules
+
+
 @pytest.mark.parametrize(
     "contract_factory",
     [
@@ -184,6 +232,13 @@ def test_ranked_observation_basket_emits_typed_semantic_surface():
         lambda: _draft_contract(
             "European swaption on a fixed-for-floating swap with expiry 2026-01-15",
             "swaption",
+        ),
+        lambda: _draft_contract(
+            (
+                "Range accrual note on SOFR paying 5.25% when SOFR stays between 1.50% "
+                "and 3.25% on 2026-01-15, 2026-04-15, 2026-07-15, and 2026-10-15."
+            ),
+            "range_accrual",
         ),
     ],
 )

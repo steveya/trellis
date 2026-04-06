@@ -819,12 +819,9 @@ def build_payoff(
     # Step 3: Plan (spec schema + module path)
     # Extract spec_schema_hint from compiled request blueprint if available
     _spec_hint = None
-    for _bp_attr in ("semantic_blueprint", "family_blueprint"):
-        _bp = getattr(compiled_request, _bp_attr, None) if compiled_request is not None else None
-        if _bp is not None:
-            _spec_hint = getattr(_bp, "spec_schema_hint", None)
-            if _spec_hint:
-                break
+    _bp = getattr(compiled_request, "semantic_blueprint", None) if compiled_request is not None else None
+    if _bp is not None:
+        _spec_hint = getattr(_bp, "spec_schema_hint", None)
     plan = plan_build(
         payoff_description,
         requirements,
@@ -1620,7 +1617,6 @@ def _validate_build(
             product_ir=product_ir,
             pricing_plan=pricing_plan,
             generation_plan=getattr(compiled_request, "generation_plan", None),
-            family_blueprint=getattr(compiled_request, "family_blueprint", None),
             semantic_blueprint=getattr(compiled_request, "semantic_blueprint", None),
             comparison_spec=getattr(compiled_request, "comparison_spec", None),
             instrument_type=itype,
@@ -1755,7 +1751,6 @@ def _validate_build(
         instrument_type=itype,
         method=(pricing_plan.method if pricing_plan is not None else "unknown"),
         product_ir=product_ir,
-        family_blueprint=getattr(compiled_request, "family_blueprint", None),
         semantic_blueprint=getattr(compiled_request, "semantic_blueprint", None),
     )
     _record_platform_event(
@@ -3145,7 +3140,7 @@ def _diagnose_and_enrich(failures: list[str]) -> str:
     """Run heuristic diagnosis on validation failures and return enriched feedback.
 
     This gives the builder agent concrete guidance beyond just "fix it",
-    drawing on accumulated experience from past debugging sessions.
+    drawing on accumulated lessons from past debugging sessions.
     """
     from trellis.agent.test_resolution import TestFailure, diagnose_failure
 
@@ -3167,9 +3162,9 @@ def _diagnose_and_enrich(failures: list[str]) -> str:
                 f"\n**Diagnosis ({diagnosis.category}, {diagnosis.magnitude}):** "
                 f"{diagnosis.root_cause}"
             )
-            if diagnosis.related_experience:
+            if diagnosis.related_lessons:
                 enrichments.append(
-                    f"  Related past lessons: {', '.join(diagnosis.related_experience)}"
+                    f"  Related past lessons: {', '.join(diagnosis.related_lessons)}"
                 )
 
     # Also match against YAML-driven failure signatures
@@ -3237,11 +3232,26 @@ def _record_resolved_failures(
 ) -> None:
     """After a successful retry, ask the LLM to distill the lesson learned.
 
-    This records the experience into experience.py so the builder agent
-    never repeats the same mistake in future builds.
+    This records the lesson into the canonical knowledge store so future builds
+    can retrieve it through normal lesson selection.
     """
-    from trellis.agent.config import llm_generate_json
+    import logging
+    import os
+
+    from trellis.agent.config import get_provider, llm_generate_json
     from trellis.agent.test_resolution import Lesson, record_lesson
+
+    provider = get_provider()
+    credential_env = {
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openai": "OPENAI_API_KEY",
+    }.get(provider, "")
+    if credential_env and not os.environ.get(credential_env):
+        logging.getLogger(__name__).warning(
+            "Skipping resolved-failure lesson distillation because %s is not configured.",
+            credential_env,
+        )
+        return
 
     prompt = f"""You fixed these validation failures for a {description}
 ({pricing_plan.method if pricing_plan else 'unknown'} method):
@@ -3267,18 +3277,7 @@ Only return JSON, no markdown."""
         raise RuntimeError(f"LLM lesson output missing fields: {sorted(missing)}")
 
     lesson = Lesson(**data)
-    try:
-        record_lesson(lesson)
-    except Exception as exc:
-        raise RuntimeError(f"Lesson recording failed for {lesson.title!r}") from exc
-
-    # Also capture into the knowledge system with feature tags.
     from trellis.agent.knowledge.decompose import decompose as kn_decompose
-    from trellis.agent.knowledge.promotion import (
-        build_lesson_payload,
-        capture_lesson as kn_capture,
-        validate_lesson_payload,
-    )
 
     features = []
     try:
@@ -3287,40 +3286,17 @@ Only return JSON, no markdown."""
     except Exception:
         pass
 
-    lesson_payload = build_lesson_payload(
-        category=data.get("category", "unknown"),
-        title=data.get("title", ""),
-        severity="high",
-        symptom=data.get("mistake", data.get("detect", "")),
-        root_cause=data.get("why", ""),
-        fix=data.get("fix", ""),
-        validation=f"Resolved during build of {description}",
-        method=pricing_plan.method if pricing_plan else None,
-        features=features,
-        confidence=0.5,
-    )
-    lesson_contract = validate_lesson_payload(lesson_payload)
-    if not lesson_contract.valid:
-        raise RuntimeError(
-            "Knowledge lesson payload failed validation: "
-            + "; ".join(lesson_contract.errors)
-        )
-
     try:
-        kn_capture(
-            category=data.get("category", "unknown"),
-            title=data.get("title", ""),
+        record_lesson(
+            lesson,
             severity="high",
-            symptom=data.get("mistake", data.get("detect", "")),
-            root_cause=data.get("why", ""),
-            fix=data.get("fix", ""),
             validation=f"Resolved during build of {description}",
             method=pricing_plan.method if pricing_plan else None,
             features=features,
             confidence=0.5,
         )
     except Exception as exc:
-        raise RuntimeError(f"Knowledge capture failed for {lesson.title!r}") from exc
+        raise RuntimeError(f"Lesson recording failed for {lesson.title!r}") from exc
 
 
 # ---------------------------------------------------------------------------

@@ -468,17 +468,23 @@ def _generation_boundary_summary(
         )
         or dict(request_metadata.get("route_binding_authority") or {})
     )
+    lowering_route_id = (
+        str(getattr(generation_plan, "lowering_route_id", "") or "").strip()
+        or str(semantic_blueprint.get("dsl_route") or "").strip()
+        or str(route_binding_authority.get("route_id") or "").strip()
+        or None
+    )
+    lowering_route_family = (
+        str(semantic_blueprint.get("dsl_route_family") or "").strip()
+        or str(getattr(primitive_plan, "route_family", "") or "").strip()
+        or str(getattr(primitive_plan, "engine_family", "") or "").strip()
+        or str(route_binding_authority.get("route_family") or "").strip()
+        or str(route_binding_authority.get("engine_family") or "").strip()
+        or None
+    )
     lowering = {
-        "route_id": (
-            getattr(generation_plan, "lowering_route_id", "")
-            or semantic_blueprint.get("dsl_route")
-            or getattr(getattr(compiled_request, "execution_plan", None), "route_method", None)
-        ),
-        "route_family": (
-            semantic_blueprint.get("dsl_route_family")
-            or getattr(primitive_plan, "route_family", "")
-            or getattr(primitive_plan, "engine_family", "")
-        ),
+        "route_id": lowering_route_id,
+        "route_family": lowering_route_family,
         "primitive_routes": list(semantic_blueprint.get("primitive_routes") or ()),
         "route_modules": list(semantic_blueprint.get("route_modules") or ()),
         "expr_kind": (

@@ -17,6 +17,19 @@ def test_get_bracketing_dates():
     date = datetime(2020, 12, 31)
     assert get_bracketing_dates(start_date, end_date, frequency, date) == (datetime(2020, 10, 1).date(), datetime(2021, 1, 1).date())
 
+
+def test_get_bracketing_dates_supports_multi_year_schedules():
+    start_date = datetime(2020, 1, 1)
+    end_date = datetime(2022, 12, 31)
+    frequency = Frequency.QUARTERLY
+    date = datetime(2021, 6, 1)
+
+    assert get_bracketing_dates(start_date, end_date, frequency, date) == (
+        datetime(2021, 4, 1).date(),
+        datetime(2021, 7, 1).date(),
+    )
+
+
 def test_get_accrual_fraction():
     start_date = datetime(2020, 1, 1)
     end_date = datetime(2020, 12, 31)
@@ -33,6 +46,15 @@ def test_get_accrual_fraction():
     date = datetime(2020, 12, 31)
     # 91 days into a 92-day quarter (Oct 1 to Jan 1)
     assert get_accrual_fraction(start_date, end_date, frequency, date) == pytest.approx(91 / 92)
+
+
+def test_get_accrual_fraction_supports_multi_year_schedules():
+    start_date = datetime(2020, 1, 1)
+    end_date = datetime(2022, 12, 31)
+    frequency = Frequency.QUARTERLY
+    date = datetime(2021, 6, 1)
+
+    assert get_accrual_fraction(start_date, end_date, frequency, date) == pytest.approx(61 / 91)
 
 def test_get_bracketing_dates_exception():
     start_date = datetime(2020, 1, 1)

@@ -1,22 +1,104 @@
-"""Calibration primitives: implied vol, SABR fitting, local vol, rates calibration."""
+"""Calibration primitives: implied vol, SABR/Heston fitting, local vol, and rates calibration."""
 
 from trellis.models.calibration.implied_vol import implied_vol, implied_vol_jaeckel
+from trellis.models.calibration.heston_fit import (
+    HestonSmileCalibrationResult,
+    HestonSmileFitDiagnostics,
+    HestonSmilePoint,
+    HestonSmileSurface,
+    build_heston_smile_surface,
+    calibrate_heston_smile_workflow,
+    fit_heston_smile_surface,
+)
+from trellis.models.calibration.benchmarking import (
+    build_supported_calibration_benchmark_report,
+    save_calibration_benchmark_report,
+)
 from trellis.models.calibration.rates import (
+    HullWhiteCalibrationInstrument,
+    HullWhiteCalibrationResult,
     RatesCalibrationResult,
+    calibrate_hull_white,
     calibrate_cap_floor_black_vol,
     calibrate_swaption_black_vol,
     swaption_terms,
 )
-from trellis.models.calibration.sabr_fit import calibrate_sabr
-from trellis.models.calibration.local_vol import dupire_local_vol
+from trellis.models.calibration.sabr_fit import (
+    SABRSmileCalibrationResult,
+    SABRSmileFitDiagnostics,
+    SABRSmilePoint,
+    SABRSmileSurface,
+    build_sabr_smile_surface,
+    calibrate_sabr_smile_workflow,
+    calibrate_sabr,
+    fit_sabr_smile_surface,
+)
+from trellis.models.calibration.local_vol import (
+    LocalVolCalibrationResult,
+    calibrate_local_vol_surface_workflow,
+    dupire_local_vol,
+    dupire_local_vol_result,
+)
+from trellis.models.calibration.solve_request import (
+    ConstraintSpec,
+    ObjectiveBundle,
+    SolveBackendRecord,
+    SolveBackendRegistry,
+    SolveBounds,
+    SolveProvenance,
+    SolveRequest,
+    SolveReplayArtifact,
+    SolveResult,
+    UnsupportedSolveCapabilityError,
+    WarmStart,
+    build_solve_provenance,
+    build_solve_replay_artifact,
+    execute_solve_request,
+)
 
 __all__ = [
     "implied_vol",
     "implied_vol_jaeckel",
+    "build_supported_calibration_benchmark_report",
+    "save_calibration_benchmark_report",
+    "HestonSmilePoint",
+    "HestonSmileSurface",
+    "HestonSmileFitDiagnostics",
+    "HestonSmileCalibrationResult",
+    "build_heston_smile_surface",
+    "fit_heston_smile_surface",
+    "calibrate_heston_smile_workflow",
+    "HullWhiteCalibrationInstrument",
+    "HullWhiteCalibrationResult",
     "RatesCalibrationResult",
+    "calibrate_hull_white",
     "calibrate_cap_floor_black_vol",
     "calibrate_swaption_black_vol",
     "swaption_terms",
+    "SABRSmilePoint",
+    "SABRSmileSurface",
+    "SABRSmileFitDiagnostics",
+    "SABRSmileCalibrationResult",
+    "build_sabr_smile_surface",
+    "fit_sabr_smile_surface",
+    "calibrate_sabr_smile_workflow",
     "calibrate_sabr",
+    "LocalVolCalibrationResult",
+    "calibrate_local_vol_surface_workflow",
+    "dupire_local_vol_result",
     "dupire_local_vol",
+    "ConstraintSpec",
+    "ObjectiveBundle",
+    "SolveBackendRecord",
+    "SolveBackendRegistry",
+    "SolveBounds",
+    "SolveProvenance",
+    "SolveRequest",
+    "SolveReplayArtifact",
+    "SolveResult",
+    "UnsupportedSolveCapabilityError",
+    "WarmStart",
+    "build_solve_provenance",
+    "build_solve_replay_artifact",
+    "execute_solve_request",
 ]

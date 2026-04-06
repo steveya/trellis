@@ -772,6 +772,8 @@ class ModelService:
             return "rates_option"
         if semantic_id in {"callable_bond"}:
             return "callable_bond"
+        if semantic_id in {"range_accrual"}:
+            return "rates_exotic"
         if semantic_id in {"credit_default_swap"}:
             return "credit_default_swap"
         if semantic_id in {"nth_to_default"}:

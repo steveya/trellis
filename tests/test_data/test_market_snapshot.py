@@ -226,3 +226,114 @@ def test_market_snapshot_to_market_state_can_build_state_space_from_factory():
     assert market_state.state_space is not None
     assert market_state.state_space.probability("base") == pytest.approx(1.0)
     assert "state_space" in market_state.available_capabilities
+
+
+def test_market_snapshot_to_market_state_exposes_named_fixing_histories():
+    from trellis.data.schema import MarketSnapshot
+
+    snapshot = MarketSnapshot(
+        as_of=SETTLE,
+        source="unit",
+        discount_curves={"usd_ois": YieldCurve.flat(0.05)},
+        fixing_histories={
+            "SOFR": {
+                date(2024, 11, 13): 0.0431,
+                date(2024, 11, 14): 0.0433,
+            }
+        },
+        default_discount_curve="usd_ois",
+        default_fixing_history="SOFR",
+    )
+
+    market_state = snapshot.to_market_state(settlement=SETTLE)
+
+    assert snapshot.fixing_history()[date(2024, 11, 13)] == pytest.approx(0.0431)
+    assert market_state.fixing_history()[date(2024, 11, 14)] == pytest.approx(0.0433)
+    assert market_state.selected_curve_names == {
+        "discount_curve": "usd_ois",
+        "fixing_history": "SOFR",
+    }
+    assert "fixing_history" in market_state.available_capabilities
+
+
+def test_market_snapshot_resolve_request_selects_named_components_and_templates():
+    from trellis.data.schema import MarketSnapshot
+
+    usd = YieldCurve.flat(0.05)
+    eur = YieldCurve.flat(0.03)
+    atm = FlatVol(0.20)
+    smile = FlatVol(0.24)
+    snapshot = MarketSnapshot(
+        as_of=SETTLE,
+        source="unit",
+        discount_curves={"usd_ois": usd, "eur_ois": eur},
+        vol_surfaces={"atm": atm, "smile": smile},
+        fixing_histories={
+            "SOFR": {
+                date(2024, 11, 14): 0.0433,
+            }
+        },
+        default_fixing_history="SOFR",
+        metadata={
+            "scenario_templates": {
+                "desk_twist": {
+                    "scenario_pack": "twist",
+                    "amplitude_bps": 25.0,
+                }
+            }
+        },
+    )
+
+    result = snapshot.resolve_request(
+        settlement=SETTLE,
+        selected_components={
+            "discount_curve": "eur_ois",
+            "vol_surface": "smile",
+            "fixing_history": "SOFR",
+        },
+        scenario_templates=("desk_twist",),
+        reference_date=SETTLE,
+    )
+
+    assert result.selection_status == "parsed"
+    assert result.selected_components == {
+        "discount_curve": "eur_ois",
+        "vol_surface": "smile",
+        "fixing_history": "SOFR",
+    }
+    assert result.selected_curve_names == {
+        "discount_curve": "eur_ois",
+        "fixing_history": "SOFR",
+    }
+    assert result.scenario_templates == {
+        "desk_twist": {
+            "scenario_pack": "twist",
+            "amplitude_bps": 25.0,
+        }
+    }
+    assert result.market_state_object.discount is eur
+    assert result.market_state_object.vol_surface is smile
+
+
+def test_market_snapshot_resolve_request_reports_missing_components_and_stale_snapshot():
+    from trellis.data.schema import MarketSnapshot
+
+    snapshot = MarketSnapshot(
+        as_of=date(2024, 11, 10),
+        source="unit",
+        discount_curves={"usd_ois": YieldCurve.flat(0.05)},
+        default_discount_curve="usd_ois",
+    )
+
+    result = snapshot.resolve_request(
+        settlement=SETTLE,
+        selected_components={"forecast_curve": "USD-SOFR-3M"},
+        scenario_templates=("desk_twist",),
+        reference_date=SETTLE,
+    )
+
+    assert result.selection_status == "invalid"
+    assert result.missing_components == {"forecast_curve": "USD-SOFR-3M"}
+    assert result.missing_scenario_templates == ("desk_twist",)
+    assert any("stale" in warning.lower() for warning in result.warnings)
+    assert any("forecast_curve" in warning for warning in result.warnings)

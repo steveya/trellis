@@ -3,7 +3,7 @@
 from trellis.instruments.bond import Bond, ParBond
 from trellis.curves.yield_curve import YieldCurve
 from trellis.engine.pricer import price_instrument as price
-from trellis.book import Book, BookResult
+from trellis.book import Book, BookResult, ScenarioResultCube
 from trellis.session import Session
 from trellis.pipeline import Pipeline
 from trellis.samples import sample_bond_10y, sample_book, sample_curve
@@ -29,7 +29,12 @@ from trellis.conventions.rate_index import RateIndex, SOFR_ON, SOFR_3M, SONIA
 from trellis.curves.credit_curve import CreditCurve
 from trellis.instruments.swap import SwapPayoff, SwapSpec, par_swap_rate
 from trellis.instruments.fx import FXRate, FXForward, FXForwardPayoff
-from trellis.curves.bootstrap import BootstrapInstrument, bootstrap_yield_curve
+from trellis.curves.bootstrap import (
+    BootstrapConventionBundle,
+    BootstrapCurveInputBundle,
+    BootstrapInstrument,
+    bootstrap_yield_curve,
+)
 from trellis.core.capabilities import analyze_gap, capability_summary
 
 
@@ -70,7 +75,7 @@ def quickstart() -> Session:
 __all__ = [
     "Bond", "ParBond", "YieldCurve",
     "price", "ask",
-    "Book", "BookResult", "Session", "Pipeline",
+    "Book", "BookResult", "ScenarioResultCube", "Session", "Pipeline",
     "quickstart", "sample_bond_10y", "sample_book", "sample_curve",
     "MarketState", "MissingCapabilityError",
     "Payoff", "DeterministicCashflowPayoff",
@@ -87,6 +92,7 @@ __all__ = [
     "CreditCurve",
     "SwapPayoff", "SwapSpec", "par_swap_rate",
     "FXRate", "FXForward", "FXForwardPayoff",
+    "BootstrapConventionBundle", "BootstrapCurveInputBundle",
     "BootstrapInstrument", "bootstrap_yield_curve",
     "analyze_gap", "capability_summary",
 ]

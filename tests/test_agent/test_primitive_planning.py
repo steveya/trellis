@@ -265,47 +265,24 @@ def test_builds_fx_analytical_plan_for_fx_option_context():
     assert plan.primitive_plan.blockers == ()
 
 
-@pytest.mark.legacy_compat
 def test_builds_quanto_analytical_plan_with_shared_resolution_and_black76():
-    from types import SimpleNamespace
-
     from trellis.agent.codegen_guardrails import build_generation_plan
     from trellis.agent.knowledge.decompose import decompose_to_ir
-    from trellis.agent.quant import select_pricing_method_for_family_blueprint
+    from trellis.agent.quant import select_pricing_method_for_product_ir
+
+    product_ir = decompose_to_ir(
+        "Quanto option: quanto-adjusted BS vs MC cross-currency",
+        instrument_type="quanto_option",
+    )
 
     plan = build_generation_plan(
-        pricing_plan=select_pricing_method_for_family_blueprint(
-            SimpleNamespace(
-                family_id="quanto_option",
-                preferred_method="analytical",
-                candidate_methods=("analytical",),
-                instrument_type="quanto_option",
-                product_ir=SimpleNamespace(
-                    instrument="quanto_option",
-                    required_market_data=(
-                        "discount_curve",
-                        "forward_curve",
-                        "black_vol_surface",
-                        "fx_rates",
-                        "spot",
-                        "model_parameters",
-                    ),
-                ),
-                route_candidates=(
-                    {
-                        "method": "analytical",
-                        "route": "quanto_adjustment_analytical",
-                    },
-                ),
-            ),
+        pricing_plan=select_pricing_method_for_product_ir(
+            product_ir,
             preferred_method="analytical",
         ),
         instrument_type="quanto_option",
         inspected_modules=("trellis.models.black", "trellis.models.resolution.quanto"),
-        product_ir=decompose_to_ir(
-            "Quanto option: quanto-adjusted BS vs MC cross-currency",
-            instrument_type="quanto_option",
-        ),
+        product_ir=product_ir,
     )
 
     assert plan.primitive_plan is not None

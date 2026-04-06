@@ -72,6 +72,7 @@ def bootstrap_platform_services(
         store=SessionContextStore(paths.sessions_dir),
         config=config,
         provider_registry=resolved_provider_registry,
+        snapshot_store=snapshot_store,
     )
     trade_service = TradeService()
     model_service = ModelService(registry=registry_store)

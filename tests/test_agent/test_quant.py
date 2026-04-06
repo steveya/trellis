@@ -10,7 +10,6 @@ from trellis.agent.quant import (
     STATIC_PLANS,
     check_data_availability,
     select_pricing_method,
-    select_pricing_method_for_family_blueprint,
     select_pricing_method_for_product_ir,
 )
 from trellis.core.market_state import MarketState, MissingCapabilityError
@@ -297,34 +296,3 @@ class TestPricingPlan:
         assert plan.method == "monte_carlo"
         assert plan.sensitivity_support is not None
         assert plan.sensitivity_support.level == "experimental"
-
-    @pytest.mark.legacy_compat
-    def test_family_blueprint_quant_plan_preserves_quanto_routes(self):
-        from trellis.agent.family_contract_compiler import compile_family_contract
-        from trellis.agent.family_contract_templates import get_family_contract_template
-
-        blueprint = compile_family_contract(get_family_contract_template("quanto_option"))
-
-        analytical_plan = select_pricing_method_for_family_blueprint(blueprint)
-
-        assert analytical_plan.method == "analytical"
-        assert analytical_plan.reasoning == "family_blueprint:quanto_option"
-        assert analytical_plan.selection_reason == "canonical_family_default"
-        assert "simplest_valid_assumption_set" in analytical_plan.assumption_summary
-        assert "discount_curve" in analytical_plan.required_market_data
-        assert "forward_curve" in analytical_plan.required_market_data
-        assert "fx_rates" in analytical_plan.required_market_data
-        assert "model_parameters" in analytical_plan.required_market_data
-        assert "trellis.models.black" in analytical_plan.method_modules
-
-        monte_carlo_plan = select_pricing_method_for_family_blueprint(
-            blueprint,
-            preferred_method="monte_carlo",
-        )
-
-        assert monte_carlo_plan.method == "monte_carlo"
-        assert "trellis.models.monte_carlo.engine" in monte_carlo_plan.method_modules
-        # Route registry sources primitives from correlated_gbm_monte_carlo route:
-        # resolution.quanto + monte_carlo.quanto (not processes.correlated_gbm)
-        assert "trellis.models.resolution.quanto" in monte_carlo_plan.method_modules
-        assert "trellis.models.monte_carlo.quanto" in monte_carlo_plan.method_modules

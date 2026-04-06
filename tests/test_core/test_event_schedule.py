@@ -10,6 +10,7 @@ from trellis.core.date_utils import (
     build_contract_timeline,
     build_exercise_timeline_from_dates,
     build_period_schedule,
+    get_bracketing_dates,
 )
 from trellis.core.types import DayCountConvention, Frequency, TimelineRole
 
@@ -90,6 +91,23 @@ class TestEventSchedule:
         assert timeline.label is None
         assert timeline.event_dates[0] == date(2024, 4, 15)
         assert timeline[0].accrual_fraction == pytest.approx(91 / 360)
+
+    def test_legacy_bracketing_helper_matches_period_schedule_on_multi_year_range(self):
+        schedule = build_period_schedule(
+            date(2024, 1, 15),
+            date(2026, 1, 15),
+            Frequency.QUARTERLY,
+        )
+
+        assert get_bracketing_dates(
+            date(2024, 1, 15),
+            date(2026, 1, 15),
+            Frequency.QUARTERLY,
+            date(2025, 8, 15),
+        ) == (
+            schedule.periods[6].start_date,
+            schedule.periods[6].end_date,
+        )
 
     def test_build_exercise_timeline_from_dates_supports_explicit_events(self):
         timeline = build_exercise_timeline_from_dates(

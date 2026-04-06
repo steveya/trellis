@@ -1,16 +1,13 @@
 """Tests for critic agent and arbiter."""
 
 from datetime import date
-from unittest.mock import patch
-
 import pytest
 
-from trellis.agent.arbiter import run_critic_tests, ValidationResult
+from trellis.agent.arbiter import run_critic_tests
 from trellis.agent.critic import CriticConcern, available_critic_checks
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import DeterministicCashflowPayoff
 from trellis.curves.yield_curve import YieldCurve
-from trellis.engine.payoff_pricer import price_payoff
 from trellis.instruments.bond import Bond
 from trellis.models.vol_surface import FlatVol
 
@@ -79,42 +76,6 @@ class TestRunCriticTests:
 
         failures = run_critic_tests(concerns, payoff)
         assert failures == []  # warnings are not run
-
-    @pytest.mark.legacy_compat
-    def test_legacy_test_code_still_supported(self):
-        concerns = [
-            CriticConcern(
-                "legacy_test_code",
-                "price should exceed 200",
-                "error",
-                test_code="assert price_payoff(payoff, ms) > 200",
-            ),
-        ]
-        bond = Bond(face=100, coupon=0.05, maturity_date=date(2034, 11, 15),
-                     maturity=10, frequency=2)
-        payoff = DeterministicCashflowPayoff(bond)
-
-        failures = run_critic_tests(concerns, payoff, allow_legacy_test_code=True)
-        assert len(failures) == 1
-        assert "price should exceed 200" in failures[0]
-
-    @pytest.mark.legacy_compat
-    def test_broken_legacy_test_code_skipped(self):
-        concerns = [
-            CriticConcern(
-                "legacy_test_code",
-                "bad code",
-                "error",
-                test_code="undefined_variable + 1",
-            ),
-        ]
-        bond = Bond(face=100, coupon=0.05, maturity_date=date(2034, 11, 15),
-                     maturity=10, frequency=2)
-        payoff = DeterministicCashflowPayoff(bond)
-
-        failures = run_critic_tests(concerns, payoff, allow_legacy_test_code=True)
-        assert failures == []
-
 
 def test_critique_includes_shared_knowledge(monkeypatch):
     from trellis.agent.critic import critique
@@ -194,8 +155,7 @@ def test_critique_can_disable_text_fallback(monkeypatch):
         )
 
 
-@pytest.mark.legacy_compat
-def test_critique_filters_legacy_test_code_payload_by_default(monkeypatch):
+def test_critique_ignores_payloads_without_structured_check_ids(monkeypatch):
     from trellis.agent.critic import critique
 
     monkeypatch.setattr(
@@ -216,33 +176,6 @@ def test_critique_filters_legacy_test_code_payload_by_default(monkeypatch):
     )
 
     assert concerns == []
-
-
-@pytest.mark.legacy_compat
-def test_critique_can_opt_in_legacy_test_code_payload(monkeypatch):
-    from trellis.agent.critic import critique
-
-    monkeypatch.setattr(
-        "trellis.agent.critic.llm_generate_json",
-        lambda prompt, model=None, max_retries=None: [
-            {
-                "description": "legacy finding",
-                "test_code": "assert True",
-                "severity": "error",
-            }
-        ],
-    )
-
-    concerns = critique(
-        "def price():\n    return 0.0",
-        "Demo instrument",
-        available_checks=available_critic_checks(instrument_type="callable_bond"),
-        allow_legacy_test_code=True,
-    )
-
-    assert len(concerns) == 1
-    assert concerns[0].check_id == "legacy_test_code"
-    assert concerns[0].test_code == "assert True"
 
 
 def test_available_critic_checks_for_callable_bond():
@@ -290,14 +223,12 @@ def test_available_critic_checks_can_be_restricted_by_validation_contract():
     ]
 
 
-@pytest.mark.legacy_compat
 def test_run_critic_tests_respects_allowed_check_ids():
     concerns = [
         CriticConcern(
-            "legacy_test_code",
-            "price should exceed 200",
+            "price_non_negative",
+            "price should stay non-negative",
             "error",
-            test_code="assert price_payoff(payoff, ms) > 200",
         ),
     ]
     bond = Bond(face=100, coupon=0.05, maturity_date=date(2034, 11, 15),
@@ -307,7 +238,7 @@ def test_run_critic_tests_respects_allowed_check_ids():
     failures = run_critic_tests(
         concerns,
         payoff,
-        allowed_check_ids={"price_non_negative"},
+        allowed_check_ids={"volatility_input_usage"},
     )
 
     assert failures == []

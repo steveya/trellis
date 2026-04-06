@@ -10,6 +10,14 @@ from trellis.agent.assembly_tools import normalize_comparison_relation
 from trellis.agent.knowledge.methods import normalize_method
 from trellis.agent import validation_bundles
 
+_VOL_CHECK_INPUTS = frozenset({"black_vol_surface", "local_vol_surface"})
+_CHECK_MARKET_DATA_REQUIREMENTS: dict[str, frozenset[str]] = {
+    "check_vol_sensitivity": _VOL_CHECK_INPUTS,
+    "check_vol_monotonicity": _VOL_CHECK_INPUTS,
+    "check_zero_vol_intrinsic": _VOL_CHECK_INPUTS,
+    "check_rate_monotonicity": frozenset({"discount_curve"}),
+}
+
 
 def _freeze_mapping(mapping: Mapping[str, object] | None) -> Mapping[str, object]:
     """Return an immutable view of a shallow mapping."""
@@ -77,7 +85,6 @@ def compile_validation_contract(
     product_ir=None,
     pricing_plan=None,
     generation_plan=None,
-    family_blueprint=None,
     semantic_blueprint=None,
     comparison_spec=None,
     instrument_type: str | None = None,
@@ -91,7 +98,6 @@ def compile_validation_contract(
     resolved_instrument = _resolve_instrument_type(
         instrument_type=instrument_type,
         product_ir=product_ir,
-        family_blueprint=family_blueprint,
         semantic_blueprint=semantic_blueprint,
     )
     if not method or not resolved_instrument:
@@ -101,7 +107,6 @@ def compile_validation_contract(
         instrument_type=resolved_instrument,
         method=method,
         product_ir=product_ir,
-        family_blueprint=family_blueprint,
         semantic_blueprint=semantic_blueprint,
     )
     route_id, route_family = _resolve_route_identity(
@@ -117,7 +122,6 @@ def compile_validation_contract(
     comparison_relations = _comparison_relations_for(
         bundle=bundle,
         instrument_type=resolved_instrument,
-        family_blueprint=family_blueprint,
         semantic_blueprint=semantic_blueprint,
         comparison_spec=comparison_spec,
     )
@@ -145,6 +149,7 @@ def compile_validation_contract(
             ),
         )
         for check_id in bundle.checks
+        if _check_supported_by_market_data(check_id, required_market_data)
     )
     review_hints = {
         "has_residual_risks": bool(residual_risks),
@@ -215,14 +220,12 @@ def _resolve_instrument_type(
     *,
     instrument_type: str | None,
     product_ir=None,
-    family_blueprint=None,
     semantic_blueprint=None,
 ) -> str:
     """Return the most specific normalized instrument identifier available."""
     candidates = (
         instrument_type,
         getattr(product_ir, "instrument", None),
-        getattr(family_blueprint, "family_id", None),
         getattr(semantic_blueprint, "semantic_id", None),
     )
     for value in candidates:
@@ -318,11 +321,24 @@ def _harness_requirements_for(check_id: str) -> tuple[str, ...]:
     return ()
 
 
+def _check_supported_by_market_data(
+    check_id: str,
+    required_market_data: tuple[str, ...],
+) -> bool:
+    """Return whether the compiled market-data surface can support the check."""
+    requirements = _CHECK_MARKET_DATA_REQUIREMENTS.get(check_id)
+    if not requirements:
+        return True
+    available = {str(item).strip() for item in required_market_data if str(item).strip()}
+    if requirements is _VOL_CHECK_INPUTS:
+        return bool(available & requirements)
+    return requirements.issubset(available)
+
+
 def _comparison_relations_for(
     *,
     bundle,
     instrument_type: str | None = None,
-    family_blueprint=None,
     semantic_blueprint=None,
     comparison_spec=None,
 ) -> tuple[ValidationRelationSpec, ...]:
@@ -356,10 +372,7 @@ def _comparison_relations_for(
             relations.append(relation)
             seen.add(key)
 
-    for target_id in _semantic_comparison_targets_for(
-        family_blueprint=family_blueprint,
-        semantic_blueprint=semantic_blueprint,
-    ):
+    for target_id in _semantic_comparison_targets_for(semantic_blueprint=semantic_blueprint):
         relation_value = comparison_spec_relations.get(target_id, "unspecified")
         relation = ValidationRelationSpec(
             target_id=target_id,
@@ -373,16 +386,9 @@ def _comparison_relations_for(
     return tuple(relations)
 
 
-def _semantic_comparison_targets_for(*, family_blueprint=None, semantic_blueprint=None) -> tuple[str, ...]:
-    """Return declared comparison-target ids from family and semantic validation metadata."""
+def _semantic_comparison_targets_for(*, semantic_blueprint=None) -> tuple[str, ...]:
+    """Return declared comparison-target ids from semantic validation metadata."""
     targets: list[str] = []
-    family_contract = getattr(family_blueprint, "contract", None)
-    family_validation = getattr(family_contract, "validation", None)
-    for value in getattr(family_validation, "comparison_targets", ()) or ():
-        text = str(value).strip()
-        if text and text not in targets:
-            targets.append(text)
-
     sem_contract = getattr(semantic_blueprint, "contract", None)
     sem_validation = getattr(sem_contract, "validation", None)
     for value in getattr(sem_validation, "comparison_targets", ()) or ():

@@ -15,6 +15,7 @@ import numpy as raw_np
 from trellis.models.monte_carlo.early_exercise import (
     EarlyExerciseDiagnostics,
     EarlyExercisePolicyResult,
+    normalize_exercise_steps,
 )
 from trellis.models.monte_carlo.lsm import longstaff_schwartz_result
 
@@ -39,17 +40,21 @@ def primal_dual_mc_result(
         basis_fn=basis_fn,
         continuation_estimator=continuation_estimator,
     )
+    effective_exercise_steps = normalize_exercise_steps(
+        exercise_dates,
+        paths.shape[1] - 1,
+    )
     df_step = raw_np.exp(-discount_rate * dt)
     discounted_intrinsic = raw_np.column_stack(
         [
             payoff_fn(paths[:, step]) * (df_step ** step)
-            for step in sorted(set(exercise_dates))
+            for step in effective_exercise_steps
         ]
     )
     upper = float(raw_np.mean(raw_np.max(discounted_intrinsic, axis=1)))
     diagnostics = EarlyExerciseDiagnostics(
         policy_class="primal_dual_mc",
-        exercise_dates_count=len(exercise_dates),
+        exercise_dates_count=len(effective_exercise_steps),
         exercised_paths_fraction=(
             lower_result.diagnostics.exercised_paths_fraction
             if lower_result.diagnostics is not None

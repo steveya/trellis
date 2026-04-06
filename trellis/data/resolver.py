@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from datetime import date
 
-from trellis.curves.bootstrap import BootstrapInstrument, bootstrap_named_yield_curves
+from trellis.curves.bootstrap import (
+    BootstrapCurveInputBundle,
+    BootstrapInstrument,
+    bootstrap_named_curve_results,
+)
 from trellis.curves.yield_curve import YieldCurve
 from trellis.data.schema import MarketSnapshot
 
@@ -58,20 +62,19 @@ def _provider_for_source(source: str):
 
 
 def _bootstrap_input_summary(
-    instruments: list[BootstrapInstrument],
-) -> list[dict[str, object]]:
+    curve_inputs: list[BootstrapInstrument] | BootstrapCurveInputBundle,
+    *,
+    curve_name: str,
+) -> dict[str, object]:
     """Return a deterministic, JSON-friendly summary of bootstrap inputs."""
-    return [
-        {
-            "tenor": float(inst.tenor),
-            "quote": float(inst.quote),
-            "instrument_type": inst.instrument_type,
-        }
-        for inst in sorted(
-            instruments,
-            key=lambda inst: (float(inst.tenor), inst.instrument_type, float(inst.quote)),
+    if isinstance(curve_inputs, BootstrapCurveInputBundle):
+        bundle = curve_inputs.with_curve_name(curve_name)
+    else:
+        bundle = BootstrapCurveInputBundle(
+            instruments=tuple(curve_inputs),
+            curve_name=curve_name,
         )
-    ]
+    return bundle.to_payload()
 
 
 def _market_provenance(
@@ -99,6 +102,8 @@ def resolve_market_snapshot(
     vol_surfaces: dict | None = None,
     default_vol_surface: str | None = None,
     forecast_curves: dict | None = None,
+    fixing_histories: dict | None = None,
+    default_fixing_history: str | None = None,
     discount_curve_bootstraps: dict | None = None,
     forecast_curve_bootstraps: dict | None = None,
     credit_curve=None,
@@ -179,6 +184,9 @@ def resolve_market_snapshot(
 
     resolved_forecast_curves = dict(base_snapshot.forecast_curves)
     resolved_fx_rates = dict(base_snapshot.fx_rates)
+    resolved_fixing_histories = {
+        key: dict(value) for key, value in base_snapshot.fixing_histories.items()
+    }
     resolved_state_spaces = dict(base_snapshot.state_spaces)
     resolved_metadata = dict(base_snapshot.metadata)
     resolved_vol_surfaces = dict(base_snapshot.vol_surfaces)
@@ -193,6 +201,7 @@ def resolve_market_snapshot(
     }
     resolved_default_vol_surface = base_snapshot.default_vol_surface
     resolved_default_credit_curve = base_snapshot.default_credit_curve
+    resolved_default_fixing_history = base_snapshot.default_fixing_history
     resolved_default_state_space = base_snapshot.default_state_space
     resolved_default_underlier_spot = base_snapshot.default_underlier_spot
     resolved_default_local_vol_surface = base_snapshot.default_local_vol_surface
@@ -227,10 +236,12 @@ def resolve_market_snapshot(
             )
 
     bootstrap_inputs = dict(resolved_provenance.get("bootstrap_inputs") or {})
+    bootstrap_runs = dict(resolved_provenance.get("bootstrap_runs") or {})
     explicit_inputs_present = any(
         value is not None
         for value in (
             forecast_curves,
+            fixing_histories,
             credit_curve,
             fx_rates,
             state_space,
@@ -250,7 +261,11 @@ def resolve_market_snapshot(
     if forecast_curves:
         resolved_forecast_curves.update(forecast_curves)
     if discount_curve_bootstraps:
-        bootstrapped_discount_curves = bootstrap_named_yield_curves(discount_curve_bootstraps)
+        discount_bootstrap_results = bootstrap_named_curve_results(discount_curve_bootstraps)
+        bootstrapped_discount_curves = {
+            name: result.curve
+            for name, result in discount_bootstrap_results.items()
+        }
         overlap = set(bootstrapped_discount_curves) & set(base_snapshot.discount_curves)
         if overlap:
             raise ValueError(
@@ -259,13 +274,22 @@ def resolve_market_snapshot(
         resolved_discount_curves = dict(base_snapshot.discount_curves)
         resolved_discount_curves.update(bootstrapped_discount_curves)
         bootstrap_inputs.setdefault("discount_curves", {})
-        for name, instruments in discount_curve_bootstraps.items():
-            bootstrap_inputs["discount_curves"][name] = _bootstrap_input_summary(instruments)
+        bootstrap_runs.setdefault("discount_curves", {})
+        for name, result in discount_bootstrap_results.items():
+            bootstrap_inputs["discount_curves"][name] = _bootstrap_input_summary(
+                discount_curve_bootstraps[name],
+                curve_name=name,
+            )
+            bootstrap_runs["discount_curves"][name] = result.to_payload()
     else:
         resolved_discount_curves = dict(base_snapshot.discount_curves)
 
     if forecast_curve_bootstraps:
-        bootstrapped_forecast_curves = bootstrap_named_yield_curves(forecast_curve_bootstraps)
+        forecast_bootstrap_results = bootstrap_named_curve_results(forecast_curve_bootstraps)
+        bootstrapped_forecast_curves = {
+            name: result.curve
+            for name, result in forecast_bootstrap_results.items()
+        }
         overlap = set(bootstrapped_forecast_curves) & set(resolved_forecast_curves)
         if overlap:
             raise ValueError(
@@ -273,11 +297,24 @@ def resolve_market_snapshot(
             )
         resolved_forecast_curves.update(bootstrapped_forecast_curves)
         bootstrap_inputs.setdefault("forecast_curves", {})
-        for name, instruments in forecast_curve_bootstraps.items():
-            bootstrap_inputs["forecast_curves"][name] = _bootstrap_input_summary(instruments)
+        bootstrap_runs.setdefault("forecast_curves", {})
+        for name, result in forecast_bootstrap_results.items():
+            bootstrap_inputs["forecast_curves"][name] = _bootstrap_input_summary(
+                forecast_curve_bootstraps[name],
+                curve_name=name,
+            )
+            bootstrap_runs["forecast_curves"][name] = result.to_payload()
 
     if fx_rates:
         resolved_fx_rates.update(fx_rates)
+    if fixing_histories:
+        resolved_fixing_histories.update({
+            key: dict(value) for key, value in fixing_histories.items()
+        })
+    if default_fixing_history is not None:
+        resolved_default_fixing_history = default_fixing_history
+    elif resolved_default_fixing_history is None and len(resolved_fixing_histories) == 1:
+        resolved_default_fixing_history = next(iter(resolved_fixing_histories))
     if state_spaces is not None:
         resolved_state_spaces.update(state_spaces)
         resolved_default_state_space = default_state_space or resolved_default_state_space
@@ -299,7 +336,9 @@ def resolve_market_snapshot(
         if resolved_default_vol_surface is None and len(resolved_vol_surfaces) == 1:
             resolved_default_vol_surface = next(iter(resolved_vol_surfaces))
     elif vol_surface is not None:
-        resolved_default_vol_surface = resolved_default_vol_surface or "default"
+        resolved_default_vol_surface = (
+            default_vol_surface or resolved_default_vol_surface or "default"
+        )
         resolved_vol_surfaces[resolved_default_vol_surface] = vol_surface
 
     if local_vol_surfaces is not None:
@@ -361,6 +400,8 @@ def resolve_market_snapshot(
 
     if bootstrap_inputs:
         resolved_provenance["bootstrap_inputs"] = bootstrap_inputs
+    if bootstrap_runs:
+        resolved_provenance["bootstrap_runs"] = bootstrap_runs
     if bootstrap_inputs or explicit_inputs_present:
         current_kind = str(resolved_provenance.get("source_kind") or "")
         if current_kind != "mixed":
@@ -374,6 +415,7 @@ def resolve_market_snapshot(
         forecast_curves=resolved_forecast_curves,
         vol_surfaces=resolved_vol_surfaces,
         credit_curves=resolved_credit_curves,
+        fixing_histories=resolved_fixing_histories,
         fx_rates=resolved_fx_rates,
         state_spaces=resolved_state_spaces,
         underlier_spots=resolved_underlier_spots,
@@ -385,6 +427,7 @@ def resolve_market_snapshot(
         or (next(iter(resolved_discount_curves)) if len(resolved_discount_curves) == 1 else None),
         default_vol_surface=resolved_default_vol_surface,
         default_credit_curve=resolved_default_credit_curve,
+        default_fixing_history=resolved_default_fixing_history,
         default_state_space=resolved_default_state_space,
         default_underlier_spot=resolved_default_underlier_spot,
         default_local_vol_surface=resolved_default_local_vol_surface,

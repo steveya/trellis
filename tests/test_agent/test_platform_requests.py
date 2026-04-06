@@ -90,7 +90,6 @@ def test_compile_build_request_uses_quanto_semantic_contract_blueprint():
 
     assert compiled.semantic_contract is not None
     assert compiled.semantic_blueprint is not None
-    assert compiled.family_blueprint is None
     assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "quanto_option"
     assert compiled.request.metadata["semantic_contract"]["semantic_concept"]["semantic_id"] == "quanto_option"
     assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == "quanto_adjustment_analytical"
@@ -253,7 +252,6 @@ def test_compile_build_request_respects_quanto_preferred_monte_carlo_route():
 
     assert compiled.semantic_contract is not None
     assert compiled.semantic_blueprint is not None
-    assert compiled.family_blueprint is None
     assert compiled.pricing_plan is not None
     assert compiled.pricing_plan.method == "monte_carlo"
     assert compiled.pricing_plan.method_modules == ["trellis.models.monte_carlo.engine"]
@@ -263,6 +261,30 @@ def test_compile_build_request_respects_quanto_preferred_monte_carlo_route():
     assert compiled.generation_plan.primitive_plan.route == "correlated_gbm_monte_carlo"
     assert compiled.execution_plan.route_method == "monte_carlo"
     assert compiled.semantic_blueprint.selection_reason == compiled.pricing_plan.selection_reason
+
+
+def test_compile_build_request_preserves_missing_route_state_for_range_accrual_semantics():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        (
+            "Range accrual note on SOFR paying 5.25% when SOFR stays between 1.50% "
+            "and 3.25% on 2026-01-15, 2026-04-15, 2026-07-15, and 2026-10-15."
+        ),
+        instrument_type="range_accrual",
+    )
+
+    assert compiled.semantic_contract is not None
+    assert compiled.semantic_blueprint is not None
+    assert compiled.semantic_blueprint.primitive_routes == ()
+    assert compiled.semantic_blueprint.dsl_lowering.route_id is None
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.primitive_plan is None
+    assert "primitive_plan_not_available" in compiled.generation_plan.uncertainty_flags
+    assert compiled.request.metadata["semantic_blueprint"]["dsl_lowering_errors"][0]["code"] == (
+        "missing_primitive_routes"
+    )
+    assert "route_binding_authority" not in compiled.request.metadata
 
 
 def test_compile_term_sheet_request_uses_quanto_semantic_contract():
@@ -295,7 +317,6 @@ def test_compile_term_sheet_request_uses_quanto_semantic_contract():
 
     assert compiled.semantic_contract is not None
     assert compiled.semantic_blueprint is not None
-    assert compiled.family_blueprint is None
     assert compiled.request.requested_outputs == ("price", "vega")
     assert compiled.semantic_blueprint.requested_outputs == ("price", "vega")
     assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "quanto_option"
@@ -406,7 +427,6 @@ def test_representative_term_sheet_requests_use_the_semantic_path(
 
     assert compiled.semantic_contract is not None
     assert compiled.semantic_blueprint is not None
-    assert compiled.family_blueprint is None
     assert compiled.request.metadata["semantic_contract"]["semantic_id"] == expected_semantic_id
     assert compiled.execution_plan.reason == "semantic_contract_request"
     assert compiled.execution_plan.route_method in {"analytical", "rate_tree"}
@@ -432,7 +452,6 @@ def test_mountain_range_request_drafts_ranked_observation_contract():
 
     assert compiled.semantic_contract is not None
     assert compiled.semantic_blueprint is not None
-    assert compiled.family_blueprint is None
     assert compiled.product_ir is not None
     assert compiled.product_ir.instrument == "basket_path_payoff"
     assert compiled.product_ir.payoff_family == "basket_path_payoff"
@@ -480,7 +499,6 @@ def test_novel_request_falls_back_with_semantic_gap_metadata():
 
     assert compiled.semantic_contract is None
     assert compiled.semantic_blueprint is None
-    assert compiled.family_blueprint is None
     assert compiled.request.metadata["semantic_gap"] == compiled_again.request.metadata["semantic_gap"]
     assert compiled.request.metadata["semantic_gap"]["instrument_type"] == "structured_note"
     assert compiled.request.metadata["semantic_gap"]["requires_clarification"] is False
@@ -584,63 +602,55 @@ def test_callable_bond_request_replays_as_supported_after_schedule_primitive_is_
 
 
 @pytest.mark.parametrize(
-    "description,instrument_type,expected_reason,expected_route_method,expected_family_id,expected_semantic_id,expected_instrument,expected_payoff_family,expected_pricing_module,expected_generation_module,expected_primitive_route,expect_semantic_contract",
+    "description,instrument_type,expected_reason,expected_route_method,expected_semantic_id,expected_instrument,expected_payoff_family,expected_pricing_module,expected_generation_module,expected_primitive_route",
     [
         (
             "Quanto option on SAP in USD with EUR underlier currency expiring 2025-11-15",
             "quanto_option",
             "semantic_contract_request",
             "analytical",
-            None,
             "quanto_option",
             "quanto_option",
             "vanilla_option",
             "trellis.models.black",
             "trellis.models.resolution.quanto",
             "quanto_adjustment_analytical",
-            True,
         ),
         (
             "Callable bond with annual coupons and issuer call dates 2026-01-15, 2027-01-15",
             "callable_bond",
             "semantic_contract_request",
             "rate_tree",
-            None,
             "callable_bond",
             "callable_bond",
             "callable_fixed_income",
             "trellis.models.trees.lattice",
             "trellis.models.trees.lattice",
             "exercise_lattice",
-            True,
         ),
         (
             "European equity call on AAPL with strike 120 and expiry 2025-11-15",
             "european_option",
             "semantic_contract_request",
             "analytical",
-            None,
             "vanilla_option",
             "european_option",
             "vanilla_option",
             "trellis.models.black",
             "trellis.models.black",
             "analytical_black76",
-            True,
         ),
         (
             "European swaption on a fixed-for-floating swap with expiry 2026-01-15",
             "swaption",
             "semantic_contract_request",
             "analytical",
-            None,
             "rate_style_swaption",
             "swaption",
             "swaption",
             "trellis.models.black",
             "trellis.models.black",
             "analytical_black76",
-            True,
         ),
     ],
 )
@@ -649,14 +659,12 @@ def test_representative_derivatives_use_generic_semantic_contracts(
     instrument_type,
     expected_reason,
     expected_route_method,
-    expected_family_id,
     expected_semantic_id,
     expected_instrument,
     expected_payoff_family,
     expected_pricing_module,
     expected_generation_module,
     expected_primitive_route,
-    expect_semantic_contract,
 ):
     from trellis.agent.platform_requests import compile_build_request
 
@@ -671,17 +679,9 @@ def test_representative_derivatives_use_generic_semantic_contracts(
     snapshot = _semantic_regression_snapshot(compiled)
     snapshot_again = _semantic_regression_snapshot(compiled_again)
 
-    if expect_semantic_contract:
-        assert compiled.semantic_contract is not None
-        assert compiled.semantic_blueprint is not None
-        assert compiled.family_blueprint is None
-        assert compiled.request.metadata["semantic_contract"]["semantic_id"] == expected_semantic_id
-    else:
-        assert compiled.semantic_contract is None
-        assert compiled.semantic_blueprint is None
-        assert compiled.request.metadata.get("semantic_contract") is None
-        assert compiled.family_blueprint is not None
-        assert compiled.family_blueprint.family_id == expected_family_id
+    assert compiled.semantic_contract is not None
+    assert compiled.semantic_blueprint is not None
+    assert compiled.request.metadata["semantic_contract"]["semantic_id"] == expected_semantic_id
     assert compiled.product_ir is not None
     assert compiled.product_ir.instrument == expected_instrument
     assert compiled.product_ir.payoff_family == expected_payoff_family
@@ -691,27 +691,23 @@ def test_representative_derivatives_use_generic_semantic_contracts(
     assert compiled.pricing_plan is not None
     assert compiled.pricing_plan.method == expected_route_method
     assert expected_pricing_module in compiled.pricing_plan.method_modules
-    if expect_semantic_contract:
-        assert compiled.semantic_blueprint is not None
-        assert compiled.semantic_contract.product.semantic_id == expected_semantic_id
-        assert compiled.semantic_contract.product.instrument_class == expected_instrument
-        assert compiled.semantic_contract.product.payoff_family == expected_payoff_family
-        assert compiled.semantic_contract.product.underlier_structure
-        assert compiled.semantic_blueprint.selection_reason == compiled.pricing_plan.selection_reason
-        assert compiled.semantic_blueprint.assumption_summary == compiled.pricing_plan.assumption_summary
-        assert compiled.semantic_blueprint.route_modules == _expected_route_modules(compiled)
-        assert compiled.semantic_blueprint.primitive_routes == (expected_primitive_route,)
-        assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == expected_primitive_route
-        assert expected_generation_module in compiled.semantic_blueprint.target_modules
-        assert snapshot == snapshot_again
-        assert snapshot["semantic_contract"] == compiled.request.metadata["semantic_contract"]
-        assert snapshot["semantic_blueprint"]["selection_reason"] == compiled.pricing_plan.selection_reason
-        assert snapshot["semantic_blueprint"]["assumption_summary"] == compiled.pricing_plan.assumption_summary
-        assert "trellis.models.resolution.basket_semantics" not in snapshot["approved_modules"]
-        assert "trellis.models.monte_carlo.semantic_basket" not in snapshot["approved_modules"]
-        assert "himalaya_option" not in repr(snapshot).lower()
-    else:
-        assert compiled.semantic_blueprint is None
+    assert compiled.semantic_contract.product.semantic_id == expected_semantic_id
+    assert compiled.semantic_contract.product.instrument_class == expected_instrument
+    assert compiled.semantic_contract.product.payoff_family == expected_payoff_family
+    assert compiled.semantic_contract.product.underlier_structure
+    assert compiled.semantic_blueprint.selection_reason == compiled.pricing_plan.selection_reason
+    assert compiled.semantic_blueprint.assumption_summary == compiled.pricing_plan.assumption_summary
+    assert compiled.semantic_blueprint.route_modules == _expected_route_modules(compiled)
+    assert compiled.semantic_blueprint.primitive_routes == (expected_primitive_route,)
+    assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == expected_primitive_route
+    assert expected_generation_module in compiled.semantic_blueprint.target_modules
+    assert snapshot == snapshot_again
+    assert snapshot["semantic_contract"] == compiled.request.metadata["semantic_contract"]
+    assert snapshot["semantic_blueprint"]["selection_reason"] == compiled.pricing_plan.selection_reason
+    assert snapshot["semantic_blueprint"]["assumption_summary"] == compiled.pricing_plan.assumption_summary
+    assert "trellis.models.resolution.basket_semantics" not in snapshot["approved_modules"]
+    assert "trellis.models.monte_carlo.semantic_basket" not in snapshot["approved_modules"]
+    assert "himalaya_option" not in repr(snapshot).lower()
     if expected_generation_module is not None:
         assert expected_generation_module in compiled.generation_plan.approved_modules
     assert "trellis.models.resolution.basket_semantics" not in compiled.generation_plan.approved_modules
@@ -754,7 +750,6 @@ def test_compile_build_request_uses_credit_default_swap_semantic_contract_bluepr
 
     assert compiled.semantic_contract is not None
     assert compiled.semantic_blueprint is not None
-    assert compiled.family_blueprint is None
     assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "credit_default_swap"
     assert compiled.product_ir is not None
     assert compiled.product_ir.instrument == "cds"
@@ -783,7 +778,6 @@ def test_compile_build_request_uses_nth_to_default_semantic_contract_blueprint()
 
     assert compiled.semantic_contract is not None
     assert compiled.semantic_blueprint is not None
-    assert compiled.family_blueprint is None
     assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "nth_to_default"
     assert compiled.product_ir is not None
     assert compiled.product_ir.instrument == "nth_to_default"

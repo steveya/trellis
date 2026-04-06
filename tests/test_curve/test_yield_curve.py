@@ -28,6 +28,14 @@ class TestLinearInterp:
 
 
 class TestYieldCurve:
+    def test_rejects_length_mismatch(self):
+        with pytest.raises(ValueError, match="same length"):
+            YieldCurve([1.0, 2.0], [0.03])
+
+    def test_rejects_unsorted_tenors(self):
+        with pytest.raises(ValueError, match="strictly increasing"):
+            YieldCurve([5.0, 1.0, 10.0], [0.04, 0.03, 0.05])
+
     def test_flat_curve_discount(self):
         curve = YieldCurve.flat(0.05)
         df = curve.discount(1.0)

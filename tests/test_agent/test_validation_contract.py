@@ -125,6 +125,33 @@ def test_swaption_validation_contract_carries_helper_consistency_check():
     )
 
 
+def test_route_less_semantic_request_keeps_validation_contract_truthful():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        (
+            "Range accrual note on SOFR paying 5.25% when SOFR stays between 1.50% "
+            "and 3.25% on 2026-01-15, 2026-04-15, 2026-07-15, and 2026-10-15."
+        ),
+        instrument_type="range_accrual",
+    )
+
+    contract = compiled.validation_contract
+
+    assert contract is not None
+    assert contract.route_id is None
+    assert contract.route_family is None
+    check_ids = {check.check_id for check in contract.deterministic_checks}
+    assert "fixing_history_bound_to_past_schedule_points" in check_ids
+    assert "principal_redeems_at_maturity" in check_ids
+    assert "check_vol_sensitivity" not in check_ids
+    assert "check_vol_monotonicity" not in check_ids
+    assert contract.lowering_errors == (
+        "route_selection:missing_primitive_routes:No primitive routes declared for DSL lowering.",
+    )
+    assert contract.review_hints["has_lowering_errors"] is True
+
+
 @pytest.mark.parametrize(
     "description,instrument_type,expected_semantic_id,expected_route,expected_bundle,required_inputs,expected_admissibility",
     [
@@ -230,7 +257,6 @@ def test_representative_semantic_requests_compile_stable_validation_contracts(
 
     assert compiled.semantic_contract is not None
     assert compiled.semantic_blueprint is not None
-    assert compiled.family_blueprint is None
     assert contract is not None
     assert contract_again is not None
 

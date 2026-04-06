@@ -82,9 +82,8 @@ def retrieve_for_task(
 ) -> dict[str, Any]:
     """Retrieve all relevant knowledge for a pricing task.
 
-    This is the primary public API — replaces the scattered calls to
-    get_experience_for_task(), get_cookbook(), format_contracts_for_prompt(),
-    and modeling_requirements lookup.
+    This is the primary public API — replaces older ad hoc prompt helpers,
+    cookbook wrappers, prompt-contract lookups, and modeling-requirements lookup.
 
     Features are the primary retrieval axis.  Lessons are matched via
     feature union (any matching feature contributes), ranked by relevance

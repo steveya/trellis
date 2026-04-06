@@ -3,6 +3,9 @@ import numpy as np
 import pytest
 from datetime import date
 
+from trellis.analytics.measures import DV01, ScenarioPnL
+from trellis.core.market_state import MarketState
+from trellis.core.types import DayCountConvention
 from trellis.instruments.bond import Bond
 from trellis.curves.yield_curve import YieldCurve
 from trellis.engine.pricer import price_instrument
@@ -50,8 +53,87 @@ class TestPricer:
         expected = 100 * np.exp(-0.05 * 10)
         assert result.dirty_price == pytest.approx(expected, rel=0.01)
 
+    def test_accrued_interest_respects_day_count_within_coupon_period(self):
+        curve = YieldCurve.flat(0.05)
+        bond = Bond(
+            face=100,
+            coupon=0.06,
+            maturity_date=date(2026, 1, 31),
+            issue_date=date(2024, 1, 31),
+            maturity=2,
+            frequency=2,
+            day_count=DayCountConvention.THIRTY_360,
+        )
+
+        result = price_instrument(bond, curve, settlement=date(2024, 3, 31), greeks=None)
+
+        assert result.accrued_interest == pytest.approx(1.0, rel=1e-12)
+        assert result.clean_price == pytest.approx(result.dirty_price - 1.0, rel=1e-12)
+
+    def test_ytm_is_solved_from_dirty_price(self):
+        rate = 0.05
+        curve = YieldCurve.flat(rate)
+        bond = Bond(
+            face=100,
+            coupon=0.045,
+            maturity_date=date(2034, 11, 15),
+            issue_date=date(2024, 11, 15),
+            maturity=10,
+            frequency=2,
+        )
+
+        result = price_instrument(bond, curve, settlement=date(2024, 11, 15), greeks=None)
+
+        expected_ytm = 2.0 * (np.exp(rate / 2.0) - 1.0)
+        assert result.ytm == pytest.approx(expected_ytm, rel=1e-10)
+
 
 class TestAnalytics:
+    def test_dv01_preserves_fixing_histories_across_bumped_market_states(self):
+        class FixingAwarePayoff:
+            requirements = {"discount_curve", "fixing_history"}
+
+            def evaluate(self, market_state):
+                return float(market_state.fixing_history()[date(2024, 11, 14)]) + float(
+                    market_state.discount.discount(1.0)
+                )
+
+        ms = MarketState(
+            as_of=date(2024, 11, 15),
+            settlement=date(2024, 11, 15),
+            discount=YieldCurve.flat(0.05),
+            fixing_histories={"SOFR": {date(2024, 11, 14): 0.0431}},
+            selected_curve_names={"fixing_history": "SOFR"},
+        )
+
+        assert DV01().compute(FixingAwarePayoff(), ms, _cache={}) > 0.0
+
+    def test_scenario_pnl_preserves_fixing_histories_across_shifted_states(self):
+        class FixingAwarePayoff:
+            requirements = {"discount_curve", "fixing_history"}
+
+            def evaluate(self, market_state):
+                return float(market_state.fixing_history()[date(2024, 11, 14)]) + float(
+                    market_state.discount.discount(1.0)
+                )
+
+        ms = MarketState(
+            as_of=date(2024, 11, 15),
+            settlement=date(2024, 11, 15),
+            discount=YieldCurve.flat(0.05),
+            fixing_histories={"SOFR": {date(2024, 11, 14): 0.0431}},
+            selected_curve_names={"fixing_history": "SOFR"},
+        )
+
+        pnl = ScenarioPnL(shifts_bps=(+100,), scenario_packs=()).compute(
+            FixingAwarePayoff(),
+            ms,
+            _cache={},
+        )
+
+        assert set(pnl) == {100}
+        assert pnl[100] < 0.0
+
     def test_greeks_finite_difference_consistency(self):
         """Autodiff Greeks should be consistent with finite-difference approximations."""
         curve = YieldCurve([1.0, 5.0, 10.0], [0.04, 0.045, 0.05])
@@ -85,3 +167,34 @@ class TestAnalytics:
         assert greeks["dv01"] == pytest.approx(fd_dv01, rel=0.05)
         assert greeks["duration"] > 0
         assert greeks["convexity"] == pytest.approx(fd_convexity, rel=0.05)
+
+    def test_compute_greeks_no_longer_emits_key_rate_durations(self):
+        curve = YieldCurve([1.0, 5.0, 10.0], [0.04, 0.045, 0.05])
+        rates = curve.rates.copy()
+
+        def price_fn(r):
+            from trellis.curves.interpolation import linear_interp
+            from trellis.core.differentiable import get_numpy
+
+            np_ = get_numpy()
+            return 100.0 * np_.exp(-linear_interp(5.0, curve.tenors, r) * 5.0)
+
+        greeks = compute_greeks(price_fn, rates, tenors=[1.0, 5.0, 10.0], measures=["dv01", "key_rate_durations"])
+
+        assert "dv01" in greeks
+        assert "key_rate_durations" not in greeks
+
+    def test_price_instrument_projects_canonical_krd_shape(self):
+        curve = YieldCurve([1.0, 2.0, 5.0, 10.0], [0.04, 0.042, 0.045, 0.047])
+        bond = Bond(
+            face=100,
+            coupon=0.045,
+            maturity_date=date(2034, 11, 15),
+            maturity=10,
+            frequency=2,
+        )
+
+        result = price_instrument(bond, curve, settlement=date(2024, 11, 15), greeks="all")
+
+        assert result.curve_sensitivities == result.greeks["key_rate_durations"]
+        assert set(result.curve_sensitivities) == {1.0, 2.0, 5.0, 10.0}

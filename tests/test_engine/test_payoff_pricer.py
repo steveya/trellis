@@ -50,6 +50,21 @@ class TestMarketState:
         ms = MarketState(as_of=SETTLE, settlement=SETTLE, discount=None)
         assert ms.available_capabilities == set()
 
+    def test_available_capabilities_ignore_empty_mapping_inputs(self):
+        ms = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            forecast_curves={},
+            fixing_histories={},
+            fx_rates={},
+            underlier_spots={},
+            local_vol_surfaces={},
+            jump_parameter_sets={},
+            model_parameter_sets={},
+        )
+
+        assert ms.available_capabilities == set()
+
     def test_fields(self):
         ms = _market_state()
         assert ms.as_of == SETTLE

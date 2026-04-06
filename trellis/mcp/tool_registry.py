@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Mapping
 
+from trellis.data.file_snapshot import FILE_IMPORT_PROVIDER_ID
 from trellis.mcp.errors import TrellisMcpError
 from trellis.mcp.schemas import ToolDefinition
 
@@ -15,7 +16,7 @@ ToolHandler = Callable[[Mapping[str, object]], Mapping[str, object]]
 class ToolRegistry:
     """Small in-process registry for Trellis MCP tool handlers."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._definitions: dict[str, ToolDefinition] = {}
         self._handlers: dict[str, ToolHandler] = {}
 
@@ -254,7 +255,31 @@ def build_tool_registry(services) -> ToolRegistry:
             calendars=arguments.get("calendars") or (),
         ),
     )
+    registry.register(
+        name="trellis.snapshot.import_files",
+        description="Import one explicit market snapshot manifest from local files, persist it, and optionally activate it for a session.",
+        handler=lambda arguments: _import_market_snapshot(services, arguments),
+    )
     return registry
+
+
+def _import_market_snapshot(services, arguments: Mapping[str, object]) -> Mapping[str, object]:
+    payload = services.snapshot_service.import_files(
+        manifest_path=arguments.get("manifest_path"),
+        reference_date=arguments.get("reference_date"),
+    )
+    if arguments.get("activate_session"):
+        session_payload = services.session_service.activate_market_snapshot(
+            session_id=arguments.get("session_id"),
+            snapshot_id=payload["snapshot"]["snapshot_id"],
+            provider_id=FILE_IMPORT_PROVIDER_ID,
+        )
+        return {
+            **payload,
+            "session": session_payload["session"],
+            "policy_bundle": session_payload["policy_bundle"],
+        }
+    return payload
 
 
 __all__ = [

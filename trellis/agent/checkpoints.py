@@ -230,9 +230,10 @@ def capture_checkpoint(
             ),
         )
         lowering = route_metadata.get("lowering") or {}
+        route_binding_authority = route_metadata.get("route_binding_authority") or {}
         route_decision = str(
             lowering.get("route_id")
-            or generation_boundary_data.get("method")
+            or route_binding_authority.get("route_id")
             or "unknown"
         )
         stages.append(StageDecision(

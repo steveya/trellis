@@ -80,19 +80,12 @@ def test_execute_validation_bundle_respects_validation_level(monkeypatch):
     assert execution.skipped_checks == ("check_vol_sensitivity",)
 
 
-@pytest.mark.legacy_compat
-def test_select_validation_bundle_for_quanto_family_includes_family_checks():
-    from trellis.agent.family_contract_compiler import compile_family_contract
-    from trellis.agent.family_contract_templates import get_family_contract_template
+def test_select_validation_bundle_for_quanto_option_includes_family_checks():
     from trellis.agent.validation_bundles import select_validation_bundle
 
-    blueprint = compile_family_contract(get_family_contract_template("quanto_option"))
-
     bundle = select_validation_bundle(
-        instrument_type="unknown",
+        instrument_type="quanto_option",
         method="analytical",
-        product_ir=blueprint.product_ir,
-        family_blueprint=blueprint,
     )
 
     assert bundle.bundle_id == "analytical:quanto_option"

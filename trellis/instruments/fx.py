@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 from trellis.core.date_utils import year_fraction
@@ -92,11 +92,41 @@ class FXForwardPayoff:
         discounts using the foreign curve, and spot × foreign_PV = domestic_PV
         by covered interest parity.
         """
-        fx_rate = market_state.fx_rates[self._fx_pair]
+        if market_state.fx_rates is None or self._fx_pair not in market_state.fx_rates:
+            raise ValueError(
+                f"market_state.fx_rates must contain fx pair {self._fx_pair!r}"
+            )
+        if (
+            market_state.forecast_curves is None
+            or self._foreign_discount_key not in market_state.forecast_curves
+        ):
+            raise ValueError(
+                "market_state.forecast_curves must contain foreign discount key "
+                f"{self._foreign_discount_key!r}"
+            )
 
-        # The inner payoff evaluates with whatever MarketState it receives.
-        # The foreign PV is already discounted at foreign rates.
-        foreign_pv = self._inner.evaluate(market_state)
+        from trellis.core.runtime_contract import wrap_market_state_with_contract
+
+        fx_rate = market_state.fx_rates[self._fx_pair]
+        foreign_curve = market_state.forecast_curves[self._foreign_discount_key]
+        selected_curve_names = dict(market_state.selected_curve_names or {})
+        selected_curve_names["discount_curve"] = self._foreign_discount_key
+        base_market_state = getattr(market_state, "raw_market_state", market_state)
+        foreign_market_state = replace(
+            base_market_state,
+            discount=foreign_curve,
+            forward_curve=None,
+            selected_curve_names=selected_curve_names or None,
+        )
+        foreign_market_state = wrap_market_state_with_contract(
+            foreign_market_state,
+            requirements=self._inner.requirements,
+            context=type(self._inner).__name__,
+        )
+
+        # Reprice the inner payoff against the foreign discount curve so the
+        # resulting PV is expressed in foreign currency before FX conversion.
+        foreign_pv = self._inner.evaluate(foreign_market_state)
 
         # Convert: domestic_PV = foreign_PV × spot
         return foreign_pv * fx_rate.spot

@@ -7,10 +7,16 @@ import pytest
 from scipy.stats import norm
 
 from trellis.core.differentiable import gradient, get_numpy
+from trellis.core.market_state import MarketState
 import trellis.models.monte_carlo.discretization as mc_discretization
 import trellis.models.monte_carlo.engine as mc_engine_module
+from trellis.curves.yield_curve import YieldCurve
 from trellis.models.processes.gbm import GBM
 from trellis.models.processes.correlated_gbm import CorrelatedGBM
+from trellis.models.processes.heston import (
+    build_heston_parameter_payload,
+    resolve_heston_runtime_binding,
+)
 from trellis.models.monte_carlo.discretization import euler_maruyama, exact_simulation, milstein
 from trellis.models.monte_carlo.engine import MonteCarloEngine
 from trellis.models.monte_carlo.local_vol import (
@@ -145,6 +151,33 @@ class TestEulerMaruyama:
         )
 
         raw_np.testing.assert_allclose(fast, slow, atol=0.0, rtol=0.0)
+
+    def test_heston_runtime_binding_simulates_vector_state_paths(self):
+        market_state = MarketState(
+            as_of=None,
+            settlement=None,
+            discount=YieldCurve.flat(0.05),
+            model_parameters=build_heston_parameter_payload(
+                kappa=2.0,
+                theta=0.04,
+                xi=0.3,
+                rho=-0.7,
+                v0=0.04,
+            ),
+        )
+        binding = resolve_heston_runtime_binding(market_state)
+
+        paths = euler_maruyama(
+            binding.process,
+            x0=raw_np.array([100.0, binding.process.v0]),
+            T=1.0,
+            n_steps=8,
+            n_paths=32,
+            rng=raw_np.random.default_rng(11),
+        )
+
+        assert paths.shape == (32, 9, 2)
+        assert raw_np.all(raw_np.isfinite(paths))
 
 
 # ---------------------------------------------------------------------------

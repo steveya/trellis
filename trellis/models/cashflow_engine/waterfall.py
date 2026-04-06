@@ -27,11 +27,11 @@ class Tranche:
     notional: float
     coupon: float
     subordination: float = 0.0
-    balance: float = 0.0  # remaining balance (set during run)
+    balance: float | None = None  # remaining balance (set during run)
 
     def __post_init__(self):
         """Initialize the running balance to notional when not explicitly supplied."""
-        if self.balance == 0.0:
+        if self.balance is None:
             self.balance = self.notional
 
 

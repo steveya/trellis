@@ -139,6 +139,13 @@ class TestCheckMarketData:
         assert "discount_curve" in errors[0]
         assert "YieldCurve" in errors[0]
 
+    def test_empty_mapping_does_not_satisfy_fx_rates_requirement(self):
+        ms = MarketState(as_of=SETTLE, settlement=SETTLE, fx_rates={})
+        errors = check_market_data({"fx_rates"}, ms)
+        assert len(errors) == 1
+        assert "fx_rates" in errors[0]
+        assert "FXRate" in errors[0]
+
     def test_method_not_checked_as_market_data(self):
         ms = MarketState(as_of=SETTLE, settlement=SETTLE,
                          discount=YieldCurve.flat(0.05))

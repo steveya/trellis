@@ -6,7 +6,7 @@ from datetime import date
 
 import pytest
 
-from trellis.book import Book, BookResult
+from trellis.book import Book, BookResult, ScenarioResultCube
 from trellis.core.types import PricingResult
 from trellis.curves.yield_curve import YieldCurve
 from trellis.engine.pricer import price_instrument
@@ -164,3 +164,138 @@ class TestBookResult:
         br = BookResult(results, book)
         assert br.total_mv == 0.0
         assert br.book_duration == 0.0
+
+
+class TestScenarioResultCube:
+    """Scenario-aware aggregation substrate for book workflows."""
+
+    def _make_cube(self) -> ScenarioResultCube:
+        curve = YieldCurve.flat(0.045)
+        bond_a = _make_bond()
+        bond_b = _make_bond(coupon=0.04)
+        book = Book(
+            {"A": bond_a, "B": bond_b},
+            notionals={"A": 1_000_000, "B": 500_000},
+        )
+        base_results = {
+            name: price_instrument(book[name], curve, date(2024, 11, 15), greeks="all")
+            for name in book
+        }
+        shocked_results = {
+            name: PricingResult(
+                clean_price=result.clean_price - 1.0,
+                dirty_price=result.dirty_price - 1.0,
+                accrued_interest=result.accrued_interest,
+                greeks=result.greeks,
+                curve_sensitivities=result.curve_sensitivities,
+            )
+            for name, result in base_results.items()
+        }
+        return ScenarioResultCube(
+            {
+                "base": BookResult(base_results, book),
+                "up100": BookResult(shocked_results, book),
+            },
+            scenario_specs={
+                "base": {"name": "base", "shift_bps": 0.0},
+                "up100": {"name": "up100", "shift_bps": 100.0},
+            },
+            scenario_provenance={
+                "base": {"source": "unit", "run_mode": "test"},
+                "up100": {"source": "unit", "run_mode": "test"},
+            },
+        )
+
+    def test_preserves_specs_and_provenance(self):
+        cube = self._make_cube()
+
+        assert list(cube) == ["base", "up100"]
+        assert cube.base_name == "base"
+        assert cube.scenario_specs["up100"]["shift_bps"] == pytest.approx(100.0)
+        assert cube.scenario_provenance["up100"]["source"] == "unit"
+
+    def test_book_ladder_carries_deltas_and_metadata(self):
+        cube = self._make_cube()
+
+        ladder = cube.book_ladder("total_mv")
+
+        assert ladder["base"] > ladder["up100"]
+        assert ladder.metadata["metric"] == "total_mv"
+        assert ladder.metadata["aggregation_level"] == "book"
+        assert ladder.metadata["baseline_scenario"] == "base"
+        assert ladder.metadata["deltas"]["base"] == pytest.approx(0.0)
+        assert ladder.metadata["deltas"]["up100"] == pytest.approx(
+            ladder["up100"] - ladder["base"]
+        )
+        assert ladder.metadata["scenario_specs"]["up100"]["shift_bps"] == pytest.approx(
+            100.0
+        )
+
+    def test_position_ladder_supports_market_value_projection(self):
+        cube = self._make_cube()
+
+        ladder = cube.position_ladder("mv")
+
+        assert ladder["A"]["base"] > ladder["A"]["up100"]
+        assert ladder["B"]["base"] > ladder["B"]["up100"]
+        assert ladder.metadata["metric"] == "mv"
+        assert ladder.metadata["aggregation_level"] == "position"
+        assert ladder.metadata["deltas"]["A"]["base"] == pytest.approx(0.0)
+        assert ladder.metadata["deltas"]["A"]["up100"] == pytest.approx(
+            ladder["A"]["up100"] - ladder["A"]["base"]
+        )
+
+    def test_batch_output_projection_preserves_plan_and_pnl_views(self):
+        cube = self._make_cube()
+        cube = ScenarioResultCube(
+            dict(cube),
+            scenario_specs=cube.scenario_specs,
+            scenario_provenance=cube.scenario_provenance,
+            compute_plan={
+                "plan_type": "book_scenario_batch",
+                "scenario_count": 2,
+            },
+        )
+
+        payload = cube.to_batch_output()
+
+        assert payload["compute_plan"]["plan_type"] == "book_scenario_batch"
+        assert payload["book_pnl"]["metadata"]["baseline_scenario"] == "base"
+        assert payload["book_pnl"]["values"]["base"] == pytest.approx(0.0)
+        assert payload["book_pnl"]["values"]["up100"] < 0.0
+        assert payload["book_pnl"]["metadata"]["levels"]["base"] > payload["book_pnl"]["metadata"]["levels"]["up100"]
+        assert payload["position_pnl"]["values"]["A"]["base"] == pytest.approx(0.0)
+        assert payload["position_pnl"]["values"]["A"]["up100"] < 0.0
+        assert (
+            payload["position_pnl"]["metadata"]["levels"]["A"]["base"]
+            > payload["position_pnl"]["metadata"]["levels"]["A"]["up100"]
+        )
+        assert payload["pnl_attribution"]["scenario_attribution"]["up100"]["top_contributors"][0]["position_name"] == "A"
+
+    def test_book_pnl_values_are_deltas_and_levels_live_in_metadata(self):
+        cube = self._make_cube()
+
+        pnl = cube.book_pnl()
+
+        assert pnl["base"] == pytest.approx(0.0)
+        assert pnl["up100"] == pytest.approx(pnl.metadata["deltas"]["up100"])
+        assert pnl.metadata["levels"]["base"] > pnl.metadata["levels"]["up100"]
+
+    def test_position_pnl_values_are_deltas_and_levels_live_in_metadata(self):
+        cube = self._make_cube()
+
+        pnl = cube.position_pnl()
+
+        assert pnl["A"]["base"] == pytest.approx(0.0)
+        assert pnl["A"]["up100"] == pytest.approx(pnl.metadata["deltas"]["A"]["up100"])
+        assert pnl.metadata["levels"]["A"]["base"] > pnl.metadata["levels"]["A"]["up100"]
+
+    def test_pnl_attribution_ranks_top_contributors_per_scenario(self):
+        cube = self._make_cube()
+
+        attribution = cube.pnl_attribution()
+
+        assert attribution["baseline_scenario"] == "base"
+        assert attribution["scenario_attribution"]["up100"]["total_pnl"] < 0.0
+        assert attribution["scenario_attribution"]["up100"]["top_contributors"][0]["position_name"] == "A"
+        assert abs(attribution["net_position_pnl"]["A"]) > abs(attribution["net_position_pnl"]["B"])

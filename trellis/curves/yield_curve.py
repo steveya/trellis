@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from trellis.curves.shocks import build_curve_shock_surface
 from trellis.core.differentiable import get_numpy
 from trellis.curves.interpolation import linear_interp
 
@@ -23,6 +24,15 @@ class YieldCurve:
         """Store tenor and zero-rate grids for interpolation-based discounting."""
         self.tenors = np.asarray(tenors, dtype=float)
         self.rates = np.asarray(rates, dtype=float)
+        if self.tenors.ndim != 1 or self.rates.ndim != 1:
+            raise ValueError("YieldCurve tenors and rates must be one-dimensional")
+        if len(self.tenors) == 0:
+            raise ValueError("YieldCurve requires at least one tenor/rate knot")
+        if len(self.tenors) != len(self.rates):
+            raise ValueError("YieldCurve tenors and rates must have the same length")
+        for index in range(len(self.tenors) - 1):
+            if float(self.tenors[index + 1]) <= float(self.tenors[index]):
+                raise ValueError("YieldCurve tenors must be strictly increasing")
 
     # ------------------------------------------------------------------
     # DiscountCurve protocol
@@ -66,12 +76,14 @@ class YieldCurve:
         return YieldCurve(self.tenors.copy(), self.rates + bps / 10_000.0)
 
     def bump(self, tenor_bumps: dict[float, float]) -> YieldCurve:
-        """New curve with per-tenor bumps (in bps). Unmatched tenors unchanged."""
-        new_rates = self.rates.copy()
-        for tenor, bps_val in tenor_bumps.items():
-            mask = np.isclose(self.tenors, tenor)
-            new_rates = np.where(mask, new_rates + bps_val / 10_000.0, new_rates)
-        return YieldCurve(self.tenors.copy(), new_rates)
+        """New curve with per-tenor bucket bumps (in bps).
+
+        Exact-tenor requests still update the matching knot directly. Off-grid
+        requests now insert a bumped knot into the curve so later repricing
+        paths see the interpolation-aware local shock instead of a silent no-op.
+        """
+        surface = build_curve_shock_surface(self, tuple(tenor_bumps))
+        return surface.apply_bumps(tenor_bumps)
 
     # ------------------------------------------------------------------
     # Constructors

@@ -179,7 +179,7 @@ same stores:
 Prompts and host packaging stay thin over those same contracts:
 
 - ``trellis.mcp.prompts`` provides guided workflows such as
-  ``price_trade``, ``price_trade_audit``, ``persist_current_model``,
+  ``price_trade``, ``exotic_desk_one_trade``, ``price_trade_audit``, ``persist_current_model``,
   ``compare_model_versions``, ``explain_model_selection``,
   ``configure_market_data``, and ``validate_candidate_model``
 - ``TrellisMcpServer.describe_host_packaging()`` returns one common manifest
@@ -208,6 +208,12 @@ Start the local MCP endpoint:
    /Users/steveyang/miniforge3/bin/python3 scripts/serve_trellis_mcp.py \
      --host 127.0.0.1 \
      --port 8000
+
+For the first explicit exotic-desk flow, hosts should prefer the
+``exotic_desk_one_trade`` prompt over ad hoc tool sequencing. That prompt
+packages the supported imported-snapshot + ``range_accrual`` workflow and
+points the host at the returned ``desk_review`` bundle plus the canonical run
+and audit resources.
 
 For a localhost prompt-flow smoke test, the launcher also supports an explicit
 demo bootstrap:

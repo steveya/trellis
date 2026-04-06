@@ -187,3 +187,20 @@ class TestWaterfall:
         results = wf.run(cashflows, period=0.5)
         assert len(results) == 3
         assert senior.balance == pytest.approx(70.0, rel=1e-10)
+
+    def test_explicit_zero_balance_tranche_stays_exhausted(self):
+        exhausted = Tranche(
+            name="Z",
+            notional=100.0,
+            coupon=0.05,
+            subordination=0.0,
+            balance=0.0,
+        )
+        wf = Waterfall([exhausted])
+
+        result = wf.distribute(available_interest=5.0, available_principal=10.0, period=1.0)
+
+        assert exhausted.balance == pytest.approx(0.0, abs=1e-12)
+        assert result["Z"]["interest"] == pytest.approx(0.0, abs=1e-12)
+        assert result["Z"]["principal"] == pytest.approx(0.0, abs=1e-12)
+        assert result["_residual"]["principal"] == pytest.approx(10.0, abs=1e-12)

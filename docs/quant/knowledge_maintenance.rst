@@ -1,13 +1,13 @@
 Knowledge Maintenance
 =====================
 
-Trellis has two knowledge layers in the codebase:
+Trellis has one canonical knowledge layer in the codebase:
 
 - the canonical knowledge system in ``trellis/agent/knowledge/``
-- legacy compatibility shims in ``trellis/agent/experience.py`` and ``trellis/agent/cookbooks.py``
 
-New knowledge should be maintained in the canonical store first. The legacy files
-exist so older call sites keep working.
+New knowledge should be maintained in that canonical store. The older
+``experience`` artifact has been retired; lessons, failure signatures, and
+traces now live only on the canonical path.
 
 What To Maintain
 ----------------
@@ -22,7 +22,9 @@ The canonical files are split by responsibility:
 - ``canonical/failure_signatures.yaml``: regex-driven failure interpretation
 - ``lessons/entries/*.yaml``: canonical lesson entries
 - ``lessons/index.yaml``: generated hot-tier cache rebuilt from the entry files
-- ``traces/``: cold-store build traces and platform audit traces
+- ``traces/``: cold-store trace namespaces such as ``platform/``,
+  ``analytical/``, ``checkpoints/``, ``semantic_extensions/``, plus promotion
+  review/adoption artifacts
 
 Lesson Lifecycle
 ----------------
@@ -45,6 +47,11 @@ Replay and reflection traces now persist a ``lesson_contract`` validation
 report plus a ``lesson_promotion_outcome`` field, so a task run can show the
 contract that was accepted or rejected before promotion.
 
+Platform traces use a split summary-plus-event-log layout while they are
+actively written, and older sidecar event logs may later be compacted back
+into the summary YAML as part of trace-retention maintenance. The trace
+loaders read both layouts.
+
 That lifecycle is important for quant maintenance because low-confidence lessons
 should not quietly become production guidance.
 
@@ -62,20 +69,20 @@ ones out of the prompt path. Basket cleanup follows the same pattern: the
 runtime records which basket lessons are treated as superseded, but the
 canonical lesson-index mutation remains a separate maintenance step.
 
-Cookbooks, Memory, And Experience
----------------------------------
+Cookbooks, Memory, And Lessons
+------------------------------
 
-Cookbooks are now canonical YAML assets, while ``trellis.agent.cookbooks`` is a
-thin compatibility shim that reads from them. The same is true for experience:
-``trellis.agent.experience`` delegates to feature-based retrieval from the
-knowledge store and falls back to the older YAML layout only when needed.
+Cookbooks are canonical YAML assets in
+``trellis.agent.knowledge.canonical.cookbooks.yaml`` and should be read from
+there directly. Lessons live under ``trellis/agent/knowledge/lessons/`` and
+are retrieved through ``KnowledgeStore``.
 
 In practice:
 
 - add new method templates in ``canonical/cookbooks.yaml``
 - keep cookbook examples method-generic and import-safe
 - use lessons for failures or edge cases, not for normal method definitions
-- treat ``experience.yaml`` and ``experience/index.yaml`` as backward-compatibility artifacts
+- do not reintroduce a sidecar lesson file outside ``trellis/agent/knowledge/``
 
 Recommended Maintenance Loop
 ----------------------------
@@ -98,5 +105,6 @@ Related Reading
 ---------------
 
 - :doc:`extending_trellis`
+- :doc:`../developer/learning_mechanism`
 - :doc:`../developer/audit_and_observability`
 - :doc:`../developer/task_and_eval_loops`

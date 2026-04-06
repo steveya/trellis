@@ -6,9 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
-from trellis.mcp.prompts import build_prompt_registry
-from trellis.mcp.resources import build_resource_registry
-from trellis.mcp.tool_registry import build_tool_registry
+from trellis.mcp.prompts import PromptRegistry, build_prompt_registry
+from trellis.mcp.resources import ResourceRegistry, build_resource_registry
+from trellis.mcp.tool_registry import ToolRegistry, build_tool_registry
 from trellis.platform.providers import ProviderRegistry
 from trellis.platform.services import PlatformServiceContainer, bootstrap_platform_services
 
@@ -18,9 +18,9 @@ class TrellisMcpServer:
     """Minimal MCP server shell built around the shared platform services."""
 
     services: PlatformServiceContainer
-    tool_registry: object
-    resource_registry: object
-    prompt_registry: object
+    tool_registry: ToolRegistry
+    resource_registry: ResourceRegistry
+    prompt_registry: PromptRegistry
 
     def list_tools(self) -> tuple[str, ...]:
         """Return the currently registered tool names."""
@@ -34,7 +34,7 @@ class TrellisMcpServer:
         """Return the currently registered resource names."""
         return self.resource_registry.list_resources()
 
-    def read_resource(self, uri: str):
+    def read_resource(self, uri: str) -> object:
         """Resolve one Trellis MCP resource URI."""
         return self.resource_registry.read_resource(uri)
 
@@ -42,7 +42,7 @@ class TrellisMcpServer:
         """Return the currently registered prompt names."""
         return self.prompt_registry.list_prompts()
 
-    def get_prompt(self, name: str, arguments: Mapping[str, object] | None = None):
+    def get_prompt(self, name: str, arguments: Mapping[str, object] | None = None) -> Mapping[str, object]:
         """Resolve one Trellis MCP prompt workflow."""
         return self.prompt_registry.get_prompt(name, arguments)
 

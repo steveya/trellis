@@ -72,7 +72,8 @@ Implementation target: black_scholes."""
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        t = year_fraction(market_state.as_of, spec.expiry_date, spec.day_count)
+        valuation_date = market_state.settlement or market_state.as_of
+        t = year_fraction(valuation_date, spec.expiry_date, spec.day_count)
         if t <= 0.0:
             intrinsic = max(spec.spot - spec.strike, 0.0) if str(spec.option_type).strip("'\"").lower() == "call" else max(spec.strike - spec.spot, 0.0)
             return float(spec.notional * intrinsic)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 import pytest
@@ -92,3 +92,60 @@ def test_price_zcb_option_tree_matches_jamshidian_within_tolerance(market_state)
     analytical = price_zcb_option_jamshidian(market_state, spec, mean_reversion=0.1)
 
     assert tree_price == pytest.approx(analytical, rel=0.02)
+
+
+def test_price_zcb_option_jamshidian_uses_market_state_hull_white_mean_reversion(market_state):
+    spec = ZCBOptionSpec(
+        notional=100.0,
+        strike=63.0,
+        expiry_date=EXPIRY,
+        bond_maturity_date=BOND_MATURITY,
+        option_type="call",
+    )
+    calibrated_state = replace(
+        market_state,
+        model_parameters={
+            "model_family": "hull_white",
+            "mean_reversion": 0.03,
+        },
+    )
+
+    via_market_state = price_zcb_option_jamshidian(calibrated_state, spec)
+    via_explicit = price_zcb_option_jamshidian(market_state, spec, mean_reversion=0.03)
+
+    assert via_market_state == pytest.approx(via_explicit, rel=1e-12)
+
+
+def test_price_zcb_option_tree_uses_market_state_hull_white_params(market_state):
+    spec = ZCBOptionSpec(
+        notional=100.0,
+        strike=63.0,
+        expiry_date=EXPIRY,
+        bond_maturity_date=BOND_MATURITY,
+        option_type="call",
+    )
+    calibrated_state = replace(
+        market_state,
+        model_parameters={
+            "model_family": "hull_white",
+            "mean_reversion": 0.03,
+            "sigma": 0.004,
+        },
+    )
+
+    via_market_state = price_zcb_option_tree(
+        calibrated_state,
+        spec,
+        model="hull_white",
+        n_steps=200,
+    )
+    via_explicit = price_zcb_option_tree(
+        market_state,
+        spec,
+        model="hull_white",
+        mean_reversion=0.03,
+        sigma=0.004,
+        n_steps=200,
+    )
+
+    assert via_market_state == pytest.approx(via_explicit, rel=1e-10)

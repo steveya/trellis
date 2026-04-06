@@ -11,6 +11,7 @@ from trellis.models.trees.lattice import (
     lattice_backward_induction,
 )
 from trellis.models.trees.control import resolve_lattice_exercise_policy
+from tests.lattice_builders import build_equity_lattice, build_short_rate_lattice
 
 
 S0, K, r, sigma, T = 100.0, 100.0, 0.05, 0.20, 1.0
@@ -51,7 +52,7 @@ class TestSpotLattice:
     def test_european_call_converges(self):
         """CRR spot lattice European call → BS."""
         n = 200
-        lattice = build_spot_lattice(S0, r, sigma, T, n)
+        lattice = build_equity_lattice(S0, r, sigma, T, n)
 
         def payoff(step, node, lat):
             return max(lat.get_state(step, node) - K, 0)
@@ -62,7 +63,7 @@ class TestSpotLattice:
 
     def test_american_put_geq_european(self):
         n = 200
-        lattice = build_spot_lattice(S0, r, sigma, T, n)
+        lattice = build_equity_lattice(S0, r, sigma, T, n)
 
         def payoff(step, node, lat):
             return max(K - lat.get_state(step, node), 0)
@@ -74,7 +75,7 @@ class TestSpotLattice:
         assert amer >= euro - 0.01
 
     def test_jarrow_rudd_call_converges(self):
-        lattice = build_spot_lattice(S0, r, sigma, T, 200, model="jarrow_rudd")
+        lattice = build_equity_lattice(S0, r, sigma, T, 200, model="jarrow_rudd")
 
         def payoff(step, node, lat):
             return max(lat.get_state(step, node) - K, 0.0)
@@ -87,13 +88,13 @@ class TestSpotLattice:
 class TestRateLattice:
 
     def test_rate_at_root(self):
-        lattice = build_rate_lattice(0.05, 0.01, 0.1, 1.0, 50)
+        lattice = build_short_rate_lattice(0.05, 0.01, 0.1, 1.0, 50)
         assert lattice.get_state(0, 0) == pytest.approx(0.05)
 
     def test_rate_dispersion_increases_with_vol(self):
         """Higher vol → wider rate dispersion at terminal step."""
-        lat_low = build_rate_lattice(0.05, 0.005, 0.1, 5.0, 100)
-        lat_high = build_rate_lattice(0.05, 0.02, 0.1, 5.0, 100)
+        lat_low = build_short_rate_lattice(0.05, 0.005, 0.1, 5.0, 100)
+        lat_high = build_short_rate_lattice(0.05, 0.02, 0.1, 5.0, 100)
 
         # Check dispersion at final step
         n = 100
@@ -114,7 +115,7 @@ class TestRateLattice:
 
         prices = []
         for vol in [0.005, 0.01, 0.02]:
-            lattice = build_rate_lattice(r0, vol, 0.1, T, 100)
+            lattice = build_short_rate_lattice(r0, vol, 0.1, T, 100)
             dt = T / 100
 
             # Call steps at 3Y, 5Y, 7Y
@@ -214,7 +215,7 @@ class TestRateLattice:
         assert price > 0.0
 
     def test_lattice_backward_induction_accepts_scalar_terminal_payoff(self):
-        lattice = build_rate_lattice(0.05, 0.01, 0.1, 1.0, 4)
+        lattice = build_short_rate_lattice(0.05, 0.01, 0.1, 1.0, 4)
         policy = resolve_lattice_exercise_policy("issuer_call", exercise_steps=[2, 3])
 
         def cashflow_at_node(step, node):

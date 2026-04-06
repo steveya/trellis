@@ -74,8 +74,9 @@ Current anchors:
 
 ## Legacy And Migration Notes
 
-- `trellis.agent.family_contract_compiler` is deprecated and retained only for
-  backward compatibility. Front-door request routing no longer falls back to it.
+- `trellis.agent.family_contract_compiler` has been removed. Checked-in family
+  templates must route through the semantic bridge instead of reviving the old
+  family-blueprint compiler.
 - `trellis.agent.family_contract_templates` still matters for the checked-in
   quanto bridge, but new work should compile through
   `compile_semantic_contract(...)`.

@@ -376,6 +376,97 @@ Use this structure for the final implementation note:
 - Caveats:
 - Follow-ons:
 
+## Code Review Workflow
+
+When the task is a code review rather than a feature implementation, use the
+repo-wide review program in `docs/plans/code-review-program.md` and the Linear
+workstream under `QUA-647`.
+
+### Review ticket selection
+
+- Linear is the source of truth for review-ticket state.
+- Use the mirrored queue in `docs/plans/code-review-program.md`.
+- Pick the earliest review ticket in the ordered queue whose status is not
+  `Done`, unless the user explicitly redirects to a different slice.
+- Tickets in the same wave may run in parallel only when their write scopes do
+  not conflict.
+
+### Review scope and posture
+
+- Treat review tickets as review-and-fix slices, not as read-only audits.
+- Review code and tests together.
+- Check local, regional, and global behavior:
+  - Local: single function, class, or module behavior.
+  - Regional: bounded interactions across modules, classes, or functions.
+  - Global: user-visible or workflow-visible behavior across major layers.
+- For important behavior, missing regional or global interaction coverage is a
+  review finding, not a note for later.
+- Keep compatibility-only coverage isolated:
+  - use `legacy_compat` only for deprecated or compatibility-only behavior
+  - keep ordinary suites on the current API surface rather than deprecated wrappers
+  - when a deprecated surface must remain, add or keep an audit test that
+    defends the boundary between legacy-only and ordinary coverage
+- Use the test strata explicitly during review and remediation:
+  - `crossval` for independent-engine checks
+  - `verification` for trusted-reference numerical checks
+  - `global_workflow` for user-visible end-to-end or multi-layer flows
+
+### Required review workflow
+
+1. Read the review ticket, the mirrored plan section, and any upstream blockers.
+2. Build a review dossier:
+   - files in scope
+   - tests in scope
+   - contracts being defended
+   - inbound and outbound module interactions
+   - current local / regional / global coverage map
+   - relevant docs, benchmarks, and `LIMITATIONS.md` entries
+   - use the `Review Dossier Template` in `docs/plans/code-review-program.md`
+3. Announce the ticket number and the plain-English review goal before editing.
+4. Perform the static review of code and tests.
+5. Run the targeted tests for the slice and the broader regression required by
+   the ticket when practical.
+6. Land low-risk in-scope fixes, test additions, doc updates, or
+   `LIMITATIONS.md` updates inside the same ticket.
+7. Split larger remediations into follow-on Linear issues instead of letting
+   the review ticket sprawl.
+
+### Findings and severity
+
+- Findings are the primary output of a review ticket.
+- Use this severity rubric:
+  - `P0`: wrong result, silent corruption, or broken governance on a critical path
+  - `P1`: high-confidence correctness, runtime, or contract bug
+  - `P2`: meaningful maintainability, test, or observability gap with real risk
+  - `P3`: lower-risk cleanup or consistency gap
+
+### Review closeout requirements
+
+Before marking a review ticket `Done`:
+
+- leave a Linear handoff note with:
+  - Reviewed:
+  - Findings:
+  - Tests checked:
+  - Coverage assessment:
+  - Docs / limitations mismatches:
+  - Shim removal candidates:
+  - Follow-on tickets:
+  - Disposition:
+- update the mirrored ticket row in `docs/plans/code-review-program.md`
+- do not mark the ticket `Done` if a hard blocker remains unresolved
+
+### Code review deliverables
+
+Every completed review ticket should leave behind:
+
+- prioritized findings with file references
+- a local / regional / global coverage assessment
+- missing-test and misleading-test notes
+- docs and `LIMITATIONS.md` mismatches
+- shim-removal or compatibility notes where relevant
+- follow-on issues for out-of-scope or larger remediations
+
 ## Current State (March 2026)
 
 - **131 priceable tasks** in `TASKS.yaml`

@@ -6,7 +6,7 @@ import dataclasses
 from dataclasses import dataclass, field
 from datetime import date
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Mapping
 import re
 
 import yaml
@@ -41,6 +41,20 @@ def _freeze_mapping(mapping: MappingProxyType | dict[str, object] | None) -> Map
 def _string_list(values) -> list[str]:
     """Normalize a sequence into YAML-safe string lists."""
     return [str(value).strip() for value in _tuple(values)]
+
+
+def _yaml_safe_value(value):
+    """Project MappingProxyType-heavy values onto YAML-safe primitives."""
+    if isinstance(value, MappingProxyType):
+        value = dict(value)
+    if isinstance(value, Mapping):
+        return {
+            str(key): _yaml_safe_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (tuple, list, set, frozenset)):
+        return [_yaml_safe_value(item) for item in value]
+    return value
 
 
 DEFAULT_PHASE_ORDER = (
@@ -205,6 +219,7 @@ class SemanticProductSemantics:
     controller_protocol: ControllerProtocol = field(default_factory=ControllerProtocol)
     audit_info: SemanticAuditInfo = field(default_factory=SemanticAuditInfo)
     implementation_hints: ImplementationHints = field(default_factory=ImplementationHints)
+    term_fields: Mapping[str, object] = field(default_factory=lambda: MappingProxyType({}))
 
     # --- Exercise & Path ---
     exercise_style: str = "none"
@@ -346,6 +361,7 @@ def semantic_contract_summary(contract: SemanticContract | dict[str, Any] | str)
             "lock_rule": parsed.product.lock_rule,
             "aggregation_rule": parsed.product.aggregation_rule,
             "multi_asset": parsed.product.multi_asset,
+            "term_fields": _yaml_safe_value(parsed.product.term_fields),
         },
         "typed_semantics": {
             "phase_order": list(parsed.product.timeline.phase_order),
@@ -1393,6 +1409,231 @@ def make_callable_bond_contract(
     )
 
 
+def make_range_accrual_contract(
+    *,
+    description: str,
+    reference_index: str,
+    observation_schedule: tuple[str, ...] | list[str],
+    coupon_definition: Mapping[str, object] | None = None,
+    range_condition: Mapping[str, object] | None = None,
+    settlement_profile: Mapping[str, object] | None = None,
+    callability: Mapping[str, object] | None = None,
+    preferred_method: str = "analytical",
+) -> SemanticContract:
+    """Construct the first checked semantic trade-entry contract for range accruals."""
+    normalized_index = str(reference_index or "").strip().upper()
+    schedule = _normalize_schedule(observation_schedule)
+    normalized_coupon = _normalize_coupon_definition(coupon_definition)
+    normalized_range = _normalize_range_condition(range_condition)
+    normalized_settlement = _normalize_settlement_profile(settlement_profile)
+    normalized_callability = _normalize_callability(callability)
+
+    if not normalized_index:
+        raise ValueError("Range accrual contract requires a reference index.")
+    if not schedule:
+        raise ValueError("Range accrual contract requires an observation schedule.")
+
+    product = SemanticProductSemantics(
+        semantic_id="range_accrual",
+        semantic_version="c2.1",
+        instrument_class="range_accrual",
+        instrument_aliases=("range_accrual", "range_accrual_note", "range_note"),
+        payoff_family="range_accrual_coupon",
+        timeline=_default_semantic_timeline(
+            schedule,
+            settlement_dates=schedule,
+            state_update_dates=schedule,
+        ),
+        underlier_structure="single_curve_rate_style",
+        payoff_rule="range_accrual_coupon_payment",
+        settlement_rule="coupon_period_cash_settlement",
+        payoff_traits=("coupon_accrual", "fixing_dependent", "range_condition"),
+        observables=(
+            ObservableSpec(
+                observable_id="reference_rate_fixing",
+                observable_type="forward_rate",
+                description="Reference-index fixing observed on each accrual observation date.",
+                source="forward_curve",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+            ObservableSpec(
+                observable_id="historical_fixing_history",
+                observable_type="fixing_history",
+                description="Historical fixings used when part of the schedule is already observed.",
+                source="fixing_history",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+            ObservableSpec(
+                observable_id="coupon_payment_schedule",
+                observable_type="cashflow_schedule",
+                description="Coupon payment schedule aligned with the accrual observation schedule.",
+                source="contract_terms",
+                schedule_role="determination_dates",
+                availability_phase="determination",
+            ),
+        ),
+        state_fields=(
+            StateField(
+                field_name="coupon_definition",
+                kind="contract_memory",
+                description="Coupon definition applied when the observed fixing remains in range.",
+                source_observables=(),
+                tags=("schedule_state", "recombining_safe"),
+            ),
+            StateField(
+                field_name="range_condition",
+                kind="contract_memory",
+                description="Accrual range bounds and inclusion flags shared across coupon periods.",
+                source_observables=(),
+                tags=("schedule_state", "recombining_safe"),
+            ),
+            StateField(
+                field_name="observed_reference_rate",
+                kind="event_state",
+                description="Observed reference-index fixing for the current accrual period.",
+                source_observables=("reference_rate_fixing",),
+                tags=("schedule_state", "recombining_safe"),
+            ),
+        ),
+        obligations=(
+            ObligationSpec(
+                obligation_id="coupon_period_cashflow",
+                settle_date_rule="coupon_period_cash_settlement",
+                amount_expression="coupon_rate_if_fixing_in_range",
+                settlement_kind="cash",
+                trigger="fixing_in_range",
+                provenance="semantic_contract",
+            ),
+            ObligationSpec(
+                obligation_id="principal_repayment",
+                settle_date_rule="principal_at_maturity",
+                amount_expression="principal_redemption",
+                settlement_kind="cash",
+                trigger="maturity",
+                provenance="semantic_contract",
+            ),
+        ),
+        controller_protocol=ControllerProtocol(
+            controller_style="identity",
+            controller_role="none",
+            decision_phase="decision",
+            schedule_role="",
+            admissible_actions=(),
+            description="Range-accrual coupons accrue automatically from observed fixings.",
+        ),
+        audit_info=_default_audit_info(),
+        implementation_hints=_default_implementation_hints(
+            event_machine_source="derived_from_event_transitions",
+            primary_schedule_role="observation_dates",
+        ),
+        term_fields=_freeze_mapping(
+            {
+                "reference_index": normalized_index,
+                "coupon_definition": dict(normalized_coupon),
+                "range_condition": dict(normalized_range),
+                "settlement_profile": dict(normalized_settlement),
+                "callability": dict(normalized_callability),
+            }
+        ),
+        exercise_style="none",
+        path_dependence="schedule_dependent",
+        schedule_dependence=True,
+        state_dependence="schedule_dependent",
+        model_family="interest_rate",
+        multi_asset=False,
+        observation_schedule=schedule,
+        observation_basis="reference_index_fixing",
+        selection_operator="",
+        selection_scope="",
+        selection_count=0,
+        lock_rule="",
+        aggregation_rule="sum_coupon_period_cashflows",
+        maturity_settlement_rule="principal_at_maturity",
+        constituents=(normalized_index,),
+        state_variables=("coupon_definition", "range_condition", "observed_reference_rate"),
+        event_transitions=(
+            "observe_reference_fixing",
+            "evaluate_range_coupon",
+            "settle_coupon_period",
+            "repay_principal_at_maturity",
+        ),
+        event_machine=_derive_event_machine(
+            (
+                "observe_reference_fixing",
+                "evaluate_range_coupon",
+                "settle_coupon_period",
+                "repay_principal_at_maturity",
+            ),
+            state_dependence="schedule_dependent",
+        ),
+    )
+
+    required_inputs = (
+        SemanticMarketInputSpec(
+            input_id="discount_curve",
+            description="Discount curve used to present-value the coupon and principal cashflows.",
+            capability="discount_curve",
+            aliases=("discount", "yield_curve"),
+            connector_hint="Provide the funding or discount curve for the payout currency.",
+            allowed_provenance=("observed", "derived"),
+        ),
+        SemanticMarketInputSpec(
+            input_id="forward_curve",
+            description="Forward curve used to project the reference index on future observation dates.",
+            capability="forward_curve",
+            aliases=("forecast_curve", "reference_curve"),
+            connector_hint="Provide the forward curve for the reference index.",
+            derivable_from=("discount_curve",),
+            allowed_provenance=("observed", "derived"),
+        ),
+        SemanticMarketInputSpec(
+            input_id="fixing_history",
+            description="Historical fixing time series for already observed coupon periods.",
+            aliases=("rate_fixings", "fixings", "rate_history"),
+            connector_hint="Provide past fixings when any observation date is in the past.",
+            allowed_provenance=("observed", "derived", "user_supplied"),
+        ),
+    )
+
+    return _semantic_contract_from_sections(
+        product=product,
+        required_inputs=required_inputs,
+        candidate_methods=("analytical",),
+        preferred_method=preferred_method,
+        bundle_hints=("range_accrual_contract",),
+        universal_checks=(
+            "reference_index_present",
+            "coupon_definition_present",
+            "range_condition_present",
+            "observation_schedule_present",
+        ),
+        semantic_checks=(
+            "coupon_only_accrues_when_fixing_in_range",
+            "fixing_history_bound_to_past_schedule_points",
+            "principal_redeems_at_maturity",
+        ),
+        comparison_targets=(normalize_method(preferred_method),),
+        reduction_cases=("single_index_range_accrual",),
+        target_modules=("trellis.models.range_accrual", "trellis.models.contingent_cashflows"),
+        primitive_families=(),
+        adapter_obligations=(
+            "resolve_discount_and_forward_curves",
+            "bind_fixing_history_for_observation_schedule",
+            "evaluate_coupon_only_when_fixing_is_in_range",
+        ),
+        proving_tasks=(
+            "compile_request_to_product_ir",
+            "validate_range_accrual_contract",
+            "emit_bounded_semantic_blueprint",
+        ),
+        blocked_by=(),
+        spec_schema_hints=("range_accrual",),
+        description=description,
+    )
+
+
 def make_rate_style_swaption_contract(
     *,
     description: str,
@@ -2032,6 +2273,7 @@ def _parse_product_semantics(
         controller_protocol=_parse_controller_protocol(payload.get("controller_protocol", {})),
         audit_info=_parse_audit_info(payload.get("audit_info", {})),
         implementation_hints=_parse_implementation_hints(payload.get("implementation_hints", {})),
+        term_fields=_freeze_mapping(payload.get("term_fields")),
         exercise_style=str(payload.get("exercise_style", "none")).strip(),
         path_dependence=str(payload.get("path_dependence", "terminal_markov")).strip(),
         schedule_dependence=bool(payload.get("schedule_dependence", False)),
@@ -2549,6 +2791,198 @@ def _extract_trigger_rank(text: str, term_sheet) -> int:
     return 1
 
 
+def _extract_reference_index(text: str, term_sheet) -> str:
+    """Extract the reference index for range-accrual style requests."""
+    parameters = getattr(term_sheet, "parameters", {}) or {}
+    for key in ("reference_index", "index", "underlier_index", "underlier", "rate_index"):
+        value = parameters.get(key)
+        if value:
+            return str(value).strip().upper()
+
+    match = re.search(
+        r"\b(SOFR|SONIA|ESTR|€STR|EURIBOR(?:\s*\d+[MY])?|LIBOR(?:\s*\d+[MY])?|CMS\d+[MY]?|CMT\d+[MY]?|TONA|BBSW)\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return ""
+    return match.group(1).strip().upper().replace("€", "E")
+
+
+def _extract_percentages(text: str) -> tuple[float, ...]:
+    """Extract percentage-looking values from free text as decimal rates."""
+    values: list[float] = []
+    for match in re.finditer(r"(-?\d+(?:\.\d+)?)\s*%", text):
+        values.append(_normalize_rate_decimal(match.group(1) + "%"))
+    return tuple(values)
+
+
+def _extract_range_accrual_coupon_definition(text: str, term_sheet) -> Mapping[str, object]:
+    """Extract the coupon definition for a range-accrual request."""
+    parameters = getattr(term_sheet, "parameters", {}) or {}
+    coupon_rate = parameters.get("coupon_rate")
+    if coupon_rate is None:
+        coupon_rate = parameters.get("coupon")
+    if coupon_rate is None:
+        coupon_rate = parameters.get("fixed_coupon")
+    if coupon_rate is None:
+        percentages = _extract_percentages(text)
+        if percentages:
+            coupon_rate = percentages[0]
+    if coupon_rate is None:
+        return {}
+    return {
+        "coupon_rate": _normalize_rate_decimal(coupon_rate),
+        "coupon_style": str(parameters.get("coupon_style", "fixed_rate_if_in_range")).strip()
+        or "fixed_rate_if_in_range",
+    }
+
+
+def _extract_range_accrual_range_condition(text: str, term_sheet) -> Mapping[str, object]:
+    """Extract the accrual range bounds for a range-accrual request."""
+    parameters = getattr(term_sheet, "parameters", {}) or {}
+    lower_bound = parameters.get("lower_bound", parameters.get("lower_barrier"))
+    upper_bound = parameters.get("upper_bound", parameters.get("upper_barrier"))
+    if lower_bound is None or upper_bound is None:
+        match = re.search(
+            r"\bbetween\s+(-?\d+(?:\.\d+)?)\s*%\s+and\s+(-?\d+(?:\.\d+)?)\s*%",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if match is not None:
+            lower_bound = match.group(1) + "%"
+            upper_bound = match.group(2) + "%"
+    if lower_bound is None or upper_bound is None:
+        percentages = _extract_percentages(text)
+        if len(percentages) >= 3:
+            lower_bound = percentages[1]
+            upper_bound = percentages[2]
+    if lower_bound is None or upper_bound is None:
+        return {}
+    return {
+        "lower_bound": _normalize_rate_decimal(lower_bound),
+        "upper_bound": _normalize_rate_decimal(upper_bound),
+        "inclusive_lower": bool(parameters.get("inclusive_lower", True)),
+        "inclusive_upper": bool(parameters.get("inclusive_upper", True)),
+    }
+
+
+def _extract_range_accrual_callability(text: str, term_sheet) -> Mapping[str, object]:
+    """Extract optional callability hooks attached to the trade-entry payload."""
+    parameters = getattr(term_sheet, "parameters", {}) or {}
+    call_schedule = ()
+    for key in ("call_schedule", "call_dates", "issuer_call_dates"):
+        value = parameters.get(key)
+        if value:
+            call_schedule = (
+                _parse_name_list(value)
+                if isinstance(value, str)
+                else _normalize_schedule(value)
+            )
+            break
+    if not call_schedule:
+        return {}
+    return {
+        "call_schedule": call_schedule,
+        "call_style": str(parameters.get("call_style", "issuer_callable")).strip()
+        or "issuer_callable",
+    }
+
+
+def _normalize_rate_decimal(value) -> float:
+    """Normalize user-facing percentages and decimal rates onto a decimal rate."""
+    if isinstance(value, (int, float)):
+        number = float(value)
+        return number / 100.0 if abs(number) > 1.0 else number
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError("Rate value cannot be empty.")
+    is_percent = text.endswith("%")
+    if is_percent:
+        text = text[:-1].strip()
+    number = float(text)
+    if is_percent or abs(number) > 1.0:
+        return number / 100.0
+    return number
+
+
+def _normalize_coupon_definition(payload: Mapping[str, object] | None) -> MappingProxyType:
+    """Normalize the range-accrual coupon definition onto a stable mapping."""
+    payload = dict(payload or {})
+    coupon_rate = payload.get("coupon_rate")
+    if coupon_rate is None:
+        raise ValueError("Range accrual contract requires coupon_definition.coupon_rate.")
+    return _freeze_mapping(
+        {
+            "coupon_rate": _normalize_rate_decimal(coupon_rate),
+            "coupon_style": str(payload.get("coupon_style", "fixed_rate_if_in_range")).strip()
+            or "fixed_rate_if_in_range",
+        }
+    )
+
+
+def _normalize_range_condition(payload: Mapping[str, object] | None) -> MappingProxyType:
+    """Normalize the range-accrual barrier/range condition."""
+    payload = dict(payload or {})
+    lower_bound = payload.get("lower_bound")
+    upper_bound = payload.get("upper_bound")
+    if lower_bound is None or upper_bound is None:
+        raise ValueError("Range accrual contract requires lower_bound and upper_bound.")
+    return _freeze_mapping(
+        {
+            "lower_bound": _normalize_rate_decimal(lower_bound),
+            "upper_bound": _normalize_rate_decimal(upper_bound),
+            "inclusive_lower": bool(payload.get("inclusive_lower", True)),
+            "inclusive_upper": bool(payload.get("inclusive_upper", True)),
+        }
+    )
+
+
+def _default_range_accrual_settlement_profile() -> Mapping[str, object]:
+    """Return the canonical settlement profile for the initial range-accrual slice."""
+    return {
+        "coupon_settlement": "coupon_period_cash_settlement",
+        "principal_settlement": "principal_at_maturity",
+    }
+
+
+def _normalize_settlement_profile(payload: Mapping[str, object] | None) -> MappingProxyType:
+    """Normalize the settlement profile for the range-accrual contract."""
+    payload = dict(_default_range_accrual_settlement_profile() if payload is None else payload)
+    return _freeze_mapping(
+        {
+            "coupon_settlement": str(
+                payload.get("coupon_settlement", "coupon_period_cash_settlement")
+            ).strip()
+            or "coupon_period_cash_settlement",
+            "principal_settlement": str(
+                payload.get("principal_settlement", "principal_at_maturity")
+            ).strip()
+            or "principal_at_maturity",
+        }
+    )
+
+
+def _normalize_callability(payload: Mapping[str, object] | None) -> MappingProxyType:
+    """Normalize optional callability hooks without promoting the trade to a callable slice."""
+    payload = dict(payload or {})
+    call_schedule = payload.get("call_schedule") or ()
+    normalized_schedule = (
+        _parse_name_list(call_schedule)
+        if isinstance(call_schedule, str)
+        else _normalize_schedule(call_schedule)
+    )
+    if not normalized_schedule:
+        return MappingProxyType({})
+    return _freeze_mapping(
+        {
+            "call_schedule": normalized_schedule,
+            "call_style": str(payload.get("call_style", "issuer_callable")).strip()
+            or "issuer_callable",
+        }
+    )
+
+
 def _looks_like_quanto_option_request(text: str, instrument_type: str | None) -> bool:
     """Return whether the request appears to describe a quanto option."""
     lower = text.lower()
@@ -2582,6 +3016,31 @@ def _looks_like_callable_bond_request(text: str, instrument_type: str | None) ->
             "call schedule",
             "call dates",
             "callable debt",
+        )
+    )
+
+
+def _looks_like_range_accrual_request(text: str, instrument_type: str | None) -> bool:
+    """Return whether the request appears to describe the initial range-accrual slice."""
+    lower = text.lower()
+    normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
+    if normalized_instrument in {
+        "range_accrual",
+        "range_accrual_note",
+        "range_note",
+        "callable_range_note",
+        "callable_range_accrual",
+    }:
+        return True
+    return any(
+        cue in lower
+        for cue in (
+            "range accrual",
+            "range note",
+            "coupon accrues if",
+            "coupon accrues when",
+            "accrues when",
+            "accrues if",
         )
     )
 
@@ -2695,6 +3154,43 @@ def _draft_shape_contract(
             description=description,
             underliers=underliers,
             observation_schedule=observation_schedule,
+        )
+
+    if _looks_like_range_accrual_request(text, instrument_type):
+        reference_index = _extract_reference_index(text, term_sheet)
+        observation_schedule = _split_supported_dates(
+            text,
+            term_sheet,
+            parameter_keys=(
+                "observation_schedule",
+                "observation_dates",
+                "fixing_schedule",
+                "fixing_dates",
+            ),
+        )
+        coupon_definition = _extract_range_accrual_coupon_definition(text, term_sheet)
+        range_condition = _extract_range_accrual_range_condition(text, term_sheet)
+        callability = _extract_range_accrual_callability(text, term_sheet)
+        missing_fields: list[str] = []
+        if not reference_index:
+            missing_fields.append("reference_index")
+        if not coupon_definition:
+            missing_fields.append("coupon_definition")
+        if not range_condition:
+            missing_fields.append("range_condition")
+        if not observation_schedule:
+            missing_fields.append("observation_schedule")
+        if missing_fields:
+            joined = ", ".join(missing_fields)
+            raise ValueError(f"Semantic range accrual request requires {joined}.")
+        return make_range_accrual_contract(
+            description=description,
+            reference_index=reference_index,
+            observation_schedule=observation_schedule,
+            coupon_definition=coupon_definition,
+            range_condition=range_condition,
+            settlement_profile=_default_range_accrual_settlement_profile(),
+            callability=callability,
         )
 
     if _looks_like_callable_bond_request(text, instrument_type):

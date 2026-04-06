@@ -104,5 +104,6 @@ def test_build_reliability_benchmark_report_and_render(tmp_path):
     assert artifacts.json_path.exists()
     assert artifacts.text_path.exists()
     saved = artifacts.report
-    assert saved["json_path"] == str(artifacts.json_path)
-    assert saved["text_path"] == str(artifacts.text_path)
+    assert "json_path" not in saved
+    assert "text_path" not in saved
+    assert str(tmp_path) not in artifacts.json_path.read_text()

@@ -156,6 +156,40 @@ def test_longstaff_schwartz_fast_estimator_matches_generic_estimator():
     assert fast.price_lower == pytest.approx(generic.price_lower, rel=1e-10, abs=1e-10)
 
 
+def test_early_exercise_policies_treat_maturity_as_an_implicit_exercise_date():
+    from trellis.models.monte_carlo.lsm import longstaff_schwartz_result
+    from trellis.models.monte_carlo.primal_dual import primal_dual_mc_result
+    from trellis.models.monte_carlo.stochastic_mesh import stochastic_mesh_result
+    from trellis.models.monte_carlo.tv_regression import tsitsiklis_van_roy_result
+
+    paths = raw_np.array(
+        [
+            [1.0, 0.9, 0.8],
+            [1.0, 1.0, 1.2],
+            [1.0, 1.1, 1.3],
+        ]
+    )
+
+    def call_payoff(S):
+        return raw_np.maximum(S - 1.0, 0.0)
+
+    for result_fn in (
+        longstaff_schwartz_result,
+        primal_dual_mc_result,
+        stochastic_mesh_result,
+        tsitsiklis_van_roy_result,
+    ):
+        implicit = result_fn(paths, [1], call_payoff, 0.0, 0.5)
+        explicit = result_fn(paths, [1, 2], call_payoff, 0.0, 0.5)
+
+        assert implicit.price_lower == pytest.approx(explicit.price_lower, rel=1e-12, abs=1e-12)
+        assert implicit.diagnostics is not None
+        assert explicit.diagnostics is not None
+        assert implicit.diagnostics.exercise_dates_count == explicit.diagnostics.exercise_dates_count
+        if implicit.price_upper is not None or explicit.price_upper is not None:
+            assert implicit.price_upper == pytest.approx(explicit.price_upper, rel=1e-12, abs=1e-12)
+
+
 def test_primal_dual_mc_result_returns_ordered_bounds():
     from trellis.models.monte_carlo.early_exercise import EarlyExercisePolicyResult
     from trellis.models.monte_carlo.primal_dual import primal_dual_mc, primal_dual_mc_result

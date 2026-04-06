@@ -67,5 +67,4 @@ class CallableBondPayoff:
             market_state,
             spec,
             model="hull_white",
-            mean_reversion=0.1,
         )

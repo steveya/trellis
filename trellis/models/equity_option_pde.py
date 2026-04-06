@@ -89,10 +89,6 @@ def resolve_vanilla_equity_pde_inputs(
     settlement = market_state.settlement or market_state.as_of
     if settlement is None:
         raise ValueError("market_state must provide settlement or as_of for PDE pricing")
-    if market_state.discount is None:
-        raise ValueError("equity PDE pricing requires market_state.discount")
-    if market_state.vol_surface is None:
-        raise ValueError("equity PDE pricing requires market_state.vol_surface")
 
     day_count = getattr(spec, "day_count", DayCountConvention.ACT_365)
     maturity = float(year_fraction(settlement, spec.expiry_date, day_count))
@@ -108,6 +104,10 @@ def resolve_vanilla_equity_pde_inputs(
         rate = 0.0
         sigma = 0.0
     else:
+        if market_state.discount is None:
+            raise ValueError("equity PDE pricing requires market_state.discount")
+        if market_state.vol_surface is None:
+            raise ValueError("equity PDE pricing requires market_state.vol_surface")
         df = float(market_state.discount.discount(maturity))
         if df <= 0.0:
             raise ValueError(f"Invalid discount factor at T={maturity}: {df}")

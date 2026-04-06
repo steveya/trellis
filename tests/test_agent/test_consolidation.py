@@ -131,6 +131,35 @@ class TestAssessConsolidationNeeds:
         assert 2 in tiers
         assert any("trace_bloat" in r for r in reasons)
 
+    def test_trace_bloat_counts_platform_event_sidecars(self, tmp_path):
+        """Tier 2 should see the sidecar logs that the current platform runtime emits."""
+        entries = tmp_path / "lessons" / "entries"
+        entries.mkdir(parents=True)
+        traces = tmp_path / "traces"
+        traces.mkdir()
+        platform = traces / "platform"
+        platform.mkdir()
+
+        _write_lesson(entries, "n001", "promoted")
+
+        for i in range(_TRACE_BLOAT_COUNT + 10):
+            request_id = f"request_{i:04d}"
+            (platform / f"{request_id}.yaml").write_text("request_id: demo\nstatus: succeeded\n")
+            (platform / f"{request_id}.events.ndjson").write_text(
+                '{"event":"request_succeeded","status":"ok","timestamp":"2026-04-05T00:00:00+00:00","details":{}}\n'
+            )
+
+        import trellis.agent.knowledge.autonomous as mod
+        original_file = mod.__file__
+        try:
+            mod.__file__ = str(tmp_path / "autonomous.py")
+            tiers, reasons = _assess_consolidation_needs()
+        finally:
+            mod.__file__ = original_file
+
+        assert 2 in tiers
+        assert any("platform event logs" in r for r in reasons)
+
     def test_supersedes_gap_triggers_tier3(self, tmp_path):
         """When many promoted lessons lack supersedes scan, tier 3 triggers."""
         entries = tmp_path / "lessons" / "entries"

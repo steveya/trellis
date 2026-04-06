@@ -17,6 +17,11 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CASSETTES_DIR = REPO_ROOT / "cassettes"
+_GLOBAL_WORKFLOW_TEST_PATHS = {
+    "tests/test_session.py",
+    "tests/test_pipeline.py",
+    "tests/test_contracts/test_pipeline_contracts.py",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -27,6 +32,26 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "tier2: Tier 2 contract tests (cassette replay, no tokens)")
     config.addinivalue_line("markers", "tier3: Tier 3 canary tests (live LLM, expensive)")
     config.addinivalue_line("markers", "integration: Full integration tests requiring live LLM")
+    config.addinivalue_line("markers", "crossval: Cross-validation tests against independent libraries or engines")
+    config.addinivalue_line("markers", "verification: Numerical or analytical verification tests against trusted references")
+    config.addinivalue_line("markers", "global_workflow: End-to-end or user-facing workflow tests spanning multiple modules")
+    config.addinivalue_line("markers", "legacy_compat: Compatibility tests that defend deprecated or legacy-only behavior")
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Auto-tag the major test strata so they stay filterable as the suite grows."""
+    for item in items:
+        try:
+            rel_path = Path(str(item.fspath)).resolve().relative_to(REPO_ROOT).as_posix()
+        except ValueError:
+            continue
+
+        if rel_path.startswith("tests/test_crossval/"):
+            item.add_marker(pytest.mark.crossval)
+        if rel_path.startswith("tests/test_verification/"):
+            item.add_marker(pytest.mark.verification)
+        if rel_path in _GLOBAL_WORKFLOW_TEST_PATHS:
+            item.add_marker(pytest.mark.global_workflow)
 
 
 # ---------------------------------------------------------------------------

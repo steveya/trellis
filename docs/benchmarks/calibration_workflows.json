@@ -1,0 +1,248 @@
+{
+  "benchmark_name": "supported_calibration_workflows",
+  "cases": [
+    {
+      "cold": {
+        "calibrations_per_second": 0.361,
+        "label": "swaption_strip",
+        "max_seconds": 2.788102,
+        "mean_seconds": 2.770749,
+        "median_seconds": 2.764522,
+        "metadata": {
+          "instrument_count": 2,
+          "warm_start": true
+        },
+        "min_seconds": 2.759624,
+        "mode": "cold",
+        "notes": [
+          "least_squares",
+          "tree_pricing"
+        ],
+        "repeats": 3,
+        "run_seconds": [
+          2.788102,
+          2.764522,
+          2.759624
+        ],
+        "warmups": 1
+      },
+      "label": "swaption_strip",
+      "metadata": {
+        "instrument_count": 2,
+        "warm_start": true
+      },
+      "notes": [
+        "least_squares",
+        "tree_pricing"
+      ],
+      "warm": {
+        "calibrations_per_second": 3.332,
+        "label": "swaption_strip",
+        "max_seconds": 0.30112,
+        "mean_seconds": 0.300092,
+        "median_seconds": 0.300042,
+        "metadata": {
+          "instrument_count": 2,
+          "warm_start": true
+        },
+        "min_seconds": 0.299114,
+        "mode": "warm",
+        "notes": [
+          "least_squares",
+          "tree_pricing"
+        ],
+        "repeats": 3,
+        "run_seconds": [
+          0.30112,
+          0.300042,
+          0.299114
+        ],
+        "warmups": 1
+      },
+      "warm_speedup": 9.233,
+      "workflow": "hull_white"
+    },
+    {
+      "cold": {
+        "calibrations_per_second": 33.587,
+        "label": "single_smile",
+        "max_seconds": 0.030741,
+        "mean_seconds": 0.029773,
+        "median_seconds": 0.029448,
+        "metadata": {
+          "point_count": 7,
+          "warm_start": true
+        },
+        "min_seconds": 0.02913,
+        "mode": "cold",
+        "notes": [
+          "least_squares",
+          "implied_vol_fit"
+        ],
+        "repeats": 3,
+        "run_seconds": [
+          0.030741,
+          0.02913,
+          0.029448
+        ],
+        "warmups": 1
+      },
+      "label": "single_smile",
+      "metadata": {
+        "point_count": 7,
+        "warm_start": true
+      },
+      "notes": [
+        "least_squares",
+        "implied_vol_fit"
+      ],
+      "warm": {
+        "calibrations_per_second": 328.261,
+        "label": "single_smile",
+        "max_seconds": 0.003147,
+        "mean_seconds": 0.003046,
+        "median_seconds": 0.003021,
+        "metadata": {
+          "point_count": 7,
+          "warm_start": true
+        },
+        "min_seconds": 0.002972,
+        "mode": "warm",
+        "notes": [
+          "least_squares",
+          "implied_vol_fit"
+        ],
+        "repeats": 3,
+        "run_seconds": [
+          0.002972,
+          0.003147,
+          0.003021
+        ],
+        "warmups": 1
+      },
+      "warm_speedup": 9.773,
+      "workflow": "sabr"
+    },
+    {
+      "cold": {
+        "calibrations_per_second": 4.29,
+        "label": "single_smile",
+        "max_seconds": 0.233535,
+        "mean_seconds": 0.233085,
+        "median_seconds": 0.233359,
+        "metadata": {
+          "point_count": 5,
+          "warm_start": true
+        },
+        "min_seconds": 0.23236,
+        "mode": "cold",
+        "notes": [
+          "least_squares",
+          "fft_pricing"
+        ],
+        "repeats": 3,
+        "run_seconds": [
+          0.233535,
+          0.233359,
+          0.23236
+        ],
+        "warmups": 1
+      },
+      "label": "single_smile",
+      "metadata": {
+        "point_count": 5,
+        "warm_start": true
+      },
+      "notes": [
+        "least_squares",
+        "fft_pricing"
+      ],
+      "warm": {
+        "calibrations_per_second": 35.153,
+        "label": "single_smile",
+        "max_seconds": 0.028959,
+        "mean_seconds": 0.028447,
+        "median_seconds": 0.028239,
+        "metadata": {
+          "point_count": 5,
+          "warm_start": true
+        },
+        "min_seconds": 0.028144,
+        "mode": "warm",
+        "notes": [
+          "least_squares",
+          "fft_pricing"
+        ],
+        "repeats": 3,
+        "run_seconds": [
+          0.028239,
+          0.028144,
+          0.028959
+        ],
+        "warmups": 1
+      },
+      "warm_speedup": 8.194,
+      "workflow": "heston"
+    },
+    {
+      "cold": {
+        "calibrations_per_second": 179.031,
+        "label": "dupire_surface",
+        "max_seconds": 0.005645,
+        "mean_seconds": 0.005586,
+        "median_seconds": 0.005617,
+        "metadata": {
+          "grid_shape": [
+            15,
+            30
+          ],
+          "warm_start": false
+        },
+        "min_seconds": 0.005495,
+        "mode": "cold",
+        "notes": [
+          "dupire",
+          "workflow_surface"
+        ],
+        "repeats": 3,
+        "run_seconds": [
+          0.005645,
+          0.005617,
+          0.005495
+        ],
+        "warmups": 1
+      },
+      "label": "dupire_surface",
+      "metadata": {
+        "grid_shape": [
+          15,
+          30
+        ],
+        "warm_start": false
+      },
+      "notes": [
+        "dupire",
+        "workflow_surface"
+      ],
+      "warm": null,
+      "warm_speedup": null,
+      "workflow": "local_vol"
+    }
+  ],
+  "created_at": "2026-04-05T00:19:22Z",
+  "environment": {
+    "platform": "macOS-26.3.1-arm64-arm-64bit",
+    "python_version": "3.10.6"
+  },
+  "notes": [
+    "Cold-start and warm-start runs share the same synthetic benchmark fixtures.",
+    "Warm-start baselines use workflow-native seed hooks where the workflow supports them."
+  ],
+  "summary": {
+    "average_warm_speedup": 9.067,
+    "cold_mean_seconds": 0.759798,
+    "warm_mean_seconds": 0.110528,
+    "warm_start_workflow_count": 3,
+    "workflow_count": 4
+  }
+}

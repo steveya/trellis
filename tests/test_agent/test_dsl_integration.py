@@ -239,6 +239,46 @@ class TestQuantoOptionPipeline:
         )
 
 
+class TestRangeAccrualPipeline:
+    """Range accrual: semantic contract without a checked route family."""
+
+    def test_compiler_keeps_range_accrual_on_semantic_modules_without_guessing_vanilla_route(self):
+        from trellis.agent.semantic_contracts import draft_semantic_contract
+        from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+        contract = draft_semantic_contract(
+            (
+                "Range accrual note on SOFR paying 5.25% when SOFR stays between 1.50% "
+                "and 3.25% on 2026-01-15, 2026-04-15, 2026-07-15, and 2026-10-15."
+            ),
+            instrument_type="range_accrual",
+        )
+        report = validate_semantic_contract(contract)
+        assert report.ok, report.errors
+
+        bp = _compile(contract, requested_measures=["price"])
+
+        assert bp.semantic_id == "range_accrual"
+        assert bp.preferred_method == "analytical"
+        assert bp.required_market_data == (
+            "discount_curve",
+            "forward_curve",
+            "fixing_history",
+        )
+        assert bp.target_modules == (
+            "trellis.models.range_accrual",
+            "trellis.models.contingent_cashflows",
+        )
+        assert bp.route_modules == bp.target_modules
+        assert bp.primitive_routes == ()
+        assert bp.dsl_lowering is not None
+        assert bp.dsl_lowering.route_id is None
+        assert any(
+            error.code == "missing_primitive_routes"
+            for error in bp.dsl_lowering.errors
+        )
+
+
 class TestSwaptionPipeline:
     """Rate swaption: rate_tree/analytical route."""
 

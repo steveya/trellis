@@ -5,6 +5,21 @@ from __future__ import annotations
 from typing import Any
 
 
+class RiskMeasureOutput(dict):
+    """Dictionary-like risk output with attached methodology metadata."""
+
+    def __init__(self, values=None, *, metadata: dict[str, Any] | None = None):
+        super().__init__(values or {})
+        self.metadata = dict(metadata or {})
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return a JSON-friendly payload with values and metadata."""
+        return {
+            "values": dict(self),
+            "metadata": dict(self.metadata),
+        }
+
+
 class AnalyticsResult:
     """Container for computed analytics measures.
 
@@ -136,14 +151,21 @@ class BookAnalyticsResult:
         tmv = self.total_mv
         if tmv == 0:
             return {}
-        agg: dict[float, float] = {}
+        agg: dict[object, float] = {}
+        metadata = None
         for name, r in self._positions.items():
             if "key_rate_durations" not in r:
                 continue
             mv = r.get("price", 0) * self._notionals.get(name, 1.0)
             weight = mv / tmv if tmv else 0
-            for tenor, krd in r["key_rate_durations"].items():
+            krd_surface = r["key_rate_durations"]
+            if isinstance(krd_surface, RiskMeasureOutput) and metadata is None:
+                metadata = dict(krd_surface.metadata)
+                metadata["aggregation"] = "market_value_weighted_book"
+            for tenor, krd in krd_surface.items():
                 agg[tenor] = agg.get(tenor, 0.0) + krd * weight
+        if metadata is not None:
+            return RiskMeasureOutput(agg, metadata=metadata)
         return agg
 
     def to_dict(self) -> dict:

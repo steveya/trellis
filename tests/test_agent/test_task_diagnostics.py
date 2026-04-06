@@ -414,3 +414,29 @@ def test_build_task_diagnosis_packet_detects_comparator_build_failure(tmp_path):
     assert packet["outcome"]["next_action"].startswith(
         "Repair the failing comparator route or scaffold"
     )
+
+
+def test_build_task_diagnosis_packet_keeps_platform_action_out_of_route_ids(tmp_path):
+    from trellis.agent.task_diagnostics import build_task_diagnosis_packet
+
+    record = _sample_record(tmp_path)
+    record.pop("telemetry", None)
+    trace = record["trace_summaries"][0]
+    trace["action"] = "build_then_price"
+    trace["route_method"] = "analytical"
+    trace["route_binding_authority"] = {}
+    trace["route_health"] = {
+        "route_id": "",
+        "route_family": "analytical",
+        "trace_status": "failed",
+        "effective_instruction_ids": [],
+        "effective_instruction_count": 0,
+        "hard_constraint_count": 0,
+        "conflict_count": 0,
+        "canary_task_ids": [],
+    }
+
+    packet = build_task_diagnosis_packet(record)
+
+    assert packet["telemetry"]["route_observations"][0]["route_id"] == ""
+    assert packet["telemetry"]["route_observations"][0]["route_family"] == "analytical"

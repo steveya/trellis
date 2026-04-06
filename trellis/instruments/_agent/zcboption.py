@@ -91,7 +91,8 @@ Implementation target: jamshidian."""
             raise ValueError("market_state.vol_surface is required for ZCB option pricing")
 
         # Touch the requested market volatility surface per routing contract.
-        expiry_t = year_fraction(market_state.as_of, spec.expiry_date, spec.day_count)
+        valuation_date = market_state.settlement or market_state.as_of
+        expiry_t = year_fraction(valuation_date, spec.expiry_date, spec.day_count)
         _ = market_state.vol_surface.black_vol(expiry_t, strike)
 
         # Jamshidian analytical route helper.

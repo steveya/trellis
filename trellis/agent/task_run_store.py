@@ -387,7 +387,6 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
         "route_id": str(
             route_binding_authority.get("route_id")
             or semantic_blueprint.get("dsl_route")
-            or data.get("action")
             or ""
         ).strip(),
         "route_family": str(
@@ -1152,17 +1151,18 @@ def _route_observations(
         route_health = dict(trace.get("route_health") or {})
         metadata = dict(trace.get("request_metadata") or {})
         semantic_blueprint = dict(metadata.get("semantic_blueprint") or {})
+        trace_kind = str(trace.get("trace_kind") or "").strip()
         route_id = (
             str(route_health.get("route_id") or "").strip()
-            or str(trace.get("action") or "").strip()
             or str(semantic_blueprint.get("dsl_route") or "").strip()
         )
+        if not route_id and trace_kind != "platform":
+            route_id = str(trace.get("action") or "").strip()
         route_family = (
             str(route_health.get("route_family") or "").strip()
             or str(trace.get("route_method") or "").strip()
             or str(semantic_blueprint.get("dsl_route_family") or "").strip()
         )
-        trace_kind = str(trace.get("trace_kind") or "").strip()
         if not route_id and not route_family:
             continue
         key = (route_id, route_family, trace_kind)

@@ -15,6 +15,7 @@ Structure:
 import numpy as raw_np
 import pytest
 from scipy.stats import norm
+from tests.lattice_builders import build_equity_lattice
 
 
 # ---------------------------------------------------------------------------
@@ -444,15 +445,15 @@ class TestLSMBasis:
     def test_laguerre_beats_polynomial_at_high_vol(self):
         """Laguerre basis should be more accurate than polynomial at high vol.
 
-        At high vol, the polynomial basis overprices (see experience.py).
+        At high vol, the polynomial basis overprices (see the canonical lessons).
         Use a high-step tree as ground truth.
         """
         from trellis.models.monte_carlo.schemes import PolynomialBasis, LaguerreBasis
-        from trellis.models.trees.lattice import build_spot_lattice, lattice_backward_induction
+        from trellis.models.trees.lattice import lattice_backward_induction
 
         vol_high = 0.40
         # Ground truth: 2000-step tree
-        lattice = build_spot_lattice(S0, r, vol_high, T, 2000)
+        lattice = build_equity_lattice(S0, r, vol_high, T, 2000)
 
         def payoff(s, n, l):
             return max(K - l.get_state(s, n), 0)

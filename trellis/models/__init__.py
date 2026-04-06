@@ -12,6 +12,12 @@ from trellis.models.black import (
     garman_kohlhagen_put,
 )
 from trellis.models.vol_surface import FlatVol, GridVolSurface, VolSurface
+from trellis.models.vol_surface_shocks import (
+    VolSurfaceShockBucket,
+    VolSurfaceShockSurface,
+    VolSurfaceShockWarning,
+    build_vol_surface_shock_surface,
+)
 
 from . import (
     analytical,
@@ -30,6 +36,7 @@ from . import (
     rate_style_swaption,
     transforms,
     trees,
+    vol_surface_shocks,
     zcb_option,
     zcb_option_tree,
 )
@@ -42,6 +49,10 @@ __all__ = [
     "FlatVol",
     "GridVolSurface",
     "VolSurface",
+    "VolSurfaceShockBucket",
+    "VolSurfaceShockSurface",
+    "VolSurfaceShockWarning",
+    "build_vol_surface_shock_surface",
     "analytical",
     "bermudan_swaption_tree",
     "trees",
@@ -58,6 +69,7 @@ __all__ = [
     "credit_default_swap",
     "equity_option_pde",
     "equity_option_tree",
+    "vol_surface_shocks",
     "zcb_option",
     "zcb_option_tree",
 ]

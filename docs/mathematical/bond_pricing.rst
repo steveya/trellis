@@ -41,7 +41,33 @@ where :math:`AI` is the accrued interest:
 
 .. math::
 
-   AI = \frac{C}{f} \cdot \frac{\text{days since last coupon}}{\text{days in coupon period}}
+   AI = \frac{C}{f} \cdot \frac{\alpha(t_{\text{last}}, t_{\text{settle}})}{\alpha(t_{\text{last}}, t_{\text{next}})}
+
+where :math:`\alpha(\cdot, \cdot)` is the selected bond day-count fraction,
+evaluated over both the elapsed accrual stub and the full coupon period. In
+Trellis this is computed from the explicit coupon schedule, so regular and
+short/long periods use the same convention-aware fractioning as the rest of
+the dated cashflow machinery.
+
+Yield To Maturity
+~~~~~~~~~~~~~~~~~
+
+Trellis reports ``ytm`` as a nominal annual yield compounded at the bond coupon
+frequency. It is solved from the dirty price by finding :math:`y` such that:
+
+.. math::
+
+   P_{\text{dirty}} = \sum_{i=1}^{n} \frac{CF_i}{\left(1 + y / f\right)^{f t_i}}
+
+where :math:`CF_i` are the remaining coupon/principal cashflows and
+:math:`t_i` are the settlement-to-payment year fractions under the bond day
+count. This keeps the reported ``ytm`` aligned with standard street-style
+nominal bond yields even though the underlying curve object may use continuous
+zero rates internally.
+
+Current reporting intentionally stops short of full settlement-convention
+coverage: ex-coupon windows, settlement lags, and other market-specific clean
+price adjustments are not modeled in this surface yet.
 
 Interest Rate Sensitivity (Greeks)
 ----------------------------------
@@ -120,6 +146,21 @@ approximates the total modified duration:
 .. math::
 
    D_{\text{mod}} \approx \sum_i \text{KRD}_i
+
+The runtime KRD measure now evaluates these sensitivities on the user-requested
+bucket grid itself. Trellis first re-expresses the base zero curve on that
+piecewise-linear tenor grid, then applies symmetric bucket bumps there. That
+preserves interpolation-aware off-grid buckets such as ``7Y`` on a base curve
+whose original knots might only include ``5Y`` and ``10Y``. The shared
+curve-shock substrate still reports explicit warnings when a requested bucket
+sits outside curve support or spans an unusually wide interpolation interval.
+
+For bootstrap-backed discount curves, Trellis also supports a rebuild-based
+variant. Instead of shocking the final zero-rate nodes directly, it bumps the
+quoted calibration instruments, rebuilds the zero curve, and then reprices on
+that rebuilt surface. The runtime result discloses which methodology ran
+through attached metadata so review tools can distinguish zero-curve KRD from
+quote-space rebuild KRD.
 
 Implementation
 --------------

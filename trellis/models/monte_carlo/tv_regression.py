@@ -8,6 +8,7 @@ from trellis.models.monte_carlo.early_exercise import (
     EarlyExerciseDiagnostics,
     EarlyExercisePolicyResult,
     default_continuation_estimator,
+    normalize_exercise_steps,
     polynomial_basis,
 )
 
@@ -38,7 +39,8 @@ def tsitsiklis_van_roy_result(
             basis_fn=basis_fn or polynomial_basis
         )
 
-    exercise_set = {int(step) for step in exercise_dates if 0 < int(step) <= n_steps}
+    effective_exercise_steps = normalize_exercise_steps(exercise_dates, n_steps)
+    exercise_set = set(effective_exercise_steps)
     values = payoff_fn(paths[:, -1]).astype(float)
     exercise_time = raw_np.full(n_paths, n_steps, dtype=int)
     regression_failures = 0
@@ -59,7 +61,7 @@ def tsitsiklis_van_roy_result(
     price = float(raw_np.mean(values * discount_powers[next_step]))
     diagnostics = EarlyExerciseDiagnostics(
         policy_class="tsitsiklis_van_roy",
-        exercise_dates_count=len(exercise_set),
+        exercise_dates_count=len(effective_exercise_steps),
         exercised_paths_fraction=float(raw_np.mean(exercise_time < n_steps)),
         regression_failures=regression_failures,
         estimator_name=getattr(continuation_estimator, "name", None),

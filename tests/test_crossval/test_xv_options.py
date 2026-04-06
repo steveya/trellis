@@ -5,6 +5,9 @@ from datetime import date
 import numpy as raw_np
 import pytest
 
+pytest.importorskip("QuantLib")
+pytest.importorskip("financepy")
+
 # --- Trellis ---
 from trellis.models.black import black76_call, black76_put
 from trellis.models.trees.binomial import BinomialTree

@@ -308,6 +308,43 @@ def test_platform_trace_persists_dsl_family_ir_summary(tmp_path):
     assert "schedule_builder_symbol: build_cds_schedule" in raw
 
 
+def test_platform_trace_keeps_route_less_semantic_requests_truthful(tmp_path):
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.platform_traces import (
+        load_platform_trace_boundary,
+        load_platform_traces,
+        record_platform_trace,
+    )
+
+    compiled = compile_build_request(
+        (
+            "Range accrual note on SOFR paying 5.25% when SOFR stays between 1.50% "
+            "and 3.25% on 2026-01-15, 2026-04-15, 2026-07-15, and 2026-10-15."
+        ),
+        instrument_type="range_accrual",
+    )
+
+    trace_path = record_platform_trace(
+        compiled,
+        success=False,
+        outcome="request_blocked",
+        root=tmp_path,
+    )
+    boundary = load_platform_trace_boundary(trace_path)
+    traces = load_platform_traces(root=tmp_path)
+
+    assert len(traces) == 1
+    trace = traces[0]
+    assert trace.route_method == "analytical"
+    assert trace.generation_boundary["method"] == "analytical"
+    assert trace.generation_boundary["lowering"]["route_id"] is None
+    assert boundary["generation_boundary"]["lowering"]["route_id"] is None
+    assert trace.generation_boundary["lowering"]["route_family"] is None
+    assert trace.generation_boundary["primitive_plan"] == {}
+    assert trace.generation_boundary["route_binding_authority"] == {}
+    assert trace.validation_contract["route_id"] is None
+
+
 @pytest.mark.parametrize(
     (
         "description",

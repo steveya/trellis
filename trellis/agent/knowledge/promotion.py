@@ -45,6 +45,38 @@ _ADAPTER_LIFECYCLE_STATUS_ORDER = {
 
 logger = logging.getLogger(__name__)
 
+_LESSON_TEXT_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "can",
+    "do",
+    "for",
+    "if",
+    "in",
+    "is",
+    "it",
+    "not",
+    "of",
+    "on",
+    "or",
+    "so",
+    "that",
+    "the",
+    "their",
+    "there",
+    "this",
+    "to",
+    "was",
+    "when",
+    "with",
+}
+
 
 @dataclass(frozen=True)
 class LessonContractReport:
@@ -510,10 +542,25 @@ def capture_lesson(
 
     # Gate 1: deduplication
     normalized_title = str(lesson_report.normalized_payload.get("title") or "").strip()
+    normalized_context = _lesson_context_key(lesson_report.normalized_payload)
+    normalized_signature = _lesson_signature_text(lesson_report.normalized_payload)
     for entry in entries:
         if entry["title"] == normalized_title:
             return None
         if _word_overlap(entry["title"], normalized_title) > 0.8:
+            return None
+        if _lesson_context_key(entry) != normalized_context:
+            continue
+        existing_entry = _load_lesson_entry(str(entry.get("id") or "").strip())
+        if not existing_entry:
+            continue
+        if (
+            _semantic_text_overlap(
+                normalized_signature,
+                _lesson_signature_text(existing_entry),
+            )
+            >= 0.30
+        ):
             return None
 
     lesson_id = _generate_id(
@@ -744,8 +791,10 @@ def compact_traces(older_than_days: int = 30) -> dict[str, int]:
     """Compact cold-tier traces older than *older_than_days*.
 
     Groups trace files by (instrument, method) cohort, writes a summary
-    YAML per cohort under ``traces/summaries/``, and removes the original
-    files.  Returns ``{cohorts_summarized, traces_compacted, traces_kept}``.
+    YAML per cohort under ``traces/summaries/``, removes the original
+    legacy flat trace files, and inlines old platform event sidecars back
+    into their summary YAML. Returns
+    ``{cohorts_summarized, traces_compacted, traces_kept}``.
     """
     from collections import defaultdict
 
@@ -820,11 +869,94 @@ def compact_traces(older_than_days: int = 30) -> dict[str, int]:
             path.unlink(missing_ok=True)
             compacted += 1
 
+    platform_compacted, platform_kept = _compact_platform_trace_sidecars(
+        older_than_days=older_than_days,
+        cutoff=cutoff,
+    )
+
     return {
         "cohorts_summarized": len(cohorts),
-        "traces_compacted": compacted,
-        "traces_kept": kept,
+        "traces_compacted": compacted + platform_compacted,
+        "traces_kept": kept + platform_kept,
     }
+
+
+def _compact_platform_trace_sidecars(
+    *,
+    older_than_days: int,
+    cutoff: datetime,
+) -> tuple[int, int]:
+    """Inline old platform event logs back into summary YAML and drop the sidecar."""
+    try:
+        from trellis.agent.platform_traces import (
+            _load_trace_event_dicts,
+            _load_trace_summary_dict,
+            _write_trace_summary_dict,
+        )
+    except Exception:
+        return 0, 0
+
+    platform_dir = _TRACES_DIR / "platform"
+    if not platform_dir.is_dir():
+        return 0, 0
+
+    compacted = 0
+    kept = 0
+    for summary_path in sorted(platform_dir.glob("*.yaml")):
+        events_path = summary_path.with_suffix(".events.ndjson")
+        if not events_path.exists():
+            continue
+        latest_mtime = max(summary_path.stat().st_mtime, events_path.stat().st_mtime)
+        age_days = (cutoff.timestamp() - latest_mtime) / 86400
+        if age_days < older_than_days:
+            kept += 1
+            continue
+
+        summary = _load_trace_summary_dict(summary_path)
+        if not summary:
+            kept += 1
+            continue
+
+        events = _load_trace_event_dicts(summary_path, trace=summary)
+        summary["events"] = [
+            _normalize_trace_event_payload(event)
+            for event in events
+            if isinstance(event, Mapping)
+        ]
+        _write_trace_summary_dict(summary_path, summary)
+        events_path.unlink(missing_ok=True)
+        compacted += 1
+
+    return compacted, kept
+
+
+def _normalize_trace_event_payload(event: Mapping[str, object]) -> dict[str, object]:
+    """Normalize one persisted trace event into stable YAML-safe primitives."""
+    details = event.get("details") or {}
+    if not isinstance(details, Mapping):
+        details = {}
+    return {
+        "event": str(event.get("event") or ""),
+        "status": str(event.get("status") or "info"),
+        "timestamp": str(event.get("timestamp") or ""),
+        "details": _normalize_trace_yaml_value(details),
+    }
+
+
+def _normalize_trace_yaml_value(value: object) -> object:
+    """Convert nested trace payloads into YAML-friendly primitives."""
+    if isinstance(value, Mapping):
+        return {
+            str(key): _normalize_trace_yaml_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, tuple):
+        return [_normalize_trace_yaml_value(item) for item in value]
+    if isinstance(value, list):
+        return [_normalize_trace_yaml_value(item) for item in value]
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    return str(value)
 
 
 def _record_gap_aggregated(
@@ -1085,7 +1217,10 @@ def resolve_adapter_lifecycle_records(
     for record in list(records) + _load_adapter_lifecycle_artifact_records():
         key = _adapter_lifecycle_record_key(record)
         existing = merged.get(key)
-        if existing is None or _adapter_lifecycle_status_rank(record.status) >= _adapter_lifecycle_status_rank(existing.status):
+        # Keep the first record we see for equal-status ties. Live records are
+        # processed before artifacts, and artifacts are loaded newest-first, so
+        # this preserves current live state and the newest persisted review.
+        if existing is None or _adapter_lifecycle_status_rank(record.status) > _adapter_lifecycle_status_rank(existing.status):
             merged[key] = record
 
     resolved = list(merged.values())
@@ -2102,6 +2237,76 @@ def _word_overlap(a: str, b: str) -> float:
     if not words_a or not words_b:
         return 0.0
     return len(words_a & words_b) / max(len(words_a), len(words_b))
+
+
+def _lesson_context_key(payload: Mapping[str, object]) -> tuple[object, ...]:
+    """Return the semantic context key used for duplicate-candidate screening."""
+    applies_when = payload.get("applies_when")
+    if not isinstance(applies_when, Mapping):
+        applies_when = {}
+
+    def _normalized_tuple(value: object) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                {
+                    str(item).strip()
+                    for item in _as_list(value)
+                    if str(item).strip()
+                }
+            )
+        )
+
+    return (
+        str(payload.get("category") or "").strip(),
+        _normalized_tuple(applies_when.get("method")),
+        _normalized_tuple(applies_when.get("features")),
+        _normalized_tuple(applies_when.get("instrument")),
+        str(applies_when.get("error_signature") or "").strip(),
+    )
+
+
+def _lesson_signature_text(payload: Mapping[str, object]) -> str:
+    """Return the text surface used for semantic duplicate screening."""
+    return " ".join(
+        part
+        for part in (
+            str(payload.get("symptom") or "").strip(),
+            str(payload.get("root_cause") or "").strip(),
+            str(payload.get("fix") or "").strip(),
+        )
+        if part
+    )
+
+
+def _semantic_tokens(text: str) -> set[str]:
+    """Return normalized content tokens for lesson-duplicate screening."""
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", text.lower())
+        if len(token) > 2 and token not in _LESSON_TEXT_STOPWORDS
+    }
+
+
+def _semantic_text_overlap(text_a: str, text_b: str) -> float:
+    """Return Jaccard similarity over normalized content tokens."""
+    words_a = _semantic_tokens(text_a)
+    words_b = _semantic_tokens(text_b)
+    if not words_a or not words_b:
+        return 0.0
+    return len(words_a & words_b) / len(words_a | words_b)
+
+
+def _load_lesson_entry(lesson_id: str) -> dict[str, object]:
+    """Load one lesson payload for duplicate screening."""
+    if not lesson_id:
+        return {}
+    entry_path = _LESSONS_DIR / "entries" / f"{lesson_id}.yaml"
+    if not entry_path.exists():
+        return {}
+    data = yaml.safe_load(entry_path.read_text())
+    if not isinstance(data, Mapping):
+        return {}
+    return dict(data)
 
 
 def _fix_word_overlap(text_a: str, text_b: str) -> float:

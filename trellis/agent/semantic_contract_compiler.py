@@ -196,10 +196,14 @@ def compile_semantic_contract(
             )
         ),
     )
+    route_method_modules = tuple(pricing_plan.method_modules)
+    if not primitive_routes:
+        route_method_modules = ()
+
     route_modules = tuple(
         dict.fromkeys(
             (
-                *pricing_plan.method_modules,
+                *route_method_modules,
                 *contract.blueprint.target_modules,
                 *getattr(dsl_lowering, "helper_modules", ()),
                 *_calibration_modules,
@@ -320,6 +324,11 @@ def _primitive_routes(
     ``analytical_black76``. Reuse the live primitive-plan ranking so semantic
     blueprints and generation plans expose the same route ordering.
     """
+    explicit_routes = tuple(contract.blueprint.primitive_families)
+    semantic_route_families = tuple(getattr(product_ir, "route_families", ()) or ())
+    if not explicit_routes and not semantic_route_families:
+        return ()
+
     ranked = rank_primitive_routes(
         pricing_plan=pricing_plan,
         product_ir=product_ir,
@@ -328,7 +337,7 @@ def _primitive_routes(
     if ranked:
         routes.append(ranked[0].route)
     else:
-        routes.extend(contract.blueprint.primitive_families)
+        routes.extend(explicit_routes)
     if contract.product.payoff_family == "basket_path_payoff" and "correlated_basket_monte_carlo" not in routes:
         routes.append("correlated_basket_monte_carlo")
     return tuple(routes)
