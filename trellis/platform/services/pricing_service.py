@@ -8,7 +8,11 @@ from types import MappingProxyType
 from typing import Mapping
 from uuid import uuid4
 
-from trellis.data.file_snapshot import load_snapshot_from_record, manifest_warnings
+from trellis.data.file_snapshot import (
+    load_snapshot_from_record,
+    manifest_warnings,
+    serialize_market_snapshot,
+)
 from trellis.platform.audits import build_run_audit_bundle
 from trellis.platform.context import ExecutionContext
 from trellis.platform.models import evaluate_model_execution_gate
@@ -244,6 +248,10 @@ class PricingService:
                 ]
             )
         )
+        settlement_date = self._resolved_settlement_date(
+            valuation_date,
+            default=market_snapshot.as_of,
+        )
 
         policy_outcome = evaluate_execution_policy(
             execution_context=execution_context,
@@ -265,6 +273,7 @@ class PricingService:
                     "reason": "policy_blocked",
                     "blocker_codes": list(policy_outcome.get("blocker_codes") or ()),
                 },
+                valuation_timestamp=settlement_date.isoformat(),
                 validation_summary={"model_execution_gate": gate.to_dict()},
                 policy_outcome=policy_outcome,
             )
@@ -295,6 +304,7 @@ class PricingService:
                     "reason": "pricing_input_incomplete",
                     "error": str(exc),
                 },
+                valuation_timestamp=settlement_date.isoformat(),
                 validation_summary={"model_execution_gate": gate.to_dict()},
                 policy_outcome=policy_outcome,
             )
@@ -308,6 +318,7 @@ class PricingService:
             payoff=payoff,
             description=description,
             selected_model=selected_model,
+            settlement=settlement_date,
         )
         from trellis.platform.executor import execute_compiled_request
 
@@ -363,12 +374,13 @@ class PricingService:
         payoff,
         description: str | None,
         selected_model: Mapping[str, object],
+        settlement: date,
     ) -> CompiledPlatformRequest:
         request = PlatformRequest(
             request_id=request_id,
             request_type="price",
             entry_point="mcp",
-            settlement=market_snapshot.as_of,
+            settlement=settlement,
             market_snapshot=market_snapshot,
             description=description or str(parsed_trade.parsed_contract.get("description", "")).strip() or None,
             instrument_type=parsed_trade.trade_type,
@@ -631,6 +643,7 @@ class PricingService:
         selected_model: Mapping[str, object] | None = None,
         selected_engine: Mapping[str, object] | None = None,
         market_snapshot=None,
+        valuation_timestamp: str | None = None,
         validation_summary: Mapping[str, object] | None = None,
         policy_outcome: Mapping[str, object] | None = None,
     ):
@@ -648,7 +661,12 @@ class PricingService:
                     "" if market_snapshot is None else str(getattr(market_snapshot, "market_snapshot_id", "")).strip()
                 ),
                 valuation_timestamp=(
-                    "" if market_snapshot is None else str(getattr(market_snapshot, "as_of", "")).strip()
+                    str(valuation_timestamp or "").strip()
+                    or (
+                        ""
+                        if market_snapshot is None
+                        else str(getattr(market_snapshot, "as_of", "")).strip()
+                    )
                 ),
                 warnings=warnings,
                 result_summary=result_summary,
@@ -673,7 +691,7 @@ class PricingService:
         existing_id = str(getattr(market_snapshot, "market_snapshot_id", "")).strip()
         if existing_id:
             existing = self.snapshot_store.get_snapshot(existing_id)
-            if existing is not None:
+            if existing is not None and self._has_rehydratable_snapshot_payload(existing):
                 return existing
         record = SnapshotRecord(
             snapshot_id=str(getattr(market_snapshot, "market_snapshot_id", "")).strip(),
@@ -681,15 +699,8 @@ class PricingService:
             as_of=market_snapshot.as_of.isoformat(),
             source=str(getattr(market_snapshot, "source", "")).strip(),
             payload={
-                "discount_curves": sorted(market_snapshot.discount_curves),
-                "forecast_curves": sorted(market_snapshot.forecast_curves),
-                "vol_surfaces": sorted(market_snapshot.vol_surfaces),
-                "credit_curves": sorted(market_snapshot.credit_curves),
-                "fx_rates": sorted(market_snapshot.fx_rates),
-                "underlier_spots": dict(market_snapshot.underlier_spots),
-                "default_discount_curve": market_snapshot.default_discount_curve,
-                "default_vol_surface": market_snapshot.default_vol_surface,
-                "default_underlier_spot": market_snapshot.default_underlier_spot,
+                "bundle_type": "governed_market_snapshot",
+                "snapshot_contract": serialize_market_snapshot(market_snapshot),
             },
             provenance=dict(market_snapshot.provenance),
         )
@@ -698,6 +709,34 @@ class PricingService:
     @staticmethod
     def _active_market_snapshot_id(session_record) -> str:
         return str(session_record.metadata.get("active_market_snapshot_id", "")).strip()
+
+    @staticmethod
+    def _has_rehydratable_snapshot_payload(record) -> bool:
+        payload = dict(getattr(record, "payload", {}) or {})
+        return bool(
+            payload.get("manifest")
+            or payload.get("snapshot_contract")
+            or (
+                str(payload.get("bundle_type", "")).strip() == "reproducibility_bundle"
+                and payload.get("market_snapshot")
+            )
+        )
+
+    @staticmethod
+    def _resolved_settlement_date(
+        valuation_date: str | date | None,
+        *,
+        default: date,
+    ) -> date:
+        if isinstance(valuation_date, date):
+            return valuation_date
+        text = str(valuation_date or "").strip()
+        if not text:
+            return default
+        try:
+            return date.fromisoformat(text)
+        except ValueError as exc:
+            raise ValueError("valuation_date must be an ISO date.") from exc
 
     def _load_imported_market_snapshot(
         self,
@@ -1644,11 +1683,16 @@ class PricingService:
     def _coerce_frequency(value, *, field_name: str, default: str):
         from trellis.core.types import Frequency
 
-        text = str(value or default).strip().lower().replace("-", "_").replace(" ", "_")
+        raw_value = default if value in {None, ""} else getattr(value, "name", value)
+        text = str(raw_value or default).strip().lower().replace("-", "_").replace(" ", "_")
+        if text.startswith("frequency."):
+            text = text.split(".", 1)[1]
         aliases = {
             "annual": Frequency.ANNUAL,
+            "annually": Frequency.ANNUAL,
             "semi_annual": Frequency.SEMI_ANNUAL,
             "semiannual": Frequency.SEMI_ANNUAL,
+            "semi_annually": Frequency.SEMI_ANNUAL,
             "quarterly": Frequency.QUARTERLY,
             "monthly": Frequency.MONTHLY,
         }
@@ -1661,15 +1705,32 @@ class PricingService:
     def _coerce_day_count(value, *, field_name: str, default: str):
         from trellis.conventions.day_count import DayCountConvention
 
-        text = str(value or default).strip().lower().replace("-", "_").replace("/", "_").replace(" ", "_")
+        raw_value = default if value in {None, ""} else getattr(value, "name", value)
+        text = (
+            str(raw_value or default)
+            .strip()
+            .lower()
+            .replace("-", "_")
+            .replace("/", "_")
+            .replace(" ", "_")
+        )
+        if text.startswith("daycountconvention."):
+            text = text.split(".", 1)[1]
         aliases = {
             "act_360": DayCountConvention.ACT_360,
             "act360": DayCountConvention.ACT_360,
+            "actual_360": DayCountConvention.ACT_360,
             "act_365": DayCountConvention.ACT_365,
             "act365": DayCountConvention.ACT_365,
+            "actual_365": DayCountConvention.ACT_365,
+            "act_365_fixed": DayCountConvention.ACT_365,
             "act_act": DayCountConvention.ACT_ACT,
+            "act_act_isda": DayCountConvention.ACT_ACT,
+            "actual_actual": DayCountConvention.ACT_ACT,
             "30_360": DayCountConvention.THIRTY_360,
             "thirty_360": DayCountConvention.THIRTY_360,
+            "30_360_us": DayCountConvention.THIRTY_360,
+            "thirty_360_us": DayCountConvention.THIRTY_360,
         }
         resolved = aliases.get(text)
         if resolved is None:

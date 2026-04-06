@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from types import SimpleNamespace
 
 
@@ -32,6 +33,7 @@ def test_compiled_pricing_request_keeps_selected_model_method_family():
         selected_model={
             "methodology_summary": {"method_family": "analytical"},
         },
+        settlement=date(2026, 4, 4),
     )
 
     assert compiled.execution_plan.route_method == "analytical"

@@ -598,7 +598,9 @@ surface:
 - ``trellis.model.diff`` compares two governed versions across contract, code,
   methodology, validation, and lineage metadata
 - ``trellis.snapshot.persist_run`` turns a persisted governed run into a
-  reproducibility bundle snapshot that can be referenced later by run id
+  reproducibility bundle snapshot that can be referenced later by run id,
+  including a concrete governed market-snapshot contract that can be
+  rehydrated for replay or review
 
 The matching read surface is resource-based rather than write-tool based. The
 main URIs are:
@@ -607,7 +609,9 @@ main URIs are:
   and validation reports
 - ``trellis://runs/{run_id}``, ``.../audit``, ``.../inputs``, and ``.../outputs``
   for governed run inspection
-- ``trellis://market-snapshots/{snapshot_id}`` for persisted market snapshots
+- ``trellis://market-snapshots/{snapshot_id}`` for persisted market snapshots,
+  including imported snapshots and reproducibility bundles with their embedded
+  governed market data
 
 Versioning constraints matter here:
 
@@ -687,12 +691,15 @@ and the executed cube can be projected into a stable pod-review payload with
    cube.compute_plan["scenario_count"]
    cube.book_ladder("total_mv").metadata["deltas"]["up100"]
    cube.position_ladder("mv")["10Y"]["up100"]
-   cube.to_batch_output()["book_pnl"]["metadata"]["baseline_scenario"]
+   cube.to_batch_output()["book_pnl"]["values"]["up100"]
    cube.pnl_attribution()["scenario_attribution"]["up100"]["top_contributors"][0]
 
 The aggregation helpers preserve scenario provenance in their attached
 ``.metadata`` payload, so downstream explain code does not have to reconstruct
 which scenario pack, shift template, or pipeline settings produced a ladder.
+The published ``book_pnl`` and ``position_pnl`` payloads now put actual P&L
+deltas in ``values`` and keep the underlying scenario levels under
+``metadata["levels"]``.
 
 The runtime analytics surface now also exposes spot ``delta`` and ``gamma``
 plus roll-down ``theta`` through ``Session.analyze(...)``. Delta and gamma use
@@ -818,7 +825,10 @@ bucket assumptions explicit in the scenario name, for example
 ``"twist_steepener_25bp"`` or ``"butterfly_belly_up_25bp"``. The attached
 ``.metadata`` payload records the resolved methodology, bucket conventions, and
 any fallback reason when a rebuild request had to drop back to zero-curve
-shocks.
+shocks. The saved ``scenario_templates`` emitted by that metadata now preserve
+the concrete methodology as well, so replaying a rebuild-based saved template
+through ``Pipeline.scenarios([{"scenario_template": ...}])`` stays in
+quote-space instead of silently degrading to a zero-curve bump.
 
 Bucketed vega now uses the same explicit substrate idea on the volatility
 side. Request ``vega`` with both ``expiries`` and ``strikes`` to get a

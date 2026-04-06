@@ -45,6 +45,38 @@ _ADAPTER_LIFECYCLE_STATUS_ORDER = {
 
 logger = logging.getLogger(__name__)
 
+_LESSON_TEXT_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "can",
+    "do",
+    "for",
+    "if",
+    "in",
+    "is",
+    "it",
+    "not",
+    "of",
+    "on",
+    "or",
+    "so",
+    "that",
+    "the",
+    "their",
+    "there",
+    "this",
+    "to",
+    "was",
+    "when",
+    "with",
+}
+
 
 @dataclass(frozen=True)
 class LessonContractReport:
@@ -510,10 +542,25 @@ def capture_lesson(
 
     # Gate 1: deduplication
     normalized_title = str(lesson_report.normalized_payload.get("title") or "").strip()
+    normalized_context = _lesson_context_key(lesson_report.normalized_payload)
+    normalized_signature = _lesson_signature_text(lesson_report.normalized_payload)
     for entry in entries:
         if entry["title"] == normalized_title:
             return None
         if _word_overlap(entry["title"], normalized_title) > 0.8:
+            return None
+        if _lesson_context_key(entry) != normalized_context:
+            continue
+        existing_entry = _load_lesson_entry(str(entry.get("id") or "").strip())
+        if not existing_entry:
+            continue
+        if (
+            _semantic_text_overlap(
+                normalized_signature,
+                _lesson_signature_text(existing_entry),
+            )
+            >= 0.30
+        ):
             return None
 
     lesson_id = _generate_id(
@@ -2190,6 +2237,76 @@ def _word_overlap(a: str, b: str) -> float:
     if not words_a or not words_b:
         return 0.0
     return len(words_a & words_b) / max(len(words_a), len(words_b))
+
+
+def _lesson_context_key(payload: Mapping[str, object]) -> tuple[object, ...]:
+    """Return the semantic context key used for duplicate-candidate screening."""
+    applies_when = payload.get("applies_when")
+    if not isinstance(applies_when, Mapping):
+        applies_when = {}
+
+    def _normalized_tuple(value: object) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                {
+                    str(item).strip()
+                    for item in _as_list(value)
+                    if str(item).strip()
+                }
+            )
+        )
+
+    return (
+        str(payload.get("category") or "").strip(),
+        _normalized_tuple(applies_when.get("method")),
+        _normalized_tuple(applies_when.get("features")),
+        _normalized_tuple(applies_when.get("instrument")),
+        str(applies_when.get("error_signature") or "").strip(),
+    )
+
+
+def _lesson_signature_text(payload: Mapping[str, object]) -> str:
+    """Return the text surface used for semantic duplicate screening."""
+    return " ".join(
+        part
+        for part in (
+            str(payload.get("symptom") or "").strip(),
+            str(payload.get("root_cause") or "").strip(),
+            str(payload.get("fix") or "").strip(),
+        )
+        if part
+    )
+
+
+def _semantic_tokens(text: str) -> set[str]:
+    """Return normalized content tokens for lesson-duplicate screening."""
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", text.lower())
+        if len(token) > 2 and token not in _LESSON_TEXT_STOPWORDS
+    }
+
+
+def _semantic_text_overlap(text_a: str, text_b: str) -> float:
+    """Return Jaccard similarity over normalized content tokens."""
+    words_a = _semantic_tokens(text_a)
+    words_b = _semantic_tokens(text_b)
+    if not words_a or not words_b:
+        return 0.0
+    return len(words_a & words_b) / len(words_a | words_b)
+
+
+def _load_lesson_entry(lesson_id: str) -> dict[str, object]:
+    """Load one lesson payload for duplicate screening."""
+    if not lesson_id:
+        return {}
+    entry_path = _LESSONS_DIR / "entries" / f"{lesson_id}.yaml"
+    if not entry_path.exists():
+        return {}
+    data = yaml.safe_load(entry_path.read_text())
+    if not isinstance(data, Mapping):
+        return {}
+    return dict(data)
 
 
 def _fix_word_overlap(text_a: str, text_b: str) -> float:

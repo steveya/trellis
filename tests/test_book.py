@@ -261,8 +261,34 @@ class TestScenarioResultCube:
 
         assert payload["compute_plan"]["plan_type"] == "book_scenario_batch"
         assert payload["book_pnl"]["metadata"]["baseline_scenario"] == "base"
-        assert payload["position_pnl"]["values"]["A"]["base"] > payload["position_pnl"]["values"]["A"]["up100"]
+        assert payload["book_pnl"]["values"]["base"] == pytest.approx(0.0)
+        assert payload["book_pnl"]["values"]["up100"] < 0.0
+        assert payload["book_pnl"]["metadata"]["levels"]["base"] > payload["book_pnl"]["metadata"]["levels"]["up100"]
+        assert payload["position_pnl"]["values"]["A"]["base"] == pytest.approx(0.0)
+        assert payload["position_pnl"]["values"]["A"]["up100"] < 0.0
+        assert (
+            payload["position_pnl"]["metadata"]["levels"]["A"]["base"]
+            > payload["position_pnl"]["metadata"]["levels"]["A"]["up100"]
+        )
         assert payload["pnl_attribution"]["scenario_attribution"]["up100"]["top_contributors"][0]["position_name"] == "A"
+
+    def test_book_pnl_values_are_deltas_and_levels_live_in_metadata(self):
+        cube = self._make_cube()
+
+        pnl = cube.book_pnl()
+
+        assert pnl["base"] == pytest.approx(0.0)
+        assert pnl["up100"] == pytest.approx(pnl.metadata["deltas"]["up100"])
+        assert pnl.metadata["levels"]["base"] > pnl.metadata["levels"]["up100"]
+
+    def test_position_pnl_values_are_deltas_and_levels_live_in_metadata(self):
+        cube = self._make_cube()
+
+        pnl = cube.position_pnl()
+
+        assert pnl["A"]["base"] == pytest.approx(0.0)
+        assert pnl["A"]["up100"] == pytest.approx(pnl.metadata["deltas"]["A"]["up100"])
+        assert pnl.metadata["levels"]["A"]["base"] > pnl.metadata["levels"]["A"]["up100"]
 
     def test_pnl_attribution_ranks_top_contributors_per_scenario(self):
         cube = self._make_cube()

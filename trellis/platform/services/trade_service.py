@@ -147,11 +147,27 @@ class TradeService:
             profile = "canonical"
 
         if structured_trade is not None:
-            maybe_contract = self._structured_semantic_contract(
-                structured_trade,
-                description=description,
-                instrument_type=instrument_type,
-            )
+            try:
+                maybe_contract = self._structured_semantic_contract(
+                    structured_trade,
+                    description=description,
+                    instrument_type=instrument_type,
+                )
+            except ValueError as exc:
+                warning_text = str(exc).strip()
+                normalized_type = self._instrument_type(
+                    structured_trade.get("instrument_type") or instrument_type
+                )
+                warnings.append(warning_text)
+                return TradeParseResult(
+                    parse_status="invalid",
+                    trade_type=normalized_type,
+                    asset_class=self._asset_class_for_instrument(normalized_type),
+                    contract_summary={"summary": warning_text},
+                    warnings=warnings,
+                    normalization_profile=profile,
+                    compatibility_surface="structured_trade",
+                )
             if maybe_contract is None:
                 missing = self._structured_missing_fields(
                     structured_trade,
@@ -619,32 +635,60 @@ class TradeService:
         return tuple(missing)
 
     @staticmethod
-    def _normalized_frequency_name(value, *, default: str) -> str:
-        text = str(value if value not in {None, ""} else default).strip().lower()
+    def _normalized_frequency_name(value, *, field_name: str, default: str) -> str:
+        if value in {None, ""}:
+            return str(default).strip().upper()
+        raw_value = getattr(value, "name", value)
+        text = str(raw_value).strip().lower()
         normalized = text.replace("-", "_").replace(" ", "_")
+        if normalized.startswith("frequency."):
+            normalized = normalized.split(".", 1)[1]
         aliases = {
             "annual": "ANNUAL",
+            "annually": "ANNUAL",
             "semi_annual": "SEMI_ANNUAL",
             "semiannual": "SEMI_ANNUAL",
             "quarterly": "QUARTERLY",
             "monthly": "MONTHLY",
         }
-        return aliases.get(normalized, str(default).strip().upper())
+        resolved = aliases.get(normalized)
+        if resolved is None:
+            raise ValueError(
+                f"Structured trade field `{field_name}` has unsupported frequency {value!r}."
+            )
+        return resolved
 
     @staticmethod
-    def _normalized_day_count_name(value, *, default: str) -> str:
-        text = str(value if value not in {None, ""} else default).strip().lower()
+    def _normalized_day_count_name(value, *, field_name: str, default: str) -> str:
+        if value in {None, ""}:
+            return str(default).strip().upper()
+        raw_value = getattr(value, "name", value)
+        text = str(raw_value).strip().lower()
         normalized = text.replace("-", "_").replace("/", "_").replace(" ", "_")
+        if normalized.startswith("daycountconvention."):
+            normalized = normalized.split(".", 1)[1]
         aliases = {
             "act_360": "ACT_360",
             "act360": "ACT_360",
+            "actual_360": "ACT_360",
             "act_365": "ACT_365",
             "act365": "ACT_365",
+            "actual_365": "ACT_365",
+            "act_365_fixed": "ACT_365",
             "act_act": "ACT_ACT",
+            "act_act_isda": "ACT_ACT",
+            "actual_actual": "ACT_ACT",
             "30_360": "THIRTY_360",
             "thirty_360": "THIRTY_360",
+            "30_360_us": "THIRTY_360",
+            "thirty_360_us": "THIRTY_360",
         }
-        return aliases.get(normalized, str(default).strip().upper())
+        resolved = aliases.get(normalized)
+        if resolved is None:
+            raise ValueError(
+                f"Structured trade field `{field_name}` has unsupported day_count {value!r}."
+            )
+        return resolved
 
     def _structured_callable_bond_term_fields(
         self,
@@ -663,10 +707,12 @@ class TradeService:
                 "call_price": float(structured_trade.get("call_price", 100.0) or 100.0),
                 "frequency": self._normalized_frequency_name(
                     structured_trade.get("frequency"),
+                    field_name="frequency",
                     default="SEMI_ANNUAL",
                 ),
                 "day_count": self._normalized_day_count_name(
                     structured_trade.get("day_count"),
+                    field_name="day_count",
                     default="ACT_365",
                 ),
                 "exercise_schedule": list(schedule),
@@ -692,10 +738,12 @@ class TradeService:
                 "swap_end": str(structured_trade.get("swap_end")).strip(),
                 "swap_frequency": self._normalized_frequency_name(
                     structured_trade.get("swap_frequency"),
+                    field_name="swap_frequency",
                     default="SEMI_ANNUAL",
                 ),
                 "day_count": self._normalized_day_count_name(
                     structured_trade.get("day_count"),
+                    field_name="day_count",
                     default="ACT_360",
                 ),
                 "is_payer": bool(is_payer),

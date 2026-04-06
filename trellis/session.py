@@ -10,6 +10,11 @@ from trellis.book import Book, BookResult
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import Payoff
 from trellis.core.types import DayCountConvention, GreeksSpec, PricingResult
+from trellis.curves.bootstrap import (
+    bootstrap_curve_input_bundle_from_payload,
+    bootstrap_yield_curve,
+    bump_bootstrap_quote_buckets,
+)
 from trellis.curves.yield_curve import YieldCurve
 from trellis.data.schema import MarketSnapshot
 from trellis.engine.payoff_pricer import price_payoff as _price_payoff
@@ -362,6 +367,33 @@ class Session:
         """Return a new session with individual tenor bumps in basis points."""
         return self.with_curve(self._curve.bump(bumps))
 
+    def with_bootstrap_quote_bumps(
+        self,
+        quote_bumps_bps: dict[str, float],
+        *,
+        curve_name: str | None = None,
+    ) -> Session:
+        """Return a new session with quote-space bumps replayed through curve rebuild."""
+        resolved_curve_name, bundle = self._bootstrap_discount_curve_bundle(
+            curve_name=curve_name
+        )
+        effective_curve_name = (
+            resolved_curve_name
+            or self._discount_curve_name
+            or getattr(self._market_snapshot, "default_discount_curve", None)
+        )
+        shifted_bundle = bump_bootstrap_quote_buckets(bundle, dict(quote_bumps_bps or {}))
+        shifted_curve = bootstrap_yield_curve(shifted_bundle)
+        snapshot = self._replace_snapshot_discount_curve(
+            shifted_curve,
+            name=effective_curve_name,
+        )
+        return self._clone(
+            curve=shifted_curve,
+            market_snapshot=snapshot,
+            discount_curve_name=effective_curve_name,
+        )
+
     def with_curve(self, curve: YieldCurve) -> Session:
         """Return a new session with the primary discount curve replaced."""
         snapshot = self._replace_snapshot_discount_curve(curve)
@@ -474,14 +506,75 @@ class Session:
             failure_outcome="analytics_failed",
         )
 
-    def _replace_snapshot_discount_curve(self, curve: YieldCurve):
+    def _replace_snapshot_discount_curve(
+        self,
+        curve: YieldCurve,
+        *,
+        name: str | None = None,
+    ):
         """Clone the backing snapshot with an updated active discount curve."""
         if self._market_snapshot is None:
             return None
-        name = self._discount_curve_name or self._market_snapshot.default_discount_curve or "discount"
+        name = (
+            name
+            or self._discount_curve_name
+            or self._market_snapshot.default_discount_curve
+            or "discount"
+        )
         curves = dict(self._market_snapshot.discount_curves)
         curves[name] = curve
         return replace(self._market_snapshot, discount_curves=curves)
+
+    def _bootstrap_discount_curve_bundle(
+        self,
+        *,
+        curve_name: str | None = None,
+    ):
+        """Resolve the typed bootstrap bundle for the active or requested discount curve."""
+        if self._market_snapshot is None:
+            raise ValueError(
+                "No market snapshot is available for bootstrap quote-space replay."
+            )
+        provenance = dict(self._market_snapshot.provenance or {})
+        requested_curve_name = (
+            str(curve_name).strip()
+            if curve_name is not None
+            else str(
+                self._discount_curve_name
+                or self._market_snapshot.default_discount_curve
+                or ""
+            ).strip()
+        )
+        discount_runs = dict(
+            (provenance.get("bootstrap_runs") or {}).get("discount_curves") or {}
+        )
+        discount_inputs = dict(
+            (provenance.get("bootstrap_inputs") or {}).get("discount_curves") or {}
+        )
+
+        bundle_payload = None
+        resolved_curve_name = requested_curve_name or None
+        if resolved_curve_name and resolved_curve_name in discount_runs:
+            bundle_payload = dict(discount_runs[resolved_curve_name]).get("input_bundle")
+        if (
+            bundle_payload is None
+            and resolved_curve_name
+            and resolved_curve_name in discount_inputs
+        ):
+            bundle_payload = discount_inputs[resolved_curve_name]
+        if bundle_payload is None and len(discount_runs) == 1:
+            resolved_curve_name, run_payload = next(iter(discount_runs.items()))
+            bundle_payload = dict(run_payload).get("input_bundle")
+        if bundle_payload is None and len(discount_inputs) == 1:
+            resolved_curve_name, bundle_payload = next(iter(discount_inputs.items()))
+        if bundle_payload is None:
+            raise ValueError(
+                "Bootstrap discount-curve provenance is unavailable for quote-space replay."
+            )
+        return (
+            str(resolved_curve_name or "").strip() or None,
+            bootstrap_curve_input_bundle_from_payload(bundle_payload),
+        )
 
     def _replace_snapshot_vol_surface(self, vol_surface):
         """Clone the backing snapshot with an updated default vol surface."""

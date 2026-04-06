@@ -189,6 +189,44 @@ def test_trade_parse_supports_structured_callable_bond_call_schedule_alias():
     ]
 
 
+def test_trade_parse_supports_structured_callable_bond_day_count_aliases():
+    from trellis.platform.services.trade_service import TradeService
+
+    result = TradeService().parse_trade(
+        structured_trade={
+            "instrument_type": "callable_bond",
+            "notional": 1_000_000.0,
+            "coupon": 0.05,
+            "start_date": "2025-01-15",
+            "end_date": "2035-01-15",
+            "call_dates": ("2028-01-15", "2030-01-15"),
+            "day_count": "THIRTY_360_US",
+        }
+    )
+
+    assert result.parse_status == "parsed"
+    assert result.contract_summary["product"]["term_fields"]["day_count"] == "THIRTY_360"
+
+
+def test_trade_parse_rejects_unsupported_callable_bond_frequency():
+    from trellis.platform.services.trade_service import TradeService
+
+    result = TradeService().parse_trade(
+        structured_trade={
+            "instrument_type": "callable_bond",
+            "notional": 1_000_000.0,
+            "coupon": 0.05,
+            "start_date": "2025-01-15",
+            "end_date": "2035-01-15",
+            "call_dates": ("2028-01-15", "2030-01-15"),
+            "frequency": "weekly",
+        }
+    )
+
+    assert result.parse_status == "invalid"
+    assert any("unsupported frequency" in warning.lower() for warning in result.warnings)
+
+
 def test_trade_parse_supports_structured_bermudan_swaption_input_with_term_fields():
     from trellis.platform.services.trade_service import TradeService
 
@@ -228,6 +266,24 @@ def test_trade_parse_supports_structured_bermudan_swaption_input_with_term_field
         "discount_curve",
         "forward_curve",
     )
+
+
+def test_trade_parse_rejects_unsupported_bermudan_swaption_day_count():
+    from trellis.platform.services.trade_service import TradeService
+
+    result = TradeService().parse_trade(
+        structured_trade={
+            "instrument_type": "bermudan_swaption",
+            "notional": 5_000_000.0,
+            "strike": 0.04,
+            "exercise_schedule": ("2027-11-15", "2028-11-15", "2029-11-15"),
+            "swap_end": "2032-11-15",
+            "day_count": "bus_252",
+        }
+    )
+
+    assert result.parse_status == "invalid"
+    assert any("unsupported day_count" in warning.lower() for warning in result.warnings)
 
 
 def test_position_parse_supports_flat_range_accrual_row_contract():

@@ -1136,6 +1136,36 @@ def _select_quote_buckets(bundle, requested_tenors: tuple[float, ...] | None):
     return tuple(selected)
 
 
+def _zero_curve_scenario_template_spec(
+    scenario,
+    *,
+    selected_curve_name: str | None,
+) -> dict[str, object]:
+    spec = dict(scenario.to_pipeline_spec())
+    spec["methodology"] = "zero_curve"
+    spec["bucket_convention"] = "curve_tenor"
+    spec["selected_curve_name"] = selected_curve_name
+    return spec
+
+
+def _quote_space_scenario_template_spec(
+    scenario,
+    *,
+    selected_curve_name: str | None,
+    tenor_to_bucket: dict[float, object],
+) -> dict[str, object]:
+    quote_bucket_bumps = {
+        tenor_to_bucket[float(tenor)].bucket_id: float(bump)
+        for tenor, bump in scenario.tenor_bumps.items()
+    }
+    spec = dict(scenario.to_pipeline_spec())
+    spec["methodology"] = "curve_rebuild"
+    spec["bucket_convention"] = "bootstrap_quote"
+    spec["selected_curve_name"] = selected_curve_name
+    spec["quote_bucket_bumps"] = quote_bucket_bumps
+    return spec
+
+
 def _rebuild_quote_space_key_rate_durations(
     payoff,
     ms: MarketState,
@@ -1194,6 +1224,7 @@ def _zero_curve_scenario_pnl(
 ) -> RiskMeasureOutput:
     base = _base_price(payoff, ms, ctx)
     result = {}
+    selected_curve_name = ms.selected_curve_name("discount_curve")
     if include_parallel_shifts:
         for shift in shifts_bps:
             shifted = ms.discount.shift(shift)
@@ -1201,6 +1232,7 @@ def _zero_curve_scenario_pnl(
             result[shift] = payoff.evaluate(ms_shifted) - base
 
     scenarios = []
+    scenario_templates = []
     if scenario_packs:
         for pack in scenario_packs:
             scenarios.extend(
@@ -1211,7 +1243,14 @@ def _zero_curve_scenario_pnl(
                     amplitude_bps=float(pack_amplitude_bps),
                 )
             )
-        ctx["scenario_pnl_templates"] = tuple(scenario.to_pipeline_spec() for scenario in scenarios)
+        scenario_templates = [
+            _zero_curve_scenario_template_spec(
+                scenario,
+                selected_curve_name=selected_curve_name,
+            )
+            for scenario in scenarios
+        ]
+        ctx["scenario_pnl_templates"] = tuple(scenario_templates)
         for scenario in scenarios:
             shifted = ms.discount.bump(scenario.tenor_bumps)
             ms_shifted = _clone_market_state(ms, discount=shifted, forward_curve=None)
@@ -1220,12 +1259,12 @@ def _zero_curve_scenario_pnl(
     metadata = {
         "resolved_methodology": "zero_curve",
         "bucket_convention": "curve_tenor",
-        "selected_curve_name": ms.selected_curve_name("discount_curve"),
+        "selected_curve_name": selected_curve_name,
         "bucket_tenors": [float(tenor) for tenor in bucket_tenors],
         "parallel_shifts_bps": [float(shift) for shift in shifts_bps] if include_parallel_shifts else [],
         "include_parallel_shifts": bool(include_parallel_shifts),
         "scenario_packs": list(scenario_packs),
-        "scenario_templates": [scenario.to_pipeline_spec() for scenario in scenarios],
+        "scenario_templates": scenario_templates,
         "pack_amplitude_bps": float(pack_amplitude_bps),
         "warnings": [],
         "fallback_reason": None,
@@ -1267,6 +1306,7 @@ def _rebuild_quote_space_scenario_pnl(
     base = _base_price(payoff, ms, ctx)
     result = {}
     scenarios = []
+    scenario_templates = []
 
     try:
         if include_parallel_shifts:
@@ -1289,12 +1329,17 @@ def _rebuild_quote_space_scenario_pnl(
                     amplitude_bps=float(pack_amplitude_bps),
                 )
             )
-        ctx["scenario_pnl_templates"] = tuple(scenario.to_pipeline_spec() for scenario in scenarios)
-        for scenario in scenarios:
-            quote_bumps = {
-                tenor_to_bucket[float(tenor)].bucket_id: float(bump)
-                for tenor, bump in scenario.tenor_bumps.items()
-            }
+        scenario_templates = [
+            _quote_space_scenario_template_spec(
+                scenario,
+                selected_curve_name=selected_curve_name,
+                tenor_to_bucket=tenor_to_bucket,
+            )
+            for scenario in scenarios
+        ]
+        ctx["scenario_pnl_templates"] = tuple(scenario_templates)
+        for scenario, template_spec in zip(scenarios, scenario_templates):
+            quote_bumps = dict(template_spec["quote_bucket_bumps"])
             shifted_bundle = bump_bootstrap_quote_buckets(bundle, quote_bumps)
             shifted_curve = bootstrap_yield_curve(shifted_bundle)
             result[scenario.name] = payoff.evaluate(
@@ -1313,7 +1358,7 @@ def _rebuild_quote_space_scenario_pnl(
         "parallel_shifts_bps": [float(shift) for shift in shifts_bps] if include_parallel_shifts else [],
         "include_parallel_shifts": bool(include_parallel_shifts),
         "scenario_packs": list(scenario_packs),
-        "scenario_templates": [scenario.to_pipeline_spec() for scenario in scenarios],
+        "scenario_templates": scenario_templates,
         "pack_amplitude_bps": float(pack_amplitude_bps),
         "warnings": [],
         "fallback_reason": None,

@@ -287,7 +287,9 @@ The MCP/HTTP surface exposes this through ``trellis.snapshot.import_files``.
 When called with ``activate_session=true``, the imported snapshot becomes the
 active market-data source for that governed session and later
 ``trellis.price.trade`` calls reuse the persisted snapshot instead of resolving
-an external provider.
+an external provider. Passing a later ``valuation_date`` to
+``trellis.price.trade`` changes the runtime settlement date while keeping the
+imported market data fixed at the snapshot manifest ``as_of`` date.
 
 If the manifest includes fixing histories, Trellis normalizes them into the
 canonical typed market-data surface:

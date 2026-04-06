@@ -315,6 +315,11 @@ class TestSessionPricing:
         metadata = result.scenario_pnl.metadata
         assert metadata["resolved_methodology"] == "curve_rebuild"
         assert metadata["bucket_convention"] == "bootstrap_quote"
+        assert metadata["scenario_templates"][0]["methodology"] == "curve_rebuild"
+        assert metadata["scenario_templates"][0]["bucket_convention"] == "bootstrap_quote"
+        assert metadata["scenario_templates"][0]["quote_bucket_bumps"]["DEP1Y"] == pytest.approx(
+            -25.0
+        )
 
     def test_analyze_bucketed_vega_returns_expiry_strike_surface(self):
         s = Session(market_snapshot=_snapshot(), settlement=SETTLE).with_vol_surface_name("usd_smile")

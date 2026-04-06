@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
+
 from trellis.mcp.errors import TrellisMcpError
 
 
@@ -20,10 +22,14 @@ class PromptRegistry:
             "validate_candidate_model",
         )
 
-    def get_prompt(self, name: str, arguments=None):
+    def get_prompt(
+        self,
+        name: str,
+        arguments: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
         normalized_name = str(name or "").strip()
         payload = dict(arguments or {})
-        builders = {
+        builders: dict[str, Callable[[dict[str, object]], dict[str, object]]] = {
             "price_trade": self._price_trade,
             "price_trade_audit": self._price_trade_audit,
             "persist_current_model": self._persist_current_model,
@@ -44,7 +50,7 @@ class PromptRegistry:
         return builder(payload)
 
     @staticmethod
-    def _price_trade(arguments):
+    def _price_trade(arguments: dict[str, object]) -> dict[str, object]:
         session_id = str(arguments.get("session_id", "default")).strip() or "default"
         return {
             "name": "price_trade",
@@ -74,7 +80,7 @@ class PromptRegistry:
         }
 
     @staticmethod
-    def _exotic_desk_one_trade(arguments):
+    def _exotic_desk_one_trade(arguments: dict[str, object]) -> dict[str, object]:
         session_id = str(arguments.get("session_id", "default")).strip() or "default"
         return {
             "name": "exotic_desk_one_trade",
@@ -104,7 +110,7 @@ class PromptRegistry:
         }
 
     @staticmethod
-    def _price_trade_audit(arguments):
+    def _price_trade_audit(arguments: dict[str, object]) -> dict[str, object]:
         run_id = str(arguments.get("run_id", "{run_id}")).strip() or "{run_id}"
         return {
             "name": "price_trade_audit",
@@ -124,7 +130,7 @@ class PromptRegistry:
         }
 
     @staticmethod
-    def _persist_current_model(arguments):
+    def _persist_current_model(arguments: dict[str, object]) -> dict[str, object]:
         model_id = str(arguments.get("model_id", "{model_id}")).strip() or "{model_id}"
         return {
             "name": "persist_current_model",
@@ -141,7 +147,7 @@ class PromptRegistry:
         }
 
     @staticmethod
-    def _compare_model_versions(arguments):
+    def _compare_model_versions(arguments: dict[str, object]) -> dict[str, object]:
         model_id = str(arguments.get("model_id", "{model_id}")).strip() or "{model_id}"
         return {
             "name": "compare_model_versions",
@@ -160,7 +166,7 @@ class PromptRegistry:
         }
 
     @staticmethod
-    def _explain_model_selection(arguments):
+    def _explain_model_selection(arguments: dict[str, object]) -> dict[str, object]:
         return {
             "name": "explain_model_selection",
             "description": "Explain deterministic governed model selection for one trade request.",
@@ -173,7 +179,7 @@ class PromptRegistry:
         }
 
     @staticmethod
-    def _configure_market_data(arguments):
+    def _configure_market_data(arguments: dict[str, object]) -> dict[str, object]:
         session_id = str(arguments.get("session_id", "default")).strip() or "default"
         return {
             "name": "configure_market_data",
@@ -198,7 +204,7 @@ class PromptRegistry:
         }
 
     @staticmethod
-    def _validate_candidate_model(arguments):
+    def _validate_candidate_model(arguments: dict[str, object]) -> dict[str, object]:
         model_id = str(arguments.get("model_id", "{model_id}")).strip() or "{model_id}"
         version = str(arguments.get("version", "{version}")).strip() or "{version}"
         return {

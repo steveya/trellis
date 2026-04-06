@@ -88,8 +88,12 @@ The same governed stores now also back explicit review and replay flows:
   canonical model store
 - ``trellis.snapshot.persist_run`` writes a reproducibility bundle snapshot
   containing the persisted run summary, selected model/engine, market snapshot,
-  output payload, tolerances, random seed, and calendars, then links it back to
-  the ``RunRecord`` as a canonical artifact reference
+  output payload, tolerances, random seed, and calendars. The embedded
+  ``market_snapshot`` record now carries a concrete rehydratable snapshot
+  contract for provider-resolved as well as imported runs, and the bundle
+  snapshot itself can be reloaded through the same market-snapshot resource
+  path. The bundle is then linked back to the ``RunRecord`` as a canonical
+  artifact reference
 
 Those same canonical stores now sit behind stable MCP resources:
 

@@ -5,6 +5,15 @@ At developer scope, Trellis is more than a pricing library. It is a request
 compiler, knowledge-backed build system, validation pipeline, and audit trail
 around the deterministic pricing engines.
 
+The repo now also carries a checked GitHub Actions CI baseline in
+``.github/workflows/ci.yml``. The primary ``build-and-test`` lane mirrors the
+current local release contract on Linux/Python 3.10 by running
+``python -m build``, a tracked-file whitespace check, and the non-integration
+pytest command. A second advisory ``typecheck`` lane runs the scoped
+``[tool.mypy]`` configuration against the thin MCP boundary modules with
+``follow_imports=skip`` so the project gets immediate static-signal coverage
+without pretending the full legacy/runtime surface is already type-clean.
+
 Platform Surfaces
 -----------------
 
@@ -191,6 +200,12 @@ Named scenario templates can now be sourced from
 for the saved-template and attribution follow-on slices. The cube now also
 exposes ``pnl_attribution()`` so pod-review callers can rank top position
 contributors per scenario without reconstructing deltas outside the cube.
+Concrete saved templates emitted from rebuild-based rates-risk results now
+carry the preserved methodology and quote-bucket shock map needed to replay the
+same quote-space curve rebuild through the pipeline. The batch-review payload
+also now publishes ``book_pnl`` and ``position_pnl`` as delta surfaces in
+``values`` while retaining the underlying scenario levels in
+``metadata["levels"]``.
 
 Pod-risk throughput now has a checked benchmark surface as well.
 ``trellis.analytics.benchmarking`` measures the supported scenario-cube,

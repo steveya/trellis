@@ -311,15 +311,29 @@ class Pipeline:
     def _scenario_name(spec: dict) -> str:
         """Derive a readable scenario name from a scenario specification."""
         if "shift_bps" in spec:
-            return f"shift_{spec['shift_bps']:+d}bp"
+            return f"shift_{Pipeline._format_bps_label(spec['shift_bps'], signed=True)}"
         if "tenor_bumps" in spec:
-            return "tenor_bump"
+            return Pipeline._tenor_bump_name(spec["tenor_bumps"])
+        if "quote_bucket_bumps" in spec:
+            return Pipeline._quote_bucket_bump_name(spec["quote_bucket_bumps"])
         return "base"
 
     @staticmethod
     def _apply_scenario(base: Session, spec: dict) -> Session:
         """Apply a scenario spec to a base session and return the shocked session."""
         session = base
+        if spec.get("methodology") == "curve_rebuild" or "quote_bucket_bumps" in spec:
+            quote_bucket_bumps = dict(spec.get("quote_bucket_bumps") or {})
+            if quote_bucket_bumps:
+                session = session.with_bootstrap_quote_bumps(
+                    quote_bucket_bumps,
+                    curve_name=spec.get("selected_curve_name"),
+                )
+            else:
+                raise ValueError(
+                    "curve_rebuild scenarios require quote_bucket_bumps for replay."
+                )
+            return session
         if "shift_bps" in spec:
             session = session.with_curve_shift(spec["shift_bps"])
         if "tenor_bumps" in spec:
@@ -375,7 +389,7 @@ class Pipeline:
         *,
         expanded_from: dict | None = None,
     ) -> None:
-        if "scenario_pack" not in spec:
+        if "scenario_pack" not in spec or Pipeline._is_concrete_scenario_spec(spec):
             projected = dict(spec)
             if expanded_from is not None:
                 projected["_expanded_from"] = deepcopy(expanded_from)
@@ -417,6 +431,64 @@ class Pipeline:
         if "_expanded_from" in spec:
             public["expanded_from"] = Pipeline._public_scenario_spec(spec["_expanded_from"])
         return public
+
+    @staticmethod
+    def _is_concrete_scenario_spec(spec: dict) -> bool:
+        return any(
+            key in spec
+            for key in ("shift_bps", "tenor_bumps", "quote_bucket_bumps")
+        )
+
+    @staticmethod
+    def _format_numeric_label(value: object, *, signed: bool = False) -> str:
+        numeric = float(value)
+        normalized = f"{abs(numeric):g}".replace(".", "p")
+        if numeric < 0.0:
+            prefix = "m"
+        elif numeric > 0.0 and signed:
+            prefix = "p"
+        else:
+            prefix = ""
+        return f"{prefix}{normalized}"
+
+    @staticmethod
+    def _format_bps_label(value: object, *, signed: bool = False) -> str:
+        return f"{Pipeline._format_numeric_label(value, signed=signed)}bp"
+
+    @staticmethod
+    def _format_tenor_label(value: object) -> str:
+        return f"{Pipeline._format_numeric_label(value)}y"
+
+    @staticmethod
+    def _tenor_bump_name(bumps: dict) -> str:
+        entries = sorted(
+            (
+                float(tenor),
+                float(bump),
+            )
+            for tenor, bump in dict(bumps or {}).items()
+        )
+        if not entries:
+            return "tenor_bump"
+        parts = [
+            f"{Pipeline._format_tenor_label(tenor)}_{Pipeline._format_bps_label(bump, signed=True)}"
+            for tenor, bump in entries
+        ]
+        return "tenor_bump_" + "_".join(parts)
+
+    @staticmethod
+    def _quote_bucket_bump_name(bumps: dict) -> str:
+        entries = sorted(
+            (str(bucket_id).strip(), float(bump))
+            for bucket_id, bump in dict(bumps or {}).items()
+        )
+        if not entries:
+            return "quote_bucket_bump"
+        parts = [
+            f"{bucket_id.lower()}_{Pipeline._format_bps_label(bump, signed=True)}"
+            for bucket_id, bump in entries
+        ]
+        return "quote_bucket_bump_" + "_".join(parts)
 
     @staticmethod
     def _write_output(out: dict, scenario_name: str, br: BookResult):

@@ -16,7 +16,7 @@ ToolHandler = Callable[[Mapping[str, object]], Mapping[str, object]]
 class ToolRegistry:
     """Small in-process registry for Trellis MCP tool handlers."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._definitions: dict[str, ToolDefinition] = {}
         self._handlers: dict[str, ToolHandler] = {}
 

@@ -357,11 +357,23 @@ class ScenarioResultCube(Mapping[str, BookResult]):
 
     def book_pnl(self, *, baseline_scenario: str | None = None) -> RiskMeasureOutput:
         """Return book-level market-value deltas across scenarios."""
-        return self.book_ladder("total_mv", baseline_scenario=baseline_scenario)
+        ladder = self.book_ladder("total_mv", baseline_scenario=baseline_scenario)
+        metadata = dict(ladder.metadata)
+        metadata["levels"] = dict(ladder)
+        return RiskMeasureOutput(
+            dict(metadata["deltas"]),
+            metadata=metadata,
+        )
 
     def position_pnl(self, *, baseline_scenario: str | None = None) -> RiskMeasureOutput:
         """Return per-position market-value deltas across scenarios."""
-        return self.position_ladder("mv", baseline_scenario=baseline_scenario)
+        ladder = self.position_ladder("mv", baseline_scenario=baseline_scenario)
+        metadata = dict(ladder.metadata)
+        metadata["levels"] = dict(ladder)
+        return RiskMeasureOutput(
+            dict(metadata["deltas"]),
+            metadata=metadata,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-friendly nested projection of the scenario cube."""

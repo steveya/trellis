@@ -22,6 +22,8 @@ FILE_IMPORT_PROVIDER_ID = "market_data.file_import"
 FILE_IMPORT_SOURCE = "file_import"
 FILE_IMPORT_BUNDLE_TYPE = "imported_market_snapshot"
 FILE_IMPORT_SCHEMA_VERSION = 1
+GOVERNED_SNAPSHOT_BUNDLE_TYPE = "governed_market_snapshot"
+GOVERNED_SNAPSHOT_SCHEMA_VERSION = 1
 
 
 def _normalize_date(value, *, field: str) -> date:
@@ -34,6 +36,13 @@ def _normalize_date(value, *, field: str) -> date:
 
 
 def _normalize_token(value: str | None) -> str:
+    return str(value or "").strip()
+
+
+def _enum_name(value) -> str:
+    name = getattr(value, "name", None)
+    if isinstance(name, str) and name.strip():
+        return name.strip()
     return str(value or "").strip()
 
 
@@ -52,6 +61,135 @@ def _json_safe(value):
     if isinstance(value, (list, tuple, set)):
         return [_json_safe(item) for item in value]
     return str(value)
+
+
+def _serialize_yield_curve(curve) -> dict[str, object]:
+    tenors = tuple(float(item) for item in getattr(curve, "tenors", ()))
+    rates = tuple(float(item) for item in getattr(curve, "rates", ()))
+    if not tenors or len(tenors) != len(rates):
+        raise ValueError(
+            f"Unsupported yield-curve snapshot component type: {type(curve).__name__}"
+        )
+    return {
+        "kind": "zero_rates",
+        "tenors": list(tenors),
+        "rates": list(rates),
+    }
+
+
+def _serialize_credit_curve(curve) -> dict[str, object]:
+    tenors = tuple(float(item) for item in getattr(curve, "tenors", ()))
+    hazard_rates = tuple(float(item) for item in getattr(curve, "hazard_rates", ()))
+    if not tenors or len(tenors) != len(hazard_rates):
+        raise ValueError(
+            f"Unsupported credit-curve snapshot component type: {type(curve).__name__}"
+        )
+    return {
+        "kind": "hazard_points",
+        "tenors": list(tenors),
+        "hazard_rates": list(hazard_rates),
+    }
+
+
+def _serialize_vol_surface(surface) -> dict[str, object]:
+    if isinstance(surface, FlatVol):
+        return {
+            "kind": "flat",
+            "vol": float(surface.vol),
+        }
+    if isinstance(surface, GridVolSurface):
+        return {
+            "kind": "grid",
+            "expiries": [float(item) for item in surface.expiries],
+            "strikes": [float(item) for item in surface.strikes],
+            "vols": [
+                [float(value) for value in row]
+                for row in surface.vols
+            ],
+        }
+    raise ValueError(
+        f"Unsupported vol-surface snapshot component type: {type(surface).__name__}"
+    )
+
+
+def _serialize_fx_rate(rate) -> dict[str, object]:
+    if not isinstance(rate, FXRate):
+        raise ValueError(f"Unsupported FX-rate snapshot component type: {type(rate).__name__}")
+    return {
+        "spot": float(rate.spot),
+        "domestic": str(rate.domestic).strip(),
+        "foreign": str(rate.foreign).strip(),
+    }
+
+
+def _serialize_fixing_history(history) -> list[dict[str, object]]:
+    return [
+        {
+            "date": fixing_date.isoformat(),
+            "value": float(value),
+        }
+        for fixing_date, value in sorted(dict(history or {}).items())
+    ]
+
+
+def serialize_market_snapshot(snapshot: MarketSnapshot) -> dict[str, object]:
+    defaults = {
+        "discount_curve": _normalize_token(snapshot.default_discount_curve),
+        "forecast_curve": _normalize_token(snapshot.metadata.get("default_forecast_curve")),
+        "vol_surface": _normalize_token(snapshot.default_vol_surface),
+        "credit_curve": _normalize_token(snapshot.default_credit_curve),
+        "fixing_history": _normalize_token(snapshot.default_fixing_history),
+        "state_space": _normalize_token(snapshot.default_state_space),
+        "underlier_spot": _normalize_token(snapshot.default_underlier_spot),
+        "local_vol_surface": _normalize_token(snapshot.default_local_vol_surface),
+        "jump_parameters": _normalize_token(snapshot.default_jump_parameters),
+        "model_parameters": _normalize_token(snapshot.default_model_parameters),
+    }
+    return {
+        "schema_version": GOVERNED_SNAPSHOT_SCHEMA_VERSION,
+        "bundle_type": GOVERNED_SNAPSHOT_BUNDLE_TYPE,
+        "as_of": snapshot.as_of.isoformat(),
+        "source": str(snapshot.source or "").strip(),
+        "defaults": {
+            key: value
+            for key, value in defaults.items()
+            if value
+        },
+        "discount_curves": {
+            name: _serialize_yield_curve(curve)
+            for name, curve in sorted(snapshot.discount_curves.items())
+        },
+        "forecast_curves": {
+            name: _serialize_yield_curve(curve)
+            for name, curve in sorted(snapshot.forecast_curves.items())
+        },
+        "vol_surfaces": {
+            name: _serialize_vol_surface(surface)
+            for name, surface in sorted(snapshot.vol_surfaces.items())
+        },
+        "credit_curves": {
+            name: _serialize_credit_curve(curve)
+            for name, curve in sorted(snapshot.credit_curves.items())
+        },
+        "fixing_histories": {
+            name: _serialize_fixing_history(history)
+            for name, history in sorted(snapshot.fixing_histories.items())
+        },
+        "fx_rates": {
+            name: _serialize_fx_rate(rate)
+            for name, rate in sorted(snapshot.fx_rates.items())
+        },
+        "state_spaces": _json_safe(snapshot.state_spaces),
+        "underlier_spots": {
+            name: float(value)
+            for name, value in sorted(snapshot.underlier_spots.items())
+        },
+        "local_vol_surfaces": _json_safe(snapshot.local_vol_surfaces),
+        "jump_parameter_sets": _json_safe(snapshot.jump_parameter_sets),
+        "model_parameter_sets": _json_safe(snapshot.model_parameter_sets),
+        "metadata": _json_safe(snapshot.metadata),
+        "provenance": _json_safe(snapshot.provenance),
+    }
 
 
 def _read_structured_file(path: Path):
@@ -379,9 +517,27 @@ def build_market_snapshot(
         name: _fx_rate_from_spec(spec)
         for name, spec in dict(manifest_contract.get("fx_rates") or {}).items()
     }
+    state_spaces = {
+        str(name): value
+        for name, value in dict(manifest_contract.get("state_spaces") or {}).items()
+    }
     underlier_spots = {
         name: float(value)
         for name, value in dict(manifest_contract.get("underlier_spots") or {}).items()
+    }
+    local_vol_surfaces = {
+        str(name): value
+        for name, value in dict(manifest_contract.get("local_vol_surfaces") or {}).items()
+    }
+    jump_parameter_sets = {
+        str(name): dict(spec)
+        for name, spec in dict(manifest_contract.get("jump_parameter_sets") or {}).items()
+        if isinstance(spec, Mapping)
+    }
+    model_parameter_sets = {
+        str(name): dict(spec)
+        for name, spec in dict(manifest_contract.get("model_parameter_sets") or {}).items()
+        if isinstance(spec, Mapping)
     }
     fixing_histories = {
         name: {
@@ -398,6 +554,22 @@ def build_market_snapshot(
 
     resolved_snapshot_id = str(snapshot_id or _snapshot_id(manifest_contract)).strip()
     source = _normalize_token(manifest_contract.get("source")) or FILE_IMPORT_SOURCE
+    provenance = dict(manifest_contract.get("provenance") or {})
+    if not provenance:
+        provenance = {
+            "provider_id": FILE_IMPORT_PROVIDER_ID,
+            "snapshot_id": resolved_snapshot_id,
+            "source": source,
+            "source_kind": "explicit_input",
+            "source_ref": _normalize_token(manifest_contract.get("manifest_path")),
+            "import_schema_version": FILE_IMPORT_SCHEMA_VERSION,
+            "bundle_type": FILE_IMPORT_BUNDLE_TYPE,
+        }
+    else:
+        provenance.setdefault("snapshot_id", resolved_snapshot_id)
+        provenance.setdefault("source", source)
+        if source == FILE_IMPORT_SOURCE:
+            provenance.setdefault("provider_id", FILE_IMPORT_PROVIDER_ID)
     return MarketSnapshot(
         as_of=_normalize_date(manifest_contract.get("as_of"), field="as_of"),
         source=source,
@@ -407,22 +579,22 @@ def build_market_snapshot(
         credit_curves=credit_curves,
         fixing_histories=fixing_histories,
         fx_rates=fx_rates,
+        state_spaces=state_spaces,
         underlier_spots=underlier_spots,
+        local_vol_surfaces=local_vol_surfaces,
+        jump_parameter_sets=jump_parameter_sets,
+        model_parameter_sets=model_parameter_sets,
         metadata=metadata,
         default_discount_curve=_normalize_token(defaults.get("discount_curve")) or None,
         default_vol_surface=_normalize_token(defaults.get("vol_surface")) or None,
         default_credit_curve=_normalize_token(defaults.get("credit_curve")) or None,
         default_fixing_history=default_fixing_history or None,
+        default_state_space=_normalize_token(defaults.get("state_space")) or None,
         default_underlier_spot=_normalize_token(defaults.get("underlier_spot")) or None,
-        provenance={
-            "provider_id": FILE_IMPORT_PROVIDER_ID,
-            "snapshot_id": resolved_snapshot_id,
-            "source": source,
-            "source_kind": "explicit_input",
-            "source_ref": _normalize_token(manifest_contract.get("manifest_path")),
-            "import_schema_version": FILE_IMPORT_SCHEMA_VERSION,
-            "bundle_type": FILE_IMPORT_BUNDLE_TYPE,
-        },
+        default_local_vol_surface=_normalize_token(defaults.get("local_vol_surface")) or None,
+        default_jump_parameters=_normalize_token(defaults.get("jump_parameters")) or None,
+        default_model_parameters=_normalize_token(defaults.get("model_parameters")) or None,
+        provenance=provenance,
     )
 
 
@@ -593,10 +765,23 @@ def import_snapshot_manifest(
 
 
 def load_snapshot_from_record(record) -> MarketSnapshot:
-    manifest = dict(getattr(record, "payload", {}).get("manifest") or {})
+    payload = dict(getattr(record, "payload", {}) or {})
+    manifest = dict(payload.get("manifest") or {})
     if not manifest:
+        snapshot_contract = dict(payload.get("snapshot_contract") or {})
+        if snapshot_contract:
+            return build_market_snapshot(
+                snapshot_contract,
+                snapshot_id=getattr(record, "snapshot_id", None),
+            )
+        if str(payload.get("bundle_type", "")).strip() == "reproducibility_bundle":
+            from trellis.platform.storage import SnapshotRecord
+
+            nested_snapshot = payload.get("market_snapshot")
+            if isinstance(nested_snapshot, Mapping):
+                return load_snapshot_from_record(SnapshotRecord.from_dict(nested_snapshot))
         raise ValueError(
-            f"Snapshot record {getattr(record, 'snapshot_id', '')!r} has no import manifest payload."
+            f"Snapshot record {getattr(record, 'snapshot_id', '')!r} has no rehydratable market-snapshot payload."
         )
     return build_market_snapshot(manifest, snapshot_id=getattr(record, "snapshot_id", None))
 
@@ -605,6 +790,8 @@ __all__ = [
     "FILE_IMPORT_BUNDLE_TYPE",
     "FILE_IMPORT_PROVIDER_ID",
     "FILE_IMPORT_SCHEMA_VERSION",
+    "GOVERNED_SNAPSHOT_BUNDLE_TYPE",
+    "GOVERNED_SNAPSHOT_SCHEMA_VERSION",
     "FILE_IMPORT_SOURCE",
     "build_market_snapshot",
     "import_snapshot_manifest",
@@ -612,4 +799,5 @@ __all__ = [
     "load_snapshot_from_record",
     "manifest_summary",
     "manifest_warnings",
+    "serialize_market_snapshot",
 ]

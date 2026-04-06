@@ -253,3 +253,88 @@ def test_persist_run_creates_reproducibility_bundle_and_attaches_it_to_run(tmp_p
         artifact["artifact_kind"] == "reproducibility_bundle"
         for artifact in run["artifacts"]
     )
+
+
+def test_persist_run_embeds_concrete_market_snapshot_for_live_provider_run(tmp_path):
+    from trellis.mcp.server import bootstrap_mcp_server
+
+    server = bootstrap_mcp_server(
+        state_root=tmp_path / "mcp_state",
+        provider_registry=_provider_registry(),
+    )
+    server.call_tool("trellis.model.generate_candidate", _candidate_payload())
+    server.call_tool(
+        "trellis.model.validate",
+        {
+            "model_id": "vanilla_option_candidate",
+            "version": "v1",
+            "actor": "validator",
+            "reason": "manifest_validation",
+        },
+    )
+    server.call_tool(
+        "trellis.model.promote",
+        {
+            "model_id": "vanilla_option_candidate",
+            "version": "v1",
+            "to_status": "validated",
+            "actor": "reviewer",
+            "reason": "validation_review_complete",
+        },
+    )
+    server.call_tool(
+        "trellis.model.promote",
+        {
+            "model_id": "vanilla_option_candidate",
+            "version": "v1",
+            "to_status": "approved",
+            "actor": "reviewer",
+            "reason": "manual_approval",
+        },
+    )
+    server.call_tool(
+        "trellis.providers.configure",
+        {
+            "session_id": "sess_bundle_snapshot_contract",
+            "provider_bindings": {
+                "market_data": {
+                    "primary": {"provider_id": "market_data.test_live"},
+                }
+            },
+        },
+    )
+    server.call_tool(
+        "trellis.run_mode.set",
+        {"session_id": "sess_bundle_snapshot_contract", "run_mode": "production"},
+    )
+    priced = server.call_tool(
+        "trellis.price.trade",
+        {
+            "session_id": "sess_bundle_snapshot_contract",
+            "structured_trade": _trade_payload(),
+            "valuation_date": "2026-04-04",
+        },
+    )
+
+    bundle = server.call_tool(
+        "trellis.snapshot.persist_run",
+        {
+            "run_id": priced["run_id"],
+            "tolerances": {"price_abs": 1e-6},
+        },
+    )
+
+    serialized_snapshot = bundle["snapshot"]["payload"]["market_snapshot"]
+    snapshot_contract = serialized_snapshot["payload"]["snapshot_contract"]
+
+    assert snapshot_contract["as_of"] == "2026-04-04"
+    assert snapshot_contract["discount_curves"]["discount"]["kind"] == "zero_rates"
+    assert snapshot_contract["vol_surfaces"]["default"]["kind"] == "flat"
+    assert snapshot_contract["underlier_spots"] == {"AAPL": 123.0}
+
+    rehydrated = server.services.snapshot_service.load_market_snapshot(
+        bundle["snapshot"]["snapshot_id"]
+    )
+    assert rehydrated.as_of.isoformat() == "2026-04-04"
+    assert rehydrated.discount_curve().discount(1.0) > 0.0
+    assert rehydrated.vol_surface().black_vol(1.0, 123.0) == 0.20

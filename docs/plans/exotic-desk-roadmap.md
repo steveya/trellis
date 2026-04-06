@@ -113,6 +113,13 @@ Status mirror last synced: `2026-04-05`
 | --- | --- |
 | `QUA-680` Benchmark artifacts: portable checked baselines and folder guidance | Done |
 
+### Ordered Merge Hardening Queue
+
+| Ticket | Status |
+| --- | --- |
+| `QUA-681` Batch risk runtime: preserve scenario methodology and delta payload semantics | Done |
+| `QUA-682` MCP pricing runtime: honor valuation settlement and persist reproducible live snapshots | Done |
+
 ### Ordered Pod Risk And Explain Queue
 
 | Ticket | Status |

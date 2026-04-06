@@ -994,6 +994,72 @@ class TestPromotion:
         assert lid1 is not None
         assert lid2 is None  # duplicate rejected
 
+    def test_capture_dedup_by_context_and_remediation_text(self):
+        from trellis.agent.knowledge.promotion import capture_lesson, rebuild_index
+
+        self._write_lesson_entry(
+            "md_001",
+            title="Transient API failure",
+            status="validated",
+            severity="high",
+            category="market_data",
+            applies_when={
+                "method": ["analytical"],
+                "features": ["floating_coupons", "vol_surface_dependence"],
+                "instrument": [],
+                "error_signature": None,
+            },
+            symptom="Validation failed because the external request errored out.",
+            root_cause=(
+                "The mental model assumed the external dependency would always respond "
+                "successfully, but transient network or service failures can interrupt "
+                "pricing."
+            ),
+            fix=(
+                "Retry the request with backoff and add fallback handling so transient "
+                "API failures do not stop validation."
+            ),
+        )
+        rebuild_index()
+
+        duplicate = capture_lesson(
+            category="market_data",
+            title="Handle API failures gracefully",
+            severity="high",
+            symptom="The valuation failed because the external request errored out.",
+            root_cause=(
+                "The mental model treated the external service call as guaranteed to "
+                "succeed, even though transient network or service issues can interrupt "
+                "pricing."
+            ),
+            fix=(
+                "Add retry, timeout, and fallback handling around the external request "
+                "so the valuation can proceed or fail gracefully."
+            ),
+            method="analytical",
+            features=["floating_coupons", "vol_surface_dependence"],
+        )
+        distinct_context = capture_lesson(
+            category="market_data",
+            title="Handle API failures gracefully",
+            severity="high",
+            symptom="The valuation failed because the external request errored out.",
+            root_cause=(
+                "The mental model treated the external service call as guaranteed to "
+                "succeed, even though transient network or service issues can interrupt "
+                "pricing."
+            ),
+            fix=(
+                "Add retry, timeout, and fallback handling around the external request "
+                "so the valuation can proceed or fail gracefully."
+            ),
+            method="monte_carlo",
+            features=["vol_surface_dependence"],
+        )
+
+        assert duplicate is None
+        assert distinct_context is not None
+
     def test_capture_rejects_invalid_contract(self):
         from trellis.agent.knowledge.promotion import capture_lesson, validate_lesson_payload
 

@@ -8,7 +8,15 @@ from unittest.mock import patch
 import pytest
 
 from trellis.book import Book, BookResult, ScenarioResultCube
+from trellis.conventions.day_count import DayCountConvention
 from trellis.core.types import PricingResult
+from trellis.core.types import Frequency
+from trellis.curves.bootstrap import (
+    BootstrapConventionBundle,
+    BootstrapCurveInputBundle,
+    BootstrapInstrument,
+    bootstrap_curve_result,
+)
 from trellis.data.schema import MarketSnapshot
 from trellis.curves.yield_curve import YieldCurve
 from trellis.instruments.bond import Bond
@@ -44,6 +52,40 @@ def _snapshot():
         },
         default_discount_curve="usd_ois",
         default_vol_surface="atm",
+    )
+
+
+def _bootstrapped_snapshot():
+    bundle = BootstrapCurveInputBundle(
+        curve_name="usd_ois_boot",
+        currency="USD",
+        rate_index="USD-SOFR-3M",
+        conventions=BootstrapConventionBundle(
+            deposit_day_count=DayCountConvention.ACT_360,
+            swap_fixed_frequency=Frequency.ANNUAL,
+            swap_fixed_day_count=DayCountConvention.THIRTY_360_US,
+            swap_float_frequency=Frequency.QUARTERLY,
+            swap_float_day_count=DayCountConvention.ACT_360,
+        ),
+        instruments=(
+            BootstrapInstrument(tenor=1.0, quote=0.045, instrument_type="deposit", label="DEP1Y"),
+            BootstrapInstrument(tenor=2.0, quote=0.046, instrument_type="swap", label="SWAP2Y"),
+            BootstrapInstrument(tenor=5.0, quote=0.0475, instrument_type="swap", label="SWAP5Y"),
+            BootstrapInstrument(tenor=10.0, quote=0.0485, instrument_type="swap", label="SWAP10Y"),
+        ),
+    )
+    result = bootstrap_curve_result(bundle, max_iter=75, tol=1e-12)
+    return MarketSnapshot(
+        as_of=date(2024, 11, 15),
+        source="unit",
+        discount_curves={"usd_ois_boot": result.curve},
+        default_discount_curve="usd_ois_boot",
+        provenance={
+            "source": "unit",
+            "source_kind": "mixed",
+            "bootstrap_inputs": {"discount_curves": {"usd_ois_boot": bundle.to_payload()}},
+            "bootstrap_runs": {"discount_curves": {"usd_ois_boot": result.to_payload()}},
+        },
     )
 
 
@@ -301,6 +343,77 @@ class TestPipeline:
         assert "twist_steepener_25bp" in {
             scenario["name"] for scenario in plan.to_dict()["scenarios"]
         }
+
+    def test_saved_rebuild_scenario_template_replays_quote_space_methodology(self):
+        snapshot = _bootstrapped_snapshot()
+        snapshot = MarketSnapshot(
+            as_of=snapshot.as_of,
+            source=snapshot.source,
+            discount_curves=snapshot.discount_curves,
+            default_discount_curve=snapshot.default_discount_curve,
+            provenance=snapshot.provenance,
+            metadata={
+                "scenario_templates": {
+                    "desk_twist_steepener": {
+                        "name": "twist_steepener_25bp",
+                        "scenario_pack": "twist",
+                        "description": "Short-end down and long-end up in quote space.",
+                        "methodology": "curve_rebuild",
+                        "bucket_convention": "bootstrap_quote",
+                        "selected_curve_name": "usd_ois_boot",
+                        "bucket_tenors": (1.0, 2.0, 5.0, 10.0),
+                        "tenor_bumps": {1.0: -25.0, 2.0: -12.5, 5.0: 8.3333333333, 10.0: 25.0},
+                        "quote_bucket_bumps": {
+                            "DEP1Y": -25.0,
+                            "SWAP2Y": -12.5,
+                            "SWAP5Y": 8.3333333333,
+                            "SWAP10Y": 25.0,
+                        },
+                    }
+                }
+            },
+        )
+
+        plan = (
+            Pipeline()
+            .instruments(_book())
+            .market_data(snapshot=snapshot)
+            .scenarios([{"scenario_template": "desk_twist_steepener"}])
+            .compile_compute_plan()
+        )
+
+        scenario = plan.to_dict()["scenarios"][0]
+        assert plan.to_dict()["scenario_count"] == 1
+        assert scenario["name"] == "twist_steepener_25bp"
+        assert scenario["methodology"] == "curve_rebuild"
+        assert scenario["bucket_convention"] == "bootstrap_quote"
+        assert scenario["quote_bucket_bumps"]["DEP1Y"] == pytest.approx(-25.0)
+
+        results = plan.execute()
+
+        assert results["twist_steepener_25bp"].total_mv > 0.0
+        assert (
+            results.scenario_provenance["twist_steepener_25bp"]["scenario_spec"]["methodology"]
+            == "curve_rebuild"
+        )
+
+    def test_compile_compute_plan_accepts_float_shift_names_and_stable_tenor_bump_names(self):
+        plan = (
+            Pipeline()
+            .instruments(_book())
+            .market_data(curve=_curve())
+            .scenarios(
+                [
+                    {"shift_bps": 25.0},
+                    {"tenor_bumps": {2.0: 10.0, 10.0: -5.5}},
+                ]
+            )
+            .compile_compute_plan()
+        )
+
+        scenarios = plan.to_dict()["scenarios"]
+        assert scenarios[0]["name"] == "shift_p25bp"
+        assert scenarios[1]["name"] == "tenor_bump_2y_p10bp_10y_m5p5bp"
 
     def test_run_projects_executor_results_without_calling_session_price(self):
         from trellis.platform.results import ExecutionResult
