@@ -341,7 +341,7 @@ Status mirror last synced: `2026-04-06`
 
 | Ticket | Slice | Status |
 | --- | --- | --- |
-| `QUA-687` | Typed engine model spec and valuation-context boundary | Backlog |
+| `QUA-687` | Typed engine model spec and valuation-context boundary | Done |
 | `QUA-688` | Explicit quote maps and calibration-target transforms | Backlog |
 | `QUA-689` | Typed calibrated-object materialization onto `MarketState` | Backlog |
 | `QUA-690` | Typed credit calibration and potential-term binding | Backlog |

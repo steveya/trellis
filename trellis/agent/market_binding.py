@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from trellis.agent.valuation_context import ValuationContext
+from trellis.agent.valuation_context import (
+    ValuationContext,
+    engine_model_spec_summary,
+)
 
 
 def _string_tuple(values) -> tuple[str, ...]:
@@ -86,6 +89,7 @@ class MarketBindingSpec:
     market_source: str
     market_snapshot_handle: str = ""
     model_spec: str | None = None
+    engine_model_spec: object | None = None
     measure_spec: str = "risk_neutral"
     discounting_policy: str = "contract_convention_discounting"
     collateral_policy: str | None = None
@@ -169,6 +173,7 @@ def build_market_binding_spec(
         market_source=valuation_context.market_source,
         market_snapshot_handle=valuation_context.market_snapshot_handle,
         model_spec=valuation_context.model_spec,
+        engine_model_spec=valuation_context.engine_model_spec,
         measure_spec=valuation_context.measure_spec,
         discounting_policy=valuation_context.discounting_policy,
         collateral_policy=valuation_context.collateral_policy,
@@ -213,6 +218,7 @@ def market_binding_spec_summary(spec: MarketBindingSpec) -> dict[str, object]:
         "market_source": spec.market_source,
         "market_snapshot_handle": spec.market_snapshot_handle,
         "model_spec": spec.model_spec,
+        "engine_model_spec": engine_model_spec_summary(spec.engine_model_spec),
         "measure_spec": spec.measure_spec,
         "discounting_policy": spec.discounting_policy,
         "collateral_policy": spec.collateral_policy,

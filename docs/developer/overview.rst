@@ -42,6 +42,13 @@ metadata, bounds, warm starts, and derivative-hook availability visible in
 provenance before the later backend-registry layer decides which concrete
 solver implementation to use.
 
+The semantic valuation boundary now also carries a bounded
+``EngineModelSpec`` surface in ``trellis.agent.valuation_context``. That keeps
+model-family binding, potential/source semantics, backend hints, calibration
+requirements, and explicit rates discount/forecast curve roles in one
+serializable record while preserving the legacy ``model_spec`` string as a
+compatibility shim for older callers.
+
 That backend-registry layer is now present as well. ``SolveBackendRegistry``
 and ``SolveBackendRecord`` provide the adapter seam, while the capability gate
 checks objective shape, bounds, constraints, warm starts, and derivative hooks

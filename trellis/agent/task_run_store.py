@@ -323,7 +323,13 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
         context = data.get("context") or {}
         generation_plan = context.get("generation_plan") or {}
         instruction_resolution = generation_plan.get("instruction_resolution") or {}
-        selected_curve_names = dict(context.get("selected_curve_names") or {})
+        runtime_contract = dict(context.get("runtime_contract") or {})
+        selected_curve_names = dict(
+            context.get("selected_curve_names")
+            or runtime_contract.get("selected_curve_names")
+            or (runtime_contract.get("snapshot_reference") or {}).get("selected_curve_names")
+            or {}
+        )
         return {
             "path": str(trace_path),
             "exists": True,

@@ -910,6 +910,12 @@ request. That selection provenance is also repeated in the runtime contract and
 task-run record so replay tools can explain the chosen discount, forecast, or
 credit curve without re-resolving market data.
 
+If an analytical trace stores that binding only under
+``runtime_contract.snapshot_reference.selected_curve_names`` (instead of a
+top-level ``selected_curve_names`` context field), replay summaries still read
+the same names back. The replay/debug path therefore uses one curve-role
+contract even when trace producers emit slightly different context layouts.
+
 If the curves were bootstrapped from rate instruments, that source-selection
 step is still preserved: the snapshot holds the named bootstrapped curves and
 the runtime state records which one was actually used.

@@ -702,6 +702,59 @@ def test_collect_trace_summaries_reads_analytical_trace_json(tmp_path):
     assert summary["instruction_resolution_conflict_count"] == 0
 
 
+def test_collect_trace_summaries_reads_analytical_curve_names_from_runtime_contract_snapshot(tmp_path):
+    import json
+
+    from trellis.agent.task_run_store import _collect_trace_summaries
+
+    trace_path = tmp_path / "analytical_trace_runtime_contract.json"
+    trace_path.write_text(
+        json.dumps(
+            {
+                "trace_id": "trace_black76_runtime_contract",
+                "trace_type": "analytical",
+                "status": "ok",
+                "route": {
+                    "family": "analytical",
+                    "name": "analytical_black76",
+                    "model": "black76",
+                },
+                "updated_at": "2026-04-06T00:00:00Z",
+                "steps": [],
+                "context": {
+                    "runtime_contract": {
+                        "snapshot_reference": {
+                            "selected_curve_names": {
+                                "discount_curve": "usd_ois",
+                                "forecast_curve": "USD-SOFR-3M",
+                                "credit_curve": "usd_ig",
+                            }
+                        }
+                    }
+                },
+            },
+            indent=2,
+        )
+    )
+
+    summaries = _collect_trace_summaries(
+        {
+            "artifacts": {
+                "analytical_trace_paths": [str(trace_path)],
+            }
+        }
+    )
+
+    assert len(summaries) == 1
+    summary = summaries[0]
+    assert summary["trace_kind"] == "analytical"
+    assert summary["selected_curve_names"] == {
+        "discount_curve": "usd_ois",
+        "forecast_curve": "USD-SOFR-3M",
+        "credit_curve": "usd_ig",
+    }
+
+
 def test_persist_task_run_record_does_not_promote_platform_action_to_fake_route_id(tmp_path):
     from trellis.agent.task_run_store import load_task_run_record, persist_task_run_record
 

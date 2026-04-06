@@ -24,7 +24,7 @@ Layering
      - Contract meaning independent of solver or market snapshot
      - ``trellis/agent/semantic_contracts.py``
    * - Valuation context
-     - ``ValuationContext``, ``RequiredDataSpec``, ``MarketBindingSpec``
+     - ``ValuationContext``, ``EngineModelSpec``, ``RequiredDataSpec``, ``MarketBindingSpec``
      - Market binding, model/measure policy, reporting, and requested outputs
      - ``trellis/agent/valuation_context.py``, ``trellis/agent/market_binding.py``
    * - Product summary and routing
@@ -85,6 +85,12 @@ The shipped family IRs are:
 This is intentionally not a flat universal IR. The current stack uses
 ``ProductIR`` as the shared checked summary and then narrows into family IRs
 for the proven route families.
+
+Within the valuation layer, migrated calibration workflows now carry a bounded
+``EngineModelSpec`` surface instead of relying only on a free-form
+``model_spec`` string. The structured model spec captures model family/name,
+potential/source semantics, backend hints, calibration requirements, and
+explicit rates discount/forecast curve roles where applicable.
 
 Current Proven Families
 -----------------------
@@ -151,6 +157,13 @@ surface. ``tests/test_verification/test_calibration_replay.py`` locks replay
 contracts and fit tolerances for the supported synthetic fixtures, while
 ``docs/benchmarks/calibration_workflows.{json,md}`` records the cold-start and
 warm-start throughput baseline for the supported workflows.
+
+For multi-curve runtime projections, the pricing stack now treats selected
+curve-role names as first-class replay metadata. The resolved
+``selected_curve_names`` contract is carried from ``MarketState`` into the
+runtime contract, copied onto task results and persisted run records, and
+recovered by replay summaries from either direct trace context fields or the
+nested ``runtime_contract.snapshot_reference`` payload.
 
 That calibration provenance is now reused by the supported rates-risk stack as
 well. Zero-curve bucket shocks remain the default lightweight KRD and

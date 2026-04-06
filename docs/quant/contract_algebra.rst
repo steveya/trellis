@@ -90,7 +90,11 @@ Valuation policy is now separate from contract meaning through
 The shipped tranche-1 surface contains:
 
 - normalized market source or snapshot handle
-- ``model_spec``
+- compatibility ``model_spec`` string
+- structured ``engine_model_spec``
+  - ``model_family`` and ``model_name``
+  - ``PotentialSpec`` and ``SourceSpec``
+  - explicit rates ``discount_curve_role`` and ``forecast_curve_role`` when applicable
 - ``measure_spec``
 - ``discounting_policy``
 - optional ``collateral_policy``
@@ -111,6 +115,10 @@ where:
 - :math:`\Gamma` is collateral, funding, and FX reporting policy
 - :math:`\rho` is the reporting policy
 - :math:`\mathcal{R}` is the requested output set
+
+For migrated calibration workflows, ``engine_model_spec`` is the authoritative
+model-binding surface and ``model_spec`` remains as a compatibility shim for
+legacy callers.
 
 The compiler also emits:
 

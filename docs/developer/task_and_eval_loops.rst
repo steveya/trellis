@@ -139,6 +139,12 @@ alongside the curve objects and repeats that provenance in the runtime
 contract, task result, and persisted task-run record so later debugging can
 tell which named discount or forecast curve was actually chosen.
 
+Replay summaries follow the same rule. For analytical traces, selected curve
+names are read from either ``context.selected_curve_names`` or the nested
+``context.runtime_contract.snapshot_reference.selected_curve_names`` payload,
+so trace consumers do not need to re-resolve snapshot inputs to recover the
+executed curve-role binding.
+
 If the market snapshot was built from bootstrapped rate instruments, the
 resolver keeps that assembly step visible too: named bootstrap buckets become
 named curves in the snapshot, and the chosen curve name is preserved in the

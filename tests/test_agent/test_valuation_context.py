@@ -69,3 +69,58 @@ def test_build_valuation_context_uses_snapshot_id_when_available():
 
     assert context.market_source == "mock"
     assert context.market_snapshot_handle == "snapshot_mock_20241115"
+
+
+def test_engine_model_spec_validation_and_summary_are_stable():
+    from trellis.agent.valuation_context import (
+        EngineModelSpec,
+        PotentialSpec,
+        RatesCurveRoleSpec,
+        SourceSpec,
+        build_valuation_context,
+        validate_engine_model_spec,
+        valuation_context_summary,
+    )
+
+    engine_model_spec = EngineModelSpec(
+        model_family="rates",
+        model_name="hull_white_1f",
+        state_semantics=("short_rate",),
+        potential=PotentialSpec(discount_term="risk_free_rate"),
+        sources=(SourceSpec(source_kind="coupon_stream"),),
+        calibration_requirements=("bootstrap_curve", "fit_hw_strip"),
+        backend_hints=("lattice",),
+        rates_curve_roles=RatesCurveRoleSpec(
+            discount_curve_role="discount_curve",
+            forecast_curve_role="forward_curve",
+        ),
+    )
+
+    assert validate_engine_model_spec(engine_model_spec) == ()
+
+    context = build_valuation_context(
+        engine_model_spec=engine_model_spec,
+        reporting_currency="USD",
+    )
+
+    assert context.engine_model_spec == engine_model_spec
+    summary = valuation_context_summary(context)
+    assert summary["engine_model_spec"]["model_family"] == "rates"
+    assert summary["engine_model_spec"]["model_name"] == "hull_white_1f"
+    assert summary["engine_model_spec"]["rates_curve_roles"] == {
+        "discount_curve_role": "discount_curve",
+        "forecast_curve_role": "forward_curve",
+        "rate_index": "",
+    }
+
+
+def test_legacy_model_spec_shim_builds_engine_model_spec_for_supported_rates_model():
+    from trellis.agent.valuation_context import build_valuation_context
+
+    context = build_valuation_context(model_spec="hull_white")
+
+    assert context.model_spec == "hull_white"
+    assert context.engine_model_spec is not None
+    assert context.engine_model_spec.model_family == "rates"
+    assert context.engine_model_spec.model_name == "hull_white_1f"
+    assert context.engine_model_spec.rates_curve_roles is not None
