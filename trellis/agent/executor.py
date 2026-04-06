@@ -3235,8 +3235,23 @@ def _record_resolved_failures(
     This records the lesson into the canonical knowledge store so future builds
     can retrieve it through normal lesson selection.
     """
-    from trellis.agent.config import llm_generate_json
+    import logging
+    import os
+
+    from trellis.agent.config import get_provider, llm_generate_json
     from trellis.agent.test_resolution import Lesson, record_lesson
+
+    provider = get_provider()
+    credential_env = {
+        "anthropic": "ANTHROPIC_API_KEY",
+        "openai": "OPENAI_API_KEY",
+    }.get(provider, "")
+    if credential_env and not os.environ.get(credential_env):
+        logging.getLogger(__name__).warning(
+            "Skipping resolved-failure lesson distillation because %s is not configured.",
+            credential_env,
+        )
+        return
 
     prompt = f"""You fixed these validation failures for a {description}
 ({pricing_plan.method if pricing_plan else 'unknown'} method):

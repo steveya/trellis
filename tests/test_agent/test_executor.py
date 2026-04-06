@@ -220,6 +220,31 @@ def test_record_resolved_failures_fails_hard_on_missing_lesson_fields(monkeypatc
         )
 
 
+def test_record_resolved_failures_skips_without_llm_credentials(monkeypatch, caplog):
+    from trellis.agent.executor import _record_resolved_failures
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("trellis.agent.config.get_provider", lambda: "openai")
+    monkeypatch.setattr(
+        "trellis.agent.config.llm_generate_json",
+        lambda *args, **kwargs: pytest.fail("llm_generate_json should not run without credentials"),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.test_resolution.record_lesson",
+        lambda *args, **kwargs: pytest.fail("record_lesson should not run without credentials"),
+    )
+
+    with caplog.at_level("WARNING"):
+        _record_resolved_failures(
+            ["example validation failure"],
+            "European call option",
+            SimpleNamespace(method="analytical"),
+            "gpt-5-mini",
+        )
+
+    assert "Skipping resolved-failure lesson distillation" in caplog.text
+
+
 def test_diagnose_failure_reads_related_lessons_from_canonical_signatures(monkeypatch):
     from trellis.agent.knowledge.schema import FailureSignature
     from trellis.agent.test_resolution import TestFailure, diagnose_failure
