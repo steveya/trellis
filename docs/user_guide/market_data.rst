@@ -323,6 +323,16 @@ rates model pack rather than only parallel shifts:
 This keeps the rates bundle deterministic and cheap, but makes it materially
 more consistent for proving, calibration fixtures, and multi-curve demos.
 
+For credit, the synthetic generator is now hazard-first:
+
+- the credit model pack stores seeded hazard-rate knots
+- the CDS-style spread grid in the quote bundle is derived from those hazards
+- the runtime ``CreditCurve`` in the snapshot is built from the same hazard
+  authority surface
+
+This keeps the synthetic credit path aligned with the typed reduced-form credit
+workflow instead of letting quote space and runtime space drift apart.
+
 For the migrated calibration workflows, the derived
 ``model_consistency_contract`` still records the bounded deterministic rates,
 credit, and volatility assumptions used to build the synthetic snapshot:

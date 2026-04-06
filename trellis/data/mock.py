@@ -153,19 +153,19 @@ class SyntheticCreditModelPack:
 
     family: str
     recovery: float
-    spread_inputs_decimal: Mapping[str, Mapping[str, float]]
+    hazard_rate_inputs: Mapping[str, Mapping[str, float]]
     quote_families: tuple[str, ...] = ("spread", "hazard")
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "recovery", float(self.recovery))
-        object.__setattr__(self, "spread_inputs_decimal", _freeze_payload(self.spread_inputs_decimal))
+        object.__setattr__(self, "hazard_rate_inputs", _freeze_payload(self.hazard_rate_inputs))
         object.__setattr__(self, "quote_families", tuple(str(family) for family in self.quote_families))
 
     def to_payload(self) -> dict[str, object]:
         return {
             "family": self.family,
             "recovery": self.recovery,
-            "spread_inputs_decimal": _payload_to_json(self.spread_inputs_decimal),
+            "hazard_rate_inputs": _payload_to_json(self.hazard_rate_inputs),
             "quote_families": _payload_to_json(self.quote_families),
         }
 
@@ -522,15 +522,15 @@ def _build_synthetic_credit_model_pack(
     ig_scale = _seeded_scale(seed, f"credit_spreads::ig::{regime}", amplitude=0.04)
     hy_scale = _seeded_scale(seed, f"credit_spreads::hy::{regime}", amplitude=0.05)
     return SyntheticCreditModelPack(
-        family="reduced_form_spread_grid",
+        family="reduced_form_hazard_curve",
         recovery=recovery,
-        spread_inputs_decimal={
+        hazard_rate_inputs={
             "usd_ig": {
-                str(tenor): round(float(spread) * ig_scale, 6)
+                str(tenor): round(float(spread) * ig_scale / (1.0 - recovery), 10)
                 for tenor, spread in ig_spreads.items()
             },
             "usd_hy": {
-                str(tenor): round(float(spread) * hy_scale, 6)
+                str(tenor): round(float(spread) * hy_scale / (1.0 - recovery), 10)
                 for tenor, spread in hy_spreads.items()
             },
         },
@@ -540,13 +540,13 @@ def _build_synthetic_credit_model_pack(
 def _build_credit_curves(credit_pack: SyntheticCreditModelPack) -> dict[str, CreditCurve]:
     """Build named credit curves from the seeded credit model pack."""
     return {
-        "usd_ig": CreditCurve.from_spreads(
-            {float(tenor): float(spread) for tenor, spread in credit_pack.spread_inputs_decimal["usd_ig"].items()},
-            recovery=credit_pack.recovery,
+        "usd_ig": CreditCurve(
+            tuple(float(tenor) for tenor in credit_pack.hazard_rate_inputs["usd_ig"].keys()),
+            tuple(float(hazard) for hazard in credit_pack.hazard_rate_inputs["usd_ig"].values()),
         ),
-        "usd_hy": CreditCurve.from_spreads(
-            {float(tenor): float(spread) for tenor, spread in credit_pack.spread_inputs_decimal["usd_hy"].items()},
-            recovery=credit_pack.recovery,
+        "usd_hy": CreditCurve(
+            tuple(float(tenor) for tenor in credit_pack.hazard_rate_inputs["usd_hy"].keys()),
+            tuple(float(hazard) for hazard in credit_pack.hazard_rate_inputs["usd_hy"].values()),
         ),
     }
 
@@ -866,7 +866,13 @@ def _build_synthetic_quote_bundles(
         },
         credit={
             "quote_families": credit_pack.quote_families,
-            "spread_inputs_decimal": credit_pack.spread_inputs_decimal,
+            "spread_inputs_decimal": {
+                curve_name: {
+                    tenor_text: round(float(hazard_rate) * (1.0 - float(credit_pack.recovery)), 10)
+                    for tenor_text, hazard_rate in hazard_grid.items()
+                }
+                for curve_name, hazard_grid in credit_pack.hazard_rate_inputs.items()
+            },
         },
         volatility={
             "surface_families": {

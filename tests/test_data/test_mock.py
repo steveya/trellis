@@ -141,10 +141,11 @@ class TestMockDataProvider:
         assert contract["version"] == "v2"
         assert contract["seed"] == snapshot.provenance["prior_seed"]
         assert contract["model_packs"]["rates"]["family"] == "shifted_curve_bundle"
-        assert contract["model_packs"]["credit"]["family"] == "reduced_form_spread_grid"
+        assert contract["model_packs"]["credit"]["family"] == "reduced_form_hazard_curve"
         assert contract["model_packs"]["volatility"]["family"] == "regime_surface_bundle"
         assert "forecast_basis_parameters" in contract["model_packs"]["rates"]
         assert "rate_vol_model" in contract["model_packs"]["rates"]
+        assert "hazard_rate_inputs" in contract["model_packs"]["credit"]
         assert contract["quote_bundles"]["credit"]["quote_families"] == ["spread", "hazard"]
         assert "usd_ois" in contract["runtime_targets"]["discount_curves"]
         assert "USD-SOFR-3M" in contract["runtime_targets"]["forecast_curves"]
@@ -228,6 +229,17 @@ class TestMockDataProvider:
             tenor = float(tenor_text)
             expected_hazard = float(spread) / (1.0 - recovery)
             assert ig_curve.hazard_rate(tenor) == pytest.approx(expected_hazard)
+
+    def test_synthetic_credit_spreads_are_derived_from_hazard_inputs(self):
+        provider = MockDataProvider()
+        snapshot = provider.fetch_market_snapshot(date(2024, 11, 15))
+        generation = snapshot.provenance["prior_parameters"]["synthetic_generation_contract"]
+        recovery = float(generation["model_packs"]["credit"]["recovery"])
+        hazard_grid = generation["model_packs"]["credit"]["hazard_rate_inputs"]["usd_ig"]
+        spread_grid = generation["quote_bundles"]["credit"]["spread_inputs_decimal"]["usd_ig"]
+
+        for tenor_text, hazard in hazard_grid.items():
+            assert spread_grid[tenor_text] == pytest.approx(float(hazard) * (1.0 - recovery))
 
     def test_model_consistency_contract_credit_inputs_drive_calibration_handoff(self):
         provider = MockDataProvider()

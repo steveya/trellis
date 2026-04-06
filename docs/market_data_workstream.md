@@ -76,6 +76,17 @@ shifts and a regime smile table." The rates pack is still bounded and cheap,
 but the generated forecast curves and rate-vol surfaces now come from one
 explicit seeded rates authority surface.
 
+`QUA-697` does the same for single-name credit. Synthetic credit fixtures now
+record:
+
+- seeded hazard-rate knots as the model-pack authority
+- derived CDS-style spread grids in the synthetic quote bundle
+- runtime `CreditCurve` objects built directly from those hazard knots
+
+This means the spread grid is no longer the primary synthetic credit input.
+The hazard term structure is the authority, and both the quote bundle and the
+runtime curve are derived from it.
+
 The older ``model_consistency_contract`` is now derived from the seeded
 generation contract so existing replay, benchmark, and proving consumers
 continue to work while the follow-on family-specific generators migrate onto
