@@ -5,6 +5,8 @@ from datetime import date
 import numpy as raw_np
 import pytest
 
+pytest.importorskip("QuantLib")
+
 # --- Trellis ---
 from trellis.curves.yield_curve import YieldCurve
 from trellis.curves.forward_curve import ForwardCurve

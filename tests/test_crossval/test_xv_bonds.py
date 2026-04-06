@@ -8,6 +8,9 @@ from datetime import date
 import numpy as np
 import pytest
 
+pytest.importorskip("QuantLib")
+pytest.importorskip("financepy")
+
 # --- Trellis ---
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import DeterministicCashflowPayoff

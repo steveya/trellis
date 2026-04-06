@@ -5,6 +5,8 @@ from datetime import date
 import numpy as raw_np
 import pytest
 
+pytest.importorskip("QuantLib")
+
 # --- Trellis ---
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
