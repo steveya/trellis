@@ -345,7 +345,7 @@ Status mirror last synced: `2026-04-06`
 | `QUA-688` | Explicit quote maps and calibration-target transforms | Done |
 | `QUA-689` | Typed calibrated-object materialization onto `MarketState` | Done |
 | `QUA-690` | Typed credit calibration and potential-term binding | Done |
-| `QUA-691` | Canonical model-grammar registry and planner lookup | Backlog |
+| `QUA-691` | Canonical model-grammar registry and planner lookup | Done |
 | `QUA-693` | Model-consistent synthetic mock snapshots for rates, credit, and vol | Backlog |
 | `QUA-692` | Replay, benchmark, canary, and docs hardening | Backlog |
 

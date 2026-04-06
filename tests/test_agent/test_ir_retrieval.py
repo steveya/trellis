@@ -51,6 +51,23 @@ def test_retrieve_for_product_ir_surfaces_exact_route_families():
     assert "rate_lattice" in text
 
 
+def test_retrieve_for_product_ir_surfaces_model_grammar_hints_for_callable_bond():
+    from trellis.agent.knowledge import format_knowledge_for_prompt, retrieve_for_product_ir
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    ir = decompose_to_ir("Callable bond with semiannual coupon and call schedule")
+    knowledge = retrieve_for_product_ir(ir, preferred_method="rate_tree")
+
+    assert knowledge["model_grammar"]
+    grammar_ids = [entry.id for entry in knowledge["model_grammar"]]
+    assert "rates_hull_white_1f" in grammar_ids
+
+    text = format_knowledge_for_prompt(knowledge)
+    assert "## Canonical Model Grammar" in text
+    assert "rates_hull_white_1f" in text
+    assert "discount_curve" in text
+
+
 def test_ir_native_retrieval_ranks_early_exercise_lessons_for_american_put():
     from trellis.agent.knowledge import retrieve_for_product_ir
     from trellis.agent.knowledge.decompose import decompose_to_ir

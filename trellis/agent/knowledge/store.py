@@ -29,6 +29,7 @@ from trellis.agent.knowledge.schema import (
     Lesson,
     LessonIndex,
     LessonStatus,
+    ModelGrammarEntry,
     MethodRequirements,
     Principle,
     ProductDecomposition,
@@ -177,6 +178,7 @@ class KnowledgeStore:
         self._cookbooks_cache: dict[str, CookbookEntry] | None = None
         self._contracts_cache: dict[str, list[DataContractEntry]] | None = None
         self._requirements_cache: dict[str, MethodRequirements] | None = None
+        self._model_grammar_cache: tuple[ModelGrammarEntry, ...] | None = None
         self._benchmarks_cache: dict[str, BenchmarkSuite] | None = None
         self._retrieval_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
         self._basket_superseded_lesson_ids_cache: list[str] | None = None
@@ -341,6 +343,7 @@ class KnowledgeStore:
             "cookbook": self._load_cookbook(method) if method else None,
             "data_contracts": self._load_contracts(method) if method else [],
             "method_requirements": self._load_requirements(method) if method else None,
+            "model_grammar": self._load_model_grammar(spec),
             "similar_products": [],
             "borrowed_lessons": [],
         }
@@ -434,6 +437,7 @@ class KnowledgeStore:
         self._cookbooks_cache = None
         self._contracts_cache = None
         self._requirements_cache = None
+        self._model_grammar_cache = None
         self._benchmarks_cache = None
         self._retrieval_cache.clear()
         self._basket_superseded_lesson_ids_cache = None
@@ -789,6 +793,126 @@ class KnowledgeStore:
                         requirements=flat,
                     )
         return self._requirements_cache.get(normalize_method(method))
+
+    @staticmethod
+    def _as_token_tuple(values: object) -> tuple[str, ...]:
+        """Normalize one YAML sequence-like field into a tuple of lowercase tokens."""
+        if values is None:
+            return ()
+        if isinstance(values, str):
+            candidates = (values,)
+        elif isinstance(values, (list, tuple, set, frozenset)):
+            candidates = tuple(values)
+        else:
+            return ()
+        normalized: list[str] = []
+        for value in candidates:
+            token = str(value or "").strip().lower().replace(" ", "_")
+            if token:
+                normalized.append(token)
+        return tuple(normalized)
+
+    def _load_model_grammar_catalog(self) -> tuple[ModelGrammarEntry, ...]:
+        """Load and cache canonical calibration-layer model-grammar entries."""
+        if self._model_grammar_cache is not None:
+            return self._model_grammar_cache
+
+        path = _KNOWLEDGE_DIR / "canonical" / "model_grammar.yaml"
+        records: list[ModelGrammarEntry] = []
+        if path.exists():
+            data = yaml.safe_load(path.read_text()) or {}
+            if isinstance(data, list):
+                entries = data
+            elif isinstance(data, dict):
+                entries = data.get("entries", [])
+            else:
+                entries = []
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                entry_id = str(entry.get("id") or "").strip()
+                if not entry_id:
+                    continue
+                records.append(
+                    ModelGrammarEntry(
+                        id=entry_id,
+                        title=str(entry.get("title") or "").strip(),
+                        methods=self._as_token_tuple(entry.get("methods")),
+                        instruments=self._as_token_tuple(entry.get("instruments")),
+                        model_families=self._as_token_tuple(entry.get("model_families")),
+                        engine_families=self._as_token_tuple(entry.get("engine_families")),
+                        features=self._as_token_tuple(entry.get("features")),
+                        model_name=str(entry.get("model_name") or "").strip(),
+                        state_semantics=self._as_token_tuple(entry.get("state_semantics")),
+                        quote_families=self._as_token_tuple(entry.get("quote_families")),
+                        calibration_workflows=tuple(
+                            str(item).strip()
+                            for item in entry.get("calibration_workflows", [])
+                            if str(item).strip()
+                        ),
+                        runtime_materialization_kind=str(
+                            entry.get("runtime_materialization_kind") or ""
+                        ).strip(),
+                        runtime_materialization_targets=self._as_token_tuple(
+                            entry.get("runtime_materialization_targets")
+                        ),
+                        rates_curve_roles=self._as_token_tuple(entry.get("rates_curve_roles")),
+                        required_market_data=self._as_token_tuple(entry.get("required_market_data")),
+                        authority_surfaces=tuple(
+                            str(item).strip()
+                            for item in entry.get("authority_surfaces", [])
+                            if str(item).strip()
+                        ),
+                        deferred_scope=tuple(
+                            str(item).strip()
+                            for item in entry.get("deferred_scope", [])
+                            if str(item).strip()
+                        ),
+                        notes=str(entry.get("notes") or "").strip(),
+                    )
+                )
+        self._model_grammar_cache = tuple(records)
+        return self._model_grammar_cache
+
+    def _load_model_grammar(self, spec: RetrievalSpec) -> list[ModelGrammarEntry]:
+        """Return model-grammar entries relevant to one retrieval spec."""
+        catalog = self._load_model_grammar_catalog()
+        if not catalog:
+            return []
+
+        method = normalize_method(spec.method) if spec.method else ""
+        instrument = str(spec.instrument or "").strip().lower()
+        model_family = str(spec.model_family or "").strip().lower()
+        feature_set = {
+            str(feature).strip().lower().replace(" ", "_")
+            for feature in (spec.features or [])
+            if str(feature).strip()
+        }
+        candidate_engine_families = {
+            str(family).strip().lower().replace(" ", "_")
+            for family in spec.candidate_engine_families
+            if str(family).strip()
+        }
+
+        ranked: list[tuple[float, ModelGrammarEntry]] = []
+        for entry in catalog:
+            score = 0.0
+            if method and method in entry.methods:
+                score += 2.0
+            if instrument and instrument in entry.instruments:
+                score += 3.0
+            if model_family and model_family in entry.model_families:
+                score += 2.5
+            if candidate_engine_families and set(entry.engine_families) & candidate_engine_families:
+                score += 1.0
+            if feature_set and entry.features:
+                score += 0.25 * len(feature_set & set(entry.features))
+            if score <= 0.0:
+                continue
+            ranked.append((score, entry))
+
+        ranked.sort(key=lambda item: (-item[0], item[1].id))
+        return [entry for _, entry in ranked]
 
     # --------------------------------------------------------------------- #
     # Warm tier: benchmarks

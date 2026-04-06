@@ -269,6 +269,30 @@ class MethodRequirements:
     requirements: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class ModelGrammarEntry:
+    """Canonical calibration-layer model-grammar entry used for planner lookup."""
+
+    id: str
+    title: str
+    methods: tuple[str, ...] = ()
+    instruments: tuple[str, ...] = ()
+    model_families: tuple[str, ...] = ()
+    engine_families: tuple[str, ...] = ()
+    features: tuple[str, ...] = ()
+    model_name: str = ""
+    state_semantics: tuple[str, ...] = ()
+    quote_families: tuple[str, ...] = ()
+    calibration_workflows: tuple[str, ...] = ()
+    runtime_materialization_kind: str = ""
+    runtime_materialization_targets: tuple[str, ...] = ()
+    rates_curve_roles: tuple[str, ...] = ()
+    required_market_data: tuple[str, ...] = ()
+    authority_surfaces: tuple[str, ...] = ()
+    deferred_scope: tuple[str, ...] = ()
+    notes: str = ""
+
+
 # ---------------------------------------------------------------------------
 # Structured memory / repo state
 # ---------------------------------------------------------------------------

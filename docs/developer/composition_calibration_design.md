@@ -367,6 +367,25 @@ inspect:
 The supported lookup surface is
 `MarketState.materialized_calibrated_object(object_kind=..., object_name=...)`.
 
+### Canonical model-grammar registry
+
+The planner and shared retrieval surface now also read a canonical calibration
+registry from `trellis/agent/knowledge/canonical/model_grammar.yaml`.
+
+That registry is intentionally descriptive:
+
+- it records the supported model family, quote families, calibration workflow,
+  runtime materialization kind, and deferred scope
+- it gives the planner and prompt surfaces a stable lookup table for supported
+  calibration workflows
+- it does not approve unsupported routes by itself and it does not replace the
+  route registry, import registry, or code/docs authority
+
+In practice, the code-level engine-model spec, quote-map surface, and runtime
+materialization helpers remain authoritative. The canonical registry mirrors
+that shipped boundary so the planner can look it up instead of reconstructing
+it from scratch.
+
 ### Integration with GenerationPlan
 
 ```python

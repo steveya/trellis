@@ -19,6 +19,8 @@ The canonical files are split by responsibility:
 - ``canonical/cookbooks.yaml``: method-family templates used during code generation
 - ``canonical/data_contracts.yaml``: input conventions and conversions
 - ``canonical/method_requirements.yaml``: modeling constraints that must hold
+- ``canonical/model_grammar.yaml``: supported calibration-layer model grammar
+  entries used for planner/retrieval lookup
 - ``canonical/failure_signatures.yaml``: regex-driven failure interpretation
 - ``lessons/entries/*.yaml``: canonical lesson entries
 - ``lessons/index.yaml``: generated hot-tier cache rebuilt from the entry files
@@ -80,9 +82,17 @@ are retrieved through ``KnowledgeStore``.
 In practice:
 
 - add new method templates in ``canonical/cookbooks.yaml``
+- record supported calibration-layer model semantics in
+  ``canonical/model_grammar.yaml`` when a workflow becomes a maintained
+  authority surface
 - keep cookbook examples method-generic and import-safe
 - use lessons for failures or edge cases, not for normal method definitions
 - do not reintroduce a sidecar lesson file outside ``trellis/agent/knowledge/``
+
+The model-grammar registry is descriptive knowledge, not an approval mechanism.
+It should stay aligned with the shipped code/docs authority for engine-model
+specs, quote maps, and runtime materialization. Unsupported or deferred models
+belong in ``deferred_scope`` notes, not in optimistic registry entries.
 
 Recommended Maintenance Loop
 ----------------------------

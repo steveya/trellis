@@ -10,6 +10,7 @@ from trellis.agent.knowledge.schema import (
     DataContractEntry,
     FailureSignature,
     Lesson,
+    ModelGrammarEntry,
     MethodRequirements,
     Principle,
     ProductDecomposition,
@@ -30,6 +31,7 @@ _COMPACT_LIMITS = {
         "principles": 4,
         "contracts": 2,
         "requirements": 6,
+        "model_grammar": 3,
         "lessons": 3,
         "unresolved_primitives": 5,
         "template_chars": 1800,
@@ -38,10 +40,12 @@ _COMPACT_LIMITS = {
     "review": {
         "principles": 4,
         "requirements": 6,
+        "model_grammar": 2,
         "lessons": 3,
     },
     "routing": {
         "principles": 4,
+        "model_grammar": 2,
         "lessons": 4,
     },
 }
@@ -50,15 +54,18 @@ _DISTILLED_LIMITS = {
     "builder": {
         "principles": 3,
         "requirements": 3,
+        "model_grammar": 2,
         "lessons": 2,
     },
     "review": {
         "principles": 3,
         "requirements": 3,
+        "model_grammar": 2,
         "lessons": 2,
     },
     "routing": {
         "principles": 3,
+        "model_grammar": 2,
         "lessons": 2,
     },
 }
@@ -261,6 +268,20 @@ def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = Fa
         lines.append("These are not optional. Failure to satisfy them produces incorrect prices.")
         sections.append("\n".join(lines))
 
+    model_grammar: list[ModelGrammarEntry] = knowledge.get("model_grammar", [])
+    if model_grammar:
+        lines = ["## Canonical Model Grammar (supported calibration workflows)\n"]
+        selected = _take_limited(
+            model_grammar,
+            _COMPACT_LIMITS["builder"]["model_grammar"] if compact else None,
+        )
+        for entry in selected:
+            lines.append(_render_model_grammar_entry(entry))
+        omission = _omission_notice("model-grammar entries", len(model_grammar), len(selected))
+        if omission:
+            lines.append(omission)
+        sections.append("\n".join(lines))
+
     # 6. Lessons (ranked by relevance + severity)
     lessons: list[Lesson] = knowledge.get("lessons", [])
     if lessons:
@@ -318,6 +339,7 @@ def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = Fa
         )
 
     unresolved_primitives: tuple[str, ...] | list[str] = knowledge.get("unresolved_primitives", ())
+    model_grammar: list[ModelGrammarEntry] = knowledge.get("model_grammar", ())
     if unresolved_primitives:
         lines = ["## Unresolved Primitives\n"]
         selected = _take_limited(
@@ -358,6 +380,7 @@ def summarize_knowledge_for_trace(knowledge: dict[str, Any]) -> dict[str, Any]:
     lessons: list[Lesson] = knowledge.get("lessons", [])
     similar_products: list[SimilarProductMatch] = knowledge.get("similar_products", [])
     borrowed_lessons: list[Lesson] = knowledge.get("borrowed_lessons", [])
+    model_grammar: list[ModelGrammarEntry] = knowledge.get("model_grammar", [])
     unresolved_primitives: tuple[str, ...] | list[str] = knowledge.get("unresolved_primitives", ())
 
     summary: dict[str, Any] = {
@@ -375,6 +398,15 @@ def summarize_knowledge_for_trace(knowledge: dict[str, Any]) -> dict[str, Any]:
         "data_contracts": [contract.name for contract in contracts],
         "requirement_count": len(reqs.requirements) if reqs else 0,
         "requirement_method": reqs.method if reqs else None,
+        "model_grammar_ids": [entry.id for entry in model_grammar],
+        "model_grammar_model_names": [entry.model_name for entry in model_grammar if entry.model_name],
+        "model_grammar_runtime_kinds": sorted(
+            {
+                entry.runtime_materialization_kind
+                for entry in model_grammar
+                if entry.runtime_materialization_kind
+            }
+        ),
         "unresolved_primitives": list(unresolved_primitives),
     }
     summary.update(_adapter_lifecycle_summary())
@@ -463,6 +495,7 @@ def format_review_knowledge_for_prompt(
         sections.append("\n".join(lines))
 
     reqs: MethodRequirements | None = knowledge.get("method_requirements")
+    model_grammar: list[ModelGrammarEntry] = knowledge.get("model_grammar", [])
     if reqs and reqs.requirements:
         lines = [f"## {audience.upper()} CHECKPOINTS\n"]
         selected = _take_limited(reqs.requirements, _COMPACT_LIMITS["review"]["requirements"] if compact else None)
@@ -473,7 +506,21 @@ def format_review_knowledge_for_prompt(
             lines.append(omission)
         sections.append("\n".join(lines))
 
+    if model_grammar:
+        lines = ["## Canonical Model Grammar Hints\n"]
+        selected = _take_limited(
+            model_grammar,
+            _COMPACT_LIMITS["review"]["model_grammar"] if compact else None,
+        )
+        for entry in selected:
+            lines.append(_render_model_grammar_entry(entry))
+        omission = _omission_notice("model-grammar entries", len(model_grammar), len(selected))
+        if omission:
+            lines.append(omission)
+        sections.append("\n".join(lines))
+
     lessons: list[Lesson] = knowledge.get("lessons", [])
+    model_grammar: list[ModelGrammarEntry] = knowledge.get("model_grammar", [])
     if lessons:
         lines = ["## Shared Failure Memory\n"]
         selected = _take_limited(lessons, _COMPACT_LIMITS["review"]["lessons"] if compact else None)
@@ -535,6 +582,7 @@ def format_decomposition_knowledge_for_prompt(knowledge: dict[str, Any], *, comp
         pass
 
     principles: list[Principle] = knowledge.get("principles", [])
+    model_grammar: list[ModelGrammarEntry] = knowledge.get("model_grammar", [])
     if principles:
         lines = ["## Shared Routing Principles\n"]
         selected = _take_limited(principles, _COMPACT_LIMITS["routing"]["principles"] if compact else None)
@@ -554,6 +602,19 @@ def format_decomposition_knowledge_for_prompt(knowledge: dict[str, Any], *, comp
                 f"- [{lesson.severity.value.upper()}] {lesson.title}: {lesson.fix.strip()}"
             )
         omission = _omission_notice("lessons", len(lessons), len(selected))
+        if omission:
+            lines.append(omission)
+        sections.append("\n".join(lines))
+
+    if model_grammar:
+        lines = ["## Model Grammar Hints\n"]
+        selected = _take_limited(
+            model_grammar,
+            _COMPACT_LIMITS["routing"]["model_grammar"] if compact else None,
+        )
+        for entry in selected:
+            lines.append(_render_model_grammar_entry(entry))
+        omission = _omission_notice("model-grammar entries", len(model_grammar), len(selected))
         if omission:
             lines.append(omission)
         sections.append("\n".join(lines))
@@ -600,6 +661,7 @@ def format_distilled_knowledge_for_prompt(
     principles: list[Principle] = knowledge.get("principles", [])
     lessons: list[Lesson] = knowledge.get("lessons", [])
     similar_products: list[SimilarProductMatch] = knowledge.get("similar_products", [])
+    model_grammar: list[ModelGrammarEntry] = knowledge.get("model_grammar", [])
     unresolved_primitives: tuple[str, ...] | list[str] = knowledge.get("unresolved_primitives", ())
 
     if audience == "builder":
@@ -622,6 +684,11 @@ def format_distilled_knowledge_for_prompt(
             lines.append("- Non-negotiable requirements:")
             for requirement in _take_limited(reqs.requirements, limits["requirements"]):
                 lines.append(f"  - {requirement}")
+        if model_grammar:
+            lines.append("- Canonical model grammar:")
+            for entry in _take_limited(model_grammar, limits["model_grammar"]):
+                model_name = entry.model_name or entry.id
+                lines.append(f"  - `{entry.id}` -> `{model_name}`")
         if lessons:
             lines.append("- Repeated fixes to reuse:")
             for lesson in _take_limited(lessons, limits["lessons"]):
@@ -655,6 +722,11 @@ def format_distilled_knowledge_for_prompt(
             lines.append("- Review checkpoints:")
             for requirement in _take_limited(reqs.requirements, limits["requirements"]):
                 lines.append(f"  - {requirement}")
+        if model_grammar:
+            lines.append("- Canonical model grammar:")
+            for entry in _take_limited(model_grammar, limits["model_grammar"]):
+                model_name = entry.model_name or entry.id
+                lines.append(f"  - `{entry.id}` -> `{model_name}`")
         if lessons:
             lines.append("- Known failure traps:")
             for lesson in _take_limited(lessons, limits["lessons"]):
@@ -694,6 +766,11 @@ def format_distilled_knowledge_for_prompt(
             lines.append("- Routing principles:")
             for principle in _take_limited(principles, limits["principles"]):
                 lines.append(f"  - `{principle.id}`: {principle.rule}")
+        if model_grammar:
+            lines.append("- Canonical model grammar:")
+            for entry in _take_limited(model_grammar, limits["model_grammar"]):
+                model_name = entry.model_name or entry.id
+                lines.append(f"  - `{entry.id}` -> `{model_name}`")
         if lessons:
             lines.append("- Similar-product lessons:")
             for lesson in _take_limited(lessons, limits["lessons"]):
@@ -898,6 +975,38 @@ def _render_similar_product_match(match: SimilarProductMatch) -> str:
         f"- `{match.instrument}` ({match.score:.0%}, `{match.method}`): "
         f"shared features {shared_features}{route_hint}"
     )
+
+
+def _render_model_grammar_entry(entry: ModelGrammarEntry) -> str:
+    """Render one model-grammar registry entry as compact markdown."""
+    model_name = entry.model_name or entry.id
+    lines = [f"### `{entry.id}` — {entry.title or model_name}"]
+    lines.append(f"- Model: `{model_name}`")
+    if entry.quote_families:
+        lines.append(
+            "- Quote families: "
+            + ", ".join(f"`{family}`" for family in entry.quote_families)
+        )
+    if entry.calibration_workflows:
+        lines.append(
+            "- Calibration workflows: "
+            + ", ".join(f"`{workflow}`" for workflow in entry.calibration_workflows)
+        )
+    if entry.runtime_materialization_kind:
+        lines.append(
+            f"- Runtime materialization kind: `{entry.runtime_materialization_kind}`"
+        )
+    if entry.rates_curve_roles:
+        lines.append(
+            "- Rates curve roles: "
+            + ", ".join(f"`{role}`" for role in entry.rates_curve_roles)
+        )
+    if entry.deferred_scope:
+        lines.append(
+            "- Deferred scope: "
+            + ", ".join(f"`{item}`" for item in entry.deferred_scope)
+        )
+    return "\n".join(lines)
 
 
 def _omission_notice(label: str, total: int, shown: int) -> str:

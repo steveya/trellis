@@ -1,0 +1,147 @@
+entries:
+  - id: rates_bootstrap_curve
+    title: Rates bootstrap curve authority
+    methods: [rate_tree, analytical]
+    instruments: [callable_bond, bermudan_swaption, european_swaption, cap_floor]
+    model_families: [interest_rate]
+    engine_families: [lattice, analytical]
+    features: [curve_bootstrap, multi_curve, rates]
+    model_name: Rates bootstrap curve bundle
+    state_semantics: [discount_curve, forecast_curve, curve_bundle]
+    quote_families: [par_rate, price]
+    calibration_workflows: [build_bootstrap_solve_request]
+    runtime_materialization_kind: market_curves
+    runtime_materialization_targets: [discount_curve, forecast_curve]
+    rates_curve_roles: [discount_curve, forecast_curve]
+    required_market_data: [discount_curve, forward_curve]
+    authority_surfaces:
+      - trellis.curves.bootstrap.build_bootstrap_solve_request
+      - trellis.models.calibration.solve_request.SolveRequest
+    deferred_scope:
+      - cross_currency_bootstrap
+      - calendar_complete_bootstrap
+    notes: |
+      Descriptive authority only. This entry explains the supported curve bootstrap
+      boundary and explicit multi-curve roles; it does not approve routes by itself.
+
+  - id: rates_hull_white_1f
+    title: Hull-White 1F rates calibration
+    methods: [rate_tree]
+    instruments: [callable_bond, bermudan_swaption, european_swaption, zero_coupon_bond_option]
+    model_families: [interest_rate]
+    engine_families: [lattice, exercise]
+    features: [mean_reversion, callable, exercise, rates_option]
+    model_name: Hull-White 1F
+    state_semantics: [short_rate, mean_reverting, one_factor]
+    quote_families: [price, implied_vol]
+    calibration_workflows: [calibrate_hull_white]
+    runtime_materialization_kind: model_parameter_set
+    runtime_materialization_targets: [model_parameters, model_parameter_sets]
+    rates_curve_roles: [discount_curve, forecast_curve]
+    required_market_data: [discount_curve, forward_curve, black_vol_surface]
+    authority_surfaces:
+      - trellis.agent.valuation_context.EngineModelSpec
+      - trellis.models.calibration.quote_maps.QuoteMapSpec
+      - trellis.models.calibration.materialization.CalibratedObjectMaterialization
+    deferred_scope:
+      - time_dependent_sigma
+      - multi_factor_rates
+    notes: |
+      Requires explicit discount/forecast curve selection. Runtime binding lands on
+      the typed model-parameter-set materialization surface.
+
+  - id: sabr_smile_workflow
+    title: SABR smile calibration
+    methods: [analytical]
+    instruments: [cap_floor, european_swaption, european_option]
+    model_families: [interest_rate, equity_diffusion]
+    engine_families: [analytical]
+    features: [smile_fit, implied_vol, forward_smile]
+    model_name: SABR smile
+    state_semantics: [forward_smile, implied_vol_surface]
+    quote_families: [implied_vol]
+    calibration_workflows: [calibrate_sabr_smile_workflow]
+    required_market_data: [black_vol_surface, forward_curve]
+    authority_surfaces:
+      - trellis.models.calibration.quote_maps.QuoteMapSpec
+      - trellis.models.calibration.sabr_fit.SABRSmileCalibrationResult
+    deferred_scope:
+      - term_structure_sabr
+      - direct_market_state_materialization
+    notes: |
+      The supported slice returns a reusable smile-fit artifact and governed solve
+      provenance; it does not yet materialize directly onto MarketState.
+
+  - id: heston_smile_workflow
+    title: Heston smile calibration
+    methods: [monte_carlo]
+    instruments: [european_option, american_option, barrier_option, asian_option]
+    model_families: [stochastic_volatility]
+    engine_families: [monte_carlo]
+    features: [stochastic_vol, smile_fit, volatility]
+    model_name: Heston
+    state_semantics: [log_spot, variance, stochastic_volatility]
+    quote_families: [implied_vol]
+    calibration_workflows: [calibrate_heston_smile_workflow]
+    runtime_materialization_kind: model_parameter_set
+    runtime_materialization_targets: [model_parameters, model_parameter_sets]
+    required_market_data: [spot, discount_curve, black_vol_surface]
+    authority_surfaces:
+      - trellis.agent.valuation_context.EngineModelSpec
+      - trellis.models.calibration.quote_maps.QuoteMapSpec
+      - trellis.models.calibration.materialization.CalibratedObjectMaterialization
+    deferred_scope:
+      - term_structure_heston
+      - hybrid_equity_rates
+    notes: |
+      The migrated workflow fits a single smile and materializes the calibrated
+      Heston parameters through the shared model-parameter-set binding surface.
+
+  - id: local_vol_surface_workflow
+    title: Dupire local-vol workflow
+    methods: [pde_solver, monte_carlo]
+    instruments: [european_option, barrier_option]
+    model_families: [equity_diffusion]
+    engine_families: [pde, lattice, monte_carlo]
+    features: [local_vol, implied_vol_surface, volatility]
+    model_name: Dupire local vol
+    state_semantics: [local_vol_surface, spot_diffusion]
+    quote_families: [implied_vol]
+    calibration_workflows: [calibrate_local_vol_surface_workflow]
+    runtime_materialization_kind: local_vol_surface
+    runtime_materialization_targets: [local_vol_surface, local_vol_surfaces]
+    required_market_data: [spot, discount_curve, black_vol_surface]
+    authority_surfaces:
+      - trellis.models.calibration.quote_maps.QuoteMapSpec
+      - trellis.models.calibration.materialization.CalibratedObjectMaterialization
+    deferred_scope:
+      - stochastic_local_vol
+      - local_vol_extrapolation_governance
+    notes: |
+      The supported workflow persists Dupire diagnostics and unstable-point warnings
+      and materializes the named local-vol surface through the shared binding path.
+
+  - id: credit_single_name_reduced_form
+    title: Reduced-form single-name CDS calibration
+    methods: [analytical, monte_carlo]
+    instruments: [cds]
+    model_families: [credit]
+    engine_families: [analytical, monte_carlo]
+    features: [credit_curve, hazard, reduced_form]
+    model_name: Reduced-form single-name credit
+    state_semantics: [hazard_rate, survival_probability, risky_discount]
+    quote_families: [spread, hazard]
+    calibration_workflows: [calibrate_single_name_credit_curve_workflow]
+    runtime_materialization_kind: credit_curve
+    runtime_materialization_targets: [credit_curve]
+    required_market_data: [discount_curve]
+    authority_surfaces:
+      - trellis.models.calibration.quote_maps.QuoteMapSpec
+      - trellis.models.calibration.materialization.CalibratedObjectMaterialization
+    deferred_scope:
+      - basket_credit
+      - structural_credit
+      - hybrid_credit_equity
+    notes: |
+      The migrated credit slice is bounded to single-name reduced-form CDS-style
+      calibration with explicit discount/default potential binding.

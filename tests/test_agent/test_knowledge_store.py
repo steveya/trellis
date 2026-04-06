@@ -829,6 +829,65 @@ class TestFormatting:
         assert payload["summary"]["similar_product_ids"][0] == "callable_bond"
         assert payload["summary"]["borrowed_lesson_ids"]
 
+    def test_retrieve_for_task_surfaces_canonical_model_grammar_entries(self):
+        from trellis.agent.knowledge import get_store
+        from trellis.agent.knowledge.retrieval import build_shared_knowledge_payload, format_knowledge_for_prompt
+        from trellis.agent.knowledge.schema import RetrievalSpec
+
+        store = get_store()
+        knowledge = store.retrieve_for_task(
+            RetrievalSpec(
+                method="rate_tree",
+                features=["callable", "mean_reversion"],
+                instrument="callable_bond",
+                model_family="interest_rate",
+                candidate_engine_families=("lattice", "exercise"),
+                max_lessons=1,
+            )
+        )
+
+        model_grammar = knowledge["model_grammar"]
+        assert model_grammar
+        grammar_ids = [entry.id for entry in model_grammar]
+        assert "rates_hull_white_1f" in grammar_ids
+        hull_white = next(entry for entry in model_grammar if entry.id == "rates_hull_white_1f")
+        assert hull_white.runtime_materialization_kind == "model_parameter_set"
+        assert hull_white.rates_curve_roles == ("discount_curve", "forecast_curve")
+
+        text = format_knowledge_for_prompt(knowledge)
+        assert "## Canonical Model Grammar" in text
+        assert "rates_hull_white_1f" in text
+
+        payload = build_shared_knowledge_payload(knowledge)
+        assert "## Canonical Model Grammar" in payload["builder_text"]
+        assert "rates_hull_white_1f" in payload["builder_text"]
+        assert "rates_hull_white_1f" in payload["summary"]["model_grammar_ids"]
+
+    def test_format_knowledge_for_prompt_renders_model_grammar_entries(self):
+        from trellis.agent.knowledge.retrieval import format_knowledge_for_prompt
+        from trellis.agent.knowledge.schema import ModelGrammarEntry
+
+        text = format_knowledge_for_prompt(
+            {
+                "model_grammar": [
+                    ModelGrammarEntry(
+                        id="credit_single_name_reduced_form",
+                        title="Reduced-form single-name CDS calibration",
+                        model_name="Reduced-form single-name credit",
+                        quote_families=("spread", "hazard"),
+                        calibration_workflows=("calibrate_single_name_credit_curve_workflow",),
+                        runtime_materialization_kind="credit_curve",
+                        deferred_scope=("basket_credit",),
+                    )
+                ]
+            }
+        )
+
+        assert "## Canonical Model Grammar" in text
+        assert "credit_single_name_reduced_form" in text
+        assert "calibrate_single_name_credit_curve_workflow" in text
+        assert "credit_curve" in text
+
 
 # ---------------------------------------------------------------------------
 # Decompose
