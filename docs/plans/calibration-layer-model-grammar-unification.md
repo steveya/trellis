@@ -335,7 +335,7 @@ Status mirror last synced: `2026-04-06`
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-686` Semantic model grammar: calibration-layer unification for model specs, quote maps, and bindings | Backlog |
+| `QUA-686` Semantic model grammar: calibration-layer unification for model specs, quote maps, and bindings | Done |
 
 ### Ordered Queue
 
