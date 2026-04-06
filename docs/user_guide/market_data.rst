@@ -313,6 +313,16 @@ The older compatibility
 existing replay and benchmark fixtures keep working while the family-specific
 synthetic generators migrate.
 
+For rates specifically, the synthetic generator now carries a richer bounded
+rates model pack rather than only parallel shifts:
+
+- tenor-shaped discount-curve shift parameters for the non-USD discount curves
+- tenor-shaped forecast-basis parameters for named forecast curves
+- a SABR-style rate-vol model used to generate the synthetic rate-vol surface
+
+This keeps the rates bundle deterministic and cheap, but makes it materially
+more consistent for proving, calibration fixtures, and multi-curve demos.
+
 For the migrated calibration workflows, the derived
 ``model_consistency_contract`` still records the bounded deterministic rates,
 credit, and volatility assumptions used to build the synthetic snapshot:

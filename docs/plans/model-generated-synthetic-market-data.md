@@ -210,7 +210,7 @@ Status mirror last synced: `2026-04-06`
 | Ticket | Slice | Status |
 | --- | --- | --- |
 | `QUA-695` | Seeded generation contract and model-pack authority | Done |
-| `QUA-696` | Model-generated multi-curve rates bundle and rate-vol fixtures | Backlog |
+| `QUA-696` | Model-generated multi-curve rates bundle and rate-vol fixtures | Done |
 | `QUA-697` | Hazard-first synthetic credit generation | Backlog |
 | `QUA-698` | Heston-generated implied-vol and derived local-vol fixtures | Backlog |
 | `QUA-699` | Round-trip validation, task fixtures, and docs hardening | Backlog |

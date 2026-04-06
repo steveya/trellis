@@ -19,6 +19,7 @@ from trellis.core.differentiable import get_numpy
 from trellis.data.base import BaseDataProvider
 from trellis.data.schema import MarketSnapshot
 from trellis.instruments.fx import FXRate
+from trellis.models.processes.sabr import SABRProcess
 from trellis.models.vol_surface import FlatVol, GridVolSurface
 
 np = get_numpy()
@@ -98,6 +99,12 @@ def _seeded_scale(seed: int, label: str, *, amplitude: float) -> float:
     return 1.0 + centered * float(amplitude)
 
 
+def _seeded_bps(seed: int, label: str, *, amplitude_bps: float) -> float:
+    """Return a bounded deterministic additive shift in basis points."""
+    centered = 2.0 * _stable_unit_interval(seed, label) - 1.0
+    return centered * float(amplitude_bps)
+
+
 @dataclass(frozen=True)
 class SyntheticRatesModelPack:
     """Seeded rates-side authority inputs for one synthetic snapshot."""
@@ -107,6 +114,9 @@ class SyntheticRatesModelPack:
     curve_roles: Mapping[str, str]
     discount_curve_shifts_bps: Mapping[str, float]
     forecast_basis_bps: Mapping[str, float]
+    discount_curve_shape_parameters: Mapping[str, Mapping[str, float]]
+    forecast_basis_parameters: Mapping[str, Mapping[str, float]]
+    rate_vol_model: Mapping[str, float]
     rate_vol_levels: tuple[float, ...]
     rate_vol_surface_family: str = "regime_rate_vol_surface"
     quote_families: tuple[str, ...] = ("price", "implied_vol")
@@ -115,6 +125,9 @@ class SyntheticRatesModelPack:
         object.__setattr__(self, "curve_roles", _freeze_payload(self.curve_roles))
         object.__setattr__(self, "discount_curve_shifts_bps", _freeze_payload(self.discount_curve_shifts_bps))
         object.__setattr__(self, "forecast_basis_bps", _freeze_payload(self.forecast_basis_bps))
+        object.__setattr__(self, "discount_curve_shape_parameters", _freeze_payload(self.discount_curve_shape_parameters))
+        object.__setattr__(self, "forecast_basis_parameters", _freeze_payload(self.forecast_basis_parameters))
+        object.__setattr__(self, "rate_vol_model", _freeze_payload(self.rate_vol_model))
         object.__setattr__(self, "rate_vol_levels", tuple(float(level) for level in self.rate_vol_levels))
         object.__setattr__(self, "quote_families", tuple(str(family) for family in self.quote_families))
 
@@ -125,6 +138,9 @@ class SyntheticRatesModelPack:
             "curve_roles": _payload_to_json(self.curve_roles),
             "discount_curve_shifts_bps": _payload_to_json(self.discount_curve_shifts_bps),
             "forecast_basis_bps": _payload_to_json(self.forecast_basis_bps),
+            "discount_curve_shape_parameters": _payload_to_json(self.discount_curve_shape_parameters),
+            "forecast_basis_parameters": _payload_to_json(self.forecast_basis_parameters),
+            "rate_vol_model": _payload_to_json(self.rate_vol_model),
             "rate_vol_levels": _payload_to_json(self.rate_vol_levels),
             "rate_vol_surface_family": self.rate_vol_surface_family,
             "quote_families": _payload_to_json(self.quote_families),
@@ -321,7 +337,70 @@ def _build_synthetic_rates_model_pack(
         "easing_cycle": (0.30, 0.27, 0.24, 0.22, 0.20, 0.18),
         "normal": (0.26, 0.24, 0.22, 0.20, 0.18, 0.17),
     }[regime]
-    rate_vol_scale = _seeded_scale(seed, f"rates_vol_levels::{regime}", amplitude=0.035)
+    discount_shapes = {
+        "eur_ois": {
+            "level_bps": -166.0 + _seeded_bps(seed, f"eur_discount_level::{regime}", amplitude_bps=6.0),
+            "slope_bps": -18.0 + _seeded_bps(seed, f"eur_discount_slope::{regime}", amplitude_bps=3.0),
+            "decay_years": 5.0 * _seeded_scale(seed, f"eur_discount_decay::{regime}", amplitude=0.10),
+        },
+        "gbp_ois": {
+            "level_bps": -68.0 + _seeded_bps(seed, f"gbp_discount_level::{regime}", amplitude_bps=5.0),
+            "slope_bps": -9.0 + _seeded_bps(seed, f"gbp_discount_slope::{regime}", amplitude_bps=2.0),
+            "decay_years": 4.0 * _seeded_scale(seed, f"gbp_discount_decay::{regime}", amplitude=0.10),
+        },
+    }
+    forecast_basis_parameters = {
+        "USD-SOFR-3M": {
+            "short_end_bps": 35.0 + _seeded_bps(seed, f"sofr_short::{regime}", amplitude_bps=2.5),
+            "long_run_bps": 18.0 + _seeded_bps(seed, f"sofr_long::{regime}", amplitude_bps=2.0),
+            "decay_years": 2.5 * _seeded_scale(seed, f"sofr_decay::{regime}", amplitude=0.12),
+        },
+        "USD-LIBOR-3M": {
+            "short_end_bps": 55.0 + _seeded_bps(seed, f"libor_short::{regime}", amplitude_bps=3.0),
+            "long_run_bps": 30.0 + _seeded_bps(seed, f"libor_long::{regime}", amplitude_bps=2.5),
+            "decay_years": 3.0 * _seeded_scale(seed, f"libor_decay::{regime}", amplitude=0.12),
+        },
+        "EUR-EURIBOR-3M": {
+            "short_end_bps": 30.0 + _seeded_bps(seed, f"euribor_short::{regime}", amplitude_bps=2.0),
+            "long_run_bps": 15.0 + _seeded_bps(seed, f"euribor_long::{regime}", amplitude_bps=1.5),
+            "decay_years": 2.8 * _seeded_scale(seed, f"euribor_decay::{regime}", amplitude=0.10),
+        },
+        "GBP-SONIA-3M": {
+            "short_end_bps": 18.0 + _seeded_bps(seed, f"sonia_short::{regime}", amplitude_bps=1.5),
+            "long_run_bps": 9.0 + _seeded_bps(seed, f"sonia_long::{regime}", amplitude_bps=1.0),
+            "decay_years": 2.2 * _seeded_scale(seed, f"sonia_decay::{regime}", amplitude=0.10),
+        },
+    }
+    rate_vol_model = {
+        "family": "sabr",
+        "alpha": {
+            "covid_crisis": 0.46,
+            "peak_inversion": 0.34,
+            "easing_cycle": 0.23,
+            "normal": 0.20,
+        }[regime] * _seeded_scale(seed, f"rates_sabr_alpha::{regime}", amplitude=0.06),
+        "beta": 0.50,
+        "rho": {
+            "covid_crisis": -0.28,
+            "peak_inversion": -0.22,
+            "easing_cycle": -0.18,
+            "normal": -0.15,
+        }[regime] + _seeded_bps(seed, f"rates_sabr_rho::{regime}", amplitude_bps=300.0) / 10000.0,
+        "nu": {
+            "covid_crisis": 0.72,
+            "peak_inversion": 0.56,
+            "easing_cycle": 0.42,
+            "normal": 0.36,
+        }[regime] * _seeded_scale(seed, f"rates_sabr_nu::{regime}", amplitude=0.06),
+    }
+    representative_basis_bps = {
+        name: round(float(params["short_end_bps"]), 6)
+        for name, params in forecast_basis_parameters.items()
+    }
+    representative_discount_shifts = {
+        name: round(float(params["level_bps"] + params["slope_bps"]), 6)
+        for name, params in discount_shapes.items()
+    }
     return SyntheticRatesModelPack(
         family="shifted_curve_bundle",
         anchor_curve_set="embedded_treasury_yield_regime",
@@ -329,18 +408,27 @@ def _build_synthetic_rates_model_pack(
             "discount_curve": "usd_ois",
             "forecast_curve": "USD-SOFR-3M",
         },
-        discount_curve_shifts_bps={
-            "eur_ois": -175.0,
-            "gbp_ois": -75.0,
-        },
-        forecast_basis_bps={
-            "USD-SOFR-3M": 35.0,
-            "USD-LIBOR-3M": 55.0,
-            "EUR-EURIBOR-3M": 30.0,
-            "GBP-SONIA-3M": 18.0,
-        },
-        rate_vol_levels=tuple(round(level * rate_vol_scale, 6) for level in base_levels),
+        discount_curve_shifts_bps=representative_discount_shifts,
+        forecast_basis_bps=representative_basis_bps,
+        discount_curve_shape_parameters=discount_shapes,
+        forecast_basis_parameters=forecast_basis_parameters,
+        rate_vol_model=rate_vol_model,
+        rate_vol_levels=tuple(float(level) for level in base_levels),
     )
+
+
+def _curve_shape_shift_bps(tenor: float, params: Mapping[str, float]) -> float:
+    """Return the tenor-dependent discount-curve shift in basis points."""
+    decay_years = max(float(params["decay_years"]), 0.25)
+    return float(params["level_bps"]) + float(params["slope_bps"]) * float(np.exp(-float(tenor) / decay_years))
+
+
+def _forecast_basis_bps_for_tenor(tenor: float, params: Mapping[str, float]) -> float:
+    """Return the tenor-dependent forecast basis in basis points."""
+    decay_years = max(float(params["decay_years"]), 0.25)
+    short_end = float(params["short_end_bps"])
+    long_run = float(params["long_run_bps"])
+    return long_run + (short_end - long_run) * float(np.exp(-float(tenor) / decay_years))
 
 
 def _build_discount_curves(
@@ -349,8 +437,13 @@ def _build_discount_curves(
 ) -> dict[str, YieldCurve]:
     """Build named discount curves from the seeded rates model pack."""
     curves = {"usd_ois": anchor_curve}
-    for curve_name, shift_bps in rates_pack.discount_curve_shifts_bps.items():
-        curves[str(curve_name)] = _shifted_curve(anchor_curve, float(shift_bps))
+    tenors = tuple(float(tenor) for tenor in anchor_curve.tenors)
+    for curve_name, shape_parameters in rates_pack.discount_curve_shape_parameters.items():
+        shifted_rates = tuple(
+            float(anchor_curve.zero_rate(tenor)) + _curve_shape_shift_bps(tenor, shape_parameters) / 10000.0
+            for tenor in tenors
+        )
+        curves[str(curve_name)] = YieldCurve(tenors, shifted_rates)
     return curves
 
 
@@ -362,39 +455,55 @@ def _build_forecast_curves(
     usd_ois = discount_curves["usd_ois"]
     eur_ois = discount_curves["eur_ois"]
     gbp_ois = discount_curves["gbp_ois"]
-    return {
-        "USD-SOFR-3M": _shifted_curve(usd_ois, float(rates_pack.forecast_basis_bps["USD-SOFR-3M"])),
-        "USD-LIBOR-3M": _shifted_curve(usd_ois, float(rates_pack.forecast_basis_bps["USD-LIBOR-3M"])),
+    base_curves = {
+        "USD-SOFR-3M": usd_ois,
+        "USD-LIBOR-3M": usd_ois,
+        "EUR-EURIBOR-3M": eur_ois,
+        "GBP-SONIA-3M": gbp_ois,
+    }
+    forecast_curves = {
         "USD-DISC": usd_ois,
         "EUR-DISC": eur_ois,
         "GBP-DISC": gbp_ois,
-        "EUR-EURIBOR-3M": _shifted_curve(eur_ois, float(rates_pack.forecast_basis_bps["EUR-EURIBOR-3M"])),
-        "GBP-SONIA-3M": _shifted_curve(gbp_ois, float(rates_pack.forecast_basis_bps["GBP-SONIA-3M"])),
     }
+    for curve_name, base_curve in base_curves.items():
+        tenors = tuple(float(tenor) for tenor in base_curve.tenors)
+        basis_parameters = rates_pack.forecast_basis_parameters[curve_name]
+        shifted_rates = tuple(
+            float(base_curve.zero_rate(tenor)) + _forecast_basis_bps_for_tenor(tenor, basis_parameters) / 10000.0
+            for tenor in tenors
+        )
+        forecast_curves[curve_name] = YieldCurve(tenors, shifted_rates)
+    return forecast_curves
 
 
 def _build_rate_vol_surfaces(
-    curve: YieldCurve,
+    forecast_curve: YieldCurve,
     rates_pack: SyntheticRatesModelPack,
 ) -> dict[str, object]:
     """Synthesize mock ATM and smile rate-vol surfaces from the rates model pack."""
     expiries = (0.25, 0.5, 1.0, 2.0, 5.0, 10.0)
     strikes = (0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07)
-    atm_term = rates_pack.rate_vol_levels
-    center = max(float(curve.zero_rate(2.0)), 0.01)
+    sabr = SABRProcess(
+        float(rates_pack.rate_vol_model["alpha"]),
+        float(rates_pack.rate_vol_model["beta"]),
+        float(rates_pack.rate_vol_model["rho"]),
+        float(rates_pack.rate_vol_model["nu"]),
+    )
+    atm_term = []
 
     smile_rows = []
-    for expiry_index, atm in enumerate(atm_term):
+    for expiry in expiries:
+        forward = max(float(forecast_curve.zero_rate(expiry)), 0.005)
+        atm = float(sabr.implied_vol(forward, forward, expiry))
+        atm_term.append(atm)
         row = []
-        expiry_scale = 1.0 - 0.04 * min(expiry_index, 4)
         for strike in strikes:
-            moneyness = strike - center
-            smile = 1.0 + 1.8 * abs(moneyness) + 0.9 * max(center - strike, 0.0)
-            row.append(round(atm * expiry_scale * smile, 6))
+            row.append(round(float(sabr.implied_vol(forward, strike, expiry)), 6))
         smile_rows.append(tuple(row))
 
     return {
-        "usd_rates_atm": FlatVol(atm_term[2]),
+        "usd_rates_atm": FlatVol(float(atm_term[2])),
         "usd_rates_smile": GridVolSurface(
             expiries=expiries,
             strikes=strikes,
@@ -481,7 +590,8 @@ def _build_model_consistency_contract(
         "rates": {
             "workflow": "curve_shifted_from_discount",
             "curve_roles": _payload_to_json(contract.rates.curve_roles),
-            "forecast_basis_bps": _payload_to_json(contract.quote_bundles.rates["forecast_basis_bps"]),
+            "forecast_basis_bps": _payload_to_json(contract.rates.forecast_basis_bps),
+            "forecast_basis_by_tenor_bps": _payload_to_json(contract.quote_bundles.rates["forecast_basis_by_tenor_bps"]),
             "quote_families": _payload_to_json(contract.rates.quote_families),
             "materialization_targets": ("discount_curves", "forecast_curves"),
         },
@@ -742,7 +852,16 @@ def _build_synthetic_quote_bundles(
     return SyntheticQuoteBundles(
         rates={
             "quote_families": rates_pack.quote_families,
-            "forecast_basis_bps": rates_pack.forecast_basis_bps,
+            "forecast_basis_by_tenor_bps": {
+                curve_name: {
+                    tenor: round(
+                        _forecast_basis_bps_for_tenor(float(tenor), rates_pack.forecast_basis_parameters[curve_name]),
+                        6,
+                    )
+                    for tenor in ("0.25", "1.0", "5.0")
+                }
+                for curve_name in rates_pack.forecast_basis_parameters.keys()
+            },
             "rate_vol_surface_names": tuple(rate_vol_surfaces.keys()),
         },
         credit={
@@ -1017,7 +1136,7 @@ class MockDataProvider(BaseDataProvider):
             volatility_pack = _build_synthetic_volatility_model_pack(regime=regime, seed=prior_seed)
             discount_curves = _build_discount_curves(usd_ois, rates_pack)
             forecast_curves = _build_forecast_curves(discount_curves, rates_pack)
-            rate_vol_surfaces = _build_rate_vol_surfaces(discount_curves["usd_ois"], rates_pack)
+            rate_vol_surfaces = _build_rate_vol_surfaces(forecast_curves["USD-SOFR-3M"], rates_pack)
             credit_curves = _build_credit_curves(credit_pack)
             local_vol_surfaces = _build_local_vol_surfaces(
                 volatility_pack=volatility_pack,
@@ -1069,7 +1188,7 @@ class MockDataProvider(BaseDataProvider):
                 "GBP-SONIA-3M": _shifted_curve(discount_curves["gbp_ois"], 18),
             }
             rate_vol_surfaces = _build_rate_vol_surfaces(
-                discount_curves["usd_ois"],
+                forecast_curves["USD-SOFR-3M"],
                 _build_synthetic_rates_model_pack(regime=regime, seed=prior_seed),
             )
             credit_curves = _build_credit_curves(

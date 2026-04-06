@@ -4,6 +4,7 @@ from datetime import date
 
 import pytest
 
+from trellis.models.calibration.sabr_fit import calibrate_sabr_smile_workflow
 from trellis.models.calibration.credit import (
     CreditHazardCalibrationQuote,
     calibrate_single_name_credit_curve_workflow,
@@ -142,6 +143,8 @@ class TestMockDataProvider:
         assert contract["model_packs"]["rates"]["family"] == "shifted_curve_bundle"
         assert contract["model_packs"]["credit"]["family"] == "reduced_form_spread_grid"
         assert contract["model_packs"]["volatility"]["family"] == "regime_surface_bundle"
+        assert "forecast_basis_parameters" in contract["model_packs"]["rates"]
+        assert "rate_vol_model" in contract["model_packs"]["rates"]
         assert contract["quote_bundles"]["credit"]["quote_families"] == ["spread", "hazard"]
         assert "usd_ois" in contract["runtime_targets"]["discount_curves"]
         assert "USD-SOFR-3M" in contract["runtime_targets"]["forecast_curves"]
@@ -164,7 +167,8 @@ class TestMockDataProvider:
         consistency = snapshot.provenance["prior_parameters"]["model_consistency_contract"]
         generation = snapshot.provenance["prior_parameters"]["synthetic_generation_contract"]
 
-        assert consistency["rates"]["forecast_basis_bps"] == generation["quote_bundles"]["rates"]["forecast_basis_bps"]
+        assert consistency["rates"]["forecast_basis_bps"] == generation["model_packs"]["rates"]["forecast_basis_bps"]
+        assert consistency["rates"]["forecast_basis_by_tenor_bps"] == generation["quote_bundles"]["rates"]["forecast_basis_by_tenor_bps"]
         assert consistency["credit"]["spread_inputs_decimal"] == generation["quote_bundles"]["credit"]["spread_inputs_decimal"]
         assert consistency["volatility"]["rate_vol_surfaces"] == generation["runtime_targets"]["vol_surfaces"]
         assert consistency["volatility"]["local_vol_surfaces"] == generation["runtime_targets"]["local_vol_surfaces"]
@@ -175,14 +179,42 @@ class TestMockDataProvider:
     def test_model_consistency_contract_preserves_multi_curve_basis(self):
         provider = MockDataProvider()
         snapshot = provider.fetch_market_snapshot(date(2024, 11, 15))
-        contract = snapshot.provenance["prior_parameters"]["model_consistency_contract"]
-        basis_bps = contract["rates"]["forecast_basis_bps"]["USD-SOFR-3M"]
+        generation = snapshot.provenance["prior_parameters"]["synthetic_generation_contract"]
+        basis_bps = generation["quote_bundles"]["rates"]["forecast_basis_by_tenor_bps"]["USD-SOFR-3M"]
 
         discount = snapshot.discount_curve("usd_ois")
         forecast = snapshot.forecast_curves["USD-SOFR-3M"]
-        for tenor in (0.25, 1.0, 5.0):
+        for tenor_text, expected_basis_bps in basis_bps.items():
+            tenor = float(tenor_text)
             observed_basis_bps = (forecast.zero_rate(tenor) - discount.zero_rate(tenor)) * 10000.0
-            assert observed_basis_bps == pytest.approx(basis_bps)
+            assert observed_basis_bps == pytest.approx(expected_basis_bps)
+
+    def test_synthetic_rates_smile_round_trips_through_sabr_workflow(self):
+        provider = MockDataProvider()
+        snapshot = provider.fetch_market_snapshot(date(2024, 11, 15))
+        generation = snapshot.provenance["prior_parameters"]["synthetic_generation_contract"]
+        sabr_model = generation["model_packs"]["rates"]["rate_vol_model"]
+        surface = snapshot.vol_surfaces["usd_rates_smile"]
+        forecast_curve = snapshot.forecast_curves["USD-SOFR-3M"]
+        expiry = 1.0
+        strikes = list(surface.strikes)
+        market_vols = [surface.black_vol(expiry, strike) for strike in strikes]
+
+        result = calibrate_sabr_smile_workflow(
+            forecast_curve.zero_rate(expiry),
+            expiry,
+            strikes,
+            market_vols,
+            beta=float(sabr_model["beta"]),
+            surface_name="synthetic_rates_sabr",
+            initial_guess=(
+                float(sabr_model["alpha"]),
+                float(sabr_model["rho"]),
+                float(sabr_model["nu"]),
+            ),
+        )
+
+        assert result.diagnostics.max_abs_vol_error < 1e-6
 
     def test_model_consistency_contract_credit_spreads_match_hazard_curve_knots(self):
         provider = MockDataProvider()

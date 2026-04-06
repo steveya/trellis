@@ -63,6 +63,19 @@ mock-path generator boundary and explicitly separates:
 - synthetic quote bundles
 - runtime target names
 
+`QUA-696` moves the rates side of that contract onto a richer bounded model
+pack. Synthetic rates fixtures now record:
+
+- tenor-shaped discount-curve shift parameters for non-USD discount curves
+- tenor-shaped forecast-basis parameters for named forecast curves
+- a SABR-style rate-vol model used to generate the named synthetic rate-vol
+  surfaces
+
+This means the mock rates bundle is no longer only "anchor curve plus parallel
+shifts and a regime smile table." The rates pack is still bounded and cheap,
+but the generated forecast curves and rate-vol surfaces now come from one
+explicit seeded rates authority surface.
+
 The older ``model_consistency_contract`` is now derived from the seeded
 generation contract so existing replay, benchmark, and proving consumers
 continue to work while the follow-on family-specific generators migrate onto
