@@ -82,7 +82,7 @@ UNAPPROVED_IMPORT_MODULE_CODE = MOCK_MODULE_CODE.replace(
 )
 
 GOOD_QUANTO_MODULE_CODE = '''\
-"""Agent-generated payoff: Quanto option."""
+"""Compatibility adapter for the quanto analytical payoff."""
 
 from __future__ import annotations
 
@@ -91,12 +91,25 @@ from datetime import date
 
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
-from trellis.models.analytical.quanto import price_quanto_option_analytical
-from trellis.models.resolution.quanto import resolve_quanto_inputs
+from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
+
+
+REQUIREMENTS = frozenset(
+    {
+        "black_vol_surface",
+        "discount_curve",
+        "forward_curve",
+        "fx_rates",
+        "model_parameters",
+        "spot",
+    }
+)
 
 
 @dataclass(frozen=True)
 class QuantoOptionSpec:
+    """Specification for the single-name quanto analytical adapter."""
+
     notional: float
     strike: float
     expiry_date: date
@@ -109,6 +122,8 @@ class QuantoOptionSpec:
 
 
 class QuantoOptionAnalyticalPayoff:
+    """Compatibility payoff that delegates through the semantic-facing helper."""
+
     def __init__(self, spec: QuantoOptionSpec):
         self._spec = spec
 
@@ -118,16 +133,15 @@ class QuantoOptionAnalyticalPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        return {"black_vol_surface", "discount_curve", "forward_curve", "fx_rates", "model_parameters", "spot"}
+        return REQUIREMENTS
 
     def evaluate(self, market_state: MarketState) -> float:
-        resolved = resolve_quanto_inputs(market_state, self._spec)
-        return float(price_quanto_option_analytical(self._spec, resolved))
+        return float(price_quanto_option_analytical_from_market_state(market_state, self._spec))
 '''
 
 UNAPPROVED_QUANTO_IMPORT_MODULE_CODE = GOOD_QUANTO_MODULE_CODE.replace(
-    "from trellis.models.analytical.quanto import price_quanto_option_analytical\nfrom trellis.models.resolution.quanto import resolve_quanto_inputs",
-    "from trellis.models.processes.heston import Heston\nfrom trellis.models.resolution.quanto import resolve_quanto_inputs",
+    "from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state",
+    "from trellis.models.processes.heston import Heston",
 )
 
 AMERICAN_SPEC_SCHEMA = SpecSchema(
@@ -356,10 +370,8 @@ def test_generate_quanto_monte_carlo_skeleton_uses_family_helper_surface():
         generation_plan=SimpleNamespace(method="monte_carlo", instrument_type="quanto_option"),
     )
 
-    assert "from trellis.models.resolution.quanto import resolve_quanto_inputs" in skeleton
-    assert "from trellis.models.monte_carlo.quanto import price_quanto_option_monte_carlo" in skeleton
-    assert "resolved = resolve_quanto_inputs(market_state, spec)" in skeleton
-    assert "return float(price_quanto_option_monte_carlo(spec, resolved))" in skeleton
+    assert "from trellis.models.quanto_option import price_quanto_option_monte_carlo_from_market_state" in skeleton
+    assert "return float(price_quanto_option_monte_carlo_from_market_state(market_state, spec))" in skeleton
 def test_generate_module_reports_syntax_error_context(monkeypatch):
     from types import SimpleNamespace
 
@@ -647,8 +659,7 @@ from datetime import date
 
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
-from trellis.models.analytical.quanto import price_quanto_option_analytical
-from trellis.models.resolution.quanto import resolve_quanto_inputs
+from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
 
     from importlib import import_module
 
@@ -679,9 +690,7 @@ class QuantoOptionAnalyticalPayoff:
         return {"black_vol_surface", "discount_curve", "forward_curve", "fx_rates", "model_parameters", "spot"}
 
     def evaluate(self, market_state: MarketState) -> float:
-        spec = self._spec
-        resolved = resolve_quanto_inputs(market_state, spec)
-        return float(price_quanto_option_analytical(spec, resolved))
+        return float(price_quanto_option_analytical_from_market_state(market_state, self._spec))
 '''
 
     monkeypatch.setattr(
@@ -691,8 +700,7 @@ class QuantoOptionAnalyticalPayoff:
 
     result = _generate_module(
         skeleton="""from trellis.core.market_state import MarketState
-from trellis.models.analytical.quanto import price_quanto_option_analytical
-from trellis.models.resolution.quanto import resolve_quanto_inputs
+from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
 
 class QuantoOptionSpec:
     pass
@@ -704,8 +712,7 @@ class QuantoOptionAnalyticalPayoff:
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        resolved = resolve_quanto_inputs(market_state, spec)
-        # return float(price_quanto_option_analytical(spec, resolved))
+        # return float(price_quanto_option_analytical_from_market_state(market_state, spec))
         raise NotImplementedError("evaluate not yet implemented")
 """,
         spec_schema=SimpleNamespace(
@@ -720,7 +727,7 @@ class QuantoOptionAnalyticalPayoff:
 
     compile(result.code, "<recovered>", "exec")
     assert "class QuantoOptionAnalyticalPayoff" in result.code
-    assert "return float(price_quanto_option_analytical(spec, resolved))" in result.code
+    assert "return float(price_quanto_option_analytical_from_market_state(market_state, spec))" in result.code
 
 
 def test_validate_build_critic_path_uses_stage_helpers_without_nameerror(monkeypatch, caplog):
@@ -1455,14 +1462,34 @@ class TestBuildLoop:
         from trellis.agent.executor import build_payoff
 
         mock_gen_mod.return_value = '''\
+"""Compatibility adapter for the quanto analytical payoff."""
+
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import date
+
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
-from trellis.models.analytical.quanto import price_quanto_option_analytical
+from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
+
+
+REQUIREMENTS = frozenset(
+    {
+        "black_vol_surface",
+        "discount_curve",
+        "forward_curve",
+        "fx_rates",
+        "model_parameters",
+        "spot",
+    }
+)
+
 
 @dataclass(frozen=True)
 class QuantoOptionSpec:
+    """Specification for the single-name quanto analytical adapter."""
+
     notional: float
     strike: float
     expiry_date: date
@@ -1473,16 +1500,19 @@ class QuantoOptionSpec:
     quanto_correlation_key: str | None = None
     day_count: DayCountConvention = DayCountConvention.ACT_365
 
+
 class QuantoOptionAnalyticalPayoff:
+    """Compatibility payoff that delegates through the semantic-facing helper."""
+
     def __init__(self, spec: QuantoOptionSpec):
         self._spec = spec
 
     @property
     def requirements(self) -> set[str]:
-        return {"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot", "model_parameters"}
+        return REQUIREMENTS
 
     def evaluate(self, market_state: MarketState) -> float:
-        return float(price_quanto_option_analytical(self._spec, market_state))
+        return float(price_quanto_option_analytical_from_market_state(market_state, self._spec))
 '''
         scratch_path = Path("/tmp/quantooptionanalytical_fresh.py")
         mock_write_module.return_value = scratch_path

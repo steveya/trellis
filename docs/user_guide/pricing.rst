@@ -88,6 +88,14 @@ the Black76 basis decomposition explicit inside the helper, so the same pricing
 math can be reused for both valuation and Greeks without rebuilding it in each
 adapter.
 
+The corresponding quanto routes now follow the same shape. The supported
+analytical and Monte Carlo slices bind through
+``trellis.models.quanto_option`` while the FX vanilla analytical slice binds
+through ``trellis.models.fx_vanilla``. The checked-in adapters under
+``trellis.instruments._agent`` are intentionally thin compatibility shells
+over those semantic-facing helpers rather than separate pricing
+implementations.
+
 Rates Calibration
 -----------------
 
@@ -239,6 +247,13 @@ For fully migrated exact-helper families, Trellis can now mark that alias as
 internal-only. In that case, prompts and trace summaries omit the alias
 entirely and rely on the backend binding id instead, while raw validation and
 replay metadata still retain the route id for compatibility.
+
+That family-first rule now also applies inside transform pricing. The thin
+vanilla transform helper is only selected for ``equity_diffusion`` claims. If
+the same European payoff is being priced under a different model family, such
+as Heston stochastic volatility, Trellis keeps the request on the raw FFT/COS
+kernel surface instead of pretending the vanilla helper is a universal
+transform authority.
 
 For the migrated PDE routes, the same trace boundary now also exposes a compact
 `family_ir_summary` alongside the raw lowering metadata. That summary is the

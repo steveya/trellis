@@ -704,18 +704,20 @@ def test_evaluate_prompt_compact_surface_mentions_fx_route_helper():
     plan = GenerationPlan(
         method="analytical",
         instrument_type="european_option",
-        inspected_modules=("trellis.models.analytical.fx", "trellis.models.black"),
-        approved_modules=("trellis.models.analytical.fx", "trellis.models.black", "trellis.core.date_utils"),
+        inspected_modules=("trellis.models.fx_vanilla", "trellis.models.analytical.fx", "trellis.models.black"),
+        approved_modules=("trellis.models.fx_vanilla", "trellis.models.analytical.fx", "trellis.models.black", "trellis.core.date_utils"),
         symbols_to_reuse=(
             "ResolvedGarmanKohlhagenInputs",
             "garman_kohlhagen_price_raw",
+            "price_fx_vanilla_analytical",
         ),
         proposed_tests=("tests/test_agent/test_build_loop.py",),
         primitive_plan=PrimitivePlan(
             route="analytical_garman_kohlhagen",
             engine_family="analytical",
             primitives=(
-                PrimitiveRef("trellis.models.analytical.fx", "garman_kohlhagen_price_raw", "route_helper"),
+                PrimitiveRef("trellis.models.fx_vanilla", "price_fx_vanilla_analytical", "route_helper"),
+                PrimitiveRef("trellis.models.analytical.fx", "garman_kohlhagen_price_raw", "pricing_kernel"),
             ),
             adapters=("map_fx_spot_and_curves_to_garman_kohlhagen_inputs",),
             blockers=(),
@@ -738,6 +740,7 @@ def test_evaluate_prompt_compact_surface_mentions_fx_route_helper():
         prompt_surface="compact",
     )
 
+    assert "price_fx_vanilla_analytical" in prompt
     assert "garman_kohlhagen_price_raw" in prompt
     assert "ResolvedGarmanKohlhagenInputs" in prompt
     assert "Garman-Kohlhagen" in prompt
@@ -1720,15 +1723,21 @@ def test_evaluate_prompt_quanto_analytical_surface_includes_resolution_guidance(
         instrument_type="quanto_option",
         inspected_modules=(
             "trellis.models.black",
+            "trellis.models.quanto_option",
             "trellis.models.resolution.quanto",
             "trellis.models.analytical.quanto",
         ),
         approved_modules=(
             "trellis.models.black",
+            "trellis.models.quanto_option",
             "trellis.models.resolution.quanto",
             "trellis.models.analytical.quanto",
         ),
-        symbols_to_reuse=("black76_call", "resolve_quanto_inputs", "price_quanto_option_analytical"),
+        symbols_to_reuse=(
+            "black76_call",
+            "resolve_quanto_inputs",
+            "price_quanto_option_analytical_from_market_state",
+        ),
         proposed_tests=("tests/test_agent/test_build_loop.py",),
         primitive_plan=PrimitivePlan(
             route="quanto_adjustment_analytical",
@@ -1741,8 +1750,8 @@ def test_evaluate_prompt_quanto_analytical_surface_includes_resolution_guidance(
                     "market_binding",
                 ),
                 PrimitiveRef(
-                    "trellis.models.analytical.quanto",
-                    "price_quanto_option_analytical",
+                    "trellis.models.quanto_option",
+                    "price_quanto_option_analytical_from_market_state",
                     "route_helper",
                 ),
             ),
@@ -1756,12 +1765,13 @@ def test_evaluate_prompt_quanto_analytical_surface_includes_resolution_guidance(
         spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
         reference_sources={
             "Quanto helper": "def resolve_quanto_inputs(...):\n    pass\n",
-            "Quanto analytical helper": "def price_quanto_option_analytical(...):\n    pass\n",
+            "Quanto analytical helper": "def price_quanto_option_analytical_from_market_state(...):\n    pass\n",
         },
         pricing_plan=PricingPlan(
             method="analytical",
             method_modules=[
                 "trellis.models.black",
+                "trellis.models.quanto_option",
                 "trellis.models.resolution.quanto",
                 "trellis.models.analytical.quanto",
             ],
@@ -1775,7 +1785,7 @@ def test_evaluate_prompt_quanto_analytical_surface_includes_resolution_guidance(
     )
 
     assert "resolve_quanto_inputs" in prompt
-    assert "price_quanto_option_analytical" in prompt
+    assert "price_quanto_option_analytical_from_market_state" in prompt
     assert "Do not reimplement spot / FX / curve / correlation lookup" in prompt
     assert "Do not reimplement the quanto-adjusted analytical pricing body" in prompt
     assert "quanto-adjusted forward" in prompt
@@ -1795,12 +1805,14 @@ def test_evaluate_prompt_quanto_monte_carlo_surface_includes_joint_state_guidanc
         inspected_modules=(
             "trellis.models.monte_carlo.engine",
             "trellis.models.monte_carlo.quanto",
+            "trellis.models.quanto_option",
             "trellis.models.processes.correlated_gbm",
             "trellis.models.resolution.quanto",
         ),
         approved_modules=(
             "trellis.models.monte_carlo.engine",
             "trellis.models.monte_carlo.quanto",
+            "trellis.models.quanto_option",
             "trellis.models.processes.correlated_gbm",
             "trellis.models.resolution.quanto",
         ),
@@ -1808,7 +1820,7 @@ def test_evaluate_prompt_quanto_monte_carlo_surface_includes_joint_state_guidanc
             "MonteCarloEngine",
             "CorrelatedGBM",
             "resolve_quanto_inputs",
-            "price_quanto_option_monte_carlo",
+            "price_quanto_option_monte_carlo_from_market_state",
         ),
         proposed_tests=("tests/test_agent/test_build_loop.py",),
         primitive_plan=PrimitivePlan(
@@ -1823,8 +1835,8 @@ def test_evaluate_prompt_quanto_monte_carlo_surface_includes_joint_state_guidanc
                     "market_binding",
                 ),
                 PrimitiveRef(
-                    "trellis.models.monte_carlo.quanto",
-                    "price_quanto_option_monte_carlo",
+                    "trellis.models.quanto_option",
+                    "price_quanto_option_monte_carlo_from_market_state",
                     "route_helper",
                 ),
             ),
@@ -1838,13 +1850,14 @@ def test_evaluate_prompt_quanto_monte_carlo_surface_includes_joint_state_guidanc
         spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
         reference_sources={
             "Quanto helper": "def resolve_quanto_inputs(...):\n    pass\n",
-            "Quanto MC helper": "def price_quanto_option_monte_carlo(...):\n    pass\n",
+            "Quanto MC helper": "def price_quanto_option_monte_carlo_from_market_state(...):\n    pass\n",
         },
         pricing_plan=PricingPlan(
             method="monte_carlo",
             method_modules=[
                 "trellis.models.monte_carlo.engine",
                 "trellis.models.monte_carlo.quanto",
+                "trellis.models.quanto_option",
                 "trellis.models.processes.correlated_gbm",
                 "trellis.models.resolution.quanto",
             ],
@@ -1857,7 +1870,7 @@ def test_evaluate_prompt_quanto_monte_carlo_surface_includes_joint_state_guidanc
         prompt_surface="compact",
     )
 
-    assert "price_quanto_option_monte_carlo" in prompt
+    assert "price_quanto_option_monte_carlo_from_market_state" in prompt
     assert "np.array([resolved.spot, resolved.fx_spot]" in prompt
     assert "Do not seed a multi-asset correlated GBM" in prompt
     assert "Do not reimplement process / engine / payoff / discount wiring" in prompt

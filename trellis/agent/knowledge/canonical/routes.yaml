@@ -42,6 +42,9 @@ routes:
         role: pricing_kernel
       - module: trellis.models.analytical.quanto
         symbol: price_quanto_option_analytical
+        role: pricing_kernel
+      - module: trellis.models.quanto_option
+        symbol: price_quanto_option_analytical_from_market_state
         role: route_helper
     adapters:
       - reuse_shared_quanto_market_binding
@@ -79,6 +82,9 @@ routes:
         role: market_binding
       - module: trellis.models.monte_carlo.quanto
         symbol: price_quanto_option_monte_carlo
+        role: pricing_kernel
+      - module: trellis.models.quanto_option
+        symbol: price_quanto_option_monte_carlo_from_market_state
         role: route_helper
     adapters:
       - reuse_shared_quanto_market_binding
@@ -951,6 +957,9 @@ routes:
     primitives:
       - module: trellis.models.analytical.fx
         symbol: garman_kohlhagen_price_raw
+        role: pricing_kernel
+      - module: trellis.models.fx_vanilla
+        symbol: price_fx_vanilla_analytical
         role: route_helper
       - module: trellis.core.date_utils
         symbol: year_fraction
@@ -979,18 +988,19 @@ routes:
     match:
       methods: [fft_pricing]
     admissibility:
-      control_styles: [identity]
+      control_styles: [identity, holder_max]
       event_support: none
       phase_sensitivity: default_phase_order_only
       multicurrency_support: single_currency_only
       supported_outputs: [price, scenario_pnl]
       supports_sensitivity_outputs: true
-      supported_state_tags: [terminal_markov]
+      supported_state_tags: [terminal_markov, recombining_safe]
       supports_calibration: false
     conditional_primitives:
       - when:
           payoff_family: vanilla_option
           exercise_style: [european]
+          model_family: [equity_diffusion]
         primitives:
           - module: trellis.models.equity_option_transforms
             symbol: price_vanilla_equity_option_transform

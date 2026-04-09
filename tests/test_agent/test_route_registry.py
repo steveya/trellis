@@ -299,7 +299,12 @@ class TestQuantoRoutes:
             ("trellis.models.resolution.quanto", "resolve_quanto_inputs", "market_binding"),
             ("trellis.models.black", "black76_call", "pricing_kernel"),
             ("trellis.models.black", "black76_put", "pricing_kernel"),
-            ("trellis.models.analytical.quanto", "price_quanto_option_analytical", "route_helper"),
+            ("trellis.models.analytical.quanto", "price_quanto_option_analytical", "pricing_kernel"),
+            (
+                "trellis.models.quanto_option",
+                "price_quanto_option_analytical_from_market_state",
+                "route_helper",
+            ),
         }
         assert _prim_set(new_prims) == expected_prims
         assert "reuse_shared_quanto_market_binding" in new_adapters
@@ -945,7 +950,8 @@ class TestFXAnalyticalRoutes:
         spec = [r for r in registry.routes if r.id == "analytical_garman_kohlhagen"][0]
         new_prims = resolve_route_primitives(spec, self.FX_IR)
         expected_prims = {
-            ("trellis.models.analytical.fx", "garman_kohlhagen_price_raw", "route_helper"),
+            ("trellis.models.analytical.fx", "garman_kohlhagen_price_raw", "pricing_kernel"),
+            ("trellis.models.fx_vanilla", "price_fx_vanilla_analytical", "route_helper"),
             ("trellis.core.date_utils", "year_fraction", "time_measure"),
         }
         assert _prim_set(new_prims) == expected_prims
@@ -1007,6 +1013,7 @@ class TestFallbackRoutes:
             instrument="european_option",
             payoff_family="vanilla_option",
             exercise_style="european",
+            model_family="equity_diffusion",
         )
         new_prims = resolve_route_primitives(spec, ir)
         expected_prims = {
@@ -1015,6 +1022,21 @@ class TestFallbackRoutes:
                 "price_vanilla_equity_option_transform",
                 "route_helper",
             ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_stochastic_vol_transform_primitives_fall_back_to_raw_kernels(self, registry):
+        spec = [r for r in registry.routes if r.id == "transform_fft"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            model_family="stochastic_volatility",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            ("trellis.models.transforms.fft_pricer", "fft_price", "transform_pricer"),
+            ("trellis.models.transforms.cos_method", "cos_price", "transform_pricer"),
         }
         assert _prim_set(new_prims) == expected_prims
 
@@ -1072,6 +1094,7 @@ class TestFallbackRoutes:
     def test_pde_admissibility_hydrates_operator_and_event_contracts(self, registry):
         vanilla = find_route_by_id("vanilla_equity_theta_pde", registry)
         generic = find_route_by_id("pde_theta_1d", registry)
+        transform = find_route_by_id("transform_fft", registry)
 
         assert vanilla is not None
         assert vanilla.admissibility.supported_operator_families == ("black_scholes_1d",)
@@ -1084,6 +1107,28 @@ class TestFallbackRoutes:
             "project_max",
             "project_min",
         )
+        assert transform is not None
+        assert transform.admissibility.supported_control_styles == ("identity", "holder_max")
+        assert transform.admissibility.supported_state_tags == ("terminal_markov", "recombining_safe")
+
+    def test_transform_route_admissibility_accepts_european_holder_control_surface(self, registry):
+        from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+        from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+        spec = find_route_by_id("transform_fft", registry)
+        assert spec is not None
+
+        contract = make_vanilla_option_contract(
+            description="European call on SPX priced with transforms",
+            underliers=("SPX",),
+            observation_schedule=("2026-06-20",),
+            preferred_method="fft_pricing",
+        )
+        blueprint = compile_semantic_contract(contract, preferred_method="fft_pricing")
+
+        decision = evaluate_route_admissibility(spec, semantic_blueprint=blueprint)
+
+        assert decision.ok
 
     def test_vanilla_pde_admissibility_rejects_wrong_operator_family(self, registry):
         from dataclasses import replace

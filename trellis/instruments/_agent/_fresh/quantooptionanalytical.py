@@ -1,4 +1,4 @@
-"""Agent-generated payoff: Quanto option."""
+"""Compatibility adapter for the quanto analytical payoff."""
 
 from __future__ import annotations
 
@@ -7,12 +7,25 @@ from datetime import date
 
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
-from trellis.models.analytical.quanto import price_quanto_option_analytical
-from trellis.models.resolution.quanto import resolve_quanto_inputs
+from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
+
+
+REQUIREMENTS = frozenset(
+    {
+        "black_vol_surface",
+        "discount_curve",
+        "forward_curve",
+        "fx_rates",
+        "model_parameters",
+        "spot",
+    }
+)
 
 
 @dataclass(frozen=True)
 class QuantoOptionSpec:
+    """Specification for the single-name quanto analytical adapter."""
+
     notional: float
     strike: float
     expiry_date: date
@@ -25,6 +38,8 @@ class QuantoOptionSpec:
 
 
 class QuantoOptionAnalyticalPayoff:
+    """Compatibility payoff that delegates through the semantic-facing helper."""
+
     def __init__(self, spec: QuantoOptionSpec):
         self._spec = spec
 
@@ -34,8 +49,7 @@ class QuantoOptionAnalyticalPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        return {"black_vol_surface", "discount_curve", "forward_curve", "fx_rates", "model_parameters", "spot"}
+        return REQUIREMENTS
 
     def evaluate(self, market_state: MarketState) -> float:
-        resolved = resolve_quanto_inputs(market_state, self._spec)
-        return float(price_quanto_option_analytical(self._spec, resolved))
+        return float(price_quanto_option_analytical_from_market_state(market_state, self._spec))

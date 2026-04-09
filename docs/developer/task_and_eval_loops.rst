@@ -137,6 +137,20 @@ keeps comparison failures concentrated on real model/regime mismatches instead
 of letting generated adapter drift reintroduce stale imports or route-local
 numerical defaults.
 
+The lower-layer cleanup tranches now apply that same pattern to FX and quanto
+routes as well. ``trellis.models.fx_vanilla`` and
+``trellis.models.quanto_option`` are the semantic-facing helper kits for the
+supported analytical and Monte Carlo slices, and the checked-in adapters under
+``trellis.instruments._agent`` are intentionally thin shells over those
+helpers instead of separate implementations.
+
+Fresh-build proving keeps a stricter boundary than ordinary supported-route
+reuse. When a task or canary is run with ``fresh_build=True``, the executor
+now skips deterministic exact-binding materialization so the run still has to
+exercise live code generation. Ordinary supported-route runs can still reuse
+exact helper wrappers for stability, but fresh-build canaries no longer get a
+free pass from executor-side deterministic module synthesis.
+
 The same rule now applies to tranche-style basket-credit comparison routes.
 Curated copula canaries bind through the semantic-facing
 ``trellis.models.credit_basket_copula`` helper surface instead of asking the
@@ -152,6 +166,13 @@ checked-in helper-backed route for single-exercise European rate-tree
 comparators. That keeps canaries such as ``T65`` on the stable
 ``price_swaption_tree(...)`` surface instead of regenerating inline lattice
 exercise code for the comparison target.
+
+Transform proving now also distinguishes model families explicitly. The thin
+vanilla transform helper surface is only used for ``equity_diffusion`` claims;
+stochastic-volatility tasks such as the Heston smile canary stay on the raw
+FFT/COS kernel path under the same route family. That keeps helper reuse
+honest without widening a GBM-oriented helper into unsupported Heston
+authority.
 
 Analytical traces also carry a structured instruction-lifecycle payload. The
 ``GenerationPlan`` now includes a resolved instruction set, the trace emits a

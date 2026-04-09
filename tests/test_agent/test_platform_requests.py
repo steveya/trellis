@@ -93,7 +93,7 @@ def test_compile_build_request_uses_quanto_semantic_contract_blueprint():
     assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "quanto_option"
     assert compiled.request.metadata["semantic_contract"]["semantic_concept"]["semantic_id"] == "quanto_option"
     assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == "quanto_adjustment_analytical"
-    assert "trellis.models.analytical.quanto.price_quanto_option_analytical" in (
+    assert "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state" in (
         compiled.request.metadata["semantic_blueprint"]["dsl_helper_refs"]
     )
     assert compiled.request.metadata["semantic_blueprint"]["lane_plan"]["lane_family"] == "analytical"
@@ -108,6 +108,8 @@ def test_compile_build_request_uses_quanto_semantic_contract_blueprint():
     assert compiled.generation_plan is not None
     assert compiled.execution_plan.reason == "semantic_contract_request"
     assert "trellis.models.resolution.quanto" in compiled.semantic_blueprint.target_modules
+    assert "trellis.models.analytical.quanto" in compiled.semantic_blueprint.target_modules
+    assert "trellis.models.quanto_option" in compiled.generation_plan.approved_modules
     assert "trellis.models.resolution.quanto" in compiled.generation_plan.approved_modules
     assert compiled.semantic_blueprint.lane_plan is not None
     assert compiled.semantic_blueprint.lane_plan.lane_family == "analytical"
@@ -134,11 +136,11 @@ def test_compile_build_request_attaches_route_binding_authority_packet():
     assert authority["route_family"] == "analytical"
     assert authority["authority_kind"] == "exact_backend_fit"
     assert authority["compatibility_alias_policy"] == "internal_only"
-    assert backend_binding["binding_id"] == "trellis.models.analytical.quanto.price_quanto_option_analytical"
+    assert backend_binding["binding_id"] == "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
     assert backend_binding["engine_family"] == "analytical"
     assert backend_binding["exact_backend_fit"] is True
     assert "trellis.models.resolution.quanto.resolve_quanto_inputs" in backend_binding["primitive_refs"]
-    assert "trellis.models.analytical.quanto.price_quanto_option_analytical" in backend_binding["helper_refs"]
+    assert "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state" in backend_binding["helper_refs"]
     assert authority["validation_bundle_id"] == "analytical:quanto_option"
     assert "check_non_negativity" in authority["validation_check_ids"]
     assert backend_binding["admissibility"]["multicurrency_support"] == "native_payout_with_fx"
