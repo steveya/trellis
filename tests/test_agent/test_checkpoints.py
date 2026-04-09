@@ -105,13 +105,13 @@ def _generation_boundary(
     exact_fit = bool(route_id)
     binding_ids = {
         "analytical_black76": "trellis.models.black.black76_call",
-        "quanto_adjustment_analytical": "trellis.models.analytical.quanto.price_quanto_option_analytical",
-        "analytical_garman_kohlhagen": "trellis.models.analytical.fx.garman_kohlhagen_price_raw",
+        "quanto_adjustment_analytical": "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state",
+        "analytical_garman_kohlhagen": "trellis.models.fx_vanilla.price_fx_vanilla_analytical",
     }
     helper_refs = {
         "analytical_black76": ["trellis.models.black.black76_call"],
-        "quanto_adjustment_analytical": ["trellis.models.analytical.quanto.price_quanto_option_analytical"],
-        "analytical_garman_kohlhagen": ["trellis.models.analytical.fx.garman_kohlhagen_price_raw"],
+        "quanto_adjustment_analytical": ["trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"],
+        "analytical_garman_kohlhagen": ["trellis.models.fx_vanilla.price_fx_vanilla_analytical"],
     }
     binding_id = binding_ids.get(route_id, "trellis.models.black.black76_call")
     return {

@@ -257,6 +257,24 @@ def test_detect_adapter_lifecycle_records_flags_stale_checked_in_adapter(monkeyp
     assert fresh[0].module_path == "trellis.instruments._agent._fresh.example_adapter"
 
 
+def test_detect_adapter_lifecycle_records_keeps_fx_and_quanto_shells_fresh():
+    from trellis.agent.knowledge.promotion import (
+        AdapterLifecycleStatus,
+        detect_adapter_lifecycle_records,
+    )
+
+    stale_ids = {
+        record.adapter_id
+        for record in detect_adapter_lifecycle_records()
+        if record.status == AdapterLifecycleStatus.STALE
+    }
+
+    assert "trellis.instruments._agent.fxvanillaanalytical" not in stale_ids
+    assert "trellis.instruments._agent.fxvanillamontecarlo" not in stale_ids
+    assert "trellis.instruments._agent.quantooptionanalytical" not in stale_ids
+    assert "trellis.instruments._agent.quantooptionmontecarlo" not in stale_ids
+
+
 def test_review_and_adopt_promotion_candidate_propagate_adapter_lifecycle_state(monkeypatch, tmp_path):
     from trellis.agent.knowledge.promotion import (
         adopt_promotion_candidate,

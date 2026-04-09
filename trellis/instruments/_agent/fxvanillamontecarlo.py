@@ -5,11 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from trellis.core.date_utils import year_fraction
-from trellis.core.differentiable import get_numpy
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
-from trellis.instruments._agent.fxvanillaanalytical import _resolve_fx_inputs
+from trellis.models.fx_vanilla import price_fx_vanilla_monte_carlo
 
 
 @dataclass(frozen=True)
@@ -25,10 +23,11 @@ class FXVanillaOptionSpec:
     day_count: DayCountConvention = DayCountConvention.ACT_365
     n_paths: int = 50000
     n_steps: int = 252
+    seed: int = 42
 
 
 class FXVanillaMonteCarloPayoff:
-    """Deterministic thin adapter over the GBM Monte Carlo engine for vanilla FX."""
+    """Deterministic thin adapter over the semantic-facing FX Monte Carlo helper."""
 
     def __init__(self, spec: FXVanillaOptionSpec):
         self._spec = spec
@@ -42,55 +41,4 @@ class FXVanillaMonteCarloPayoff:
         return {"discount_curve", "forward_curve", "black_vol_surface", "fx_rates"}
 
     def evaluate(self, market_state: MarketState) -> float:
-        from trellis.models.monte_carlo.engine import MonteCarloEngine
-        from trellis.models.processes.gbm import GBM
-
-        spec = self._spec
-        np = get_numpy()
-        resolved = _resolve_fx_inputs(market_state, spec)
-        spot = float(resolved.spot)
-        T = float(resolved.T)
-        if T <= 0.0:
-            intrinsic = (
-                max(spot - spec.strike, 0.0)
-                if spec.option_type.lower() == "call"
-                else max(spec.strike - spot, 0.0)
-            )
-            return float(spec.notional) * float(intrinsic)
-
-        sigma = float(resolved.sigma)
-        rd = float(-np.log(resolved.df_domestic) / T)
-        rf = float(-np.log(resolved.df_foreign) / T)
-        process = GBM(mu=rd - rf, sigma=sigma)
-        engine = MonteCarloEngine(
-            process,
-            n_paths=int(spec.n_paths),
-            n_steps=int(spec.n_steps),
-            seed=42,
-            method="exact",
-        )
-
-        option_type = spec.option_type.lower()
-        strike = float(spec.strike)
-        notional = float(spec.notional)
-
-        def payoff_fn(paths):
-            terminal = paths[:, -1]
-            if option_type == "call":
-                payoffs = np.maximum(terminal - strike, 0.0)
-            elif option_type == "put":
-                payoffs = np.maximum(strike - terminal, 0.0)
-            else:
-                raise ValueError(
-                    f"Unsupported option_type {spec.option_type!r}; expected 'call' or 'put'"
-                )
-            return payoffs * notional
-
-        result = engine.price(
-            spot,
-            T,
-            payoff_fn,
-            discount_rate=rd,
-            return_paths=False,
-        )
-        return float(result["price"])
+        return float(price_fx_vanilla_monte_carlo(market_state, self._spec))

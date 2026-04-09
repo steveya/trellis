@@ -1266,23 +1266,24 @@ def build_payoff(
         generated_module: GeneratedModuleResult | None = None
         generation_token_usage: dict[str, object] = {}
         try:
-            generated_module = _materialize_deterministic_exact_binding_module(
-                skeleton,
-                generation_plan,
-                semantic_blueprint=(
-                    getattr(compiled_request, "semantic_blueprint", None)
-                    if compiled_request is not None
-                    else None
-                ),
-                comparison_target=(
-                    (
-                        getattr(getattr(compiled_request, "request", None), "metadata", None)
-                        or {}
-                    ).get("comparison_target")
-                    if compiled_request is not None
-                    else None
-                ),
-            )
+            if not fresh_build:
+                generated_module = _materialize_deterministic_exact_binding_module(
+                    skeleton,
+                    generation_plan,
+                    semantic_blueprint=(
+                        getattr(compiled_request, "semantic_blueprint", None)
+                        if compiled_request is not None
+                        else None
+                    ),
+                    comparison_target=(
+                        (
+                            getattr(getattr(compiled_request, "request", None), "metadata", None)
+                            or {}
+                        ).get("comparison_target")
+                        if compiled_request is not None
+                        else None
+                    ),
+                )
             if generated_module is None:
                 with llm_usage_stage(
                     "code_generation",
@@ -2581,34 +2582,12 @@ def _generate_skeleton(
     requirements_str = ", ".join(f'"{r}"' for r in sorted(spec_schema.requirements))
     import_lines = list(_skeleton_type_import_lines(spec_schema))
     import_lines.extend(_skeleton_exact_binding_import_lines(generation_plan))
-    evaluate_preamble_lines = ["        spec = self._spec"]
-
-    if instrument_type == "quanto_option" and method == "analytical":
-        import_lines.extend(
-            [
-                "from trellis.models.analytical.quanto import price_quanto_option_analytical",
-                "from trellis.models.resolution.quanto import resolve_quanto_inputs",
-            ]
-        )
-        evaluate_preamble_lines.extend(
-            [
-                "        resolved = resolve_quanto_inputs(market_state, spec)",
-                "        # return float(price_quanto_option_analytical(spec, resolved))",
-            ]
-        )
-    elif instrument_type == "quanto_option" and method == "monte_carlo":
-        import_lines.extend(
-            [
-                "from trellis.models.monte_carlo.quanto import price_quanto_option_monte_carlo",
-                "from trellis.models.resolution.quanto import resolve_quanto_inputs",
-            ]
-        )
-        evaluate_preamble_lines.extend(
-            [
-                "        resolved = resolve_quanto_inputs(market_state, spec)",
-                "        # return float(price_quanto_option_monte_carlo(spec, resolved))",
-            ]
-        )
+    semantic_helper_imports, semantic_helper_lines = _skeleton_semantic_helper_hints(
+        instrument_type,
+        method,
+    )
+    import_lines.extend(semantic_helper_imports)
+    evaluate_preamble_lines = ["        spec = self._spec", *semantic_helper_lines]
     extra_imports = "\n".join(dict.fromkeys(import_lines))
     if extra_imports:
         extra_imports = f"{extra_imports}\n"
@@ -2663,12 +2642,30 @@ def _skeleton_type_import_lines(spec_schema) -> tuple[str, ...]:
     return (f"from trellis.core.types import {', '.join(names)}",)
 
 
+def _skeleton_semantic_helper_hints(
+    instrument_type: str,
+    method: str,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return semantic-facing helper imports and commented evaluate hints."""
+    helper_hints = {
+        ("quanto_option", "analytical"): (
+            ("from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state",),
+            ("        # return float(price_quanto_option_analytical_from_market_state(market_state, spec))",),
+        ),
+        ("quanto_option", "monte_carlo"): (
+            ("from trellis.models.quanto_option import price_quanto_option_monte_carlo_from_market_state",),
+            ("        # return float(price_quanto_option_monte_carlo_from_market_state(market_state, spec))",),
+        ),
+    }
+    return helper_hints.get((instrument_type, method), ((), ()))
+
+
 def _skeleton_exact_binding_import_lines(generation_plan) -> tuple[str, ...]:
     """Return import lines for compiler-selected exact bindings."""
     if generation_plan is None:
         return ()
 
-    refs: list[str] = list(getattr(generation_plan, "lane_exact_binding_refs", ()) or ())
+    refs: list[str] = list(_exact_binding_refs(generation_plan))
     primitive_plan = getattr(generation_plan, "primitive_plan", None)
     if primitive_plan is not None:
         refs.extend(
@@ -2714,7 +2711,31 @@ def _exact_binding_refs(generation_plan) -> tuple[str, ...]:
         text = str(ref or "").strip()
         if text and text not in normalized:
             normalized.append(text)
+    for ref in _semantic_exact_binding_refs(tuple(normalized)):
+        if ref not in normalized:
+            normalized.append(ref)
     return tuple(normalized)
+
+
+def _semantic_exact_binding_refs(refs: tuple[str, ...]) -> tuple[str, ...]:
+    """Return semantic-facing helper refs that supersede lower-level route helpers."""
+    extra: list[str] = []
+    raw_to_semantic = {
+        "trellis.models.analytical.quanto.price_quanto_option_analytical": (
+            "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
+        ),
+        "trellis.models.monte_carlo.quanto.price_quanto_option_monte_carlo": (
+            "trellis.models.quanto_option.price_quanto_option_monte_carlo_from_market_state"
+        ),
+        "trellis.models.analytical.fx.garman_kohlhagen_price_raw": (
+            "trellis.models.fx_vanilla.price_fx_vanilla_analytical"
+        ),
+    }
+    for ref in refs:
+        semantic = raw_to_semantic.get(ref)
+        if semantic and semantic not in extra:
+            extra.append(semantic)
+    return tuple(extra)
 
 
 def _swaption_comparison_helper_kwargs(semantic_blueprint) -> str:
@@ -2793,6 +2814,15 @@ def _deterministic_exact_binding_evaluate_body(
     zcb_option_tree_kwargs = _zcb_option_tree_helper_kwargs(comparison_target)
     credit_basket_tranche_kwargs = _credit_basket_tranche_helper_kwargs(comparison_target)
     helper_bodies = {
+        "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state": (
+            "return float(price_quanto_option_analytical_from_market_state(market_state, spec))"
+        ),
+        "trellis.models.quanto_option.price_quanto_option_monte_carlo_from_market_state": (
+            "return float(price_quanto_option_monte_carlo_from_market_state(market_state, spec))"
+        ),
+        "trellis.models.fx_vanilla.price_fx_vanilla_analytical": (
+            "return float(price_fx_vanilla_analytical(market_state, spec))"
+        ),
         "trellis.models.callable_bond_pde.price_callable_bond_pde": (
             "return float(price_callable_bond_pde(market_state, spec))"
         ),

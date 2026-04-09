@@ -7,8 +7,7 @@ from datetime import date
 
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
-from trellis.models.analytical.quanto import price_quanto_option_raw
-from trellis.models.resolution.quanto import resolve_quanto_inputs
+from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
 
 
 REQUIREMENTS = frozenset(
@@ -39,7 +38,7 @@ class QuantoOptionSpec:
 
 
 class QuantoOptionAnalyticalPayoff:
-    """Compatibility payoff that delegates through the shared analytical helper."""
+    """Compatibility payoff that delegates through the semantic-facing helper."""
 
     def __init__(self, spec: QuantoOptionSpec):
         self._spec = spec
@@ -53,9 +52,4 @@ class QuantoOptionAnalyticalPayoff:
         return REQUIREMENTS
 
     def evaluate(self, market_state: MarketState) -> float:
-        return float(
-            price_quanto_option_raw(
-                self._spec,
-                resolve_quanto_inputs(market_state, self._spec),
-            )
-        )
+        return float(price_quanto_option_analytical_from_market_state(market_state, self._spec))

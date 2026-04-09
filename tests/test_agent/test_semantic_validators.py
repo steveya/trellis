@@ -187,7 +187,7 @@ def evaluate(self, market_state):
     def test_importing_route_helper_without_calling_it_still_fails(self, registry):
         spec = [r for r in registry.routes if r.id == "quanto_adjustment_analytical"][0]
         source = '''
-from trellis.models.analytical.quanto import price_quanto_option_analytical
+from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
 
 def evaluate(self, market_state):
     return black76_call(F, K, T, vol, df)

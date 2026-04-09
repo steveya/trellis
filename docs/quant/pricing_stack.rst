@@ -147,9 +147,18 @@ The first migrated vanilla cases now use that boundary directly:
   single-state diffusion resolver/GBM-support layer under
   ``trellis.models.resolution`` for settlement, maturity, spot, dividend,
   discount, vol, and characteristic-function binding
+- the transform route uses that thin vanilla helper only for true
+  ``equity_diffusion`` contracts; stochastic-volatility transform tasks such
+  as Heston smile extraction still lower onto the raw FFT/COS kernel surface
+  instead of being forced through the single-state helper
 - the local-vol vanilla helper remains a checked route-level wrapper, but it
   now assembles and prices through ``trellis.models.monte_carlo.event_aware``
   instead of maintaining a separate Monte Carlo engine/payoff loop
+- FX vanilla and quanto routes now expose semantic-facing helper kits in
+  ``trellis.models.fx_vanilla`` and ``trellis.models.quanto_option`` so the
+  checked analytical and Monte Carlo adapters can stay as thin shells over
+  shared market-binding and execution helpers rather than separate product
+  implementations
 - the copula basket-credit slice now also exposes a semantic-facing helper
   layer in ``trellis.models.credit_basket_copula`` so tranche-style CDO and
   nth-to-default requests can bind discount/credit inputs, tranche bounds, and
