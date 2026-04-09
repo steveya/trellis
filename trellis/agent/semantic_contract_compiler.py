@@ -286,42 +286,12 @@ def _select_preferred_method(
 
 def _specialize_contract_for_preferred_method(contract, preferred_method: str):
     """Rebuild contracts whose blueprint/helper surface depends on method selection."""
-    normalized_method = normalize_method(preferred_method)
-    semantic_id = str(getattr(contract, "semantic_id", "") or "").strip()
-    product = getattr(contract, "product", None)
-    if product is None:
-        return contract
+    from trellis.agent.semantic_contracts import specialize_semantic_contract_for_method
 
-    description = str(getattr(contract, "description", "") or "")
-    if semantic_id == "vanilla_option":
-        from trellis.agent.semantic_contracts import make_vanilla_option_contract
-
-        return make_vanilla_option_contract(
-            description=description,
-            underliers=tuple(getattr(product, "constituents", ()) or ()),
-            observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
-            preferred_method=normalized_method,
-        )
-    if semantic_id == "quanto_option":
-        from trellis.agent.semantic_contracts import make_quanto_option_contract
-
-        return make_quanto_option_contract(
-            description=description,
-            underliers=tuple(getattr(product, "constituents", ()) or ()),
-            observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
-            preferred_method=normalized_method,
-        )
-    if semantic_id == "rate_style_swaption":
-        from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
-
-        return make_rate_style_swaption_contract(
-            description=description,
-            observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
-            preferred_method=normalized_method,
-            exercise_style=str(getattr(product, "exercise_style", "european") or "european"),
-            term_fields=dict(getattr(product, "term_fields", {}) or {}),
-        )
-    return contract
+    return specialize_semantic_contract_for_method(
+        contract,
+        preferred_method=preferred_method,
+    )
 
 
 def _connector_binding_hints(market_binding_spec) -> dict[str, object]:

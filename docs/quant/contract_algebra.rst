@@ -76,10 +76,21 @@ The semantic layer now follows these rules:
 - solver-facing state tags live on ``StateField.tags``
 - schedule-bearing routes compile onto explicit timeline carriers such as
   ``ContractTimeline`` rather than raw comma-separated date strings
+- family drafting now runs through an ordered draft-rule registry rather than
+  one giant branch-ordered parser
+- admissible methods now come from registry-backed
+  ``SemanticFamilyDefinition`` plus ``SemanticMethodSurfaceDefinition`` entries
+  instead of being re-encoded independently in the request/compiler layers
 
 Legacy mirrors such as ``settlement_rule`` and ``event_transitions`` still
 exist on ``SemanticProductSemantics``, but they are no longer the authority for
 migrated route families.
+
+That registry-backed structure also means lower layers now share one
+specialization authority when a contract needs to be rebuilt for a different
+preferred method. Request compilation, semantic compilation, and runtime
+metadata all consume the same family/method surface instead of each carrying
+its own family-local branching.
 
 Valuation Context
 -----------------

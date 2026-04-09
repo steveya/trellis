@@ -57,6 +57,13 @@ The current semantic pricing path is:
 6. Lower onto a family-specific IR and then onto a checked helper or kernel.
 7. Execute the existing deterministic numerical code.
 
+The first step is now registry-backed instead of branch-order-driven. Semantic
+drafting runs through ordered draft rules, then resolves a registered semantic
+family plus a registered method surface. The request layer and semantic
+compiler both reuse the same specialization authority when a different
+preferred method is selected, which keeps admissible-method truth in one place
+instead of repeating family-local branching in multiple lower layers.
+
 Below that semantic boundary, the runtime now also treats family identity as an
 authority contract. Once the request or compiled product summary knows a
 specific family such as ``zcb_option`` or ``basket_option``, lower layers such
@@ -207,6 +214,14 @@ generic exotics runtime. The callable-bond slice now also projects callable
 analytics directly off that tree boundary: effective ``oas_duration`` plus a
 callable-specific scenario ladder that compares callable price, straight-bond
 reference price, and embedded call option value under parallel rate shocks.
+
+Below those public callable wrappers, the reusable coupon/event/control layer
+now lives in ``trellis.models.short_rate_fixed_income``. Coupon schedule
+compilation, embedded issuer/holder exercise semantics, straight-bond
+reference PV, and generic lattice/PDE event assembly no longer live only in
+``callable_bond_tree`` or ``callable_bond_pde``. That keeps the wrappers
+stable while moving the reusable short-rate claim logic into a broader helper
+surface for later fixed-income families.
 
 Calibration Surface
 -------------------

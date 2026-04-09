@@ -48,6 +48,51 @@ def _draft_contract(description: str, instrument_type: str):
     return draft_semantic_contract(description, instrument_type=instrument_type)
 
 
+def test_semantic_draft_rule_registry_exposes_stable_order():
+    from trellis.agent.semantic_contracts import registered_semantic_draft_rule_names
+
+    assert registered_semantic_draft_rule_names() == (
+        "ranked_observation_basket",
+        "quanto_option",
+        "range_accrual",
+        "callable_bond",
+        "vanilla_option",
+        "rate_style_swaption",
+        "credit_basket_tranche",
+        "nth_to_default",
+        "credit_default_swap",
+    )
+
+
+def test_semantic_family_registry_exposes_supported_method_surfaces():
+    from trellis.agent.semantic_contracts import (
+        registered_semantic_family_keys,
+        resolve_semantic_method_surface,
+    )
+
+    assert "vanilla_option" in registered_semantic_family_keys()
+    surface = resolve_semantic_method_surface("vanilla_option", "fft_pricing")
+
+    assert surface.method == "fft_pricing"
+    assert surface.target_modules == ("trellis.models.equity_option_transforms",)
+    assert surface.primitive_families == ("transform_fft",)
+
+
+def test_semantic_contract_summary_emits_registered_family_surface_metadata():
+    from trellis.agent.semantic_contracts import make_rate_style_swaption_contract, semantic_contract_summary
+
+    contract = make_rate_style_swaption_contract(
+        description="European payer swaption",
+        observation_schedule=("2026-01-15",),
+        preferred_method="monte_carlo",
+    )
+    summary = semantic_contract_summary(contract)
+
+    assert summary["methods"]["family_key"] == "rate_style_swaption:european"
+    assert summary["methods"]["registered_surface"]["method"] == "monte_carlo"
+    assert "trellis.models.rate_style_swaption" in summary["methods"]["registered_surface"]["target_modules"]
+
+
 def _phase_index(contract):
     return {
         phase: idx
@@ -289,6 +334,74 @@ def test_automatic_event_paths_and_strategic_rights_are_separated_on_the_typed_s
     assert callable_bond.product.controller_protocol.controller_style == "issuer_min"
     assert callable_bond.product.controller_protocol.controller_role == "issuer"
     assert callable_bond.product.timeline.decision_dates == callable_bond.product.observation_schedule
+
+
+def test_vanilla_option_rate_tree_contract_uses_equity_tree_surface():
+    from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+    contract = make_vanilla_option_contract(
+        description="European call on AAPL with rate-tree preference",
+        underliers=("AAPL",),
+        observation_schedule=("2025-11-15",),
+        preferred_method="rate_tree",
+    )
+
+    assert "fft_pricing" in contract.methods.candidate_methods
+    assert contract.blueprint.target_modules == ("trellis.models.equity_option_tree",)
+    assert contract.blueprint.primitive_families == ("exercise_lattice",)
+
+
+def test_callable_bond_contract_rejects_unsupported_monte_carlo_surface():
+    from trellis.agent.semantic_contracts import make_callable_bond_contract
+
+    with pytest.raises(ValueError, match="does not support method `monte_carlo`"):
+        make_callable_bond_contract(
+            description="Callable bond monte carlo request",
+            observation_schedule=("2026-01-15", "2027-01-15"),
+            preferred_method="monte_carlo",
+        )
+
+
+def test_bermudan_swaption_contract_rejects_unsupported_monte_carlo_surface():
+    from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
+
+    with pytest.raises(ValueError, match="does not support method `monte_carlo`"):
+        make_rate_style_swaption_contract(
+            description="Bermudan swaption monte carlo request",
+            observation_schedule=("2026-01-15", "2027-01-15"),
+            preferred_method="monte_carlo",
+            exercise_style="bermudan",
+        )
+
+
+def test_specialize_semantic_contract_for_method_reuses_shared_family_authority():
+    from trellis.agent.semantic_contracts import (
+        make_vanilla_option_contract,
+        specialize_semantic_contract_for_method,
+    )
+
+    contract = make_vanilla_option_contract(
+        description="European call on AAPL with analytical preference",
+        underliers=("AAPL",),
+        observation_schedule=("2025-11-15",),
+        preferred_method="analytical",
+    )
+
+    specialized = specialize_semantic_contract_for_method(
+        contract,
+        preferred_method="fft_pricing",
+    )
+
+    assert specialized is not None
+    assert specialized.methods.preferred_method == "fft_pricing"
+    assert specialized.blueprint.target_modules == ("trellis.models.equity_option_transforms",)
+    assert specialized.blueprint.primitive_families == ("transform_fft",)
+
+
+def test_semantic_family_registry_invariants_hold():
+    from trellis.agent.semantic_contracts import validate_semantic_family_registry
+
+    validate_semantic_family_registry()
 
 
 def test_contract_rejects_illegal_phase_inversion():

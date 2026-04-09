@@ -7,41 +7,27 @@ same coupon and exercise mapping inline.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date
-from typing import Iterable
 
 from trellis.core.date_utils import (
-    build_payment_timeline,
-    coerce_contract_timeline_from_dates,
-    normalize_explicit_dates,
     year_fraction,
 )
-from trellis.core.types import TimelineRole
 import trellis.models.trees.algebra as lattice_algebra
 import trellis.models.trees.models as tree_models
-from trellis.models.trees.control import (
-    lattice_step_from_time,
-    lattice_steps_from_timeline,
-    resolve_lattice_exercise_policy_from_control_style,
-)
 from trellis.models.trees.lattice import (
     RecombiningLattice,
     build_lattice,
     price_on_lattice,
 )
 from trellis.models.hull_white_parameters import resolve_hull_white_parameters
-
-
-@dataclass(frozen=True)
-class _EmbeddedBondExerciseConfig:
-    """Resolved embedded-option semantics for callable or puttable bonds."""
-
-    schedule_dates: object
-    exercise_price: float
-    exercise_style: str
-    control_style: str
-    reference_bound: str
+from trellis.models.short_rate_fixed_income import (
+    build_embedded_fixed_income_coupon_step_map,
+    build_embedded_fixed_income_event_timeline,
+    build_embedded_fixed_income_exercise_policy,
+    compile_embedded_fixed_income_lattice_contract_spec,
+    present_value_fixed_coupon_bond,
+    settlement_date_for_fixed_income_claim,
+)
 
 
 def build_callable_bond_lattice(
@@ -54,7 +40,7 @@ def build_callable_bond_lattice(
     n_steps: int | None = None,
 ) -> RecombiningLattice:
     """Build the calibrated tree used to price a callable bond."""
-    settlement = _settlement_date(market_state, spec)
+    settlement = settlement_date_for_fixed_income_claim(market_state, spec)
     maturity = year_fraction(settlement, spec.end_date, spec.day_count)
     if maturity <= 0.0:
         raise ValueError("Callable bond maturity must be after settlement")
@@ -96,30 +82,12 @@ def build_callable_bond_coupon_map(
     n_steps: int,
 ) -> dict[int, float]:
     """Map scheduled coupon payments onto lattice steps."""
-    coupon_by_step: dict[int, float] = {}
-    payment_timeline = build_payment_timeline(
-        spec.start_date,
-        spec.end_date,
-        spec.frequency,
-        day_count=spec.day_count,
-        time_origin=settlement,
-        label="callable_bond_coupon_timeline",
+    event_timeline = build_embedded_fixed_income_event_timeline(spec, settlement=settlement)
+    return build_embedded_fixed_income_coupon_step_map(
+        event_timeline,
+        dt=dt,
+        n_steps=n_steps,
     )
-
-    for period in payment_timeline:
-        if period.payment_date <= settlement:
-            continue
-        step = lattice_step_from_time(
-            period,
-            dt=dt,
-            n_steps=n_steps,
-            allow_terminal_step=True,
-        )
-        if step is None:
-            continue
-        coupon = float(spec.notional) * float(spec.coupon) * float(period.accrual_fraction or 0.0)
-        coupon_by_step[step] = coupon_by_step.get(step, 0.0) + coupon
-    return coupon_by_step
 
 
 def build_callable_bond_exercise_policy(
@@ -130,35 +98,13 @@ def build_callable_bond_exercise_policy(
     n_steps: int,
 ):
     """Resolve callable or puttable exercise dates into a lattice policy."""
-    exercise = _resolve_embedded_bond_exercise_config(spec)
-    exercise_dates = tuple(
-        exercise_date
-        for exercise_date in normalize_explicit_dates(exercise.schedule_dates)
-        if settlement < exercise_date <= spec.end_date
-    )
-    if not exercise_dates:
-        return resolve_lattice_exercise_policy_from_control_style(
-            exercise.control_style,
-            exercise_steps=(),
-            exercise_style=exercise.exercise_style,
-        )
-
-    exercise_timeline = coerce_contract_timeline_from_dates(
-        exercise_dates,
-        role=TimelineRole.EXERCISE,
+    event_timeline = build_embedded_fixed_income_event_timeline(spec, settlement=settlement)
+    return build_embedded_fixed_income_exercise_policy(
+        event_timeline,
+        maturity_date=spec.end_date,
         day_count=spec.day_count,
-        time_origin=settlement,
-        label=f"{exercise.exercise_style}_timeline",
-    )
-    exercise_steps = lattice_steps_from_timeline(
-        exercise_timeline,
         dt=dt,
         n_steps=n_steps,
-    )
-    return resolve_lattice_exercise_policy_from_control_style(
-        exercise.control_style,
-        exercise_steps=exercise_steps,
-        exercise_style=exercise.exercise_style,
     )
 
 
@@ -170,35 +116,11 @@ def compile_callable_bond_contract_spec(
     n_steps: int,
 ) -> lattice_algebra.LatticeContractSpec:
     """Compile callable- or puttable-bond coupons and exercise into a lattice contract."""
-    exercise = _resolve_embedded_bond_exercise_config(spec)
-    coupon_by_step = build_callable_bond_coupon_map(
+    return compile_embedded_fixed_income_lattice_contract_spec(
         spec,
         settlement=settlement,
         dt=dt,
         n_steps=n_steps,
-    )
-    exercise_policy = build_callable_bond_exercise_policy(
-        spec,
-        settlement=settlement,
-        dt=dt,
-        n_steps=n_steps,
-    )
-    terminal_coupon = coupon_by_step.get(n_steps, 0.0)
-    return lattice_algebra.LatticeContractSpec(
-        claim=lattice_algebra.LatticeLinearClaimSpec(
-            terminal_payoff=lambda step, node, lattice, obs: float(spec.notional) + float(terminal_coupon),
-            node_cashflow_fn=lambda step, node, lattice, obs: float(coupon_by_step.get(step, 0.0)),
-            observable_requirements=("rate",),
-        ),
-        control=lattice_algebra.LatticeControlSpec(
-            objective=exercise.control_style,
-            exercise_steps=exercise_policy.exercise_steps,
-            exercise_value_fn=(
-                lambda step, node, lattice, obs: float(exercise.exercise_price)
-                + float(coupon_by_step.get(step, 0.0))
-            ),
-        ),
-        metadata={"coupon_by_step": coupon_by_step},
     )
 
 
@@ -232,7 +154,7 @@ def price_callable_bond_tree(
     n_steps: int | None = None,
 ) -> float:
     """Build the requested callable- or puttable-bond tree and return the holder PV."""
-    settlement = _settlement_date(market_state, spec)
+    settlement = settlement_date_for_fixed_income_claim(market_state, spec)
     lattice = build_callable_bond_lattice(
         market_state,
         spec,
@@ -247,7 +169,7 @@ def price_callable_bond_tree(
         settlement=settlement,
     )
     straight_price = straight_bond_present_value(market_state, spec, settlement=settlement)
-    exercise = _resolve_embedded_bond_exercise_config(spec)
+    exercise = build_embedded_fixed_income_event_timeline(spec, settlement=settlement).exercise
     if exercise.reference_bound == "lower":
         return max(tree_price, straight_price)
     return min(tree_price, straight_price)
@@ -255,57 +177,8 @@ def price_callable_bond_tree(
 
 def straight_bond_present_value(market_state, spec, *, settlement: date) -> float:
     """Reference straight-bond PV used to cap callable-bond values."""
-    pv = 0.0
-    payment_timeline = build_payment_timeline(
-        spec.start_date,
-        spec.end_date,
-        spec.frequency,
-        day_count=spec.day_count,
-        time_origin=settlement,
-        label="callable_bond_coupon_timeline",
+    return present_value_fixed_coupon_bond(
+        market_state,
+        spec,
+        settlement=settlement,
     )
-    for period in payment_timeline:
-        if period.payment_date <= settlement:
-            continue
-        tau = float(period.accrual_fraction or 0.0)
-        t_pay = float(period.t_payment or 0.0)
-        pv += float(spec.notional) * float(spec.coupon) * tau * float(
-            market_state.discount.discount(t_pay)
-        )
-
-    maturity = year_fraction(settlement, spec.end_date, spec.day_count)
-    pv += float(spec.notional) * float(market_state.discount.discount(maturity))
-    return float(pv)
-
-
-def _settlement_date(market_state, spec) -> date:
-    return market_state.settlement or market_state.as_of or spec.start_date
-
-
-def _resolve_embedded_bond_exercise_config(spec) -> _EmbeddedBondExerciseConfig:
-    has_call_dates = hasattr(spec, "call_dates")
-    has_put_dates = hasattr(spec, "put_dates")
-    if has_call_dates and has_put_dates:
-        raise ValueError("Embedded bond spec must define either call_dates or put_dates, not both")
-    if has_call_dates:
-        return _EmbeddedBondExerciseConfig(
-            schedule_dates=getattr(spec, "call_dates"),
-            exercise_price=_quoted_exercise_price_to_cash(spec, "call_price"),
-            exercise_style="issuer_call",
-            control_style="issuer_min",
-            reference_bound="upper",
-        )
-    if has_put_dates:
-        return _EmbeddedBondExerciseConfig(
-            schedule_dates=getattr(spec, "put_dates"),
-            exercise_price=_quoted_exercise_price_to_cash(spec, "put_price"),
-            exercise_style="holder_put",
-            control_style="holder_max",
-            reference_bound="lower",
-        )
-    raise ValueError("Embedded bond spec must define call_dates or put_dates")
-
-
-def _quoted_exercise_price_to_cash(spec, field_name: str) -> float:
-    quoted_price = float(getattr(spec, field_name))
-    return quoted_price / 100.0 * float(spec.notional)
