@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Mapping
 
@@ -111,16 +111,17 @@ def compile_semantic_contract(
             or ""
         ),
     )
+    preferred_method = _select_preferred_method(
+        contract,
+        requested_measures=resolved_valuation_context.requested_outputs,
+        preferred_method=preferred_method,
+    )
+    contract = _specialize_contract_for_preferred_method(contract, preferred_method)
     required_data_spec = build_required_data_spec(contract)
     market_binding_spec = build_market_binding_spec(
         contract,
         valuation_context=resolved_valuation_context,
         required_data_spec=required_data_spec,
-    )
-    preferred_method = _select_preferred_method(
-        contract,
-        requested_measures=resolved_valuation_context.requested_outputs,
-        preferred_method=preferred_method,
     )
     product_ir = build_product_ir(
         description=contract.description or contract.semantic_id,
@@ -138,6 +139,7 @@ def compile_semantic_contract(
         preferred_method=preferred_method,
         event_machine=getattr(contract.product, "event_machine", None),
     )
+    product_ir = _augment_product_ir_with_contract_route_hints(product_ir, contract)
     pricing_plan = select_pricing_method_for_product_ir(
         product_ir,
         preferred_method=preferred_method,
@@ -282,6 +284,46 @@ def _select_preferred_method(
     return ranked[1]
 
 
+def _specialize_contract_for_preferred_method(contract, preferred_method: str):
+    """Rebuild contracts whose blueprint/helper surface depends on method selection."""
+    normalized_method = normalize_method(preferred_method)
+    semantic_id = str(getattr(contract, "semantic_id", "") or "").strip()
+    product = getattr(contract, "product", None)
+    if product is None:
+        return contract
+
+    description = str(getattr(contract, "description", "") or "")
+    if semantic_id == "vanilla_option":
+        from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+        return make_vanilla_option_contract(
+            description=description,
+            underliers=tuple(getattr(product, "constituents", ()) or ()),
+            observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+            preferred_method=normalized_method,
+        )
+    if semantic_id == "quanto_option":
+        from trellis.agent.semantic_contracts import make_quanto_option_contract
+
+        return make_quanto_option_contract(
+            description=description,
+            underliers=tuple(getattr(product, "constituents", ()) or ()),
+            observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+            preferred_method=normalized_method,
+        )
+    if semantic_id == "rate_style_swaption":
+        from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
+
+        return make_rate_style_swaption_contract(
+            description=description,
+            observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+            preferred_method=normalized_method,
+            exercise_style=str(getattr(product, "exercise_style", "european") or "european"),
+            term_fields=dict(getattr(product, "term_fields", {}) or {}),
+        )
+    return contract
+
+
 def _connector_binding_hints(market_binding_spec) -> dict[str, object]:
     """Return backward-compatible runtime binding hints from compiled bindings."""
     if market_binding_spec is None:
@@ -361,6 +403,34 @@ def _engine_families_from_methods(methods: tuple[str, ...]) -> tuple[str, ...]:
             if family not in families:
                 families.append(family)
     return tuple(families)
+
+
+def _augment_product_ir_with_contract_route_hints(product_ir, contract):
+    """Merge explicit semantic primitive-family hints back into ProductIR authority."""
+    primitive_routes = tuple(getattr(getattr(contract, "blueprint", None), "primitive_families", ()) or ())
+    if not primitive_routes:
+        return product_ir
+
+    from trellis.agent.route_registry import find_route_by_id, load_route_registry, resolve_route_family
+
+    registry = load_route_registry()
+    route_families = list(getattr(product_ir, "route_families", ()) or ())
+    engine_families = list(getattr(product_ir, "candidate_engine_families", ()) or ())
+    for route_id in primitive_routes:
+        spec = find_route_by_id(route_id, registry)
+        if spec is None:
+            continue
+        resolved_family = str(resolve_route_family(spec, product_ir) or spec.route_family or "").strip()
+        if resolved_family and resolved_family not in route_families:
+            route_families.append(resolved_family)
+        engine_family = str(getattr(spec, "engine_family", "") or "").strip()
+        if engine_family and engine_family not in engine_families:
+            engine_families.append(engine_family)
+    return replace(
+        product_ir,
+        route_families=tuple(route_families),
+        candidate_engine_families=tuple(engine_families),
+    )
 
 
 def _emit_event_skeleton(contract) -> str | None:

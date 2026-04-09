@@ -176,7 +176,8 @@ def test_generation_plan_renders_compiled_semantic_and_validation_boundary():
     assert "- Validation contract:" in text
     assert "bundle=`analytical:quanto_option`" in text
     assert "check_non_negativity" in text
-    assert "quanto_adjustment_applied" in text
+    assert "check_quanto_required_inputs" in text
+    assert "check_quanto_cross_currency_semantics" in text
     assert "- Route authority:" in text
     assert "authority=`exact_backend_fit`" in text
     assert "canaries=`T105`" in text

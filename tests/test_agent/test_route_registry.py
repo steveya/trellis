@@ -1183,9 +1183,11 @@ class TestFallbackRoutes:
             pricing_plan=pricing_plan,
         )
 
-        assert bp.dsl_lowering.route_family == "rate_lattice"
+        assert bp.dsl_lowering.route_family == "pde_solver"
+        assert "pde_solver" in bp.product_ir.route_families
         assert not decision.ok
-        assert "family_identity_mismatch" in decision.failures
+        assert "schedule_dependence_unsupported" in decision.failures
+        assert "state_dependence_unsupported:schedule_dependent" in decision.failures
         assert candidates == ()
 
     def test_holder_max_equity_pde_admissibility_accepts_project_max_contract(self, registry):
