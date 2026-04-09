@@ -182,7 +182,7 @@ class AmericanOptionPayoff:
         import numpy as np
         from trellis.models.monte_carlo.engine import MonteCarloEngine
         from trellis.models.monte_carlo.schemes import LaguerreBasis
-        from trellis.models.processes.gbm import GBM
+        from trellis.models.processes import GBM
 
         spec = self._spec
         T = (spec.expiry_date - market_state.settlement).days / 365.25
@@ -240,7 +240,6 @@ class AmericanOptionPayoff:
         from trellis.models.monte_carlo.engine import MonteCarloEngine
         from trellis.models.monte_carlo.lsm import longstaff_schwartz
         from trellis.models.monte_carlo.schemes import LaguerreBasis
-        from trellis.models.processes.gbm import GBM
 
         spec = self._spec
         np = get_numpy()
@@ -250,7 +249,19 @@ class AmericanOptionPayoff:
 
         r = float(market_state.discount.zero_rate(T))
         sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
-        process = GBM(mu=r, sigma=sigma)
+
+        class _LocalGBM:
+            def __init__(self, mu: float, sigma: float):
+                self.mu = mu
+                self.sigma = sigma
+
+            def exact_sample(self, x, t, dt, dw):
+                return x * np.exp(
+                    (self.mu - 0.5 * self.sigma ** 2) * dt
+                    + self.sigma * np.sqrt(dt) * dw
+                )
+
+        process = _LocalGBM(mu=r, sigma=sigma)
         engine = MonteCarloEngine(process, n_paths=4096, n_steps=64, seed=42, method="exact")
         paths = engine.simulate(spec.spot, T)
         dt = T / engine.n_steps
