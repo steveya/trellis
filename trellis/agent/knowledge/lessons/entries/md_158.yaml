@@ -1,0 +1,38 @@
+category: market_data
+title: Handle fallback code paths cleanly
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-08T17:13:15.392468'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: A fallback branch was started with an except block but the next implementation
+  was not indented under it, causing a syntax error.
+root_cause: The mental model failure was treating alternate method logic as if it
+  could be appended inline without preserving Python block structure. In practice,
+  any fallback or try/except path must be fully scoped and syntactically complete
+  before adding the next function definition.
+fix: Keep try/except fallback implementations fully indented and define helper functions
+  outside the exception block only after the block ends.
+validation: "Resolved during build of Build a pricer for: FFT vs COS: GBM calls/puts\
+  \ across strikes and maturities\n\nEuropean call and put options on a non-dividend-paying\
+  \ stock under GBM.\nS0=100, risk-free rate r=5%, volatility sigma=20%.\nPrice across\
+  \ a grid of strikes K=[80, 90, 100, 110, 120] and\nmaturities T=[0.5, 1.0, 2.0]\
+  \ years — 15 call prices and 15 put\nprices total.\nMethod 1: FFT (Carr-Madan) with\
+  \ N=4096, eta=0.25, Simpson weights.\nMethod 2: COS method with N=128 terms.\nBoth\
+  \ methods should agree with Black-Scholes analytical to within 0.5%.\n\nConstruct\
+  \ methods: fft_pricing\nComparison targets: fft (fft_pricing), cos (fft_pricing),\
+  \ black_scholes (analytical)\nCross-validation harness:\n  internal targets: fft,\
+  \ cos\n  analytical benchmark: black_scholes\nNew component: put_pricing_via_transforms\n\
+  \nImplementation target: fft\nPreferred method family: fft_pricing\n\nImplementation\
+  \ target: fft"
+supersedes: []
+id: md_158

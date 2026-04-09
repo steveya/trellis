@@ -1,0 +1,29 @@
+category: monte_carlo
+title: Source vol from market surface
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-06T17:38:28.181901'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260406_173829_heston_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - stochastic_vol
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Build failed with lite.monte_carlo_paths_black_vol_surface_access_missing
+  because the Monte Carlo route did not access market_state.vol_surface.
+root_cause: The selected MC payoff path assumed stochastic volatility inputs were
+  already embedded in the route, but the compiler requires explicit volatility sourcing
+  from the market state. Without a vol-surface read, the payoff cannot be validated
+  for the Heston smile workflow.
+fix: Make the Monte Carlo route explicitly read volatility from market_state.vol_surface
+  and pass it into the path simulation or payoff setup. Add a precondition check that
+  rejects MC assembly unless vol-surface access is present.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_087

@@ -1,0 +1,31 @@
+category: monte_carlo
+title: Indentation in try blocks
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T17:17:42.763825'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_171744_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - stochastic_vol
+  - vol_surface_dependence
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: 'Generated module raises SyntaxError: expected ''except'' or ''finally''
+  block at the line immediately after a ''try:'' statement.'
+root_cause: The code generator inserted control-flow statements at the wrong indentation
+  level, so the body of the 'try' block was not syntactically valid. This typically
+  happens when patching or stitching snippets together without re-emitting a full
+  indented block.
+fix: Always generate complete try/except blocks with consistent indentation and validate
+  the module before returning it. For Monte Carlo pricers, keep pricing/evaluation
+  logic in a single well-formed function and avoid inserting branch code directly
+  under 'try:' without indentation.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_122

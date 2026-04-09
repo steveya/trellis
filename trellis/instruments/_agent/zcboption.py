@@ -1,5 +1,12 @@
 """Agent-generated payoff: Build a pricer for: ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical
 
+Price a 1Y European option on a zero-coupon bond maturing at T=5Y.
+Face value $100, strike price $88. Hull-White model: mean reversion
+a=0.1, short-rate vol sigma=0.01, initial short rate r0=0.05.
+Flat yield curve at 5%.
+Cross-validate Ho-Lee tree, Hull-White tree, and Jamshidian analytical
+decomposition.  All three should agree within 2%.
+
 Construct methods: rate_tree
 Comparison targets: ho_lee_tree (rate_tree), hull_white_tree (rate_tree), jamshidian (analytical)
 Cross-validation harness:
@@ -18,16 +25,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from trellis.core.date_utils import generate_schedule, year_fraction
 from trellis.core.market_state import MarketState
-from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.black import black76_call, black76_put
+from trellis.core.types import DayCountConvention
+from trellis.models.zcb_option import price_zcb_option_jamshidian
 
 
 
 @dataclass(frozen=True)
 class ZCBOptionSpec:
     """Specification for Build a pricer for: ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical
+
+Price a 1Y European option on a zero-coupon bond maturing at T=5Y.
+Face value $100, strike price $88. Hull-White model: mean reversion
+a=0.1, short-rate vol sigma=0.01, initial short rate r0=0.05.
+Flat yield curve at 5%.
+Cross-validate Ho-Lee tree, Hull-White tree, and Jamshidian analytical
+decomposition.  All three should agree within 2%.
 
 Construct methods: rate_tree
 Comparison targets: ho_lee_tree (rate_tree), hull_white_tree (rate_tree), jamshidian (analytical)
@@ -51,6 +64,13 @@ Implementation target: jamshidian."""
 
 class ZCBOptionPayoff:
     """Build a pricer for: ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical
+
+Price a 1Y European option on a zero-coupon bond maturing at T=5Y.
+Face value $100, strike price $88. Hull-White model: mean reversion
+a=0.1, short-rate vol sigma=0.01, initial short rate r0=0.05.
+Flat yield curve at 5%.
+Cross-validate Ho-Lee tree, Hull-White tree, and Jamshidian analytical
+decomposition.  All three should agree within 2%.
 
 Construct methods: rate_tree
 Comparison targets: ho_lee_tree (rate_tree), hull_white_tree (rate_tree), jamshidian (analytical)
@@ -79,37 +99,17 @@ Implementation target: jamshidian."""
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
         spec = self._spec
-        if spec.bond_maturity_date <= spec.expiry_date:
-            raise ValueError("bond_maturity_date must be strictly after expiry_date")
-
-        # Normalize strike quotes quoted on face value to unit-notional strike for the kernel.
-        strike = spec.strike / spec.notional if spec.notional != 0 else spec.strike
-
-        # Ensure the required market capabilities exist and are observable.
-        _ = market_state.discount
-        if market_state.vol_surface is None:
-            raise ValueError("market_state.vol_surface is required for ZCB option pricing")
-
-        # Touch the requested market volatility surface per routing contract.
-        valuation_date = market_state.settlement or market_state.as_of
-        expiry_t = year_fraction(valuation_date, spec.expiry_date, spec.day_count)
-        _ = market_state.vol_surface.black_vol(expiry_t, strike)
-
-        # Jamshidian analytical route helper.
         from trellis.models.zcb_option import price_zcb_option_jamshidian
 
-        try:
-            pv = price_zcb_option_jamshidian(market_state, spec, mean_reversion=0.1)
-        except TypeError:
-            # Fallback for helper variants that expect normalized strike or different spec handling.
-            normalized_spec = ZCBOptionSpec(
-                notional=spec.notional,
-                strike=strike,
-                expiry_date=spec.expiry_date,
-                bond_maturity_date=spec.bond_maturity_date,
-                day_count=spec.day_count,
-                option_type=spec.option_type,
-            )
-            pv = price_zcb_option_jamshidian(market_state, normalized_spec, mean_reversion=0.1)
+        if self.requirements and getattr(market_state, "discount", None) is None:
+            raise ValueError("discount_curve market data is required for ZCB option pricing")
+        if getattr(market_state, "vol_surface", None) is None:
+            raise ValueError("black_vol_surface market data is required for ZCB option pricing")
 
-        return float(pv)
+        # Delegate to the checked-in analytical helper; it handles resolving
+        # the Hull-White / Jamshidian inputs and internal discounting.
+        try:
+            return float(price_zcb_option_jamshidian(market_state, spec))
+        except TypeError:
+            # Some backend variants accept mean_reversion explicitly.
+            return float(price_zcb_option_jamshidian(market_state, spec, mean_reversion=0.1))

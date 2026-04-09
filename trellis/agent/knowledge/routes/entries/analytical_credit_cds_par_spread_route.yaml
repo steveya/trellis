@@ -1,0 +1,42 @@
+id: analytical_credit_cds_par_spread_route
+engine_family: analytical
+route_family: analytical
+status: candidate
+confidence: 0.5
+discovered_from: reflect_attempt_2
+successful_builds: 1
+match:
+  methods:
+  - credit
+  instruments:
+  - swap
+primitives:
+- module: trellis.core.market_state
+  symbol: MarketState
+  role: state_container
+- module: trellis.core.date_utils
+  symbol: generate_schedule
+  role: route_helper
+- module: trellis.core.date_utils
+  symbol: year_fraction
+  role: route_helper
+market_data_access:
+  required:
+    credit_curve:
+    - market_state.credit
+    discount_curve:
+    - market_state.discount
+parameter_bindings:
+  required:
+  - notional
+  - spread
+  - recovery
+  - start_date
+  - end_date
+  - frequency
+  - day_count
+notes:
+- This route works because CDS par-spread valuation is an analytical credit problem
+  built from a premium leg and protection leg, both of which depend only on scheduled
+  cash-flow dates, discounting, and survival probabilities from the hazard/credit
+  curve.

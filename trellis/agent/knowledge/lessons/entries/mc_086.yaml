@@ -1,0 +1,30 @@
+category: monte_carlo
+title: Misplaced continue in payoff loop
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-06T17:34:10.771485'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260406_173412_swaption_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - floating_coupons
+  - path_dependent
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Build fails with a SyntaxError or compiler error stating that 'continue'
+  is not properly in loop at swaption.py line 136.
+root_cause: A generated branch inserted 'continue' inside a helper or expression block
+  instead of inside an actual loop. This typically happens when template logic for
+  schedule filtering or coupon skipping is emitted with broken indentation or control-flow
+  placement.
+fix: Move the skip logic into a real for-loop over cashflow dates or simulation paths,
+  and replace stray 'continue' with an if-guard when no loop is present. Regenerate
+  the payoff block with indentation-checked templates and unit tests that parse the
+  module before execution.
+validation: Discovered during build (attempt 1)
+supersedes: []
+id: mc_086

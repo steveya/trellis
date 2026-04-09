@@ -7,6 +7,7 @@ from types import MappingProxyType
 from typing import Mapping
 
 from trellis.agent.assembly_tools import normalize_comparison_relation
+from trellis.agent.instrument_identity import resolve_authoritative_instrument_type
 from trellis.agent.knowledge.methods import normalize_method
 from trellis.agent import validation_bundles
 
@@ -223,16 +224,12 @@ def _resolve_instrument_type(
     semantic_blueprint=None,
 ) -> str:
     """Return the most specific normalized instrument identifier available."""
-    candidates = (
+    resolved = resolve_authoritative_instrument_type(
         instrument_type,
         getattr(product_ir, "instrument", None),
         getattr(semantic_blueprint, "semantic_id", None),
     )
-    for value in candidates:
-        text = str(value or "").strip().lower().replace(" ", "_")
-        if text and text != "unknown":
-            return text
-    return ""
+    return resolved or ""
 
 
 def _resolve_route_identity(

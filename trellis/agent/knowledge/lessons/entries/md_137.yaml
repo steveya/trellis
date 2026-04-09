@@ -1,0 +1,32 @@
+category: market_data
+title: Uninitialized model label
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-06T18:09:23.867209'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The rate_tree implementation referenced model_name before it was assigned,
+  causing the smoke test to fail immediately.
+root_cause: This usually happens when code assumes a configuration variable was set
+  earlier in the flow, but a branch, refactor, or early return skips that assignment.
+  The mental model failure is treating metadata like model_name as always available
+  instead of validating it before use.
+fix: Initialize model_name explicitly before any branch that uses it, or derive it
+  from a single validated configuration source at the top of the method.
+validation: "Resolved during build of Build a pricer for: ZCB option: Ho-Lee vs HW\
+  \ tree vs Jamshidian analytical\n\nConstruct methods: rate_tree\nComparison targets:\
+  \ ho_lee_tree (rate_tree), hull_white_tree (rate_tree), jamshidian (analytical)\n\
+  Cross-validation harness:\n  internal targets: ho_lee_tree, hull_white_tree\n  analytical\
+  \ benchmark: jamshidian\n  external targets: quantlib, financepy\nNew component:\
+  \ jamshidian_decomposition\n\nImplementation target: ho_lee_tree\nPreferred method\
+  \ family: rate_tree\n\nImplementation target: ho_lee_tree"
+supersedes: []
+id: md_137

@@ -1,0 +1,30 @@
+category: market_data
+title: Wrong Gaussian constructor
+severity: critical
+status: promoted
+confidence: 0.8
+created: '2026-04-08T17:18:35.708249'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_171837_cdo_copula.yaml
+applies_when:
+  method:
+  - copula
+  features:
+  - credit_risk
+  - discounting
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: Smoke test fails with `GaussianCopula.__init__() got an unexpected keyword
+  argument 'n_names'`.
+root_cause: The build passed a non-existent constructor argument, indicating the copula
+  API contract was assumed rather than verified. This usually happens when adapting
+  a basket/CDO route from another engine with different parameter names or object
+  shape.
+fix: Inspect the actual `GaussianCopula` signature and instantiate it with the supported
+  fields only, then supply portfolio dimension through the correct route/helper if
+  required. Add a constructor-level unit test that validates the exact copula API
+  before wiring tranche pricing.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: md_159

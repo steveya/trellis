@@ -1,0 +1,36 @@
+category: backward_induction
+title: Misplaced exception block
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-08T22:23:05.875940'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: An except clause was indented under an if statement, causing a syntax error
+  instead of valid validation logic.
+root_cause: 'This happens when control-flow blocks are mixed up mentally: exception
+  handling must wrap code in a try/except structure, not follow a standalone conditional.
+  The parser fails before any runtime validation can occur.'
+fix: Move the except clause into a proper try/except around the validation code and
+  keep conditionals separate from exception handling.
+validation: "Resolved during build of Build a pricer for: ZCB option: Ho-Lee vs HW\
+  \ tree vs Jamshidian analytical\n\nPrice a 1Y European option on a zero-coupon bond\
+  \ maturing at T=5Y.\nFace value $100, strike price $88. Hull-White model: mean reversion\n\
+  a=0.1, short-rate vol sigma=0.01, initial short rate r0=0.05.\nFlat yield curve\
+  \ at 5%.\nCross-validate Ho-Lee tree, Hull-White tree, and Jamshidian analytical\n\
+  decomposition.  All three should agree within 2%.\n\nConstruct methods: rate_tree\n\
+  Comparison targets: ho_lee_tree (rate_tree), hull_white_tree (rate_tree), jamshidian\
+  \ (analytical)\nCross-validation harness:\n  internal targets: ho_lee_tree, hull_white_tree\n\
+  \  analytical benchmark: jamshidian\n  external targets: quantlib, financepy\nNew\
+  \ component: jamshidian_decomposition\n\nImplementation target: jamshidian\nPreferred\
+  \ method family: analytical\n\nImplementation target: jamshidian"
+supersedes: []
+id: bi_030

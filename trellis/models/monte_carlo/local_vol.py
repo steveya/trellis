@@ -5,9 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from trellis.core.differentiable import get_numpy
-from trellis.models.monte_carlo.engine import MonteCarloEngine
-from trellis.models.monte_carlo.path_state import terminal_value_payoff
-from trellis.models.processes.local_vol import LocalVol
+from trellis.models.monte_carlo.event_aware import (
+    EventAwareMonteCarloProblemSpec,
+    EventAwareMonteCarloProcessSpec,
+    build_event_aware_monte_carlo_problem,
+    price_event_aware_monte_carlo,
+)
 
 np = get_numpy()
 
@@ -62,25 +65,34 @@ def local_vol_european_vanilla_price_result(
         return LocalVolMonteCarloResult(price=float(intrinsic), std_error=0.0, n_paths=0)
 
     risk_free_rate = float(discount_curve.zero_rate(maturity))
-    process = LocalVol(mu=risk_free_rate - dividend_yield, vol_fn=local_vol_surface)
-    engine = MonteCarloEngine(
-        process,
-        n_paths=n_paths,
-        n_steps=n_steps,
-        seed=seed,
-        method="euler",
-    )
 
     def terminal_payoff(terminal):
         if option == "call":
             return np.maximum(terminal - strike, 0.0)
         return np.maximum(strike - terminal, 0.0)
 
-    result = engine.price(
-        spot,
-        maturity,
-        terminal_value_payoff(terminal_payoff, name="local_vol_terminal_payoff"),
-        discount_rate=risk_free_rate,
+    problem = build_event_aware_monte_carlo_problem(
+        EventAwareMonteCarloProblemSpec(
+            process_spec=EventAwareMonteCarloProcessSpec(
+                family="local_vol_1d",
+                risk_free_rate=risk_free_rate,
+                dividend_yield=dividend_yield,
+                local_vol_surface=local_vol_surface,
+            ),
+            initial_state=spot,
+            maturity=maturity,
+            n_steps=n_steps,
+            discount_rate=risk_free_rate,
+            path_requirement_kind="terminal_only",
+            reducer_kind="terminal_payoff",
+            terminal_payoff=terminal_payoff,
+        )
+    )
+
+    result = price_event_aware_monte_carlo(
+        problem,
+        n_paths=n_paths,
+        seed=seed,
         return_paths=False,
     )
     return LocalVolMonteCarloResult(

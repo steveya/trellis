@@ -1,0 +1,31 @@
+category: convention
+title: Missing tranche payoff adapter
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-07T10:13:21.722849'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_101323_cdo_copula.yaml
+applies_when:
+  method:
+  - copula
+  features:
+  - credit_risk
+  - path_dependent
+  - discounting
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: Build failed with assembly.required_primitive_missing because the generated
+  payoff did not call trellis.instruments.nth_to_default.price_nth_to_default_basket.
+root_cause: The route required a thin adapter around the Nth-to-default primitive,
+  but the implementation attempted to assemble a tranche pricer directly without using
+  the mandated primitive. This caused the compiler to reject the payoff shape as non-compliant
+  with the selected assembly route.
+fix: Wrap the CDO tranche valuation in a minimal adapter that maps tranche attachment/detachment
+  to the required nth-to-default basket primitive. Ensure the generated code explicitly
+  invokes trellis.instruments.nth_to_default.price_nth_to_default_basket and only
+  transforms inputs/outputs around that kernel.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: con_040

@@ -1,0 +1,30 @@
+category: convention
+title: Copula payoff shape contract
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-08T16:11:31.484032'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_161133_cdo_copula.yaml
+applies_when:
+  method:
+  - copula
+  features:
+  - credit_risk
+  - multi_asset
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: GaussianCopula.__init__() raises unexpected keyword argument 'n_names' during
+  market-state smoke test.
+root_cause: The pricing plan assumed a copula constructor contract that does not exist
+  in the implementation, mixing tranche/basket shape parameters with kernel initialization.
+  This indicates the codegen path lacked a validated payoff-adapter contract for CDO
+  tranche construction under the copula method.
+fix: Introduce an explicit copula payoff adapter that separates portfolio shape inputs
+  (n_names, attachment, detachment, recovery, maturity) from copula kernel inputs
+  (correlation, df, factor structure). Add a constructor smoke test against the actual
+  library signature before assembling the payoff.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: con_044

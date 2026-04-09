@@ -44,6 +44,7 @@ CANARY_FILE = ROOT / "CANARY_TASKS.yaml"
 
 # Engine families considered "core" for the --subset=core option
 CORE_FAMILIES = {"lattice", "monte_carlo", "pde", "credit"}
+CANARY_MAX_RETRIES = 3
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +82,23 @@ def filter_canaries(
     if subset == "core":
         return [c for c in canaries if c.get("engine_family") in CORE_FAMILIES]
     return canaries
+
+
+def merge_canary_task_payload(task: dict, canary: dict) -> dict:
+    """Overlay curated canary fields onto the live task registry payload."""
+    merged = dict(task)
+    for key in (
+        "description",
+        "market",
+        "market_assertions",
+        "construct",
+        "cross_validate",
+        "new_component",
+    ):
+        value = canary.get(key)
+        if value is not None:
+            merged[key] = value
+    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +147,10 @@ def run_canaries(
     from trellis.agent.task_runtime import build_market_state, load_tasks, run_task
 
     budget = budget_override or meta.get("total_budget_usd", 3.0)
-    all_tasks = load_tasks()
+    # Canary coverage is curated independently of task lifecycle state, so the
+    # runner must look across the full task registry rather than only "pending"
+    # entries.
+    all_tasks = load_tasks(status=None)
     task_lookup = {t["id"]: t for t in all_tasks}
 
     market_state = build_market_state()
@@ -158,6 +179,7 @@ def run_canaries(
                 "reason": "not_in_tasks_yaml",
             })
             continue
+        task = merge_canary_task_payload(task, canary)
 
         start = time.time()
         print(f"\n  [{idx}/{len(canaries)}] {task_id:6s}  {canary.get('engine_family', '?'):14s}", end="", flush=True)
@@ -169,6 +191,7 @@ def run_canaries(
                 model=model,
                 force_rebuild=True,
                 validation=validation,
+                max_retries=CANARY_MAX_RETRIES,
                 knowledge_profile="knowledge_light" if knowledge_light else None,
             )
         except Exception as exc:

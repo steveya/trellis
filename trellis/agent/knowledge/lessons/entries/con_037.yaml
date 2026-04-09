@@ -1,0 +1,31 @@
+category: convention
+title: Missing CDS convention contract
+severity: critical
+status: promoted
+confidence: 0.8
+created: '2026-04-06T17:31:55.283369'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260406_173156_swap_credit.yaml
+applies_when:
+  method:
+  - credit
+  features:
+  - credit_risk
+  - discounting
+  - fixed_coupons
+  - floating_coupons
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: Build gate blocks generation with 'Lane `credit` has no exact backend binding
+  and no constructive steps' and the model cannot resolve spread/curve units.
+root_cause: The credit lane lacks a registered data contract and convention mapping
+  for CDS inputs, so the compiler cannot safely assemble par-spread logic. This leaves
+  unit normalization, discounting, and hazard-rate bootstrap semantics underspecified.
+fix: Add an explicit CDS credit contract covering spread units, day count, premium/payment
+  timing, discount curve usage, and hazard-rate bootstrap conventions. Bind the credit
+  lane to a constructive route or cookbook template so generation can proceed without
+  guessing.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: con_037

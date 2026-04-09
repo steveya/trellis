@@ -1,0 +1,29 @@
+category: backward_induction
+title: Exercise Time Undefined
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-06T17:40:17.751193'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260406_174019_swaption_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Smoke test raises NameError: name ''exercise_time'' is not defined during
+  payoff construction.'
+root_cause: The payoff builder references an exercise-time variable that was never
+  derived from the swaption schedule or passed into scope. This is a wiring error
+  in the tree payoff setup, not a model problem.
+fix: Compute exercise_time explicitly from the expiry/exercise date using the product's
+  day count and store it before building the lattice payoff. Ensure the payoff calls
+  the lattice backward-induction primitives with a fully bound exercise schedule instead
+  of relying on an undefined local variable.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: bi_022

@@ -1,0 +1,33 @@
+category: market_data
+title: Normalize CDS spread units
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-06T17:31:22.875621'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - credit
+  features:
+  - credit_risk
+  - fixed_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: The CDS quote was used as-is, so basis-point inputs like 100 were treated
+  differently from decimal inputs like 0.01.
+root_cause: The mental model assumed all market spreads were already in the same units,
+  but CDS feeds often quote spreads in basis points while valuation formulas expect
+  decimal rates. This unit mismatch can create wildly wrong accrual, premium-leg,
+  and PV results even when the quote values are semantically equivalent.
+fix: Convert CDS spreads to a single internal convention, typically decimal rate units,
+  before pricing and accrual calculations.
+validation: "Resolved during build of Build a pricer for: CDS par spread: hazard rate\
+  \ bootstrap vs closed-form\n\nComparison targets: bootstrapped_cds (credit), analytical_cds\
+  \ (credit)\nCross-validation harness:\n  internal targets: bootstrapped_cds, analytical_cds\n\
+  \  external targets: quantlib, financepy\nNew component: cds_bootstrap\n\nImplementation\
+  \ target: bootstrapped_cds\nPreferred method family: credit\n\nImplementation target:\
+  \ bootstrapped_cds"
+supersedes: []
+id: md_135

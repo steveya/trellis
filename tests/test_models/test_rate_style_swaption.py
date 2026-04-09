@@ -7,13 +7,20 @@ import pytest
 
 from trellis.core.differentiable import gradient
 from trellis.core.market_state import MarketState
+from trellis.core.types import DayCountConvention
 from trellis.curves.yield_curve import YieldCurve
+from trellis.data.resolver import resolve_market_snapshot
 from trellis.models.rate_style_swaption import (
     ResolvedSwaptionBlack76Inputs,
     price_bermudan_swaption_black76_lower_bound,
+    price_swaption_monte_carlo,
     price_swaption_black76_raw,
     price_swaption_black76,
     resolve_swaption_black76_inputs,
+)
+from trellis.models.rate_style_swaption_tree import (
+    build_swaption_tree_spec,
+    price_swaption_tree,
 )
 from trellis.models.black import black76_put
 from trellis.models.vol_surface import FlatVol
@@ -32,6 +39,19 @@ class _EuropeanSpec:
     swap_frequency = Frequency.SEMI_ANNUAL
     day_count = DayCountConvention.ACT_360
     rate_index = None
+    is_payer = True
+
+
+class _EuropeanCurveSpec:
+    notional = 1_000_000.0
+    strike = 0.045
+    expiry_date = date(2025, 11, 15)
+    swap_start = expiry_date
+    swap_end = date(2030, 11, 15)
+    from trellis.core.types import DayCountConvention, Frequency
+    swap_frequency = Frequency.SEMI_ANNUAL
+    day_count = DayCountConvention.ACT_360
+    rate_index = "USD-SOFR-3M"
     is_payer = True
 
 
@@ -145,3 +165,94 @@ def test_bermudan_lower_bound_increases_with_vol():
     low = price_bermudan_swaption_black76_lower_bound(_market_state(vol=0.10), _BermudanSpec())
     high = price_bermudan_swaption_black76_lower_bound(_market_state(vol=0.30), _BermudanSpec())
     assert high > low
+
+
+def test_build_swaption_tree_spec_maps_single_exercise_surface():
+    tree_spec = build_swaption_tree_spec(_EuropeanSpec())
+
+    assert tree_spec.notional == pytest.approx(_EuropeanSpec.notional)
+    assert tree_spec.strike == pytest.approx(_EuropeanSpec.strike)
+    assert tree_spec.exercise_dates == (_EuropeanSpec.expiry_date,)
+    assert tree_spec.swap_end == _EuropeanSpec.swap_end
+    assert tree_spec.rate_index == _EuropeanSpec.rate_index
+    assert tree_spec.is_payer is _EuropeanSpec.is_payer
+
+
+def test_price_swaption_tree_is_positive():
+    price = price_swaption_tree(_market_state(), _EuropeanSpec(), model="hull_white")
+    assert price > 0.0
+
+
+def test_price_swaption_monte_carlo_stays_close_to_black76_and_tree():
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=YieldCurve.flat(0.042, max_tenor=10.0),
+        forecast_curves={"USD-SOFR-3M": YieldCurve.flat(0.046, max_tenor=10.0)},
+        vol_surface=FlatVol(0.20),
+        selected_curve_names={"discount_curve": "usd_ois", "forecast_curve": "USD-SOFR-3M"},
+    )
+    spec = _EuropeanCurveSpec()
+
+    mc_price = price_swaption_monte_carlo(
+        market_state,
+        spec,
+        n_paths=12_000,
+        seed=11,
+        n_steps=64,
+    )
+    black76_price = price_swaption_black76(market_state, spec)
+    tree_price = price_swaption_tree(market_state, spec, model="hull_white")
+
+    assert mc_price > 0.0
+    assert mc_price == pytest.approx(tree_price, rel=0.15)
+    assert mc_price == pytest.approx(black76_price, rel=0.35)
+
+
+def test_price_swaption_black76_with_hull_white_comparison_vol_matches_tree_and_mc():
+    snapshot = resolve_market_snapshot(as_of=SETTLE, source="mock")
+    market_state = snapshot.to_market_state(
+        settlement=SETTLE,
+        discount_curve="usd_ois",
+        forecast_curve="USD-SOFR-3M",
+        vol_surface="usd_rates_atm",
+        fixing_history="USD-SOFR-3M",
+    )
+
+    class _TaskLikeSpec:
+        notional = 1_000_000.0
+        strike = 0.03
+        expiry_date = date(2025, 11, 15)
+        swap_start = expiry_date
+        swap_end = date(2030, 11, 15)
+        swap_frequency = _EuropeanSpec.swap_frequency
+        day_count = DayCountConvention.THIRTY_360
+        rate_index = "USD-SOFR-3M"
+        is_payer = True
+
+    spec = _TaskLikeSpec()
+    black76_price = price_swaption_black76(
+        market_state,
+        spec,
+        mean_reversion=0.05,
+        sigma=0.01,
+    )
+    tree_price = price_swaption_tree(
+        market_state,
+        spec,
+        model="hull_white",
+        mean_reversion=0.05,
+        sigma=0.01,
+    )
+    mc_price = price_swaption_monte_carlo(
+        market_state,
+        spec,
+        mean_reversion=0.05,
+        sigma=0.01,
+        n_paths=10_000,
+        seed=42,
+    )
+
+    assert black76_price > 0.0
+    assert black76_price == pytest.approx(tree_price, rel=0.05)
+    assert black76_price == pytest.approx(mc_price, rel=0.08)

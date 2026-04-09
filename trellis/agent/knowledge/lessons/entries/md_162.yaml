@@ -1,0 +1,27 @@
+category: market_data
+title: Missing bond maturity field
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T21:57:00.648626'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_215702_zcb_option_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Pricing failed with AttributeError: ''EuropeanOptionSpec'' object has no
+  attribute ''bond_maturity_date''.'
+root_cause: The payoff builder assumed the instrument spec exposed a bond maturity
+  date, but the actual option spec only carried the underlying bond tenor/maturity
+  indirectly. This mismatch broke market-state smoke testing before tree valuation
+  began.
+fix: Map the bond maturity from the product definition or parameter block, not from
+  a nonexistent spec attribute. Add a validation layer that resolves required instrument
+  dates/tenors before constructing the payoff and tree exercise schedule.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: md_162

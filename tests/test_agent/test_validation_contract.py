@@ -125,6 +125,20 @@ def test_swaption_validation_contract_carries_helper_consistency_check():
     )
 
 
+def test_compile_validation_contract_prefers_more_specific_product_family_over_generic_request_family():
+    from trellis.agent.validation_contract import compile_validation_contract
+
+    contract = compile_validation_contract(
+        pricing_plan=type("PricingPlan", (), {"method": "analytical", "required_market_data": {"discount_curve", "black_vol_surface"}})(),
+        instrument_type="european_option",
+        product_ir=type("ProductIR", (), {"instrument": "zcb_option", "required_market_data": {"discount_curve", "black_vol_surface"}})(),
+    )
+
+    assert contract is not None
+    assert contract.bundle_id == "analytical:zcb_option"
+    assert contract.instrument_type == "zcb_option"
+
+
 def test_route_less_semantic_request_keeps_validation_contract_truthful():
     from trellis.agent.platform_requests import compile_build_request
 

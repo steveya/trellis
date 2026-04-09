@@ -1,0 +1,30 @@
+category: volatility
+title: Tree must read vol surface
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T15:45:24.445422'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_154526_european_option_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Price stays unchanged when the volatility input is bumped from 5% to 40%,
+  with change=0.0000%.
+root_cause: The pricing route used a fixed or missing sigma instead of reading volatility
+  from the market state/vol surface, so the tree dynamics never reflected vol sensitivity.
+  A syntax error in the vol-surface probe loop also prevented the fallback logic from
+  running.
+fix: Read sigma from the live market state/vol surface at pricing time and rebuild
+  the tree when vol changes. Keep the volatility access loop syntactically correct
+  with proper try/except structure and validate that option value moves with vol bumps
+  before returning.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: vol_023

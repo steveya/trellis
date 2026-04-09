@@ -1,0 +1,43 @@
+category: volatility
+title: Tree ignored option sensitivity
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-07T13:23:54.097729'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: The HW rate tree produced the same callable bond price even when volatility
+  changed dramatically, indicating the embedded call option was not properly affecting
+  the backward induction.
+root_cause: This happens when the tree is built or evaluated as if only the base bond
+  cash flows matter, or when the call decision is applied incorrectly so the continuation
+  value never reflects rate uncertainty. The mental-model failure is treating a callable
+  bond like a plain bond instead of an option-sensitive instrument whose value must
+  move with volatility.
+fix: Ensure the tree recombines rates correctly, discounts node-by-node, and enforces
+  the call constraint at each call date using the continuation value so option value
+  responds to volatility.
+validation: "Resolved during build of Build a pricer for: Callable bond: HW rate PDE\
+  \ (PSOR) vs HW tree\n\nPrice a 10-year callable bond paying a 5% semi-annual coupon,\
+  \ par $100,\ncallable at par on any coupon date after year 3.\nUse the USD OIS discount\
+  \ curve from the market snapshot (as_of 2024-11-15).\nHull-White model: mean reversion\
+  \ a=0.05, short-rate vol sigma=0.01.\nMethod 1: solve the HW rate PDE backward in\
+  \ time using PSOR to\nenforce the call constraint (issuer calls when continuation\
+  \ value > par).\nMethod 2: Hull-White trinomial/binomial rate tree for comparison.\n\
+  Both methods should agree within 1%.\nCompute callable bond price and option-adjusted\
+  \ spread (OAS).\n\nConstruct methods: pde_solver, rate_tree\nComparison targets:\
+  \ hw_pde_psor (pde_solver), hw_rate_tree (rate_tree)\nCross-validation harness:\n\
+  \  internal targets: hw_pde_psor, hw_rate_tree\n  external targets: quantlib\nNew\
+  \ component: hw_rate_pde_operator\n\nImplementation target: hw_rate_tree\nPreferred\
+  \ method family: rate_tree\n\nImplementation target: hw_rate_tree"
+supersedes: []
+id: vol_013

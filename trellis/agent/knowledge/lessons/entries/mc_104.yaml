@@ -1,0 +1,28 @@
+category: monte_carlo
+title: Use event-aware MC primitive
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T15:55:01.532599'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_155503_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Generated Monte Carlo code failed assembly.required_primitive_missing because
+  it did not invoke trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo.
+root_cause: The payoff was built as a custom simulation rather than a thin adapter
+  around the required event-aware Monte Carlo primitive. The assembly route validates
+  that the selected kernel symbol is actually used, so ad-hoc path logic gets rejected.
+fix: 'Wrap the product payoff and variance-reduction logic around the event-aware
+  Monte Carlo primitive instead of reimplementing path pricing. Keep the adapter thin:
+  extract inputs, pass them into price_event_aware_monte_carlo, and compute any post-processing
+  metrics from its outputs.'
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_104

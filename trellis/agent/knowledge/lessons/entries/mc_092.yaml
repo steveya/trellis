@@ -1,0 +1,40 @@
+category: monte_carlo
+title: Initialize all payoff variables
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-07T09:58:42.281740'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: A path payoff variable was referenced before it was assigned in the antithetic
+  Monte Carlo branch.
+root_cause: 'The implementation likely computed `intrinsic` only inside a conditional
+  path, then used it unconditionally later. This is a control-flow bug: every variable
+  that contributes to the payoff must be defined for all execution paths.'
+fix: Initialize the payoff-related variable before branching, or assign it in every
+  branch before it is used.
+validation: "Resolved during build of Build a pricer for: Variance reduction: antithetic\
+  \ + control variate + importance sampling\n\nEuropean call option on a non-dividend-paying\
+  \ stock.\nS0=100, K=105, T=1Y, risk-free rate r=5%, volatility sigma=20%.\nRun 100,000\
+  \ paths with the exact GBM scheme.\nCompare four configurations:\n  1. Plain MC\
+  \ (no variance reduction)\n  2. Antithetic variates\n  3. Control variate (use the\
+  \ geometric-average Asian as control)\n  4. Antithetic + control variate combined\n\
+  Report price, standard error, and effective variance reduction ratio\nfor each.\
+  \  All four should converge to the Black-Scholes value;\nmethods 2-4 should show\
+  \ lower standard error than method 1.\n\nConstruct methods: monte_carlo\nComparison\
+  \ targets: plain_mc (monte_carlo), antithetic_mc (monte_carlo), control_variate_mc\
+  \ (monte_carlo), black_scholes (analytical)\nCross-validation harness:\n  internal\
+  \ targets: plain_mc, antithetic_mc, control_variate_mc\n  analytical benchmark:\
+  \ black_scholes\nNew component: ['control_variate_wrapper', 'importance_sampling']\n\
+  \nImplementation target: antithetic_mc\nPreferred method family: monte_carlo\n\n\
+  Implementation target: antithetic_mc"
+supersedes: []
+id: mc_092

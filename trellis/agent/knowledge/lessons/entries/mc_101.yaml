@@ -1,0 +1,28 @@
+category: monte_carlo
+title: Use correct MC entrypoint
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T15:50:26.420592'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_155028_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'price_event_aware_monte_carlo() raised TypeError: got an unexpected keyword
+  argument ''engine''.'
+root_cause: The generated pricer called a Monte Carlo helper with an API shape that
+  does not accept an engine keyword. This indicates a mismatch between the cookbook/template
+  used by the generator and the actual trellis Monte Carlo entrypoint signature.
+fix: Call the concrete Monte Carlo pricing function with its real signature, or wrap
+  it in a small adapter that translates the pricing plan into the supported arguments.
+  Verify the exact symbol and parameter names before code generation, especially for
+  the event-aware MC path.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_101

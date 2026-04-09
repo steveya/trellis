@@ -1,0 +1,30 @@
+category: numerical
+title: Fix indentation and fallback paths
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-07T10:11:43.405256'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_101145_european_option_fft_pricing.yaml
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - discounting
+  - vol_surface_dependence
+  - characteristic_function
+  - cos_method
+  - stochastic_vol
+  instrument: []
+  error_signature: null
+symptom: Build logs show SyntaxError at lines inside try blocks and repeated fallback
+  failures when the pricer is invoked.
+root_cause: The generated module had malformed try/except indentation, so Python could
+  not parse the file. In addition, the fallback logic assumed a COS pricer symbol/module
+  existed, but that route was not actually available in the build environment.
+fix: Use strict code generation with syntax validation before submission, especially
+  around try/except blocks. Add guarded imports and a single clearly ordered fallback
+  path that only calls symbols confirmed to exist in the current runtime.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: num_040

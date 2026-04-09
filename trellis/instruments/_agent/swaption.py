@@ -7,10 +7,8 @@ from datetime import date
 
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.rate_style_swaption import (
-    price_swaption_black76_raw,
-    resolve_swaption_black76_inputs,
-)
+from trellis.models.rate_style_swaption import price_swaption_black76
+
 
 
 @dataclass(frozen=True)
@@ -42,5 +40,5 @@ class SwaptionPayoff:
         return {"black_vol_surface", "discount_curve", "forward_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
-        resolved = resolve_swaption_black76_inputs(market_state, self._spec)
-        return float(price_swaption_black76_raw(resolved))
+        spec = self._spec
+        return float(price_swaption_black76(market_state, spec))

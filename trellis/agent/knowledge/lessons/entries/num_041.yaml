@@ -1,0 +1,30 @@
+category: numerical
+title: Copula constructor signature mismatch
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-07T10:14:07.957345'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_101409_cdo_copula.yaml
+applies_when:
+  method:
+  - copula
+  features:
+  - credit_risk
+  - path_dependent
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: 'Build fails at smoke test with TypeError: GaussianCopula.__init__() takes
+  2 positional arguments but 3 were given.'
+root_cause: The pricing assembly passed an extra positional argument into the Gaussian
+  copula constructor, indicating the route assumed a different API contract than the
+  implementation exposed. This usually happens when the dependence-model interface
+  is underspecified or when the pricer is wired against a non-existent wrapper signature.
+fix: Add an explicit constructor contract for copula models and instantiate them with
+  the correct argument list, using named parameters for correlation, degrees of freedom,
+  and market state where applicable. Also validate the route wiring with a minimal
+  instantiation smoke test before payoff assembly.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: num_041

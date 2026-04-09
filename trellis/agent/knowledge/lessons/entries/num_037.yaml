@@ -1,0 +1,38 @@
+category: numerical
+title: Convert schedule state early
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-07T10:02:27.014142'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_100228_callable_bond_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - callable
+  - backward_induction
+  - bermudan
+  - fixed_coupons
+  - mean_reversion
+  - pde_grid
+  - discounting
+  - early_exercise
+  - oas
+  instrument: []
+  error_signature: null
+symptom: Route admissibility failed before generation with unsupported_control_style:issuer_min
+  and unsupported_state_tag:schedule_state.
+root_cause: The PDE route was assembled with schedule-dependent callable exercise
+  state still in a generic schedule form, so the route checker could not map it to
+  a supported early-exercise control/state representation. Callable bonds require
+  the exercise timeline and intrinsic/continuation state to be normalized before PDE
+  branching.
+fix: Convert all schedule inputs into explicit exercise dates and a supported callable
+  control style before route selection, and initialize the intrinsic/continuation
+  comparison state at each call date. For callable bonds, use a Bermudan/issuer-call
+  compatible exercise abstraction and ensure the PDE operator sees only supported
+  rate-state variables.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: num_037

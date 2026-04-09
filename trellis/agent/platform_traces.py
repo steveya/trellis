@@ -462,6 +462,7 @@ def _generation_boundary_summary(
     semantic_blueprint = dict(request_metadata.get("semantic_blueprint") or {})
     primitive_plan = getattr(generation_plan, "primitive_plan", None)
     lane_plan = dict(semantic_blueprint.get("lane_plan") or {})
+    family_ir_payload = dict(semantic_blueprint.get("dsl_family_ir") or {})
     route_binding_authority = (
         route_binding_authority_summary(
             getattr(generation_plan, "route_binding_authority", None)
@@ -495,6 +496,7 @@ def _generation_boundary_summary(
             getattr(generation_plan, "lowering_family_ir_type", "")
             or semantic_blueprint.get("dsl_family_ir_type")
         ),
+        "family_ir_summary": _family_ir_trace_summary(family_ir_payload),
         "helper_refs": list(
             getattr(generation_plan, "lowering_helper_refs", ())
             or semantic_blueprint.get("dsl_helper_refs")
@@ -559,6 +561,102 @@ def _generation_boundary_summary(
     }
     if not any(summary.values()):
         return {}
+    return summary
+
+
+def _family_ir_trace_summary(family_ir_payload: dict[str, Any]) -> dict[str, Any]:
+    """Project a compact trace-friendly summary from the YAML-safe family IR payload."""
+    if not family_ir_payload:
+        return {}
+
+    state_spec = dict(family_ir_payload.get("state_spec") or {})
+    process_spec = dict(family_ir_payload.get("process_spec") or {})
+    operator_spec = dict(family_ir_payload.get("operator_spec") or {})
+    control_spec = dict(family_ir_payload.get("control_spec") or {})
+    control_program = dict(family_ir_payload.get("control_program") or {})
+    boundary_spec = dict(family_ir_payload.get("boundary_spec") or {})
+    path_requirement_spec = dict(family_ir_payload.get("path_requirement_spec") or {})
+    payoff_reducer_spec = dict(family_ir_payload.get("payoff_reducer_spec") or {})
+    event_program = dict(family_ir_payload.get("event_program") or {})
+    compatibility_wrapper = str(family_ir_payload.get("compatibility_wrapper") or "").strip()
+
+    event_transform_kinds: list[str] = []
+    for transform in family_ir_payload.get("event_transforms") or ():
+        kind = str((transform or {}).get("transform_kind") or "").strip()
+        if kind and kind not in event_transform_kinds:
+            event_transform_kinds.append(kind)
+    if not event_transform_kinds:
+        for bucket in family_ir_payload.get("event_timeline") or ():
+            for transform in (bucket or {}).get("transforms") or ():
+                kind = str((transform or {}).get("transform_kind") or "").strip()
+                if kind and kind not in event_transform_kinds:
+                    event_transform_kinds.append(kind)
+
+    event_dates: list[str] = []
+    for bucket in family_ir_payload.get("event_timeline") or ():
+        event_date = str((bucket or {}).get("event_date") or "").strip()
+        if event_date and event_date not in event_dates:
+            event_dates.append(event_date)
+
+    event_kinds: list[str] = []
+    for event in family_ir_payload.get("event_specs") or ():
+        kind = str((event or {}).get("event_kind") or "").strip()
+        if kind and kind not in event_kinds:
+            event_kinds.append(kind)
+    if not event_kinds:
+        for bucket in family_ir_payload.get("event_timeline") or ():
+            for event in (bucket or {}).get("events") or ():
+                kind = str((event or {}).get("event_kind") or "").strip()
+                if kind and kind not in event_kinds:
+                    event_kinds.append(kind)
+
+    semantic_event_kinds: list[str] = []
+    semantic_transform_kinds: list[str] = []
+    semantic_event_dates: list[str] = []
+    for bucket in event_program.get("timeline") or ():
+        event_date = str((bucket or {}).get("event_date") or "").strip()
+        if event_date and event_date not in semantic_event_dates:
+            semantic_event_dates.append(event_date)
+        for event in (bucket or {}).get("events") or ():
+            kind = str((event or {}).get("event_kind") or "").strip()
+            transform_kind = str((event or {}).get("transform_kind") or "").strip()
+            if kind and kind not in semantic_event_kinds:
+                semantic_event_kinds.append(kind)
+            if transform_kind and transform_kind not in semantic_transform_kinds:
+                semantic_transform_kinds.append(transform_kind)
+
+    summary = {
+        "state_variable": state_spec.get("state_variable"),
+        "dimension": state_spec.get("dimension"),
+        "state_tags": list(state_spec.get("state_tags") or ()),
+        "process_family": process_spec.get("process_family"),
+        "simulation_scheme": process_spec.get("simulation_scheme"),
+        "operator_family": operator_spec.get("operator_family"),
+        "solver_family": operator_spec.get("solver_family"),
+        "control_style": control_spec.get("control_style"),
+        "controller_role": control_spec.get("controller_role"),
+        "semantic_control_style": control_program.get("control_style"),
+        "semantic_controller_role": control_program.get("controller_role"),
+        "semantic_decision_phase": control_program.get("decision_phase"),
+        "semantic_schedule_role": control_program.get("schedule_role"),
+        "path_requirement_kind": path_requirement_spec.get("requirement_kind"),
+        "reducer_kind": payoff_reducer_spec.get("reducer_kind"),
+        "event_kinds": event_kinds,
+        "semantic_event_kinds": semantic_event_kinds,
+        "terminal_condition_kind": boundary_spec.get("terminal_condition_kind"),
+        "event_transform_kinds": event_transform_kinds,
+        "semantic_transform_kinds": semantic_transform_kinds,
+        "event_dates": event_dates,
+        "semantic_event_dates": semantic_event_dates,
+        "helper_symbol": family_ir_payload.get("helper_symbol"),
+        "compatibility_wrapper": compatibility_wrapper or None,
+        "compatibility_status": (
+            "transitional_wrapper" if compatibility_wrapper else "native_event_aware"
+        ),
+        "end_state": (
+            "migrate_to_plain_EventAwarePDEIR" if compatibility_wrapper else "native_event_aware"
+        ),
+    }
     return summary
 
 

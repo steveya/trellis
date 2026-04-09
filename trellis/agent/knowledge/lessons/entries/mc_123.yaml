@@ -1,0 +1,27 @@
+category: monte_carlo
+title: Use correct GBM state keyword
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T18:27:24.895095'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_182727_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Build fails with "GBM.__init__() got an unexpected keyword argument 'spot'"
+  during the market-state smoke test.
+root_cause: The payoff generator passed a state constructor keyword that the GBM model
+  does not accept. The model expects a different state-field name, so the route could
+  not even initialize the simulation state.
+fix: Align the instrument-to-model adapter with the GBM constructor signature before
+  payoff assembly. Use the model’s required state keyword and add a smoke test for
+  constructor arguments in the Monte Carlo template.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_123

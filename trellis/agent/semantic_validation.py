@@ -34,7 +34,9 @@ _RAW_STRING_SCHEDULE_ANNOTATIONS = frozenset({
 _ROUTE_HELPER_SUBSUMED_PRIMITIVE_ROLES = frozenset({
     "array_backend",
     "event_probability",
+    "loss_distribution",
     "market_binding",
+    "path_simulation",
     "pricing_kernel",
     "time_measure",
 })
@@ -357,16 +359,33 @@ def validate_semantics(
         helper_only_required_route and helper_route_calls_present
     )
     if primitive_plan is not None and not primitive_plan.blockers and not thin_adapter_calls:
-        missing_primitives = [
-            f"{primitive.module}.{primitive.symbol}"
+        required_primitives = tuple(
+            primitive
             for primitive in primitive_plan.primitives
             if primitive.required
             and not (
                 helper_route_calls_present
                 and primitive.role in _ROUTE_HELPER_SUBSUMED_PRIMITIVE_ROLES
             )
-            and f"{primitive.module}.{primitive.symbol}" not in signals.resolved_calls
-        ]
+        )
+        called_primitives = {
+            f"{primitive.module}.{primitive.symbol}"
+            for primitive in required_primitives
+            if f"{primitive.module}.{primitive.symbol}" in signals.resolved_calls
+        }
+        role_to_primitives: dict[str, list[object]] = {}
+        for primitive in required_primitives:
+            role_to_primitives.setdefault(primitive.role, []).append(primitive)
+
+        missing_primitives: list[str] = []
+        for primitives_for_role in role_to_primitives.values():
+            role_refs = {
+                f"{primitive.module}.{primitive.symbol}"
+                for primitive in primitives_for_role
+            }
+            if called_primitives.intersection(role_refs):
+                continue
+            missing_primitives.extend(sorted(role_refs))
         if missing_primitives:
             issues.append(SemanticIssue(
                 code="assembly.required_primitive_missing",

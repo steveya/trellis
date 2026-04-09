@@ -1,0 +1,37 @@
+category: backward_induction
+title: Use approved analytical modules
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-08T21:05:45.517945'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The Jamshidian implementation imported an unapproved Trellis module instead
+  of an approved inspected module.
+root_cause: This happens when code is built against a generated plan without checking
+  the allowed module boundary, so the model confuses a valid algorithm with a valid
+  import path. The mental model failure is assuming functionality availability implies
+  import approval.
+fix: Replace the unapproved import with the approved inspected analytical module and
+  keep the decomposition logic inside the validated component.
+validation: "Resolved during build of Build a pricer for: ZCB option: Ho-Lee vs HW\
+  \ tree vs Jamshidian analytical\n\nPrice a 1Y European option on a zero-coupon bond\
+  \ maturing at T=5Y.\nFace value $100, strike price $88. Hull-White model: mean reversion\n\
+  a=0.1, short-rate vol sigma=0.01, initial short rate r0=0.05.\nFlat yield curve\
+  \ at 5%.\nCross-validate Ho-Lee tree, Hull-White tree, and Jamshidian analytical\n\
+  decomposition.  All three should agree within 2%.\n\nConstruct methods: rate_tree\n\
+  Comparison targets: ho_lee_tree (rate_tree), hull_white_tree (rate_tree), jamshidian\
+  \ (analytical)\nCross-validation harness:\n  internal targets: ho_lee_tree, hull_white_tree\n\
+  \  analytical benchmark: jamshidian\n  external targets: quantlib, financepy\nNew\
+  \ component: jamshidian_decomposition\n\nImplementation target: jamshidian\nPreferred\
+  \ method family: analytical\n\nImplementation target: jamshidian"
+supersedes: []
+id: bi_028

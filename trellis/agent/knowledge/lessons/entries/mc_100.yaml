@@ -1,0 +1,28 @@
+category: monte_carlo
+title: Source vol from market state
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-07T18:40:03.862359'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_184005_swaption_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Generated MC code hardcodes sigma and never reads market_state.vol_surface,
+  triggering lite.monte_carlo_paths_black_vol_surface_access_missing.
+root_cause: The payoff builder bypassed the required Monte Carlo primitives and embedded
+  a fixed volatility assumption instead of wiring the model to the market snapshot.
+  That breaks the assembly contract and prevents surface-dependent pricing.
+fix: Build the payoff as a thin adapter around trellis.models.monte_carlo.engine.MonteCarloEngine
+  primitives and read volatility only from market_state.vol_surface. Pass discount_curve
+  and forward_curve through the engine inputs, and avoid any hardcoded sigma or direct
+  path-process implementation in the payoff layer.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_100

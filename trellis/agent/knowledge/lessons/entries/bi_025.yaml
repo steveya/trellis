@@ -1,0 +1,30 @@
+category: backward_induction
+title: Avoid non-exported lattice helpers
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-08T16:16:07.480902'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_161609_callable_bond_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: Import error reported that lattice_step_from_time and lattice_steps_from_timeline
+  are not exported by trellis.core.date_utils.
+root_cause: The implementation depended on internal helper names that are not part
+  of the public API. This typically happens when copying patterns from another module
+  or older code paths without verifying exports.
+fix: Use only documented/public timeline and lattice APIs, or implement the required
+  step-index mapping locally from the schedule and model time grid. For callable products,
+  derive exercise indices from payment dates and lattice dt rather than importing
+  private helpers.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: bi_025

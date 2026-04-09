@@ -220,6 +220,12 @@ binding. Build and review prompts consume that packet only after the lane
 obligations so route guidance stays a backend-fit constraint rather than a
 route-first synthesis plan.
 
+For the migrated PDE routes, the same trace boundary now also exposes a compact
+`family_ir_summary` alongside the raw lowering metadata. That summary is the
+operator-facing view of the PDE contract: state variable, operator family,
+control style, event transforms, event dates, and whether the route is still
+passing through the transitional `VanillaEquityPDEIR` wrapper.
+
 For simple-derivative proving and regression, Trellis also supports a
 knowledge-light build profile through
 ``scripts/run_knowledge_light_proving.py``. That mode intentionally minimizes
@@ -403,11 +409,15 @@ the proxy explicit without forcing the user to inspect the raw validation
 payload first.
 
 For callable bonds and Bermudan swaptions, the governed surface now packages
-the checked lattice helpers into the same run/audit contract. Those routes
-surface typed exercise schedules in ``desk_review.schedule_summary``, project
-reviewable event rows for exercise or maturity boundaries, and group defaulted
-route assumptions such as par call price, schedule frequency, or day-count
-basis into ``desk_review.assumptions.defaulted_inputs``.
+the checked lattice helpers into the same run/audit contract. Callable bonds
+also have a bounded Hull-White PDE proof route on the event-aware rollback
+lane, so the compiler can now cross-check issuer-callable fixed-income requests
+through either the tree or PDE path when the market bindings and model family
+fit that slice. These routes surface typed exercise schedules in
+``desk_review.schedule_summary``, project reviewable event rows for exercise or
+maturity boundaries, and group defaulted route assumptions such as par call
+price, schedule frequency, or day-count basis into
+``desk_review.assumptions.defaulted_inputs``.
 
 Callable-bond trade runs now also expose ``result.oas_duration`` plus
 ``result.callable_scenario_explain``. The scenario explain payload is the

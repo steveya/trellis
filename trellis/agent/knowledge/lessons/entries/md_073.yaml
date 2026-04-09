@@ -1,8 +1,8 @@
 category: market_data
 title: Resolved inputs object missing expected volatility attribute
 severity: high
-status: validated
-confidence: 0.7
+status: promoted
+confidence: 1.0
 created: '2026-04-02T16:16:03.379086'
 version: ''
 source_trace: null
@@ -35,3 +35,4 @@ validation: "Resolved during build of Build a pricer for: Quanto option: quanto-
   \ ['quanto_adjustment', 'cross_currency_mc']\n\nImplementation target: quanto_bs\n\
   Preferred method family: analytical\n\nImplementation target: quanto_bs"
 id: md_073
+supersedes: []

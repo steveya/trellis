@@ -1,0 +1,32 @@
+category: backward_induction
+title: Missing exercise recursion
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T21:56:21.191757'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_215623_zcb_option_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  - early_exercise
+  - maturity_settlement
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Tree pricing fails with a missing bond maturity attribute or produces zero/incorrect
+  option value because exercise logic never reaches a valid bond payoff state.
+root_cause: The payoff path was built without the required lattice backward induction
+  and exercise-recursion steps, so the European option on the bond was not evaluated
+  from the bond maturity node back to the exercise date. The object used for payoff
+  construction also assumed a `bond_maturity_date` field that was not present on the
+  instrument spec.
+fix: Implement the payoff through lattice backward induction primitives and explicit
+  exercise-time recursion, using the instrument's maturity fields from market state
+  or a normalized product spec. Validate the instrument schema before tree evaluation
+  and map bond maturity/option expiry to the lattice time grid.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: bi_029

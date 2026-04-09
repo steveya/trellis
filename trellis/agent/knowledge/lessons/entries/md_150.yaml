@@ -1,0 +1,31 @@
+category: market_data
+title: Swaption forward rate mismatch
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-08T15:36:55.423157'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_153657_swaption_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - forward_rate
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Analytical swaption payoff or price differs materially from the reference
+  oracle; observed price 0.012948 versus expected 0.000455 at rate=3.00% and vol=15.00%.
+root_cause: The pricer likely used an incorrect forward swap rate or inconsistent
+  curve inputs when forming the Black-76 underlying. For a non-flat yield curve, the
+  forward swap rate must be computed from the actual discount and forecast term structures,
+  not from a flat-rate shortcut or par-rate proxy.
+fix: Compute the forward swap rate directly from the OIS discount curve and SOFR-3M
+  forward projection curve using the exact swap cashflow schedule. Ensure the option
+  payoff uses the swap annuity and the correct payer/receiver sign convention before
+  applying Black-76.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: md_150

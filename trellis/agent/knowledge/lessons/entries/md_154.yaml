@@ -1,0 +1,31 @@
+category: market_data
+title: Read model inputs from market state
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-08T16:33:32.765075'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_163334_callable_bond_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Callable bond pricing fails smoke tests when the PDE engine uses a fixed
+  sigma instead of reading the configured market_state inputs.
+root_cause: The implementation hardcoded volatility/model inputs instead of pulling
+  them from the provided market snapshot and product configuration. This breaks consistency
+  between calibration, pricing, and validation paths, especially for callable instruments
+  that are sensitive to rate volatility.
+fix: Wire all model parameters through explicit market-state accessors and pass them
+  into the PDE/tree constructors. Validate that the pricing kernel consumes the same
+  curve and Hull-White parameters used by the harness before solving.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: md_154

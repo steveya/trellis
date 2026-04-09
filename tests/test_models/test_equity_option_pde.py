@@ -13,10 +13,14 @@ from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
 from trellis.models.black import black76_call
 from trellis.models.equity_option_pde import (
+    build_event_aware_equity_pde_problem,
+    build_vanilla_equity_pde_problem,
+    price_event_aware_equity_option_pde,
     price_vanilla_equity_option_pde,
     resolve_vanilla_equity_pde_inputs,
     solve_vanilla_equity_option_pde_surface,
 )
+from trellis.models.equity_option_tree import price_vanilla_equity_option_tree
 from trellis.models.vol_surface import FlatVol
 
 
@@ -33,6 +37,12 @@ class VanillaEquitySpec:
     strike: float
     expiry_date: date
     option_type: str = "call"
+
+
+@dataclass(frozen=True)
+class EventAwareEquitySpec(VanillaEquitySpec):
+    exercise_style: str = "european"
+    exercise_dates: tuple[date, ...] = ()
 
 
 def _market_state() -> MarketState:
@@ -165,6 +175,113 @@ def test_solve_vanilla_equity_option_pde_surface_returns_grid_aligned_values():
     assert resolved.option_type == "put"
     assert len(grid.x) == len(values)
     assert float(values[0]) >= 0.0
+
+
+def test_build_vanilla_equity_pde_problem_uses_event_aware_runtime_problem():
+    from trellis.models.pde.event_aware import EventAwarePDEProblem
+
+    spec = VanillaEquitySpec(
+        notional=1.0,
+        spot=100.0,
+        strike=105.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="put",
+    )
+
+    resolved, problem = build_vanilla_equity_pde_problem(
+        _market_state(),
+        spec,
+        theta=0.5,
+        n_x=101,
+        n_t=101,
+    )
+
+    assert isinstance(problem, EventAwarePDEProblem)
+    assert problem.event_buckets == ()
+    assert problem.theta == pytest.approx(0.5)
+    assert problem.grid.x_min == pytest.approx(0.0)
+    assert problem.grid.x_max == pytest.approx(resolved.s_max)
+    assert len(problem.terminal_condition) == problem.grid.n_x
+
+
+def test_build_event_aware_equity_pde_problem_compiles_holder_max_buckets():
+    spec = EventAwareEquitySpec(
+        notional=1.0,
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="put",
+        exercise_style="bermudan",
+        exercise_dates=(
+            date(2025, 2, 15),
+            date(2025, 5, 15),
+            date(2025, 8, 15),
+        ),
+    )
+
+    resolved, problem = build_event_aware_equity_pde_problem(
+        _market_state(),
+        spec,
+        theta=1.0,
+        n_x=101,
+        n_t=101,
+    )
+
+    assert resolved.exercise_style == "bermudan"
+    assert problem.event_buckets
+    assert {bucket.transforms[0].kind for bucket in problem.event_buckets} == {"project_max"}
+
+
+def test_price_event_aware_equity_option_pde_bermudan_put_is_bracketed():
+    spec = EventAwareEquitySpec(
+        notional=1.0,
+        spot=90.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="put",
+        exercise_style="bermudan",
+        exercise_dates=(
+            date(2025, 2, 15),
+            date(2025, 5, 15),
+            date(2025, 8, 15),
+        ),
+    )
+
+    european = price_vanilla_equity_option_pde(
+        _market_state(),
+        VanillaEquitySpec(
+            notional=1.0,
+            spot=spec.spot,
+            strike=spec.strike,
+            expiry_date=spec.expiry_date,
+            option_type=spec.option_type,
+        ),
+        theta=1.0,
+        n_x=201,
+        n_t=201,
+    )
+    bermudan = price_event_aware_equity_option_pde(
+        _market_state(),
+        spec,
+        theta=1.0,
+        n_x=201,
+        n_t=201,
+    )
+    american_tree = price_vanilla_equity_option_tree(
+        _market_state(),
+        EventAwareEquitySpec(
+            notional=1.0,
+            spot=spec.spot,
+            strike=spec.strike,
+            expiry_date=spec.expiry_date,
+            option_type=spec.option_type,
+            exercise_style="american",
+        ),
+        model="crr",
+        n_steps=300,
+    )
+
+    assert european <= bermudan <= american_tree + 0.25
 
 
 def test_price_vanilla_equity_option_pde_returns_intrinsic_after_expiry_without_market_data():

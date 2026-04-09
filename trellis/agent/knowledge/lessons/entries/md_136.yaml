@@ -1,0 +1,33 @@
+category: market_data
+title: Missing input resolver
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-06T17:32:37.147680'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The analytical Black76 path called a helper that was never defined, causing
+  the market-state smoke test to fail immediately.
+root_cause: 'This is a wiring failure, not a pricing error: the pricing formula was
+  implemented without a concrete function to normalize/resolve the required swaption
+  inputs from the market state. The mental model mistake is assuming downstream valuation
+  code can rely on preprocessed inputs without explicitly creating that preprocessing
+  step.'
+fix: Define and unit-test the input-resolution helper (or inline the mapping) so Black76
+  receives fully specified strike, forward, expiry, annuity, and volatility inputs.
+validation: "Resolved during build of Build a pricer for: European swaption: Black76\
+  \ vs HW tree vs HW MC\n\nConstruct methods: analytical, rate_tree, monte_carlo\n\
+  Comparison targets: black76 (analytical), hw_tree (rate_tree), hw_mc (monte_carlo)\n\
+  Cross-validation harness:\n  internal targets: black76, hw_tree, hw_mc\n  external\
+  \ targets: quantlib, financepy\n\nImplementation target: black76\nPreferred method\
+  \ family: analytical\n\nImplementation target: black76"
+supersedes: []
+id: md_136

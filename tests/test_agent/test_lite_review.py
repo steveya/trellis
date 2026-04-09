@@ -201,6 +201,168 @@ def price(spec, market_state):
     assert "lite.analytical_black76_black_vol_surface_access_missing" in issue_codes
 
 
+def test_lite_review_allows_swaption_black76_helper_with_explicit_hull_white_comparison_params():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.rate_style_swaption import price_swaption_black76
+
+def price(spec, market_state):
+    return float(
+        price_swaption_black76(
+            market_state,
+            spec,
+            mean_reversion=0.05,
+            sigma=0.01,
+        )
+    )
+"""
+
+    plan = GenerationPlan(
+        method="analytical",
+        instrument_type="swaption",
+        inspected_modules=("trellis.models.rate_style_swaption",),
+        approved_modules=("trellis.models.rate_style_swaption",),
+        symbols_to_reuse=("price_swaption_black76",),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="analytical_black76",
+            engine_family="analytical",
+            primitives=(
+                PrimitiveRef("trellis.models.rate_style_swaption", "price_swaption_black76", "route_helper"),
+            ),
+            adapters=("reuse_checked_in_rate_style_swaption_helper",),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.rate_style_swaption"],
+        required_market_data={"discount_curve", "black_vol_surface", "forward_curve"},
+        model_to_build="swaption",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.hardcoded_black_vol_surface" not in issue_codes
+
+
+def test_lite_review_allows_swaption_tree_helper_with_explicit_hull_white_comparison_params():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.rate_style_swaption_tree import price_swaption_tree
+
+def price(spec, market_state):
+    return float(
+        price_swaption_tree(
+            market_state,
+            spec,
+            mean_reversion=0.05,
+            sigma=0.01,
+        )
+    )
+"""
+
+    plan = GenerationPlan(
+        method="rate_tree",
+        instrument_type="swaption",
+        inspected_modules=("trellis.models.rate_style_swaption_tree",),
+        approved_modules=("trellis.models.rate_style_swaption_tree",),
+        symbols_to_reuse=("price_swaption_tree",),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="rate_tree_backward_induction",
+            engine_family="lattice",
+            primitives=(
+                PrimitiveRef("trellis.models.rate_style_swaption_tree", "price_swaption_tree", "route_helper"),
+            ),
+            adapters=("reuse_checked_in_rate_style_swaption_helper",),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="rate_tree",
+        method_modules=["trellis.models.rate_style_swaption_tree"],
+        required_market_data={"discount_curve", "black_vol_surface", "forward_curve"},
+        model_to_build="swaption",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.hardcoded_black_vol_surface" not in issue_codes
+
+
+def test_lite_review_allows_swaption_monte_carlo_helper_with_explicit_hull_white_comparison_params():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.rate_style_swaption import price_swaption_monte_carlo
+
+def price(spec, market_state):
+    return float(
+        price_swaption_monte_carlo(
+            market_state,
+            spec,
+            mean_reversion=0.05,
+            sigma=0.01,
+        )
+    )
+"""
+
+    plan = GenerationPlan(
+        method="monte_carlo",
+        instrument_type="swaption",
+        inspected_modules=("trellis.models.rate_style_swaption",),
+        approved_modules=("trellis.models.rate_style_swaption",),
+        symbols_to_reuse=("price_swaption_monte_carlo",),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="monte_carlo_paths",
+            engine_family="monte_carlo",
+            primitives=(
+                PrimitiveRef("trellis.models.rate_style_swaption", "price_swaption_monte_carlo", "route_helper"),
+            ),
+            adapters=("reuse_checked_in_rate_style_swaption_helper",),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.rate_style_swaption"],
+        required_market_data={"discount_curve", "black_vol_surface", "forward_curve"},
+        model_to_build="swaption",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.hardcoded_black_vol_surface" not in issue_codes
+
+
 def test_lite_review_rejects_garman_kohlhagen_without_foreign_curve_access():
     from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan
     from trellis.agent.lite_review import review_generated_code

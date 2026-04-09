@@ -1,0 +1,27 @@
+category: semantic
+title: _semantic_extension_decision_knowledge_artifact_concept_american_opt
+severity: medium
+status: validated
+confidence: 0.6
+created: '2026-04-07T16:20:23.031471'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/semantic_extensions/97bffb38f281dc1d.yaml
+applies_when:
+  method:
+  - knowledge_artifact
+  features:
+  - underlier_structure
+  - payoff_rule
+  - settlement_rule
+  - semantic_contract_lesson
+  instrument:
+  - american_option
+  error_signature: null
+symptom: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing knowledge artifacts: semantic_contract_lesson'
+root_cause: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing knowledge artifacts: semantic_contract_lesson'
+fix: Keep the canonical concept and surface the compatibility name as a thin wrapper.
+validation: Repeated semantic extension trace `97bffb38f281dc1d`
+supersedes: []
+id: sem_018

@@ -1,0 +1,31 @@
+category: market_data
+title: Convert state inputs early
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-06T17:29:15.773708'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260406_172917_callable_bond_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  - discounting
+  - backward_induction
+  instrument: []
+  error_signature: null
+symptom: Actual market state smoke test failed with "'list' object has no attribute
+  'astype'" while building the payoff.
+root_cause: The payoff builder assumed a NumPy-like market state container and called
+  array methods on a plain Python list. This usually happens when market state access
+  is deferred until inside branching logic, so the first normalization step never
+  runs.
+fix: Initialize and normalize intrinsic/state arrays before any branching or vectorized
+  operations. Coerce list inputs to NumPy arrays at the market-state boundary and
+  validate required fields before payoff construction.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: md_134

@@ -3,7 +3,7 @@ title: Syntax & API errors in MC quanto pricer
 severity: critical
 category: monte_carlo
 status: promoted
-confidence: 0.8
+confidence: 1.0
 created: '2026-03-26T19:37:36.634230'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260326_193736_quanto_option_monte_carlo.yaml

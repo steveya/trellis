@@ -17,7 +17,7 @@ from trellis.curves.bootstrap import (
 from trellis.curves.yield_curve import YieldCurve
 from trellis.data.resolver import resolve_market_snapshot
 from trellis.data.schema import MarketSnapshot
-from trellis.instruments._agent.swaption import SwaptionPayoff, SwaptionSpec
+from trellis.instruments._agent.swaption import SwaptionSpec
 from trellis.instruments.cap import CapFloorSpec, CapPayoff, FloorPayoff
 from trellis.models.bermudan_swaption_tree import (
     BermudanSwaptionTreeSpec,
@@ -46,6 +46,7 @@ from trellis.models.calibration.local_vol import (
     dupire_local_vol,
     dupire_local_vol_result,
 )
+from trellis.models.rate_style_swaption import price_swaption_black76
 from trellis.models.calibration.heston_fit import (
     HestonSmileCalibrationResult,
     build_heston_smile_surface,
@@ -54,6 +55,10 @@ from trellis.models.calibration.heston_fit import (
 )
 from trellis.models.calibration.quote_maps import (
     QuoteMapSpec,
+    QuoteAxisSpec,
+    QuoteSemanticsSpec,
+    QuoteSettlementSpec,
+    QuoteUnitSpec,
     build_identity_quote_map,
     build_implied_vol_quote_map,
     supported_quote_map_surface,
@@ -152,6 +157,45 @@ class TestQuoteMaps:
     def test_quote_map_spec_rejects_unsupported_quote_family(self):
         with pytest.raises(ValueError, match="unsupported quote_family"):
             QuoteMapSpec(quote_family="variance_swap")
+
+    def test_quote_map_spec_carries_structured_quote_semantics(self):
+        spec = QuoteMapSpec(
+            quote_family="implied_vol",
+            convention="black",
+            semantics=QuoteSemanticsSpec(
+                quote_family="implied_vol",
+                convention="black",
+                quote_subject="swaption",
+                axes=(
+                    QuoteAxisSpec("expiry", axis_kind="time_to_expiry", unit="years"),
+                    QuoteAxisSpec("underlier_tenor", axis_kind="swap_tenor", unit="years"),
+                    QuoteAxisSpec("strike", axis_kind="swap_rate", unit="decimal_rate"),
+                ),
+                unit=QuoteUnitSpec(
+                    unit_name="decimal_volatility",
+                    value_domain="volatility",
+                    scaling="absolute",
+                ),
+                settlement=QuoteSettlementSpec(
+                    numeraire="discount_curve",
+                    settlement_style="cash",
+                    discount_curve_role="discount_curve",
+                    forecast_curve_role="forecast_curve",
+                    rate_index="usd-sofr-3m",
+                ),
+            ),
+        )
+
+        payload = spec.to_payload()
+
+        assert spec.quote_subject == "swaption"
+        assert spec.quote_unit == "decimal_volatility"
+        assert payload["quote_subject"] == "swaption"
+        assert payload["quote_unit"] == "decimal_volatility"
+        assert payload["quote_axes"][0]["axis_name"] == "expiry"
+        assert payload["quote_axes"][1]["axis_kind"] == "swap_tenor"
+        assert payload["quote_settlement"]["rate_index"] == "usd-sofr-3m"
+        assert payload["quote_semantics"]["quote_subject"] == "swaption"
 
 
 # ---------------------------------------------------------------------------
@@ -703,7 +747,7 @@ class TestRatesCalibration:
             is_payer=True,
         )
         target_state = replace(market_state, vol_surface=FlatVol(true_vol))
-        target_price = SwaptionPayoff(spec).evaluate(target_state)
+        target_price = price_swaption_black76(target_state, spec)
         T, annuity, forward_swap_rate, payment_count = swaption_terms(spec, market_state)
         assert T > 0.0
         assert annuity > 0.0

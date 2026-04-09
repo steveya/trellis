@@ -13,12 +13,17 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from trellis.agent.codegen_guardrails import GenerationPlan, PrimitiveRef
+from trellis.agent.family_lowering_ir import EventAwareMonteCarloIR
 from trellis.agent.knowledge.decompose import decompose_to_ir
-from trellis.agent.knowledge.methods import normalize_method
+from trellis.agent.knowledge.methods import is_known_method, normalize_method
 from trellis.agent.quant import (
     PricingPlan,
     select_pricing_method,
     select_pricing_method_for_product_ir,
+)
+from trellis.models.monte_carlo.event_aware import (
+    EventAwareMonteCarloProblemSpec,
+    build_event_aware_monte_carlo_problem_from_family_ir as _build_event_aware_monte_carlo_problem_from_family_ir,
 )
 
 
@@ -167,6 +172,40 @@ def lookup_primitive_route_from_context(
     )
 
 
+def build_event_aware_monte_carlo_problem_from_family_ir(
+    family_ir: EventAwareMonteCarloIR,
+    *,
+    process_spec,
+    initial_state,
+    maturity: float,
+    event_time_map: Mapping[str, float] | None = None,
+    event_payloads: Mapping[str, Mapping[str, object]] | None = None,
+    discount_rate: float = 0.0,
+    n_steps: int = 100,
+    terminal_payoff=None,
+    state_payoff=None,
+    path_reducers=(),
+    settlement_event: str | None = None,
+) -> EventAwareMonteCarloProblemSpec:
+    """Bridge typed MC family IR into a runtime Monte Carlo problem spec."""
+    if not isinstance(family_ir, EventAwareMonteCarloIR):
+        raise TypeError("family_ir must be an EventAwareMonteCarloIR")
+    return _build_event_aware_monte_carlo_problem_from_family_ir(
+        family_ir,
+        process_spec=process_spec,
+        initial_state=initial_state,
+        maturity=maturity,
+        event_time_map=event_time_map,
+        event_payloads=event_payloads,
+        discount_rate=discount_rate,
+        n_steps=n_steps,
+        terminal_payoff=terminal_payoff,
+        state_payoff=state_payoff,
+        path_reducers=tuple(path_reducers),
+        settlement_event=settlement_event,
+    )
+
+
 def lookup_primitive_route(
     *,
     description: str,
@@ -281,8 +320,13 @@ def select_invariant_pack(
 
     checks.extend(["check_non_negativity", "check_price_sanity"])
 
+    analytical_swaption_helper_regime = (
+        normalized_method == "analytical" and normalized_instrument == "swaption"
+    )
+
     if (
         normalized_instrument not in _CREDIT_INSTRUMENTS
+        and not analytical_swaption_helper_regime
         and (
             normalized_instrument in _OPTION_LIKE_INSTRUMENTS
             or normalized_method in {"analytical", "monte_carlo", "qmc", "pde_solver", "fft_pricing"}
@@ -291,7 +335,7 @@ def select_invariant_pack(
     ):
         checks.extend(["check_vol_sensitivity", "check_vol_monotonicity"])
 
-    if normalized_method == "analytical" and normalized_instrument in {"european_option", "cap", "floor", "swaption"}:
+    if normalized_method == "analytical" and normalized_instrument in {"european_option", "cap", "floor"}:
         checks.append("check_zero_vol_intrinsic")
     if normalized_method == "analytical" and normalized_instrument == "swaption":
         checks.append("check_rate_style_swaption_helper_consistency")
@@ -326,9 +370,15 @@ def build_comparison_harness_plan(task: Mapping[str, Any]) -> ComparisonHarnessP
     """Build a deterministic comparison harness plan from task metadata."""
     construct = task.get("construct")
     if isinstance(construct, str):
-        construct_methods = [normalize_method(construct)]
+        normalized = normalize_method(construct)
+        construct_methods = [normalized] if is_known_method(normalized) else []
     else:
-        construct_methods = [normalize_method(item) for item in (construct or [])]
+        construct_methods = [
+            normalized
+            for item in (construct or [])
+            for normalized in [normalize_method(item)]
+            if is_known_method(normalized)
+        ]
 
     cross_validate = task.get("cross_validate") or {}
     relation_overrides = cross_validate.get("relations") or {}
@@ -417,6 +467,7 @@ def _preferred_method_for_target(target_id: str, construct_methods: list[str]) -
         return normalized_target
 
     explicit_patterns = (
+        ("analytical", "analytical"),
         ("tree", "rate_tree"),
         ("lattice", "rate_tree"),
         ("pde", "pde_solver"),

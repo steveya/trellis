@@ -1,0 +1,30 @@
+category: volatility
+title: Tree ignored vol sensitivity
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:20:10.403881'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_162012_european_option_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  - discounting
+  - mean_reversion
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Repricing the instrument with vol bumped from 5% to 40% produced no price
+  change, with both outputs reported as 0.0000.
+root_cause: The tree payoff/pricing path was not wired to the market volatility input,
+  so the lattice was effectively deterministic or disconnected from the volatility
+  surface. For an option, this removes vega and can collapse all sensitivity checks.
+fix: Read volatility from market state and feed it into the rate-tree construction
+  on every repricing. Ensure the payoff is evaluated through lattice backward induction
+  so tree nodes depend on sigma and mean reversion, and validate by bumping vol to
+  confirm non-zero vega.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: vol_024

@@ -1,5 +1,20 @@
 """PDE solvers for option pricing."""
 
+from trellis.models.pde.event_aware import (
+    EventAwarePDEBoundarySpec,
+    EventAwarePDEEventBucket,
+    EventAwarePDEGridSpec,
+    EventAwarePDEOperatorSpec,
+    EventAwarePDEProblem,
+    EventAwarePDEProblemSpec,
+    EventAwarePDETransform,
+    apply_event_bucket,
+    apply_event_transform,
+    build_event_aware_pde_operator,
+    build_event_aware_pde_problem,
+    interpolate_pde_values,
+    solve_event_aware_pde,
+)
 from trellis.models.pde.theta_method import theta_method_1d
 from trellis.models.pde.psor import psor_1d
 from trellis.models.pde.grid import Grid

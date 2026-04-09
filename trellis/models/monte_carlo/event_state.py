@@ -250,6 +250,7 @@ class PathEventState:
     exercise_values: Mapping[str, np.ndarray] = field(default_factory=dict)
     coupon_cashflows: Mapping[str, np.ndarray] = field(default_factory=dict)
     settlement_values: Mapping[str, np.ndarray] = field(default_factory=dict)
+    reducer_values: Mapping[str, np.ndarray] = field(default_factory=dict)
 
     @property
     def event_count(self) -> int:
@@ -284,11 +285,19 @@ class PathEventState:
         except KeyError as exc:
             raise KeyError(f"coupon event '{name}' was not stored") from exc
 
+    def reduced_value(self, name: str) -> np.ndarray:
+        """Return the stored reduced path statistic for the named reducer."""
+        try:
+            return self.reducer_values[name]
+        except KeyError as exc:
+            raise KeyError(f"reducer '{name}' was not stored") from exc
+
 
 def replay_path_event_timeline(
     cross_sections: Sequence[object],
     initial_values,
     event_timeline: PathEventTimeline | Sequence[PathEventSpec],
+    reducer_values: Mapping[str, object] | None = None,
 ) -> PathEventState:
     """Replay a path-event timeline against a sequence of deterministic cross-sections."""
     specs = tuple(event_timeline.events) if isinstance(event_timeline, PathEventTimeline) else tuple(event_timeline)
@@ -305,6 +314,10 @@ def replay_path_event_timeline(
         initial_values=np.asarray(initial_values, dtype=float).copy(),
         n_paths=n_paths,
         n_steps=n_steps,
+        reducer_values={
+            str(name): np.asarray(values, dtype=float).copy()
+            for name, values in dict(reducer_values or {}).items()
+        },
     )
 
     for spec, cross_section in ordered_pairs:
@@ -424,6 +437,7 @@ def _apply_observation_event(
         exercise_values=dict(state.exercise_values),
         coupon_cashflows=dict(state.coupon_cashflows),
         settlement_values=dict(state.settlement_values),
+        reducer_values=dict(state.reducer_values),
     )
 
 
@@ -468,6 +482,7 @@ def _apply_barrier_event(
         exercise_values=dict(state.exercise_values),
         coupon_cashflows=dict(state.coupon_cashflows),
         settlement_values=dict(state.settlement_values),
+        reducer_values=dict(state.reducer_values),
     )
 
 
@@ -516,6 +531,7 @@ def _apply_coupon_event(
         exercise_values=dict(state.exercise_values),
         coupon_cashflows=coupon_cashflows,
         settlement_values=dict(state.settlement_values),
+        reducer_values=dict(state.reducer_values),
     )
 
 
@@ -573,6 +589,7 @@ def _apply_exercise_event(
         exercise_values=exercise_values_map,
         coupon_cashflows=dict(state.coupon_cashflows),
         settlement_values=dict(state.settlement_values),
+        reducer_values=dict(state.reducer_values),
     )
 
 
@@ -617,11 +634,17 @@ def _apply_settlement_event(
         if triggered is None or exercise_values is None:
             raise KeyError(f"settlement event {spec.name!r} requires exercise_event {exercise_event!r}")
         settlement = np.where(np.asarray(triggered, dtype=bool), np.asarray(exercise_values, dtype=float), terminal_values)
+    elif rule == "discounted_swap_pv":
+        settlement = _discounted_swap_pv_settlement(
+            state,
+            spec,
+            current_short_rate=np.asarray(terminal_values, dtype=float),
+        )
     elif rule == "terminal_value":
         settlement = terminal_values
     else:
         raise ValueError(
-            f"Unsupported settlement rule {rule!r}; expected average_locked_returns, sum_locked_returns, terminal_value, knock_out_terminal, or exercise_or_terminal"
+            f"Unsupported settlement rule {rule!r}; expected average_locked_returns, sum_locked_returns, terminal_value, knock_out_terminal, exercise_or_terminal, or discounted_swap_pv"
         )
 
     coupon_events = spec.payload.get("coupon_events")
@@ -670,7 +693,80 @@ def _apply_settlement_event(
         exercise_values=dict(state.exercise_values),
         coupon_cashflows=dict(state.coupon_cashflows),
         settlement_values=settlement_values,
+        reducer_values=dict(state.reducer_values),
     )
+
+
+def _discounted_swap_pv_settlement(
+    state: PathEventState,
+    spec: PathEventSpec,
+    *,
+    current_short_rate: np.ndarray,
+) -> np.ndarray:
+    """Return one discounted European swap payoff from a short-rate cross-section."""
+    payment_times = np.asarray(spec.payload.get("payment_times", ()), dtype=float)
+    accrual_fractions = np.asarray(spec.payload.get("accrual_fractions", ()), dtype=float)
+    anchor_discount_factors = np.asarray(spec.payload.get("anchor_discount_factors", ()), dtype=float)
+    if payment_times.size == 0 or accrual_fractions.size == 0 or anchor_discount_factors.size == 0:
+        raise ValueError(
+            f"settlement event {spec.name!r} with rule discounted_swap_pv requires payment_times, accrual_fractions, and anchor_discount_factors"
+        )
+    if not (
+        payment_times.shape == accrual_fractions.shape
+        and payment_times.shape == anchor_discount_factors.shape
+    ):
+        raise ValueError(
+            f"settlement event {spec.name!r} requires payment_times, accrual_fractions, and anchor_discount_factors with matching shapes"
+        )
+
+    reducer_name = str(spec.payload.get("discount_reducer_name", "")).strip()
+    if not reducer_name:
+        raise ValueError(
+            f"settlement event {spec.name!r} with rule discounted_swap_pv requires discount_reducer_name"
+        )
+    if reducer_name not in state.reducer_values:
+        raise KeyError(
+            f"settlement event {spec.name!r} requires reducer {reducer_name!r}"
+        )
+
+    exercise_time = max(float(spec.payload.get("exercise_time", 0.0)), 1e-12)
+    anchor_discount_to_exercise = max(
+        float(spec.payload.get("anchor_discount_to_exercise", 1.0)),
+        1e-12,
+    )
+    mean_reversion = float(spec.payload.get("mean_reversion", 0.1))
+    anchor_short_rate = float(
+        spec.payload.get(
+            "anchor_short_rate",
+            -np.log(anchor_discount_to_exercise) / exercise_time,
+        )
+    )
+    curve_basis_spread = float(spec.payload.get("curve_basis_spread", 0.0))
+    strike = float(spec.payload.get("strike", 0.0))
+    notional = float(spec.payload.get("notional", 1.0))
+    payer_sign = 1.0 if bool(spec.payload.get("is_payer", True)) else -1.0
+    discount_to_exercise = np.asarray(state.reducer_values[reducer_name], dtype=float)
+
+    tau = np.maximum(payment_times - exercise_time, 0.0)
+    if abs(mean_reversion) < 1e-12:
+        B = tau
+    else:
+        B = (1.0 - np.exp(-mean_reversion * tau)) / mean_reversion
+
+    anchor_ratio = anchor_discount_factors / anchor_discount_to_exercise
+    short_rate = np.asarray(current_short_rate, dtype=float)[:, np.newaxis]
+    bond_prices = anchor_ratio[np.newaxis, :] * np.exp(
+        -B[np.newaxis, :] * (short_rate - anchor_short_rate)
+    )
+    annuity = np.sum(accrual_fractions[np.newaxis, :] * bond_prices, axis=1)
+    forward_swap_rate = np.where(
+        annuity > 1e-12,
+        (1.0 - bond_prices[:, -1]) / annuity,
+        0.0,
+    )
+    adjusted_forward = forward_swap_rate + curve_basis_spread
+    intrinsic = np.maximum(payer_sign * (adjusted_forward - strike), 0.0)
+    return discount_to_exercise * notional * annuity * intrinsic
 
 
 __all__ = [

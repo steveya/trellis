@@ -1,983 +1,586 @@
 analytical:
-  description: Closed-form or semi-closed-form pricing under specific modeling assumptions. Each solution contract below is valid only within its stated assumptions and payoff definition. The contracts are not interchangeable.
+  description: Closed-form or semi-closed-form pricing under specific modeling assumptions.
+    Each solution contract below is valid only within its stated assumptions and payoff
+    definition. The contracts are not interchangeable.
   applicable_instruments:
-    - bond
-    - cap
-    - floor
-    - cds
-    - swaption
-    - european_option
+  - bond
+  - cap
+  - floor
+  - cds
+  - swaption
+  - european_option
   version: canonical
   solution_contracts:
-    - id: black_scholes_equity
-      name: Black-Scholes / Black76 equity European
-      assumptions:
-        - lognormal spot dynamics (GBM)
-        - deterministic interest rates
-        - no dividends (or continuous dividend yield absorbed into forward)
-        - European exercise only
-      payoff: European vanilla call or put on an equity spot
-      market_data: [discount_curve, black_vol_surface, spot]
-      lattice_equivalence: CRR binomial tree with matching GBM assumptions converges to this contract
-      pde_equivalence: Black-Scholes PDE with terminal max(S-K,0) or max(K-S,0) recovers this contract
-    - id: black_scholes_digital
-      name: Black-Scholes / Black76 cash-or-nothing digital
-      assumptions:
-        - lognormal spot dynamics (GBM)
-        - deterministic interest rates
-        - European exercise only
-      payoff: Cash-or-nothing digital call or put on an equity spot
-      market_data: [discount_curve, black_vol_surface, spot]
-      lattice_equivalence: CRR binomial tree with matching GBM assumptions converges to the discounted binary payoff
-      pde_equivalence: Black-Scholes PDE with binary terminal condition recovers this contract
-    - id: garman_kohlhagen_fx
-      name: Garman-Kohlhagen FX European
-      assumptions:
-        - lognormal FX spot dynamics
-        - deterministic domestic and foreign interest rates
-        - covered interest parity (F = S * df_foreign / df_domestic)
-        - European exercise only
-      payoff: European vanilla call or put on an FX spot rate
-      market_data: [domestic_discount_curve, foreign_discount_curve, black_vol_surface, fx_spot]
-      lattice_equivalence: CRR tree with dual-curve discounting under same assumptions
-      pde_equivalence: Garman-Kohlhagen PDE with appropriate boundary conditions
-    - id: black76_forward_rate
-      name: Black76 forward-rate
-      assumptions:
-        - lognormal forward rate dynamics
-        - deterministic discount factors
-        - rate fixing at period start, payment at period end
-        - European exercise per period (caplet/floorlet) or single expiry (swaption)
-      payoff: European call or put on a forward rate, summed over a schedule of periods
-      market_data: [discount_curve, forward_curve, black_vol_surface]
-      lattice_equivalence: rate tree with matching short-rate vol and mean reversion converges only when the rate distribution assumptions align
-      pde_equivalence: not directly applicable (forward-rate models require HJM or similar framework)
-    - id: jamshidian_zcb_option
-      name: Jamshidian / Hull-White ZCB option
-      assumptions:
-        - one-factor Hull-White / Jamshidian closed-form contract
-        - deterministic discount curve inputs at pricing time
-        - Black-style volatility quote mapped at option expiry
-        - European exercise only
-      payoff: European call or put on a zero-coupon bond
-      market_data: [discount_curve, black_vol_surface]
-      lattice_equivalence: Hull-White or Ho-Lee trees converge only when the underlying short-rate model assumptions align
-      pde_equivalence: not directly applicable
-    - id: credit_default_swap
-      name: Credit default swap (single-name)
-      assumptions:
-        - deterministic discounting
-        - piecewise survival probabilities from a credit curve
-        - one reference entity only
-        - premium leg paid on a discrete schedule
-        - protection leg triggered by default before maturity
-      payoff: Single-name CDS premium leg minus protection leg under a credit-curve survival model
-      market_data: [discount_curve, credit_curve]
-      lattice_equivalence: not intended for tree routing; use credit survival inputs directly or a single-name hazard-rate Monte Carlo model
-      pde_equivalence: not directly applicable
-    - id: deterministic_cashflow
-      name: Deterministic cashflow discounting
-      assumptions:
-        - all cashflows are known at pricing time
-        - no optionality
-        - deterministic discount curve
-      payoff: sum of discounted known cashflows (coupons, principal, fixed swap legs)
-      market_data: [discount_curve]
-      lattice_equivalence: any tree recovers the same PV when no exercise or path dependence exists
-      pde_equivalence: trivial (no diffusion term)
-  template: |
-    ## Cookbook: Analytical
-    This family contains distinct solution contracts. Each is valid only under
-    its stated assumptions. See the `solution_contracts` block above for the
-    assumption sets. Do not mix assumptions across contracts.
-
-    evaluate() returns the PV (float) and discounts each period internally.
-
-    ### Black-Scholes equity European (solution contract: black_scholes_equity)
-    Assumptions: lognormal spot (GBM), deterministic rates, European exercise.
-    ```python
-    def evaluate(self, market_state):
-        from trellis.core.date_utils import year_fraction
-        from trellis.models.black import black76_call, black76_put
-
-        spec = self._spec
-        T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)
-        if T <= 0:
-            return 0.0
-
-        df = float(market_state.discount.discount(T))
-        sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
-        forward = spec.spot / max(df, 1e-12)
-
-        if spec.option_type == "put":
-            undiscounted = black76_put(forward, spec.strike, sigma, T)
-        else:
-            undiscounted = black76_call(forward, spec.strike, sigma, T)
-
-        return spec.notional * df * float(undiscounted)
-    ```
-
-    ### Black-Scholes cash-or-nothing digital (solution contract: black_scholes_digital)
-    Assumptions: lognormal spot (GBM), deterministic rates, European exercise.
-    ```python
-    def evaluate(self, market_state):
-        from trellis.core.date_utils import year_fraction
-        from trellis.models.black import black76_cash_or_nothing_call, black76_cash_or_nothing_put
-
-        spec = self._spec
-        T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)
-        if T <= 0:
-            return 0.0
-
-        df = float(market_state.discount.discount(T))
-        sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
-        F = spec.spot / max(df, 1e-12)
-
-        if spec.option_type == "put":
-            undiscounted = black76_cash_or_nothing_put(F, spec.strike, sigma, T)
-        else:
-            undiscounted = black76_cash_or_nothing_call(F, spec.strike, sigma, T)
-
-        pv = spec.notional * float(undiscounted) * df
-        return pv
-    ```
-
-    ### Garman-Kohlhagen FX European (helper-backed resolved-input route; solution contract: garman_kohlhagen_fx)
-    Assumptions: lognormal FX spot, deterministic domestic/foreign rates,
-    covered interest parity.
-    ```python
-    def evaluate(self, market_state):
-        from trellis.core.date_utils import year_fraction
-        from trellis.models.analytical.fx import (
-            ResolvedGarmanKohlhagenInputs,
-            garman_kohlhagen_price_raw,
-        )
-
-        spec = self._spec
-        T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)
-
-        fx_quote = market_state.fx_rates[spec.fx_pair]
-        foreign_curve = market_state.forecast_curves[spec.foreign_discount_key]
-
-        spot = float(fx_quote.spot)
-        df_domestic = float(market_state.discount.discount(T))
-        df_foreign = float(foreign_curve.discount(T))
-        sigma = 0.0 if T <= 0 else float(market_state.vol_surface.black_vol(T, spec.strike))
-        resolved = ResolvedGarmanKohlhagenInputs(
-            spot=spot,
-            strike=spec.strike,
-            sigma=sigma,
-            T=T,
-            df_domestic=df_domestic,
-            df_foreign=df_foreign,
-        )
-
-        return spec.notional * float(garman_kohlhagen_price_raw(spec.option_type, resolved))
-    ```
-
-    For FX tasks, the selected foreign curve is usually bridged into
-    `market_state.forward_curve` for routing and capability checks, while the
-    explicit foreign discount factors still come from
-    `market_state.forecast_curves[spec.foreign_discount_key]`.
-
-    ### Black76 forward-rate (solution contract: black76_forward_rate)
-    Assumptions: lognormal forward rate, deterministic discounting,
-    rate fixing at period start. Use for caps, floors, swaptions.
-    ```python
-    def evaluate(self, market_state):
-        from trellis.core.date_utils import build_payment_timeline
-        from trellis.models.black import black76_call, black76_put
-
-        spec = self._spec
-        fwd_curve = market_state.forecast_forward_curve(spec.rate_index)
-
-        timeline = build_payment_timeline(
-            spec.start_date,
-            spec.end_date,
-            spec.frequency,
-            day_count=spec.day_count,
-            time_origin=market_state.settlement,
-        )
-
-        pv = 0.0
-        for period in timeline:
-            if period.payment_date <= market_state.settlement:
-                continue
-            tau = float(period.accrual_fraction or 0.0)
-            t_start = float(period.t_start or 0.0)
-            t_end = float(period.t_payment or 0.0)
-            t_start = max(t_start, 1e-6)
-
-            F = fwd_curve.forward_rate(t_start, t_end)
-            sigma = market_state.vol_surface.black_vol(t_start, spec.strike)
-
-            # >>> INSTRUMENT-SPECIFIC: choose black76_call or black76_put <<<
-            undiscounted = spec.notional * tau * black76_call(F, spec.strike, sigma, t_start)
-            df = market_state.discount.discount(t_end)
-            pv += float(undiscounted) * float(df)
-
-        return pv
-    ```
-
-    For European rate-style swaptions, prefer the checked helper-backed path
-    over rebuilding annuity, forward-swap-rate, and expiry binding inline.
-
-    ### Rate-style swaption Black76 (helper-backed resolved-input route; solution contract: black76_forward_rate)
-    Assumptions: single-exercise European rate-style swaption under the
-    checked Black76 forward-rate helper contract.
-    ```python
-    def evaluate(self, market_state):
-        from trellis.models.rate_style_swaption import (
-            ResolvedSwaptionBlack76Inputs,
-            price_swaption_black76_raw,
-            resolve_swaption_black76_inputs,
-        )
-
-        spec = self._spec
-        resolved = resolve_swaption_black76_inputs(market_state, spec)
-        assert isinstance(resolved, ResolvedSwaptionBlack76Inputs)
-        return float(price_swaption_black76_raw(resolved))
-    ```
-
-    ### Jamshidian zero-coupon bond option (helper-backed resolved-input route; solution contract: jamshidian_zcb_option)
-    Assumptions: one-factor Hull-White / Jamshidian closed form, European
-    exercise, option on a zero-coupon bond.
-    ```python
-    def evaluate(self, market_state):
-        from trellis.models.zcb_option import resolve_zcb_option_hw_inputs
-        from trellis.models.analytical.jamshidian import (
-            ResolvedJamshidianInputs,
-            zcb_option_hw_raw,
-        )
-
-        spec = self._spec
-        resolved = resolve_zcb_option_hw_inputs(
-            market_state,
-            spec,
-            mean_reversion=0.1,
-        )
-        assert isinstance(resolved.jamshidian, ResolvedJamshidianInputs)
-
-        if resolved.jamshidian.T_exp <= 0.0:
-            if resolved.option_type == "put":
-                intrinsic = max(
-                    resolved.jamshidian.strike - resolved.jamshidian.discount_factor_bond,
-                    0.0,
-                )
-            else:
-                intrinsic = max(
-                    resolved.jamshidian.discount_factor_bond - resolved.jamshidian.strike,
-                    0.0,
-                )
-            return float(resolved.notional * intrinsic)
-
-        raw = zcb_option_hw_raw(resolved.jamshidian)
-        return float(resolved.notional * raw[resolved.option_type])
-    ```
-
-    ### Credit default swap (single-name) (solution contract: credit_default_swap)
-    Assumptions: deterministic discounting, credit survival probabilities from
-    a credit curve, one reference entity, premium leg on a schedule, protection
-    leg triggered by default before maturity. Do not reinterpret this section as
-    nth-to-default or basket CDS.
-    Convert quoted running spreads from basis points to decimals before accrual,
-    for example 150 bp -> 0.015.
-    Keep the analytical schedule convention aligned with the Monte Carlo
-    comparator: use `spec.start_date` as the time origin for `year_fraction(...)`
-    schedule times and discount both the premium leg and the interval default
-    mass with the payment-date discount factor. Do not trapezoid the protection
-    leg or average adjacent discount factors.
-    Prefer the checked-in CDS helpers so the adapter stays thin.
-    The shared analytical helper uses `credit_curve.survival_probability(t)` and
-    `discount_curve.discount(t)` internally and preserves the same premium/protection
-    leg contract.
-    ```python
-    def evaluate(self, market_state):
-        from trellis.models.credit_default_swap import (
-            build_cds_schedule,
-            price_cds_analytical,
-        )
-
-        spec = self._spec
-        schedule = build_cds_schedule(
-            spec.start_date,
-            spec.end_date,
-            spec.frequency,
-            spec.day_count,
-        )
-        return price_cds_analytical(
-            notional=spec.notional,
-            spread_quote=spec.spread,
-            recovery=spec.recovery,
-            schedule=schedule,
-            credit_curve=market_state.credit_curve,
-            discount_curve=market_state.discount,
-        )
-    ```
-
+  - id: black_scholes_equity
+    name: Black-Scholes / Black76 equity European
+    assumptions:
+    - lognormal spot dynamics (GBM)
+    - deterministic interest rates
+    - no dividends (or continuous dividend yield absorbed into forward)
+    - European exercise only
+    payoff: European vanilla call or put on an equity spot
+    market_data:
+    - discount_curve
+    - black_vol_surface
+    - spot
+    lattice_equivalence: CRR binomial tree with matching GBM assumptions converges
+      to this contract
+    pde_equivalence: Black-Scholes PDE with terminal max(S-K,0) or max(K-S,0) recovers
+      this contract
+  - id: black_scholes_digital
+    name: Black-Scholes / Black76 cash-or-nothing digital
+    assumptions:
+    - lognormal spot dynamics (GBM)
+    - deterministic interest rates
+    - European exercise only
+    payoff: Cash-or-nothing digital call or put on an equity spot
+    market_data:
+    - discount_curve
+    - black_vol_surface
+    - spot
+    lattice_equivalence: CRR binomial tree with matching GBM assumptions converges
+      to the discounted binary payoff
+    pde_equivalence: Black-Scholes PDE with binary terminal condition recovers this
+      contract
+  - id: garman_kohlhagen_fx
+    name: Garman-Kohlhagen FX European
+    assumptions:
+    - lognormal FX spot dynamics
+    - deterministic domestic and foreign interest rates
+    - covered interest parity (F = S * df_foreign / df_domestic)
+    - European exercise only
+    payoff: European vanilla call or put on an FX spot rate
+    market_data:
+    - domestic_discount_curve
+    - foreign_discount_curve
+    - black_vol_surface
+    - fx_spot
+    lattice_equivalence: CRR tree with dual-curve discounting under same assumptions
+    pde_equivalence: Garman-Kohlhagen PDE with appropriate boundary conditions
+  - id: black76_forward_rate
+    name: Black76 forward-rate
+    assumptions:
+    - lognormal forward rate dynamics
+    - deterministic discount factors
+    - rate fixing at period start, payment at period end
+    - European exercise per period (caplet/floorlet) or single expiry (swaption)
+    payoff: European call or put on a forward rate, summed over a schedule of periods
+    market_data:
+    - discount_curve
+    - forward_curve
+    - black_vol_surface
+    lattice_equivalence: rate tree with matching short-rate vol and mean reversion
+      converges only when the rate distribution assumptions align
+    pde_equivalence: not directly applicable (forward-rate models require HJM or similar
+      framework)
+  - id: jamshidian_zcb_option
+    name: Jamshidian / Hull-White ZCB option
+    assumptions:
+    - one-factor Hull-White / Jamshidian closed-form contract
+    - deterministic discount curve inputs at pricing time
+    - Black-style volatility quote mapped at option expiry
+    - European exercise only
+    payoff: European call or put on a zero-coupon bond
+    market_data:
+    - discount_curve
+    - black_vol_surface
+    lattice_equivalence: Hull-White or Ho-Lee trees converge only when the underlying
+      short-rate model assumptions align
+    pde_equivalence: not directly applicable
+  - id: credit_default_swap
+    name: Credit default swap (single-name)
+    assumptions:
+    - deterministic discounting
+    - piecewise survival probabilities from a credit curve
+    - one reference entity only
+    - premium leg paid on a discrete schedule
+    - protection leg triggered by default before maturity
+    payoff: Single-name CDS premium leg minus protection leg under a credit-curve
+      survival model
+    market_data:
+    - discount_curve
+    - credit_curve
+    lattice_equivalence: not intended for tree routing; use credit survival inputs
+      directly or a single-name hazard-rate Monte Carlo model
+    pde_equivalence: not directly applicable
+  - id: deterministic_cashflow
+    name: Deterministic cashflow discounting
+    assumptions:
+    - all cashflows are known at pricing time
+    - no optionality
+    - deterministic discount curve
+    payoff: sum of discounted known cashflows (coupons, principal, fixed swap legs)
+    market_data:
+    - discount_curve
+    lattice_equivalence: any tree recovers the same PV when no exercise or path dependence
+      exists
+    pde_equivalence: trivial (no diffusion term)
+  template: "## Cookbook: Analytical\nThis family contains distinct solution contracts.\
+    \ Each is valid only under\nits stated assumptions. See the `solution_contracts`\
+    \ block above for the\nassumption sets. Do not mix assumptions across contracts.\n\
+    \nevaluate() returns the PV (float) and discounts each period internally.\n\n\
+    ### Black-Scholes equity European (solution contract: black_scholes_equity)\n\
+    Assumptions: lognormal spot (GBM), deterministic rates, European exercise.\n```python\n\
+    def evaluate(self, market_state):\n    from trellis.core.date_utils import year_fraction\n\
+    \    from trellis.models.black import black76_call, black76_put\n\n    spec =\
+    \ self._spec\n    T = year_fraction(market_state.settlement, spec.expiry_date,\
+    \ spec.day_count)\n    if T <= 0:\n        return 0.0\n\n    df = float(market_state.discount.discount(T))\n\
+    \    sigma = float(market_state.vol_surface.black_vol(T, spec.strike))\n    forward\
+    \ = spec.spot / max(df, 1e-12)\n\n    if spec.option_type == \"put\":\n      \
+    \  undiscounted = black76_put(forward, spec.strike, sigma, T)\n    else:\n   \
+    \     undiscounted = black76_call(forward, spec.strike, sigma, T)\n\n    return\
+    \ spec.notional * df * float(undiscounted)\n```\n\n### Black-Scholes cash-or-nothing\
+    \ digital (solution contract: black_scholes_digital)\nAssumptions: lognormal spot\
+    \ (GBM), deterministic rates, European exercise.\n```python\ndef evaluate(self,\
+    \ market_state):\n    from trellis.core.date_utils import year_fraction\n    from\
+    \ trellis.models.black import black76_cash_or_nothing_call, black76_cash_or_nothing_put\n\
+    \n    spec = self._spec\n    T = year_fraction(market_state.settlement, spec.expiry_date,\
+    \ spec.day_count)\n    if T <= 0:\n        return 0.0\n\n    df = float(market_state.discount.discount(T))\n\
+    \    sigma = float(market_state.vol_surface.black_vol(T, spec.strike))\n    F\
+    \ = spec.spot / max(df, 1e-12)\n\n    if spec.option_type == \"put\":\n      \
+    \  undiscounted = black76_cash_or_nothing_put(F, spec.strike, sigma, T)\n    else:\n\
+    \        undiscounted = black76_cash_or_nothing_call(F, spec.strike, sigma, T)\n\
+    \n    pv = spec.notional * float(undiscounted) * df\n    return pv\n```\n\n###\
+    \ Garman-Kohlhagen FX European (helper-backed resolved-input route; solution contract:\
+    \ garman_kohlhagen_fx)\nAssumptions: lognormal FX spot, deterministic domestic/foreign\
+    \ rates,\ncovered interest parity.\n```python\ndef evaluate(self, market_state):\n\
+    \    from trellis.core.date_utils import year_fraction\n    from trellis.models.analytical.fx\
+    \ import (\n        ResolvedGarmanKohlhagenInputs,\n        garman_kohlhagen_price_raw,\n\
+    \    )\n\n    spec = self._spec\n    T = year_fraction(market_state.settlement,\
+    \ spec.expiry_date, spec.day_count)\n\n    fx_quote = market_state.fx_rates[spec.fx_pair]\n\
+    \    foreign_curve = market_state.forecast_curves[spec.foreign_discount_key]\n\
+    \n    spot = float(fx_quote.spot)\n    df_domestic = float(market_state.discount.discount(T))\n\
+    \    df_foreign = float(foreign_curve.discount(T))\n    sigma = 0.0 if T <= 0\
+    \ else float(market_state.vol_surface.black_vol(T, spec.strike))\n    resolved\
+    \ = ResolvedGarmanKohlhagenInputs(\n        spot=spot,\n        strike=spec.strike,\n\
+    \        sigma=sigma,\n        T=T,\n        df_domestic=df_domestic,\n      \
+    \  df_foreign=df_foreign,\n    )\n\n    return spec.notional * float(garman_kohlhagen_price_raw(spec.option_type,\
+    \ resolved))\n```\n\nFor FX tasks, the selected foreign curve is usually bridged\
+    \ into\n`market_state.forward_curve` for routing and capability checks, while\
+    \ the\nexplicit foreign discount factors still come from\n`market_state.forecast_curves[spec.foreign_discount_key]`.\n\
+    \n### Black76 forward-rate (solution contract: black76_forward_rate)\nAssumptions:\
+    \ lognormal forward rate, deterministic discounting,\nrate fixing at period start.\
+    \ Use for caps, floors, swaptions.\n```python\ndef evaluate(self, market_state):\n\
+    \    from trellis.core.date_utils import build_payment_timeline\n    from trellis.models.black\
+    \ import black76_call, black76_put\n\n    spec = self._spec\n    fwd_curve = market_state.forecast_forward_curve(spec.rate_index)\n\
+    \n    timeline = build_payment_timeline(\n        spec.start_date,\n        spec.end_date,\n\
+    \        spec.frequency,\n        day_count=spec.day_count,\n        time_origin=market_state.settlement,\n\
+    \    )\n\n    pv = 0.0\n    for period in timeline:\n        if period.payment_date\
+    \ <= market_state.settlement:\n            continue\n        tau = float(period.accrual_fraction\
+    \ or 0.0)\n        t_start = float(period.t_start or 0.0)\n        t_end = float(period.t_payment\
+    \ or 0.0)\n        t_start = max(t_start, 1e-6)\n\n        F = fwd_curve.forward_rate(t_start,\
+    \ t_end)\n        sigma = market_state.vol_surface.black_vol(t_start, spec.strike)\n\
+    \n        # >>> INSTRUMENT-SPECIFIC: choose black76_call or black76_put <<<\n\
+    \        undiscounted = spec.notional * tau * black76_call(F, spec.strike, sigma,\
+    \ t_start)\n        df = market_state.discount.discount(t_end)\n        pv +=\
+    \ float(undiscounted) * float(df)\n\n    return pv\n```\n\nFor European rate-style\
+    \ swaptions, prefer the checked helper-backed path\nover rebuilding annuity, forward-swap-rate,\
+    \ and expiry binding inline.\n\n### Rate-style swaption Black76 (helper-backed\
+    \ resolved-input route; solution contract: black76_forward_rate)\nAssumptions:\
+    \ single-exercise European rate-style swaption under the\nchecked Black76 forward-rate\
+    \ helper contract.\n```python\ndef evaluate(self, market_state):\n    from trellis.models.rate_style_swaption\
+    \ import (\n        ResolvedSwaptionBlack76Inputs,\n        price_swaption_black76_raw,\n\
+    \        resolve_swaption_black76_inputs,\n    )\n\n    spec = self._spec\n  \
+    \  resolved = resolve_swaption_black76_inputs(market_state, spec)\n    assert\
+    \ isinstance(resolved, ResolvedSwaptionBlack76Inputs)\n    return float(price_swaption_black76_raw(resolved))\n\
+    ```\n\n### Jamshidian zero-coupon bond option (helper-backed resolved-input route;\
+    \ solution contract: jamshidian_zcb_option)\nAssumptions: one-factor Hull-White\
+    \ / Jamshidian closed form, European\nexercise, option on a zero-coupon bond.\n\
+    ```python\ndef evaluate(self, market_state):\n    from trellis.models.zcb_option\
+    \ import resolve_zcb_option_hw_inputs\n    from trellis.models.analytical.jamshidian\
+    \ import (\n        ResolvedJamshidianInputs,\n        zcb_option_hw_raw,\n  \
+    \  )\n\n    spec = self._spec\n    resolved = resolve_zcb_option_hw_inputs(\n\
+    \        market_state,\n        spec,\n        mean_reversion=0.1,\n    )\n  \
+    \  assert isinstance(resolved.jamshidian, ResolvedJamshidianInputs)\n\n    if\
+    \ resolved.jamshidian.T_exp <= 0.0:\n        if resolved.option_type == \"put\"\
+    :\n            intrinsic = max(\n                resolved.jamshidian.strike -\
+    \ resolved.jamshidian.discount_factor_bond,\n                0.0,\n          \
+    \  )\n        else:\n            intrinsic = max(\n                resolved.jamshidian.discount_factor_bond\
+    \ - resolved.jamshidian.strike,\n                0.0,\n            )\n       \
+    \ return float(resolved.notional * intrinsic)\n\n    raw = zcb_option_hw_raw(resolved.jamshidian)\n\
+    \    return float(resolved.notional * raw[resolved.option_type])\n```\n\n### Credit\
+    \ default swap (single-name) (solution contract: credit_default_swap)\nAssumptions:\
+    \ deterministic discounting, credit survival probabilities from\na credit curve,\
+    \ one reference entity, premium leg on a schedule, protection\nleg triggered by\
+    \ default before maturity. Do not reinterpret this section as\nnth-to-default\
+    \ or basket CDS.\nConvert quoted running spreads from basis points to decimals\
+    \ before accrual,\nfor example 150 bp -> 0.015.\nKeep the analytical schedule\
+    \ convention aligned with the Monte Carlo\ncomparator: use `spec.start_date` as\
+    \ the time origin for `year_fraction(...)`\nschedule times and discount both the\
+    \ premium leg and the interval default\nmass with the payment-date discount factor.\
+    \ Do not trapezoid the protection\nleg or average adjacent discount factors.\n\
+    Prefer the checked-in CDS helpers so the adapter stays thin.\nThe shared analytical\
+    \ helper uses `credit_curve.survival_probability(t)` and\n`discount_curve.discount(t)`\
+    \ internally and preserves the same premium/protection\nleg contract.\n```python\n\
+    def evaluate(self, market_state):\n    from trellis.models.credit_default_swap\
+    \ import (\n        build_cds_schedule,\n        price_cds_analytical,\n    )\n\
+    \n    spec = self._spec\n    schedule = build_cds_schedule(\n        spec.start_date,\n\
+    \        spec.end_date,\n        spec.frequency,\n        spec.day_count,\n  \
+    \  )\n    return price_cds_analytical(\n        notional=spec.notional,\n    \
+    \    spread_quote=spec.spread,\n        recovery=spec.recovery,\n        schedule=schedule,\n\
+    \        credit_curve=market_state.credit_curve,\n        discount_curve=market_state.discount,\n\
+    \    )\n```\n"
 calibration:
-  description: Implied-vol calibration for rates options under explicit multi-curve provenance
+  description: Implied-vol calibration for rates options under explicit multi-curve
+    provenance
   applicable_instruments:
-    - cap
-    - floor
-    - swaption
+  - cap
+  - floor
+  - swaption
   version: canonical
-  template: |
-    ## Cookbook: Rates calibration
-    Use this pattern when a cap/floor or swaption quote should be converted
-    into a flat Black volatility while preserving the selected curve names in
-    the result metadata.
-
-    ```python
-    from dataclasses import replace
-
-    from trellis.core.market_state import MarketState
-    from trellis.models.calibration import (
-        calibrate_cap_floor_black_vol,
-        calibrate_swaption_black_vol,
-    )
-    from trellis.models.vol_surface import FlatVol
-    from trellis.instruments.cap import CapFloorSpec, CapPayoff, FloorPayoff
-    from trellis.instruments._agent.swaption import SwaptionSpec, SwaptionPayoff
-
-    # >>> INSTRUMENT-SPECIFIC: inject the observed quote and the route-specific
-    # >>> calibration target here <<<
-    # Cap/floor calibration
-    cap_spec = CapFloorSpec(...)
-    quote_state = MarketState(...)
-    target_state = replace(quote_state, vol_surface=FlatVol(0.20))
-    target_price = CapPayoff(cap_spec).evaluate(target_state)
-    cap_result = calibrate_cap_floor_black_vol(
-        cap_spec,
-        quote_state,
-        target_price,
-        kind="cap",
-        vol_surface_name="rates_cap_surface",
-    )
-
-    # Swaption calibration
-    swaption_spec = SwaptionSpec(...)
-    swaption_target_state = replace(quote_state, vol_surface=FlatVol(0.18))
-    swaption_target_price = SwaptionPayoff(swaption_spec).evaluate(
-        swaption_target_state
-    )
-    swaption_result = calibrate_swaption_black_vol(
-        swaption_spec,
-        quote_state,
-        swaption_target_price,
-        vol_surface_name="rates_swaption_surface",
-    )
-
-    assert cap_result.provenance["selected_curve_names"]
-    assert swaption_result.provenance["selected_curve_names"]
-    return cap_result
-    return swaption_result
-    ```
-
+  template: "## Cookbook: Rates calibration\nUse this pattern when a cap/floor or\
+    \ swaption quote should be converted\ninto a flat Black volatility while preserving\
+    \ the selected curve names in\nthe result metadata.\n\n```python\nfrom dataclasses\
+    \ import replace\n\nfrom trellis.core.market_state import MarketState\nfrom trellis.models.calibration\
+    \ import (\n    calibrate_cap_floor_black_vol,\n    calibrate_swaption_black_vol,\n\
+    )\nfrom trellis.models.vol_surface import FlatVol\nfrom trellis.instruments.cap\
+    \ import CapFloorSpec, CapPayoff, FloorPayoff\nfrom trellis.instruments._agent.swaption\
+    \ import SwaptionSpec, SwaptionPayoff\n\n# >>> INSTRUMENT-SPECIFIC: inject the\
+    \ observed quote and the route-specific\n# >>> calibration target here <<<\n#\
+    \ Cap/floor calibration\ncap_spec = CapFloorSpec(...)\nquote_state = MarketState(...)\n\
+    target_state = replace(quote_state, vol_surface=FlatVol(0.20))\ntarget_price =\
+    \ CapPayoff(cap_spec).evaluate(target_state)\ncap_result = calibrate_cap_floor_black_vol(\n\
+    \    cap_spec,\n    quote_state,\n    target_price,\n    kind=\"cap\",\n    vol_surface_name=\"\
+    rates_cap_surface\",\n)\n\n# Swaption calibration\nswaption_spec = SwaptionSpec(...)\n\
+    swaption_target_state = replace(quote_state, vol_surface=FlatVol(0.18))\nswaption_target_price\
+    \ = SwaptionPayoff(swaption_spec).evaluate(\n    swaption_target_state\n)\nswaption_result\
+    \ = calibrate_swaption_black_vol(\n    swaption_spec,\n    quote_state,\n    swaption_target_price,\n\
+    \    vol_surface_name=\"rates_swaption_surface\",\n)\n\nassert cap_result.provenance[\"\
+    selected_curve_names\"]\nassert swaption_result.provenance[\"selected_curve_names\"\
+    ]\nreturn cap_result\nreturn swaption_result\n```\n"
 rate_tree:
-  description: Backward induction on calibrated short-rate lattices for callable, puttable, and Bermudan structures
+  description: Backward induction on calibrated short-rate lattices for callable,
+    puttable, and Bermudan structures
   applicable_instruments:
-    - callable_bond
-    - puttable_bond
-    - bermudan_swaption
+  - callable_bond
+  - puttable_bond
+  - bermudan_swaption
   version: canonical
-  template: |
-    ## Cookbook: Rate Tree (backward induction)
-    Use this pattern for instruments with early exercise on interest rates
-    (callable bonds, puttable bonds, Bermudan swaptions).
-
-    IMPORTANT: For plain Hull-White-style rate derivatives, use
-    `build_rate_lattice` which creates a mean-reverting SHORT-RATE tree.
-    For model-specific calibrated trees such as BDT vs Hull-White comparisons,
-    use `build_generic_lattice(..., MODEL_REGISTRY["bdt"|"hull_white"], ...)`.
-    Do NOT use `BinomialTree.crr` for interest-rate exercise problems.
-
-    Prefer the checked-in helper surface first:
-
-    ```python
-    def evaluate(self, market_state):
-        from trellis.models.callable_bond_tree import price_callable_bond_tree
-
-        return price_callable_bond_tree(
-            market_state,
-            self._spec,
-            model="hull_white",  # or "bdt" for explicit comparison routes
-        )
-    ```
-
-    If you must build the lattice path manually, keep to the following shape:
-
-    ```python
-    def evaluate(self, market_state):
-        from trellis.core.date_utils import (
-            build_exercise_timeline_from_dates,
-            build_payment_timeline,
-            year_fraction,
-        )
-        from trellis.models.trees.control import (
-            lattice_step_from_time,
-            lattice_steps_from_timeline,
-            resolve_lattice_exercise_policy,
-        )
-        from trellis.models.trees.lattice import (
-            build_generic_lattice,
-            build_rate_lattice,
-            lattice_backward_induction,
-        )
-        from trellis.models.trees.models import MODEL_REGISTRY
-
-        spec = self._spec
-        T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
-        if T <= 0:
-            return 0.0
-
-        r0 = float(market_state.discount.zero_rate(max(T / 2, 1e-6)))
-        black_vol = float(market_state.vol_surface.black_vol(max(T / 2, 1e-6), r0))
-        sigma_hw = black_vol * max(r0, 1e-6)
-        mean_reversion = 0.1
-
-        n_steps = min(200, max(50, int(T * 50)))
-        # Hull-White helper route
-        lattice = build_rate_lattice(
-            r0, sigma_hw, mean_reversion, T, n_steps,
-            discount_curve=market_state.discount,
-        )
-        # BDT / explicit model-comparison route
-        # model = MODEL_REGISTRY["bdt"]  # or MODEL_REGISTRY["hull_white"]
-        # lattice = build_generic_lattice(
-        #     model, r0=r0, sigma=black_vol, a=0.05, T=T, n_steps=n_steps,
-        #     discount_curve=market_state.discount,
-        # )
-
-        payment_timeline = build_payment_timeline(
-            spec.start_date,
-            spec.end_date,
-            spec.frequency,
-            day_count=spec.day_count,
-            time_origin=market_state.settlement,
-            label="coupon_timeline",
-        )
-        exercise_timeline = build_exercise_timeline_from_dates(
-            spec.call_dates,
-            day_count=spec.day_count,
-            time_origin=market_state.settlement,
-            label="issuer_call_dates",
-        )
-        exercise_policy = resolve_lattice_exercise_policy(
-            "issuer_call",  # or "holder_put" / "bermudan"
-            exercise_steps=lattice_steps_from_timeline(
-                exercise_timeline,
-                dt=lattice.dt,
-                n_steps=lattice.n_steps,
-            ),
-        )
-
-        def payoff_at_node(step, node, lattice):
-            # >>> INSTRUMENT-SPECIFIC: terminal payoff at maturity <<<
-            return spec.notional
-
-        def cashflow(step, node, lattice):
-            # >>> INSTRUMENT-SPECIFIC: coupon or interim cashflow at this step <<<
-            return 0.0
-
-        def exercise_value(step, node, lattice):
-            # >>> INSTRUMENT-SPECIFIC: value received on exercise/call/put <<<
-            return spec.notional
-
-        price = lattice_backward_induction(
-            lattice,
-            payoff_at_node,
-            exercise_value,
-            cashflow_at_node=cashflow,
-            exercise_policy=exercise_policy,
-        )
-        return price
-    ```
-
-    `lattice_backward_induction(...)` expects a terminal-payoff callback as the
-    second argument. Do not call it with legacy aliases like `terminal_value=...`
-    or `exercise_value_fn=...`.
-
-    For issuer-callable structures, resolve the policy with
-    `resolve_lattice_exercise_policy("issuer_call", ...)`.
-    For holder-exercised structures such as puttable bonds or Bermudan
-    swaptions, resolve `"holder_put"` or `"bermudan"` instead of open-coding
-    `exercise_fn=max`.
-
+  template: "## Cookbook: Rate Tree (backward induction)\nUse this pattern for instruments\
+    \ with early exercise on interest rates\n(callable bonds, puttable bonds, Bermudan\
+    \ swaptions).\n\nIMPORTANT: For plain Hull-White-style rate derivatives, use\n\
+    `build_rate_lattice` which creates a mean-reverting SHORT-RATE tree.\nFor model-specific\
+    \ calibrated trees such as BDT vs Hull-White comparisons,\nuse `build_generic_lattice(...,\
+    \ MODEL_REGISTRY[\"bdt\"|\"hull_white\"], ...)`.\nDo NOT use `BinomialTree.crr`\
+    \ for interest-rate exercise problems.\n\nPrefer the checked-in helper surface\
+    \ first:\n\n```python\ndef evaluate(self, market_state):\n    from trellis.models.callable_bond_tree\
+    \ import price_callable_bond_tree\n\n    return price_callable_bond_tree(\n  \
+    \      market_state,\n        self._spec,\n        model=\"hull_white\",  # or\
+    \ \"bdt\" for explicit comparison routes\n    )\n```\n\nIf you must build the\
+    \ lattice path manually, keep to the following shape:\n\n```python\ndef evaluate(self,\
+    \ market_state):\n    from trellis.core.date_utils import (\n        build_exercise_timeline_from_dates,\n\
+    \        build_payment_timeline,\n        year_fraction,\n    )\n    from trellis.models.trees.control\
+    \ import (\n        lattice_step_from_time,\n        lattice_steps_from_timeline,\n\
+    \        resolve_lattice_exercise_policy,\n    )\n    from trellis.models.trees.lattice\
+    \ import (\n        build_generic_lattice,\n        build_rate_lattice,\n    \
+    \    lattice_backward_induction,\n    )\n    from trellis.models.trees.models\
+    \ import MODEL_REGISTRY\n\n    spec = self._spec\n    T = year_fraction(market_state.settlement,\
+    \ spec.end_date, spec.day_count)\n    if T <= 0:\n        return 0.0\n\n    r0\
+    \ = float(market_state.discount.zero_rate(max(T / 2, 1e-6)))\n    black_vol =\
+    \ float(market_state.vol_surface.black_vol(max(T / 2, 1e-6), r0))\n    sigma_hw\
+    \ = black_vol * max(r0, 1e-6)\n    mean_reversion = 0.1\n\n    n_steps = min(200,\
+    \ max(50, int(T * 50)))\n    # Hull-White helper route\n    lattice = build_rate_lattice(\n\
+    \        r0, sigma_hw, mean_reversion, T, n_steps,\n        discount_curve=market_state.discount,\n\
+    \    )\n    # BDT / explicit model-comparison route\n    # model = MODEL_REGISTRY[\"\
+    bdt\"]  # or MODEL_REGISTRY[\"hull_white\"]\n    # lattice = build_generic_lattice(\n\
+    \    #     model, r0=r0, sigma=black_vol, a=0.05, T=T, n_steps=n_steps,\n    #\
+    \     discount_curve=market_state.discount,\n    # )\n\n    payment_timeline =\
+    \ build_payment_timeline(\n        spec.start_date,\n        spec.end_date,\n\
+    \        spec.frequency,\n        day_count=spec.day_count,\n        time_origin=market_state.settlement,\n\
+    \        label=\"coupon_timeline\",\n    )\n    exercise_timeline = build_exercise_timeline_from_dates(\n\
+    \        spec.call_dates,\n        day_count=spec.day_count,\n        time_origin=market_state.settlement,\n\
+    \        label=\"issuer_call_dates\",\n    )\n    exercise_policy = resolve_lattice_exercise_policy(\n\
+    \        \"issuer_call\",  # or \"holder_put\" / \"bermudan\"\n        exercise_steps=lattice_steps_from_timeline(\n\
+    \            exercise_timeline,\n            dt=lattice.dt,\n            n_steps=lattice.n_steps,\n\
+    \        ),\n    )\n\n    def payoff_at_node(step, node, lattice):\n        #\
+    \ >>> INSTRUMENT-SPECIFIC: terminal payoff at maturity <<<\n        return spec.notional\n\
+    \n    def cashflow(step, node, lattice):\n        # >>> INSTRUMENT-SPECIFIC: coupon\
+    \ or interim cashflow at this step <<<\n        return 0.0\n\n    def exercise_value(step,\
+    \ node, lattice):\n        # >>> INSTRUMENT-SPECIFIC: value received on exercise/call/put\
+    \ <<<\n        return spec.notional\n\n    price = lattice_backward_induction(\n\
+    \        lattice,\n        payoff_at_node,\n        exercise_value,\n        cashflow_at_node=cashflow,\n\
+    \        exercise_policy=exercise_policy,\n    )\n    return price\n```\n\n`lattice_backward_induction(...)`\
+    \ expects a terminal-payoff callback as the\nsecond argument. Do not call it with\
+    \ legacy aliases like `terminal_value=...`\nor `exercise_value_fn=...`.\n\nFor\
+    \ issuer-callable structures, resolve the policy with\n`resolve_lattice_exercise_policy(\"\
+    issuer_call\", ...)`.\nFor holder-exercised structures such as puttable bonds\
+    \ or Bermudan\nswaptions, resolve `\"holder_put\"` or `\"bermudan\"` instead of\
+    \ open-coding\n`exercise_fn=max`.\n"
 monte_carlo:
-  description: Path simulation for path-dependent or high-dimensional claims, including LSM-based exercise when needed
+  description: Path simulation for path-dependent or high-dimensional claims, including
+    LSM-based exercise when needed
   applicable_instruments:
-    - barrier_option
-    - asian_option
-    - american_option
-    - autocallable
-    - variance_swap
-    - cds
-    - mbs
-    - basket_path_payoff
-    - ranked_observation_basket
+  - barrier_option
+  - asian_option
+  - american_option
+  - autocallable
+  - variance_swap
+  - cds
+  - mbs
+  - basket_path_payoff
+  - ranked_observation_basket
   version: canonical
-  template: |
-    ## Cookbook: Monte Carlo (path simulation)
-    Use this pattern for path-dependent instruments.
-    The MC engine computes a discounted expected payoff estimate and returns a float.
-
-    ```python
-    def evaluate(self, market_state):
-        from trellis.core.date_utils import year_fraction
-        from trellis.core.differentiable import get_numpy
-        from trellis.models.monte_carlo.engine import MonteCarloEngine
-        from trellis.models.processes.gbm import GBM
-
-        np = get_numpy()
-        spec = self._spec
-        T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)
-        r = float(market_state.discount.zero_rate(T))
-        sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
-
-        process = GBM(mu=r, sigma=sigma)
-        engine = MonteCarloEngine(
-            process,
-            n_paths=50000,
-            n_steps=max(200, int(T * 252)),
-            seed=42,
-            method="exact",
-        )
-
-        def payoff_fn(paths):
-            """paths: ndarray of shape (n_paths, n_steps + 1)."""
-            S_T = paths[:, -1]
-            # >>> INSTRUMENT-SPECIFIC: compute payoff from paths <<<
-            return np.maximum(S_T - spec.strike, 0.0) * spec.notional
-
-    result = engine.price(spec.spot, T, payoff_fn, discount_rate=r)
-    return result["price"]
-    ```
-
-    ### Credit default swap (single-name) (solution contract: credit_default_swap)
-    Use this pattern for single-name credit protection legs and premium-leg
-    accrual under a hazard-rate or survival-probability model. Do not reuse it
-    for nth-to-default or basket CDS.
-    Convert quoted running spreads from basis points to decimals before accrual,
-    for example 150 bp -> 0.015. Do that once at the top of `evaluate()` and
-    then reuse only the normalized `spread` variable for the premium leg.
-    Semantically equivalent quotes such as `100` and `0.01` should produce the
-    same PV up to numerical tolerance.
-    Prefer the checked-in CDS helpers so the adapter stays thin.
-    The shared Monte Carlo helper samples interval defaults from the credit
-    curve survival structure, using `survival_probability(...)` for interval
-    default mass and `hazard_rate(...)` only if later routes need within-interval
-    timing refinement.
-
-    ```python
-    def evaluate(self, market_state):
-        from trellis.models.credit_default_swap import (
-            build_cds_schedule,
-            price_cds_monte_carlo,
-        )
-
-        spec = self._spec
-        schedule = build_cds_schedule(
-            spec.start_date,
-            spec.end_date,
-            spec.frequency,
-            spec.day_count,
-        )
-        return price_cds_monte_carlo(
-            notional=spec.notional,
-            spread_quote=spec.spread,
-            recovery=spec.recovery,
-            schedule=schedule,
-            credit_curve=market_state.credit_curve,
-            discount_curve=market_state.discount,
-            n_paths=50000,
-            seed=42,
-        )
-    ```
-
-    If the user request is partial or underspecified, do not guess the missing
-    contract fields. First derive a required-input checklist from the semantic
-    contract, method requirements, and data contracts. Then either synthesize a
-    mock input provider plan or surface the exact remaining fields the user
-    must supply.
-
-    ### Ranked-observation basket path payoff (solution contract: ranked_observation_basket)
-    Use this pattern for ranked-selection basket payoffs with an ordered
-    observation schedule and a shared correlated path substrate.
-
-    Keep the adapter thin: resolve the basket semantics first, then delegate to
-    the shared basket Monte Carlo helper. Do not reimplement the ranking or
-    state-machine logic inside the adapter.
-
-    ```python
-    def evaluate(self, market_state):
-        from trellis.models.resolution.basket_semantics import resolve_basket_semantics
-        from trellis.models.monte_carlo.semantic_basket import (
-            price_ranked_observation_basket_monte_carlo,
-        )
-
-        resolved = resolve_basket_semantics(market_state, self.spec)
-        return price_ranked_observation_basket_monte_carlo(self.spec, resolved)
-    ```
-
-    If you need reduced-state evaluation, use the shared basket state helpers
-    in `trellis.models.monte_carlo.basket_state` and the ranked-observation
-    payoff helpers in `trellis.models.monte_carlo.ranked_observation_payoffs`.
-
-    The generated payoff must declare the market inputs basket pricing actually
-    needs: `discount_curve`, `black_vol_surface`, `spot`, and `model_parameters`
-    (plus `forward_curve` when the route uses forward drift). Do not emit a
-    requirements set that only names `discount_curve`.
-
-    For multi-asset basket routes, do not reshape or index the raw
-    `MarketState` as if it were a simulated path tensor. Resolve the basket
-    semantics first, then use `resolved.constituent_spots` as the engine's
-    initial multi-asset state and pass the resolved basket object directly to
-    the shared Monte Carlo helper.
-
-    ### Exact adapter signature
-    Use the following adapter shape exactly when generating the payoff module:
-
-    ```python
-    def evaluate(self, market_state):
-        from datetime import date
-        from trellis.models.resolution.basket_semantics import resolve_basket_semantics
-        from trellis.models.monte_carlo.semantic_basket import (
-            RankedObservationBasketSpec,
-            price_ranked_observation_basket_monte_carlo,
-        )
-
-        constituents = [
-            name.strip()
-            for name in self.spec.underlyings.split(",")
-            if name.strip()
-        ]
-        observation_dates = [
-            date.fromisoformat(item.strip())
-            for item in self.spec.observation_dates.split(",")
-            if item.strip()
-        ]
-        ranked_spec = RankedObservationBasketSpec(
-            notional=self.spec.notional,
-            strike=self.spec.strike,
-            expiry_date=self.spec.expiry_date,
-            constituents=",".join(constituents),
-            observation_dates=",".join(item.isoformat() for item in observation_dates),
-            option_type="call",
-            day_count=self.spec.day_count,
-        )
-        resolved = resolve_basket_semantics(market_state, ranked_spec)
-        return price_ranked_observation_basket_monte_carlo(ranked_spec, resolved)
-    ```
-
-    Do NOT pass `basket_assets`, `asset_names`, `underlyings`, or `is_call` into
-    `RankedObservationBasketSpec`. Do NOT inline a Monte Carlo loop or construct
-    `CorrelatedGBM` in the generated payoff module. That state-process primitive
-    belongs inside `trellis.models.monte_carlo.ranked_observation_payoffs.build_ranked_observation_basket_process`,
-    which is called by the shared helper above.
-
-    ### Bootstrap contract
-    Before the final pricing call, launch the generated module with the
-    repo-pinned Python interpreter, an explicit shell invocation, and the repo
-    workdir. Run an import/compile smoke test before pricing. If you see
-    `ModuleNotFoundError`, `ImportError`, `SyntaxError`, or a shell/interpreter
-    mismatch, stop and fix bootstrap first instead of continuing into pricing.
-
-    ### Early exercise via approved control primitives
-    For American or Bermudan exercise in Monte Carlo, do NOT invent `method="lsm"`
-    or a `lsm_mc` alias on `MonteCarloEngine`, and do NOT treat `engine.price(...)`
-    as an early-exercise solver.
-    Instead:
-
-    - simulate paths with `MonteCarloEngine(..., method="exact" | "euler" | "milstein")`
-    - call an approved early-exercise control primitive
-    - Trellis currently implements `longstaff_schwartz(...)`
-    - if using continuation regression, choose the estimator or basis explicitly
-    - `LaguerreBasis` from `trellis.models.monte_carlo.schemes` is a common basis, not a mandatory route primitive
-    - use a payoff callback on spot values at exercise dates, not on the full path matrix
-
-    Current concrete example using the implemented `longstaff_schwartz(...)` primitive:
-
-    ```python
-    def evaluate(self, market_state):
-        from trellis.core.date_utils import year_fraction
-        from trellis.core.differentiable import get_numpy
-        from trellis.models.monte_carlo.engine import MonteCarloEngine
-        from trellis.models.monte_carlo.lsm import longstaff_schwartz
-        from trellis.models.monte_carlo.schemes import LaguerreBasis
-        from trellis.models.processes.gbm import GBM
-
-        np = get_numpy()
-        spec = self._spec
-        T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)
-        if T <= 0:
-            return 0.0
-
-        r = float(market_state.discount.zero_rate(T))
-        sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
-
-        process = GBM(mu=r, sigma=sigma)
-        engine = MonteCarloEngine(
-            process,
-            n_paths=50000,
-            n_steps=max(50, int(T * 100)),
-            seed=42,
-            method="exact",
-        )
-        paths = engine.simulate(spec.spot, T)
-        dt = T / engine.n_steps
-        exercise_dates = list(range(1, engine.n_steps + 1))
-        basis = LaguerreBasis()  # example continuation basis, not mandatory
-
-        def exercise_payoff(spots):
-            return np.maximum(spec.strike - spots, 0.0)
-
-        return float(
-            longstaff_schwartz(
-                paths,
-                exercise_dates,
-                exercise_payoff,
-                discount_rate=r,
-                dt=dt,
-                basis_fn=basis,
-            )
-        )
-    ```
-
+  template: "## Cookbook: Monte Carlo (path simulation)\nUse this pattern for path-dependent\
+    \ instruments.\nThe MC engine computes a discounted expected payoff estimate and\
+    \ returns a float.\n\n```python\ndef evaluate(self, market_state):\n    from trellis.core.date_utils\
+    \ import year_fraction\n    from trellis.core.differentiable import get_numpy\n\
+    \    from trellis.models.monte_carlo.engine import MonteCarloEngine\n    from\
+    \ trellis.models.processes.gbm import GBM\n\n    np = get_numpy()\n    spec =\
+    \ self._spec\n    T = year_fraction(market_state.settlement, spec.expiry_date,\
+    \ spec.day_count)\n    r = float(market_state.discount.zero_rate(T))\n    sigma\
+    \ = float(market_state.vol_surface.black_vol(T, spec.strike))\n\n    process =\
+    \ GBM(mu=r, sigma=sigma)\n    engine = MonteCarloEngine(\n        process,\n \
+    \       n_paths=50000,\n        n_steps=max(200, int(T * 252)),\n        seed=42,\n\
+    \        method=\"exact\",\n    )\n\n    def payoff_fn(paths):\n        \"\"\"\
+    paths: ndarray of shape (n_paths, n_steps + 1).\"\"\"\n        S_T = paths[:,\
+    \ -1]\n        # >>> INSTRUMENT-SPECIFIC: compute payoff from paths <<<\n    \
+    \    return np.maximum(S_T - spec.strike, 0.0) * spec.notional\n\nresult = engine.price(spec.spot,\
+    \ T, payoff_fn, discount_rate=r)\nreturn result[\"price\"]\n```\n\n### Credit\
+    \ default swap (single-name) (solution contract: credit_default_swap)\nUse this\
+    \ pattern for single-name credit protection legs and premium-leg\naccrual under\
+    \ a hazard-rate or survival-probability model. Do not reuse it\nfor nth-to-default\
+    \ or basket CDS.\nConvert quoted running spreads from basis points to decimals\
+    \ before accrual,\nfor example 150 bp -> 0.015. Do that once at the top of `evaluate()`\
+    \ and\nthen reuse only the normalized `spread` variable for the premium leg.\n\
+    Semantically equivalent quotes such as `100` and `0.01` should produce the\nsame\
+    \ PV up to numerical tolerance.\nPrefer the checked-in CDS helpers so the adapter\
+    \ stays thin.\nThe shared Monte Carlo helper samples interval defaults from the\
+    \ credit\ncurve survival structure, using `survival_probability(...)` for interval\n\
+    default mass and `hazard_rate(...)` only if later routes need within-interval\n\
+    timing refinement.\n\n```python\ndef evaluate(self, market_state):\n    from trellis.models.credit_default_swap\
+    \ import (\n        build_cds_schedule,\n        price_cds_monte_carlo,\n    )\n\
+    \n    spec = self._spec\n    schedule = build_cds_schedule(\n        spec.start_date,\n\
+    \        spec.end_date,\n        spec.frequency,\n        spec.day_count,\n  \
+    \  )\n    return price_cds_monte_carlo(\n        notional=spec.notional,\n   \
+    \     spread_quote=spec.spread,\n        recovery=spec.recovery,\n        schedule=schedule,\n\
+    \        credit_curve=market_state.credit_curve,\n        discount_curve=market_state.discount,\n\
+    \        n_paths=50000,\n        seed=42,\n    )\n```\n\nIf the user request is\
+    \ partial or underspecified, do not guess the missing\ncontract fields. First\
+    \ derive a required-input checklist from the semantic\ncontract, method requirements,\
+    \ and data contracts. Then either synthesize a\nmock input provider plan or surface\
+    \ the exact remaining fields the user\nmust supply.\n\n### Ranked-observation\
+    \ basket path payoff (solution contract: ranked_observation_basket)\nUse this\
+    \ pattern for ranked-selection basket payoffs with an ordered\nobservation schedule\
+    \ and a shared correlated path substrate.\n\nKeep the adapter thin: resolve the\
+    \ basket semantics first, then delegate to\nthe shared basket Monte Carlo helper.\
+    \ Do not reimplement the ranking or\nstate-machine logic inside the adapter.\n\
+    \n```python\ndef evaluate(self, market_state):\n    from trellis.models.resolution.basket_semantics\
+    \ import resolve_basket_semantics\n    from trellis.models.monte_carlo.semantic_basket\
+    \ import (\n        price_ranked_observation_basket_monte_carlo,\n    )\n\n  \
+    \  resolved = resolve_basket_semantics(market_state, self.spec)\n    return price_ranked_observation_basket_monte_carlo(self.spec,\
+    \ resolved)\n```\n\nIf you need reduced-state evaluation, use the shared basket\
+    \ state helpers\nin `trellis.models.monte_carlo.basket_state` and the ranked-observation\n\
+    payoff helpers in `trellis.models.monte_carlo.ranked_observation_payoffs`.\n\n\
+    The generated payoff must declare the market inputs basket pricing actually\n\
+    needs: `discount_curve`, `black_vol_surface`, `spot`, and `model_parameters`\n\
+    (plus `forward_curve` when the route uses forward drift). Do not emit a\nrequirements\
+    \ set that only names `discount_curve`.\n\nFor multi-asset basket routes, do not\
+    \ reshape or index the raw\n`MarketState` as if it were a simulated path tensor.\
+    \ Resolve the basket\nsemantics first, then use `resolved.constituent_spots` as\
+    \ the engine's\ninitial multi-asset state and pass the resolved basket object\
+    \ directly to\nthe shared Monte Carlo helper.\n\n### Exact adapter signature\n\
+    Use the following adapter shape exactly when generating the payoff module:\n\n\
+    ```python\ndef evaluate(self, market_state):\n    from datetime import date\n\
+    \    from trellis.models.resolution.basket_semantics import resolve_basket_semantics\n\
+    \    from trellis.models.monte_carlo.semantic_basket import (\n        RankedObservationBasketSpec,\n\
+    \        price_ranked_observation_basket_monte_carlo,\n    )\n\n    constituents\
+    \ = [\n        name.strip()\n        for name in self.spec.underlyings.split(\"\
+    ,\")\n        if name.strip()\n    ]\n    observation_dates = [\n        date.fromisoformat(item.strip())\n\
+    \        for item in self.spec.observation_dates.split(\",\")\n        if item.strip()\n\
+    \    ]\n    ranked_spec = RankedObservationBasketSpec(\n        notional=self.spec.notional,\n\
+    \        strike=self.spec.strike,\n        expiry_date=self.spec.expiry_date,\n\
+    \        constituents=\",\".join(constituents),\n        observation_dates=\"\
+    ,\".join(item.isoformat() for item in observation_dates),\n        option_type=\"\
+    call\",\n        day_count=self.spec.day_count,\n    )\n    resolved = resolve_basket_semantics(market_state,\
+    \ ranked_spec)\n    return price_ranked_observation_basket_monte_carlo(ranked_spec,\
+    \ resolved)\n```\n\nDo NOT pass `basket_assets`, `asset_names`, `underlyings`,\
+    \ or `is_call` into\n`RankedObservationBasketSpec`. Do NOT inline a Monte Carlo\
+    \ loop or construct\n`CorrelatedGBM` in the generated payoff module. That state-process\
+    \ primitive\nbelongs inside `trellis.models.monte_carlo.ranked_observation_payoffs.build_ranked_observation_basket_process`,\n\
+    which is called by the shared helper above.\n\n### Bootstrap contract\nBefore\
+    \ the final pricing call, launch the generated module with the\nrepo-pinned Python\
+    \ interpreter, an explicit shell invocation, and the repo\nworkdir. Run an import/compile\
+    \ smoke test before pricing. If you see\n`ModuleNotFoundError`, `ImportError`,\
+    \ `SyntaxError`, or a shell/interpreter\nmismatch, stop and fix bootstrap first\
+    \ instead of continuing into pricing.\n\n### Early exercise via approved control\
+    \ primitives\nFor American or Bermudan exercise in Monte Carlo, do NOT invent\
+    \ `method=\"lsm\"`\nor a `lsm_mc` alias on `MonteCarloEngine`, and do NOT treat\
+    \ `engine.price(...)`\nas an early-exercise solver.\nInstead:\n\n- simulate paths\
+    \ with `MonteCarloEngine(..., method=\"exact\" | \"euler\" | \"milstein\")`\n\
+    - call an approved early-exercise control primitive\n- Trellis currently implements\
+    \ `longstaff_schwartz(...)`\n- if using continuation regression, choose the estimator\
+    \ or basis explicitly\n- `LaguerreBasis` from `trellis.models.monte_carlo.schemes`\
+    \ is a common basis, not a mandatory route primitive\n- use a payoff callback\
+    \ on spot values at exercise dates, not on the full path matrix\n\nCurrent concrete\
+    \ example using the implemented `longstaff_schwartz(...)` primitive:\n\n```python\n\
+    def evaluate(self, market_state):\n    from trellis.core.date_utils import year_fraction\n\
+    \    from trellis.core.differentiable import get_numpy\n    from trellis.models.monte_carlo.engine\
+    \ import MonteCarloEngine\n    from trellis.models.monte_carlo.lsm import longstaff_schwartz\n\
+    \    from trellis.models.monte_carlo.schemes import LaguerreBasis\n    from trellis.models.processes.gbm\
+    \ import GBM\n\n    np = get_numpy()\n    spec = self._spec\n    T = year_fraction(market_state.settlement,\
+    \ spec.expiry_date, spec.day_count)\n    if T <= 0:\n        return 0.0\n\n  \
+    \  r = float(market_state.discount.zero_rate(T))\n    sigma = float(market_state.vol_surface.black_vol(T,\
+    \ spec.strike))\n\n    process = GBM(mu=r, sigma=sigma)\n    engine = MonteCarloEngine(\n\
+    \        process,\n        n_paths=50000,\n        n_steps=max(50, int(T * 100)),\n\
+    \        seed=42,\n        method=\"exact\",\n    )\n    paths = engine.simulate(spec.spot,\
+    \ T)\n    dt = T / engine.n_steps\n    exercise_dates = list(range(1, engine.n_steps\
+    \ + 1))\n    basis = LaguerreBasis()  # example continuation basis, not mandatory\n\
+    \n    def exercise_payoff(spots):\n        return np.maximum(spec.strike - spots,\
+    \ 0.0)\n\n    return float(\n        longstaff_schwartz(\n            paths,\n\
+    \            exercise_dates,\n            exercise_payoff,\n            discount_rate=r,\n\
+    \            dt=dt,\n            basis_fn=basis,\n        )\n    )\n```\n"
 qmc:
-  description: Low-discrepancy Monte Carlo accelerators built on Sobol sampling and optional Brownian-bridge path construction
+  description: Low-discrepancy Monte Carlo accelerators built on Sobol sampling and
+    optional Brownian-bridge path construction
   applicable_instruments:
-    - autocallable
-    - asian_option
-    - barrier_option
-    - variance_swap
+  - autocallable
+  - asian_option
+  - barrier_option
+  - variance_swap
   version: canonical
-  template: |
-    ## Cookbook: QMC (Sobol accelerators)
-    Use this pattern when plain Monte Carlo is already appropriate but you want
-    lower-variance sampling via low-discrepancy sequences.
-
-    This family currently provides Sobol normal draws and Brownian-bridge
-    construction helpers. It does NOT provide a separate generic pricing engine.
-    Estimation and payoff logic remain Monte Carlo-style.
-
-    ```python
-    def evaluate(self, market_state):
-        from trellis.core.date_utils import year_fraction
-        from trellis.core.differentiable import get_numpy
-        from trellis.models.qmc import sobol_normals
-
-        np = get_numpy()
-        spec = self._spec
-        T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)
-        if T <= 0:
-            return 0.0
-
-        r = float(market_state.discount.zero_rate(T))
-        sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
-
-        n_paths = 4096  # Sobol is best behaved for power-of-two sample counts
-        n_steps = max(64, int(T * 252))
-        dt = T / n_steps
-
-        Z = sobol_normals(n_paths, n_steps)
-        log_returns = (r - 0.5 * sigma**2) * dt + sigma * np.sqrt(dt) * Z
-        log_paths = np.cumsum(log_returns, axis=1)
-        spots = spec.spot * np.exp(
-            np.concatenate([np.zeros((n_paths, 1)), log_paths], axis=1)
-        )
-
-        # >>> INSTRUMENT-SPECIFIC: compute payoff from full paths <<<
-        payoffs = np.maximum(spots[:, -1] - spec.strike, 0.0) * spec.notional
-        discounted = np.exp(-r * T) * payoffs
-        return float(np.mean(discounted))
-    ```
-
+  template: "## Cookbook: QMC (Sobol accelerators)\nUse this pattern when plain Monte\
+    \ Carlo is already appropriate but you want\nlower-variance sampling via low-discrepancy\
+    \ sequences.\n\nThis family currently provides Sobol normal draws and Brownian-bridge\n\
+    construction helpers. It does NOT provide a separate generic pricing engine.\n\
+    Estimation and payoff logic remain Monte Carlo-style.\n\n```python\ndef evaluate(self,\
+    \ market_state):\n    from trellis.core.date_utils import year_fraction\n    from\
+    \ trellis.core.differentiable import get_numpy\n    from trellis.models.qmc import\
+    \ sobol_normals\n\n    np = get_numpy()\n    spec = self._spec\n    T = year_fraction(market_state.settlement,\
+    \ spec.expiry_date, spec.day_count)\n    if T <= 0:\n        return 0.0\n\n  \
+    \  r = float(market_state.discount.zero_rate(T))\n    sigma = float(market_state.vol_surface.black_vol(T,\
+    \ spec.strike))\n\n    n_paths = 4096  # Sobol is best behaved for power-of-two\
+    \ sample counts\n    n_steps = max(64, int(T * 252))\n    dt = T / n_steps\n\n\
+    \    Z = sobol_normals(n_paths, n_steps)\n    log_returns = (r - 0.5 * sigma**2)\
+    \ * dt + sigma * np.sqrt(dt) * Z\n    log_paths = np.cumsum(log_returns, axis=1)\n\
+    \    spots = spec.spot * np.exp(\n        np.concatenate([np.zeros((n_paths, 1)),\
+    \ log_paths], axis=1)\n    )\n\n    # >>> INSTRUMENT-SPECIFIC: compute payoff\
+    \ from full paths <<<\n    payoffs = np.maximum(spots[:, -1] - spec.strike, 0.0)\
+    \ * spec.notional\n    discounted = np.exp(-r * T) * payoffs\n    return float(np.mean(discounted))\n\
+    ```\n"
 copula:
   description: Correlated-default pricing for basket credit and tranche products
   applicable_instruments:
-    - cdo
-    - nth_to_default
+  - cdo
+  - nth_to_default
   version: canonical
-  template: |
-    ## Cookbook: Copula (correlated defaults)
-    Use this pattern for portfolio credit instruments.
-
-    ```python
-    def evaluate(self, market_state):
-        from trellis.core.date_utils import year_fraction
-        from trellis.models.copulas.factor import FactorCopula
-
-        spec = self._spec
-        T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
-        marginal_prob = 1.0 - float(market_state.credit_curve.survival_probability(T))
-
-        copula = FactorCopula(n_names=spec.n_names, correlation=spec.correlation)
-        losses, probs = copula.loss_distribution(marginal_prob)
-
-        # >>> INSTRUMENT-SPECIFIC: compute tranche or basket loss functional <<<
-        tranche_el = 0.0
-        for n_defaults, prob in zip(losses, probs):
-            portfolio_loss = n_defaults / spec.n_names
-            tranche_loss = max(
-                0.0,
-                min(portfolio_loss - spec.attachment, spec.detachment - spec.attachment),
-            )
-            tranche_el += prob * tranche_loss
-
-        df = float(market_state.discount.discount(T))
-        tranche_pv = spec.notional * tranche_el * df
-        return tranche_pv
-    ```
-
+  template: "## Cookbook: Copula (correlated defaults)\nUse this pattern for portfolio\
+    \ credit instruments.\n\n```python\ndef evaluate(self, market_state):\n    from\
+    \ trellis.core.date_utils import year_fraction\n    from trellis.models.copulas.factor\
+    \ import FactorCopula\n\n    spec = self._spec\n    T = year_fraction(market_state.settlement,\
+    \ spec.end_date, spec.day_count)\n    marginal_prob = 1.0 - float(market_state.credit_curve.survival_probability(T))\n\
+    \n    copula = FactorCopula(n_names=spec.n_names, correlation=spec.correlation)\n\
+    \    losses, probs = copula.loss_distribution(marginal_prob)\n\n    # >>> INSTRUMENT-SPECIFIC:\
+    \ compute tranche or basket loss functional <<<\n    tranche_el = 0.0\n    for\
+    \ n_defaults, prob in zip(losses, probs):\n        portfolio_loss = n_defaults\
+    \ / spec.n_names\n        tranche_loss = max(\n            0.0,\n            min(portfolio_loss\
+    \ - spec.attachment, spec.detachment - spec.attachment),\n        )\n        tranche_el\
+    \ += prob * tranche_loss\n\n    df = float(market_state.discount.discount(T))\n\
+    \    tranche_pv = spec.notional * tranche_el * df\n    return tranche_pv\n```\n"
 waterfall:
-  description: Structured-cashflow distribution and discounted tranche valuation for MBS/ABS/CLO-style products
+  description: Structured-cashflow distribution and discounted tranche valuation for
+    MBS/ABS/CLO-style products
   applicable_instruments:
-    - mbs
-    - abs
-    - clo
+  - mbs
+  - abs
+  - clo
   version: canonical
-  template: |
-    ## Cookbook: Waterfall (structured products)
-    Use this pattern for MBS, ABS, CLO, and other structured cashflow products.
-
-    ```python
-    def evaluate(self, market_state):
-        from trellis.models.cashflow_engine.waterfall import Tranche, Waterfall
-        from trellis.models.cashflow_engine.prepayment import PSA
-        from trellis.models.cashflow_engine.amortization import level_pay
-
-        spec = self._spec
-        monthly_rate = spec.coupon / 12.0
-        base_schedule = level_pay(spec.notional, monthly_rate, spec.term_months)
-
-        prepay = PSA(speed=spec.psa_speed)
-        adjusted = []
-        balance = spec.notional
-        for month, (interest, principal) in enumerate(base_schedule, 1):
-            smm = prepay.smm(month)
-            prepaid = balance * smm
-            total_principal = min(principal + prepaid, balance)
-            adjusted.append((interest, total_principal))
-            balance -= total_principal
-            if balance <= 0:
-                break
-
-        # >>> INSTRUMENT-SPECIFIC: define tranche stack and target tranche <<<
-        tranches = [
-            Tranche("A", spec.notional * 0.8, spec.coupon_a, subordination=0),
-            Tranche("B", spec.notional * 0.2, spec.coupon_b, subordination=1),
-        ]
-        waterfall = Waterfall(tranches)
-        distributions = waterfall.run(adjusted, period=1 / 12)
-
-        pv = 0.0
-        for period_idx, dist in enumerate(distributions, 1):
-            if spec.tranche_name not in dist:
-                continue
-            tranche_cash = dist[spec.tranche_name]["interest"] + dist[spec.tranche_name]["principal"]
-            if tranche_cash <= 0:
-                continue
-            t = period_idx / 12.0
-            pv += tranche_cash * float(market_state.discount.discount(t))
-
-        return pv
-    ```
-
+  template: "## Cookbook: Waterfall (structured products)\nUse this pattern for MBS,\
+    \ ABS, CLO, and other structured cashflow products.\n\n```python\ndef evaluate(self,\
+    \ market_state):\n    from trellis.models.cashflow_engine.waterfall import Tranche,\
+    \ Waterfall\n    from trellis.models.cashflow_engine.prepayment import PSA\n \
+    \   from trellis.models.cashflow_engine.amortization import level_pay\n\n    spec\
+    \ = self._spec\n    monthly_rate = spec.coupon / 12.0\n    base_schedule = level_pay(spec.notional,\
+    \ monthly_rate, spec.term_months)\n\n    prepay = PSA(speed=spec.psa_speed)\n\
+    \    adjusted = []\n    balance = spec.notional\n    for month, (interest, principal)\
+    \ in enumerate(base_schedule, 1):\n        smm = prepay.smm(month)\n        prepaid\
+    \ = balance * smm\n        total_principal = min(principal + prepaid, balance)\n\
+    \        adjusted.append((interest, total_principal))\n        balance -= total_principal\n\
+    \        if balance <= 0:\n            break\n\n    # >>> INSTRUMENT-SPECIFIC:\
+    \ define tranche stack and target tranche <<<\n    tranches = [\n        Tranche(\"\
+    A\", spec.notional * 0.8, spec.coupon_a, subordination=0),\n        Tranche(\"\
+    B\", spec.notional * 0.2, spec.coupon_b, subordination=1),\n    ]\n    waterfall\
+    \ = Waterfall(tranches)\n    distributions = waterfall.run(adjusted, period=1\
+    \ / 12)\n\n    pv = 0.0\n    for period_idx, dist in enumerate(distributions,\
+    \ 1):\n        if spec.tranche_name not in dist:\n            continue\n     \
+    \   tranche_cash = dist[spec.tranche_name][\"interest\"] + dist[spec.tranche_name][\"\
+    principal\"]\n        if tranche_cash <= 0:\n            continue\n        t =\
+    \ period_idx / 12.0\n        pv += tranche_cash * float(market_state.discount.discount(t))\n\
+    \n    return pv\n```\n"
 pde_solver:
-  description: One-dimensional finite-difference theta-method pricing with optional obstacle handling
+  description: One-dimensional finite-difference theta-method pricing with optional
+    obstacle handling
   applicable_instruments:
-    - european_option
-    - american_option
-    - barrier_option
+  - european_option
+  - american_option
+  - barrier_option
   version: canonical
-  template: |
-    ## Cookbook: PDE (finite difference theta-method)
-    Use this pattern for low-dimensional Markov claims where a 1D PDE is natural.
-
-    For plain European call/put equity routes, prefer the checked-in helper
-    `price_vanilla_equity_option_pde(market_state, spec, theta=...)` from
-    `trellis.models.equity_option_pde` so the adapter stays thin.
-
-    ```python
-    def evaluate(self, market_state):
-        from trellis.core.date_utils import year_fraction
-        from trellis.models.pde.grid import Grid
-        from trellis.models.pde.theta_method import theta_method_1d
-        from trellis.models.pde.operator import BlackScholesOperator
-        import numpy as np
-
-        spec = self._spec
-        T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)
-        r = float(market_state.discount.zero_rate(T))
-        sigma = float(market_state.vol_surface.black_vol(T, spec.strike))
-
-        S_max = 4.0 * spec.spot
-        n_x = 201
-        n_t = max(200, int(round(T * 252)))
-        grid = Grid(x_min=0.0, x_max=S_max, n_x=n_x, T=T, n_t=n_t)
-        # >>> INSTRUMENT-SPECIFIC: define terminal payoff and boundary conditions <<<
-        terminal = np.maximum(grid.x - spec.strike, 0.0)
-        op = BlackScholesOperator(lambda s, t: sigma, lambda t: r)
-
-        V = theta_method_1d(
-            grid,
-            op,
-            terminal,
-            theta=0.5,
-            lower_bc_fn=lambda t: 0.0,
-            upper_bc_fn=lambda t: S_max - spec.strike * np.exp(-r * (T - t)),
-        )
-
-        # For American puts, pass exercise_values and exercise_fn=max.
-        # For barrier or digital payoffs, use rannacher_timesteps to smooth
-        # the first backward steps and keep the boundary conditions explicit.
-
-        price = float(np.interp(spec.spot, grid.x, V))
-        return price * spec.notional
-    ```
-
+  template: "## Cookbook: PDE (finite difference theta-method)\nUse this pattern for\
+    \ low-dimensional Markov claims where a 1D PDE is natural.\n\nFor plain European\
+    \ call/put equity routes, prefer the checked-in helper\n`price_vanilla_equity_option_pde(market_state,\
+    \ spec, theta=...)` from\n`trellis.models.equity_option_pde` so the adapter stays\
+    \ thin.\n\n```python\ndef evaluate(self, market_state):\n    from trellis.core.date_utils\
+    \ import year_fraction\n    from trellis.models.pde.grid import Grid\n    from\
+    \ trellis.models.pde.theta_method import theta_method_1d\n    from trellis.models.pde.operator\
+    \ import BlackScholesOperator\n    import numpy as np\n\n    spec = self._spec\n\
+    \    T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)\n\
+    \    r = float(market_state.discount.zero_rate(T))\n    sigma = float(market_state.vol_surface.black_vol(T,\
+    \ spec.strike))\n\n    S_max = 4.0 * spec.spot\n    n_x = 201\n    n_t = max(200,\
+    \ int(round(T * 252)))\n    grid = Grid(x_min=0.0, x_max=S_max, n_x=n_x, T=T,\
+    \ n_t=n_t)\n    # >>> INSTRUMENT-SPECIFIC: define terminal payoff and boundary\
+    \ conditions <<<\n    terminal = np.maximum(grid.x - spec.strike, 0.0)\n    op\
+    \ = BlackScholesOperator(lambda s, t: sigma, lambda t: r)\n\n    V = theta_method_1d(\n\
+    \        grid,\n        op,\n        terminal,\n        theta=0.5,\n        lower_bc_fn=lambda\
+    \ t: 0.0,\n        upper_bc_fn=lambda t: S_max - spec.strike * np.exp(-r * (T\
+    \ - t)),\n    )\n\n    # For American puts, pass exercise_values and exercise_fn=max.\n\
+    \    # For barrier or digital payoffs, use rannacher_timesteps to smooth\n   \
+    \ # the first backward steps and keep the boundary conditions explicit.\n\n  \
+    \  price = float(np.interp(spec.spot, grid.x, V))\n    return price * spec.notional\n\
+    ```\n"
 fft_pricing:
-  description: Characteristic-function pricing for European-style options under models such as Heston
+  description: Characteristic-function pricing for European-style options under models
+    such as Heston
   applicable_instruments:
-    - heston_option
-    - european_option
+  - heston_option
+  - european_option
   version: canonical
-  template: |
-    ## Cookbook: FFT/COS Transform Pricing
-    Use this pattern for models with a stable characteristic function.
-
-    ```python
-    def evaluate(self, market_state):
-        from trellis.core.date_utils import year_fraction
-        from trellis.models.transforms import cos_price
-        from trellis.models.processes.heston import Heston
-
-        spec = self._spec
-        T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)
-        r = float(market_state.discount.zero_rate(T))
-
-        # >>> INSTRUMENT-SPECIFIC: set model parameters honestly and explicitly <<<
-        process = Heston(
-            mu=r,
-            kappa=spec.kappa,
-            theta=spec.theta,
-            xi=spec.xi,
-            rho=spec.rho,
-            v0=spec.v0,
-        )
-
-        # COS expects the characteristic function of log(S_T / S0).
-        def char_fn(u):
-            return process.characteristic_function(u, T)
-
-        price = cos_price(
-            char_fn=char_fn,
-            S0=spec.spot,
-            K=spec.strike,
-            T=T,
-            r=r,
-            option_type="call",  # >>> INSTRUMENT-SPECIFIC: choose call or put <<<
-        )
-        return float(price) * spec.notional
-    ```
+  template: "## Cookbook: FFT/COS Transform Pricing\nUse this pattern for models with\
+    \ a stable characteristic function.\n\n```python\ndef evaluate(self, market_state):\n\
+    \    from trellis.core.date_utils import year_fraction\n    from trellis.models.transforms\
+    \ import cos_price\n    from trellis.models.processes.heston import Heston\n\n\
+    \    spec = self._spec\n    T = year_fraction(market_state.settlement, spec.expiry_date,\
+    \ spec.day_count)\n    r = float(market_state.discount.zero_rate(T))\n\n    #\
+    \ >>> INSTRUMENT-SPECIFIC: set model parameters honestly and explicitly <<<\n\
+    \    process = Heston(\n        mu=r,\n        kappa=spec.kappa,\n        theta=spec.theta,\n\
+    \        xi=spec.xi,\n        rho=spec.rho,\n        v0=spec.v0,\n    )\n\n  \
+    \  # COS expects the characteristic function of log(S_T / S0).\n    def char_fn(u):\n\
+    \        return process.characteristic_function(u, T)\n\n    price = cos_price(\n\
+    \        char_fn=char_fn,\n        S0=spec.spot,\n        K=spec.strike,\n   \
+    \     T=T,\n        r=r,\n        option_type=\"call\",  # >>> INSTRUMENT-SPECIFIC:\
+    \ choose call or put <<<\n    )\n    return float(price) * spec.notional\n```\n"
+credit:
+  template: "class CDSPricer:\n    def __init__(self, spec):\n        self._spec =\
+    \ spec\n\n    @property\n    def requirements(self) -> set[str]:\n        return\
+    \ {\"credit_curve\", \"discount_curve\"}\n\n    def evaluate(self, market_state):\n\
+    \        cc = market_state.credit_curve\n        dc = market_state.discount\n\
+    \        if cc is None:\n            raise ValueError(\"CDS pricing requires a\
+    \ credit curve\")\n        if dc is None:\n            raise ValueError(\"CDS\
+    \ pricing requires a discount curve\")\n\n        # INSTRUMENT-SPECIFIC: extract\
+    \ spread / notional / recovery / dates\n        spread = float(self._spec.spread)\n\
+    \        if abs(spread) > 1.0:\n            spread *= 1e-4  # INSTRUMENT-SPECIFIC:\
+    \ normalize bps to rate\n\n        notional = float(self._spec.notional)\n   \
+    \     recovery = float(self._spec.recovery)\n        loss_given_default = 1.0\
+    \ - recovery\n\n        # INSTRUMENT-SPECIFIC: build schedule and compute year\
+    \ fractions\n        payment_dates = list(generate_schedule(self._spec.start_date,\
+    \ self._spec.end_date, self._spec.frequency))\n        accruals = []\n       \
+    \ prev = self._spec.start_date\n        for d in payment_dates:\n            accruals.append(year_fraction(prev,\
+    \ d, self._spec.day_count))\n            prev = d\n\n        # INSTRUMENT-SPECIFIC:\
+    \ value premium and protection legs\n        premium_leg = 0.0\n        protection_leg\
+    \ = 0.0\n        for d, dt in zip(payment_dates, accruals):\n            df =\
+    \ dc.df(d)\n            surv = cc.survival_probability(d)\n            premium_leg\
+    \ += df * surv * dt\n            # INSTRUMENT-SPECIFIC: replace with default-time\
+    \ integration / bootstrap-consistent formula\n            protection_leg += df\
+    \ * (1.0 - surv) * loss_given_default\n\n        return notional * (spread * premium_leg\
+    \ - protection_leg)\n"
+  description: Auto-extracted from successful build
+  applicable_instruments: []
+  version: auto

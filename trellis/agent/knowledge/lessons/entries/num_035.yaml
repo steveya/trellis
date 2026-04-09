@@ -1,0 +1,31 @@
+category: numerical
+title: Fix try-except indentation
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-06T17:36:39.850788'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260406_173641_heston_option_fft_pricing.yaml
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - discounting
+  - stochastic_vol
+  - vol_surface_dependence
+  - characteristic_function
+  instrument: []
+  error_signature: null
+symptom: Build fails with SyntaxError messages like 'expected except or finally block'
+  at lines containing an `if` nested under `try` without proper indentation.
+root_cause: The generated pricing module produced malformed Python control flow, typically
+  by emitting `if` statements at the same indentation level as `try` or by inserting
+  statements before the `except` clause. This happens when template assembly is not
+  validated before execution.
+fix: Generate the pricing function with strict syntax-aware templates and run a parse/compile
+  check before returning the module. Keep all conditional logic fully inside the `try`
+  block or fully outside it, and prefer minimal guarded sections around curve access
+  and model parameter extraction.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: num_035

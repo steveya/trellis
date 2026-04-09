@@ -1,0 +1,30 @@
+category: market_data
+title: Remove unsupported market_state arg
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T19:06:05.898441'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_190607_european_option_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  - discounting
+  - mean_reversion
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'build_rate_lattice() raised TypeError: got an unexpected keyword argument
+  ''market_state'' during smoke test.'
+root_cause: The tree builder API was called with a parameter name that is not part
+  of the actual lattice constructor contract. This indicates a mismatch between the
+  pricing harness and the underlying rate_tree implementation signature.
+fix: 'Align the call site with the real lattice API: pass only supported arguments
+  and read market inputs through the approved market-data accessors. If the tree needs
+  market context, thread it via the expected state object or extract discount/vol
+  inputs before constructing the lattice.'
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: md_161

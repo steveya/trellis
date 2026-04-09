@@ -1,0 +1,36 @@
+category: volatility
+title: Tree Must React to Vol Bumps
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-08T15:37:44.747648'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_153746_swaption_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  - floating_coupons
+  - discounting
+  - vol_surface_dependence
+  - mean_reversion
+  - fixed_coupons
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: Pricing the swaption at 5% and 40% volatility produced identical values,
+  with observed vega change equal to 0.0000%.
+root_cause: The Hull-White tree payoff path ignored the volatility input or failed
+  to propagate it through calibration/backward induction, so the constructed tree
+  price was insensitive to the vol parameter. For an option-like instrument, this
+  indicates the lattice was effectively pricing a deterministic swap value rather
+  than the embedded optionality.
+fix: Ensure the tree calibration and payoff evaluation consume the volatility term
+  in the state transition probabilities or short-rate node construction, and reprice
+  after each vol bump using the same calibrated curve inputs. Verify the backward
+  induction includes the option exercise value so price changes monotonically with
+  vol.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: vol_021

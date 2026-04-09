@@ -21,7 +21,12 @@ from trellis.models.calibration.solve_request import (
     build_solve_replay_artifact,
     execute_solve_request,
 )
-from trellis.models.calibration.quote_maps import QuoteMapSpec
+from trellis.models.calibration.quote_maps import (
+    QuoteAxisSpec,
+    QuoteMapSpec,
+    QuoteSemanticsSpec,
+    QuoteUnitSpec,
+)
 from trellis.models.processes.sabr import SABRProcess
 
 np = get_numpy()
@@ -39,7 +44,24 @@ def _normalize_float_tuple(values: Sequence[float]) -> tuple[float, ...]:
 
 def _default_implied_vol_quote_map_spec() -> QuoteMapSpec:
     """Return the shared implied-vol quote-map spec used by vol workflows."""
-    return QuoteMapSpec(quote_family="implied_vol", convention="black")
+    return QuoteMapSpec(
+        quote_family="implied_vol",
+        convention="black",
+        semantics=QuoteSemanticsSpec(
+            quote_family="implied_vol",
+            convention="black",
+            quote_subject="swaption",
+            axes=(
+                QuoteAxisSpec("expiry", axis_kind="time_to_expiry", unit="years"),
+                QuoteAxisSpec("strike", axis_kind="swap_rate", unit="decimal_rate"),
+            ),
+            unit=QuoteUnitSpec(
+                unit_name="decimal_volatility",
+                value_domain="volatility",
+                scaling="absolute",
+            ),
+        ),
+    )
 
 
 @dataclass(frozen=True)

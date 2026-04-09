@@ -9,6 +9,8 @@ from trellis.agent.family_lowering_ir import (
     AnalyticalBlack76IR,
     CorrelatedBasketMonteCarloIR,
     CreditDefaultSwapIR,
+    EventAwareMonteCarloIR,
+    EventAwarePDEIR,
     ExerciseLatticeIR,
     NthToDefaultIR,
     VanillaEquityPDEIR,
@@ -267,6 +269,26 @@ def _timeline_roles_for(family_ir) -> tuple[str, ...]:
 
 def _state_obligations_for(family_ir) -> tuple[str, ...]:
     """Return state obligations implied by the family IR."""
+    if isinstance(family_ir, EventAwareMonteCarloIR):
+        return _tuple_unique(
+            (
+                family_ir.state_spec.state_variable,
+                *(family_ir.state_spec.state_tags or ()),
+                family_ir.path_requirement_spec.requirement_kind,
+                *(family_ir.path_requirement_spec.reducer_kinds or ()),
+                *(family_ir.path_requirement_spec.stored_fields or ()),
+                *(f"semantic_transform:{kind}" for kind in getattr(getattr(family_ir, "event_program", None), "transform_kinds", ()) or ()),
+            )
+        )
+    if isinstance(family_ir, EventAwarePDEIR):
+        return _tuple_unique(
+            (
+                family_ir.state_spec.state_variable,
+                *(family_ir.state_spec.state_tags or ()),
+                family_ir.boundary_spec.terminal_condition_kind,
+                *(f"semantic_event_kind:{kind}" for kind in getattr(getattr(family_ir, "event_program", None), "event_kinds", ()) or ()),
+            )
+        )
     if isinstance(family_ir, ExerciseLatticeIR):
         return _tuple_unique(
             (
@@ -296,6 +318,55 @@ def _state_obligations_for(family_ir) -> tuple[str, ...]:
 
 def _control_obligations_for(family_ir) -> tuple[str, ...]:
     """Return control semantics implied by the family IR."""
+    if isinstance(family_ir, EventAwareMonteCarloIR):
+        semantic_control = getattr(family_ir, "control_program", None)
+        obligations = [
+            f"control_style:{family_ir.control_spec.control_style}",
+            f"controller_role:{family_ir.control_spec.controller_role}",
+            f"measure_family:{family_ir.measure_spec.measure_family}",
+            f"numeraire_binding:{family_ir.measure_spec.numeraire_binding}",
+        ]
+        if semantic_control is not None:
+            obligations.extend(
+                (
+                    f"semantic_control_style:{semantic_control.control_style}",
+                    f"semantic_controller_role:{semantic_control.controller_role}",
+                )
+            )
+        obligations.extend(
+            f"semantic_event_kind:{kind}"
+            for kind in getattr(getattr(family_ir, "event_program", None), "event_kinds", ()) or ()
+        )
+        obligations.extend(f"event_kind:{kind}" for kind in family_ir.event_kinds)
+        calibration_binding = getattr(family_ir, "calibration_binding", None)
+        if calibration_binding is not None:
+            model_family = str(getattr(calibration_binding, "model_family", "") or "").strip()
+            quote_family = str(getattr(calibration_binding, "quote_family", "") or "").strip()
+            if model_family:
+                obligations.append(f"calibration_model:{model_family}")
+            if quote_family:
+                obligations.append(f"quote_family:{quote_family}")
+            if bool(getattr(calibration_binding, "requires_quote_normalization", False)):
+                obligations.append("requires_quote_normalization:true")
+        return _tuple_unique(obligations)
+    if isinstance(family_ir, EventAwarePDEIR):
+        semantic_control = getattr(family_ir, "control_program", None)
+        return _tuple_unique(
+            (
+                f"control_style:{family_ir.control_spec.control_style}",
+                f"controller_role:{family_ir.control_spec.controller_role}",
+                *(
+                    (
+                        f"semantic_control_style:{semantic_control.control_style}",
+                        f"semantic_controller_role:{semantic_control.controller_role}",
+                    )
+                    if semantic_control is not None
+                    else ()
+                ),
+                *(f"semantic_event_kind:{kind}" for kind in getattr(getattr(family_ir, "event_program", None), "event_kinds", ()) or ()),
+                *(f"event_transform:{kind}" for kind in family_ir.event_transform_kinds),
+            )
+        )
     if isinstance(family_ir, ExerciseLatticeIR):
         return _tuple_unique(
             (
@@ -304,6 +375,7 @@ def _control_obligations_for(family_ir) -> tuple[str, ...]:
                 f"exercise_style:{family_ir.exercise_style}",
                 f"schedule_role:{family_ir.schedule_role}",
                 f"decision_phase:{family_ir.decision_phase}",
+                *(f"semantic_event_kind:{kind}" for kind in getattr(getattr(family_ir, "event_program", None), "event_kinds", ()) or ()),
             )
         )
     if isinstance(family_ir, CorrelatedBasketMonteCarloIR):
@@ -341,11 +413,29 @@ def _construction_steps_for(*, lane_family: str, family_ir) -> tuple[str, ...]:
             f"Construct the terminal `{family_ir.option_type}` claim with `{family_ir.kernel_symbol}`.",
             "Keep the implementation path-static and discount-consistent; do not introduce simulation or rollback.",
         )
+    if isinstance(family_ir, EventAwareMonteCarloIR):
+        process_family = family_ir.process_spec.process_family or "generic_state_process"
+        path_kind = family_ir.path_requirement_spec.requirement_kind or "terminal_only"
+        reducer_kind = family_ir.payoff_reducer_spec.reducer_kind or "path_payoff"
+        return (
+            f"Assemble a one-factor `{process_family}` simulation over `{family_ir.state_spec.state_variable or 'state'}`.",
+            f"Bind the reduced-state requirement `{path_kind}` and event kinds `{', '.join(family_ir.event_kinds) or 'none'}` before path generation.",
+            f"Aggregate the payoff through `{reducer_kind}` under the `{family_ir.measure_spec.measure_family}` measure before discount-consistent readout.",
+        )
     if isinstance(family_ir, VanillaEquityPDEIR):
         return (
             "Assemble a one-dimensional terminal payoff on the expiry timeline.",
             f"Build the PDE operator through `{family_ir.helper_symbol}` with theta={family_ir.theta:.1f}.",
             "Apply backward stepping and boundary conditions on the pricing grid before interpolating back to spot.",
+        )
+    if isinstance(family_ir, EventAwarePDEIR):
+        operator_family = family_ir.operator_spec.operator_family or "generic_1d"
+        terminal_kind = family_ir.boundary_spec.terminal_condition_kind or "terminal_condition"
+        control_style = family_ir.control_spec.control_style or "identity"
+        return (
+            f"Assemble a one-dimensional `{operator_family}` rollback state over `{family_ir.state_spec.state_variable or 'state'}`.",
+            f"Apply `{terminal_kind}` at maturity and schedule the typed event transforms: {', '.join(family_ir.event_transform_kinds) or 'none'}.",
+            f"Enforce `{control_style}` control semantics during backward stepping before reading out the price.",
         )
     if isinstance(family_ir, ExerciseLatticeIR):
         return (

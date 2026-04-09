@@ -128,6 +128,58 @@ class TestPlanStatic:
         assert plan.spec_schema is not None
         assert plan.spec_schema.class_name == "EuropeanOptionAnalyticalPayoff"
 
+    def test_explicit_zcb_option_instrument_beats_generic_european_option_specialization(self):
+        plan = _plan_static(
+            "European call option on a zero-coupon bond",
+            {"discount_curve", "black_vol_surface"},
+            {"discount_curve", "black_vol_surface"},
+            set(),
+            instrument_type="zcb_option",
+        )
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.class_name == "ZCBOptionPayoff"
+        assert plan.spec_schema.spec_name == "ZCBOptionSpec"
+
+    @pytest.mark.parametrize(
+        ("description", "requirements", "instrument_type", "expected_class"),
+        [
+            (
+                "European best-of basket option on two equities",
+                {"discount_curve", "spot"},
+                "basket_option",
+                "BasketOptionPayoff",
+            ),
+            (
+                "European down-and-out barrier option",
+                {"discount_curve", "black_vol_surface"},
+                "barrier_option",
+                "BarrierOptionPayoff",
+            ),
+            (
+                "European arithmetic asian option",
+                {"discount_curve", "black_vol_surface"},
+                "asian_option",
+                "AsianOptionPayoff",
+            ),
+        ],
+    )
+    def test_explicit_family_specs_are_not_overridden_by_generic_european_specialization(
+        self,
+        description,
+        requirements,
+        instrument_type,
+        expected_class,
+    ):
+        plan = _plan_static(
+            description,
+            requirements,
+            requirements,
+            set(),
+            instrument_type=instrument_type,
+        )
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.class_name == expected_class
+
     def test_local_vol_description_gets_deterministic_spec(self):
         plan = _plan_static(
             "Build a pricer for: European equity call under local vol: PDE vs MC",
@@ -151,6 +203,19 @@ class TestPlanStatic:
         assert plan.spec_schema is not None
         assert plan.spec_schema.class_name == "QuantoOptionAnalyticalPayoff"
         assert plan.steps[0].module_path.endswith("quantooptionanalytical.py")
+
+    def test_cds_monte_carlo_specialization_still_refines_explicit_credit_family(self):
+        plan = _plan_static(
+            "Single-name CDS priced with Monte Carlo",
+            {"discount_curve", "credit_curve"},
+            {"discount_curve", "credit_curve"},
+            set(),
+            instrument_type="cds",
+            preferred_method="monte_carlo",
+        )
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.class_name == "CDSPayoff"
+        assert any(field.name == "n_paths" for field in plan.spec_schema.fields)
 
 class TestPlanBuild:
 

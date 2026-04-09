@@ -37,7 +37,11 @@ from trellis.models.calibration.solve_request import (
 )
 from trellis.models.calibration.quote_maps import (
     CalibrationQuoteMap,
+    QuoteAxisSpec,
     QuoteMapSpec,
+    QuoteSemanticsSpec,
+    QuoteSettlementSpec,
+    QuoteUnitSpec,
     build_identity_quote_map,
     build_implied_vol_quote_map,
 )
@@ -491,9 +495,32 @@ def _hull_white_quote_map(
         "multi_curve_roles": roles,
         "quote_kind": instrument.quote_kind,
     }
+    settlement = QuoteSettlementSpec(
+        numeraire="discount_curve",
+        settlement_style="cash",
+        discount_curve_role="discount_curve",
+        forecast_curve_role="forecast_curve",
+        rate_index=str(instrument.rate_index or ""),
+    )
     if instrument.quote_kind == "price":
         return build_identity_quote_map(
-            QuoteMapSpec(quote_family="price"),
+            QuoteMapSpec(
+                quote_family="price",
+                semantics=QuoteSemanticsSpec(
+                    quote_family="price",
+                    quote_subject="swaption",
+                    axes=(
+                        QuoteAxisSpec("expiry", axis_kind="time_to_expiry", unit="years"),
+                        QuoteAxisSpec("underlier_tenor", axis_kind="swap_tenor", unit="years"),
+                    ),
+                    unit=QuoteUnitSpec(
+                        unit_name="present_value",
+                        value_domain="price",
+                        scaling="absolute",
+                    ),
+                    settlement=settlement,
+                ),
+            ),
             source_ref="_hull_white_quote_map",
             assumptions=assumptions,
             metadata=metadata,
@@ -508,6 +535,22 @@ def _hull_white_quote_map(
             float(price),
             tol=1e-10,
         ).calibrated_vol,
+        semantics=QuoteSemanticsSpec(
+            quote_family="implied_vol",
+            convention="black",
+            quote_subject="swaption",
+            axes=(
+                QuoteAxisSpec("expiry", axis_kind="time_to_expiry", unit="years"),
+                QuoteAxisSpec("underlier_tenor", axis_kind="swap_tenor", unit="years"),
+                QuoteAxisSpec("strike", axis_kind="swap_rate", unit="decimal_rate"),
+            ),
+            unit=QuoteUnitSpec(
+                unit_name="decimal_volatility",
+                value_domain="volatility",
+                scaling="absolute",
+            ),
+            settlement=settlement,
+        ),
         source_ref="_hull_white_quote_map",
         assumptions=assumptions,
         metadata=metadata,
@@ -531,13 +574,40 @@ def _initial_hull_white_guess(
     sigma_seed = 0.01
     if first.quote_kind == "black_vol":
         sigma_seed = float(first.quote) * max(abs(r0), 1e-6)
-    elif market_state.vol_surface is not None:
-        option_horizon = year_fraction(settlement, first.exercise_date, first.day_count)
-        black_vol = float(
-            market_state.vol_surface.black_vol(max(option_horizon, 1e-6), max(abs(float(first.strike)), 1e-6))
-        )
-        sigma_seed = black_vol * max(abs(r0), 1e-6)
+    else:
+        try:
+            black_vol_seed = calibrate_swaption_black_vol(
+                _hull_white_swaption_like(first),
+                market_state,
+                float(first.quote),
+                tol=1e-10,
+            ).calibrated_vol
+            sigma_seed = float(black_vol_seed) * max(abs(r0), 1e-6)
+        except Exception:
+            sigma_seed = 0.01
     return 0.1, max(float(sigma_seed), 1e-6)
+
+
+def _clip_guess_to_bounds(
+    guess: tuple[float, float],
+    *,
+    mean_reversion_bounds: tuple[float | None, float | None],
+    sigma_bounds: tuple[float | None, float | None],
+) -> tuple[float, float]:
+    """Project one heuristic Hull-White seed onto the explicit solve bounds."""
+
+    def _clip(value: float, lower: float | None, upper: float | None) -> float:
+        clipped = float(value)
+        if lower is not None:
+            clipped = max(clipped, float(lower))
+        if upper is not None:
+            clipped = min(clipped, float(upper))
+        return clipped
+
+    return (
+        _clip(float(guess[0]), mean_reversion_bounds[0], mean_reversion_bounds[1]),
+        _clip(float(guess[1]), sigma_bounds[0], sigma_bounds[1]),
+    )
 
 
 def calibrate_hull_white(
@@ -577,6 +647,11 @@ def calibrate_hull_white(
         resolved_instruments,
         market_state,
         initial_guess=initial_guess,
+    )
+    start = _clip_guess_to_bounds(
+        start,
+        mean_reversion_bounds=mean_reversion_bounds,
+        sigma_bounds=sigma_bounds,
     )
 
     def vector_objective(params):
@@ -874,28 +949,21 @@ def _swaption_black76_price(
     vol: float,
 ) -> tuple[float, dict[str, object]]:
     """Return the Black76 swaption PV and a summary of the assembled terms."""
-    T, annuity, swap_rate, payment_count = swaption_terms(spec, market_state)
-    if T <= 0.0 or annuity <= 0.0:
-        return 0.0, {
-            "expiry_years": float(T),
-            "annuity": float(annuity),
-            "forward_swap_rate": float(swap_rate),
-            "payment_count": payment_count,
-            "option_type": "payer" if spec.is_payer else "receiver",
-        }
-
-    if spec.is_payer:
-        option_value = black76_call(swap_rate, spec.strike, vol, T)
-    else:
-        option_value = black76_put(swap_rate, spec.strike, vol, T)
-
-    pv = spec.notional * annuity * float(option_value)
-    return float(pv), {
-        "expiry_years": float(T),
+    expiry_years, annuity, forward_swap_rate, payment_count = swaption_terms(spec, market_state)
+    strike = float(spec.strike)
+    option_value = (
+        black76_call(forward_swap_rate, strike, float(vol), expiry_years)
+        if spec.is_payer
+        else black76_put(forward_swap_rate, strike, float(vol), expiry_years)
+    )
+    pv = float(spec.notional) * float(annuity) * float(option_value)
+    return pv, {
+        "expiry_years": float(expiry_years),
         "annuity": float(annuity),
-        "forward_swap_rate": float(swap_rate),
-        "payment_count": payment_count,
+        "forward_swap_rate": float(forward_swap_rate),
+        "payment_count": int(payment_count),
         "option_type": "payer" if spec.is_payer else "receiver",
+        "effective_strike": strike,
     }
 
 

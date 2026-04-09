@@ -1,0 +1,32 @@
+category: numerical
+title: Fix broken try-except blocks
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-07T10:11:01.821077'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_101103_european_option_fft_pricing.yaml
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - discounting
+  - characteristic_function
+  - cos_method
+  - stochastic_vol
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Module build fails with SyntaxError at an `except Exception:` line because
+  the preceding `try` block is not closed or indented correctly.
+root_cause: The generated pricing code mixed transform-pricer fallbacks and error
+  handling with malformed indentation, leaving Python parser state inconsistent. This
+  typically happens when nested `try/except` branches are assembled programmatically
+  without a strict template.
+fix: Use a single, well-structured fallback chain with matching `try/except` blocks
+  and consistent indentation. Validate the emitted source before build, and keep FFT/COS/BS
+  fallback logic in separate helper functions rather than inline nested exception
+  handling.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: num_039

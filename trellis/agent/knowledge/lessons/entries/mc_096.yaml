@@ -1,0 +1,32 @@
+category: monte_carlo
+title: Reject non-recombining MC route
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-07T18:13:10.574006'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_181312_swaption_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  - discounting
+  - forward_rate
+  - mean_reversion
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: 'Build gate fails with `Route admissibility failed for monte_carlo_paths:
+  unsupported_state_tag:recombining_safe` before any paths are generated.'
+root_cause: The route selector assumed a path-simulation engine could be used without
+  checking the state-tag compatibility constraints. The product requires a non-recombining
+  state for simulation, but the build pipeline marked the route as recombining-safe
+  and blocked it.
+fix: Add an admissibility precheck that maps swaption MC to a non-recombining path
+  process and rejects recombining-safe tags only when incompatible. If the model must
+  remain tree-compatible, route to the HW tree instead of MC.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: mc_096

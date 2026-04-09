@@ -1,0 +1,27 @@
+category: monte_carlo
+title: Pass engine through MC wrapper
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:24:04.875428'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_162406_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Runtime error: price_event_aware_monte_carlo() got an unexpected keyword
+  argument ''engine''.'
+root_cause: The generated payoff/pricing call used a wrapper signature that does not
+  accept an 'engine' keyword. This usually happens when a Monte Carlo route is assembled
+  against an outdated or mismatched helper API.
+fix: Align the generated caller with the actual Monte Carlo helper signature and pass
+  the pricing engine only through supported parameters. Add a smoke test for the exact
+  wrapper invocation before finalizing the payoff assembly.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_107

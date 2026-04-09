@@ -1,0 +1,30 @@
+category: monte_carlo
+title: Use required MC primitive adapter
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T17:02:33.133703'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_170235_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: Build fails with assembly.required_primitive_missing because generated code
+  does not call trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo.
+root_cause: The payoff was generated as a direct implementation instead of a thin
+  adapter around the route’s required Monte Carlo primitive. The assembly checker
+  requires the selected engine primitive to appear in the generated code path, not
+  just equivalent custom logic.
+fix: Wrap the product payoff in a minimal adapter that delegates simulation and pricing
+  to price_event_aware_monte_carlo, passing the required market state and payoff parameters
+  through unchanged. Keep any variance-reduction logic as configuration on the primitive
+  route, not as a replacement implementation.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_117

@@ -39,7 +39,12 @@ from trellis.agent.quant import (
 )
 from trellis.agent.sensitivity_support import normalize_requested_outputs
 from trellis.agent.valuation_context import (
+    EngineModelSpec,
+    PotentialSpec,
+    RatesCurveRoleSpec,
+    SourceSpec,
     build_valuation_context,
+    canonical_engine_model_name,
     valuation_context_summary,
 )
 
@@ -142,6 +147,8 @@ class ComparisonMethodPlan:
 
     preferred_method: str
     pricing_plan: PricingPlan
+    semantic_contract: object | None = None
+    semantic_blueprint: object | None = None
     generation_plan: Any | None = None
     blocker_report: Any | None = None
     new_primitive_workflow: Any | None = None
@@ -793,9 +800,14 @@ def _compile_semantic_request(
     """Compile a semantic contract into execution artifacts."""
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
 
+    semantic_contract = _semantic_contract_with_preferred_method(
+        semantic_contract,
+        preferred_method=preferred_method,
+    )
     valuation_context = _valuation_context_for_request(
         request,
         semantic_contract=semantic_contract,
+        preferred_method=preferred_method,
     )
     semantic_blueprint = compile_semantic_contract(
         semantic_contract,
@@ -1139,21 +1151,34 @@ def _compile_comparison_request(request: PlatformRequest) -> CompiledPlatformReq
     if not request.description:
         raise ValueError("Comparison request requires a description")
 
+    semantic_contract = _draft_semantic_contract(
+        request.description,
+        instrument_type=request.instrument_type,
+    )
+    if semantic_contract is not None:
+        request = _request_with_semantic_metadata(request, semantic_contract)
+
     product_ir = decompose_to_ir(
         request.description,
         instrument_type=request.instrument_type,
     )
     method_plans = tuple(
         _compile_comparison_method_plan(
+            request=request,
             product_ir=product_ir,
             instrument_type=request.instrument_type,
             preferred_method=method,
+            semantic_contract=semantic_contract,
             knowledge_profile=_knowledge_profile_for_request(request),
             measures=request.measures,
             description=request.description,
         )
         for method in comparison_spec.method_families
     )
+    for plan in method_plans:
+        if plan.semantic_blueprint is not None:
+            product_ir = plan.semantic_blueprint.product_ir
+            break
     should_block = any(
         plan.blocker_report is not None and plan.blocker_report.should_block
         for plan in method_plans
@@ -1169,6 +1194,7 @@ def _compile_comparison_request(request: PlatformRequest) -> CompiledPlatformReq
             route_method="comparison",
             requires_build=not should_block,
         ),
+        semantic_contract=semantic_contract,
         product_ir=product_ir,
         knowledge_bundle={
             "summary": knowledge_summary,
@@ -1181,26 +1207,68 @@ def _compile_comparison_request(request: PlatformRequest) -> CompiledPlatformReq
 
 def _compile_comparison_method_plan(
     *,
+    request: PlatformRequest,
     product_ir,
     instrument_type: str | None,
     preferred_method: str,
+    semantic_contract=None,
     knowledge_profile: str = "default",
     measures: tuple[str, ...] = (),
     description: str | None = None,
 ) -> ComparisonMethodPlan:
     """Compile one candidate method route inside a multi-method comparison request."""
-    pricing_plan = select_pricing_method_for_product_ir(
-        product_ir,
-        preferred_method=preferred_method,
-        requested_measures=measures,
-        context_description=description,
-    )
+    semantic_blueprint = None
+    if semantic_contract is not None:
+        from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+
+        semantic_contract = _semantic_contract_with_preferred_method(
+            semantic_contract,
+            preferred_method=preferred_method,
+        )
+        semantic_blueprint = compile_semantic_contract(
+            semantic_contract,
+            valuation_context=_valuation_context_for_request(
+                request,
+                semantic_contract=semantic_contract,
+                preferred_method=preferred_method,
+            ),
+            requested_measures=measures,
+            preferred_method=preferred_method,
+        )
+        product_ir = semantic_blueprint.product_ir
+        pricing_plan = semantic_blueprint.pricing_plan
+        inspected_modules = semantic_blueprint.route_modules
+    else:
+        pricing_plan = select_pricing_method_for_product_ir(
+            product_ir,
+            preferred_method=preferred_method,
+            requested_measures=measures,
+            context_description=description,
+        )
+        inspected_modules = tuple(pricing_plan.method_modules)
+
     generation_plan = build_generation_plan(
         pricing_plan=pricing_plan,
         instrument_type=instrument_type,
-        inspected_modules=tuple(pricing_plan.method_modules),
+        inspected_modules=inspected_modules,
         product_ir=product_ir,
     )
+    if semantic_blueprint is not None and not getattr(semantic_blueprint, "primitive_routes", ()):
+        uncertainty_flags = tuple(
+            dict.fromkeys(
+                (
+                    *getattr(generation_plan, "uncertainty_flags", ()),
+                    "primitive_plan_not_available",
+                )
+            )
+        )
+        generation_plan = replace(
+            generation_plan,
+            primitive_plan=None,
+            blocker_report=None,
+            new_primitive_workflow=None,
+            uncertainty_flags=uncertainty_flags,
+        )
     knowledge_bundle = _shared_knowledge_bundle(
         product_ir,
         preferred_method=pricing_plan.method,
@@ -1210,6 +1278,8 @@ def _compile_comparison_method_plan(
     return ComparisonMethodPlan(
         preferred_method=preferred_method,
         pricing_plan=pricing_plan,
+        semantic_contract=semantic_contract,
+        semantic_blueprint=semantic_blueprint,
         generation_plan=generation_plan,
         blocker_report=generation_plan.blocker_report,
         new_primitive_workflow=generation_plan.new_primitive_workflow,
@@ -1362,15 +1432,127 @@ def _request_reporting_currency(
     return ""
 
 
+def _semantic_contract_with_preferred_method(
+    semantic_contract,
+    *,
+    preferred_method: str | None,
+):
+    """Return a method-specialized semantic contract when the family surface depends on method."""
+    if semantic_contract is None or not preferred_method:
+        return semantic_contract
+    semantic_id = str(getattr(semantic_contract, "semantic_id", "") or "").strip()
+    normalized_method = normalize_method(preferred_method)
+    if semantic_id != "rate_style_swaption":
+        return semantic_contract
+
+    from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
+
+    product = getattr(semantic_contract, "product", None)
+    if product is None:
+        return semantic_contract
+    return make_rate_style_swaption_contract(
+        description=str(getattr(semantic_contract, "description", "") or ""),
+        observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+        preferred_method=normalized_method,
+        exercise_style=str(getattr(product, "exercise_style", "european") or "european"),
+        term_fields=dict(getattr(product, "term_fields", {}) or {}),
+    )
+
+
+def _swaption_engine_model_spec(
+    semantic_contract,
+    *,
+    preferred_method: str | None,
+) -> EngineModelSpec | None:
+    """Return the bounded Hull-White engine-model spec for swaption comparison routes."""
+    semantic_id = str(getattr(semantic_contract, "semantic_id", "") or "").strip()
+    method = normalize_method(preferred_method) if preferred_method else ""
+    if semantic_id != "rate_style_swaption" or method not in {"analytical", "rate_tree", "monte_carlo"}:
+        return None
+
+    product = getattr(semantic_contract, "product", None)
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
+    comparison_model_name = str(term_fields.get("comparison_model_name") or "").strip().lower()
+    explicit_comparison_model = comparison_model_name == "hull_white_1f" or (
+        "comparison_mean_reversion" in term_fields and "comparison_sigma" in term_fields
+    )
+    if method == "analytical" and not explicit_comparison_model:
+        return None
+
+    rate_index = str(term_fields.get("rate_index") or "").strip()
+    backend_hint = (
+        "analytical"
+        if method == "analytical"
+        else "lattice" if method == "rate_tree" else "monte_carlo"
+    )
+    parameter_overrides: dict[str, object] = {}
+    for key, target in (
+        ("comparison_mean_reversion", "mean_reversion"),
+        ("comparison_sigma", "sigma"),
+        ("comparison_quote_family", "quote_family"),
+        ("comparison_quote_convention", "quote_convention"),
+        ("comparison_quote_subject", "quote_subject"),
+    ):
+        value = term_fields.get(key)
+        if value is not None and value != "":
+            parameter_overrides[target] = value
+    return EngineModelSpec(
+        model_family="rates",
+        model_name="hull_white_1f",
+        state_semantics=("short_rate",),
+        potential=PotentialSpec(discount_term="risk_free_rate"),
+        sources=(SourceSpec(source_kind="coupon_stream"),),
+        calibration_requirements=("bootstrap_curve", "fit_hw_strip"),
+        backend_hints=(backend_hint,),
+        parameter_overrides=parameter_overrides,
+        rates_curve_roles=RatesCurveRoleSpec(
+            discount_curve_role="discount_curve",
+            forecast_curve_role="forward_curve",
+            rate_index=rate_index,
+        ),
+        description=(
+            "Hull-White comparison regime for rate-style swaption cross-method routes."
+        ),
+    )
+
+
+def _engine_model_spec_for_request(
+    request: PlatformRequest,
+    *,
+    semantic_contract=None,
+    preferred_method: str | None = None,
+) -> EngineModelSpec | None:
+    """Infer one bounded engine-model spec when the request omits an explicit model."""
+    if canonical_engine_model_name(getattr(request, "model", None)):
+        return None
+    if semantic_contract is None:
+        return None
+    return _swaption_engine_model_spec(
+        semantic_contract,
+        preferred_method=preferred_method,
+    )
+
+
 def _valuation_context_for_request(
     request: PlatformRequest,
     *,
     semantic_contract=None,
+    preferred_method: str | None = None,
 ):
     """Build the tranche-1 valuation context for one semantic request."""
+    explicit_pricing_model = (
+        request.model
+        if canonical_engine_model_name(getattr(request, "model", None))
+        else None
+    )
     return build_valuation_context(
         market_snapshot=request.market_snapshot,
-        model_spec=request.model,
+        model_spec=explicit_pricing_model,
+        engine_model_spec=_engine_model_spec_for_request(
+            request,
+            semantic_contract=semantic_contract,
+            preferred_method=preferred_method,
+        ),
         reporting_currency=_request_reporting_currency(
             request,
             semantic_contract=semantic_contract,

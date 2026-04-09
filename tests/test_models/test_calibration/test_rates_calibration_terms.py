@@ -10,9 +10,10 @@ import pytest
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.curves.yield_curve import YieldCurve
 from trellis.data.schema import MarketSnapshot
-from trellis.instruments._agent.swaption import SwaptionPayoff, SwaptionSpec
+from trellis.instruments._agent.swaption import SwaptionSpec
 from trellis.instruments.cap import CapFloorSpec, CapPayoff, FloorPayoff
 from trellis.models.calibration.rates import calibrate_cap_floor_black_vol, calibrate_swaption_black_vol
+from trellis.models.rate_style_swaption import price_swaption_black76
 from trellis.models.vol_surface import FlatVol
 
 
@@ -81,7 +82,7 @@ def test_swaption_calibration_reports_shared_residual_policy():
         is_payer=True,
     )
     target_state = replace(market_state, vol_surface=FlatVol(true_vol))
-    target_price = SwaptionPayoff(spec).evaluate(target_state)
+    target_price = price_swaption_black76(target_state, spec)
 
     result = calibrate_swaption_black_vol(spec, market_state, target_price)
 

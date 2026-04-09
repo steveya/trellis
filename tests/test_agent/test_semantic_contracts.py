@@ -1128,6 +1128,50 @@ def test_bermudan_swaption_analytical_contract_uses_lower_bound_target():
     )
 
 
+def test_rate_style_swaption_contract_accepts_european_monte_carlo_method():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = make_rate_style_swaption_contract(
+        description="European payer swaption under Hull-White Monte Carlo",
+        observation_schedule=("2029-11-15",),
+        preferred_method="monte_carlo",
+        exercise_style="european",
+    )
+    report = validate_semantic_contract(contract)
+    assert report.ok
+
+    compiled = compile_semantic_contract(contract, preferred_method="monte_carlo")
+    assert compiled.pricing_plan.method == "monte_carlo"
+    assert compiled.primitive_routes == ("monte_carlo_paths",)
+    assert compiled.dsl_lowering is not None
+    assert compiled.dsl_lowering.route_id == "monte_carlo_paths"
+    assert compiled.dsl_lowering.family_ir is not None
+
+
+def test_extract_swaption_term_fields_captures_hull_white_comparison_regime():
+    from types import SimpleNamespace
+
+    from trellis.agent.semantic_contracts import _extract_swaption_term_fields
+
+    fields = _extract_swaption_term_fields(
+        (
+            "European payer swaption. Fixed leg: semi-annual, 30/360. "
+            "Float leg: quarterly 3M SOFR, Act/360. "
+            "Hull-White model: mean reversion a=0.05, vol sigma=0.01."
+        ),
+        SimpleNamespace(parameters={}),
+    )
+
+    assert fields["comparison_model_name"] == "hull_white_1f"
+    assert fields["comparison_mean_reversion"] == pytest.approx(0.05)
+    assert fields["comparison_sigma"] == pytest.approx(0.01)
+    assert fields["comparison_quote_family"] == "implied_vol"
+    assert fields["comparison_quote_convention"] == "black"
+    assert fields["comparison_quote_subject"] == "swaption"
+
+
 def test_credit_default_swap_contract_validates_and_compiles():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_credit_default_swap_contract
@@ -1222,3 +1266,29 @@ def test_nth_to_default_summary_is_stable_and_route_specific():
     assert summary["typed_semantics"]["controller_protocol"]["controller_style"] == "identity"
     assert summary["market_data"]["required_inputs"] == ["discount_curve", "credit_curve"]
     assert summary["blueprint"]["primitive_families"] == ["nth_to_default_monte_carlo"]
+
+
+def test_cdo_tranche_contract_validates_and_compiles():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = _draft_contract(
+        (
+            "CDO tranche on a 100-name IG portfolio with attachment point 3%, "
+            "detachment point 7%, maturity 2029-11-15, and flat default correlation 0.3."
+        ),
+        "cdo",
+    )
+    report = validate_semantic_contract(contract)
+
+    assert report.ok, report.errors
+
+    compiled = compile_semantic_contract(contract)
+    assert compiled.semantic_id == "credit_basket_tranche"
+    assert compiled.product_ir.instrument == "cdo"
+    assert compiled.product_ir.payoff_family == "credit_basket_tranche"
+    assert compiled.pricing_plan.method == "copula"
+    assert "trellis.models.credit_basket_copula" in compiled.target_modules
+    assert compiled.primitive_routes == ("copula_loss_distribution",)
+    assert compiled.dsl_lowering is not None
+    assert compiled.dsl_lowering.route_id == "copula_loss_distribution"

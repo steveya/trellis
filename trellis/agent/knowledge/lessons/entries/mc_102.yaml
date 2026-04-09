@@ -1,0 +1,29 @@
+category: monte_carlo
+title: Use proper GBM market-state inputs
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T15:51:23.152063'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_155125_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Smoke test fails with `GBM.__init__() got an unexpected keyword argument
+  'spot'` or the generated module raises a syntax error before pricing starts.
+root_cause: The generated Monte Carlo route passed incorrect constructor keywords
+  and had control-flow/indentation corruption in the fallback pricing wrapper. This
+  indicates the code was assembled without matching the engine's required state-process
+  signature and without a syntax-valid template.
+fix: Instantiate the GBM process with the exact engine-expected field names and keep
+  the pricing wrapper on a single validated code path. Reuse a known-good Monte Carlo
+  template with explicit try/except blocks and avoid ad-hoc keyword translation during
+  generation.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_102

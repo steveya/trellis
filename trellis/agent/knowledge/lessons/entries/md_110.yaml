@@ -1,8 +1,8 @@
 category: market_data
 title: Comparing float to date object in market state
 severity: high
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-04-03T00:12:51.556550'
 version: ''
 source_trace: null
@@ -35,3 +35,4 @@ validation: "Resolved during build of Build a pricer for: FX vanilla option: Gar
   New component: garman_kohlhagen_formula\n\nImplementation target: gk_analytical\n\
   Preferred method family: analytical\n\nImplementation target: gk_analytical"
 id: md_110
+supersedes: []

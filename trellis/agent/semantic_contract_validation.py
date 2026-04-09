@@ -1425,12 +1425,14 @@ def _validate_semantic_shape(
     dispatch = {
         "ranked_observation_basket": _validate_ranked_observation_basket_shape,
         "vanilla_option": _validate_vanilla_option_shape,
+        "american_option": _validate_american_option_shape,
         "quanto_option": _validate_quanto_option_shape,
         "callable_bond": _validate_callable_bond_shape,
         "range_accrual": _validate_range_accrual_shape,
         "rate_style_swaption": _validate_rate_style_swaption_shape,
         "credit_default_swap": _validate_credit_default_swap_shape,
         "nth_to_default": _validate_nth_to_default_shape,
+        "credit_basket_tranche": _validate_credit_basket_tranche_shape,
     }
     validator = dispatch.get(contract.semantic_id)
     if validator is None:
@@ -1657,6 +1659,47 @@ def _validate_vanilla_option_shape(
     )
     if "spot" not in required_capabilities:
         errors.append("Vanilla option semantics require a spot underlier input.")
+    if not contract.blueprint.primitive_families:
+        warnings.append(
+            f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."
+        )
+
+
+def _validate_american_option_shape(
+    contract: SemanticContract,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate a single-underlier holder-controlled vanilla option shape."""
+    required_capabilities = _validate_market_capabilities(
+        contract,
+        errors,
+        frozenset({"discount_curve", "spot", "black_vol_surface"}),
+    )
+    _validate_profile_fields(
+        contract,
+        errors,
+        expected_instrument_class="american_option",
+        expected_payoff_family="vanilla_option",
+        expected_underlier_structure="single_underlier",
+        expected_payoff_rule="vanilla_option_payoff",
+        expected_settlement_rule="cash_settle_at_expiry",
+        expected_multi_asset=False,
+        require_schedule=True,
+        require_constituents=1,
+        path_dependence="terminal_markov",
+        state_dependence="terminal_markov",
+    )
+    if contract.product.exercise_style not in {"american", "bermudan"}:
+        errors.append(
+            f"American-option semantics require exercise_style `american` or `bermudan`, got `{contract.product.exercise_style}`."
+        )
+    if contract.product.exercise_style == "bermudan" and not contract.product.schedule_dependence:
+        errors.append("Bermudan option semantics require schedule_dependence=True.")
+    if contract.product.controller_protocol.controller_style != "holder_max":
+        errors.append("American-option semantics require holder_max controller protocol.")
+    if "spot" not in required_capabilities:
+        errors.append("American-option semantics require a spot underlier input.")
     if not contract.blueprint.primitive_families:
         warnings.append(
             f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."
@@ -1917,6 +1960,83 @@ def _validate_nth_to_default_shape(
         errors.append("Nth-to-default semantics require trigger_rank >= 1.")
     if product.selection_count > len(product.constituents):
         errors.append("Nth-to-default trigger_rank cannot exceed the reference-entity pool.")
+    if not contract.blueprint.primitive_families:
+        warnings.append(
+            f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."
+        )
+
+
+def _validate_credit_basket_tranche_shape(
+    contract: SemanticContract,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate a tranche-style basket-credit semantic shape."""
+    required_capabilities = _validate_market_capabilities(
+        contract,
+        errors,
+        frozenset({"discount_curve", "credit_curve"}),
+    )
+    _validate_profile_fields(
+        contract,
+        errors,
+        expected_instrument_class="cdo",
+        expected_payoff_family="credit_basket_tranche",
+        expected_underlier_structure="multi_asset_basket",
+        expected_payoff_rule="tranche_loss_payment",
+        expected_settlement_rule="settle_expected_tranche_loss_at_maturity",
+        expected_exercise_style="none",
+        expected_multi_asset=True,
+        require_schedule=True,
+        require_constituents=2,
+        path_dependence="path_dependent",
+        state_dependence="path_dependent",
+        schedule_dependence=True,
+    )
+    if "credit_curve" not in required_capabilities:
+        errors.append("Credit-basket tranche semantics require a credit curve input.")
+    product = contract.product
+    observable_types = {
+        str(getattr(item, "observable_type", "")).strip().lower()
+        for item in product.observables
+    }
+    if "credit_curve" not in observable_types:
+        errors.append("Credit-basket tranche semantics require a typed credit_curve observable.")
+    obligation_ids = {item.obligation_id for item in product.obligations}
+    if "tranche_loss_cash_settlement" not in obligation_ids:
+        errors.append(
+            "Credit-basket tranche semantics require a typed tranche-loss settlement obligation."
+        )
+    if product.controller_protocol.controller_style != "identity":
+        errors.append("Credit-basket tranche semantics cannot declare a strategic controller.")
+
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
+    reference_pool_size = int(term_fields.get("reference_pool_size") or 0)
+    attachment = term_fields.get("attachment")
+    detachment = term_fields.get("detachment")
+    if reference_pool_size < 2:
+        errors.append("Credit-basket tranche semantics require reference_pool_size >= 2.")
+    if reference_pool_size and reference_pool_size != len(product.constituents):
+        errors.append(
+            "Credit-basket tranche reference_pool_size must match the constituent count."
+        )
+    if attachment is None or detachment is None:
+        errors.append("Credit-basket tranche semantics require attachment and detachment.")
+    else:
+        attachment_value = float(attachment)
+        detachment_value = float(detachment)
+        if not 0.0 <= attachment_value < detachment_value <= 1.0:
+            errors.append(
+                "Credit-basket tranche semantics require 0 <= attachment < detachment <= 1."
+            )
+    if product.selection_count != len(product.constituents):
+        errors.append(
+            "Credit-basket tranche semantics require selection_count to equal the reference pool size."
+        )
+    if "cumulative_portfolio_loss_fraction" not in product.state_variables:
+        errors.append(
+            "Credit-basket tranche semantics require cumulative_portfolio_loss_fraction state."
+        )
     if not contract.blueprint.primitive_families:
         warnings.append(
             f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."

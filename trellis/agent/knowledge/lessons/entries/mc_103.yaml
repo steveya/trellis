@@ -1,0 +1,29 @@
+category: monte_carlo
+title: Fix MC import and indentation
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T15:54:06.991040'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_155408_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Generated module failed to parse with repeated SyntaxError messages such
+  as 'expected "except" or "finally" block' and 'expected an indented block after
+  "except"'.
+root_cause: The auto-generated Monte Carlo wrapper introduced malformed try/except
+  blocks and mis-indented fallback code, so the pricing module could not be imported.
+  The failure was structural rather than quantitative, blocking even a basic path
+  simulation run.
+fix: Generate the Monte Carlo module from a validated template with explicit indentation
+  and complete try/except/fallback branches. Keep the import/dispatch logic minimal,
+  and run a syntax check before attempting pricing.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_103

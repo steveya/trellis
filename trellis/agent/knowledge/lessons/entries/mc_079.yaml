@@ -1,8 +1,8 @@
 category: monte_carlo
 title: Wrong constructor argument name for GBM spot price
 severity: high
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-04-03T01:24:28.585299'
 version: ''
 source_trace: null
@@ -33,3 +33,4 @@ validation: "Resolved during build of Build a pricer for: FX vanilla option: Gar
   New component: garman_kohlhagen_formula\n\nImplementation target: mc_fx_option\n\
   Preferred method family: monte_carlo\n\nImplementation target: mc_fx_option"
 id: mc_079
+supersedes: []

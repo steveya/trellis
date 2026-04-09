@@ -1,0 +1,28 @@
+category: numerical
+title: Initialize intrinsic before payoff
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:39:47.658421'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_163949_european_option_fft_pricing.yaml
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Runtime error reports "local variable 'intrinsic' referenced before assignment"
+  during the payoff smoke test.
+root_cause: The payoff branch uses the variable before it is assigned in all control-flow
+  paths, typically due to a missing default initialization or an incomplete call/put
+  branch. This is especially easy to trigger in transform-based pricers where payoff
+  construction is separated from pricing logic.
+fix: Initialize `intrinsic` before any conditional logic, or compute it directly inside
+  each call/put branch with a guaranteed assignment. Add a unit test that exercises
+  both call and put payoff paths for representative strikes and maturities.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: num_043

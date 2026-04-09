@@ -578,10 +578,29 @@ def _render_family_route_guidance(
     if instrument_type == "swaption" and method == "analytical":
         lines.append("## Family Route Guidance")
         lines.extend([
-            "- For European rate-style swaptions, prefer `resolve_swaption_black76_inputs(market_state, self._spec)` and `price_swaption_black76_raw(resolved)` from `trellis.models.rate_style_swaption`.",
-            "- Treat `ResolvedSwaptionBlack76Inputs` as the resolved contract for expiry, annuity, forward swap rate, strike, volatility, notional, payer/receiver direction, and payment count.",
-            "- Keep the adapter thin: validate discount/vol access, resolve once, and delegate to the helper-backed raw kernel.",
-            "- Do not rebuild annuity, forward-swap-rate, expiry year-fraction, or payment-count loops inline when the checked-in helper already owns that binding.",
+            "- For European rate-style swaptions, prefer `price_swaption_black76(market_state, self._spec, ...)` from `trellis.models.rate_style_swaption`.",
+            "- Keep the adapter thin: validate discount/vol access, then delegate to the family helper instead of rebuilding a resolve-plus-kernel split inline.",
+            "- When the request supplies explicit Hull-White comparison parameters, pass `mean_reversion=` and `sigma=` into `price_swaption_black76(...)` so the analytical comparator uses a Hull-White-implied Black vol instead of an unrelated market surface quote.",
+            "- Do not rebuild annuity, forward-swap-rate, expiry year-fraction, payment-count loops, or swaption-vol normalization inline when the checked-in helper already owns that binding.",
+        ])
+
+    if instrument_type == "swaption" and method == "rate_tree":
+        lines.append("## Family Route Guidance")
+        lines.extend([
+            "- For single-exercise European rate-style swaptions on the rate-tree route, prefer `price_swaption_tree(market_state, self._spec, model=\"hull_white\"|\"bdt\")` from `trellis.models.rate_style_swaption_tree`.",
+            "- Treat the generated route as a thin adapter over the checked-in helper; do not rebuild exercise-step selection, swap rollback, or lattice payoff glue inline.",
+            "- This helper-backed route assumes the forward-starting European surface where `spec.swap_start == spec.expiry_date`.",
+            "- Keep cap/floor-style period loops separate. This route is for a single-exercise European swaption comparison target, not for caplet or floorlet strips.",
+        ])
+
+    if instrument_type == "swaption" and method == "monte_carlo":
+        lines.append("## Family Route Guidance")
+        lines.extend([
+            "- For European rate-style swaptions, prefer `price_swaption_monte_carlo(market_state, self._spec, ...)` from `trellis.models.rate_style_swaption`.",
+            "- Treat the generated route as a thin adapter over that family helper; do not rebuild Hull-White process resolution, event payload assembly, or event-aware Monte Carlo plumbing inline.",
+            "- The helper already preserves `day_count`, `swap_frequency`, `rate_index`, and the forward-starting European condition `swap_start == expiry_date`.",
+            "- Do not hardcode `sigma = 0.01` or fall back to a GBM equity path. The helper resolves the Hull-White process from `market_state` on the bounded calibration/model path.",
+            "- If you need the lower-level assembly surface for debugging, the authoritative pieces remain `resolve_hull_white_monte_carlo_process_inputs(...)`, `build_discounted_swap_pv_payload(...)`, `build_short_rate_discount_reducer(...)`, and `price_event_aware_monte_carlo(...)` under `trellis.models.monte_carlo.event_aware`.",
         ])
 
     if instrument_type == "zcb_option":

@@ -1,0 +1,32 @@
+category: monte_carlo
+title: Require payoff shape contract
+severity: critical
+status: candidate
+confidence: 0.4
+created: '2026-04-06T17:26:07.630563'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - path_dependent
+  - maturity_settlement
+  - greeks
+  - black_scholes_benchmark
+  - convergence_order_measurement
+  instrument: []
+  error_signature: null
+symptom: Build stops with clarification decision because semantic_product_shape is
+  missing and no payoff can be generated.
+root_cause: The DSL request did not specify the product shape, schedule, or payoff
+  assumptions, so the pricing generator could not map the instrument to a concrete
+  Monte Carlo payoff. Without a cookbook entry for the exact contract form, the builder
+  cannot extend the DSL safely.
+fix: Add explicit contract fields for semantic_product_shape, schedule, and payoff
+  conventions before building the pricer. For Monte Carlo templates, always bind the
+  payoff to a known product shape and reuse a validated cookbook entry or equivalent
+  route helper.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: mc_082

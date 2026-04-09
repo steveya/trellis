@@ -57,6 +57,15 @@ The current semantic pricing path is:
 6. Lower onto a family-specific IR and then onto a checked helper or kernel.
 7. Execute the existing deterministic numerical code.
 
+Below that semantic boundary, the runtime now also treats family identity as an
+authority contract. Once the request or compiled product summary knows a
+specific family such as ``zcb_option`` or ``basket_option``, lower layers such
+as static spec selection, cached-wrapper reuse, and helper binding are not
+allowed to widen it back to a generic family like ``european_option`` unless
+that widening is an explicitly declared refinement. This is what keeps the
+lower stack aligned with the semantic/compiler boundary instead of letting
+description-level heuristics silently override it.
+
 The LLM is not in the pricing hot path. It participates in parsing, planning,
 generation, review, and validation around the deterministic library.
 
@@ -70,12 +79,15 @@ The current compiler boundary is:
    SemanticContract
      + ValuationContext
      -> ProductIR
+     -> EventProgramIR / ControlProgramIR
      -> family lowering IR
      -> helper-backed numerical route
 
 The shipped family IRs are:
 
 - ``AnalyticalBlack76IR``
+- ``EventAwareMonteCarloIR`` as the new bounded single-state Monte Carlo family
+  surface
 - ``VanillaEquityPDEIR``
 - ``ExerciseLatticeIR``
 - ``CorrelatedBasketMonteCarloIR``
@@ -83,8 +95,73 @@ The shipped family IRs are:
 - ``NthToDefaultIR``
 
 This is intentionally not a flat universal IR. The current stack uses
-``ProductIR`` as the shared checked summary and then narrows into family IRs
-for the proven route families.
+``ProductIR`` as the shared checked summary, then emits one universal semantic
+event/control program before narrowing into family IRs for the proven route
+families. The shared compiler program consists of:
+
+- ``EventProgramIR``
+- ``ControlProgramIR``
+
+Those objects are the canonical semantic authority for scheduled events,
+exercise/call control, and same-day phase ordering. Family IRs then project
+that shared program into their bounded numerical forms:
+
+- lattice keeps the semantic schedule/control surface on ``ExerciseLatticeIR``
+- PDE projects it into ``PDEEventTimeSpec`` / ``PDEEventTransformSpec``
+- Monte Carlo projects it into ``MCEventTimeSpec`` plus reduced replay
+  requirements
+
+For Monte Carlo, the new event-aware family is now the typed
+compiler/admissibility surface for bounded single-state schedule semantics as
+well. European rate-style swaptions can already lower into
+``EventAwareMonteCarloIR`` with explicit event buckets, replay requirements,
+and payoff-reducer contracts. The runtime now also ships the matching bounded
+problem-assembly layer in ``trellis.models.monte_carlo.event_aware``:
+
+- ``EventAwareMonteCarloProcessSpec``
+- ``EventAwareMonteCarloEvent``
+- ``EventAwareMonteCarloProblemSpec``
+- ``EventAwareMonteCarloProblem``
+
+That runtime layer resolves process-family plugins, compiles deterministic
+event buckets into reduced-state replay requirements, and assembles a
+``StateAwarePayoff`` on top of the existing Monte Carlo path-state and
+path-event substrate. The generic vanilla MC migration and the final
+schedule-driven proof routes are still separate follow-on slices, but the
+compiler no longer points at an event-aware family without a checked runtime
+problem-spec boundary underneath it.
+
+The first migrated vanilla cases now use that boundary directly:
+
+- vanilla European Monte Carlo lowers onto ``EventAwareMonteCarloIR`` as a
+  terminal-only ``gbm_1d`` family instance rather than a synthetic event-replay
+  instance
+- the vanilla Monte Carlo and transform wrappers now both compose a shared
+  single-state diffusion resolver/GBM-support layer under
+  ``trellis.models.resolution`` for settlement, maturity, spot, dividend,
+  discount, vol, and characteristic-function binding
+- the local-vol vanilla helper remains a checked route-level wrapper, but it
+  now assembles and prices through ``trellis.models.monte_carlo.event_aware``
+  instead of maintaining a separate Monte Carlo engine/payoff loop
+- the copula basket-credit slice now also exposes a semantic-facing helper
+  layer in ``trellis.models.credit_basket_copula`` so tranche-style CDO and
+  nth-to-default requests can bind discount/credit inputs, tranche bounds, and
+  dependence-family controls without exposing the raw scalar copula kernels as
+  the public route helper
+
+For rate-style swaption comparison builds, the semantic compiler now also keeps
+the contract-level convention surface attached to each method-specific plan.
+Fixed-leg and floating-leg day-count terms, rate-index bindings, and the
+bounded Hull-White calibration/model contract now survive into the
+method-specific ``ValuationContext`` and ``MarketBindingSpec`` instead of being
+dropped when a multi-method comparison request is compiled.
+
+For the helper-backed analytical, tree, and Monte Carlo swaption routes, the
+runtime now also preserves those comparison-regime bindings when it materializes
+deterministic exact wrappers. That means the exact helper calls carry the same
+explicit Hull-White comparison parameters, and the Monte Carlo wrapper adds a
+stable comparison-quality sampling control instead of drifting on an unseeded
+default path.
 
 Within the valuation layer, migrated calibration workflows now carry a bounded
 ``EngineModelSpec`` surface instead of relying only on a free-form
@@ -106,6 +183,8 @@ The end-to-end typed boundary is currently proven for:
 - ``range_accrual_discounted_cashflow_v1`` on the first single-index range-accrual note slice
 - ``credit_default_swap_analytical`` and ``credit_default_swap_monte_carlo`` on single-name CDS
 - ``nth_to_default_monte_carlo`` on nth-to-default basket credit
+- ``copula_loss_distribution`` on tranche-style basket-credit comparison tasks
+  through the semantic-facing basket-credit helper surface
 
 These route IDs and helper-backed numerical kernels are preserved. The new work
 changes validation, binding, admissibility, and lowering, not the pricing math.
@@ -143,6 +222,24 @@ The calibration boundary is:
 4. persist ``solver_provenance`` and ``solver_replay_artifact``
 5. hand the calibrated parameter or surface payload back onto ``MarketState``
 6. validate the workflow against replay/tolerance fixtures and benchmark baselines
+
+Calibration quote maps now carry a broader quote-semantics authority as well.
+``QuoteMapSpec`` still exposes the bounded top-level ``quote_family`` and
+``convention`` fields for compatibility, but the authoritative contract now
+includes a typed quote-semantics payload with:
+
+- quote subject
+- axis semantics
+- unit semantics
+- settlement / numeraire semantics
+
+That means the runtime can distinguish not only that something is, for
+example, an implied vol, but also whether it is a swaption or equity-option
+quote, which axes identify one point on the quote surface, which unit the
+quote uses, and which curve-role / settlement assumptions govern the quote
+space. The shipped calibration families now use that same surface for rates,
+credit, equity-vol, local-vol, and short-rate comparison regimes instead of
+relying on ad hoc metadata keys.
 
 The currently supported calibration workflows are:
 

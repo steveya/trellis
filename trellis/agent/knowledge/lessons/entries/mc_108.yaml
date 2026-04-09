@@ -1,0 +1,28 @@
+category: monte_carlo
+title: Fix MC control-flow indentation
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:24:48.483253'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_162450_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Build fails with SyntaxError: ''break'' outside loop in europeanoptionmontecarlo.py,
+  line 174.'
+root_cause: The generated Monte Carlo code placed a loop-control statement at module
+  or function scope due to a template indentation error. This usually happens when
+  assembling path-simulation or payoff-evaluation blocks from fragments without preserving
+  loop nesting.
+fix: Move the break/continue logic inside the actual simulation loop, or replace it
+  with a proper guard/flag outside the loop. Re-run code generation with indentation
+  checks and a syntax validation pass before execution.
+validation: Discovered during build (attempt 1)
+supersedes: []
+id: mc_108

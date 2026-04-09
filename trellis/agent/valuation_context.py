@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Iterable
 
 from trellis.agent.sensitivity_support import normalize_requested_outputs
@@ -36,6 +37,11 @@ def _normalize_token_tuple(values: Iterable[str] | None) -> tuple[str, ...]:
         if token and token not in result:
             result.append(token)
     return tuple(result)
+
+
+def _freeze_mapping(mapping: dict[str, object] | None) -> MappingProxyType:
+    """Return a deterministic read-only mapping for frozen dataclasses."""
+    return MappingProxyType(dict(mapping or {}))
 
 
 def _market_source_label(snapshot) -> str:
@@ -216,6 +222,7 @@ class EngineModelSpec:
     sources: tuple[SourceSpec, ...] = ()
     calibration_requirements: tuple[str, ...] = ()
     backend_hints: tuple[str, ...] = ()
+    parameter_overrides: dict[str, object] = field(default_factory=dict)
     rates_curve_roles: RatesCurveRoleSpec | None = None
     description: str = ""
 
@@ -236,6 +243,7 @@ class EngineModelSpec:
         object.__setattr__(self, "sources", normalized_sources)
         object.__setattr__(self, "calibration_requirements", calibration_requirements)
         object.__setattr__(self, "backend_hints", backend_hints)
+        object.__setattr__(self, "parameter_overrides", _freeze_mapping(self.parameter_overrides))
 
         errors = validate_engine_model_spec(self)
         if errors:
@@ -321,6 +329,7 @@ def engine_model_spec_summary(spec: EngineModelSpec | None) -> dict[str, object]
         ],
         "calibration_requirements": list(spec.calibration_requirements),
         "backend_hints": list(spec.backend_hints),
+        "parameter_overrides": dict(spec.parameter_overrides),
         "rates_curve_roles": rates_curve_roles,
         "description": spec.description,
     }
@@ -406,6 +415,11 @@ def _legacy_engine_model_name(model_spec: str | None) -> str:
     """Map one legacy model_spec label onto a supported canonical model name."""
     token = _normalize_label(model_spec, fallback="")
     return _LEGACY_ENGINE_MODEL_ALIASES.get(token, "")
+
+
+def canonical_engine_model_name(model_spec: str | None) -> str:
+    """Return the canonical engine-model name for a supported pricing model label."""
+    return _legacy_engine_model_name(model_spec)
 
 
 def _engine_model_spec_from_legacy_model_spec(model_spec: str | None) -> EngineModelSpec | None:

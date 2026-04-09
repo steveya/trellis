@@ -5,8 +5,9 @@ from __future__ import annotations
 import ast
 import json
 import subprocess
+import textwrap
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace as replace_dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -146,6 +147,90 @@ def _render_spec_default_value(field_type: str, default: str) -> str:
             return "None"
         return repr(default)
     return default
+
+
+def _hydrate_spec_schema_defaults_from_semantics(
+    spec_schema,
+    *,
+    semantic_contract=None,
+):
+    """Overlay semantic term-field defaults onto a deterministic spec schema.
+
+    Static planner schemas intentionally stay generic. When the semantic layer
+    has already recovered contract conventions, hydrate those defaults here so
+    skeleton generation, smoke tests, and validation all operate on the same
+    contract surface.
+    """
+    if spec_schema is None or semantic_contract is None:
+        return spec_schema
+
+    product = getattr(semantic_contract, "product", None)
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
+    if not term_fields:
+        return spec_schema
+
+    spec_name = str(getattr(spec_schema, "spec_name", "") or "")
+    if spec_name not in {"SwaptionSpec", "BermudanSwaptionSpec"}:
+        return spec_schema
+
+    from trellis.agent.planner import FieldDef, SpecSchema
+
+    def _enum_default(prefix: str, raw_value: object | None) -> str | None:
+        if raw_value in {None, ""}:
+            return None
+        text = str(raw_value).strip()
+        if not text:
+            return None
+        if text.startswith(f"{prefix}."):
+            return text
+        return f"{prefix}.{text}"
+
+    overrides: dict[str, str] = {}
+    day_count_default = (
+        _enum_default("DayCountConvention", term_fields.get("fixed_leg_day_count"))
+        or _enum_default("DayCountConvention", term_fields.get("day_count"))
+    )
+    if day_count_default is not None:
+        overrides["day_count"] = day_count_default
+
+    swap_frequency_default = _enum_default(
+        "Frequency",
+        term_fields.get("payment_frequency") or term_fields.get("swap_frequency"),
+    )
+    if swap_frequency_default is not None:
+        overrides["swap_frequency"] = swap_frequency_default
+
+    rate_index = term_fields.get("rate_index")
+    if rate_index not in {None, ""}:
+        overrides["rate_index"] = str(rate_index).strip()
+
+    if not overrides:
+        return spec_schema
+
+    fields = []
+    changed = False
+    for field in getattr(spec_schema, "fields", ()):
+        default = overrides.get(field.name, field.default)
+        if default != field.default:
+            changed = True
+        fields.append(
+            FieldDef(
+                name=field.name,
+                type=field.type,
+                description=field.description,
+                default=default,
+            )
+        )
+
+    if not changed:
+        return spec_schema
+
+    return SpecSchema(
+        class_name=spec_schema.class_name,
+        spec_name=spec_schema.spec_name,
+        requirements=list(getattr(spec_schema, "requirements", ())),
+        fields=fields,
+    )
 
 
 def _handle_tool_call(name: str, input_data: dict) -> str:
@@ -830,6 +915,16 @@ def build_payoff(
         preferred_method=pricing_plan.method,
         spec_schema_hint=_spec_hint,
     )
+    hydrated_spec_schema = _hydrate_spec_schema_defaults_from_semantics(
+        getattr(plan, "spec_schema", None),
+        semantic_contract=(
+            getattr(compiled_request, "semantic_contract", None)
+            if compiled_request is not None
+            else None
+        ),
+    )
+    if hydrated_spec_schema is not getattr(plan, "spec_schema", None):
+        plan = replace_dataclass(plan, spec_schema=hydrated_spec_schema)
     _record_platform_event(
         compiled_request,
         "planner_completed",
@@ -1169,36 +1264,56 @@ def build_payoff(
         )
         stage_model = get_model_for_stage("code_generation", model)
         generated_module: GeneratedModuleResult | None = None
+        generation_token_usage: dict[str, object] = {}
         try:
-            with llm_usage_stage(
-                "code_generation",
-                metadata=_llm_stage_metadata(
-                    compiled_request=compiled_request,
-                    model=stage_model,
-                    attempt=attempt_number,
-                    instrument_type=instrument_type,
+            generated_module = _materialize_deterministic_exact_binding_module(
+                skeleton,
+                generation_plan,
+                semantic_blueprint=(
+                    getattr(compiled_request, "semantic_blueprint", None)
+                    if compiled_request is not None
+                    else None
                 ),
-            ) as usage_records:
-                generated_module = _generate_module(
-                    skeleton, spec_schema, reference_sources, stage_model, 1,
-                    extra_context=validation_feedback,
-                    pricing_plan=pricing_plan,
-                    knowledge_context=knowledge_text,
-                    generation_plan=generation_plan,
-                    prompt_surface=prompt_surface,
-                )
-                if isinstance(generated_module, str):
-                    source_report = sanitize_generated_source(generated_module)
-                    generated_module = GeneratedModuleResult(
-                        raw_code=generated_module,
-                        sanitized_code=source_report.sanitized_source,
-                        code=source_report.sanitized_source.expandtabs(4),
-                        source_report=source_report,
+                comparison_target=(
+                    (
+                        getattr(getattr(compiled_request, "request", None), "metadata", None)
+                        or {}
+                    ).get("comparison_target")
+                    if compiled_request is not None
+                    else None
+                ),
+            )
+            if generated_module is None:
+                with llm_usage_stage(
+                    "code_generation",
+                    metadata=_llm_stage_metadata(
+                        compiled_request=compiled_request,
+                        model=stage_model,
+                        attempt=attempt_number,
+                        instrument_type=instrument_type,
+                    ),
+                ) as usage_records:
+                    generated_module = _generate_module(
+                        skeleton, spec_schema, reference_sources, stage_model, 1,
+                        extra_context=validation_feedback,
+                        pricing_plan=pricing_plan,
+                        knowledge_context=knowledge_text,
+                        generation_plan=generation_plan,
+                        prompt_surface=prompt_surface,
                     )
-                code = generated_module.code
+                    if isinstance(generated_module, str):
+                        source_report = sanitize_generated_source(generated_module)
+                        generated_module = GeneratedModuleResult(
+                            raw_code=generated_module,
+                            sanitized_code=source_report.sanitized_source,
+                            code=source_report.sanitized_source.expandtabs(4),
+                            source_report=source_report,
+                        )
+                generation_token_usage = summarize_llm_usage(usage_records)
+                enforce_llm_token_budget(stage="code_generation")
+            code = generated_module.code
         except Exception as exc:
             failure_text = f"attempt {attempt_number}: {type(exc).__name__}: {exc}"
-            generation_token_usage = summarize_llm_usage(locals().get("usage_records"))
             previous_failures.append(failure_text)
             source_report = getattr(exc, "source_report", None)
             _record_platform_event(
@@ -1231,8 +1346,6 @@ def build_payoff(
             )
             retry_reason = "code_generation"
             continue
-        generation_token_usage = summarize_llm_usage(usage_records)
-        enforce_llm_token_budget(stage="code_generation")
         _record_platform_event(
             compiled_request,
             "builder_attempt_generated",
@@ -1601,13 +1714,10 @@ def _validate_build(
     settle = date(2024, 11, 15)
     failures = []
     failure_details: list[object] = []
-    compiled_instrument = None
-    if compiled_request is not None:
-        compiled_instrument = getattr(getattr(compiled_request, "request", None), "instrument_type", None)
-    itype = (
-        compiled_instrument
-        or getattr(product_ir, "instrument", None)
-        or _extract_instrument_type(description)
+    itype = _resolve_lower_layer_instrument_type(
+        description,
+        compiled_request=compiled_request,
+        product_ir=product_ir,
     )
     required_market_data = set(getattr(pricing_plan, "required_market_data", ()) or ())
     validation_contract = getattr(compiled_request, "validation_contract", None)
@@ -1783,6 +1893,7 @@ def _validate_build(
         market_state_factory=ms_factory,
         reference_factory=reference_factory,
         check_relations=validation_check_relations,
+        semantic_blueprint=getattr(compiled_request, "semantic_blueprint", None),
     )
     failures.extend(bundle_execution.failures)
     failure_details.extend(bundle_execution.failure_details)
@@ -1817,6 +1928,8 @@ def _validate_build(
         oracle_spec = select_reference_oracle(
             instrument_type=itype,
             method=(pricing_plan.method if pricing_plan is not None else "unknown"),
+            product_ir=product_ir,
+            semantic_blueprint=getattr(compiled_request, "semantic_blueprint", None),
         )
         if oracle_spec is not None:
             oracle_execution = execute_reference_oracle(
@@ -1824,6 +1937,7 @@ def _validate_build(
                 payoff_factory=payoff_factory,
                 market_state_factory=ms_factory,
                 reference_factory=reference_factory,
+                semantic_blueprint=getattr(compiled_request, "semantic_blueprint", None),
             )
             oracle_summary = reference_oracle_summary(oracle_execution)
             _record_platform_event(
@@ -2193,18 +2307,46 @@ def _validate_build(
 
 def _extract_instrument_type(description: str) -> str:
     """Extract instrument type keyword from a description."""
-    desc = description.lower()
-    for keyword in ["callable_bond", "callable bond", "puttable_bond", "bermudan_swaption",
-                     "barrier_option", "barrier option", "asian_option", "cdo",
-                     "nth_to_default", "swaption", "cap", "floor", "swap", "bond", "mbs"]:
-        if keyword.replace("_", " ") in desc or keyword in desc:
-            return keyword.replace(" ", "_")
-    return "unknown"
+    from trellis.agent.instrument_identity import resolve_instrument_identity
+
+    resolution = resolve_instrument_identity(
+        description,
+        inferred_source="executor.description_ingress",
+    )
+    return resolution.instrument_type or "unknown"
 
 
-def _make_test_payoff(payoff_cls, spec_schema, settle: date):
+def _resolve_lower_layer_instrument_type(
+    description: str,
+    *,
+    compiled_request=None,
+    product_ir=None,
+    explicit_instrument_type: str | None = None,
+) -> str:
+    """Resolve family identity for lower layers without rediscovering known families."""
+    from trellis.agent.instrument_identity import normalize_instrument_type
+
+    request = getattr(compiled_request, "request", None)
+    request_metadata = dict(getattr(request, "metadata", None) or {})
+    runtime_contract = dict(request_metadata.get("runtime_contract") or {})
+    candidates = (
+        explicit_instrument_type,
+        getattr(request, "instrument_type", None),
+        request_metadata.get("instrument_type"),
+        runtime_contract.get("instrument_type"),
+        getattr(product_ir, "instrument", None),
+    )
+    for candidate in candidates:
+        normalized = normalize_instrument_type(candidate)
+        if normalized:
+            return normalized
+    return _extract_instrument_type(description)
+
+
+def _make_test_payoff(payoff_cls, spec_schema, settle: date, market_state=None):
     """Create a test payoff instance from the spec schema with default values."""
     import sys
+    from dataclasses import is_dataclass, replace as replace_dataclass
 
     spec_cls = None
     for attr_name in ("__init__", "evaluate"):
@@ -2335,6 +2477,21 @@ def _make_test_payoff(payoff_cls, spec_schema, settle: date):
         # If we're missing required fields, try with all defaults
         spec = spec_cls(**{f.name: name_defaults.get(f.name, type_defaults.get(f.type, ""))
                           for f in spec_schema.fields if f.default is None})
+
+    if market_state is not None and spec_schema.spec_name == "QuantoOptionSpec":
+        try:
+            from trellis.models.resolution.quanto import resolve_quanto_inputs
+
+            resolved = resolve_quanto_inputs(market_state, spec)
+            atm_strike = float(resolved.spot)
+            if is_dataclass(spec):
+                spec = replace_dataclass(spec, strike=atm_strike)
+            elif hasattr(spec, "__dict__"):
+                payload = dict(vars(spec))
+                payload["strike"] = atm_strike
+                spec = spec_cls(**payload)
+        except Exception:
+            pass
 
     return payoff_cls(spec)
 
@@ -2534,6 +2691,175 @@ def _skeleton_exact_binding_import_lines(generation_plan) -> tuple[str, ...]:
     return tuple(
         f"from {module} import {', '.join(symbols)}"
         for module, symbols in sorted(imports_by_module.items())
+    )
+
+
+def _exact_binding_refs(generation_plan) -> tuple[str, ...]:
+    """Return the normalized exact/helper binding refs declared by the generation plan."""
+    if generation_plan is None:
+        return ()
+    refs: list[str] = list(getattr(generation_plan, "lane_exact_binding_refs", ()) or ())
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    if primitive_plan is not None:
+        refs.extend(
+            f"{primitive.module}.{primitive.symbol}"
+            for primitive in getattr(primitive_plan, "primitives", ()) or ()
+            if getattr(primitive, "role", "") == "route_helper"
+            and getattr(primitive, "module", "")
+            and getattr(primitive, "symbol", "")
+        )
+
+    normalized: list[str] = []
+    for ref in refs:
+        text = str(ref or "").strip()
+        if text and text not in normalized:
+            normalized.append(text)
+    return tuple(normalized)
+
+
+def _swaption_comparison_helper_kwargs(semantic_blueprint) -> str:
+    """Return deterministic helper kwargs for explicit swaption comparison regimes."""
+    valuation_context = getattr(semantic_blueprint, "valuation_context", None)
+    engine_model_spec = getattr(valuation_context, "engine_model_spec", None)
+    if engine_model_spec is None or getattr(engine_model_spec, "model_name", "") != "hull_white_1f":
+        return ""
+    overrides = dict(getattr(engine_model_spec, "parameter_overrides", {}) or {})
+    mean_reversion = overrides.get("mean_reversion")
+    sigma = overrides.get("sigma")
+    if mean_reversion is None or sigma is None:
+        return ""
+    return f", mean_reversion={float(mean_reversion)!r}, sigma={float(sigma)!r}"
+
+
+def _vanilla_equity_monte_carlo_helper_kwargs(comparison_target: str | None) -> str:
+    """Return deterministic helper kwargs for vanilla-equity Monte Carlo comparison targets."""
+    target = str(comparison_target or "").strip().lower()
+    if target == "euler":
+        return ', scheme="euler"'
+    if target == "milstein":
+        return ', scheme="milstein"'
+    if target == "exact":
+        return ', scheme="exact"'
+    if target == "log_euler":
+        return ', scheme="log_euler"'
+    if target == "plain_mc":
+        return ', scheme="exact", variance_reduction="none"'
+    if target == "antithetic_mc":
+        return ', scheme="exact", variance_reduction="antithetic"'
+    if target == "control_variate_mc":
+        return ', scheme="exact", variance_reduction="control_variate"'
+    return ""
+
+
+def _vanilla_equity_transform_helper_kwargs(comparison_target: str | None) -> str:
+    """Return deterministic helper kwargs for transform comparison targets."""
+    target = str(comparison_target or "").strip().lower()
+    if target == "fft":
+        return ', method="fft"'
+    if target == "cos":
+        return ', method="cos"'
+    return ""
+
+
+def _zcb_option_tree_helper_kwargs(comparison_target: str | None) -> str:
+    """Return deterministic helper kwargs for ZCB-option tree comparison targets."""
+    target = str(comparison_target or "").strip().lower()
+    if target == "ho_lee_tree":
+        return ', model="ho_lee"'
+    if target == "hull_white_tree":
+        return ', model="hull_white"'
+    return ""
+
+
+def _credit_basket_tranche_helper_kwargs(comparison_target: str | None) -> str:
+    """Return deterministic helper kwargs for tranche-copula comparison targets."""
+    target = str(comparison_target or "").strip().lower()
+    if target == "student_t_copula":
+        return ', copula_family="student_t", degrees_of_freedom=5.0, n_paths=40000, seed=42'
+    return ', copula_family="gaussian"'
+
+
+def _deterministic_exact_binding_evaluate_body(
+    generation_plan,
+    *,
+    semantic_blueprint=None,
+    comparison_target: str | None = None,
+) -> str | None:
+    """Return a deterministic evaluate body for supported exact helper-backed routes."""
+    refs = set(_exact_binding_refs(generation_plan))
+    swaption_comparison_kwargs = _swaption_comparison_helper_kwargs(semantic_blueprint)
+    vanilla_equity_mc_kwargs = _vanilla_equity_monte_carlo_helper_kwargs(comparison_target)
+    vanilla_equity_transform_kwargs = _vanilla_equity_transform_helper_kwargs(comparison_target)
+    zcb_option_tree_kwargs = _zcb_option_tree_helper_kwargs(comparison_target)
+    credit_basket_tranche_kwargs = _credit_basket_tranche_helper_kwargs(comparison_target)
+    helper_bodies = {
+        "trellis.models.callable_bond_pde.price_callable_bond_pde": (
+            "return float(price_callable_bond_pde(market_state, spec))"
+        ),
+        "trellis.models.callable_bond_tree.price_callable_bond_tree": (
+            'return float(price_callable_bond_tree(market_state, spec, model="hull_white"))'
+        ),
+        "trellis.models.rate_style_swaption.price_swaption_black76": (
+            "return float(price_swaption_black76(market_state, spec"
+            f"{swaption_comparison_kwargs}))"
+        ),
+        "trellis.models.rate_style_swaption_tree.price_swaption_tree": (
+            "return float(price_swaption_tree(market_state, spec"
+            f"{swaption_comparison_kwargs}))"
+        ),
+        "trellis.models.rate_style_swaption.price_swaption_monte_carlo": (
+            "return float(price_swaption_monte_carlo("
+            "market_state, spec, n_paths=20000, seed=42"
+            f"{swaption_comparison_kwargs}))"
+        ),
+        "trellis.models.equity_option_monte_carlo.price_vanilla_equity_option_monte_carlo": (
+            "return float(price_vanilla_equity_option_monte_carlo("
+            f"market_state, spec{vanilla_equity_mc_kwargs}))"
+        ),
+        "trellis.models.equity_option_transforms.price_vanilla_equity_option_transform": (
+            "return float(price_vanilla_equity_option_transform("
+            f"market_state, spec{vanilla_equity_transform_kwargs}))"
+        ),
+        "trellis.models.zcb_option_tree.price_zcb_option_tree": (
+            "return float(price_zcb_option_tree("
+            f"market_state, spec{zcb_option_tree_kwargs}))"
+        ),
+        "trellis.models.credit_basket_copula.price_credit_basket_tranche": (
+            "return float(price_credit_basket_tranche("
+            f"market_state, spec{credit_basket_tranche_kwargs}))"
+        ),
+    }
+    for ref, body in helper_bodies.items():
+        if ref in refs:
+            return body
+    return None
+
+
+def _materialize_deterministic_exact_binding_module(
+    skeleton: str,
+    generation_plan,
+    *,
+    semantic_blueprint=None,
+    comparison_target: str | None = None,
+) -> GeneratedModuleResult | None:
+    """Build a thin helper-backed module without invoking the LLM when the route is exact."""
+    body = _deterministic_exact_binding_evaluate_body(
+        generation_plan,
+        semantic_blueprint=semantic_blueprint,
+        comparison_target=comparison_target,
+    )
+    if body is None:
+        return None
+    rendered = skeleton.replace(
+        EVALUATE_SENTINEL,
+        textwrap.indent(body, "        "),
+    )
+    source_report = sanitize_generated_source(rendered)
+    return GeneratedModuleResult(
+        raw_code=rendered,
+        sanitized_code=source_report.sanitized_source,
+        code=source_report.sanitized_source.expandtabs(4),
+        source_report=source_report,
     )
 
 
@@ -4205,14 +4531,38 @@ def _route_specific_retry_lines(
         )
     if (
         instrument == "swaption"
+        and pricing_method == "monte_carlo"
+        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
+    ):
+        return (
+            "European rate-style swaption Monte Carlo routes should stay on the checked family helper instead of assembling the event-aware problem inline.",
+            "Prefer `from trellis.models.rate_style_swaption import price_swaption_monte_carlo` and delegate to that helper from the adapter.",
+            "Keep the route thin: validate discount/vol access, preserve the contract conventions on `self._spec`, then call the helper and return `float(...)`.",
+            "do not hardcode `sigma = 0.01` and do not synthesize a GBM equity path. The helper resolves the Hull-White process from `market_state` on the bounded calibration/model path.",
+            "If you truly need the lower-level runtime for debugging, the authoritative pieces remain `resolve_hull_white_monte_carlo_process_inputs(...)`, `build_discounted_swap_pv_payload(...)`, `build_short_rate_discount_reducer(...)`, and `price_event_aware_monte_carlo(...)` in `trellis.models.monte_carlo.event_aware`.",
+        )
+    if (
+        instrument == "swaption"
+        and pricing_method == "rate_tree"
+        and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
+    ):
+        return (
+            "European rate-style swaption tree routes should stay on the checked-in helper-backed surface.",
+            "Prefer `from trellis.models.rate_style_swaption_tree import price_swaption_tree` and delegate to that helper from the adapter.",
+            "This helper-backed tree route is for the single-exercise European comparison surface where `swap_start == expiry_date`.",
+            "Do not rebuild exercise-step selection, swap rollback, or lattice payoff glue inline when the checked-in helper already owns the route.",
+            "Keep cap/floor-style period loops separate. This route is for a single-exercise European swaption comparison target, not for caplet or floorlet strips.",
+        )
+    if (
+        instrument == "swaption"
         and pricing_method == "analytical"
         and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
     ):
         return (
             "European rate-style swaption analytical routes should stay on the checked helper-backed Black76 surface.",
-            "Prefer `from trellis.models.rate_style_swaption import resolve_swaption_black76_inputs, price_swaption_black76_raw` and delegate to those helpers from the adapter.",
-            "Treat `ResolvedSwaptionBlack76Inputs` as the resolved contract for expiry, annuity, forward swap rate, strike, volatility, notional, direction, and payment count.",
-            "Do not rebuild annuity, forward-swap-rate, expiry year-fraction, or payment-count loops inline when the checked helper already owns that binding.",
+            "Prefer `from trellis.models.rate_style_swaption import price_swaption_black76` and delegate to that helper from the adapter.",
+            "When the request supplies explicit Hull-White comparison parameters, pass `mean_reversion=` and `sigma=` into `price_swaption_black76(...)` so the analytical lane uses a Hull-White-implied Black vol instead of drifting to an unrelated market vol surface.",
+            "Do not rebuild annuity, forward-swap-rate, expiry year-fraction, payment-count loops, or swaption-vol normalization inline when the checked helper already owns that binding.",
             "Keep cap/floor-style period loops separate. This helper-backed shortcut is for single-exercise European swaptions, not for caplet or floorlet strips.",
         )
     if (

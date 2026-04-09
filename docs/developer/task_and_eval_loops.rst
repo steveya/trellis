@@ -40,6 +40,12 @@ The repo ships a small task-operations toolchain:
 - ``scripts/remediate.py``: analyze failures, categorize knowledge gaps, and patch common knowledge issues
 - ``scripts/evaluate_shared_memory.py``: compare two task-result tranches and render a shared-memory improvement report
 
+For curated canaries specifically, ``scripts/run_canary.py`` now executes the
+live task entry plus any richer canary-only fields from ``CANARY_TASKS.yaml``.
+That lets sparse manifest rows keep their normal task-inventory shape while
+the curated regression surface still carries the fuller descriptions or market
+blocks needed to exercise canonical comparison cases honestly.
+
 Evals And Stress Tasks
 ----------------------
 
@@ -98,6 +104,54 @@ For comparison tasks, the top-level task result also aggregates nested method
 failures into a single failure list before remediation runs. That keeps the
 analysis loop from losing the actual timeout, import, or implementation-gap
 message behind a method-level success/failure split.
+
+Comparison-target planning is now stricter about method-family labels as well.
+Task-level construct hints such as ``credit`` or ``volatility`` are treated as
+domain labels, not as canonical pricing methods, so they no longer bleed into
+comparison-target routing. That keeps helper-backed canaries such as ``T51`` on
+the analytical CDS route instead of degrading into an unbound generic lane.
+
+The same lower-layer authority rule now applies to instrument families. Once a
+task, request, or compiled plan already knows the concrete family
+(``zcb_option``, ``basket_option``, ``barrier_option``, and so on), lower
+runtime layers must not fall back to a generic text heuristic such as
+``european_option`` just because the description happens to contain words like
+``European`` or ``option``. Planner specialization, cached-module schema
+inference, and executor fallback inference now all follow the same rule:
+explicit family beats generic heuristic unless the specialization is an
+explicitly allowed refinement of that family.
+
+Comparison pricing now also prefers market-aligned smoke fixtures when the
+route family needs them. For the supported quanto slice, the comparison
+harness derives an at-the-money fixture strike from the resolved runtime
+market state instead of relying on a generic hard-coded strike. That keeps the
+analytical-versus-Monte-Carlo parity check focused on route differences rather
+than on a distorted fixture contract.
+
+For helper-backed comparison routes, the build loop now also prefers
+deterministic exact wrappers over open-ended adapter synthesis. Those wrappers
+thread semantic comparison-regime bindings such as explicit Hull-White
+parameters through the analytical, tree, and Monte Carlo helper calls, and
+they can attach stable comparison sampling controls for Monte Carlo lanes. This
+keeps comparison failures concentrated on real model/regime mismatches instead
+of letting generated adapter drift reintroduce stale imports or route-local
+numerical defaults.
+
+The same rule now applies to tranche-style basket-credit comparison routes.
+Curated copula canaries bind through the semantic-facing
+``trellis.models.credit_basket_copula`` helper surface instead of asking the
+builder to reconstruct tranche-loss projection from raw copula primitives. In
+practice that means the build loop can keep tranche attachment/detachment,
+representative credit-curve binding, and dependence-family selection on a
+checked helper path while semantic validation treats the helper as the public
+assembly contract rather than forcing direct calls to the lower-level loss
+distribution primitives.
+
+For the supported swaption tree slice, the comparison harness now has a
+checked-in helper-backed route for single-exercise European rate-tree
+comparators. That keeps canaries such as ``T65`` on the stable
+``price_swaption_tree(...)`` surface instead of regenerating inline lattice
+exercise code for the comparison target.
 
 Analytical traces also carry a structured instruction-lifecycle payload. The
 ``GenerationPlan`` now includes a resolved instruction set, the trace emits a
@@ -166,8 +220,26 @@ the chosen parameter-set name, the source kind, the selected source reference,
 the parameter keys, and the source-family-specific details that matter for
 review. Bootstrap entries expose their originating curve buckets, empirical
 entries expose estimator/sample metadata, calibration entries expose workflow
-and quote-family metadata, and seeded mock runs collapse to a synthetic-prior
-trace with the governing contract version and seed.
+plus quote-family / quote-subject / quote-unit metadata, and seeded mock runs
+collapse to a synthetic-prior trace with the governing contract version and
+seed.
+
+Lower-layer family identity now follows the same provenance rule. Task runtime
+records both ``instrument_type`` and ``instrument_identity_source`` on the
+request metadata, runtime contract, simulation identity payload, task result,
+and persisted run record. That gives later executor, cached-selection, and
+validation slices a stable signal for whether family identity came from an
+explicit field or from a single ingress fallback, instead of forcing them to
+re-parse raw title text again.
+
+Executor-side validation and helper-binding paths now prefer that threaded
+family identity over raw-description fallback whenever the request metadata,
+runtime contract, or ``ProductIR`` already supplies the family. Description
+heuristics remain only as the final fallback when no structural family signal
+exists yet. The residual text-pattern table is intentionally narrower now:
+generic ``bond`` and ``swap`` wording no longer produce a family on their own,
+so ingress fallback only fires for phrases that still correspond to defended
+task families rather than widening broad desk summaries into a pricing schema.
 
 Suggested Validation Order
 --------------------------

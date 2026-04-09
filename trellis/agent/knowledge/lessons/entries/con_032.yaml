@@ -1,8 +1,8 @@
 category: convention
 title: Code-gen payoff template and conventions missing
 severity: critical
-status: validated
-confidence: 0.7
+status: promoted
+confidence: 0.8
 created: '2026-03-31T10:52:38.922136'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260331_105240_european_option_analytical.yaml
@@ -27,3 +27,4 @@ fix: Provide a minimal canonical payoff/module template and instrument class sig
   before use.
 validation: Discovered during build (attempt 3)
 id: con_032
+supersedes: []

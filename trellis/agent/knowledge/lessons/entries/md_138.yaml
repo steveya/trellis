@@ -1,0 +1,42 @@
+category: market_data
+title: Hardcoded volatility source
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-06T18:47:22.071850'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The rate-tree pricer used a fixed sigma=0.01 instead of pulling the Black
+  volatility from market_state.
+root_cause: The implementation assumed an internal default parameter was acceptable,
+  but calibration and cross-validation require the tree to reflect the live market
+  inputs for each scenario. This breaks the link between market data and pricing,
+  so the uncalibrated benchmark is no longer genuinely uncalibrated to the snapshot.
+fix: Read the volatility from market_state (or pass it explicitly) for every pricing
+  route, and reserve hardcoded values only for intentional test fixtures.
+validation: "Resolved during build of Build a pricer for: HW calibration to swaption\
+  \ volatilities\n\nCalibrate the Hull-White one-factor model parameters (mean reversion\
+  \ a,\nshort-rate vol sigma) to a set of at-the-money co-terminal European\nswaption\
+  \ volatilities.\nSwaption grid (expiry x tail, all co-terminal to 10Y):\n  1Y x\
+  \ 9Y, 2Y x 8Y, 3Y x 7Y, 5Y x 5Y, 7Y x 3Y, 9Y x 1Y.\nTarget ATM normal vols (bp):\
+  \ 55, 58, 60, 62, 60, 55.\nUse the USD OIS curve for discounting and the SOFR-3M\
+  \ forecast curve\nfor forward swap rate projection from the market snapshot (as_of\n\
+  2024-11-15).\nCalibrate by minimizing the sum of squared differences between model\n\
+  and market swaption prices (or vols).  Report calibrated (a, sigma)\nand the residual\
+  \ pricing error for each swaption.\nCross-validate: reprice each swaption with the\
+  \ calibrated HW tree\nand with an uncalibrated HW tree (a=0.05, sigma=0.01) to show\
+  \ the\ncalibrated model fits better.\n\nComparison targets: calibrated_hw_tree (rate_tree),\
+  \ uncalibrated_hw_tree (rate_tree)\nCross-validation harness:\n  internal targets:\
+  \ calibrated_hw_tree, uncalibrated_hw_tree\n  external targets: quantlib, financepy\n\
+  New component: hw_swaption_calibration\n\nImplementation target: uncalibrated_hw_tree\n\
+  Preferred method family: rate_tree\n\nImplementation target: uncalibrated_hw_tree"
+supersedes: []
+id: md_138

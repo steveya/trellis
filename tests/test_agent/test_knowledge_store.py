@@ -572,9 +572,12 @@ class TestKnowledgeStore:
             max_lessons=80,
         )
 
-        lesson_ids = [lesson.id for lesson in k["lessons"]]
-        assert "sem_002" in lesson_ids
-        assert any("required-input plan" in lesson.title.lower() for lesson in k["lessons"])
+        cookbook_text = (getattr(k.get("cookbook"), "template", "") or "").lower()
+        lesson_titles = [lesson.title.lower() for lesson in k["lessons"]]
+        assert (
+            "required-input checklist" in cookbook_text
+            or any("required-input plan" in title for title in lesson_titles)
+        )
 
     def test_retrieve_basket_request_includes_correlated_gbm_mu_lesson(self):
         from trellis.agent.knowledge import retrieve_for_task

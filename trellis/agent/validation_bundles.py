@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
 from trellis.agent.assembly_tools import normalize_comparison_relation, select_invariant_pack
+from trellis.agent.instrument_identity import resolve_authoritative_instrument_type
 from trellis.agent.knowledge.methods import normalize_method
 
 
@@ -90,6 +91,20 @@ def select_validation_bundle(
             )
         )
     )
+    if (
+        normalized_instrument == "swaption"
+        and normalized_method in {"analytical", "rate_tree", "monte_carlo"}
+        and _has_explicit_swaption_comparison_regime(semantic_blueprint)
+    ):
+        checks = tuple(
+            check
+            for check in checks
+            if check not in {
+                "check_vol_sensitivity",
+                "check_vol_monotonicity",
+                "check_zero_vol_intrinsic",
+            }
+        )
     categories = _categorize_checks(checks)
     bundle_id = f"{normalized_method}:{normalized_instrument}"
     return ValidationBundle(
@@ -112,6 +127,7 @@ def execute_validation_bundle(
     reference_factory: Callable[[], Any] | None = None,
     intrinsic_fn: Callable[[Any], float] | None = None,
     check_relations: Mapping[str, str] | None = None,
+    semantic_blueprint=None,
 ) -> ValidationBundleExecution:
     """Execute the deterministic checks selected for a validation bundle."""
     from trellis.agent import invariants
@@ -122,6 +138,7 @@ def execute_validation_bundle(
     skipped_checks: list[str] = []
     check_relations = check_relations or {}
     vol_direction = _vol_monotonicity_direction(bundle.instrument_type)
+    swaption_comparison_kwargs = _swaption_comparison_kwargs_from_blueprint(semantic_blueprint)
 
     for check in bundle.checks:
         if failures and check not in UNIVERSAL_CHECKS:
@@ -226,6 +243,7 @@ def execute_validation_bundle(
                 check,
                 payoff_factory,
                 market_state_factory,
+                comparison_kwargs=swaption_comparison_kwargs,
             )
             failures.extend(result[0])
             failure_details.extend(result[1])
@@ -294,6 +312,28 @@ def execute_validation_bundle(
     )
 
 
+def _swaption_comparison_kwargs_from_blueprint(semantic_blueprint) -> dict[str, float]:
+    """Return explicit comparison kwargs for swaption helper validation when present."""
+    valuation_context = getattr(semantic_blueprint, "valuation_context", None)
+    engine_model_spec = getattr(valuation_context, "engine_model_spec", None)
+    if engine_model_spec is None or getattr(engine_model_spec, "model_name", "") != "hull_white_1f":
+        return {}
+    overrides = dict(getattr(engine_model_spec, "parameter_overrides", {}) or {})
+    mean_reversion = overrides.get("mean_reversion")
+    sigma = overrides.get("sigma")
+    if mean_reversion is None or sigma is None:
+        return {}
+    return {
+        "mean_reversion": float(mean_reversion),
+        "sigma": float(sigma),
+    }
+
+
+def _has_explicit_swaption_comparison_regime(semantic_blueprint) -> bool:
+    """Return whether the blueprint carries explicit fixed comparison parameters."""
+    return bool(_swaption_comparison_kwargs_from_blueprint(semantic_blueprint))
+
+
 def _run_check_with_diagnostics(check_fn, check_name: str, *args, **kwargs) -> tuple[list[str], list[Any]]:
     """Execute one invariant check and normalize structured diagnostics."""
     from trellis.agent.invariants import InvariantFailure
@@ -342,14 +382,12 @@ def _resolve_validation_instrument(
     semantic_blueprint=None,
 ) -> str:
     """Resolve the most specific instrument id available for validation."""
-    normalized = (instrument_type or "").strip().lower().replace(" ", "_")
-    if normalized and normalized != "unknown":
-        return normalized
-    if semantic_blueprint is not None and getattr(semantic_blueprint, "semantic_id", None):
-        return str(semantic_blueprint.semantic_id).strip().lower().replace(" ", "_")
-    if product_ir is not None and getattr(product_ir, "instrument", None):
-        return str(product_ir.instrument).strip().lower().replace(" ", "_")
-    return "unknown"
+    resolved = resolve_authoritative_instrument_type(
+        instrument_type,
+        getattr(product_ir, "instrument", None),
+        getattr(semantic_blueprint, "semantic_id", None),
+    )
+    return resolved or "unknown"
 
 
 def _family_checks_for(

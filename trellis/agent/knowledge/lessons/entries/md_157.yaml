@@ -1,0 +1,36 @@
+category: market_data
+title: Approved Module Usage
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:55:57.846684'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The implementation imported an unapproved module instead of the inspected
+  module from the generation plan.
+root_cause: The mental model failed by treating any available internal module as valid,
+  rather than respecting the approved dependency boundary used by validation. This
+  causes mismatches between generated code and the sanctioned component graph.
+fix: Replace the unapproved import with the approved inspected module and keep all
+  implementation dependencies within the validated plan.
+validation: "Resolved during build of Build a pricer for: ZCB option: Ho-Lee vs HW\
+  \ tree vs Jamshidian analytical\n\nPrice a 1Y European option on a zero-coupon bond\
+  \ maturing at T=5Y.\nFace value $100, strike price $88. Hull-White model: mean reversion\n\
+  a=0.1, short-rate vol sigma=0.01, initial short rate r0=0.05.\nFlat yield curve\
+  \ at 5%.\nCross-validate Ho-Lee tree, Hull-White tree, and Jamshidian analytical\n\
+  decomposition.  All three should agree within 2%.\n\nConstruct methods: rate_tree\n\
+  Comparison targets: ho_lee_tree (rate_tree), hull_white_tree (rate_tree), jamshidian\
+  \ (analytical)\nCross-validation harness:\n  internal targets: ho_lee_tree, hull_white_tree\n\
+  \  analytical benchmark: jamshidian\n  external targets: quantlib, financepy\nNew\
+  \ component: jamshidian_decomposition\n\nImplementation target: jamshidian\nPreferred\
+  \ method family: analytical\n\nImplementation target: jamshidian"
+supersedes: []
+id: md_157

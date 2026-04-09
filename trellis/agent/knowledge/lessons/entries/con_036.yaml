@@ -1,0 +1,30 @@
+category: convention
+title: Missing payoff schedule contract
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-06T17:27:20.332248'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - path_dependent
+  - discounting
+  - analytical
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Build fails with a clarification error stating that semantic_product_shape
+  and a date-schedule primitive are missing before payoff generation.
+root_cause: The pricing DSL requires explicit product shape, schedule, and payoff
+  contract fields before it can construct the payoff adapter. Without those semantic
+  inputs, the analytical branch cannot bind the payoff to a valid instrument specification.
+fix: Add the missing schedule primitive and payoff contract fields to the instrument
+  spec, including semantic_product_shape, payment dates, and payoff assumptions. Ensure
+  the analytical pricer uses the explicit payoff adapter contract rather than inferring
+  the product shape.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: con_036

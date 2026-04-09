@@ -2,8 +2,8 @@ id: mc_027
 title: Unapproved correlated_gbm module path blocks Himalaya build
 severity: critical
 category: monte_carlo
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 0.8
 created: '2026-03-28T12:05:09.116634'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_120509_basket_option_monte_carlo.yaml
@@ -32,3 +32,4 @@ fix: Replace all imports of `trellis.models.processes.correlated_gbm` with the a
   path appears in the generation plan's approved module list) and verify the approved
   path before writing any import statement.
 validation: Discovered during build (attempt 3)
+supersedes: []

@@ -1,0 +1,38 @@
+category: market_data
+title: Uninitialized branch variable
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-07T10:10:16.193401'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The Black-Scholes implementation referenced `intrinsic` in a code path where
+  it was never assigned for the actual market-state smoke test.
+root_cause: This happens when a variable is created only inside one conditional branch
+  but later used unconditionally; the mental model error is assuming every execution
+  path initializes the same local state. In pricing code, edge cases like maturity/volatility
+  limits make these branch gaps easy to miss.
+fix: Initialize `intrinsic` before branching or return immediately in the edge-case
+  branch so every path either defines it or avoids using it.
+validation: "Resolved during build of Build a pricer for: FFT vs COS: GBM calls/puts\
+  \ across strikes and maturities\n\nEuropean call and put options on a non-dividend-paying\
+  \ stock under GBM.\nS0=100, risk-free rate r=5%, volatility sigma=20%.\nPrice across\
+  \ a grid of strikes K=[80, 90, 100, 110, 120] and\nmaturities T=[0.5, 1.0, 2.0]\
+  \ years — 15 call prices and 15 put\nprices total.\nMethod 1: FFT (Carr-Madan) with\
+  \ N=4096, eta=0.25, Simpson weights.\nMethod 2: COS method with N=128 terms.\nBoth\
+  \ methods should agree with Black-Scholes analytical to within 0.5%.\n\nConstruct\
+  \ methods: fft_pricing\nComparison targets: fft (fft_pricing), cos (fft_pricing),\
+  \ black_scholes (analytical)\nCross-validation harness:\n  internal targets: fft,\
+  \ cos\n  analytical benchmark: black_scholes\nNew component: put_pricing_via_transforms\n\
+  \nImplementation target: black_scholes\nPreferred method family: analytical\n\n\
+  Implementation target: black_scholes"
+supersedes: []
+id: md_143

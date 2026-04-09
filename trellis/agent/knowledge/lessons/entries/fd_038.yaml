@@ -1,8 +1,8 @@
 category: finite_differences
 title: Initialize intrinsic before branching
 severity: high
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-03-31T20:24:25.965278'
 version: ''
 source_trace: null
@@ -35,3 +35,4 @@ validation: "Resolved during build of Build a pricer for: European call: theta-m
   \ target: theta_1.0\nPreferred method family: pde_solver\n\nImplementation target:\
   \ theta_1.0"
 id: fd_038
+supersedes: []

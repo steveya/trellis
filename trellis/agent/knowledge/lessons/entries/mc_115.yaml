@@ -1,0 +1,28 @@
+category: monte_carlo
+title: Event-aware MC API mismatch
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:59:48.100890'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_165950_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'The build failed with TypeError: price_event_aware_monte_carlo() got an
+  unexpected keyword argument ''process''.'
+root_cause: The generated pricer called the event-aware Monte Carlo entry point with
+  a non-supported API signature. The implementation assumed a 'process' argument existed,
+  but the actual engine expects a different set of inputs and route-specific state
+  wiring.
+fix: Align the pricer with the exact Monte Carlo cookbook signature and use only supported
+  arguments for the selected route. If a process object is required, pass it through
+  the correct state/process parameter name or route helper used by trellis.models.monte_carlo.engine.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_115

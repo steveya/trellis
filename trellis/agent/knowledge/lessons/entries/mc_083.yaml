@@ -1,0 +1,30 @@
+category: monte_carlo
+title: Specify payoff product shape
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-06T17:26:42.034071'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - path_dependent
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Build stops with decision=clarification and missing contract fields: semantic_product_shape
+  before payoff generation.'
+root_cause: The pricing request did not define the payoff contract shape clearly enough
+  for the DSL to generate a valid payoff function. For Monte Carlo pricing, the engine
+  needs the exact product type, schedule, and payoff assumptions to map paths to scalar
+  payoffs.
+fix: 'Add an explicit product-shape contract before extending the DSL: specify whether
+  the payoff is vanilla, path-dependent, basket, Asian, or other; provide schedule/maturity
+  conventions; and define the payoff formula and observation points. Then implement
+  the payoff so it returns one scalar per path.'
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: mc_083

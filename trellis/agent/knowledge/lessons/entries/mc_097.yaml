@@ -1,0 +1,28 @@
+category: monte_carlo
+title: Fix MC payoff indentation
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-07T18:21:14.338070'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_182116_swaption_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - floating_coupons
+  - forward_rate
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Generated code fails with SyntaxError: expected an indented block after
+  ''for'' statement in the payoff builder.'
+root_cause: The MC payoff assembly emitted a loop header without indenting the try/except
+  body that computes forward rates. This is a codegen structural bug, not a pricing
+  logic error.
+fix: Generate the payoff block with strict indentation checks and unit-test the emitted
+  Python AST before saving. Keep floating-coupon logic inside the loop body and validate
+  that each control block has at least one indented statement.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_097

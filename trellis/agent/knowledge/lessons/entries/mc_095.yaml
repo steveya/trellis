@@ -1,0 +1,29 @@
+category: monte_carlo
+title: MC route gate mismatch
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-07T10:12:13.559045'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_101215_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Build fails before path generation with `Route admissibility failed for
+  monte_carlo_paths: unsupported_control_style:holder_max; unsupported_state_tag:recombining_safe`.'
+root_cause: The Monte Carlo pricer was routed through a control-style/state-tag combination
+  that the MC engine does not admit. The selected route expected a non-recombining
+  path simulation kernel, but the plan carried incompatible annotations from a different
+  pricing family.
+fix: Strip unsupported control/state tags before route selection and bind European
+  option pricing to the standard Monte Carlo simulation kernel only. Add an admissibility
+  guard that maps European calls to a plain path-simulation route with discounting
+  and vol-surface dependence, avoiding holder_max/recombining-safe metadata.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: mc_095

@@ -1,0 +1,33 @@
+category: volatility
+title: Vega must affect callable pricing
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-07T13:12:03.906673'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_131205_callable_bond_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  - pde_grid
+  - backward_induction
+  - oas
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: price(5%) == price(40%) with 0.0000% change for an embedded-call bond
+root_cause: The pricer used a payoff/path construction that ignored volatility or
+  bypassed the model dynamics, so the callable feature never saw any rate dispersion.
+  For callable instruments, option value must vary with sigma; otherwise the call
+  constraint is not being exercised in the pricing engine.
+fix: Wire volatility into the HW PDE/tree state evolution and verify the embedded
+  option changes price under a large sigma bump. Add a regression check that callable-bond
+  price and OAS move materially when sigma changes, and fail fast if vega is effectively
+  zero.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: vol_012

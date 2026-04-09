@@ -1,0 +1,29 @@
+category: monte_carlo
+title: Fix MC indentation and primitives
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-07T18:29:29.226038'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_182931_swaption_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Generated module fails to import with a SyntaxError near a misindented try/except
+  block, and validation reports missing required primitive GBM usage.
+root_cause: The payoff template was assembled with malformed Python control flow and
+  did not remain a thin adapter around the required Monte Carlo process primitive.
+  As a result, the route compiler rejected the payoff and the module could not be
+  parsed.
+fix: Rebuild the Monte Carlo payoff as a thin, indentation-safe adapter around the
+  approved simulation primitive only. Ensure the evaluate() path uses the required
+  process primitive directly, with no fallback branch that breaks syntax or bypasses
+  the selected assembly route.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_098
