@@ -222,10 +222,7 @@ def test_route_less_semantic_request_keeps_validation_contract_truthful():
             "credit_default_swap_analytical",
             "analytical:credit_default_swap",
             {"discount_curve", "credit_curve"},
-            (
-                "unsupported_state_tag:pathwise_only",
-                "unsupported_state_tag:recombining_safe",
-            ),
+            (),
         ),
         (
             "First-to-default basket on ACME, BRAVO, CHARLIE, DELTA, ECHO maturing 2029-11-15",
