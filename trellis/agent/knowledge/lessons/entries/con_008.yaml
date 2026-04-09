@@ -2,8 +2,8 @@ id: con_008
 title: Undefined MarketState in CDS Pricer
 severity: critical
 category: convention
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 1.0
 created: '2026-03-24T12:36:15.378460'
 version: ''
 source_trace: null
@@ -20,3 +20,4 @@ root_cause: The pricing model referenced MarketState without a proper definition
 fix: Define or import the MarketState class according to the established data contracts
   and ensure that all unit and convention requirements are met.
 validation: Discovered during build (attempt 0)
+supersedes: []

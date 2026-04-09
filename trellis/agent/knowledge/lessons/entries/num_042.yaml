@@ -1,0 +1,32 @@
+category: numerical
+title: Unknown Trellis FFT module
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:08:38.955521'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_160840_european_option_fft_pricing.yaml
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - discounting
+  - characteristic_function
+  - cos_method
+  - greeks
+  - stochastic_vol
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Build logs fail at line 129 with "unknown Trellis module `trellis.models.transforms`"
+  during payoff/pricer assembly.
+root_cause: The payoff builder referenced a module path that does not exist in the
+  available Trellis runtime, so the FFT pricing route could not resolve its kernel
+  implementation. This is a route-discovery/registry mismatch rather than a math error
+  in Heston pricing.
+fix: Use only registered pricing modules and verify the exact import path before assembly.
+  Add a preflight check that resolves the FFT/COS pricer symbol from the route registry
+  and fails fast with a clear fallback if the transform module is unavailable.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: num_042

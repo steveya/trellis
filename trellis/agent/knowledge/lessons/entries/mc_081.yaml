@@ -1,0 +1,32 @@
+category: monte_carlo
+title: Clarify payoff contract shape
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-06T17:25:54.423660'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - path_dependent
+  - maturity_settlement
+  - discounting
+  - greeks
+  - convergence_order_measurement
+  instrument: []
+  error_signature: null
+symptom: Build stops with 'Cannot generate payoff because the semantic request still
+  requires clarification' and missing field 'semantic_product_shape'.
+root_cause: The pricing request did not specify the exact payoff/product shape and
+  settlement assumptions needed to synthesize the Monte Carlo payoff DSL. Without
+  a cookbook entry for the product contract, the generator cannot safely infer whether
+  the call is plain-vanilla, path-dependent, or requires special settlement timing.
+fix: 'Add the missing contract fields up front: semantic_product_shape, payoff formula,
+  settlement timing, and any path-dependence assumptions. Ensure the cookbook/DSL
+  has a reusable GBM call template before attempting scheme comparison or convergence
+  measurement.'
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: mc_081

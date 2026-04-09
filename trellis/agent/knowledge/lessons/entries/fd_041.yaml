@@ -1,0 +1,42 @@
+category: finite_differences
+title: Boundary scaling blew up price
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-08T15:57:32.717168'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The PDE solver produced a wildly inflated option value because the grid/operator
+  inputs were likely mis-scaled or mismatched, causing the spot/volatility/time units
+  to be applied incorrectly.
+root_cause: In finite-difference pricing, a small unit or coefficient mistake in the
+  Black-Scholes operator, time step, or boundary conditions can amplify across the
+  whole grid and yield prices far outside plausible bounds. This usually reflects
+  a mental model failure where numerical stability is assumed to guarantee correctness,
+  even though the discretized PDE can still be built with the wrong economic units.
+fix: Verify all inputs are in consistent units and that the PDE coefficients, boundary
+  conditions, and time-step scaling match the Black-Scholes equation exactly before
+  comparing convergence.
+validation: "Resolved during build of Build a pricer for: European call: theta-method\
+  \ convergence order measurement\n\nEuropean call option on a non-dividend-paying\
+  \ stock.\nS0=100, K=105, T=1Y, risk-free rate r=5%, volatility sigma=20%.\nSolve\
+  \ with the Black-Scholes PDE operator using Crank-Nicolson\n(theta=0.5) and fully\
+  \ implicit (theta=1.0) on a 200-point spot grid\n× 100 time steps.\nMeasure convergence\
+  \ order by doubling the grid: the CN scheme should\nshow O(dt^2 + dS^2) convergence\
+  \ and the implicit scheme O(dt + dS^2).\nCompare both to the Black-Scholes analytical\
+  \ price.\n\nConstruct methods: pde_solver\nComparison targets: theta_0.5 (pde_solver),\
+  \ theta_1.0 (pde_solver), black_scholes (analytical)\nCross-validation harness:\n\
+  \  internal targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n\
+  \  external targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+  \ target: theta_0.5\nPreferred method family: pde_solver\n\nImplementation target:\
+  \ theta_0.5"
+supersedes: []
+id: fd_041

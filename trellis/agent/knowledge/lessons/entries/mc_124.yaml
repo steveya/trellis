@@ -1,0 +1,30 @@
+category: monte_carlo
+title: Initialize payoff variables safely
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T18:27:27.546751'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_182729_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - asian
+  - path_dependent
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Monte Carlo payoff generation raised `local variable 'intrinsic' referenced
+  before assignment` during the market state smoke test.
+root_cause: The generated payoff branch used `intrinsic` outside the conditional block
+  where it was assigned. This typically happens in templated payoff code when indentation
+  or branch coverage is wrong.
+fix: Define the intrinsic payoff in a single, unconditional expression before any
+  branch-specific logic, or ensure every branch assigns it. Add a smoke test that
+  evaluates a representative in-the-money and out-of-the-money path to catch uninitialized
+  locals.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_124

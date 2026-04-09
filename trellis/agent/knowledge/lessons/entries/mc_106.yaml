@@ -1,0 +1,52 @@
+category: monte_carlo
+title: Avoid malformed exception blocks
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:10:28.934157'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - path_dependent
+  - stochastic_vol
+  - characteristic_function
+  - cos_method
+  - fft_pricing
+  - monte_carlo
+  - vol_surface_dependence
+  - implied_vol_surface_extraction
+  - discounting
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: The Monte Carlo implementation contained a syntax error in a try/except path,
+  so the module could not load and validation failed before any pricing logic ran.
+root_cause: In Python, even a small indentation or block-structure mistake breaks
+  the entire file, which is easy to miss when adding defensive fallback code around
+  simulation or pricing routines. The mental model failure is treating error-handling
+  as isolated, when it must still obey exact parser-level syntax.
+fix: Keep try/except blocks minimal and well-indented, and always execute a pre-validation
+  compile/import step after editing the Monte Carlo code.
+validation: "Resolved during build of Build a pricer for: Heston smile: FFT vs COS\
+  \ vs MC implied vol surface\n\nExtract the implied volatility smile surface under\
+  \ the Heston\nstochastic volatility model for SPX.\nUse the market snapshot (as_of\
+  \ 2024-11-15) which provides:\n  - SPX spot (S=5890)\n  - Heston parameters: kappa=2.0,\
+  \ theta=0.04, xi=0.48, rho=-0.68, v0=0.04\n  - USD OIS discount curve\n  - A reference\
+  \ implied vol smile surface (6 expiries x 7 strikes)\nPrice European calls across\
+  \ strikes K=[5400, 5600, 5800, 5900, 6000,\n6200, 6400] and maturities T=[0.25,\
+  \ 0.5, 1.0, 2.0] years.\nMethod 1: Heston FFT (Carr-Madan with the Heston characteristic\
+  \ function).\nMethod 2: Heston COS method.\nMethod 3: Heston MC (QE scheme, 200k\
+  \ paths).\nFrom each set of prices, extract the implied vol surface by inverting\n\
+  Black-Scholes.  All three surfaces should agree within 0.5 vol points.\nThe resulting\
+  \ smile should show negative skew (lower strikes have\nhigher IV) consistent with\
+  \ rho=-0.68.\n\nConstruct methods: fft_pricing, monte_carlo\nComparison targets:\
+  \ heston_fft (fft_pricing), heston_cos (fft_pricing), heston_mc (monte_carlo)\n\
+  Cross-validation harness:\n  internal targets: heston_fft, heston_cos, heston_mc\n\
+  \  external targets: quantlib\nNew component: implied_vol_surface_extraction\n\n\
+  Implementation target: heston_mc\nPreferred method family: monte_carlo\n\nImplementation\
+  \ target: heston_mc"
+supersedes: []
+id: mc_106

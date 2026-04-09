@@ -1033,6 +1033,166 @@ def make_vanilla_option_contract(
     )
 
 
+def make_american_option_contract(
+    *,
+    description: str,
+    underliers: tuple[str, ...] | list[str],
+    observation_schedule: tuple[str, ...] | list[str],
+    preferred_method: str = "rate_tree",
+    exercise_style: str = "american",
+) -> SemanticContract:
+    """Construct a bounded early-exercise single-underlier option contract."""
+    underlier_names = _tuple(underliers)
+    schedule = _normalize_schedule(observation_schedule)
+    if not underlier_names:
+        raise ValueError("American option contract requires at least one underlier.")
+    if not schedule:
+        raise ValueError("American option contract requires an expiry or exercise schedule.")
+
+    normalized_exercise = str(exercise_style).strip().lower()
+    if normalized_exercise not in {"american", "bermudan"}:
+        raise ValueError("American option contract only supports american or bermudan exercise.")
+
+    product = SemanticProductSemantics(
+        semantic_id="american_option",
+        semantic_version="c2.1",
+        instrument_class="american_option",
+        instrument_aliases=("american_option", "bermudan_option", "option"),
+        payoff_family="vanilla_option",
+        timeline=_default_semantic_timeline(
+            schedule,
+            includes_decision=True,
+            settlement_dates=schedule[-1:],
+        ),
+        underlier_structure="single_underlier",
+        payoff_rule="vanilla_option_payoff",
+        settlement_rule="cash_settle_at_expiry",
+        payoff_traits=("discounting", "vol_surface_dependence", "early_exercise"),
+        observables=(
+            ObservableSpec(
+                observable_id="underlier_spot",
+                observable_type="spot",
+                description="Observed underlier spot on candidate exercise dates.",
+                source="underlier_spot",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+        ),
+        state_fields=(
+            StateField(
+                field_name="underlier_price",
+                kind="event_state",
+                description="Observed underlier price used for early-exercise payoff decisions.",
+                source_observables=("underlier_spot",),
+                tags=("terminal_markov", "recombining_safe"),
+            ),
+        ),
+        obligations=(
+            ObligationSpec(
+                obligation_id="exercise_cash_settlement",
+                settle_date_rule="cash_settle_at_expiry",
+                amount_expression="vanilla_option_payoff",
+                settlement_kind="cash",
+                trigger="exercise_if_optimal_on_schedule",
+                provenance="semantic_contract",
+            ),
+        ),
+        controller_protocol=ControllerProtocol(
+            controller_style="holder_max",
+            controller_role="holder",
+            decision_phase="decision",
+            schedule_role="decision_dates",
+            admissible_actions=("exercise", "continue"),
+            description="Holder exercise decision on each permitted exercise date.",
+        ),
+        audit_info=_default_audit_info(),
+        implementation_hints=_default_implementation_hints(
+            event_machine_source="derived_from_event_transitions",
+            primary_schedule_role="decision_dates",
+        ),
+        exercise_style=normalized_exercise,
+        path_dependence="terminal_markov",
+        schedule_dependence=(normalized_exercise == "bermudan"),
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+        multi_asset=False,
+        observation_schedule=schedule,
+        observation_basis="exercise_schedule",
+        selection_operator="",
+        selection_scope="",
+        selection_count=0,
+        lock_rule="",
+        aggregation_rule="",
+        maturity_settlement_rule="cash_settle_at_expiry",
+        constituents=underlier_names,
+        state_variables=("underlier_price",),
+        event_transitions=("evaluate_early_exercise", "evaluate_terminal_payoff", "settle_at_expiry"),
+        event_machine=_derive_event_machine(
+            ("evaluate_early_exercise", "evaluate_terminal_payoff", "settle_at_expiry"),
+            state_dependence="terminal_markov",
+        ),
+    )
+
+    required_inputs = (
+        SemanticMarketInputSpec(
+            input_id="discount_curve",
+            description="Risk-free discount curve for present-value discounting.",
+            capability="discount_curve",
+            aliases=("discount", "discount_rate"),
+            connector_hint="Use the settlement discount curve.",
+            allowed_provenance=("observed",),
+        ),
+        SemanticMarketInputSpec(
+            input_id="underlier_spot",
+            description="Spot level for the single underlier.",
+            capability="spot",
+            aliases=("spot", "underlier_spots", "underlier_price"),
+            connector_hint="Provide the current spot for the priced underlier.",
+            allowed_provenance=("observed",),
+        ),
+        SemanticMarketInputSpec(
+            input_id="black_vol_surface",
+            description="Implied volatility surface for the underlier.",
+            capability="black_vol_surface",
+            aliases=("vol_surface", "volatility_surface"),
+            connector_hint="Provide implied vol or a surface.",
+            allowed_provenance=("observed",),
+        ),
+    )
+    return _semantic_contract_from_sections(
+        product=product,
+        required_inputs=required_inputs,
+        candidate_methods=("rate_tree", "pde_solver", "monte_carlo"),
+        preferred_method=preferred_method,
+        bundle_hints=("american_option_contract",),
+        universal_checks=(
+            "single_underlier_present",
+            "expiry_or_exercise_date_present",
+            "settlement_rule_present",
+        ),
+        semantic_checks=(
+            "holder_exercise_occurs_on_schedule",
+            "settlement_occurs_at_expiry",
+        ),
+        comparison_targets=(normalize_method(preferred_method),),
+        reduction_cases=("single_underlier_early_exercise",),
+        target_modules=("trellis.models.equity_option_tree", "trellis.models.equity_option_pde"),
+        primitive_families=("exercise_lattice", "pde_theta_1d"),
+        adapter_obligations=(
+            "resolve_single_underlier_spot",
+            "resolve_discount_curve",
+            "map_holder_exercise_schedule",
+        ),
+        proving_tasks=(
+            "compile_request_to_product_ir",
+            "validate_american_option_contract",
+            "emit_bounded_semantic_blueprint",
+        ),
+        spec_schema_hints=("american_option",),
+        description=description,
+    )
+
+
 def make_quanto_option_contract(
     *,
     description: str,
@@ -1640,6 +1800,7 @@ def make_rate_style_swaption_contract(
     observation_schedule: tuple[str, ...] | list[str],
     preferred_method: str = "analytical",
     exercise_style: str = "european",
+    term_fields: Mapping[str, object] | None = None,
 ) -> SemanticContract:
     """Construct a generic rate-style swaption semantic contract."""
     schedule = _normalize_schedule(observation_schedule)
@@ -1650,8 +1811,17 @@ def make_rate_style_swaption_contract(
     if normalized_exercise not in {"european", "bermudan"}:
         raise ValueError("Rate-style swaption contract only supports european or bermudan exercise.")
     if normalized_exercise == "european":
-        target_modules = ("trellis.models.black",)
-        primitive_families = ("analytical_black76",)
+        if normalized_method == "monte_carlo":
+            target_modules = (
+                "trellis.models.processes.hull_white",
+                "trellis.models.monte_carlo.engine",
+                "trellis.models.monte_carlo.event_state",
+                "trellis.models.monte_carlo.path_state",
+            )
+            primitive_families = ("monte_carlo_paths",)
+        else:
+            target_modules = ("trellis.models.black",)
+            primitive_families = ("analytical_black76",)
     elif normalized_method == "analytical":
         target_modules = ("trellis.models.rate_style_swaption",)
         primitive_families = ("analytical_black76",)
@@ -1659,6 +1829,7 @@ def make_rate_style_swaption_contract(
         target_modules = ("trellis.models.trees.lattice",)
         primitive_families = ("exercise_lattice",)
     spec_schema_hints = ("swaption",) if normalized_exercise == "european" else ("bermudan_swaption",)
+    normalized_term_fields = _freeze_mapping(term_fields)
 
     product = SemanticProductSemantics(
         semantic_id="rate_style_swaption",
@@ -1750,6 +1921,7 @@ def make_rate_style_swaption_contract(
         constituents=(),
         state_variables=("exercise_date", "swap_rate"),
         event_transitions=("price_swaption_at_exercise", "settle_at_exercise"),
+        term_fields=normalized_term_fields,
         event_machine=_derive_event_machine(
             ("price_swaption_at_exercise", "settle_at_exercise"),
             state_dependence="schedule_dependent",
@@ -1783,10 +1955,49 @@ def make_rate_style_swaption_contract(
             allowed_provenance=("observed",),
         ),
     )
+    optional_inputs: tuple[SemanticMarketInputSpec, ...] = ()
+    derivable_inputs: tuple[str, ...] = ()
+    estimation_policy: tuple[str, ...] = ()
+    calibration = None
+    comparison_model_name = str(
+        normalized_term_fields.get("comparison_model_name") or ""
+    ).strip().lower()
+    explicit_comparison_parameters = (
+        "comparison_mean_reversion" in normalized_term_fields
+        and "comparison_sigma" in normalized_term_fields
+    )
+    if normalized_method in {"rate_tree", "monte_carlo"} or comparison_model_name == "hull_white_1f":
+        optional_inputs = (
+            SemanticMarketInputSpec(
+                input_id="model_parameters",
+                description="Calibrated Hull-White parameter set when already available.",
+                capability="model_parameters",
+                aliases=("hull_white_parameters", "model_parameter_set"),
+                connector_hint="Use calibrated Hull-White model parameters when the market snapshot already carries them.",
+                derivable_from=("discount_curve", "black_vol_surface"),
+                allowed_provenance=("observed", "derived", "calibrated"),
+            ),
+        )
+        derivable_inputs = ("model_parameters",)
+        estimation_policy = ("derive_hull_white_parameters_from_swaption_quotes",)
+        if normalized_method in {"rate_tree", "monte_carlo"} or not explicit_comparison_parameters:
+            try:
+                from trellis.agent.calibration_contract import hull_white_calibration_contract
+
+                calibration = hull_white_calibration_contract(fitting="swaption")
+            except Exception:
+                calibration = None
     return _semantic_contract_from_sections(
         product=product,
         required_inputs=required_inputs,
-        candidate_methods=("analytical", "rate_tree"),
+        optional_inputs=optional_inputs,
+        derivable_inputs=derivable_inputs,
+        estimation_policy=estimation_policy,
+        candidate_methods=(
+            ("analytical", "rate_tree", "monte_carlo")
+            if normalized_exercise == "european"
+            else ("analytical", "rate_tree")
+        ),
         preferred_method=preferred_method,
         bundle_hints=("rate_style_swaption_contract",),
         universal_checks=(
@@ -1806,6 +2017,14 @@ def make_rate_style_swaption_contract(
             "resolve_forward_and_discount_curves",
             "derive_swaption_exercise_schedule",
             "map_swaption_to_black_route",
+            *(
+                (
+                    "compile_schedule_into_mc_event_timeline",
+                    "map_swaption_to_event_aware_mc_payoff",
+                )
+                if normalized_method == "monte_carlo"
+                else ()
+            ),
         ),
         proving_tasks=(
             "compile_request_to_product_ir",
@@ -1814,6 +2033,7 @@ def make_rate_style_swaption_contract(
         ),
         spec_schema_hints=spec_schema_hints,
         description=description,
+        calibration=calibration,
     )
 
 
@@ -2175,6 +2395,189 @@ def make_nth_to_default_contract(
             "emit_bounded_semantic_blueprint",
         ),
         spec_schema_hints=("nth_to_default",),
+        description=description,
+    )
+
+
+def make_credit_basket_tranche_contract(
+    *,
+    description: str,
+    observation_schedule: tuple[str, ...] | list[str],
+    reference_pool_size: int,
+    attachment: float,
+    detachment: float,
+    preferred_method: str = "copula",
+) -> SemanticContract:
+    """Construct a tranche-style basket-credit semantic contract."""
+    schedule = _normalize_schedule(observation_schedule)
+    normalized_method = normalize_method(preferred_method)
+    normalized_pool_size = max(int(reference_pool_size), 2)
+    normalized_attachment = float(attachment)
+    normalized_detachment = float(detachment)
+    if not schedule:
+        raise ValueError("Credit-basket tranche contract requires a maturity schedule.")
+    if normalized_detachment <= normalized_attachment:
+        raise ValueError("Tranche detachment must exceed attachment.")
+    if normalized_method != "copula":
+        raise ValueError(
+            "Credit-basket tranche semantic contracts currently support the copula route only."
+        )
+
+    reference_pool = tuple(f"REF{i + 1}" for i in range(normalized_pool_size))
+    product = SemanticProductSemantics(
+        semantic_id="credit_basket_tranche",
+        semantic_version="c1.0",
+        instrument_class="cdo",
+        instrument_aliases=("cdo", "cdo_tranche", "synthetic_cdo", "tranche"),
+        payoff_family="credit_basket_tranche",
+        timeline=_default_semantic_timeline(
+            schedule,
+            settlement_dates=schedule,
+            state_update_dates=schedule,
+        ),
+        underlier_structure="multi_asset_basket",
+        payoff_rule="tranche_loss_payment",
+        settlement_rule="settle_expected_tranche_loss_at_maturity",
+        payoff_traits=(
+            "credit_spread_dependence",
+            "correlation_dependence",
+            "default_contingent",
+            "tranche_loss",
+        ),
+        observables=(
+            ObservableSpec(
+                observable_id="basket_credit_curve",
+                observable_type="credit_curve",
+                description="Representative credit curve used to derive marginal basket default probabilities.",
+                source="credit_curve",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+        ),
+        state_fields=(
+            StateField(
+                field_name="remaining_reference_pool",
+                kind="contract_memory",
+                description="Surviving reference-entity pool used by the copula loss model.",
+                source_observables=("basket_credit_curve",),
+                tags=("pathwise_only", "remaining_pool", "schedule_state"),
+            ),
+            StateField(
+                field_name="cumulative_portfolio_loss_fraction",
+                kind="contract_memory",
+                description="Running portfolio loss fraction before tranche projection.",
+                source_observables=("basket_credit_curve",),
+                tags=("pathwise_only", "schedule_state"),
+            ),
+        ),
+        obligations=(
+            ObligationSpec(
+                obligation_id="tranche_loss_cash_settlement",
+                settle_date_rule="settle_expected_tranche_loss_at_maturity",
+                amount_expression="discounted_expected_tranche_loss",
+                settlement_kind="cash",
+                trigger="maturity",
+                provenance="semantic_contract",
+            ),
+        ),
+        controller_protocol=ControllerProtocol(
+            controller_style="identity",
+            controller_role="none",
+            decision_phase="decision",
+            schedule_role="",
+            admissible_actions=(),
+            description="Tranche-loss semantics are automatic and have no strategic controller.",
+        ),
+        audit_info=_default_audit_info(),
+        implementation_hints=_default_implementation_hints(
+            event_machine_source="derived_from_event_transitions",
+            primary_schedule_role="observation_dates",
+        ),
+        exercise_style="none",
+        path_dependence="path_dependent",
+        schedule_dependence=True,
+        state_dependence="path_dependent",
+        model_family="credit_copula",
+        multi_asset=True,
+        observation_schedule=schedule,
+        observation_basis="maturity_horizon",
+        selection_operator="tranche_loss_projection",
+        selection_scope="reference_portfolio",
+        selection_count=normalized_pool_size,
+        lock_rule="survivor_pool_updates_after_each_default",
+        aggregation_rule="expected_tranche_loss",
+        maturity_settlement_rule="settle_expected_tranche_loss_at_maturity",
+        constituents=reference_pool,
+        state_variables=("remaining_reference_pool", "cumulative_portfolio_loss_fraction"),
+        event_transitions=(
+            "sample_correlated_default_times",
+            "accumulate_portfolio_loss",
+            "project_tranche_loss_at_maturity",
+        ),
+        event_machine=_derive_event_machine(
+            (
+                "sample_correlated_default_times",
+                "accumulate_portfolio_loss",
+                "project_tranche_loss_at_maturity",
+            ),
+            state_dependence="path_dependent",
+        ),
+        term_fields={
+            "reference_pool_size": normalized_pool_size,
+            "attachment": normalized_attachment,
+            "detachment": normalized_detachment,
+        },
+    )
+
+    required_inputs = (
+        SemanticMarketInputSpec(
+            input_id="discount_curve",
+            description="Discount curve used to present-value tranche loss.",
+            capability="discount_curve",
+            aliases=("discount", "discount_rate"),
+            connector_hint="Use the settlement discount curve.",
+            allowed_provenance=("observed",),
+        ),
+        SemanticMarketInputSpec(
+            input_id="credit_curve",
+            description="Representative basket credit curve used for marginal default probabilities.",
+            capability="credit_curve",
+            aliases=("hazard_curve", "survival_curve"),
+            connector_hint="Provide the basket credit curve or representative hazard term structure.",
+            allowed_provenance=("observed", "derived"),
+        ),
+    )
+
+    return _semantic_contract_from_sections(
+        product=product,
+        required_inputs=required_inputs,
+        candidate_methods=("copula",),
+        preferred_method=normalized_method,
+        bundle_hints=("credit_basket_tranche_contract",),
+        universal_checks=(
+            "reference_pool_size_present",
+            "tranche_bounds_valid",
+            "maturity_schedule_present",
+        ),
+        semantic_checks=(
+            "tranche_attachment_detachment_explicit",
+            "copula_dependence_assumption_explicit",
+        ),
+        comparison_targets=("gaussian_copula", "student_t_copula"),
+        reduction_cases=("mezzanine_tranche",),
+        target_modules=("trellis.models.credit_basket_copula",),
+        primitive_families=("copula_loss_distribution",),
+        adapter_obligations=(
+            "resolve_basket_credit_curve_and_discount_curve",
+            "preserve_tranche_attachment_and_detachment",
+            "delegate_credit_basket_tranche_pricing_to_checked_helper",
+        ),
+        proving_tasks=(
+            "compile_request_to_product_ir",
+            "validate_credit_basket_tranche_contract",
+            "emit_bounded_semantic_blueprint",
+        ),
+        spec_schema_hints=("cdo",),
         description=description,
     )
 
@@ -2791,6 +3194,72 @@ def _extract_trigger_rank(text: str, term_sheet) -> int:
     return 1
 
 
+def _extract_reference_pool_size(text: str, term_sheet) -> int:
+    """Extract the reference-portfolio size for basket-credit tranche requests."""
+    parameters = getattr(term_sheet, "parameters", {}) or {}
+    for key in ("reference_pool_size", "portfolio_size", "n_names", "names"):
+        value = parameters.get(key)
+        if value is None:
+            continue
+        try:
+            size = int(value)
+        except (TypeError, ValueError):
+            continue
+        if size >= 2:
+            return size
+
+    match = re.search(r"\b(\d+)\s*-\s*name\b", text, flags=re.IGNORECASE)
+    if match is None:
+        match = re.search(r"\b(\d+)\s+names?\b", text, flags=re.IGNORECASE)
+    if match is not None:
+        return max(int(match.group(1)), 2)
+    return 0
+
+
+def _parse_decimal_or_percent(value: object) -> float | None:
+    """Parse a numeric text/number, accepting percent inputs such as ``3%``."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        is_percent = text.endswith("%")
+        if is_percent:
+            text = text[:-1].strip()
+        try:
+            number = float(text)
+        except ValueError:
+            return None
+        return number / 100.0 if is_percent or number > 1.0 else number
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number / 100.0 if number > 1.0 else number
+
+
+def _extract_tranche_point(text: str, term_sheet, *, label: str) -> float | None:
+    """Extract one tranche attachment/detachment point from structured fields or text."""
+    parameters = getattr(term_sheet, "parameters", {}) or {}
+    for key in (label, f"{label}_point", f"{label}_pct"):
+        parsed = _parse_decimal_or_percent(parameters.get(key))
+        if parsed is not None:
+            return parsed
+
+    pattern = rf"{label}\s+point\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\s*%?"
+    match = re.search(pattern, text, flags=re.IGNORECASE)
+    if match is None:
+        pattern = rf"{label}\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\s*%?"
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+    if match is None:
+        return None
+    token = match.group(1)
+    has_percent = "%" in match.group(0)
+    value = float(token)
+    return value / 100.0 if has_percent or value > 1.0 else value
+
+
 def _extract_reference_index(text: str, term_sheet) -> str:
     """Extract the reference index for range-accrual style requests."""
     parameters = getattr(term_sheet, "parameters", {}) or {}
@@ -2807,6 +3276,199 @@ def _extract_reference_index(text: str, term_sheet) -> str:
     if match is None:
         return ""
     return match.group(1).strip().upper().replace("€", "E")
+
+
+_DAY_COUNT_ALIASES = {
+    "act360": "ACT_360",
+    "act/360": "ACT_360",
+    "act_360": "ACT_360",
+    "act365": "ACT_365",
+    "act/365": "ACT_365",
+    "act_365": "ACT_365",
+    "30360": "THIRTY_360",
+    "30/360": "THIRTY_360",
+    "30_360": "THIRTY_360",
+    "thirty360": "THIRTY_360",
+    "thirty/360": "THIRTY_360",
+    "thirty_360": "THIRTY_360",
+}
+
+
+def _normalize_day_count_token(value: object | None) -> str:
+    """Normalize common day-count spellings into canonical enum-style labels."""
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    condensed = re.sub(r"[\s\-]+", "_", text)
+    compact = condensed.replace("_", "")
+    return _DAY_COUNT_ALIASES.get(condensed, _DAY_COUNT_ALIASES.get(compact, ""))
+
+
+def _extract_leg_day_count(text: str, term_sheet, *, leg_label: str) -> str:
+    """Extract one leg-specific day-count token from structured fields or free text."""
+    parameters = getattr(term_sheet, "parameters", {}) or {}
+    for key in (f"{leg_label}_day_count", f"{leg_label}_leg_day_count"):
+        normalized = _normalize_day_count_token(parameters.get(key))
+        if normalized:
+            return normalized
+
+    match = re.search(
+        rf"{leg_label}\s+leg\s*:\s*[^.\n]*?\b(30/360|act/360|act/365|thirty[_/\-\s]*360)\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return ""
+    return _normalize_day_count_token(match.group(1))
+
+
+def _extract_swaption_rate_index(text: str, term_sheet) -> str:
+    """Extract the swaption floating-leg index from structured fields or free text."""
+    parameters = getattr(term_sheet, "parameters", {}) or {}
+    for key in ("rate_index", "reference_index", "float_index", "forecast_curve"):
+        value = parameters.get(key)
+        if value:
+            return str(value).strip().upper().replace("_", "-")
+
+    explicit_patterns = (
+        (r"\b(?:USD[-\s]?)?SOFR[-\s]?3M\b", "USD-SOFR-3M"),
+        (r"\b3M\s+SOFR\b", "USD-SOFR-3M"),
+        (r"\b(?:USD[-\s]?)?SOFR\b", "SOFR"),
+        (r"\b(?:EUR[-\s]?)?EURIBOR[-\s]?3M\b", "EURIBOR-3M"),
+        (r"\b(?:GBP[-\s]?)?SONIA\b", "SONIA"),
+    )
+    for pattern, normalized in explicit_patterns:
+        if re.search(pattern, text, flags=re.IGNORECASE):
+            return normalized
+    return ""
+
+
+def _extract_curve_name_from_text(text: str, *, role: str) -> str:
+    """Extract one curve-name hint from the request text."""
+    patterns = (
+        (
+            r"use\s+the\s+([A-Z0-9._-]+)\s+curve\s+for\s+discounting",
+            r"discounting\s+with\s+the\s+([A-Z0-9._-]+)\s+curve",
+        )
+        if role == "discount"
+        else (
+            r"the\s+([A-Z0-9._-]+)\s+forecast\s+curve",
+            r"([A-Z0-9._-]+)\s+forecast\s+curve",
+        )
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match is not None:
+            return str(match.group(1)).strip()
+    return ""
+
+
+def _extract_swaption_term_fields(text: str, term_sheet) -> Mapping[str, object]:
+    """Extract bounded swaption convention fields needed by comparison routes."""
+    parameters = getattr(term_sheet, "parameters", {}) or {}
+    fixed_leg_day_count = _extract_leg_day_count(text, term_sheet, leg_label="fixed")
+    float_leg_day_count = _extract_leg_day_count(text, term_sheet, leg_label="float")
+    rate_index = _extract_swaption_rate_index(text, term_sheet)
+    discount_curve_name = str(
+        parameters.get("discount_curve")
+        or _extract_curve_name_from_text(text, role="discount")
+        or ""
+    ).strip()
+    forecast_curve_name = str(
+        parameters.get("forecast_curve")
+        or _extract_curve_name_from_text(text, role="forecast")
+        or ""
+    ).strip()
+
+    fields: dict[str, object] = {}
+    if fixed_leg_day_count:
+        fields["fixed_leg_day_count"] = fixed_leg_day_count
+    if float_leg_day_count:
+        fields["float_leg_day_count"] = float_leg_day_count
+    if rate_index:
+        fields["rate_index"] = rate_index
+    if discount_curve_name:
+        fields["discount_curve_name"] = discount_curve_name
+    if forecast_curve_name:
+        fields["forecast_curve_name"] = forecast_curve_name
+    if rate_index or forecast_curve_name:
+        fields["curve_roles"] = {
+            "discount_curve_role": "discount_curve",
+            "forecast_curve_role": "forward_curve",
+            "rate_index": rate_index or forecast_curve_name,
+        }
+    fields.update(_extract_swaption_comparison_regime(text, term_sheet))
+    return fields
+
+
+def _extract_swaption_comparison_regime(text: str, term_sheet) -> Mapping[str, object]:
+    """Extract one explicit cross-method comparison regime for swaptions."""
+    parameters = getattr(term_sheet, "parameters", {}) or {}
+
+    comparison_model = str(
+        parameters.get("comparison_model")
+        or parameters.get("model")
+        or parameters.get("model_name")
+        or ""
+    ).strip().lower()
+
+    explicit_hull_white = bool(
+        comparison_model in {"hull_white", "hull_white_1f", "hw"}
+        or re.search(r"\bhull[-\s]?white\b", text, flags=re.IGNORECASE)
+    )
+
+    mean_reversion = (
+        parameters.get("comparison_mean_reversion")
+        or parameters.get("mean_reversion")
+        or parameters.get("a")
+    )
+    if mean_reversion is None:
+        match = re.search(
+            r"\bmean\s+reversion\b[^.\n]*?\ba\s*=\s*(-?\d+(?:\.\d+)?%?)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if match is None:
+            match = re.search(
+                r"\bmean\s+reversion\s*[:=]?\s*(-?\d+(?:\.\d+)?%?)",
+                text,
+                flags=re.IGNORECASE,
+            )
+        if match is not None:
+            mean_reversion = match.group(1)
+
+    sigma = (
+        parameters.get("comparison_sigma")
+        or parameters.get("short_rate_vol")
+        or parameters.get("sigma")
+    )
+    if sigma is None:
+        match = re.search(
+            r"\b(?:short[-\s]?rate\s+)?vol(?:atility)?\b[^.\n]*?\bsigma\s*=\s*(-?\d+(?:\.\d+)?%?)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if match is None:
+            match = re.search(
+                r"\bsigma\s*=\s*(-?\d+(?:\.\d+)?%?)",
+                text,
+                flags=re.IGNORECASE,
+            )
+        if match is not None:
+            sigma = match.group(1)
+
+    if not explicit_hull_white and mean_reversion is None and sigma is None:
+        return {}
+
+    fields: dict[str, object] = {"comparison_model_name": "hull_white_1f"}
+    if mean_reversion is not None:
+        fields["comparison_mean_reversion"] = _normalize_rate_decimal(mean_reversion)
+    if sigma is not None:
+        fields["comparison_sigma"] = _normalize_rate_decimal(sigma)
+    fields["comparison_quote_family"] = "implied_vol"
+    fields["comparison_quote_convention"] = "black"
+    fields["comparison_quote_subject"] = "swaption"
+    return fields
 
 
 def _extract_percentages(text: str) -> tuple[float, ...]:
@@ -3128,6 +3790,26 @@ def _looks_like_nth_to_default_request(text: str, instrument_type: str | None) -
     )
 
 
+def _looks_like_cdo_tranche_request(text: str, instrument_type: str | None) -> bool:
+    """Return whether the request appears to describe a tranche-style credit basket."""
+    lower = text.lower()
+    normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
+    if normalized_instrument in {"cdo", "cdo_tranche", "tranche"}:
+        return True
+    return any(
+        cue in lower
+        for cue in (
+            "cdo tranche",
+            "synthetic cdo",
+            "mezzanine tranche",
+            "senior tranche",
+            "equity tranche",
+            "attachment point",
+            "detachment point",
+        )
+    )
+
+
 def _draft_shape_contract(
     text: str,
     description: str,
@@ -3223,6 +3905,15 @@ def _draft_shape_contract(
             raise ValueError(
                 "Semantic vanilla option request requires an expiry or exercise schedule."
             )
+        normalized_instrument = str(instrument_type or "").strip().lower().replace(" ", "_")
+        if normalized_instrument == "american_option":
+            return make_american_option_contract(
+                description=description,
+                underliers=underliers,
+                observation_schedule=observation_schedule,
+                preferred_method="pde_solver",
+                exercise_style="bermudan" if len(observation_schedule) > 1 else "american",
+            )
         return make_vanilla_option_contract(
             description=description,
             underliers=underliers,
@@ -3245,6 +3936,41 @@ def _draft_shape_contract(
             observation_schedule=observation_schedule,
             preferred_method="rate_tree" if normalized_instrument == "bermudan_swaption" else "analytical",
             exercise_style="bermudan" if normalized_instrument == "bermudan_swaption" else "european",
+            term_fields=_extract_swaption_term_fields(text, term_sheet),
+        )
+
+    if _looks_like_cdo_tranche_request(text, instrument_type):
+        observation_schedule = _split_supported_dates(
+            text,
+            term_sheet,
+            parameter_keys=(
+                "maturity_date",
+                "end_date",
+                "observation_schedule",
+                "observation_dates",
+            ),
+        )
+        if not observation_schedule:
+            raise ValueError(
+                "Semantic credit-basket tranche request requires a maturity schedule."
+            )
+        reference_pool_size = _extract_reference_pool_size(text, term_sheet)
+        if reference_pool_size < 2:
+            raise ValueError(
+                "Semantic credit-basket tranche request requires a reference-pool size."
+            )
+        attachment = _extract_tranche_point(text, term_sheet, label="attachment")
+        detachment = _extract_tranche_point(text, term_sheet, label="detachment")
+        if attachment is None or detachment is None:
+            raise ValueError(
+                "Semantic credit-basket tranche request requires attachment and detachment points."
+            )
+        return make_credit_basket_tranche_contract(
+            description=description,
+            observation_schedule=observation_schedule,
+            reference_pool_size=reference_pool_size,
+            attachment=attachment,
+            detachment=detachment,
         )
 
     if _looks_like_nth_to_default_request(text, instrument_type):

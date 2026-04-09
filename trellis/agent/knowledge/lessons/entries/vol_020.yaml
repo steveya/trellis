@@ -1,0 +1,41 @@
+category: volatility
+title: Don’t hardcode market vol
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-08T14:57:01.866173'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The tree pricer used a fixed sigma value instead of pulling the Black volatility
+  surface from market_state.
+root_cause: This happens when generated pricing logic treats model inputs as constants
+  rather than dynamic market data, so calibration and scenario changes are silently
+  ignored. The result is a model that may run but no longer prices the instrument
+  off the actual market surface.
+fix: Thread the volatility surface through market_state into the backward-induction
+  route and use it explicitly in calibration and pricing.
+validation: "Resolved during build of Build a pricer for: European swaption: Black76\
+  \ vs HW tree vs HW MC\n\nEuropean payer swaption.  Expiry: 1Y.  Underlying: 5Y fixed-for-float\n\
+  interest rate swap.  Strike (fixed rate): 3%.  Notional: $1,000,000.\nFixed leg:\
+  \ semi-annual, 30/360.  Float leg: quarterly 3M SOFR, Act/360.\nUse the USD OIS\
+  \ curve for discounting and the SOFR-3M forecast curve\nfor forward rate projection\
+  \ from the market snapshot (as_of 2024-11-15).\nThe yield curve is NOT flat — the\
+  \ agent must project forward swap rates\nfrom the actual term structure.\nHull-White\
+  \ model: mean reversion a=0.05, vol sigma=0.01.\nMethod 1: Black76 analytical (with\
+  \ forward swap rate and swaption vol).\nMethod 2: Hull-White tree (calibrated to\
+  \ the OIS curve).\nMethod 3: Hull-White Monte Carlo (calibrated to the OIS curve).\n\
+  All three should agree within 5%.\n\nConstruct methods: analytical, rate_tree, monte_carlo\n\
+  Comparison targets: black76 (analytical), hw_tree (rate_tree), hw_mc (monte_carlo)\n\
+  Cross-validation harness:\n  internal targets: black76, hw_tree, hw_mc\n  external\
+  \ targets: quantlib, financepy\n\nImplementation target: hw_tree\nPreferred method\
+  \ family: rate_tree\n\nImplementation target: hw_tree"
+supersedes: []
+id: vol_020

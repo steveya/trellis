@@ -1,0 +1,32 @@
+category: credit_risk
+title: Route gate rejected MC CDS
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-07T10:03:40.994117'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_100342_swap_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - credit_risk
+  - discounting
+  - fixed_coupons
+  - floating_coupons
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: Build fails before code generation with route admissibility errors mentioning
+  unsupported_state_tag:recombining_safe and unsupported_state_tag:terminal_markov
+  for credit_default_swap_monte_carlo.
+root_cause: The selected Monte Carlo CDS route was not admissible under the compiler's
+  state-tag constraints, so the product was never mapped to a valid simulation kernel.
+  This is a route-selection failure rather than a pricing-formula error.
+fix: Add or select a CDS Monte Carlo route that explicitly supports the required state
+  tags for default-time simulation, or fall back to the validated analytical survival-probability
+  route. Ensure the route descriptor includes the accepted primitives and avoids unsupported
+  recombining/terminal-Markov assumptions.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: cre_001

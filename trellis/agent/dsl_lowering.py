@@ -29,6 +29,8 @@ from trellis.agent.family_lowering_ir import (
     AnalyticalBlack76IR,
     CorrelatedBasketMonteCarloIR,
     CreditDefaultSwapIR,
+    EventAwareMonteCarloIR,
+    EventAwarePDEIR,
     ExerciseLatticeIR,
     NthToDefaultIR,
     VanillaEquityPDEIR,
@@ -146,6 +148,7 @@ def lower_semantic_blueprint(
         )
 
     errors: list[DslLoweringError] = []
+    fallback_result: SemanticDslLowering | None = None
     for route_id in primitive_routes:
         route = find_route_by_id(route_id)
         if route is None:
@@ -207,14 +210,27 @@ def lower_semantic_blueprint(
                 bindings=bindings,
             )
         if lowering_errors:
+            fallback_result = SemanticDslLowering(
+                route_id=route_id,
+                route_family=route_family,
+                family_ir=family_ir,
+                expr=None,
+                normalized_expr=None,
+                target_bindings=bindings,
+                adapters=adapters,
+                notes=notes,
+                errors=tuple(
+                    _lowering_error(
+                        route_id=route_id,
+                        stage="dsl_expr",
+                        code=_infer_error_code(error),
+                        message=error,
+                    )
+                    for error in lowering_errors
+                ),
+            )
             errors.extend(
-                _lowering_error(
-                    route_id=route_id,
-                    stage="dsl_expr",
-                    code=_infer_error_code(error),
-                    message=error,
-                )
-                for error in lowering_errors
+                fallback_result.errors
             )
             continue
         assert expr is not None
@@ -244,6 +260,19 @@ def lower_semantic_blueprint(
             errors=(),
         )
 
+    if fallback_result is not None:
+        return SemanticDslLowering(
+            route_id=fallback_result.route_id,
+            route_family=fallback_result.route_family,
+            family_ir=fallback_result.family_ir,
+            expr=None,
+            normalized_expr=None,
+            target_bindings=fallback_result.target_bindings,
+            adapters=fallback_result.adapters,
+            notes=fallback_result.notes,
+            errors=tuple(errors),
+        )
+
     return SemanticDslLowering(
         route_id=primitive_routes[0],
         route_family=None,
@@ -267,8 +296,14 @@ def _build_expr_for_family_ir(
             family_ir=family_ir,
             bindings=bindings,
         )
-    if isinstance(family_ir, VanillaEquityPDEIR):
-        return _build_vanilla_equity_pde_expr_from_family_ir(
+    if isinstance(family_ir, EventAwarePDEIR):
+        return _build_event_aware_pde_expr_from_family_ir(
+            route_id=route_id,
+            family_ir=family_ir,
+            bindings=bindings,
+        )
+    if isinstance(family_ir, EventAwareMonteCarloIR):
+        return _build_event_aware_monte_carlo_expr_from_family_ir(
             route_id=route_id,
             family_ir=family_ir,
             bindings=bindings,
@@ -435,8 +470,19 @@ def _build_black76_expr(
             None,
         )
         if market_binding is None:
-            return None, (
-                f"Route '{route_id}' is missing the required market binding for European rate-style swaption lowering.",
+            return (
+                ContractAtom(
+                    atom_id=f"{route_id}:route_helper",
+                    primitive_ref=route_helper.primitive_ref,
+                    description="Delegate European rate-style swaption pricing to the checked-in Black76 family helper.",
+                    signature=ContractSignature(
+                        inputs=market_signature.inputs,
+                        outputs=("price:scalar",),
+                        timeline_roles=market_signature.timeline_roles,
+                        market_data_requirements=market_signature.market_data_requirements,
+                    ),
+                ),
+                (),
             )
 
         binding_atom = ContractAtom(
@@ -528,13 +574,17 @@ def _build_black76_expr_from_family_ir(
     return kernel_atom, ()
 
 
-def _build_vanilla_equity_pde_expr_from_family_ir(
+def _build_event_aware_pde_expr_from_family_ir(
     *,
     route_id: str,
-    family_ir: VanillaEquityPDEIR,
+    family_ir: EventAwarePDEIR,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
-    """Build a vanilla PDE helper lowering from typed family IR."""
+    """Build a helper-backed event-aware PDE lowering from typed family IR."""
+    if not family_ir.helper_symbol:
+        return None, (
+            f"Route '{route_id}' has no helper-backed lowering target.",
+        )
     route_helper = next(
         (
             binding
@@ -551,13 +601,148 @@ def _build_vanilla_equity_pde_expr_from_family_ir(
     helper_atom = ContractAtom(
         atom_id=f"{route_id}:route_helper",
         primitive_ref=route_helper.primitive_ref,
-        description=(
-            f"Typed theta-method PDE helper for vanilla {family_ir.option_type} payoff "
-            f"with theta={family_ir.theta:g}."
-        ),
+        description=_event_aware_pde_helper_description(family_ir),
         signature=_market_signature_from_family_ir(family_ir),
     )
     return helper_atom, ()
+
+
+def _build_event_aware_monte_carlo_expr_from_family_ir(
+    *,
+    route_id: str,
+    family_ir: EventAwareMonteCarloIR,
+    bindings: tuple[DslTargetBinding, ...],
+) -> tuple[ContractExpr | None, tuple[str, ...]]:
+    """Build a bounded event-aware Monte Carlo lowering from typed family IR."""
+    market_signature = _market_signature_from_family_ir(family_ir)
+    if family_ir.helper_symbol:
+        route_helper = next(
+            (
+                binding
+                for binding in bindings
+                if binding.role == "route_helper" and binding.symbol == family_ir.helper_symbol
+            ),
+            None,
+        )
+        if route_helper is None:
+            return None, (
+                f"Route '{route_id}' is missing the required route helper '{family_ir.helper_symbol}'.",
+            )
+        helper_atom = ContractAtom(
+            atom_id=f"{route_id}:route_helper",
+            primitive_ref=route_helper.primitive_ref,
+            description=(
+                f"Typed event-aware Monte Carlo family helper for {family_ir.product_instrument or 'compiled'} "
+                f"with process={family_ir.process_spec.process_family or 'generic_state_process'} "
+                f"and reducer={family_ir.payoff_reducer_spec.reducer_kind or 'compiled_payoff'}."
+            ),
+            signature=market_signature,
+        )
+        return helper_atom, ()
+
+    process_binding = next(
+        (
+            binding
+            for binding in bindings
+            if binding.role == "state_process"
+            and _binding_supports_mc_process(binding, family_ir.process_spec.process_family)
+        ),
+        None,
+    )
+    path_simulation = next(
+        (binding for binding in bindings if binding.role == "path_simulation"),
+        None,
+    )
+    if path_simulation is None:
+        return None, (
+            f"Route '{route_id}' is missing the required Monte Carlo path simulation primitive.",
+        )
+
+    reducer_binding = next(
+        (
+            binding
+            for binding in bindings
+            if binding.role in {"pricing_kernel", "route_helper"}
+            and (
+                not family_ir.helper_symbol
+                or binding.symbol == family_ir.helper_symbol
+            )
+        ),
+        None,
+    )
+
+    process_atom = ContractAtom(
+        atom_id=f"{route_id}:state_process",
+        primitive_ref=process_binding.primitive_ref if process_binding is not None else None,
+        description=(
+            f"Compile the typed {family_ir.process_spec.process_family or 'event-aware'} "
+            f"state process over {family_ir.state_spec.state_variable or 'state'}."
+        ),
+        signature=ContractSignature(
+            inputs=market_signature.inputs,
+            outputs=("mc_process:state",),
+            timeline_roles=market_signature.timeline_roles,
+            market_data_requirements=market_signature.market_data_requirements,
+        ),
+    )
+    simulation_atom = ContractAtom(
+        atom_id=f"{route_id}:path_simulation",
+        primitive_ref=path_simulation.primitive_ref,
+        description=(
+            f"Simulate paths under the typed {family_ir.path_requirement_spec.requirement_kind or 'terminal_only'} "
+            f"contract with event kinds {', '.join(family_ir.event_kinds) or 'none'}."
+        ),
+        signature=ContractSignature(
+            inputs=("mc_process:state",),
+            outputs=("path_state:state",),
+            timeline_roles=market_signature.timeline_roles,
+            market_data_requirements=market_signature.market_data_requirements,
+        ),
+    )
+    reducer_atom = ContractAtom(
+        atom_id=f"{route_id}:payoff_reducer",
+        primitive_ref=reducer_binding.primitive_ref if reducer_binding is not None else None,
+        description=(
+            f"Reduce simulated path state through {family_ir.payoff_reducer_spec.reducer_kind or 'compiled_payoff'} "
+            "into a price scalar."
+        ),
+        signature=ContractSignature(
+            inputs=("path_state:state",),
+            outputs=("price:scalar",),
+            timeline_roles=market_signature.timeline_roles,
+            market_data_requirements=market_signature.market_data_requirements,
+        ),
+    )
+    return ThenExpr(terms=(process_atom, simulation_atom, reducer_atom)), ()
+
+
+def _binding_supports_mc_process(binding: DslTargetBinding, process_family: str) -> bool:
+    """Return whether one route binding can satisfy the typed MC process family."""
+    family = str(process_family or "").strip()
+    if not family:
+        return True
+    if family == "gbm_1d":
+        return binding.symbol == "GBM"
+    if family == "local_vol_1d":
+        return binding.symbol == "LocalVol"
+    if family == "hull_white_1f":
+        return binding.symbol == "HullWhite"
+    return False
+
+
+def _event_aware_pde_helper_description(family_ir: EventAwarePDEIR) -> str:
+    """Return a readable helper description for typed event-aware PDE routes."""
+    if isinstance(family_ir, VanillaEquityPDEIR):
+        return (
+            f"Typed theta-method PDE helper for vanilla {family_ir.option_type} payoff "
+            f"with theta={family_ir.theta:g}."
+        )
+    operator_family = str(family_ir.operator_spec.operator_family or "generic_1d").strip()
+    control_style = str(family_ir.control_spec.control_style or "identity").strip()
+    return (
+        f"Typed event-aware PDE helper for {family_ir.product_instrument or 'compiled'} "
+        f"rollback with operator={operator_family} and control={control_style}."
+    )
 
 
 def _build_exercise_lattice_expr_from_family_ir(

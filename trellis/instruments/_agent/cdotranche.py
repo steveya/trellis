@@ -1,19 +1,67 @@
-"""Agent-generated payoff: Build a pricer for: CDO tranche: Gaussian vs Student-t copula."""
+"""Agent-generated payoff: Build a pricer for: CDO tranche: Gaussian vs Student-t copula
+
+Price a synthetic CDO mezzanine tranche on a 100-name investment-grade
+portfolio.  Attachment point: 3%.  Detachment point: 7%.
+Maturity: 5Y.  Notional per name: $1,000,000 (portfolio notional $100M).
+Recovery rate: 40% flat across all names.
+Use the IG credit curve from the market snapshot (as_of 2024-11-15)
+as the representative single-name hazard curve for all 100 names.
+Flat pairwise default correlation: 0.3.
+Method 1: Gaussian copula (one-factor, semi-analytical via Vasicek
+large-pool or recursive).
+Method 2: Student-t copula (degrees of freedom = 5) for comparison
+to see heavier-tail effects on the mezzanine tranche.
+Report tranche fair spread (bp) and expected loss for each copula.
+
+Construct methods: copula
+Comparison targets: gaussian_copula (copula), student_t_copula (copula)
+Cross-validation harness:
+  internal targets: gaussian_copula, student_t_copula
+  external targets: quantlib
+
+Implementation target: student_t_copula
+Preferred method family: copula
+
+Implementation target: student_t_copula."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
 
-from trellis.core.date_utils import generate_schedule, year_fraction
 from trellis.core.market_state import MarketState
-from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.black import black76_call, black76_put
+from trellis.core.types import DayCountConvention
+from trellis.models.credit_basket_copula import price_credit_basket_tranche
+
 
 
 @dataclass(frozen=True)
 class CDOTrancheSpec:
-    """Specification for Build a pricer for: CDO tranche: Gaussian vs Student-t copula."""
+    """Specification for Build a pricer for: CDO tranche: Gaussian vs Student-t copula
+
+Price a synthetic CDO mezzanine tranche on a 100-name investment-grade
+portfolio.  Attachment point: 3%.  Detachment point: 7%.
+Maturity: 5Y.  Notional per name: $1,000,000 (portfolio notional $100M).
+Recovery rate: 40% flat across all names.
+Use the IG credit curve from the market snapshot (as_of 2024-11-15)
+as the representative single-name hazard curve for all 100 names.
+Flat pairwise default correlation: 0.3.
+Method 1: Gaussian copula (one-factor, semi-analytical via Vasicek
+large-pool or recursive).
+Method 2: Student-t copula (degrees of freedom = 5) for comparison
+to see heavier-tail effects on the mezzanine tranche.
+Report tranche fair spread (bp) and expected loss for each copula.
+
+Construct methods: copula
+Comparison targets: gaussian_copula (copula), student_t_copula (copula)
+Cross-validation harness:
+  internal targets: gaussian_copula, student_t_copula
+  external targets: quantlib
+
+Implementation target: student_t_copula
+Preferred method family: copula
+
+Implementation target: student_t_copula."""
     notional: float
     n_names: int
     attachment: float
@@ -25,48 +73,43 @@ class CDOTrancheSpec:
 
 
 class CDOTranchePayoff:
-    """Build a pricer for: CDO tranche: Gaussian vs Student-t copula."""
+    """Build a pricer for: CDO tranche: Gaussian vs Student-t copula
+
+Price a synthetic CDO mezzanine tranche on a 100-name investment-grade
+portfolio.  Attachment point: 3%.  Detachment point: 7%.
+Maturity: 5Y.  Notional per name: $1,000,000 (portfolio notional $100M).
+Recovery rate: 40% flat across all names.
+Use the IG credit curve from the market snapshot (as_of 2024-11-15)
+as the representative single-name hazard curve for all 100 names.
+Flat pairwise default correlation: 0.3.
+Method 1: Gaussian copula (one-factor, semi-analytical via Vasicek
+large-pool or recursive).
+Method 2: Student-t copula (degrees of freedom = 5) for comparison
+to see heavier-tail effects on the mezzanine tranche.
+Report tranche fair spread (bp) and expected loss for each copula.
+
+Construct methods: copula
+Comparison targets: gaussian_copula (copula), student_t_copula (copula)
+Cross-validation harness:
+  internal targets: gaussian_copula, student_t_copula
+  external targets: quantlib
+
+Implementation target: student_t_copula
+Preferred method family: copula
+
+Implementation target: student_t_copula."""
 
     def __init__(self, spec: CDOTrancheSpec):
-        """Store the generated tranche specification."""
         self._spec = spec
 
     @property
     def spec(self) -> CDOTrancheSpec:
-        """Return the immutable generated tranche specification."""
         return self._spec
 
     @property
     def requirements(self) -> set[str]:
-        """Declare that valuation needs discounting and credit-survival inputs."""
         return {"credit_curve", "discount_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
-        """Estimate discounted expected tranche loss from a factor-copula loss distribution."""
-        from trellis.core.date_utils import year_fraction
-        from trellis.models.copulas.factor import FactorCopula
-        import numpy as np
-
         spec = self._spec
-        T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
-        if T <= 0:
-            return 0.0
-
-        # Consistent with calibration: marginal default probability from credit curve
-        marginal_prob = 1 - float(market_state.credit_curve.survival_probability(T))
-
-        # Build copula with given correlation and portfolio size
-        copula = FactorCopula(n_names=spec.n_names, correlation=spec.correlation)
-        losses, probs = copula.loss_distribution(marginal_prob)
-
-        # Compute expected tranche loss by integrating over possible default states
-        tranche_el = 0.0
-        for n_defaults, prob in zip(losses, probs):
-            portfolio_loss = n_defaults / spec.n_names
-            tranche_loss = max(0, min(portfolio_loss - spec.attachment, spec.detachment - spec.attachment))
-            tranche_el += prob * tranche_loss
-
-        # Discount the expected loss to get the present value for the tranche
-        df = float(market_state.discount.discount(T))
-        tranche_pv = spec.notional * (tranche_el * df)
-        return tranche_pv
+        return float(price_credit_basket_tranche(market_state, spec, copula_family="student_t", degrees_of_freedom=5.0, n_paths=40000, seed=42))

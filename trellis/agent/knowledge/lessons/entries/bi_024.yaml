@@ -1,0 +1,31 @@
+category: backward_induction
+title: Use lattice backward induction
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-08T15:46:20.990600'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_154622_european_option_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  - discounting
+  - mean_reversion
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The build produced a zero option value and failed the volatility bump check,
+  indicating the payoff was not propagated through the tree.
+root_cause: The payoff was computed as a terminal closed-form expression instead of
+  being valued by lattice backward induction. For embedded or bond options, the tree
+  must carry discounted continuation values back through exercise dates so the price
+  responds to the rate process and volatility.
+fix: Implement the option price by calling the lattice backward_induction primitives
+  on the rate tree, with terminal bond payoff at option expiry and discounted continuation
+  values at earlier nodes. Ensure the underlying bond value at option expiry is derived
+  from the tree state so the result has non-zero vega.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: bi_024

@@ -1,0 +1,31 @@
+category: numerical
+title: Fix try block indentation
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-06T17:37:35.693547'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260406_173737_heston_option_fft_pricing.yaml
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - characteristic_function
+  - cos_method
+  - discounting
+  - stochastic_vol
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Build logs show SyntaxError: expected ''except'' or ''finally'' block at
+  lines inside a try statement.'
+root_cause: The generated pricing module contained invalid Python control-flow, typically
+  from mis-indented assignments placed between a try and its except. This prevents
+  even a correct FFT/COS pricing route from loading and blocks all downstream validation.
+fix: Generate the pricing function from a strict template with syntactic guards, and
+  run a syntax check before returning code. Keep all statements inside the try block
+  indented consistently, or move the calculation outside the try after handling the
+  fallback values.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: num_036

@@ -1,0 +1,30 @@
+category: monte_carlo
+title: Define terminal asset before payoff
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T17:03:27.105033'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_170329_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  - path_dependent
+  - asian
+  instrument: []
+  error_signature: null
+symptom: 'Generated MC code fails with NameError: name ''terminal'' is not defined
+  during payoff evaluation.'
+root_cause: The payoff generator referenced a terminal asset variable that was never
+  created or passed through the simulation state. This is a common assembly bug when
+  the path simulator and payoff kernel are built independently.
+fix: Compute and name the terminal stock value explicitly from the simulated GBM path
+  before applying the option payoff. Ensure the payoff function receives the final
+  state variable from the path engine, and add a smoke test that asserts the terminal
+  variable exists for both plain and variance-reduced paths.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_118

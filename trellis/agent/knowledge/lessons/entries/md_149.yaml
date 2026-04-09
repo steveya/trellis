@@ -1,0 +1,29 @@
+category: market_data
+title: Read vol from market state
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-07T18:44:37.065125'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_184438_swaption_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - vol_surface_dependence
+  - monte_carlo
+  - floating_coupons
+  instrument: []
+  error_signature: null
+symptom: Generated Monte Carlo payoff code contains a hardcoded assignment like `sigma
+  = 0.01` instead of accessing a volatility value from `market_state`.
+root_cause: The code generator reused the model parameter as a literal inside the
+  payoff path, bypassing the market-data plumbing. This breaks route validation when
+  volatility must come from the snapshot or surface rather than fixed constants.
+fix: Thread the volatility input through the pricing route as an explicit market-state
+  lookup, e.g. `market_state.black_vol_surface` or the calibrated model surface, and
+  forbid literals in path code. Add a lint/guard that rejects any hardcoded sigma
+  in routes marked `vol_surface_dependence` or `monte_carlo`.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: md_149

@@ -1,8 +1,8 @@
 category: market_data
 title: Wrong field name passed to resolved inputs dataclass
 severity: high
-status: validated
-confidence: 0.6
+status: promoted
+confidence: 0.9
 created: '2026-04-03T00:38:17.007677'
 version: ''
 source_trace: null
@@ -33,3 +33,4 @@ validation: "Resolved during build of Build a pricer for: FX vanilla option: Gar
   New component: garman_kohlhagen_formula\n\nImplementation target: gk_analytical\n\
   Preferred method family: analytical\n\nImplementation target: gk_analytical"
 id: md_114
+supersedes: []

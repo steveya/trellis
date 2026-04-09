@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
+from trellis.agent.instrument_identity import resolve_authoritative_instrument_type
 from trellis.agent.knowledge.methods import normalize_method
 from trellis.engine.payoff_pricer import price_payoff
 
@@ -42,9 +43,15 @@ def select_reference_oracle(
     *,
     instrument_type: str | None,
     method: str | None,
+    product_ir=None,
+    semantic_blueprint=None,
 ) -> ReferenceOracleSpec | None:
     """Return the deterministic oracle definition for one supported route."""
-    normalized_instrument = str(instrument_type or "").strip().lower().replace(" ", "_")
+    normalized_instrument = resolve_authoritative_instrument_type(
+        instrument_type,
+        getattr(product_ir, "instrument", None),
+        getattr(semantic_blueprint, "semantic_id", None),
+    ) or ""
     normalized_method = normalize_method(method or "")
     if normalized_method == "analytical" and normalized_instrument == "swaption":
         return ReferenceOracleSpec(
@@ -87,6 +94,7 @@ def execute_reference_oracle(
     payoff_factory: Callable[[], Any],
     market_state_factory: Callable[..., Any],
     reference_factory: Callable[[], Any] | None = None,
+    semantic_blueprint=None,
 ) -> ReferenceOracleExecution | None:
     """Execute one selected oracle and return a structured outcome."""
     if oracle is None:
@@ -103,7 +111,15 @@ def execute_reference_oracle(
             market_state = market_state_factory(**scenario)
             payoff = payoff_factory()
             generated = float(price_payoff(payoff, market_state))
-            reference = float(_reference_value_for(oracle, market_state, payoff, reference_factory))
+            reference = float(
+                _reference_value_for(
+                    oracle,
+                    market_state,
+                    payoff,
+                    reference_factory,
+                    semantic_blueprint=semantic_blueprint,
+                )
+            )
             abs_deviation = abs(generated - reference)
             rel_deviation = abs_deviation / max(abs(reference), 1.0)
             max_abs_deviation = max(max_abs_deviation, abs_deviation)
@@ -185,13 +201,21 @@ def _reference_value_for(
     market_state,
     payoff,
     reference_factory: Callable[[], Any] | None,
+    *,
+    semantic_blueprint=None,
 ) -> float:
     """Return the exact or bound reference value for one oracle scenario."""
     spec = _extract_spec(payoff)
     if oracle.oracle_id == "swaption_black76_exact":
         from trellis.models.rate_style_swaption import price_swaption_black76
 
-        return float(price_swaption_black76(market_state, spec))
+        return float(
+            price_swaption_black76(
+                market_state,
+                spec,
+                **_swaption_comparison_kwargs_from_blueprint(semantic_blueprint),
+            )
+        )
     if oracle.oracle_id == "zcb_option_jamshidian_exact":
         from trellis.models.zcb_option import price_zcb_option_jamshidian
 
@@ -204,6 +228,23 @@ def _reference_value_for(
             raise ValueError("Bound-style reference oracle requires reference_factory")
         return float(price_payoff(reference_factory(), market_state))
     raise ValueError(f"Unsupported reference oracle {oracle.oracle_id!r}")
+
+
+def _swaption_comparison_kwargs_from_blueprint(semantic_blueprint) -> dict[str, float]:
+    """Return explicit comparison kwargs for swaption oracles when present."""
+    valuation_context = getattr(semantic_blueprint, "valuation_context", None)
+    engine_model_spec = getattr(valuation_context, "engine_model_spec", None)
+    if engine_model_spec is None or getattr(engine_model_spec, "model_name", "") != "hull_white_1f":
+        return {}
+    overrides = dict(getattr(engine_model_spec, "parameter_overrides", {}) or {})
+    mean_reversion = overrides.get("mean_reversion")
+    sigma = overrides.get("sigma")
+    if mean_reversion is None or sigma is None:
+        return {}
+    return {
+        "mean_reversion": float(mean_reversion),
+        "sigma": float(sigma),
+    }
 
 
 def _scenario_grid_for(oracle: ReferenceOracleSpec) -> tuple[Mapping[str, float], ...]:

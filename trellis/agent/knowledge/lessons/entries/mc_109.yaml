@@ -1,0 +1,39 @@
+category: monte_carlo
+title: Match GBM constructor args
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:25:43.538447'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The simulator was instantiated with the wrong keyword argument name, passing
+  spot instead of the GBM model’s expected parameter.
+root_cause: This is a mental-model mismatch between the pricing interface and the
+  actual class API; even correct pricing logic fails if object construction uses the
+  wrong field names. In Monte Carlo setups, these schema mismatches often show up
+  only at runtime during smoke tests.
+fix: Inspect the GBM constructor signature and map inputs to its required argument
+  names exactly, then add an interface adapter if needed.
+validation: "Resolved during build of Build a pricer for: GBM call: all 4 schemes\
+  \ convergence order\n\nEuropean call option on a non-dividend-paying stock.\nS0=100,\
+  \ K=100, T=1Y, risk-free rate r=5%, volatility sigma=30%.\nSimulate with 100,000\
+  \ paths and 252 time steps using four GBM\ndiscretization schemes: Euler-Maruyama,\
+  \ Milstein, log-Euler (exact\nGBM), and predictor-corrector.\nCompare each scheme's\
+  \ price to the Black-Scholes analytical value.\nMeasure convergence order (weak\
+  \ order 1.0 for Euler, 1.0 for\nMilstein in 1D GBM, exact for log-Euler).\n\nConstruct\
+  \ methods: monte_carlo\nComparison targets: euler (monte_carlo), milstein (monte_carlo),\
+  \ exact (monte_carlo), log_euler (monte_carlo), black_scholes (analytical)\nCross-validation\
+  \ harness:\n  internal targets: euler, milstein, exact, log_euler\n  analytical\
+  \ benchmark: black_scholes\n  external targets: quantlib\nNew component: convergence_order_measurement\n\
+  \nImplementation target: exact\nPreferred method family: monte_carlo\n\nImplementation\
+  \ target: exact"
+supersedes: []
+id: mc_109

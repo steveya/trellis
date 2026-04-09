@@ -189,6 +189,38 @@ def build_price(self, market_state):
 """
 
 
+HELPER_BACKED_CDO_TRANCHE_SOURCE = """\
+from __future__ import annotations
+
+from trellis.models.credit_basket_copula import price_credit_basket_tranche
+
+
+def build_price(self, market_state):
+    spec = self._spec
+    return float(price_credit_basket_tranche(market_state, spec, copula_family="gaussian"))
+"""
+
+
+HULL_WHITE_EVENT_AWARE_MC_SOURCE = """\
+from __future__ import annotations
+
+from trellis.models.rate_style_swaption import price_swaption_monte_carlo
+
+
+def build_price(self, market_state):
+    return float(
+        price_swaption_monte_carlo(
+            market_state,
+            self._spec,
+            n_paths=32,
+            seed=7,
+            mean_reversion=0.05,
+            sigma=0.01,
+        )
+    )
+"""
+
+
 RATE_LATTICE_SOURCE = """\
 from __future__ import annotations
 
@@ -793,6 +825,69 @@ def test_accepts_helper_backed_cds_route_without_internal_event_probability_call
     issue_codes = {issue.code for issue in report.issues}
     assert "assembly.required_primitive_missing" not in issue_codes
     assert report.ok
+
+
+def test_accepts_helper_backed_cdo_tranche_route_without_internal_copula_calls():
+    from trellis.agent.semantic_validation import validate_semantics
+
+    pricing_plan = PricingPlan(
+        method="copula",
+        method_modules=["trellis.models.credit_basket_copula"],
+        required_market_data={"discount_curve", "credit_curve"},
+        model_to_build="cdo",
+        reasoning="test",
+    )
+    product_ir = decompose_to_ir(
+        "CDO tranche on a 100-name IG portfolio with attachment 3% and detachment 7%",
+        instrument_type="cdo",
+    )
+    generation_plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="cdo",
+        inspected_modules=("trellis.models.credit_basket_copula",),
+        product_ir=product_ir,
+    )
+
+    report = validate_semantics(
+        HELPER_BACKED_CDO_TRANCHE_SOURCE,
+        product_ir=product_ir,
+        generation_plan=generation_plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "assembly.required_primitive_missing" not in issue_codes
+    assert report.ok
+
+
+def test_accepts_one_required_state_process_when_route_declares_role_alternatives():
+    from trellis.agent.semantic_validation import validate_semantics
+
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.monte_carlo.engine"],
+        required_market_data={"discount_curve", "forward_curve", "black_vol_surface"},
+        model_to_build="swaption",
+        reasoning="test",
+    )
+    product_ir = decompose_to_ir(
+        "European payer swaption under Hull-White Monte Carlo",
+        instrument_type="swaption",
+    )
+    generation_plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="swaption",
+        inspected_modules=("trellis.models.monte_carlo.engine", "trellis.models.monte_carlo.event_aware"),
+        product_ir=product_ir,
+    )
+
+    report = validate_semantics(
+        HULL_WHITE_EVENT_AWARE_MC_SOURCE,
+        product_ir=product_ir,
+        generation_plan=generation_plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "assembly.required_primitive_missing" not in issue_codes
 
 
 def test_rejects_matrix_payoff_passed_to_mc_engine():

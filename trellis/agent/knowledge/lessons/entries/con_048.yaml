@@ -1,0 +1,30 @@
+category: convention
+title: Missing option maturity field
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T21:57:46.789603'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_215749_zcb_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - maturity_settlement
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Pricing fails with AttributeError: ''EuropeanOptionSpec'' object has no
+  attribute ''bond_maturity_date''.'
+root_cause: The payoff builder expected a required schedule/date primitive on the
+  product spec, but the generated spec only contained a partial instrument definition.
+  This is usually caused by missing convention wiring between the instrument schema
+  and the pricing kernel.
+fix: Populate the spec with the required bond maturity date and option exercise date
+  using the agreed date-schedule primitive before calling payoff construction. Also
+  align the instrument model with the pricer's expected field names and validate the
+  spec schema at build time.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: con_048

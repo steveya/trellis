@@ -1,0 +1,30 @@
+category: market_data
+title: Read volatility from market state
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-07T09:50:04.085348'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_095005_european_option_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - discounting
+  - vol_surface_dependence
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: Build fails with `lite.rate_tree_backward_induction_black_vol_surface_access_missing`
+  and generated code hardcodes `sigma = 0.01` instead of reading market data.
+root_cause: The rate-tree route was assembled without wiring the volatility input
+  from `market_state.vol_surface`, so the pricer ignored the required market-data
+  dependency. This also led to a brittle implementation that used a literal sigma
+  rather than the calibrated surface or model parameter source.
+fix: Use the approved rate-tree backward-induction path and fetch volatility from
+  `market_state.vol_surface` (or the tree calibration input) before pricing. Remove
+  hardcoded sigma values and pass the extracted vol surface into the tree constructor/calibration
+  step.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: md_139

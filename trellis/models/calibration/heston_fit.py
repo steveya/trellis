@@ -13,7 +13,12 @@ from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
 from trellis.models.calibration.implied_vol import implied_vol
 from trellis.models.calibration.materialization import materialize_model_parameter_set
-from trellis.models.calibration.quote_maps import QuoteMapSpec
+from trellis.models.calibration.quote_maps import (
+    QuoteAxisSpec,
+    QuoteMapSpec,
+    QuoteSemanticsSpec,
+    QuoteUnitSpec,
+)
 from trellis.models.calibration.solve_request import (
     ObjectiveBundle,
     SolveBounds,
@@ -47,7 +52,24 @@ def _normalize_float_tuple(values: Sequence[float]) -> tuple[float, ...]:
 
 def _default_implied_vol_quote_map_spec() -> QuoteMapSpec:
     """Return the shared implied-vol quote-map spec used by vol workflows."""
-    return QuoteMapSpec(quote_family="implied_vol", convention="black")
+    return QuoteMapSpec(
+        quote_family="implied_vol",
+        convention="black",
+        semantics=QuoteSemanticsSpec(
+            quote_family="implied_vol",
+            convention="black",
+            quote_subject="equity_option",
+            axes=(
+                QuoteAxisSpec("expiry", axis_kind="time_to_expiry", unit="years"),
+                QuoteAxisSpec("strike", axis_kind="option_strike", unit="price"),
+            ),
+            unit=QuoteUnitSpec(
+                unit_name="decimal_volatility",
+                value_domain="volatility",
+                scaling="absolute",
+            ),
+        ),
+    )
 
 
 @dataclass(frozen=True)

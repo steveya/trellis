@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -62,6 +63,142 @@ def _himalaya_market_state(*, corr: float = 0.35) -> MarketState:
         vol_surface=FlatVol(0.20),
         model_parameters={"correlation_matrix": corr},
     )
+
+
+def _single_state_market_state(*, rate: float = 0.05, vol: float = 0.20) -> MarketState:
+    return MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=YieldCurve.flat(rate, max_tenor=5.0),
+        vol_surface=FlatVol(vol),
+    )
+
+
+def test_resolve_single_state_diffusion_inputs_reads_market_state_contract():
+    from trellis.models.resolution.single_state_diffusion import (
+        resolve_single_state_diffusion_inputs,
+    )
+
+    spec = SimpleNamespace(
+        notional=100.0,
+        spot=105.0,
+        strike=110.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="put",
+    )
+
+    resolved = resolve_single_state_diffusion_inputs(
+        _single_state_market_state(rate=0.04, vol=0.30),
+        spec,
+    )
+
+    assert resolved.notional == pytest.approx(100.0)
+    assert resolved.spot == pytest.approx(105.0)
+    assert resolved.strike == pytest.approx(110.0)
+    assert resolved.maturity == pytest.approx(1.0)
+    assert resolved.rate == pytest.approx(0.04)
+    assert resolved.sigma == pytest.approx(0.30)
+    assert resolved.dividend_yield == pytest.approx(0.0)
+    assert resolved.option_type == "put"
+
+
+def test_short_rate_comparison_regime_builds_typed_flat_market_objects():
+    from trellis.models.resolution.short_rate_claims import ShortRateComparisonRegime
+
+    regime = ShortRateComparisonRegime(
+        regime_name="t01_short_rate_comparison",
+        flat_discount_rate=0.05,
+        flat_sigma=0.01,
+        hull_white_mean_reversion=0.1,
+    )
+
+    discount_curve = regime.build_discount_curve(max_tenor=12.0)
+    vol_surface = regime.build_vol_surface()
+
+    assert discount_curve.zero_rate(3.0) == pytest.approx(0.05)
+    assert vol_surface.black_vol(3.0, 0.63) == pytest.approx(0.01)
+    payload = regime.to_payload()
+    assert payload["regime_family"] == "short_rate"
+    assert payload["vol_surface"]["quote_subject"] == "discount_bond_option"
+    assert payload["vol_surface"]["quote_unit"] == "decimal_volatility"
+    assert payload["vol_surface"]["quote_semantics"]["quote_subject"] == "discount_bond_option"
+
+
+def test_resolve_short_rate_regime_uses_model_specific_mean_reversion_from_comparison_regime():
+    from trellis.models.resolution.short_rate_claims import (
+        ShortRateComparisonRegime,
+        resolve_short_rate_regime,
+    )
+
+    regime = ShortRateComparisonRegime(
+        regime_name="t01_short_rate_comparison",
+        flat_discount_rate=0.05,
+        flat_sigma=0.01,
+        hull_white_mean_reversion=0.1,
+        ho_lee_mean_reversion=0.0,
+    )
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=regime.build_discount_curve(max_tenor=12.0),
+        vol_surface=regime.build_vol_surface(),
+        market_provenance={"comparison_regime": regime.to_payload()},
+    )
+
+    hull_white = resolve_short_rate_regime(
+        market_state,
+        model="hull_white",
+        maturity=3.0,
+        strike=0.63,
+    )
+    ho_lee = resolve_short_rate_regime(
+        market_state,
+        model="ho_lee",
+        maturity=3.0,
+        strike=0.63,
+    )
+
+    assert hull_white.sigma == pytest.approx(0.01)
+    assert hull_white.mean_reversion == pytest.approx(0.1)
+    assert ho_lee.sigma == pytest.approx(0.01)
+    assert ho_lee.mean_reversion == pytest.approx(0.0)
+
+
+def test_single_state_diffusion_gbm_characteristic_functions_match_known_moments():
+    from trellis.models.resolution.single_state_diffusion import (
+        ResolvedSingleStateDiffusionInputs,
+        gbm_log_ratio_char_fn,
+        gbm_log_spot_char_fn,
+        put_from_call_parity,
+    )
+
+    resolved = ResolvedSingleStateDiffusionInputs(
+        notional=100.0,
+        spot=100.0,
+        strike=105.0,
+        maturity=1.25,
+        rate=0.04,
+        dividend_yield=0.01,
+        sigma=0.30,
+        option_type="put",
+    )
+
+    log_spot_phi = gbm_log_spot_char_fn(resolved)
+    log_ratio_phi = gbm_log_ratio_char_fn(resolved)
+    expected_forward = resolved.spot * np.exp(
+        (resolved.rate - resolved.dividend_yield) * resolved.maturity
+    )
+
+    assert log_spot_phi(0.0) == pytest.approx(1.0)
+    assert log_ratio_phi(0.0) == pytest.approx(1.0)
+    assert log_spot_phi(-1j) == pytest.approx(expected_forward)
+    assert log_ratio_phi(-1j) == pytest.approx(expected_forward / resolved.spot)
+
+    call_price = 12.5
+    expected_put = call_price - resolved.spot * np.exp(
+        -resolved.dividend_yield * resolved.maturity
+    ) + resolved.strike * np.exp(-resolved.rate * resolved.maturity)
+    assert put_from_call_parity(call_price, resolved) == pytest.approx(expected_put)
 
 
 def test_resolve_quanto_inputs_matches_expected_market_binding():

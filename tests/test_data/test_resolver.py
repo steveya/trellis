@@ -561,6 +561,12 @@ class TestResolveMarketSnapshot:
         assert source_spec["calibration_result"]["calibration_target"]["quote_map"]["quote_family"] == (
             "implied_vol"
         )
+        assert source_spec["calibration_result"]["calibration_target"]["quote_map"]["quote_subject"] == (
+            "equity_option"
+        )
+        assert source_spec["calibration_result"]["calibration_target"]["quote_map"]["quote_unit"] == (
+            "decimal_volatility"
+        )
         assert source_spec["calibration_result"]["fit_diagnostics"]["point_count"] == len(strikes)
 
     @patch("trellis.data.treasury_gov.TreasuryGovDataProvider")

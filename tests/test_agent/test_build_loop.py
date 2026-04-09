@@ -81,6 +81,55 @@ UNAPPROVED_IMPORT_MODULE_CODE = MOCK_MODULE_CODE.replace(
     "from trellis.models.processes.heston import Heston",
 )
 
+GOOD_QUANTO_MODULE_CODE = '''\
+"""Agent-generated payoff: Quanto option."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+
+from trellis.core.market_state import MarketState
+from trellis.core.types import DayCountConvention
+from trellis.models.analytical.quanto import price_quanto_option_analytical
+from trellis.models.resolution.quanto import resolve_quanto_inputs
+
+
+@dataclass(frozen=True)
+class QuantoOptionSpec:
+    notional: float
+    strike: float
+    expiry_date: date
+    fx_pair: str
+    underlier_currency: str = "EUR"
+    domestic_currency: str = "USD"
+    option_type: str = "call"
+    quanto_correlation_key: str | None = None
+    day_count: DayCountConvention = DayCountConvention.ACT_365
+
+
+class QuantoOptionAnalyticalPayoff:
+    def __init__(self, spec: QuantoOptionSpec):
+        self._spec = spec
+
+    @property
+    def spec(self) -> QuantoOptionSpec:
+        return self._spec
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"black_vol_surface", "discount_curve", "forward_curve", "fx_rates", "model_parameters", "spot"}
+
+    def evaluate(self, market_state: MarketState) -> float:
+        resolved = resolve_quanto_inputs(market_state, self._spec)
+        return float(price_quanto_option_analytical(self._spec, resolved))
+'''
+
+UNAPPROVED_QUANTO_IMPORT_MODULE_CODE = GOOD_QUANTO_MODULE_CODE.replace(
+    "from trellis.models.analytical.quanto import price_quanto_option_analytical\nfrom trellis.models.resolution.quanto import resolve_quanto_inputs",
+    "from trellis.models.processes.heston import Heston\nfrom trellis.models.resolution.quanto import resolve_quanto_inputs",
+)
+
 AMERICAN_SPEC_SCHEMA = SpecSchema(
     class_name="AmericanOptionPayoff",
     spec_name="AmericanPutEquitySpec",
@@ -1158,9 +1207,8 @@ class TestBuildLoop:
         assert passed, f"Invariant failures: {failures}"
 
     @patch("trellis.agent.executor._generate_module")
-    def test_build_retries_after_invalid_imports(self, mock_gen_mod):
-        """Invalid Trellis imports are rejected before module write and retried."""
-        mock_gen_mod.side_effect = [BAD_IMPORT_MODULE_CODE, MOCK_MODULE_CODE]
+    def test_build_reuses_deterministic_swaption_wrapper_without_codegen(self, mock_gen_mod):
+        """Helper-backed swaption routes should bypass freeform code generation."""
 
         from trellis.agent.executor import build_payoff
 
@@ -1171,20 +1219,23 @@ class TestBuildLoop:
         )
 
         assert cls.__name__ == "SwaptionPayoff"
-        assert mock_gen_mod.call_count == 2
+        mock_gen_mod.assert_not_called()
 
     @patch("trellis.agent.executor._generate_module")
-    def test_build_fails_on_unapproved_existing_module(self, mock_gen_mod):
-        """Existing but unapproved Trellis imports are rejected explicitly."""
-        mock_gen_mod.return_value = UNAPPROVED_IMPORT_MODULE_CODE
+    def test_build_fails_on_unapproved_generated_module(self, mock_gen_mod):
+        """Fresh-build codegen rejects unapproved Trellis imports explicitly."""
+        mock_gen_mod.return_value = UNAPPROVED_QUANTO_IMPORT_MODULE_CODE
 
         from trellis.agent.executor import build_payoff
 
         with pytest.raises(RuntimeError, match="unapproved Trellis module"):
             build_payoff(
-                "European payer swaption",
-                {"discount_curve", "forward_curve", "black_vol_surface"},
+                "Quanto option: quanto-adjusted BS vs MC cross-currency",
                 force_rebuild=True,
+                fresh_build=True,
+                validation="fast",
+                instrument_type="quanto_option",
+                preferred_method="analytical",
                 max_retries=2,
             )
 
@@ -1205,9 +1256,12 @@ class TestBuildLoop:
         with patch("trellis.agent.executor._record_platform_event", side_effect=_tracking_record_platform_event):
             with pytest.raises(RuntimeError, match="OpenAI text request failed"):
                 executor.build_payoff(
-                    "European payer swaption",
-                    {"discount_curve", "forward_curve", "black_vol_surface"},
+                    "Quanto option: quanto-adjusted BS vs MC cross-currency",
                     force_rebuild=True,
+                    fresh_build=True,
+                    validation="fast",
+                    instrument_type="quanto_option",
+                    preferred_method="analytical",
                     max_retries=1,
                 )
 
@@ -1221,19 +1275,22 @@ class TestBuildLoop:
         """Code-generation failures should be retried before the build loop gives up."""
         mock_gen_mod.side_effect = [
             RuntimeError("OpenAI text request failed after 1 attempts"),
-            MOCK_MODULE_CODE,
+            GOOD_QUANTO_MODULE_CODE,
         ]
 
         from trellis.agent.executor import build_payoff
 
         cls = build_payoff(
-            "European payer swaption",
-            {"discount_curve", "forward_curve", "black_vol_surface"},
+            "Quanto option: quanto-adjusted BS vs MC cross-currency",
             force_rebuild=True,
+            fresh_build=True,
+            validation="fast",
+            instrument_type="quanto_option",
+            preferred_method="analytical",
             max_retries=2,
         )
 
-        assert cls.__name__ == "SwaptionPayoff"
+        assert cls.__name__ == "QuantoOptionAnalyticalPayoff"
         assert mock_gen_mod.call_count == 2
 
     @patch("trellis.agent.executor._generate_module")

@@ -1,0 +1,33 @@
+category: convention
+title: Wrong product shape contract
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-08T19:02:18.908827'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_190221_cdo_copula.yaml
+applies_when:
+  method:
+  - copula
+  features:
+  - credit_risk
+  - discounting
+  - spread_computation
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: The build fails with `price_nth_to_default_basket() got an unexpected keyword
+  argument 'market_state'` during the market-state smoke test.
+root_cause: The copula payoff/pricer path was wired to a function signature that does
+  not accept a `market_state` object, indicating the product shape contract between
+  the tranche payoff adapter and the pricing kernel was not aligned. The implementation
+  also confused an NTD-style primitive with a CDO tranche payoff, so the required
+  inputs and adapter boundary were incorrect.
+fix: Define an explicit CDO tranche payoff adapter with the exact pricing kernel signature
+  expected by the copula route, and pass only supported primitives such as credit
+  curve, discount curve, attachment/detachment, correlation, maturity, and recovery.
+  Remove unsupported `market_state` plumbing or add a proper wrapper that translates
+  `market_state` into kernel inputs before calling the pricer.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: con_046

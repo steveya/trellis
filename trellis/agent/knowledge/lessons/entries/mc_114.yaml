@@ -1,0 +1,27 @@
+category: monte_carlo
+title: Fix MC indentation and exceptions
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:43:58.162007'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_164400_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Generated module fails to import with SyntaxError at an `except Exception:`
+  line nested under a conditional block.
+root_cause: The code generator placed `except` clauses inside `if` branches instead
+  of wrapping the entire result-conversion logic in a single `try` block. This creates
+  invalid Python syntax and prevents the pricing module from compiling.
+fix: Restructure the evaluator so each fallback conversion is enclosed by a proper
+  `try/except` pair at the correct indentation level. Keep one clean return path per
+  result type and avoid inserting exception handlers inside conditional statements.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_114

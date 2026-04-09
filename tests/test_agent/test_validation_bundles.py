@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 
@@ -32,7 +34,63 @@ def test_select_validation_bundle_for_analytical_swaption_includes_helper_consis
 
     assert bundle.bundle_id == "analytical:swaption"
     assert "check_rate_style_swaption_helper_consistency" in bundle.checks
+    assert "check_vol_sensitivity" not in bundle.checks
+    assert "check_vol_monotonicity" not in bundle.checks
+    assert "check_zero_vol_intrinsic" not in bundle.checks
     assert "route_specific" in bundle.categories
+
+
+def test_select_validation_bundle_prefers_more_specific_product_family_over_generic_request_family():
+    from trellis.agent.validation_bundles import select_validation_bundle
+
+    bundle = select_validation_bundle(
+        instrument_type="european_option",
+        method="analytical",
+        product_ir=SimpleNamespace(instrument="zcb_option"),
+    )
+
+    assert bundle.bundle_id == "analytical:zcb_option"
+    assert bundle.instrument_type == "zcb_option"
+
+
+def test_select_validation_bundle_skips_generic_vol_checks_for_explicit_swaption_comparison_regime():
+    from trellis.agent.validation_bundles import select_validation_bundle
+    from trellis.agent.valuation_context import (
+        EngineModelSpec,
+        PotentialSpec,
+        RatesCurveRoleSpec,
+        SourceSpec,
+    )
+
+    semantic_blueprint = SimpleNamespace(
+        valuation_context=SimpleNamespace(
+            engine_model_spec=EngineModelSpec(
+                model_family="rates",
+                model_name="hull_white_1f",
+                state_semantics=("short_rate",),
+                potential=PotentialSpec(discount_term="risk_free_rate"),
+                sources=(SourceSpec(source_kind="coupon_stream"),),
+                calibration_requirements=("bootstrap_curve", "fit_hw_strip"),
+                backend_hints=("monte_carlo",),
+                parameter_overrides={"mean_reversion": 0.05, "sigma": 0.01},
+                rates_curve_roles=RatesCurveRoleSpec(
+                    discount_curve_role="discount_curve",
+                    forecast_curve_role="forward_curve",
+                ),
+            )
+        )
+    )
+
+    bundle = select_validation_bundle(
+        instrument_type="swaption",
+        method="monte_carlo",
+        semantic_blueprint=semantic_blueprint,
+    )
+
+    assert "check_non_negativity" in bundle.checks
+    assert "check_price_sanity" in bundle.checks
+    assert "check_vol_sensitivity" not in bundle.checks
+    assert "check_vol_monotonicity" not in bundle.checks
 
 
 def test_execute_validation_bundle_respects_validation_level(monkeypatch):
@@ -407,3 +465,82 @@ def test_execute_validation_bundle_runs_swaption_helper_consistency(monkeypatch)
         "check_rate_style_swaption_helper_consistency",
     )
     assert calls == list(execution.executed_checks)
+
+
+def test_execute_validation_bundle_threads_swaption_comparison_kwargs(monkeypatch):
+    from trellis.agent.validation_bundles import ValidationBundle, execute_validation_bundle
+    from trellis.agent.valuation_context import (
+        EngineModelSpec,
+        PotentialSpec,
+        RatesCurveRoleSpec,
+        SourceSpec,
+    )
+
+    received_kwargs: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_non_negativity",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_price_sanity",
+        lambda *args, **kwargs: [],
+    )
+
+    def _capture(*args, **kwargs):
+        received_kwargs.update(kwargs)
+        return []
+
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_rate_style_swaption_helper_consistency",
+        _capture,
+    )
+
+    bundle = ValidationBundle(
+        bundle_id="analytical:swaption",
+        instrument_type="swaption",
+        method="analytical",
+        checks=(
+            "check_non_negativity",
+            "check_price_sanity",
+            "check_rate_style_swaption_helper_consistency",
+        ),
+        categories={
+            "universal": ("check_non_negativity", "check_price_sanity"),
+            "route_specific": ("check_rate_style_swaption_helper_consistency",),
+        },
+    )
+    semantic_blueprint = SimpleNamespace(
+        valuation_context=SimpleNamespace(
+            engine_model_spec=EngineModelSpec(
+                model_family="rates",
+                model_name="hull_white_1f",
+                state_semantics=("short_rate",),
+                potential=PotentialSpec(discount_term="risk_free_rate"),
+                sources=(SourceSpec(source_kind="coupon_stream"),),
+                calibration_requirements=("bootstrap_curve", "fit_hw_strip"),
+                backend_hints=("analytical",),
+                parameter_overrides={"mean_reversion": 0.05, "sigma": 0.01},
+                rates_curve_roles=RatesCurveRoleSpec(
+                    discount_curve_role="discount_curve",
+                    forecast_curve_role="forward_curve",
+                ),
+            )
+        )
+    )
+
+    execution = execute_validation_bundle(
+        bundle,
+        validation_level="fast",
+        test_payoff=object(),
+        market_state=object(),
+        payoff_factory=lambda: object(),
+        market_state_factory=lambda **kwargs: object(),
+        semantic_blueprint=semantic_blueprint,
+    )
+
+    assert execution.failures == ()
+    assert received_kwargs["comparison_kwargs"] == {
+        "mean_reversion": pytest.approx(0.05),
+        "sigma": pytest.approx(0.01),
+    }

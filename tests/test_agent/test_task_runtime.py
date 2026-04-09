@@ -53,8 +53,13 @@ def test_run_task_passes_force_rebuild_and_validation():
 
     assert calls[0]["description"] == "Build a pricer for: European call: theta-method convergence order"
     assert calls[0]["instrument_type"] == "european_option"
+    assert calls[0]["request_metadata"]["instrument_type"] == "european_option"
+    assert calls[0]["request_metadata"]["instrument_identity_source"] == "task.title_or_description"
     assert calls[0]["request_metadata"]["task_id"] == "T13"
     assert calls[0]["request_metadata"]["task_title"] == "European call: theta-method convergence order"
+    assert calls[0]["request_metadata"]["runtime_contract"]["instrument_identity_source"] == (
+        "task.title_or_description"
+    )
     assert calls[0]["request_metadata"]["runtime_contract"]["snapshot_reference"]["source"] == "default"
     assert calls[0]["request_metadata"]["runtime_contract"]["evaluation_tags"] == (
         "task_runtime",
@@ -385,6 +390,8 @@ def test_market_parameter_trace_summary_compacts_named_source_families():
                             "quote_map": {
                                 "quote_family": "implied_vol",
                                 "convention": "black",
+                                "quote_subject": "equity_option",
+                                "quote_unit": "decimal_volatility",
                             },
                         },
                         "fit_diagnostics": {"point_count": 5},
@@ -416,6 +423,8 @@ def test_market_parameter_trace_summary_compacts_named_source_families():
     assert trace["sources"]["empirical_quanto"]["details"]["outputs"]["quanto_correlation"]["sample_size"] == 60
     assert trace["sources"]["heston_surface_fit"]["details"]["workflow"] == "heston_smile"
     assert trace["sources"]["heston_surface_fit"]["details"]["quote_family"] == "implied_vol"
+    assert trace["sources"]["heston_surface_fit"]["details"]["quote_subject"] == "equity_option"
+    assert trace["sources"]["heston_surface_fit"]["details"]["quote_unit"] == "decimal_volatility"
 
 
 def test_build_market_state_for_task_records_selected_mock_model_parameter_trace():
@@ -441,6 +450,107 @@ def test_build_market_state_for_task_records_selected_mock_model_parameter_trace
     assert trace["sources"]["heston_equity"]["details"]["synthetic_generation_contract_version"] == "v2"
     assert trace["sources"]["heston_equity"]["details"]["prior_seed"] == market_context["provenance"]["prior_seed"]
     assert "theta" in trace["sources"]["heston_equity"]["parameter_keys"]
+
+
+def test_task_to_instrument_type_prefers_explicit_task_field():
+    from trellis.agent.task_runtime import task_to_instrument_type
+
+    assert task_to_instrument_type(
+        {
+            "id": "T01",
+            "title": "Completely ambiguous title",
+            "instrument_type": "zcb_option",
+        }
+    ) == "zcb_option"
+
+
+def test_task_to_instrument_identity_records_explicit_source():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T01",
+            "title": "Completely ambiguous title",
+            "instrument_type": "zcb_option",
+        }
+    )
+
+    assert resolution.instrument_type == "zcb_option"
+    assert resolution.source == "task.instrument_type"
+
+
+def test_task_to_instrument_type_uses_shared_lower_layer_mapping():
+    from trellis.agent.task_runtime import task_to_instrument_type
+
+    assert task_to_instrument_type(
+        {
+            "id": "T49",
+            "title": "CDO tranche: Gaussian copula vs Student-t copula",
+        }
+    ) == "cdo"
+
+
+def test_task_to_instrument_identity_records_text_fallback_source():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T49",
+            "title": "CDO tranche: Gaussian copula vs Student-t copula",
+        }
+    )
+
+    assert resolution.instrument_type == "cdo"
+    assert resolution.source == "task.title_or_description"
+
+
+def test_build_market_state_for_task_materializes_short_rate_comparison_regime(monkeypatch):
+    from trellis.agent.task_runtime import build_market_state_for_task
+    from trellis.core.market_state import MarketState
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.models.resolution.short_rate_claims import (
+        FlatShortRateVolSurface,
+        extract_short_rate_comparison_regime,
+    )
+    from trellis.models.vol_surface import FlatVol
+
+    base_state = MarketState(
+        as_of=date(2024, 11, 15),
+        settlement=date(2024, 11, 15),
+        discount=YieldCurve.flat(0.02, max_tenor=20.0),
+        vol_surface=FlatVol(0.20),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime.build_market_state",
+        lambda: base_state,
+    )
+
+    market_state, market_context = build_market_state_for_task(
+        {
+            "id": "T01",
+            "title": "ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical",
+            "instrument_type": "zcb_option",
+            "comparison_regime": {
+                "family": "short_rate",
+                "regime_name": "t01_short_rate_comparison",
+                "flat_discount_rate": 0.05,
+                "flat_sigma": 0.01,
+                "hull_white_mean_reversion": 0.1,
+                "ho_lee_mean_reversion": 0.0,
+            },
+        }
+    )
+
+    assert market_state.discount.zero_rate(1.0) == pytest.approx(0.05)
+    assert isinstance(market_state.vol_surface, FlatShortRateVolSurface)
+    assert market_state.vol_surface.black_vol(3.0, 0.63) == pytest.approx(0.01)
+    regime = extract_short_rate_comparison_regime(market_state)
+    assert regime is not None
+    assert regime.regime_name == "t01_short_rate_comparison"
+    assert regime.hull_white_mean_reversion == pytest.approx(0.1)
+    assert regime.ho_lee_mean_reversion == pytest.approx(0.0)
+    assert market_context["provenance"]["comparison_regime"]["regime_family"] == "short_rate"
+    assert market_context["provenance"]["comparison_regime"]["flat_sigma"] == pytest.approx(0.01)
 
 
 def test_artifacts_from_payload_collects_analytical_trace_paths():
@@ -865,6 +975,28 @@ def test_cross_validate_comparison_task_respects_directional_relations():
     }
     assert result["passed_targets"] == ["tree_lower"]
     assert result["failed_targets"] == ["tree_upper"]
+
+
+def test_task_comparison_targets_promote_t51_cds_targets_to_analytical_lane():
+    from trellis.agent.task_runtime import _task_comparison_targets, _task_construct_methods
+
+    task = {
+        "id": "T51",
+        "title": "CDS par spread: hazard rate bootstrap vs closed-form",
+        "construct": "credit",
+        "cross_validate": {
+            "internal": ["bootstrapped_cds", "analytical_cds"],
+        },
+    }
+
+    construct_methods = _task_construct_methods(task)
+    targets = _task_comparison_targets(task, construct_methods)
+
+    assert construct_methods == []
+    assert [(target.target_id, target.preferred_method) for target in targets] == [
+        ("bootstrapped_cds", "analytical"),
+        ("analytical_cds", "analytical"),
+    ]
 
 
 def test_load_tasks_excludes_framework_inventory():
@@ -1517,6 +1649,22 @@ def test_task_to_instrument_type_detects_bare_european_shape():
     ) == "european_option"
 
 
+def test_task_to_instrument_identity_leaves_generic_bond_or_swap_titles_unresolved():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    bond_resolution = task_to_instrument_identity(
+        {"id": "T900", "title": "Generic bond workflow summary"}
+    )
+    swap_resolution = task_to_instrument_identity(
+        {"id": "T901", "title": "Desk swap exposure summary"}
+    )
+
+    assert bond_resolution.instrument_type is None
+    assert bond_resolution.source == "missing"
+    assert swap_resolution.instrument_type is None
+    assert swap_resolution.source == "missing"
+
+
 def test_build_market_state_uses_mock_snapshot_defaults():
     from trellis.agent.task_runtime import build_market_state
 
@@ -2082,6 +2230,152 @@ def test_prepare_existing_task_rejects_mismatched_generic_module(monkeypatch):
         )
 
 
+def test_prepare_existing_task_rejects_generic_cached_schema_when_explicit_family_requires_specific_spec(
+    monkeypatch,
+):
+    """Explicit family identity should reject generic cached schemas even if the title overlaps."""
+    from dataclasses import dataclass
+    from datetime import date
+    from types import ModuleType
+
+    from trellis.agent.task_runtime import prepare_existing_task
+
+    @dataclass(frozen=True)
+    class EuropeanOptionSpec:
+        notional: float
+        strike: float
+        expiry_date: date
+        option_type: str
+
+    class EuropeanOptionAnalyticalPayoff:
+        def __init__(self, spec: EuropeanOptionSpec):
+            self._spec = spec
+
+        def evaluate(self, market_state):
+            return 0.0
+
+    module = ModuleType("trellis.instruments._agent.europeanoptionanalytical")
+    module.__doc__ = "Agent-generated payoff: Build a pricer for: European call option on a zero-coupon bond."
+    EuropeanOptionSpec.__module__ = module.__name__
+    EuropeanOptionAnalyticalPayoff.__module__ = module.__name__
+    setattr(module, "EuropeanOptionSpec", EuropeanOptionSpec)
+    setattr(module, "EuropeanOptionAnalyticalPayoff", EuropeanOptionAnalyticalPayoff)
+
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime.compile_build_request",
+        lambda description, instrument_type=None, model=None: SimpleNamespace(
+            pricing_plan=SimpleNamespace(required_market_data={"discount_curve", "black_vol_surface"}, method="analytical"),
+        ),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime.plan_build",
+        lambda description, requirements, model="o3-mini", instrument_type=None, preferred_method=None: SimpleNamespace(
+            spec_schema=None,
+            steps=[SimpleNamespace(module_path="instruments/_agent/europeanoptionanalytical.py")],
+        ),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime._try_import_existing",
+        lambda plan: EuropeanOptionAnalyticalPayoff,
+    )
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime.import_module",
+        lambda module_name: module,
+    )
+
+    with pytest.raises(FileNotFoundError, match="No cached agent module found"):
+        prepare_existing_task(
+            {
+                "id": "T01",
+                "title": "European call option on a zero-coupon bond",
+                "instrument_type": "zcb_option",
+            },
+            model="test-model",
+        )
+
+
+def test_prepare_existing_task_uses_compiled_product_family_as_cached_schema_authority(
+    monkeypatch,
+):
+    """Compiled product identity should upgrade cached schema authority over a generic request family."""
+    from dataclasses import dataclass
+    from datetime import date
+    from types import ModuleType
+
+    from trellis.agent.task_runtime import prepare_existing_task
+
+    @dataclass(frozen=True)
+    class EuropeanOptionSpec:
+        notional: float
+        strike: float
+        expiry_date: date
+        option_type: str
+
+    class EuropeanOptionAnalyticalPayoff:
+        def __init__(self, spec: EuropeanOptionSpec):
+            self._spec = spec
+
+        def evaluate(self, market_state):
+            return 0.0
+
+    class ZCBOptionPayoff:
+        def __init__(self, spec):
+            self._spec = spec
+
+        def evaluate(self, market_state):
+            return 1.0
+
+    generic_module = ModuleType("trellis.instruments._agent.europeanoptionanalytical")
+    generic_module.__doc__ = "Agent-generated payoff: Build a pricer for: European call option on a zero-coupon bond."
+    EuropeanOptionSpec.__module__ = generic_module.__name__
+    EuropeanOptionAnalyticalPayoff.__module__ = generic_module.__name__
+    setattr(generic_module, "EuropeanOptionSpec", EuropeanOptionSpec)
+    setattr(generic_module, "EuropeanOptionAnalyticalPayoff", EuropeanOptionAnalyticalPayoff)
+
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime.compile_build_request",
+        lambda description, instrument_type=None, model=None: SimpleNamespace(
+            pricing_plan=SimpleNamespace(required_market_data={"discount_curve", "black_vol_surface"}, method="analytical"),
+            product_ir=SimpleNamespace(instrument="zcb_option"),
+            semantic_blueprint=None,
+            request=SimpleNamespace(metadata={}),
+        ),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime.plan_build",
+        lambda description, requirements, model="o3-mini", instrument_type=None, preferred_method=None: SimpleNamespace(
+            spec_schema=None,
+            steps=[SimpleNamespace(module_path="instruments/_agent/europeanoptionanalytical.py")],
+        ),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime._try_import_existing",
+        lambda plan: EuropeanOptionAnalyticalPayoff,
+    )
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime.import_module",
+        lambda module_name: generic_module,
+    )
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime._load_fallback_cached_agent",
+        lambda instrument_type, task_title: (
+            (ZCBOptionPayoff, object()) if instrument_type == "zcb_option" else (None, None)
+        ),
+    )
+
+    prepared = prepare_existing_task(
+        {
+            "id": "T01",
+            "title": "European call option on a zero-coupon bond",
+            "instrument_type": "european_option",
+        },
+        model="test-model",
+    )
+
+    assert prepared.instrument_type == "zcb_option"
+    assert prepared.payoff_cls is ZCBOptionPayoff
+
+
 def test_benchmark_existing_task_uses_cached_payoff(monkeypatch):
     """Benchmarking should instantiate and price an existing payoff without rebuild."""
     from trellis.agent.task_runtime import PreparedTask, benchmark_existing_task
@@ -2105,7 +2399,7 @@ def test_benchmark_existing_task_uses_cached_payoff(monkeypatch):
     )
     monkeypatch.setattr(
         "trellis.agent.task_runtime._make_test_payoff",
-        lambda payoff_cls, spec_schema, settle: "payoff-instance",
+        lambda payoff_cls, spec_schema, settle, **_kwargs: "payoff-instance",
     )
 
     observed: list[tuple[object, object]] = []
@@ -2246,6 +2540,46 @@ def test_make_test_payoff_uses_atm_strike_for_spot_based_options(monkeypatch):
     assert payoff.spec.kwargs["spot"] == 100.0
     assert payoff.spec.kwargs["strike"] == 100.0
     assert payoff.spec.kwargs["option_type"] == "call"
+
+
+def test_make_test_payoff_aligns_quanto_fixture_to_runtime_market_state():
+    from dataclasses import replace
+
+    from trellis.agent.planner import SPECIALIZED_SPECS
+    from trellis.agent.task_runtime import _make_test_payoff, build_market_state_for_task
+    from trellis.instruments._agent.quantooptionmontecarlo import QuantoOptionMonteCarloPayoff
+    from trellis.models.resolution.quanto import resolve_quanto_inputs
+
+    task = {
+        "id": "T105",
+        "title": "Quanto option: quanto-adjusted BS vs MC cross-currency",
+        "market": {
+            "source": "mock",
+            "as_of": "2024-11-15",
+            "discount_curve": "usd_ois",
+            "forecast_curve": "EUR-DISC",
+            "fx_rate": "EURUSD",
+            "model_parameters": "heston_equity",
+        },
+    }
+    market_state, _ = build_market_state_for_task(task)
+    market_state = replace(
+        market_state,
+        model_parameters={
+            **dict(market_state.model_parameters or {}),
+            "quanto_foreign_curve_policy": {"kind": "selected_forecast_curve"},
+        },
+    )
+
+    payoff = _make_test_payoff(
+        QuantoOptionMonteCarloPayoff,
+        SPECIALIZED_SPECS["quanto_option_monte_carlo"],
+        date(2024, 11, 15),
+        market_state=market_state,
+    )
+    resolved = resolve_quanto_inputs(market_state, payoff.spec)
+
+    assert payoff.spec.strike == pytest.approx(resolved.spot)
 
 
 def test_make_test_payoff_prefers_defining_module_spec_when_sys_modules_is_stale(monkeypatch):

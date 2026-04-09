@@ -12,21 +12,18 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
-from trellis.core.date_utils import year_fraction
-from trellis.core.types import DayCountConvention
 from trellis.models.analytical.jamshidian import (
     ResolvedJamshidianInputs,
     zcb_option_hw_raw,
 )
-from trellis.models.hull_white_parameters import resolve_hull_white_mean_reversion
-
-
-class DiscountCurveLike(Protocol):
-    """Discount interface required by the ZCB option helpers."""
-
-    def discount(self, t: float) -> float:
-        """Return a discount factor to time ``t``."""
-        ...
+from trellis.models.resolution.short_rate_claims import (
+    DiscountBondClaimSpecLike,
+    ResolvedDiscountBondClaim,
+    ShortRateClaimMarketStateLike,
+    normalize_discount_bond_strike,
+    resolve_discount_bond_claim_inputs,
+    resolve_discount_bond_option_type,
+)
 
 
 class VolSurfaceLike(Protocol):
@@ -37,16 +34,15 @@ class VolSurfaceLike(Protocol):
         ...
 
 
-class ZCBOptionMarketStateLike(Protocol):
+class ZCBOptionMarketStateLike(ShortRateClaimMarketStateLike, Protocol):
     """Market-state interface required by the ZCB option helpers."""
 
     as_of: date | None
     settlement: date | None
-    discount: DiscountCurveLike | None
     vol_surface: VolSurfaceLike | None
 
 
-class ZCBOptionSpecLike(Protocol):
+class ZCBOptionSpecLike(DiscountBondClaimSpecLike, Protocol):
     """Spec fields consumed by the ZCB option helpers."""
 
     notional: float
@@ -65,17 +61,41 @@ class ResolvedZCBOptionInputs:
 
 
 def normalize_zcb_option_strike(strike_quote: float, notional: float) -> float:
-    """Normalize strike quotes to unit-face form.
+    """Backward-compatible alias for the shared discount-bond strike normalizer."""
+    return normalize_discount_bond_strike(strike_quote, notional)
 
-    T01-style task text and generated specs sometimes use ``63`` as the strike
-    on ``100`` face rather than ``0.63`` per unit face. Treat those as
-    equivalent when the notional/face is available.
-    """
-    strike = float(strike_quote)
-    face = abs(float(notional))
-    if abs(strike) > 1.0 and face > 1.0:
-        strike /= face
-    return strike
+
+def _build_resolved_jamshidian_inputs(
+    claim: ResolvedDiscountBondClaim,
+) -> ResolvedZCBOptionInputs:
+    """Project shared short-rate claim inputs onto Jamshidian kernel inputs."""
+    if claim.expiry_time <= 0.0:
+        return ResolvedZCBOptionInputs(
+            notional=claim.notional,
+            option_type=claim.option_type,
+            jamshidian=ResolvedJamshidianInputs(
+                discount_factor_expiry=1.0,
+                discount_factor_bond=claim.discount_factor_bond,
+                strike=claim.strike_unit,
+                T_exp=0.0,
+                T_bond=max(claim.bond_maturity_time, 0.0),
+                sigma=0.0,
+                a=float(claim.regime.mean_reversion),
+            ),
+        )
+    return ResolvedZCBOptionInputs(
+        notional=claim.notional,
+        option_type=claim.option_type,
+        jamshidian=ResolvedJamshidianInputs(
+            discount_factor_expiry=claim.discount_factor_expiry,
+            discount_factor_bond=claim.discount_factor_bond,
+            strike=claim.strike_unit,
+            T_exp=claim.expiry_time,
+            T_bond=claim.bond_maturity_time,
+            sigma=float(claim.regime.sigma),
+            a=float(claim.regime.mean_reversion),
+        ),
+    )
 
 
 def resolve_zcb_option_hw_inputs(
@@ -85,54 +105,14 @@ def resolve_zcb_option_hw_inputs(
     mean_reversion: float | None = None,
 ) -> ResolvedZCBOptionInputs:
     """Resolve dates, strike units, vol, and discount factors for Jamshidian."""
-    settlement = _settlement_date(market_state, spec)
-    discount_curve = market_state.discount
-    if discount_curve is None:
-        raise ValueError("ZCB option pricing requires market_state.discount")
-    if market_state.vol_surface is None:
-        raise ValueError("ZCB option pricing requires market_state.vol_surface")
-    resolved_mean_reversion = resolve_hull_white_mean_reversion(
+    claim = resolve_discount_bond_claim_inputs(
         market_state,
+        spec,
+        model="hull_white",
         mean_reversion=mean_reversion,
         default_mean_reversion=0.1,
     )
-
-    day_count = getattr(spec, "day_count", DayCountConvention.ACT_365)
-    t_exp = year_fraction(settlement, spec.expiry_date, day_count)
-    t_bond = year_fraction(settlement, spec.bond_maturity_date, day_count)
-    if t_exp <= 0.0:
-        return ResolvedZCBOptionInputs(
-            notional=float(spec.notional),
-            option_type=_resolve_option_type(spec),
-            jamshidian=ResolvedJamshidianInputs(
-                discount_factor_expiry=1.0,
-                discount_factor_bond=float(discount_curve.discount(max(t_bond, 0.0))),
-                strike=normalize_zcb_option_strike(spec.strike, spec.notional),
-                T_exp=max(t_exp, 0.0),
-                T_bond=max(t_bond, 0.0),
-                sigma=0.0,
-                a=float(resolved_mean_reversion),
-            ),
-        )
-    if t_bond <= t_exp:
-        raise ValueError("bond_maturity_date must be after expiry_date for ZCB options")
-
-    strike_unit = normalize_zcb_option_strike(spec.strike, spec.notional)
-    sigma = float(market_state.vol_surface.black_vol(max(t_exp, 1e-6), strike_unit))
-
-    return ResolvedZCBOptionInputs(
-        notional=float(spec.notional),
-        option_type=_resolve_option_type(spec),
-        jamshidian=ResolvedJamshidianInputs(
-            discount_factor_expiry=float(discount_curve.discount(t_exp)),
-            discount_factor_bond=float(discount_curve.discount(t_bond)),
-            strike=strike_unit,
-            T_exp=float(t_exp),
-            T_bond=float(t_bond),
-            sigma=sigma,
-            a=float(resolved_mean_reversion),
-        ),
-    )
+    return _build_resolved_jamshidian_inputs(claim)
 
 
 def price_zcb_option_jamshidian(
@@ -160,23 +140,8 @@ def price_zcb_option_jamshidian(
 
 
 def _resolve_option_type(spec) -> str:
-    """Resolve call/put semantics from modern or legacy spec fields."""
-    option_type = getattr(spec, "option_type", None)
-    if option_type is not None:
-        normalized = str(option_type).strip().lower()
-        if normalized in {"call", "put"}:
-            return normalized
-        if normalized == "payer":
-            return "put"
-        if normalized == "receiver":
-            return "call"
-    if hasattr(spec, "is_call"):
-        return "call" if bool(spec.is_call) else "put"
-    if hasattr(spec, "is_payer"):
-        # Historical compatibility: earlier task scaffolds reused payer/receiver
-        # wording for bond options and mapped payer -> put on the bond forward.
-        return "put" if bool(spec.is_payer) else "call"
-    return "call"
+    """Backward-compatible alias for the shared discount-bond option-type resolver."""
+    return resolve_discount_bond_option_type(spec)
 
 
 def _terminal_intrinsic(option_type: str, *, bond_unit_price: float, strike: float) -> float:

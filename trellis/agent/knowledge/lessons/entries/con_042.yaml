@@ -1,0 +1,28 @@
+category: convention
+title: Missing Exported Timeline Helper
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:00:23.831399'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_160025_callable_bond_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: Importing lattice_step_from_time from trellis.core.date_utils raised an ImportError
+  because the symbol is not exported.
+root_cause: The implementation relied on a helper that is not part of the public API
+  for the installed trellis version. This usually happens when code is written against
+  an internal helper name or a different package revision.
+fix: Replace the unsupported helper with an exported timeline/index conversion utility,
+  or compute lattice indices directly from the payment schedule and model timestep.
+  Add an import smoke test for all non-public symbols before code generation.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: con_042

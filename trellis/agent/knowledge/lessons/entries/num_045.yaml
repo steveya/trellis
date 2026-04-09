@@ -1,0 +1,29 @@
+category: numerical
+title: FFT payoff argument mismatch
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T17:14:17.412062'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_171419_european_option_fft_pricing.yaml
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - characteristic_function
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Smoke test failed with TypeError: fft_price() got an unexpected keyword
+  argument ''option_type''.'
+root_cause: The FFT pricing helper was called with a payoff-style API, but the underlying
+  transform pricer does not accept an option_type keyword. This indicates an interface
+  mismatch between the route assembly layer and the pricing kernel contract.
+fix: Align the call site with the kernel signature by passing the expected payoff/contract
+  fields only, or add an adapter that maps option_type into the transform pricer's
+  supported inputs. Ensure the pricer contract is explicit for calls and puts before
+  invoking FFT/COS routines.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: num_045

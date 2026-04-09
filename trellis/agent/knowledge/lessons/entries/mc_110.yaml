@@ -1,0 +1,27 @@
+category: monte_carlo
+title: Fix MC indentation flow
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:26:38.374310'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_162640_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Generated module fails to import with SyntaxError: expected ''except'' or
+  ''finally'' block near the Monte Carlo pricing call.'
+root_cause: The code generator produced mis-indented try/except logic around the MC
+  evaluation, leaving an exception handler detached from its block. This is a templating/control-flow
+  bug rather than a modeling error.
+fix: Use a single, linear evaluate() pattern with no nested try/except inside expression
+  assembly, and keep result normalization in one indentation level. Validate generated
+  source for balanced blocks before returning it.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_110

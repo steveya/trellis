@@ -15,6 +15,7 @@ Request / term sheet
   -> ValuationContext
   -> RequiredDataSpec / MarketBindingSpec
   -> ProductIR
+  -> EventProgramIR / ControlProgramIR
   -> PricingPlan + RouteSpec admissibility
   -> family lowering IR
   -> existing helper-backed numerical route
@@ -87,15 +88,129 @@ Route-card prose is secondary evidence, not the planning authority.
 
 ### 2.4 Lowering authority
 
-The current lowering boundary is family-specific, not universal:
+The current lowering boundary is family-specific, but it now sits underneath a
+universal semantic event/control compiler program:
+
+- `EventProgramIR`
+- `ControlProgramIR`
+
+That shared program is emitted once from product semantics and then projected
+into the bounded numerical families. The current family-specific layer is:
 
 - `AnalyticalBlack76IR`
-- `VanillaEquityPDEIR`
+- `EventAwarePDEIR`
+- `VanillaEquityPDEIR` as the current compatibility wrapper for the vanilla
+  theta-method PDE route
 - `ExerciseLatticeIR`
 - `CorrelatedBasketMonteCarloIR`
 
 These lower onto existing checked-in helpers and kernels. The pricing math
 remains in `trellis/models/`.
+
+For PDE routes, the typed lowering surface now includes explicit contracts for:
+
+- PDE state (`PDEStateSpec`)
+- operator/stepping family (`PDEOperatorSpec`)
+- event-time buckets (`PDEEventTimeSpec`)
+- event transforms (`PDEEventTransformSpec`)
+- control style (`PDEControlSpec`)
+- boundary/terminal semantics (`PDEBoundarySpec`)
+
+Those PDE contracts are now projections of the shared event/control program,
+not a separate PDE-local event vocabulary.
+
+The runtime now also ships a bounded generic rollback substrate in
+`trellis.models.pde.event_aware`:
+
+- `EventAwarePDEGridSpec`
+- `EventAwarePDEOperatorSpec`
+- `EventAwarePDEBoundarySpec`
+- `EventAwarePDEEventBucket`
+- `EventAwarePDETransform`
+- `EventAwarePDEProblemSpec`
+- `EventAwarePDEProblem`
+
+That substrate is intentionally 1D and deterministic-schedule-only, but it
+means the compiler no longer lowers into a family IR without a matching
+product-agnostic rollback assembly layer.
+
+The checked vanilla-equity PDE helper now uses that same runtime substrate. The
+route still exposes `price_vanilla_equity_option_pde`, but the helper assembles
+an `EventAwarePDEProblem` with no event buckets instead of carrying a separate
+vanilla-only rollback loop. `VanillaEquityPDEIR` is now explicitly
+transitional-only: the intended end state is to retire the wrapper once trace
+and review consumers stop keying on the legacy family-IR type.
+
+For supported schedule-driven PDE requests, the compiler can now preserve a
+typed event timeline on `EventAwarePDEIR` even when DSL lowering cannot yet
+bind a helper target. That changes the failure mode from “raw schedule-state
+leaked through routing” to “explicit event-aware PDE contract exists, but the
+selected route still lacks the required operator/control backend or route
+migration.”
+
+The platform trace boundary now mirrors that contract through
+`generation_boundary.lowering.family_ir_summary`, which condenses the family IR
+into the fields operators actually review:
+
+- state variable and tags
+- operator family and solver family
+- control style
+- event-transform kinds and event dates
+- helper symbol
+- compatibility status for transitional wrappers
+
+The Monte Carlo compiler now has the matching bounded family surface for the
+next migration tranche:
+
+- `EventAwareMonteCarloIR`
+- `MCStateSpec`
+- `MCProcessSpec`
+- `MCEventTimeSpec`
+- `MCEventSpec`
+- `MCPathRequirementSpec`
+- `MCPayoffReducerSpec`
+- `MCControlSpec`
+- `MCMeasureSpec`
+- `MCCalibrationBindingSpec`
+
+Those Monte Carlo contracts are likewise projections of the shared
+`EventProgramIR` / `ControlProgramIR` boundary. The compiler now lowers
+deterministic schedule/event semantics into that family for bounded products
+without inventing a separate Monte Carlo-only event language. The first
+concrete proof slice is the European rate-style swaption path: the semantic
+compiler can emit `EventAwareMonteCarloIR` with explicit event buckets, replay
+requirements, and typed payoff-reducer semantics on the Monte Carlo route
+instead of dropping the product straight into an untyped fallback.
+
+The runtime now also has the matching bounded assembly layer in
+`trellis.models.monte_carlo.event_aware`:
+
+- `EventAwareMonteCarloProcessSpec`
+- `EventAwareMonteCarloEvent`
+- `EventAwareMonteCarloProblemSpec`
+- `EventAwareMonteCarloProblem`
+
+That layer resolves bounded process families (`gbm_1d`, `local_vol_1d`,
+`hull_white_1f`), compiles deterministic event buckets onto the existing
+`PathEventTimeline` substrate, and assembles `StateAwarePayoff` contracts over
+reduced Monte Carlo state instead of requiring product-local path replay code.
+
+That still does not mean the full Monte Carlo migration is complete. The
+current state is:
+
+- bounded compiler/lowering support exists
+- bounded runtime problem assembly now exists
+- vanilla European Monte Carlo now normalizes onto a terminal-only
+  `EventAwareMonteCarloIR` contract instead of carrying a synthetic event
+  replay timeline
+- the local-vol vanilla helper is now a compatibility wrapper over the generic
+  event-aware Monte Carlo runtime
+- generic vanilla migration and proof-route recovery remain separate follow-on
+  slices
+- comparison-request compilation no longer bypasses semantic compilation for
+  rate-style swaptions; each method plan now carries its own semantic blueprint
+  so fixed/float leg conventions, rate-index roles, and the bounded
+  Hull-White calibration contract survive into comparison assembly
 
 ---
 
@@ -106,11 +221,19 @@ The typed semantic boundary is proven end-to-end for these route families:
 | Route ID | Family IR | Current contract families |
 |---|---|---|
 | `analytical_black76` | `AnalyticalBlack76IR` | vanilla European options |
-| `vanilla_equity_theta_pde` | `VanillaEquityPDEIR` | vanilla European options |
+| `vanilla_equity_theta_pde` | `VanillaEquityPDEIR` on `EventAwarePDEIR` | vanilla European options |
+| `pde_theta_1d` | `EventAwarePDEIR` | bounded event-aware 1D rollback for holder-max equity exercise and issuer-min Hull-White callable bonds |
 | `exercise_lattice` | `ExerciseLatticeIR` | callable bonds, Bermudan swaptions |
 | `correlated_basket_monte_carlo` | `CorrelatedBasketMonteCarloIR` | ranked-observation baskets |
 
 This boundary preserves current route IDs and helper entry surfaces.
+
+For Monte Carlo, the next bounded compiler target is `EventAwareMonteCarloIR`:
+single-state / one-factor, deterministic event timelines, reduced-state path
+requirements, and explicit model/quote bindings. The route table above remains
+accurate because the generic vanilla MC routes have not yet all switched over
+to that family, even though the compiler now emits it for the bounded
+schedule-driven swaption slice.
 
 ---
 
@@ -158,6 +281,8 @@ Errors are used when:
 - an automatic trigger is represented as strategic control
 - settlement-bearing contracts omit typed obligations
 - route capabilities do not support the requested control, outputs, or state tags
+- route capabilities do not support the requested PDE operator family or
+  event-transform set
 
 ---
 

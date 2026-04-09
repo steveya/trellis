@@ -23,6 +23,7 @@ from typing import Any
 import yaml
 
 from trellis.agent.codegen_guardrails import PrimitiveRef
+from trellis.agent.family_lowering_ir import EventAwareMonteCarloIR, EventAwarePDEIR
 from trellis.agent.knowledge.import_registry import (
     get_repo_revision,
     is_valid_import,
@@ -92,6 +93,10 @@ class RouteAdmissibilitySpec:
     supported_outputs: tuple[str, ...] = ("price",)
     supports_sensitivity_outputs: bool = True
     supported_state_tags: tuple[str, ...] = ()
+    supported_process_families: tuple[str, ...] = ()
+    supported_path_requirement_kinds: tuple[str, ...] = ()
+    supported_operator_families: tuple[str, ...] = ()
+    supported_event_transform_kinds: tuple[str, ...] = ()
     supports_calibration: bool = False
 
 
@@ -287,6 +292,10 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_outputs=("price", "scenario_pnl"),
             supports_sensitivity_outputs=True,
             supported_state_tags=("terminal_markov", "recombining_safe", "schedule_state"),
+            supported_process_families=(),
+            supported_path_requirement_kinds=(),
+            supported_operator_families=(),
+            supported_event_transform_kinds=(),
             supports_calibration=False,
         ),
         "pde_solver": RouteAdmissibilitySpec(
@@ -297,6 +306,10 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_outputs=("price", "scenario_pnl"),
             supports_sensitivity_outputs=True,
             supported_state_tags=("terminal_markov", "recombining_safe"),
+            supported_process_families=(),
+            supported_path_requirement_kinds=(),
+            supported_operator_families=("black_scholes_1d",),
+            supported_event_transform_kinds=(),
             supports_calibration=False,
         ),
         "lattice": RouteAdmissibilitySpec(
@@ -307,6 +320,10 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_outputs=("price", "scenario_pnl", "exercise_boundary"),
             supports_sensitivity_outputs=True,
             supported_state_tags=("terminal_markov", "recombining_safe", "schedule_state"),
+            supported_process_families=(),
+            supported_path_requirement_kinds=(),
+            supported_operator_families=(),
+            supported_event_transform_kinds=(),
             supports_calibration=True,
         ),
         "monte_carlo": RouteAdmissibilitySpec(
@@ -316,7 +333,18 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             multicurrency_support="single_currency_only",
             supported_outputs=("price", "scenario_pnl"),
             supports_sensitivity_outputs=True,
-            supported_state_tags=("pathwise_only", "remaining_pool", "locked_cashflow_state", "terminal_markov", "schedule_state"),
+            supported_state_tags=(
+                "pathwise_only",
+                "remaining_pool",
+                "locked_cashflow_state",
+                "terminal_markov",
+                "recombining_safe",
+                "schedule_state",
+            ),
+            supported_process_families=(),
+            supported_path_requirement_kinds=("terminal_only", "full_path", "event_snapshots", "event_replay", "reducer_state"),
+            supported_operator_families=(),
+            supported_event_transform_kinds=(),
             supports_calibration=False,
         ),
         "exercise": RouteAdmissibilitySpec(
@@ -327,6 +355,10 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_outputs=("price", "scenario_pnl", "exercise_boundary"),
             supports_sensitivity_outputs=True,
             supported_state_tags=("pathwise_only", "terminal_markov", "schedule_state"),
+            supported_process_families=(),
+            supported_path_requirement_kinds=(),
+            supported_operator_families=(),
+            supported_event_transform_kinds=(),
             supports_calibration=False,
         ),
         "qmc": RouteAdmissibilitySpec(
@@ -337,6 +369,10 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_outputs=("price", "scenario_pnl"),
             supports_sensitivity_outputs=True,
             supported_state_tags=("pathwise_only", "terminal_markov", "schedule_state"),
+            supported_process_families=(),
+            supported_path_requirement_kinds=("terminal_only", "full_path", "event_snapshots", "event_replay", "reducer_state"),
+            supported_operator_families=(),
+            supported_event_transform_kinds=(),
             supports_calibration=False,
         ),
         "fft_pricing": RouteAdmissibilitySpec(
@@ -347,6 +383,10 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_outputs=("price", "scenario_pnl"),
             supports_sensitivity_outputs=True,
             supported_state_tags=("terminal_markov",),
+            supported_process_families=(),
+            supported_path_requirement_kinds=(),
+            supported_operator_families=(),
+            supported_event_transform_kinds=(),
             supports_calibration=False,
         ),
         "copula": RouteAdmissibilitySpec(
@@ -357,6 +397,10 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_outputs=("price", "scenario_pnl"),
             supports_sensitivity_outputs=True,
             supported_state_tags=("pathwise_only", "schedule_state"),
+            supported_process_families=(),
+            supported_path_requirement_kinds=(),
+            supported_operator_families=(),
+            supported_event_transform_kinds=(),
             supports_calibration=False,
         ),
         "waterfall": RouteAdmissibilitySpec(
@@ -367,6 +411,10 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_outputs=("price", "scenario_pnl", "cashflow_projection"),
             supports_sensitivity_outputs=True,
             supported_state_tags=("schedule_state",),
+            supported_process_families=(),
+            supported_path_requirement_kinds=(),
+            supported_operator_families=(),
+            supported_event_transform_kinds=(),
             supports_calibration=False,
         ),
     }
@@ -380,6 +428,10 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_outputs=spec.supported_outputs,
             supports_sensitivity_outputs=spec.supports_sensitivity_outputs,
             supported_state_tags=spec.supported_state_tags,
+            supported_process_families=spec.supported_process_families,
+            supported_path_requirement_kinds=spec.supported_path_requirement_kinds,
+            supported_operator_families=spec.supported_operator_families,
+            supported_event_transform_kinds=spec.supported_event_transform_kinds,
             supports_calibration=spec.supports_calibration,
         )
     return spec
@@ -398,6 +450,10 @@ def _parse_admissibility(raw: dict | None, *, route_id: str, engine_family: str)
         supported_outputs=_str_tuple(raw.get("supported_outputs")) or default.supported_outputs,
         supports_sensitivity_outputs=bool(raw.get("supports_sensitivity_outputs", default.supports_sensitivity_outputs)),
         supported_state_tags=_str_tuple(raw.get("supported_state_tags")) or default.supported_state_tags,
+        supported_process_families=_str_tuple(raw.get("supported_process_families")) or default.supported_process_families,
+        supported_path_requirement_kinds=_str_tuple(raw.get("supported_path_requirement_kinds")) or default.supported_path_requirement_kinds,
+        supported_operator_families=_str_tuple(raw.get("supported_operator_families")) or default.supported_operator_families,
+        supported_event_transform_kinds=_str_tuple(raw.get("supported_event_transform_kinds")) or default.supported_event_transform_kinds,
         supports_calibration=bool(raw.get("supports_calibration", default.supports_calibration)),
     )
 
@@ -887,6 +943,10 @@ def route_binding_authority_summary(
             "supported_outputs": list(authority.admissibility.supported_outputs),
             "supports_sensitivity_outputs": authority.admissibility.supports_sensitivity_outputs,
             "supported_state_tags": list(authority.admissibility.supported_state_tags),
+            "supported_process_families": list(authority.admissibility.supported_process_families),
+            "supported_path_requirement_kinds": list(authority.admissibility.supported_path_requirement_kinds),
+            "supported_operator_families": list(authority.admissibility.supported_operator_families),
+            "supported_event_transform_kinds": list(authority.admissibility.supported_event_transform_kinds),
             "supports_calibration": authority.admissibility.supports_calibration,
         },
         "admissibility_failures": list(authority.admissibility_failures),
@@ -1015,11 +1075,18 @@ def evaluate_route_admissibility(
         return RouteAdmissibilityDecision(ok=True)
     if product_ir is None:
         product_ir = getattr(semantic_blueprint, "product_ir", None)
+    family_ir = getattr(getattr(semantic_blueprint, "dsl_lowering", None), "family_ir", None)
 
     admissibility = spec.admissibility
     failures: list[str] = []
 
     control_style = str(getattr(getattr(product, "controller_protocol", None), "controller_style", "identity")).strip() or "identity"
+    if isinstance(family_ir, (EventAwarePDEIR, EventAwareMonteCarloIR)):
+        lowered_control_style = str(
+            getattr(getattr(family_ir, "control_spec", None), "control_style", "") or ""
+        ).strip()
+        if lowered_control_style:
+            control_style = lowered_control_style
     if admissibility.supported_control_styles and control_style not in admissibility.supported_control_styles:
         failures.append(f"unsupported_control_style:{control_style}")
 
@@ -1068,14 +1135,57 @@ def evaluate_route_admissibility(
 
     supported_tags = set(admissibility.supported_state_tags)
     if supported_tags:
-        state_tags = {
-            str(tag)
-            for field_spec in getattr(product, "state_fields", ()) or ()
-            for tag in getattr(field_spec, "tags", ()) or ()
-        }
+        if isinstance(family_ir, EventAwarePDEIR):
+            state_tags = {
+                str(tag)
+                for tag in getattr(getattr(family_ir, "state_spec", None), "state_tags", ()) or ()
+                if str(tag).strip()
+            }
+        elif isinstance(family_ir, EventAwareMonteCarloIR):
+            state_tags = {
+                str(tag)
+                for tag in getattr(getattr(family_ir, "state_spec", None), "state_tags", ()) or ()
+                if str(tag).strip()
+            }
+        elif getattr(family_ir, "state_tags", ()):
+            state_tags = {
+                str(tag)
+                for tag in getattr(family_ir, "state_tags", ()) or ()
+                if str(tag).strip()
+            }
+        else:
+            state_tags = {
+                str(tag)
+                for field_spec in getattr(product, "state_fields", ()) or ()
+                for tag in getattr(field_spec, "tags", ()) or ()
+            }
         for tag in sorted(state_tags):
             if tag not in supported_tags:
                 failures.append(f"unsupported_state_tag:{tag}")
+
+    if isinstance(family_ir, EventAwarePDEIR):
+        supported_operators = set(admissibility.supported_operator_families)
+        operator_family = str(getattr(getattr(family_ir, "operator_spec", None), "operator_family", "")).strip()
+        if supported_operators and operator_family and operator_family not in supported_operators:
+            failures.append(f"unsupported_operator_family:{operator_family}")
+
+        supported_transforms = set(admissibility.supported_event_transform_kinds)
+        if supported_transforms or family_ir.event_transform_kinds:
+            for kind in family_ir.event_transform_kinds:
+                if kind not in supported_transforms:
+                    failures.append(f"unsupported_event_transform_kind:{kind}")
+    if isinstance(family_ir, EventAwareMonteCarloIR):
+        supported_processes = set(admissibility.supported_process_families)
+        process_family = str(getattr(getattr(family_ir, "process_spec", None), "process_family", "")).strip()
+        if supported_processes and process_family and process_family not in supported_processes:
+            failures.append(f"unsupported_process_family:{process_family}")
+
+        supported_requirements = set(admissibility.supported_path_requirement_kinds)
+        requirement_kind = str(
+            getattr(getattr(family_ir, "path_requirement_spec", None), "requirement_kind", "")
+        ).strip()
+        if supported_requirements and requirement_kind and requirement_kind not in supported_requirements:
+            failures.append(f"unsupported_path_requirement_kind:{requirement_kind}")
 
     if calibration_step is not None and not admissibility.supports_calibration:
         failures.append("unsupported_calibration_step")

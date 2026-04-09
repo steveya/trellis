@@ -1,0 +1,39 @@
+category: volatility
+title: Option price ignored volatility
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-09T00:39:17.695543'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The analytical Black-Scholes pricer returned zero for very different volatilities,
+  so the option had no vega.
+root_cause: This usually happens when the volatility term is omitted, hard-coded,
+  or canceled out in the formula, causing price to stay insensitive to sigma. For
+  embedded options, volatility must flow through the distribution of terminal payoffs,
+  so a flat response signals a broken pricing model.
+fix: Verify sigma is used in both d1/d2 and the discounting/payoff computation, then
+  re-test that price increases with volatility.
+validation: "Resolved during build of Build a pricer for: GBM call: all 4 schemes\
+  \ convergence order\n\nEuropean call option on a non-dividend-paying stock.\nS0=100,\
+  \ K=100, T=1Y, risk-free rate r=5%, volatility sigma=30%.\nSimulate with 100,000\
+  \ paths and 252 time steps using four GBM\ndiscretization schemes: Euler-Maruyama,\
+  \ Milstein, log-Euler (exact\nGBM), and predictor-corrector.\nCompare each scheme's\
+  \ price to the Black-Scholes analytical value.\nMeasure convergence order (weak\
+  \ order 1.0 for Euler, 1.0 for\nMilstein in 1D GBM, exact for log-Euler).\n\nConstruct\
+  \ methods: monte_carlo\nComparison targets: euler (monte_carlo), milstein (monte_carlo),\
+  \ exact (monte_carlo), log_euler (monte_carlo), black_scholes (analytical)\nCross-validation\
+  \ harness:\n  internal targets: euler, milstein, exact, log_euler\n  analytical\
+  \ benchmark: black_scholes\n  external targets: quantlib\nNew component: convergence_order_measurement\n\
+  \nImplementation target: black_scholes\nPreferred method family: analytical\n\n\
+  Implementation target: black_scholes"
+supersedes: []
+id: vol_025

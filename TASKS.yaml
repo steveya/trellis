@@ -1,7 +1,31 @@
 - id: T01
   title: 'ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical'
+  instrument_type: zcb_option
+  description: |
+    European call option on a zero-coupon bond.
+    Settlement / valuation date: 2024-11-15.
+    Option expiry: 2027-11-15.
+    Underlying bond maturity: 2033-11-15.
+    Strike: 63 per 100 face (= 0.63 per unit face).
+    Face / notional: 100.
+    Shared short-rate comparison regime:
+    - flat discount curve at 5%
+    - flat short-rate volatility sigma = 0.01
+    - Hull-White mean reversion a = 0.1
+    - Ho-Lee uses the same sigma with zero mean reversion
   construct: lattice
   new_component: jamshidian_decomposition
+  comparison_regime:
+    family: short_rate
+    regime_name: t01_short_rate_comparison
+    flat_discount_rate: 0.05
+    flat_sigma: 0.01
+    hull_white_mean_reversion: 0.1
+    ho_lee_mean_reversion: 0.0
+    quote_family: black
+    quote_subject: discount_bond_option
+    quote_convention: flat
+    source_kind: task_comparison_regime
   cross_validate:
     internal:
     - ho_lee_tree

@@ -1,0 +1,38 @@
+category: market_data
+title: Import API mismatch
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-07T09:52:50.196959'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: The implementation called helper functions that were not actually exported
+  by the date utility module.
+root_cause: This happens when the mental model assumes a package’s internal helpers
+  are part of its public API, but the runtime only exposes a smaller supported surface.
+  Even if the names look correct, an unexported symbol will fail at import time or
+  during execution.
+fix: Use only documented exported utilities, or replace the missing helpers with locally
+  implemented timeline-step logic.
+validation: "Resolved during build of Build a pricer for: Callable bond: BDT lognormal\
+  \ vs HW normal tree\n\nPrice a 10-year callable bond paying a 5% semi-annual coupon,\
+  \ par $100,\ncallable at par on any coupon date after year 3.\nUse the USD OIS discount\
+  \ curve from the market snapshot (as_of 2024-11-15,\neasing-cycle regime — the curve\
+  \ is NOT flat, running ~4.2-4.6%).\nCompare BDT lognormal tree vs Hull-White normal\
+  \ tree.\nBoth trees should be calibrated to the yield curve.\nCompute clean price\
+  \ and effective duration.\n\nConstruct methods: rate_tree\nComparison targets: bdt_tree\
+  \ (rate_tree), hull_white_tree (rate_tree)\nCross-validation harness:\n  internal\
+  \ targets: bdt_tree, hull_white_tree\n  external targets: financepy, quantlib\n\
+  New component: bdt_calibration_via_generic_lattice\n\nImplementation target: hull_white_tree\n\
+  Preferred method family: rate_tree\n\nImplementation target: hull_white_tree"
+supersedes: []
+id: md_140

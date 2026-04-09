@@ -1,0 +1,41 @@
+category: market_data
+title: Missing field in market state
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-08T18:29:19.577789'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The analytical pricer assumed the market state exposed black_vol, but the
+  object only provided the inputs needed for Black-Scholes through other attributes.
+root_cause: 'This is a schema mismatch: the pricing formula was wired to a field name
+  that doesn’t exist in the actual data model, so the implementation can’t even initialize
+  correctly. The mental model error is assuming the market object is richer or differently
+  named than it really is.'
+fix: Map the Black-Scholes pricer to the market state's actual volatility field or
+  pass volatility explicitly instead of reading black_vol.
+validation: "Resolved during build of Build a pricer for: Variance reduction: antithetic\
+  \ + control variate + importance sampling\n\nEuropean call option on a non-dividend-paying\
+  \ stock.\nS0=100, K=105, T=1Y, risk-free rate r=5%, volatility sigma=20%.\nRun 100,000\
+  \ paths with the exact GBM scheme.\nCompare four configurations:\n  1. Plain MC\
+  \ (no variance reduction)\n  2. Antithetic variates\n  3. Control variate (use the\
+  \ geometric-average Asian as control)\n  4. Antithetic + control variate combined\n\
+  Report price, standard error, and effective variance reduction ratio\nfor each.\
+  \  All four should converge to the Black-Scholes value;\nmethods 2-4 should show\
+  \ lower standard error than method 1.\n\nConstruct methods: monte_carlo\nComparison\
+  \ targets: plain_mc (monte_carlo), antithetic_mc (monte_carlo), control_variate_mc\
+  \ (monte_carlo), black_scholes (analytical)\nCross-validation harness:\n  internal\
+  \ targets: plain_mc, antithetic_mc, control_variate_mc\n  analytical benchmark:\
+  \ black_scholes\nNew component: ['control_variate_wrapper', 'importance_sampling']\n\
+  \nImplementation target: black_scholes\nPreferred method family: analytical\n\n\
+  Implementation target: black_scholes"
+supersedes: []
+id: md_160

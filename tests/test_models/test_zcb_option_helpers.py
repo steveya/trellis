@@ -12,6 +12,7 @@ from trellis.core.types import DayCountConvention
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
 from trellis.models.analytical.jamshidian import zcb_option_hw
+from trellis.models.resolution.short_rate_claims import ShortRateComparisonRegime
 from trellis.models.vol_surface import FlatVol
 from trellis.models.zcb_option import (
     normalize_zcb_option_strike,
@@ -149,3 +150,89 @@ def test_price_zcb_option_tree_uses_market_state_hull_white_params(market_state)
     )
 
     assert via_market_state == pytest.approx(via_explicit, rel=1e-10)
+
+
+def test_price_zcb_option_jamshidian_uses_short_rate_comparison_regime_mean_reversion(market_state):
+    spec = ZCBOptionSpec(
+        notional=100.0,
+        strike=63.0,
+        expiry_date=EXPIRY,
+        bond_maturity_date=BOND_MATURITY,
+        option_type="call",
+    )
+    regime = ShortRateComparisonRegime(
+        regime_name="t01_short_rate_comparison",
+        flat_discount_rate=0.05,
+        flat_sigma=0.01,
+        hull_white_mean_reversion=0.07,
+    )
+    comparison_state = replace(
+        market_state,
+        discount=regime.build_discount_curve(max_tenor=20.0),
+        vol_surface=regime.build_vol_surface(),
+        market_provenance={"comparison_regime": regime.to_payload()},
+    )
+
+    via_regime = price_zcb_option_jamshidian(comparison_state, spec)
+    via_explicit = price_zcb_option_jamshidian(
+        comparison_state,
+        spec,
+        mean_reversion=0.07,
+    )
+
+    assert via_regime == pytest.approx(via_explicit, rel=1e-12)
+
+
+def test_price_zcb_option_tree_uses_model_specific_mean_reversion_from_comparison_regime(market_state):
+    spec = ZCBOptionSpec(
+        notional=100.0,
+        strike=63.0,
+        expiry_date=EXPIRY,
+        bond_maturity_date=BOND_MATURITY,
+        option_type="call",
+    )
+    regime = ShortRateComparisonRegime(
+        regime_name="t01_short_rate_comparison",
+        flat_discount_rate=0.05,
+        flat_sigma=0.01,
+        hull_white_mean_reversion=0.10,
+        ho_lee_mean_reversion=0.0,
+    )
+    comparison_state = replace(
+        market_state,
+        discount=regime.build_discount_curve(max_tenor=20.0),
+        vol_surface=regime.build_vol_surface(),
+        market_provenance={"comparison_regime": regime.to_payload()},
+    )
+
+    via_regime_ho_lee = price_zcb_option_tree(
+        comparison_state,
+        spec,
+        model="ho_lee",
+        n_steps=200,
+    )
+    via_explicit_ho_lee = price_zcb_option_tree(
+        comparison_state,
+        spec,
+        model="ho_lee",
+        mean_reversion=0.0,
+        sigma=0.01,
+        n_steps=200,
+    )
+    via_regime_hw = price_zcb_option_tree(
+        comparison_state,
+        spec,
+        model="hull_white",
+        n_steps=200,
+    )
+    via_explicit_hw = price_zcb_option_tree(
+        comparison_state,
+        spec,
+        model="hull_white",
+        mean_reversion=0.10,
+        sigma=0.01,
+        n_steps=200,
+    )
+
+    assert via_regime_ho_lee == pytest.approx(via_explicit_ho_lee, rel=1e-12)
+    assert via_regime_hw == pytest.approx(via_explicit_hw, rel=1e-12)

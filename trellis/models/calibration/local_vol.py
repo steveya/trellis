@@ -7,12 +7,34 @@ from dataclasses import dataclass, field
 import numpy as raw_np
 
 from trellis.models.calibration.materialization import materialize_local_vol_surface
-from trellis.models.calibration.quote_maps import QuoteMapSpec
+from trellis.models.calibration.quote_maps import (
+    QuoteAxisSpec,
+    QuoteMapSpec,
+    QuoteSemanticsSpec,
+    QuoteUnitSpec,
+)
 
 
 def _default_implied_vol_quote_map_spec() -> QuoteMapSpec:
     """Return the shared implied-vol quote-map spec used by vol workflows."""
-    return QuoteMapSpec(quote_family="implied_vol", convention="black")
+    return QuoteMapSpec(
+        quote_family="implied_vol",
+        convention="black",
+        semantics=QuoteSemanticsSpec(
+            quote_family="implied_vol",
+            convention="black",
+            quote_subject="equity_option",
+            axes=(
+                QuoteAxisSpec("expiry", axis_kind="time_to_expiry", unit="years"),
+                QuoteAxisSpec("strike", axis_kind="option_strike", unit="price"),
+            ),
+            unit=QuoteUnitSpec(
+                unit_name="decimal_volatility",
+                value_domain="volatility",
+                scaling="absolute",
+            ),
+        ),
+    )
 
 
 @dataclass(frozen=True)

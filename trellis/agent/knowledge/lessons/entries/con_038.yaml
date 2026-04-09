@@ -1,0 +1,30 @@
+category: convention
+title: Missing NTD product shape contract
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-06T17:38:57.291872'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260406_173858_cdo_copula.yaml
+applies_when:
+  method:
+  - copula
+  features:
+  - credit_risk
+  - discounting
+  - coupons
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: Build fails with clarification_decision for concept=nth_to_default and missing
+  semantic_product_shape fields before payoff generation.
+root_cause: The copula pricer was extended without a contract that defines the exact
+  nth-to-default product shape, schedule, and payoff assumptions. As a result, the
+  DSL cannot determine whether to build a tranche, basket, or NTD-style payoff.
+fix: Add a product-shape contract for CDO tranche vs nth-to-default semantics, including
+  schedule, attachment/detachment, default settlement, and discounting conventions
+  before implementing the payoff. Gate payoff construction on these required fields
+  so the copula engine can choose the correct route and integration logic.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: con_038

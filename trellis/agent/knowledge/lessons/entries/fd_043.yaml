@@ -1,0 +1,39 @@
+category: finite_differences
+title: Use required date primitives
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-08T22:53:51.359379'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The analytical Black-Scholes implementation bypassed the required trellis.core.date_utils.year_fraction
+  primitive instead of wrapping it.
+root_cause: This usually happens when code computes time inputs directly or hardcodes
+  date logic, forgetting that the assembly expects a thin adapter around shared primitives
+  for consistency and validation. The mental model failure is treating the analytical
+  price as standalone math rather than part of the same component graph.
+fix: Rebuild the analytical payoff/price as a thin adapter that calls trellis.core.date_utils.year_fraction
+  and uses its result for the time-to-maturity input.
+validation: "Resolved during build of Build a pricer for: European call: theta-method\
+  \ convergence order measurement\n\nEuropean call option on a non-dividend-paying\
+  \ stock.\nS0=100, K=105, T=1Y, risk-free rate r=5%, volatility sigma=20%.\nSolve\
+  \ with the Black-Scholes PDE operator using Crank-Nicolson\n(theta=0.5) and fully\
+  \ implicit (theta=1.0) on a 200-point spot grid\n× 100 time steps.\nMeasure convergence\
+  \ order by doubling the grid: the CN scheme should\nshow O(dt^2 + dS^2) convergence\
+  \ and the implicit scheme O(dt + dS^2).\nCompare both to the Black-Scholes analytical\
+  \ price.\n\nConstruct methods: pde_solver\nComparison targets: theta_0.5 (pde_solver),\
+  \ theta_1.0 (pde_solver), black_scholes (analytical)\nCross-validation harness:\n\
+  \  internal targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n\
+  \  external targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+  \ target: black_scholes\nPreferred method family: analytical\n\nImplementation target:\
+  \ black_scholes"
+supersedes: []
+id: fd_043

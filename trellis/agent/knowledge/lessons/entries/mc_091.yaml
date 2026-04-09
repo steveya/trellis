@@ -1,0 +1,27 @@
+category: monte_carlo
+title: Initialize payoff variables
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-07T09:57:45.773010'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_095747_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Runtime error shows local variable 'intrinsic' referenced before assignment
+  during payoff evaluation.
+root_cause: The generated Monte Carlo payoff branch used a variable before initializing
+  it, likely due to a conditional path or indentation error in the payoff function.
+  This breaks the pricing kernel before any path simulation results can be accumulated.
+fix: Define intrinsic/payoff values on every execution path before any conditional
+  use, and add a smoke test that evaluates a representative market state. Keep payoff
+  logic flat and explicit to avoid indentation-dependent control flow bugs.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_091

@@ -3,7 +3,7 @@ title: Missing valuation_date in ResolvedQuantoInputs
 severity: critical
 category: market_data
 status: promoted
-confidence: 0.8
+confidence: 1.0
 created: '2026-03-26T19:57:49.344414'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260326_195749_quanto_option_monte_carlo.yaml

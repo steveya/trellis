@@ -1,0 +1,28 @@
+category: monte_carlo
+title: Thin adapter to MC primitive
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T15:56:04.442880'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_155606_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Build failed with assembly.required_primitive_missing and the generated module
+  did not call price_event_aware_monte_carlo.
+root_cause: The generator produced custom payoff logic instead of a thin wrapper around
+  the required Monte Carlo primitive for the selected route. This broke the route
+  contract and also introduced a syntax/indentation error in the generated module.
+fix: Keep the payoff implementation as a minimal adapter that directly invokes the
+  route primitive and only translates inputs/outputs. Avoid inlining simulation logic
+  or control-flow-heavy code in the wrapper; add a syntax check before returning the
+  module.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_105

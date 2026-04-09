@@ -388,6 +388,18 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
 }
 
 
+_SPECIALIZED_SPEC_ALLOWED_INSTRUMENTS: dict[str, frozenset[str]] = {
+    "cds_monte_carlo": frozenset({"", "cds", "credit_default_swap"}),
+    "fx_vanilla_analytical": frozenset({"", "european_option"}),
+    "fx_vanilla_monte_carlo": frozenset({"", "european_option"}),
+    "quanto_option_analytical": frozenset({"", "quanto_option"}),
+    "quanto_option_monte_carlo": frozenset({"", "quanto_option"}),
+    "european_option_analytical": frozenset({"", "european_option"}),
+    "european_option_monte_carlo": frozenset({"", "european_option"}),
+    "european_local_vol_monte_carlo": frozenset({"", "european_option"}),
+}
+
+
 # ---------------------------------------------------------------------------
 # Planning functions
 # ---------------------------------------------------------------------------
@@ -533,27 +545,38 @@ def _select_specialized_spec(
     desc_lower = description.lower()
     normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
     method_hint = _infer_method_hint(desc_lower, preferred_method=preferred_method)
+    def _allowed(key: str) -> bool:
+        return normalized_instrument in _SPECIALIZED_SPEC_ALLOWED_INSTRUMENTS[key]
 
-    if normalized_instrument == "quanto_option" or "quanto" in desc_lower:
+    if _allowed("quanto_option_analytical") and (
+        normalized_instrument == "quanto_option" or "quanto" in desc_lower
+    ):
         if method_hint == "monte_carlo":
             return SPECIALIZED_SPECS["quanto_option_monte_carlo"]
         return SPECIALIZED_SPECS["quanto_option_analytical"]
 
-    if normalized_instrument in {"cds", "credit_default_swap"}:
+    if _allowed("cds_monte_carlo") and normalized_instrument in {"cds", "credit_default_swap"}:
         if method_hint == "monte_carlo":
             return SPECIALIZED_SPECS["cds_monte_carlo"]
 
-    if _looks_like_fx_vanilla(description, desc_lower, normalized_requirements):
+    if _allowed("fx_vanilla_analytical") and _looks_like_fx_vanilla(
+        description,
+        desc_lower,
+        normalized_requirements,
+    ):
         if method_hint == "monte_carlo":
             return SPECIALIZED_SPECS["fx_vanilla_monte_carlo"]
         return SPECIALIZED_SPECS["fx_vanilla_analytical"]
 
-    if "local vol" in desc_lower or "local_vol_surface" in normalized_requirements:
+    if _allowed("european_local_vol_monte_carlo") and (
+        "local vol" in desc_lower or "local_vol_surface" in normalized_requirements
+    ):
         if normalized_instrument == "european_option" or "european" in desc_lower:
             return SPECIALIZED_SPECS["european_local_vol_monte_carlo"]
 
-    if normalized_instrument == "european_option" or (
-        "european" in desc_lower and "option" in desc_lower
+    if _allowed("european_option_analytical") and (
+        normalized_instrument == "european_option"
+        or ("european" in desc_lower and "option" in desc_lower)
     ):
         if method_hint == "monte_carlo":
             return SPECIALIZED_SPECS["european_option_monte_carlo"]

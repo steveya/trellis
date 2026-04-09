@@ -1,0 +1,29 @@
+category: monte_carlo
+title: Clarify GBM payoff contract
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-06T17:25:42.302667'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - greeks
+  - maturity_settlement
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: 'Build stops with decision=clarification and missing contract fields: semantic_product_shape
+  while generating the payoff.'
+root_cause: The pricing request did not specify the product shape, schedule, and payoff
+  assumptions needed to instantiate the DSL for a GBM call. Without those contract
+  details, the monte_carlo builder cannot assemble the payoff or convergence harness.
+fix: Require explicit semantic product shape, settlement/schedule assumptions, and
+  payoff definition before extending the DSL. Add a cookbook entry for GBM call payoff
+  construction so the monte_carlo path can create the payoff without ambiguity.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: mc_080

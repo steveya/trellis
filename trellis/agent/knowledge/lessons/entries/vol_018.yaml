@@ -1,0 +1,29 @@
+category: volatility
+title: Read swaption vol from market
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T14:52:06.683346'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_145208_swaption_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - vol_surface_dependence
+  - floating_coupons
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Generated code sets `sigma = 0.01` in the analytical Black76 route instead
+  of extracting a vol from `market_state` or a volatility surface.
+root_cause: The implementation hardcoded the model volatility parameter as if it were
+  the market swaption volatility, conflating Hull-White sigma with Black76 implied
+  vol. This breaks market-consistent valuation and triggers the hardcoded-vol detector.
+fix: Separate Black76 swaption volatility from Hull-White sigma in the pricing pipeline.
+  Read the Black swaption vol from `market_state.black_vol_surface` (or the configured
+  market vol source) and pass it explicitly into the analytical pricer; reserve `sigma=0.01`
+  only for the Hull-White methods.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: vol_018

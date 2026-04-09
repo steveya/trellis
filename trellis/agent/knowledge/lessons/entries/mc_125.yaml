@@ -1,0 +1,28 @@
+category: monte_carlo
+title: Use event-aware MC primitives
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T18:28:17.944294'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_182820_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Generated code imports monte_carlo pricing but does not call any symbol from
+  trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo.
+root_cause: The payoff was assembled as a standalone implementation instead of a thin
+  adapter around the required event-aware Monte Carlo route primitive. The compiler
+  checks route compliance and rejects code that bypasses the mandated primitive path.
+fix: Wrap the payoff in a minimal adapter that delegates pricing to price_event_aware_monte_carlo
+  and only supplies instrument-specific state, payoff, and simulation parameters.
+  Keep the adapter thin so the generated module visibly uses the required primitive
+  and no alternate pricing loop is introduced.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_125

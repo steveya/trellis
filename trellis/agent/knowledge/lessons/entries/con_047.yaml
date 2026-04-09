@@ -1,0 +1,27 @@
+category: convention
+title: Wrong copula constructor args
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T19:24:51.065928'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_192453_cdo_copula.yaml
+applies_when:
+  method:
+  - copula
+  features:
+  - credit_risk
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: Build logs contain `GaussianCopula.__init__() got an unexpected keyword argument
+  'correlation'` during market-state smoke test.
+root_cause: The pricing code passed a non-contract constructor argument name to the
+  copula implementation. The engine expects a different parameter schema, so the route
+  failed before payoff construction.
+fix: Align the copula constructor call with the actual class signature and data contract.
+  Add a thin adapter that maps the model-level correlation input to the library’s
+  expected parameter names and validates them before instantiation.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: con_047

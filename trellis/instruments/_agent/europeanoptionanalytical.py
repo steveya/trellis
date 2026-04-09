@@ -1,42 +1,77 @@
-"""Agent-generated payoff: Build a pricer for: European equity call: 5-way (tree, PDE, MC, FFT, COS)
+"""Agent-generated payoff: Build a pricer for: Heston smile: FFT vs COS vs MC implied vol surface
 
-Construct methods: rate_tree, pde_solver, monte_carlo, fft_pricing
-Comparison targets: crr_tree (rate_tree), bs_pde (pde_solver), mc_exact (monte_carlo), fft (fft_pricing), cos (fft_pricing), black_scholes (analytical)
+Extract the implied volatility smile surface under the Heston
+stochastic volatility model for SPX.
+Use the market snapshot (as_of 2024-11-15) which provides:
+  - SPX spot (S=5890)
+  - Heston parameters: kappa=2.0, theta=0.04, xi=0.48, rho=-0.68, v0=0.04
+  - USD OIS discount curve
+  - A reference implied vol smile surface (6 expiries x 7 strikes)
+Price European calls across strikes K=[5400, 5600, 5800, 5900, 6000,
+6200, 6400] and maturities T=[0.25, 0.5, 1.0, 2.0] years.
+Method 1: Heston FFT (Carr-Madan with the Heston characteristic function).
+Method 2: Heston COS method.
+Method 3: Heston MC (QE scheme, 200k paths).
+From each set of prices, extract the implied vol surface by inverting
+Black-Scholes.  All three surfaces should agree within 0.5 vol points.
+The resulting smile should show negative skew (lower strikes have
+higher IV) consistent with rho=-0.68.
+
+Construct methods: fft_pricing, monte_carlo
+Comparison targets: heston_fft (fft_pricing), heston_cos (fft_pricing), heston_mc (monte_carlo)
 Cross-validation harness:
-  internal targets: crr_tree, bs_pde, mc_exact, fft, cos
-  analytical benchmark: black_scholes
+  internal targets: heston_fft, heston_cos, heston_mc
+  external targets: quantlib
+New component: implied_vol_surface_extraction
 
-Implementation target: black_scholes
-Preferred method family: analytical
+Implementation target: heston_cos
+Preferred method family: fft_pricing
 
-Implementation target: black_scholes."""
+Implementation target: heston_cos."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
 
-from trellis.core.date_utils import generate_schedule, year_fraction
 from trellis.core.market_state import MarketState
-from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.black import black76_call, black76_put
+from trellis.core.types import DayCountConvention
+from trellis.models.equity_option_transforms import price_vanilla_equity_option_transform
 
 
 
 @dataclass(frozen=True)
 class EuropeanOptionSpec:
-    """Specification for Build a pricer for: European equity call: 5-way (tree, PDE, MC, FFT, COS)
+    """Specification for Build a pricer for: Heston smile: FFT vs COS vs MC implied vol surface
 
-Construct methods: rate_tree, pde_solver, monte_carlo, fft_pricing
-Comparison targets: crr_tree (rate_tree), bs_pde (pde_solver), mc_exact (monte_carlo), fft (fft_pricing), cos (fft_pricing), black_scholes (analytical)
+Extract the implied volatility smile surface under the Heston
+stochastic volatility model for SPX.
+Use the market snapshot (as_of 2024-11-15) which provides:
+  - SPX spot (S=5890)
+  - Heston parameters: kappa=2.0, theta=0.04, xi=0.48, rho=-0.68, v0=0.04
+  - USD OIS discount curve
+  - A reference implied vol smile surface (6 expiries x 7 strikes)
+Price European calls across strikes K=[5400, 5600, 5800, 5900, 6000,
+6200, 6400] and maturities T=[0.25, 0.5, 1.0, 2.0] years.
+Method 1: Heston FFT (Carr-Madan with the Heston characteristic function).
+Method 2: Heston COS method.
+Method 3: Heston MC (QE scheme, 200k paths).
+From each set of prices, extract the implied vol surface by inverting
+Black-Scholes.  All three surfaces should agree within 0.5 vol points.
+The resulting smile should show negative skew (lower strikes have
+higher IV) consistent with rho=-0.68.
+
+Construct methods: fft_pricing, monte_carlo
+Comparison targets: heston_fft (fft_pricing), heston_cos (fft_pricing), heston_mc (monte_carlo)
 Cross-validation harness:
-  internal targets: crr_tree, bs_pde, mc_exact, fft, cos
-  analytical benchmark: black_scholes
+  internal targets: heston_fft, heston_cos, heston_mc
+  external targets: quantlib
+New component: implied_vol_surface_extraction
 
-Implementation target: black_scholes
-Preferred method family: analytical
+Implementation target: heston_cos
+Preferred method family: fft_pricing
 
-Implementation target: black_scholes."""
+Implementation target: heston_cos."""
     notional: float
     spot: float
     strike: float
@@ -46,18 +81,36 @@ Implementation target: black_scholes."""
 
 
 class EuropeanOptionAnalyticalPayoff:
-    """Build a pricer for: European equity call: 5-way (tree, PDE, MC, FFT, COS)
+    """Build a pricer for: Heston smile: FFT vs COS vs MC implied vol surface
 
-Construct methods: rate_tree, pde_solver, monte_carlo, fft_pricing
-Comparison targets: crr_tree (rate_tree), bs_pde (pde_solver), mc_exact (monte_carlo), fft (fft_pricing), cos (fft_pricing), black_scholes (analytical)
+Extract the implied volatility smile surface under the Heston
+stochastic volatility model for SPX.
+Use the market snapshot (as_of 2024-11-15) which provides:
+  - SPX spot (S=5890)
+  - Heston parameters: kappa=2.0, theta=0.04, xi=0.48, rho=-0.68, v0=0.04
+  - USD OIS discount curve
+  - A reference implied vol smile surface (6 expiries x 7 strikes)
+Price European calls across strikes K=[5400, 5600, 5800, 5900, 6000,
+6200, 6400] and maturities T=[0.25, 0.5, 1.0, 2.0] years.
+Method 1: Heston FFT (Carr-Madan with the Heston characteristic function).
+Method 2: Heston COS method.
+Method 3: Heston MC (QE scheme, 200k paths).
+From each set of prices, extract the implied vol surface by inverting
+Black-Scholes.  All three surfaces should agree within 0.5 vol points.
+The resulting smile should show negative skew (lower strikes have
+higher IV) consistent with rho=-0.68.
+
+Construct methods: fft_pricing, monte_carlo
+Comparison targets: heston_fft (fft_pricing), heston_cos (fft_pricing), heston_mc (monte_carlo)
 Cross-validation harness:
-  internal targets: crr_tree, bs_pde, mc_exact, fft, cos
-  analytical benchmark: black_scholes
+  internal targets: heston_fft, heston_cos, heston_mc
+  external targets: quantlib
+New component: implied_vol_surface_extraction
 
-Implementation target: black_scholes
-Preferred method family: analytical
+Implementation target: heston_cos
+Preferred method family: fft_pricing
 
-Implementation target: black_scholes."""
+Implementation target: heston_cos."""
 
     def __init__(self, spec: EuropeanOptionSpec):
         self._spec = spec
@@ -72,22 +125,4 @@ Implementation target: black_scholes."""
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        valuation_date = market_state.settlement or market_state.as_of
-        t = year_fraction(valuation_date, spec.expiry_date, spec.day_count)
-        if t <= 0.0:
-            intrinsic = max(spec.spot - spec.strike, 0.0) if str(spec.option_type).strip("'\"").lower() == "call" else max(spec.strike - spec.spot, 0.0)
-            return float(spec.notional * intrinsic)
-
-        df = market_state.discount.discount(t)
-        sigma = market_state.vol_surface.black_vol(t, spec.strike)
-        forward = spec.spot / max(df, 1e-12)
-
-        opt_type = str(spec.option_type).strip("'\"").lower()
-        if opt_type == "call":
-            pv = df * black76_call(forward, spec.strike, sigma, t)
-        elif opt_type == "put":
-            pv = df * black76_put(forward, spec.strike, sigma, t)
-        else:
-            raise ValueError(f"Unsupported option_type: {spec.option_type!r}")
-
-        return float(spec.notional * pv)
+        return float(price_vanilla_equity_option_transform(market_state, spec))

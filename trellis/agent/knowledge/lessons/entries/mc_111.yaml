@@ -1,0 +1,30 @@
+category: monte_carlo
+title: Fix MC state and syntax
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:29:01.377521'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_162903_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: Build fails with `GBM.__init__() got an unexpected keyword argument 'spot'`
+  and later a `SyntaxError` at a `except Exception:` line.
+root_cause: The generated Monte Carlo payoff used an invalid constructor signature
+  for the GBM state process and also introduced malformed exception-handling indentation
+  in the emitted module. This indicates the code was assembled without matching the
+  engine's expected API and without syntactic validation before execution.
+fix: Use the exact state/process signature required by the Monte Carlo engine, including
+  the correct spot keyword or container shape, and validate the generated module with
+  a syntax check before runtime. Add a lightweight smoke test for the market-state
+  constructor and keep try/except blocks correctly nested inside the function body.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_111

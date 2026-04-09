@@ -1,0 +1,28 @@
+category: market_data
+title: Pass rate into fft pricer
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-08T16:06:05.677794'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_160607_european_option_fft_pricing.yaml
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Calling fft_price() raises TypeError: missing 1 required positional argument:
+  ''r''.'
+root_cause: The transform pricer API expects the risk-free rate to be supplied explicitly,
+  but the harness or payoff builder invoked it without the required market-rate argument.
+  This indicates a contract mismatch between the pricing route and the assembled market
+  state.
+fix: Thread the risk-free rate through the pricing call chain and ensure the FFT/COS
+  wrappers accept and forward the full market state. Add an argument validation step
+  so missing discounting inputs fail early with a clear error.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: md_151

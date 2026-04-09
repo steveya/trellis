@@ -1,0 +1,38 @@
+category: market_data
+title: Initialize Intrinsic Early
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:07:50.084208'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The analytical pricing path referenced a local variable before it was assigned
+  in some branch of the option payoff logic.
+root_cause: This happens when the mental model assumes every code path computes shared
+  intermediates, but one branch returns or bypasses initialization first. In pricing
+  routines, call/put and maturity edge cases can easily skip the line that sets common
+  variables.
+fix: Initialize shared variables before branching, or compute payoff/intrinsic values
+  in a single common path used by all option types.
+validation: "Resolved during build of Build a pricer for: FFT vs COS: GBM calls/puts\
+  \ across strikes and maturities\n\nEuropean call and put options on a non-dividend-paying\
+  \ stock under GBM.\nS0=100, risk-free rate r=5%, volatility sigma=20%.\nPrice across\
+  \ a grid of strikes K=[80, 90, 100, 110, 120] and\nmaturities T=[0.5, 1.0, 2.0]\
+  \ years — 15 call prices and 15 put\nprices total.\nMethod 1: FFT (Carr-Madan) with\
+  \ N=4096, eta=0.25, Simpson weights.\nMethod 2: COS method with N=128 terms.\nBoth\
+  \ methods should agree with Black-Scholes analytical to within 0.5%.\n\nConstruct\
+  \ methods: fft_pricing\nComparison targets: fft (fft_pricing), cos (fft_pricing),\
+  \ black_scholes (analytical)\nCross-validation harness:\n  internal targets: fft,\
+  \ cos\n  analytical benchmark: black_scholes\nNew component: put_pricing_via_transforms\n\
+  \nImplementation target: black_scholes\nPreferred method family: analytical\n\n\
+  Implementation target: black_scholes"
+supersedes: []
+id: md_153

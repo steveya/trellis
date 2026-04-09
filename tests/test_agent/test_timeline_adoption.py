@@ -92,8 +92,7 @@ def test_generated_schedule_heavy_routes_no_longer_reconstruct_period_starts_man
             "build_payment_timeline",
         ),
         REPO_ROOT / "trellis" / "instruments" / "_agent" / "swaption.py": (
-            "resolve_swaption_black76_inputs",
-            "price_swaption_black76_raw",
+            "price_swaption_black76",
         ),
     }
 

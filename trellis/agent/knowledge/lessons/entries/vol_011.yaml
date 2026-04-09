@@ -1,0 +1,30 @@
+category: volatility
+title: Missing swaption vol vega
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-06T17:41:13.356802'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260406_174114_swaption_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'repricing with a 5% vol bump and a 40% vol bump returned the same price:
+  price(5%)=0.2649, price(40%)=0.2649, change=0.0000%.'
+root_cause: The payoff path did not actually depend on the volatility surface, so
+  the rate tree produced a deterministic value with zero implied-vol sensitivity.
+  For swaption calibration, the tree must ingest the black vol surface or calibrated
+  HW parameters in the pricing flow.
+fix: Wire the swaption pricer to the vol surface and calibration component so the
+  tree construction or exercise valuation changes under volatility bumps. Verify with
+  a bump test that price changes materially with volatility and that the instrument
+  shows non-zero vega.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: vol_011

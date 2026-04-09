@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from types import SimpleNamespace
 
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
@@ -61,6 +62,20 @@ def test_select_reference_oracle_for_puttable_bond_returns_bound_helper():
     assert oracle.relation == ">="
 
 
+def test_select_reference_oracle_prefers_more_specific_product_family_over_generic_request_family():
+    from trellis.agent.reference_oracles import select_reference_oracle
+
+    oracle = select_reference_oracle(
+        instrument_type="european_option",
+        method="analytical",
+        product_ir=SimpleNamespace(instrument="zcb_option"),
+    )
+
+    assert oracle is not None
+    assert oracle.oracle_id == "zcb_option_jamshidian_exact"
+    assert oracle.instrument_type == "zcb_option"
+
+
 def test_execute_reference_oracle_passes_for_helper_backed_zcb_option():
     from trellis.agent.reference_oracles import execute_reference_oracle, select_reference_oracle
 
@@ -116,3 +131,80 @@ def test_execute_reference_oracle_detects_zcb_magnitude_error():
     assert execution.passed is False
     assert execution.failure_message is not None
     assert execution.max_abs_deviation is not None
+
+
+def test_execute_reference_oracle_threads_explicit_swaption_comparison_kwargs(monkeypatch):
+    from trellis.agent.reference_oracles import execute_reference_oracle, select_reference_oracle
+    from trellis.agent.valuation_context import (
+        EngineModelSpec,
+        PotentialSpec,
+        RatesCurveRoleSpec,
+        SourceSpec,
+    )
+
+    captured_kwargs: dict[str, object] = {}
+
+    class _SwaptionSpec:
+        notional = 1_000_000.0
+        strike = 0.03
+        expiry_date = date(2025, 11, 15)
+        swap_start = date(2025, 11, 15)
+        swap_end = date(2030, 11, 15)
+        swap_frequency = "SEMI_ANNUAL"
+        day_count = "THIRTY_360"
+        rate_index = "USD-SOFR-3M"
+        is_payer = True
+
+    class _Payoff:
+        def __init__(self):
+            self._spec = _SwaptionSpec()
+
+        @property
+        def requirements(self):
+            return {"discount_curve", "forward_curve", "black_vol_surface"}
+
+        def evaluate(self, market_state):
+            return 1.23
+
+    def _fake_price_swaption_black76(market_state, spec, **kwargs):
+        captured_kwargs.update(kwargs)
+        return 1.23
+
+    monkeypatch.setattr(
+        "trellis.models.rate_style_swaption.price_swaption_black76",
+        _fake_price_swaption_black76,
+    )
+
+    oracle = select_reference_oracle(instrument_type="swaption", method="analytical")
+    semantic_blueprint = SimpleNamespace(
+        valuation_context=SimpleNamespace(
+            engine_model_spec=EngineModelSpec(
+                model_family="rates",
+                model_name="hull_white_1f",
+                state_semantics=("short_rate",),
+                potential=PotentialSpec(discount_term="risk_free_rate"),
+                sources=(SourceSpec(source_kind="coupon_stream"),),
+                calibration_requirements=("bootstrap_curve", "fit_hw_strip"),
+                backend_hints=("analytical",),
+                parameter_overrides={"mean_reversion": 0.05, "sigma": 0.01},
+                rates_curve_roles=RatesCurveRoleSpec(
+                    discount_curve_role="discount_curve",
+                    forecast_curve_role="forward_curve",
+                ),
+            )
+        )
+    )
+
+    execution = execute_reference_oracle(
+        oracle,
+        payoff_factory=_Payoff,
+        market_state_factory=_zcb_market_state,
+        semantic_blueprint=semantic_blueprint,
+    )
+
+    assert execution is not None
+    assert execution.passed is True
+    assert captured_kwargs == {
+        "mean_reversion": 0.05,
+        "sigma": 0.01,
+    }

@@ -84,6 +84,7 @@ def test_market_binding_spec_carries_engine_model_spec_summary():
             sources=(SourceSpec(source_kind="coupon_stream"),),
             calibration_requirements=("bootstrap_curve", "fit_hw_strip"),
             backend_hints=("lattice",),
+            parameter_overrides={"mean_reversion": 0.05, "sigma": 0.01},
             rates_curve_roles=RatesCurveRoleSpec(
                 discount_curve_role="discount_curve",
                 forecast_curve_role="forward_curve",
@@ -106,4 +107,8 @@ def test_market_binding_spec_carries_engine_model_spec_summary():
         "discount_curve_role": "discount_curve",
         "forecast_curve_role": "forward_curve",
         "rate_index": "sofr",
+    }
+    assert summary["engine_model_spec"]["parameter_overrides"] == {
+        "mean_reversion": 0.05,
+        "sigma": 0.01,
     }

@@ -1,0 +1,30 @@
+category: backward_induction
+title: Tree payoff missed exercise recursion
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-06T17:33:33.130014'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260406_173334_swaption_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Swaption price remained exactly 0.0000 across large volatility bumps, and
+  the build reported zero vega.
+root_cause: The rate-tree payoff likely did not call lattice backward induction on
+  the coupon and exercise schedule, so the embedded option never affected the present
+  value. For swaptions, the tree must propagate continuation values and exercise values
+  through the lattice rather than discounting a fixed terminal amount.
+fix: Implement the payoff via lattice backward induction primitives with explicit
+  exercise at the swaption expiry node and coupon cashflow projection on the underlying
+  swap dates. Ensure the tree uses the calibrated curve/volatility inputs so repricing
+  changes when the black vol surface is bumped.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: bi_021

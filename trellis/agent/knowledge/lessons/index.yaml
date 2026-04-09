@@ -329,6 +329,157 @@ entries:
     - discounting
     instrument: []
     error_signature: null
+- id: bi_021
+  title: Tree payoff missed exercise recursion
+  severity: critical
+  category: backward_induction
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: bi_022
+  title: Exercise Time Undefined
+  severity: critical
+  category: backward_induction
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: bi_023
+  title: Use only exported lattice helpers
+  severity: high
+  category: backward_induction
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: bi_024
+  title: Use lattice backward induction
+  severity: critical
+  category: backward_induction
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - discounting
+    - mean_reversion
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: bi_025
+  title: Avoid non-exported lattice helpers
+  severity: critical
+  category: backward_induction
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: bi_026
+  title: Invalid control flow in tree builder
+  severity: critical
+  category: backward_induction
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - discounting
+    - mean_reversion
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: bi_027
+  title: Initialize payoff before branching
+  severity: high
+  category: backward_induction
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: bi_028
+  title: Use approved analytical modules
+  severity: high
+  category: backward_induction
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: bi_029
+  title: Missing exercise recursion
+  severity: critical
+  category: backward_induction
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - early_exercise
+    - maturity_settlement
+    - discounting
+    instrument: []
+    error_signature: null
+- id: bi_030
+  title: Misplaced exception block
+  severity: high
+  category: backward_induction
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
 - id: cal_001
   title: Uncalibrated rate tree
   severity: critical
@@ -643,7 +794,7 @@ entries:
   title: Undefined MarketState in CDS Pricer
   severity: critical
   category: convention
-  status: validated
+  status: promoted
   supersedes: []
   applies_when:
     method:
@@ -983,7 +1134,7 @@ entries:
   title: Missing payoff adapter using schedule primitive
   severity: critical
   category: convention
-  status: validated
+  status: promoted
   supersedes: []
   applies_when:
     method:
@@ -1036,7 +1187,7 @@ entries:
   title: Code-gen payoff template and conventions missing
   severity: critical
   category: convention
-  status: validated
+  status: promoted
   supersedes: []
   applies_when:
     method:
@@ -1092,6 +1243,243 @@ entries:
     features:
     - floating_coupons
     - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: con_036
+  title: Missing payoff schedule contract
+  severity: critical
+  category: convention
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - path_dependent
+    - discounting
+    - analytical
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: con_037
+  title: Missing CDS convention contract
+  severity: critical
+  category: convention
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - credit
+    features:
+    - credit_risk
+    - discounting
+    - fixed_coupons
+    - floating_coupons
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: con_038
+  title: Missing NTD product shape contract
+  severity: critical
+  category: convention
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
+    - discounting
+    - coupons
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: con_039
+  title: Clarify CDO payoff shape
+  severity: critical
+  category: convention
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
+    - ranked_observation
+    - remaining_selection
+    - discounting
+    instrument: []
+    error_signature: null
+- id: con_040
+  title: Missing tranche payoff adapter
+  severity: critical
+  category: convention
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
+    - path_dependent
+    - discounting
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: con_041
+  title: Swaption helper payoff mismatch
+  severity: critical
+  category: convention
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: con_042
+  title: Missing Exported Timeline Helper
+  severity: critical
+  category: convention
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: con_043
+  title: CDS curve input validation
+  severity: critical
+  category: convention
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - discounting
+    - fixed_coupons
+    - floating_coupons
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: con_044
+  title: Copula payoff shape contract
+  severity: critical
+  category: convention
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
+    - multi_asset
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: con_045
+  title: Wrong GaussianCopula Constructor
+  severity: critical
+  category: convention
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
+    - multi_asset
+    - path_dependent
+    - discounting
+    instrument: []
+    error_signature: null
+- id: con_046
+  title: Wrong product shape contract
+  severity: critical
+  category: convention
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
+    - discounting
+    - spread_computation
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: con_047
+  title: Wrong copula constructor args
+  severity: critical
+  category: convention
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: con_048
+  title: Missing option maturity field
+  severity: critical
+  category: convention
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - maturity_settlement
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: cre_001
+  title: Route gate rejected MC CDS
+  severity: critical
+  category: credit_risk
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - discounting
+    - fixed_coupons
+    - floating_coupons
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: cre_002
+  title: MC CDS route gate rejection
+  severity: critical
+  category: credit_risk
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - credit_risk
+    - discounting
+    - fixed_coupons
+    - floating_coupons
+    - discrete_coupons
     instrument: []
     error_signature: null
 - id: fd_001
@@ -1691,7 +2079,7 @@ entries:
   title: Initialize intrinsic before branching
   severity: high
   category: finite_differences
-  status: validated
+  status: promoted
   supersedes: []
   applies_when:
     method:
@@ -1736,6 +2124,49 @@ entries:
     - puttable
     - discounting
     - pde_grid
+    instrument: []
+    error_signature: null
+- id: fd_041
+  title: Boundary scaling blew up price
+  severity: high
+  category: finite_differences
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: fd_042
+  title: Match solver API to harness
+  severity: high
+  category: finite_differences
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: fd_043
+  title: Use required date primitives
+  severity: high
+  category: finite_differences
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
     instrument: []
     error_signature: null
 - id: mc_001
@@ -2199,7 +2630,7 @@ entries:
   title: Unapproved correlated_gbm module path blocks Himalaya build
   severity: critical
   category: monte_carlo
-  status: validated
+  status: promoted
   supersedes: []
   applies_when:
     method:
@@ -3071,7 +3502,7 @@ entries:
   title: Wrong constructor argument name for GBM spot price
   severity: high
   category: monte_carlo
-  status: validated
+  status: promoted
   supersedes: []
   applies_when:
     method:
@@ -3084,6 +3515,753 @@ entries:
     - gamma
     - multi_asset
     - maturity_settlement
+    instrument: []
+    error_signature: null
+- id: mc_080
+  title: Clarify GBM payoff contract
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - greeks
+    - maturity_settlement
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: mc_081
+  title: Clarify payoff contract shape
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - path_dependent
+    - maturity_settlement
+    - discounting
+    - greeks
+    - convergence_order_measurement
+    instrument: []
+    error_signature: null
+- id: mc_082
+  title: Require payoff shape contract
+  severity: critical
+  category: monte_carlo
+  status: candidate
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - path_dependent
+    - maturity_settlement
+    - greeks
+    - black_scholes_benchmark
+    - convergence_order_measurement
+    instrument: []
+    error_signature: null
+- id: mc_083
+  title: Specify payoff product shape
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - path_dependent
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_084
+  title: Specify payoff shape first
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - forward_rate
+    - greeks
+    - path_dependent
+    - variance_reduction
+    - antithetic_sampling
+    instrument: []
+    error_signature: null
+- id: mc_085
+  title: Missing payoff contract shape
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - greeks
+    - monte_carlo
+    instrument: []
+    error_signature: null
+- id: mc_086
+  title: Misplaced continue in payoff loop
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - floating_coupons
+    - path_dependent
+    - discounting
+    instrument: []
+    error_signature: null
+- id: mc_087
+  title: Source vol from market surface
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - stochastic_vol
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_088
+  title: Wrong constructor parameter name for GBM model
+  severity: high
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_089
+  title: Match constructor keywords exactly
+  severity: high
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_090
+  title: Uninitialized rate variable
+  severity: high
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_091
+  title: Initialize payoff variables
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_092
+  title: Initialize all payoff variables
+  severity: high
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_093
+  title: Match constructor argument names
+  severity: high
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_094
+  title: Fix MC indentation and payoff
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - coupons
+    - discounting
+    - floating_coupons
+    - forward_rate
+    - greeks
+    - mean_reversion
+    - path_dependent
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_095
+  title: MC route gate mismatch
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_096
+  title: Reject non-recombining MC route
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    - discounting
+    - forward_rate
+    - mean_reversion
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: mc_097
+  title: Fix MC payoff indentation
+  severity: critical
+  category: monte_carlo
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - floating_coupons
+    - forward_rate
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_098
+  title: Fix MC indentation and primitives
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_099
+  title: Missing payment timeline export
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_100
+  title: Source vol from market state
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_101
+  title: Use correct MC entrypoint
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_102
+  title: Use proper GBM market-state inputs
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_103
+  title: Fix MC import and indentation
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_104
+  title: Use event-aware MC primitive
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_105
+  title: Thin adapter to MC primitive
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_106
+  title: Avoid malformed exception blocks
+  severity: high
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - path_dependent
+    - stochastic_vol
+    - characteristic_function
+    - cos_method
+    - fft_pricing
+    - monte_carlo
+    - vol_surface_dependence
+    - implied_vol_surface_extraction
+    - discounting
+    - greeks
+    instrument: []
+    error_signature: null
+- id: mc_107
+  title: Pass engine through MC wrapper
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_108
+  title: Fix MC control-flow indentation
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_109
+  title: Match GBM constructor args
+  severity: high
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_110
+  title: Fix MC indentation flow
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_111
+  title: Fix MC state and syntax
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: mc_112
+  title: Respect simulator constructor keywords
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    - path_dependent
+    - asian
+    instrument: []
+    error_signature: null
+- id: mc_113
+  title: Missing required primitives
+  severity: high
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_114
+  title: Fix MC indentation and exceptions
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_115
+  title: Event-aware MC API mismatch
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_116
+  title: Thin adapters must use GBM primitives
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_117
+  title: Use required MC primitive adapter
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    - path_dependent
+    instrument: []
+    error_signature: null
+- id: mc_118
+  title: Define terminal asset before payoff
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    - path_dependent
+    - asian
+    instrument: []
+    error_signature: null
+- id: mc_119
+  title: Use correct GBM state keywords
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_120
+  title: Respect exception indentation
+  severity: high
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - path_dependent
+    - stochastic_vol
+    - characteristic_function
+    - cos_method
+    - fft_pricing
+    - monte_carlo
+    - vol_surface_dependence
+    - greeks
+    instrument: []
+    error_signature: null
+- id: mc_121
+  title: Indentation in fallback branches
+  severity: high
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - path_dependent
+    - stochastic_vol
+    - vol_surface_dependence
+    - characteristic_function
+    - cos_method
+    - fft_pricing
+    - monte_carlo
+    - greeks
+    - maturity_settlement
+    - discounting
+    - forward_rate
+    - implied_vol_surface_extraction
+    instrument: []
+    error_signature: null
+- id: mc_122
+  title: Indentation in try blocks
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - stochastic_vol
+    - vol_surface_dependence
+    - greeks
+    instrument: []
+    error_signature: null
+- id: mc_123
+  title: Use correct GBM state keyword
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_124
+  title: Initialize payoff variables safely
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - asian
+    - path_dependent
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_125
+  title: Use event-aware MC primitives
+  severity: critical
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_126
+  title: Match GBM constructor signature
+  severity: high
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_127
+  title: Use market_state sources consistently
+  severity: high
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: mc_128
+  title: Use Market State Inputs
+  severity: high
+  category: monte_carlo
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
     instrument: []
     error_signature: null
 - id: md_001
@@ -3916,7 +5094,7 @@ entries:
   title: Missing market state access
   severity: high
   category: market_data
-  status: validated
+  status: promoted
   supersedes: []
   applies_when:
     method:
@@ -4210,7 +5388,7 @@ entries:
   title: Resolved inputs object missing expected volatility attribute
   severity: high
   category: market_data
-  status: validated
+  status: promoted
   supersedes: []
   applies_when:
     method:
@@ -4734,7 +5912,7 @@ entries:
   title: Comparing float to date object in market state
   severity: high
   category: market_data
-  status: validated
+  status: promoted
   supersedes: []
   applies_when:
     method:
@@ -4796,7 +5974,7 @@ entries:
   title: Wrong field name passed to resolved inputs dataclass
   severity: high
   category: market_data
-  status: validated
+  status: promoted
   supersedes: []
   applies_when:
     method:
@@ -4986,6 +6164,443 @@ entries:
   applies_when:
     method: []
     features: []
+    instrument: []
+    error_signature: null
+- id: md_134
+  title: Convert state inputs early
+  severity: critical
+  category: market_data
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    - discounting
+    - backward_induction
+    instrument: []
+    error_signature: null
+- id: md_135
+  title: Normalize CDS spread units
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - credit
+    features:
+    - credit_risk
+    - fixed_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: md_136
+  title: Missing input resolver
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_137
+  title: Uninitialized model label
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_138
+  title: Hardcoded volatility source
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_139
+  title: Read volatility from market state
+  severity: critical
+  category: market_data
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - discounting
+    - vol_surface_dependence
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: md_140
+  title: Import API mismatch
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: md_141
+  title: Don't hardcode model inputs
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_142
+  title: Guard variable scope in fallback paths
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_143
+  title: Uninitialized branch variable
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_144
+  title: Pass required bond fields explicitly
+  severity: critical
+  category: market_data
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: md_145
+  title: Missing schedule helper
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: md_146
+  title: Missing year fraction helper
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_147
+  title: Avoid Hardcoded Inputs
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_148
+  title: Hardcoded vol ignores market state
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_149
+  title: Read vol from market state
+  severity: critical
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - vol_surface_dependence
+    - monte_carlo
+    - floating_coupons
+    instrument: []
+    error_signature: null
+- id: md_150
+  title: Swaption forward rate mismatch
+  severity: critical
+  category: market_data
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - forward_rate
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_151
+  title: Pass rate into fft pricer
+  severity: critical
+  category: market_data
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_152
+  title: Keep branch syntax aligned
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_153
+  title: Initialize Intrinsic Early
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_154
+  title: Read model inputs from market state
+  severity: critical
+  category: market_data
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_155
+  title: CDS curve inputs and units
+  severity: critical
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - credit_risk
+    - discounting
+    - fixed_coupons
+    - floating_coupons
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: md_156
+  title: Use required pricing primitive
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
+    instrument: []
+    error_signature: null
+- id: md_157
+  title: Approved Module Usage
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_158
+  title: Handle fallback code paths cleanly
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_159
+  title: Wrong Gaussian constructor
+  severity: critical
+  category: market_data
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
+    - discounting
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: md_160
+  title: Missing field in market state
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_161
+  title: Remove unsupported market_state arg
+  severity: critical
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - discounting
+    - mean_reversion
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_162
+  title: Missing bond maturity field
+  severity: critical
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: md_163
+  title: Date vs Number Mix-up
+  severity: high
+  category: market_data
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
     instrument: []
     error_signature: null
 - id: num_001
@@ -5418,7 +7033,7 @@ entries:
   title: Undefined method identifier in spec default
   severity: high
   category: numerical
-  status: validated
+  status: promoted
   supersedes: []
   applies_when:
     method:
@@ -5475,6 +7090,253 @@ entries:
     features:
     - discounting
     - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_033
+  title: Missing payoff contract fields
+  severity: critical
+  category: numerical
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - characteristic_function
+    - cos_method
+    - discounting
+    - fixed_coupons
+    - forward_rate
+    - greeks
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_034
+  title: Need explicit option shape
+  severity: critical
+  category: numerical
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - fixed_coupons
+    - vol_surface_dependence
+    - characteristic_function
+    - fft_pricing
+    - cos_method
+    - greeks
+    instrument: []
+    error_signature: null
+- id: num_035
+  title: Fix try-except indentation
+  severity: critical
+  category: numerical
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - stochastic_vol
+    - vol_surface_dependence
+    - characteristic_function
+    instrument: []
+    error_signature: null
+- id: num_036
+  title: Fix try block indentation
+  severity: critical
+  category: numerical
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - characteristic_function
+    - cos_method
+    - discounting
+    - stochastic_vol
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_037
+  title: Convert schedule state early
+  severity: critical
+  category: numerical
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - callable
+    - backward_induction
+    - bermudan
+    - fixed_coupons
+    - mean_reversion
+    - pde_grid
+    - discounting
+    - early_exercise
+    - oas
+    instrument: []
+    error_signature: null
+- id: num_038
+  title: Initialize intrinsic before payoff use
+  severity: critical
+  category: numerical
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_039
+  title: Fix broken try-except blocks
+  severity: critical
+  category: numerical
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - characteristic_function
+    - cos_method
+    - stochastic_vol
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_040
+  title: Fix indentation and fallback paths
+  severity: critical
+  category: numerical
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - vol_surface_dependence
+    - characteristic_function
+    - cos_method
+    - stochastic_vol
+    instrument: []
+    error_signature: null
+- id: num_041
+  title: Copula constructor signature mismatch
+  severity: critical
+  category: numerical
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
+    - path_dependent
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: num_042
+  title: Unknown Trellis FFT module
+  severity: critical
+  category: numerical
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - characteristic_function
+    - cos_method
+    - greeks
+    - stochastic_vol
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_043
+  title: Initialize intrinsic before payoff
+  severity: critical
+  category: numerical
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_044
+  title: Fix FFT pricing syntax and initialization
+  severity: critical
+  category: numerical
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - characteristic_function
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_045
+  title: FFT payoff argument mismatch
+  severity: critical
+  category: numerical
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - fft_pricing
+    features:
+    - characteristic_function
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: num_046
+  title: Use required copula primitives
+  severity: critical
+  category: numerical
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
+    - path_dependent
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: num_047
+  title: Wrong copula constructor
+  severity: critical
+  category: numerical
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - copula
+    features:
+    - credit_risk
+    - multi_asset
+    - path_dependent
     instrument: []
     error_signature: null
 - id: sem_001
@@ -5816,6 +7678,23 @@ entries:
     instrument:
     - nth_to_default
     error_signature: null
+- id: sem_018
+  title: _semantic_extension_decision_knowledge_artifact_concept_american_opt
+  severity: medium
+  category: semantic
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - knowledge_artifact
+    features:
+    - underlier_structure
+    - payoff_rule
+    - settlement_rule
+    - semantic_contract_lesson
+    instrument:
+    - american_option
+    error_signature: null
 - id: tst_001
   title: Measure actual gap before setting test tolerance
   severity: medium
@@ -6000,6 +7879,238 @@ entries:
     - discrete_coupons
     - discounting
     - greeks
+    instrument: []
+    error_signature: null
+- id: vol_011
+  title: Missing swaption vol vega
+  severity: critical
+  category: volatility
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: vol_012
+  title: Vega must affect callable pricing
+  severity: critical
+  category: volatility
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - pde_solver
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    - pde_grid
+    - backward_induction
+    - oas
+    - spread_computation
+    instrument: []
+    error_signature: null
+- id: vol_013
+  title: Tree ignored option sensitivity
+  severity: high
+  category: volatility
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: vol_014
+  title: Tree lost vol sensitivity
+  severity: high
+  category: volatility
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: vol_015
+  title: Tree ignored vol dynamics
+  severity: high
+  category: volatility
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - callable
+    - fixed_coupons
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: vol_016
+  title: Do not hardcode model vol
+  severity: high
+  category: volatility
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: vol_017
+  title: No hardcoded vol inputs
+  severity: high
+  category: volatility
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: vol_018
+  title: Read swaption vol from market
+  severity: critical
+  category: volatility
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - vol_surface_dependence
+    - floating_coupons
+    - discounting
+    instrument: []
+    error_signature: null
+- id: vol_019
+  title: Swaption vega was zeroed out
+  severity: critical
+  category: volatility
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: vol_020
+  title: Don’t hardcode market vol
+  severity: high
+  category: volatility
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: vol_021
+  title: Tree Must React to Vol Bumps
+  severity: critical
+  category: volatility
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - floating_coupons
+    - discounting
+    - vol_surface_dependence
+    - mean_reversion
+    - fixed_coupons
+    - greeks
+    instrument: []
+    error_signature: null
+- id: vol_022
+  title: Add non-zero vega support
+  severity: critical
+  category: volatility
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - monte_carlo
+    features:
+    - discounting
+    - forward_rate
+    - floating_coupons
+    - vol_surface_dependence
+    - greeks
+    - mean_reversion
+    instrument: []
+    error_signature: null
+- id: vol_023
+  title: Tree must read vol surface
+  severity: critical
+  category: volatility
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: vol_024
+  title: Tree ignored vol sensitivity
+  severity: critical
+  category: volatility
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - rate_tree
+    features:
+    - backward_induction
+    - discounting
+    - mean_reversion
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: vol_025
+  title: Option price ignored volatility
+  severity: high
+  category: volatility
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - vol_surface_dependence
     instrument: []
     error_signature: null
 settings:

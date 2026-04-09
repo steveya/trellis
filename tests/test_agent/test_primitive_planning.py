@@ -165,10 +165,7 @@ def test_builds_primitive_plan_for_swaption():
     assert plan.primitive_plan is not None
     assert plan.primitive_plan.route == "analytical_black76"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert {
-        "resolve_swaption_black76_inputs",
-        "price_swaption_black76_raw",
-    } <= primitive_symbols
+    assert {"price_swaption_black76"} <= primitive_symbols
     assert "black76_call" not in primitive_symbols
     assert plan.primitive_plan.blockers == ()
 

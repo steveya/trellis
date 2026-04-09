@@ -226,3 +226,80 @@ def test_path_event_state_rejects_invalid_directions():
 
     with pytest.raises(ValueError, match="Unsupported direction"):
         replay_path_event_timeline((np.array([100.0], dtype=float),), 100.0, barrier_timeline)
+
+
+def test_discounted_swap_pv_settlement_uses_short_rate_anchor_and_discount_reducer():
+    from trellis.models.monte_carlo.event_state import (
+        PathEventSpec,
+        PathEventTimeline,
+        replay_path_event_timeline,
+    )
+
+    exercise_time = 1.0
+    payment_times = (1.5, 2.0)
+    accrual_fractions = (0.5, 0.5)
+    anchor_discount_to_exercise = 0.96
+    anchor_discount_factors = (0.94, 0.92)
+    anchor_short_rate = -np.log(anchor_discount_to_exercise) / exercise_time
+    mean_reversion = 0.10
+    curve_basis_spread = 0.002
+    short_rate_at_exercise = np.array([0.050, 0.032], dtype=float)
+    discount_to_exercise = np.array([0.97, 0.99], dtype=float)
+
+    timeline = PathEventTimeline(
+        (
+            PathEventSpec(
+                name="expiry_settlement",
+                kind="settlement",
+                step=2,
+                payload={
+                    "rule": "discounted_swap_pv",
+                    "discount_reducer_name": "discount_to_expiry",
+                    "exercise_time": exercise_time,
+                    "payment_times": payment_times,
+                    "accrual_fractions": accrual_fractions,
+                    "anchor_discount_to_exercise": anchor_discount_to_exercise,
+                    "anchor_discount_factors": anchor_discount_factors,
+                    "anchor_short_rate": anchor_short_rate,
+                    "mean_reversion": mean_reversion,
+                    "curve_basis_spread": curve_basis_spread,
+                    "notional": 100.0,
+                    "strike": 0.045,
+                    "is_payer": True,
+                },
+            ),
+        )
+    )
+
+    state = replay_path_event_timeline(
+        (short_rate_at_exercise,),
+        initial_values=0.04,
+        event_timeline=timeline,
+        reducer_values={"discount_to_expiry": discount_to_exercise},
+    )
+
+    def _expected_settlement(short_rate: float, discount_factor: float) -> float:
+        taus = np.asarray(payment_times, dtype=float) - exercise_time
+        B = (1.0 - np.exp(-mean_reversion * taus)) / mean_reversion
+        anchor_ratio = np.asarray(anchor_discount_factors, dtype=float) / anchor_discount_to_exercise
+        bond_prices = anchor_ratio * np.exp(-B * (short_rate - anchor_short_rate))
+        annuity = float(np.sum(np.asarray(accrual_fractions, dtype=float) * bond_prices))
+        forward = (1.0 - float(bond_prices[-1])) / annuity
+        adjusted_forward = forward + curve_basis_spread
+        intrinsic = max(adjusted_forward - 0.045, 0.0)
+        return discount_factor * 100.0 * annuity * intrinsic
+
+    expected = np.asarray(
+        [
+            _expected_settlement(short_rate_at_exercise[0], discount_to_exercise[0]),
+            _expected_settlement(short_rate_at_exercise[1], discount_to_exercise[1]),
+        ],
+        dtype=float,
+    )
+
+    np.testing.assert_allclose(
+        state.settlement_value("expiry_settlement"),
+        expected,
+        rtol=1e-12,
+        atol=1e-12,
+    )

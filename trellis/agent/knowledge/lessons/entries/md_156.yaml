@@ -1,0 +1,39 @@
+category: market_data
+title: Use required pricing primitive
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:46:07.911159'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - copula
+  features:
+  - credit_risk
+  instrument: []
+  error_signature: null
+symptom: The implementation priced the tranche directly instead of wrapping the required
+  nth-to-default basket primitive from the chosen assembly route.
+root_cause: This usually happens when the modeler jumps to a custom payoff formula
+  and forgets that validation expects the code path to be built as a thin adapter
+  over the approved instrument primitive. The mental model failure is treating the
+  primitive as optional rather than the mandatory pricing backbone.
+fix: Rebuild the tranche payoff as a thin adapter around trellis.instruments.nth_to_default.price_nth_to_default_basket
+  and route all valuation through it.
+validation: "Resolved during build of Build a pricer for: CDO tranche: Gaussian vs\
+  \ Student-t copula\n\nPrice a synthetic CDO mezzanine tranche on a 100-name investment-grade\n\
+  portfolio.  Attachment point: 3%.  Detachment point: 7%.\nMaturity: 5Y.  Notional\
+  \ per name: $1,000,000 (portfolio notional $100M).\nRecovery rate: 40% flat across\
+  \ all names.\nUse the IG credit curve from the market snapshot (as_of 2024-11-15)\n\
+  as the representative single-name hazard curve for all 100 names.\nFlat pairwise\
+  \ default correlation: 0.3.\nMethod 1: Gaussian copula (one-factor, semi-analytical\
+  \ via Vasicek\nlarge-pool or recursive).\nMethod 2: Student-t copula (degrees of\
+  \ freedom = 5) for comparison\nto see heavier-tail effects on the mezzanine tranche.\n\
+  Report tranche fair spread (bp) and expected loss for each copula.\n\nConstruct\
+  \ methods: copula\nComparison targets: gaussian_copula (copula), student_t_copula\
+  \ (copula)\nCross-validation harness:\n  internal targets: gaussian_copula, student_t_copula\n\
+  \  external targets: quantlib\n\nImplementation target: student_t_copula\nPreferred\
+  \ method family: copula\n\nImplementation target: student_t_copula"
+supersedes: []
+id: md_156

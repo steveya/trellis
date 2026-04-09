@@ -1,44 +1,68 @@
-"""Agent-generated payoff: Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical
+"""Agent-generated payoff: Build a pricer for: CDO tranche: Gaussian vs Student-t copula
 
-Construct methods: monte_carlo
-Comparison targets: mc_cds (monte_carlo), analytical_cds (analytical)
+Price a synthetic CDO mezzanine tranche on a 100-name investment-grade
+portfolio.  Attachment point: 3%.  Detachment point: 7%.
+Maturity: 5Y.  Notional per name: $1,000,000 (portfolio notional $100M).
+Recovery rate: 40% flat across all names.
+Use the IG credit curve from the market snapshot (as_of 2024-11-15)
+as the representative single-name hazard curve for all 100 names.
+Flat pairwise default correlation: 0.3.
+Method 1: Gaussian copula (one-factor, semi-analytical via Vasicek
+large-pool or recursive).
+Method 2: Student-t copula (degrees of freedom = 5) for comparison
+to see heavier-tail effects on the mezzanine tranche.
+Report tranche fair spread (bp) and expected loss for each copula.
+
+Construct methods: copula
+Comparison targets: gaussian_copula (copula), student_t_copula (copula)
 Cross-validation harness:
-  internal targets: mc_cds, analytical_cds
-  external targets: quantlib, financepy
-New component: cds_pricing
+  internal targets: gaussian_copula, student_t_copula
+  external targets: quantlib
 
-Implementation target: analytical_cds
-Preferred method family: analytical
+Implementation target: student_t_copula
+Preferred method family: copula
 
-Implementation target: analytical_cds."""
+Implementation target: student_t_copula."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
 
-from trellis.core.date_utils import generate_schedule, year_fraction
 from trellis.core.market_state import MarketState
-from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.black import black76_call, black76_put
+from trellis.core.types import DayCountConvention
+from trellis.core.date_utils import generate_schedule
+from trellis.instruments.nth_to_default import price_nth_to_default_basket
 
 
 
 @dataclass(frozen=True)
 class NthToDefaultSpec:
-    """Specification for Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical
+    """Specification for Build a pricer for: CDO tranche: Gaussian vs Student-t copula
 
-Construct methods: monte_carlo
-Comparison targets: mc_cds (monte_carlo), analytical_cds (analytical)
+Price a synthetic CDO mezzanine tranche on a 100-name investment-grade
+portfolio.  Attachment point: 3%.  Detachment point: 7%.
+Maturity: 5Y.  Notional per name: $1,000,000 (portfolio notional $100M).
+Recovery rate: 40% flat across all names.
+Use the IG credit curve from the market snapshot (as_of 2024-11-15)
+as the representative single-name hazard curve for all 100 names.
+Flat pairwise default correlation: 0.3.
+Method 1: Gaussian copula (one-factor, semi-analytical via Vasicek
+large-pool or recursive).
+Method 2: Student-t copula (degrees of freedom = 5) for comparison
+to see heavier-tail effects on the mezzanine tranche.
+Report tranche fair spread (bp) and expected loss for each copula.
+
+Construct methods: copula
+Comparison targets: gaussian_copula (copula), student_t_copula (copula)
 Cross-validation harness:
-  internal targets: mc_cds, analytical_cds
-  external targets: quantlib, financepy
-New component: cds_pricing
+  internal targets: gaussian_copula, student_t_copula
+  external targets: quantlib
 
-Implementation target: analytical_cds
-Preferred method family: analytical
+Implementation target: student_t_copula
+Preferred method family: copula
 
-Implementation target: analytical_cds."""
+Implementation target: student_t_copula."""
     notional: float
     n_names: int
     n_th: int
@@ -49,19 +73,31 @@ Implementation target: analytical_cds."""
 
 
 class NthToDefaultPayoff:
-    """Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical
+    """Build a pricer for: CDO tranche: Gaussian vs Student-t copula
 
-Construct methods: monte_carlo
-Comparison targets: mc_cds (monte_carlo), analytical_cds (analytical)
+Price a synthetic CDO mezzanine tranche on a 100-name investment-grade
+portfolio.  Attachment point: 3%.  Detachment point: 7%.
+Maturity: 5Y.  Notional per name: $1,000,000 (portfolio notional $100M).
+Recovery rate: 40% flat across all names.
+Use the IG credit curve from the market snapshot (as_of 2024-11-15)
+as the representative single-name hazard curve for all 100 names.
+Flat pairwise default correlation: 0.3.
+Method 1: Gaussian copula (one-factor, semi-analytical via Vasicek
+large-pool or recursive).
+Method 2: Student-t copula (degrees of freedom = 5) for comparison
+to see heavier-tail effects on the mezzanine tranche.
+Report tranche fair spread (bp) and expected loss for each copula.
+
+Construct methods: copula
+Comparison targets: gaussian_copula (copula), student_t_copula (copula)
 Cross-validation harness:
-  internal targets: mc_cds, analytical_cds
-  external targets: quantlib, financepy
-New component: cds_pricing
+  internal targets: gaussian_copula, student_t_copula
+  external targets: quantlib
 
-Implementation target: analytical_cds
-Preferred method family: analytical
+Implementation target: student_t_copula
+Preferred method family: copula
 
-Implementation target: analytical_cds."""
+Implementation target: student_t_copula."""
 
     def __init__(self, spec: NthToDefaultSpec):
         self._spec = spec
@@ -75,47 +111,27 @@ Implementation target: analytical_cds."""
         return {"credit_curve", "discount_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
+        from trellis.core.differentiable import get_numpy
+        from trellis.core.date_utils import year_fraction
+        from trellis.models.copulas.gaussian import GaussianCopula
         spec = self._spec
         T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
-        if T <= 0.0:
-            return 0.0
-
-        if market_state.credit_curve is None:
-            raise ValueError("NthToDefaultPayoff requires a credit curve")
-        if market_state.discount is None:
-            raise ValueError("NthToDefaultPayoff requires a discount curve")
-
-        p_def = max(0.0, 1.0 - float(market_state.credit_curve.survival_probability(T)))
-        n = int(spec.n_names)
-        n_th = int(spec.n_th)
-        rho = float(spec.correlation)
-
-        if rho <= 1e-8:
-            from math import comb
-
-            p_nth = 1.0 - sum(
-                comb(n, j) * (p_def ** j) * ((1.0 - p_def) ** (n - j))
-                for j in range(n_th)
-            )
-        else:
-            from math import comb
-            from scipy import integrate
-            from scipy.stats import norm
-
-            p_thr = norm.ppf(max(1e-9, min(1.0 - 1e-9, p_def)))
-            sq_rho = rho ** 0.5
-            sq_1mr = (1.0 - rho) ** 0.5
-
-            def integrand(z):
-                pc = norm.cdf((p_thr - sq_rho * z) / sq_1mr)
-                pk = 1.0 - sum(
-                    comb(n, j) * (pc ** j) * ((1.0 - pc) ** (n - j))
-                    for j in range(n_th)
-                )
-                return pk * norm.pdf(z)
-
-            p_nth, _ = integrate.quad(integrand, -8.0, 8.0)
-            p_nth = max(0.0, min(1.0, float(p_nth)))
-
-        df = float(market_state.discount.discount(T))
-        return float(p_nth * (1.0 - spec.recovery) * spec.notional * df)
+        T = float(T)
+        survival = float(market_state.credit_curve.survival_probability(T))
+        marginal_prob = 1.0 - survival
+        copula = GaussianCopula(correlation=spec.correlation)
+        n_defaults = int(spec.n_th)
+        _ = get_numpy()
+        total_loss = price_nth_to_default_basket(
+            n_names=spec.n_names,
+            n_th=n_defaults,
+            notional=spec.notional,
+            maturity=T,
+            default_prob=marginal_prob,
+            recovery=spec.recovery,
+            correlation=spec.correlation,
+        )
+        try:
+            return float(total_loss)
+        except TypeError:
+            return float(total_loss.item())

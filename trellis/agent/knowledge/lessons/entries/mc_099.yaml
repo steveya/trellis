@@ -1,0 +1,29 @@
+category: monte_carlo
+title: Missing payment timeline export
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-07T18:34:28.706485'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_183430_swaption_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Build fails with `build_payment_timeline is not exported by trellis.models.monte_carlo.event_aware`
+  at line 118.
+root_cause: The generator assumed a helper existed in the Monte Carlo event-aware
+  module, but that symbol is not part of the public API. This indicates an incorrect
+  dependency on a non-exported schedule builder instead of constructing the swap cashflow
+  timeline locally or via an approved scheduling utility.
+fix: Replace the missing import with an instrument-local payment schedule builder
+  that generates fixed and floating coupon dates from the swap conventions. Feed that
+  timeline directly into the Monte Carlo payoff evaluator, keeping event handling
+  and cashflow generation separate from the pricing kernel.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_099

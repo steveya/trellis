@@ -1,0 +1,29 @@
+category: volatility
+title: Swaption vega was zeroed out
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T14:56:11.390149'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_145613_swaption_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Changing the input volatility from 5% to 40% left the swaption price unchanged
+  at 2.4618, indicating zero vega.
+root_cause: The analytical pricer was wired without actually passing or using the
+  swaption volatility, so the result became insensitive to the vol input. For an embedded-option
+  instrument like a swaption, omitting the volatility surface or using a fallback
+  with no vol dependency produces a flat price across vol bumps.
+fix: Thread the swaption volatility explicitly into the Black76 pricing call and validate
+  that price changes under vol bumps before accepting the build. Add a unit test that
+  compares prices at two distinct vols and rejects any implementation with near-zero
+  sensitivity.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: vol_019

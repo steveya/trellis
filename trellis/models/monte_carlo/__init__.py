@@ -27,6 +27,21 @@ from trellis.models.monte_carlo.event_state import (
     event_step_indices,
     replay_path_event_timeline,
 )
+from trellis.models.monte_carlo.event_aware import (
+    EventAwareMonteCarloEvent,
+    EventAwareMonteCarloProblem,
+    EventAwareMonteCarloProblemSpec,
+    EventAwareMonteCarloProcessSpec,
+    build_event_time_map_from_family_ir,
+    build_discounted_swap_pv_payload,
+    build_event_aware_monte_carlo_problem,
+    build_event_aware_monte_carlo_problem_from_family_ir,
+    build_event_aware_monte_carlo_process,
+    build_timed_event_aware_monte_carlo_problem_from_family_ir,
+    build_short_rate_discount_reducer,
+    price_event_aware_monte_carlo,
+    resolve_hull_white_monte_carlo_process_inputs,
+)
 from trellis.models.monte_carlo.local_vol import (
     LocalVolMonteCarloResult,
     local_vol_european_vanilla_price,

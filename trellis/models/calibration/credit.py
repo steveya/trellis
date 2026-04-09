@@ -12,7 +12,11 @@ from trellis.curves.credit_curve import CreditCurve
 from trellis.models.calibration.materialization import materialize_credit_curve
 from trellis.models.calibration.quote_maps import (
     CalibrationQuoteMap,
+    QuoteAxisSpec,
     QuoteMapSpec,
+    QuoteSemanticsSpec,
+    QuoteSettlementSpec,
+    QuoteUnitSpec,
     build_identity_quote_map,
 )
 from trellis.models.calibration.solve_request import (
@@ -83,7 +87,23 @@ def _spread_quote_map(
     """Return the explicit spread-to-hazard quote map."""
     scale = float(1.0 - recovery)
     return CalibrationQuoteMap(
-        spec=QuoteMapSpec(quote_family="spread"),
+        spec=QuoteMapSpec(
+            quote_family="spread",
+            semantics=QuoteSemanticsSpec(
+                quote_family="spread",
+                quote_subject="single_name_cds",
+                axes=(QuoteAxisSpec("maturity", axis_kind="tenor", unit="years"),),
+                unit=QuoteUnitSpec(
+                    unit_name="decimal_running_spread",
+                    value_domain="credit_spread",
+                    scaling="absolute",
+                ),
+                settlement=QuoteSettlementSpec(
+                    numeraire="discount_curve",
+                    discount_curve_role="discount_curve",
+                ),
+            ),
+        ),
         quote_to_price_fn=lambda quote: normalize_cds_running_spread(float(quote)) / scale,
         price_to_quote_fn=lambda hazard: float(hazard) * scale,
         source_ref=source_ref,
@@ -104,7 +124,23 @@ def _hazard_quote_map(
 ) -> CalibrationQuoteMap:
     """Return the explicit hazard quote map."""
     return build_identity_quote_map(
-        QuoteMapSpec(quote_family="hazard"),
+        QuoteMapSpec(
+            quote_family="hazard",
+            semantics=QuoteSemanticsSpec(
+                quote_family="hazard",
+                quote_subject="single_name_cds",
+                axes=(QuoteAxisSpec("maturity", axis_kind="tenor", unit="years"),),
+                unit=QuoteUnitSpec(
+                    unit_name="hazard_rate",
+                    value_domain="default_intensity",
+                    scaling="absolute",
+                ),
+                settlement=QuoteSettlementSpec(
+                    numeraire="discount_curve",
+                    discount_curve_role="discount_curve",
+                ),
+            ),
+        ),
         source_ref="_hazard_quote_map",
         assumptions=assumptions,
         metadata={

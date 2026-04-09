@@ -62,6 +62,10 @@ def test_calibrates_single_name_credit_curve_from_spreads_and_materializes_runti
     assert result.target_hazards[1] == pytest.approx(normalize_cds_running_spread(180.0) / 0.6)
     assert result.provenance["potential_binding"]["discount_curve_name"] == "usd_ois"
     assert result.provenance["calibration_target"]["quote_maps"][0]["quote_family"] == "spread"
+    assert result.provenance["calibration_target"]["quote_maps"][0]["quote_subject"] == "single_name_cds"
+    assert result.provenance["calibration_target"]["quote_maps"][0]["quote_unit"] == (
+        "decimal_running_spread"
+    )
     assert result.max_abs_hazard_residual == pytest.approx(0.0)
     assert result.max_abs_quote_residual == pytest.approx(0.0)
 
@@ -121,6 +125,8 @@ def test_credit_calibration_handoff_prices_cds_with_mixed_hazard_and_spread_quot
     assert result.summary["quote_families"] == ["hazard", "spread"]
     assert result.provenance["calibration_target"]["quote_maps"][0]["quote_family"] == "hazard"
     assert result.provenance["calibration_target"]["quote_maps"][1]["quote_family"] == "spread"
+    assert result.provenance["calibration_target"]["quote_maps"][0]["quote_unit"] == "hazard_rate"
+    assert result.provenance["calibration_target"]["quote_maps"][1]["quote_subject"] == "single_name_cds"
 
 
 def test_credit_calibration_rejects_missing_discount_curve_binding():

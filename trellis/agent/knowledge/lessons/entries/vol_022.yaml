@@ -1,0 +1,35 @@
+category: volatility
+title: Add non-zero vega support
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-08T15:38:33.166683'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_153834_swaption_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - forward_rate
+  - floating_coupons
+  - vol_surface_dependence
+  - greeks
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: Repricing the swaption at 5% and 40% volatility changed the price by less
+  than 1%, triggering the check that embedded options must have non-zero vega.
+root_cause: The payoff/valuation path was effectively insensitive to the volatility
+  input, typically because the implementation used a deterministic discounting-only
+  path or failed to feed the vol surface into the option valuation step. For a swaption,
+  volatility must affect the exercise distribution or Black76 pricing directly, otherwise
+  the model cannot express vega.
+fix: Wire the volatility surface into the swaption pricing kernel and verify the output
+  changes materially under vol bumps. For MC, ensure the simulated rate process uses
+  sigma in the state evolution and that exercise/option value depends on the simulated
+  terminal swap rate; for Black76, pass the correct swaption vol and forward swap
+  rate.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: vol_022

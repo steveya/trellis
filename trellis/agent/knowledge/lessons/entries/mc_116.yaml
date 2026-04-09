@@ -1,0 +1,28 @@
+category: monte_carlo
+title: Thin adapters must use GBM primitives
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T17:00:43.556720'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_170045_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Code generation fails with assembly.required_primitive_missing and reports
+  that the generated module did not use trellis.models.processes.gbm.GBM or trellis.models.processes.hull_white.HullWhite.
+root_cause: The payoff/pricer was built as a custom implementation instead of a thin
+  adapter around the required process primitives for the selected assembly route.
+  That bypassed the compiler's required primitive usage check.
+fix: Rebuild the payoff as a minimal adapter that directly instantiates and delegates
+  to the required GBM primitive for path generation, then layer only the option payoff
+  and discounting on top. Keep the generated module free of bespoke process logic
+  so the required primitive is present in the emitted code.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_116

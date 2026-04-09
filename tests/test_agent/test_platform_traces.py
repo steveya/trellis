@@ -308,6 +308,104 @@ def test_platform_trace_persists_dsl_family_ir_summary(tmp_path):
     assert "schedule_builder_symbol: build_cds_schedule" in raw
 
 
+def test_platform_trace_summarizes_event_aware_pde_family_ir(tmp_path):
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.platform_traces import load_platform_trace_boundary, record_platform_trace
+
+    compiled = compile_build_request(
+        (
+            "Build a pricer for: Callable bond: HW rate PDE (PSOR) vs HW tree\n\n"
+            "Price a 10-year callable bond paying a 5% semi-annual coupon, par $100,\n"
+            "callable at par on any coupon date after year 3.\n"
+            "Use the USD OIS discount curve from the market snapshot (as_of 2024-11-15).\n"
+            "Hull-White model: mean reversion a=0.05, short-rate vol sigma=0.01.\n"
+            "Method 1: solve the HW rate PDE backward in time using PSOR to\n"
+            "enforce the call constraint (issuer calls when continuation value > par)."
+        ),
+        instrument_type="callable_bond",
+        preferred_method="pde_solver",
+    )
+
+    trace_path = record_platform_trace(
+        compiled,
+        success=True,
+        outcome="build_completed",
+        root=tmp_path,
+    )
+    boundary = load_platform_trace_boundary(trace_path)
+    lowering = boundary["generation_boundary"]["lowering"]
+    family_ir_summary = lowering["family_ir_summary"]
+
+    assert lowering["family_ir_type"] == "EventAwarePDEIR"
+    assert family_ir_summary["operator_family"] == "hull_white_1f"
+    assert family_ir_summary["control_style"] == "issuer_min"
+    assert family_ir_summary["semantic_control_style"] == "issuer_min"
+    assert family_ir_summary["state_variable"] == "short_rate"
+    assert family_ir_summary["event_transform_kinds"] == ["add_cashflow", "project_min"]
+    assert family_ir_summary["semantic_transform_kinds"] == ["add_cashflow", "project_min"]
+    assert family_ir_summary["compatibility_status"] == "native_event_aware"
+
+
+def test_platform_trace_marks_vanilla_pde_wrapper_as_transitional(tmp_path):
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.platform_traces import load_platform_trace_boundary, record_platform_trace
+
+    compiled = compile_build_request(
+        "European equity call on AAPL with strike 120 and expiry 2025-11-15",
+        instrument_type="european_option",
+        preferred_method="pde_solver",
+    )
+
+    trace_path = record_platform_trace(
+        compiled,
+        success=True,
+        outcome="build_completed",
+        root=tmp_path,
+    )
+    boundary = load_platform_trace_boundary(trace_path)
+    lowering = boundary["generation_boundary"]["lowering"]
+    family_ir_summary = lowering["family_ir_summary"]
+
+    assert lowering["family_ir_type"] == "VanillaEquityPDEIR"
+    assert family_ir_summary["operator_family"] == "black_scholes_1d"
+    assert family_ir_summary["control_style"] == "identity"
+    assert family_ir_summary["semantic_control_style"] == "holder_max"
+    assert family_ir_summary["compatibility_wrapper"] == "VanillaEquityPDEIR"
+    assert family_ir_summary["compatibility_status"] == "transitional_wrapper"
+    assert family_ir_summary["end_state"] == "migrate_to_plain_EventAwarePDEIR"
+
+
+def test_platform_trace_summarizes_terminal_only_event_aware_monte_carlo_family_ir(tmp_path):
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.platform_traces import load_platform_trace_boundary, record_platform_trace
+
+    compiled = compile_build_request(
+        "European equity call on AAPL with strike 120 and expiry 2025-11-15",
+        instrument_type="european_option",
+        preferred_method="monte_carlo",
+    )
+
+    trace_path = record_platform_trace(
+        compiled,
+        success=True,
+        outcome="build_completed",
+        root=tmp_path,
+    )
+    boundary = load_platform_trace_boundary(trace_path)
+    lowering = boundary["generation_boundary"]["lowering"]
+    family_ir_summary = lowering["family_ir_summary"]
+
+    assert lowering["family_ir_type"] == "EventAwareMonteCarloIR"
+    assert family_ir_summary["process_family"] == "gbm_1d"
+    assert family_ir_summary["control_style"] == "identity"
+    assert family_ir_summary["semantic_control_style"] == "holder_max"
+    assert family_ir_summary["path_requirement_kind"] == "terminal_only"
+    assert family_ir_summary["reducer_kind"] == "terminal_payoff"
+    assert family_ir_summary["event_kinds"] == []
+    assert family_ir_summary["semantic_event_kinds"] == []
+    assert family_ir_summary["compatibility_status"] == "native_event_aware"
+
+
 def test_platform_trace_keeps_route_less_semantic_requests_truthful(tmp_path):
     from trellis.agent.platform_requests import compile_build_request
     from trellis.agent.platform_traces import (

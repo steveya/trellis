@@ -1,0 +1,28 @@
+category: numerical
+title: Wrong copula constructor
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T19:25:47.708442'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_192549_cdo_copula.yaml
+applies_when:
+  method:
+  - copula
+  features:
+  - credit_risk
+  - multi_asset
+  - path_dependent
+  instrument: []
+  error_signature: null
+symptom: Build fails with GaussianCopula.__init__() got an unexpected keyword argument
+  'correlation'.
+root_cause: The pricing code assumed a constructor contract that does not match the
+  actual copula API. The engine expects a different parameter name or a different
+  state object shape for correlation input.
+fix: Align the implementation with the real copula class signature and data contract
+  before instantiation. Add a small adapter that maps market correlation inputs into
+  the exact constructor/state fields required by the library.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: num_047

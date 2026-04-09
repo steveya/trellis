@@ -1,0 +1,28 @@
+category: numerical
+title: Initialize intrinsic before payoff use
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-07T10:09:35.779012'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_100937_european_option_fft_pricing.yaml
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Runtime error: local variable ''intrinsic'' referenced before assignment
+  during payoff construction or smoke test.'
+root_cause: The payoff builder assumed a branch would always assign the intrinsic
+  value before it was read, but one execution path skipped that assignment. This typically
+  happens when strike/payoff-type conditionals or try/except blocks are incomplete
+  or misindented.
+fix: Assign intrinsic immediately after computing the underlying payoff input and
+  before any conditional return paths. Add a unit test for both call and put branches
+  across valid/invalid branches to ensure the variable is always defined.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: num_038

@@ -1,0 +1,30 @@
+category: numerical
+title: Fix FFT pricing syntax and initialization
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:42:10.557351'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_164212_european_option_fft_pricing.yaml
+applies_when:
+  method:
+  - fft_pricing
+  features:
+  - characteristic_function
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Module build failed with SyntaxError in an else block and later raised 'local
+  variable intrinsic referenced before assignment' during the market state smoke test.
+root_cause: The generated pricer had malformed control flow (broken try/except and
+  stray else indentation) and used payoff variables before guaranteeing initialization.
+  This is typical when assembling analytical pricing logic from partially templated
+  code without a validated callable skeleton.
+fix: Use a single, fully indented pricing template with explicit initialization of
+  all intermediates before branching. Validate the module with a syntax check and
+  a minimal smoke test that exercises payoff construction and discounting before retrying
+  the build.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: num_044

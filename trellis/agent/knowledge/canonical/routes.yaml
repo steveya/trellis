@@ -327,7 +327,7 @@ routes:
       multicurrency_support: single_currency_only
       supported_outputs: [price, scenario_pnl, exercise_boundary]
       supports_sensitivity_outputs: true
-      supported_state_tags: [pathwise_only, terminal_markov, schedule_state]
+      supported_state_tags: [pathwise_only, terminal_markov, recombining_safe, schedule_state]
       supports_calibration: false
     # NOTE: _route_components calls early_exercise_policy at import time.
     # The notes below are static captures of the policy summaries.
@@ -395,15 +395,23 @@ routes:
       multicurrency_support: single_currency_only
       supported_outputs: [price, scenario_pnl]
       supports_sensitivity_outputs: true
-      supported_state_tags: [pathwise_only, terminal_markov, schedule_state]
-      supports_calibration: false
+      supported_state_tags: [pathwise_only, terminal_markov, recombining_safe, schedule_state]
+      supported_process_families: [gbm_1d, hull_white_1f]
+      supported_path_requirement_kinds: [terminal_only, full_path, event_snapshots, event_replay, reducer_state]
+      supports_calibration: true
     primitives:
       - module: trellis.models.processes.gbm
         symbol: GBM
         role: state_process
+      - module: trellis.models.processes.hull_white
+        symbol: HullWhite
+        role: state_process
       - module: trellis.models.monte_carlo.engine
         symbol: MonteCarloEngine
         role: path_simulation
+      - module: trellis.models.monte_carlo.event_aware
+        symbol: price_event_aware_monte_carlo
+        role: route_helper
     adapters:
       - build_payoff_vector_from_paths
     notes:
@@ -412,6 +420,33 @@ routes:
       required:
         discount_curve: [market_state.discount]
         black_vol_surface: [market_state.vol_surface]
+    conditional_primitives:
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+        primitives:
+          - module: trellis.models.equity_option_monte_carlo
+            symbol: price_vanilla_equity_option_monte_carlo
+            role: route_helper
+        adapters: []
+        notes:
+          - "For vanilla European equity options, prefer `trellis.models.equity_option_monte_carlo.price_vanilla_equity_option_monte_carlo(...)`."
+          - "Treat the generated route as a thin adapter over the checked family helper; do not rebuild GBM process construction, scheme wiring, or variance-reduction glue inline."
+      - when:
+          payoff_family: swaption
+          exercise_style: [european]
+          model_family: [interest_rate, short_rate]
+        primitives:
+          - module: trellis.models.rate_style_swaption
+            symbol: price_swaption_monte_carlo
+            role: route_helper
+        adapters: []
+        notes:
+          - "For European rate-style swaptions, prefer `trellis.models.rate_style_swaption.price_swaption_monte_carlo(...)`."
+          - "Treat the generated route as a thin adapter over the checked family helper; do not rebuild Hull-White process resolution, event payload assembly, or Monte Carlo plumbing inline."
+      - when: default
+        primitives: []
+        adapters: []
 
   - id: local_vol_monte_carlo
     engine_family: monte_carlo
@@ -431,6 +466,8 @@ routes:
       supported_outputs: [price, scenario_pnl]
       supports_sensitivity_outputs: true
       supported_state_tags: [pathwise_only, terminal_markov, schedule_state]
+      supported_process_families: [local_vol_1d]
+      supported_path_requirement_kinds: [terminal_only, full_path, event_snapshots, event_replay, reducer_state]
       supports_calibration: false
     primitives:
       - module: trellis.models.processes.local_vol
@@ -647,13 +684,34 @@ routes:
       - module: trellis.models.trees.lattice
         symbol: lattice_backward_induction
         role: backward_induction
-    adapters:
-      - map_cashflows_and_exercise_dates_to_tree_steps
-    notes:
-      - "Use calibrated rate-tree primitives for scheduled early-exercise products."
-      - "The real Hull-White convenience-builder contract is `build_rate_lattice(r0, sigma_hw, mean_reversion, T, n_steps, discount_curve=market_state.discount)`."
-      - "Do not invent keyword-only variants such as `maturity=...`, `steps=...`, or `market_state=...` when calling `build_rate_lattice(...)`."
-      - "For explicit model selection, prefer `build_generic_lattice(MODEL_REGISTRY[\"hull_white\"|\"ho_lee\"|\"bdt\"], r0=..., sigma=..., a=..., T=..., n_steps=..., discount_curve=market_state.discount)`."
+    conditional_primitives:
+      - when:
+          payoff_family: swaption
+          exercise_style: [european]
+        primitives:
+          - module: trellis.models.rate_style_swaption_tree
+            symbol: price_swaption_tree
+            role: route_helper
+        adapters: []
+        notes:
+          - "For single-exercise European rate-style swaptions on the rate-tree route, prefer `trellis.models.rate_style_swaption_tree.price_swaption_tree(...)`."
+          - "Treat the rate-tree swaption build as a thin adapter over the checked-in helper; do not rebuild exercise-step selection, swap rollback, or lattice payoff glue inline."
+          - "The checked-in helper assumes the live forward-starting European surface where `spec.swap_start == spec.expiry_date`."
+      - when: default
+        primitives:
+          - module: trellis.models.trees.lattice
+            symbol: build_rate_lattice
+            role: lattice_builder
+          - module: trellis.models.trees.lattice
+            symbol: lattice_backward_induction
+            role: backward_induction
+        adapters:
+          - map_cashflows_and_exercise_dates_to_tree_steps
+        notes:
+          - "Use calibrated rate-tree primitives for scheduled early-exercise products."
+          - "The real Hull-White convenience-builder contract is `build_rate_lattice(r0, sigma_hw, mean_reversion, T, n_steps, discount_curve=market_state.discount)`."
+          - "Do not invent keyword-only variants such as `maturity=...`, `steps=...`, or `market_state=...` when calling `build_rate_lattice(...)`."
+          - "For explicit model selection, prefer `build_generic_lattice(MODEL_REGISTRY[\"hull_white\"|\"ho_lee\"|\"bdt\"], r0=..., sigma=..., a=..., T=..., n_steps=..., discount_curve=market_state.discount)`."
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -775,17 +833,15 @@ routes:
           exercise_style: [european]
         primitives:
           - module: trellis.models.rate_style_swaption
-            symbol: resolve_swaption_black76_inputs
-            role: market_binding
-          - module: trellis.models.rate_style_swaption
-            symbol: price_swaption_black76_raw
+            symbol: price_swaption_black76
             role: route_helper
         adapters:
           - reuse_checked_in_rate_style_swaption_helper
         notes:
-          - "For European rate-style swaptions, prefer the checked helper-backed split `resolve_swaption_black76_inputs(...)` -> `price_swaption_black76_raw(...)` from `trellis.models.rate_style_swaption`."
-          - "Treat `ResolvedSwaptionBlack76Inputs` as the resolved contract for expiry, annuity, forward swap rate, strike, vol, notional, direction, and payment count."
-          - "Keep the generated route as a thin adapter over the helper-backed resolved-input contract; do not rebuild annuity, forward-swap-rate, or expiry binding inline."
+          - "For European rate-style swaptions, prefer `price_swaption_black76(market_state, spec, ...)` from `trellis.models.rate_style_swaption`."
+          - "This helper owns expiry, annuity, forward swap rate, quote-regime normalization, and Black76 execution."
+          - "When the request supplies explicit Hull-White comparison parameters, pass `mean_reversion=` and `sigma=` into `price_swaption_black76(...)` so the analytical comparator uses a Hull-White-implied Black vol instead of drifting to an unrelated market vol surface."
+          - "Keep the generated route as a thin adapter over the helper-backed family surface; do not rebuild annuity, forward-swap-rate, expiry binding, or swaption-vol normalization inline."
       - when: default
         primitives:
           - module: trellis.models.black
@@ -929,18 +985,31 @@ routes:
       supports_sensitivity_outputs: true
       supported_state_tags: [terminal_markov]
       supports_calibration: false
-    primitives:
-      - module: trellis.models.transforms.fft_pricer
-        symbol: fft_price
-        role: transform_pricer
-      - module: trellis.models.transforms.cos_method
-        symbol: cos_price
-        role: transform_pricer
-        required: false
-    adapters:
-      - build_vector_safe_characteristic_function
-    notes:
-      - "Characteristic functions must be array-safe for transform pricing."
+    conditional_primitives:
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+        primitives:
+          - module: trellis.models.equity_option_transforms
+            symbol: price_vanilla_equity_option_transform
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use `trellis.models.equity_option_transforms.price_vanilla_equity_option_transform(...)` directly for vanilla European equity transform routes."
+          - "Treat transform generation as a thin adapter over the checked helper; do not rebuild GBM characteristic functions, put/call parity, or raw FFT/COS argument plumbing inline."
+      - when: default
+        primitives:
+          - module: trellis.models.transforms.fft_pricer
+            symbol: fft_price
+            role: transform_pricer
+          - module: trellis.models.transforms.cos_method
+            symbol: cos_price
+            role: transform_pricer
+            required: false
+        adapters:
+          - build_vector_safe_characteristic_function
+        notes:
+          - "Characteristic functions must be array-safe for transform pricing."
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -961,6 +1030,7 @@ routes:
       methods: [pde_solver]
       instruments: [european_option]
       payoff_family: [vanilla_option]
+      exercise: [european]
     admissibility:
       control_styles: [identity, holder_max]
       event_support: none
@@ -969,6 +1039,8 @@ routes:
       supported_outputs: [price, scenario_pnl]
       supports_sensitivity_outputs: true
       supported_state_tags: [terminal_markov, recombining_safe]
+      supported_operator_families: [black_scholes_1d]
+      supported_event_transform_kinds: []
       supports_calibration: false
     primitives:
       - module: trellis.models.equity_option_pde
@@ -994,14 +1066,60 @@ routes:
     match:
       methods: [pde_solver]
     admissibility:
-      control_styles: [identity, holder_max]
+      control_styles: [identity, holder_max, issuer_min]
       event_support: none
       phase_sensitivity: default_phase_order_only
       multicurrency_support: single_currency_only
       supported_outputs: [price, scenario_pnl]
       supports_sensitivity_outputs: true
       supported_state_tags: [terminal_markov, recombining_safe]
-      supports_calibration: false
+      supported_operator_families: [black_scholes_1d, hull_white_1f]
+      supported_event_transform_kinds: [add_cashflow, project_max, project_min]
+      supports_calibration: true
+    conditional_primitives:
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [american, bermudan]
+          model_family: [equity, equity_diffusion]
+        primitives:
+          - module: trellis.models.equity_option_pde
+            symbol: price_event_aware_equity_option_pde
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use `trellis.models.equity_option_pde.price_event_aware_equity_option_pde(...)` for bounded holder-max equity PDE routes."
+          - "Keep the adapter thin: resolve market-state discount/vol inputs and let the checked helper assemble `EventAwarePDEProblem` buckets for Bermudan or American exercise."
+      - when:
+          payoff_family: callable_fixed_income
+          exercise_style: [issuer_call]
+          model_family: [interest_rate, short_rate]
+        primitives:
+          - module: trellis.models.callable_bond_pde
+            symbol: price_callable_bond_pde
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use `trellis.models.callable_bond_pde.price_callable_bond_pde(...)` for bounded issuer-min callable-bond PDE routes."
+          - "Keep the adapter thin: resolve discount and Black-vol inputs, then let the checked helper assemble short-rate `add_cashflow` and `project_min` event buckets on the shared `EventAwarePDEProblem` substrate."
+      - when: default
+        primitives:
+          - module: trellis.models.pde.grid
+            symbol: Grid
+            role: grid
+          - module: trellis.models.pde.operator
+            symbol: BlackScholesOperator
+            role: spatial_operator
+          - module: trellis.models.pde.theta_method
+            symbol: theta_method_1d
+            role: time_stepping
+        adapters:
+          - define_operator_boundary_terminal_conditions
+        notes:
+          - "Construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray before calling `theta_method_1d(grid, operator, terminal_condition, theta=...)`."
+          - "Use `BlackScholesOperator(sigma_fn, r_fn)` with callable inputs; do not invent `log_grid_pde` or `uniform_grid_pde` helper names."
+          - "For American puts, pass `exercise_values` and `exercise_fn=max` instead of a bare `AMERICAN` constant or a `psor_pde` alias."
+          - "For barrier or digital payoffs, keep `lower_bc_fn` / `upper_bc_fn` callables explicit and use `rannacher_timesteps` to smooth the first backward steps."
+          - "Do not pass a callable terminal payoff into `theta_method_1d`; the solver expects an ndarray and will copy it internally."
     primitives:
       - module: trellis.models.pde.grid
         symbol: Grid
@@ -1049,9 +1167,16 @@ routes:
       - module: trellis.models.copulas.factor
         symbol: FactorCopula
         role: loss_distribution
+      - module: trellis.models.credit_basket_copula
+        symbol: price_credit_basket_tranche
+        role: route_helper
+      - module: trellis.models.copulas.student_t
+        symbol: StudentTCopula
+        role: loss_distribution
     adapters:
       - map_credit_curve_to_marginal_default_probabilities
-    notes: []
+    notes:
+      - "Prefer the semantic-facing basket-credit helper for tranche-style CDO requests instead of rebuilding copula initialization or tranche-loss projection inline."
     market_data_access:
       required:
         credit_curve: [market_state.credit_curve]

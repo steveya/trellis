@@ -1,0 +1,32 @@
+category: convention
+title: CDS curve input validation
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-08T16:01:42.057506'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_160143_swap_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - discounting
+  - fixed_coupons
+  - floating_coupons
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: Build gate blocks analytical CDS pricing with unsupported_state_tag errors
+  and missing required credit_curve input.
+root_cause: The analytical route was assembled without a validated CDS credit curve
+  contract, including term-structured hazard rates, spread units, and coupon/day-count
+  conventions. This caused the route admissibility check to reject the product before
+  pricing could run.
+fix: Add an explicit CDS contract/curve adapter that validates and passes the credit_curve,
+  discount_curve, spread units, recovery, and quarterly Act/360 schedule into the
+  analytical pricer. Ensure the analytics consume term-dependent hazard rates rather
+  than a flat hazard assumption.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: con_043

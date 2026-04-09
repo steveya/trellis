@@ -1,0 +1,30 @@
+category: numerical
+title: Use required copula primitives
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T17:19:34.279843'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_171936_cdo_copula.yaml
+applies_when:
+  method:
+  - copula
+  features:
+  - credit_risk
+  - path_dependent
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: Build fails with assembly.required_primitive_missing and mentions GaussianCopula
+  and price_nth_to_default_basket were not used.
+root_cause: The generated payoff bypassed the required route primitives and assembled
+  the CDO payoff directly, so the compiler could not validate the selected copula
+  route. This usually happens when tranche logic is built as a custom kernel instead
+  of a thin adapter around the approved basket-default and copula primitives.
+fix: Rebuild the payoff as an adapter that calls trellis.models.copulas.gaussian.GaussianCopula
+  and trellis.instruments.nth_to_default.price_nth_to_default_basket. Keep tranche
+  aggregation, attachment/detachment, and spread calculation outside the primitive,
+  but do not replace the required default-basket pricing route.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: num_046

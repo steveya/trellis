@@ -1,0 +1,30 @@
+category: monte_carlo
+title: Missing payoff contract shape
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-06T17:27:08.248338'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - greeks
+  - monte_carlo
+  instrument: []
+  error_signature: null
+symptom: Build stops with decision=clarification and reports missing contract field
+  semantic_product_shape before payoff generation.
+root_cause: The Monte Carlo generator was asked to extend variance-reduction logic
+  without an explicit product shape and payoff contract. As a result, the DSL could
+  not determine the payoff structure, exercise assumptions, or schedule needed to
+  emit valid code.
+fix: Require semantic_product_shape, schedule, and payoff assumptions as explicit
+  inputs before generating the MC pricer. Add a preflight contract check that fails
+  fast when payoff shape or exercise-style metadata is missing, instead of attempting
+  code synthesis.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: mc_085

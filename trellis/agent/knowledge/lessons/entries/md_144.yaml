@@ -1,0 +1,30 @@
+category: market_data
+title: Pass required bond fields explicitly
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-07T13:22:41.394581'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_132243_callable_bond_pde_solver.yaml
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: 'price_callable_bond_pde() raises TypeError: got an unexpected keyword argument
+  ''notional'''
+root_cause: The pricer wrapper called a lower-level PDE pricing function with a field
+  name that is not in its signature. This usually happens when product-state conversion
+  is incomplete and instrument terms are passed through without adapting to the kernel's
+  expected arguments.
+fix: Map the bond specification into the exact argument names accepted by the pricing
+  kernel before calling it. Add an adapter layer that converts schedule, coupon, par/notional,
+  call dates, and curve inputs early and validates the callable-bond schema against
+  the solver signature.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: md_144

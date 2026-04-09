@@ -34,6 +34,7 @@ class TestCookbooks:
         expected = {
             "analytical",
             "calibration",
+            "credit",
             "rate_tree",
             "monte_carlo",
             "qmc",

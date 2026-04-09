@@ -1,0 +1,32 @@
+category: market_data
+title: CDS curve inputs and units
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:35:22.558553'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_163524_swap_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - credit_risk
+  - discounting
+  - fixed_coupons
+  - floating_coupons
+  - spread_computation
+  instrument: []
+  error_signature: null
+symptom: Build gate blocked pre-generation with route admissibility failed for credit_default_swap_analytical
+  due to unsupported_state_tag errors and missing credit curve validation.
+root_cause: The pricing path lacked a validated CDS credit curve with correct term
+  structure and unit conventions, so the analytical route could not be bound to the
+  required hazard/survival inputs. The system also missed the contract specification
+  needed to align premium-leg cashflow conventions with the discount curve.
+fix: Provide a CDS-specific input adapter that validates the IG credit curve, tenor
+  interpolation/bootstrapped hazard rates, recovery rate, and premium-leg day count
+  before pricing. Enforce unit consistency for spread, hazard, and discount factors,
+  and reject flat-hazard assumptions when a term structure is available.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: md_155

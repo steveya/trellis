@@ -263,6 +263,141 @@ def test_compile_build_request_respects_quanto_preferred_monte_carlo_route():
     assert compiled.semantic_blueprint.selection_reason == compiled.pricing_plan.selection_reason
 
 
+def test_compile_build_request_preserves_swaption_conventions_and_hw_bindings():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        (
+            "European payer swaption. Expiry: 2025-11-15. Underlying: 5Y fixed-for-float interest "
+            "rate swap. Strike (fixed rate): 3%. Fixed leg: semi-annual, 30/360. "
+            "Float leg: quarterly 3M SOFR, Act/360. Use the USD OIS curve for discounting "
+            "and the SOFR-3M forecast curve for forward rate projection."
+        ),
+        instrument_type="swaption",
+        preferred_method="rate_tree",
+    )
+
+    assert compiled.semantic_contract is not None
+    assert compiled.semantic_blueprint is not None
+    assert compiled.semantic_contract.product.term_fields["fixed_leg_day_count"] == "THIRTY_360"
+    assert compiled.semantic_contract.product.term_fields["float_leg_day_count"] == "ACT_360"
+    assert compiled.semantic_contract.product.term_fields["rate_index"] == "USD-SOFR-3M"
+    assert compiled.semantic_blueprint.valuation_context is not None
+    assert compiled.semantic_blueprint.valuation_context.engine_model_spec is not None
+    assert compiled.semantic_blueprint.valuation_context.engine_model_spec.model_name == "hull_white_1f"
+    assert (
+        compiled.semantic_blueprint.valuation_context.engine_model_spec.rates_curve_roles.rate_index
+        == "usd-sofr-3m"
+    )
+    assert compiled.semantic_blueprint.calibration_step is not None
+    assert compiled.semantic_blueprint.market_binding_spec is not None
+    assert "model_parameters" in compiled.semantic_blueprint.market_binding_spec.derivable_inputs
+
+
+def test_compile_comparison_request_keeps_semantic_swaption_method_plans():
+    from trellis.agent.platform_requests import (
+        compile_platform_request,
+        make_comparison_request,
+    )
+
+    request = make_comparison_request(
+        description=(
+            "European payer swaption. Expiry: 2025-11-15. Underlying: 5Y fixed-for-float "
+            "interest rate swap. Strike (fixed rate): 3%. Fixed leg: semi-annual, "
+            "30/360. Float leg: quarterly 3M SOFR, Act/360. Use the USD OIS curve "
+            "for discounting and the SOFR-3M forecast curve for forward rate projection."
+        ),
+        instrument_type="swaption",
+        methods=["analytical", "rate_tree", "monte_carlo"],
+        reference_method="analytical",
+    )
+
+    compiled = compile_platform_request(request)
+
+    assert compiled.semantic_contract is not None
+    assert compiled.semantic_contract.semantic_id == "rate_style_swaption"
+    assert len(compiled.comparison_method_plans) == 3
+    assert all(plan.semantic_blueprint is not None for plan in compiled.comparison_method_plans)
+    tree_plan = next(plan for plan in compiled.comparison_method_plans if plan.preferred_method == "rate_tree")
+    mc_plan = next(plan for plan in compiled.comparison_method_plans if plan.preferred_method == "monte_carlo")
+    assert tree_plan.semantic_blueprint.valuation_context.engine_model_spec.model_name == "hull_white_1f"
+    assert mc_plan.semantic_blueprint.valuation_context.engine_model_spec.model_name == "hull_white_1f"
+    assert tree_plan.semantic_blueprint.calibration_step is not None
+    assert mc_plan.semantic_blueprint.calibration_step is not None
+
+
+def test_compile_comparison_request_preserves_explicit_swaption_comparison_regime_for_all_methods():
+    from trellis.agent.platform_requests import (
+        compile_platform_request,
+        make_comparison_request,
+    )
+
+    request = make_comparison_request(
+        description=(
+            "European payer swaption. Expiry: 2025-11-15. Underlying: 5Y fixed-for-float "
+            "interest rate swap. Strike (fixed rate): 3%. Fixed leg: semi-annual, "
+            "30/360. Float leg: quarterly 3M SOFR, Act/360. Use the USD OIS curve "
+            "for discounting and the SOFR-3M forecast curve for forward rate projection. "
+            "Hull-White model: mean reversion a=0.05, vol sigma=0.01."
+        ),
+        instrument_type="swaption",
+        methods=["analytical", "rate_tree", "monte_carlo"],
+        reference_method="analytical",
+    )
+
+    compiled = compile_platform_request(request)
+    plans = {
+        plan.preferred_method: plan
+        for plan in compiled.comparison_method_plans
+    }
+
+    for method in ("analytical", "rate_tree", "monte_carlo"):
+        blueprint = plans[method].semantic_blueprint
+        assert blueprint is not None
+        engine_model_spec = blueprint.valuation_context.engine_model_spec
+        assert engine_model_spec is not None
+        assert engine_model_spec.model_name == "hull_white_1f"
+        assert engine_model_spec.parameter_overrides["mean_reversion"] == pytest.approx(0.05)
+        assert engine_model_spec.parameter_overrides["sigma"] == pytest.approx(0.01)
+        assert engine_model_spec.parameter_overrides["quote_family"] == "implied_vol"
+        assert engine_model_spec.parameter_overrides["quote_convention"] == "black"
+        assert engine_model_spec.parameter_overrides["quote_subject"] == "swaption"
+
+
+def test_compile_comparison_request_does_not_treat_llm_model_name_as_pricing_model():
+    from trellis.agent.platform_requests import (
+        compile_platform_request,
+        make_comparison_request,
+    )
+
+    request = make_comparison_request(
+        description=(
+            "European payer swaption. Expiry: 2025-11-15. Underlying: 5Y fixed-for-float "
+            "interest rate swap. Strike (fixed rate): 3%. Fixed leg: semi-annual, "
+            "30/360. Float leg: quarterly 3M SOFR, Act/360. Use the USD OIS curve "
+            "for discounting and the SOFR-3M forecast curve for forward rate projection. "
+            "Hull-White model: mean reversion a=0.05, vol sigma=0.01."
+        ),
+        instrument_type="swaption",
+        methods=["analytical", "rate_tree", "monte_carlo"],
+        reference_method="analytical",
+        model="gpt-5.4-mini",
+    )
+
+    compiled = compile_platform_request(request)
+    plans = {
+        plan.preferred_method: plan
+        for plan in compiled.comparison_method_plans
+    }
+
+    for method in ("analytical", "rate_tree", "monte_carlo"):
+        blueprint = plans[method].semantic_blueprint
+        assert blueprint is not None
+        assert blueprint.valuation_context.model_spec != "gpt-5.4-mini"
+        assert blueprint.valuation_context.engine_model_spec is not None
+        assert blueprint.valuation_context.engine_model_spec.model_name == "hull_white_1f"
+
+
 def test_compile_build_request_preserves_missing_route_state_for_range_accrual_semantics():
     from trellis.agent.platform_requests import compile_build_request
 

@@ -1,0 +1,31 @@
+category: backward_induction
+title: Invalid control flow in tree builder
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-08T16:55:11.513189'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_165513_european_option_rate_tree.yaml
+applies_when:
+  method:
+  - rate_tree
+  features:
+  - backward_induction
+  - discounting
+  - mean_reversion
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Build fails with a SyntaxError inside the rate-tree constructor path, often
+  at an unexpected `else`, `break`, or `except` line.
+root_cause: The generated pricing module contained malformed control-flow blocks in
+  the lattice construction and fallback logic, so the interpreter could not parse
+  the implementation before any pricing logic executed. This prevented the required
+  backward-induction payoff from being built at all.
+fix: Use a minimal, syntactically valid tree-construction path with explicit `try/except`
+  structure and no dangling `else/break` fragments. Ensure the option payoff is implemented
+  through lattice backward induction primitives only, with a single well-formed constructor
+  fallback chain.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: bi_026

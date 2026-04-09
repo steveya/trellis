@@ -2,49 +2,44 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Protocol
 
 import trellis.models.trees.models as tree_models
 
-from trellis.core.date_utils import year_fraction
-from trellis.core.types import DayCountConvention
-from trellis.models.hull_white_parameters import resolve_hull_white_parameters
 from trellis.models.trees.lattice import RecombiningLattice, build_generic_lattice
-from trellis.models.zcb_option import (
-    VolSurfaceLike,
-    normalize_zcb_option_strike,
+from trellis.models.resolution.short_rate_claims import (
+    DiscountBondClaimSpecLike,
+    ResolvedDiscountBondClaim,
+    ShortRateClaimMarketStateLike,
+    resolve_discount_bond_claim_inputs,
 )
 
 
-class DiscountCurveLike(Protocol):
-    """Discount interface required by the tree helpers."""
-
-    def discount(self, t: float) -> float:
-        """Return a discount factor to time ``t``."""
-        ...
-
-    def zero_rate(self, t: float) -> float:
-        """Return the zero rate to time ``t``."""
-        ...
-
-
-class ZCBOptionTreeMarketStateLike(Protocol):
+class ZCBOptionTreeMarketStateLike(ShortRateClaimMarketStateLike, Protocol):
     """Market-state interface required by the tree helpers."""
 
-    as_of: date | None
-    settlement: date | None
-    discount: DiscountCurveLike | None
-    vol_surface: VolSurfaceLike | None
 
-
-class ZCBOptionSpecLike(Protocol):
+class ZCBOptionSpecLike(DiscountBondClaimSpecLike, Protocol):
     """Spec fields consumed by the tree helpers."""
 
-    notional: float
-    strike: float
-    expiry_date: date
-    bond_maturity_date: date
+
+def _resolve_tree_claim(
+    market_state: ZCBOptionTreeMarketStateLike,
+    spec: ZCBOptionSpecLike,
+    *,
+    model: str,
+    mean_reversion: float | None,
+    sigma: float | None,
+) -> ResolvedDiscountBondClaim:
+    """Resolve one discount-bond option claim for tree construction."""
+    return resolve_discount_bond_claim_inputs(
+        market_state,
+        spec,
+        model=model,
+        mean_reversion=mean_reversion,
+        sigma=sigma,
+        default_mean_reversion=0.1,
+    )
 
 
 def build_zcb_option_lattice(
@@ -57,41 +52,24 @@ def build_zcb_option_lattice(
     n_steps: int | None = None,
 ) -> RecombiningLattice:
     """Build the calibrated rate tree used by a ZCB option."""
-    settlement = _settlement_date(market_state, spec)
+    claim = _resolve_tree_claim(
+        market_state,
+        spec,
+        model=model,
+        mean_reversion=mean_reversion,
+        sigma=sigma,
+    )
     discount_curve = market_state.discount
     if discount_curve is None:
         raise ValueError("ZCB option tree pricing requires market_state.discount")
-    if market_state.vol_surface is None:
-        if sigma is None:
-            raise ValueError("ZCB option tree pricing requires market_state.vol_surface")
 
-    day_count = getattr(spec, "day_count", DayCountConvention.ACT_365)
-    t_exp = year_fraction(settlement, spec.expiry_date, day_count)
-    t_bond = year_fraction(settlement, spec.bond_maturity_date, day_count)
-    if t_bond <= 0.0:
-        raise ValueError("bond_maturity_date must be after settlement")
-    if t_bond <= t_exp:
-        raise ValueError("bond_maturity_date must be after expiry_date")
-
-    strike_unit = normalize_zcb_option_strike(spec.strike, spec.notional)
-    r0 = float(discount_curve.zero_rate(max(min(t_exp, t_bond), 1e-6)))
-    default_sigma = sigma
-    if market_state.vol_surface is not None:
-        default_sigma = float(market_state.vol_surface.black_vol(max(t_exp, 1e-6), strike_unit))
-    resolved_mean_reversion, resolved_sigma = resolve_hull_white_parameters(
-        market_state,
-        mean_reversion=mean_reversion,
-        sigma=sigma,
-        default_mean_reversion=0.1,
-        default_sigma=default_sigma,
-    )
-    step_count = int(n_steps or min(400, max(100, int(t_bond * 24))))
+    step_count = int(n_steps or min(400, max(100, int(claim.bond_maturity_time * 24))))
     return build_generic_lattice(
         tree_models.MODEL_REGISTRY[str(model).strip().lower()],
-        r0=r0,
-        sigma=resolved_sigma,
-        a=resolved_mean_reversion,
-        T=float(t_bond),
+        r0=float(claim.regime.initial_rate),
+        sigma=float(claim.regime.sigma),
+        a=float(claim.regime.mean_reversion),
+        T=float(claim.bond_maturity_time),
         n_steps=step_count,
         discount_curve=discount_curve,
     )
@@ -100,15 +78,11 @@ def build_zcb_option_lattice(
 def price_zcb_option_on_lattice(
     lattice: RecombiningLattice,
     *,
-    spec: ZCBOptionSpecLike,
-    settlement: date,
+    claim: ResolvedDiscountBondClaim,
 ) -> float:
     """Price a European option on a ZCB using a pre-built calibrated lattice."""
-    day_count = getattr(spec, "day_count", DayCountConvention.ACT_365)
-    t_exp = year_fraction(settlement, spec.expiry_date, day_count)
-    t_bond = year_fraction(settlement, spec.bond_maturity_date, day_count)
-    exp_step = int(round(t_exp / lattice.dt))
-    bond_step = int(round(t_bond / lattice.dt))
+    exp_step = int(round(claim.expiry_time / lattice.dt))
+    bond_step = int(round(claim.bond_maturity_time / lattice.dt))
     if bond_step > lattice.n_steps:
         raise ValueError(
             f"Lattice horizon {lattice.n_steps} is shorter than bond maturity step {bond_step}"
@@ -126,17 +100,13 @@ def price_zcb_option_on_lattice(
             )
         zcb_values = new_vals
 
-    strike = float(spec.strike)
-    notional = float(spec.notional)
-    option_type = _resolve_option_type(spec)
-    unit_strike = normalize_zcb_option_strike(strike, notional)
     payoff = []
     for node in range(lattice.n_nodes(exp_step)):
         bond_unit_price = float(zcb_values[node])
-        if option_type == "put":
-            payoff.append(max(unit_strike - bond_unit_price, 0.0) * notional)
+        if claim.option_type == "put":
+            payoff.append(max(claim.strike_unit - bond_unit_price, 0.0) * claim.notional)
         else:
-            payoff.append(max(bond_unit_price - unit_strike, 0.0) * notional)
+            payoff.append(max(bond_unit_price - claim.strike_unit, 0.0) * claim.notional)
 
     values = payoff
     for step in range(exp_step - 1, -1, -1):
@@ -162,7 +132,13 @@ def price_zcb_option_tree(
     n_steps: int | None = None,
 ) -> float:
     """Build the requested tree and return the ZCB option PV."""
-    settlement = _settlement_date(market_state, spec)
+    claim = _resolve_tree_claim(
+        market_state,
+        spec,
+        model=model,
+        mean_reversion=mean_reversion,
+        sigma=sigma,
+    )
     lattice = build_zcb_option_lattice(
         market_state,
         spec,
@@ -173,33 +149,8 @@ def price_zcb_option_tree(
     )
     return price_zcb_option_on_lattice(
         lattice,
-        spec=spec,
-        settlement=settlement,
+        claim=claim,
     )
-
-
-def _resolve_option_type(spec) -> str:
-    option_type = getattr(spec, "option_type", None)
-    if option_type is not None:
-        normalized = str(option_type).strip().lower()
-        if normalized in {"call", "put"}:
-            return normalized
-        if normalized == "payer":
-            return "put"
-        if normalized == "receiver":
-            return "call"
-    if hasattr(spec, "is_call"):
-        return "call" if bool(spec.is_call) else "put"
-    if hasattr(spec, "is_payer"):
-        return "put" if bool(spec.is_payer) else "call"
-    return "call"
-
-
-def _settlement_date(market_state, spec) -> date:
-    settlement = getattr(market_state, "settlement", None) or getattr(market_state, "as_of", None)
-    if settlement is None:
-        return spec.expiry_date
-    return settlement
 
 
 __all__ = [

@@ -1,0 +1,33 @@
+category: numerical
+title: Need explicit option shape
+severity: critical
+status: validated
+confidence: 0.7
+created: '2026-04-06T17:35:55.605163'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - fixed_coupons
+  - vol_surface_dependence
+  - characteristic_function
+  - fft_pricing
+  - cos_method
+  - greeks
+  instrument: []
+  error_signature: null
+symptom: Build fails with clarification required for missing semantic_product_shape
+  when generating the payoff.
+root_cause: The DSL request did not specify the product shape, schedule, and payoff
+  assumptions needed to construct a vanilla option payoff. Without those contract
+  fields, the analytical branch cannot generate a valid pricing kernel or payoff template.
+fix: Require the product shape and schedule inputs up front, including call/put direction,
+  strike, maturity, and settlement conventions. Then route the analytical branch through
+  the established date utilities and payoff cookbook template before extending transforms
+  or Greeks.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: num_034

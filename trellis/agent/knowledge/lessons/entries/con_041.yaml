@@ -1,0 +1,29 @@
+category: convention
+title: Swaption helper payoff mismatch
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T15:06:16.175947'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_150617_swaption_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Generated payoff 0.012948 deviates from helper reference 0.000455 at rate=3.00%,
+  vol=15.00%.
+root_cause: The implementation likely mixed swaption payoff conventions or used inconsistent
+  rate/annuity units when mapping Black76 inputs to the helper reference. This produces
+  a correctly shaped payoff formula with the wrong scale, especially when fixed/float
+  accrual conventions and notional normalization are not aligned.
+fix: Use a single swaption convention contract for forward swap rate, annuity, strike,
+  vol, and notional scaling, and validate all quantities in the same units before
+  pricing. Add a helper-consistency test that checks the analytical payoff against
+  the reference across rates/vols and rejects any curve or accrual mismatch early.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: con_041

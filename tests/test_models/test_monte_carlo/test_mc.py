@@ -19,6 +19,7 @@ from trellis.models.processes.heston import (
 )
 from trellis.models.monte_carlo.discretization import euler_maruyama, exact_simulation, milstein
 from trellis.models.monte_carlo.engine import MonteCarloEngine
+import trellis.models.monte_carlo.local_vol as local_vol_module
 from trellis.models.monte_carlo.local_vol import (
     local_vol_european_vanilla_price,
     local_vol_european_vanilla_price_result,
@@ -575,6 +576,44 @@ class TestLocalVolMonteCarlo:
 
         assert isinstance(result, float)
         assert result >= 0.0
+
+    def test_local_vol_helper_delegates_to_event_aware_runtime(self, monkeypatch):
+        calls = {}
+
+        def fake_build(problem_spec):
+            calls["problem_spec"] = problem_spec
+            return "compiled_problem"
+
+        def fake_price(problem, *, n_paths, seed, return_paths):
+            calls["problem"] = problem
+            calls["n_paths"] = n_paths
+            calls["seed"] = seed
+            calls["return_paths"] = return_paths
+            return {"price": 12.34, "std_error": 0.56, "n_paths": n_paths}
+
+        monkeypatch.setattr(local_vol_module, "build_event_aware_monte_carlo_problem", fake_build)
+        monkeypatch.setattr(local_vol_module, "price_event_aware_monte_carlo", fake_price)
+
+        result = local_vol_european_vanilla_price_result(
+            spot=100.0,
+            strike=100.0,
+            maturity=1.0,
+            discount_curve=YieldCurve.flat(0.03),
+            local_vol_surface=lambda s, t: 0.20,
+            n_paths=512,
+            n_steps=16,
+            seed=5,
+        )
+
+        assert calls["problem"] == "compiled_problem"
+        assert calls["n_paths"] == 512
+        assert calls["seed"] == 5
+        assert calls["return_paths"] is False
+        assert calls["problem_spec"].process_spec.family == "local_vol_1d"
+        assert calls["problem_spec"].path_requirement_kind == "terminal_only"
+        assert result.price == pytest.approx(12.34)
+        assert result.std_error == pytest.approx(0.56)
+        assert result.n_paths == 512
 
 
 # ---------------------------------------------------------------------------

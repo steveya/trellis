@@ -1,0 +1,40 @@
+category: monte_carlo
+title: Use market_state sources consistently
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-08T19:13:29.715379'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The analytical Black-Scholes path bypassed the required market_state.discount
+  and market_state.vol_surface inputs.
+root_cause: The implementation mixed in direct formula assumptions instead of reading
+  pricing inputs from the market state abstraction. That breaks the model API contract
+  and can make validation fail even when the math is correct.
+fix: Refactor the analytical route to derive present value from market_state.discount
+  and volatility from market_state.vol_surface, keeping all pricing inputs source-consistent.
+validation: "Resolved during build of Build a pricer for: Variance reduction: antithetic\
+  \ + control variate + importance sampling\n\nEuropean call option on a non-dividend-paying\
+  \ stock.\nS0=100, K=105, T=1Y, risk-free rate r=5%, volatility sigma=20%.\nRun 100,000\
+  \ paths with the exact GBM scheme.\nCompare four configurations:\n  1. Plain MC\
+  \ (no variance reduction)\n  2. Antithetic variates\n  3. Control variate (use the\
+  \ geometric-average Asian as control)\n  4. Antithetic + control variate combined\n\
+  Report price, standard error, and effective variance reduction ratio\nfor each.\
+  \  All four should converge to the Black-Scholes value;\nmethods 2-4 should show\
+  \ lower standard error than method 1.\n\nConstruct methods: monte_carlo\nComparison\
+  \ targets: plain_mc (monte_carlo), antithetic_mc (monte_carlo), control_variate_mc\
+  \ (monte_carlo), black_scholes (analytical)\nCross-validation harness:\n  internal\
+  \ targets: plain_mc, antithetic_mc, control_variate_mc\n  analytical benchmark:\
+  \ black_scholes\nNew component: ['control_variate_wrapper', 'importance_sampling']\n\
+  \nImplementation target: black_scholes\nPreferred method family: analytical\n\n\
+  Implementation target: black_scholes"
+supersedes: []
+id: mc_127

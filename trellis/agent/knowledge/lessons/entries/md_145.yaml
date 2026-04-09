@@ -1,0 +1,40 @@
+category: market_data
+title: Missing schedule helper
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-07T13:34:26.105586'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - pde_solver
+  features:
+  - callable
+  - fixed_coupons
+  - mean_reversion
+  instrument: []
+  error_signature: null
+symptom: The pricer called generate_schedule without defining or importing it, so
+  the market-state smoke test failed immediately.
+root_cause: 'This is a dependency/assembly error: the pricing logic assumed date-schedule
+  construction existed elsewhere, but the implementation did not actually wire in
+  that helper. In model code, even correct math will fail if basic cashflow infrastructure
+  is missing.'
+fix: Define or import generate_schedule in the pricing module and verify all schedule/date
+  utilities are explicitly passed or bundled with the pricer.
+validation: "Resolved during build of Build a pricer for: Callable bond: HW rate PDE\
+  \ (PSOR) vs HW tree\n\nPrice a 10-year callable bond paying a 5% semi-annual coupon,\
+  \ par $100,\ncallable at par on any coupon date after year 3.\nUse the USD OIS discount\
+  \ curve from the market snapshot (as_of 2024-11-15).\nHull-White model: mean reversion\
+  \ a=0.05, short-rate vol sigma=0.01.\nMethod 1: solve the HW rate PDE backward in\
+  \ time using PSOR to\nenforce the call constraint (issuer calls when continuation\
+  \ value > par).\nMethod 2: Hull-White trinomial/binomial rate tree for comparison.\n\
+  Both methods should agree within 1%.\nCompute callable bond price and option-adjusted\
+  \ spread (OAS).\n\nConstruct methods: pde_solver, rate_tree\nComparison targets:\
+  \ hw_pde_psor (pde_solver), hw_rate_tree (rate_tree)\nCross-validation harness:\n\
+  \  internal targets: hw_pde_psor, hw_rate_tree\n  external targets: quantlib\nNew\
+  \ component: hw_rate_pde_operator\n\nImplementation target: hw_pde_psor\nPreferred\
+  \ method family: pde_solver\n\nImplementation target: hw_pde_psor"
+supersedes: []
+id: md_145

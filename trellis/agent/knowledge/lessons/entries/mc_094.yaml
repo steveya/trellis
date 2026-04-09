@@ -1,0 +1,34 @@
+category: monte_carlo
+title: Fix MC indentation and payoff
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-07T10:07:37.752322'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260407_100739_swaption_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - coupons
+  - discounting
+  - floating_coupons
+  - forward_rate
+  - greeks
+  - mean_reversion
+  - path_dependent
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Generated module fails to parse with SyntaxError/IndentationError around
+  the swaption payoff function and exception block.
+root_cause: The Monte Carlo payoff builder emitted incomplete blocks and stray statements
+  after control flow, causing invalid Python syntax. The generator also mixed payoff
+  logic with recovery code paths without ensuring proper indentation and return flow.
+fix: Generate the payoff function as a complete, indentation-safe template with explicit
+  return paths and no dangling pass/except blocks. Add a syntax-validation step before
+  retrying, and keep the swap PV computation in a separate helper with clear inputs
+  and outputs.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_094

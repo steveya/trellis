@@ -189,22 +189,136 @@ The current compilation path is:
      -> ValuationContext
      -> RequiredDataSpec / MarketBindingSpec
      -> ProductIR
+     -> EventProgramIR / ControlProgramIR
      -> typed route admissibility
      -> family lowering IR
      -> existing checked-in helper or kernel
 
 ``ProductIR`` remains the shared checked summary used by route selection.
 Trellis does not currently use one flat universal numerical IR. The shipped
-lowering boundary is ``ProductIR`` plus family-specific lowering IRs.
+lowering boundary is ``ProductIR`` plus one shared event/control compiler
+program plus family-specific lowering IRs.
+
+The shared semantic compiler program is:
+
+- ``EventProgramIR``
+- ``ControlProgramIR``
+
+That program is now the universal authority for:
+
+- schedule-aware event meaning
+- control/exercise meaning
+- same-day phase ordering carried into numerical lowering
+
+Family IRs do not invent their own event semantics anymore. They project the
+shared program into bounded numerical surfaces that each family can support.
 
 Shipped family IRs:
 
 - ``AnalyticalBlack76IR``
-- ``VanillaEquityPDEIR``
+- ``EventAwareMonteCarloIR`` as the new bounded single-state Monte Carlo family
+  surface
+- ``EventAwarePDEIR``
+- ``VanillaEquityPDEIR`` as the current compatibility wrapper for the vanilla
+  theta-method PDE route
 - ``ExerciseLatticeIR``
 - ``CorrelatedBasketMonteCarloIR``
 - ``CreditDefaultSwapIR``
 - ``NthToDefaultIR``
+
+For PDE routes, the compiler now carries typed sub-specifications inside
+``EventAwarePDEIR``:
+
+- ``PDEStateSpec``
+- ``PDEOperatorSpec``
+- ``PDEEventTimeSpec``
+- ``PDEEventTransformSpec``
+- ``PDEControlSpec``
+- ``PDEBoundarySpec``
+
+Those PDE-specific objects are now projections of the shared
+``EventProgramIR`` / ``ControlProgramIR`` boundary rather than a separate
+family-local event language.
+
+The runtime now has a matching bounded rollback surface under
+``trellis.models.pde.event_aware``:
+
+- ``EventAwarePDEGridSpec``
+- ``EventAwarePDEOperatorSpec``
+- ``EventAwarePDEBoundarySpec``
+- ``EventAwarePDEEventBucket``
+- ``EventAwarePDETransform``
+- ``EventAwarePDEProblemSpec``
+- ``EventAwarePDEProblem``
+
+For Monte Carlo routes, the compiler now also carries a bounded event-aware
+family surface:
+
+- ``MCStateSpec``
+- ``MCProcessSpec``
+- ``MCEventTimeSpec``
+- ``MCEventSpec``
+- ``MCPathRequirementSpec``
+- ``MCPayoffReducerSpec``
+- ``MCControlSpec``
+- ``MCMeasureSpec``
+- ``MCCalibrationBindingSpec``
+- ``EventAwareMonteCarloIR``
+
+Those Monte Carlo-specific objects are likewise projections of the shared
+``EventProgramIR`` / ``ControlProgramIR`` boundary. This is why a European
+rate-style swaption can now carry semantic holder-exercise control at the
+universal layer while still lowering onto an identity-control Monte Carlo
+numerical contract where the exercise right is absorbed into the payoff
+reducer.
+
+The runtime now has the matching bounded problem-assembly surface under
+``trellis.models.monte_carlo.event_aware``:
+
+- ``EventAwareMonteCarloProcessSpec``
+- ``EventAwareMonteCarloEvent``
+- ``EventAwareMonteCarloProblemSpec``
+- ``EventAwareMonteCarloProblem``
+
+That layer resolves bounded process families, compiles deterministic
+event schedules into ``PathEventTimeline`` replay contracts, and assembles
+``StateAwarePayoff`` objects over reduced Monte Carlo state. Trellis still
+does not claim that all vanilla or schedule-driven Monte Carlo routes have
+migrated onto that family. The intended end state is to express the existing
+simple Monte Carlo routes plus bounded one-factor event-driven cases through
+``EventAwareMonteCarloIR`` rather than through generic route-local synthesis.
+
+The first vanilla migration slice is now checked in as well:
+
+- vanilla European Monte Carlo lowers as a terminal-only ``gbm_1d`` family
+  instance with no synthetic event-replay timeline
+- the existing local-vol vanilla helper remains a compatibility surface, but
+  it now delegates into the generic event-aware Monte Carlo runtime rather than
+  owning a separate engine/payoff implementation
+
+In the current tranche this is still a bounded 1D family surface. It makes the
+operator family and event-transform contract explicit before the generic
+rollback assembly is introduced. That rollback layer is now checked in and
+supports deterministic event buckets plus bounded ``identity``,
+``holder_max``, ``issuer_min``, and ``state_remap`` transforms without a
+product-specific rollback loop. ``VanillaEquityPDEIR`` now inherits from that
+surface so the existing vanilla route remains stable while future PDE families
+can migrate onto the same compiler boundary. It is transitional-only: the end
+state is for the vanilla route to emit a plain ``EventAwarePDEIR`` once
+downstream traces and review surfaces no longer rely on the legacy wrapper
+type.
+
+The first migrated runtime consumer is the checked vanilla-equity PDE helper in
+``trellis.models.equity_option_pde``. It now assembles an
+``EventAwarePDEProblem`` with an empty event timeline and ``identity`` control
+instead of maintaining a separate vanilla-only rollback implementation.
+
+For schedule-driven PDE requests, lowering can now preserve explicit event-time
+payloads even when no checked rollback helper exists yet. In that case the
+compiler emits typed event buckets and transform kinds on ``EventAwarePDEIR``
+so lane obligations, admissibility, and traces see normalized semantics such as
+cashflow additions or exercise projections instead of raw ``schedule_state``
+tags leaking past lowering.
 
 Current Proven Families
 -----------------------
@@ -213,6 +327,8 @@ The typed semantic boundary is proven end-to-end for:
 
 - ``analytical_black76`` on vanilla options
 - ``vanilla_equity_theta_pde`` on vanilla options
+- ``pde_theta_1d`` on bounded event-aware 1D rollback, including holder-max
+  equity exercise and issuer-min Hull-White callable bonds
 - ``exercise_lattice`` on callable bonds and Bermudan swaptions
 - ``correlated_basket_monte_carlo`` on ranked-observation baskets
 - ``credit_default_swap_analytical`` and ``credit_default_swap_monte_carlo`` on single-name CDS
@@ -262,7 +378,11 @@ For migrated routes, the compiled blueprint metadata now also records:
 
 That metadata is persisted into platform-request traces so replay tools can see
 the algebra objects that drove helper selection, not just the final module
-list.
+list. The trace boundary now also projects
+``generation_boundary.lowering.family_ir_summary`` as the review-friendly PDE
+surface: operator family, control style, event-transform kinds, event dates,
+and the transitional wrapper state when a route still uses
+``VanillaEquityPDEIR``.
 
 Deferred Scope
 --------------

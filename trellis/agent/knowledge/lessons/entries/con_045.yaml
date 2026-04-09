@@ -1,0 +1,29 @@
+category: convention
+title: Wrong GaussianCopula Constructor
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-08T16:44:55.683461'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_164457_cdo_copula.yaml
+applies_when:
+  method:
+  - copula
+  features:
+  - credit_risk
+  - multi_asset
+  - path_dependent
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Build fails with "GaussianCopula.__init__() got an unexpected keyword argument
+  'n_names'" during the market state smoke test.
+root_cause: The pricing path assumed a Gaussian copula API that accepts portfolio
+  size as a constructor argument, but the actual implementation uses a different object
+  contract. This is a method/interface mismatch rather than a model issue.
+fix: Inspect the copula class signature before wiring the payoff builder and pass
+  only supported arguments. Add an adapter layer that maps tranche/portfolio inputs
+  into the library's expected copula and basket-pricer contract.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: con_045

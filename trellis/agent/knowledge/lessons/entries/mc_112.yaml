@@ -1,0 +1,29 @@
+category: monte_carlo
+title: Respect simulator constructor keywords
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T16:29:55.992508'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_162957_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  - path_dependent
+  - asian
+  instrument: []
+  error_signature: null
+symptom: Build failed with `GBM.__init__() got an unexpected keyword argument 'spot'`
+  during the market-state smoke test.
+root_cause: The generated Monte Carlo wiring passed a non-existent constructor argument
+  (`spot`) to the GBM process. This indicates the route implementation relied on an
+  incorrect primitive signature instead of the actual engine contract.
+fix: Use the exact primitive API expected by the Monte Carlo engine, including the
+  correct state keyword names such as `spot_prices` where required. Add a smoke test
+  for process construction before payoff assembly so signature mismatches fail early.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_112

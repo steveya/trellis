@@ -21,6 +21,12 @@ from typing import Any, Callable, Mapping, get_args, get_origin
 _log = logging.getLogger(__name__)
 
 from trellis.agent.executor import _make_test_payoff, _try_import_existing
+from trellis.agent.instrument_identity import (
+    InstrumentIdentityResolution,
+    normalize_instrument_type,
+    resolve_authoritative_instrument_type,
+    resolve_instrument_identity,
+)
 from trellis.agent.knowledge.methods import is_known_method, normalize_method
 from trellis.agent.planner import FieldDef, SpecSchema
 from trellis.agent.planner import plan_build
@@ -156,6 +162,8 @@ def _compact_market_parameter_source_entry(
             "surface_name": calibration_target.get("surface_name"),
             "quote_family": quote_map.get("quote_family"),
             "quote_convention": quote_map.get("convention"),
+            "quote_subject": quote_map.get("quote_subject"),
+            "quote_unit": quote_map.get("quote_unit"),
             "point_count": fit_diagnostics.get("point_count"),
         }
     return entry
@@ -415,6 +423,51 @@ def build_market_state():
         )
 
 
+def _materialize_task_comparison_regime(task: dict, market_state):
+    """Attach one bounded task-level comparison regime to the runtime market state."""
+    comparison_spec = task.get("comparison_regime")
+    if not isinstance(comparison_spec, Mapping):
+        return market_state
+
+    family = str(
+        comparison_spec.get("family")
+        or comparison_spec.get("regime_family")
+        or comparison_spec.get("kind")
+        or ""
+    ).strip().lower()
+    if family not in {"short_rate", "interest_rate", "rates"}:
+        return market_state
+
+    from trellis.models.resolution.short_rate_claims import ShortRateComparisonRegime
+
+    regime = ShortRateComparisonRegime.from_task_spec(comparison_spec)
+    market_provenance = dict(getattr(market_state, "market_provenance", None) or {})
+    market_provenance["comparison_regime"] = regime.to_payload()
+
+    model_parameter_sets = dict(getattr(market_state, "model_parameter_sets", None) or {})
+    model_parameter_sets[regime.regime_name] = {
+        "model_family": "short_rate_comparison",
+        "regime_name": regime.regime_name,
+        "flat_discount_rate": float(regime.flat_discount_rate),
+        "flat_sigma": float(regime.flat_sigma),
+        "hull_white_mean_reversion": float(regime.hull_white_mean_reversion),
+        "ho_lee_mean_reversion": float(regime.ho_lee_mean_reversion),
+        "source_kind": regime.source_kind,
+    }
+    base_discount = getattr(market_state, "discount", None)
+    max_tenor = getattr(base_discount, "max_tenor", None)
+    if max_tenor is None:
+        max_tenor = 31.0
+
+    return replace(
+        market_state,
+        discount=regime.build_discount_curve(max_tenor=float(max_tenor)),
+        vol_surface=regime.build_vol_surface(),
+        model_parameter_sets=model_parameter_sets or None,
+        market_provenance=market_provenance,
+    )
+
+
 def build_market_snapshot_for_task(task: dict):
     """Resolve a market snapshot for a task-level market spec, if present."""
     market_spec = task.get("market") or {}
@@ -435,6 +488,7 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
     if snapshot is None:
         market_state = fallback_market_state if fallback_market_state is not None else build_market_state()
         market_state = _inject_default_credit_curve_for_task(task, market_state)
+        market_state = _materialize_task_comparison_regime(task, market_state)
         selected_curve_names = _selected_curve_names_from_market_state(market_state)
         market_provenance = dict(getattr(market_state, "market_provenance", None) or {})
         market_context = {
@@ -473,6 +527,7 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
     )
     had_credit_curve_before = getattr(market_state, "credit_curve", None) is not None
     market_state = _inject_default_credit_curve_for_task(task, market_state)
+    market_state = _materialize_task_comparison_regime(task, market_state)
     selected_curve_names = _selected_curve_names_from_market_state(market_state)
     # Add credit_curve to selected_components only when it was runtime-injected for
     # this task (i.e. the task is a credit task and the snapshot had no credit_curve).
@@ -584,70 +639,24 @@ def _effective_task_description(task: dict) -> str:
 
 def task_to_instrument_type(task: dict) -> str | None:
     """Heuristically resolve the most likely instrument type for a task."""
+    return task_to_instrument_identity(task).instrument_type
+
+
+def task_to_instrument_identity(task: dict) -> InstrumentIdentityResolution:
+    """Resolve task instrument identity and record where it came from."""
     title = " ".join(
         part for part in (
             str(task.get("title") or ""),
             str(task.get("description") or ""),
         )
         if part
-    ).lower()
-    mappings = [
-        ("himalaya", "basket_option"),
-        ("ranked observation", "basket_option"),
-        ("remaining constituents", "basket_option"),
-        ("american put", "american_put"),
-        ("american option", "american_option"),
-        ("worst-of", "basket_option"),
-        ("worst of", "basket_option"),
-        ("best-of", "basket_option"),
-        ("best of", "basket_option"),
-        ("rainbow", "basket_option"),
-        ("spread option", "basket_option"),
-        ("basket", "basket_option"),
-        ("european equity call", "european_option"),
-        ("european equity put", "european_option"),
-        ("european call", "european_option"),
-        ("european put", "european_option"),
-        ("european option", "european_option"),
-        ("callable bond", "callable_bond"),
-        ("puttable bond", "puttable_bond"),
-        ("bermudan swaption", "bermudan_swaption"),
-        ("barrier", "barrier_option"),
-        ("asian option", "asian_option"),
-        ("asian", "asian_option"),
-        ("lookback", "barrier_option"),
-        ("autocallable", "autocallable"),
-        ("variance swap", "variance_swap"),
-        ("heston", "heston_option"),
-        ("cev", "european_option"),
-        ("cdo", "cdo"),
-        ("cds", "credit_default_swap"),
-        ("nth-to-default", "nth_to_default"),
-        ("swaption", "swaption"),
-        ("cap", "cap"),
-        ("floor", "floor"),
-        ("convertible", "callable_bond"),
-        ("mbs", "mbs"),
-        ("range accrual", "range_accrual"),
-        ("digital", "european_option"),
-        ("compound option", "european_option"),
-        ("chooser", "european_option"),
-        ("cliquet", "autocallable"),
-        ("double barrier", "barrier_option"),
-        ("quanto", "quanto_option"),
-        ("forward start", "european_option"),
-        ("vanilla option", "european_option"),
-        ("vanilla", "european_option"),
-        ("american", "american_option"),
-        ("european", "european_option"),
-        ("fx", "european_option"),
-        ("swap", "swap"),
-        ("bond", "bond"),
-    ]
-    for pattern, instrument_type in mappings:
-        if pattern in title:
-            return instrument_type
-    return None
+    )
+    return resolve_instrument_identity(
+        title,
+        explicit_instrument_type=task.get("instrument_type"),
+        explicit_source="task.instrument_type",
+        inferred_source="task.title_or_description",
+    )
 
 
 def task_to_semantic_contract(task: dict):
@@ -706,6 +715,7 @@ def _stable_seed(payload: dict[str, Any]) -> int:
 def _runtime_simulation_identity(
     task: dict,
     *,
+    instrument_identity: InstrumentIdentityResolution,
     semantic_contract,
     market_context: dict[str, Any],
 ) -> dict[str, Any]:
@@ -721,7 +731,8 @@ def _runtime_simulation_identity(
         "task_id": task["id"],
         "task_title": task["title"],
         "description": task_to_description(task),
-        "instrument_type": task_to_instrument_type(task),
+        "instrument_type": instrument_identity.instrument_type,
+        "instrument_identity_source": instrument_identity.source,
         "semantic_contract_id": semantic_id,
         "snapshot_reference": snapshot_reference,
         "evaluation_tags": evaluation_tags,
@@ -797,6 +808,7 @@ def _runtime_contract_metadata(
     *,
     description: str,
     instrument_type: str | None,
+    instrument_identity_source: str,
     semantic_contract,
     market_context: dict[str, Any],
     trace_identifier: str | None = None,
@@ -808,6 +820,10 @@ def _runtime_contract_metadata(
     summary = semantic_contract_summary(semantic_contract) if semantic_contract is not None else None
     simulation_identity = _runtime_simulation_identity(
         task,
+        instrument_identity=InstrumentIdentityResolution(
+            instrument_type=instrument_type,
+            source=instrument_identity_source,
+        ),
         semantic_contract=semantic_contract,
         market_context=market_context,
     )
@@ -816,6 +832,7 @@ def _runtime_contract_metadata(
         "task_title": task["title"],
         "description": description,
         "instrument_type": instrument_type,
+        "instrument_identity_source": instrument_identity_source,
         "semantic_contract": summary,
         "semantic_contract_id": getattr(getattr(semantic_contract, "product", None), "semantic_id", None),
         "snapshot_reference": _runtime_snapshot_reference(market_context),
@@ -917,7 +934,8 @@ def run_task(
 
     task_id = task["id"]
     description = _effective_task_description(task)
-    instrument_type = task_to_instrument_type(task)
+    instrument_identity = task_to_instrument_identity(task)
+    instrument_type = instrument_identity.instrument_type
     semantic_contract = task_to_semantic_contract(task)
     construct_methods = _task_construct_methods(task)
     comparison_targets = _task_comparison_targets(task, construct_methods)
@@ -935,6 +953,7 @@ def run_task(
         "task_id": task_id,
         "title": task["title"],
         "instrument_type": instrument_type,
+        "instrument_identity_source": instrument_identity.source,
         "start_time": now_fn().isoformat(),
         "comparison_task": comparison_task,
         "construct_methods": construct_methods,
@@ -952,12 +971,15 @@ def run_task(
             task,
             description=description,
             instrument_type=instrument_type,
+            instrument_identity_source=instrument_identity.source,
             semantic_contract=semantic_contract,
             market_context=market_context,
         )
         base_request_metadata = {
             "task_id": task_id,
             "task_title": task["title"],
+            "instrument_type": instrument_type,
+            "instrument_identity_source": instrument_identity.source,
             "runtime_contract": runtime_contract,
         }
         if knowledge_profile:
@@ -1330,6 +1352,7 @@ def _preferred_method_for_target(target_id: str, construct_methods: list[str]) -
         return normalized_target
 
     explicit_patterns = (
+        ("analytical", "analytical"),
         ("tree", "rate_tree"),
         ("lattice", "rate_tree"),
         ("pde", "pde_solver"),
@@ -1798,7 +1821,13 @@ def _cross_validate_comparison_task(
     from trellis.engine.payoff_pricer import price_payoff
 
     custom_payoff_factory = payoff_factory is not None
-    payoff_factory = payoff_factory or _make_test_payoff
+    if payoff_factory is None:
+        payoff_factory = lambda payoff_cls, spec_schema, settle: _make_test_payoff(
+            payoff_cls,
+            spec_schema,
+            settle,
+            market_state=market_state,
+        )
     price_fn = price_fn or price_payoff
     settle = getattr(market_state, "settlement", DEFAULT_SETTLEMENT)
 
@@ -1934,7 +1963,11 @@ def prepare_existing_task(task: dict, *, model: str = "gpt-5.4-mini") -> Prepare
             generic_payoff_cls = _load_payoff_class_from_plan(generic_plan)
         generic_schema = None
         if generic_payoff_cls is not None:
-            generic_schema = _infer_cached_spec_schema(generic_payoff_cls, task["title"])
+            generic_schema = _infer_cached_spec_schema(
+                generic_payoff_cls,
+                task["title"],
+                instrument_type=instrument_type,
+            )
 
         if generic_payoff_cls is None or generic_schema is None:
             generic_payoff_cls, generic_schema = _load_generic_fallback_cached_agent(task["title"])
@@ -1989,13 +2022,28 @@ def prepare_existing_task(task: dict, *, model: str = "gpt-5.4-mini") -> Prepare
         raise ValueError(
             f"Could not determine a pricing plan for {task['id']} ({instrument_type})"
         )
+    request_metadata = (
+        getattr(getattr(compiled, "request", None), "metadata", {}) or {}
+        if compiled is not None
+        else {}
+    )
+    runtime_contract = dict(request_metadata.get("runtime_contract") or {})
+    authoritative_instrument_type = resolve_authoritative_instrument_type(
+        instrument_type,
+        request_metadata.get("instrument_type"),
+        runtime_contract.get("instrument_type"),
+        getattr(getattr(compiled, "product_ir", None), "instrument", None) if compiled is not None else None,
+        getattr(getattr(compiled, "semantic_blueprint", None), "semantic_id", None)
+        if compiled is not None
+        else None,
+    ) or instrument_type
     preferred_method = getattr(pricing_plan, "method", None)
     try:
         plan = plan_build(
             description,
             pricing_plan.required_market_data,
             model=model,
-            instrument_type=instrument_type,
+            instrument_type=authoritative_instrument_type,
             preferred_method=preferred_method,
         )
     except TypeError as exc:
@@ -2005,29 +2053,36 @@ def prepare_existing_task(task: dict, *, model: str = "gpt-5.4-mini") -> Prepare
             description,
             pricing_plan.required_market_data,
             model=model,
-            instrument_type=instrument_type,
+            instrument_type=authoritative_instrument_type,
         )
     payoff_cls = _try_import_existing(plan)
     spec_schema = plan.spec_schema
 
     if payoff_cls is not None and spec_schema is None:
-        inferred_schema = _infer_cached_spec_schema(payoff_cls, task["title"])
+        inferred_schema = _infer_cached_spec_schema(
+            payoff_cls,
+            task["title"],
+            instrument_type=authoritative_instrument_type,
+        )
         if inferred_schema is not None:
             spec_schema = inferred_schema
 
     if payoff_cls is None or spec_schema is None:
-        payoff_cls, spec_schema = _load_fallback_cached_agent(instrument_type, task["title"])
+        payoff_cls, spec_schema = _load_fallback_cached_agent(
+            authoritative_instrument_type,
+            task["title"],
+        )
 
     if payoff_cls is None or spec_schema is None:
         raise FileNotFoundError(
-            f"No cached agent module found for {task['id']} ({instrument_type})"
+            f"No cached agent module found for {task['id']} ({authoritative_instrument_type})"
         )
 
     return PreparedTask(
         task_id=task["id"],
         title=task["title"],
         description=description,
-        instrument_type=instrument_type,
+        instrument_type=authoritative_instrument_type,
         requirements=set(pricing_plan.required_market_data),
         payoff_cls=payoff_cls,
         spec_schema=spec_schema,
@@ -2058,7 +2113,12 @@ def benchmark_existing_task(
     settle = getattr(market_state, "settlement", DEFAULT_SETTLEMENT)
 
     t0 = timer()
-    payoff = _make_test_payoff(prepared.payoff_cls, prepared.spec_schema, settle)
+    payoff = _make_test_payoff(
+        prepared.payoff_cls,
+        prepared.spec_schema,
+        settle,
+        market_state=market_state,
+    )
     instantiate_seconds = timer() - t0
 
     for _ in range(warmups):
@@ -2144,8 +2204,15 @@ def _load_payoff_class_from_plan(plan) -> type | None:
     return _find_cached_payoff_class(module)
 
 
-def _infer_cached_spec_schema(payoff_cls: type, task_title: str) -> SpecSchema | None:
+def _infer_cached_spec_schema(
+    payoff_cls: type,
+    task_title: str,
+    *,
+    instrument_type: str | None = None,
+) -> SpecSchema | None:
     """Infer a spec schema from a cached generic module if it matches the task."""
+    from trellis.agent.planner import STATIC_SPECS
+
     try:
         module = import_module(payoff_cls.__module__)
     except Exception:
@@ -2154,7 +2221,16 @@ def _infer_cached_spec_schema(payoff_cls: type, task_title: str) -> SpecSchema |
     if not _module_matches_task(module, task_title):
         return None
 
-    return _infer_spec_schema_from_module(module, payoff_cls)
+    inferred = _infer_spec_schema_from_module(module, payoff_cls)
+    if inferred is None:
+        return None
+
+    normalized_instrument = normalize_instrument_type(instrument_type)
+    expected = STATIC_SPECS.get(normalized_instrument)
+    if expected is not None and inferred.spec_name != expected.spec_name:
+        return None
+
+    return inferred
 
 
 def _module_matches_task(module, task_title: str) -> bool:

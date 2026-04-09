@@ -1,0 +1,26 @@
+category: monte_carlo
+title: Use correct GBM state keywords
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-08T17:04:22.296255'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260408_170424_european_option_monte_carlo.yaml
+applies_when:
+  method:
+  - monte_carlo
+  features:
+  - discounting
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: 'Runtime error: GBM.__init__() got an unexpected keyword argument ''spot''.'
+root_cause: The generated Monte Carlo setup passed a non-existent constructor argument
+  to the GBM process state. This usually happens when the pricing template assumes
+  a different process API than the installed engine actually exposes.
+fix: Inspect the process class signature and pass the exact expected keyword names,
+  such as spot_prices instead of spot or spots. Add a smoke test that instantiates
+  the process with the market state before running the full path simulation.
+validation: Discovered during build (attempt 3)
+supersedes: []
+id: mc_119

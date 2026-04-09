@@ -8,10 +8,33 @@ from trellis.agent.family_lowering_ir import (
     AnalyticalBlack76IR,
     CorrelatedBasketMonteCarloIR,
     CreditDefaultSwapIR,
+    EventAwarePDEIR,
+    EventAwareMonteCarloIR,
     ExerciseLatticeIR,
+    MCCalibrationBindingSpec,
+    MCControlSpec,
+    MCEventSpec,
+    MCEventTimeSpec,
+    MCMeasureSpec,
+    MCPathRequirementSpec,
+    MCPayoffReducerSpec,
+    MCProcessSpec,
+    MCStateSpec,
     NthToDefaultIR,
     VanillaEquityPDEIR,
 )
+
+
+def _make_bermudan_equity_pde_contract():
+    from trellis.agent.semantic_contracts import make_american_option_contract
+
+    return make_american_option_contract(
+        description="Bermudan put on AAPL with quarterly exercise dates",
+        underliers=("AAPL",),
+        observation_schedule=("2026-03-20", "2026-06-20", "2026-09-20", "2026-12-20"),
+        preferred_method="pde_solver",
+        exercise_style="bermudan",
+    )
 
 
 def test_vanilla_option_compiles_to_analytical_black76_family_ir():
@@ -54,6 +77,7 @@ def test_vanilla_option_compiles_to_pde_family_ir():
     )
 
     family_ir = blueprint.dsl_lowering.family_ir
+    assert isinstance(family_ir, EventAwarePDEIR)
     assert isinstance(family_ir, VanillaEquityPDEIR)
     assert family_ir.route_id == "vanilla_equity_theta_pde"
     assert family_ir.product_instrument == "european_option"
@@ -62,6 +86,15 @@ def test_vanilla_option_compiles_to_pde_family_ir():
     assert family_ir.theta == 0.5
     assert family_ir.helper_symbol == "price_vanilla_equity_option_pde"
     assert family_ir.market_mapping == "equity_spot_discount_black_vol"
+    assert family_ir.state_spec.state_variable == "spot"
+    assert family_ir.state_spec.dimension == 1
+    assert family_ir.state_spec.state_tags == ("terminal_markov", "recombining_safe")
+    assert family_ir.operator_spec.operator_family == "black_scholes_1d"
+    assert family_ir.operator_spec.solver_family == "theta_method"
+    assert family_ir.control_spec.control_style == "identity"
+    assert family_ir.event_transform_kinds == ()
+    assert family_ir.boundary_spec.terminal_condition_kind == "expiry_payoff"
+    assert family_ir.compatibility_wrapper == "VanillaEquityPDEIR"
     assert family_ir.required_input_ids == blueprint.required_market_data
     assert family_ir.requested_outputs == ("price",)
 
@@ -104,6 +137,7 @@ def test_vanilla_family_ir_ignores_legacy_settlement_rule_mirror():
     )
     pde_bp = compile_semantic_contract(pde, preferred_method="pde_solver")
 
+    assert isinstance(pde_bp.dsl_lowering.family_ir, EventAwarePDEIR)
     assert isinstance(pde_bp.dsl_lowering.family_ir, VanillaEquityPDEIR)
     assert pde_bp.dsl_lowering.route_id == "vanilla_equity_theta_pde"
 
@@ -123,6 +157,83 @@ def test_non_migrated_analytical_swaption_keeps_legacy_lowering_path():
     assert blueprint.dsl_lowering.family_ir is None
 
 
+def test_rate_style_swaption_monte_carlo_compiles_to_event_aware_family_ir():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
+
+    contract = make_rate_style_swaption_contract(
+        description="European payer swaption under Hull-White Monte Carlo",
+        observation_schedule=("2029-11-15",),
+        preferred_method="monte_carlo",
+        exercise_style="european",
+    )
+    blueprint = compile_semantic_contract(contract, preferred_method="monte_carlo")
+
+    family_ir = blueprint.dsl_lowering.family_ir
+    assert isinstance(family_ir, EventAwareMonteCarloIR)
+    assert family_ir.route_id == "monte_carlo_paths"
+    assert family_ir.product_instrument == "swaption"
+    assert family_ir.payoff_family == "swaption"
+    assert family_ir.state_spec.state_variable == "short_rate"
+    assert family_ir.state_spec.dimension == 1
+    assert "schedule_state" in family_ir.state_spec.state_tags
+    assert "recombining_safe" in family_ir.state_spec.state_tags
+    assert family_ir.process_spec.process_family == "hull_white_1f"
+    assert family_ir.process_spec.simulation_scheme == "exact_ou"
+    assert family_ir.control_spec.control_style == "identity"
+    assert family_ir.control_spec.controller_role == "holder"
+    assert family_ir.control_program.control_style == "holder_max"
+    assert family_ir.control_program.controller_role == "holder"
+    assert family_ir.control_program.decision_phase == "decision"
+    assert family_ir.control_program.schedule_role == "decision_dates"
+    assert family_ir.path_requirement_spec.requirement_kind == "event_replay"
+    assert family_ir.path_requirement_spec.replay_mode == "deterministic_timeline"
+    assert "exercise_date" in family_ir.path_requirement_spec.stored_fields
+    assert "swap_rate" in family_ir.path_requirement_spec.stored_fields
+    assert family_ir.payoff_reducer_spec.reducer_kind == "swaption_exercise_payoff"
+    assert family_ir.event_dates == ("2029-11-15",)
+    assert family_ir.event_kinds == ("observation", "exercise", "settlement")
+    assert family_ir.event_program.event_dates == ("2029-11-15",)
+    assert family_ir.event_program.event_kinds == ("observation", "exercise", "settlement")
+    first_bucket = family_ir.event_timeline[0]
+    assert first_bucket.schedule_roles == ("observation_dates", "settlement_dates")
+    assert first_bucket.phase_sequence == ("observation", "settlement")
+    assert tuple(event.event_name for event in first_bucket.events) == (
+        "forward_swap_rate",
+        "discount_curve_state",
+        "price_swaption_at_exercise",
+        "settle_at_exercise",
+        "exercise_cash_settlement",
+    )
+
+
+def test_vanilla_option_monte_carlo_compiles_to_terminal_only_event_aware_family_ir():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+    contract = make_vanilla_option_contract(
+        description="EUR call on AAPL, K=150, T=1y",
+        underliers=("AAPL",),
+        observation_schedule=("2026-06-20",),
+        preferred_method="monte_carlo",
+    )
+    blueprint = compile_semantic_contract(contract, preferred_method="monte_carlo")
+
+    family_ir = blueprint.dsl_lowering.family_ir
+    assert isinstance(family_ir, EventAwareMonteCarloIR)
+    assert family_ir.route_id == "monte_carlo_paths"
+    assert family_ir.product_instrument == "european_option"
+    assert family_ir.payoff_family == "vanilla_option"
+    assert family_ir.helper_symbol == "price_vanilla_equity_option_monte_carlo"
+    assert family_ir.state_spec.state_variable == "spot"
+    assert family_ir.process_spec.process_family == "gbm_1d"
+    assert family_ir.path_requirement_spec.requirement_kind == "terminal_only"
+    assert family_ir.path_requirement_spec.replay_mode == "none"
+    assert family_ir.payoff_reducer_spec.reducer_kind == "terminal_payoff"
+    assert family_ir.event_dates == ()
+    assert family_ir.event_kinds == ()
+
+
 def test_callable_bond_compiles_to_exercise_lattice_family_ir():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_callable_bond_contract
@@ -138,9 +249,84 @@ def test_callable_bond_compiles_to_exercise_lattice_family_ir():
     assert family_ir.route_id == "exercise_lattice"
     assert family_ir.product_instrument == "callable_bond"
     assert family_ir.control_style == "issuer_min"
+    assert family_ir.control_program.control_style == "issuer_min"
+    assert family_ir.control_program.controller_role == "issuer"
     assert family_ir.helper_symbol == "price_callable_bond_tree"
+    assert family_ir.event_program.event_dates == ("2026-01-15", "2027-01-15")
+    assert "add_cashflow" in family_ir.event_program.transform_kinds
+    assert "project_min" in family_ir.event_program.transform_kinds
     assert family_ir.observable_types == ("discount_curve", "cashflow_schedule")
     assert "coupon_accrual_fractions" in family_ir.derived_quantities
+
+
+def test_callable_bond_pde_compiles_to_event_aware_family_ir():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_callable_bond_contract
+
+    contract = make_callable_bond_contract(
+        description="Callable bond with annual coupons and issuer call dates 2026-01-15, 2027-01-15",
+        observation_schedule=("2026-01-15", "2027-01-15"),
+        preferred_method="pde_solver",
+    )
+    blueprint = compile_semantic_contract(contract, preferred_method="pde_solver")
+
+    family_ir = blueprint.dsl_lowering.family_ir
+    assert isinstance(family_ir, EventAwarePDEIR)
+    assert not isinstance(family_ir, VanillaEquityPDEIR)
+    assert family_ir.route_id == "pde_theta_1d"
+    assert family_ir.product_instrument == "callable_bond"
+    assert family_ir.operator_spec.operator_family == "hull_white_1f"
+    assert family_ir.state_spec.state_variable == "short_rate"
+    assert family_ir.state_spec.state_tags == ("terminal_markov", "recombining_safe")
+    assert family_ir.control_spec.control_style == "issuer_min"
+    assert family_ir.control_program.control_style == "issuer_min"
+    assert family_ir.control_program.schedule_role == "decision_dates"
+    assert family_ir.event_transform_kinds == ("add_cashflow", "project_min")
+    assert family_ir.event_dates == ("2026-01-15", "2027-01-15")
+    assert family_ir.event_program.event_dates == ("2026-01-15", "2027-01-15")
+    assert "add_cashflow" in family_ir.event_program.transform_kinds
+    assert "project_min" in family_ir.event_program.transform_kinds
+    assert family_ir.helper_symbol == "price_callable_bond_pde"
+    first_bucket = family_ir.event_timeline[0]
+    assert first_bucket.schedule_roles == ("determination_dates", "decision_dates")
+    assert first_bucket.phase_sequence == ("determination", "decision")
+    assert tuple(transform.transform_kind for transform in first_bucket.transforms) == (
+        "add_cashflow",
+        "project_min",
+    )
+    assert family_ir.boundary_spec.terminal_condition_kind == "cashflow_terminal_value"
+
+
+def test_holder_max_equity_pde_compiles_to_event_aware_helper_family_ir():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+
+    contract = _make_bermudan_equity_pde_contract()
+    blueprint = compile_semantic_contract(contract, preferred_method="pde_solver")
+
+    family_ir = blueprint.dsl_lowering.family_ir
+    assert isinstance(family_ir, EventAwarePDEIR)
+    assert not isinstance(family_ir, VanillaEquityPDEIR)
+    assert family_ir.route_id == "pde_theta_1d"
+    assert family_ir.product_instrument == "american_option"
+    assert family_ir.operator_spec.operator_family == "black_scholes_1d"
+    assert family_ir.state_spec.state_variable == "spot"
+    assert family_ir.control_spec.control_style == "holder_max"
+    assert family_ir.control_program.control_style == "holder_max"
+    assert family_ir.event_transform_kinds == ("project_max",)
+    assert family_ir.helper_symbol == "price_event_aware_equity_option_pde"
+    assert family_ir.event_dates == (
+        "2026-03-20",
+        "2026-06-20",
+        "2026-09-20",
+        "2026-12-20",
+    )
+    assert family_ir.event_program.event_dates == (
+        "2026-03-20",
+        "2026-06-20",
+        "2026-09-20",
+        "2026-12-20",
+    )
+    assert "project_max" in family_ir.event_program.transform_kinds
 
 
 def test_bermudan_swaption_compiles_to_exercise_lattice_family_ir():
@@ -315,6 +501,82 @@ def test_ranked_observation_basket_family_ir_rejects_missing_correlation_input()
 
     with pytest.raises(ValueError, match="correlation data"):
         compile_semantic_contract(contract)
+
+
+def test_event_aware_monte_carlo_ir_collects_typed_event_and_path_contracts():
+    family_ir = EventAwareMonteCarloIR(
+        route_id="monte_carlo_paths",
+        route_family="monte_carlo",
+        product_instrument="swaption",
+        payoff_family="swaption",
+        state_spec=MCStateSpec(
+            state_variable="short_rate",
+            dimension=1,
+            state_tags=("terminal_markov", "schedule_state"),
+        ),
+        process_spec=MCProcessSpec(
+            process_family="hull_white_1f",
+            simulation_scheme="exact_ou",
+        ),
+        path_requirement_spec=MCPathRequirementSpec(
+            requirement_kind="event_replay",
+            reducer_kinds=("discounted_swap_pv",),
+            stored_fields=("exercise_state",),
+        ),
+        payoff_reducer_spec=MCPayoffReducerSpec(
+            reducer_kind="positive_part_at_exercise",
+            output_semantics="swaption_exercise_payoff",
+            event_dependencies=("exercise", "settlement"),
+        ),
+        control_spec=MCControlSpec(
+            control_style="identity",
+            controller_role="holder",
+        ),
+        measure_spec=MCMeasureSpec(
+            measure_family="risk_neutral",
+            numeraire_binding="discount_curve",
+        ),
+        calibration_binding=MCCalibrationBindingSpec(
+            model_family="hull_white_1f",
+            quote_family="black_swaption_vol",
+            required_parameters=("mean_reversion", "sigma"),
+            requires_quote_normalization=True,
+        ),
+        event_timeline=(
+            MCEventTimeSpec(
+                event_date="2027-03-15",
+                schedule_roles=("observation_dates", "settlement_dates"),
+                phase_sequence=("observation", "settlement"),
+                events=(
+                    MCEventSpec(
+                        event_name="exercise",
+                        event_kind="observation",
+                        schedule_role="observation_dates",
+                        phase="observation",
+                        value_semantics="forward_swap_rate",
+                    ),
+                    MCEventSpec(
+                        event_name="settlement",
+                        event_kind="settlement",
+                        schedule_role="settlement_dates",
+                        phase="settlement",
+                        value_semantics="cash_settlement",
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    assert family_ir.state_spec.state_variable == "short_rate"
+    assert family_ir.process_spec.process_family == "hull_white_1f"
+    assert family_ir.path_requirement_spec.requirement_kind == "event_replay"
+    assert family_ir.payoff_reducer_spec.reducer_kind == "positive_part_at_exercise"
+    assert family_ir.event_kinds == ("observation", "settlement")
+    assert family_ir.event_dates == ("2027-03-15",)
+    assert family_ir.reducer_kinds == (
+        "discounted_swap_pv",
+        "positive_part_at_exercise",
+    )
 
 
 def test_credit_default_swap_compiles_to_analytical_family_ir():

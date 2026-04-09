@@ -24,6 +24,7 @@ from run_canary import (
     filter_canaries,
     load_canary_set,
     promote_golden_after_run,
+    run_canaries,
 )
 
 
@@ -170,6 +171,147 @@ class TestDryRun:
         display_dry_run(canaries, meta)
         output = capsys.readouterr().out
         assert "Total estimated cost" in output
+
+
+# ---------------------------------------------------------------------------
+# run_canaries
+# ---------------------------------------------------------------------------
+
+class TestRunCanaries:
+    def test_run_canaries_loads_full_task_registry(self, monkeypatch):
+        seen: dict[str, object] = {}
+
+        def fake_build_market_state():
+            return object()
+
+        def fake_load_tasks(*, status="pending", path=None):
+            seen["status"] = status
+            return [{"id": "T01", "status": "done"}]
+
+        def fake_run_task(task, market_state, **kwargs):
+            seen["task_id"] = task["id"]
+            seen["max_retries"] = kwargs.get("max_retries")
+            return {"task_id": task["id"], "success": True}
+
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.build_market_state",
+            fake_build_market_state,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.load_tasks",
+            fake_load_tasks,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.run_task",
+            fake_run_task,
+        )
+
+        results = run_canaries(
+            [{"id": "T01", "engine_family": "lattice", "complexity": "simple"}],
+            {"total_budget_usd": 1.0},
+        )
+
+        assert seen["status"] is None
+        assert seen["task_id"] == "T01"
+        assert seen["max_retries"] == 3
+        assert results[0]["success"] is True
+
+    def test_run_canaries_executes_done_task_entries(self, monkeypatch):
+        def fake_build_market_state():
+            return object()
+
+        def fake_load_tasks(*, status="pending", path=None):
+            if status is None:
+                return [{"id": "T02", "status": "done"}]
+            return []
+
+        def fake_run_task(task, market_state, **kwargs):
+            return {
+                "task_id": task["id"],
+                "success": True,
+                "token_usage_summary": {"total_tokens": 123},
+            }
+
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.build_market_state",
+            fake_build_market_state,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.load_tasks",
+            fake_load_tasks,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.run_task",
+            fake_run_task,
+        )
+
+        results = run_canaries(
+            [{"id": "T02", "engine_family": "lattice", "complexity": "simple"}],
+            {"total_budget_usd": 1.0},
+        )
+
+        assert results == [
+            {
+                "task_id": "T02",
+                "success": True,
+                "token_usage_summary": {"total_tokens": 123},
+                "canary_id": "T02",
+                "engine_family": "lattice",
+                "complexity": "simple",
+            }
+        ]
+
+    def test_run_canaries_prefers_curated_canary_description(self, monkeypatch):
+        captured: dict[str, object] = {}
+
+        def fake_build_market_state():
+            return object()
+
+        def fake_load_tasks(*, status="pending", path=None):
+            return [
+                {
+                    "id": "T25",
+                    "title": "GBM call: all 4 schemes convergence order",
+                    "construct": "monte_carlo",
+                    "cross_validate": {
+                        "internal": ["euler", "milstein", "exact", "log_euler"],
+                        "analytical": "black_scholes",
+                    },
+                }
+            ]
+
+        def fake_run_task(task, market_state, **kwargs):
+            captured["description"] = task.get("description")
+            captured["construct"] = task.get("construct")
+            return {"task_id": task["id"], "success": True}
+
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.build_market_state",
+            fake_build_market_state,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.load_tasks",
+            fake_load_tasks,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.run_task",
+            fake_run_task,
+        )
+
+        run_canaries(
+            [
+                {
+                    "id": "T25",
+                    "engine_family": "monte_carlo",
+                    "complexity": "simple",
+                    "description": "European call option on a non-dividend-paying stock.",
+                }
+            ],
+            {"total_budget_usd": 1.0},
+        )
+
+        assert captured["description"] == "European call option on a non-dividend-paying stock."
+        assert captured["construct"] == "monte_carlo"
 
 
 # ---------------------------------------------------------------------------

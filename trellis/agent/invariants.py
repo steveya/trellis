@@ -839,6 +839,7 @@ def check_rate_style_swaption_helper_consistency(
     *,
     scenarios: tuple[tuple[float, float], ...] = ((0.03, 0.15), (0.05, 0.20), (0.07, 0.30)),
     tolerance: float = 1e-4,
+    comparison_kwargs: Mapping[str, object] | None = None,
     return_diagnostics: bool = False,
 ) -> list[InvariantFailure] | list[str]:
     """Analytical rate-style swaptions should agree with the checked helper surface."""
@@ -873,13 +874,20 @@ def check_rate_style_swaption_helper_consistency(
     if spec is None or any(not hasattr(spec, field) for field in required_fields):
         return _emit_failures(failures, return_diagnostics=return_diagnostics)
 
+    comparison_kwargs = dict(comparison_kwargs or {})
     sampled_prices: list[dict[str, float]] = []
     for rate, vol in scenarios:
         try:
             market_state = market_state_factory(rate=rate, vol=vol)
             payoff = payoff_factory()
             generated = float(price_payoff(payoff, market_state))
-            reference = float(price_swaption_black76(market_state, _extract_spec(payoff)))
+            reference = float(
+                price_swaption_black76(
+                    market_state,
+                    _extract_spec(payoff),
+                    **comparison_kwargs,
+                )
+            )
             sampled_prices.append(
                 {
                     "rate": float(rate),
@@ -905,6 +913,7 @@ def check_rate_style_swaption_helper_consistency(
                             "tolerance": float(tolerance),
                             "rate": float(rate),
                             "vol": float(vol),
+                            "comparison_kwargs": comparison_kwargs,
                             "sampled_prices": sampled_prices,
                         },
                     )
@@ -922,6 +931,7 @@ def check_rate_style_swaption_helper_consistency(
                         "tolerance": float(tolerance),
                         "rate": float(rate),
                         "vol": float(vol),
+                        "comparison_kwargs": comparison_kwargs,
                         "sampled_prices": sampled_prices,
                     },
                 )
