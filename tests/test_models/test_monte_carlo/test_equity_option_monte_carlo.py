@@ -120,4 +120,3 @@ def test_antithetic_and_control_variate_reduce_standard_error():
 
     assert antithetic.std_error < plain.std_error
     assert control_variate.std_error < plain.std_error
-
