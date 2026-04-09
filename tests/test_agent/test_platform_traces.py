@@ -407,6 +407,50 @@ def test_platform_trace_summarizes_terminal_only_event_aware_monte_carlo_family_
     assert family_ir_summary["compatibility_status"] == "native_event_aware"
 
 
+def test_platform_trace_summary_reads_legacy_top_level_route_binding_fields():
+    from trellis.agent.platform_traces import _construction_identity_summary, _generation_boundary_summary
+
+    lowering = _generation_boundary_summary(
+        SimpleNamespace(
+            request_metadata={
+                "semantic_blueprint": {},
+                "route_binding_authority": {
+                    "route_id": "analytical_black76",
+                    "route_family": "",
+                    "engine_family": "analytical",
+                    "exact_backend_fit": True,
+                },
+            }
+        ),
+        request_metadata={
+            "semantic_blueprint": {},
+            "route_binding_authority": {
+                "route_id": "analytical_black76",
+                "route_family": "",
+                "engine_family": "analytical",
+                "exact_backend_fit": True,
+            },
+        },
+    )["lowering"]
+    construction_identity = _construction_identity_summary(
+        lane_plan={},
+        lowering=lowering,
+        route_binding_authority={
+            "route_id": "analytical_black76",
+            "engine_family": "analytical",
+            "exact_backend_fit": True,
+            "backend_binding": {
+                "binding_id": "trellis.models.rate_style_swaption.price_swaption_black76",
+            },
+        },
+    )
+
+    assert lowering["route_family"] == "analytical"
+    assert construction_identity["primary_kind"] == "backend_binding"
+    assert construction_identity["backend_exact_fit"] is True
+    assert construction_identity["backend_engine_family"] == "analytical"
+
+
 def test_platform_trace_keeps_route_less_semantic_requests_truthful(tmp_path):
     from trellis.agent.platform_requests import compile_build_request
     from trellis.agent.platform_traces import (

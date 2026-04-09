@@ -98,7 +98,6 @@ Implementation target: jamshidian."""
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        spec = self._spec
 
         # Resolve and validate the required market data.
         if market_state.discount is None:

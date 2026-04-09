@@ -481,6 +481,7 @@ def _generation_boundary_summary(
         or str(getattr(primitive_plan, "route_family", "") or "").strip()
         or str(getattr(primitive_plan, "engine_family", "") or "").strip()
         or str(route_binding_authority.get("route_family") or "").strip()
+        or str(route_binding_authority.get("engine_family") or "").strip()
         or str(backend_binding.get("engine_family") or "").strip()
         or None
     )
@@ -581,7 +582,11 @@ def _construction_identity_summary(
     from trellis.agent.route_registry import should_surface_route_alias
 
     backend_binding = dict(route_binding_authority.get("backend_binding") or {})
-    exact_backend_fit = bool(backend_binding.get("exact_backend_fit"))
+    exact_backend_fit = bool(
+        backend_binding.get("exact_backend_fit")
+        if "exact_backend_fit" in backend_binding
+        else route_binding_authority.get("exact_backend_fit")
+    )
     lane_family = str(lane_plan.get("lane_family") or "").strip() or None
     family_ir_type = str(lowering.get("family_ir_type") or "").strip() or None
     route_family = str(lowering.get("route_family") or "").strip() or None
@@ -592,7 +597,11 @@ def _construction_identity_summary(
     )
     route_alias = raw_route_alias if should_surface_route_alias(route_binding_authority) else None
     backend_binding_id = str(backend_binding.get("binding_id") or "").strip() or None
-    backend_engine_family = str(backend_binding.get("engine_family") or "").strip() or None
+    backend_engine_family = (
+        str(backend_binding.get("engine_family") or "").strip()
+        or str(route_binding_authority.get("engine_family") or "").strip()
+        or None
+    )
 
     if exact_backend_fit and backend_binding_id:
         primary_kind = "backend_binding"

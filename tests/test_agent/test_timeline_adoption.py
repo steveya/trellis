@@ -13,8 +13,8 @@ from trellis.curves.yield_curve import YieldCurve
 from trellis.instruments._agent.agentcap import AgentCapPayoff, AgentCapSpec
 from trellis.instruments._agent.swaption import SwaptionPayoff, SwaptionSpec
 from trellis.instruments.cap import CapFloorSpec, CapPayoff
-from trellis.models.black import black76_call, black76_put
 from trellis.models.calibration.rates import swaption_terms
+from trellis.models.rate_style_swaption import price_swaption_monte_carlo
 from trellis.models.vol_surface import FlatVol
 
 
@@ -75,9 +75,13 @@ def test_agent_swaption_matches_swaption_terms_formula_after_timeline_migration(
     market_state = _market_state(rate=0.04, vol=0.18)
 
     price = SwaptionPayoff(spec).evaluate(market_state)
-    expiry, annuity, forward_swap_rate, payment_count = swaption_terms(spec, market_state)
-    sigma = market_state.vol_surface.black_vol(expiry, spec.strike)
-    expected = spec.notional * annuity * float(black76_call(forward_swap_rate, spec.strike, sigma, expiry))
+    _, _, _, payment_count = swaption_terms(spec, market_state)
+    expected = price_swaption_monte_carlo(
+        market_state,
+        spec,
+        n_paths=spec.mc_n_paths,
+        seed=spec.mc_seed,
+    )
 
     assert payment_count > 0
     assert price == pytest.approx(expected)
@@ -92,7 +96,7 @@ def test_generated_schedule_heavy_routes_no_longer_reconstruct_period_starts_man
             "build_payment_timeline",
         ),
         REPO_ROOT / "trellis" / "instruments" / "_agent" / "swaption.py": (
-            "price_swaption_black76",
+            "price_swaption_monte_carlo",
         ),
     }
 
