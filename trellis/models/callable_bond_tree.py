@@ -101,6 +101,7 @@ def build_callable_bond_exercise_policy(
     event_timeline = build_embedded_fixed_income_event_timeline(spec, settlement=settlement)
     return build_embedded_fixed_income_exercise_policy(
         event_timeline,
+        maturity_date=spec.end_date,
         day_count=spec.day_count,
         dt=dt,
         n_steps=n_steps,

@@ -242,6 +242,7 @@ def build_embedded_fixed_income_coupon_step_map(
 def build_embedded_fixed_income_exercise_policy(
     event_timeline: EmbeddedFixedIncomeEventTimeline,
     *,
+    maturity_date: date,
     day_count: DayCountConvention,
     dt: float,
     n_steps: int,
@@ -250,7 +251,7 @@ def build_embedded_fixed_income_exercise_policy(
     exercise_dates = tuple(
         exercise_date
         for exercise_date in event_timeline.exercise.schedule_dates
-        if event_timeline.settlement < exercise_date
+        if event_timeline.settlement < exercise_date < maturity_date
     )
     if not exercise_dates:
         return resolve_lattice_exercise_policy_from_control_style(
@@ -293,15 +294,16 @@ def compile_embedded_fixed_income_lattice_contract_spec(
     )
     exercise_policy = build_embedded_fixed_income_exercise_policy(
         event_timeline,
+        maturity_date=spec.end_date,
         day_count=spec.day_count,
         dt=dt,
         n_steps=n_steps,
     )
-    terminal_coupon = coupon_by_step.get(n_steps, 0.0)
+    terminal_redemption_cash = float(event_timeline.terminal_redemption_cash)
     exercise = event_timeline.exercise
     return lattice_algebra.LatticeContractSpec(
         claim=lattice_algebra.LatticeLinearClaimSpec(
-            terminal_payoff=lambda step, node, lattice, obs: float(spec.notional) + float(terminal_coupon),
+            terminal_payoff=lambda step, node, lattice, obs: terminal_redemption_cash,
             node_cashflow_fn=lambda step, node, lattice, obs: float(coupon_by_step.get(step, 0.0)),
             observable_requirements=("rate",),
         ),
@@ -324,10 +326,11 @@ def build_embedded_fixed_income_pde_event_buckets(
     maturity_date: date,
 ) -> tuple[EventAwarePDEEventBucket, ...]:
     """Compile coupon and exercise timelines into generic PDE event buckets."""
-    coupon_by_date = {
-        cashflow.payment_date: cashflow.amount
-        for cashflow in event_timeline.coupon_cashflows
-    }
+    coupon_by_date: dict[date, float] = {}
+    for cashflow in event_timeline.coupon_cashflows:
+        coupon_by_date[cashflow.payment_date] = (
+            coupon_by_date.get(cashflow.payment_date, 0.0) + float(cashflow.amount)
+        )
     exercise_dates = {
         exercise_date
         for exercise_date in event_timeline.exercise.schedule_dates

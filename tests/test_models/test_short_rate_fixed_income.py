@@ -17,6 +17,9 @@ from trellis.models.callable_bond_tree import (
     straight_bond_present_value,
 )
 from trellis.models.short_rate_fixed_income import (
+    EmbeddedFixedIncomeEventTimeline,
+    EmbeddedFixedIncomeExerciseConfig,
+    FixedIncomeCouponCashflow,
     build_embedded_fixed_income_event_timeline,
     build_embedded_fixed_income_pde_event_buckets,
     compile_embedded_fixed_income_lattice_contract_spec,
@@ -107,6 +110,41 @@ def test_generic_lattice_contract_spec_matches_callable_wrapper_price():
     )
 
 
+def test_generic_lattice_contract_spec_includes_terminal_coupon_in_terminal_payoff():
+    spec = _callable_spec()
+    contract = compile_embedded_fixed_income_lattice_contract_spec(
+        spec,
+        settlement=date(2024, 11, 15),
+        dt=0.125,
+        n_steps=80,
+    )
+
+    terminal_value = contract.claim.terminal_payoff(80, 0, None, None)
+    assert terminal_value == pytest.approx(102.52054794520548)
+
+
+def test_generic_lattice_exercise_policy_excludes_maturity_step():
+    spec = CallableBondSpec(
+        notional=100.0,
+        coupon=0.05,
+        start_date=date(2025, 1, 15),
+        end_date=date(2035, 1, 15),
+        call_dates=[date(2028, 1, 15), date(2035, 1, 15)],
+        call_price=100.0,
+        frequency=Frequency.SEMI_ANNUAL,
+        day_count=DayCountConvention.ACT_365,
+    )
+    contract = compile_embedded_fixed_income_lattice_contract_spec(
+        spec,
+        settlement=date(2024, 11, 15),
+        dt=0.125,
+        n_steps=80,
+    )
+
+    assert contract.control.exercise_steps
+    assert max(contract.control.exercise_steps) < 80
+
+
 def test_generic_pde_event_buckets_support_callable_and_puttable_projection():
     callable_timeline = build_embedded_fixed_income_event_timeline(
         _callable_spec(),
@@ -138,6 +176,47 @@ def test_generic_pde_event_buckets_support_callable_and_puttable_projection():
         for bucket in puttable_buckets
         for transform in bucket.transforms
     )
+
+
+def test_generic_pde_event_buckets_accumulate_duplicate_coupon_dates():
+    timeline = EmbeddedFixedIncomeEventTimeline(
+        settlement=date(2024, 11, 15),
+        coupon_cashflows=(
+            FixedIncomeCouponCashflow(
+                payment_date=date(2028, 1, 15),
+                amount=1.25,
+                accrual_fraction=0.25,
+                time_to_payment=3.0,
+            ),
+            FixedIncomeCouponCashflow(
+                payment_date=date(2028, 1, 15),
+                amount=0.75,
+                accrual_fraction=0.15,
+                time_to_payment=3.0,
+            ),
+        ),
+        exercise=EmbeddedFixedIncomeExerciseConfig(
+            schedule_dates=(),
+            exercise_price_cash=100.0,
+            exercise_style="issuer_call",
+            control_style="issuer_min",
+            reference_bound="upper",
+            projection_kind="project_min",
+        ),
+        terminal_coupon_cash=0.0,
+        terminal_redemption_cash=100.0,
+    )
+
+    buckets = build_embedded_fixed_income_pde_event_buckets(
+        timeline,
+        day_count=DayCountConvention.ACT_365,
+        maturity_date=date(2035, 1, 15),
+    )
+
+    assert len(buckets) == 1
+    add_cashflow = [t for t in buckets[0].transforms if t.kind == "add_cashflow"]
+    assert len(add_cashflow) == 1
+    assert float(add_cashflow[0].payload) == pytest.approx(2.0)
 
 
 def test_present_value_fixed_coupon_bond_matches_callable_wrapper_reference():
