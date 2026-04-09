@@ -132,7 +132,7 @@ class TestRouteDiscoveryCapture:
 
 class TestRouteDeduplication:
     def test_find_equivalent_by_primitives(self):
-        registry = load_route_registry()
+        registry = load_route_registry(include_discovered=True)
         # The analytical_black76 route has black76_call and black76_put
         prim_set = frozenset({
             ("trellis.models.black", "black76_call", "pricing_kernel"),
@@ -162,7 +162,7 @@ class TestRouteDeduplication:
         _capture_discovered_route(route_data, decomp, attempt=1)
         clear_route_registry_cache()
 
-        registry = load_route_registry()
+        registry = load_route_registry(include_discovered=True)
         prim_set = frozenset({("trellis.models.black", "test_dedup_fn", "test")})
         result = _find_equivalent_route(prim_set, registry)
         assert result == "test_dedup_route"
@@ -220,7 +220,7 @@ class TestConfidenceLifecycle:
             _boost_route_confidence("test_promoted_visible", delta=0.1)
 
         clear_route_registry_cache()
-        registry = load_route_registry()
+        registry = load_route_registry(include_discovered=True)
         ir = ProductIR(instrument="test_visible_instrument", payoff_family="test")
         matches = match_candidate_routes(registry, "analytical", ir, promoted_only=True)
         route_ids = [r.id for r in matches]

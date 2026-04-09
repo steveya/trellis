@@ -159,6 +159,24 @@ into the fields operators actually review:
 - helper symbol
 - compatibility status for transitional wrappers
 
+The same boundary now also emits `generation_boundary.construction_identity`.
+That summary is the operator-facing answer to “what construction contract am I
+actually looking at?” It prefers:
+
+- the exact backend binding id when the compiler found a native checked fit
+- otherwise the family IR type
+- otherwise the lane family
+
+The compatibility route alias is still recorded, but only as secondary
+provenance context instead of the primary explanation.
+
+That secondary context is now policy-driven. Migrated exact-helper families can
+mark their route alias as internal-only, in which case:
+
+- the route id remains in raw authority metadata for replay and canary history
+- operator-facing trace and prompt surfaces suppress the alias
+- the backend binding id or family IR remains the only surfaced explanation
+
 The Monte Carlo compiler now has the matching bounded family surface for the
 next migration tranche:
 
@@ -244,6 +262,10 @@ it. These do not reopen the contract/compiler split; they exploit it:
 
 - deterministic checked-in route reuse is now route-metadata-driven rather than
   executor-hardcoded
+- route matching now treats explicit semantic ``route_families`` as a stronger
+  authority than broad engine-family preferences, so lower layers stop
+  widening candidate sets after the semantic compiler has already chosen a
+  family boundary
 - replay, checkpoints, and diagnosis packets consume the same
   route-binding-authority packet rather than inferring route meaning from
   scattered helper text

@@ -184,6 +184,8 @@ The residual route mechanism should no longer own:
 
 - once migrated families are stable, collapse redundant route aliases
 - keep only durable public/replay identifiers that still add value
+- add an explicit alias-retention policy so operator-facing surfaces can hide
+  internal-only route ids while replay/canary metadata keeps them
 
 ## Dependency Notes
 
@@ -212,20 +214,20 @@ Each coding agent assigned to this workstream should begin with:
 
 ## Linear Mirror
 
-Status mirror last synced: `2026-04-07`
+Status mirror last synced: `2026-04-09`
 
 ### Workstream Ticket
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-727` | Route registry minimization: family-first backend binding cleanup | Backlog |
+| `QUA-727` | Route registry minimization: family-first backend binding cleanup | Done |
 
 ### Ordered Queue
 
 | Ticket | Slice | Status |
 | --- | --- | --- |
-| `QUA-728` | Route inventory: quarantine discovered routes from live authority | Backlog |
-| `QUA-729` | Route bindings: split backend-binding facts from route compatibility aliases | Backlog |
-| `QUA-730` | Route matching: move canonical selection toward family-first capability predicates | Backlog |
-| `QUA-731` | Diagnostics: demote route identity behind family IR and lane obligations | Backlog |
-| `QUA-732` | Compatibility cleanup: retire redundant route aliases after migrated-family adoption | Backlog |
+| `QUA-728` | Route inventory: quarantine discovered routes from live authority | Done |
+| `QUA-729` | Route bindings: split backend-binding facts from route compatibility aliases | Done |
+| `QUA-730` | Route matching: move canonical selection toward family-first capability predicates | Done |
+| `QUA-731` | Diagnostics: demote route identity behind family IR and lane obligations | Done |
+| `QUA-732` | Compatibility cleanup: retire redundant route aliases after migrated-family adoption | Done |

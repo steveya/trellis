@@ -102,6 +102,18 @@ def _generation_boundary(
     route_id: str | None = "analytical_black76",
     approved_modules: tuple[str, ...] = ("trellis.models.black",),
 ):
+    exact_fit = bool(route_id)
+    binding_ids = {
+        "analytical_black76": "trellis.models.black.black76_call",
+        "quanto_adjustment_analytical": "trellis.models.analytical.quanto.price_quanto_option_analytical",
+        "analytical_garman_kohlhagen": "trellis.models.analytical.fx.garman_kohlhagen_price_raw",
+    }
+    helper_refs = {
+        "analytical_black76": ["trellis.models.black.black76_call"],
+        "quanto_adjustment_analytical": ["trellis.models.analytical.quanto.price_quanto_option_analytical"],
+        "analytical_garman_kohlhagen": ["trellis.models.analytical.fx.garman_kohlhagen_price_raw"],
+    }
+    binding_id = binding_ids.get(route_id, "trellis.models.black.black76_call")
     return {
         "method": "analytical",
         "approved_modules": list(approved_modules),
@@ -118,6 +130,28 @@ def _generation_boundary(
         },
         "market_binding_spec": {
             "reporting_currency": "USD",
+        },
+        "construction_identity": {
+            "primary_kind": "backend_binding" if exact_fit else "family_ir",
+            "primary_label": (
+                binding_id
+                if exact_fit
+                else "VanillaOptionIR"
+            ),
+            "lane_family": "analytical",
+            "plan_kind": "exact_target_binding" if exact_fit else "compiler_boundary_only",
+            "family_ir_type": "VanillaOptionIR",
+            "backend_binding_id": (
+                binding_id
+                if exact_fit
+                else None
+            ),
+            "backend_engine_family": "analytical" if exact_fit else None,
+            "backend_exact_fit": exact_fit,
+            "route_alias": route_id,
+            "route_authority_kind": "exact_backend_fit" if exact_fit else None,
+            "state_obligations": [],
+            "control_obligations": [],
         },
         "lowering": {
             "route_id": route_id,
@@ -145,12 +179,33 @@ def _generation_boundary(
             {
                 "route_id": route_id,
                 "route_family": "analytical",
-                "engine_family": "analytical",
                 "authority_kind": "exact_backend_fit",
-                "exact_backend_fit": True,
+                "backend_binding": {
+                    "binding_id": binding_id,
+                    "engine_family": "analytical",
+                    "exact_backend_fit": True,
+                    "helper_refs": helper_refs.get(route_id, ["trellis.models.black.black76_call"]),
+                    "primitive_refs": [],
+                    "exact_target_refs": [],
+                    "approved_modules": list(approved_modules),
+                    "admissibility": {
+                        "supported_control_styles": ["identity"],
+                        "event_support": "none",
+                        "phase_sensitivity": "default_phase_order_only",
+                        "multicurrency_support": "single_currency_only",
+                        "supported_outputs": ["price"],
+                        "supports_sensitivity_outputs": True,
+                        "supported_state_tags": [],
+                        "supported_process_families": [],
+                        "supported_path_requirement_kinds": [],
+                        "supported_operator_families": [],
+                        "supported_event_transform_kinds": [],
+                        "supports_calibration": False,
+                    },
+                    "admissibility_failures": [],
+                },
                 "validation_bundle_id": "analytical:vanilla_option",
                 "canary_task_ids": ["T73"],
-                "helper_refs": ["trellis.models.black.black76_call"],
             }
             if route_id
             else {}
@@ -250,9 +305,10 @@ def test_capture_checkpoint_threads_route_binding_authority_into_route_stage():
 
     route_stage = next(stage for stage in checkpoint.stages if stage.agent == "route")
 
-    assert route_stage.decision == "analytical_black76"
+    assert route_stage.decision == "trellis.models.black.black76_call"
     assert route_stage.metadata["route_binding_authority"]["authority_kind"] == "exact_backend_fit"
     assert route_stage.metadata["route_binding_authority"]["canary_task_ids"] == ["T73"]
+    assert route_stage.metadata["construction_identity"]["route_alias"] == "analytical_black76"
 
 
 def test_capture_checkpoint_keeps_route_stage_unknown_when_lowering_has_no_route():
@@ -284,7 +340,7 @@ def test_capture_checkpoint_keeps_route_stage_unknown_when_lowering_has_no_route
 
     route_stage = next(stage for stage in checkpoint.stages if stage.agent == "route")
 
-    assert route_stage.decision == "unknown"
+    assert route_stage.decision == "VanillaOptionIR"
     assert route_stage.metadata["method"] == "analytical"
     assert route_stage.metadata["lowering"]["route_id"] is None
     assert "route_binding_authority" not in route_stage.metadata
@@ -407,7 +463,7 @@ class TestCaptureCheckpoint:
         assert semantic.metadata["compatibility_bridge_status"] == "thin_compatibility_wrapper"
 
         route = [stage for stage in cp.stages if stage.agent == "route"][0]
-        assert route.decision == "analytical_black76"
+        assert route.decision == "trellis.models.black.black76_call"
         assert route.metadata["valuation_context"]["market_source"] == "unbound_market_snapshot"
 
         builder = [stage for stage in cp.stages if stage.agent == "builder"][0]
@@ -874,7 +930,7 @@ class TestEmitDecisionCheckpoint:
 
         assert semantic.decision == "ranked_observation_basket"
         assert semantic.metadata["compatibility_bridge_status"] == "thin_compatibility_wrapper"
-        assert route.decision == "correlated_basket_monte_carlo"
+        assert route.decision == "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo"
         assert "trellis.models.monte_carlo.semantic_basket" in builder.metadata["approved_modules"]
         assert validator.metadata["route_id"] == "correlated_basket_monte_carlo"
         assert validator.metadata["bundle_id"] == "monte_carlo:basket_option"

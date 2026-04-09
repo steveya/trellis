@@ -128,18 +128,21 @@ def test_compile_build_request_attaches_route_binding_authority_packet():
     )
 
     authority = compiled.request.metadata["route_binding_authority"]
+    backend_binding = authority["backend_binding"]
 
     assert authority["route_id"] == "quanto_adjustment_analytical"
     assert authority["route_family"] == "analytical"
-    assert authority["engine_family"] == "analytical"
     assert authority["authority_kind"] == "exact_backend_fit"
-    assert authority["exact_backend_fit"] is True
-    assert "trellis.models.resolution.quanto.resolve_quanto_inputs" in authority["primitive_refs"]
-    assert "trellis.models.analytical.quanto.price_quanto_option_analytical" in authority["helper_refs"]
+    assert authority["compatibility_alias_policy"] == "internal_only"
+    assert backend_binding["binding_id"] == "trellis.models.analytical.quanto.price_quanto_option_analytical"
+    assert backend_binding["engine_family"] == "analytical"
+    assert backend_binding["exact_backend_fit"] is True
+    assert "trellis.models.resolution.quanto.resolve_quanto_inputs" in backend_binding["primitive_refs"]
+    assert "trellis.models.analytical.quanto.price_quanto_option_analytical" in backend_binding["helper_refs"]
     assert authority["validation_bundle_id"] == "analytical:quanto_option"
     assert "check_non_negativity" in authority["validation_check_ids"]
-    assert authority["admissibility"]["multicurrency_support"] == "native_payout_with_fx"
-    assert authority["admissibility_failures"] == []
+    assert backend_binding["admissibility"]["multicurrency_support"] == "native_payout_with_fx"
+    assert backend_binding["admissibility_failures"] == []
     assert authority["canary_task_ids"] == ["T105"]
     assert authority["provenance"]["semantic_contract_id"] == "quanto_option"
     assert authority["provenance"]["lane_plan_kind"] == "exact_target_binding"

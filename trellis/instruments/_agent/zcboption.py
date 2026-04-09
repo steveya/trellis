@@ -99,17 +99,25 @@ Implementation target: jamshidian."""
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
         spec = self._spec
-        from trellis.models.zcb_option import price_zcb_option_jamshidian
 
-        if self.requirements and getattr(market_state, "discount", None) is None:
-            raise ValueError("discount_curve market data is required for ZCB option pricing")
-        if getattr(market_state, "vol_surface", None) is None:
-            raise ValueError("black_vol_surface market data is required for ZCB option pricing")
+        # Resolve and validate the required market data.
+        if market_state.discount is None:
+            raise ValueError("ZCBOptionPayoff requires a discount curve in market_state")
+        if market_state.vol_surface is None:
+            raise ValueError("ZCBOptionPayoff requires a black vol surface in market_state")
+        if market_state.as_of is None:
+            raise ValueError("ZCBOptionPayoff requires market_state.as_of to be set")
 
-        # Delegate to the checked-in analytical helper; it handles resolving
-        # the Hull-White / Jamshidian inputs and internal discounting.
+        if spec.bond_maturity_date <= spec.expiry_date:
+            raise ValueError("bond_maturity_date must be strictly after expiry_date")
+
+        option_type = str(spec.option_type).strip().strip("'").strip('"').lower()
+        if option_type not in {"call", "put"}:
+            raise ValueError("option_type must be 'call' or 'put'")
+
+        # Prefer the checked-in analytical helper for Jamshidian pricing.
         try:
-            return float(price_zcb_option_jamshidian(market_state, spec))
-        except TypeError:
-            # Some backend variants accept mean_reversion explicitly.
             return float(price_zcb_option_jamshidian(market_state, spec, mean_reversion=0.1))
+        except TypeError:
+            # Fallback for helper variants that do not accept mean_reversion as a keyword.
+            return float(price_zcb_option_jamshidian(market_state, spec))

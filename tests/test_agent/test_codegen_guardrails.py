@@ -170,7 +170,7 @@ def test_generation_plan_renders_compiled_semantic_and_validation_boundary():
     assert "- Lane obligations:" in text
     assert "Plan kind: `exact_target_binding`" in text
     assert "- Lowering boundary:" in text
-    assert "route=`quanto_adjustment_analytical`" in text
+    assert "route_alias=`quanto_adjustment_analytical`" not in text
     assert "expr=`ThenExpr`" in text
     assert "price_quanto_option_analytical" in text
     assert "- Validation contract:" in text
@@ -211,7 +211,7 @@ def test_review_contract_card_renders_wrapper_route_and_validation_scope():
     assert "## Compiled Route Contract" in text
     assert "bridge=`thin_compatibility_wrapper`" in text
     assert "wrapper=`european_option`" in text
-    assert "route=`analytical_black76`" in text
+    assert "route_alias=`analytical_black76`" not in text
     assert "bundle=`analytical:european_option`" in text
     assert "- Route authority:" in text
     assert "authority=`exact_backend_fit`" in text

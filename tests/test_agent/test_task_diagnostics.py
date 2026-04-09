@@ -108,6 +108,10 @@ def _sample_record(root: Path) -> dict[str, object]:
                 {
                     "route_id": "callable_bond_tree",
                     "route_family": "pde",
+                    "primary_kind": "family_ir",
+                    "primary_label": "EventAwarePDEIR",
+                    "backend_binding_id": "",
+                    "route_alias": "callable_bond_tree",
                     "trace_kind": "platform",
                     "trace_status": "failed",
                     "outcome": "comparison:insufficient_results",
@@ -155,11 +159,29 @@ def _sample_record(root: Path) -> dict[str, object]:
                 "route_health": {
                     "route_id": "callable_bond_tree",
                     "route_family": "pde",
+                    "primary_kind": "family_ir",
+                    "primary_label": "EventAwarePDEIR",
+                    "backend_binding_id": "",
+                    "route_alias": "callable_bond_tree",
                     "trace_status": "failed",
                     "effective_instruction_ids": [],
                     "effective_instruction_count": 0,
                     "hard_constraint_count": 0,
                     "conflict_count": 0,
+                },
+                "construction_identity": {
+                    "primary_kind": "family_ir",
+                    "primary_label": "EventAwarePDEIR",
+                    "lane_family": "pde_solver",
+                    "plan_kind": "family_lowering_only",
+                    "family_ir_type": "EventAwarePDEIR",
+                    "backend_binding_id": None,
+                    "backend_engine_family": None,
+                    "backend_exact_fit": False,
+                    "route_alias": "callable_bond_tree",
+                    "route_authority_kind": "route_registry_binding",
+                    "state_obligations": ["schedule_state"],
+                    "control_obligations": ["issuer_min"],
                 },
                 "route_binding_authority": {
                     "route_id": "callable_bond_tree",
@@ -285,7 +307,9 @@ def test_build_task_diagnosis_packet_summarizes_failure(tmp_path):
     assert packet["runtime_controls"]["llm_wait_log_path"] == "/tmp/t999_waits.jsonl"
     assert packet["telemetry"]["selected_artifacts"][0]["artifact_id"] == "route_hint:callable_bond_tree"
     assert packet["telemetry"]["route_observations"][0]["route_id"] == "callable_bond_tree"
+    assert packet["telemetry"]["route_observations"][0]["primary_label"] == "EventAwarePDEIR"
     assert packet["telemetry"]["route_observations"][0]["task_ids"] == ["T02"]
+    assert packet["trace_index"][0]["construction_label"] == "EventAwarePDEIR"
 
     rendered = render_task_diagnosis_dossier(packet)
     assert "## Primary Diagnosis" in rendered
@@ -297,7 +321,7 @@ def test_build_task_diagnosis_packet_summarizes_failure(tmp_path):
     assert "comparison_insufficient_results" in rendered
     assert "semantic_validation_failed" in rendered
     assert "route_hint:callable_bond_tree" in rendered
-    assert "callable_bond_tree" in rendered
+    assert "EventAwarePDEIR" in rendered
     assert "/tmp/t999_waits.jsonl" in rendered
 
 
@@ -424,6 +448,7 @@ def test_build_task_diagnosis_packet_keeps_platform_action_out_of_route_ids(tmp_
     trace = record["trace_summaries"][0]
     trace["action"] = "build_then_price"
     trace["route_method"] = "analytical"
+    trace["construction_identity"] = {}
     trace["route_binding_authority"] = {}
     trace["route_health"] = {
         "route_id": "",
@@ -440,3 +465,4 @@ def test_build_task_diagnosis_packet_keeps_platform_action_out_of_route_ids(tmp_
 
     assert packet["telemetry"]["route_observations"][0]["route_id"] == ""
     assert packet["telemetry"]["route_observations"][0]["route_family"] == "analytical"
+    assert packet["telemetry"]["route_observations"][0]["primary_label"] == "analytical"

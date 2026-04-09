@@ -16,6 +16,7 @@ routes:
     route_family: analytical
     status: promoted
     confidence: 1.0
+    compatibility_alias_policy: internal_only
     reuse_module_paths: [instruments/_agent/quantooptionanalytical.py]
     match:
       methods: [analytical]
@@ -761,6 +762,7 @@ routes:
     route_family: analytical
     status: promoted
     confidence: 1.0
+    compatibility_alias_policy: internal_only
     score_hints:
       payoff_family_bonus: {swaption: 1.0, vanilla_option: 1.0}
       non_european_penalty: -4.0

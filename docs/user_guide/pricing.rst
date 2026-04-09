@@ -212,13 +212,33 @@ Carlo, PDE, and so on), the timeline and market bindings that lane requires,
 and only then any exact checked backend binding that already satisfies those
 obligations.
 
+Route matching is also now family-first. When the semantic compiler has
+already emitted an explicit ``route_families`` contract, Trellis uses that
+family identity ahead of broader engine-family preferences. Generic engine
+families still matter for fallback scoring, but they no longer override a more
+specific family decision coming from the semantic layer.
+
 When the compiler does find such a checked backend, Trellis now records it as a
 route-binding authority packet. That packet is not a second planning language;
-it is a backend/provenance record containing the exact route ID, helper refs,
-approved modules, validation bundle, and any canary tasks that cover the
-binding. Build and review prompts consume that packet only after the lane
-obligations so route guidance stays a backend-fit constraint rather than a
-route-first synthesis plan.
+it now separates a thin compatibility route alias from the nested backend
+binding facts. The outer packet keeps the exact route ID, validation bundle,
+and canary ownership; the nested ``backend_binding`` record carries the helper
+refs, primitive refs, approved modules, admissibility contract, and stable
+binding id that the runtime actually reuses. Build and review prompts consume
+that packet only after the lane obligations so route guidance stays a
+backend-fit constraint rather than a route-first synthesis plan.
+
+The trace boundary also exposes a family-first ``construction_identity``
+summary. For operators, that is now the primary readout:
+
+- native checked fits surface the stable backend binding id
+- otherwise Trellis surfaces the lowered family IR type or lane family
+- the route alias is still present, but only as secondary provenance
+
+For fully migrated exact-helper families, Trellis can now mark that alias as
+internal-only. In that case, prompts and trace summaries omit the alias
+entirely and rely on the backend binding id instead, while raw validation and
+replay metadata still retain the route id for compatibility.
 
 For the migrated PDE routes, the same trace boundary now also exposes a compact
 `family_ir_summary` alongside the raw lowering metadata. That summary is the

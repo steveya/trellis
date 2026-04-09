@@ -51,12 +51,48 @@ def test_persist_task_run_record_writes_latest_and_enriches_traces(tmp_path):
                 "artifact_kind": "GenerationPlan",
             },
             "generation_boundary": {
+                "construction_identity": {
+                    "primary_kind": "family_ir",
+                    "primary_label": "FourierPricingIR",
+                    "lane_family": "fft_pricing",
+                    "plan_kind": "family_lowering_only",
+                    "family_ir_type": "FourierPricingIR",
+                    "backend_binding_id": None,
+                    "backend_engine_family": None,
+                    "backend_exact_fit": False,
+                    "route_alias": "fft_black_scholes",
+                    "route_authority_kind": "route_registry_binding",
+                    "state_obligations": [],
+                    "control_obligations": [],
+                },
                 "route_binding_authority": {
                     "route_id": "fft_black_scholes",
                     "route_family": "fft_pricing",
-                    "engine_family": "fft_pricing",
                     "authority_kind": "route_registry_binding",
-                    "exact_backend_fit": False,
+                    "backend_binding": {
+                        "binding_id": "fft_pricing:fft_pricing:fallback",
+                        "engine_family": "fft_pricing",
+                        "exact_backend_fit": False,
+                        "exact_target_refs": [],
+                        "approved_modules": [],
+                        "primitive_refs": [],
+                        "helper_refs": [],
+                        "admissibility": {
+                            "supported_control_styles": ["identity"],
+                            "event_support": "none",
+                            "phase_sensitivity": "default_phase_order_only",
+                            "multicurrency_support": "single_currency_only",
+                            "supported_outputs": ["price"],
+                            "supports_sensitivity_outputs": True,
+                            "supported_state_tags": [],
+                            "supported_process_families": [],
+                            "supported_path_requirement_kinds": [],
+                            "supported_operator_families": [],
+                            "supported_event_transform_kinds": [],
+                            "supports_calibration": False,
+                        },
+                        "admissibility_failures": [],
+                    },
                     "validation_bundle_id": "fft_pricing:european_option",
                     "canary_task_ids": ["T39"],
                 }
@@ -258,6 +294,7 @@ def test_persist_task_run_record_writes_latest_and_enriches_traces(tmp_path):
     assert latest["method_runs"]["fft"]["trace_summary"]["linear_issue"]["identifier"] == "QUA-99"
     assert latest["method_runs"]["fft"]["trace_summary"]["semantic_role_ownership"]["selected_role"] == "quant"
     assert latest["method_runs"]["fft"]["trace_summary"]["route_binding_authority"]["route_id"] == "fft_black_scholes"
+    assert latest["trace_summaries"][0]["construction_identity"]["primary_label"] == "FourierPricingIR"
     assert latest["trace_summaries"][0]["route_binding_authority"]["canary_task_ids"] == ["T39"]
     assert latest["method_runs"]["fft"]["issue_refs"]["github"]["number"] == 77
     assert latest["method_runs"]["fft"]["token_usage"]["total_tokens"] == 250
@@ -879,3 +916,4 @@ def test_persist_task_run_record_does_not_promote_platform_action_to_fake_route_
     assert latest["trace_summaries"][0]["route_health"]["route_family"] == "analytical"
     assert latest["telemetry"]["route_observations"][0]["route_id"] == ""
     assert latest["telemetry"]["route_observations"][0]["route_family"] == "analytical"
+    assert latest["telemetry"]["route_observations"][0]["primary_label"] == "analytical"

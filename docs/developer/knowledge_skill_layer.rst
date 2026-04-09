@@ -12,8 +12,9 @@ The source artifacts remain:
 * lesson entries in ``trellis/agent/knowledge/lessons/entries/``
 * canonical cookbooks in ``trellis/agent/knowledge/canonical/cookbooks.yaml``
 * canonical principles in ``trellis/agent/knowledge/canonical/principles.yaml``
-* canonical and discovered route guidance in ``trellis/agent/knowledge/canonical/routes.yaml``
-  and ``trellis/agent/knowledge/routes/entries/``
+* canonical route guidance in ``trellis/agent/knowledge/canonical/routes.yaml``
+* discovered route entries in ``trellis/agent/knowledge/routes/entries/`` for
+  analysis or explicit opt-in workflows
 
 Generated view
 --------------
@@ -102,8 +103,16 @@ The first pass projects four artifact kinds:
 * ``route_hint``
 
 ``route_hint`` records include deterministic instruction-lifecycle guidance
-derived from the route registry, such as route-helper constraints,
-schedule-builder hints, and route-note precedence.
+derived from the live canonical route authority by default, such as
+route-helper constraints, schedule-builder hints, and route-note precedence.
+The runtime authority packet underneath those hints is now split as well:
+``route_id`` remains a compatibility alias, while helper refs, primitive refs,
+approved modules, and admissibility live in a nested backend-binding record.
+Discovered routes remain available to analysis code paths, but they no longer
+perturb ordinary prompt skill projection unless a caller opts in explicitly.
+Migrated exact-helper routes may also mark that alias as internal-only, which
+suppresses it from operator-facing prompts while retaining the raw id for
+replay and canary history.
 
 Selection and trace surface
 ---------------------------

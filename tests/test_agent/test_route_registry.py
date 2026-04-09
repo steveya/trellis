@@ -22,7 +22,11 @@ from trellis.agent.family_lowering_ir import (
 from trellis.agent.knowledge.schema import ProductIR
 from trellis.agent.quant import PricingPlan
 from trellis.agent.route_registry import (
+    RouteAdmissibilitySpec,
+    RouteRegistry,
+    RouteSpec,
     evaluate_route_admissibility,
+    evaluate_route_capability_match,
     find_route_by_id,
     load_route_registry,
     match_candidate_routes,
@@ -37,6 +41,11 @@ from trellis.agent.route_registry import (
 @pytest.fixture(scope="module")
 def registry():
     return load_route_registry()
+
+
+@pytest.fixture(scope="module")
+def analysis_registry():
+    return load_route_registry(include_discovered=True)
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +103,6 @@ class TestRegistryValidation:
         route_ids = {route.id for route in registry.routes}
         assert {
             "analytical_black76",
-            "analytical_credit_cds_par_spread_route",
             "exercise_lattice",
             "correlated_basket_monte_carlo",
             "correlated_gbm_monte_carlo",
@@ -111,7 +119,129 @@ class TestRegistryValidation:
         candidate_ids = {route.id for route in registry.routes if route.status == "candidate"}
         non_promoted = {route.id: route.status for route in registry.routes if route.status not in {"promoted", "candidate"}}
         assert non_promoted == {}
-        assert candidate_ids == {"analytical_credit_cds_par_spread_route"}
+        assert candidate_ids == set()
+
+    def test_analysis_registry_opt_in_loads_discovered_routes(self, registry, analysis_registry):
+        live_ids = {route.id for route in registry.routes}
+        analysis_ids = {route.id for route in analysis_registry.routes}
+
+        assert "analytical_credit_cds_par_spread_route" not in live_ids
+        assert "analytical_credit_cds_par_spread_route" in analysis_ids
+
+        discovered = find_route_by_id("analytical_credit_cds_par_spread_route", analysis_registry)
+        assert discovered is not None
+        assert discovered.status == "candidate"
+        assert discovered.discovered_from is not None
+
+    def test_family_first_capability_match_uses_route_family_and_schedule_state(self):
+        spec = RouteSpec(
+            id="synthetic_credit_mc",
+            engine_family="monte_carlo",
+            route_family="credit_default_swap",
+            status="promoted",
+            confidence=1.0,
+            match_methods=("monte_carlo",),
+            match_instruments=None,
+            exclude_instruments=(),
+            match_payoff_family=None,
+            match_payoff_traits=None,
+            match_exercise=None,
+            exclude_exercise=(),
+            match_required_market_data=None,
+            exclude_required_market_data=None,
+            primitives=(),
+            conditional_primitives=(),
+            conditional_route_family=None,
+            adapters=(),
+            notes=(),
+            admissibility=RouteAdmissibilitySpec(
+                supported_state_tags=("schedule_state", "pathwise_only"),
+                supported_path_requirement_kinds=("event_snapshots",),
+            ),
+        )
+        ir = ProductIR(
+            instrument="cds",
+            payoff_family="credit_default_swap",
+            schedule_dependence=True,
+            state_dependence="pathwise_only",
+            candidate_engine_families=("monte_carlo",),
+            route_families=("credit_default_swap",),
+        )
+
+        decision = evaluate_route_capability_match(spec, ir)
+
+        assert decision.ok is True
+        assert "route_family" in decision.matched_predicates
+        assert "schedule_dependence" in decision.matched_predicates
+        assert "state:pathwise_only" in decision.matched_predicates
+
+    def test_match_candidate_routes_prefers_family_capability_predicates(self):
+        registry = RouteRegistry(
+            routes=(
+                RouteSpec(
+                    id="generic_mc",
+                    engine_family="monte_carlo",
+                    route_family="monte_carlo",
+                    status="promoted",
+                    confidence=1.0,
+                    match_methods=("monte_carlo",),
+                    match_instruments=None,
+                    exclude_instruments=(),
+                    match_payoff_family=None,
+                    match_payoff_traits=None,
+                    match_exercise=None,
+                    exclude_exercise=(),
+                    match_required_market_data=None,
+                    exclude_required_market_data=None,
+                    primitives=(),
+                    conditional_primitives=(),
+                    conditional_route_family=None,
+                    adapters=(),
+                    notes=(),
+                    admissibility=RouteAdmissibilitySpec(
+                        supported_state_tags=("terminal_markov",),
+                    ),
+                ),
+                RouteSpec(
+                    id="family_mc",
+                    engine_family="monte_carlo",
+                    route_family="credit_default_swap",
+                    status="promoted",
+                    confidence=1.0,
+                    match_methods=("monte_carlo",),
+                    match_instruments=None,
+                    exclude_instruments=(),
+                    match_payoff_family=None,
+                    match_payoff_traits=None,
+                    match_exercise=None,
+                    exclude_exercise=(),
+                    match_required_market_data=None,
+                    exclude_required_market_data=None,
+                    primitives=(),
+                    conditional_primitives=(),
+                    conditional_route_family=None,
+                    adapters=(),
+                    notes=(),
+                    admissibility=RouteAdmissibilitySpec(
+                        supported_state_tags=("schedule_state", "pathwise_only"),
+                        supported_path_requirement_kinds=("event_snapshots",),
+                    ),
+                ),
+            ),
+            _method_index={"monte_carlo": (0, 1)},
+        )
+        ir = ProductIR(
+            instrument="cds",
+            payoff_family="credit_default_swap",
+            schedule_dependence=True,
+            state_dependence="pathwise_only",
+            candidate_engine_families=("monte_carlo",),
+            route_families=("credit_default_swap",),
+        )
+
+        matches = match_candidate_routes(registry, "monte_carlo", ir)
+
+        assert tuple(route.id for route in matches) == ("family_mc",)
 
     def test_typed_admissibility_hydrates_for_migrated_routes(self, registry):
         analytical = find_route_by_id("analytical_black76", registry)
@@ -177,6 +307,7 @@ class TestQuantoRoutes:
     def test_engine_family(self, registry):
         spec = [r for r in registry.routes if r.id == "quanto_adjustment_analytical"][0]
         assert spec.engine_family == "analytical"
+        assert spec.compatibility_alias_policy == "internal_only"
 
 
 # ---------------------------------------------------------------------------
@@ -1025,9 +1156,10 @@ class TestFallbackRoutes:
         assert not decision.ok
         assert "unsupported_event_transform_kind:project_min" in decision.failures
 
-    def test_callable_bond_pde_admissibility_uses_lowered_pde_state_not_raw_schedule_tags(self, registry):
+    def test_callable_bond_pde_route_is_filtered_when_product_ir_locks_rate_lattice(self, registry):
         from trellis.agent.semantic_contract_compiler import compile_semantic_contract
         from trellis.agent.semantic_contracts import make_callable_bond_contract
+        from trellis.agent.quant import select_pricing_method_for_product_ir
 
         spec = find_route_by_id("pde_theta_1d", registry)
         assert spec is not None
@@ -1038,12 +1170,23 @@ class TestFallbackRoutes:
             preferred_method="pde_solver",
         )
         bp = compile_semantic_contract(contract, preferred_method="pde_solver")
+        pricing_plan = select_pricing_method_for_product_ir(
+            bp.product_ir,
+            preferred_method="pde_solver",
+        )
 
-        decision = evaluate_route_admissibility(spec, semantic_blueprint=bp)
+        decision = evaluate_route_capability_match(spec, bp.product_ir)
+        candidates = match_candidate_routes(
+            registry,
+            "pde_solver",
+            bp.product_ir,
+            pricing_plan=pricing_plan,
+        )
 
-        assert decision.ok
-        assert decision.failures == ()
-        assert "unsupported_state_tag:schedule_state" not in decision.failures
+        assert bp.dsl_lowering.route_family == "rate_lattice"
+        assert not decision.ok
+        assert "family_identity_mismatch" in decision.failures
+        assert candidates == ()
 
     def test_holder_max_equity_pde_admissibility_accepts_project_max_contract(self, registry):
         from trellis.agent.semantic_contract_compiler import compile_semantic_contract
@@ -1092,7 +1235,6 @@ class TestFallbackRoutes:
 
 class TestEngineFamilyCoverage:
     EXPECTED = {
-        "analytical_credit_cds_par_spread_route": "analytical",
         "quanto_adjustment_analytical": "analytical",
         "correlated_gbm_monte_carlo": "monte_carlo",
         "credit_default_swap_analytical": "analytical",

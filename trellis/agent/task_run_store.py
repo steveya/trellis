@@ -377,6 +377,11 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
         or metadata.get("route_binding_authority")
         or {}
     )
+    construction_identity = (
+        generation_boundary.get("construction_identity")
+        or metadata.get("construction_identity")
+        or {}
+    )
     semantic_role_ownership = (
         data.get("semantic_role_ownership")
         or metadata.get("semantic_role_ownership")
@@ -407,6 +412,10 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
         "hard_constraint_count": 0,
         "conflict_count": 0,
         "canary_task_ids": list(route_binding_authority.get("canary_task_ids") or []),
+        "primary_kind": str(construction_identity.get("primary_kind") or "").strip(),
+        "primary_label": str(construction_identity.get("primary_label") or "").strip(),
+        "backend_binding_id": str(construction_identity.get("backend_binding_id") or "").strip(),
+        "route_alias": str(construction_identity.get("route_alias") or "").strip(),
     }
     return {
         "path": str(trace_path),
@@ -427,6 +436,7 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
         "semantic_role_ownership_role": semantic_role_ownership.get("selected_role"),
         "semantic_role_ownership_trigger": semantic_role_ownership.get("trigger_condition"),
         "semantic_role_ownership_artifact": semantic_role_ownership.get("artifact_kind"),
+        "construction_identity": construction_identity,
         "route_binding_authority": route_binding_authority,
         "route_health": route_health,
         "token_usage": data.get("token_usage") or {},
@@ -1155,6 +1165,7 @@ def _route_observations(
 
     for trace in traces:
         route_health = dict(trace.get("route_health") or {})
+        construction_identity = dict(trace.get("construction_identity") or {})
         metadata = dict(trace.get("request_metadata") or {})
         semantic_blueprint = dict(metadata.get("semantic_blueprint") or {})
         trace_kind = str(trace.get("trace_kind") or "").strip()
@@ -1203,6 +1214,29 @@ def _route_observations(
             {
                 "route_id": route_id,
                 "route_family": route_family,
+                "primary_kind": str(
+                    route_health.get("primary_kind")
+                    or construction_identity.get("primary_kind")
+                    or ""
+                ).strip(),
+                "primary_label": str(
+                    route_health.get("primary_label")
+                    or construction_identity.get("primary_label")
+                    or route_family
+                    or route_id
+                    or "unknown"
+                ).strip(),
+                "backend_binding_id": str(
+                    route_health.get("backend_binding_id")
+                    or construction_identity.get("backend_binding_id")
+                    or ""
+                ).strip(),
+                "route_alias": str(
+                    route_health.get("route_alias")
+                    or construction_identity.get("route_alias")
+                    or route_id
+                    or ""
+                ).strip(),
                 "trace_kind": trace_kind or "unknown",
                 "trace_status": str(trace.get("status") or "").strip(),
                 "outcome": outcome,
@@ -1233,6 +1267,10 @@ def _route_observations(
             {
                 "route_id": "",
                 "route_family": route_family,
+                "primary_kind": "method_family",
+                "primary_label": route_family,
+                "backend_binding_id": "",
+                "route_alias": "",
                 "trace_kind": "method_run",
                 "trace_status": "ok" if bool(payload.get("success")) else "error",
                 "outcome": outcome,

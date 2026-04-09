@@ -252,13 +252,13 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
             "",
             "## Trace Index",
             *_render_table(
-                headers=("Scope", "Name", "Status", "Route", "Latest Event", "Path"),
+                headers=("Scope", "Name", "Status", "Construction", "Latest Event", "Path"),
                 rows=[
                     (
                         trace_row.get("scope"),
                         trace_row.get("name"),
                         trace_row.get("status"),
-                        trace_row.get("route_method"),
+                        trace_row.get("construction_label"),
                         trace_row.get("latest_event"),
                         trace_row.get("path"),
                     )
@@ -309,11 +309,11 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
         lines.extend(
             [
                 *_render_table(
-                    headers=("Route", "Family", "Outcome", "Health", "Trace"),
+                    headers=("Primary", "Backend", "Outcome", "Health", "Trace"),
                     rows=[
                         (
-                            item.get("route_id"),
-                            item.get("route_family"),
+                            item.get("primary_label"),
+                            item.get("backend_binding_id") or item.get("route_alias") or item.get("route_family"),
                             item.get("outcome"),
                             (
                                 "effective="
@@ -591,6 +591,7 @@ def _telemetry_section(record: Mapping[str, Any]) -> dict[str, Any]:
         if not isinstance(trace, Mapping):
             continue
         route_health = dict(trace.get("route_health") or {})
+        construction_identity = dict(trace.get("construction_identity") or {})
         route_binding_authority = dict(trace.get("route_binding_authority") or {})
         trace_kind = str(trace.get("trace_kind") or "").strip()
         route_id = str(route_health.get("route_id") or "").strip()
@@ -607,6 +608,29 @@ def _telemetry_section(record: Mapping[str, Any]) -> dict[str, Any]:
             {
                 "route_id": route_id,
                 "route_family": route_family,
+                "primary_kind": str(
+                    route_health.get("primary_kind")
+                    or construction_identity.get("primary_kind")
+                    or ""
+                ).strip(),
+                "primary_label": str(
+                    route_health.get("primary_label")
+                    or construction_identity.get("primary_label")
+                    or route_family
+                    or route_id
+                    or "unknown"
+                ).strip(),
+                "backend_binding_id": str(
+                    route_health.get("backend_binding_id")
+                    or construction_identity.get("backend_binding_id")
+                    or ""
+                ).strip(),
+                "route_alias": str(
+                    route_health.get("route_alias")
+                    or construction_identity.get("route_alias")
+                    or route_id
+                    or ""
+                ).strip(),
                 "trace_kind": str(trace.get("trace_kind") or "").strip(),
                 "trace_status": str(trace.get("status") or "").strip(),
                 "outcome": str(workflow.get("status") or "").strip(),
@@ -650,10 +674,12 @@ def _enrich_telemetry_route_observations(
     """Backfill route-authority canary IDs into persisted telemetry when available."""
     traces = list(record.get("trace_summaries") or [])
     route_task_ids: dict[tuple[str, str], list[str]] = {}
+    route_construction: dict[tuple[str, str], dict[str, Any]] = {}
     for trace in traces:
         if not isinstance(trace, Mapping):
             continue
         route_health = dict(trace.get("route_health") or {})
+        construction_identity = dict(trace.get("construction_identity") or {})
         route_binding_authority = dict(trace.get("route_binding_authority") or {})
         trace_kind = str(trace.get("trace_kind") or "").strip()
         route_id = str(route_health.get("route_id") or "").strip()
@@ -667,6 +693,7 @@ def _enrich_telemetry_route_observations(
         )
         if route_id or route_family:
             route_task_ids[(route_id, route_family)] = task_ids
+            route_construction[(route_id, route_family)] = construction_identity
 
     observations = []
     for observation in telemetry.get("route_observations") or []:
@@ -675,6 +702,30 @@ def _enrich_telemetry_route_observations(
         item = dict(observation)
         route_id = str(item.get("route_id") or "").strip()
         route_family = str(item.get("route_family") or "").strip()
+        construction_identity = dict(route_construction.get((route_id, route_family)) or {})
+        item["primary_kind"] = str(
+            item.get("primary_kind")
+            or construction_identity.get("primary_kind")
+            or ""
+        ).strip()
+        item["primary_label"] = str(
+            item.get("primary_label")
+            or construction_identity.get("primary_label")
+            or route_family
+            or route_id
+            or "unknown"
+        ).strip()
+        item["backend_binding_id"] = str(
+            item.get("backend_binding_id")
+            or construction_identity.get("backend_binding_id")
+            or ""
+        ).strip()
+        item["route_alias"] = str(
+            item.get("route_alias")
+            or construction_identity.get("route_alias")
+            or route_id
+            or ""
+        ).strip()
         item["task_ids"] = list(
             item.get("task_ids")
             or route_task_ids.get((route_id, route_family))
@@ -789,6 +840,7 @@ def _trace_index(
         if not path or path in seen:
             return
         seen.add(path)
+        construction_identity = dict(trace.get("construction_identity") or {})
         entries.append(
             {
                 "scope": scope,
@@ -800,6 +852,10 @@ def _trace_index(
                 "status": trace.get("status"),
                 "outcome": trace.get("outcome"),
                 "route_method": trace.get("route_method"),
+                "construction_label": (
+                    str(construction_identity.get("primary_label") or "").strip()
+                    or str(trace.get("route_method") or "").strip()
+                ),
                 "latest_event": trace.get("latest_event"),
                 "latest_event_status": trace.get("latest_event_status"),
                 "updated_at": trace.get("updated_at"),

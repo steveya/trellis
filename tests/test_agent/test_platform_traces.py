@@ -334,14 +334,15 @@ def test_platform_trace_summarizes_event_aware_pde_family_ir(tmp_path):
     )
     boundary = load_platform_trace_boundary(trace_path)
     lowering = boundary["generation_boundary"]["lowering"]
+    construction_identity = boundary["generation_boundary"]["construction_identity"]
     family_ir_summary = lowering["family_ir_summary"]
 
-    assert lowering["family_ir_type"] == "EventAwarePDEIR"
-    assert family_ir_summary["operator_family"] == "hull_white_1f"
-    assert family_ir_summary["control_style"] == "issuer_min"
+    assert lowering["family_ir_type"] == "ExerciseLatticeIR"
+    assert construction_identity["primary_kind"] == "backend_binding"
+    assert construction_identity["route_alias"] == "exercise_lattice"
+    assert construction_identity["backend_binding_id"] == "trellis.models.callable_bond_tree.price_callable_bond_tree"
     assert family_ir_summary["semantic_control_style"] == "issuer_min"
-    assert family_ir_summary["state_variable"] == "short_rate"
-    assert family_ir_summary["event_transform_kinds"] == ["add_cashflow", "project_min"]
+    assert family_ir_summary["helper_symbol"] == "price_callable_bond_tree"
     assert family_ir_summary["semantic_transform_kinds"] == ["add_cashflow", "project_min"]
     assert family_ir_summary["compatibility_status"] == "native_event_aware"
 
@@ -438,6 +439,8 @@ def test_platform_trace_keeps_route_less_semantic_requests_truthful(tmp_path):
     assert trace.generation_boundary["lowering"]["route_id"] is None
     assert boundary["generation_boundary"]["lowering"]["route_id"] is None
     assert trace.generation_boundary["lowering"]["route_family"] is None
+    assert trace.generation_boundary["construction_identity"]["primary_kind"] == "lane_family"
+    assert trace.generation_boundary["construction_identity"]["primary_label"] == "analytical"
     assert trace.generation_boundary["primitive_plan"] == {}
     assert trace.generation_boundary["route_binding_authority"] == {}
     assert trace.validation_contract["route_id"] is None
@@ -450,6 +453,7 @@ def test_platform_trace_keeps_route_less_semantic_requests_truthful(tmp_path):
         "expected_semantic_id",
         "expected_bridge_status",
         "expected_route_id",
+        "expected_route_alias",
         "expected_module",
         "expected_helper",
     ),
@@ -460,6 +464,7 @@ def test_platform_trace_keeps_route_less_semantic_requests_truthful(tmp_path):
             "vanilla_option",
             "thin_compatibility_wrapper",
             "analytical_black76",
+            None,
             "trellis.models.black",
             None,
         ),
@@ -469,6 +474,7 @@ def test_platform_trace_keeps_route_less_semantic_requests_truthful(tmp_path):
             "quanto_option",
             "canonical_semantic",
             "quanto_adjustment_analytical",
+            None,
             "trellis.models.resolution.quanto",
             "trellis.models.analytical.quanto.price_quanto_option_analytical",
         ),
@@ -480,6 +486,7 @@ def test_platform_trace_keeps_route_less_semantic_requests_truthful(tmp_path):
             "basket_option",
             "ranked_observation_basket",
             "thin_compatibility_wrapper",
+            "correlated_basket_monte_carlo",
             "correlated_basket_monte_carlo",
             "trellis.models.monte_carlo.semantic_basket",
             "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo",
@@ -493,6 +500,7 @@ def test_platform_trace_persists_semantic_checkpoint_and_generation_boundary(
     expected_semantic_id,
     expected_bridge_status,
     expected_route_id,
+    expected_route_alias,
     expected_module,
     expected_helper,
 ):
@@ -528,11 +536,20 @@ def test_platform_trace_persists_semantic_checkpoint_and_generation_boundary(
         "monte_carlo",
     }
     assert trace.generation_boundary["lane_plan"]["plan_kind"] == "exact_target_binding"
+    construction_identity = trace.generation_boundary["construction_identity"]
+    assert construction_identity["primary_kind"] == "backend_binding"
+    assert construction_identity["backend_exact_fit"] is True
+    assert construction_identity["route_alias"] == expected_route_alias
     assert trace.generation_boundary["lowering"]["route_id"] == expected_route_id
     assert boundary["generation_boundary"]["lowering"]["route_id"] == expected_route_id
+    assert boundary["generation_boundary"]["construction_identity"]["route_alias"] == expected_route_alias
     assert trace.generation_boundary["route_binding_authority"]["route_id"] == expected_route_id
     assert boundary["generation_boundary"]["route_binding_authority"]["route_id"] == expected_route_id
     assert trace.generation_boundary["route_binding_authority"]["authority_kind"] == "exact_backend_fit"
+    assert (
+        trace.generation_boundary["route_binding_authority"]["backend_binding"]["engine_family"]
+        in {"analytical", "monte_carlo"}
+    )
     assert (
         trace.generation_boundary["route_binding_authority"]["validation_bundle_id"]
         == trace.validation_contract["bundle_id"]
@@ -542,4 +559,4 @@ def test_platform_trace_persists_semantic_checkpoint_and_generation_boundary(
     if expected_helper is not None:
         assert expected_helper in trace.generation_boundary["lowering"]["helper_refs"]
         assert expected_helper in boundary["generation_boundary"]["lowering"]["helper_refs"]
-        assert expected_helper in trace.generation_boundary["route_binding_authority"]["helper_refs"]
+        assert expected_helper in trace.generation_boundary["route_binding_authority"]["backend_binding"]["helper_refs"]

@@ -188,7 +188,8 @@ def test_llm_conceptual_review_includes_compiled_route_contract(monkeypatch):
     assert findings == []
     assert "Compiled Route Contract" in captured["prompt"]
     assert "bridge=`thin_compatibility_wrapper`" in captured["prompt"]
-    assert "route=`analytical_black76`" in captured["prompt"]
+    assert "family_ir=`AnalyticalBlack76IR`" in captured["prompt"]
+    assert "route_alias=`analytical_black76`" not in captured["prompt"]
     assert "bundle=`analytical:european_option`" in captured["prompt"]
 
 
