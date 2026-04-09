@@ -170,6 +170,13 @@ to a thin wrapper, or pointed at a genuinely new concept. Supporting atoms are
 only surfaced when the request is actually about that semantic layer rather
 than just a novel product request that mentions the atom as a secondary detail.
 
+That summary now also carries the registered semantic family key plus the
+resolved method-surface summary when the contract family is registry-backed.
+In practice this makes the trace payload show both the semantic identity and
+the exact family/method surface that the lower compiler layers are expected to
+honor, which is useful when debugging admissible-method questions without
+diffing request-layer branch logic.
+
 Semantic role ownership is recorded on top of that contract metadata. The
 request metadata and platform traces now carry a stage-specific ownership
 summary that makes the handoff explicit: gap classification, bounded quant

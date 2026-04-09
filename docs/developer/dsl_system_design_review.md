@@ -246,12 +246,27 @@ The typed semantic boundary is proven end-to-end for these route families:
 
 This boundary preserves current route IDs and helper entry surfaces.
 
+The semantic-contract layer feeding that boundary is now also registry-backed:
+ordered draft rules select the family, registered family definitions own the
+admissible method matrix, and a single shared specialization helper rebuilds
+method-sensitive contracts for the request layer and semantic compiler. That
+eliminates one of the recurring lower-layer bug classes where method support
+drifted between ``semantic_contracts.py``, ``platform_requests.py``, and
+``semantic_contract_compiler.py``.
+
 For Monte Carlo, the next bounded compiler target is `EventAwareMonteCarloIR`:
 single-state / one-factor, deterministic event timelines, reduced-state path
 requirements, and explicit model/quote bindings. The route table above remains
 accurate because the generic vanilla MC routes have not yet all switched over
 to that family, even though the compiler now emits it for the bounded
 schedule-driven swaption slice.
+
+Callable-bond wrappers now follow the same “thin public shell over reusable
+family helpers” rule as the newer event-aware routes. The public PDE/tree
+helpers still exist, but coupon timeline compilation, embedded exercise
+projection, and straight-bond reference assembly have moved into
+``trellis.models.short_rate_fixed_income`` so later short-rate claim families
+can reuse that substrate instead of copying callable-bond-local logic.
 
 ---
 

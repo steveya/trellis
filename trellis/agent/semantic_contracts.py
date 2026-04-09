@@ -6,7 +6,7 @@ import dataclasses
 from dataclasses import dataclass, field
 from datetime import date
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 import re
 
 import yaml
@@ -55,6 +55,481 @@ def _yaml_safe_value(value):
     if isinstance(value, (tuple, list, set, frozenset)):
         return [_yaml_safe_value(item) for item in value]
     return value
+
+
+def _semantic_family_key(semantic_id: str, *, exercise_style: str | None = None) -> str:
+    """Return the registered family key for a semantic family and optional variant."""
+    normalized_semantic_id = str(semantic_id or "").strip()
+    normalized_exercise = str(exercise_style or "").strip().lower()
+    if normalized_semantic_id == "rate_style_swaption" and normalized_exercise in {"european", "bermudan"}:
+        return f"{normalized_semantic_id}:{normalized_exercise}"
+    return normalized_semantic_id
+
+
+def _method_surface_definition(
+    method: str,
+    *,
+    target_modules: tuple[str, ...] | list[str] = (),
+    primitive_families: tuple[str, ...] | list[str] = (),
+    adapter_obligations: tuple[str, ...] | list[str] = (),
+    spec_schema_hints: tuple[str, ...] | list[str] = (),
+) -> SemanticMethodSurfaceDefinition:
+    """Build one immutable semantic family/method surface definition."""
+    return SemanticMethodSurfaceDefinition(
+        method=normalize_method(method),
+        target_modules=_tuple(target_modules),
+        primitive_families=_tuple(primitive_families),
+        adapter_obligations=_tuple(adapter_obligations),
+        spec_schema_hints=_tuple(spec_schema_hints),
+    )
+
+
+def _family_definition(
+    *,
+    family_key: str,
+    semantic_id: str,
+    candidate_methods: tuple[str, ...] | list[str],
+    default_preferred_method: str | None = None,
+    method_surfaces: tuple[SemanticMethodSurfaceDefinition, ...] | list[SemanticMethodSurfaceDefinition] = (),
+) -> SemanticFamilyDefinition:
+    """Build one immutable semantic family definition."""
+    surfaces = {
+        surface.method: surface
+        for surface in method_surfaces
+    }
+    return SemanticFamilyDefinition(
+        family_key=family_key,
+        semantic_id=semantic_id,
+        candidate_methods=_tuple(candidate_methods),
+        default_preferred_method=normalize_method(default_preferred_method) if default_preferred_method else None,
+        method_surfaces=MappingProxyType(dict(surfaces)),
+    )
+
+
+def _build_semantic_family_registry() -> MappingProxyType:
+    """Return the immutable semantic family and method-surface registry."""
+    definitions = (
+        _family_definition(
+            family_key="ranked_observation_basket",
+            semantic_id="ranked_observation_basket",
+            candidate_methods=("monte_carlo",),
+            default_preferred_method="monte_carlo",
+            method_surfaces=(
+                _method_surface_definition(
+                    "monte_carlo",
+                    target_modules=(
+                        "trellis.models.resolution.basket_semantics",
+                        "trellis.models.monte_carlo.semantic_basket",
+                    ),
+                    primitive_families=("correlated_basket_monte_carlo",),
+                    adapter_obligations=(
+                        "resolve_basket_spots_for_ranked_selection",
+                        "resolve_basket_correlation_matrix",
+                        "build_ranked_observation_snapshot_state",
+                        "lock_selected_simple_return",
+                        "aggregate_locked_returns_at_maturity",
+                    ),
+                    spec_schema_hints=("basket_option",),
+                ),
+            ),
+        ),
+        _family_definition(
+            family_key="vanilla_option",
+            semantic_id="vanilla_option",
+            candidate_methods=("analytical", "rate_tree", "pde_solver", "monte_carlo", "fft_pricing"),
+            default_preferred_method="analytical",
+            method_surfaces=(
+                _method_surface_definition(
+                    "analytical",
+                    target_modules=("trellis.models.black",),
+                    primitive_families=("analytical_black76",),
+                    adapter_obligations=(
+                        "resolve_single_underlier_spot",
+                        "resolve_discount_curve",
+                        "map_terminal_payoff_to_black_kernel",
+                    ),
+                    spec_schema_hints=("european_option",),
+                ),
+                _method_surface_definition(
+                    "rate_tree",
+                    target_modules=("trellis.models.equity_option_tree",),
+                    primitive_families=("exercise_lattice",),
+                    adapter_obligations=(
+                        "resolve_single_underlier_spot",
+                        "resolve_discount_curve",
+                        "map_terminal_payoff_to_equity_tree_helper",
+                    ),
+                    spec_schema_hints=("european_option",),
+                ),
+                _method_surface_definition(
+                    "pde_solver",
+                    target_modules=("trellis.models.equity_option_pde",),
+                    primitive_families=("vanilla_equity_theta_pde",),
+                    adapter_obligations=(
+                        "resolve_single_underlier_spot",
+                        "resolve_discount_curve",
+                        "map_terminal_payoff_to_vanilla_pde_helper",
+                    ),
+                    spec_schema_hints=("european_option",),
+                ),
+                _method_surface_definition(
+                    "monte_carlo",
+                    target_modules=("trellis.models.equity_option_monte_carlo",),
+                    primitive_families=("monte_carlo_paths",),
+                    adapter_obligations=(
+                        "resolve_single_underlier_spot",
+                        "resolve_discount_curve",
+                        "map_terminal_payoff_to_equity_mc_helper",
+                    ),
+                    spec_schema_hints=("european_option",),
+                ),
+                _method_surface_definition(
+                    "fft_pricing",
+                    target_modules=("trellis.models.equity_option_transforms",),
+                    primitive_families=("transform_fft",),
+                    adapter_obligations=(
+                        "resolve_single_underlier_spot",
+                        "resolve_discount_curve",
+                        "map_terminal_payoff_to_transform_helper",
+                    ),
+                    spec_schema_hints=("european_option",),
+                ),
+            ),
+        ),
+        _family_definition(
+            family_key="american_option",
+            semantic_id="american_option",
+            candidate_methods=("rate_tree", "pde_solver", "monte_carlo"),
+            default_preferred_method="rate_tree",
+            method_surfaces=(
+                _method_surface_definition(
+                    "rate_tree",
+                    target_modules=("trellis.models.equity_option_tree",),
+                    primitive_families=("exercise_lattice",),
+                    adapter_obligations=(
+                        "resolve_single_underlier_spot",
+                        "resolve_discount_curve",
+                        "map_holder_exercise_schedule",
+                    ),
+                    spec_schema_hints=("american_option",),
+                ),
+                _method_surface_definition(
+                    "pde_solver",
+                    target_modules=("trellis.models.equity_option_pde",),
+                    primitive_families=("pde_theta_1d",),
+                    adapter_obligations=(
+                        "resolve_single_underlier_spot",
+                        "resolve_discount_curve",
+                        "map_holder_exercise_schedule",
+                    ),
+                    spec_schema_hints=("american_option",),
+                ),
+                _method_surface_definition(
+                    "monte_carlo",
+                    target_modules=(
+                        "trellis.models.monte_carlo.engine",
+                        "trellis.models.monte_carlo.lsm",
+                    ),
+                    primitive_families=("exercise_monte_carlo",),
+                    adapter_obligations=(
+                        "derive_exercise_dates_from_schedule_or_time_grid",
+                        "build_spot_to_exercise_payoff_callback",
+                        "select_continuation_estimator_or_basis",
+                    ),
+                    spec_schema_hints=("american_option",),
+                ),
+            ),
+        ),
+        _family_definition(
+            family_key="quanto_option",
+            semantic_id="quanto_option",
+            candidate_methods=("analytical", "monte_carlo"),
+            default_preferred_method="analytical",
+            method_surfaces=(
+                _method_surface_definition(
+                    "analytical",
+                    target_modules=(
+                        "trellis.models.resolution.quanto",
+                        "trellis.models.analytical.quanto",
+                    ),
+                    primitive_families=("quanto_adjustment_analytical",),
+                    adapter_obligations=(
+                        "resolve_underlier_spot",
+                        "resolve_fx_rate",
+                        "resolve_forward_and_discount_curves",
+                        "apply_quanto_adjustment_terms",
+                    ),
+                    spec_schema_hints=("quanto_option",),
+                ),
+                _method_surface_definition(
+                    "monte_carlo",
+                    target_modules=(
+                        "trellis.models.resolution.quanto",
+                        "trellis.models.monte_carlo.quanto",
+                    ),
+                    primitive_families=("correlated_gbm_monte_carlo",),
+                    adapter_obligations=(
+                        "resolve_underlier_spot",
+                        "resolve_fx_rate",
+                        "resolve_forward_and_discount_curves",
+                        "resolve_joint_underlier_fx_state",
+                        "price_through_quanto_mc_helper",
+                    ),
+                    spec_schema_hints=("quanto_option",),
+                ),
+            ),
+        ),
+        _family_definition(
+            family_key="callable_bond",
+            semantic_id="callable_bond",
+            candidate_methods=("rate_tree", "pde_solver"),
+            default_preferred_method="rate_tree",
+            method_surfaces=(
+                _method_surface_definition(
+                    "rate_tree",
+                    target_modules=("trellis.models.callable_bond_tree",),
+                    primitive_families=("exercise_lattice",),
+                    adapter_obligations=(
+                        "resolve_call_schedule",
+                        "calibrate_rate_tree",
+                        "backward_induction_over_call_dates",
+                    ),
+                    spec_schema_hints=("callable_bond",),
+                ),
+                _method_surface_definition(
+                    "pde_solver",
+                    target_modules=("trellis.models.callable_bond_pde",),
+                    primitive_families=("pde_theta_1d",),
+                    adapter_obligations=(
+                        "resolve_call_schedule",
+                        "resolve_rate_model_inputs",
+                        "backward_valuation_over_call_dates",
+                    ),
+                    spec_schema_hints=("callable_bond",),
+                ),
+            ),
+        ),
+        _family_definition(
+            family_key="range_accrual",
+            semantic_id="range_accrual",
+            candidate_methods=("analytical",),
+            default_preferred_method="analytical",
+            method_surfaces=(
+                _method_surface_definition(
+                    "analytical",
+                    target_modules=(
+                        "trellis.models.range_accrual",
+                        "trellis.models.contingent_cashflows",
+                    ),
+                    primitive_families=(),
+                    adapter_obligations=(
+                        "resolve_discount_and_forward_curves",
+                        "bind_fixing_history_for_observation_schedule",
+                        "evaluate_coupon_only_when_fixing_is_in_range",
+                    ),
+                    spec_schema_hints=("range_accrual",),
+                ),
+            ),
+        ),
+        _family_definition(
+            family_key="rate_style_swaption:european",
+            semantic_id="rate_style_swaption",
+            candidate_methods=("analytical", "rate_tree", "monte_carlo"),
+            default_preferred_method="analytical",
+            method_surfaces=(
+                _method_surface_definition(
+                    "analytical",
+                    target_modules=("trellis.models.rate_style_swaption",),
+                    primitive_families=("analytical_black76",),
+                    adapter_obligations=(
+                        "resolve_forward_and_discount_curves",
+                        "derive_swaption_exercise_schedule",
+                        "map_swaption_to_black_route",
+                    ),
+                    spec_schema_hints=("swaption",),
+                ),
+                _method_surface_definition(
+                    "rate_tree",
+                    target_modules=("trellis.models.rate_style_swaption_tree",),
+                    primitive_families=("rate_tree_backward_induction",),
+                    adapter_obligations=(
+                        "resolve_forward_and_discount_curves",
+                        "derive_swaption_exercise_schedule",
+                        "map_swaption_to_tree_helper",
+                    ),
+                    spec_schema_hints=("swaption",),
+                ),
+                _method_surface_definition(
+                    "monte_carlo",
+                    target_modules=("trellis.models.rate_style_swaption",),
+                    primitive_families=("monte_carlo_paths",),
+                    adapter_obligations=(
+                        "resolve_forward_and_discount_curves",
+                        "derive_swaption_exercise_schedule",
+                        "compile_schedule_into_mc_event_timeline",
+                        "map_swaption_to_event_aware_mc_payoff",
+                    ),
+                    spec_schema_hints=("swaption",),
+                ),
+            ),
+        ),
+        _family_definition(
+            family_key="rate_style_swaption:bermudan",
+            semantic_id="rate_style_swaption",
+            candidate_methods=("analytical", "rate_tree"),
+            default_preferred_method="rate_tree",
+            method_surfaces=(
+                _method_surface_definition(
+                    "analytical",
+                    target_modules=("trellis.models.rate_style_swaption",),
+                    primitive_families=("analytical_black76",),
+                    adapter_obligations=(
+                        "resolve_forward_and_discount_curves",
+                        "derive_swaption_exercise_schedule",
+                        "map_swaption_to_black_route",
+                    ),
+                    spec_schema_hints=("bermudan_swaption",),
+                ),
+                _method_surface_definition(
+                    "rate_tree",
+                    target_modules=("trellis.models.bermudan_swaption_tree",),
+                    primitive_families=("exercise_lattice",),
+                    adapter_obligations=(
+                        "resolve_forward_and_discount_curves",
+                        "derive_swaption_exercise_schedule",
+                        "map_swaption_to_tree_helper",
+                    ),
+                    spec_schema_hints=("bermudan_swaption",),
+                ),
+            ),
+        ),
+        _family_definition(
+            family_key="credit_default_swap",
+            semantic_id="credit_default_swap",
+            candidate_methods=("analytical", "monte_carlo"),
+            default_preferred_method="analytical",
+            method_surfaces=(
+                _method_surface_definition(
+                    "analytical",
+                    target_modules=("trellis.models.credit_default_swap",),
+                    primitive_families=("credit_default_swap_analytical",),
+                    adapter_obligations=(
+                        "resolve_credit_curve_and_discount_curve",
+                        "build_cds_payment_schedule",
+                        "delegate_cds_leg_pricing_to_checked_helpers",
+                    ),
+                    spec_schema_hints=("credit_default_swap",),
+                ),
+                _method_surface_definition(
+                    "monte_carlo",
+                    target_modules=("trellis.models.credit_default_swap",),
+                    primitive_families=("credit_default_swap_monte_carlo",),
+                    adapter_obligations=(
+                        "resolve_credit_curve_and_discount_curve",
+                        "build_cds_payment_schedule",
+                        "delegate_cds_leg_pricing_to_checked_helpers",
+                    ),
+                    spec_schema_hints=("credit_default_swap",),
+                ),
+            ),
+        ),
+        _family_definition(
+            family_key="nth_to_default",
+            semantic_id="nth_to_default",
+            candidate_methods=("copula",),
+            default_preferred_method="copula",
+            method_surfaces=(
+                _method_surface_definition(
+                    "copula",
+                    target_modules=("trellis.instruments.nth_to_default",),
+                    primitive_families=("nth_to_default_monte_carlo",),
+                    adapter_obligations=(
+                        "resolve_basket_credit_curve_and_discount_curve",
+                        "preserve_reference_entities_and_trigger_rank",
+                        "delegate_nth_to_default_pricing_to_checked_helper",
+                    ),
+                    spec_schema_hints=("nth_to_default",),
+                ),
+            ),
+        ),
+        _family_definition(
+            family_key="credit_basket_tranche",
+            semantic_id="credit_basket_tranche",
+            candidate_methods=("copula",),
+            default_preferred_method="copula",
+            method_surfaces=(
+                _method_surface_definition(
+                    "copula",
+                    target_modules=("trellis.models.credit_basket_copula",),
+                    primitive_families=("copula_loss_distribution",),
+                    adapter_obligations=(
+                        "resolve_basket_credit_curve_and_discount_curve",
+                        "preserve_tranche_attachment_and_detachment",
+                        "delegate_credit_basket_tranche_pricing_to_checked_helper",
+                    ),
+                    spec_schema_hints=("cdo",),
+                ),
+            ),
+        ),
+    )
+    return MappingProxyType({definition.family_key: definition for definition in definitions})
+
+
+_SEMANTIC_FAMILY_REGISTRY: MappingProxyType | None = None
+
+
+def registered_semantic_family_keys() -> tuple[str, ...]:
+    """Return the registered semantic family keys."""
+    return tuple(_SEMANTIC_FAMILY_REGISTRY.keys())
+
+
+def resolve_semantic_family_definition(
+    semantic_id: str,
+    *,
+    exercise_style: str | None = None,
+) -> SemanticFamilyDefinition:
+    """Return the registered family definition for the semantic family."""
+    family_key = _semantic_family_key(semantic_id, exercise_style=exercise_style)
+    try:
+        return _SEMANTIC_FAMILY_REGISTRY[family_key]
+    except KeyError as exc:
+        raise ValueError(f"Semantic family `{family_key}` is not registered.") from exc
+
+
+def resolve_semantic_method_surface(
+    semantic_id: str,
+    preferred_method: str,
+    *,
+    exercise_style: str | None = None,
+) -> SemanticMethodSurfaceDefinition:
+    """Return the registered method surface for one semantic family."""
+    definition = resolve_semantic_family_definition(semantic_id, exercise_style=exercise_style)
+    normalized_method = normalize_method(preferred_method)
+    try:
+        return definition.method_surfaces[normalized_method]
+    except KeyError as exc:
+        raise ValueError(
+            f"Semantic family `{definition.family_key}` does not support method `{normalized_method}`."
+        ) from exc
+
+
+def _resolve_registered_family_surface(
+    semantic_id: str,
+    *,
+    preferred_method: str | None = None,
+    exercise_style: str | None = None,
+) -> tuple[SemanticFamilyDefinition, SemanticMethodSurfaceDefinition, str]:
+    """Return the family definition, chosen method surface, and normalized method."""
+    definition = resolve_semantic_family_definition(semantic_id, exercise_style=exercise_style)
+    normalized_method = normalize_method(
+        preferred_method or definition.default_preferred_method or definition.candidate_methods[0]
+    )
+    surface = resolve_semantic_method_surface(
+        semantic_id,
+        normalized_method,
+        exercise_style=exercise_style,
+    )
+    return definition, surface, normalized_method
 
 
 DEFAULT_PHASE_ORDER = (
@@ -174,6 +649,37 @@ class SemanticMarketInputSpec:
     connector_hint: str = ""
     derivable_from: tuple[str, ...] = ()
     allowed_provenance: tuple[str, ...] = ("observed",)
+
+
+@dataclass(frozen=True)
+class SemanticDraftRule:
+    """One ordered semantic-contract drafting rule."""
+
+    name: str
+    matcher: Callable[[str, str | None], bool]
+    builder: Callable[[str, str, str | None, Any], SemanticContract]
+
+
+@dataclass(frozen=True)
+class SemanticMethodSurfaceDefinition:
+    """One registered family/method surface for semantic-contract assembly."""
+
+    method: str
+    target_modules: tuple[str, ...] = ()
+    primitive_families: tuple[str, ...] = ()
+    adapter_obligations: tuple[str, ...] = ()
+    spec_schema_hints: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class SemanticFamilyDefinition:
+    """One registry-backed semantic family definition."""
+
+    family_key: str
+    semantic_id: str
+    candidate_methods: tuple[str, ...]
+    default_preferred_method: str | None
+    method_surfaces: Mapping[str, SemanticMethodSurfaceDefinition]
 
 
 def _to_compact_dict(obj) -> dict:
@@ -315,6 +821,9 @@ class SemanticContract:
         return self.product.semantic_id
 
 
+_SEMANTIC_FAMILY_REGISTRY = _build_semantic_family_registry()
+
+
 def parse_semantic_contract(spec: SemanticContract | dict[str, Any] | str) -> SemanticContract:
     """Parse a semantic contract from an object, dict, or YAML string."""
     if isinstance(spec, SemanticContract):
@@ -339,6 +848,26 @@ def semantic_contract_summary(contract: SemanticContract | dict[str, Any] | str)
     """Return a YAML-safe summary of a semantic contract for request metadata."""
     parsed = parse_semantic_contract(contract)
     concept = get_semantic_concept_definition(parsed.product.semantic_id)
+    family_key = _semantic_family_key(
+        parsed.product.semantic_id,
+        exercise_style=parsed.product.exercise_style,
+    )
+    surface_summary: dict[str, object] | None = None
+    try:
+        surface = resolve_semantic_method_surface(
+            parsed.product.semantic_id,
+            parsed.methods.preferred_method or parsed.methods.candidate_methods[0],
+            exercise_style=parsed.product.exercise_style,
+        )
+    except (IndexError, ValueError):
+        surface = None
+    if surface is not None:
+        surface_summary = {
+            "method": surface.method,
+            "target_modules": list(surface.target_modules),
+            "primitive_families": list(surface.primitive_families),
+            "spec_schema_hints": list(surface.spec_schema_hints),
+        }
     return {
         "semantic_id": parsed.product.semantic_id,
         "semantic_version": parsed.product.semantic_version,
@@ -408,8 +937,10 @@ def semantic_contract_summary(contract: SemanticContract | dict[str, Any] | str)
             "optional_inputs": [item.input_id for item in parsed.market_data.optional_inputs],
         },
         "methods": {
+            "family_key": family_key,
             "candidate_methods": list(parsed.methods.candidate_methods),
             "preferred_method": parsed.methods.preferred_method,
+            "registered_surface": surface_summary,
         },
         "blueprint": {
             "target_modules": list(parsed.blueprint.target_modules),
@@ -429,6 +960,10 @@ def make_ranked_observation_basket_contract(
     """Construct the canonical ranked-observation basket semantic contract."""
     constituent_names = _tuple(constituents)
     schedule = _normalize_schedule(observation_schedule)
+    definition, surface, normalized_method = _resolve_registered_family_surface(
+        "ranked_observation_basket",
+        preferred_method=preferred_method,
+    )
     if len(constituent_names) < 2:
         raise ValueError("Ranked observation basket contract requires at least two constituents.")
     if not schedule:
@@ -609,10 +1144,10 @@ def make_ranked_observation_basket_contract(
     )
 
     methods = SemanticMethodContract(
-        candidate_methods=(normalize_method(preferred_method),),
-        reference_methods=(normalize_method(preferred_method),),
-        production_methods=(normalize_method(preferred_method),),
-        preferred_method=normalize_method(preferred_method),
+        candidate_methods=definition.candidate_methods,
+        reference_methods=(normalized_method,),
+        production_methods=(normalized_method,),
+        preferred_method=normalized_method,
     )
 
     validation = SemanticValidationContract(
@@ -630,30 +1165,21 @@ def make_ranked_observation_basket_contract(
             "simple_return_locked_per_observation",
             "settle_once_at_maturity",
         ),
-        comparison_targets=(normalize_method(preferred_method),),
+        comparison_targets=(normalized_method,),
         reduction_cases=("three_constituent_three_date_basket",),
     )
 
     blueprint = SemanticBlueprintHints(
-        target_modules=(
-            "trellis.models.resolution.basket_semantics",
-            "trellis.models.monte_carlo.semantic_basket",
-        ),
-        primitive_families=("correlated_basket_monte_carlo",),
-        adapter_obligations=(
-            "resolve_basket_spots_for_ranked_selection",
-            "resolve_basket_correlation_matrix",
-            "build_ranked_observation_snapshot_state",
-            "lock_selected_simple_return",
-            "aggregate_locked_returns_at_maturity",
-        ),
+        target_modules=surface.target_modules,
+        primitive_families=surface.primitive_families,
+        adapter_obligations=surface.adapter_obligations,
         proving_tasks=(
             "compile_request_to_product_ir",
             "validate_ranked_observation_contract",
             "emit_bounded_semantic_blueprint",
         ),
         blocked_by=(),
-        spec_schema_hints=("basket_option",),
+        spec_schema_hints=surface.spec_schema_hints,
     )
 
     return SemanticContract(
@@ -888,7 +1414,10 @@ def make_vanilla_option_contract(
     """Construct a generic vanilla option semantic contract."""
     underlier_names = _tuple(underliers)
     schedule = _normalize_schedule(observation_schedule)
-    normalized_method = normalize_method(preferred_method)
+    definition, surface, normalized_method = _resolve_registered_family_surface(
+        "vanilla_option",
+        preferred_method=preferred_method,
+    )
     if not underlier_names:
         raise ValueError("Vanilla option contract requires at least one underlier.")
     if not schedule:
@@ -1000,43 +1529,11 @@ def make_vanilla_option_contract(
             allowed_provenance=("observed",),
         ),
     )
-    if normalized_method == "monte_carlo":
-        target_modules = ("trellis.models.equity_option_monte_carlo",)
-        primitive_families = ("monte_carlo_paths",)
-        adapter_obligations = (
-            "resolve_single_underlier_spot",
-            "resolve_discount_curve",
-            "map_terminal_payoff_to_equity_mc_helper",
-        )
-    elif normalized_method == "fft_pricing":
-        target_modules = ("trellis.models.equity_option_transforms",)
-        primitive_families = ("transform_fft",)
-        adapter_obligations = (
-            "resolve_single_underlier_spot",
-            "resolve_discount_curve",
-            "map_terminal_payoff_to_transform_helper",
-        )
-    elif normalized_method == "pde_solver":
-        target_modules = ("trellis.models.equity_option_pde",)
-        primitive_families = ("vanilla_equity_theta_pde",)
-        adapter_obligations = (
-            "resolve_single_underlier_spot",
-            "resolve_discount_curve",
-            "map_terminal_payoff_to_vanilla_pde_helper",
-        )
-    else:
-        target_modules = ("trellis.models.black",)
-        primitive_families = ("analytical_black76",)
-        adapter_obligations = (
-            "resolve_single_underlier_spot",
-            "resolve_discount_curve",
-            "map_terminal_payoff_to_black_kernel",
-        )
     return _semantic_contract_from_sections(
         product=product,
         required_inputs=required_inputs,
-        candidate_methods=("analytical", "rate_tree", "pde_solver", "monte_carlo"),
-        preferred_method=preferred_method,
+        candidate_methods=definition.candidate_methods,
+        preferred_method=normalized_method,
         bundle_hints=("vanilla_option_contract",),
         universal_checks=(
             "single_underlier_present",
@@ -1047,17 +1544,17 @@ def make_vanilla_option_contract(
             "terminal_payoff_evaluated_from_single_underlier",
             "settlement_occurs_at_expiry",
         ),
-        comparison_targets=(normalize_method(preferred_method),),
+        comparison_targets=(normalized_method,),
         reduction_cases=("single_underlier_terminal_payoff",),
-        target_modules=target_modules,
-        primitive_families=primitive_families,
-        adapter_obligations=adapter_obligations,
+        target_modules=surface.target_modules,
+        primitive_families=surface.primitive_families,
+        adapter_obligations=surface.adapter_obligations,
         proving_tasks=(
             "compile_request_to_product_ir",
             "validate_vanilla_option_contract",
             "emit_bounded_semantic_blueprint",
         ),
-        spec_schema_hints=("european_option",),
+        spec_schema_hints=surface.spec_schema_hints,
         description=description,
     )
 
@@ -1073,6 +1570,10 @@ def make_american_option_contract(
     """Construct a bounded early-exercise single-underlier option contract."""
     underlier_names = _tuple(underliers)
     schedule = _normalize_schedule(observation_schedule)
+    definition, surface, normalized_method = _resolve_registered_family_surface(
+        "american_option",
+        preferred_method=preferred_method,
+    )
     if not underlier_names:
         raise ValueError("American option contract requires at least one underlier.")
     if not schedule:
@@ -1191,8 +1692,8 @@ def make_american_option_contract(
     return _semantic_contract_from_sections(
         product=product,
         required_inputs=required_inputs,
-        candidate_methods=("rate_tree", "pde_solver", "monte_carlo"),
-        preferred_method=preferred_method,
+        candidate_methods=definition.candidate_methods,
+        preferred_method=normalized_method,
         bundle_hints=("american_option_contract",),
         universal_checks=(
             "single_underlier_present",
@@ -1203,21 +1704,17 @@ def make_american_option_contract(
             "holder_exercise_occurs_on_schedule",
             "settlement_occurs_at_expiry",
         ),
-        comparison_targets=(normalize_method(preferred_method),),
+        comparison_targets=(normalized_method,),
         reduction_cases=("single_underlier_early_exercise",),
-        target_modules=("trellis.models.equity_option_tree", "trellis.models.equity_option_pde"),
-        primitive_families=("exercise_lattice", "pde_theta_1d"),
-        adapter_obligations=(
-            "resolve_single_underlier_spot",
-            "resolve_discount_curve",
-            "map_holder_exercise_schedule",
-        ),
+        target_modules=surface.target_modules,
+        primitive_families=surface.primitive_families,
+        adapter_obligations=surface.adapter_obligations,
         proving_tasks=(
             "compile_request_to_product_ir",
             "validate_american_option_contract",
             "emit_bounded_semantic_blueprint",
         ),
-        spec_schema_hints=("american_option",),
+        spec_schema_hints=surface.spec_schema_hints,
         description=description,
     )
 
@@ -1232,7 +1729,10 @@ def make_quanto_option_contract(
     """Construct a generic quanto-style semantic contract."""
     underlier_names = _tuple(underliers)
     schedule = _normalize_schedule(observation_schedule)
-    normalized_method = normalize_method(preferred_method)
+    definition, surface, normalized_method = _resolve_registered_family_surface(
+        "quanto_option",
+        preferred_method=preferred_method,
+    )
     if not underlier_names:
         raise ValueError("Quanto option contract requires at least one underlier.")
     if not schedule:
@@ -1391,28 +1891,11 @@ def make_quanto_option_contract(
             ),
         ),
     )
-    if normalized_method == "monte_carlo":
-        primitive_families = ("correlated_gbm_monte_carlo",)
-        adapter_obligations = (
-            "resolve_underlier_spot",
-            "resolve_fx_rate",
-            "resolve_forward_and_discount_curves",
-            "resolve_joint_underlier_fx_state",
-            "price_through_quanto_mc_helper",
-        )
-    else:
-        primitive_families = ("quanto_adjustment_analytical",)
-        adapter_obligations = (
-            "resolve_underlier_spot",
-            "resolve_fx_rate",
-            "resolve_forward_and_discount_curves",
-            "apply_quanto_adjustment_terms",
-        )
     return _semantic_contract_from_sections(
         product=product,
         required_inputs=required_inputs,
-        candidate_methods=("analytical", "monte_carlo"),
-        preferred_method=preferred_method,
+        candidate_methods=definition.candidate_methods,
+        preferred_method=normalized_method,
         bundle_hints=("quanto_option_contract",),
         universal_checks=(
             "single_underlier_present",
@@ -1424,21 +1907,17 @@ def make_quanto_option_contract(
             "quanto_adjustment_applied",
             "fx_conversion_applied_before_settlement",
         ),
-        comparison_targets=(normalize_method(preferred_method),),
+        comparison_targets=(normalized_method,),
         reduction_cases=("single_underlier_cross_currency_payoff",),
-        target_modules=(
-            "trellis.models.resolution.quanto",
-            "trellis.models.analytical.quanto",
-            "trellis.models.monte_carlo.quanto",
-        ),
-        primitive_families=primitive_families,
-        adapter_obligations=adapter_obligations,
+        target_modules=surface.target_modules,
+        primitive_families=surface.primitive_families,
+        adapter_obligations=surface.adapter_obligations,
         proving_tasks=(
             "compile_request_to_product_ir",
             "validate_quanto_option_contract",
             "emit_bounded_semantic_blueprint",
         ),
-        spec_schema_hints=("quanto_option",),
+        spec_schema_hints=surface.spec_schema_hints,
         description=description,
     )
 
@@ -1453,7 +1932,10 @@ def make_callable_bond_contract(
     schedule = _normalize_schedule(observation_schedule)
     if not schedule:
         raise ValueError("Callable bond contract requires a call schedule.")
-    normalized_method = normalize_method(preferred_method)
+    definition, surface, normalized_method = _resolve_registered_family_surface(
+        "callable_bond",
+        preferred_method=preferred_method,
+    )
 
     product = SemanticProductSemantics(
         semantic_id="callable_bond",
@@ -1577,28 +2059,11 @@ def make_callable_bond_contract(
     except Exception:
         pass
 
-    if normalized_method == "pde_solver":
-        target_modules = ("trellis.models.callable_bond_pde",)
-        primitive_families = ("pde_theta_1d",)
-        adapter_obligations = (
-            "resolve_call_schedule",
-            "resolve_rate_model_inputs",
-            "backward_valuation_over_call_dates",
-        )
-    else:
-        target_modules = ("trellis.models.callable_bond_tree",)
-        primitive_families = ("exercise_lattice",)
-        adapter_obligations = (
-            "resolve_call_schedule",
-            "calibrate_rate_tree",
-            "backward_induction_over_call_dates",
-        )
-
     return _semantic_contract_from_sections(
         product=product,
         required_inputs=required_inputs,
-        candidate_methods=("rate_tree", "pde_solver", "monte_carlo"),
-        preferred_method=preferred_method,
+        candidate_methods=definition.candidate_methods,
+        preferred_method=normalized_method,
         bundle_hints=("callable_bond_contract",),
         universal_checks=(
             "call_schedule_present",
@@ -1609,17 +2074,17 @@ def make_callable_bond_contract(
             "issuer_call_decision_compares_continuation_value",
             "call_decision_applied_on_schedule",
         ),
-        comparison_targets=(normalize_method(preferred_method),),
+        comparison_targets=(normalized_method,),
         reduction_cases=("single_issuer_call_schedule",),
-        target_modules=target_modules,
-        primitive_families=primitive_families,
-        adapter_obligations=adapter_obligations,
+        target_modules=surface.target_modules,
+        primitive_families=surface.primitive_families,
+        adapter_obligations=surface.adapter_obligations,
         proving_tasks=(
             "compile_request_to_product_ir",
             "validate_callable_bond_contract",
             "emit_bounded_semantic_blueprint",
         ),
-        spec_schema_hints=("callable_bond",),
+        spec_schema_hints=surface.spec_schema_hints,
         description=description,
         calibration=_calibration,
     )
@@ -1637,6 +2102,10 @@ def make_range_accrual_contract(
     preferred_method: str = "analytical",
 ) -> SemanticContract:
     """Construct the first checked semantic trade-entry contract for range accruals."""
+    definition, surface, normalized_method = _resolve_registered_family_surface(
+        "range_accrual",
+        preferred_method=preferred_method,
+    )
     normalized_index = str(reference_index or "").strip().upper()
     schedule = _normalize_schedule(observation_schedule)
     normalized_coupon = _normalize_coupon_definition(coupon_definition)
@@ -1816,8 +2285,8 @@ def make_range_accrual_contract(
     return _semantic_contract_from_sections(
         product=product,
         required_inputs=required_inputs,
-        candidate_methods=("analytical",),
-        preferred_method=preferred_method,
+        candidate_methods=definition.candidate_methods,
+        preferred_method=normalized_method,
         bundle_hints=("range_accrual_contract",),
         universal_checks=(
             "reference_index_present",
@@ -1830,22 +2299,18 @@ def make_range_accrual_contract(
             "fixing_history_bound_to_past_schedule_points",
             "principal_redeems_at_maturity",
         ),
-        comparison_targets=(normalize_method(preferred_method),),
+        comparison_targets=(normalized_method,),
         reduction_cases=("single_index_range_accrual",),
-        target_modules=("trellis.models.range_accrual", "trellis.models.contingent_cashflows"),
-        primitive_families=(),
-        adapter_obligations=(
-            "resolve_discount_and_forward_curves",
-            "bind_fixing_history_for_observation_schedule",
-            "evaluate_coupon_only_when_fixing_is_in_range",
-        ),
+        target_modules=surface.target_modules,
+        primitive_families=surface.primitive_families,
+        adapter_obligations=surface.adapter_obligations,
         proving_tasks=(
             "compile_request_to_product_ir",
             "validate_range_accrual_contract",
             "emit_bounded_semantic_blueprint",
         ),
         blocked_by=(),
-        spec_schema_hints=("range_accrual",),
+        spec_schema_hints=surface.spec_schema_hints,
         description=description,
     )
 
@@ -1862,32 +2327,14 @@ def make_rate_style_swaption_contract(
     schedule = _normalize_schedule(observation_schedule)
     if not schedule:
         raise ValueError("Rate-style swaption contract requires an exercise schedule.")
-    normalized_method = normalize_method(preferred_method)
     normalized_exercise = str(exercise_style).strip().lower()
     if normalized_exercise not in {"european", "bermudan"}:
         raise ValueError("Rate-style swaption contract only supports european or bermudan exercise.")
-    if normalized_exercise == "european":
-        if normalized_method == "monte_carlo":
-            target_modules = (
-                "trellis.models.processes.hull_white",
-                "trellis.models.monte_carlo.engine",
-                "trellis.models.monte_carlo.event_state",
-                "trellis.models.monte_carlo.path_state",
-            )
-            primitive_families = ("monte_carlo_paths",)
-        elif normalized_method == "rate_tree":
-            target_modules = ("trellis.models.rate_style_swaption_tree",)
-            primitive_families = ("rate_tree_backward_induction",)
-        else:
-            target_modules = ("trellis.models.rate_style_swaption",)
-            primitive_families = ("analytical_black76",)
-    elif normalized_method == "analytical":
-        target_modules = ("trellis.models.rate_style_swaption",)
-        primitive_families = ("analytical_black76",)
-    else:
-        target_modules = ("trellis.models.trees.lattice",)
-        primitive_families = ("exercise_lattice",)
-    spec_schema_hints = ("swaption",) if normalized_exercise == "european" else ("bermudan_swaption",)
+    definition, surface, normalized_method = _resolve_registered_family_surface(
+        "rate_style_swaption",
+        preferred_method=preferred_method,
+        exercise_style=normalized_exercise,
+    )
     normalized_term_fields = _freeze_mapping(term_fields)
 
     product = SemanticProductSemantics(
@@ -2052,12 +2499,8 @@ def make_rate_style_swaption_contract(
         optional_inputs=optional_inputs,
         derivable_inputs=derivable_inputs,
         estimation_policy=estimation_policy,
-        candidate_methods=(
-            ("analytical", "rate_tree", "monte_carlo")
-            if normalized_exercise == "european"
-            else ("analytical", "rate_tree")
-        ),
-        preferred_method=preferred_method,
+        candidate_methods=definition.candidate_methods,
+        preferred_method=normalized_method,
         bundle_hints=("rate_style_swaption_contract",),
         universal_checks=(
             "exercise_schedule_present",
@@ -2068,29 +2511,17 @@ def make_rate_style_swaption_contract(
             "exercise_payoff_derived_from_schedule",
             "settlement_occurs_at_exercise",
         ),
-        comparison_targets=(normalize_method(preferred_method),),
+        comparison_targets=(normalized_method,),
         reduction_cases=("single_curve_rate_style_swaption",),
-        target_modules=target_modules,
-        primitive_families=primitive_families,
-        adapter_obligations=(
-            "resolve_forward_and_discount_curves",
-            "derive_swaption_exercise_schedule",
-            "map_swaption_to_black_route",
-            *(
-                (
-                    "compile_schedule_into_mc_event_timeline",
-                    "map_swaption_to_event_aware_mc_payoff",
-                )
-                if normalized_method == "monte_carlo"
-                else ()
-            ),
-        ),
+        target_modules=surface.target_modules,
+        primitive_families=surface.primitive_families,
+        adapter_obligations=surface.adapter_obligations,
         proving_tasks=(
             "compile_request_to_product_ir",
             "validate_rate_style_swaption_contract",
             "emit_bounded_semantic_blueprint",
         ),
-        spec_schema_hints=spec_schema_hints,
+        spec_schema_hints=surface.spec_schema_hints,
         description=description,
         calibration=calibration,
     )
@@ -2108,12 +2539,9 @@ def make_credit_default_swap_contract(
     reference_names = _tuple(reference_entities)
     if not schedule:
         raise ValueError("Credit default swap contract requires a premium or maturity schedule.")
-
-    normalized_method = normalize_method(preferred_method)
-    primitive_family = (
-        "credit_default_swap_monte_carlo"
-        if normalized_method == "monte_carlo"
-        else "credit_default_swap_analytical"
+    definition, surface, normalized_method = _resolve_registered_family_surface(
+        "credit_default_swap",
+        preferred_method=preferred_method,
     )
 
     product = SemanticProductSemantics(
@@ -2248,8 +2676,8 @@ def make_credit_default_swap_contract(
     return _semantic_contract_from_sections(
         product=product,
         required_inputs=required_inputs,
-        candidate_methods=("analytical", "monte_carlo"),
-        preferred_method=preferred_method,
+        candidate_methods=definition.candidate_methods,
+        preferred_method=normalized_method,
         bundle_hints=("credit_default_swap_contract",),
         universal_checks=(
             "single_reference_entity_present",
@@ -2262,19 +2690,15 @@ def make_credit_default_swap_contract(
         ),
         comparison_targets=(normalized_method,),
         reduction_cases=("single_name_credit_default_swap",),
-        target_modules=("trellis.models.credit_default_swap",),
-        primitive_families=(primitive_family,),
-        adapter_obligations=(
-            "resolve_credit_curve_and_discount_curve",
-            "build_cds_payment_schedule",
-            "delegate_cds_leg_pricing_to_checked_helpers",
-        ),
+        target_modules=surface.target_modules,
+        primitive_families=surface.primitive_families,
+        adapter_obligations=surface.adapter_obligations,
         proving_tasks=(
             "compile_request_to_product_ir",
             "validate_credit_default_swap_contract",
             "emit_bounded_semantic_blueprint",
         ),
-        spec_schema_hints=("credit_default_swap",),
+        spec_schema_hints=surface.spec_schema_hints,
         description=description,
     )
 
@@ -2300,10 +2724,10 @@ def make_nth_to_default_contract(
         raise ValueError(
             "Nth-to-default trigger rank cannot exceed the number of reference entities."
         )
-    if normalized_method != "copula":
-        raise ValueError(
-            "Nth-to-default semantic contracts currently support the copula route only."
-        )
+    definition, surface, normalized_method = _resolve_registered_family_surface(
+        "nth_to_default",
+        preferred_method=preferred_method,
+    )
 
     product = SemanticProductSemantics(
         semantic_id="nth_to_default",
@@ -2427,7 +2851,7 @@ def make_nth_to_default_contract(
     return _semantic_contract_from_sections(
         product=product,
         required_inputs=required_inputs,
-        candidate_methods=("copula",),
+        candidate_methods=definition.candidate_methods,
         preferred_method=normalized_method,
         bundle_hints=("nth_to_default_contract",),
         universal_checks=(
@@ -2441,19 +2865,15 @@ def make_nth_to_default_contract(
         ),
         comparison_targets=(normalized_method,),
         reduction_cases=("first_to_default_basket",),
-        target_modules=("trellis.instruments.nth_to_default",),
-        primitive_families=("nth_to_default_monte_carlo",),
-        adapter_obligations=(
-            "resolve_basket_credit_curve_and_discount_curve",
-            "preserve_reference_entities_and_trigger_rank",
-            "delegate_nth_to_default_pricing_to_checked_helper",
-        ),
+        target_modules=surface.target_modules,
+        primitive_families=surface.primitive_families,
+        adapter_obligations=surface.adapter_obligations,
         proving_tasks=(
             "compile_request_to_product_ir",
             "validate_nth_to_default_contract",
             "emit_bounded_semantic_blueprint",
         ),
-        spec_schema_hints=("nth_to_default",),
+        spec_schema_hints=surface.spec_schema_hints,
         description=description,
     )
 
@@ -2477,10 +2897,10 @@ def make_credit_basket_tranche_contract(
         raise ValueError("Credit-basket tranche contract requires a maturity schedule.")
     if normalized_detachment <= normalized_attachment:
         raise ValueError("Tranche detachment must exceed attachment.")
-    if normalized_method != "copula":
-        raise ValueError(
-            "Credit-basket tranche semantic contracts currently support the copula route only."
-        )
+    definition, surface, normalized_method = _resolve_registered_family_surface(
+        "credit_basket_tranche",
+        preferred_method=preferred_method,
+    )
 
     reference_pool = tuple(f"REF{i + 1}" for i in range(normalized_pool_size))
     product = SemanticProductSemantics(
@@ -2610,7 +3030,7 @@ def make_credit_basket_tranche_contract(
     return _semantic_contract_from_sections(
         product=product,
         required_inputs=required_inputs,
-        candidate_methods=("copula",),
+        candidate_methods=definition.candidate_methods,
         preferred_method=normalized_method,
         bundle_hints=("credit_basket_tranche_contract",),
         universal_checks=(
@@ -2622,23 +3042,282 @@ def make_credit_basket_tranche_contract(
             "tranche_attachment_detachment_explicit",
             "copula_dependence_assumption_explicit",
         ),
-        comparison_targets=("gaussian_copula", "student_t_copula"),
+        comparison_targets=(normalized_method,),
         reduction_cases=("mezzanine_tranche",),
-        target_modules=("trellis.models.credit_basket_copula",),
-        primitive_families=("copula_loss_distribution",),
-        adapter_obligations=(
-            "resolve_basket_credit_curve_and_discount_curve",
-            "preserve_tranche_attachment_and_detachment",
-            "delegate_credit_basket_tranche_pricing_to_checked_helper",
-        ),
+        target_modules=surface.target_modules,
+        primitive_families=surface.primitive_families,
+        adapter_obligations=surface.adapter_obligations,
         proving_tasks=(
             "compile_request_to_product_ir",
             "validate_credit_basket_tranche_contract",
             "emit_bounded_semantic_blueprint",
         ),
-        spec_schema_hints=("cdo",),
+        spec_schema_hints=surface.spec_schema_hints,
         description=description,
     )
+
+
+def _contract_requires_input(contract: SemanticContract, input_id: str) -> bool:
+    """Return whether the semantic contract requires one named market input."""
+    return any(
+        str(spec.input_id).strip() == input_id
+        for spec in getattr(contract.market_data, "required_inputs", ())
+    )
+
+
+def _rebuild_ranked_observation_basket_contract(
+    contract: SemanticContract,
+    normalized_method: str,
+) -> SemanticContract:
+    """Rebuild a ranked-observation basket contract for one preferred method."""
+    product = contract.product
+    return make_ranked_observation_basket_contract(
+        description=contract.description,
+        constituents=tuple(getattr(product, "constituents", ()) or ()),
+        observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+        preferred_method=normalized_method,
+        include_correlation=_contract_requires_input(contract, "correlation_matrix"),
+    )
+
+
+def _rebuild_vanilla_option_contract(
+    contract: SemanticContract,
+    normalized_method: str,
+) -> SemanticContract:
+    """Rebuild a vanilla option contract for one preferred method."""
+    product = contract.product
+    return make_vanilla_option_contract(
+        description=contract.description,
+        underliers=tuple(getattr(product, "constituents", ()) or ()),
+        observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+        preferred_method=normalized_method,
+    )
+
+
+def _rebuild_american_option_contract(
+    contract: SemanticContract,
+    normalized_method: str,
+) -> SemanticContract:
+    """Rebuild an early-exercise option contract for one preferred method."""
+    product = contract.product
+    return make_american_option_contract(
+        description=contract.description,
+        underliers=tuple(getattr(product, "constituents", ()) or ()),
+        observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+        preferred_method=normalized_method,
+        exercise_style=str(getattr(product, "exercise_style", "american") or "american"),
+    )
+
+
+def _rebuild_quanto_option_contract(
+    contract: SemanticContract,
+    normalized_method: str,
+) -> SemanticContract:
+    """Rebuild a quanto option contract for one preferred method."""
+    product = contract.product
+    return make_quanto_option_contract(
+        description=contract.description,
+        underliers=tuple(getattr(product, "constituents", ()) or ()),
+        observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+        preferred_method=normalized_method,
+    )
+
+
+def _rebuild_callable_bond_contract(
+    contract: SemanticContract,
+    normalized_method: str,
+) -> SemanticContract:
+    """Rebuild a callable-bond contract for one preferred method."""
+    product = contract.product
+    return make_callable_bond_contract(
+        description=contract.description,
+        observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+        preferred_method=normalized_method,
+    )
+
+
+def _rebuild_range_accrual_contract(
+    contract: SemanticContract,
+    normalized_method: str,
+) -> SemanticContract:
+    """Rebuild a range-accrual contract for one preferred method."""
+    product = contract.product
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
+    return make_range_accrual_contract(
+        description=contract.description,
+        reference_index=str(term_fields.get("reference_index") or ""),
+        observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+        coupon_definition=term_fields.get("coupon_definition"),
+        range_condition=term_fields.get("range_condition"),
+        settlement_profile=term_fields.get("settlement_profile"),
+        callability=term_fields.get("callability"),
+        preferred_method=normalized_method,
+    )
+
+
+def _rebuild_rate_style_swaption_contract(
+    contract: SemanticContract,
+    normalized_method: str,
+) -> SemanticContract:
+    """Rebuild a rate-style swaption contract for one preferred method."""
+    product = contract.product
+    return make_rate_style_swaption_contract(
+        description=contract.description,
+        observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+        preferred_method=normalized_method,
+        exercise_style=str(getattr(product, "exercise_style", "european") or "european"),
+        term_fields=dict(getattr(product, "term_fields", {}) or {}),
+    )
+
+
+def _rebuild_credit_default_swap_contract(
+    contract: SemanticContract,
+    normalized_method: str,
+) -> SemanticContract:
+    """Rebuild a single-name CDS contract for one preferred method."""
+    product = contract.product
+    return make_credit_default_swap_contract(
+        description=contract.description,
+        observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+        preferred_method=normalized_method,
+        reference_entities=tuple(getattr(product, "constituents", ()) or ()),
+    )
+
+
+def _rebuild_nth_to_default_contract(
+    contract: SemanticContract,
+    normalized_method: str,
+) -> SemanticContract:
+    """Rebuild an nth-to-default contract for one preferred method."""
+    product = contract.product
+    return make_nth_to_default_contract(
+        description=contract.description,
+        observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+        reference_entities=tuple(getattr(product, "constituents", ()) or ()),
+        trigger_rank=max(int(getattr(product, "selection_count", 1) or 1), 1),
+        preferred_method=normalized_method,
+    )
+
+
+def _rebuild_credit_basket_tranche_contract(
+    contract: SemanticContract,
+    normalized_method: str,
+) -> SemanticContract:
+    """Rebuild a credit-basket tranche contract for one preferred method."""
+    product = contract.product
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
+    reference_pool_size = int(
+        term_fields.get("reference_pool_size")
+        or len(tuple(getattr(product, "constituents", ()) or ()))
+        or 2
+    )
+    return make_credit_basket_tranche_contract(
+        description=contract.description,
+        observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+        reference_pool_size=reference_pool_size,
+        attachment=float(term_fields.get("attachment") or 0.0),
+        detachment=float(term_fields.get("detachment") or 1.0),
+        preferred_method=normalized_method,
+    )
+
+
+_SEMANTIC_CONTRACT_REBUILDERS: Mapping[str, Callable[[SemanticContract, str], SemanticContract]] = MappingProxyType(
+    {
+        "ranked_observation_basket": _rebuild_ranked_observation_basket_contract,
+        "vanilla_option": _rebuild_vanilla_option_contract,
+        "american_option": _rebuild_american_option_contract,
+        "quanto_option": _rebuild_quanto_option_contract,
+        "callable_bond": _rebuild_callable_bond_contract,
+        "range_accrual": _rebuild_range_accrual_contract,
+        "rate_style_swaption": _rebuild_rate_style_swaption_contract,
+        "credit_default_swap": _rebuild_credit_default_swap_contract,
+        "nth_to_default": _rebuild_nth_to_default_contract,
+        "credit_basket_tranche": _rebuild_credit_basket_tranche_contract,
+    }
+)
+
+
+def validate_semantic_family_registry() -> None:
+    """Raise when the semantic family/method registry is internally inconsistent."""
+    errors: list[str] = []
+    semantic_ids_with_rebuilders = set(_SEMANTIC_CONTRACT_REBUILDERS.keys())
+    family_semantic_ids = {definition.semantic_id for definition in _SEMANTIC_FAMILY_REGISTRY.values()}
+
+    for family_key, definition in _SEMANTIC_FAMILY_REGISTRY.items():
+        candidate_methods = tuple(definition.candidate_methods)
+        surface_methods = tuple(definition.method_surfaces.keys())
+        if not candidate_methods:
+            errors.append(f"{family_key}: candidate_methods cannot be empty")
+        if surface_methods != candidate_methods:
+            errors.append(
+                f"{family_key}: method surfaces {surface_methods} do not exactly match candidate methods {candidate_methods}"
+            )
+        if definition.default_preferred_method and definition.default_preferred_method not in candidate_methods:
+            errors.append(
+                f"{family_key}: default method `{definition.default_preferred_method}` is not in candidate methods {candidate_methods}"
+            )
+        for method_name, surface in definition.method_surfaces.items():
+            if surface.method != method_name:
+                errors.append(
+                    f"{family_key}: surface key `{method_name}` does not match surface.method `{surface.method}`"
+                )
+            if not surface.target_modules:
+                errors.append(f"{family_key}:{method_name}: target_modules cannot be empty")
+            if not surface.spec_schema_hints:
+                errors.append(f"{family_key}:{method_name}: spec_schema_hints cannot be empty")
+
+    missing_rebuilders = sorted(family_semantic_ids - semantic_ids_with_rebuilders)
+    if missing_rebuilders:
+        errors.append(
+            f"semantic families missing rebuilders: {tuple(missing_rebuilders)}"
+        )
+
+    extra_rebuilders = sorted(semantic_ids_with_rebuilders - family_semantic_ids)
+    if extra_rebuilders:
+        errors.append(
+            f"rebuilders registered for unknown semantic families: {tuple(extra_rebuilders)}"
+        )
+
+    if errors:
+        raise ValueError("Invalid semantic family registry: " + "; ".join(errors))
+
+
+def specialize_semantic_contract_for_method(
+    semantic_contract: SemanticContract | None,
+    *,
+    preferred_method: str | None,
+) -> SemanticContract | None:
+    """Return the method-specialized contract using the shared registry-backed authority."""
+    if semantic_contract is None or not preferred_method:
+        return semantic_contract
+    normalized_method = normalize_method(preferred_method)
+    current_method = normalize_method(getattr(semantic_contract.methods, "preferred_method", "") or "")
+    semantic_id = str(getattr(semantic_contract, "semantic_id", "") or "").strip()
+    rebuilder = _SEMANTIC_CONTRACT_REBUILDERS.get(semantic_id)
+    if rebuilder is None:
+        return semantic_contract
+    if current_method == normalized_method:
+        try:
+            surface = resolve_semantic_method_surface(
+                semantic_id,
+                normalized_method,
+                exercise_style=getattr(semantic_contract.product, "exercise_style", None),
+            )
+        except ValueError:
+            surface = None
+        if surface is not None:
+            blueprint = getattr(semantic_contract, "blueprint", None)
+            if blueprint is not None and (
+                tuple(getattr(blueprint, "target_modules", ()) or ()) == surface.target_modules
+                and tuple(getattr(blueprint, "primitive_families", ()) or ()) == surface.primitive_families
+                and tuple(getattr(blueprint, "adapter_obligations", ()) or ()) == surface.adapter_obligations
+                and tuple(getattr(blueprint, "spec_schema_hints", ()) or ()) == surface.spec_schema_hints
+            ):
+                return semantic_contract
+    return rebuilder(semantic_contract, normalized_method)
+
+
+validate_semantic_family_registry()
 
 
 def draft_semantic_contract(
@@ -2649,29 +3328,7 @@ def draft_semantic_contract(
 ) -> SemanticContract | None:
     """Draft the canonical semantic contract from a natural-language request."""
     text = _combined_request_text(description, instrument_type, term_sheet)
-    if not _looks_like_ranked_observation_basket_request(text):
-        maybe_contract = _draft_shape_contract(text, description, instrument_type, term_sheet)
-        if maybe_contract is None:
-            return None
-        return maybe_contract
-
-    constituents = _extract_constituents(text, term_sheet)
-    observation_schedule = _extract_observation_schedule(text, term_sheet)
-
-    if not observation_schedule:
-        raise ValueError(
-            "Semantic ranked observation basket request requires an observation schedule."
-        )
-    if len(constituents) < 2:
-        raise ValueError(
-            "Semantic ranked observation basket request requires at least two constituents."
-        )
-
-    return make_ranked_observation_basket_contract(
-        description=description,
-        constituents=constituents,
-        observation_schedule=observation_schedule,
-    )
+    return _draft_shape_contract(text, description, instrument_type, term_sheet)
 
 
 def _parse_market_input_spec(payload: SemanticMarketInputSpec | dict[str, Any]) -> SemanticMarketInputSpec:
@@ -3869,6 +4526,362 @@ def _looks_like_cdo_tranche_request(text: str, instrument_type: str | None) -> b
     )
 
 
+def _draft_ranked_observation_basket_contract(
+    text: str,
+    description: str,
+    instrument_type: str | None,
+    term_sheet,
+) -> SemanticContract:
+    """Draft a ranked-observation basket contract from request text."""
+    del instrument_type
+    constituents = _extract_constituents(text, term_sheet)
+    observation_schedule = _extract_observation_schedule(text, term_sheet)
+    if not observation_schedule:
+        raise ValueError(
+            "Semantic ranked observation basket request requires an observation schedule."
+        )
+    if len(constituents) < 2:
+        raise ValueError(
+            "Semantic ranked observation basket request requires at least two constituents."
+        )
+    return make_ranked_observation_basket_contract(
+        description=description,
+        constituents=constituents,
+        observation_schedule=observation_schedule,
+    )
+
+
+def _draft_quanto_option_contract(
+    text: str,
+    description: str,
+    instrument_type: str | None,
+    term_sheet,
+) -> SemanticContract:
+    """Draft a quanto option contract from request text."""
+    del instrument_type
+    underliers = _extract_primary_underlier(text, term_sheet)
+    observation_schedule = _split_supported_dates(
+        text,
+        term_sheet,
+        parameter_keys=("expiry_date", "expiry", "exercise_date"),
+    )
+    if not underliers:
+        raise ValueError(
+            "Semantic quanto option request requires an identifiable underlier."
+        )
+    if not observation_schedule:
+        raise ValueError(
+            "Semantic quanto option request requires an expiry or exercise schedule."
+        )
+    return make_quanto_option_contract(
+        description=description,
+        underliers=underliers,
+        observation_schedule=observation_schedule,
+    )
+
+
+def _draft_range_accrual_contract(
+    text: str,
+    description: str,
+    instrument_type: str | None,
+    term_sheet,
+) -> SemanticContract:
+    """Draft a range-accrual contract from request text."""
+    del instrument_type
+    reference_index = _extract_reference_index(text, term_sheet)
+    observation_schedule = _split_supported_dates(
+        text,
+        term_sheet,
+        parameter_keys=(
+            "observation_schedule",
+            "observation_dates",
+            "fixing_schedule",
+            "fixing_dates",
+        ),
+    )
+    coupon_definition = _extract_range_accrual_coupon_definition(text, term_sheet)
+    range_condition = _extract_range_accrual_range_condition(text, term_sheet)
+    callability = _extract_range_accrual_callability(text, term_sheet)
+    missing_fields: list[str] = []
+    if not reference_index:
+        missing_fields.append("reference_index")
+    if not coupon_definition:
+        missing_fields.append("coupon_definition")
+    if not range_condition:
+        missing_fields.append("range_condition")
+    if not observation_schedule:
+        missing_fields.append("observation_schedule")
+    if missing_fields:
+        joined = ", ".join(missing_fields)
+        raise ValueError(f"Semantic range accrual request requires {joined}.")
+    return make_range_accrual_contract(
+        description=description,
+        reference_index=reference_index,
+        observation_schedule=observation_schedule,
+        coupon_definition=coupon_definition,
+        range_condition=range_condition,
+        settlement_profile=_default_range_accrual_settlement_profile(),
+        callability=callability,
+    )
+
+
+def _draft_callable_bond_contract(
+    text: str,
+    description: str,
+    instrument_type: str | None,
+    term_sheet,
+) -> SemanticContract:
+    """Draft a callable-bond contract from request text."""
+    del instrument_type
+    observation_schedule = _split_supported_dates(
+        text,
+        term_sheet,
+        parameter_keys=("call_schedule", "call_dates", "observation_schedule", "observation_dates"),
+    )
+    if not observation_schedule:
+        raise ValueError(
+            "Semantic callable bond request requires a call or exercise schedule."
+        )
+    return make_callable_bond_contract(
+        description=description,
+        observation_schedule=observation_schedule,
+    )
+
+
+def _draft_vanilla_option_contract(
+    text: str,
+    description: str,
+    instrument_type: str | None,
+    term_sheet,
+) -> SemanticContract:
+    """Draft a vanilla or bounded early-exercise option contract from request text."""
+    underliers = _extract_primary_underlier(text, term_sheet)
+    observation_schedule = _split_supported_dates(
+        text,
+        term_sheet,
+        parameter_keys=("expiry_date", "expiry", "exercise_date", "observation_schedule", "observation_dates"),
+    )
+    if not underliers:
+        raise ValueError(
+            "Semantic vanilla option request requires an identifiable underlier."
+        )
+    if not observation_schedule:
+        raise ValueError(
+            "Semantic vanilla option request requires an expiry or exercise schedule."
+        )
+    normalized_instrument = str(instrument_type or "").strip().lower().replace(" ", "_")
+    if normalized_instrument == "american_option":
+        return make_american_option_contract(
+            description=description,
+            underliers=underliers,
+            observation_schedule=observation_schedule,
+            preferred_method="pde_solver",
+            exercise_style="bermudan" if len(observation_schedule) > 1 else "american",
+        )
+    return make_vanilla_option_contract(
+        description=description,
+        underliers=underliers,
+        observation_schedule=observation_schedule,
+    )
+
+
+def _draft_rate_style_swaption_contract(
+    text: str,
+    description: str,
+    instrument_type: str | None,
+    term_sheet,
+) -> SemanticContract:
+    """Draft a rate-style swaption contract from request text."""
+    observation_schedule = _split_supported_dates(
+        text,
+        term_sheet,
+        parameter_keys=("expiry_date", "expiry", "exercise_date", "observation_schedule", "observation_dates"),
+    )
+    if not observation_schedule:
+        raise ValueError(
+            "Semantic rate-style swaption request requires an exercise schedule."
+        )
+    normalized_instrument = str(instrument_type or "").strip().lower()
+    return make_rate_style_swaption_contract(
+        description=description,
+        observation_schedule=observation_schedule,
+        preferred_method="rate_tree" if normalized_instrument == "bermudan_swaption" else "analytical",
+        exercise_style="bermudan" if normalized_instrument == "bermudan_swaption" else "european",
+        term_fields=_extract_swaption_term_fields(text, term_sheet),
+    )
+
+
+def _draft_credit_basket_tranche_contract(
+    text: str,
+    description: str,
+    instrument_type: str | None,
+    term_sheet,
+) -> SemanticContract:
+    """Draft a tranche-style credit basket contract from request text."""
+    del instrument_type
+    observation_schedule = _split_supported_dates(
+        text,
+        term_sheet,
+        parameter_keys=(
+            "maturity_date",
+            "end_date",
+            "observation_schedule",
+            "observation_dates",
+        ),
+    )
+    if not observation_schedule:
+        raise ValueError(
+            "Semantic credit-basket tranche request requires a maturity schedule."
+        )
+    reference_pool_size = _extract_reference_pool_size(text, term_sheet)
+    if reference_pool_size < 2:
+        raise ValueError(
+            "Semantic credit-basket tranche request requires a reference-pool size."
+        )
+    attachment = _extract_tranche_point(text, term_sheet, label="attachment")
+    detachment = _extract_tranche_point(text, term_sheet, label="detachment")
+    if attachment is None or detachment is None:
+        raise ValueError(
+            "Semantic credit-basket tranche request requires attachment and detachment points."
+        )
+    return make_credit_basket_tranche_contract(
+        description=description,
+        observation_schedule=observation_schedule,
+        reference_pool_size=reference_pool_size,
+        attachment=attachment,
+        detachment=detachment,
+    )
+
+
+def _draft_nth_to_default_contract(
+    text: str,
+    description: str,
+    instrument_type: str | None,
+    term_sheet,
+) -> SemanticContract:
+    """Draft an nth-to-default contract from request text."""
+    del instrument_type
+    observation_schedule = _split_supported_dates(
+        text,
+        term_sheet,
+        parameter_keys=(
+            "maturity_date",
+            "end_date",
+            "observation_schedule",
+            "observation_dates",
+            "trigger_dates",
+        ),
+    )
+    if not observation_schedule:
+        raise ValueError(
+            "Semantic nth-to-default request requires a maturity or trigger schedule."
+        )
+    reference_entities = _extract_reference_entities(text, term_sheet)
+    if len(reference_entities) < 2:
+        raise ValueError(
+            "Semantic nth-to-default request requires at least two reference entities."
+        )
+    return make_nth_to_default_contract(
+        description=description,
+        observation_schedule=observation_schedule,
+        reference_entities=reference_entities,
+        trigger_rank=_extract_trigger_rank(text, term_sheet),
+    )
+
+
+def _draft_credit_default_swap_contract(
+    text: str,
+    description: str,
+    instrument_type: str | None,
+    term_sheet,
+) -> SemanticContract:
+    """Draft a single-name CDS contract from request text."""
+    del instrument_type
+    observation_schedule = _split_supported_dates(
+        text,
+        term_sheet,
+        parameter_keys=(
+            "premium_schedule",
+            "premium_dates",
+            "observation_schedule",
+            "observation_dates",
+            "maturity_date",
+            "end_date",
+            "expiry_date",
+        ),
+    )
+    if not observation_schedule:
+        raise ValueError(
+            "Semantic credit default swap request requires a premium or maturity schedule."
+        )
+    reference_entities = _extract_primary_underlier(text, term_sheet)
+    return make_credit_default_swap_contract(
+        description=description,
+        observation_schedule=observation_schedule,
+        preferred_method="monte_carlo" if "hazard rate mc" in text.lower() else "analytical",
+        reference_entities=reference_entities,
+    )
+
+
+def _build_semantic_draft_rules() -> tuple[SemanticDraftRule, ...]:
+    """Return the ordered semantic drafting rules."""
+    return (
+        SemanticDraftRule(
+            name="ranked_observation_basket",
+            matcher=lambda text, instrument_type: _looks_like_ranked_observation_basket_request(text),
+            builder=_draft_ranked_observation_basket_contract,
+        ),
+        SemanticDraftRule(
+            name="quanto_option",
+            matcher=_looks_like_quanto_option_request,
+            builder=_draft_quanto_option_contract,
+        ),
+        SemanticDraftRule(
+            name="range_accrual",
+            matcher=_looks_like_range_accrual_request,
+            builder=_draft_range_accrual_contract,
+        ),
+        SemanticDraftRule(
+            name="callable_bond",
+            matcher=_looks_like_callable_bond_request,
+            builder=_draft_callable_bond_contract,
+        ),
+        SemanticDraftRule(
+            name="vanilla_option",
+            matcher=_looks_like_vanilla_option_request,
+            builder=_draft_vanilla_option_contract,
+        ),
+        SemanticDraftRule(
+            name="rate_style_swaption",
+            matcher=_looks_like_rate_style_swaption_request,
+            builder=_draft_rate_style_swaption_contract,
+        ),
+        SemanticDraftRule(
+            name="credit_basket_tranche",
+            matcher=_looks_like_cdo_tranche_request,
+            builder=_draft_credit_basket_tranche_contract,
+        ),
+        SemanticDraftRule(
+            name="nth_to_default",
+            matcher=_looks_like_nth_to_default_request,
+            builder=_draft_nth_to_default_contract,
+        ),
+        SemanticDraftRule(
+            name="credit_default_swap",
+            matcher=_looks_like_credit_default_swap_request,
+            builder=_draft_credit_default_swap_contract,
+        ),
+    )
+
+
+_SEMANTIC_DRAFT_RULES = _build_semantic_draft_rules()
+
+
+def registered_semantic_draft_rule_names() -> tuple[str, ...]:
+    """Return the ordered semantic-contract draft rule names."""
+    return tuple(rule.name for rule in _SEMANTIC_DRAFT_RULES)
+
+
 def _draft_shape_contract(
     text: str,
     description: str,
@@ -3876,214 +4889,7 @@ def _draft_shape_contract(
     term_sheet,
 ) -> SemanticContract | None:
     """Draft one generic shape-driven semantic contract, if recognized."""
-    if _looks_like_quanto_option_request(text, instrument_type):
-        underliers = _extract_primary_underlier(text, term_sheet)
-        observation_schedule = _split_supported_dates(
-            text,
-            term_sheet,
-            parameter_keys=("expiry_date", "expiry", "exercise_date"),
-        )
-        if not underliers:
-            raise ValueError(
-                "Semantic quanto option request requires an identifiable underlier."
-            )
-        if not observation_schedule:
-            raise ValueError(
-                "Semantic quanto option request requires an expiry or exercise schedule."
-            )
-        return make_quanto_option_contract(
-            description=description,
-            underliers=underliers,
-            observation_schedule=observation_schedule,
-        )
-
-    if _looks_like_range_accrual_request(text, instrument_type):
-        reference_index = _extract_reference_index(text, term_sheet)
-        observation_schedule = _split_supported_dates(
-            text,
-            term_sheet,
-            parameter_keys=(
-                "observation_schedule",
-                "observation_dates",
-                "fixing_schedule",
-                "fixing_dates",
-            ),
-        )
-        coupon_definition = _extract_range_accrual_coupon_definition(text, term_sheet)
-        range_condition = _extract_range_accrual_range_condition(text, term_sheet)
-        callability = _extract_range_accrual_callability(text, term_sheet)
-        missing_fields: list[str] = []
-        if not reference_index:
-            missing_fields.append("reference_index")
-        if not coupon_definition:
-            missing_fields.append("coupon_definition")
-        if not range_condition:
-            missing_fields.append("range_condition")
-        if not observation_schedule:
-            missing_fields.append("observation_schedule")
-        if missing_fields:
-            joined = ", ".join(missing_fields)
-            raise ValueError(f"Semantic range accrual request requires {joined}.")
-        return make_range_accrual_contract(
-            description=description,
-            reference_index=reference_index,
-            observation_schedule=observation_schedule,
-            coupon_definition=coupon_definition,
-            range_condition=range_condition,
-            settlement_profile=_default_range_accrual_settlement_profile(),
-            callability=callability,
-        )
-
-    if _looks_like_callable_bond_request(text, instrument_type):
-        observation_schedule = _split_supported_dates(
-            text,
-            term_sheet,
-            parameter_keys=("call_schedule", "call_dates", "observation_schedule", "observation_dates"),
-        )
-        if not observation_schedule:
-            raise ValueError(
-                "Semantic callable bond request requires a call or exercise schedule."
-            )
-        return make_callable_bond_contract(
-            description=description,
-            observation_schedule=observation_schedule,
-        )
-
-    if _looks_like_vanilla_option_request(text, instrument_type):
-        underliers = _extract_primary_underlier(text, term_sheet)
-        observation_schedule = _split_supported_dates(
-            text,
-            term_sheet,
-            parameter_keys=("expiry_date", "expiry", "exercise_date", "observation_schedule", "observation_dates"),
-        )
-        if not underliers:
-            raise ValueError(
-                "Semantic vanilla option request requires an identifiable underlier."
-            )
-        if not observation_schedule:
-            raise ValueError(
-                "Semantic vanilla option request requires an expiry or exercise schedule."
-            )
-        normalized_instrument = str(instrument_type or "").strip().lower().replace(" ", "_")
-        if normalized_instrument == "american_option":
-            return make_american_option_contract(
-                description=description,
-                underliers=underliers,
-                observation_schedule=observation_schedule,
-                preferred_method="pde_solver",
-                exercise_style="bermudan" if len(observation_schedule) > 1 else "american",
-            )
-        return make_vanilla_option_contract(
-            description=description,
-            underliers=underliers,
-            observation_schedule=observation_schedule,
-        )
-
-    if _looks_like_rate_style_swaption_request(text, instrument_type):
-        observation_schedule = _split_supported_dates(
-            text,
-            term_sheet,
-            parameter_keys=("expiry_date", "expiry", "exercise_date", "observation_schedule", "observation_dates"),
-        )
-        if not observation_schedule:
-            raise ValueError(
-                "Semantic rate-style swaption request requires an exercise schedule."
-            )
-        normalized_instrument = str(instrument_type or "").strip().lower()
-        return make_rate_style_swaption_contract(
-            description=description,
-            observation_schedule=observation_schedule,
-            preferred_method="rate_tree" if normalized_instrument == "bermudan_swaption" else "analytical",
-            exercise_style="bermudan" if normalized_instrument == "bermudan_swaption" else "european",
-            term_fields=_extract_swaption_term_fields(text, term_sheet),
-        )
-
-    if _looks_like_cdo_tranche_request(text, instrument_type):
-        observation_schedule = _split_supported_dates(
-            text,
-            term_sheet,
-            parameter_keys=(
-                "maturity_date",
-                "end_date",
-                "observation_schedule",
-                "observation_dates",
-            ),
-        )
-        if not observation_schedule:
-            raise ValueError(
-                "Semantic credit-basket tranche request requires a maturity schedule."
-            )
-        reference_pool_size = _extract_reference_pool_size(text, term_sheet)
-        if reference_pool_size < 2:
-            raise ValueError(
-                "Semantic credit-basket tranche request requires a reference-pool size."
-            )
-        attachment = _extract_tranche_point(text, term_sheet, label="attachment")
-        detachment = _extract_tranche_point(text, term_sheet, label="detachment")
-        if attachment is None or detachment is None:
-            raise ValueError(
-                "Semantic credit-basket tranche request requires attachment and detachment points."
-            )
-        return make_credit_basket_tranche_contract(
-            description=description,
-            observation_schedule=observation_schedule,
-            reference_pool_size=reference_pool_size,
-            attachment=attachment,
-            detachment=detachment,
-        )
-
-    if _looks_like_nth_to_default_request(text, instrument_type):
-        observation_schedule = _split_supported_dates(
-            text,
-            term_sheet,
-            parameter_keys=(
-                "maturity_date",
-                "end_date",
-                "observation_schedule",
-                "observation_dates",
-                "trigger_dates",
-            ),
-        )
-        if not observation_schedule:
-            raise ValueError(
-                "Semantic nth-to-default request requires a maturity or trigger schedule."
-            )
-        reference_entities = _extract_reference_entities(text, term_sheet)
-        if len(reference_entities) < 2:
-            raise ValueError(
-                "Semantic nth-to-default request requires at least two reference entities."
-            )
-        return make_nth_to_default_contract(
-            description=description,
-            observation_schedule=observation_schedule,
-            reference_entities=reference_entities,
-            trigger_rank=_extract_trigger_rank(text, term_sheet),
-        )
-
-    if _looks_like_credit_default_swap_request(text, instrument_type):
-        observation_schedule = _split_supported_dates(
-            text,
-            term_sheet,
-            parameter_keys=(
-                "premium_schedule",
-                "premium_dates",
-                "observation_schedule",
-                "observation_dates",
-                "maturity_date",
-                "end_date",
-                "expiry_date",
-            ),
-        )
-        if not observation_schedule:
-            raise ValueError(
-                "Semantic credit default swap request requires a premium or maturity schedule."
-            )
-        reference_entities = _extract_primary_underlier(text, term_sheet)
-        return make_credit_default_swap_contract(
-            description=description,
-            observation_schedule=observation_schedule,
-            preferred_method="monte_carlo" if "hazard rate mc" in text.lower() else "analytical",
-            reference_entities=reference_entities,
-        )
-
+    for rule in _SEMANTIC_DRAFT_RULES:
+        if rule.matcher(text, instrument_type):
+            return rule.builder(text, description, instrument_type, term_sheet)
     return None

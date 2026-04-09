@@ -210,6 +210,31 @@ def test_compile_build_request_supports_knowledge_light_profile():
     assert compiled.routing_knowledge_text.startswith("## Knowledge-Light Routing Mode")
 
 
+def test_platform_request_method_specialization_uses_shared_semantic_authority():
+    from trellis.agent.platform_requests import _semantic_contract_with_preferred_method
+    from trellis.agent.semantic_contracts import (
+        make_rate_style_swaption_contract,
+        specialize_semantic_contract_for_method,
+    )
+
+    contract = make_rate_style_swaption_contract(
+        description="European payer swaption",
+        observation_schedule=("2026-01-15",),
+        preferred_method="analytical",
+    )
+
+    specialized = _semantic_contract_with_preferred_method(
+        contract,
+        preferred_method="monte_carlo",
+    )
+    expected = specialize_semantic_contract_for_method(
+        contract,
+        preferred_method="monte_carlo",
+    )
+
+    assert specialized == expected
+
+
 def test_compile_build_request_emits_fallback_lane_plan_for_american_tree_route():
     from trellis.agent.platform_requests import compile_build_request
 

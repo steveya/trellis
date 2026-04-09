@@ -337,12 +337,12 @@ def test_platform_trace_summarizes_event_aware_pde_family_ir(tmp_path):
     construction_identity = boundary["generation_boundary"]["construction_identity"]
     family_ir_summary = lowering["family_ir_summary"]
 
-    assert lowering["family_ir_type"] == "ExerciseLatticeIR"
+    assert lowering["family_ir_type"] == "EventAwarePDEIR"
     assert construction_identity["primary_kind"] == "backend_binding"
-    assert construction_identity["route_alias"] == "exercise_lattice"
-    assert construction_identity["backend_binding_id"] == "trellis.models.callable_bond_tree.price_callable_bond_tree"
+    assert construction_identity["route_alias"] == "pde_theta_1d"
+    assert construction_identity["backend_binding_id"] == "trellis.models.callable_bond_pde.price_callable_bond_pde"
     assert family_ir_summary["semantic_control_style"] == "issuer_min"
-    assert family_ir_summary["helper_symbol"] == "price_callable_bond_tree"
+    assert family_ir_summary["helper_symbol"] == "price_callable_bond_pde"
     assert family_ir_summary["semantic_transform_kinds"] == ["add_cashflow", "project_min"]
     assert family_ir_summary["compatibility_status"] == "native_event_aware"
 

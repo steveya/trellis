@@ -15,23 +15,27 @@ from typing import Protocol
 
 import numpy as raw_np
 
-from trellis.core.date_utils import build_payment_timeline, normalize_explicit_dates, year_fraction
+from trellis.core.date_utils import normalize_explicit_dates, year_fraction
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.callable_bond_tree import straight_bond_present_value
 from trellis.models.hull_white_parameters import resolve_hull_white_parameters
 from trellis.models.pde.event_aware import (
     EventAwarePDEBoundarySpec,
-    EventAwarePDEEventBucket,
     EventAwarePDEGridSpec,
     EventAwarePDEOperatorSpec,
     EventAwarePDEProblem,
     EventAwarePDEProblemSpec,
-    EventAwarePDETransform,
     build_event_aware_pde_problem,
     interpolate_pde_values,
     solve_event_aware_pde,
 )
 from trellis.models.pde.grid import Grid
+from trellis.models.short_rate_fixed_income import (
+    build_embedded_fixed_income_event_timeline,
+    build_embedded_fixed_income_pde_event_buckets,
+    matured_embedded_fixed_income_value,
+    present_value_fixed_coupon_bond,
+    settlement_date_for_fixed_income_claim,
+)
 
 
 class DiscountCurveLike(Protocol):
@@ -124,7 +128,7 @@ def resolve_callable_bond_pde_inputs(
     r_max: float | None = None,
 ) -> ResolvedCallableBondPDEInputs:
     """Resolve callable-bond PDE inputs from market state and spec."""
-    settlement = _settlement_date(market_state, spec)
+    settlement = settlement_date_for_fixed_income_claim(market_state, spec)
     discount_curve = market_state.discount
     if discount_curve is None:
         raise ValueError("Callable-bond PDE pricing requires market_state.discount")
@@ -164,7 +168,7 @@ def resolve_callable_bond_pde_inputs(
         default_mean_reversion=0.1,
         default_sigma=default_sigma,
     )
-    terminal_redemption = float(spec.notional) + _final_coupon_amount(spec, settlement=settlement)
+    terminal_redemption = matured_embedded_fixed_income_value(spec, settlement=settlement)
     resolved_n_r = max(int(n_r or 201), 5)
     resolved_n_t = max(int(n_t or max(200, int(round(max(maturity, 1e-6) * 50)))), 1)
     resolved_r_min, resolved_r_max = _rate_bounds(
@@ -251,10 +255,13 @@ def build_callable_bond_pde_problem(
                 upper=_upper_short_rate_boundary_discount,
                 post_step_policy="linear_extrapolation",
             ),
-            event_buckets=_callable_bond_event_buckets(
-                spec,
-                settlement=settlement_or_asof(market_state, spec),
-                call_price_cash=resolved.call_price_cash,
+            event_buckets=build_embedded_fixed_income_pde_event_buckets(
+                build_embedded_fixed_income_event_timeline(
+                    spec,
+                    settlement=settlement_or_asof(market_state, spec),
+                ),
+                day_count=spec.day_count,
+                maturity_date=spec.end_date,
             ),
             theta=resolved.theta,
         )
@@ -329,9 +336,9 @@ def price_callable_bond_pde(
         frequency=frequency,
         day_count=day_count,
     )
-    settlement = _settlement_date(market_state, resolved_spec)
+    settlement = settlement_date_for_fixed_income_claim(market_state, resolved_spec)
     if settlement >= resolved_spec.end_date:
-        return float(_matured_callable_bond_value(resolved_spec, settlement=settlement))
+        return float(matured_embedded_fixed_income_value(resolved_spec, settlement=settlement))
 
     resolved, grid, surface = solve_callable_bond_pde_surface(
         market_state,
@@ -345,7 +352,7 @@ def price_callable_bond_pde(
         r_max=r_max,
     )
     price = float(interpolate_pde_values(surface, grid.x, resolved.r0))
-    straight_price = straight_bond_present_value(
+    straight_price = present_value_fixed_coupon_bond(
         market_state,
         resolved_spec,
         settlement=settlement,
@@ -431,106 +438,6 @@ def _coerce_callable_bond_spec(
         frequency=resolved_frequency,
         day_count=resolved_day_count,
     )
-
-
-def _callable_bond_event_buckets(
-    spec: CallableBondSpecLike,
-    *,
-    settlement: date,
-    call_price_cash: float,
-) -> tuple[EventAwarePDEEventBucket, ...]:
-    """Build coupon and issuer-call event buckets in deterministic time order."""
-    coupon_by_date = _coupon_amounts_by_date(spec, settlement=settlement)
-    call_dates = {
-        call_date
-        for call_date in normalize_explicit_dates(spec.call_dates)
-        if settlement < call_date < spec.end_date
-    }
-    all_event_dates = sorted(set(coupon_by_date).union(call_dates))
-
-    buckets: list[EventAwarePDEEventBucket] = []
-    for event_date in all_event_dates:
-        event_time = max(float(year_fraction(settlement, event_date, spec.day_count)), 0.0)
-        transforms: list[EventAwarePDETransform] = []
-        coupon_cash = float(coupon_by_date.get(event_date, 0.0))
-        if coupon_cash:
-            transforms.append(
-                EventAwarePDETransform(
-                    kind="add_cashflow",
-                    payload=coupon_cash,
-                    label="coupon_cashflow",
-                )
-            )
-        if event_date in call_dates:
-            transforms.append(
-                EventAwarePDETransform(
-                    kind="project_min",
-                    payload=call_price_cash + coupon_cash,
-                    label="issuer_call_projection",
-                )
-            )
-        if transforms:
-            buckets.append(
-                EventAwarePDEEventBucket(
-                    time=event_time,
-                    transforms=tuple(transforms),
-                    label=event_date.isoformat(),
-                )
-            )
-    return tuple(buckets)
-
-
-def _coupon_amounts_by_date(
-    spec: CallableBondSpecLike,
-    *,
-    settlement: date,
-) -> dict[date, float]:
-    """Map non-terminal coupon payment dates to cash coupon amounts."""
-    coupon_by_date: dict[date, float] = {}
-    payment_timeline = build_payment_timeline(
-        spec.start_date,
-        spec.end_date,
-        spec.frequency,
-        day_count=spec.day_count,
-        time_origin=settlement,
-        label="callable_bond_coupon_timeline",
-    )
-    for period in payment_timeline:
-        if period.payment_date <= settlement or period.payment_date >= spec.end_date:
-            continue
-        coupon = float(spec.notional) * float(spec.coupon) * float(period.accrual_fraction or 0.0)
-        coupon_by_date[period.payment_date] = coupon_by_date.get(period.payment_date, 0.0) + coupon
-    return coupon_by_date
-
-
-def _final_coupon_amount(
-    spec: CallableBondSpecLike,
-    *,
-    settlement: date,
-) -> float:
-    """Return the maturity coupon amount included in the terminal value."""
-    payment_timeline = build_payment_timeline(
-        spec.start_date,
-        spec.end_date,
-        spec.frequency,
-        day_count=spec.day_count,
-        time_origin=settlement,
-        label="callable_bond_coupon_timeline",
-    )
-    coupon = 0.0
-    for period in payment_timeline:
-        if period.payment_date == spec.end_date:
-            coupon += float(spec.notional) * float(spec.coupon) * float(period.accrual_fraction or 0.0)
-    return float(coupon)
-
-
-def _matured_callable_bond_value(spec: CallableBondSpecLike, *, settlement: date) -> float:
-    """Return the immediate settlement value once the callable bond has matured."""
-    if settlement > spec.end_date:
-        return 0.0
-    return float(spec.notional) + _final_coupon_amount(spec, settlement=settlement)
-
-
 def _quoted_call_price_to_cash(spec: CallableBondSpecLike) -> float:
     """Convert the quoted callable-bond price from 100-par quote to cash terms."""
     return float(spec.call_price) / 100.0 * float(spec.notional)
@@ -616,18 +523,9 @@ def _hull_white_alpha_from_discount_curve(
         )
 
     return alpha_fn
-
-
-def _settlement_date(market_state: CallableBondPDEMarketStateLike, spec: CallableBondSpecLike) -> date:
-    settlement = getattr(market_state, "settlement", None) or getattr(market_state, "as_of", None)
-    if settlement is None:
-        return spec.start_date
-    return settlement
-
-
 def settlement_or_asof(market_state: CallableBondPDEMarketStateLike, spec: CallableBondSpecLike) -> date:
     """Return the callable-bond settlement anchor used for schedule timing."""
-    return _settlement_date(market_state, spec)
+    return settlement_date_for_fixed_income_claim(market_state, spec)
 
 
 __all__ = [

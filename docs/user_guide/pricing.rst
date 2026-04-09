@@ -439,6 +439,13 @@ maturity boundaries, and group defaulted route assumptions such as par call
 price, schedule frequency, or day-count basis into
 ``desk_review.assumptions.defaulted_inputs``.
 
+Under those public wrappers, the reusable short-rate fixed-income helper layer
+now owns coupon schedule compilation, embedded exercise/control semantics,
+straight-bond reference PV, and generic lattice/PDE event assembly. That keeps
+the callable-bond user surface stable while letting later short-rate claim
+families reuse the same helper substrate instead of copying callable-bond-local
+ glue code.
+
 Callable-bond trade runs now also expose ``result.oas_duration`` plus
 ``result.callable_scenario_explain``. The scenario explain payload is the
 callable-specific desk review surface: it shows how the callable price, the
