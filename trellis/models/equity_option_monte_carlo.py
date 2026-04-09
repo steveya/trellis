@@ -17,6 +17,7 @@ from trellis.models.monte_carlo.single_state_diffusion import (
     price_single_state_terminal_claim_monte_carlo_result,
     resolve_single_state_terminal_claim_monte_carlo_inputs,
 )
+from trellis.models.monte_carlo.event_aware import EventAwareMonteCarloProblem
 from trellis.models.resolution.single_state_diffusion import (
     SingleStateDiffusionMarketStateLike,
     SingleStateDiffusionSpecLike,
@@ -55,7 +56,7 @@ def build_vanilla_equity_monte_carlo_problem(
     n_paths: int | None = None,
     n_steps: int | None = None,
     seed: int | None = None,
-) -> tuple[ResolvedEquityMonteCarloInputs, object]:
+) -> tuple[ResolvedEquityMonteCarloInputs, EventAwareMonteCarloProblem]:
     """Build the bounded event-aware MC problem for a vanilla European option."""
     return build_single_state_terminal_claim_monte_carlo_problem(
         market_state,
