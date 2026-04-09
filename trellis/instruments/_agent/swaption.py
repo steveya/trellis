@@ -31,7 +31,7 @@ from datetime import date
 
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.rate_style_swaption import price_swaption_monte_carlo
+from trellis.models.rate_style_swaption import price_swaption_black76
 
 
 
@@ -71,8 +71,6 @@ Implementation target: hw_mc."""
     day_count: DayCountConvention = DayCountConvention.THIRTY_360
     rate_index: str | None = 'USD-SOFR-3M'
     is_payer: bool = True
-    mc_n_paths: int = 10_000
-    mc_seed: int | None = 42
 
 
 class SwaptionPayoff:
@@ -115,11 +113,4 @@ Implementation target: hw_mc."""
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        return float(
-            price_swaption_monte_carlo(
-                market_state,
-                spec,
-                n_paths=spec.mc_n_paths,
-                seed=spec.mc_seed,
-            )
-        )
+        return float(price_swaption_black76(market_state, spec))
