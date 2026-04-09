@@ -193,8 +193,9 @@ def _check_route_gap(decomposition: ProductDecomposition) -> RouteGap | None:
             return None
 
         # Check for candidate/validated routes
+        analysis_registry = load_route_registry(include_discovered=True)
         all_matches = match_candidate_routes(
-            registry, decomposition.method, minimal_ir, promoted_only=False,
+            analysis_registry, decomposition.method, minimal_ir, promoted_only=False,
         )
         candidates = [r for r in all_matches if r.status in ("candidate", "validated")]
         if candidates:

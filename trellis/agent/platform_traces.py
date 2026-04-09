@@ -469,6 +469,7 @@ def _generation_boundary_summary(
         )
         or dict(request_metadata.get("route_binding_authority") or {})
     )
+    backend_binding = dict(route_binding_authority.get("backend_binding") or {})
     lowering_route_id = (
         str(getattr(generation_plan, "lowering_route_id", "") or "").strip()
         or str(semantic_blueprint.get("dsl_route") or "").strip()
@@ -481,6 +482,7 @@ def _generation_boundary_summary(
         or str(getattr(primitive_plan, "engine_family", "") or "").strip()
         or str(route_binding_authority.get("route_family") or "").strip()
         or str(route_binding_authority.get("engine_family") or "").strip()
+        or str(backend_binding.get("engine_family") or "").strip()
         or None
     )
     lowering = {
@@ -505,6 +507,35 @@ def _generation_boundary_summary(
         "target_bindings": list(semantic_blueprint.get("dsl_target_bindings") or ()),
         "lowering_errors": list(semantic_blueprint.get("dsl_lowering_errors") or ()),
     }
+    lane_summary = (
+        {
+            "lane_family": getattr(generation_plan, "lane_family", "") or lane_plan.get("lane_family"),
+            "plan_kind": getattr(generation_plan, "lane_plan_kind", "") or lane_plan.get("plan_kind"),
+            "timeline_roles": list(
+                getattr(generation_plan, "lane_timeline_roles", ()) or lane_plan.get("timeline_roles") or ()
+            ),
+            "market_requirements": list(
+                getattr(generation_plan, "lane_market_requirements", ()) or lane_plan.get("market_requirements") or ()
+            ),
+            "state_obligations": list(
+                getattr(generation_plan, "lane_state_obligations", ()) or lane_plan.get("state_obligations") or ()
+            ),
+            "control_obligations": list(
+                getattr(generation_plan, "lane_control_obligations", ()) or lane_plan.get("control_obligations") or ()
+            ),
+            "construction_steps": list(
+                getattr(generation_plan, "lane_construction_steps", ()) or lane_plan.get("construction_steps") or ()
+            ),
+            "exact_target_refs": list(
+                getattr(generation_plan, "lane_exact_binding_refs", ()) or lane_plan.get("exact_target_refs") or ()
+            ),
+            "unresolved_primitives": list(
+                getattr(generation_plan, "lane_unresolved_primitives", ()) or lane_plan.get("unresolved_primitives") or ()
+            ),
+        }
+        if generation_plan is not None or lane_plan
+        else {}
+    )
     summary = {
         "method": (
             getattr(generation_plan, "method", "")
@@ -516,36 +547,13 @@ def _generation_boundary_summary(
         "valuation_context": dict(semantic_blueprint.get("valuation_context") or {}),
         "required_data_spec": dict(semantic_blueprint.get("required_data_spec") or {}),
         "market_binding_spec": dict(semantic_blueprint.get("market_binding_spec") or {}),
-        "lane_plan": (
-            {
-                "lane_family": getattr(generation_plan, "lane_family", "") or lane_plan.get("lane_family"),
-                "plan_kind": getattr(generation_plan, "lane_plan_kind", "") or lane_plan.get("plan_kind"),
-                "timeline_roles": list(
-                    getattr(generation_plan, "lane_timeline_roles", ()) or lane_plan.get("timeline_roles") or ()
-                ),
-                "market_requirements": list(
-                    getattr(generation_plan, "lane_market_requirements", ()) or lane_plan.get("market_requirements") or ()
-                ),
-                "state_obligations": list(
-                    getattr(generation_plan, "lane_state_obligations", ()) or lane_plan.get("state_obligations") or ()
-                ),
-                "control_obligations": list(
-                    getattr(generation_plan, "lane_control_obligations", ()) or lane_plan.get("control_obligations") or ()
-                ),
-                "construction_steps": list(
-                    getattr(generation_plan, "lane_construction_steps", ()) or lane_plan.get("construction_steps") or ()
-                ),
-                "exact_target_refs": list(
-                    getattr(generation_plan, "lane_exact_binding_refs", ()) or lane_plan.get("exact_target_refs") or ()
-                ),
-                "unresolved_primitives": list(
-                    getattr(generation_plan, "lane_unresolved_primitives", ()) or lane_plan.get("unresolved_primitives") or ()
-                ),
-            }
-            if generation_plan is not None or lane_plan
-            else {}
-        ),
+        "lane_plan": lane_summary,
         "lowering": lowering,
+        "construction_identity": _construction_identity_summary(
+            lane_plan=lane_summary,
+            lowering=lowering,
+            route_binding_authority=route_binding_authority,
+        ),
         "route_binding_authority": route_binding_authority,
         "primitive_plan": (
             {
@@ -562,6 +570,70 @@ def _generation_boundary_summary(
     if not any(summary.values()):
         return {}
     return summary
+
+
+def _construction_identity_summary(
+    *,
+    lane_plan: dict[str, Any],
+    lowering: dict[str, Any],
+    route_binding_authority: dict[str, Any],
+) -> dict[str, Any]:
+    """Project the family-first construction identity used by diagnostics."""
+    from trellis.agent.route_registry import should_surface_route_alias
+
+    backend_binding = dict(route_binding_authority.get("backend_binding") or {})
+    exact_backend_fit = bool(
+        backend_binding.get("exact_backend_fit")
+        if "exact_backend_fit" in backend_binding
+        else route_binding_authority.get("exact_backend_fit")
+    )
+    lane_family = str(lane_plan.get("lane_family") or "").strip() or None
+    family_ir_type = str(lowering.get("family_ir_type") or "").strip() or None
+    route_family = str(lowering.get("route_family") or "").strip() or None
+    raw_route_alias = (
+        str(route_binding_authority.get("route_id") or "").strip()
+        or str(lowering.get("route_id") or "").strip()
+        or None
+    )
+    route_alias = raw_route_alias if should_surface_route_alias(route_binding_authority) else None
+    backend_binding_id = str(backend_binding.get("binding_id") or "").strip() or None
+    backend_engine_family = (
+        str(backend_binding.get("engine_family") or "").strip()
+        or str(route_binding_authority.get("engine_family") or "").strip()
+        or None
+    )
+
+    if exact_backend_fit and backend_binding_id:
+        primary_kind = "backend_binding"
+        primary_label = backend_binding_id
+    elif family_ir_type:
+        primary_kind = "family_ir"
+        primary_label = family_ir_type
+    elif lane_family:
+        primary_kind = "lane_family"
+        primary_label = lane_family
+    elif route_family:
+        primary_kind = "method_family"
+        primary_label = route_family
+    else:
+        primary_kind = "unknown"
+        primary_label = "unknown"
+
+    return {
+        "primary_kind": primary_kind,
+        "primary_label": primary_label,
+        "lane_family": lane_family,
+        "plan_kind": str(lane_plan.get("plan_kind") or "").strip() or None,
+        "family_ir_type": family_ir_type,
+        "backend_binding_id": backend_binding_id,
+        "backend_engine_family": backend_engine_family,
+        "backend_exact_fit": exact_backend_fit,
+        "route_alias": route_alias,
+        "route_alias_policy": str(route_binding_authority.get("compatibility_alias_policy") or "").strip() or None,
+        "route_authority_kind": str(route_binding_authority.get("authority_kind") or "").strip() or None,
+        "state_obligations": list(lane_plan.get("state_obligations") or ()),
+        "control_obligations": list(lane_plan.get("control_obligations") or ()),
+    }
 
 
 def _family_ir_trace_summary(family_ir_payload: dict[str, Any]) -> dict[str, Any]:

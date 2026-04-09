@@ -1704,7 +1704,7 @@ def test_evaluate_prompt_compact_surface_shows_semantic_valuation_and_validation
     assert "- Lane boundary:" in prompt
     assert "family=`analytical`" in prompt
     assert "- Lowering boundary:" in prompt
-    assert "route=`quanto_adjustment_analytical`" in prompt
+    assert "route_alias=`quanto_adjustment_analytical`" not in prompt
     assert "- Validation contract:" in prompt
     assert "bundle=`analytical:quanto_option`" in prompt
     assert "quanto_adjustment_applied" in prompt

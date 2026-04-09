@@ -224,15 +224,26 @@ def capture_checkpoint(
                 "valuation_context",
                 "required_data_spec",
                 "market_binding_spec",
+                "construction_identity",
                 "lowering",
                 "route_binding_authority",
                 "primitive_plan",
             ),
         )
         lowering = route_metadata.get("lowering") or {}
+        construction_identity = route_metadata.get("construction_identity") or {}
         route_binding_authority = route_metadata.get("route_binding_authority") or {}
+        backend_binding = route_binding_authority.get("backend_binding") or {}
         route_decision = str(
-            lowering.get("route_id")
+            construction_identity.get("primary_label")
+            or (
+                backend_binding.get("binding_id")
+                if route_binding_authority.get("authority_kind") == "exact_backend_fit"
+                else None
+            )
+            or lowering.get("family_ir_type")
+            or route_metadata.get("lane_plan", {}).get("lane_family")
+            or lowering.get("route_id")
             or route_binding_authority.get("route_id")
             or "unknown"
         )

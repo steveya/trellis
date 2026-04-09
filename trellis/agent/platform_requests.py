@@ -1442,21 +1442,39 @@ def _semantic_contract_with_preferred_method(
         return semantic_contract
     semantic_id = str(getattr(semantic_contract, "semantic_id", "") or "").strip()
     normalized_method = normalize_method(preferred_method)
-    if semantic_id != "rate_style_swaption":
-        return semantic_contract
-
-    from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
-
     product = getattr(semantic_contract, "product", None)
     if product is None:
         return semantic_contract
-    return make_rate_style_swaption_contract(
-        description=str(getattr(semantic_contract, "description", "") or ""),
-        observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
-        preferred_method=normalized_method,
-        exercise_style=str(getattr(product, "exercise_style", "european") or "european"),
-        term_fields=dict(getattr(product, "term_fields", {}) or {}),
-    )
+    description = str(getattr(semantic_contract, "description", "") or "")
+    if semantic_id == "rate_style_swaption":
+        from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
+
+        return make_rate_style_swaption_contract(
+            description=description,
+            observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+            preferred_method=normalized_method,
+            exercise_style=str(getattr(product, "exercise_style", "european") or "european"),
+            term_fields=dict(getattr(product, "term_fields", {}) or {}),
+        )
+    if semantic_id == "quanto_option":
+        from trellis.agent.semantic_contracts import make_quanto_option_contract
+
+        return make_quanto_option_contract(
+            description=description,
+            underliers=tuple(getattr(product, "constituents", ()) or ()),
+            observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+            preferred_method=normalized_method,
+        )
+    if semantic_id == "vanilla_option":
+        from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+        return make_vanilla_option_contract(
+            description=description,
+            underliers=tuple(getattr(product, "constituents", ()) or ()),
+            observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+            preferred_method=normalized_method,
+        )
+    return semantic_contract
 
 
 def _swaption_engine_model_spec(

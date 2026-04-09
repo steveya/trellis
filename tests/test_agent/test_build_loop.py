@@ -182,7 +182,7 @@ class AmericanOptionPayoff:
         import numpy as np
         from trellis.models.monte_carlo.engine import MonteCarloEngine
         from trellis.models.monte_carlo.schemes import LaguerreBasis
-        from trellis.models.processes.gbm import GBM
+        from trellis.models.processes import GBM
 
         spec = self._spec
         T = (spec.expiry_date - market_state.settlement).days / 365.25

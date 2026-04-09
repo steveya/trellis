@@ -13,7 +13,7 @@ from trellis.curves.yield_curve import YieldCurve
 from trellis.instruments._agent.agentcap import AgentCapPayoff, AgentCapSpec
 from trellis.instruments._agent.swaption import SwaptionPayoff, SwaptionSpec
 from trellis.instruments.cap import CapFloorSpec, CapPayoff
-from trellis.models.black import black76_call, black76_put
+from trellis.models.black import black76_call
 from trellis.models.calibration.rates import swaption_terms
 from trellis.models.vol_surface import FlatVol
 

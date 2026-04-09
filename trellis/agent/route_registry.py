@@ -1,4 +1,4 @@
-"""Declarative route registry: loads canonical + discovered routes from YAML.
+"""Declarative route registry with canonical live authority and opt-in discovery.
 
 Replaces the hard-coded ``_candidate_routes`` / ``_route_components`` /
 ``_route_engine_family`` / ``_route_family`` functions that were formerly in
@@ -8,8 +8,8 @@ two tiers:
 * **Tier 1 — Canonical seed** routes in ``knowledge/canonical/routes.yaml``
 * **Tier 2 — Discovered** routes in ``knowledge/routes/entries/*.yaml``
 
-The registry is cached per (routes_yaml_mtime, discovered_dir_mtime,
-repo_revision) and validated against the live import registry at load time.
+The registry is cached per authority mode and validated against the live import
+registry at load time.
 """
 
 from __future__ import annotations
@@ -109,6 +109,15 @@ class RouteAdmissibilityDecision:
 
 
 @dataclass(frozen=True)
+class RouteCapabilityDecision:
+    """Family-first capability decision for route matching and scoring."""
+
+    ok: bool
+    matched_predicates: tuple[str, ...] = ()
+    failures: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class RouteSpec:
     """A single route declaration — canonical or discovered."""
 
@@ -137,6 +146,7 @@ class RouteSpec:
     admissibility: RouteAdmissibilitySpec = RouteAdmissibilitySpec()
     score_hints: dict[str, Any] = field(default_factory=dict)
     aliases: tuple[str, ...] = ()
+    compatibility_alias_policy: str = "operator_visible"
     discovered_from: str | None = None
     reuse_module_paths: tuple[str, ...] = ()
     successful_builds: int = 0
@@ -144,29 +154,38 @@ class RouteSpec:
 
 @dataclass(frozen=True)
 class RouteRegistry:
-    """Merged canonical + discovered route registry."""
+    """Loaded route authority for one registry mode."""
 
     routes: tuple[RouteSpec, ...]
     _method_index: dict[str, tuple[int, ...]] = field(default_factory=dict, repr=False)
 
 
 @dataclass(frozen=True)
-class RouteBindingAuthority:
-    """Structured route-binding authority packet for build, replay, and review."""
+class BackendBindingAuthority:
+    """Structured backend-binding facts independent of route alias identity."""
 
-    route_id: str
-    route_family: str
-    engine_family: str
-    authority_kind: str
-    exact_backend_fit: bool
+    engine_family: str = ""
+    binding_id: str = ""
+    exact_backend_fit: bool = False
     exact_target_refs: tuple[str, ...] = ()
     approved_modules: tuple[str, ...] = ()
     primitive_refs: tuple[str, ...] = ()
     helper_refs: tuple[str, ...] = ()
-    validation_bundle_id: str = ""
-    validation_check_ids: tuple[str, ...] = ()
     admissibility: RouteAdmissibilitySpec = RouteAdmissibilitySpec()
     admissibility_failures: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class RouteBindingAuthority:
+    """Structured route alias plus backend-binding authority for review and replay."""
+
+    route_id: str
+    route_family: str
+    authority_kind: str
+    backend_binding: BackendBindingAuthority
+    compatibility_alias_policy: str = "operator_visible"
+    validation_bundle_id: str = ""
+    validation_check_ids: tuple[str, ...] = ()
     canary_task_ids: tuple[str, ...] = ()
     provenance: dict[str, object] = field(default_factory=dict)
 
@@ -189,14 +208,14 @@ _DISCOVERED_DIR = (
 )
 
 
-def _cache_key() -> tuple:
+def _cache_key(*, include_discovered: bool) -> tuple:
     canonical_mtime = _CANONICAL_PATH.stat().st_mtime if _CANONICAL_PATH.exists() else 0
     discovered_mtime = 0.0
-    if _DISCOVERED_DIR.exists():
+    if include_discovered and _DISCOVERED_DIR.exists():
         for entry in _DISCOVERED_DIR.iterdir():
             if entry.suffix in (".yaml", ".yml"):
                 discovered_mtime = max(discovered_mtime, entry.stat().st_mtime)
-    return (canonical_mtime, discovered_mtime, get_repo_revision())
+    return (include_discovered, canonical_mtime, discovered_mtime, get_repo_revision())
 
 
 # ---------------------------------------------------------------------------
@@ -502,6 +521,7 @@ def _parse_route(raw: dict) -> RouteSpec:
         admissibility=_parse_admissibility(raw.get("admissibility"), route_id=route_id, engine_family=engine_family),
         score_hints=dict(raw.get("score_hints", {})),
         aliases=_str_tuple(raw.get("aliases")),
+        compatibility_alias_policy=str(raw.get("compatibility_alias_policy") or "operator_visible").strip() or "operator_visible",
         discovered_from=raw.get("discovered_from"),
         reuse_module_paths=_str_tuple(raw.get("reuse_module_paths")),
         successful_builds=int(raw.get("successful_builds", 0)),
@@ -512,12 +532,15 @@ def _parse_route(raw: dict) -> RouteSpec:
 # Registry loading
 # ---------------------------------------------------------------------------
 
-def load_route_registry() -> RouteRegistry:
-    """Load canonical + discovered routes, merged and indexed.
+def load_route_registry(*, include_discovered: bool = False) -> RouteRegistry:
+    """Load the route registry for live authority or explicit analysis.
 
-    Results are cached per (routes.yaml mtime, discovered dir mtime, repo rev).
+    By default this returns the canonical live route authority only.
+    Discovered routes are quarantined from ordinary matching and test loads
+    unless ``include_discovered=True`` is requested explicitly by an analysis
+    path such as route discovery or knowledge-gap inspection.
     """
-    key = _cache_key()
+    key = _cache_key(include_discovered=include_discovered)
     cached = _REGISTRY_CACHE.get(key)
     if cached is not None:
         return cached
@@ -531,8 +554,8 @@ def load_route_registry() -> RouteRegistry:
         for raw in data.get("routes", ()):
             routes.append(_parse_route(raw))
 
-    # Tier 2: discovered
-    if _DISCOVERED_DIR.exists():
+    # Tier 2: discovered (analysis/opt-in only)
+    if include_discovered and _DISCOVERED_DIR.exists():
         for entry in sorted(_DISCOVERED_DIR.iterdir()):
             if entry.suffix not in (".yaml", ".yml"):
                 continue
@@ -553,6 +576,11 @@ def load_route_registry() -> RouteRegistry:
     registry = RouteRegistry(routes=tuple(routes), _method_index=frozen_index)
     _REGISTRY_CACHE[key] = registry
     return registry
+
+
+def load_analysis_route_registry() -> RouteRegistry:
+    """Load canonical routes plus discovered entries for explicit analysis."""
+    return load_route_registry(include_discovered=True)
 
 
 def clear_route_registry_cache() -> None:
@@ -632,6 +660,10 @@ def match_candidate_routes(
         if route.match_methods and method not in route.match_methods:
             continue
 
+        capability = evaluate_route_capability_match(route, product_ir)
+        if not capability.ok:
+            continue
+
         # Instrument/payoff family/payoff traits — OR match
         # The old _candidate_routes checks instrument OR payoff_family OR
         # payoff_traits with OR semantics.  Any positive match qualifies;
@@ -677,6 +709,107 @@ def match_candidate_routes(
         matches.append(route)
 
     return tuple(matches)
+
+
+def evaluate_route_capability_match(
+    spec: RouteSpec,
+    product_ir: ProductIR | None,
+) -> RouteCapabilityDecision:
+    """Evaluate family-first capability predicates before route-local clauses."""
+    if product_ir is None:
+        return RouteCapabilityDecision(ok=True)
+
+    matched: list[str] = []
+    failures: list[str] = []
+
+    candidate_engines = {
+        str(family).strip()
+        for family in (getattr(product_ir, "candidate_engine_families", ()) or ())
+        if str(family).strip()
+    }
+    ir_route_families = {
+        str(family).strip()
+        for family in (getattr(product_ir, "route_families", ()) or ())
+        if str(family).strip()
+    }
+    resolved_route_family = resolve_route_family(spec, product_ir)
+    if ir_route_families:
+        if _family_name_matches(resolved_route_family, ir_route_families):
+            matched.append("route_family")
+        else:
+            failures.append("family_identity_mismatch")
+    elif candidate_engines and _family_name_matches(spec.engine_family, candidate_engines):
+        matched.append("engine_family")
+
+    supported_state_tags = {
+        str(tag).strip()
+        for tag in (spec.admissibility.supported_state_tags or ())
+        if str(tag).strip()
+    }
+    if getattr(product_ir, "schedule_dependence", False):
+        schedule_ok = (
+            spec.admissibility.event_support == "automatic"
+            or "schedule_state" in supported_state_tags
+        )
+        if schedule_ok:
+            matched.append("schedule_dependence")
+        else:
+            failures.append("schedule_dependence_unsupported")
+
+    state_dependence = str(getattr(product_ir, "state_dependence", "") or "").strip()
+    if state_dependence and supported_state_tags:
+        if _state_requirement_satisfied(
+            required_state=state_dependence,
+            supported_state_tags=supported_state_tags,
+        ):
+            matched.append(f"state:{state_dependence}")
+        else:
+            failures.append(f"state_dependence_unsupported:{state_dependence}")
+
+    return RouteCapabilityDecision(
+        ok=not failures,
+        matched_predicates=tuple(dict.fromkeys(matched)),
+        failures=tuple(dict.fromkeys(failures)),
+    )
+
+
+def _family_name_matches(selected: str, candidates: set[str]) -> bool:
+    """Return True when a family name matches one of the candidate aliases."""
+    selected_aliases = _family_aliases(selected)
+    return any(selected_aliases.intersection(_family_aliases(candidate)) for candidate in candidates)
+
+
+def _family_aliases(family: str) -> set[str]:
+    """Return normalized aliases for engine/route-family comparisons."""
+    value = str(family or "").strip()
+    if not value:
+        return set()
+    aliases = {value}
+    if value in {"rate_tree", "tree", "lattice", "exercise", "rate_lattice"}:
+        aliases.update({"rate_tree", "tree", "lattice", "exercise", "rate_lattice"})
+    if value in {"pde", "pde_solver"}:
+        aliases.update({"pde", "pde_solver"})
+    return aliases
+
+
+def _state_requirement_satisfied(
+    *,
+    required_state: str,
+    supported_state_tags: set[str],
+) -> bool:
+    """Return True when route state support is at least as strong as required."""
+    required = str(required_state or "").strip()
+    if not required or not supported_state_tags:
+        return True
+    compatible = {
+        "terminal_markov": {"terminal_markov", "recombining_safe", "pathwise_only", "schedule_state"},
+        "recombining_safe": {"recombining_safe"},
+        "pathwise_only": {"pathwise_only", "schedule_state"},
+        "path_dependent": {"pathwise_only", "schedule_state"},
+        "schedule_state": {"schedule_state"},
+        "schedule_dependent": {"schedule_state"},
+    }.get(required, {required})
+    return bool(supported_state_tags.intersection(compatible))
 
 
 def resolve_route_primitives(
@@ -898,20 +1031,32 @@ def compile_route_binding_authority(
         "lane_plan_kind": str(getattr(generation_plan, "lane_plan_kind", "") or ""),
         "repo_revision": str(getattr(generation_plan, "repo_revision", "") or ""),
     }
-    return RouteBindingAuthority(
-        route_id=route_id or str(getattr(primitive_plan, "route", "") or ""),
-        route_family=route_family,
+    backend_binding = BackendBindingAuthority(
+        binding_id=_backend_binding_id_for(
+            engine_family=engine_family,
+            route_family=route_family,
+            exact_target_refs=exact_target_refs,
+            helper_refs=helper_refs,
+            primitive_refs=primitive_refs,
+            primitive_plan=primitive_plan,
+        ),
         engine_family=engine_family,
-        authority_kind=authority_kind,
         exact_backend_fit=exact_backend_fit,
         exact_target_refs=exact_target_refs,
         approved_modules=approved_modules,
         primitive_refs=primitive_refs,
         helper_refs=helper_refs,
-        validation_bundle_id=validation_bundle_id,
-        validation_check_ids=validation_check_ids,
         admissibility=admissibility,
         admissibility_failures=admissibility_failures,
+    )
+    return RouteBindingAuthority(
+        route_id=route_id or str(getattr(primitive_plan, "route", "") or ""),
+        route_family=route_family,
+        authority_kind=authority_kind,
+        backend_binding=backend_binding,
+        compatibility_alias_policy=str(getattr(route_spec, "compatibility_alias_policy", "") or "operator_visible"),
+        validation_bundle_id=validation_bundle_id,
+        validation_check_ids=validation_check_ids,
         canary_task_ids=canary_task_ids,
         provenance=provenance,
     )
@@ -923,36 +1068,56 @@ def route_binding_authority_summary(
     """Project the route-binding authority packet onto YAML-safe primitives."""
     if authority is None:
         return None
+    backend_binding = authority.backend_binding
     return {
         "route_id": authority.route_id,
         "route_family": authority.route_family,
-        "engine_family": authority.engine_family,
         "authority_kind": authority.authority_kind,
-        "exact_backend_fit": authority.exact_backend_fit,
-        "exact_target_refs": list(authority.exact_target_refs),
-        "approved_modules": list(authority.approved_modules),
-        "primitive_refs": list(authority.primitive_refs),
-        "helper_refs": list(authority.helper_refs),
+        "compatibility_alias_policy": authority.compatibility_alias_policy,
+        "backend_binding": {
+            "binding_id": backend_binding.binding_id,
+            "engine_family": backend_binding.engine_family,
+            "exact_backend_fit": backend_binding.exact_backend_fit,
+            "exact_target_refs": list(backend_binding.exact_target_refs),
+            "approved_modules": list(backend_binding.approved_modules),
+            "primitive_refs": list(backend_binding.primitive_refs),
+            "helper_refs": list(backend_binding.helper_refs),
+            "admissibility": {
+                "supported_control_styles": list(backend_binding.admissibility.supported_control_styles),
+                "event_support": backend_binding.admissibility.event_support,
+                "phase_sensitivity": backend_binding.admissibility.phase_sensitivity,
+                "multicurrency_support": backend_binding.admissibility.multicurrency_support,
+                "supported_outputs": list(backend_binding.admissibility.supported_outputs),
+                "supports_sensitivity_outputs": backend_binding.admissibility.supports_sensitivity_outputs,
+                "supported_state_tags": list(backend_binding.admissibility.supported_state_tags),
+                "supported_process_families": list(backend_binding.admissibility.supported_process_families),
+                "supported_path_requirement_kinds": list(backend_binding.admissibility.supported_path_requirement_kinds),
+                "supported_operator_families": list(backend_binding.admissibility.supported_operator_families),
+                "supported_event_transform_kinds": list(backend_binding.admissibility.supported_event_transform_kinds),
+                "supports_calibration": backend_binding.admissibility.supports_calibration,
+            },
+            "admissibility_failures": list(backend_binding.admissibility_failures),
+        },
         "validation_bundle_id": authority.validation_bundle_id,
         "validation_check_ids": list(authority.validation_check_ids),
-        "admissibility": {
-            "supported_control_styles": list(authority.admissibility.supported_control_styles),
-            "event_support": authority.admissibility.event_support,
-            "phase_sensitivity": authority.admissibility.phase_sensitivity,
-            "multicurrency_support": authority.admissibility.multicurrency_support,
-            "supported_outputs": list(authority.admissibility.supported_outputs),
-            "supports_sensitivity_outputs": authority.admissibility.supports_sensitivity_outputs,
-            "supported_state_tags": list(authority.admissibility.supported_state_tags),
-            "supported_process_families": list(authority.admissibility.supported_process_families),
-            "supported_path_requirement_kinds": list(authority.admissibility.supported_path_requirement_kinds),
-            "supported_operator_families": list(authority.admissibility.supported_operator_families),
-            "supported_event_transform_kinds": list(authority.admissibility.supported_event_transform_kinds),
-            "supports_calibration": authority.admissibility.supports_calibration,
-        },
-        "admissibility_failures": list(authority.admissibility_failures),
         "canary_task_ids": list(authority.canary_task_ids),
         "provenance": dict(authority.provenance),
     }
+
+
+def should_surface_route_alias(authority: RouteBindingAuthority | dict[str, object] | None) -> bool:
+    """Return whether the compatibility route alias should remain operator-visible."""
+    if authority is None:
+        return False
+    if isinstance(authority, RouteBindingAuthority):
+        policy = authority.compatibility_alias_policy
+        route_id = authority.route_id
+    else:
+        policy = str(authority.get("compatibility_alias_policy") or "operator_visible")
+        route_id = str(authority.get("route_id") or "")
+    if not str(route_id or "").strip():
+        return False
+    return str(policy or "operator_visible").strip() != "internal_only"
 
 
 def _route_id_for_authority(*, generation_plan=None, semantic_blueprint=None) -> str:
@@ -966,6 +1131,49 @@ def _route_id_for_authority(*, generation_plan=None, semantic_blueprint=None) ->
         return route_id
     lowering = getattr(semantic_blueprint, "dsl_lowering", None)
     return str(getattr(lowering, "route_id", "") or "").strip()
+
+
+def _backend_binding_id_for(
+    *,
+    engine_family: str,
+    route_family: str,
+    exact_target_refs: tuple[str, ...],
+    helper_refs: tuple[str, ...],
+    primitive_refs: tuple[str, ...],
+    primitive_plan=None,
+) -> str:
+    """Return a stable backend-binding identifier decoupled from route alias ids."""
+    prioritized_roles = (
+        "route_helper",
+        "pricing_kernel",
+        "solver",
+        "payoff_kernel",
+        "engine",
+        "market_binding",
+    )
+    primitives = tuple(getattr(primitive_plan, "primitives", ()) or ())
+    if primitives:
+        by_role = {
+            str(getattr(primitive, "role", "") or "").strip(): primitive
+            for primitive in primitives
+        }
+        for role in prioritized_roles:
+            primitive = by_role.get(role)
+            if primitive is not None:
+                module = str(getattr(primitive, "module", "") or "").strip()
+                symbol = str(getattr(primitive, "symbol", "") or "").strip()
+                if module and symbol:
+                    return f"{module}.{symbol}"
+    for refs in (helper_refs, exact_target_refs, primitive_refs):
+        if refs:
+            return str(refs[0]).strip()
+    engine = str(engine_family or "").strip()
+    route = str(route_family or "").strip()
+    if engine and route:
+        return f"{engine}:{route}:fallback"
+    if engine:
+        return f"{engine}:fallback"
+    return "unbound:fallback"
 
 
 def _primitive_refs_for(

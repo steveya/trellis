@@ -529,7 +529,7 @@ def test_contract_requires_correlation_for_multi_asset_mc():
             "settle_on_call_or_maturity",
             "rate_tree",
             "exercise_lattice",
-            "trellis.models.trees.lattice",
+            "trellis.models.callable_bond_tree",
         ),
         (
             "European swaption on a fixed-for-floating swap with expiry 2026-01-15",
@@ -541,7 +541,7 @@ def test_contract_requires_correlation_for_multi_asset_mc():
             "cash_settle_at_exercise",
             "analytical",
             "analytical_black76",
-            "trellis.models.black",
+            "trellis.models.rate_style_swaption",
         ),
     ],
 )

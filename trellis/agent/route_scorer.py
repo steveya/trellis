@@ -20,7 +20,11 @@ from pathlib import Path
 from typing import Any
 
 from trellis.agent.knowledge.schema import ProductIR
-from trellis.agent.route_registry import RouteRegistry, RouteSpec
+from trellis.agent.route_registry import (
+    RouteRegistry,
+    RouteSpec,
+    evaluate_route_capability_match,
+)
 from trellis.core.differentiable import get_numpy
 
 np = get_numpy()
@@ -136,6 +140,7 @@ def extract_scoring_features(ctx: ScoringContext) -> dict[str, float]:
 
     if ir is not None:
         ir_route_families = set(getattr(ir, "route_families", ()) or ())
+        capability = evaluate_route_capability_match(spec, ir)
         features["product_supported"] = 1.0 if ir.supported else 0.0
         features["schedule_dependence"] = 1.0 if ir.schedule_dependence else 0.0
         features["has_unresolved_primitives"] = 1.0 if ir.unresolved_primitives else 0.0
@@ -143,10 +148,16 @@ def extract_scoring_features(ctx: ScoringContext) -> dict[str, float]:
             1.0 if spec.engine_family in ir.candidate_engine_families else 0.0
         )
         features["route_family_matches_ir"] = 1.0 if route_family in ir_route_families else 0.0
+        features["family_capability_ok"] = 1.0 if capability.ok else 0.0
+        features["family_capability_match_count"] = float(len(capability.matched_predicates))
         features[f"exercise:{ir.exercise_style}"] = 1.0
         features[f"state:{ir.state_dependence}"] = 1.0
         features[f"model:{ir.model_family}"] = 1.0
         features[f"payoff:{ir.payoff_family}"] = 1.0
+        for predicate in capability.matched_predicates:
+            features[f"capability:{predicate}"] = 1.0
+        for failure in capability.failures:
+            features[f"capability_failure:{failure}"] = 1.0
 
     features[f"route:{spec.id}"] = 1.0
     features[f"engine_family:{spec.engine_family}"] = 1.0

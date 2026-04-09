@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from trellis.agent.knowledge.schema import ProductIR
-from trellis.agent.route_registry import load_route_registry
+from trellis.agent.route_registry import RouteAdmissibilitySpec, RouteSpec, load_route_registry
 from trellis.agent.route_scorer import (
     LearnedModel,
     RouteScorer,
@@ -53,6 +53,7 @@ class TestFeatureExtraction:
         assert features["engine_family:analytical"] == 1.0
         assert features["exercise:european"] == 1.0
         assert features["payoff:swaption"] == 1.0
+        assert features["family_capability_ok"] == 1.0
 
     def test_blocker_features(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
@@ -66,6 +67,52 @@ class TestFeatureExtraction:
         features = extract_scoring_features(ctx)
         assert features["blocker_count"] == 2.0
         assert features["blocker:missing_module:foo"] == 1.0
+
+    def test_capability_failure_features(self):
+        spec = RouteSpec(
+            id="synthetic_terminal_mc",
+            engine_family="monte_carlo",
+            route_family="monte_carlo",
+            status="promoted",
+            confidence=1.0,
+            match_methods=("monte_carlo",),
+            match_instruments=None,
+            exclude_instruments=(),
+            match_payoff_family=None,
+            match_payoff_traits=None,
+            match_exercise=None,
+            exclude_exercise=(),
+            match_required_market_data=None,
+            exclude_required_market_data=None,
+            primitives=(),
+            conditional_primitives=(),
+            conditional_route_family=None,
+            adapters=(),
+            notes=(),
+            admissibility=RouteAdmissibilitySpec(
+                supported_state_tags=("terminal_markov",),
+            ),
+        )
+        ir = ProductIR(
+            instrument="cds",
+            payoff_family="credit_default_swap",
+            schedule_dependence=True,
+            state_dependence="pathwise_only",
+            candidate_engine_families=("monte_carlo",),
+            route_families=("credit_default_swap",),
+        )
+        ctx = ScoringContext(
+            product_ir=ir,
+            route_spec=spec,
+            pricing_plan=None,
+            blockers=[],
+        )
+
+        features = extract_scoring_features(ctx)
+
+        assert features["family_capability_ok"] == 0.0
+        assert features["capability_failure:family_identity_mismatch"] == 1.0
+        assert features["capability_failure:schedule_dependence_unsupported"] == 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +181,73 @@ class TestScoring:
         ranked = scorer.rank_routes(contexts)
         assert len(ranked) == 2
         assert ranked[0].final_score >= ranked[1].final_score
+
+    def test_capability_mismatch_penalizes_heuristic_score(self, scorer):
+        matching = RouteSpec(
+            id="family_mc",
+            engine_family="monte_carlo",
+            route_family="credit_default_swap",
+            status="promoted",
+            confidence=1.0,
+            match_methods=("monte_carlo",),
+            match_instruments=None,
+            exclude_instruments=(),
+            match_payoff_family=None,
+            match_payoff_traits=None,
+            match_exercise=None,
+            exclude_exercise=(),
+            match_required_market_data=None,
+            exclude_required_market_data=None,
+            primitives=(),
+            conditional_primitives=(),
+            conditional_route_family=None,
+            adapters=(),
+            notes=(),
+            admissibility=RouteAdmissibilitySpec(
+                supported_state_tags=("schedule_state", "pathwise_only"),
+            ),
+        )
+        mismatched = RouteSpec(
+            id="generic_mc",
+            engine_family="monte_carlo",
+            route_family="monte_carlo",
+            status="promoted",
+            confidence=1.0,
+            match_methods=("monte_carlo",),
+            match_instruments=None,
+            exclude_instruments=(),
+            match_payoff_family=None,
+            match_payoff_traits=None,
+            match_exercise=None,
+            exclude_exercise=(),
+            match_required_market_data=None,
+            exclude_required_market_data=None,
+            primitives=(),
+            conditional_primitives=(),
+            conditional_route_family=None,
+            adapters=(),
+            notes=(),
+            admissibility=RouteAdmissibilitySpec(
+                supported_state_tags=("terminal_markov",),
+            ),
+        )
+        ir = ProductIR(
+            instrument="cds",
+            payoff_family="credit_default_swap",
+            schedule_dependence=True,
+            state_dependence="pathwise_only",
+            candidate_engine_families=("monte_carlo",),
+            route_families=("credit_default_swap",),
+        )
+
+        matching_score = scorer.score_route(
+            ScoringContext(product_ir=ir, route_spec=matching, pricing_plan=None, blockers=[]),
+        )
+        mismatched_score = scorer.score_route(
+            ScoringContext(product_ir=ir, route_spec=mismatched, pricing_plan=None, blockers=[]),
+        )
+
+        assert matching_score.final_score > mismatched_score.final_score
 
 
 # ---------------------------------------------------------------------------

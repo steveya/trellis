@@ -888,6 +888,7 @@ def make_vanilla_option_contract(
     """Construct a generic vanilla option semantic contract."""
     underlier_names = _tuple(underliers)
     schedule = _normalize_schedule(observation_schedule)
+    normalized_method = normalize_method(preferred_method)
     if not underlier_names:
         raise ValueError("Vanilla option contract requires at least one underlier.")
     if not schedule:
@@ -999,6 +1000,38 @@ def make_vanilla_option_contract(
             allowed_provenance=("observed",),
         ),
     )
+    if normalized_method == "monte_carlo":
+        target_modules = ("trellis.models.equity_option_monte_carlo",)
+        primitive_families = ("monte_carlo_paths",)
+        adapter_obligations = (
+            "resolve_single_underlier_spot",
+            "resolve_discount_curve",
+            "map_terminal_payoff_to_equity_mc_helper",
+        )
+    elif normalized_method == "fft_pricing":
+        target_modules = ("trellis.models.equity_option_transforms",)
+        primitive_families = ("transform_fft",)
+        adapter_obligations = (
+            "resolve_single_underlier_spot",
+            "resolve_discount_curve",
+            "map_terminal_payoff_to_transform_helper",
+        )
+    elif normalized_method == "pde_solver":
+        target_modules = ("trellis.models.equity_option_pde",)
+        primitive_families = ("vanilla_equity_theta_pde",)
+        adapter_obligations = (
+            "resolve_single_underlier_spot",
+            "resolve_discount_curve",
+            "map_terminal_payoff_to_vanilla_pde_helper",
+        )
+    else:
+        target_modules = ("trellis.models.black",)
+        primitive_families = ("analytical_black76",)
+        adapter_obligations = (
+            "resolve_single_underlier_spot",
+            "resolve_discount_curve",
+            "map_terminal_payoff_to_black_kernel",
+        )
     return _semantic_contract_from_sections(
         product=product,
         required_inputs=required_inputs,
@@ -1016,13 +1049,9 @@ def make_vanilla_option_contract(
         ),
         comparison_targets=(normalize_method(preferred_method),),
         reduction_cases=("single_underlier_terminal_payoff",),
-        target_modules=("trellis.models.black",),
-        primitive_families=("analytical_black76",),
-        adapter_obligations=(
-            "resolve_single_underlier_spot",
-            "resolve_discount_curve",
-            "map_terminal_payoff_to_black_kernel",
-        ),
+        target_modules=target_modules,
+        primitive_families=primitive_families,
+        adapter_obligations=adapter_obligations,
         proving_tasks=(
             "compile_request_to_product_ir",
             "validate_vanilla_option_contract",
@@ -1203,6 +1232,7 @@ def make_quanto_option_contract(
     """Construct a generic quanto-style semantic contract."""
     underlier_names = _tuple(underliers)
     schedule = _normalize_schedule(observation_schedule)
+    normalized_method = normalize_method(preferred_method)
     if not underlier_names:
         raise ValueError("Quanto option contract requires at least one underlier.")
     if not schedule:
@@ -1361,6 +1391,23 @@ def make_quanto_option_contract(
             ),
         ),
     )
+    if normalized_method == "monte_carlo":
+        primitive_families = ("correlated_gbm_monte_carlo",)
+        adapter_obligations = (
+            "resolve_underlier_spot",
+            "resolve_fx_rate",
+            "resolve_forward_and_discount_curves",
+            "resolve_joint_underlier_fx_state",
+            "price_through_quanto_mc_helper",
+        )
+    else:
+        primitive_families = ("quanto_adjustment_analytical",)
+        adapter_obligations = (
+            "resolve_underlier_spot",
+            "resolve_fx_rate",
+            "resolve_forward_and_discount_curves",
+            "apply_quanto_adjustment_terms",
+        )
     return _semantic_contract_from_sections(
         product=product,
         required_inputs=required_inputs,
@@ -1384,13 +1431,8 @@ def make_quanto_option_contract(
             "trellis.models.analytical.quanto",
             "trellis.models.monte_carlo.quanto",
         ),
-        primitive_families=("quanto_adjustment_analytical",),
-        adapter_obligations=(
-            "resolve_underlier_spot",
-            "resolve_fx_rate",
-            "resolve_forward_and_discount_curves",
-            "apply_quanto_adjustment_terms",
-        ),
+        primitive_families=primitive_families,
+        adapter_obligations=adapter_obligations,
         proving_tasks=(
             "compile_request_to_product_ir",
             "validate_quanto_option_contract",
@@ -1411,6 +1453,7 @@ def make_callable_bond_contract(
     schedule = _normalize_schedule(observation_schedule)
     if not schedule:
         raise ValueError("Callable bond contract requires a call schedule.")
+    normalized_method = normalize_method(preferred_method)
 
     product = SemanticProductSemantics(
         semantic_id="callable_bond",
@@ -1534,6 +1577,23 @@ def make_callable_bond_contract(
     except Exception:
         pass
 
+    if normalized_method == "pde_solver":
+        target_modules = ("trellis.models.callable_bond_pde",)
+        primitive_families = ("pde_theta_1d",)
+        adapter_obligations = (
+            "resolve_call_schedule",
+            "resolve_rate_model_inputs",
+            "backward_valuation_over_call_dates",
+        )
+    else:
+        target_modules = ("trellis.models.callable_bond_tree",)
+        primitive_families = ("exercise_lattice",)
+        adapter_obligations = (
+            "resolve_call_schedule",
+            "calibrate_rate_tree",
+            "backward_induction_over_call_dates",
+        )
+
     return _semantic_contract_from_sections(
         product=product,
         required_inputs=required_inputs,
@@ -1551,13 +1611,9 @@ def make_callable_bond_contract(
         ),
         comparison_targets=(normalize_method(preferred_method),),
         reduction_cases=("single_issuer_call_schedule",),
-        target_modules=("trellis.models.trees.lattice",),
-        primitive_families=("exercise_lattice",),
-        adapter_obligations=(
-            "resolve_call_schedule",
-            "calibrate_rate_tree",
-            "backward_induction_over_call_dates",
-        ),
+        target_modules=target_modules,
+        primitive_families=primitive_families,
+        adapter_obligations=adapter_obligations,
         proving_tasks=(
             "compile_request_to_product_ir",
             "validate_callable_bond_contract",
@@ -1819,8 +1875,11 @@ def make_rate_style_swaption_contract(
                 "trellis.models.monte_carlo.path_state",
             )
             primitive_families = ("monte_carlo_paths",)
+        elif normalized_method == "rate_tree":
+            target_modules = ("trellis.models.rate_style_swaption_tree",)
+            primitive_families = ("rate_tree_backward_induction",)
         else:
-            target_modules = ("trellis.models.black",)
+            target_modules = ("trellis.models.rate_style_swaption",)
             primitive_families = ("analytical_black76",)
     elif normalized_method == "analytical":
         target_modules = ("trellis.models.rate_style_swaption",)

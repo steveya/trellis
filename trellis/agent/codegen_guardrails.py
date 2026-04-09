@@ -570,7 +570,7 @@ def _render_route_authority_lines(plan: GenerationPlan, *, compact: bool) -> lis
     if plan.route_binding_authority is None:
         return []
 
-    from trellis.agent.route_registry import route_binding_authority_summary
+    from trellis.agent.route_registry import route_binding_authority_summary, should_surface_route_alias
 
     authority = route_binding_authority_summary(plan.route_binding_authority)
     if not authority:
@@ -578,14 +578,17 @@ def _render_route_authority_lines(plan: GenerationPlan, *, compact: bool) -> lis
 
     lines = ["- Route authority:"]
     authority_bits = []
-    if authority.get("route_id"):
-        authority_bits.append(f"route=`{authority['route_id']}`")
+    backend_binding = dict(authority.get("backend_binding") or {})
+    if backend_binding.get("binding_id"):
+        authority_bits.append(f"binding=`{backend_binding['binding_id']}`")
+    if backend_binding.get("engine_family"):
+        authority_bits.append(f"engine=`{backend_binding['engine_family']}`")
     if authority.get("authority_kind"):
         authority_bits.append(f"authority=`{authority['authority_kind']}`")
-    if authority.get("engine_family"):
-        authority_bits.append(f"engine=`{authority['engine_family']}`")
     if authority_bits:
         lines.append(f"  - {', '.join(authority_bits)}")
+    if should_surface_route_alias(authority):
+        lines.append(f"  - Route alias: `{authority['route_id']}`")
     if authority.get("validation_bundle_id"):
         lines.append(f"  - Validation bundle: `{authority['validation_bundle_id']}`")
     check_ids = tuple(authority.get("validation_check_ids") or ())
@@ -599,21 +602,21 @@ def _render_route_authority_lines(plan: GenerationPlan, *, compact: bool) -> lis
     if canary_task_ids:
         selected = ", ".join(f"`{task_id}`" for task_id in canary_task_ids[: (2 if compact else 4)])
         lines.append(f"  - Canary coverage: canaries={selected}")
-    helper_refs = tuple(authority.get("helper_refs") or ())
+    helper_refs = tuple(backend_binding.get("helper_refs") or ())
     if helper_refs:
         selected = helper_refs[: (2 if compact else 4)]
         lines.append(
             "  - Helper authority: "
             + ", ".join(f"`{helper}`" for helper in selected)
         )
-    exact_refs = tuple(authority.get("exact_target_refs") or ())
+    exact_refs = tuple(backend_binding.get("exact_target_refs") or ())
     if exact_refs:
         selected = exact_refs[: (2 if compact else 4)]
         lines.append(
             "  - Exact target bindings: "
             + ", ".join(f"`{ref}`" for ref in selected)
         )
-    admissibility_failures = tuple(authority.get("admissibility_failures") or ())
+    admissibility_failures = tuple(backend_binding.get("admissibility_failures") or ())
     if admissibility_failures:
         lines.append(
             "  - Admissibility failures: "
@@ -1035,6 +1038,8 @@ def _normalize_semantic_label(value: object) -> str:
 
 def _render_compiled_boundary_lines(plan: GenerationPlan, *, compact: bool) -> list[str]:
     """Render semantic/valuation/lowering/validation summaries for prompts."""
+    from trellis.agent.route_registry import route_binding_authority_summary, should_surface_route_alias
+
     lines: list[str] = []
     if plan.semantic_contract_id:
         semantic_bits = [
@@ -1096,18 +1101,19 @@ def _render_compiled_boundary_lines(plan: GenerationPlan, *, compact: bool) -> l
         lines.append(f"- Lane boundary: {', '.join(lane_bits)}")
 
     lowering_bits: list[str] = []
-    if plan.lowering_route_id:
-        lowering_bits.append(f"route=`{plan.lowering_route_id}`")
-    if plan.lowering_expr_kind:
-        lowering_bits.append(f"expr=`{plan.lowering_expr_kind}`")
     if plan.lowering_family_ir_type:
         lowering_bits.append(f"family_ir=`{plan.lowering_family_ir_type}`")
+    if plan.lowering_expr_kind:
+        lowering_bits.append(f"expr=`{plan.lowering_expr_kind}`")
     if plan.lowering_helper_refs:
         helper_limit = 2 if compact else 4
         helper_refs = ", ".join(
             f"`{helper}`" for helper in plan.lowering_helper_refs[:helper_limit]
         )
         lowering_bits.append(f"helpers={helper_refs}")
+    authority = route_binding_authority_summary(plan.route_binding_authority)
+    if plan.lowering_route_id and should_surface_route_alias(authority):
+        lowering_bits.append(f"route_alias=`{plan.lowering_route_id}`")
     if lowering_bits:
         lines.append(f"- Lowering boundary: {', '.join(lowering_bits)}")
 
@@ -1463,6 +1469,8 @@ def _route_score(
     bonuses and penalties are declared in ``score_hints`` within routes.yaml
     rather than hard-coded per route name.
     """
+    from trellis.agent.route_registry import evaluate_route_capability_match
+
     hints = spec.score_hints if spec is not None else {}
     route = spec.id if spec is not None else ""
     engine_family = spec.engine_family if spec is not None else ""
@@ -1480,6 +1488,12 @@ def _route_score(
             score += 2.5
         elif engine_family in product_ir.candidate_engine_families:
             score += 2.5
+
+        capability = evaluate_route_capability_match(spec, product_ir)
+        if capability.ok:
+            score += 1.0 + 0.25 * len(capability.matched_predicates)
+        else:
+            score -= 2.5 + 0.5 * len(capability.failures)
 
         # --- YAML-driven hints ---
 

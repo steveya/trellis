@@ -245,7 +245,7 @@ def _attribute_route_success(decomposition: ProductDecomposition) -> int:
         )
         from trellis.agent.knowledge.schema import ProductIR
 
-        registry = load_route_registry()
+        registry = load_route_registry(include_discovered=True)
         minimal_ir = ProductIR(
             instrument=decomposition.instrument,
             payoff_family=decomposition.instrument,
@@ -320,7 +320,7 @@ def _capture_discovered_route(
 
         from trellis.agent.route_registry import load_route_registry, clear_route_registry_cache
 
-        registry = load_route_registry()
+        registry = load_route_registry(include_discovered=True)
 
         # Check if route already exists by ID
         for existing in registry.routes:

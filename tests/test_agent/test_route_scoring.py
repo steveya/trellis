@@ -55,11 +55,7 @@ def test_american_put_ranks_exercise_mc_above_plain_mc():
         product_ir=product_ir,
     )
 
-    assert [plan.route for plan in ranked[:2]] == [
-        "exercise_monte_carlo",
-        "monte_carlo_paths",
-    ]
-    assert ranked[0].score > ranked[1].score
+    assert [plan.route for plan in ranked] == ["exercise_monte_carlo"]
 
 
 def test_american_put_ranks_equity_tree_above_rate_tree():
@@ -118,7 +114,7 @@ def test_unsupported_composite_routes_are_penalized_by_blockers():
     assert ranked
     assert ranked[0].blockers
     assert "path_dependent_early_exercise_under_stochastic_vol" in ranked[0].blockers
-    assert ranked[0].score < 0.0
+    assert ranked[0].score <= 0.0
 
 
 def test_cds_ranks_credit_default_swap_route_above_generic_analytical():

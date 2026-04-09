@@ -396,11 +396,12 @@ def _family_checks_for(
     semantic_blueprint=None,
 ) -> tuple[str, ...]:
     """Return extra semantic-family validation checks for known contracts."""
+    checks = list(_KNOWN_FAMILY_CHECKS.get(normalized_instrument, ()))
     sem_contract = getattr(semantic_blueprint, "contract", None)
     sem_validation = getattr(sem_contract, "validation", None)
     if sem_validation is not None and getattr(sem_validation, "semantic_checks", None):
-        return tuple(sem_validation.semantic_checks)
-    return _KNOWN_FAMILY_CHECKS.get(normalized_instrument, ())
+        checks.extend(tuple(sem_validation.semantic_checks))
+    return tuple(dict.fromkeys(checks))
 
 
 def _vol_monotonicity_direction(instrument_type: str | None) -> str:

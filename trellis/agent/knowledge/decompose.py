@@ -189,7 +189,7 @@ def build_product_ir(
         else schedule_dependence
     )
     resolved_state_dependence = (
-        _state_dependence_for(normalized_traits, resolved_schedule_dependence)
+        _state_dependence_for(normalized_instrument, normalized_traits, resolved_schedule_dependence)
         if state_dependence is None
         else state_dependence
     )
@@ -384,7 +384,7 @@ def _product_ir_from_decomposition(
     payoff_traits = tuple(sorted(set(decomposition.features)))
     exercise_style = _exercise_style_for(instrument, payoff_traits, description)
     schedule_dependence = _schedule_dependence_for(instrument, payoff_traits)
-    state_dependence = _state_dependence_for(payoff_traits, schedule_dependence)
+    state_dependence = _state_dependence_for(instrument, payoff_traits, schedule_dependence)
     model_family = _model_family_for(instrument, payoff_traits, decomposition.method, description)
     route_families = _route_families_for(
         instrument,
@@ -398,6 +398,13 @@ def _product_ir_from_decomposition(
         payoff_traits,
         model_family,
     )
+    normalized_desc = _normalise(description)
+    if instrument == "bermudan_swaption" and (
+        "analytical_lower_bound" in normalized_desc
+        or ("analytical" in normalized_desc and "lower_bound" in normalized_desc)
+    ):
+        route_families = tuple(dict.fromkeys((*route_families, "analytical")))
+        candidate_engine_families = tuple(dict.fromkeys((*candidate_engine_families, "analytical")))
     return ProductIR(
         instrument=instrument,
         payoff_family=_payoff_family_for(instrument, payoff_traits, description),
@@ -426,7 +433,7 @@ def _infer_composite_ir(
     desc = _normalise(description)
     payoff_traits = _traits_from_text(desc)
     schedule_dependence = _schedule_dependence_for(instrument or "", payoff_traits)
-    state_dependence = _state_dependence_for(payoff_traits, schedule_dependence)
+    state_dependence = _state_dependence_for(instrument or "", payoff_traits, schedule_dependence)
     model_family = _model_family_for(instrument or "", payoff_traits, "", description)
     exercise_style = _exercise_style_for(instrument or "", payoff_traits, description)
     route_families = _route_families_for(
@@ -602,8 +609,16 @@ def _schedule_dependence_for(instrument: str, payoff_traits: tuple[str, ...]) ->
     }
 
 
-def _state_dependence_for(payoff_traits: tuple[str, ...], schedule_dependence: bool) -> str:
+def _state_dependence_for(
+    instrument: str,
+    payoff_traits: tuple[str, ...],
+    schedule_dependence: bool,
+) -> str:
     """Infer state dependence from traits."""
+    if instrument == "barrier_option" and not any(
+        trait in payoff_traits for trait in ("asian", "lookback", "path_dependent")
+    ):
+        return "terminal_markov"
     if any(trait in payoff_traits for trait in ("barrier", "asian", "lookback", "path_dependent", "prepayment", "range_condition")):
         return "path_dependent"
     if schedule_dependence:
@@ -656,6 +671,8 @@ def _candidate_engine_families_for(
         families.append("exercise")
     if any(trait in payoff_traits for trait in ("asian", "barrier", "lookback", "path_dependent")) and "monte_carlo" not in families:
         families.append("monte_carlo")
+    if "barrier" in payoff_traits and model_family == "equity_diffusion" and "pde" not in families:
+        families.append("pde")
     if model_family == "stochastic_volatility" and "monte_carlo" not in families:
         families.append("monte_carlo")
     return tuple(families)
@@ -676,7 +693,10 @@ def _route_families_for(
         and exercise_style in {"american", "bermudan"}
         and model_family == "equity_diffusion"
     ):
+        families.append("exercise")
         families.append("equity_tree")
+    if instrument == "barrier_option" and model_family == "equity_diffusion":
+        families.append("pde_solver")
     if (
         instrument in {"callable_bond", "puttable_bond", "bermudan_swaption"}
         or (

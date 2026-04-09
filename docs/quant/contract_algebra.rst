@@ -144,8 +144,10 @@ After the lane plan is emitted, the runtime may also attach a
 the contract algebra itself. It does not tell the agent what should be built;
 the lane obligations already do that. It only records:
 
-- the exact checked backend fit, if one was found
-- the approved modules, primitive refs, and helper refs for that fit
+- the thin compatibility route alias, if one still exists
+- the nested backend-binding record for the exact checked fit, if one was found
+- the approved modules, primitive refs, helper refs, and admissibility facts
+  for that binding
 - the validation bundle and canary IDs that cover the fit
 - the typed route admissibility contract and any request-local failures
 
@@ -156,6 +158,26 @@ provenance.
 This separates "what must be built" from "which existing backend already
 matches it", which is the key tranche-2 shift away from treating route IDs as
 the whole compiler output.
+
+The trace and checkpoint layer now reflects that same split through a
+``construction_identity`` summary. That summary is family-first:
+
+- exact backend bindings surface the stable binding id as the primary identity
+- otherwise the surfaced identity falls back to the lowered family IR or lane
+  family
+- the route alias is retained only as secondary backend/provenance context
+
+So operators see the constructive meaning first and the compatibility alias
+second.
+
+Compatibility aliases are now governed explicitly. Migrated exact-helper
+families may mark the route alias as internal-only, which means:
+
+- the raw route id still survives in validation/replay/canary metadata
+- operator-facing traces and prompts omit the alias when the backend binding id
+  already carries the full meaning
+- retained aliases remain visible only where replay or compatibility still
+  depends on them
 
 Runtime Contract
 ----------------
