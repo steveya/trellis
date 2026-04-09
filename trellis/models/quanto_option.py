@@ -14,12 +14,17 @@ from trellis.models.resolution.quanto import (
 )
 
 
-class QuantoOptionSpecLike(QuantoSpecLike, Protocol):
-    """Minimal semantic surface consumed by the semantic-facing quanto helpers."""
+class QuantoOptionAnalyticalSpecLike(QuantoSpecLike, Protocol):
+    """Minimal semantic surface consumed by the analytical quanto helper."""
 
     notional: float
     strike: float
     option_type: str
+
+
+class QuantoOptionMonteCarloSpecLike(QuantoOptionAnalyticalSpecLike, Protocol):
+    """Monte Carlo extension of the semantic-facing quanto option surface."""
+
     n_paths: int
     n_steps: int
     seed: int
@@ -27,7 +32,7 @@ class QuantoOptionSpecLike(QuantoSpecLike, Protocol):
 
 def resolve_quanto_option_inputs(
     market_state: MarketState,
-    spec: QuantoOptionSpecLike,
+    spec: QuantoOptionAnalyticalSpecLike,
 ) -> ResolvedQuantoInputs:
     """Resolve one semantic-facing quanto option into the shared market inputs."""
     return resolve_quanto_inputs(market_state, spec)
@@ -35,7 +40,7 @@ def resolve_quanto_option_inputs(
 
 def price_quanto_option_analytical_from_market_state(
     market_state: MarketState,
-    spec: QuantoOptionSpecLike,
+    spec: QuantoOptionAnalyticalSpecLike,
 ) -> float:
     """Resolve and price one quanto option analytically."""
     resolved = resolve_quanto_option_inputs(market_state, spec)
@@ -44,7 +49,7 @@ def price_quanto_option_analytical_from_market_state(
 
 def price_quanto_option_monte_carlo_from_market_state(
     market_state: MarketState,
-    spec: QuantoOptionSpecLike,
+    spec: QuantoOptionMonteCarloSpecLike,
 ) -> float:
     """Resolve and price one quanto option through the shared MC helper."""
     resolved = resolve_quanto_option_inputs(market_state, spec)
@@ -52,7 +57,8 @@ def price_quanto_option_monte_carlo_from_market_state(
 
 
 __all__ = [
-    "QuantoOptionSpecLike",
+    "QuantoOptionAnalyticalSpecLike",
+    "QuantoOptionMonteCarloSpecLike",
     "price_quanto_option_analytical_from_market_state",
     "price_quanto_option_monte_carlo_from_market_state",
     "resolve_quanto_option_inputs",

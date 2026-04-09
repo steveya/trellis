@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable
 
 import numpy as raw_np
@@ -87,15 +87,20 @@ def build_single_state_terminal_claim_monte_carlo_problem_from_resolved(
     local_vol_surface: Callable | None = None,
 ) -> EventAwareMonteCarloProblem:
     """Build the event-aware runtime problem for one single-state terminal claim."""
+    process_family_name = str(process_family).strip()
+    simulation_method = _normalized_event_aware_simulation_method(
+        resolved.scheme,
+        process_family=process_family_name,
+    )
     return build_event_aware_monte_carlo_problem(
         EventAwareMonteCarloProblemSpec(
             process_spec=EventAwareMonteCarloProcessSpec(
-                family=str(process_family).strip(),
+                family=process_family_name,
                 risk_free_rate=resolved.rate,
                 dividend_yield=resolved.dividend_yield,
                 sigma=resolved.sigma,
                 local_vol_surface=local_vol_surface,
-                simulation_method="exact" if resolved.scheme == "log_euler" else resolved.scheme,
+                simulation_method=simulation_method,
             ),
             initial_state=resolved.spot,
             maturity=resolved.maturity,
@@ -130,6 +135,13 @@ def build_single_state_terminal_claim_monte_carlo_problem(
         n_paths=n_paths,
         n_steps=n_steps,
         seed=seed,
+    )
+    resolved = replace(
+        resolved,
+        scheme=_normalized_event_aware_simulation_method(
+            resolved.scheme,
+            process_family=str(process_family).strip(),
+        ),
     )
     problem = build_single_state_terminal_claim_monte_carlo_problem_from_resolved(
         resolved,
@@ -304,6 +316,18 @@ def _scheme_object(scheme: str):
     if scheme == "log_euler":
         return LogEuler()
     return Exact()
+
+
+def _normalized_event_aware_simulation_method(
+    scheme: str,
+    *,
+    process_family: str,
+) -> str:
+    normalized = _normalized_scheme(scheme)
+    family = str(process_family or "").strip()
+    if family == "local_vol_1d" and normalized == "exact":
+        return "euler"
+    return normalized
 
 
 __all__ = [

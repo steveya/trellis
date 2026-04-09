@@ -69,7 +69,7 @@ def test_build_single_state_terminal_claim_monte_carlo_problem_uses_terminal_onl
     )
     problem = build_single_state_terminal_claim_monte_carlo_problem_from_resolved(
         resolved,
-        terminal_payoff=lambda terminal: terminal,
+        terminal_payoff=lambda terminal, resolved: terminal,
     )
 
     assert problem.path_requirement.full_path is False
@@ -77,6 +77,37 @@ def test_build_single_state_terminal_claim_monte_carlo_problem_uses_terminal_onl
     assert problem.maturity == pytest.approx(1.0)
     assert problem.discount_rate == pytest.approx(resolved.rate)
     assert problem.simulation_method == "exact"
+
+
+def test_build_single_state_terminal_claim_monte_carlo_problem_downgrades_local_vol_exact_to_euler():
+    from trellis.models.monte_carlo.single_state_diffusion import (
+        build_single_state_terminal_claim_monte_carlo_problem,
+    )
+
+    _, problem = build_single_state_terminal_claim_monte_carlo_problem(
+        _market_state(),
+        _Spec(),
+        terminal_payoff=lambda terminal, resolved: terminal,
+        process_family="local_vol_1d",
+        local_vol_surface=lambda t, s: 0.20,
+    )
+
+    assert problem.simulation_method == "euler"
+
+
+def test_build_single_state_terminal_claim_monte_carlo_problem_preserves_log_euler():
+    from trellis.models.monte_carlo.single_state_diffusion import (
+        build_single_state_terminal_claim_monte_carlo_problem,
+    )
+
+    _, problem = build_single_state_terminal_claim_monte_carlo_problem(
+        _market_state(),
+        _Spec(),
+        terminal_payoff=lambda terminal, resolved: terminal,
+        scheme="log_euler",
+    )
+
+    assert problem.simulation_method == "log_euler"
 
 
 def test_equity_monte_carlo_wrapper_delegates_through_single_state_family_helper(monkeypatch):
