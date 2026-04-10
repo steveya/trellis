@@ -122,11 +122,14 @@ def reflect_on_build(
         "decomposition_saved": False,
         "distill_run": False,
         "agent_observation_count": len(agent_observations or []),
+        "scorer_retrained": False,
+        "validators_promoted": False,
     }
+    knowledge_writes_allowed = _knowledge_store_mutations_allowed()
 
     try:
         # 1. Attribution — boost retrieved lessons and routes on success
-        if success:
+        if success and knowledge_writes_allowed:
             actions["lessons_attributed"] = _attribute_success(
                 retrieved_lesson_ids
             )
@@ -135,7 +138,7 @@ def reflect_on_build(
             )
 
         # 2. Save learned decomposition on success
-        if success and decomposition.learned:
+        if success and decomposition.learned and knowledge_writes_allowed:
             _save_decomposition(decomposition)
             actions["decomposition_saved"] = True
 
@@ -150,7 +153,7 @@ def reflect_on_build(
             if reflection:
                 # Capture lesson if one was identified
                 lesson_data = reflection.get("lesson")
-                if lesson_data and isinstance(lesson_data, dict):
+                if lesson_data and isinstance(lesson_data, dict) and knowledge_writes_allowed:
                     lid, lesson_contract, lesson_outcome = _capture_structured_lesson(
                         lesson_data, decomposition, success, attempt,
                     )
@@ -162,19 +165,30 @@ def reflect_on_build(
                 gaps = reflection.get("knowledge_gaps", [])
                 if gaps:
                     actions["gaps_identified"] = gaps
-                    actions["knowledge_gap_log_saved"] = _record_gaps(
-                        gaps,
-                        decomposition,
-                        gap_report,
-                    )
+                    if knowledge_writes_allowed:
+                        actions["knowledge_gap_log_saved"] = _record_gaps(
+                            gaps,
+                            decomposition,
+                            gap_report,
+                        )
 
                 # Enrich cookbook if missing
                 cookbook_extract = reflection.get("cookbook_extract")
-                if cookbook_extract and not gap_report.has_cookbook and success:
+                if (
+                    cookbook_extract
+                    and not gap_report.has_cookbook
+                    and success
+                    and knowledge_writes_allowed
+                ):
                     _enrich_cookbook(decomposition.method, cookbook_extract)
                     actions["cookbook_enriched"] = True
 
-            if success and not gap_report.has_cookbook and not actions["cookbook_enriched"]:
+            if (
+                success
+                and not gap_report.has_cookbook
+                and not actions["cookbook_enriched"]
+                and knowledge_writes_allowed
+            ):
                 actions["cookbook_candidate_saved"] = _record_cookbook_candidate(
                     decomposition.method,
                     description,
@@ -184,7 +198,12 @@ def reflect_on_build(
             # Capture discovered route if build was ad-hoc
             if reflection:
                 route_data = reflection.get("route_discovery")
-                if route_data and isinstance(route_data, dict) and success:
+                if (
+                    route_data
+                    and isinstance(route_data, dict)
+                    and success
+                    and knowledge_writes_allowed
+                ):
                     rid, outcome = _capture_discovered_route(
                         route_data, decomposition, attempt,
                     )
@@ -192,32 +211,44 @@ def reflect_on_build(
                     actions["route_discovery_outcome"] = outcome
 
         # 4. Record trace
-        actions["knowledge_trace_saved"] = _record_full_trace(
-            description, decomposition, gap_report, retrieved_lesson_ids,
-            success, failures, code, attempt, actions, agent_observations or [],
-        )
-        if actions.get("lesson_captured") and actions["knowledge_trace_saved"]:
-            _attach_source_trace(
-                actions["lesson_captured"],
-                actions["knowledge_trace_saved"],
+        if knowledge_writes_allowed:
+            actions["knowledge_trace_saved"] = _record_full_trace(
+                description, decomposition, gap_report, retrieved_lesson_ids,
+                success, failures, code, attempt, actions, agent_observations or [],
             )
+            if actions.get("lesson_captured") and actions["knowledge_trace_saved"]:
+                _attach_source_trace(
+                    actions["lesson_captured"],
+                    actions["knowledge_trace_saved"],
+                )
 
         # 5. Maybe distill
-        if _should_distill():
+        if knowledge_writes_allowed and _should_distill():
             from trellis.agent.knowledge.promotion import distill
             distill()
             actions["distill_run"] = True
 
         # 6. Maybe retrain route scorer
-        actions["scorer_retrained"] = _maybe_retrain_scorer()
+        if knowledge_writes_allowed:
+            actions["scorer_retrained"] = _maybe_retrain_scorer()
 
         # 7. Maybe promote semantic validators
-        actions["validators_promoted"] = _maybe_promote_validators()
+        if knowledge_writes_allowed:
+            actions["validators_promoted"] = _maybe_promote_validators()
 
     except Exception:
         pass  # Reflection must never block the build
 
     return actions
+
+
+def _knowledge_store_mutations_allowed() -> bool:
+    """Return False when the current runtime should not mutate the knowledge store."""
+    try:
+        from trellis.agent.cassette import current_llm_cassette_context
+    except Exception:
+        return True
+    return current_llm_cassette_context() is None
 
 
 # ---------------------------------------------------------------------------

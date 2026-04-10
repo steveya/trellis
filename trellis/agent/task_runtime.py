@@ -925,6 +925,7 @@ def run_task(
     price_fn: Callable[[Any, Any], float] | None = None,
 ) -> dict:
     """Execute one task through the knowledge-aware build pipeline."""
+    from trellis.agent.cassette import current_llm_cassette_context
     from trellis.agent.task_run_store import persist_task_run_record, summarize_task_learning
 
     if build_fn is None:
@@ -940,6 +941,12 @@ def run_task(
     construct_methods = _task_construct_methods(task)
     comparison_targets = _task_comparison_targets(task, construct_methods)
     comparison_task = len(comparison_targets) > 1
+    cassette_context = current_llm_cassette_context()
+    execution_mode = (
+        f"cassette_{cassette_context['mode']}"
+        if cassette_context is not None
+        else "live"
+    )
 
     print(f"\n{'=' * 60}")
     print(f"  {task_id}: {task['title']}")
@@ -962,7 +969,10 @@ def run_task(
         "new_component": task.get("new_component"),
         "semantic_contract_id": getattr(getattr(semantic_contract, "product", None), "semantic_id", None),
         "runtime_controls": _runtime_bisection_controls(),
+        "execution_mode": execution_mode,
     }
+    if cassette_context is not None:
+        result_data["llm_cassette"] = cassette_context
 
     try:
         _validate_task_contract(task, instrument_type, construct_methods)

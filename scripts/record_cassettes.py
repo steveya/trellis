@@ -1,4 +1,4 @@
-"""Record LLM cassettes for all canary tasks.
+"""Record full-task LLM cassettes for canary tasks.
 
 Usage:
     python scripts/record_cassettes.py            # record all canary cassettes
@@ -8,7 +8,7 @@ Usage:
 This is a one-time token spend (~$2-3 for all canary tasks).
 Cassettes are saved to cassettes/ and should be committed to git.
 
-See QUA-427 for design context.
+See QUA-458 for the full-task replay design context.
 """
 
 from __future__ import annotations
@@ -32,7 +32,8 @@ from trellis.agent.config import load_env
 load_env()
 
 CANARY_FILE = ROOT / "CANARY_TASKS.yaml"
-CASSETTES_DIR = ROOT / "cassettes"
+FULL_TASK_CASSETTES_DIR = ROOT / "cassettes" / "full_task"
+CANARY_MAX_RETRIES = 3
 
 
 def load_canary_set() -> list[dict]:
@@ -40,51 +41,56 @@ def load_canary_set() -> list[dict]:
     return raw.get("canary_set", [])
 
 
+def merge_canary_task_payload(task: dict, canary: dict) -> dict:
+    """Overlay curated canary fields onto the live task registry payload."""
+    merged = dict(task)
+    for key in (
+        "description",
+        "market",
+        "market_assertions",
+        "construct",
+        "cross_validate",
+        "new_component",
+    ):
+        value = canary.get(key)
+        if value is not None:
+            merged[key] = value
+    return merged
+
+
 def record_cassette_for_task(
-    task_id: str,
-    task_title: str,
-    construct: str,
+    task: dict,
+    canary: dict,
     *,
     model: str = "gpt-5.4-mini",
-) -> Path:
+) -> tuple[Path, dict]:
     """Record a cassette for a single canary task.
 
-    Runs the build pipeline with cassette recording enabled.
-    Returns the cassette file path.
+    Runs the full ``run_task(...)`` pipeline with cassette recording enabled.
+    Returns the cassette file path plus the recorded task result.
     """
-    from trellis.agent.cassette import CassetteRecorder
-    from trellis.agent import config as agent_config
-    from trellis.agent.executor import build_payoff
+    from trellis.agent.cassette import llm_cassette_session
+    from trellis.agent.task_runtime import build_market_state, run_task
 
-    cassette_path = CASSETTES_DIR / f"{task_id}.yaml"
-    recorder = CassetteRecorder(cassette_path, name=task_id, store_prompts=True)
-
-    # Wrap LLM functions
-    real_generate = agent_config.llm_generate
-    real_generate_json = agent_config.llm_generate_json
-
-    agent_config.llm_generate = recorder.wrap_generate(real_generate)
-    agent_config.llm_generate_json = recorder.wrap_generate_json(real_generate_json)
-
-    try:
-        build_payoff(
-            task_title,
-            instrument_type=construct if isinstance(construct, str) else None,
+    task_id = task["id"]
+    cassette_path = FULL_TASK_CASSETTES_DIR / f"{task_id}.yaml"
+    merged_task = merge_canary_task_payload(task, canary)
+    market_state = build_market_state()
+    with llm_cassette_session(
+        cassette_path,
+        mode="record",
+        name=task_id,
+        store_prompts=True,
+    ):
+        result = run_task(
+            merged_task,
+            market_state,
             model=model,
             force_rebuild=True,
+            validation="standard",
+            max_retries=CANARY_MAX_RETRIES,
         )
-    except Exception as exc:
-        print(f"  WARNING: Build failed for {task_id}: {exc}")
-        print(f"  Cassette still saved with {len(recorder)} calls recorded.")
-    finally:
-        agent_config.llm_generate = real_generate
-        agent_config.llm_generate_json = real_generate_json
-
-    recorder.flush(
-        provider=agent_config.get_provider(),
-        model=model,
-    )
-    return cassette_path
+    return cassette_path, result
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -96,8 +102,11 @@ def main(argv: list[str] | None = None) -> int:
 
     canaries = load_canary_set()
 
-    # Load TASKS.yaml for titles
-    tasks = yaml.safe_load((ROOT / "TASKS.yaml").read_text(encoding="utf-8"))
+    from trellis.agent.task_runtime import load_tasks
+
+    # Use the same task-loading path as the canary runner so record and replay
+    # see the same normalized task payload.
+    tasks = load_tasks(status=None)
     task_lookup = {t["id"]: t for t in tasks}
 
     if args.task:
@@ -114,12 +123,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\nEstimated cost: ~${sum(c.get('estimated_cost_usd', 0.12) for c in canaries):.2f}")
         return 0
 
-    CASSETTES_DIR.mkdir(parents=True, exist_ok=True)
+    FULL_TASK_CASSETTES_DIR.mkdir(parents=True, exist_ok=True)
 
     print(f"\n{'=' * 65}")
     print(f"  CASSETTE RECORDING — {len(canaries)} tasks")
     print(f"  Model: {args.model}")
-    print(f"  Output: {CASSETTES_DIR}")
+    print(f"  Output: {FULL_TASK_CASSETTES_DIR}")
     print(f"  Started: {datetime.now().isoformat()}")
     print(f"{'=' * 65}")
 
@@ -135,14 +144,14 @@ def main(argv: list[str] | None = None) -> int:
         start = time.time()
 
         try:
-            path = record_cassette_for_task(
-                task_id,
-                task["title"],
-                task.get("construct", ""),
+            path, result = record_cassette_for_task(
+                task,
+                canary,
                 model=args.model,
             )
             elapsed = time.time() - start
-            print(f"  recorded ({elapsed:.1f}s) → {path.name}")
+            status = "recorded" if result.get("success") else "recorded with task failure"
+            print(f"  {status} ({elapsed:.1f}s) → {path.name}")
             recorded += 1
         except Exception as exc:
             elapsed = time.time() - start
@@ -150,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"\n{'=' * 65}")
     print(f"  Recorded: {recorded}/{len(canaries)} cassettes")
-    print(f"  Location: {CASSETTES_DIR}")
+    print(f"  Location: {FULL_TASK_CASSETTES_DIR}")
     print(f"{'=' * 65}")
 
     return 0 if recorded == len(canaries) else 1

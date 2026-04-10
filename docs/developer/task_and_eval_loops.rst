@@ -46,6 +46,31 @@ That lets sparse manifest rows keep their normal task-inventory shape while
 the curated regression surface still carries the fuller descriptions or market
 blocks needed to exercise canonical comparison cases honestly.
 
+The same runner now also has a full-task replay mode for diagnosis-heavy
+canaries:
+
+- record with
+  ``PYTHONHASHSEED=0 /Users/steveyang/miniforge3/bin/python3 scripts/record_cassettes.py --task T13``
+- replay with
+  ``PYTHONHASHSEED=0 /Users/steveyang/miniforge3/bin/python3 scripts/run_canary.py --task T13 --replay``
+- full-task canary cassettes live under ``cassettes/full_task/``
+
+The hash seed matters because the replay contract hashes the full prompt text.
+Use ``PYTHONHASHSEED=0`` for both recording and replay so prompt surfaces that
+still depend on iteration order stay stable across processes.
+
+Unlike the older tier-2 pipeline cassettes, the full-task canary path replays
+the real ``run_task(...)`` surface. That means the replay still exercises the
+runtime contract, comparison harness, task-run persistence, and diagnosis
+packet/dossier writes, but it does not spend live model tokens.
+
+Full-task cassette sessions also keep the knowledge store read-only during
+record and replay. The build still performs its normal LLM reflection calls,
+but it does not write new lessons, traces, cookbook candidates, or promotion
+candidates back into the canonical knowledge store. This keeps the replay
+prompt surface aligned with the state that the cassette was recorded against
+instead of letting the recording run mutate later retrieval inputs.
+
 Evals And Stress Tasks
 ----------------------
 
@@ -73,6 +98,16 @@ for run diagnosis; the dossier is the human-facing view that opens first when
 you need to understand a failure or confirm a success. The batch runner now
 surfaces those packet paths directly on the task result so you do not have to
 reconstruct them from traces or summary files.
+
+For cassette-backed canary replays, the task result and persisted task-run
+record now carry explicit execution metadata:
+
+- ``execution_mode`` is ``cassette_replay`` instead of ``live``
+- ``llm_cassette`` records the cassette name, path, and replay policy
+
+That keeps replay runs obvious to humans and downstream tooling without
+changing the packet or task-result schema that remediation and canary summary
+tools already consume.
 
 The task record and diagnosis packet also preserve post-build checkpoint
 metadata. That metadata records the transition from a validated method build

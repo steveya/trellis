@@ -38,6 +38,22 @@ The packet and dossier live under:
 The batch runner also surfaces those paths on the task result itself so a
 caller can jump directly to the packet after a batch finishes.
 
+Replay marker
+-------------
+
+Full-task canary replays now persist the same task-run and diagnosis artifacts
+as live runs, but they also mark the execution surface explicitly:
+
+- ``execution_mode`` is set to ``cassette_replay``
+- ``llm_cassette`` records the cassette name, path, and replay policy
+
+That metadata is stored on the top-level task result and the persisted task-run
+record so diagnosis, remediation, and canary-summary tooling can tell live and
+cassette-backed runs apart without needing a separate artifact schema.
+
+For replay stability, record and replay full-task canary cassettes with
+``PYTHONHASHSEED=0`` and keep them under ``cassettes/full_task/``.
+
 How to read one
 ---------------
 

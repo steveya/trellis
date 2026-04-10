@@ -24,6 +24,8 @@ import hashlib
 import json
 import logging
 import warnings
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +34,10 @@ from typing import Any, Callable
 import yaml
 
 _log = logging.getLogger(__name__)
+_LLM_CASSETTE_CONTEXT: ContextVar[dict[str, Any] | None] = ContextVar(
+    "llm_cassette_context",
+    default=None,
+)
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -354,3 +360,79 @@ def load_cassette(path: str | Path) -> dict[str, Any]:
     if not p.exists():
         raise CassetteNotFoundError(f"Cassette not found: {p}")
     return yaml.safe_load(p.read_text(encoding="utf-8"))
+
+
+def current_llm_cassette_context() -> dict[str, Any] | None:
+    """Return metadata for the active cassette scope, if any."""
+    current = _LLM_CASSETTE_CONTEXT.get()
+    if current is None:
+        return None
+    return dict(current)
+
+
+@contextmanager
+def llm_cassette_session(
+    path: str | Path,
+    *,
+    mode: str,
+    stale_policy: str = CassetteReplayer.STALE_POLICY_WARN,
+    store_prompts: bool = True,
+    name: str | None = None,
+):
+    """Run the current LLM call path against a recorder or replayer.
+
+    This scopes cassette control through ``trellis.agent.config.llm_generate``
+    and ``llm_generate_json`` so callers that imported those functions at
+    module scope still respect the active cassette session.
+    """
+    from trellis.agent.config import (
+        _llm_generate_json_live,
+        _llm_generate_live,
+        get_default_model,
+        get_provider,
+        llm_override_scope,
+    )
+
+    cassette_path = Path(path)
+    cassette_name = name or cassette_path.stem
+    if mode == "record":
+        handler: CassetteRecorder | CassetteReplayer = CassetteRecorder(
+            cassette_path,
+            store_prompts=store_prompts,
+            name=cassette_name,
+        )
+        generate = handler.wrap_generate(_llm_generate_live)
+        generate_json = handler.wrap_generate_json(_llm_generate_json_live)
+    elif mode == "replay":
+        handler = CassetteReplayer(cassette_path, stale_policy=stale_policy)
+        generate = handler.generate
+        generate_json = handler.generate_json
+    else:
+        raise ValueError(f"Unsupported cassette mode: {mode!r}")
+
+    metadata = {
+        "mode": mode,
+        "name": cassette_name,
+        "path": str(cassette_path),
+    }
+    if mode == "replay":
+        metadata["stale_policy"] = stale_policy
+
+    token = _LLM_CASSETTE_CONTEXT.set(metadata)
+    try:
+        with llm_override_scope(
+            generate=generate,
+            generate_json=generate_json,
+        ):
+            yield handler
+    finally:
+        _LLM_CASSETTE_CONTEXT.reset(token)
+        if mode == "record":
+            assert isinstance(handler, CassetteRecorder)
+            handler.flush(
+                provider=get_provider(),
+                model=get_default_model(),
+            )
+        else:
+            assert isinstance(handler, CassetteReplayer)
+            handler.assert_all_consumed()

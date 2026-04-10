@@ -3,6 +3,7 @@
 Usage:
     python scripts/run_canary.py                     # run all canaries
     python scripts/run_canary.py --task T38          # run single canary
+    python scripts/run_canary.py --task T38 --replay # replay single canary from cassette
     python scripts/run_canary.py --dry-run           # show plan, no execution
     python scripts/run_canary.py --budget 1.50       # override budget limit
     python scripts/run_canary.py --subset core       # run core subset (lattice + MC + PDE)
@@ -41,6 +42,7 @@ from trellis.agent.golden_traces import (
 )
 
 CANARY_FILE = ROOT / "CANARY_TASKS.yaml"
+FULL_TASK_CASSETTES_DIR = ROOT / "cassettes" / "full_task"
 
 # Engine families considered "core" for the --subset=core option
 CORE_FAMILIES = {"lattice", "monte_carlo", "pde", "credit"}
@@ -139,6 +141,9 @@ def run_canaries(
     validation: str = "standard",
     knowledge_light: bool = False,
     output_file: str | None = None,
+    replay: bool = False,
+    cassette_dir: str | Path | None = None,
+    cassette_stale_policy: str = "error",
 ) -> list[dict]:
     """Run canary tasks and return results.
 
@@ -147,6 +152,11 @@ def run_canaries(
     from trellis.agent.task_runtime import build_market_state, load_tasks, run_task
 
     budget = budget_override or meta.get("total_budget_usd", 3.0)
+    cassette_root = (
+        Path(cassette_dir)
+        if cassette_dir is not None
+        else FULL_TASK_CASSETTES_DIR
+    )
     # Canary coverage is curated independently of task lifecycle state, so the
     # runner must look across the full task registry rather than only "pending"
     # entries.
@@ -163,6 +173,8 @@ def run_canaries(
     print(f"  CANARY RUN — {len(canaries)} tasks")
     print(f"  Model: {model}")
     print(f"  Budget: ${budget:.2f}")
+    if replay:
+        print(f"  Replay: cassette-backed ({cassette_root})")
     print(f"  Started: {datetime.now().isoformat()}")
     print(f"{'=' * 65}")
 
@@ -180,20 +192,55 @@ def run_canaries(
             })
             continue
         task = merge_canary_task_payload(task, canary)
+        cassette_path = cassette_root / f"{task_id}.yaml"
 
         start = time.time()
         print(f"\n  [{idx}/{len(canaries)}] {task_id:6s}  {canary.get('engine_family', '?'):14s}", end="", flush=True)
 
-        try:
-            result = run_task(
-                task,
-                market_state,
-                model=model,
-                force_rebuild=True,
-                validation=validation,
-                max_retries=CANARY_MAX_RETRIES,
-                knowledge_profile="knowledge_light" if knowledge_light else None,
+        if replay and not cassette_path.exists():
+            error = (
+                f"Missing cassette for {task_id} at {cassette_path}. "
+                f"Record it with scripts/record_cassettes.py --task {task_id}"
             )
+            print("  SKIP — missing cassette")
+            results.append({
+                "canary_id": task_id,
+                "engine_family": canary.get("engine_family"),
+                "success": False,
+                "skipped": True,
+                "reason": "missing_cassette",
+                "error": error,
+            })
+            continue
+
+        try:
+            run_kwargs = {
+                "model": model,
+                "force_rebuild": True,
+                "validation": validation,
+                "max_retries": CANARY_MAX_RETRIES,
+                "knowledge_profile": "knowledge_light" if knowledge_light else None,
+            }
+            if replay:
+                from trellis.agent.cassette import llm_cassette_session
+
+                with llm_cassette_session(
+                    cassette_path,
+                    mode="replay",
+                    stale_policy=cassette_stale_policy,
+                    name=task_id,
+                ):
+                    result = run_task(
+                        task,
+                        market_state,
+                        **run_kwargs,
+                    )
+            else:
+                result = run_task(
+                    task,
+                    market_state,
+                    **run_kwargs,
+                )
         except Exception as exc:
             result = {
                 "task_id": task_id,
@@ -201,6 +248,14 @@ def run_canaries(
                 "error": str(exc),
                 "elapsed_seconds": time.time() - start,
             }
+            if replay:
+                result["execution_mode"] = "cassette_replay"
+                result["llm_cassette"] = {
+                    "mode": "replay",
+                    "name": task_id,
+                    "path": str(cassette_path),
+                    "stale_policy": cassette_stale_policy,
+                }
 
         elapsed = time.time() - start
         tokens = int((result.get("token_usage_summary") or {}).get("total_tokens") or 0)
@@ -327,6 +382,21 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="Use the compiler-first minimal knowledge profile during canary builds",
     )
     parser.add_argument("--output", help="Output file path for results JSON")
+    parser.add_argument(
+        "--replay",
+        action="store_true",
+        help="Replay canaries from recorded LLM cassettes instead of making live model calls",
+    )
+    parser.add_argument(
+        "--cassette-dir",
+        help="Directory containing canary cassette YAML files (default: cassettes/)",
+    )
+    parser.add_argument(
+        "--cassette-stale-policy",
+        choices=["warn", "error"],
+        default="error",
+        help="How replay mode handles prompt-hash drift",
+    )
     parser.add_argument("--check-drift", action="store_true", help="Compare results against golden traces and report drift")
     parser.add_argument("--update-golden", action="store_true", help="Promote passing results to golden traces (requires all pass)")
     return parser.parse_args(argv)
@@ -357,6 +427,9 @@ def main(argv: list[str] | None = None) -> int:
         validation=args.validation,
         knowledge_light=args.knowledge_light,
         output_file=output_file,
+        replay=args.replay,
+        cassette_dir=args.cassette_dir,
+        cassette_stale_policy=args.cassette_stale_policy,
     )
 
     all_passed = all(r.get("success", False) for r in results if not r.get("skipped"))
