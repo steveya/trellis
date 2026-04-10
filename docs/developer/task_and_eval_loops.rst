@@ -52,7 +52,25 @@ The repo ships a small task-operations toolchain:
 - ``scripts/benchmark_tasks.py``: benchmark cached generated payoffs without rebuilding
 - ``scripts/remediate.py``: analyze failures, categorize knowledge gaps, and patch common knowledge issues
 - ``scripts/evaluate_shared_memory.py``: compare two task-result tranches and render a shared-memory improvement report
+- ``scripts/should_run_canary.py``: decide whether current local changes justify the focused core canary gate
 - ``scripts/test_hygiene.py``: report stale skip/xfail/quarantine markers for local test-hygiene triage
+
+The repo root ``Makefile`` now exposes the explicit gate entrypoints:
+
+- ``make gate-pr`` for PR-ready validation
+- ``make gate-canary`` for the focused live canary subset
+- ``make gate-release`` for the broader replay/drift/freshness release gate
+
+Use ``scripts/should_run_canary.py`` before paying for the live canary subset.
+The helper reads local changed files from git status by default and recommends
+the focused ``core`` canary subset when runtime, pricing, task-manifest, or
+canary-runner surfaces move.
+
+The release gate keeps its canary evidence deterministic by replaying the
+committed full-task cassettes and then calling ``--check-drift``. That drift
+step still depends on a latest available decision checkpoint for the replayed
+task, so the runner will explicitly report when no checkpoint exists yet and
+the drift probe was skipped.
 
 For curated canaries specifically, ``scripts/run_canary.py`` now executes the
 live task entry plus any richer canary-only fields from ``CANARY_TASKS.yaml``.
