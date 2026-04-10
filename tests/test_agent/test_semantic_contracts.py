@@ -58,6 +58,7 @@ def test_semantic_draft_rule_registry_exposes_stable_order():
         "callable_bond",
         "vanilla_option",
         "rate_style_swaption",
+        "rate_cap_floor_strip",
         "credit_basket_tranche",
         "nth_to_default",
         "credit_default_swap",
@@ -71,11 +72,15 @@ def test_semantic_family_registry_exposes_supported_method_surfaces():
     )
 
     assert "vanilla_option" in registered_semantic_family_keys()
+    assert "rate_cap_floor_strip" in registered_semantic_family_keys()
     surface = resolve_semantic_method_surface("vanilla_option", "fft_pricing")
+    cap_surface = resolve_semantic_method_surface("rate_cap_floor_strip", "monte_carlo")
 
     assert surface.method == "fft_pricing"
     assert surface.target_modules == ("trellis.models.equity_option_transforms",)
     assert surface.primitive_families == ("transform_fft",)
+    assert cap_surface.primitive_families == ("monte_carlo_paths",)
+    assert "trellis.instruments.cap" in cap_surface.target_modules
 
 
 def test_semantic_contract_summary_emits_registered_family_surface_metadata():
@@ -656,6 +661,18 @@ def test_contract_requires_correlation_for_multi_asset_mc():
             "analytical_black76",
             "trellis.models.rate_style_swaption",
         ),
+        (
+            "Build a pricer for: Cap/floor: Black caplet stack vs MC rate simulation",
+            "cap",
+            "rate_cap_floor_strip",
+            "cap",
+            "rate_cap_floor_strip",
+            "single_curve_rate_style",
+            "coupon_period_cash_settlement",
+            "analytical",
+            "analytical_black76",
+            "trellis.instruments.cap",
+        ),
     ],
 )
 def test_representative_derivative_contracts_validate_and_compile(
@@ -702,6 +719,37 @@ def test_representative_derivative_contracts_validate_and_compile(
     assert compiled.primitive_routes == (expected_route,)
     assert expected_target_module in compiled.target_modules
     assert all("himalaya" not in module.lower() for module in compiled.route_modules)
+
+
+def test_rate_cap_floor_strip_draft_uses_structural_schedule_placeholder_when_dates_are_absent():
+    contract = _draft_contract(
+        "Build a pricer for: Cap/floor: Black caplet stack vs MC rate simulation",
+        "cap",
+    )
+
+    assert contract is not None
+    assert contract.semantic_id == "rate_cap_floor_strip"
+    assert contract.product.instrument_class == "cap"
+    assert contract.product.observation_schedule
+    assert contract.product.term_fields["schedule_authority"] == "structural_placeholder"
+    assert contract.product.term_fields["option_type"] == "call"
+
+
+def test_rate_cap_floor_strip_contract_uses_registered_surface_schema_hints():
+    from trellis.agent.semantic_contracts import (
+        make_rate_cap_floor_strip_contract,
+        resolve_semantic_method_surface,
+    )
+
+    contract = make_rate_cap_floor_strip_contract(
+        description="SOFR cap strip with annual fixings through 2029-11-15",
+        instrument_class="cap",
+        observation_schedule=("2026-11-15", "2027-11-15", "2028-11-15", "2029-11-15"),
+        preferred_method="monte_carlo",
+    )
+    surface = resolve_semantic_method_surface("rate_cap_floor_strip", "monte_carlo")
+
+    assert contract.blueprint.spec_schema_hints == surface.spec_schema_hints
 
 
 def test_migrated_contract_allows_missing_settlement_rule_mirror_with_warning():
@@ -874,6 +922,19 @@ def test_semantic_concept_resolution_marks_deprecated_wrappers_as_stale():
     assert resolution.matched_alias == "himalaya_option"
     assert summary["concept_status"] == "stale"
     assert summary["matched_alias"] == "himalaya_option"
+
+
+def test_semantic_concept_resolution_maps_cap_wrapper_to_rate_option_strip():
+    from trellis.agent.semantic_concepts import resolve_semantic_concept
+
+    resolution = resolve_semantic_concept(
+        "Black caplet stack vs MC rate simulation",
+        instrument_type="cap",
+    )
+
+    assert resolution.concept_id == "rate_cap_floor_strip"
+    assert resolution.resolution_kind == "thin_compatibility_wrapper"
+    assert resolution.matched_wrapper == "cap"
 
 
 @pytest.mark.parametrize(

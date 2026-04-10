@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 import re
+from types import MappingProxyType
 
 import trellis.core.capabilities as capability_registry
 
@@ -82,7 +83,6 @@ _AUTOMATIC_ACTION_HINTS = (
     "barrier",
 )
 
-
 @dataclass(frozen=True)
 class SemanticContractValidationFinding:
     """One structured semantic-contract validation finding."""
@@ -140,6 +140,61 @@ class SemanticContractValidationReport:
     def missing(self) -> tuple[str, ...]:
         """Duck-type the gap-report missing tuple for build-gate reuse."""
         return self.errors
+
+
+@dataclass(frozen=True)
+class SettlementAuthorityProfile:
+    """Declarative settlement-authority match profile for one semantic family."""
+
+    semantic_id: str
+    instrument_classes: tuple[str, ...] = ()
+    payoff_families: tuple[str, ...] = ()
+    exercise_styles: tuple[str, ...] = ()
+    required_payoff_traits: tuple[str, ...] = ()
+    required_primitive_families: tuple[str, ...] = ()
+
+
+_SETTLEMENT_AUTHORITY_PROFILES = MappingProxyType(
+    {
+        "vanilla_option": SettlementAuthorityProfile(
+            semantic_id="vanilla_option",
+            instrument_classes=("european_option",),
+            payoff_families=("vanilla_option",),
+        ),
+        "callable_bond": SettlementAuthorityProfile(
+            semantic_id="callable_bond",
+            instrument_classes=("callable_bond",),
+        ),
+        "ranked_observation_basket": SettlementAuthorityProfile(
+            semantic_id="ranked_observation_basket",
+            instrument_classes=("basket_path_payoff",),
+            required_payoff_traits=("ranked_observation",),
+        ),
+        "rate_style_swaption": SettlementAuthorityProfile(
+            semantic_id="rate_style_swaption",
+            instrument_classes=("swaption",),
+            exercise_styles=("bermudan",),
+            required_primitive_families=("exercise_lattice",),
+        ),
+    }
+)
+
+_RATE_CAP_FLOOR_WRAPPER_PROFILES = MappingProxyType(
+    {
+        "cap": MappingProxyType(
+            {
+                "obligation_id": "cap_period_cashflow",
+                "option_type": "call",
+            }
+        ),
+        "floor": MappingProxyType(
+            {
+                "obligation_id": "floor_period_cashflow",
+                "option_type": "put",
+            }
+        ),
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -342,6 +397,7 @@ def classify_semantic_gap(
     request_text = _combined_request_text(description, instrument_type, term_sheet)
     normalized_text = _normalize_text(request_text)
     cues = _semantic_cues(normalized_text)
+    has_any_semantic_cue = any(cues.values())
     concept_resolution = resolve_semantic_concept(
         description,
         instrument_type=instrument_type,
@@ -381,7 +437,7 @@ def classify_semantic_gap(
     if instrument_type and not cues["shape"]:
         missing_knowledge_artifacts.append("instrument_specific_lesson")
 
-    if not any(cues.values()):
+    if not has_any_semantic_cue:
         missing_contract_fields.append("semantic_product_shape")
         missing_knowledge_artifacts.append("cookbook_entry")
 
@@ -403,7 +459,7 @@ def classify_semantic_gap(
     if missing_knowledge_artifacts:
         gap_types.append("missing_knowledge_lesson")
 
-    requires_clarification = not any(cues.values())
+    requires_clarification = not has_any_semantic_cue
     # Ambiguous concept resolution should also require clarification — even
     # when cues fire, two concepts scoring equally means the request is
     # underspecified (e.g., "credit derivative" matches both CDS and NTD).
@@ -1241,13 +1297,20 @@ def _typed_surface_is_authoritative_for_settlement_rule(contract: SemanticContra
         str(item).strip().lower()
         for item in getattr(contract.blueprint, "primitive_families", ()) or ()
     }
-    if instrument == "european_option" and payoff_family == "vanilla_option":
-        return True
-    if instrument == "callable_bond":
-        return True
-    if instrument == "basket_path_payoff" and "ranked_observation" in payoff_traits:
-        return True
-    return instrument == "swaption" and exercise_style == "bermudan" and "exercise_lattice" in primitive_families
+    profile = _SETTLEMENT_AUTHORITY_PROFILES.get(str(contract.semantic_id or "").strip())
+    if profile is None:
+        return False
+    if profile.instrument_classes and instrument not in profile.instrument_classes:
+        return False
+    if profile.payoff_families and payoff_family not in profile.payoff_families:
+        return False
+    if profile.exercise_styles and exercise_style not in profile.exercise_styles:
+        return False
+    if profile.required_payoff_traits and not set(profile.required_payoff_traits).issubset(payoff_traits):
+        return False
+    if profile.required_primitive_families and not set(profile.required_primitive_families).issubset(primitive_families):
+        return False
+    return True
 
 
 def _typed_settlement_rules(product) -> tuple[str, ...]:
@@ -1430,6 +1493,7 @@ def _validate_semantic_shape(
         "callable_bond": _validate_callable_bond_shape,
         "range_accrual": _validate_range_accrual_shape,
         "rate_style_swaption": _validate_rate_style_swaption_shape,
+        "rate_cap_floor_strip": _validate_rate_cap_floor_strip_shape,
         "credit_default_swap": _validate_credit_default_swap_shape,
         "nth_to_default": _validate_nth_to_default_shape,
         "credit_basket_tranche": _validate_credit_basket_tranche_shape,
@@ -1478,7 +1542,7 @@ def _validate_profile_fields(
     contract: SemanticContract,
     errors: list[str],
     *,
-    expected_instrument_class: str,
+    expected_instrument_class: str | None,
     expected_payoff_family: str,
     expected_underlier_structure: str,
     expected_payoff_rule: str,
@@ -1496,7 +1560,7 @@ def _validate_profile_fields(
 ) -> None:
     """Validate a product profile's deterministic structural fields."""
     product = contract.product
-    if product.instrument_class != expected_instrument_class:
+    if expected_instrument_class is not None and product.instrument_class != expected_instrument_class:
         errors.append(
             f"Semantic slice expects instrument_class `{expected_instrument_class}`, got `{product.instrument_class}`."
         )
@@ -1858,6 +1922,72 @@ def _validate_range_accrual_shape(
         warnings.append(
             "Range-accrual callability hooks are captured as trade-entry metadata; callable execution remains a later slice."
         )
+    if not contract.blueprint.primitive_families:
+        warnings.append(
+            f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."
+        )
+
+
+def _validate_rate_cap_floor_strip_shape(
+    contract: SemanticContract,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate a schedule-driven cap/floor strip semantic shape."""
+    required_capabilities = _validate_market_capabilities(
+        contract,
+        errors,
+        frozenset({"discount_curve", "forward_curve", "black_vol_surface"}),
+    )
+    _validate_profile_fields(
+        contract,
+        errors,
+        expected_instrument_class=None,
+        expected_payoff_family="rate_cap_floor_strip",
+        expected_underlier_structure="single_curve_rate_style",
+        expected_payoff_rule="period_rate_option_strip_payoff",
+        expected_settlement_rule="coupon_period_cash_settlement",
+        expected_exercise_style="none",
+        expected_multi_asset=False,
+        require_schedule=True,
+        require_constituents=0,
+        path_dependence="schedule_dependent",
+        state_dependence="schedule_dependent",
+        schedule_dependence=True,
+    )
+    product = contract.product
+    wrapper_profile = _RATE_CAP_FLOOR_WRAPPER_PROFILES.get(
+        str(product.instrument_class or "").strip().lower()
+    )
+    if wrapper_profile is None:
+        errors.append(
+            "Rate cap/floor strip semantics require instrument_class `cap` or `floor`."
+        )
+    if "forward_curve" not in required_capabilities:
+        errors.append("Rate cap/floor strip semantics require a forward curve input.")
+    observable_types = {
+        str(getattr(item, "observable_type", "")).strip().lower()
+        for item in product.observables
+    }
+    if "forward_rate" not in observable_types:
+        errors.append("Rate cap/floor strip semantics require a typed forward_rate observable.")
+    if "discount_curve" not in observable_types:
+        errors.append("Rate cap/floor strip semantics require a typed discount_curve observable.")
+    obligation_ids = {item.obligation_id for item in product.obligations}
+    expected_obligation_id = str((wrapper_profile or {}).get("obligation_id", ""))
+    if expected_obligation_id not in obligation_ids:
+        errors.append(
+            f"Rate cap/floor strip semantics require obligation `{expected_obligation_id}`."
+        )
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
+    option_type = str(term_fields.get("option_type", "")).strip().lower()
+    expected_option_type = str((wrapper_profile or {}).get("option_type", ""))
+    if option_type != expected_option_type:
+        errors.append(
+            f"Rate cap/floor strip semantics require option_type `{expected_option_type}`, got `{option_type}`."
+        )
+    if product.controller_protocol.controller_style != "identity":
+        errors.append("Rate cap/floor strip semantics cannot declare a strategic controller.")
     if not contract.blueprint.primitive_families:
         warnings.append(
             f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."

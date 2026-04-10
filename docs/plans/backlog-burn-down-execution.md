@@ -18,8 +18,9 @@ Current status:
 - `QUA-428` is complete.
 - `QUA-430` is complete.
 - `QUA-700` is complete.
+- `QUA-543` is complete.
 - Wave 1 is complete.
-- The next actionable ticket in queue order is `QUA-543`.
+- The next actionable ticket in queue order is `QUA-417`.
 
 ## Operating Rules
 
@@ -142,15 +143,17 @@ If a ticket has become stale because other landed work already satisfies it:
 ## Current Start Point
 
 Execution started with `QUA-458`, continued through `QUA-710`, `QUA-428`,
-`QUA-430`, and the `QUA-700` umbrella closeout, and now moves next to
-`QUA-543`.
+`QUA-430`, the `QUA-700` umbrella closeout, and `QUA-543`, and now moves next
+to `QUA-417`.
 
 Plain-English goal:
 
-- restore the remaining `E22` stress-path regression to a compare-ready state
+- narrow the route-registry / builder obligation surface without reopening the
+  completed stress-path recovery
 
 Primary files and surfaces:
 
-- the current `E22` stress-path implementation and comparison harness
-- the proving and stress-run evidence around the remaining compare-ready gap
-- any route or helper cleanup needed to make the stress tranche stable without reopening the completed canary wave
+- the route registry and builder obligation surfaces that still overexpose
+  modules or prompts
+- the generation and routing contracts that depend on that registry surface
+- regional validation around route selection and builder prompt assembly

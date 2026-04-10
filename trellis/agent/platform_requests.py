@@ -429,6 +429,18 @@ def _compile_user_defined_request(request: PlatformRequest) -> CompiledPlatformR
     )
 
 
+_KNOWN_FAMILY_REQUEST_PROFILES = MappingProxyType(
+    {
+        "quanto_option": MappingProxyType(
+            {
+                "instrument_aliases": ("quanto_option",),
+                "cue_phrases": ("quanto",),
+            }
+        ),
+    }
+)
+
+
 def _known_family_id(
     *,
     description: str | None,
@@ -437,15 +449,16 @@ def _known_family_id(
 ) -> str | None:
     """Resolve a known checked-in family contract id from request context."""
     normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
-    if normalized_instrument == "quanto_option":
-        return "quanto_option"
     lower_description = (description or "").lower()
-    if "quanto" in lower_description:
-        return "quanto_option"
     term_sheet_type = getattr(term_sheet, "instrument_type", "")
     normalized_term_sheet = str(term_sheet_type).strip().lower().replace(" ", "_")
-    if normalized_term_sheet == "quanto_option":
-        return "quanto_option"
+    for family_id, profile in _KNOWN_FAMILY_REQUEST_PROFILES.items():
+        if normalized_instrument in profile["instrument_aliases"]:
+            return family_id
+        if normalized_term_sheet in profile["instrument_aliases"]:
+            return family_id
+        if any(cue in lower_description for cue in profile["cue_phrases"]):
+            return family_id
     return None
 
 
@@ -478,6 +491,15 @@ def _compile_known_family_request(
         reason=reason or "family_template_request",
         preferred_method=preferred_method,
     )
+
+
+def _matched_payoff_uses_generated_adapter(match: tuple | None) -> bool:
+    """Return whether a matched direct payoff comes from a generated `_agent` adapter."""
+    if not match:
+        return False
+    payoff = match[0]
+    module_name = str(getattr(type(payoff), "__module__", "") or "")
+    return "._agent." in module_name
 
 
 def _draft_semantic_contract(
@@ -889,6 +911,33 @@ def _compile_term_sheet_request(request: PlatformRequest) -> CompiledPlatformReq
 
     term_sheet = request.term_sheet
     description = request.description or getattr(term_sheet, "raw_description", term_sheet.instrument_type)
+    product_ir = decompose_to_ir(
+        description,
+        instrument_type=term_sheet.instrument_type,
+    )
+
+    match = match_payoff(term_sheet, request.settlement or date.today())
+    # Canonical checked-in payoffs should keep the direct-existing route. Generated
+    # `_agent` adapters still allow semantic compilation to take precedence.
+    if match is not None and not _matched_payoff_uses_generated_adapter(match):
+        knowledge_bundle = _shared_knowledge_bundle(
+            product_ir,
+            preferred_method="direct_existing",
+            knowledge_profile=_knowledge_profile_for_request(request),
+        )
+        return _finalize_compiled_request(
+            request=request,
+            market_snapshot=request.market_snapshot,
+            execution_plan=_execution_plan_for_request(
+                request,
+                action="price_existing_payoff",
+                reason="term_sheet_matched_existing_payoff",
+                route_method="direct_existing",
+            ),
+            product_ir=product_ir,
+            knowledge_bundle=knowledge_bundle,
+        )
+
     semantic_contract = _draft_semantic_contract(
         description,
         instrument_type=request.instrument_type,
@@ -912,12 +961,6 @@ def _compile_term_sheet_request(request: PlatformRequest) -> CompiledPlatformReq
             reason="known_family_term_sheet_request",
             description=description,
         )
-    product_ir = decompose_to_ir(
-        description,
-        instrument_type=term_sheet.instrument_type,
-    )
-
-    match = match_payoff(term_sheet, request.settlement or date.today())
     if match is not None:
         knowledge_bundle = _shared_knowledge_bundle(
             product_ir,
@@ -936,7 +979,6 @@ def _compile_term_sheet_request(request: PlatformRequest) -> CompiledPlatformReq
             product_ir=product_ir,
             knowledge_bundle=knowledge_bundle,
         )
-
     from trellis.agent.semantic_contract_validation import classify_semantic_gap
     from trellis.agent.semantic_contract_validation import propose_semantic_extension
     from trellis.agent.semantic_contract_validation import semantic_extension_summary
@@ -1503,6 +1545,13 @@ def _swaption_engine_model_spec(
     )
 
 
+_ENGINE_MODEL_SPEC_BUILDERS = MappingProxyType(
+    {
+        "rate_style_swaption": _swaption_engine_model_spec,
+    }
+)
+
+
 def _engine_model_spec_for_request(
     request: PlatformRequest,
     *,
@@ -1514,7 +1563,12 @@ def _engine_model_spec_for_request(
         return None
     if semantic_contract is None:
         return None
-    return _swaption_engine_model_spec(
+    builder = _ENGINE_MODEL_SPEC_BUILDERS.get(
+        str(getattr(semantic_contract, "semantic_id", "") or "").strip()
+    )
+    if builder is None:
+        return None
+    return builder(
         semantic_contract,
         preferred_method=preferred_method,
     )

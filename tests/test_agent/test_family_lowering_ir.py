@@ -158,6 +158,28 @@ def test_non_migrated_analytical_swaption_keeps_legacy_lowering_path():
     assert blueprint.dsl_lowering.family_ir is None
 
 
+def test_rate_cap_floor_strip_analytical_compiles_to_black76_family_ir():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_rate_cap_floor_strip_contract
+
+    contract = make_rate_cap_floor_strip_contract(
+        description="5Y cap on SOFR under Black caplet strip pricing",
+        instrument_class="cap",
+        observation_schedule=("cap_schedule_placeholder",),
+        preferred_method="analytical",
+    )
+    blueprint = compile_semantic_contract(contract, preferred_method="analytical")
+
+    family_ir = blueprint.dsl_lowering.family_ir
+    assert isinstance(family_ir, AnalyticalBlack76IR)
+    assert family_ir.route_id == "analytical_black76"
+    assert family_ir.product_instrument == "cap"
+    assert family_ir.payoff_family == "rate_cap_floor_strip"
+    assert family_ir.option_type == "call"
+    assert family_ir.kernel_symbol == "black76_call"
+    assert family_ir.market_mapping == "discount_curve_forward_curve_black_vol_to_caplet_strip"
+
+
 def test_rate_style_swaption_monte_carlo_compiles_to_event_aware_family_ir():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
@@ -206,6 +228,30 @@ def test_rate_style_swaption_monte_carlo_compiles_to_event_aware_family_ir():
         "settle_at_exercise",
         "exercise_cash_settlement",
     )
+
+
+def test_rate_cap_floor_strip_monte_carlo_compiles_to_event_aware_family_ir():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_rate_cap_floor_strip_contract
+
+    contract = make_rate_cap_floor_strip_contract(
+        description="Black floorlet strip vs Hull-White Monte Carlo",
+        instrument_class="floor",
+        observation_schedule=("floor_schedule_placeholder",),
+        preferred_method="monte_carlo",
+    )
+    blueprint = compile_semantic_contract(contract, preferred_method="monte_carlo")
+
+    family_ir = blueprint.dsl_lowering.family_ir
+    assert isinstance(family_ir, EventAwareMonteCarloIR)
+    assert family_ir.route_id == "monte_carlo_paths"
+    assert family_ir.product_instrument == "floor"
+    assert family_ir.payoff_family == "rate_cap_floor_strip"
+    assert family_ir.state_spec.state_variable == "short_rate"
+    assert family_ir.process_spec.process_family == "hull_white_1f"
+    assert family_ir.path_requirement_spec.requirement_kind == "event_replay"
+    assert family_ir.payoff_reducer_spec.reducer_kind == "period_option_cashflow_strip"
+    assert family_ir.market_mapping == "discount_curve_forward_curve_black_vol_to_rate_option_strip_mc"
 
 
 def test_vanilla_option_monte_carlo_compiles_to_terminal_only_event_aware_family_ir():

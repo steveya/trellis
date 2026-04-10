@@ -547,7 +547,6 @@ def test_classify_semantic_gap_treats_cds_as_credit_request():
     assert "discount_curve" in report.missing_market_inputs
     assert "credit_curve" in report.missing_market_inputs
 
-
 def test_accepts_fixed_t39_transform_artifact():
     from trellis.agent.semantic_validation import validate_semantics
 

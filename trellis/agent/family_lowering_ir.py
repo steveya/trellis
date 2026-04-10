@@ -543,6 +543,246 @@ FamilyLoweringIR = (
 )
 
 
+@dataclass(frozen=True)
+class FamilyIRMatchProfile:
+    """Declarative family-IR match profile for one semantic slice."""
+
+    semantic_id: str
+    allowed_instruments: tuple[str, ...] = ()
+    allowed_payoff_families: tuple[str, ...] = ()
+    allowed_product_instruments: tuple[str, ...] = ()
+    allowed_product_payoff_families: tuple[str, ...] = ()
+    allowed_exercise_styles: tuple[str, ...] = ()
+    required_payoff_traits: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class ExerciseLatticeProfile:
+    """Declarative exercise-lattice lowering profile for one semantic family."""
+
+    match_profile: FamilyIRMatchProfile
+    required_observables: tuple[str, ...]
+    required_inputs: tuple[str, ...]
+    helper_symbol: str
+    market_mapping: str
+    derived_quantities: tuple[str, ...]
+
+
+_FAMILY_IR_MATCH_PROFILES = {
+    "vanilla_european": FamilyIRMatchProfile(
+        semantic_id="vanilla_option",
+        allowed_instruments=("european_option",),
+        allowed_payoff_families=("vanilla_option",),
+        allowed_product_instruments=("european_option",),
+        allowed_exercise_styles=("european",),
+    ),
+    "rate_cap_floor_strip": FamilyIRMatchProfile(
+        semantic_id="rate_cap_floor_strip",
+        allowed_instruments=("cap", "floor"),
+        allowed_payoff_families=("rate_cap_floor_strip",),
+        allowed_product_instruments=("cap", "floor"),
+        allowed_product_payoff_families=("rate_cap_floor_strip",),
+    ),
+    "ranked_observation_basket": FamilyIRMatchProfile(
+        semantic_id="ranked_observation_basket",
+        allowed_instruments=("basket_path_payoff",),
+        allowed_payoff_families=("basket_path_payoff",),
+        allowed_product_instruments=("basket_path_payoff",),
+        allowed_product_payoff_families=("basket_path_payoff",),
+        required_payoff_traits=("ranked_observation",),
+    ),
+    "credit_default_swap": FamilyIRMatchProfile(
+        semantic_id="credit_default_swap",
+        allowed_instruments=("cds",),
+        allowed_payoff_families=("credit_default_swap",),
+        allowed_product_instruments=("cds",),
+        allowed_product_payoff_families=("credit_default_swap",),
+    ),
+    "nth_to_default": FamilyIRMatchProfile(
+        semantic_id="nth_to_default",
+        allowed_instruments=("nth_to_default",),
+        allowed_payoff_families=("nth_to_default",),
+        allowed_product_instruments=("nth_to_default",),
+        allowed_product_payoff_families=("nth_to_default",),
+    ),
+}
+
+
+_EXERCISE_LATTICE_PROFILES = (
+    ExerciseLatticeProfile(
+        match_profile=FamilyIRMatchProfile(
+            semantic_id="callable_bond",
+            allowed_instruments=("callable_bond",),
+            allowed_product_instruments=("callable_bond",),
+            allowed_exercise_styles=("issuer_call",),
+        ),
+        required_observables=("discount_curve", "cashflow_schedule"),
+        required_inputs=("discount_curve", "black_vol_surface"),
+        helper_symbol="price_callable_bond_tree",
+        market_mapping="discount_curve_black_vol_coupon_schedule_to_callable_tree",
+        derived_quantities=(
+            "call_schedule_steps",
+            "coupon_accrual_fractions",
+            "settlement_discount_factors",
+        ),
+    ),
+    ExerciseLatticeProfile(
+        match_profile=FamilyIRMatchProfile(
+            semantic_id="rate_style_swaption",
+            allowed_instruments=("swaption",),
+            allowed_product_instruments=("swaption",),
+            allowed_exercise_styles=("bermudan",),
+        ),
+        required_observables=("forward_rate", "discount_curve"),
+        required_inputs=("discount_curve", "forward_curve", "black_vol_surface"),
+        helper_symbol="price_bermudan_swaption_tree",
+        market_mapping="discount_curve_forward_par_rate_schedule_to_lattice",
+        derived_quantities=(
+            "exercise_schedule_steps",
+            "schedule_bound_forward_fixings",
+            "par_rate_bindings",
+            "swap_accrual_fractions",
+            "settlement_discount_factors",
+        ),
+    ),
+)
+
+
+_TRANSFORM_TERMINAL_PAYOFF_KIND_BY_FAMILY = {
+    "vanilla_option": "vanilla_terminal_payoff",
+}
+
+
+_TRANSFORM_HELPER_BINDINGS = {
+    ("vanilla_option", "equity_diffusion"): "price_vanilla_equity_option_transform",
+}
+
+
+_TRANSFORM_MARKET_MAPPINGS = {
+    ("vanilla_option", "equity_diffusion"): "single_state_diffusion_transform_inputs",
+    ("", "stochastic_volatility"): "stochastic_vol_transform_inputs",
+}
+
+
+_MC_MARKET_MAPPINGS = {
+    ("hull_white_1f", "swaption"): "discount_curve_forward_curve_black_vol_to_short_rate_mc",
+    ("hull_white_1f", "rate_cap_floor_strip"): "discount_curve_forward_curve_black_vol_to_rate_option_strip_mc",
+    ("local_vol_1d", ""): "equity_spot_discount_local_vol_to_mc",
+    ("gbm_1d", ""): "equity_spot_discount_black_vol_to_mc",
+}
+
+
+_MC_HELPER_BINDINGS = {
+    ("gbm_1d", "vanilla_option", "european"): "price_vanilla_equity_option_monte_carlo",
+    ("hull_white_1f", "swaption", ""): "price_swaption_monte_carlo",
+}
+
+
+_MC_REDUCER_BINDINGS = {
+    "swaption": ("discounted_swap_pv",),
+    "rate_cap_floor_strip": ("period_option_cashflow_strip",),
+    "vanilla_option": ("terminal_payoff",),
+}
+
+
+_MC_TERMINAL_ONLY_FAMILY_EXERCISE = frozenset(
+    {
+        ("vanilla_option", "european"),
+    }
+)
+
+
+_MC_PAYOFF_REDUCER_OUTPUTS = {
+    "swaption": ("swaption_exercise_payoff", "swaption_exercise_payoff"),
+    "vanilla_option": ("terminal_payoff", "vanilla_option_payoff"),
+    "rate_cap_floor_strip": ("period_option_cashflow_strip", "rate_cap_floor_strip_payoff"),
+}
+
+
+_PDE_BOUNDARY_BINDINGS = {
+    "callable_fixed_income": PDEBoundarySpec(
+        terminal_condition_kind="cashflow_terminal_value",
+        lower_boundary_kind="short_rate_linear",
+        upper_boundary_kind="short_rate_linear",
+    ),
+    "bond": PDEBoundarySpec(
+        terminal_condition_kind="cashflow_terminal_value",
+        lower_boundary_kind="short_rate_linear",
+        upper_boundary_kind="short_rate_linear",
+    ),
+    "vanilla_option": PDEBoundarySpec(
+        terminal_condition_kind="expiry_payoff",
+        lower_boundary_kind="vanilla_dirichlet",
+        upper_boundary_kind="vanilla_linear_asymptote",
+    ),
+}
+
+
+_PDE_MARKET_MAPPINGS = {
+    ("hull_white_1f", "callable_fixed_income"): "discount_curve_coupon_schedule_to_short_rate_pde",
+    ("black_scholes_1d", ""): "equity_spot_discount_black_vol",
+}
+
+
+_PDE_HELPER_BINDINGS = {
+    ("vanilla_option", "black_scholes_1d", "holder_max"): "price_event_aware_equity_option_pde",
+    ("callable_fixed_income", "hull_white_1f", "issuer_min"): "price_callable_bond_pde",
+}
+
+
+def _matches_family_ir_profile(contract, product_ir, profile: FamilyIRMatchProfile) -> bool:
+    """Return whether one semantic contract fits a declarative lowering profile."""
+    instrument = str(getattr(product_ir, "instrument", "") or "").strip().lower()
+    payoff_family = str(getattr(product_ir, "payoff_family", "") or "").strip().lower()
+    exercise_style = str(getattr(product_ir, "exercise_style", "") or "").strip().lower()
+    product = getattr(contract, "product", None)
+    product_instrument = str(getattr(product, "instrument_class", "") or "").strip().lower()
+    product_payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    payoff_traits = {
+        str(item).strip().lower()
+        for item in getattr(product_ir, "payoff_traits", ()) or ()
+    }
+    if str(getattr(contract, "semantic_id", "") or "").strip() != profile.semantic_id:
+        return False
+    if profile.allowed_instruments and instrument not in profile.allowed_instruments:
+        return False
+    if profile.allowed_payoff_families and payoff_family not in profile.allowed_payoff_families:
+        return False
+    if profile.allowed_product_instruments and product_instrument not in profile.allowed_product_instruments:
+        return False
+    if profile.allowed_product_payoff_families and product_payoff_family not in profile.allowed_product_payoff_families:
+        return False
+    if profile.allowed_exercise_styles and exercise_style not in profile.allowed_exercise_styles:
+        return False
+    if profile.required_payoff_traits and not set(profile.required_payoff_traits).issubset(payoff_traits):
+        return False
+    return True
+
+
+def _lookup_by_composite_key(bindings, *keys: str) -> str:
+    """Return the first composite-key binding that matches, honoring empty wildcards."""
+    normalized = tuple(str(key or "").strip().lower() for key in keys)
+    if normalized in bindings:
+        return bindings[normalized]
+    for wildcard_count in range(1, len(normalized) + 1):
+        for start in range(0, len(normalized) - wildcard_count + 1):
+            wildcard = list(normalized)
+            for index in range(start, start + wildcard_count):
+                wildcard[index] = ""
+            wildcard_key = tuple(wildcard)
+            if wildcard_key in bindings:
+                return bindings[wildcard_key]
+    return ""
+
+
+def _resolve_exercise_lattice_profile(contract, product_ir) -> ExerciseLatticeProfile | None:
+    """Return the declared exercise-lattice lowering profile for one semantic contract."""
+    for profile in _EXERCISE_LATTICE_PROFILES:
+        if _matches_family_ir_profile(contract, product_ir, profile.match_profile):
+            return profile
+    return None
+
+
 def build_family_lowering_ir(
     contract,
     *,
@@ -591,6 +831,14 @@ def build_family_lowering_ir(
                 ),
                 **common_kwargs,
             )
+    if _is_rate_cap_floor_strip_contract(contract, product_ir) and route_id == "analytical_black76":
+        option_type = _option_type_for_contract(contract)
+        return AnalyticalBlack76IR(
+            option_type=option_type,
+            kernel_symbol="black76_put" if option_type == "put" else "black76_call",
+            market_mapping="discount_curve_forward_curve_black_vol_to_caplet_strip",
+            **common_kwargs,
+        )
     if route_id == "pde_theta_1d":
         return _build_event_aware_pde_ir(
             contract,
@@ -934,9 +1182,10 @@ def _transform_characteristic_spec_for_product(
 def _transform_terminal_payoff_kind_for_product(product) -> str:
     """Return the bounded terminal payoff kind for one transform family IR."""
     payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
-    if payoff_family == "vanilla_option":
-        return "vanilla_terminal_payoff"
-    return "compiled_terminal_payoff"
+    return _TRANSFORM_TERMINAL_PAYOFF_KIND_BY_FAMILY.get(
+        payoff_family,
+        "compiled_terminal_payoff",
+    )
 
 
 def _transform_quote_semantics_for_product(
@@ -956,12 +1205,11 @@ def _transform_helper_symbol_for_product(
 ) -> str:
     """Return the bounded helper symbol for transform routes when one exists."""
     payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
-    if (
-        payoff_family == "vanilla_option"
-        and characteristic_spec.model_family == "equity_diffusion"
-    ):
-        return "price_vanilla_equity_option_transform"
-    return ""
+    return _lookup_by_composite_key(
+        _TRANSFORM_HELPER_BINDINGS,
+        payoff_family,
+        characteristic_spec.model_family,
+    )
 
 
 def _transform_market_mapping_for_product(
@@ -970,14 +1218,12 @@ def _transform_market_mapping_for_product(
 ) -> str:
     """Return a readable market-binding label for one transform family IR."""
     payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
-    if (
-        payoff_family == "vanilla_option"
-        and characteristic_spec.model_family == "equity_diffusion"
-    ):
-        return "single_state_diffusion_transform_inputs"
-    if characteristic_spec.model_family == "stochastic_volatility":
-        return "stochastic_vol_transform_inputs"
-    return "compiled_transform_inputs"
+    mapping = _lookup_by_composite_key(
+        _TRANSFORM_MARKET_MAPPINGS,
+        payoff_family,
+        characteristic_spec.model_family,
+    )
+    return mapping or "compiled_transform_inputs"
 
 
 def _build_event_aware_monte_carlo_ir(
@@ -1062,7 +1308,7 @@ def _mc_uses_terminal_only_contract(product) -> bool:
     """Return whether the product should lower onto a terminal-only MC contract."""
     payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
     exercise_style = str(getattr(product, "exercise_style", "") or "").strip().lower()
-    return payoff_family == "vanilla_option" and exercise_style == "european"
+    return (payoff_family, exercise_style) in _MC_TERMINAL_ONLY_FAMILY_EXERCISE
 
 
 def _mc_control_spec_for_product(product) -> MCControlSpec | None:
@@ -1131,28 +1377,24 @@ def _mc_process_spec_for_product(product, *, route_id: str) -> MCProcessSpec:
 def _mc_market_mapping_for_product(product, process_spec: MCProcessSpec) -> str:
     """Return a readable market-binding label for the bounded MC family IR."""
     payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
-    if process_spec.process_family == "hull_white_1f" and payoff_family == "swaption":
-        return "discount_curve_forward_curve_black_vol_to_short_rate_mc"
-    if process_spec.process_family == "local_vol_1d":
-        return "equity_spot_discount_local_vol_to_mc"
-    if process_spec.process_family == "gbm_1d":
-        return "equity_spot_discount_black_vol_to_mc"
-    return "compiled_event_aware_monte_carlo_inputs"
+    mapping = _lookup_by_composite_key(
+        _MC_MARKET_MAPPINGS,
+        process_spec.process_family,
+        payoff_family,
+    )
+    return mapping or "compiled_event_aware_monte_carlo_inputs"
 
 
 def _mc_helper_symbol_for_product(product, process_spec: MCProcessSpec) -> str:
     """Return a family-level helper symbol when one comprehensive kit exists."""
     payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
     exercise_style = str(getattr(product, "exercise_style", "") or "").strip().lower()
-    if (
-        process_spec.process_family == "gbm_1d"
-        and payoff_family == "vanilla_option"
-        and exercise_style == "european"
-    ):
-        return "price_vanilla_equity_option_monte_carlo"
-    if process_spec.process_family == "hull_white_1f" and payoff_family == "swaption":
-        return "price_swaption_monte_carlo"
-    return ""
+    return _lookup_by_composite_key(
+        _MC_HELPER_BINDINGS,
+        process_spec.process_family,
+        payoff_family,
+        exercise_style,
+    )
 
 
 def _build_mc_event_timeline(product) -> tuple[MCEventTimeSpec, ...]:
@@ -1338,11 +1580,7 @@ def _mc_path_requirement_spec_for_product(
 def _mc_reducer_kinds_for_product(product) -> tuple[str, ...]:
     """Return bounded reduced-state helper names for one semantic product."""
     payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
-    if payoff_family == "swaption":
-        return ("discounted_swap_pv",)
-    if payoff_family == "vanilla_option":
-        return ("terminal_payoff",)
-    return ()
+    return _MC_REDUCER_BINDINGS.get(payoff_family, ())
 
 
 def _mc_payoff_reducer_spec_for_product(
@@ -1352,26 +1590,178 @@ def _mc_payoff_reducer_spec_for_product(
 ) -> MCPayoffReducerSpec:
     """Infer the payoff-reducer contract for one bounded MC family instance."""
     payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
-    if payoff_family == "swaption":
-        dependencies = tuple(
-            event.event_name
-            for bucket in event_timeline
-            for event in bucket.events
-        )
+    reducer_profile = _MC_PAYOFF_REDUCER_OUTPUTS.get(payoff_family)
+    if reducer_profile is not None:
+        reducer_kind, output_semantics = reducer_profile
+        if payoff_family in {"swaption", "rate_cap_floor_strip"}:
+            dependencies = tuple(
+                event.event_name
+                for bucket in event_timeline
+                for event in bucket.events
+            )
+            return MCPayoffReducerSpec(
+                reducer_kind=reducer_kind,
+                output_semantics=output_semantics,
+                event_dependencies=dependencies,
+            )
         return MCPayoffReducerSpec(
-            reducer_kind="swaption_exercise_payoff",
-            output_semantics="swaption_exercise_payoff",
-            event_dependencies=dependencies,
-        )
-    if payoff_family == "vanilla_option":
-        return MCPayoffReducerSpec(
-            reducer_kind="terminal_payoff",
-            output_semantics="vanilla_option_payoff",
+            reducer_kind=reducer_kind,
+            output_semantics=output_semantics,
         )
     return MCPayoffReducerSpec(
         reducer_kind="compiled_schedule_payoff",
         output_semantics=payoff_family or "compiled_payoff",
     )
+
+
+def _pde_boundary_spec_for_product(product) -> PDEBoundarySpec:
+    """Infer the bounded terminal/boundary contract for one PDE family IR."""
+    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    return _PDE_BOUNDARY_BINDINGS.get(
+        payoff_family,
+        PDEBoundarySpec(
+            terminal_condition_kind="compiled_terminal_value",
+            lower_boundary_kind="default",
+            upper_boundary_kind="default",
+        ),
+    )
+
+
+def _pde_market_mapping_for_product(product, operator_spec: PDEOperatorSpec) -> str:
+    """Return a readable market-binding label for the bounded PDE family IR."""
+    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    mapping = _lookup_by_composite_key(
+        _PDE_MARKET_MAPPINGS,
+        operator_spec.operator_family,
+        payoff_family,
+    )
+    return mapping or "compiled_event_aware_pde_inputs"
+
+
+def _pde_helper_symbol_for_product(
+    product,
+    operator_spec: PDEOperatorSpec,
+    control_style: str,
+) -> str:
+    """Return a bounded helper symbol for migrated event-aware PDE proof slices."""
+    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    return _lookup_by_composite_key(
+        _PDE_HELPER_BINDINGS,
+        payoff_family,
+        operator_spec.operator_family,
+        control_style,
+    )
+
+
+def _exercise_lattice_profile_for_product(contract, product_ir) -> ExerciseLatticeProfile | None:
+    """Return the exercise-lattice lowering profile for one semantic product."""
+    return _resolve_exercise_lattice_profile(contract, product_ir)
+
+
+def _build_exercise_lattice_ir(
+    contract,
+    *,
+    product_ir,
+    route_id: str,
+    route_family: str,
+    product_instrument: str,
+    payoff_family: str,
+    required_input_ids: tuple[str, ...],
+    market_data_requirements: frozenset[str],
+    timeline_roles: frozenset[TimelineRole],
+    requested_outputs: tuple[str, ...],
+    reporting_currency: str,
+) -> ExerciseLatticeIR | None:
+    """Build the tranche-1 exercise-lattice family IR."""
+    profile = _exercise_lattice_profile_for_product(contract, product_ir)
+    if profile is None:
+        return None
+
+    product = contract.product
+    protocol = product.controller_protocol
+    control_style = _normalized_control_style(protocol.controller_style)
+    control_program = _build_control_program(product)
+    event_program = _build_event_program(product, control_program=control_program)
+    _validate_exercise_lattice_control(product.exercise_style, control_style)
+    _validate_exercise_lattice_timing(product)
+
+    observable_ids = tuple(item.observable_id for item in product.observables)
+    observable_types = tuple(item.observable_type for item in product.observables)
+    state_field_names = tuple(item.field_name for item in product.state_fields)
+    _require_observables(
+        product,
+        required_types=profile.required_observables,
+        route_name="Exercise-lattice",
+    )
+    _require_required_inputs(
+        required_input_ids,
+        required=profile.required_inputs,
+        route_name="Exercise-lattice",
+    )
+    return ExerciseLatticeIR(
+        route_id=route_id,
+        route_family=route_family,
+        product_instrument=product_instrument,
+        payoff_family=payoff_family,
+        required_input_ids=required_input_ids,
+        market_data_requirements=market_data_requirements,
+        timeline_roles=timeline_roles,
+        requested_outputs=requested_outputs,
+        reporting_currency=reporting_currency,
+        control_style=control_style,
+        controller_role=str(protocol.controller_role or ""),
+        exercise_style=str(product.exercise_style or ""),
+        event_program=event_program,
+        control_program=control_program,
+        helper_symbol=profile.helper_symbol,
+        market_mapping=profile.market_mapping,
+        schedule_role=str(protocol.schedule_role or ""),
+        decision_phase=str(protocol.decision_phase or "decision"),
+        observable_ids=observable_ids,
+        observable_types=observable_types,
+        state_field_names=state_field_names,
+        derived_quantities=profile.derived_quantities,
+        decision_dates=tuple(product.timeline.decision_dates),
+        settlement_dates=tuple(product.timeline.settlement_dates),
+    )
+
+
+def _pde_state_spec_for_product(product) -> PDEStateSpec:
+    """Infer a bounded PDE state contract from semantic product metadata."""
+    model_family = str(getattr(product, "model_family", "") or "").strip().lower()
+    if model_family in {"interest_rate", "short_rate"}:
+        return PDEStateSpec(
+            state_variable="short_rate",
+            dimension=1,
+            state_tags=("terminal_markov", "recombining_safe"),
+            coordinate_chart="short_rate",
+        )
+    if model_family in {"equity", "equity_diffusion"}:
+        return PDEStateSpec(
+            state_variable="spot",
+            dimension=1,
+            state_tags=("terminal_markov", "recombining_safe"),
+            coordinate_chart="spot",
+        )
+    return PDEStateSpec()
+
+
+def _pde_operator_spec_for_product(product) -> PDEOperatorSpec:
+    """Infer a bounded PDE operator contract from semantic product metadata."""
+    model_family = str(getattr(product, "model_family", "") or "").strip().lower()
+    if model_family in {"interest_rate", "short_rate"}:
+        return PDEOperatorSpec(
+            operator_family="hull_white_1f",
+            solver_family="theta_method",
+            stepping_scheme="theta_0.5",
+        )
+    if model_family in {"equity", "equity_diffusion"}:
+        return PDEOperatorSpec(
+            operator_family="black_scholes_1d",
+            solver_family="theta_method",
+            stepping_scheme="theta_0.5",
+        )
+    return PDEOperatorSpec()
 
 
 def _build_event_aware_pde_ir(
@@ -1434,98 +1824,6 @@ def _build_event_aware_pde_ir(
         market_mapping=_pde_market_mapping_for_product(product, operator_spec),
         compatibility_wrapper="",
     )
-
-
-def _pde_state_spec_for_product(product) -> PDEStateSpec:
-    """Infer a bounded PDE state contract from semantic product metadata."""
-    model_family = str(getattr(product, "model_family", "") or "").strip().lower()
-    if model_family in {"interest_rate", "short_rate"}:
-        return PDEStateSpec(
-            state_variable="short_rate",
-            dimension=1,
-            state_tags=("terminal_markov", "recombining_safe"),
-            coordinate_chart="short_rate",
-        )
-    if model_family in {"equity", "equity_diffusion"}:
-        return PDEStateSpec(
-            state_variable="spot",
-            dimension=1,
-            state_tags=("terminal_markov", "recombining_safe"),
-            coordinate_chart="spot",
-        )
-    return PDEStateSpec()
-
-
-def _pde_operator_spec_for_product(product) -> PDEOperatorSpec:
-    """Infer a bounded PDE operator contract from semantic product metadata."""
-    model_family = str(getattr(product, "model_family", "") or "").strip().lower()
-    if model_family in {"interest_rate", "short_rate"}:
-        return PDEOperatorSpec(
-            operator_family="hull_white_1f",
-            solver_family="theta_method",
-            stepping_scheme="theta_0.5",
-        )
-    if model_family in {"equity", "equity_diffusion"}:
-        return PDEOperatorSpec(
-            operator_family="black_scholes_1d",
-            solver_family="theta_method",
-            stepping_scheme="theta_0.5",
-        )
-    return PDEOperatorSpec()
-
-
-def _pde_boundary_spec_for_product(product) -> PDEBoundarySpec:
-    """Infer the bounded terminal/boundary contract for one PDE family IR."""
-    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
-    if payoff_family in {"callable_fixed_income", "bond"}:
-        return PDEBoundarySpec(
-            terminal_condition_kind="cashflow_terminal_value",
-            lower_boundary_kind="short_rate_linear",
-            upper_boundary_kind="short_rate_linear",
-        )
-    if payoff_family == "vanilla_option":
-        return PDEBoundarySpec(
-            terminal_condition_kind="expiry_payoff",
-            lower_boundary_kind="vanilla_dirichlet",
-            upper_boundary_kind="vanilla_linear_asymptote",
-        )
-    return PDEBoundarySpec(
-        terminal_condition_kind="compiled_terminal_value",
-        lower_boundary_kind="default",
-        upper_boundary_kind="default",
-    )
-
-
-def _pde_market_mapping_for_product(product, operator_spec: PDEOperatorSpec) -> str:
-    """Return a readable market-binding label for the bounded PDE family IR."""
-    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
-    if operator_spec.operator_family == "hull_white_1f" and payoff_family == "callable_fixed_income":
-        return "discount_curve_coupon_schedule_to_short_rate_pde"
-    if operator_spec.operator_family == "black_scholes_1d":
-        return "equity_spot_discount_black_vol"
-    return "compiled_event_aware_pde_inputs"
-
-
-def _pde_helper_symbol_for_product(
-    product,
-    operator_spec: PDEOperatorSpec,
-    control_style: str,
-) -> str:
-    """Return a bounded helper symbol for migrated event-aware PDE proof slices."""
-    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
-    if (
-        payoff_family == "vanilla_option"
-        and operator_spec.operator_family == "black_scholes_1d"
-        and control_style == "holder_max"
-    ):
-        return "price_event_aware_equity_option_pde"
-    if (
-        payoff_family == "callable_fixed_income"
-        and operator_spec.operator_family == "hull_white_1f"
-        and control_style == "issuer_min"
-    ):
-        return "price_callable_bond_pde"
-    return ""
 
 
 def _build_pde_event_timeline(
@@ -1594,122 +1892,6 @@ def _cashflow_schedule_role(product) -> str:
             if schedule_role:
                 return schedule_role
     return "determination_dates"
-
-
-def _build_exercise_lattice_ir(
-    contract,
-    *,
-    product_ir,
-    route_id: str,
-    route_family: str,
-    product_instrument: str,
-    payoff_family: str,
-    required_input_ids: tuple[str, ...],
-    market_data_requirements: frozenset[str],
-    timeline_roles: frozenset[TimelineRole],
-    requested_outputs: tuple[str, ...],
-    reporting_currency: str,
-) -> ExerciseLatticeIR | None:
-    """Build the tranche-1 exercise-lattice family IR."""
-    if not _is_tranche_one_exercise_lattice_contract(contract, product_ir):
-        return None
-
-    product = contract.product
-    protocol = product.controller_protocol
-    control_style = _normalized_control_style(protocol.controller_style)
-    control_program = _build_control_program(product)
-    event_program = _build_event_program(product, control_program=control_program)
-    _validate_exercise_lattice_control(product.exercise_style, control_style)
-    _validate_exercise_lattice_timing(product)
-
-    observable_ids = tuple(item.observable_id for item in product.observables)
-    observable_types = tuple(item.observable_type for item in product.observables)
-    state_field_names = tuple(item.field_name for item in product.state_fields)
-
-    if product.instrument_class == "callable_bond":
-        _require_observables(
-            product,
-            required_types=("discount_curve", "cashflow_schedule"),
-            route_name="Exercise-lattice",
-        )
-        _require_required_inputs(
-            required_input_ids,
-            required=("discount_curve", "black_vol_surface"),
-            route_name="Exercise-lattice",
-        )
-        return ExerciseLatticeIR(
-            route_id=route_id,
-            route_family=route_family,
-            product_instrument=product_instrument,
-            payoff_family=payoff_family,
-            required_input_ids=required_input_ids,
-            market_data_requirements=market_data_requirements,
-            timeline_roles=timeline_roles,
-            requested_outputs=requested_outputs,
-            reporting_currency=reporting_currency,
-            control_style=control_style,
-            controller_role=str(protocol.controller_role or ""),
-            exercise_style=str(product.exercise_style or ""),
-            event_program=event_program,
-            control_program=control_program,
-            helper_symbol="price_callable_bond_tree",
-            market_mapping="discount_curve_black_vol_coupon_schedule_to_callable_tree",
-            schedule_role=str(protocol.schedule_role or ""),
-            decision_phase=str(protocol.decision_phase or "decision"),
-            observable_ids=observable_ids,
-            observable_types=observable_types,
-            state_field_names=state_field_names,
-            derived_quantities=(
-                "call_schedule_steps",
-                "coupon_accrual_fractions",
-                "settlement_discount_factors",
-            ),
-            decision_dates=tuple(product.timeline.decision_dates),
-            settlement_dates=tuple(product.timeline.settlement_dates),
-        )
-
-    _require_observables(
-        product,
-        required_types=("forward_rate", "discount_curve"),
-        route_name="Exercise-lattice",
-    )
-    _require_required_inputs(
-        required_input_ids,
-        required=("discount_curve", "forward_curve", "black_vol_surface"),
-        route_name="Exercise-lattice",
-    )
-    return ExerciseLatticeIR(
-        route_id=route_id,
-        route_family=route_family,
-        product_instrument=product_instrument,
-        payoff_family=payoff_family,
-        required_input_ids=required_input_ids,
-        market_data_requirements=market_data_requirements,
-        timeline_roles=timeline_roles,
-        requested_outputs=requested_outputs,
-        reporting_currency=reporting_currency,
-        control_style=control_style,
-        controller_role=str(protocol.controller_role or ""),
-        exercise_style=str(product.exercise_style or ""),
-        event_program=event_program,
-        control_program=control_program,
-        helper_symbol="price_bermudan_swaption_tree",
-        market_mapping="discount_curve_forward_par_rate_schedule_to_lattice",
-        schedule_role=str(protocol.schedule_role or ""),
-        decision_phase=str(protocol.decision_phase or "decision"),
-        observable_ids=observable_ids,
-        observable_types=observable_types,
-        state_field_names=state_field_names,
-        derived_quantities=(
-            "exercise_schedule_steps",
-            "schedule_bound_forward_fixings",
-            "par_rate_bindings",
-            "swap_accrual_fractions",
-            "settlement_discount_factors",
-        ),
-        decision_dates=tuple(product.timeline.decision_dates),
-        settlement_dates=tuple(product.timeline.settlement_dates),
-    )
 
 
 def _build_correlated_basket_monte_carlo_ir(
@@ -1935,70 +2117,51 @@ def _build_nth_to_default_ir(
 
 def _is_vanilla_european_contract(contract, product_ir) -> bool:
     """Whether the semantic contract fits the tranche-1 vanilla family IR slice."""
-    instrument = str(getattr(product_ir, "instrument", ""))
-    payoff_family = str(getattr(product_ir, "payoff_family", ""))
-    exercise_style = str(getattr(product_ir, "exercise_style", ""))
-    return (
-        instrument == "european_option"
-        and payoff_family == "vanilla_option"
-        and exercise_style == "european"
-        and str(getattr(contract.product, "instrument_class", "")) == "european_option"
+    return _matches_family_ir_profile(
+        contract,
+        product_ir,
+        _FAMILY_IR_MATCH_PROFILES["vanilla_european"],
+    )
+
+
+def _is_rate_cap_floor_strip_contract(contract, product_ir) -> bool:
+    """Whether the semantic contract fits the cap/floor strip family IR slice."""
+    return _matches_family_ir_profile(
+        contract,
+        product_ir,
+        _FAMILY_IR_MATCH_PROFILES["rate_cap_floor_strip"],
     )
 
 
 def _is_tranche_one_exercise_lattice_contract(contract, product_ir) -> bool:
     """Whether the semantic contract fits the tranche-1 exercise-lattice slice."""
-    instrument = str(getattr(product_ir, "instrument", ""))
-    exercise_style = str(getattr(product_ir, "exercise_style", ""))
-    product_instrument = str(getattr(contract.product, "instrument_class", ""))
-    if instrument == "callable_bond" and product_instrument == "callable_bond":
-        return exercise_style == "issuer_call"
-    if instrument == "swaption" and product_instrument == "swaption":
-        return exercise_style == "bermudan"
-    return False
+    return _resolve_exercise_lattice_profile(contract, product_ir) is not None
 
 
 def _is_ranked_observation_basket_contract(contract, product_ir) -> bool:
     """Whether the semantic contract fits the tranche-1 ranked-observation basket slice."""
-    instrument = str(getattr(product_ir, "instrument", ""))
-    payoff_family = str(getattr(product_ir, "payoff_family", ""))
-    product_instrument = str(getattr(contract.product, "instrument_class", ""))
-    product_payoff_family = str(getattr(contract.product, "payoff_family", ""))
-    payoff_traits = {str(item).strip().lower() for item in getattr(product_ir, "payoff_traits", ())}
-    return (
-        instrument == "basket_path_payoff"
-        and payoff_family == "basket_path_payoff"
-        and product_instrument == "basket_path_payoff"
-        and product_payoff_family == "basket_path_payoff"
-        and "ranked_observation" in payoff_traits
+    return _matches_family_ir_profile(
+        contract,
+        product_ir,
+        _FAMILY_IR_MATCH_PROFILES["ranked_observation_basket"],
     )
 
 
 def _is_credit_default_swap_contract(contract, product_ir) -> bool:
     """Whether the semantic contract fits the single-name CDS family IR slice."""
-    instrument = str(getattr(product_ir, "instrument", ""))
-    payoff_family = str(getattr(product_ir, "payoff_family", ""))
-    product_instrument = str(getattr(contract.product, "instrument_class", ""))
-    product_payoff_family = str(getattr(contract.product, "payoff_family", ""))
-    return (
-        instrument == "cds"
-        and payoff_family == "credit_default_swap"
-        and product_instrument == "cds"
-        and product_payoff_family == "credit_default_swap"
+    return _matches_family_ir_profile(
+        contract,
+        product_ir,
+        _FAMILY_IR_MATCH_PROFILES["credit_default_swap"],
     )
 
 
 def _is_nth_to_default_contract(contract, product_ir) -> bool:
     """Whether the semantic contract fits the nth-to-default family IR slice."""
-    instrument = str(getattr(product_ir, "instrument", ""))
-    payoff_family = str(getattr(product_ir, "payoff_family", ""))
-    product_instrument = str(getattr(contract.product, "instrument_class", ""))
-    product_payoff_family = str(getattr(contract.product, "payoff_family", ""))
-    return (
-        instrument == "nth_to_default"
-        and payoff_family == "nth_to_default"
-        and product_instrument == "nth_to_default"
-        and product_payoff_family == "nth_to_default"
+    return _matches_family_ir_profile(
+        contract,
+        product_ir,
+        _FAMILY_IR_MATCH_PROFILES["nth_to_default"],
     )
 
 
@@ -2063,6 +2226,10 @@ def _option_type_for_contract(contract) -> str:
         option_type = str(getattr(product, "option_type")).strip().lower()
         if option_type in {"call", "put"}:
             return option_type
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
+    option_type = str(term_fields.get("option_type", "")).strip().lower()
+    if option_type in {"call", "put"}:
+        return option_type
     description = str(getattr(contract, "description", "")).lower()
     if re.search(r"\bput\b", description):
         return "put"
