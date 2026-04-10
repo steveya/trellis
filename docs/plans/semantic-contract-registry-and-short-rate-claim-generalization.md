@@ -178,9 +178,9 @@ short-rate follow-on:
 | Issue | Title | Status |
 | --- | --- | --- |
 | `QUA-746` | Semantic comparison regimes: short-rate market objects and claim helper generalization | Backlog |
-| `QUA-747` | Task runtime: typed short-rate comparison regime objects | Backlog |
-| `QUA-748` | Helper layers: shared short-rate regime resolver and discount-bond claim kit | Backlog |
-| `QUA-749` | Short-rate wrappers: migrate ZCB analytical and tree helpers onto shared claim kits | Backlog |
+| `QUA-747` | Task runtime: typed short-rate comparison regime objects | Done |
+| `QUA-748` | Helper layers: shared short-rate regime resolver and discount-bond claim kit | Done |
+| `QUA-749` | Short-rate wrappers: migrate ZCB analytical and tree helpers onto shared claim kits | Done |
 | `QUA-751` | Validation and exact binding: recover T01 on typed short-rate regimes | Backlog |
 
 ### New umbrella
