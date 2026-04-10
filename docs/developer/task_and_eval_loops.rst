@@ -29,6 +29,19 @@ strata:
 - ``global_workflow`` for user-facing workflow tests that span modules
 - ``legacy_compat`` for deprecated or compatibility-only behavior
 
+The stale-test hygiene layer now sits alongside those strata rather than
+replacing them. Use ``scripts/test_hygiene.py`` to inventory `skip`, `xfail`,
+`importorskip`, and ``legacy_compat`` usage with approximate git-age buckets:
+
+- ``quarantine`` for fresh markers
+- ``stale`` for markers that have lingered for at least 30 days
+- ``ancient`` for markers that are 90 days or older
+
+Pytest collection also now rejects ancient ``xfail`` markers that do not carry
+a linked ticket id such as ``QUA-123`` or ``CR-10``. That guard is
+intentionally narrow: it keeps unticketed xfails visible without turning every
+skip into a hard failure.
+
 Operational Scripts
 -------------------
 
@@ -39,6 +52,7 @@ The repo ships a small task-operations toolchain:
 - ``scripts/benchmark_tasks.py``: benchmark cached generated payoffs without rebuilding
 - ``scripts/remediate.py``: analyze failures, categorize knowledge gaps, and patch common knowledge issues
 - ``scripts/evaluate_shared_memory.py``: compare two task-result tranches and render a shared-memory improvement report
+- ``scripts/test_hygiene.py``: report stale skip/xfail/quarantine markers for local test-hygiene triage
 
 For curated canaries specifically, ``scripts/run_canary.py`` now executes the
 live task entry plus any richer canary-only fields from ``CANARY_TASKS.yaml``.

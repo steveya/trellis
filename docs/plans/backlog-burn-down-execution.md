@@ -15,7 +15,8 @@ Current status:
 
 - `QUA-458` is complete.
 - `QUA-710` is complete.
-- The next actionable ticket in queue order is `QUA-428`.
+- `QUA-428` is complete.
+- The next actionable ticket in queue order is `QUA-430`.
 
 ## Operating Rules
 
@@ -137,17 +138,17 @@ If a ticket has become stale because other landed work already satisfies it:
 
 ## Current Start Point
 
-Execution started with `QUA-458`, continued through `QUA-710`, and now moves
-next to `QUA-428`.
+Execution started with `QUA-458`, continued through `QUA-710` and `QUA-428`,
+and now moves next to `QUA-430`.
 
 Plain-English goal:
 
-- inventory the remaining stale-test surface and make the triage flow explicit
-  so the local gate work can rely on a current, reviewable test baseline
+- codify the local PR/canary/release gate entrypoints on top of the now-live
+  replay, telemetry, and stale-test hygiene surfaces
 
 Primary files and surfaces:
 
-- stale-test inventory docs and queue mirrors
 - the current local/CI test entrypoints
-- any helper tooling used to classify stale or compatibility-only tests
-- the gate-facing docs that `QUA-430` will consume next
+- canary trigger logic and any path-based helper needed to keep canary runs targeted
+- the gate-facing docs and wrapper commands that turn the current pyramid into explicit operator workflows
+- the closeout path that leaves `QUA-700` with only final umbrella maintenance work

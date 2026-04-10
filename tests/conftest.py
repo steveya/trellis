@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from trellis.testing.hygiene import scan_repo, stale_unticketed_xfails
+
 # ---------------------------------------------------------------------------
 # Cassette directories
 # ---------------------------------------------------------------------------
@@ -22,6 +24,8 @@ _GLOBAL_WORKFLOW_TEST_PATHS = {
     "tests/test_pipeline.py",
     "tests/test_contracts/test_pipeline_contracts.py",
 }
+_ALLOW_STALE_XFAIL_ENV = "TRELLIS_ALLOW_STALE_XFAIL"
+_STALE_XFAIL_ANCIENT_DAYS_ENV = "TRELLIS_STALE_XFAIL_ANCIENT_DAYS"
 
 
 # ---------------------------------------------------------------------------
@@ -52,6 +56,26 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(pytest.mark.verification)
         if rel_path in _GLOBAL_WORKFLOW_TEST_PATHS:
             item.add_marker(pytest.mark.global_workflow)
+
+    if os.environ.get(_ALLOW_STALE_XFAIL_ENV, "").strip().lower() in {"1", "true", "yes", "on"}:
+        return
+
+    ancient_days = int(os.environ.get(_STALE_XFAIL_ANCIENT_DAYS_ENV, "90") or "90")
+    violations = stale_unticketed_xfails(
+        scan_repo(REPO_ROOT, ancient_days=ancient_days),
+    )
+    if violations:
+        lines = [
+            "Ancient xfails without linked ticket ids are not allowed.",
+            "Add a ticket like QUA-123 to the xfail reason, refresh/remove the xfail,",
+            f"or override temporarily with {_ALLOW_STALE_XFAIL_ENV}=1.",
+            "",
+        ]
+        for finding in violations:
+            rel_path = Path(finding.path).resolve().relative_to(REPO_ROOT).as_posix()
+            reason = finding.reason or "no reason"
+            lines.append(f"- {rel_path}:{finding.line} ({finding.age_days}d) {reason}")
+        raise pytest.UsageError("\n".join(lines))
 
 
 # ---------------------------------------------------------------------------
