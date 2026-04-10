@@ -137,6 +137,10 @@ container:
   current session binding slots
 - ``trellis.providers.configure`` persists explicit provider bindings and
   rejects unknown provider ids or production-incompatible mock bindings
+- rebinding ``market_data`` through ``trellis.providers.configure`` clears any
+  active imported market snapshot metadata on that session so later pricing
+  runs cannot mix a new ``provider_id`` with a stale imported
+  ``market_snapshot_id``
 - ``trellis.model.generate_candidate`` persists a governed draft candidate plus
   canonical contract, methodology, lineage, validation-plan, and optional code
   sidecars

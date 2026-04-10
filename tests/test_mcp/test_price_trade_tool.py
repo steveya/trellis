@@ -758,6 +758,61 @@ def test_price_trade_uses_activated_imported_snapshot(tmp_path):
     assert snapshot_payload["snapshot"]["payload"]["manifest"]["as_of"] == "2026-04-04"
 
 
+def test_price_trade_rebinding_market_data_clears_active_imported_snapshot(tmp_path):
+    from trellis.mcp.server import bootstrap_mcp_server
+
+    server = bootstrap_mcp_server(
+        state_root=tmp_path / "mcp_state",
+        provider_registry=_provider_registry(),
+    )
+    _seed_model(server.services.model_registry, approved=True)
+
+    imported = server.call_tool(
+        "trellis.snapshot.import_files",
+        {
+            "session_id": "sess_price_rebind_snapshot",
+            "manifest_path": _file_import_manifest(tmp_path),
+            "activate_session": True,
+            "reference_date": "2026-04-04",
+        },
+    )
+
+    configured = server.call_tool(
+        "trellis.providers.configure",
+        {
+            "session_id": "sess_price_rebind_snapshot",
+            "provider_bindings": {
+                "market_data": {
+                    "primary": {"provider_id": "market_data.test_live"},
+                }
+            },
+        },
+    )
+
+    assert configured["session"]["provider_bindings"]["market_data"]["primary"]["provider_id"] == "market_data.test_live"
+    assert "active_market_snapshot_id" not in configured["session"]["metadata"]
+    assert "active_market_snapshot_provider_id" not in configured["session"]["metadata"]
+
+    payload = server.call_tool(
+        "trellis.price.trade",
+        {
+            "session_id": "sess_price_rebind_snapshot",
+            "structured_trade": _trade_payload(),
+            "output_mode": "structured",
+            "valuation_date": "2026-04-04",
+        },
+    )
+
+    assert payload["status"] == "succeeded"
+    assert payload["provenance"]["provider_id"] == "market_data.test_live"
+    assert payload["provenance"]["market_snapshot_id"] != imported["snapshot"]["snapshot_id"]
+
+    run_payload = server.call_tool("trellis.run.get", {"run_id": payload["run_id"]})
+
+    assert run_payload["run"]["provenance"]["provider_id"] == "market_data.test_live"
+    assert run_payload["run"]["market_snapshot_id"] != imported["snapshot"]["snapshot_id"]
+
+
 def test_price_trade_can_use_later_settlement_with_fixed_imported_market_data(tmp_path):
     from trellis.mcp.server import bootstrap_mcp_server
 

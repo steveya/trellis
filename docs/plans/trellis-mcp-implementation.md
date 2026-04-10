@@ -62,7 +62,7 @@ Rules for coding agents:
 - Keep the first `price.trade` milestone narrow: approved-model-only governed
   execution. Do not widen it to candidate generation in the MVP slice.
 
-Status mirror last synced: `2026-04-04`
+Status mirror last synced: `2026-04-10`
 
 ### MCP Workstream Tickets
 
@@ -96,6 +96,7 @@ Status mirror last synced: `2026-04-04`
 | `QUA-587` MCP model lifecycle: require per-version validation evidence and preserve version audit artifacts | Done |
 | `QUA-588` MCP transport: local streamable HTTP server for Codex and Claude Code | Done |
 | `QUA-622` MCP local demo mode: sandbox mock prompt-flow bootstrap | Done |
+| `QUA-683` Session context: clear active snapshot when market-data bindings change | Done |
 
 ## Preconditions
 

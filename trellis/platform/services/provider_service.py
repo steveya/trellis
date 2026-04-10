@@ -64,6 +64,11 @@ class ProviderService:
                 details={"session_id": record.session_id},
             )
 
+        metadata = dict(record.metadata)
+        if bindings.market_data != record.provider_bindings.market_data:
+            metadata.pop("active_market_snapshot_id", None)
+            metadata.pop("active_market_snapshot_provider_id", None)
+
         persisted = self.session_service.save(
             replace(
                 record,
@@ -71,6 +76,7 @@ class ProviderService:
                 connected_providers=tuple(
                     provider.provider_id for provider in self.provider_registry.list_providers()
                 ),
+                metadata=metadata,
             )
         )
         return self.session_service.get_context(persisted.session_id)
