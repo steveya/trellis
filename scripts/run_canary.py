@@ -272,8 +272,10 @@ def run_canaries(
             break
 
     # Summary
+    skip_count = sum(1 for item in results if item.get("skipped"))
+    completed_count = len(results) - skip_count
     print(f"\n{'=' * 65}")
-    print(f"  CANARY RESULTS: {pass_count}/{len(results)} passed")
+    print(f"  CANARY RESULTS: {pass_count}/{completed_count} passed, {skip_count} skipped")
     print(f"  Total tokens: {total_tokens}")
     print(f"  Total time: {total_time:.1f}s")
 

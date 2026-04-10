@@ -260,7 +260,7 @@ class TestRunCanaries:
         assert results[0]["canary_batch_id"].startswith("canary_")
         assert results[0]["canary_batch_history_path"].endswith(".json")
         assert results[0]["canary_batch_latest_path"].endswith(
-            "/task_runs/canary_batches/latest/live__full_curated__standard__default.json"
+            "/task_runs/canary_batches/latest/live__full_curated__standard__default__gpt-5.4-mini.json"
         )
 
     def test_run_canaries_prefers_curated_canary_description(self, monkeypatch):
@@ -361,8 +361,53 @@ class TestRunCanaries:
         )
         assert results[0]["canary_batch_id"].startswith("canary_")
         assert results[0]["canary_batch_latest_path"].endswith(
-            "/task_runs/canary_batches/latest/cassette_replay__full_curated__standard__default.json"
+            "/task_runs/canary_batches/latest/cassette_replay__full_curated__standard__default__gpt-5.4-mini.json"
         )
+
+    def test_run_canaries_summary_reports_completed_and_skipped_counts(self, monkeypatch, tmp_path, capsys):
+        def fake_build_market_state():
+            return object()
+
+        def fake_load_tasks(*, status="pending", path=None):
+            return [
+                {"id": "T13", "title": "European call: theta-method convergence order"},
+                {"id": "T38", "title": "CDS pricing canary"},
+            ]
+
+        def fake_run_task(task, market_state, **kwargs):
+            return {
+                "task_id": task["id"],
+                "success": True,
+                "token_usage_summary": {"total_tokens": 123},
+            }
+
+        (tmp_path / "T38.yaml").write_text("meta: {}\ncalls: []\n", encoding="utf-8")
+
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.build_market_state",
+            fake_build_market_state,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.load_tasks",
+            fake_load_tasks,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.run_task",
+            fake_run_task,
+        )
+
+        run_canaries(
+            [
+                {"id": "T13", "engine_family": "pde", "complexity": "simple"},
+                {"id": "T38", "engine_family": "credit", "complexity": "complex"},
+            ],
+            {"total_budget_usd": 1.0},
+            replay=True,
+            cassette_dir=tmp_path,
+        )
+
+        output = capsys.readouterr().out
+        assert "CANARY RESULTS: 1/1 passed, 1 skipped" in output
 
     def test_run_canaries_replay_mode_uses_full_task_cassette(self, monkeypatch, tmp_path):
         from trellis.agent.cassette import _prompt_hash

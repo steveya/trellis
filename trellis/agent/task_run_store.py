@@ -173,7 +173,7 @@ def persist_canary_batch_record(
         requested_subset=requested_subset,
     )
     knowledge_profile = "knowledge_light" if knowledge_light else "default"
-    comparison_key = f"{execution_mode}:{scope_slug}:{validation}:{knowledge_profile}"
+    comparison_key = f"{execution_mode}:{scope_slug}:{validation}:{knowledge_profile}:{model}"
     synthetic_source = _synthetic_canary_source(root)
     benchmark_eligible = execution_mode == "live" and not synthetic_source
 
@@ -240,7 +240,7 @@ def persist_canary_batch_record(
     latest_root.mkdir(parents=True, exist_ok=True)
 
     history_path = history_root / f"{batch_id}.json"
-    latest_path = latest_root / f"{_scope_slug_to_latest_key(scope_slug, execution_mode, validation, knowledge_profile)}.json"
+    latest_path = latest_root / f"{_scope_slug_to_latest_key(scope_slug, execution_mode, validation, knowledge_profile, model)}.json"
     history_path.write_text(json.dumps(record, indent=2, default=str))
     latest_path.write_text(json.dumps(record, indent=2, default=str))
     return {
@@ -332,9 +332,10 @@ def _scope_slug_to_latest_key(
     execution_mode: str,
     validation: str,
     knowledge_profile: str,
+    model: str,
 ) -> str:
     """Return the stable latest filename stem for one canary batch scope."""
-    return f"{execution_mode}__{scope_slug}__{validation}__{knowledge_profile}"
+    return f"{execution_mode}__{scope_slug}__{validation}__{knowledge_profile}__{model}"
 
 
 def _build_canary_batch_entry(

@@ -755,12 +755,16 @@ def test_persist_canary_batch_record_writes_history_and_latest_views(tmp_path):
     assert record["summary"]["execution_mode"] == "live"
     assert record["summary"]["batch_scope"] == "full_curated"
     assert record["summary"]["benchmark_eligible"] is True
+    assert record["summary"]["comparison_key"] == "live:full_curated:standard:default:gpt-5.4-mini"
     assert record["summary"]["task_count"] == 2
     assert record["summary"]["pass_count"] == 1
     assert record["summary"]["failure_count"] == 1
     assert record["summary"]["total_tokens"] == 975
     assert record["summary"]["total_attempts"] == 5
     assert record["canaries"][0]["task_run_history_path"] == "/tmp/task_runs/history/T13/live.json"
+    assert persisted["latest_path"].endswith(
+        "/task_runs/canary_batches/latest/live__full_curated__standard__default__gpt-5.4-mini.json"
+    )
 
 
 def test_load_canary_task_history_excludes_replay_runs_from_benchmark_view(tmp_path):
