@@ -271,6 +271,8 @@ implementation ticket unless the user explicitly overrides it.
 5. Leave a handoff note in Linear describing what changed and any caveats.
 6. Mark the ticket `Done`, then update the mirrored ticket table in the
    relevant plan doc.
+7. Conduct a self-review, fix any issues found, and make a meaningful git
+   commit for the landed slice.
 
 ### Step 1: Review upstream context
 
@@ -365,6 +367,23 @@ After the ticket is moved to `Done` in Linear:
 - skip tickets already marked `Done` when selecting the next ticket
 - do not mark the plan-table row `Done` before the Linear ticket is actually
   closed
+
+### Step 7: Self-review and commit the landed slice
+
+After the ticket is `Done` in Linear and the mirrored plan row is updated, the
+implementer must do one more pass over the actual diff:
+
+- review the changed code and tests as a reviewer, not just as the author
+- fix any issues found inside the ticket scope
+- rerun any targeted validation affected by those review fixes
+- if the review uncovers a problem that invalidates the `Done` criteria, update
+  the Linear ticket state or leave a follow-up note before treating the slice
+  as complete
+- create a meaningful git commit message that describes the landed outcome, not
+  just the activity
+
+This step is meant to catch the last class of local, regional, or workflow
+issues before the branch is pushed or handed off for PR review.
 
 ### Recommended Linear closeout template
 
