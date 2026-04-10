@@ -21,7 +21,7 @@ the miniforge interpreter.
 **Scope:** `trellis/models/`, `trellis/core/`, `trellis/curves/`, `trellis/instruments/`
 **Task:** Build, refactor, or extend pricing engines, stochastic processes, numerical methods.
 **Rules:**
-- Read `CLAUDE.md` for full architecture context
+- Read `ARCHITECTURE.md` for current architecture context
 - Check `LIMITATIONS.md` before starting — some features are known-incomplete
 - Use `from trellis.core.differentiable import get_numpy` instead of `import numpy` for autograd compatibility
 - All value types should be frozen dataclasses
@@ -267,7 +267,7 @@ implementation ticket unless the user explicitly overrides it.
 1. Review upstream context before coding.
 2. Announce the current ticket number and its plain-English goal on screen.
 3. Implement the current ticket with test-driven development.
-4. Update the relevant docs after the implementation and tests pass.
+4. Update the relevant docs and `LIMITATIONS.md` if necessary after the implementation and tests pass.
 5. Leave a handoff note in Linear describing what changed and any caveats.
 6. Mark the ticket `Done`, then update the mirrored ticket table in the
    relevant plan doc.
@@ -316,7 +316,7 @@ Minimum expectation:
 For documentation-only or planning-only tickets, state explicitly in the ticket
 that TDD does not apply.
 
-### Step 4: Update docs after tests pass
+### Step 4: Update docs and `LIMITATIONS.md` after tests pass
 
 When behavior, APIs, runtime flow, governance, validation, or operator workflow
 changes, update the relevant official docs after the implementation is stable:
@@ -326,8 +326,15 @@ changes, update the relevant official docs after the implementation is stable:
   operational flow changes
 - `docs/user_guide/` for user-facing behavior and workflows
 
-Doc updates are part of completing the ticket, not optional follow-up work,
-unless the ticket is explicitly scoped as doc-free.
+When the implementation changes the support contract, resolves a known gap, or
+introduces a new material limitation, update `LIMITATIONS.md` in the same
+ticket. Move resolved entries to `Resolved`, add new entries with concrete
+impact and file references, or record explicitly in the ticket handoff note why
+`LIMITATIONS.md` did not need to change.
+
+Doc and limitation updates are part of completing the ticket, not optional
+follow-up work, unless the ticket is explicitly scoped as doc-free and
+limitation-neutral.
 
 ### Step 5: Leave a Linear handoff note
 
@@ -337,6 +344,7 @@ Before marking the ticket done, add a Linear comment with this information:
 - which tests were added or updated
 - which test commands were run and whether they passed
 - which docs were updated
+- which `LIMITATIONS.md` entries were updated, if any
 - any caveats, deferred work, follow-on risks, or compatibility notes that the
   next implementer should know
 
@@ -358,6 +366,8 @@ Mark the ticket `Done` only when:
 - the agreed validation passed
 - the relevant docs are updated or the ticket explicitly records why no docs
   changed
+- `LIMITATIONS.md` is updated when the support contract moved, or the ticket
+  explicitly records why it did not change
 - the Linear handoff note is written
 
 After the ticket is moved to `Done` in Linear:
@@ -508,7 +518,7 @@ Every completed review ticket should leave behind:
 
 ## Key Files to Read First
 
-1. `CLAUDE.md` — Full architecture guide
+1. `ARCHITECTURE.md` — Current high-level architecture guide
 2. `LIMITATIONS.md` — Known issues and resolved items
 3. `TASKS.yaml` — Priceable task inventory with status
 4. `FRAMEWORK_TASKS.yaml` — Framework/meta task inventory
