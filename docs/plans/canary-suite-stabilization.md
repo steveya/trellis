@@ -166,7 +166,7 @@ Each agent assigned to this workstream should begin with:
 
 ## Linear Mirror
 
-Status mirror last synced: `2026-04-09`
+Status mirror last synced: `2026-04-10`
 
 ### Workstream Ticket
 
@@ -187,12 +187,16 @@ Status mirror last synced: `2026-04-09`
 | `QUA-707` | Analytical swaption cross-validation recovery for `T73` | Done |
 | `QUA-708` | Transform/Heston cross-validation recovery for `T40` | Done |
 | `QUA-709` | Copula cross-validation recovery for `T49` | Done |
-| `QUA-458` | Full-task canary replay with diagnosis parity | Backlog |
+| `QUA-458` | Full-task canary replay with diagnosis parity | Done |
 | `QUA-710` | Trustworthy canary telemetry and historical baselines | Backlog |
 | `QUA-430` | Local gate and release-gate configuration | Backlog |
 
 Note:
 
+- `QUA-700` now remains open only for telemetry / gate closeout
+  (`QUA-710`, `QUA-430`). The direct canary recovery tranche and the
+  full-task replay tranche (`QUA-458`) are complete after the `2026-04-09`
+  full curated rerun plus the `2026-04-10` cassette-backed replay landing.
 - `T01` is now green through the short-rate comparison-regime workstream in
   `docs/plans/short-rate-comparison-regime-and-claim-helpers.md` under
   `QUA-746` through `QUA-751`. The recovery path materializes task-level

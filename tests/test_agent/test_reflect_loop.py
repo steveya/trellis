@@ -218,3 +218,48 @@ def test_reflect_trace_records_agent_observations(monkeypatch, tmp_path):
     trace_data = yaml.safe_load(trace_path.read_text())
     assert trace_data["agent_observations"][0]["agent"] == "critic"
     assert trace_data["agent_observations"][0]["summary"] == "Potential double discounting"
+
+
+def test_reflect_on_build_keeps_knowledge_store_read_only_inside_cassette_session(monkeypatch, tmp_path):
+    from trellis.agent.cassette import llm_cassette_session
+    from trellis.agent.knowledge.gap_check import GapReport
+    from trellis.agent.knowledge.reflect import reflect_on_build
+    from trellis.agent.knowledge.schema import ProductDecomposition
+
+    knowledge_root = tmp_path / "knowledge"
+    _seed_minimal_knowledge_dir(knowledge_root)
+    _patch_knowledge_paths(monkeypatch, knowledge_root)
+    monkeypatch.setattr("trellis.agent.knowledge.reflect._should_distill", lambda: False)
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.reflect._llm_reflect",
+        lambda *args, **kwargs: {
+            "lesson": None,
+            "knowledge_gaps": ["Need a stable CDS helper note"],
+            "cookbook_extract": None,
+        },
+    )
+
+    cassette_path = tmp_path / "noop.yaml"
+    with llm_cassette_session(cassette_path, mode="record", name="reflect_read_only"):
+        actions = reflect_on_build(
+            description="European call option",
+            decomposition=ProductDecomposition(
+                instrument="european_option",
+                features=("vanilla",),
+                method="analytical",
+                learned=False,
+            ),
+            gap_report=GapReport(has_cookbook=False, confidence=0.2, retrieved_lesson_ids=[]),
+            retrieved_lesson_ids=[],
+            success=True,
+            failures=[],
+            code="return 0.0",
+            attempt=1,
+            model=None,
+        )
+
+    assert actions["gaps_identified"] == ["Need a stable CDS helper note"]
+    assert actions["knowledge_trace_saved"] is None
+    assert actions["knowledge_gap_log_saved"] is None
+    assert actions["cookbook_candidate_saved"] is None
+    assert list((knowledge_root / "traces").iterdir()) == []

@@ -8,6 +8,7 @@ from types import ModuleType, SimpleNamespace
 import sys
 
 import pytest
+import yaml
 
 
 def test_run_task_passes_force_rebuild_and_validation():
@@ -635,6 +636,101 @@ def test_run_task_persists_latest_record(monkeypatch):
     assert result["task_diagnosis_headline"] == "Demo task completed successfully."
     assert result["task_diagnosis_persist_error"] == ""
     assert result["task_diagnosis_persist_skipped"] == ""
+
+
+def test_run_task_marks_cassette_replay_runs_and_persists_metadata(monkeypatch, tmp_path):
+    from trellis.agent.cassette import _prompt_hash, llm_cassette_session
+    from trellis.agent.task_runtime import run_task
+
+    prompt = "critic replay prompt"
+    cassette_path = tmp_path / "T13.yaml"
+    cassette_path.write_text(
+        yaml.safe_dump(
+            {
+                "meta": {
+                    "recorded_at": "2026-04-10T12:00:00+00:00",
+                    "total_calls": 1,
+                    "name": "T13",
+                },
+                "calls": [
+                    {
+                        "seq": 0,
+                        "function": "llm_generate",
+                        "stage": "critic",
+                        "prompt_hash": _prompt_hash(prompt),
+                        "response_text": "cassette critic response",
+                    }
+                ],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+    persisted: dict[str, object] = {}
+    seen: dict[str, object] = {}
+
+    class FakeResult:
+        success = True
+        attempts = 1
+        gap_confidence = 0.8
+        knowledge_gaps = []
+        payoff_cls = type("FakePayoff", (), {})
+        failures = []
+        reflection = {}
+
+    def fake_build(**kwargs):
+        from trellis.agent import critic
+
+        seen["llm_text"] = critic.llm_generate(prompt)
+        return FakeResult()
+
+    def fake_persist(task, result):
+        persisted["task"] = task
+        persisted["result"] = dict(result)
+        return {
+            "history_path": "/tmp/task_runs/history/T13/run.json",
+            "latest_path": "/tmp/task_runs/latest/T13.json",
+            "latest_index_path": "/tmp/task_results_latest.json",
+            "diagnosis_packet_path": "/tmp/task_runs/diagnostics/history/T13/run.json",
+            "diagnosis_dossier_path": "/tmp/task_runs/diagnostics/history/T13/run.md",
+            "latest_diagnosis_packet_path": "/tmp/task_runs/diagnostics/latest/T13.json",
+            "latest_diagnosis_dossier_path": "/tmp/task_runs/diagnostics/latest/T13.md",
+            "diagnosis_headline": "Replay task completed successfully.",
+            "diagnosis_failure_bucket": "success",
+            "diagnosis_decision_stage": "completed",
+            "diagnosis_next_action": "No action required.",
+            "diagnosis_persist_error": "",
+            "diagnosis_persist_skipped": "",
+        }
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        fake_persist,
+    )
+
+    with llm_cassette_session(
+        cassette_path,
+        mode="replay",
+        stale_policy="error",
+        name="T13",
+    ):
+        result = run_task(
+            {"id": "T13", "title": "European call: theta-method convergence order"},
+            market_state=object(),
+            build_fn=fake_build,
+        )
+
+    assert seen["llm_text"] == "cassette critic response"
+    assert result["execution_mode"] == "cassette_replay"
+    assert result["llm_cassette"]["mode"] == "replay"
+    assert result["llm_cassette"]["name"] == "T13"
+    assert result["llm_cassette"]["path"] == str(cassette_path)
+    assert persisted["task"]["id"] == "T13"
+    assert persisted["result"]["execution_mode"] == "cassette_replay"
+    assert persisted["result"]["llm_cassette"]["path"] == str(cassette_path)
+    assert result["task_diagnosis_packet_path"] == "/tmp/task_runs/diagnostics/history/T13/run.json"
+    assert result["task_diagnosis_dossier_path"] == "/tmp/task_runs/diagnostics/history/T13/run.md"
 
 
 def test_run_task_uses_single_construct_as_preferred_method():

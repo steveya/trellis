@@ -71,8 +71,7 @@ def llm_cassette(request, monkeypatch):
     The cassette name is derived from the test name by default, or can be
     specified via ``@pytest.mark.parametrize("llm_cassette", ["name"], indirect=True)``.
     """
-    from trellis.agent import config as agent_config
-    from trellis.agent.cassette import CassetteRecorder, CassetteReplayer
+    from trellis.agent.cassette import llm_cassette_session
 
     # Determine cassette name
     if hasattr(request, "param") and request.param:
@@ -84,28 +83,18 @@ def llm_cassette(request, monkeypatch):
     cassette_path = cassette_dir / f"{cassette_name}.yaml"
 
     if os.environ.get("TRELLIS_CASSETTE_RECORD", "0") == "1":
-        # Record mode: wrap real functions
-        recorder = CassetteRecorder(cassette_path, name=cassette_name)
-        real_generate = agent_config.llm_generate
-        real_generate_json = agent_config.llm_generate_json
-        monkeypatch.setattr(
-            agent_config, "llm_generate",
-            recorder.wrap_generate(real_generate),
-        )
-        monkeypatch.setattr(
-            agent_config, "llm_generate_json",
-            recorder.wrap_generate_json(real_generate_json),
-        )
-        yield recorder
-        recorder.flush(
-            provider=agent_config.get_provider(),
-            model=agent_config.get_default_model(),
-        )
+        with llm_cassette_session(
+            cassette_path,
+            mode="record",
+            name=cassette_name,
+        ) as recorder:
+            yield recorder
     else:
-        # Replay mode: return stored responses
         stale_policy = os.environ.get("TRELLIS_CASSETTE_STALE_POLICY", "warn")
-        replayer = CassetteReplayer(cassette_path, stale_policy=stale_policy)
-        monkeypatch.setattr(agent_config, "llm_generate", replayer.generate)
-        monkeypatch.setattr(agent_config, "llm_generate_json", replayer.generate_json)
-        yield replayer
-        replayer.assert_all_consumed()
+        with llm_cassette_session(
+            cassette_path,
+            mode="replay",
+            stale_policy=stale_policy,
+            name=cassette_name,
+        ) as replayer:
+            yield replayer

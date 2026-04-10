@@ -21,7 +21,7 @@ def test_cassettes_are_fresh():
     if not CASSETTES_DIR.exists():
         pytest.skip("No cassettes directory found — record cassettes first")
 
-    cassette_files = list(CASSETTES_DIR.glob("*.yaml"))
+    cassette_files = list(CASSETTES_DIR.rglob("*.yaml"))
     if not cassette_files:
         pytest.skip("No cassette files found — record cassettes first")
 
@@ -48,7 +48,7 @@ def test_cassette_files_are_valid_yaml():
 
     import yaml
 
-    cassette_files = list(CASSETTES_DIR.glob("*.yaml"))
+    cassette_files = list(CASSETTES_DIR.rglob("*.yaml"))
     if not cassette_files:
         pytest.skip("No cassette files")
 

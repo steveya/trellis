@@ -15,6 +15,7 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 CASSETTES_DIR = REPO_ROOT / "cassettes"
+FULL_TASK_CASSETTES_DIR = CASSETTES_DIR / "full_task"
 CANARY_FILE = REPO_ROOT / "CANARY_TASKS.yaml"
 
 
@@ -67,6 +68,16 @@ def cassette_path_for(task_id: str) -> Path:
 def cassette_available(task_id: str) -> bool:
     """Check whether a cassette file exists for *task_id*."""
     return cassette_path_for(task_id).exists()
+
+
+def full_task_cassette_path_for(task_id: str) -> Path:
+    """Return the expected full-task replay cassette path for a canary task."""
+    return FULL_TASK_CASSETTES_DIR / f"{task_id}.yaml"
+
+
+def full_task_cassette_available(task_id: str) -> bool:
+    """Check whether a full-task cassette exists for *task_id*."""
+    return full_task_cassette_path_for(task_id).exists()
 
 
 def requires_cassette(task_id: str):

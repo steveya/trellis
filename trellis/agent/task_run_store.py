@@ -193,6 +193,10 @@ def build_task_run_record(
             "targets": list(result.get("comparison_targets") or []),
             "summary": dict(result.get("cross_validation") or {}),
         },
+        "execution": {
+            "mode": str(result.get("execution_mode") or "live"),
+            "llm_cassette": dict(result.get("llm_cassette") or {}),
+        },
         "market": dict(result.get("market_context") or {}),
         "framework": framework,
         "method_runs": method_runs,
@@ -225,6 +229,7 @@ def build_task_run_record(
             "deviations_pct": dict((result.get("cross_validation") or {}).get("deviations_pct") or {}),
             "token_usage": dict(result.get("token_usage_summary") or {}),
             "framework_outcome": framework.get("outcome_type"),
+            "execution_mode": str(result.get("execution_mode") or "live"),
             "learning": learning,
         },
     }

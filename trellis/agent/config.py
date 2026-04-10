@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import os
 import threading
@@ -10,7 +11,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 _LOADED = False
 
@@ -69,7 +70,19 @@ _LLM_REQUEST_CONTEXT: ContextVar[dict[str, Any] | None] = ContextVar(
     "llm_request_context",
     default=None,
 )
+_LLM_OVERRIDE_HANDLERS: ContextVar["LLMOverrideHandlers | None"] = ContextVar(
+    "llm_override_handlers",
+    default=None,
+)
 LLM_WAIT_LOG_ROOT = Path(__file__).resolve().parents[2] / "task_runs" / "llm_waits"
+
+
+@dataclass(frozen=True)
+class LLMOverrideHandlers:
+    """Temporary override functions for LLM text and JSON requests."""
+
+    generate: Callable[..., str]
+    generate_json: Callable[..., dict]
 
 
 class TokenBudgetExceeded(RuntimeError):
@@ -283,6 +296,19 @@ def llm_generate(
     max_retries: int | None = None,
 ) -> str:
     """Call the LLM and return text response."""
+    override = _LLM_OVERRIDE_HANDLERS.get()
+    if override is not None:
+        return override.generate(prompt, model=model, max_retries=max_retries)
+    return _llm_generate_live(prompt, model=model, max_retries=max_retries)
+
+
+def _llm_generate_live(
+    prompt: str,
+    model: str | None = None,
+    *,
+    max_retries: int | None = None,
+) -> str:
+    """Call the live LLM provider and return text response."""
     load_env()
     provider = get_provider()
     model = model or get_default_model()
@@ -312,6 +338,19 @@ def llm_generate_json(
     max_retries: int | None = None,
 ) -> dict:
     """Call LLM with JSON response format and return parsed dict."""
+    override = _LLM_OVERRIDE_HANDLERS.get()
+    if override is not None:
+        return override.generate_json(prompt, model=model, max_retries=max_retries)
+    return _llm_generate_json_live(prompt, model=model, max_retries=max_retries)
+
+
+def _llm_generate_json_live(
+    prompt: str,
+    model: str | None = None,
+    *,
+    max_retries: int | None = None,
+) -> dict:
+    """Call the live LLM provider for a JSON response and return parsed data."""
     load_env()
     provider = get_provider()
     model = model or get_default_model()
@@ -331,6 +370,25 @@ def llm_generate_json(
         response_text=text,
     )
     return _parse_llm_json_response(text, provider=provider, model=model)
+
+
+@contextmanager
+def llm_override_scope(
+    *,
+    generate: Callable[..., str],
+    generate_json: Callable[..., dict],
+):
+    """Temporarily override LLM text/JSON calls in the current context."""
+    token = _LLM_OVERRIDE_HANDLERS.set(
+        LLMOverrideHandlers(
+            generate=generate,
+            generate_json=generate_json,
+        )
+    )
+    try:
+        yield
+    finally:
+        _LLM_OVERRIDE_HANDLERS.reset(token)
 
 
 def _validate_llm_text_response(text: str | None, *, provider: str, model: str) -> str:

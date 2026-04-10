@@ -6,6 +6,7 @@ All tests use mocked task execution — no LLM calls, no tokens spent.
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime, timezone
 
 import pytest
 import yaml
@@ -313,6 +314,126 @@ class TestRunCanaries:
         assert captured["description"] == "European call option on a non-dividend-paying stock."
         assert captured["construct"] == "monte_carlo"
 
+    def test_run_canaries_replay_mode_skips_missing_cassettes(self, monkeypatch, tmp_path):
+        seen = {"run_task_calls": 0}
+
+        def fake_build_market_state():
+            return object()
+
+        def fake_load_tasks(*, status="pending", path=None):
+            return [{"id": "T13", "title": "European call: theta-method convergence order"}]
+
+        def fake_run_task(task, market_state, **kwargs):
+            seen["run_task_calls"] += 1
+            return {"task_id": task["id"], "success": True}
+
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.build_market_state",
+            fake_build_market_state,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.load_tasks",
+            fake_load_tasks,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.run_task",
+            fake_run_task,
+        )
+
+        results = run_canaries(
+            [{"id": "T13", "engine_family": "pde", "complexity": "simple"}],
+            {"total_budget_usd": 1.0},
+            replay=True,
+            cassette_dir=tmp_path,
+        )
+
+        assert seen["run_task_calls"] == 0
+        assert results == [
+            {
+                "canary_id": "T13",
+                "engine_family": "pde",
+                "success": False,
+                "skipped": True,
+                "reason": "missing_cassette",
+                "error": (
+                    "Missing cassette for T13 at "
+                    f"{tmp_path / 'T13.yaml'}. "
+                    "Record it with scripts/record_cassettes.py --task T13"
+                ),
+            }
+        ]
+
+    def test_run_canaries_replay_mode_uses_full_task_cassette(self, monkeypatch, tmp_path):
+        from trellis.agent.cassette import _prompt_hash
+
+        prompt = "runner replay prompt"
+        cassette_path = tmp_path / "T38.yaml"
+        cassette_path.write_text(
+            yaml.safe_dump(
+                {
+                    "meta": {
+                        "recorded_at": datetime.now(timezone.utc).isoformat(),
+                        "total_calls": 1,
+                    },
+                    "calls": [
+                        {
+                            "seq": 0,
+                            "function": "llm_generate",
+                            "stage": "critic",
+                            "prompt_hash": _prompt_hash(prompt),
+                            "response_text": "runner replay response",
+                        }
+                    ],
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+
+        seen: dict[str, object] = {}
+
+        def fake_build_market_state():
+            return object()
+
+        def fake_load_tasks(*, status="pending", path=None):
+            return [{"id": "T38", "title": "CDS pricing canary"}]
+
+        def fake_run_task(task, market_state, **kwargs):
+            from trellis.agent import critic
+
+            seen["llm_text"] = critic.llm_generate(prompt)
+            return {
+                "task_id": task["id"],
+                "success": True,
+                "execution_mode": "cassette_replay",
+                "token_usage_summary": {"total_tokens": 0},
+            }
+
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.build_market_state",
+            fake_build_market_state,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.load_tasks",
+            fake_load_tasks,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.run_task",
+            fake_run_task,
+        )
+
+        results = run_canaries(
+            [{"id": "T38", "engine_family": "credit", "complexity": "complex"}],
+            {"total_budget_usd": 1.0},
+            replay=True,
+            cassette_dir=tmp_path,
+        )
+
+        assert seen["llm_text"] == "runner replay response"
+        assert results[0]["success"] is True
+        assert results[0]["execution_mode"] == "cassette_replay"
+        assert results[0]["token_usage_summary"]["total_tokens"] == 0
+
 
 # ---------------------------------------------------------------------------
 # CANARY_TASKS.yaml validity
@@ -518,6 +639,22 @@ class TestDriftIntegration:
         args = _parse_args(["--check-drift", "--update-golden"])
         assert args.check_drift is True
         assert args.update_golden is True
+
+    def test_parse_args_replay_flags(self):
+        from run_canary import _parse_args
+
+        args = _parse_args(
+            [
+                "--replay",
+                "--cassette-dir",
+                "/tmp/cassettes",
+                "--cassette-stale-policy",
+                "error",
+            ]
+        )
+        assert args.replay is True
+        assert args.cassette_dir == "/tmp/cassettes"
+        assert args.cassette_stale_policy == "error"
 
         args_none = _parse_args([])
         assert args_none.check_drift is False
