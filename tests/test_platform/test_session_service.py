@@ -57,3 +57,99 @@ def test_activate_market_snapshot_uses_persisted_snapshot_provider_binding(tmp_p
         persisted.provider_bindings.market_data.primary.provider_id
         == "market_data.file_import"
     )
+
+
+def test_provider_reconfigure_clears_active_imported_snapshot_metadata(tmp_path):
+    from trellis.platform.services import bootstrap_platform_services
+    from trellis.platform.storage import SnapshotRecord
+
+    services = bootstrap_platform_services(state_root=tmp_path / "state")
+    services.snapshot_store.save_snapshot(
+        SnapshotRecord(
+            snapshot_id="snapshot_import_002",
+            provider_id="market_data.file_import",
+            as_of="2026-04-04",
+            source="file_import",
+            payload={"bundle_type": "file_import_bundle"},
+            provenance={"provider_id": "market_data.file_import"},
+        )
+    )
+    services.session_service.activate_market_snapshot(
+        session_id="sess_rebind_snapshot",
+        snapshot_id="snapshot_import_002",
+    )
+
+    payload = services.provider_service.configure(
+        session_id="sess_rebind_snapshot",
+        provider_bindings={
+            "market_data": {
+                "primary": {"provider_id": "market_data.treasury_gov"},
+            }
+        },
+    )
+
+    assert (
+        payload["session"]["provider_bindings"]["market_data"]["primary"]["provider_id"]
+        == "market_data.treasury_gov"
+    )
+    assert "active_market_snapshot_id" not in payload["session"]["metadata"]
+    assert "active_market_snapshot_provider_id" not in payload["session"]["metadata"]
+
+    persisted = services.session_service.ensure_record("sess_rebind_snapshot")
+    assert "active_market_snapshot_id" not in persisted.metadata
+    assert "active_market_snapshot_provider_id" not in persisted.metadata
+
+
+def test_provider_reconfigure_keeps_active_snapshot_for_metadata_only_binding_change(tmp_path):
+    from trellis.platform.services import bootstrap_platform_services
+    from trellis.platform.storage import SnapshotRecord
+
+    services = bootstrap_platform_services(state_root=tmp_path / "state")
+    services.snapshot_store.save_snapshot(
+        SnapshotRecord(
+            snapshot_id="snapshot_import_003",
+            provider_id="market_data.file_import",
+            as_of="2026-04-04",
+            source="file_import",
+            payload={"bundle_type": "file_import_bundle"},
+            provenance={"provider_id": "market_data.file_import"},
+        )
+    )
+    services.session_service.activate_market_snapshot(
+        session_id="sess_rebind_snapshot_metadata",
+        snapshot_id="snapshot_import_003",
+    )
+
+    payload = services.provider_service.configure(
+        session_id="sess_rebind_snapshot_metadata",
+        provider_bindings={
+            "market_data": {
+                "primary": {
+                    "provider_id": "market_data.file_import",
+                    "label": "Desk Upload",
+                    "metadata": {"origin": "ops_refresh"},
+                },
+            }
+        },
+    )
+
+    assert (
+        payload["session"]["provider_bindings"]["market_data"]["primary"]["provider_id"]
+        == "market_data.file_import"
+    )
+    assert (
+        payload["session"]["provider_bindings"]["market_data"]["primary"]["label"]
+        == "Desk Upload"
+    )
+    assert payload["session"]["metadata"]["active_market_snapshot_id"] == "snapshot_import_003"
+    assert (
+        payload["session"]["metadata"]["active_market_snapshot_provider_id"]
+        == "market_data.file_import"
+    )
+
+    persisted = services.session_service.ensure_record("sess_rebind_snapshot_metadata")
+    assert persisted.metadata["active_market_snapshot_id"] == "snapshot_import_003"
+    assert (
+        persisted.metadata["active_market_snapshot_provider_id"]
+        == "market_data.file_import"
+    )
