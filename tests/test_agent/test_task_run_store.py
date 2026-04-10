@@ -701,6 +701,132 @@ def test_persist_task_run_record_can_skip_diagnosis_artifacts(monkeypatch, tmp_p
     assert persisted["diagnosis_persist_error"] == ""
 
 
+def test_persist_canary_batch_record_writes_history_and_latest_views(tmp_path):
+    from trellis.agent.task_run_store import (
+        load_canary_batch_records,
+        persist_canary_batch_record,
+    )
+
+    persisted = persist_canary_batch_record(
+        canaries=[
+            {"id": "T13", "engine_family": "pde", "complexity": "simple"},
+            {"id": "T38", "engine_family": "credit", "complexity": "complex"},
+        ],
+        meta={"version": 3, "refresh_cadence": "weekly", "total_budget_usd": 3.12},
+        results=[
+            {
+                "task_id": "T13",
+                "canary_id": "T13",
+                "success": True,
+                "elapsed_seconds": 4.2,
+                "attempts": 2,
+                "token_usage_summary": {"total_tokens": 321},
+                "task_run_history_path": "/tmp/task_runs/history/T13/live.json",
+            },
+            {
+                "task_id": "T38",
+                "canary_id": "T38",
+                "success": False,
+                "elapsed_seconds": 7.8,
+                "attempts": 3,
+                "token_usage_summary": {"total_tokens": 654},
+                "task_run_history_path": "/tmp/task_runs/history/T38/live.json",
+                "error": "comparison failed",
+            },
+        ],
+        model="gpt-5.4-mini",
+        validation="standard",
+        knowledge_light=False,
+        replay=False,
+        requested_task_id=None,
+        requested_subset=None,
+        root=tmp_path,
+        started_at=datetime(2026, 4, 10, 12, 0, tzinfo=timezone.utc),
+        finished_at=datetime(2026, 4, 10, 12, 5, tzinfo=timezone.utc),
+    )
+
+    history_records = load_canary_batch_records(root=tmp_path)
+
+    assert Path(persisted["history_path"]).exists()
+    assert Path(persisted["latest_path"]).exists()
+    assert persisted["batch_id"] == "canary_20260410T120000000000Z"
+    assert len(history_records) == 1
+    record = history_records[0]
+    assert record["summary"]["execution_mode"] == "live"
+    assert record["summary"]["batch_scope"] == "full_curated"
+    assert record["summary"]["benchmark_eligible"] is True
+    assert record["summary"]["task_count"] == 2
+    assert record["summary"]["pass_count"] == 1
+    assert record["summary"]["failure_count"] == 1
+    assert record["summary"]["total_tokens"] == 975
+    assert record["summary"]["total_attempts"] == 5
+    assert record["canaries"][0]["task_run_history_path"] == "/tmp/task_runs/history/T13/live.json"
+
+
+def test_load_canary_task_history_excludes_replay_runs_from_benchmark_view(tmp_path):
+    from trellis.agent.task_run_store import (
+        load_canary_task_history,
+        persist_canary_batch_record,
+    )
+
+    persist_canary_batch_record(
+        canaries=[{"id": "T13", "engine_family": "pde", "complexity": "simple"}],
+        meta={"version": 3},
+        results=[
+            {
+                "task_id": "T13",
+                "canary_id": "T13",
+                "success": True,
+                "elapsed_seconds": 4.0,
+                "attempts": 2,
+                "token_usage_summary": {"total_tokens": 300},
+            }
+        ],
+        model="gpt-5.4-mini",
+        validation="standard",
+        knowledge_light=False,
+        replay=False,
+        requested_task_id=None,
+        requested_subset=None,
+        root=tmp_path,
+        started_at=datetime(2026, 4, 10, 12, 0, tzinfo=timezone.utc),
+        finished_at=datetime(2026, 4, 10, 12, 1, tzinfo=timezone.utc),
+    )
+    persist_canary_batch_record(
+        canaries=[{"id": "T13", "engine_family": "pde", "complexity": "simple"}],
+        meta={"version": 3},
+        results=[
+            {
+                "task_id": "T13",
+                "canary_id": "T13",
+                "success": True,
+                "elapsed_seconds": 0.1,
+                "attempts": 1,
+                "token_usage_summary": {"total_tokens": 0},
+                "execution_mode": "cassette_replay",
+            }
+        ],
+        model="gpt-5.4-mini",
+        validation="standard",
+        knowledge_light=False,
+        replay=True,
+        requested_task_id=None,
+        requested_subset=None,
+        root=tmp_path,
+        started_at=datetime(2026, 4, 10, 13, 0, tzinfo=timezone.utc),
+        finished_at=datetime(2026, 4, 10, 13, 1, tzinfo=timezone.utc),
+    )
+
+    all_history = load_canary_task_history("T13", root=tmp_path)
+    benchmark_history = load_canary_task_history("T13", root=tmp_path, benchmark_only=True)
+
+    assert len(all_history) == 2
+    assert {item["execution_mode"] for item in all_history} == {"live", "cassette_replay"}
+    assert len(benchmark_history) == 1
+    assert benchmark_history[0]["execution_mode"] == "live"
+    assert benchmark_history[0]["benchmark_eligible"] is True
+
+
 def test_collect_trace_summaries_reads_analytical_trace_json(tmp_path):
     import json
 

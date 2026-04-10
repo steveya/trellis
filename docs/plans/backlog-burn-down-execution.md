@@ -14,7 +14,8 @@ Status mirror last synced: `2026-04-10`
 Current status:
 
 - `QUA-458` is complete.
-- The next actionable ticket in queue order is `QUA-710`.
+- `QUA-710` is complete.
+- The next actionable ticket in queue order is `QUA-428`.
 
 ## Operating Rules
 
@@ -136,20 +137,17 @@ If a ticket has become stale because other landed work already satisfies it:
 
 ## Current Start Point
 
-Execution started with `QUA-458` and now moves next to `QUA-710`.
+Execution started with `QUA-458`, continued through `QUA-710`, and now moves
+next to `QUA-428`.
 
 Plain-English goal:
 
-- replay full `run_task(...)` canary paths from recorded LLM cassettes so
-  diagnosis-heavy canaries can be inspected without live token spend
+- inventory the remaining stale-test surface and make the triage flow explicit
+  so the local gate work can rely on a current, reviewable test baseline
 
 Primary files and surfaces:
 
-- `trellis/agent/cassette.py`
-- `trellis/agent/config.py`
-- `trellis/agent/task_runtime.py`
-- `trellis/agent/task_run_store.py`
-- `scripts/run_canary.py`
-- `scripts/record_cassettes.py`
-- `docs/developer/`
-- targeted tests under `tests/test_agent/` and `tests/test_contracts/`
+- stale-test inventory docs and queue mirrors
+- the current local/CI test entrypoints
+- any helper tooling used to classify stale or compatibility-only tests
+- the gate-facing docs that `QUA-430` will consume next

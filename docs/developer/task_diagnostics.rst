@@ -105,6 +105,34 @@ rollups through ``trellis.agent.task_run_store``:
 - ``load_latest_skill_telemetry_rollup()``
 - ``load_latest_route_health_rollup()``
 
+Canary batch telemetry
+----------------------
+
+Canary runs now persist one explicit batch record under
+``task_runs/canary_batches/`` in addition to the per-task diagnosis artifacts.
+
+That batch layer exists because the raw task-run store mixes ordinary ad hoc
+task executions, replay-backed runs, and any historical one-off reruns. The
+canary batch record gives tooling a trustworthy benchmark surface instead of
+forcing it to infer canary lineage from task ids alone.
+
+Each batch record captures:
+
+- ``execution_mode`` so live and replay runs stay separate
+- ``benchmark_eligible`` so replay-backed history can be excluded cleanly
+- the batch scope (full curated set, subset, or single task)
+- aggregate pass, elapsed-time, token, and attempt metrics
+- per-canary links back to the underlying task-run and diagnosis artifacts
+
+The deterministic loaders are:
+
+- ``load_canary_batch_records()``
+- ``load_canary_task_history()``
+
+Use ``load_canary_task_history(..., benchmark_only=True)`` when you want a
+live-only history surface for one canary without mixing in replay runs or
+root-level pytest artifacts.
+
 Connector-stress batch surfacing
 --------------------------------
 
