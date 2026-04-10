@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 import re
+from types import MappingProxyType
 
 import trellis.core.capabilities as capability_registry
 
@@ -82,7 +83,6 @@ _AUTOMATIC_ACTION_HINTS = (
     "barrier",
 )
 
-
 @dataclass(frozen=True)
 class SemanticContractValidationFinding:
     """One structured semantic-contract validation finding."""
@@ -140,6 +140,61 @@ class SemanticContractValidationReport:
     def missing(self) -> tuple[str, ...]:
         """Duck-type the gap-report missing tuple for build-gate reuse."""
         return self.errors
+
+
+@dataclass(frozen=True)
+class SettlementAuthorityProfile:
+    """Declarative settlement-authority match profile for one semantic family."""
+
+    semantic_id: str
+    instrument_classes: tuple[str, ...] = ()
+    payoff_families: tuple[str, ...] = ()
+    exercise_styles: tuple[str, ...] = ()
+    required_payoff_traits: tuple[str, ...] = ()
+    required_primitive_families: tuple[str, ...] = ()
+
+
+_SETTLEMENT_AUTHORITY_PROFILES = MappingProxyType(
+    {
+        "vanilla_option": SettlementAuthorityProfile(
+            semantic_id="vanilla_option",
+            instrument_classes=("european_option",),
+            payoff_families=("vanilla_option",),
+        ),
+        "callable_bond": SettlementAuthorityProfile(
+            semantic_id="callable_bond",
+            instrument_classes=("callable_bond",),
+        ),
+        "ranked_observation_basket": SettlementAuthorityProfile(
+            semantic_id="ranked_observation_basket",
+            instrument_classes=("basket_path_payoff",),
+            required_payoff_traits=("ranked_observation",),
+        ),
+        "rate_style_swaption": SettlementAuthorityProfile(
+            semantic_id="rate_style_swaption",
+            instrument_classes=("swaption",),
+            exercise_styles=("bermudan",),
+            required_primitive_families=("exercise_lattice",),
+        ),
+    }
+)
+
+_RATE_CAP_FLOOR_WRAPPER_PROFILES = MappingProxyType(
+    {
+        "cap": MappingProxyType(
+            {
+                "obligation_id": "cap_period_cashflow",
+                "option_type": "call",
+            }
+        ),
+        "floor": MappingProxyType(
+            {
+                "obligation_id": "floor_period_cashflow",
+                "option_type": "put",
+            }
+        ),
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -1242,13 +1297,20 @@ def _typed_surface_is_authoritative_for_settlement_rule(contract: SemanticContra
         str(item).strip().lower()
         for item in getattr(contract.blueprint, "primitive_families", ()) or ()
     }
-    if instrument == "european_option" and payoff_family == "vanilla_option":
-        return True
-    if instrument == "callable_bond":
-        return True
-    if instrument == "basket_path_payoff" and "ranked_observation" in payoff_traits:
-        return True
-    return instrument == "swaption" and exercise_style == "bermudan" and "exercise_lattice" in primitive_families
+    profile = _SETTLEMENT_AUTHORITY_PROFILES.get(str(contract.semantic_id or "").strip())
+    if profile is None:
+        return False
+    if profile.instrument_classes and instrument not in profile.instrument_classes:
+        return False
+    if profile.payoff_families and payoff_family not in profile.payoff_families:
+        return False
+    if profile.exercise_styles and exercise_style not in profile.exercise_styles:
+        return False
+    if profile.required_payoff_traits and not set(profile.required_payoff_traits).issubset(payoff_traits):
+        return False
+    if profile.required_primitive_families and not set(profile.required_primitive_families).issubset(primitive_families):
+        return False
+    return True
 
 
 def _typed_settlement_rules(product) -> tuple[str, ...]:
@@ -1894,7 +1956,10 @@ def _validate_rate_cap_floor_strip_shape(
         schedule_dependence=True,
     )
     product = contract.product
-    if product.instrument_class not in {"cap", "floor"}:
+    wrapper_profile = _RATE_CAP_FLOOR_WRAPPER_PROFILES.get(
+        str(product.instrument_class or "").strip().lower()
+    )
+    if wrapper_profile is None:
         errors.append(
             "Rate cap/floor strip semantics require instrument_class `cap` or `floor`."
         )
@@ -1909,14 +1974,14 @@ def _validate_rate_cap_floor_strip_shape(
     if "discount_curve" not in observable_types:
         errors.append("Rate cap/floor strip semantics require a typed discount_curve observable.")
     obligation_ids = {item.obligation_id for item in product.obligations}
-    expected_obligation_id = f"{product.instrument_class}_period_cashflow"
+    expected_obligation_id = str((wrapper_profile or {}).get("obligation_id", ""))
     if expected_obligation_id not in obligation_ids:
         errors.append(
             f"Rate cap/floor strip semantics require obligation `{expected_obligation_id}`."
         )
     term_fields = dict(getattr(product, "term_fields", {}) or {})
     option_type = str(term_fields.get("option_type", "")).strip().lower()
-    expected_option_type = "put" if product.instrument_class == "floor" else "call"
+    expected_option_type = str((wrapper_profile or {}).get("option_type", ""))
     if option_type != expected_option_type:
         errors.append(
             f"Rate cap/floor strip semantics require option_type `{expected_option_type}`, got `{option_type}`."

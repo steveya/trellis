@@ -61,9 +61,22 @@ def _semantic_family_key(semantic_id: str, *, exercise_style: str | None = None)
     """Return the registered family key for a semantic family and optional variant."""
     normalized_semantic_id = str(semantic_id or "").strip()
     normalized_exercise = str(exercise_style or "").strip().lower()
-    if normalized_semantic_id == "rate_style_swaption" and normalized_exercise in {"european", "bermudan"}:
-        return f"{normalized_semantic_id}:{normalized_exercise}"
+    variant_keys = _SEMANTIC_FAMILY_VARIANT_KEYS.get(normalized_semantic_id)
+    if variant_keys is not None and normalized_exercise in variant_keys:
+        return variant_keys[normalized_exercise]
     return normalized_semantic_id
+
+
+_SEMANTIC_FAMILY_VARIANT_KEYS = MappingProxyType(
+    {
+        "rate_style_swaption": MappingProxyType(
+            {
+                "european": "rate_style_swaption:european",
+                "bermudan": "rate_style_swaption:bermudan",
+            }
+        ),
+    }
+)
 
 
 def _method_surface_definition(
@@ -695,6 +708,25 @@ class SemanticDraftRule:
     name: str
     matcher: Callable[[str, str | None], bool]
     builder: Callable[[str, str, str | None, Any], SemanticContract]
+
+
+@dataclass(frozen=True)
+class SemanticDraftMatcherProfile:
+    """Declarative matcher inputs for one semantic drafting family."""
+
+    rule_name: str
+    instrument_aliases: tuple[str, ...] = ()
+    positive_cues: tuple[str, ...] = ()
+    negative_cues: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class SemanticDraftVariantProfile:
+    """Declarative variant resolution profile for one semantic drafting family."""
+
+    variant_key: str
+    instrument_aliases: tuple[str, ...] = ()
+    selection_cues: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1477,7 +1509,10 @@ def _extract_rate_cap_floor_schedule(
 
 def _rate_cap_floor_option_type(instrument_class: str) -> str:
     """Return the coarse option type encoded by a cap/floor wrapper."""
-    return "put" if instrument_class == "floor" else "call"
+    return _RATE_CAP_FLOOR_OPTION_TYPES.get(
+        str(instrument_class or "").strip().lower(),
+        "call",
+    )
 
 
 def make_vanilla_option_contract(
@@ -2612,7 +2647,8 @@ def make_rate_cap_floor_strip_contract(
 ) -> SemanticContract:
     """Construct a schedule-driven cap/floor strip semantic contract."""
     normalized_instrument = str(instrument_class or "").strip().lower()
-    if normalized_instrument not in {"cap", "floor"}:
+    wrapper_profile = _RATE_CAP_FLOOR_WRAPPER_PROFILES.get(normalized_instrument)
+    if wrapper_profile is None:
         raise ValueError("Rate cap/floor strip contract requires instrument_class `cap` or `floor`.")
     schedule = _normalize_schedule(observation_schedule)
     if not schedule:
@@ -2621,7 +2657,7 @@ def make_rate_cap_floor_strip_contract(
         "rate_cap_floor_strip",
         preferred_method=preferred_method,
     )
-    option_type = _rate_cap_floor_option_type(normalized_instrument)
+    option_type = str(wrapper_profile["option_type"])
     schedule_authority = (
         "explicit_schedule"
         if all(re.fullmatch(r"\d{4}-\d{2}-\d{2}", item) for item in schedule)
@@ -2679,9 +2715,9 @@ def make_rate_cap_floor_strip_contract(
         ),
         obligations=(
             ObligationSpec(
-                obligation_id=f"{normalized_instrument}_period_cashflow",
+                obligation_id=str(wrapper_profile["obligation_id"]),
                 settle_date_rule="coupon_period_cash_settlement",
-                amount_expression=f"{normalized_instrument}let_cashflow",
+                amount_expression=str(wrapper_profile["amount_expression"]),
                 settlement_kind="cash",
                 trigger="period_option_in_the_money",
                 provenance="semantic_contract",
@@ -4644,189 +4680,322 @@ def _normalize_callability(payload: Mapping[str, object] | None) -> MappingProxy
     )
 
 
+def _normalize_instrument_alias(instrument_type: str | None) -> str:
+    """Return a normalized request instrument alias for registry-driven matching."""
+    return str(instrument_type or "").strip().lower().replace(" ", "_")
+
+
+def _matches_semantic_draft_profile(
+    text: str,
+    instrument_type: str | None,
+    *,
+    profile: SemanticDraftMatcherProfile,
+) -> bool:
+    """Return whether request text/instrument matches one declarative drafting profile."""
+    lower = text.lower()
+    normalized_instrument = _normalize_instrument_alias(instrument_type)
+    if normalized_instrument and normalized_instrument in profile.instrument_aliases:
+        return True
+    if any(cue in lower for cue in profile.negative_cues):
+        return False
+    return any(cue in lower for cue in profile.positive_cues)
+
+
+def _resolve_semantic_draft_variant(
+    text: str,
+    instrument_type: str | None,
+    *,
+    variants: tuple[SemanticDraftVariantProfile, ...],
+    default_variant: str,
+) -> str:
+    """Return the declared semantic wrapper variant for one request family."""
+    normalized_instrument = _normalize_instrument_alias(instrument_type)
+    for variant in variants:
+        if normalized_instrument and normalized_instrument in variant.instrument_aliases:
+            return variant.variant_key
+    lower = text.lower()
+    for variant in variants:
+        if any(cue in lower for cue in variant.selection_cues):
+            return variant.variant_key
+    return default_variant
+
+
+_SEMANTIC_DRAFT_MATCHER_PROFILES = MappingProxyType(
+    {
+        "quanto_option": SemanticDraftMatcherProfile(
+            rule_name="quanto_option",
+            instrument_aliases=("quanto_option",),
+            positive_cues=(
+                "quanto option",
+                "quanto",
+                "cross currency option",
+                "cross-currency option",
+                "fx option",
+                "fx-linked option",
+            ),
+        ),
+        "callable_bond": SemanticDraftMatcherProfile(
+            rule_name="callable_bond",
+            instrument_aliases=("callable_bond",),
+            positive_cues=(
+                "callable bond",
+                "issuer call",
+                "call schedule",
+                "call dates",
+                "callable debt",
+            ),
+        ),
+        "range_accrual": SemanticDraftMatcherProfile(
+            rule_name="range_accrual",
+            instrument_aliases=(
+                "range_accrual",
+                "range_accrual_note",
+                "range_note",
+                "callable_range_note",
+                "callable_range_accrual",
+            ),
+            positive_cues=(
+                "range accrual",
+                "range note",
+                "coupon accrues if",
+                "coupon accrues when",
+                "accrues when",
+                "accrues if",
+            ),
+        ),
+        "vanilla_option": SemanticDraftMatcherProfile(
+            rule_name="vanilla_option",
+            instrument_aliases=("european_option", "american_option"),
+            positive_cues=(
+                "vanilla option",
+                "european option",
+                "european call",
+                "european put",
+                "call on",
+                "put on",
+                "option on",
+            ),
+            negative_cues=("callable bond", "callable debt"),
+        ),
+        "rate_style_swaption": SemanticDraftMatcherProfile(
+            rule_name="rate_style_swaption",
+            instrument_aliases=("swaption", "bermudan_swaption"),
+            positive_cues=(
+                "swaption",
+                "fixed-for-floating",
+                "forward swap",
+                "swap rate",
+                "swap exercise",
+            ),
+        ),
+        "rate_cap_floor_strip": SemanticDraftMatcherProfile(
+            rule_name="rate_cap_floor_strip",
+            instrument_aliases=("cap", "floor"),
+            positive_cues=(
+                "interest rate cap",
+                "interest rate floor",
+                "caplet",
+                "floorlet",
+                "cap/floor",
+                "cap floor",
+            ),
+        ),
+        "credit_default_swap": SemanticDraftMatcherProfile(
+            rule_name="credit_default_swap",
+            instrument_aliases=("credit_default_swap", "cds"),
+            positive_cues=(
+                "credit default swap",
+                "single-name cds",
+                "single name cds",
+                " cds ",
+                "protection leg",
+                "premium leg",
+                "reference entity",
+            ),
+            negative_cues=(
+                "nth to default",
+                "nth-to-default",
+                "first to default",
+                "basket cds",
+                "default correlation",
+            ),
+        ),
+        "nth_to_default": SemanticDraftMatcherProfile(
+            rule_name="nth_to_default",
+            instrument_aliases=("nth_to_default",),
+            positive_cues=(
+                "nth to default",
+                "nth-to-default",
+                "first to default",
+                "first-to-default",
+                "second to default",
+                "second-to-default",
+                "basket cds",
+                "default correlation",
+            ),
+        ),
+        "credit_basket_tranche": SemanticDraftMatcherProfile(
+            rule_name="credit_basket_tranche",
+            instrument_aliases=("cdo", "cdo_tranche", "tranche"),
+            positive_cues=(
+                "cdo tranche",
+                "synthetic cdo",
+                "mezzanine tranche",
+                "senior tranche",
+                "equity tranche",
+                "attachment point",
+                "detachment point",
+            ),
+        ),
+    }
+)
+
+
+_VANILLA_OPTION_DRAFT_VARIANTS = (
+    SemanticDraftVariantProfile(
+        variant_key="american_option",
+        instrument_aliases=("american_option",),
+    ),
+    SemanticDraftVariantProfile(
+        variant_key="european_option",
+        instrument_aliases=("european_option",),
+    ),
+)
+
+
+_RATE_STYLE_SWAPTION_DRAFT_VARIANTS = (
+    SemanticDraftVariantProfile(
+        variant_key="bermudan_swaption",
+        instrument_aliases=("bermudan_swaption",),
+    ),
+    SemanticDraftVariantProfile(
+        variant_key="swaption",
+        instrument_aliases=("swaption",),
+    ),
+)
+
+
+_RATE_CAP_FLOOR_DRAFT_VARIANTS = (
+    SemanticDraftVariantProfile(
+        variant_key="floor",
+        instrument_aliases=("floor",),
+        selection_cues=("floorlet", "interest rate floor"),
+    ),
+    SemanticDraftVariantProfile(
+        variant_key="cap",
+        instrument_aliases=("cap",),
+        selection_cues=("caplet", "interest rate cap"),
+    ),
+)
+
+
+_RATE_CAP_FLOOR_OPTION_TYPES = MappingProxyType(
+    {
+        "cap": "call",
+        "floor": "put",
+    }
+)
+
+
+_RATE_CAP_FLOOR_WRAPPER_PROFILES = MappingProxyType(
+    {
+        "cap": MappingProxyType(
+            {
+                "option_type": "call",
+                "obligation_id": "cap_period_cashflow",
+                "amount_expression": "caplet_cashflow",
+            }
+        ),
+        "floor": MappingProxyType(
+            {
+                "option_type": "put",
+                "obligation_id": "floor_period_cashflow",
+                "amount_expression": "floorlet_cashflow",
+            }
+        ),
+    }
+)
+
+
 def _looks_like_quanto_option_request(text: str, instrument_type: str | None) -> bool:
     """Return whether the request appears to describe a quanto option."""
-    lower = text.lower()
-    normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
-    if normalized_instrument == "quanto_option":
-        return True
-    return any(
-        cue in lower
-        for cue in (
-            "quanto option",
-            "quanto",
-            "cross currency option",
-            "cross-currency option",
-            "fx option",
-            "fx-linked option",
-        )
+    return _matches_semantic_draft_profile(
+        text,
+        instrument_type,
+        profile=_SEMANTIC_DRAFT_MATCHER_PROFILES["quanto_option"],
     )
 
 
 def _looks_like_callable_bond_request(text: str, instrument_type: str | None) -> bool:
     """Return whether the request appears to describe a callable bond."""
-    lower = text.lower()
-    normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
-    if normalized_instrument == "callable_bond":
-        return True
-    return any(
-        cue in lower
-        for cue in (
-            "callable bond",
-            "issuer call",
-            "call schedule",
-            "call dates",
-            "callable debt",
-        )
+    return _matches_semantic_draft_profile(
+        text,
+        instrument_type,
+        profile=_SEMANTIC_DRAFT_MATCHER_PROFILES["callable_bond"],
     )
 
 
 def _looks_like_range_accrual_request(text: str, instrument_type: str | None) -> bool:
     """Return whether the request appears to describe the initial range-accrual slice."""
-    lower = text.lower()
-    normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
-    if normalized_instrument in {
-        "range_accrual",
-        "range_accrual_note",
-        "range_note",
-        "callable_range_note",
-        "callable_range_accrual",
-    }:
-        return True
-    return any(
-        cue in lower
-        for cue in (
-            "range accrual",
-            "range note",
-            "coupon accrues if",
-            "coupon accrues when",
-            "accrues when",
-            "accrues if",
-        )
+    return _matches_semantic_draft_profile(
+        text,
+        instrument_type,
+        profile=_SEMANTIC_DRAFT_MATCHER_PROFILES["range_accrual"],
     )
 
 
 def _looks_like_vanilla_option_request(text: str, instrument_type: str | None) -> bool:
     """Return whether the request appears to describe a vanilla option."""
-    lower = text.lower()
-    normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
-    if normalized_instrument in {"european_option", "american_option"}:
-        return True
-    if "callable bond" in lower or "callable debt" in lower:
-        return False
-    return any(
-        cue in lower
-        for cue in (
-            "vanilla option",
-            "european option",
-            "european call",
-            "european put",
-            "call on",
-            "put on",
-            "option on",
-        )
+    return _matches_semantic_draft_profile(
+        text,
+        instrument_type,
+        profile=_SEMANTIC_DRAFT_MATCHER_PROFILES["vanilla_option"],
     )
 
 
 def _looks_like_rate_style_swaption_request(text: str, instrument_type: str | None) -> bool:
     """Return whether the request appears to describe a simple rate-style swaption."""
-    lower = text.lower()
-    normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
-    if normalized_instrument in {"swaption", "bermudan_swaption"}:
-        return True
-    return any(
-        cue in lower
-        for cue in (
-            "swaption",
-            "fixed-for-floating",
-            "forward swap",
-            "swap rate",
-            "swap exercise",
-        )
+    return _matches_semantic_draft_profile(
+        text,
+        instrument_type,
+        profile=_SEMANTIC_DRAFT_MATCHER_PROFILES["rate_style_swaption"],
     )
 
 
 def _looks_like_rate_cap_floor_request(text: str, instrument_type: str | None) -> bool:
     """Return whether the request appears to describe a cap/floor strip."""
-    lower = text.lower()
-    normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
-    if normalized_instrument in {"cap", "floor"}:
-        return True
-    return any(
-        cue in lower
-        for cue in (
-            "interest rate cap",
-            "interest rate floor",
-            "caplet",
-            "floorlet",
-            "cap/floor",
-            "cap floor",
-        )
+    return _matches_semantic_draft_profile(
+        text,
+        instrument_type,
+        profile=_SEMANTIC_DRAFT_MATCHER_PROFILES["rate_cap_floor_strip"],
     )
 
 
 def _looks_like_credit_default_swap_request(text: str, instrument_type: str | None) -> bool:
     """Return whether the request appears to describe a single-name CDS."""
-    lower = text.lower()
-    normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
-    if normalized_instrument in {"credit_default_swap", "cds"}:
-        return True
-    if any(cue in lower for cue in ("nth to default", "nth-to-default", "first to default", "basket cds", "default correlation")):
-        return False
-    return any(
-        cue in lower
-        for cue in (
-            "credit default swap",
-            "single-name cds",
-            "single name cds",
-            " cds ",
-            "protection leg",
-            "premium leg",
-            "reference entity",
-        )
+    return _matches_semantic_draft_profile(
+        text,
+        instrument_type,
+        profile=_SEMANTIC_DRAFT_MATCHER_PROFILES["credit_default_swap"],
     )
 
 
 def _looks_like_nth_to_default_request(text: str, instrument_type: str | None) -> bool:
     """Return whether the request appears to describe an nth-to-default basket."""
-    lower = text.lower()
-    normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
-    if normalized_instrument == "nth_to_default":
-        return True
-    return any(
-        cue in lower
-        for cue in (
-            "nth to default",
-            "nth-to-default",
-            "first to default",
-            "first-to-default",
-            "second to default",
-            "second-to-default",
-            "basket cds",
-            "default correlation",
-        )
+    return _matches_semantic_draft_profile(
+        text,
+        instrument_type,
+        profile=_SEMANTIC_DRAFT_MATCHER_PROFILES["nth_to_default"],
     )
 
 
 def _looks_like_cdo_tranche_request(text: str, instrument_type: str | None) -> bool:
     """Return whether the request appears to describe a tranche-style credit basket."""
-    lower = text.lower()
-    normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
-    if normalized_instrument in {"cdo", "cdo_tranche", "tranche"}:
-        return True
-    return any(
-        cue in lower
-        for cue in (
-            "cdo tranche",
-            "synthetic cdo",
-            "mezzanine tranche",
-            "senior tranche",
-            "equity tranche",
-            "attachment point",
-            "detachment point",
-        )
+    return _matches_semantic_draft_profile(
+        text,
+        instrument_type,
+        profile=_SEMANTIC_DRAFT_MATCHER_PROFILES["credit_basket_tranche"],
     )
-
 
 def _draft_ranked_observation_basket_contract(
     text: str,
@@ -4971,8 +5140,13 @@ def _draft_vanilla_option_contract(
         raise ValueError(
             "Semantic vanilla option request requires an expiry or exercise schedule."
         )
-    normalized_instrument = str(instrument_type or "").strip().lower().replace(" ", "_")
-    if normalized_instrument == "american_option":
+    variant_key = _resolve_semantic_draft_variant(
+        text,
+        instrument_type,
+        variants=_VANILLA_OPTION_DRAFT_VARIANTS,
+        default_variant="european_option",
+    )
+    if variant_key == "american_option":
         return make_american_option_contract(
             description=description,
             underliers=underliers,
@@ -5003,12 +5177,17 @@ def _draft_rate_style_swaption_contract(
         raise ValueError(
             "Semantic rate-style swaption request requires an exercise schedule."
         )
-    normalized_instrument = str(instrument_type or "").strip().lower()
+    variant_key = _resolve_semantic_draft_variant(
+        text,
+        instrument_type,
+        variants=_RATE_STYLE_SWAPTION_DRAFT_VARIANTS,
+        default_variant="swaption",
+    )
     return make_rate_style_swaption_contract(
         description=description,
         observation_schedule=observation_schedule,
-        preferred_method="rate_tree" if normalized_instrument == "bermudan_swaption" else "analytical",
-        exercise_style="bermudan" if normalized_instrument == "bermudan_swaption" else "european",
+        preferred_method="rate_tree" if variant_key == "bermudan_swaption" else "analytical",
+        exercise_style="bermudan" if variant_key == "bermudan_swaption" else "european",
         term_fields=_extract_swaption_term_fields(text, term_sheet),
     )
 
@@ -5020,10 +5199,12 @@ def _draft_rate_cap_floor_strip_contract(
     term_sheet,
 ) -> SemanticContract:
     """Draft a cap/floor strip semantic contract from request text."""
-    normalized_instrument = str(instrument_type or "").strip().lower().replace(" ", "_")
-    if normalized_instrument not in {"cap", "floor"}:
-        lower = text.lower()
-        normalized_instrument = "floor" if "floor" in lower and "cap" not in lower else "cap"
+    normalized_instrument = _resolve_semantic_draft_variant(
+        text,
+        instrument_type,
+        variants=_RATE_CAP_FLOOR_DRAFT_VARIANTS,
+        default_variant="cap",
+    )
     return make_rate_cap_floor_strip_contract(
         description=description,
         instrument_class=normalized_instrument,

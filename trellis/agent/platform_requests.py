@@ -429,6 +429,18 @@ def _compile_user_defined_request(request: PlatformRequest) -> CompiledPlatformR
     )
 
 
+_KNOWN_FAMILY_REQUEST_PROFILES = MappingProxyType(
+    {
+        "quanto_option": MappingProxyType(
+            {
+                "instrument_aliases": ("quanto_option",),
+                "cue_phrases": ("quanto",),
+            }
+        ),
+    }
+)
+
+
 def _known_family_id(
     *,
     description: str | None,
@@ -437,15 +449,16 @@ def _known_family_id(
 ) -> str | None:
     """Resolve a known checked-in family contract id from request context."""
     normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
-    if normalized_instrument == "quanto_option":
-        return "quanto_option"
     lower_description = (description or "").lower()
-    if "quanto" in lower_description:
-        return "quanto_option"
     term_sheet_type = getattr(term_sheet, "instrument_type", "")
     normalized_term_sheet = str(term_sheet_type).strip().lower().replace(" ", "_")
-    if normalized_term_sheet == "quanto_option":
-        return "quanto_option"
+    for family_id, profile in _KNOWN_FAMILY_REQUEST_PROFILES.items():
+        if normalized_instrument in profile["instrument_aliases"]:
+            return family_id
+        if normalized_term_sheet in profile["instrument_aliases"]:
+            return family_id
+        if any(cue in lower_description for cue in profile["cue_phrases"]):
+            return family_id
     return None
 
 
@@ -1503,6 +1516,13 @@ def _swaption_engine_model_spec(
     )
 
 
+_ENGINE_MODEL_SPEC_BUILDERS = MappingProxyType(
+    {
+        "rate_style_swaption": _swaption_engine_model_spec,
+    }
+)
+
+
 def _engine_model_spec_for_request(
     request: PlatformRequest,
     *,
@@ -1514,7 +1534,12 @@ def _engine_model_spec_for_request(
         return None
     if semantic_contract is None:
         return None
-    return _swaption_engine_model_spec(
+    builder = _ENGINE_MODEL_SPEC_BUILDERS.get(
+        str(getattr(semantic_contract, "semantic_id", "") or "").strip()
+    )
+    if builder is None:
+        return None
+    return builder(
         semantic_contract,
         preferred_method=preferred_method,
     )
