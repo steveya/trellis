@@ -857,6 +857,8 @@ def _build_transform_pricing_ir(
         return None
 
     control_program = _build_control_program(product)
+    if not _transform_supports_control_program(control_program):
+        return None
     controller_role = str(control_program.controller_role or "holder").strip() or "holder"
 
     return TransformPricingIR(
@@ -883,6 +885,15 @@ def _build_transform_pricing_ir(
         market_mapping=_transform_market_mapping_for_product(product, characteristic_spec),
         compatibility_wrapper="",
     )
+
+
+def _transform_supports_control_program(control_program: ControlProgramIR) -> bool:
+    """Return whether the bounded transform lane can safely lower one control program."""
+    control_style = str(control_program.control_style or "identity").strip().lower()
+    controller_role = str(control_program.controller_role or "none").strip().lower()
+    if control_style not in {"identity", "holder_max"}:
+        return False
+    return controller_role in {"", "none", "holder"}
 
 
 def _transform_state_spec_for_product(product) -> TransformStateSpec:

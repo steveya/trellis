@@ -234,8 +234,9 @@ def test_vanilla_option_monte_carlo_compiles_to_terminal_only_event_aware_family
 def test_vanilla_option_transform_compiles_to_bounded_transform_family_ir():
     from dataclasses import replace
 
+    from trellis.agent.family_lowering_ir import build_family_lowering_ir
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
-    from trellis.agent.semantic_contracts import make_vanilla_option_contract
+    from trellis.agent.semantic_contracts import ControllerProtocol, make_vanilla_option_contract
 
     contract = make_vanilla_option_contract(
         description="EUR call on AAPL, K=150, T=1y",
@@ -278,6 +279,27 @@ def test_vanilla_option_transform_compiles_to_bounded_transform_family_ir():
     assert family_ir.market_mapping == "single_state_diffusion_transform_inputs"
     assert family_ir.timeline_roles == blueprint.dsl_lowering.normalized_expr.signature.timeline_roles
     assert family_ir.required_input_ids == blueprint.required_market_data
+
+    unsupported_contract = replace(
+        transform_contract,
+        product=replace(
+            transform_contract.product,
+            controller_protocol=ControllerProtocol(
+                controller_style="issuer_min",
+                controller_role="issuer",
+                decision_phase="decision",
+                schedule_role="decision_dates",
+            ),
+        ),
+    )
+    unsupported_family_ir = build_family_lowering_ir(
+        unsupported_contract,
+        route_id="transform_fft",
+        route_family="fft_pricing",
+        product_ir=blueprint.product_ir,
+    )
+
+    assert unsupported_family_ir is None
 
 
 def test_callable_bond_compiles_to_exercise_lattice_family_ir():

@@ -568,7 +568,7 @@ def test_deterministic_exact_binding_module_materializes_black_scholes_comparato
     assert "from trellis.core.date_utils import year_fraction" in generated.code
     assert "year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)" in generated.code
     assert "market_state.discount.discount(T)" in generated.code
-    assert "market_state.vol_surface.black_vol(max(T, 1e-6), spec.strike)" in generated.code
+    assert "market_state.vol_surface.black_vol(max(T, 1e-6), strike)" in generated.code
     assert "terminal_vanilla_from_basis(" not in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 

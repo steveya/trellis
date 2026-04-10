@@ -2836,7 +2836,7 @@ def _deterministic_exact_binding_evaluate_body(
                 intrinsic = max(spot - strike, 0.0) if option_type == "call" else max(strike - spot, 0.0)
                 return float(spec.notional) * intrinsic
             df = float(market_state.discount.discount(T))
-            sigma = float(market_state.vol_surface.black_vol(max(T, 1e-6), spec.strike))
+            sigma = float(market_state.vol_surface.black_vol(max(T, 1e-6), strike))
             forward = spot / max(df, 1e-12)
             if option_type == "call":
                 undiscounted = black76_call(forward, strike, sigma, T)
