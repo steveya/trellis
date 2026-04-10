@@ -16,7 +16,8 @@ Current status:
 - `QUA-458` is complete.
 - `QUA-710` is complete.
 - `QUA-428` is complete.
-- The next actionable ticket in queue order is `QUA-430`.
+- `QUA-430` is complete.
+- The next actionable ticket in queue order is `QUA-700`.
 
 ## Operating Rules
 
@@ -138,17 +139,16 @@ If a ticket has become stale because other landed work already satisfies it:
 
 ## Current Start Point
 
-Execution started with `QUA-458`, continued through `QUA-710` and `QUA-428`,
-and now moves next to `QUA-430`.
+Execution started with `QUA-458`, continued through `QUA-710`, `QUA-428`, and
+`QUA-430`, and now moves next to `QUA-700`.
 
 Plain-English goal:
 
-- codify the local PR/canary/release gate entrypoints on top of the now-live
-  replay, telemetry, and stale-test hygiene surfaces
+- close the canary umbrella now that replay, telemetry, hygiene, and gate
+  entrypoints are all landed
 
 Primary files and surfaces:
 
-- the current local/CI test entrypoints
-- canary trigger logic and any path-based helper needed to keep canary runs targeted
-- the gate-facing docs and wrapper commands that turn the current pyramid into explicit operator workflows
-- the closeout path that leaves `QUA-700` with only final umbrella maintenance work
+- `docs/plans/canary-suite-stabilization.md`
+- the current canary rerun evidence and gate command docs
+- any final docs or Linear cleanup needed to turn `QUA-700` from backlog into completed umbrella maintenance

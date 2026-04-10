@@ -60,6 +60,8 @@ the miniforge interpreter.
 - Cross-validation: `tests/test_crossval/test_xv_{topic}.py`
 - Verification: `tests/test_verification/test_{topic}.py`
 - Use `pytest.importorskip("QuantLib")` for optional external library tests
+- Use `make gate-pr` for PR-ready validation, `make gate-canary` for focused live canaries, and `make gate-release` for replay/drift/freshness release checks
+- Use `/Users/steveyang/miniforge3/bin/python3 scripts/should_run_canary.py` before paying for the live canary subset
 - Run `/Users/steveyang/miniforge3/bin/python3 scripts/test_hygiene.py` when touching skip/xfail/quarantine markers
 - Update `LIMITATIONS.md` when resolving or discovering limitations
 

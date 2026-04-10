@@ -190,18 +190,19 @@ Status mirror last synced: `2026-04-10`
 | `QUA-458` | Full-task canary replay with diagnosis parity | Done |
 | `QUA-710` | Trustworthy canary telemetry and historical baselines | Done |
 | `QUA-428` | Stale-test triage process and tooling | Done |
-| `QUA-430` | Local gate and release-gate configuration | Backlog |
+| `QUA-430` | Local gate and release-gate configuration | Done |
 
 Note:
 
-- `QUA-700` now remains open only for gate closeout (`QUA-430`). The direct
-  canary recovery tranche, the full-task replay tranche (`QUA-458`), the
-  trustworthy telemetry tranche (`QUA-710`), and the stale-test hygiene slice
-  (`QUA-428`) are complete after the `2026-04-09` full curated rerun, the
-  `2026-04-10` cassette-backed replay landing, the `2026-04-10` live `T13`
-  telemetry rerun that now persists aggregate canary batch records under
-  `task_runs/canary_batches/`, and the `2026-04-10` local hygiene tool /
-  collection guard landing.
+- `QUA-700` now remains open only for umbrella closeout. The direct canary
+  recovery tranche, the full-task replay tranche (`QUA-458`), the trustworthy
+  telemetry tranche (`QUA-710`), the stale-test hygiene slice (`QUA-428`), and
+  the explicit local gate entrypoints (`QUA-430`) are complete after the
+  `2026-04-09` full curated rerun, the `2026-04-10` cassette-backed replay
+  landing, the `2026-04-10` live `T13` telemetry rerun that now persists
+  aggregate canary batch records under `task_runs/canary_batches/`, the
+  `2026-04-10` local hygiene tool / collection guard landing, and the
+  `2026-04-10` `gate-pr` / `gate-canary` / `gate-release` command landing.
 - `T01` is now green through the short-rate comparison-regime workstream in
   `docs/plans/short-rate-comparison-regime-and-claim-helpers.md` under
   `QUA-746` through `QUA-751`. The recovery path materializes task-level
