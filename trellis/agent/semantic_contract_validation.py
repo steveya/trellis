@@ -81,6 +81,7 @@ _AUTOMATIC_ACTION_HINTS = (
     "knock",
     "barrier",
 )
+_INSTRUMENT_TYPES_WITH_IMPLIED_SHAPE = frozenset({"cap", "floor"})
 
 
 @dataclass(frozen=True)
@@ -342,6 +343,8 @@ def classify_semantic_gap(
     request_text = _combined_request_text(description, instrument_type, term_sheet)
     normalized_text = _normalize_text(request_text)
     cues = _semantic_cues(normalized_text)
+    instrument_implies_shape = _instrument_type_implies_shape(instrument_type)
+    has_any_semantic_cue = any(cues.values()) or instrument_implies_shape
     concept_resolution = resolve_semantic_concept(
         description,
         instrument_type=instrument_type,
@@ -378,10 +381,10 @@ def classify_semantic_gap(
             missing_market_inputs.append("correlation_matrix")
     if cues["basket"] and cues["path"]:
         missing_route_helpers.append("correlated_basket_route_helper")
-    if instrument_type and not cues["shape"]:
+    if instrument_type and not (cues["shape"] or instrument_implies_shape):
         missing_knowledge_artifacts.append("instrument_specific_lesson")
 
-    if not any(cues.values()):
+    if not has_any_semantic_cue:
         missing_contract_fields.append("semantic_product_shape")
         missing_knowledge_artifacts.append("cookbook_entry")
 
@@ -403,7 +406,7 @@ def classify_semantic_gap(
     if missing_knowledge_artifacts:
         gap_types.append("missing_knowledge_lesson")
 
-    requires_clarification = not any(cues.values())
+    requires_clarification = not has_any_semantic_cue
     # Ambiguous concept resolution should also require clarification — even
     # when cues fire, two concepts scoring equally means the request is
     # underspecified (e.g., "credit derivative" matches both CDS and NTD).
@@ -719,6 +722,12 @@ def _semantic_cues(normalized_text: str) -> dict[str, bool]:
 def _contains_any(text: str, needles: tuple[str, ...]) -> bool:
     """Return whether any keyword or phrase appears in the normalized text."""
     return any(needle in text for needle in needles)
+
+
+def _instrument_type_implies_shape(instrument_type: str | None) -> bool:
+    """Return whether the typed instrument family already fixes the product shape."""
+    normalized = _normalize_text(str(instrument_type or ""))
+    return normalized in _INSTRUMENT_TYPES_WITH_IMPLIED_SHAPE
 
 
 def _semantic_extension_trace_key(report: SemanticGapReport, *, decision: str) -> str:

@@ -677,6 +677,23 @@ def test_novel_request_falls_back_with_semantic_gap_metadata():
     assert "semantic_gap" in compiled.request.metadata
 
 
+def test_compile_build_request_does_not_require_clarification_for_rate_cap_family():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "Build a pricer for: Cap/floor: Black caplet stack vs MC rate simulation",
+        instrument_type="cap",
+    )
+
+    assert compiled.execution_plan.reason == "free_form_build_request"
+    assert compiled.execution_plan.route_method == "analytical"
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.instrument == "cap"
+    assert compiled.request.metadata["semantic_gap"]["requires_clarification"] is False
+    assert compiled.request.metadata["semantic_gap"]["missing_contract_fields"] == []
+    assert compiled.request.metadata["semantic_extension"]["decision"] != "clarification"
+
+
 def test_novel_request_persists_semantic_extension_trace(monkeypatch, tmp_path):
     from trellis.agent.platform_requests import compile_build_request
     import trellis.agent.knowledge.promotion as promotion_mod
