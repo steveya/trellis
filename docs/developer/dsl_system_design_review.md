@@ -98,6 +98,7 @@ That shared program is emitted once from product semantics and then projected
 into the bounded numerical families. The current family-specific layer is:
 
 - `AnalyticalBlack76IR`
+- `TransformPricingIR`
 - `EventAwarePDEIR`
 - `VanillaEquityPDEIR` as the current compatibility wrapper for the vanilla
   theta-method PDE route
@@ -106,6 +107,19 @@ into the bounded numerical families. The current family-specific layer is:
 
 These lower onto existing checked-in helpers and kernels. The pricing math
 remains in `trellis/models/`.
+
+For transform routes, the dedicated lowered contract now carries:
+
+- one terminal-state transform state spec
+- one characteristic-function family and model family
+- explicit quote semantics and strike semantics
+- a transform-lane control contract (`identity`) plus the upstream semantic
+  control provenance
+- backend capability split (`helper_backed` versus `raw_kernel_only`)
+
+That removes the earlier ambiguity where transform admissibility could fall
+back to raw option-family tags and mistakenly inherit exercise/state facts that
+are irrelevant to terminal-only transform pricing.
 
 For PDE routes, the typed lowering surface now includes explicit contracts for:
 

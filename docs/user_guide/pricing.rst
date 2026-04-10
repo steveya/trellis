@@ -255,6 +255,17 @@ as Heston stochastic volatility, Trellis keeps the request on the raw FFT/COS
 kernel surface instead of pretending the vanilla helper is a universal
 transform authority.
 
+Under the hood, that route family now lowers onto a native
+``TransformPricingIR`` contract before admissibility. Operators will therefore
+see transform-specific facts in the trace summary, such as:
+
+- the characteristic-function family
+- the transform backend capability
+- the terminal payoff kind
+- quote and strike semantics
+
+rather than a fallback view of the broader upstream option family.
+
 For the migrated PDE routes, the same trace boundary now also exposes a compact
 `family_ir_summary` alongside the raw lowering metadata. That summary is the
 operator-facing view of the PDE contract: state variable, operator family,

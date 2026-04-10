@@ -251,6 +251,7 @@ Shipped family IRs:
 - ``AnalyticalBlack76IR``
 - ``EventAwareMonteCarloIR`` as the new bounded single-state Monte Carlo family
   surface
+- ``TransformPricingIR`` as the bounded terminal-only transform family surface
 - ``EventAwarePDEIR``
 - ``VanillaEquityPDEIR`` as the current compatibility wrapper for the vanilla
   theta-method PDE route
@@ -258,6 +259,23 @@ Shipped family IRs:
 - ``CorrelatedBasketMonteCarloIR``
 - ``CreditDefaultSwapIR``
 - ``NthToDefaultIR``
+
+For transform routes, the compiler now also carries an explicit bounded family
+surface on ``TransformPricingIR``. That surface keeps transform admissibility
+restricted to:
+
+- terminal-only payoff semantics
+- numerical-lane ``identity`` control
+- one typed characteristic-function family such as ``gbm_log_spot`` or
+  ``heston_log_spot``
+- explicit quote and strike semantics
+- a backend capability split between helper-backed diffusion execution and
+  raw-kernel stochastic-volatility execution
+
+That means the transform route no longer admits on the full upstream
+``vanilla_option`` contract. Admissibility reads the lowered transform family
+contract first, so upstream semantic tags such as ``holder_max`` or
+``recombining_safe`` stop leaking into transform-only route checks.
 
 For PDE routes, the compiler now carries typed sub-specifications inside
 ``EventAwarePDEIR``:

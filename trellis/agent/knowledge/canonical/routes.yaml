@@ -988,13 +988,14 @@ routes:
     match:
       methods: [fft_pricing]
     admissibility:
-      control_styles: [identity, holder_max]
+      control_styles: [identity]
       event_support: none
       phase_sensitivity: default_phase_order_only
       multicurrency_support: single_currency_only
       supported_outputs: [price, scenario_pnl]
       supports_sensitivity_outputs: true
-      supported_state_tags: [terminal_markov, recombining_safe]
+      supported_state_tags: [terminal_markov]
+      supported_characteristic_families: [gbm_log_spot, heston_log_spot]
       supports_calibration: false
     conditional_primitives:
       - when:

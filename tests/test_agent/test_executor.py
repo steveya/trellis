@@ -527,6 +527,123 @@ def test_deterministic_exact_binding_module_materializes_vanilla_equity_transfor
     assert EVALUATE_SENTINEL not in generated.code
 
 
+def test_deterministic_exact_binding_module_materializes_black_scholes_comparator():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.black.black76_call",
+            "trellis.models.black.black76_put",
+            "trellis.models.black.black76_asset_or_nothing_call",
+            "trellis.models.black.black76_asset_or_nothing_put",
+            "trellis.models.black.black76_cash_or_nothing_call",
+            "trellis.models.black.black76_cash_or_nothing_put",
+            "trellis.models.analytical.terminal_vanilla_from_basis",
+            "trellis.core.date_utils.year_fraction",
+        ),
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "European option analytical comparator",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="black_scholes",
+    )
+
+    assert generated is not None
+    assert "black76_call(forward, strike, sigma, T)" in generated.code
+    assert "black76_put(forward, strike, sigma, T)" in generated.code
+    assert "from trellis.core.date_utils import year_fraction" in generated.code
+    assert "year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)" in generated.code
+    assert "market_state.discount.discount(T)" in generated.code
+    assert "market_state.vol_surface.black_vol(max(T, 1e-6), strike)" in generated.code
+    assert "terminal_vanilla_from_basis(" not in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_black_scholes_comparator_satisfies_required_primitive_validation():
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+    from trellis.agent.semantic_validation import validate_semantics
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.black.black76_call",
+            "trellis.models.black.black76_put",
+            "trellis.models.black.black76_asset_or_nothing_call",
+            "trellis.models.black.black76_asset_or_nothing_put",
+            "trellis.models.black.black76_cash_or_nothing_call",
+            "trellis.models.black.black76_cash_or_nothing_put",
+        ),
+        primitive_plan=SimpleNamespace(
+            primitives=(
+                SimpleNamespace(
+                    required=True,
+                    role="pricing_kernel",
+                    module="trellis.models.black",
+                    symbol="black76_call",
+                    excluded=False,
+                ),
+                SimpleNamespace(
+                    required=True,
+                    role="pricing_kernel",
+                    module="trellis.models.black",
+                    symbol="black76_put",
+                    excluded=False,
+                ),
+                SimpleNamespace(
+                    required=False,
+                    role="assembly_helper",
+                    module="trellis.models.analytical",
+                    symbol="terminal_vanilla_from_basis",
+                    excluded=False,
+                ),
+                SimpleNamespace(
+                    required=True,
+                    role="time_measure",
+                    module="trellis.core.date_utils",
+                    symbol="year_fraction",
+                    excluded=False,
+                ),
+            ),
+            blockers=(),
+        ),
+        method="analytical",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "European option analytical comparator",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="black_scholes",
+    )
+
+    assert generated is not None
+    report = validate_semantics(generated.code, generation_plan=generation_plan)
+
+    assert report.ok, report.errors
+
+
 @pytest.mark.parametrize(
     ("comparison_target", "expected_fragment"),
     [

@@ -1108,8 +1108,12 @@ class TestFallbackRoutes:
             "project_min",
         )
         assert transform is not None
-        assert transform.admissibility.supported_control_styles == ("identity", "holder_max")
-        assert transform.admissibility.supported_state_tags == ("terminal_markov", "recombining_safe")
+        assert transform.admissibility.supported_control_styles == ("identity",)
+        assert transform.admissibility.supported_state_tags == ("terminal_markov",)
+        assert transform.admissibility.supported_characteristic_families == (
+            "gbm_log_spot",
+            "heston_log_spot",
+        )
 
     def test_transform_route_admissibility_accepts_european_holder_control_surface(self, registry):
         from trellis.agent.semantic_contract_compiler import compile_semantic_contract
@@ -1129,6 +1133,34 @@ class TestFallbackRoutes:
         decision = evaluate_route_admissibility(spec, semantic_blueprint=blueprint)
 
         assert decision.ok
+
+    def test_transform_route_admissibility_requires_lowered_transform_family_contract(self, registry):
+        from dataclasses import replace
+
+        from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+        from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+        spec = find_route_by_id("transform_fft", registry)
+        assert spec is not None
+
+        contract = make_vanilla_option_contract(
+            description="European call on SPX priced with transforms",
+            underliers=("SPX",),
+            observation_schedule=("2026-06-20",),
+            preferred_method="fft_pricing",
+        )
+        blueprint = compile_semantic_contract(contract, preferred_method="fft_pricing")
+        lowered_decision = evaluate_route_admissibility(spec, semantic_blueprint=blueprint)
+        assert lowered_decision.ok
+
+        raw_blueprint = replace(
+            blueprint,
+            dsl_lowering=replace(blueprint.dsl_lowering, family_ir=None),
+        )
+        raw_decision = evaluate_route_admissibility(spec, semantic_blueprint=raw_blueprint)
+
+        assert not raw_decision.ok
+        assert "unsupported_control_style:holder_max" in raw_decision.failures
 
     def test_vanilla_pde_admissibility_rejects_wrong_operator_family(self, registry):
         from dataclasses import replace

@@ -116,6 +116,52 @@ class AnalyticalBlack76IR(BaseFamilyLoweringIR):
 
 
 @dataclass(frozen=True)
+class TransformStateSpec:
+    """Typed state-space contract for one bounded transform-pricing problem."""
+
+    state_variable: str = ""
+    dimension: int = 1
+    state_tags: tuple[str, ...] = ()
+    coordinate_chart: str = "spot"
+
+
+@dataclass(frozen=True)
+class TransformCharacteristicSpec:
+    """Typed characteristic-function contract for one transform pricing lane."""
+
+    model_family: str = ""
+    characteristic_family: str = ""
+    supported_methods: tuple[str, ...] = ("fft", "cos")
+    backend_capability: str = "raw_kernel_only"
+
+
+@dataclass(frozen=True)
+class TransformControlSpec:
+    """Typed control contract for one bounded transform pricing lane."""
+
+    control_style: str = "identity"
+    controller_role: str = "holder"
+
+
+@dataclass(frozen=True)
+class TransformPricingIR(BaseFamilyLoweringIR):
+    """Typed lowering payload for bounded transform-pricing routes."""
+
+    state_spec: TransformStateSpec = field(default_factory=TransformStateSpec)
+    characteristic_spec: TransformCharacteristicSpec = field(
+        default_factory=TransformCharacteristicSpec
+    )
+    control_program: ControlProgramIR = field(default_factory=ControlProgramIR)
+    control_spec: TransformControlSpec = field(default_factory=TransformControlSpec)
+    terminal_payoff_kind: str = ""
+    strike_semantics: str = ""
+    quote_semantics: str = ""
+    helper_symbol: str = ""
+    market_mapping: str = ""
+    compatibility_wrapper: str = ""
+
+
+@dataclass(frozen=True)
 class MCStateSpec:
     """Typed state-space contract for one event-aware Monte Carlo problem."""
 
@@ -486,6 +532,7 @@ class NthToDefaultIR(BaseFamilyLoweringIR):
 
 FamilyLoweringIR = (
     AnalyticalBlack76IR
+    | TransformPricingIR
     | EventAwareMonteCarloIR
     | EventAwarePDEIR
     | VanillaEquityPDEIR
@@ -521,6 +568,13 @@ def build_family_lowering_ir(
             return AnalyticalBlack76IR(
                 option_type=option_type,
                 kernel_symbol="black76_put" if option_type == "put" else "black76_call",
+                **common_kwargs,
+            )
+
+        if route_id == "transform_fft":
+            return _build_transform_pricing_ir(
+                contract,
+                product_ir=product_ir,
                 **common_kwargs,
             )
 
@@ -779,6 +833,151 @@ def _build_event_program(
             )
         )
     return EventProgramIR(timeline=tuple(timeline))
+
+
+def _build_transform_pricing_ir(
+    contract,
+    *,
+    product_ir,
+    route_id: str,
+    route_family: str,
+    product_instrument: str,
+    payoff_family: str,
+    required_input_ids: tuple[str, ...],
+    market_data_requirements: frozenset[str],
+    timeline_roles: frozenset[TimelineRole],
+    requested_outputs: tuple[str, ...],
+    reporting_currency: str,
+) -> TransformPricingIR | None:
+    """Build a typed transform family IR for bounded single-state terminal claims."""
+    product = contract.product
+    state_spec = _transform_state_spec_for_product(product)
+    characteristic_spec = _transform_characteristic_spec_for_product(product)
+    if not state_spec.state_variable or not characteristic_spec.characteristic_family:
+        return None
+
+    control_program = _build_control_program(product)
+    if not _transform_supports_control_program(control_program):
+        return None
+    controller_role = str(control_program.controller_role or "holder").strip() or "holder"
+
+    return TransformPricingIR(
+        route_id=route_id,
+        route_family=route_family,
+        product_instrument=product_instrument,
+        payoff_family=payoff_family,
+        required_input_ids=required_input_ids,
+        market_data_requirements=market_data_requirements,
+        timeline_roles=timeline_roles,
+        requested_outputs=requested_outputs,
+        reporting_currency=reporting_currency,
+        state_spec=state_spec,
+        characteristic_spec=characteristic_spec,
+        control_program=control_program,
+        control_spec=TransformControlSpec(
+            control_style="identity",
+            controller_role=controller_role,
+        ),
+        terminal_payoff_kind=_transform_terminal_payoff_kind_for_product(product),
+        strike_semantics="vanilla_strike",
+        quote_semantics=_transform_quote_semantics_for_product(characteristic_spec),
+        helper_symbol=_transform_helper_symbol_for_product(product, characteristic_spec),
+        market_mapping=_transform_market_mapping_for_product(product, characteristic_spec),
+        compatibility_wrapper="",
+    )
+
+
+def _transform_supports_control_program(control_program: ControlProgramIR) -> bool:
+    """Return whether the bounded transform lane can safely lower one control program."""
+    control_style = str(control_program.control_style or "identity").strip().lower()
+    controller_role = str(control_program.controller_role or "none").strip().lower()
+    if control_style not in {"identity", "holder_max"}:
+        return False
+    return controller_role in {"", "none", "holder"}
+
+
+def _transform_state_spec_for_product(product) -> TransformStateSpec:
+    """Infer the bounded transform state contract from semantic product metadata."""
+    model_family = str(getattr(product, "model_family", "") or "").strip().lower()
+    if model_family in {"equity", "equity_diffusion", "stochastic_volatility"}:
+        return TransformStateSpec(
+            state_variable="spot",
+            dimension=1,
+            state_tags=("terminal_markov",),
+            coordinate_chart="spot",
+        )
+    return TransformStateSpec()
+
+
+def _transform_characteristic_spec_for_product(
+    product,
+) -> TransformCharacteristicSpec:
+    """Infer the bounded transform characteristic-function contract for one product."""
+    model_family = str(getattr(product, "model_family", "") or "").strip().lower()
+    if model_family in {"equity", "equity_diffusion"}:
+        return TransformCharacteristicSpec(
+            model_family="equity_diffusion",
+            characteristic_family="gbm_log_spot",
+            supported_methods=("fft", "cos"),
+            backend_capability="helper_backed",
+        )
+    if model_family == "stochastic_volatility":
+        return TransformCharacteristicSpec(
+            model_family="stochastic_volatility",
+            characteristic_family="heston_log_spot",
+            supported_methods=("fft", "cos"),
+            backend_capability="raw_kernel_only",
+        )
+    return TransformCharacteristicSpec()
+
+
+def _transform_terminal_payoff_kind_for_product(product) -> str:
+    """Return the bounded terminal payoff kind for one transform family IR."""
+    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    if payoff_family == "vanilla_option":
+        return "vanilla_terminal_payoff"
+    return "compiled_terminal_payoff"
+
+
+def _transform_quote_semantics_for_product(
+    characteristic_spec: TransformCharacteristicSpec,
+) -> str:
+    """Return a readable quote-semantics label for one transform family IR."""
+    if characteristic_spec.model_family == "equity_diffusion":
+        return "equity_black_vol_surface"
+    if characteristic_spec.model_family == "stochastic_volatility":
+        return "stochastic_vol_model_parameters"
+    return "compiled_transform_quote_inputs"
+
+
+def _transform_helper_symbol_for_product(
+    product,
+    characteristic_spec: TransformCharacteristicSpec,
+) -> str:
+    """Return the bounded helper symbol for transform routes when one exists."""
+    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    if (
+        payoff_family == "vanilla_option"
+        and characteristic_spec.model_family == "equity_diffusion"
+    ):
+        return "price_vanilla_equity_option_transform"
+    return ""
+
+
+def _transform_market_mapping_for_product(
+    product,
+    characteristic_spec: TransformCharacteristicSpec,
+) -> str:
+    """Return a readable market-binding label for one transform family IR."""
+    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    if (
+        payoff_family == "vanilla_option"
+        and characteristic_spec.model_family == "equity_diffusion"
+    ):
+        return "single_state_diffusion_transform_inputs"
+    if characteristic_spec.model_family == "stochastic_volatility":
+        return "stochastic_vol_transform_inputs"
+    return "compiled_transform_inputs"
 
 
 def _build_event_aware_monte_carlo_ir(
