@@ -31,6 +31,7 @@ os.environ.setdefault("LLM_PROVIDER", "openai")
 import yaml
 
 from trellis.agent.config import load_env
+from canary_common import CANARY_FILE, FULL_TASK_CASSETTES_DIR, merge_canary_task_payload
 
 load_env()
 
@@ -40,9 +41,6 @@ from trellis.agent.golden_traces import (
     format_drift_report,
     update_golden_from_results,
 )
-
-CANARY_FILE = ROOT / "CANARY_TASKS.yaml"
-FULL_TASK_CASSETTES_DIR = ROOT / "cassettes" / "full_task"
 
 # Engine families considered "core" for the --subset=core option
 CORE_FAMILIES = {"lattice", "monte_carlo", "pde", "credit"}
@@ -84,23 +82,6 @@ def filter_canaries(
     if subset == "core":
         return [c for c in canaries if c.get("engine_family") in CORE_FAMILIES]
     return canaries
-
-
-def merge_canary_task_payload(task: dict, canary: dict) -> dict:
-    """Overlay curated canary fields onto the live task registry payload."""
-    merged = dict(task)
-    for key in (
-        "description",
-        "market",
-        "market_assertions",
-        "construct",
-        "cross_validate",
-        "new_component",
-    ):
-        value = canary.get(key)
-        if value is not None:
-            merged[key] = value
-    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -389,7 +370,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--cassette-dir",
-        help="Directory containing canary cassette YAML files (default: cassettes/)",
+        help="Directory containing canary cassette YAML files (default: cassettes/full_task/)",
     )
     parser.add_argument(
         "--cassette-stale-policy",

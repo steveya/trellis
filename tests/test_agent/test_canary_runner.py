@@ -6,7 +6,6 @@ All tests use mocked task execution — no LLM calls, no tokens spent.
 from __future__ import annotations
 
 from pathlib import Path
-import json
 from datetime import datetime, timezone
 
 import pytest

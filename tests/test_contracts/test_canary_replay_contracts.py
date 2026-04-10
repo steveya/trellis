@@ -32,7 +32,7 @@ def _full_task_replay_test(task_id: str):
         not full_task_cassette_available(task_id),
         reason=(
             f"Full-task cassette not recorded for {task_id}. "
-            f"Run: /Users/steveyang/miniforge3/bin/python3 scripts/record_cassettes.py --task {task_id}"
+            f"Run: PYTHONHASHSEED=0 {sys.executable} scripts/record_cassettes.py --task {task_id}"
         ),
     )
     class _ReplayTest:

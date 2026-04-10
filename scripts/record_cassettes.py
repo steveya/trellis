@@ -6,7 +6,7 @@ Usage:
     python scripts/record_cassettes.py --dry-run   # show what would be recorded
 
 This is a one-time token spend (~$2-3 for all canary tasks).
-Cassettes are saved to cassettes/ and should be committed to git.
+Cassettes are saved to cassettes/full_task/ and should be committed to git.
 
 See QUA-458 for the full-task replay design context.
 """
@@ -27,35 +27,17 @@ os.environ.setdefault("LLM_PROVIDER", "openai")
 
 import yaml
 
+from canary_common import CANARY_FILE, FULL_TASK_CASSETTES_DIR, merge_canary_task_payload
 from trellis.agent.config import load_env
 
 load_env()
 
-CANARY_FILE = ROOT / "CANARY_TASKS.yaml"
-FULL_TASK_CASSETTES_DIR = ROOT / "cassettes" / "full_task"
 CANARY_MAX_RETRIES = 3
 
 
 def load_canary_set() -> list[dict]:
     raw = yaml.safe_load(CANARY_FILE.read_text(encoding="utf-8"))
     return raw.get("canary_set", [])
-
-
-def merge_canary_task_payload(task: dict, canary: dict) -> dict:
-    """Overlay curated canary fields onto the live task registry payload."""
-    merged = dict(task)
-    for key in (
-        "description",
-        "market",
-        "market_assertions",
-        "construct",
-        "cross_validate",
-        "new_component",
-    ):
-        value = canary.get(key)
-        if value is not None:
-            merged[key] = value
-    return merged
 
 
 def record_cassette_for_task(

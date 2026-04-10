@@ -50,14 +50,17 @@ The same runner now also has a full-task replay mode for diagnosis-heavy
 canaries:
 
 - record with
-  ``PYTHONHASHSEED=0 /Users/steveyang/miniforge3/bin/python3 scripts/record_cassettes.py --task T13``
+  ``PYTHONHASHSEED=0 python3 scripts/record_cassettes.py --task T13``
 - replay with
-  ``PYTHONHASHSEED=0 /Users/steveyang/miniforge3/bin/python3 scripts/run_canary.py --task T13 --replay``
+  ``PYTHONHASHSEED=0 python3 scripts/run_canary.py --task T13 --replay``
 - full-task canary cassettes live under ``cassettes/full_task/``
 
 The hash seed matters because the replay contract hashes the full prompt text.
 Use ``PYTHONHASHSEED=0`` for both recording and replay so prompt surfaces that
 still depend on iteration order stay stable across processes.
+Run these commands with the repo-standard miniforge interpreter; if your shell
+``python3`` resolves elsewhere, invoke the configured interpreter path from
+``AGENTS.md`` directly.
 
 Unlike the older tier-2 pipeline cassettes, the full-task canary path replays
 the real ``run_task(...)`` surface. That means the replay still exercises the
