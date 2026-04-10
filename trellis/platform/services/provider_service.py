@@ -65,7 +65,9 @@ class ProviderService:
             )
 
         metadata = dict(record.metadata)
-        if bindings.market_data != record.provider_bindings.market_data:
+        if self._market_data_provider_ids(bindings) != self._market_data_provider_ids(
+            record.provider_bindings
+        ):
             metadata.pop("active_market_snapshot_id", None)
             metadata.pop("active_market_snapshot_provider_id", None)
 
@@ -114,13 +116,15 @@ class ProviderService:
 
     @staticmethod
     def _uses_mock_market_data(bindings: ProviderBindings) -> bool:
-        binding_set = bindings.market_data
-        provider_ids = [
-            binding.provider_id
-            for binding in (binding_set.primary, binding_set.fallback)
-            if binding is not None and binding.provider_id
-        ]
+        provider_ids = [provider_id for provider_id in ProviderService._market_data_provider_ids(bindings) if provider_id]
         return any(".mock" in provider_id or provider_id.endswith("_mock") for provider_id in provider_ids)
+
+    @staticmethod
+    def _market_data_provider_ids(bindings: ProviderBindings) -> tuple[str, str]:
+        binding_set = bindings.market_data
+        primary = "" if binding_set.primary is None else str(binding_set.primary.provider_id).strip()
+        fallback = "" if binding_set.fallback is None else str(binding_set.fallback.provider_id).strip()
+        return primary, fallback
 
     @staticmethod
     def _bound_slots(bindings: ProviderBindings) -> dict[str, list[str]]:
