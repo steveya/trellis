@@ -70,7 +70,7 @@ the miniforge interpreter.
 | `trellis/models/` | Library Developer | All pricing engines and processes |
 | `trellis/curves/` | Library Developer | Yield, forward, credit curves |
 | `trellis/instruments/` | Library Developer | Reference implementations |
-| `trellis/instruments/_agent/` | Task Runner | Auto-generated, can be deleted |
+| `trellis/instruments/_agent/` | Task Runner | Generated adapters; track admitted modules in git, but treat them as regenerable source artifacts |
 | `trellis/agent/knowledge/` | Knowledge Agent | Knowledge system |
 | `trellis/agent/knowledge/canonical/` | Knowledge Agent | Feature taxonomy, cookbooks, etc. |
 | `trellis/agent/knowledge/lessons/` | Knowledge Agent | Auto-maintained lessons |
