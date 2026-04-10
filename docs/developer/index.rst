@@ -21,6 +21,7 @@ Core Developer Topics
    audit_and_observability
    task_and_eval_loops
    task_diagnostics
+   test_hygiene
    learning_mechanism
    legacy_test_audit
    knowledge_skill_layer

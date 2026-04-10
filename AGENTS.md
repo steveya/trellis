@@ -60,6 +60,7 @@ the miniforge interpreter.
 - Cross-validation: `tests/test_crossval/test_xv_{topic}.py`
 - Verification: `tests/test_verification/test_{topic}.py`
 - Use `pytest.importorskip("QuantLib")` for optional external library tests
+- Run `/Users/steveyang/miniforge3/bin/python3 scripts/test_hygiene.py` when touching skip/xfail/quarantine markers
 - Update `LIMITATIONS.md` when resolving or discovering limitations
 
 ## Module Ownership
