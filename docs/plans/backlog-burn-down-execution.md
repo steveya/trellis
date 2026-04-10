@@ -17,7 +17,9 @@ Current status:
 - `QUA-710` is complete.
 - `QUA-428` is complete.
 - `QUA-430` is complete.
-- The next actionable ticket in queue order is `QUA-700`.
+- `QUA-700` is complete.
+- Wave 1 is complete.
+- The next actionable ticket in queue order is `QUA-543`.
 
 ## Operating Rules
 
@@ -139,16 +141,16 @@ If a ticket has become stale because other landed work already satisfies it:
 
 ## Current Start Point
 
-Execution started with `QUA-458`, continued through `QUA-710`, `QUA-428`, and
-`QUA-430`, and now moves next to `QUA-700`.
+Execution started with `QUA-458`, continued through `QUA-710`, `QUA-428`,
+`QUA-430`, and the `QUA-700` umbrella closeout, and now moves next to
+`QUA-543`.
 
 Plain-English goal:
 
-- close the canary umbrella now that replay, telemetry, hygiene, and gate
-  entrypoints are all landed
+- restore the remaining `E22` stress-path regression to a compare-ready state
 
 Primary files and surfaces:
 
-- `docs/plans/canary-suite-stabilization.md`
-- the current canary rerun evidence and gate command docs
-- any final docs or Linear cleanup needed to turn `QUA-700` from backlog into completed umbrella maintenance
+- the current `E22` stress-path implementation and comparison harness
+- the proving and stress-run evidence around the remaining compare-ready gap
+- any route or helper cleanup needed to make the stress tranche stable without reopening the completed canary wave
