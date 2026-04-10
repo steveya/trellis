@@ -591,6 +591,14 @@ def build_family_lowering_ir(
                 ),
                 **common_kwargs,
             )
+    if _is_rate_cap_floor_strip_contract(contract, product_ir) and route_id == "analytical_black76":
+        option_type = _option_type_for_contract(contract)
+        return AnalyticalBlack76IR(
+            option_type=option_type,
+            kernel_symbol="black76_put" if option_type == "put" else "black76_call",
+            market_mapping="discount_curve_forward_curve_black_vol_to_caplet_strip",
+            **common_kwargs,
+        )
     if route_id == "pde_theta_1d":
         return _build_event_aware_pde_ir(
             contract,
@@ -1133,6 +1141,8 @@ def _mc_market_mapping_for_product(product, process_spec: MCProcessSpec) -> str:
     payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
     if process_spec.process_family == "hull_white_1f" and payoff_family == "swaption":
         return "discount_curve_forward_curve_black_vol_to_short_rate_mc"
+    if process_spec.process_family == "hull_white_1f" and payoff_family == "rate_cap_floor_strip":
+        return "discount_curve_forward_curve_black_vol_to_rate_option_strip_mc"
     if process_spec.process_family == "local_vol_1d":
         return "equity_spot_discount_local_vol_to_mc"
     if process_spec.process_family == "gbm_1d":
@@ -1340,6 +1350,8 @@ def _mc_reducer_kinds_for_product(product) -> tuple[str, ...]:
     payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
     if payoff_family == "swaption":
         return ("discounted_swap_pv",)
+    if payoff_family == "rate_cap_floor_strip":
+        return ("period_option_cashflow_strip",)
     if payoff_family == "vanilla_option":
         return ("terminal_payoff",)
     return ()
@@ -1367,6 +1379,17 @@ def _mc_payoff_reducer_spec_for_product(
         return MCPayoffReducerSpec(
             reducer_kind="terminal_payoff",
             output_semantics="vanilla_option_payoff",
+        )
+    if payoff_family == "rate_cap_floor_strip":
+        dependencies = tuple(
+            event.event_name
+            for bucket in event_timeline
+            for event in bucket.events
+        )
+        return MCPayoffReducerSpec(
+            reducer_kind="period_option_cashflow_strip",
+            output_semantics="rate_cap_floor_strip_payoff",
+            event_dependencies=dependencies,
         )
     return MCPayoffReducerSpec(
         reducer_kind="compiled_schedule_payoff",
@@ -1946,6 +1969,20 @@ def _is_vanilla_european_contract(contract, product_ir) -> bool:
     )
 
 
+def _is_rate_cap_floor_strip_contract(contract, product_ir) -> bool:
+    """Whether the semantic contract fits the cap/floor strip family IR slice."""
+    instrument = str(getattr(product_ir, "instrument", ""))
+    payoff_family = str(getattr(product_ir, "payoff_family", ""))
+    product_instrument = str(getattr(contract.product, "instrument_class", ""))
+    product_payoff_family = str(getattr(contract.product, "payoff_family", ""))
+    return (
+        instrument in {"cap", "floor"}
+        and payoff_family == "rate_cap_floor_strip"
+        and product_instrument in {"cap", "floor"}
+        and product_payoff_family == "rate_cap_floor_strip"
+    )
+
+
 def _is_tranche_one_exercise_lattice_contract(contract, product_ir) -> bool:
     """Whether the semantic contract fits the tranche-1 exercise-lattice slice."""
     instrument = str(getattr(product_ir, "instrument", ""))
@@ -2063,6 +2100,10 @@ def _option_type_for_contract(contract) -> str:
         option_type = str(getattr(product, "option_type")).strip().lower()
         if option_type in {"call", "put"}:
             return option_type
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
+    option_type = str(term_fields.get("option_type", "")).strip().lower()
+    if option_type in {"call", "put"}:
+        return option_type
     description = str(getattr(contract, "description", "")).lower()
     if re.search(r"\bput\b", description):
         return "put"

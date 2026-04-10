@@ -404,6 +404,43 @@ def _build_semantic_family_registry() -> MappingProxyType:
             ),
         ),
         _family_definition(
+            family_key="rate_cap_floor_strip",
+            semantic_id="rate_cap_floor_strip",
+            candidate_methods=("analytical", "monte_carlo"),
+            default_preferred_method="analytical",
+            method_surfaces=(
+                _method_surface_definition(
+                    "analytical",
+                    target_modules=(
+                        "trellis.instruments.cap",
+                        "trellis.models.black",
+                    ),
+                    primitive_families=("analytical_black76",),
+                    adapter_obligations=(
+                        "resolve_forward_and_discount_curves",
+                        "build_caplet_or_floorlet_schedule",
+                        "map_period_option_strip_to_black_kernel",
+                    ),
+                    spec_schema_hints=("rate_cap_floor_strip",),
+                ),
+                _method_surface_definition(
+                    "monte_carlo",
+                    target_modules=(
+                        "trellis.instruments.cap",
+                        "trellis.models.monte_carlo.engine",
+                    ),
+                    primitive_families=("monte_carlo_paths",),
+                    adapter_obligations=(
+                        "resolve_forward_and_discount_curves",
+                        "build_caplet_or_floorlet_schedule",
+                        "compile_period_option_strip_into_mc_timeline",
+                        "reduce_period_option_strip_cashflows",
+                    ),
+                    spec_schema_hints=("rate_cap_floor_strip",),
+                ),
+            ),
+        ),
+        _family_definition(
             family_key="credit_default_swap",
             semantic_id="credit_default_swap",
             candidate_methods=("analytical", "monte_carlo"),
@@ -1402,6 +1439,45 @@ def _extract_primary_underlier(text: str, term_sheet) -> tuple[str, ...]:
             continue
         return (upper,)
     return ()
+
+
+def _extract_rate_cap_floor_schedule(
+    text: str,
+    term_sheet,
+    *,
+    instrument_class: str,
+) -> tuple[str, ...]:
+    """Extract a cap/floor strip schedule, falling back to a structural placeholder."""
+    schedule = _split_supported_dates(
+        text,
+        term_sheet,
+        parameter_keys=(
+            "observation_schedule",
+            "observation_dates",
+            "payment_schedule",
+            "payment_dates",
+            "fixing_schedule",
+            "fixing_dates",
+            "start_date",
+            "end_date",
+            "maturity_date",
+            "expiry_date",
+        ),
+    )
+    if schedule:
+        return schedule
+
+    tenor_match = re.search(r"\b(\d+)\s*([ym])\b", text, flags=re.IGNORECASE)
+    if tenor_match is not None:
+        tenor_value = tenor_match.group(1)
+        tenor_unit = tenor_match.group(2).upper()
+        return (f"{instrument_class}_tenor_{tenor_value}{tenor_unit}",)
+    return (f"{instrument_class}_schedule_placeholder",)
+
+
+def _rate_cap_floor_option_type(instrument_class: str) -> str:
+    """Return the coarse option type encoded by a cap/floor wrapper."""
+    return "put" if instrument_class == "floor" else "call"
 
 
 def make_vanilla_option_contract(
@@ -2527,6 +2603,198 @@ def make_rate_style_swaption_contract(
     )
 
 
+def make_rate_cap_floor_strip_contract(
+    *,
+    description: str,
+    instrument_class: str,
+    observation_schedule: tuple[str, ...] | list[str],
+    preferred_method: str = "analytical",
+) -> SemanticContract:
+    """Construct a schedule-driven cap/floor strip semantic contract."""
+    normalized_instrument = str(instrument_class or "").strip().lower()
+    if normalized_instrument not in {"cap", "floor"}:
+        raise ValueError("Rate cap/floor strip contract requires instrument_class `cap` or `floor`.")
+    schedule = _normalize_schedule(observation_schedule)
+    if not schedule:
+        raise ValueError("Rate cap/floor strip contract requires a schedule or structural schedule placeholder.")
+    definition, surface, normalized_method = _resolve_registered_family_surface(
+        "rate_cap_floor_strip",
+        preferred_method=preferred_method,
+    )
+    option_type = _rate_cap_floor_option_type(normalized_instrument)
+    schedule_authority = (
+        "explicit_schedule"
+        if all(re.fullmatch(r"\d{4}-\d{2}-\d{2}", item) for item in schedule)
+        else "structural_placeholder"
+    )
+
+    product = SemanticProductSemantics(
+        semantic_id="rate_cap_floor_strip",
+        semantic_version="c2.1",
+        instrument_class=normalized_instrument,
+        instrument_aliases=("rate_cap_floor_strip", "rate_option_strip", normalized_instrument),
+        payoff_family="rate_cap_floor_strip",
+        timeline=_default_semantic_timeline(
+            schedule,
+            settlement_dates=schedule,
+            state_update_dates=schedule,
+        ),
+        underlier_structure="single_curve_rate_style",
+        payoff_rule="period_rate_option_strip_payoff",
+        settlement_rule="coupon_period_cash_settlement",
+        payoff_traits=("floating_coupons", "period_option_strip", "vol_surface_dependence"),
+        observables=(
+            ObservableSpec(
+                observable_id="forward_rate_fixing",
+                observable_type="forward_rate",
+                description="Observed or projected forward rate at each caplet/floorlet fixing date.",
+                source="forward_curve",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+            ObservableSpec(
+                observable_id="discount_curve_state",
+                observable_type="discount_curve",
+                description="Discount curve state used to value each period option cashflow.",
+                source="discount_curve",
+                schedule_role="observation_dates",
+                availability_phase="observation",
+            ),
+        ),
+        state_fields=(
+            StateField(
+                field_name="strip_schedule",
+                kind="contract_memory",
+                description="Ordered caplet/floorlet strip schedule carried through valuation.",
+                source_observables=(),
+                tags=("schedule_state", "recombining_safe"),
+            ),
+            StateField(
+                field_name="forward_rate",
+                kind="event_state",
+                description="Observed forward rate used to price the current period option.",
+                source_observables=("forward_rate_fixing",),
+                tags=("schedule_state", "recombining_safe"),
+            ),
+        ),
+        obligations=(
+            ObligationSpec(
+                obligation_id=f"{normalized_instrument}_period_cashflow",
+                settle_date_rule="coupon_period_cash_settlement",
+                amount_expression=f"{normalized_instrument}let_cashflow",
+                settlement_kind="cash",
+                trigger="period_option_in_the_money",
+                provenance="semantic_contract",
+            ),
+        ),
+        controller_protocol=ControllerProtocol(
+            controller_style="identity",
+            controller_role="none",
+            decision_phase="decision",
+            schedule_role="",
+            admissible_actions=(),
+            description="Cap/floor strip semantics are automatic and have no strategic controller.",
+        ),
+        audit_info=_default_audit_info(),
+        implementation_hints=_default_implementation_hints(
+            event_machine_source="derived_from_event_transitions",
+            primary_schedule_role="observation_dates",
+        ),
+        term_fields=_freeze_mapping(
+            {
+                "option_type": option_type,
+                "schedule_authority": schedule_authority,
+            }
+        ),
+        exercise_style="none",
+        path_dependence="schedule_dependent",
+        schedule_dependence=True,
+        state_dependence="schedule_dependent",
+        model_family="interest_rate",
+        multi_asset=False,
+        observation_schedule=schedule,
+        observation_basis="caplet_or_floorlet_schedule",
+        selection_operator="",
+        selection_scope="",
+        selection_count=0,
+        lock_rule="",
+        aggregation_rule="sum_period_option_cashflows",
+        maturity_settlement_rule="coupon_period_cash_settlement",
+        constituents=(),
+        state_variables=("strip_schedule", "forward_rate"),
+        event_transitions=(
+            "observe_forward_rate",
+            "price_period_option",
+            "settle_coupon_period",
+        ),
+        event_machine=_derive_event_machine(
+            (
+                "observe_forward_rate",
+                "price_period_option",
+                "settle_coupon_period",
+            ),
+            state_dependence="schedule_dependent",
+        ),
+    )
+
+    required_inputs = (
+        SemanticMarketInputSpec(
+            input_id="discount_curve",
+            description="Risk-free discount curve for caplet/floorlet settlement cashflows.",
+            capability="discount_curve",
+            aliases=("discount", "yield_curve"),
+            connector_hint="Use the settlement discount curve.",
+            allowed_provenance=("observed",),
+        ),
+        SemanticMarketInputSpec(
+            input_id="forward_curve",
+            description="Forward curve used to project period fixing rates.",
+            capability="forward_curve",
+            aliases=("forecast_curve", "forward_rate_curve"),
+            connector_hint="Provide the forward curve for the referenced rate index.",
+            derivable_from=("discount_curve",),
+            allowed_provenance=("observed", "derived"),
+        ),
+        SemanticMarketInputSpec(
+            input_id="black_vol_surface",
+            description="Volatility surface used to price caplets or floorlets.",
+            capability="black_vol_surface",
+            aliases=("vol_surface", "volatility_surface"),
+            connector_hint="Provide the cap/floor volatility surface.",
+            allowed_provenance=("observed",),
+        ),
+    )
+
+    return _semantic_contract_from_sections(
+        product=product,
+        required_inputs=required_inputs,
+        candidate_methods=definition.candidate_methods,
+        preferred_method=normalized_method,
+        bundle_hints=("rate_cap_floor_strip_contract",),
+        universal_checks=(
+            "observation_schedule_present",
+            "forward_curve_present",
+            "settlement_rule_present",
+        ),
+        semantic_checks=(
+            "period_option_strip_prices_each_schedule_point",
+            "coupon_periods_settle_in_schedule_order",
+        ),
+        comparison_targets=(normalized_method,),
+        reduction_cases=("single_curve_rate_option_strip",),
+        target_modules=surface.target_modules,
+        primitive_families=surface.primitive_families,
+        adapter_obligations=surface.adapter_obligations,
+        proving_tasks=(
+            "compile_request_to_product_ir",
+            "validate_rate_cap_floor_strip_contract",
+            "emit_bounded_semantic_blueprint",
+        ),
+        spec_schema_hints=(normalized_instrument,),
+        description=description,
+    )
+
+
 def make_credit_default_swap_contract(
     *,
     description: str,
@@ -3170,6 +3438,20 @@ def _rebuild_rate_style_swaption_contract(
     )
 
 
+def _rebuild_rate_cap_floor_strip_contract(
+    contract: SemanticContract,
+    normalized_method: str,
+) -> SemanticContract:
+    """Rebuild a cap/floor strip contract for one preferred method."""
+    product = contract.product
+    return make_rate_cap_floor_strip_contract(
+        description=contract.description,
+        instrument_class=str(getattr(product, "instrument_class", "") or "cap"),
+        observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
+        preferred_method=normalized_method,
+    )
+
+
 def _rebuild_credit_default_swap_contract(
     contract: SemanticContract,
     normalized_method: str,
@@ -3230,6 +3512,7 @@ _SEMANTIC_CONTRACT_REBUILDERS: Mapping[str, Callable[[SemanticContract, str], Se
         "callable_bond": _rebuild_callable_bond_contract,
         "range_accrual": _rebuild_range_accrual_contract,
         "rate_style_swaption": _rebuild_rate_style_swaption_contract,
+        "rate_cap_floor_strip": _rebuild_rate_cap_floor_strip_contract,
         "credit_default_swap": _rebuild_credit_default_swap_contract,
         "nth_to_default": _rebuild_nth_to_default_contract,
         "credit_basket_tranche": _rebuild_credit_basket_tranche_contract,
@@ -4463,6 +4746,25 @@ def _looks_like_rate_style_swaption_request(text: str, instrument_type: str | No
     )
 
 
+def _looks_like_rate_cap_floor_request(text: str, instrument_type: str | None) -> bool:
+    """Return whether the request appears to describe a cap/floor strip."""
+    lower = text.lower()
+    normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
+    if normalized_instrument in {"cap", "floor"}:
+        return True
+    return any(
+        cue in lower
+        for cue in (
+            "interest rate cap",
+            "interest rate floor",
+            "caplet",
+            "floorlet",
+            "cap/floor",
+            "cap floor",
+        )
+    )
+
+
 def _looks_like_credit_default_swap_request(text: str, instrument_type: str | None) -> bool:
     """Return whether the request appears to describe a single-name CDS."""
     lower = text.lower()
@@ -4711,6 +5013,28 @@ def _draft_rate_style_swaption_contract(
     )
 
 
+def _draft_rate_cap_floor_strip_contract(
+    text: str,
+    description: str,
+    instrument_type: str | None,
+    term_sheet,
+) -> SemanticContract:
+    """Draft a cap/floor strip semantic contract from request text."""
+    normalized_instrument = str(instrument_type or "").strip().lower().replace(" ", "_")
+    if normalized_instrument not in {"cap", "floor"}:
+        lower = text.lower()
+        normalized_instrument = "floor" if "floor" in lower and "cap" not in lower else "cap"
+    return make_rate_cap_floor_strip_contract(
+        description=description,
+        instrument_class=normalized_instrument,
+        observation_schedule=_extract_rate_cap_floor_schedule(
+            text,
+            term_sheet,
+            instrument_class=normalized_instrument,
+        ),
+    )
+
+
 def _draft_credit_basket_tranche_contract(
     text: str,
     description: str,
@@ -4855,6 +5179,11 @@ def _build_semantic_draft_rules() -> tuple[SemanticDraftRule, ...]:
             name="rate_style_swaption",
             matcher=_looks_like_rate_style_swaption_request,
             builder=_draft_rate_style_swaption_contract,
+        ),
+        SemanticDraftRule(
+            name="rate_cap_floor_strip",
+            matcher=_looks_like_rate_cap_floor_request,
+            builder=_draft_rate_cap_floor_strip_contract,
         ),
         SemanticDraftRule(
             name="credit_basket_tranche",

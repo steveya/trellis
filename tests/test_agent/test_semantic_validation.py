@@ -547,23 +547,6 @@ def test_classify_semantic_gap_treats_cds_as_credit_request():
     assert "discount_curve" in report.missing_market_inputs
     assert "credit_curve" in report.missing_market_inputs
 
-
-@pytest.mark.parametrize("instrument_type", ["cap", "floor"])
-def test_classify_semantic_gap_treats_rate_cap_floor_instrument_type_as_shape(
-    instrument_type: str,
-):
-    from trellis.agent.semantic_contract_validation import classify_semantic_gap
-
-    report = classify_semantic_gap(
-        "Black caplet stack vs MC rate simulation",
-        instrument_type=instrument_type,
-    )
-
-    assert report.requires_clarification is False
-    assert "semantic_product_shape" not in report.missing_contract_fields
-    assert "cookbook_entry" not in report.missing_knowledge_artifacts
-
-
 def test_accepts_fixed_t39_transform_artifact():
     from trellis.agent.semantic_validation import validate_semantics
 

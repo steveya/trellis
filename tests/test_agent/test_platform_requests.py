@@ -677,7 +677,7 @@ def test_novel_request_falls_back_with_semantic_gap_metadata():
     assert "semantic_gap" in compiled.request.metadata
 
 
-def test_compile_build_request_does_not_require_clarification_for_rate_cap_family():
+def test_compile_build_request_routes_rate_cap_family_through_semantic_contract():
     from trellis.agent.platform_requests import compile_build_request
 
     compiled = compile_build_request(
@@ -685,13 +685,14 @@ def test_compile_build_request_does_not_require_clarification_for_rate_cap_famil
         instrument_type="cap",
     )
 
-    assert compiled.execution_plan.reason == "free_form_build_request"
+    assert compiled.execution_plan.reason == "semantic_contract_request"
     assert compiled.execution_plan.route_method == "analytical"
+    assert compiled.semantic_contract is not None
+    assert compiled.semantic_contract.semantic_id == "rate_cap_floor_strip"
     assert compiled.product_ir is not None
     assert compiled.product_ir.instrument == "cap"
-    assert compiled.request.metadata["semantic_gap"]["requires_clarification"] is False
-    assert compiled.request.metadata["semantic_gap"]["missing_contract_fields"] == []
-    assert compiled.request.metadata["semantic_extension"]["decision"] != "clarification"
+    assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "rate_cap_floor_strip"
+    assert "semantic_gap" not in compiled.request.metadata
 
 
 def test_novel_request_persists_semantic_extension_trace(monkeypatch, tmp_path):

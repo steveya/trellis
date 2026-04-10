@@ -236,13 +236,13 @@ inference, and executor fallback inference now all follow the same rule:
 explicit family beats generic heuristic unless the specialization is an
 explicitly allowed refinement of that family.
 
-The rate cap/floor stress lane now follows that same authority rule. If the
-task or compiled request already carries ``instrument_type=cap`` or
-``instrument_type=floor``, the semantic-gap classifier must not reopen a
-generic ``semantic_product_shape`` clarification solely because the free-form
-description omits broader shape words such as ``option`` or ``swaption``.
-That keeps compare-ready tasks such as ``E22`` on the actual pricing route
-instead of stopping in clarification before route assembly.
+The rate cap/floor stress lane now follows that same authority rule through a
+dedicated semantic family rather than a classifier exception. Cap and floor
+requests now draft into the ``rate_cap_floor_strip`` semantic contract, which
+materializes the schedule-driven rate-option-strip shape, required market
+inputs, and route surface before generic semantic-gap handling runs. That
+keeps compare-ready tasks such as ``E22`` on the actual pricing route without
+teaching the generic classifier any instrument-specific special cases.
 
 Comparison pricing now also prefers market-aligned smoke fixtures when the
 route family needs them. For the supported quanto slice, the comparison

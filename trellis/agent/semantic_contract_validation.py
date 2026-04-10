@@ -81,7 +81,6 @@ _AUTOMATIC_ACTION_HINTS = (
     "knock",
     "barrier",
 )
-_INSTRUMENT_TYPES_WITH_IMPLIED_SHAPE = frozenset({"cap", "floor"})
 
 
 @dataclass(frozen=True)
@@ -343,8 +342,7 @@ def classify_semantic_gap(
     request_text = _combined_request_text(description, instrument_type, term_sheet)
     normalized_text = _normalize_text(request_text)
     cues = _semantic_cues(normalized_text)
-    instrument_implies_shape = _instrument_type_implies_shape(instrument_type)
-    has_any_semantic_cue = any(cues.values()) or instrument_implies_shape
+    has_any_semantic_cue = any(cues.values())
     concept_resolution = resolve_semantic_concept(
         description,
         instrument_type=instrument_type,
@@ -381,7 +379,7 @@ def classify_semantic_gap(
             missing_market_inputs.append("correlation_matrix")
     if cues["basket"] and cues["path"]:
         missing_route_helpers.append("correlated_basket_route_helper")
-    if instrument_type and not (cues["shape"] or instrument_implies_shape):
+    if instrument_type and not cues["shape"]:
         missing_knowledge_artifacts.append("instrument_specific_lesson")
 
     if not has_any_semantic_cue:
@@ -722,12 +720,6 @@ def _semantic_cues(normalized_text: str) -> dict[str, bool]:
 def _contains_any(text: str, needles: tuple[str, ...]) -> bool:
     """Return whether any keyword or phrase appears in the normalized text."""
     return any(needle in text for needle in needles)
-
-
-def _instrument_type_implies_shape(instrument_type: str | None) -> bool:
-    """Return whether the typed instrument family already fixes the product shape."""
-    normalized = _normalize_text(str(instrument_type or ""))
-    return normalized in _INSTRUMENT_TYPES_WITH_IMPLIED_SHAPE
 
 
 def _semantic_extension_trace_key(report: SemanticGapReport, *, decision: str) -> str:
@@ -1439,6 +1431,7 @@ def _validate_semantic_shape(
         "callable_bond": _validate_callable_bond_shape,
         "range_accrual": _validate_range_accrual_shape,
         "rate_style_swaption": _validate_rate_style_swaption_shape,
+        "rate_cap_floor_strip": _validate_rate_cap_floor_strip_shape,
         "credit_default_swap": _validate_credit_default_swap_shape,
         "nth_to_default": _validate_nth_to_default_shape,
         "credit_basket_tranche": _validate_credit_basket_tranche_shape,
@@ -1487,7 +1480,7 @@ def _validate_profile_fields(
     contract: SemanticContract,
     errors: list[str],
     *,
-    expected_instrument_class: str,
+    expected_instrument_class: str | None,
     expected_payoff_family: str,
     expected_underlier_structure: str,
     expected_payoff_rule: str,
@@ -1505,7 +1498,7 @@ def _validate_profile_fields(
 ) -> None:
     """Validate a product profile's deterministic structural fields."""
     product = contract.product
-    if product.instrument_class != expected_instrument_class:
+    if expected_instrument_class is not None and product.instrument_class != expected_instrument_class:
         errors.append(
             f"Semantic slice expects instrument_class `{expected_instrument_class}`, got `{product.instrument_class}`."
         )
@@ -1867,6 +1860,69 @@ def _validate_range_accrual_shape(
         warnings.append(
             "Range-accrual callability hooks are captured as trade-entry metadata; callable execution remains a later slice."
         )
+    if not contract.blueprint.primitive_families:
+        warnings.append(
+            f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."
+        )
+
+
+def _validate_rate_cap_floor_strip_shape(
+    contract: SemanticContract,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate a schedule-driven cap/floor strip semantic shape."""
+    required_capabilities = _validate_market_capabilities(
+        contract,
+        errors,
+        frozenset({"discount_curve", "forward_curve", "black_vol_surface"}),
+    )
+    _validate_profile_fields(
+        contract,
+        errors,
+        expected_instrument_class=None,
+        expected_payoff_family="rate_cap_floor_strip",
+        expected_underlier_structure="single_curve_rate_style",
+        expected_payoff_rule="period_rate_option_strip_payoff",
+        expected_settlement_rule="coupon_period_cash_settlement",
+        expected_exercise_style="none",
+        expected_multi_asset=False,
+        require_schedule=True,
+        require_constituents=0,
+        path_dependence="schedule_dependent",
+        state_dependence="schedule_dependent",
+        schedule_dependence=True,
+    )
+    product = contract.product
+    if product.instrument_class not in {"cap", "floor"}:
+        errors.append(
+            "Rate cap/floor strip semantics require instrument_class `cap` or `floor`."
+        )
+    if "forward_curve" not in required_capabilities:
+        errors.append("Rate cap/floor strip semantics require a forward curve input.")
+    observable_types = {
+        str(getattr(item, "observable_type", "")).strip().lower()
+        for item in product.observables
+    }
+    if "forward_rate" not in observable_types:
+        errors.append("Rate cap/floor strip semantics require a typed forward_rate observable.")
+    if "discount_curve" not in observable_types:
+        errors.append("Rate cap/floor strip semantics require a typed discount_curve observable.")
+    obligation_ids = {item.obligation_id for item in product.obligations}
+    expected_obligation_id = f"{product.instrument_class}_period_cashflow"
+    if expected_obligation_id not in obligation_ids:
+        errors.append(
+            f"Rate cap/floor strip semantics require obligation `{expected_obligation_id}`."
+        )
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
+    option_type = str(term_fields.get("option_type", "")).strip().lower()
+    expected_option_type = "put" if product.instrument_class == "floor" else "call"
+    if option_type != expected_option_type:
+        errors.append(
+            f"Rate cap/floor strip semantics require option_type `{expected_option_type}`, got `{option_type}`."
+        )
+    if product.controller_protocol.controller_style != "identity":
+        errors.append("Rate cap/floor strip semantics cannot declare a strategic controller.")
     if not contract.blueprint.primitive_families:
         warnings.append(
             f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."
