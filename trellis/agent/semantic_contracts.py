@@ -1507,14 +1507,6 @@ def _extract_rate_cap_floor_schedule(
     return (f"{instrument_class}_schedule_placeholder",)
 
 
-def _rate_cap_floor_option_type(instrument_class: str) -> str:
-    """Return the coarse option type encoded by a cap/floor wrapper."""
-    return _RATE_CAP_FLOOR_OPTION_TYPES.get(
-        str(instrument_class or "").strip().lower(),
-        "call",
-    )
-
-
 def make_vanilla_option_contract(
     *,
     description: str,
@@ -2826,7 +2818,7 @@ def make_rate_cap_floor_strip_contract(
             "validate_rate_cap_floor_strip_contract",
             "emit_bounded_semantic_blueprint",
         ),
-        spec_schema_hints=(normalized_instrument,),
+        spec_schema_hints=surface.spec_schema_hints,
         description=description,
     )
 
@@ -4886,14 +4878,6 @@ _RATE_CAP_FLOOR_DRAFT_VARIANTS = (
         instrument_aliases=("cap",),
         selection_cues=("caplet", "interest rate cap"),
     ),
-)
-
-
-_RATE_CAP_FLOOR_OPTION_TYPES = MappingProxyType(
-    {
-        "cap": "call",
-        "floor": "put",
-    }
 )
 
 

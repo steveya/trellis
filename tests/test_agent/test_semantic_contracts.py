@@ -735,6 +735,23 @@ def test_rate_cap_floor_strip_draft_uses_structural_schedule_placeholder_when_da
     assert contract.product.term_fields["option_type"] == "call"
 
 
+def test_rate_cap_floor_strip_contract_uses_registered_surface_schema_hints():
+    from trellis.agent.semantic_contracts import (
+        make_rate_cap_floor_strip_contract,
+        resolve_semantic_method_surface,
+    )
+
+    contract = make_rate_cap_floor_strip_contract(
+        description="SOFR cap strip with annual fixings through 2029-11-15",
+        instrument_class="cap",
+        observation_schedule=("2026-11-15", "2027-11-15", "2028-11-15", "2029-11-15"),
+        preferred_method="monte_carlo",
+    )
+    surface = resolve_semantic_method_surface("rate_cap_floor_strip", "monte_carlo")
+
+    assert contract.blueprint.spec_schema_hints == surface.spec_schema_hints
+
+
 def test_migrated_contract_allows_missing_settlement_rule_mirror_with_warning():
     from trellis.agent.semantic_contract_validation import validate_semantic_contract
 

@@ -1614,17 +1614,6 @@ def _mc_payoff_reducer_spec_for_product(
     )
 
 
-def _build_rate_cap_floor_dependencies(
-    event_timeline: tuple[MCEventTimeSpec, ...],
-) -> tuple[str, ...]:
-    """Return stable event dependencies for schedule-driven rate-option strips."""
-    return tuple(
-        event.event_name
-        for bucket in event_timeline
-        for event in bucket.events
-    )
-
-
 def _pde_boundary_spec_for_product(product) -> PDEBoundarySpec:
     """Infer the bounded terminal/boundary contract for one PDE family IR."""
     payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()

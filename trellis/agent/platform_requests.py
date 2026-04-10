@@ -493,6 +493,15 @@ def _compile_known_family_request(
     )
 
 
+def _matched_payoff_uses_generated_adapter(match: tuple | None) -> bool:
+    """Return whether a matched direct payoff comes from a generated `_agent` adapter."""
+    if not match:
+        return False
+    payoff = match[0]
+    module_name = str(getattr(type(payoff), "__module__", "") or "")
+    return "._agent." in module_name
+
+
 def _draft_semantic_contract(
     description: str,
     *,
@@ -902,6 +911,33 @@ def _compile_term_sheet_request(request: PlatformRequest) -> CompiledPlatformReq
 
     term_sheet = request.term_sheet
     description = request.description or getattr(term_sheet, "raw_description", term_sheet.instrument_type)
+    product_ir = decompose_to_ir(
+        description,
+        instrument_type=term_sheet.instrument_type,
+    )
+
+    match = match_payoff(term_sheet, request.settlement or date.today())
+    # Canonical checked-in payoffs should keep the direct-existing route. Generated
+    # `_agent` adapters still allow semantic compilation to take precedence.
+    if match is not None and not _matched_payoff_uses_generated_adapter(match):
+        knowledge_bundle = _shared_knowledge_bundle(
+            product_ir,
+            preferred_method="direct_existing",
+            knowledge_profile=_knowledge_profile_for_request(request),
+        )
+        return _finalize_compiled_request(
+            request=request,
+            market_snapshot=request.market_snapshot,
+            execution_plan=_execution_plan_for_request(
+                request,
+                action="price_existing_payoff",
+                reason="term_sheet_matched_existing_payoff",
+                route_method="direct_existing",
+            ),
+            product_ir=product_ir,
+            knowledge_bundle=knowledge_bundle,
+        )
+
     semantic_contract = _draft_semantic_contract(
         description,
         instrument_type=request.instrument_type,
@@ -925,12 +961,6 @@ def _compile_term_sheet_request(request: PlatformRequest) -> CompiledPlatformReq
             reason="known_family_term_sheet_request",
             description=description,
         )
-    product_ir = decompose_to_ir(
-        description,
-        instrument_type=term_sheet.instrument_type,
-    )
-
-    match = match_payoff(term_sheet, request.settlement or date.today())
     if match is not None:
         knowledge_bundle = _shared_knowledge_bundle(
             product_ir,
@@ -949,7 +979,6 @@ def _compile_term_sheet_request(request: PlatformRequest) -> CompiledPlatformReq
             product_ir=product_ir,
             knowledge_bundle=knowledge_bundle,
         )
-
     from trellis.agent.semantic_contract_validation import classify_semantic_gap
     from trellis.agent.semantic_contract_validation import propose_semantic_extension
     from trellis.agent.semantic_contract_validation import semantic_extension_summary
