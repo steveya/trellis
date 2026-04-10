@@ -174,6 +174,20 @@ FFT/COS kernel path under the same route family. That keeps helper reuse
 honest without widening a GBM-oriented helper into unsupported Heston
 authority.
 
+That route family now also has its own lowered contract boundary. Transform
+tasks compile onto ``TransformPricingIR`` before admissibility, so the canaries
+no longer have to rely on the broader upstream ``vanilla_option`` semantics
+when the numerical lane only needs a terminal-only characteristic-function
+contract. In practice this is what keeps transform canaries such as ``T39`` and
+``T40`` from failing on irrelevant option-family tags like ``holder_max`` or
+``recombining_safe``.
+
+For the analytical benchmark side of those canaries, the runtime now also
+materializes a deterministic exact wrapper around the checked Black76 kernels.
+That wrapper binds ``year_fraction(...)``, discounting, and expiry-vol lookup
+through the actual runtime market-state protocols instead of asking the build
+loop to regenerate a tiny analytical adapter for every transform comparison.
+
 Analytical traces also carry a structured instruction-lifecycle payload. The
 ``GenerationPlan`` now includes a resolved instruction set, the trace emits a
 dedicated ``instruction_lifecycle`` step, and the persisted task-run summary

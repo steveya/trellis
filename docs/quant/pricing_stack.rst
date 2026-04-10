@@ -95,6 +95,7 @@ The shipped family IRs are:
 - ``AnalyticalBlack76IR``
 - ``EventAwareMonteCarloIR`` as the new bounded single-state Monte Carlo family
   surface
+- ``TransformPricingIR`` as the bounded transform family surface
 - ``VanillaEquityPDEIR``
 - ``ExerciseLatticeIR``
 - ``CorrelatedBasketMonteCarloIR``
@@ -114,9 +115,26 @@ exercise/call control, and same-day phase ordering. Family IRs then project
 that shared program into their bounded numerical forms:
 
 - lattice keeps the semantic schedule/control surface on ``ExerciseLatticeIR``
+- transforms project it into a terminal-only characteristic-function contract
+  on ``TransformPricingIR``
 - PDE projects it into ``PDEEventTimeSpec`` / ``PDEEventTransformSpec``
 - Monte Carlo projects it into ``MCEventTimeSpec`` plus reduced replay
   requirements
+
+For transforms, that now means route admissibility is family-first rather than
+product-first. ``TransformPricingIR`` carries the transform-specific facts that
+matter numerically:
+
+- characteristic-function family
+- terminal payoff kind
+- strike semantics
+- quote semantics
+- backend capability (helper-backed vanilla diffusion versus raw-kernel
+  stochastic volatility)
+
+So a vanilla European payoff can still have holder-side semantic exercise
+meaning upstream while the transform lane itself lowers onto an ``identity``
+control contract with only terminal-state tags.
 
 For Monte Carlo, the new event-aware family is now the typed
 compiler/admissibility surface for bounded single-state schedule semantics as
