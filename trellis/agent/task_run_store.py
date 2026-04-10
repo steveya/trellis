@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+from statistics import median
 from typing import Any, Mapping
 
 import yaml
@@ -23,6 +24,9 @@ TASK_RUN_ROOT = ROOT / "task_runs"
 TASK_RUN_HISTORY_ROOT = TASK_RUN_ROOT / "history"
 TASK_RUN_LATEST_ROOT = TASK_RUN_ROOT / "latest"
 TASK_RUN_LATEST_INDEX = ROOT / "task_results_latest.json"
+CANARY_BATCH_ROOT = TASK_RUN_ROOT / "canary_batches"
+CANARY_BATCH_HISTORY_ROOT = CANARY_BATCH_ROOT / "history"
+CANARY_BATCH_LATEST_ROOT = CANARY_BATCH_ROOT / "latest"
 _SKIP_TASK_DIAGNOSIS_PERSIST_ENV = "TRELLIS_SKIP_TASK_DIAGNOSIS_PERSIST"
 
 
@@ -144,6 +148,289 @@ def load_latest_task_run_records(
             continue
         records.append(normalized)
     return sorted(records, key=lambda item: str(item.get("task_id") or ""))
+
+
+def persist_canary_batch_record(
+    *,
+    canaries: list[dict[str, Any]],
+    meta: Mapping[str, Any],
+    results: list[dict[str, Any]],
+    model: str,
+    validation: str,
+    knowledge_light: bool,
+    replay: bool,
+    requested_task_id: str | None,
+    requested_subset: str | None,
+    root: Path = ROOT,
+    started_at: datetime,
+    finished_at: datetime,
+) -> dict[str, str]:
+    """Persist one explicit canary-batch record and stable latest view."""
+    batch_id = f"canary_{started_at.astimezone(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}"
+    execution_mode = "cassette_replay" if replay else "live"
+    batch_scope, scope_slug = _canary_batch_scope(
+        requested_task_id=requested_task_id,
+        requested_subset=requested_subset,
+    )
+    knowledge_profile = "knowledge_light" if knowledge_light else "default"
+    comparison_key = f"{execution_mode}:{scope_slug}:{validation}:{knowledge_profile}:{model}"
+    synthetic_source = _synthetic_canary_source(root)
+    benchmark_eligible = execution_mode == "live" and not synthetic_source
+
+    by_task_id = {
+        str((payload.get("canary_id") or payload.get("task_id") or "")).strip(): dict(payload)
+        for payload in results
+        if isinstance(payload, Mapping)
+    }
+    entries = [
+        _build_canary_batch_entry(
+            canary=dict(canary),
+            result=by_task_id.get(str(canary.get("id") or "").strip(), {}),
+            batch_id=batch_id,
+            execution_mode=execution_mode,
+            benchmark_eligible=benchmark_eligible,
+        )
+        for canary in canaries
+    ]
+    summary = _summarize_canary_batch(
+        entries,
+        execution_mode=execution_mode,
+        batch_scope=batch_scope,
+        scope_slug=scope_slug,
+        benchmark_eligible=benchmark_eligible,
+        synthetic_source=synthetic_source,
+        model=model,
+        validation=validation,
+        knowledge_profile=knowledge_profile,
+        comparison_key=comparison_key,
+        requested_task_id=requested_task_id,
+        requested_subset=requested_subset,
+        started_at=started_at,
+        finished_at=finished_at,
+    )
+    record = {
+        "batch_id": batch_id,
+        "started_at": started_at.astimezone(timezone.utc).isoformat(),
+        "finished_at": finished_at.astimezone(timezone.utc).isoformat(),
+        "selection": {
+            "requested_task_id": requested_task_id,
+            "requested_subset": requested_subset,
+        },
+        "config": {
+            "model": model,
+            "validation": validation,
+            "knowledge_profile": knowledge_profile,
+            "replay": replay,
+            "execution_mode": execution_mode,
+            "comparison_key": comparison_key,
+            "synthetic_source": synthetic_source or None,
+        },
+        "manifest": {
+            "version": meta.get("version"),
+            "refresh_cadence": meta.get("refresh_cadence"),
+            "total_budget_usd": meta.get("total_budget_usd"),
+        },
+        "summary": summary,
+        "canaries": entries,
+    }
+
+    history_root = root / CANARY_BATCH_HISTORY_ROOT.relative_to(ROOT)
+    latest_root = root / CANARY_BATCH_LATEST_ROOT.relative_to(ROOT)
+    history_root.mkdir(parents=True, exist_ok=True)
+    latest_root.mkdir(parents=True, exist_ok=True)
+
+    history_path = history_root / f"{batch_id}.json"
+    latest_path = latest_root / f"{_scope_slug_to_latest_key(scope_slug, execution_mode, validation, knowledge_profile, model)}.json"
+    history_path.write_text(json.dumps(record, indent=2, default=str))
+    latest_path.write_text(json.dumps(record, indent=2, default=str))
+    return {
+        "batch_id": batch_id,
+        "history_path": str(history_path),
+        "latest_path": str(latest_path),
+    }
+
+
+def load_canary_batch_records(
+    *,
+    root: Path = ROOT,
+    execution_mode: str | None = None,
+    benchmark_only: bool = False,
+) -> list[dict[str, Any]]:
+    """Load persisted canary batch records from history."""
+    history_root = root / CANARY_BATCH_HISTORY_ROOT.relative_to(ROOT)
+    if not history_root.exists():
+        return []
+
+    records: list[dict[str, Any]] = []
+    for path in sorted(history_root.glob("*.json")):
+        payload = json.loads(path.read_text())
+        summary = dict(payload.get("summary") or {})
+        if execution_mode is not None and str(summary.get("execution_mode") or "") != execution_mode:
+            continue
+        if benchmark_only and not bool(summary.get("benchmark_eligible")):
+            continue
+        records.append(payload)
+    return sorted(records, key=lambda item: str(item.get("started_at") or ""))
+
+
+def load_canary_task_history(
+    task_id: str,
+    *,
+    root: Path = ROOT,
+    execution_mode: str | None = None,
+    benchmark_only: bool = False,
+) -> list[dict[str, Any]]:
+    """Flatten persisted canary batch history for one task ID."""
+    history: list[dict[str, Any]] = []
+    for batch in load_canary_batch_records(
+        root=root,
+        execution_mode=execution_mode,
+        benchmark_only=benchmark_only,
+    ):
+        summary = dict(batch.get("summary") or {})
+        for item in batch.get("canaries") or []:
+            if str(item.get("task_id") or "") != str(task_id):
+                continue
+            history.append(
+                {
+                    **dict(item),
+                    "batch_id": batch.get("batch_id"),
+                    "started_at": batch.get("started_at"),
+                    "finished_at": batch.get("finished_at"),
+                    "batch_scope": summary.get("batch_scope"),
+                    "comparison_key": summary.get("comparison_key"),
+                    "benchmark_eligible": bool(summary.get("benchmark_eligible")),
+                }
+            )
+    return sorted(history, key=lambda item: str(item.get("started_at") or ""))
+
+
+def _canary_batch_scope(
+    *,
+    requested_task_id: str | None,
+    requested_subset: str | None,
+) -> tuple[str, str]:
+    """Return the human-readable scope plus a filename-safe slug."""
+    if requested_task_id:
+        task_id = str(requested_task_id).strip()
+        return "single_task", f"single_task_{task_id}"
+    if requested_subset:
+        subset = str(requested_subset).strip()
+        return f"subset:{subset}", f"subset_{subset}"
+    return "full_curated", "full_curated"
+
+
+def _synthetic_canary_source(root: Path) -> str:
+    """Return a synthetic-source marker when a canary batch comes from pytest."""
+    if os.environ.get("PYTEST_CURRENT_TEST") and root.resolve() == ROOT.resolve():
+        return "pytest"
+    return ""
+
+
+def _scope_slug_to_latest_key(
+    scope_slug: str,
+    execution_mode: str,
+    validation: str,
+    knowledge_profile: str,
+    model: str,
+) -> str:
+    """Return the stable latest filename stem for one canary batch scope."""
+    return f"{execution_mode}__{scope_slug}__{validation}__{knowledge_profile}__{model}"
+
+
+def _build_canary_batch_entry(
+    *,
+    canary: Mapping[str, Any],
+    result: Mapping[str, Any],
+    batch_id: str,
+    execution_mode: str,
+    benchmark_eligible: bool,
+) -> dict[str, Any]:
+    """Project one canary task result into the persisted batch history shape."""
+    token_usage = dict(result.get("token_usage_summary") or {})
+    return {
+        "batch_id": batch_id,
+        "task_id": str(canary.get("id") or result.get("task_id") or "").strip(),
+        "engine_family": str(canary.get("engine_family") or result.get("engine_family") or "").strip(),
+        "complexity": str(canary.get("complexity") or result.get("complexity") or "").strip(),
+        "success": bool(result.get("success")),
+        "skipped": bool(result.get("skipped")),
+        "reason": str(result.get("reason") or "").strip(),
+        "error": str(result.get("error") or "").strip(),
+        "execution_mode": str(result.get("execution_mode") or execution_mode),
+        "benchmark_eligible": benchmark_eligible and str(result.get("execution_mode") or execution_mode) == "live",
+        "elapsed_seconds": round(float(result.get("elapsed_seconds") or 0.0), 4),
+        "attempts": int(result.get("attempts") or 0),
+        "token_usage": token_usage,
+        "total_tokens": int(token_usage.get("total_tokens") or 0),
+        "task_run_history_path": str(result.get("task_run_history_path") or "").strip(),
+        "task_run_latest_path": str(result.get("task_run_latest_path") or "").strip(),
+        "task_diagnosis_packet_path": str(result.get("task_diagnosis_packet_path") or "").strip(),
+        "task_diagnosis_dossier_path": str(result.get("task_diagnosis_dossier_path") or "").strip(),
+    }
+
+
+def _summarize_canary_batch(
+    entries: list[Mapping[str, Any]],
+    *,
+    execution_mode: str,
+    batch_scope: str,
+    scope_slug: str,
+    benchmark_eligible: bool,
+    synthetic_source: str,
+    model: str,
+    validation: str,
+    knowledge_profile: str,
+    comparison_key: str,
+    requested_task_id: str | None,
+    requested_subset: str | None,
+    started_at: datetime,
+    finished_at: datetime,
+) -> dict[str, Any]:
+    """Summarize one canary batch into stable aggregate metrics."""
+    completed = [item for item in entries if not bool(item.get("skipped"))]
+    elapsed_values = [float(item.get("elapsed_seconds") or 0.0) for item in completed]
+    token_values = [int(item.get("total_tokens") or 0) for item in completed]
+    attempt_values = [int(item.get("attempts") or 0) for item in completed]
+    pass_count = sum(1 for item in completed if bool(item.get("success")))
+    failure_count = sum(1 for item in completed if not bool(item.get("success")))
+    skip_count = sum(1 for item in entries if bool(item.get("skipped")))
+    completed_count = len(completed)
+    return {
+        "execution_mode": execution_mode,
+        "batch_scope": batch_scope,
+        "scope_slug": scope_slug,
+        "benchmark_eligible": benchmark_eligible,
+        "benchmark_exclusion_reason": (
+            ""
+            if benchmark_eligible
+            else (f"synthetic:{synthetic_source}" if synthetic_source else "replay")
+        ),
+        "comparison_key": comparison_key,
+        "model": model,
+        "validation": validation,
+        "knowledge_profile": knowledge_profile,
+        "synthetic_source": synthetic_source or None,
+        "requested_task_id": requested_task_id,
+        "requested_subset": requested_subset,
+        "task_count": len(entries),
+        "completed_count": completed_count,
+        "pass_count": pass_count,
+        "failure_count": failure_count,
+        "skip_count": skip_count,
+        "pass_rate": _fraction(pass_count, completed_count),
+        "total_elapsed_seconds": round(sum(elapsed_values), 4),
+        "avg_elapsed_seconds": _fraction(sum(elapsed_values), completed_count),
+        "median_elapsed_seconds": round(median(elapsed_values), 4) if elapsed_values else 0.0,
+        "total_tokens": sum(token_values),
+        "avg_tokens": _fraction(sum(token_values), completed_count),
+        "median_tokens": round(median(token_values), 4) if token_values else 0.0,
+        "total_attempts": sum(attempt_values),
+        "avg_attempts": _fraction(sum(attempt_values), completed_count),
+        "max_attempts": max(attempt_values) if attempt_values else 0,
+        "started_at": started_at.astimezone(timezone.utc).isoformat(),
+        "finished_at": finished_at.astimezone(timezone.utc).isoformat(),
+    }
 
 
 def build_task_run_record(

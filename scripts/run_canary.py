@@ -20,7 +20,7 @@ import json
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -125,11 +125,14 @@ def run_canaries(
     replay: bool = False,
     cassette_dir: str | Path | None = None,
     cassette_stale_policy: str = "error",
+    requested_task_id: str | None = None,
+    requested_subset: str | None = None,
 ) -> list[dict]:
     """Run canary tasks and return results.
 
     Returns list of result dicts with canary metadata attached.
     """
+    from trellis.agent.task_run_store import persist_canary_batch_record
     from trellis.agent.task_runtime import build_market_state, load_tasks, run_task
 
     budget = budget_override or meta.get("total_budget_usd", 3.0)
@@ -138,6 +141,7 @@ def run_canaries(
         if cassette_dir is not None
         else FULL_TASK_CASSETTES_DIR
     )
+    started_at = datetime.now(timezone.utc)
     # Canary coverage is curated independently of task lifecycle state, so the
     # runner must look across the full task registry rather than only "pending"
     # entries.
@@ -156,7 +160,7 @@ def run_canaries(
     print(f"  Budget: ${budget:.2f}")
     if replay:
         print(f"  Replay: cassette-backed ({cassette_root})")
-    print(f"  Started: {datetime.now().isoformat()}")
+    print(f"  Started: {started_at.isoformat()}")
     print(f"{'=' * 65}")
 
     for idx, canary in enumerate(canaries, 1):
@@ -268,11 +272,43 @@ def run_canaries(
             break
 
     # Summary
+    skip_count = sum(1 for item in results if item.get("skipped"))
+    completed_count = len(results) - skip_count
     print(f"\n{'=' * 65}")
-    print(f"  CANARY RESULTS: {pass_count}/{len(results)} passed")
+    print(f"  CANARY RESULTS: {pass_count}/{completed_count} passed, {skip_count} skipped")
     print(f"  Total tokens: {total_tokens}")
     print(f"  Total time: {total_time:.1f}s")
+
+    finished_at = datetime.now(timezone.utc)
+    try:
+        persisted = persist_canary_batch_record(
+            canaries=canaries,
+            meta=meta,
+            results=results,
+            model=model,
+            validation=validation,
+            knowledge_light=knowledge_light,
+            replay=replay,
+            requested_task_id=requested_task_id,
+            requested_subset=requested_subset,
+            root=ROOT,
+            started_at=started_at,
+            finished_at=finished_at,
+        )
+        for result in results:
+            result["canary_batch_id"] = persisted["batch_id"]
+            result["canary_batch_history_path"] = persisted["history_path"]
+            result["canary_batch_latest_path"] = persisted["latest_path"]
+        print(f"  Canary telemetry: {persisted['history_path']}")
+    except Exception as exc:
+        error = str(exc)[:200]
+        for result in results:
+            result["canary_batch_persist_error"] = error
+        print(f"  Canary telemetry: FAILED ({error})")
+
     if output_file:
+        with open(output_file, "w") as f:
+            json.dump(results, f, indent=2, default=str)
         print(f"  Results saved: {output_file}")
     print(f"{'=' * 65}")
 
@@ -411,6 +447,8 @@ def main(argv: list[str] | None = None) -> int:
         replay=args.replay,
         cassette_dir=args.cassette_dir,
         cassette_stale_policy=args.cassette_stale_policy,
+        requested_task_id=args.task,
+        requested_subset=args.subset,
     )
 
     all_passed = all(r.get("success", False) for r in results if not r.get("skipped"))

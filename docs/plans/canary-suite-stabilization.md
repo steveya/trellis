@@ -188,15 +188,19 @@ Status mirror last synced: `2026-04-10`
 | `QUA-708` | Transform/Heston cross-validation recovery for `T40` | Done |
 | `QUA-709` | Copula cross-validation recovery for `T49` | Done |
 | `QUA-458` | Full-task canary replay with diagnosis parity | Done |
-| `QUA-710` | Trustworthy canary telemetry and historical baselines | Backlog |
+| `QUA-710` | Trustworthy canary telemetry and historical baselines | Done |
 | `QUA-430` | Local gate and release-gate configuration | Backlog |
 
 Note:
 
-- `QUA-700` now remains open only for telemetry / gate closeout
-  (`QUA-710`, `QUA-430`). The direct canary recovery tranche and the
-  full-task replay tranche (`QUA-458`) are complete after the `2026-04-09`
-  full curated rerun plus the `2026-04-10` cassette-backed replay landing.
+- `QUA-700` now remains open only for gate closeout (`QUA-430`), with the
+  stale-test hygiene slice (`QUA-428`) still feeding that work from the
+  adjacent burn-down queue. The direct canary recovery tranche, the full-task
+  replay tranche (`QUA-458`), and the trustworthy telemetry tranche
+  (`QUA-710`) are complete after the `2026-04-09` full curated rerun, the
+  `2026-04-10` cassette-backed replay landing, and the `2026-04-10` live `T13`
+  telemetry rerun that now persists aggregate canary batch records under
+  `task_runs/canary_batches/`.
 - `T01` is now green through the short-rate comparison-regime workstream in
   `docs/plans/short-rate-comparison-regime-and-claim-helpers.md` under
   `QUA-746` through `QUA-751`. The recovery path materializes task-level

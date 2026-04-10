@@ -251,16 +251,17 @@ class TestRunCanaries:
             {"total_budget_usd": 1.0},
         )
 
-        assert results == [
-            {
-                "task_id": "T02",
-                "success": True,
-                "token_usage_summary": {"total_tokens": 123},
-                "canary_id": "T02",
-                "engine_family": "lattice",
-                "complexity": "simple",
-            }
-        ]
+        assert results[0]["task_id"] == "T02"
+        assert results[0]["success"] is True
+        assert results[0]["token_usage_summary"] == {"total_tokens": 123}
+        assert results[0]["canary_id"] == "T02"
+        assert results[0]["engine_family"] == "lattice"
+        assert results[0]["complexity"] == "simple"
+        assert results[0]["canary_batch_id"].startswith("canary_")
+        assert results[0]["canary_batch_history_path"].endswith(".json")
+        assert results[0]["canary_batch_latest_path"].endswith(
+            "/task_runs/canary_batches/latest/live__full_curated__standard__default__gpt-5.4-mini.json"
+        )
 
     def test_run_canaries_prefers_curated_canary_description(self, monkeypatch):
         captured: dict[str, object] = {}
@@ -348,20 +349,65 @@ class TestRunCanaries:
         )
 
         assert seen["run_task_calls"] == 0
-        assert results == [
-            {
-                "canary_id": "T13",
-                "engine_family": "pde",
-                "success": False,
-                "skipped": True,
-                "reason": "missing_cassette",
-                "error": (
-                    "Missing cassette for T13 at "
-                    f"{tmp_path / 'T13.yaml'}. "
-                    "Record it with scripts/record_cassettes.py --task T13"
-                ),
+        assert results[0]["canary_id"] == "T13"
+        assert results[0]["engine_family"] == "pde"
+        assert results[0]["success"] is False
+        assert results[0]["skipped"] is True
+        assert results[0]["reason"] == "missing_cassette"
+        assert results[0]["error"] == (
+            "Missing cassette for T13 at "
+            f"{tmp_path / 'T13.yaml'}. "
+            "Record it with scripts/record_cassettes.py --task T13"
+        )
+        assert results[0]["canary_batch_id"].startswith("canary_")
+        assert results[0]["canary_batch_latest_path"].endswith(
+            "/task_runs/canary_batches/latest/cassette_replay__full_curated__standard__default__gpt-5.4-mini.json"
+        )
+
+    def test_run_canaries_summary_reports_completed_and_skipped_counts(self, monkeypatch, tmp_path, capsys):
+        def fake_build_market_state():
+            return object()
+
+        def fake_load_tasks(*, status="pending", path=None):
+            return [
+                {"id": "T13", "title": "European call: theta-method convergence order"},
+                {"id": "T38", "title": "CDS pricing canary"},
+            ]
+
+        def fake_run_task(task, market_state, **kwargs):
+            return {
+                "task_id": task["id"],
+                "success": True,
+                "token_usage_summary": {"total_tokens": 123},
             }
-        ]
+
+        (tmp_path / "T38.yaml").write_text("meta: {}\ncalls: []\n", encoding="utf-8")
+
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.build_market_state",
+            fake_build_market_state,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.load_tasks",
+            fake_load_tasks,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.run_task",
+            fake_run_task,
+        )
+
+        run_canaries(
+            [
+                {"id": "T13", "engine_family": "pde", "complexity": "simple"},
+                {"id": "T38", "engine_family": "credit", "complexity": "complex"},
+            ],
+            {"total_budget_usd": 1.0},
+            replay=True,
+            cassette_dir=tmp_path,
+        )
+
+        output = capsys.readouterr().out
+        assert "CANARY RESULTS: 1/1 passed, 1 skipped" in output
 
     def test_run_canaries_replay_mode_uses_full_task_cassette(self, monkeypatch, tmp_path):
         from trellis.agent.cassette import _prompt_hash
@@ -433,6 +479,94 @@ class TestRunCanaries:
         assert results[0]["success"] is True
         assert results[0]["execution_mode"] == "cassette_replay"
         assert results[0]["token_usage_summary"]["total_tokens"] == 0
+
+    def test_run_canaries_persists_canary_batch_telemetry(self, monkeypatch, tmp_path):
+        seen: dict[str, object] = {}
+
+        def fake_build_market_state():
+            return object()
+
+        def fake_load_tasks(*, status="pending", path=None):
+            return [{"id": "T13", "title": "European call: theta-method convergence order"}]
+
+        def fake_run_task(task, market_state, **kwargs):
+            return {
+                "task_id": task["id"],
+                "success": True,
+                "elapsed_seconds": 4.2,
+                "attempts": 2,
+                "token_usage_summary": {"total_tokens": 321},
+                "task_run_history_path": "/tmp/task_runs/history/T13/live.json",
+            }
+
+        def fake_persist_canary_batch_record(
+            *,
+            canaries,
+            meta,
+            results,
+            model,
+            validation,
+            knowledge_light,
+            replay,
+            requested_task_id,
+            requested_subset,
+            root,
+            started_at,
+            finished_at,
+        ):
+            seen["canaries"] = canaries
+            seen["meta"] = meta
+            seen["results"] = results
+            seen["model"] = model
+            seen["validation"] = validation
+            seen["knowledge_light"] = knowledge_light
+            seen["replay"] = replay
+            seen["requested_task_id"] = requested_task_id
+            seen["requested_subset"] = requested_subset
+            seen["root"] = root
+            seen["started_at"] = started_at
+            seen["finished_at"] = finished_at
+            return {
+                "batch_id": "canary_20260410T120000Z",
+                "history_path": str(tmp_path / "task_runs" / "canary_batches" / "history" / "canary_20260410T120000Z.json"),
+                "latest_path": str(tmp_path / "task_runs" / "canary_batches" / "latest" / "live__full_curated__standard__default.json"),
+            }
+
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.build_market_state",
+            fake_build_market_state,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.load_tasks",
+            fake_load_tasks,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.run_task",
+            fake_run_task,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_run_store.persist_canary_batch_record",
+            fake_persist_canary_batch_record,
+        )
+
+        results = run_canaries(
+            [{"id": "T13", "engine_family": "pde", "complexity": "simple"}],
+            {"total_budget_usd": 1.0, "version": 7},
+            model="gpt-5.4-mini",
+            validation="standard",
+        )
+
+        assert seen["replay"] is False
+        assert seen["requested_task_id"] is None
+        assert seen["requested_subset"] is None
+        assert seen["knowledge_light"] is False
+        assert seen["model"] == "gpt-5.4-mini"
+        assert seen["validation"] == "standard"
+        assert seen["results"][0]["task_id"] == "T13"
+        assert results[0]["canary_batch_id"] == "canary_20260410T120000Z"
+        assert results[0]["canary_batch_history_path"].endswith(
+            "/task_runs/canary_batches/history/canary_20260410T120000Z.json"
+        )
 
 
 # ---------------------------------------------------------------------------

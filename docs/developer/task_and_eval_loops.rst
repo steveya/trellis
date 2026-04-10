@@ -74,6 +74,51 @@ candidates back into the canonical knowledge store. This keeps the replay
 prompt surface aligned with the state that the cassette was recorded against
 instead of letting the recording run mutate later retrieval inputs.
 
+Every canary batch now also writes a dedicated aggregate telemetry record under
+``task_runs/canary_batches/``:
+
+- ``task_runs/canary_batches/history/<batch_id>.json`` keeps the immutable
+  per-batch history
+- ``task_runs/canary_batches/latest/<scope>.json`` keeps the latest batch for a
+  stable comparison scope such as ``live__full_curated__standard__default``
+
+Those records sit on top of the existing per-task run history. They do not
+replace ``task_runs/history/``; instead they provide the trustworthy canary
+view that raw task runs could not guarantee on their own.
+
+Each batch record carries:
+
+- explicit lineage for ``live`` versus ``cassette_replay`` execution
+- whether the batch is benchmark-eligible
+- the selection scope (full curated set, subset, or single task)
+- aggregate pass/fail, elapsed-time, token, and attempt metrics
+- per-canary entries with links back to the underlying task-run and diagnosis
+  artifacts
+
+For maintenance tooling, the deterministic loaders live in
+``trellis.agent.task_run_store``:
+
+- ``load_canary_batch_records()``
+- ``load_canary_task_history()``
+
+Use those loaders, not ad hoc scans over ``task_runs/history/``, when you want
+to compare canary latency, token, or attempt trends over time. The batch store
+excludes ordinary ad hoc task runs by construction and can filter replay-backed
+history out of the benchmark view. Root-level pytest runs are also marked as
+synthetic so they do not become accidental benchmark baselines.
+
+To compare against the ``2026-04-09`` full curated rerun baseline, treat that
+date's documented ``14/14`` pass as the historical anchor and compare fresh
+batch records that match the same live scope:
+
+- ``execution_mode=live``
+- ``batch_scope=full_curated``
+- ``validation=standard``
+- ``knowledge_profile=default``
+
+Fresh partial-task reruns are still useful for diagnosis, but they should not
+be described as replacements for the full curated baseline.
+
 Evals And Stress Tasks
 ----------------------
 
