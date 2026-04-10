@@ -172,7 +172,7 @@ Status mirror last synced: `2026-04-10`
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-700` Canary suite: stabilization, remediation, and gate readiness | Backlog |
+| `QUA-700` Canary suite: stabilization, remediation, and gate readiness | Done |
 
 ### Ordered Queue
 
@@ -194,15 +194,19 @@ Status mirror last synced: `2026-04-10`
 
 Note:
 
-- `QUA-700` now remains open only for umbrella closeout. The direct canary
-  recovery tranche, the full-task replay tranche (`QUA-458`), the trustworthy
-  telemetry tranche (`QUA-710`), the stale-test hygiene slice (`QUA-428`), and
-  the explicit local gate entrypoints (`QUA-430`) are complete after the
-  `2026-04-09` full curated rerun, the `2026-04-10` cassette-backed replay
-  landing, the `2026-04-10` live `T13` telemetry rerun that now persists
-  aggregate canary batch records under `task_runs/canary_batches/`, the
-  `2026-04-10` local hygiene tool / collection guard landing, and the
-  `2026-04-10` `gate-pr` / `gate-canary` / `gate-release` command landing.
+- `QUA-700` is now complete. The direct canary recovery tranche, the full-task
+  replay tranche (`QUA-458`), the trustworthy telemetry tranche (`QUA-710`),
+  the stale-test hygiene slice (`QUA-428`), and the explicit local gate
+  entrypoints (`QUA-430`) are all landed after the `2026-04-09` full curated
+  rerun, the `2026-04-10` cassette-backed replay landing, the `2026-04-10`
+  live `T13` telemetry rerun that now persists aggregate canary batch records
+  under `task_runs/canary_batches/`, the `2026-04-10` local hygiene tool /
+  collection guard landing, and the `2026-04-10` `gate-pr` / `gate-canary` /
+  `gate-release` command landing.
+- The release gate currently probes the repo's existing drift surface and will
+  report when no latest checkpoint is available for the replayed task. That
+  caveat no longer reopens the stabilization umbrella; it is now an
+  operational note on top of an otherwise complete canary workflow.
 - `T01` is now green through the short-rate comparison-regime workstream in
   `docs/plans/short-rate-comparison-regime-and-claim-helpers.md` under
   `QUA-746` through `QUA-751`. The recovery path materializes task-level
