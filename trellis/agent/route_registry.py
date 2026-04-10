@@ -23,7 +23,11 @@ from typing import Any
 import yaml
 
 from trellis.agent.codegen_guardrails import PrimitiveRef
-from trellis.agent.family_lowering_ir import EventAwareMonteCarloIR, EventAwarePDEIR
+from trellis.agent.family_lowering_ir import (
+    EventAwareMonteCarloIR,
+    EventAwarePDEIR,
+    TransformPricingIR,
+)
 from trellis.agent.knowledge.import_registry import (
     get_repo_revision,
     is_valid_import,
@@ -96,6 +100,7 @@ class RouteAdmissibilitySpec:
     supported_process_families: tuple[str, ...] = ()
     supported_path_requirement_kinds: tuple[str, ...] = ()
     supported_operator_families: tuple[str, ...] = ()
+    supported_characteristic_families: tuple[str, ...] = ()
     supported_event_transform_kinds: tuple[str, ...] = ()
     supports_calibration: bool = False
 
@@ -314,6 +319,7 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_process_families=(),
             supported_path_requirement_kinds=(),
             supported_operator_families=(),
+            supported_characteristic_families=(),
             supported_event_transform_kinds=(),
             supports_calibration=False,
         ),
@@ -328,6 +334,7 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_process_families=(),
             supported_path_requirement_kinds=(),
             supported_operator_families=("black_scholes_1d",),
+            supported_characteristic_families=(),
             supported_event_transform_kinds=(),
             supports_calibration=False,
         ),
@@ -342,6 +349,7 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_process_families=(),
             supported_path_requirement_kinds=(),
             supported_operator_families=(),
+            supported_characteristic_families=(),
             supported_event_transform_kinds=(),
             supports_calibration=True,
         ),
@@ -363,6 +371,7 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_process_families=(),
             supported_path_requirement_kinds=("terminal_only", "full_path", "event_snapshots", "event_replay", "reducer_state"),
             supported_operator_families=(),
+            supported_characteristic_families=(),
             supported_event_transform_kinds=(),
             supports_calibration=False,
         ),
@@ -377,6 +386,7 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_process_families=(),
             supported_path_requirement_kinds=(),
             supported_operator_families=(),
+            supported_characteristic_families=(),
             supported_event_transform_kinds=(),
             supports_calibration=False,
         ),
@@ -391,6 +401,7 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_process_families=(),
             supported_path_requirement_kinds=("terminal_only", "full_path", "event_snapshots", "event_replay", "reducer_state"),
             supported_operator_families=(),
+            supported_characteristic_families=(),
             supported_event_transform_kinds=(),
             supports_calibration=False,
         ),
@@ -405,6 +416,7 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_process_families=(),
             supported_path_requirement_kinds=(),
             supported_operator_families=(),
+            supported_characteristic_families=("gbm_log_spot", "heston_log_spot"),
             supported_event_transform_kinds=(),
             supports_calibration=False,
         ),
@@ -419,6 +431,7 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_process_families=(),
             supported_path_requirement_kinds=(),
             supported_operator_families=(),
+            supported_characteristic_families=(),
             supported_event_transform_kinds=(),
             supports_calibration=False,
         ),
@@ -433,6 +446,7 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_process_families=(),
             supported_path_requirement_kinds=(),
             supported_operator_families=(),
+            supported_characteristic_families=(),
             supported_event_transform_kinds=(),
             supports_calibration=False,
         ),
@@ -450,6 +464,7 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
             supported_process_families=spec.supported_process_families,
             supported_path_requirement_kinds=spec.supported_path_requirement_kinds,
             supported_operator_families=spec.supported_operator_families,
+            supported_characteristic_families=spec.supported_characteristic_families,
             supported_event_transform_kinds=spec.supported_event_transform_kinds,
             supports_calibration=spec.supports_calibration,
         )
@@ -472,6 +487,7 @@ def _parse_admissibility(raw: dict | None, *, route_id: str, engine_family: str)
         supported_process_families=_str_tuple(raw.get("supported_process_families")) or default.supported_process_families,
         supported_path_requirement_kinds=_str_tuple(raw.get("supported_path_requirement_kinds")) or default.supported_path_requirement_kinds,
         supported_operator_families=_str_tuple(raw.get("supported_operator_families")) or default.supported_operator_families,
+        supported_characteristic_families=_str_tuple(raw.get("supported_characteristic_families")) or default.supported_characteristic_families,
         supported_event_transform_kinds=_str_tuple(raw.get("supported_event_transform_kinds")) or default.supported_event_transform_kinds,
         supports_calibration=bool(raw.get("supports_calibration", default.supports_calibration)),
     )
@@ -1093,6 +1109,7 @@ def route_binding_authority_summary(
                 "supported_process_families": list(backend_binding.admissibility.supported_process_families),
                 "supported_path_requirement_kinds": list(backend_binding.admissibility.supported_path_requirement_kinds),
                 "supported_operator_families": list(backend_binding.admissibility.supported_operator_families),
+                "supported_characteristic_families": list(backend_binding.admissibility.supported_characteristic_families),
                 "supported_event_transform_kinds": list(backend_binding.admissibility.supported_event_transform_kinds),
                 "supports_calibration": backend_binding.admissibility.supports_calibration,
             },
@@ -1289,7 +1306,7 @@ def evaluate_route_admissibility(
     failures: list[str] = []
 
     control_style = str(getattr(getattr(product, "controller_protocol", None), "controller_style", "identity")).strip() or "identity"
-    if isinstance(family_ir, (EventAwarePDEIR, EventAwareMonteCarloIR)):
+    if isinstance(family_ir, (EventAwarePDEIR, EventAwareMonteCarloIR, TransformPricingIR)):
         lowered_control_style = str(
             getattr(getattr(family_ir, "control_spec", None), "control_style", "") or ""
         ).strip()
@@ -1349,6 +1366,12 @@ def evaluate_route_admissibility(
                 for tag in getattr(getattr(family_ir, "state_spec", None), "state_tags", ()) or ()
                 if str(tag).strip()
             }
+        elif isinstance(family_ir, TransformPricingIR):
+            state_tags = {
+                str(tag)
+                for tag in getattr(getattr(family_ir, "state_spec", None), "state_tags", ()) or ()
+                if str(tag).strip()
+            }
         elif isinstance(family_ir, EventAwareMonteCarloIR):
             state_tags = {
                 str(tag)
@@ -1382,6 +1405,17 @@ def evaluate_route_admissibility(
             for kind in family_ir.event_transform_kinds:
                 if kind not in supported_transforms:
                     failures.append(f"unsupported_event_transform_kind:{kind}")
+    if isinstance(family_ir, TransformPricingIR):
+        supported_characteristics = set(admissibility.supported_characteristic_families)
+        characteristic_family = str(
+            getattr(getattr(family_ir, "characteristic_spec", None), "characteristic_family", "")
+        ).strip()
+        if (
+            supported_characteristics
+            and characteristic_family
+            and characteristic_family not in supported_characteristics
+        ):
+            failures.append(f"unsupported_characteristic_family:{characteristic_family}")
     if isinstance(family_ir, EventAwareMonteCarloIR):
         supported_processes = set(admissibility.supported_process_families)
         process_family = str(getattr(getattr(family_ir, "process_spec", None), "process_family", "")).strip()

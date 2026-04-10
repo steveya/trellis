@@ -407,6 +407,36 @@ def test_platform_trace_summarizes_terminal_only_event_aware_monte_carlo_family_
     assert family_ir_summary["compatibility_status"] == "native_event_aware"
 
 
+def test_platform_trace_summarizes_transform_family_ir(tmp_path):
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.platform_traces import load_platform_trace_boundary, record_platform_trace
+
+    compiled = compile_build_request(
+        "European equity call on AAPL with strike 120 and expiry 2025-11-15",
+        instrument_type="european_option",
+        preferred_method="fft_pricing",
+    )
+
+    trace_path = record_platform_trace(
+        compiled,
+        success=True,
+        outcome="build_completed",
+        root=tmp_path,
+    )
+    boundary = load_platform_trace_boundary(trace_path)
+    lowering = boundary["generation_boundary"]["lowering"]
+    family_ir_summary = lowering["family_ir_summary"]
+
+    assert lowering["family_ir_type"] == "TransformPricingIR"
+    assert family_ir_summary["characteristic_family"] == "gbm_log_spot"
+    assert family_ir_summary["control_style"] == "identity"
+    assert family_ir_summary["semantic_control_style"] == "holder_max"
+    assert family_ir_summary["terminal_payoff_kind"] == "vanilla_terminal_payoff"
+    assert family_ir_summary["quote_semantics"] == "equity_black_vol_surface"
+    assert family_ir_summary["helper_symbol"] == "price_vanilla_equity_option_transform"
+    assert family_ir_summary["compatibility_status"] == "native_transform_family_ir"
+
+
 def test_platform_trace_summary_reads_legacy_top_level_route_binding_fields():
     from trellis.agent.platform_traces import _construction_identity_summary, _generation_boundary_summary
 

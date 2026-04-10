@@ -13,6 +13,7 @@ from trellis.agent.family_lowering_ir import (
     EventAwarePDEIR,
     ExerciseLatticeIR,
     NthToDefaultIR,
+    TransformPricingIR,
     VanillaEquityPDEIR,
 )
 from trellis.agent.knowledge.methods import normalize_method
@@ -289,6 +290,15 @@ def _state_obligations_for(family_ir) -> tuple[str, ...]:
                 *(f"semantic_event_kind:{kind}" for kind in getattr(getattr(family_ir, "event_program", None), "event_kinds", ()) or ()),
             )
         )
+    if isinstance(family_ir, TransformPricingIR):
+        return _tuple_unique(
+            (
+                family_ir.state_spec.state_variable,
+                *(family_ir.state_spec.state_tags or ()),
+                family_ir.characteristic_spec.characteristic_family,
+                family_ir.terminal_payoff_kind,
+            )
+        )
     if isinstance(family_ir, ExerciseLatticeIR):
         return _tuple_unique(
             (
@@ -367,6 +377,24 @@ def _control_obligations_for(family_ir) -> tuple[str, ...]:
                 *(f"event_transform:{kind}" for kind in family_ir.event_transform_kinds),
             )
         )
+    if isinstance(family_ir, TransformPricingIR):
+        semantic_control = getattr(family_ir, "control_program", None)
+        return _tuple_unique(
+            (
+                f"control_style:{family_ir.control_spec.control_style}",
+                f"controller_role:{family_ir.control_spec.controller_role}",
+                f"quote_semantics:{family_ir.quote_semantics}",
+                f"strike_semantics:{family_ir.strike_semantics}",
+                *(
+                    (
+                        f"semantic_control_style:{semantic_control.control_style}",
+                        f"semantic_controller_role:{semantic_control.controller_role}",
+                    )
+                    if semantic_control is not None
+                    else ()
+                ),
+            )
+        )
     if isinstance(family_ir, ExerciseLatticeIR):
         return _tuple_unique(
             (
@@ -436,6 +464,17 @@ def _construction_steps_for(*, lane_family: str, family_ir) -> tuple[str, ...]:
             f"Assemble a one-dimensional `{operator_family}` rollback state over `{family_ir.state_spec.state_variable or 'state'}`.",
             f"Apply `{terminal_kind}` at maturity and schedule the typed event transforms: {', '.join(family_ir.event_transform_kinds) or 'none'}.",
             f"Enforce `{control_style}` control semantics during backward stepping before reading out the price.",
+        )
+    if isinstance(family_ir, TransformPricingIR):
+        characteristic_family = (
+            family_ir.characteristic_spec.characteristic_family or "generic_transform_characteristic"
+        )
+        backend_capability = family_ir.characteristic_spec.backend_capability or "raw_kernel_only"
+        binding_target = family_ir.helper_symbol or "raw FFT/COS kernels"
+        return (
+            f"Assemble a terminal-only transform contract over `{family_ir.state_spec.state_variable or 'state'}` with `{characteristic_family}`.",
+            f"Normalize the payoff to `{family_ir.terminal_payoff_kind}` with `{family_ir.quote_semantics}` inputs before transform evaluation.",
+            f"Dispatch through `{binding_target}` according to backend capability `{backend_capability}` instead of widening semantic admissibility.",
         )
     if isinstance(family_ir, ExerciseLatticeIR):
         return (

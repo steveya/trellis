@@ -11,6 +11,7 @@ from trellis.agent.family_lowering_ir import (
     EventAwarePDEIR,
     ExerciseLatticeIR,
     NthToDefaultIR,
+    TransformPricingIR,
     VanillaEquityPDEIR,
 )
 
@@ -340,6 +341,9 @@ def test_vanilla_option_transform_lowers_to_checked_in_transform_helper():
     assert lowering.route_id == "transform_fft"
     assert lowering.route_family == "fft_pricing"
     assert lowering.admissibility_errors == ()
+    assert isinstance(lowering.family_ir, TransformPricingIR)
+    assert lowering.family_ir.control_spec.control_style == "identity"
+    assert lowering.family_ir.state_spec.state_tags == ("terminal_markov",)
     assert isinstance(lowering.normalized_expr, ContractAtom)
     assert lowering.normalized_expr.atom_id == "transform_fft:route_helper"
     assert lowering.normalized_expr.primitive_ref == (

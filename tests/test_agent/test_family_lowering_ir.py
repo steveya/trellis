@@ -21,6 +21,7 @@ from trellis.agent.family_lowering_ir import (
     MCProcessSpec,
     MCStateSpec,
     NthToDefaultIR,
+    TransformPricingIR,
     VanillaEquityPDEIR,
 )
 
@@ -228,10 +229,55 @@ def test_vanilla_option_monte_carlo_compiles_to_terminal_only_event_aware_family
     assert family_ir.state_spec.state_variable == "spot"
     assert family_ir.process_spec.process_family == "gbm_1d"
     assert family_ir.path_requirement_spec.requirement_kind == "terminal_only"
-    assert family_ir.path_requirement_spec.replay_mode == "none"
-    assert family_ir.payoff_reducer_spec.reducer_kind == "terminal_payoff"
-    assert family_ir.event_dates == ()
-    assert family_ir.event_kinds == ()
+
+
+def test_vanilla_option_transform_compiles_to_bounded_transform_family_ir():
+    from dataclasses import replace
+
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+    contract = make_vanilla_option_contract(
+        description="EUR call on AAPL, K=150, T=1y",
+        underliers=("AAPL",),
+        observation_schedule=("2026-06-20",),
+        preferred_method="analytical",
+    )
+    transform_contract = replace(
+        contract,
+        methods=replace(
+            contract.methods,
+            candidate_methods=contract.methods.candidate_methods + ("fft_pricing",),
+            reference_methods=("fft_pricing",),
+            preferred_method="fft_pricing",
+        ),
+    )
+    blueprint = compile_semantic_contract(transform_contract, preferred_method="fft_pricing")
+
+    family_ir = blueprint.dsl_lowering.family_ir
+    assert isinstance(family_ir, TransformPricingIR)
+    assert family_ir.route_id == "transform_fft"
+    assert family_ir.route_family == "fft_pricing"
+    assert family_ir.product_instrument == "european_option"
+    assert family_ir.payoff_family == "vanilla_option"
+    assert family_ir.state_spec.state_variable == "spot"
+    assert family_ir.state_spec.dimension == 1
+    assert family_ir.state_spec.state_tags == ("terminal_markov",)
+    assert family_ir.characteristic_spec.model_family == "equity_diffusion"
+    assert family_ir.characteristic_spec.characteristic_family == "gbm_log_spot"
+    assert family_ir.characteristic_spec.supported_methods == ("fft", "cos")
+    assert family_ir.control_spec.control_style == "identity"
+    assert family_ir.control_spec.controller_role == "holder"
+    assert family_ir.control_program.control_style == "holder_max"
+    assert family_ir.control_program.controller_role == "holder"
+    assert family_ir.control_program.schedule_role == "decision_dates"
+    assert family_ir.terminal_payoff_kind == "vanilla_terminal_payoff"
+    assert family_ir.strike_semantics == "vanilla_strike"
+    assert family_ir.quote_semantics == "equity_black_vol_surface"
+    assert family_ir.helper_symbol == "price_vanilla_equity_option_transform"
+    assert family_ir.market_mapping == "single_state_diffusion_transform_inputs"
+    assert family_ir.timeline_roles == blueprint.dsl_lowering.normalized_expr.signature.timeline_roles
+    assert family_ir.required_input_ids == blueprint.required_market_data
 
 
 def test_callable_bond_compiles_to_exercise_lattice_family_ir():

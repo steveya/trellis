@@ -642,6 +642,7 @@ def _family_ir_trace_summary(family_ir_payload: dict[str, Any]) -> dict[str, Any
         return {}
 
     state_spec = dict(family_ir_payload.get("state_spec") or {})
+    characteristic_spec = dict(family_ir_payload.get("characteristic_spec") or {})
     process_spec = dict(family_ir_payload.get("process_spec") or {})
     operator_spec = dict(family_ir_payload.get("operator_spec") or {})
     control_spec = dict(family_ir_payload.get("control_spec") or {})
@@ -701,6 +702,10 @@ def _family_ir_trace_summary(family_ir_payload: dict[str, Any]) -> dict[str, Any
         "state_variable": state_spec.get("state_variable"),
         "dimension": state_spec.get("dimension"),
         "state_tags": list(state_spec.get("state_tags") or ()),
+        "model_family": characteristic_spec.get("model_family"),
+        "characteristic_family": characteristic_spec.get("characteristic_family"),
+        "supported_transform_methods": list(characteristic_spec.get("supported_methods") or ()),
+        "transform_backend_capability": characteristic_spec.get("backend_capability"),
         "process_family": process_spec.get("process_family"),
         "simulation_scheme": process_spec.get("simulation_scheme"),
         "operator_family": operator_spec.get("operator_family"),
@@ -713,6 +718,9 @@ def _family_ir_trace_summary(family_ir_payload: dict[str, Any]) -> dict[str, Any
         "semantic_schedule_role": control_program.get("schedule_role"),
         "path_requirement_kind": path_requirement_spec.get("requirement_kind"),
         "reducer_kind": payoff_reducer_spec.get("reducer_kind"),
+        "terminal_payoff_kind": family_ir_payload.get("terminal_payoff_kind"),
+        "strike_semantics": family_ir_payload.get("strike_semantics"),
+        "quote_semantics": family_ir_payload.get("quote_semantics"),
         "event_kinds": event_kinds,
         "semantic_event_kinds": semantic_event_kinds,
         "terminal_condition_kind": boundary_spec.get("terminal_condition_kind"),
@@ -721,12 +729,21 @@ def _family_ir_trace_summary(family_ir_payload: dict[str, Any]) -> dict[str, Any
         "event_dates": event_dates,
         "semantic_event_dates": semantic_event_dates,
         "helper_symbol": family_ir_payload.get("helper_symbol"),
+        "market_mapping": family_ir_payload.get("market_mapping"),
         "compatibility_wrapper": compatibility_wrapper or None,
         "compatibility_status": (
-            "transitional_wrapper" if compatibility_wrapper else "native_event_aware"
+            "transitional_wrapper"
+            if compatibility_wrapper
+            else "native_transform_family_ir"
+            if characteristic_spec
+            else "native_event_aware"
         ),
         "end_state": (
-            "migrate_to_plain_EventAwarePDEIR" if compatibility_wrapper else "native_event_aware"
+            "migrate_to_plain_EventAwarePDEIR"
+            if compatibility_wrapper
+            else "native_transform_family_ir"
+            if characteristic_spec
+            else "native_event_aware"
         ),
     }
     return summary

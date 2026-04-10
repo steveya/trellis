@@ -33,6 +33,7 @@ from trellis.agent.family_lowering_ir import (
     EventAwarePDEIR,
     ExerciseLatticeIR,
     NthToDefaultIR,
+    TransformPricingIR,
     VanillaEquityPDEIR,
     build_family_lowering_ir,
 )
@@ -304,6 +305,12 @@ def _build_expr_for_family_ir(
         )
     if isinstance(family_ir, EventAwareMonteCarloIR):
         return _build_event_aware_monte_carlo_expr_from_family_ir(
+            route_id=route_id,
+            family_ir=family_ir,
+            bindings=bindings,
+        )
+    if isinstance(family_ir, TransformPricingIR):
+        return _build_transform_expr_from_family_ir(
             route_id=route_id,
             family_ir=family_ir,
             bindings=bindings,
@@ -714,6 +721,63 @@ def _build_event_aware_monte_carlo_expr_from_family_ir(
         ),
     )
     return ThenExpr(terms=(process_atom, simulation_atom, reducer_atom)), ()
+
+
+def _build_transform_expr_from_family_ir(
+    *,
+    route_id: str,
+    family_ir: TransformPricingIR,
+    bindings: tuple[DslTargetBinding, ...],
+) -> tuple[ContractExpr | None, tuple[str, ...]]:
+    """Build a bounded transform-pricing lowering from typed family IR."""
+    market_signature = _market_signature_from_family_ir(family_ir)
+    if family_ir.helper_symbol:
+        route_helper = next(
+            (
+                binding
+                for binding in bindings
+                if binding.role == "route_helper" and binding.symbol == family_ir.helper_symbol
+            ),
+            None,
+        )
+        if route_helper is None:
+            return None, (
+                f"Route '{route_id}' is missing the required route helper '{family_ir.helper_symbol}'.",
+            )
+        helper_atom = ContractAtom(
+            atom_id=f"{route_id}:route_helper",
+            primitive_ref=route_helper.primitive_ref,
+            description=(
+                f"Typed transform helper for {family_ir.product_instrument or 'compiled'} "
+                f"with characteristic={family_ir.characteristic_spec.characteristic_family or 'generic_cf'}."
+            ),
+            signature=market_signature,
+        )
+        return helper_atom, ()
+
+    transform_pricer = next(
+        (
+            binding
+            for binding in bindings
+            if binding.role == "transform_pricer"
+        ),
+        None,
+    )
+    if transform_pricer is None:
+        return None, (
+            f"Route '{route_id}' is missing the required raw transform pricing primitive.",
+        )
+
+    kernel_atom = ContractAtom(
+        atom_id=f"{route_id}:transform_pricer",
+        primitive_ref=transform_pricer.primitive_ref,
+        description=(
+            f"Typed raw transform pricing kernel for {family_ir.product_instrument or 'compiled'} "
+            f"with characteristic={family_ir.characteristic_spec.characteristic_family or 'generic_cf'}."
+        ),
+        signature=market_signature,
+    )
+    return kernel_atom, ()
 
 
 def _binding_supports_mc_process(binding: DslTargetBinding, process_family: str) -> bool:

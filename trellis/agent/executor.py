@@ -2671,7 +2671,10 @@ def _skeleton_exact_binding_import_lines(generation_plan) -> tuple[str, ...]:
         refs.extend(
             f"{primitive.module}.{primitive.symbol}"
             for primitive in getattr(primitive_plan, "primitives", ()) or ()
-            if getattr(primitive, "role", "") in {"route_helper", "pricing_kernel", "schedule_builder"}
+            if (
+                getattr(primitive, "required", False)
+                or getattr(primitive, "role", "") in {"route_helper", "pricing_kernel", "schedule_builder"}
+            )
             and getattr(primitive, "module", "")
             and getattr(primitive, "symbol", "")
         )
@@ -2813,6 +2816,37 @@ def _deterministic_exact_binding_evaluate_body(
     vanilla_equity_transform_kwargs = _vanilla_equity_transform_helper_kwargs(comparison_target)
     zcb_option_tree_kwargs = _zcb_option_tree_helper_kwargs(comparison_target)
     credit_basket_tranche_kwargs = _credit_basket_tranche_helper_kwargs(comparison_target)
+    if (
+        comparison_target == "black_scholes"
+        and "trellis.models.black.black76_call" in refs
+        and "trellis.models.black.black76_put" in refs
+    ):
+        return textwrap.dedent(
+            """\
+            spec = self._spec
+            if market_state.discount is None:
+                raise ValueError("market_state.discount is required for Black-Scholes comparison")
+            if market_state.vol_surface is None:
+                raise ValueError("market_state.vol_surface is required for Black-Scholes comparison")
+            T = max(float(year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)), 0.0)
+            spot = float(spec.spot)
+            strike = float(spec.strike)
+            option_type = str(spec.option_type or "call").strip().lower()
+            if T <= 0.0:
+                intrinsic = max(spot - strike, 0.0) if option_type == "call" else max(strike - spot, 0.0)
+                return float(spec.notional) * intrinsic
+            df = float(market_state.discount.discount(T))
+            sigma = float(market_state.vol_surface.black_vol(max(T, 1e-6), spec.strike))
+            forward = spot / max(df, 1e-12)
+            if option_type == "call":
+                undiscounted = black76_call(forward, strike, sigma, T)
+            elif option_type == "put":
+                undiscounted = black76_put(forward, strike, sigma, T)
+            else:
+                raise ValueError(f"Unsupported option_type {spec.option_type!r}")
+            return float(spec.notional) * df * float(undiscounted)
+            """
+        ).rstrip()
     helper_bodies = {
         "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state": (
             "return float(price_quanto_option_analytical_from_market_state(market_state, spec))"
