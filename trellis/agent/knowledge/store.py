@@ -487,17 +487,39 @@ class KnowledgeStore:
 
         scored.sort(key=lambda item: (-item[0], _SEVERITY_ORDER.get(item[1].severity, 3)))
 
-        overfetch_n = max(max_n * 2, max_n + 1)
-        candidate_entries = [idx for _, idx in scored[:overfetch_n]]
-        lessons: list[Lesson] = []
+        needs_semantic_rerank = bool(spec.semantic_text_markers)
+        if not needs_semantic_rerank:
+            lessons: list[Lesson] = []
+            for _, idx in scored:
+                lesson = self._load_lesson(idx.id)
+                if lesson is None:
+                    continue
+                lessons.append(lesson)
+                if len(lessons) >= max_n:
+                    break
+            return lessons
 
-        for idx in candidate_entries:
+        overfetch_n = max(max_n * 2, max_n + 1)
+        rescored_lessons: list[tuple[float, float, Lesson]] = []
+
+        for base_score, idx in scored[:overfetch_n]:
             lesson = self._load_lesson(idx.id)
             if lesson is None:
                 continue
-            lessons.append(lesson)
-            if len(lessons) >= max_n:
-                return lessons
+            combined_score = base_score + self._lesson_semantic_bonus(lesson, spec)
+            rescored_lessons.append((combined_score, base_score, lesson))
+
+        rescored_lessons.sort(
+            key=lambda item: (
+                -item[0],
+                -item[1],
+                _SEVERITY_ORDER.get(item[2].severity, 3),
+                item[2].id,
+            )
+        )
+        lessons = [lesson for _, _, lesson in rescored_lessons[:max_n]]
+        if len(lessons) >= max_n:
+            return lessons
 
         for _, idx in scored[overfetch_n:]:
             lesson = self._load_lesson(idx.id)
@@ -507,6 +529,29 @@ class KnowledgeStore:
             if len(lessons) >= max_n:
                 break
         return lessons
+
+    @staticmethod
+    def _lesson_semantic_bonus(
+        lesson: Lesson,
+        spec: RetrievalSpec,
+    ) -> float:
+        """Apply a shallow full-text rerank bonus from ProductIR-derived markers."""
+        raw_text = " ".join(
+            (
+                lesson.title,
+                lesson.symptom,
+                lesson.root_cause,
+                lesson.fix,
+                lesson.validation,
+            )
+        ).lower()
+        normalized_text = raw_text.replace("-", " ").replace("_", " ")
+        matched = {
+            marker
+            for marker in spec.semantic_text_markers
+            if marker and (marker in raw_text or marker in normalized_text)
+        }
+        return min(0.5 * len(matched), 2.0)
 
     def _should_surface_similar_products(
         self,

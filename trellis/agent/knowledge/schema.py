@@ -648,6 +648,8 @@ class RetrievalSpec:
     schedule_dependence: bool | None = None
     model_family: str | None = None
     candidate_engine_families: tuple[str, ...] = ()
+    semantic_text_markers: tuple[str, ...] = ()
+    reusable_primitives: tuple[str, ...] = ()
     unresolved_primitives: tuple[str, ...] = ()
     error_signatures: list[str] = field(default_factory=list)
     max_lessons: int = 7

@@ -430,6 +430,8 @@ class TestKnowledgeStore:
         assert "garman_kohlhagen_price_raw" in k["cookbook"].template
         assert "fx_rates" in requirements_text
         assert "forward_curve" in requirements_text
+        lesson_ids = [lesson.id for lesson in k["lessons"]]
+        assert "md_114" in lesson_ids
 
     def test_retrieve_swaption_ir_includes_helper_backed_black76_guidance(self):
         from trellis.agent.knowledge import retrieve_for_product_ir

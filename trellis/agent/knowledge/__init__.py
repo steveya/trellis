@@ -138,6 +138,8 @@ def retrieve_for_product_ir(
         schedule_dependence=spec.schedule_dependence,
         model_family=spec.model_family,
         candidate_engine_families=spec.candidate_engine_families,
+        semantic_text_markers=spec.semantic_text_markers,
+        reusable_primitives=spec.reusable_primitives,
         unresolved_primitives=spec.unresolved_primitives,
         error_signatures=error_signatures or [],
         max_lessons=max_lessons,

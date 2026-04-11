@@ -184,6 +184,14 @@ successful method leg, not by summing all nested attempts. Two methods that
 both succeed on their first method-local attempt still count as a first-pass
 task-level success.
 
+The proving harness depends on the same ``ProductIR`` retrieval bridge as the
+ordinary build loop. That bridge now carries market-data-derived retrieval
+features plus a small set of IR-derived semantic text markers into lesson
+selection. The intent is narrow: once a lesson is already broadly relevant by
+method and feature overlap, the rerank can surface the lane-specific lesson
+that actually matches the current analytical or helper-bound contract instead
+of stopping at a more generic lesson from the same method family.
+
 For broader short-term learning evidence, use
 ``scripts/run_task_learning_benchmark.py``. That runner selects a non-canary
 cohort from ``TASKS.yaml`` and executes repeated passes at the same git

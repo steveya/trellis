@@ -47,6 +47,14 @@ The active loop has five stages.
    superseded lessons, and returns the top active matches together with the
    relevant cookbook, contracts, requirements, and matched failure signatures.
 
+   When the compiler already has a ``ProductIR``, retrieval now also carries
+   forward a small set of structural hints from that IR: market-data-derived
+   retrieval features such as ``forward_rate`` plus semantic text markers built
+   from the instrument, payoff family, model family, route-family labels, and
+   reusable primitives. That keeps retrieval feature-first, but lets the final
+   rerank prefer lessons that mention the exact analytical/helper contract
+   already implied by the IR.
+
 2. Diagnose failures during repair
 
    Retry feedback uses two inputs:
