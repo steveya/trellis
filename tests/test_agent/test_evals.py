@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+import yaml
 
 from trellis.agent.quant import PricingPlan
 
@@ -496,6 +499,97 @@ def test_summarize_task_results_reports_retry_recovery_and_reviewer_signals():
     assert summary["token_usage"]["call_count"] == 3
     assert summary["token_usage"]["calls_without_usage"] == 1
     assert summary["token_usage"]["by_stage"]["code_generation"]["total_tokens"] == 120
+
+
+def test_summarize_task_results_uses_attempts_to_success_for_comparison_tasks(tmp_path):
+    from trellis.agent.evals import summarize_task_results
+
+    def _write_platform_trace(name: str, *events: dict[str, object]) -> str:
+        trace_path = tmp_path / f"{name}.yaml"
+        trace_path.write_text(
+            yaml.safe_dump(
+                {
+                    "request_id": name,
+                    "status": "succeeded",
+                    "outcome": "build_completed",
+                },
+                sort_keys=False,
+            )
+        )
+        events_path = trace_path.with_suffix(".events.ndjson")
+        if events:
+            events_path.write_text(
+                "\n".join(json.dumps(event) for event in events) + "\n"
+            )
+        return str(trace_path)
+
+    results = [
+        {
+            "task_id": "KL01",
+            "success": True,
+            "attempts": 2,
+            "method_results": {
+                "analytical": {
+                    "success": True,
+                    "attempts": 1,
+                    "platform_trace_path": _write_platform_trace("kl01_analytical"),
+                },
+                "monte_carlo": {
+                    "success": True,
+                    "attempts": 1,
+                    "platform_trace_path": _write_platform_trace("kl01_mc"),
+                },
+            },
+        },
+        {
+            "task_id": "KL02",
+            "success": True,
+            "attempts": 3,
+            "method_results": {
+                "analytical": {
+                    "success": True,
+                    "attempts": 2,
+                    "platform_trace_path": _write_platform_trace(
+                        "kl02_analytical",
+                        {
+                            "event": "builder_attempt_failed",
+                            "status": "error",
+                            "timestamp": "2026-04-10T15:00:00+00:00",
+                            "details": {"reason": "semantic_validation"},
+                        },
+                        {
+                            "event": "builder_attempt_succeeded",
+                            "status": "ok",
+                            "timestamp": "2026-04-10T15:00:01+00:00",
+                            "details": {"attempt": 2},
+                        },
+                    ),
+                },
+                "monte_carlo": {
+                    "success": True,
+                    "attempts": 1,
+                    "platform_trace_path": _write_platform_trace("kl02_mc"),
+                },
+            },
+        },
+    ]
+
+    summary = summarize_task_results(results)
+
+    assert summary["retry_recovery"]["first_attempt_successes"] == 1
+    assert summary["retry_recovery"]["successful_after_retry"] == 1
+    assert summary["first_pass"]["successful_tasks"] == 2
+    assert summary["first_pass"]["first_pass_successes"] == 1
+    assert summary["first_pass"]["rate"] == 0.5
+    assert summary["attempts_to_success"]["average"] == 1.5
+    assert summary["attempts_to_success"]["median"] == 1.5
+    assert summary["attempts_to_success"]["max"] == 2
+    assert summary["attempts_to_success"]["distribution"] == {"1": 1, "2": 1}
+    assert summary["retry_taxonomy"]["recovered_successes"] == 1
+    assert summary["retry_taxonomy"]["unattributed_recoveries"] == 0
+    assert summary["retry_taxonomy"]["by_stage"]["semantic_validation"]["count"] == 1
+    assert summary["retry_taxonomy"]["by_stage"]["semantic_validation"]["task_ids"] == ["KL02"]
+    assert summary["retry_taxonomy"]["by_task"]["KL02"] == ["semantic_validation"]
 
 
 def test_summarize_promotion_discipline_flags_success_without_reusable_artifacts():

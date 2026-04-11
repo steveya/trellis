@@ -258,7 +258,7 @@ class TestRegistryValidation:
 
     def test_reuse_module_paths_hydrate_for_checked_in_deterministic_routes(self, registry):
         analytical_fx = find_route_by_id("analytical_garman_kohlhagen", registry)
-        monte_carlo_fx = find_route_by_id("monte_carlo_paths", registry)
+        monte_carlo_fx = find_route_by_id("monte_carlo_fx_vanilla", registry)
         analytical_quanto = find_route_by_id("quanto_adjustment_analytical", registry)
         monte_carlo_quanto = find_route_by_id("correlated_gbm_monte_carlo", registry)
 
@@ -957,6 +957,26 @@ class TestFXAnalyticalRoutes:
         assert _prim_set(new_prims) == expected_prims
 
 
+class TestFXMonteCarloRoutes:
+    FX_IR = ProductIR(instrument="fx_option", payoff_family="vanilla_option", exercise_style="european")
+    FX_PLAN = _make_plan(
+        "monte_carlo",
+        market_data={"fx_rates", "forward_curve", "discount_curve", "black_vol_surface", "spot"},
+    )
+
+    def test_fx_candidate(self, registry):
+        new = _new_routes(registry, "monte_carlo", self.FX_IR, pricing_plan=self.FX_PLAN)
+        assert "monte_carlo_fx_vanilla" in new
+
+    def test_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_fx_vanilla"][0]
+        new_prims = resolve_route_primitives(spec, self.FX_IR)
+        expected_prims = {
+            ("trellis.models.fx_vanilla", "price_fx_vanilla_monte_carlo", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+
 # ---------------------------------------------------------------------------
 # Transform / PDE / Copula / Waterfall routes
 # ---------------------------------------------------------------------------
@@ -1322,6 +1342,7 @@ class TestEngineFamilyCoverage:
         "correlated_basket_monte_carlo": "monte_carlo",
         "exercise_monte_carlo": "exercise",
         "monte_carlo_paths": "monte_carlo",
+        "monte_carlo_fx_vanilla": "monte_carlo",
         "local_vol_monte_carlo": "monte_carlo",
         "qmc_sobol_paths": "qmc",
         "exercise_lattice": "lattice",

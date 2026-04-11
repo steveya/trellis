@@ -388,7 +388,6 @@ routes:
     route_family: monte_carlo
     status: promoted
     confidence: 1.0
-    reuse_module_paths: [instruments/_agent/fxvanillamontecarlo.py]
     score_hints:
       non_european_penalty: -2.0
       penalize_when_market_data: {local_vol_surface: -3.0}
@@ -454,6 +453,46 @@ routes:
       - when: default
         primitives: []
         adapters: []
+
+  - id: monte_carlo_fx_vanilla
+    engine_family: monte_carlo
+    route_family: monte_carlo
+    status: promoted
+    confidence: 1.0
+    reuse_module_paths: [instruments/_agent/fxvanillamontecarlo.py]
+    score_hints:
+      bonus_when_market_data: {fx_rates: 4.0, forward_curve: 4.0}
+      payoff_family_bonus: {vanilla_option: 1.0}
+      non_european_penalty: -2.0
+    match:
+      methods: [monte_carlo]
+      exclude_instruments: [quanto_option, cds, nth_to_default, basket_option]
+      required_market_data: [fx_rates, forward_curve]
+    admissibility:
+      control_styles: [identity]
+      event_support: automatic
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: native_payout_with_fx
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [pathwise_only, terminal_markov, recombining_safe, schedule_state]
+      supported_process_families: [gbm_1d]
+      supported_path_requirement_kinds: [terminal_only, full_path, event_snapshots, event_replay, reducer_state]
+      supports_calibration: true
+    primitives:
+      - module: trellis.models.fx_vanilla
+        symbol: price_fx_vanilla_monte_carlo
+        role: route_helper
+    adapters: []
+    notes:
+      - "For vanilla European FX options on the Monte Carlo lane, prefer `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo(...)`."
+      - "Treat the generated route as a thin adapter over the checked FX helper; do not rebuild GBM drift, curve resolution, or payoff discounting inline."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        forward_curve: [market_state.forward_curve, market_state.forecast_curves]
+        black_vol_surface: [market_state.vol_surface]
+        spot: [market_state.spot, market_state.underlier_spots, market_state.fx_rates]
 
   - id: local_vol_monte_carlo
     engine_family: monte_carlo

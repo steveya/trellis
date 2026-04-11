@@ -288,7 +288,10 @@ def test_american_option_route_card_mentions_equity_tree_helper():
 
 
 def test_fx_monte_carlo_route_card_mentions_fx_rate_scalar_extraction():
+    from trellis.agent.codegen_guardrails import clear_generation_plan_cache
     from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    clear_generation_plan_cache()
 
     pricing_plan = PricingPlan(
         method="monte_carlo",
@@ -308,7 +311,15 @@ def test_fx_monte_carlo_route_card_mentions_fx_rate_scalar_extraction():
 
     assert "Lane obligations:" in card
     assert "Lane family: `monte_carlo`" in card
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "monte_carlo_fx_vanilla"
+    primitive_refs = {
+        f"{primitive.module}.{primitive.symbol}"
+        for primitive in plan.primitive_plan.primitives
+    }
+    assert "trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo" in primitive_refs
     assert "Resolve scalar FX spot from `market_state.fx_rates[spec.fx_pair].spot`" in card
+    assert "price_fx_vanilla_monte_carlo" in card
     assert "FXRate` wrapper" in card
 
 

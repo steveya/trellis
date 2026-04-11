@@ -19,8 +19,14 @@ Current status:
 - `QUA-430` is complete.
 - `QUA-700` is complete.
 - `QUA-543` is complete.
+- `QUA-544` is complete with a measured `3/3` proving-success bar, `2/3`
+  task-level first-pass success, and the residual `KL01` semantic-validation
+  retry split into `QUA-779`.
 - Wave 1 is complete.
-- The next actionable ticket in queue order is `QUA-417`.
+- Wave 2 is complete.
+- `QUA-417` has been rewritten as a low-priority route-registry maintenance
+  cleanup rather than a core burn-down tranche.
+- The next actionable ticket in queue order is `QUA-429`.
 
 ## Operating Rules
 
@@ -45,12 +51,13 @@ These tickets are actionable backlog burn-down work:
 4. `QUA-430` local gate and release-gate configuration
 5. `QUA-700` canary suite closeout after replay / telemetry / gate hardening
 6. `QUA-543` stress tranche: remaining `E22` compare-ready regression
-7. `QUA-417` route registry cleanup for smaller builder obligation surfaces
-8. `QUA-544` proving runs: first-pass knowledge-light reliability
-9. `QUA-429` lesson-to-test pipeline base slice
-10. `QUA-447` semantic template follow-on for the lesson-to-test path
-11. `QUA-545` maintenance tail for residual cleanup that does not justify a
+7. `QUA-544` proving runs: first-pass knowledge-light reliability
+8. `QUA-429` lesson-to-test pipeline base slice
+9. `QUA-447` semantic template follow-on for the lesson-to-test path
+10. `QUA-545` maintenance tail for residual cleanup that does not justify a
     broader project
+11. `QUA-417` route registry cleanup: collapse redundant optional utility
+    bindings
 
 ## Out of Scope
 
@@ -90,20 +97,18 @@ Wave 1 closeout gate:
 - gate commands and release posture are documented
 - `QUA-700` is closed only after the above slices are done
 
-### Wave 2: Remaining correctness and route-surface cleanup
+### Wave 2: Remaining correctness
 
-This wave removes the highest-value remaining correctness and builder-surface
-debt once canary iteration is cheap again.
+This wave removed the highest-value remaining correctness debt once canary
+iteration was cheap again.
 
 | Order | Ticket | Expected artifact |
 | --- | --- | --- |
 | 6 | `QUA-543` | `E22` stress path restored to a compare-ready state |
-| 7 | `QUA-417` | Narrower route-registry / builder obligation surface |
 
 Wave 2 closeout gate:
 
 - the remaining stress-path regression is resolved or split cleanly
-- route-surface cleanup lands with the relevant regional validation
 
 ### Wave 3: Reliability and durable learning loop
 
@@ -112,9 +117,9 @@ to durable regression coverage.
 
 | Order | Ticket | Expected artifact |
 | --- | --- | --- |
-| 8 | `QUA-544` | Improved first-pass knowledge-light proving reliability |
-| 9 | `QUA-429` | Base lesson-to-test pipeline |
-| 10 | `QUA-447` | Semantic template follow-on on top of the base pipeline |
+| 7 | `QUA-544` | Improved first-pass knowledge-light proving reliability |
+| 8 | `QUA-429` | Base lesson-to-test pipeline |
+| 9 | `QUA-447` | Semantic template follow-on on top of the base pipeline |
 
 Wave 3 closeout gate:
 
@@ -122,11 +127,18 @@ Wave 3 closeout gate:
 - the lesson-to-test path exists end-to-end
 - semantic follow-on scope stays additive rather than reopening the base slice
 
+Current note:
+
+- `QUA-544` delivered the proving summary and route/packet hardening needed to
+  move the tranche to `3/3` success; the remaining non-first-pass retry path
+  is isolated in `QUA-779`
+
 ### Wave 4: Maintenance tail
 
 | Order | Ticket | Expected artifact |
 | --- | --- | --- |
-| 11 | `QUA-545` | Residual maintenance cleanup with explicit scope boundary |
+| 10 | `QUA-545` | Residual maintenance cleanup with explicit scope boundary |
+| 11 | `QUA-417` | Route-registry metadata compaction for optional utility bindings |
 
 ## Ticket Selection Rule
 
@@ -143,17 +155,20 @@ If a ticket has become stale because other landed work already satisfies it:
 ## Current Start Point
 
 Execution started with `QUA-458`, continued through `QUA-710`, `QUA-428`,
-`QUA-430`, the `QUA-700` umbrella closeout, and `QUA-543`, and now moves next
-to `QUA-417`.
+`QUA-430`, the `QUA-700` umbrella closeout, and `QUA-543`. `QUA-417` was
+rewritten as maintenance cleanup. `QUA-544` then improved the knowledge-light
+proving tranche to `3/3` success and split the remaining `KL01`
+semantic-validation retry into `QUA-779`, so the active queue now moves next
+to `QUA-429`.
 
 Plain-English goal:
 
-- narrow the route-registry / builder obligation surface without reopening the
-  completed stress-path recovery
+- build the base lesson-to-test pipeline now that the proving tranche is
+  stable enough to turn repeat misses into durable regression coverage
 
 Primary files and surfaces:
 
-- the route registry and builder obligation surfaces that still overexpose
-  modules or prompts
-- the generation and routing contracts that depend on that registry surface
-- regional validation around route selection and builder prompt assembly
+- lesson capture, normalization, and regression materialization surfaces
+- the proving / evaluation loops that should consume durable regression output
+- validation around the base learning-to-test path rather than proving-only
+  packet hardening

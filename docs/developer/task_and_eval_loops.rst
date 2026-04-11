@@ -165,6 +165,24 @@ Evals And Stress Tasks
 This is the main developer-facing evidence loop for changes to routing,
 knowledge retrieval, or generation guardrails.
 
+For the focused simple-derivative tranche, use
+``scripts/run_knowledge_light_proving.py``. That harness keeps the
+compiler-first, knowledge-light prompt surface but now emits a more explicit
+reliability summary alongside the ordinary correctness outcomes:
+
+- ``first_pass`` for task-level first-attempt success
+- ``attempts_to_success`` for successful-task attempt counts
+- ``retry_taxonomy`` for recovered successes bucketed by the triggering stage
+
+The retry taxonomy is derived from the recorded platform trace events rather
+than free-form closeout text, so a proving rerun can answer "what recovered?"
+and "which stage missed first?" from the stored artifact alone.
+
+For comparison tasks, ``attempts_to_success`` is normalized by the slowest
+successful method leg, not by summing all nested attempts. Two methods that
+both succeed on their first method-local attempt still count as a first-pass
+task-level success.
+
 Task-run artifacts now preserve analytical trace paths alongside the existing
 platform traces. When a build loop emits an analytical route, the stored task
 record keeps both the JSON trace and the rendered Markdown path, including

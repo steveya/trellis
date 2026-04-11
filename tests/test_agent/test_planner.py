@@ -253,6 +253,26 @@ class TestPlanBuild:
         assert plan.spec_schema.spec_name == "FXVanillaOptionSpec"
         assert plan.payoff_class_name == "FXVanillaMonteCarloPayoff"
 
+    def test_american_put_tree_route_uses_deterministic_spec_schema(self):
+        plan = plan_build(
+            "American put: equity tree knowledge-light proving",
+            {"discount_curve", "black_vol_surface"},
+            instrument_type="american_put",
+            preferred_method="rate_tree",
+        )
+
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.spec_name == "AmericanOptionSpec"
+        assert plan.payoff_class_name == "AmericanOptionPayoff"
+        assert [field.name for field in plan.spec_schema.fields] == [
+            "spot",
+            "strike",
+            "expiry_date",
+            "option_type",
+            "exercise_style",
+            "day_count",
+        ]
+
     def test_plan_gap_analysis(self):
         plan = plan_build(
             "European payer swaption",
