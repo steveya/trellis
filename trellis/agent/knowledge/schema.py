@@ -208,6 +208,37 @@ class Lesson:
 
 
 @dataclass(frozen=True)
+class LessonRegressionTemplate:
+    """Deterministic regression-template metadata for one lesson family."""
+
+    family: str
+    target_test_file: str
+    description: str = ""
+    assertion_focus: tuple[str, ...] = ()
+    fixture_hints: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class LessonRegressionPayload:
+    """Materialized regression payload derived from a validated or promoted lesson."""
+
+    lesson_id: str
+    lesson_title: str
+    lesson_category: str
+    lesson_status: LessonStatus
+    template_family: str
+    target_test_file: str
+    applies_when: AppliesWhen
+    rationale: str
+    assertion_focus: tuple[str, ...] = ()
+    fixture_hints: tuple[str, ...] = ()
+    tags: tuple[str, ...] = ()
+    source_trace: str | None = None
+    rendered_fragment: str = ""
+
+
+@dataclass(frozen=True)
 class AdapterLifecycleRecord:
     """Lifecycle metadata for an adapter family or fresh-build replacement."""
 

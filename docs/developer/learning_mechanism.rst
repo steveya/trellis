@@ -133,6 +133,26 @@ The prompt surface therefore reuses:
 - modeling requirements
 - matched failure signatures
 
+Deterministic Lesson-To-Test Projection
+---------------------------------------
+
+Validated and promoted lessons now also feed a separate deterministic
+materialization seam in ``trellis.agent.knowledge.lesson_to_test``.
+
+That layer does not mutate the canonical lesson store and does not ask the
+model to write tests. Instead it:
+
+- classifies one active lesson into a regression-template family
+- attaches a stable target-test-file hint plus assertion and fixture focus
+- renders a reviewable pytest-style fragment for the lesson
+- ignores ``candidate`` and ``archived`` lessons so low-confidence guidance
+  does not silently become regression authority
+
+The base template families cover generic codegen, method-contract, convention,
+and dependency-resilience failures. Semantic, lowering, bridge, and
+route-boundary failures refine that same deterministic layer rather than
+creating a separate prompt-only path.
+
 Observability And Audit
 -----------------------
 
