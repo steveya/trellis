@@ -2,7 +2,7 @@ meta:
   recorded_at: '2026-04-11T00:34:30.994893+00:00'
   provider: openai
   model: gpt-5.4-mini
-  total_calls: 7
+  total_calls: 6
   name: T13
 calls:
 - seq: 0
@@ -2254,39 +2254,4 @@ calls:
     ,\n    \"remediation\": \"what to change\",\n    \"status\": \"suspect\"\n}\n\n\
     Focus on pricing errors that the deterministic checks can confirm.\nReturn at\
     \ most 3 concerns, ordered by severity.\nReturn ONLY the JSON array."
-  model: gpt-5.4-mini
-- seq: 6
-  function: llm_generate_json
-  stage: unscoped
-  prompt_hash: b68118324974453267fe8ff8cc819d63e46d64393d19419ddc63724f9def26d7
-  response_text: '{"category": "finite_differences", "title": "Missing time helper
-    variable", "mistake": "The PDE solver referenced year_fraction without defining
-    or passing it into the method.", "why": "This happens when a finite-difference
-    routine assumes a shared time-setup variable exists in scope, but the solver is
-    actually self-contained and must derive or receive all discretization inputs explicitly.
-    The mental model failure is treating grid setup as implicit state instead of making
-    the time horizon and step sizes part of the solver interface.", "detect": "Run
-    a smoke test on the solver entry point and check for NameError or any undeclared
-    grid-setup variables before calibration.", "fix": "Define the time horizon locally
-    or pass it as an explicit argument, and compute all time-step quantities from
-    that value inside the solver."}'
-  prompt_text: "You fixed these validation failures for a Build a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nEuropean call option on\
-    \ a non-dividend-paying stock.\nS0=100, K=105, T=1Y, risk-free rate r=5%, volatility\
-    \ sigma=20%.\nSolve with the Black-Scholes PDE operator using Crank-Nicolson\n\
-    (theta=0.5) and fully implicit (theta=1.0) on a 200-point spot grid\n× 100 time\
-    \ steps.\nMeasure convergence order by doubling the grid: the CN scheme should\n\
-    show O(dt^2 + dS^2) convergence and the implicit scheme O(dt + dS^2).\nCompare\
-    \ both to the Black-Scholes analytical price.\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_1.0\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_1.0\n(pde_solver method):\n\
-    \n- Actual market state smoke test failed: name 'year_fraction' is not defined\n\
-    \nDistill ONE concise lesson learned. Return JSON:\n{\n  \"category\": \"calibration|volatility|backward_induction|finite_differences|monte_carlo|market_data\"\
-    ,\n  \"title\": \"Short title (max 10 words)\",\n  \"mistake\": \"What went wrong\
-    \ (1 sentence)\",\n  \"why\": \"Why it happens — the mental model failure (1-2\
-    \ sentences)\",\n  \"detect\": \"How to detect this issue (1 sentence)\",\n  \"\
-    fix\": \"How to fix it (1 sentence)\"\n}\n\nOnly return JSON, no markdown."
   model: gpt-5.4-mini
