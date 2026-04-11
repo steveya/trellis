@@ -161,6 +161,18 @@ proving tranche to `3/3` success and split the remaining `KL01`
 semantic-validation retry into `QUA-779`, so the active queue now moves next
 to `QUA-429`.
 
+Current architectural note:
+
+- the live lesson path is `promotion.py -> store.py -> reflect.py`, with
+  `test_resolution.py` and the resolved-failure hook in `executor.py` feeding
+  the same promotion pipeline
+- older references to `experience.py` or `cookbooks.py` as the core lesson
+  surfaces are stale and should not drive ticket scope
+- `QUA-429` is the generic deterministic materialization slice from validated
+  or promoted lessons into regression payloads
+- `QUA-447` remains the semantic-specific follow-on for lowering, validation,
+  bridge, and route-boundary template families
+
 Plain-English goal:
 
 - build the base lesson-to-test pipeline now that the proving tranche is
@@ -168,7 +180,11 @@ Plain-English goal:
 
 Primary files and surfaces:
 
-- lesson capture, normalization, and regression materialization surfaces
-- the proving / evaluation loops that should consume durable regression output
-- validation around the base learning-to-test path rather than proving-only
-  packet hardening
+- `trellis/agent/knowledge/promotion.py`
+- `trellis/agent/knowledge/store.py`
+- `trellis/agent/knowledge/reflect.py`
+- `trellis/agent/test_resolution.py`
+- `trellis/agent/executor.py` for resolved-failure provenance into the lesson
+  pipeline
+- a new deterministic lesson-to-test materialization surface and its
+  `tests/test_agent/` coverage
