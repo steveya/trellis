@@ -304,6 +304,13 @@ a safe checked binding. This matters for thin-adapter families such as CDS,
 where the task may select the correct helper but still drift on keyword names
 without the signature in view.
 
+The proving summary now also records task-level ``first_pass``,
+``attempts_to_success``, and a stage-bucketed ``retry_taxonomy``. That makes
+it possible to separate "eventually succeeded after retries" from
+"succeeded on the first constructive attempt" without reopening the raw trace
+set, and it keeps recovered successes attributable to a concrete stage such as
+semantic validation rather than a generic retry count.
+
 Runtime contract failures
 -------------------------
 

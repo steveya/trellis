@@ -3,7 +3,7 @@
 import pytest
 
 from trellis.agent.planner import (
-    BuildPlan, BuildStep, FieldDef, SpecSchema, STATIC_SPECS, _plan_static, plan_build,
+    BuildPlan, BuildStep, FieldDef, SpecSchema, STATIC_SPECS, _infer_method_hint, _plan_static, plan_build,
 )
 
 
@@ -252,6 +252,30 @@ class TestPlanBuild:
         assert plan.spec_schema is not None
         assert plan.spec_schema.spec_name == "FXVanillaOptionSpec"
         assert plan.payoff_class_name == "FXVanillaMonteCarloPayoff"
+
+    def test_american_put_tree_route_uses_deterministic_spec_schema(self):
+        plan = plan_build(
+            "American put: equity tree knowledge-light proving",
+            {"discount_curve", "black_vol_surface"},
+            instrument_type="american_put",
+            preferred_method="rate_tree",
+        )
+
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.spec_name == "AmericanPutTreeSpec"
+        assert plan.payoff_class_name == "AmericanPutTreePayoff"
+        assert [field.name for field in plan.spec_schema.fields] == [
+            "spot",
+            "strike",
+            "expiry_date",
+            "option_type",
+            "exercise_style",
+            "day_count",
+        ]
+
+    def test_infer_method_hint_does_not_match_tree_substrings_inside_other_words(self):
+        assert _infer_method_hint("main street spot-vol quote pack") is None
+        assert _infer_method_hint("american put lattice benchmark") == "rate_tree"
 
     def test_plan_gap_analysis(self):
         plan = plan_build(

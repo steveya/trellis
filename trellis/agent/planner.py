@@ -309,6 +309,19 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
             FieldDef("n_steps", "int", "Number of Monte Carlo time steps", "252"),
         ],
     ),
+    "american_put_tree": SpecSchema(
+        class_name="AmericanPutTreePayoff",
+        spec_name="AmericanPutTreeSpec",
+        requirements=["discount_curve", "black_vol_surface"],
+        fields=[
+            FieldDef("spot", "float", "Current spot price"),
+            FieldDef("strike", "float", "Option strike price"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'put'"),
+            FieldDef("exercise_style", "str", "Exercise style for the checked lattice helper", "'american'"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+        ],
+    ),
     "quanto_option_analytical": SpecSchema(
         class_name="QuantoOptionAnalyticalPayoff",
         spec_name="QuantoOptionSpec",
@@ -392,6 +405,7 @@ _SPECIALIZED_SPEC_ALLOWED_INSTRUMENTS: dict[str, frozenset[str]] = {
     "cds_monte_carlo": frozenset({"", "cds", "credit_default_swap"}),
     "fx_vanilla_analytical": frozenset({"", "european_option"}),
     "fx_vanilla_monte_carlo": frozenset({"", "european_option"}),
+    "american_put_tree": frozenset({"", "american_put"}),
     "quanto_option_analytical": frozenset({"", "quanto_option"}),
     "quanto_option_monte_carlo": frozenset({"", "quanto_option"}),
     "european_option_analytical": frozenset({"", "european_option"}),
@@ -568,6 +582,13 @@ def _select_specialized_spec(
             return SPECIALIZED_SPECS["fx_vanilla_monte_carlo"]
         return SPECIALIZED_SPECS["fx_vanilla_analytical"]
 
+    if _allowed("american_put_tree") and (
+        normalized_instrument == "american_put"
+        or ("american" in desc_lower and "put" in desc_lower)
+    ):
+        if method_hint == "rate_tree":
+            return SPECIALIZED_SPECS["american_put_tree"]
+
     if _allowed("european_local_vol_monte_carlo") and (
         "local vol" in desc_lower or "local_vol_surface" in normalized_requirements
     ):
@@ -605,6 +626,8 @@ def _infer_method_hint(desc_lower: str, *, preferred_method: str | None = None) 
         normalized = preferred_method.strip().lower().replace("-", "_").replace(" ", "_")
         if normalized in {"monte_carlo", "mc"}:
             return "monte_carlo"
+        if normalized in {"rate_tree", "tree", "lattice"}:
+            return "rate_tree"
         if normalized in {"analytical", "garman_kohlhagen", "gk_analytical"}:
             return "analytical"
     preferred_match = re.search(r"preferred method family:\s*([a-zA-Z_]+)", desc_lower)
@@ -614,6 +637,8 @@ def _infer_method_hint(desc_lower: str, *, preferred_method: str | None = None) 
         return "monte_carlo"
     if "monte carlo" in desc_lower or " monte_carlo" in desc_lower:
         return "monte_carlo"
+    if "rate_tree" in desc_lower or re.search(r"\b(?:rate[_ ]tree|binomial tree|tree|lattice)\b", desc_lower):
+        return "rate_tree"
     if "analytical" in desc_lower or "garman_kohlhagen" in desc_lower:
         return "analytical"
     return None

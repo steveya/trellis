@@ -197,7 +197,14 @@ def run_proving_set(
     print(f"\n{'=' * 60}")
     print(f"SUMMARY: {sum(1 for item in results if item.get('success'))}/{len(results)} succeeded")
     print(f"  Failure buckets: {summary['failure_buckets']}")
+    print(
+        "  First pass: "
+        f"{summary['first_pass']['first_pass_successes']}/{summary['first_pass']['tasks']} "
+        f"({summary['first_pass']['rate']:.0%})"
+    )
+    print(f"  Attempts to success: {summary['attempts_to_success']}")
     print(f"  Retry recovery: {summary['retry_recovery']}")
+    print(f"  Retry taxonomy: {summary['retry_taxonomy']}")
     print(f"  Token usage: {summary['token_usage']}")
     print(f"  Results saved to: {output_file}")
     print(f"  Summary saved to: {summary_path}")

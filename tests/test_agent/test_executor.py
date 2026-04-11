@@ -284,9 +284,14 @@ def test_diagnose_failure_reads_related_lessons_from_canonical_signatures(monkey
     assert diagnosis.related_lessons == ["LSM high-vol bias with polynomial basis"]
 
 
-def test_generate_skeleton_quotes_string_defaults_but_keeps_symbolic_defaults():
-    from trellis.agent.executor import _generate_skeleton
+def test_generate_skeleton_normalizes_string_defaults_and_keeps_symbolic_defaults():
+    from trellis.agent.executor import _generate_skeleton, _render_spec_default_value
     from trellis.agent.planner import FieldDef, SpecSchema
+
+    assert _render_spec_default_value("str", "monte_carlo") == "'monte_carlo'"
+    assert _render_spec_default_value("str", "'american'") == "'american'"
+    assert _render_spec_default_value("str", '"put"') == "'put'"
+    assert _render_spec_default_value("str | None", "None") == "None"
 
     spec_schema = SpecSchema(
         class_name="DemoPayoff",
@@ -851,8 +856,8 @@ def test_generate_skeleton_prefills_exact_binding_imports_without_generic_noise(
     from trellis.agent.planner import FieldDef, SpecSchema
 
     spec_schema = SpecSchema(
-        class_name="AmericanOptionPayoff",
-        spec_name="AmericanPutEquitySpec",
+        class_name="AmericanPutTreePayoff",
+        spec_name="AmericanPutTreeSpec",
         requirements=["discount_curve", "black_vol_surface"],
         fields=[
             FieldDef("spot", "float", "Spot"),
@@ -880,6 +885,8 @@ def test_generate_skeleton_prefills_exact_binding_imports_without_generic_noise(
         "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree"
         in skeleton
     )
+    assert "option_type: str = 'put'" in skeleton
+    assert "exercise_style: str = 'american'" in skeleton
     assert "from trellis.core.date_utils import generate_schedule, year_fraction" not in skeleton
     assert "from trellis.models.black import black76_call, black76_put" not in skeleton
 

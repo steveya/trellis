@@ -266,7 +266,7 @@ def test_compile_build_request_emits_fallback_lane_plan_for_fx_monte_carlo_route
 
     assert compiled.semantic_blueprint is None
     assert compiled.generation_plan.primitive_plan is not None
-    assert compiled.generation_plan.primitive_plan.route == "monte_carlo_paths"
+    assert compiled.generation_plan.primitive_plan.route == "monte_carlo_fx_vanilla"
     assert compiled.generation_plan.lane_family == "monte_carlo"
     assert any("FXRate" in step for step in compiled.generation_plan.lane_construction_steps)
 

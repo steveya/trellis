@@ -145,6 +145,12 @@ def _render_spec_default_value(field_type: str, default: str) -> str:
     if "str" in normalized_type:
         if default == "None":
             return "None"
+        try:
+            parsed_default = ast.literal_eval(default)
+        except (SyntaxError, ValueError):
+            parsed_default = default
+        if isinstance(parsed_default, str):
+            return repr(parsed_default)
         return repr(default)
     return default
 

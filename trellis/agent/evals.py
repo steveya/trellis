@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+from statistics import median
 from typing import Any, Iterable, Mapping
 
 import yaml
@@ -603,6 +604,7 @@ def summarize_task_results(results: list[Mapping[str, Any]]) -> dict[str, Any]:
     """Summarize one task-result tranche with shared-memory-focused metrics."""
     failure_buckets: dict[str, int] = {}
     attempts: list[int] = []
+    attempts_to_success: list[int] = []
     token_usage = _empty_token_usage_summary()
     shared_knowledge_tasks = 0
     shared_knowledge_lessons = 0
@@ -610,6 +612,9 @@ def summarize_task_results(results: list[Mapping[str, Any]]) -> dict[str, Any]:
     tasks_recovered_after_review = 0
     tasks_with_multi_reviewer_issues = 0
     reviewer_agent_counts: dict[str, int] = {}
+    retry_taxonomy_by_stage: dict[str, dict[str, Any]] = {}
+    retry_taxonomy_by_task: dict[str, list[str]] = {}
+    unattributed_recoveries = 0
 
     successes = 0
     successful_after_retry = 0
@@ -621,11 +626,31 @@ def summarize_task_results(results: list[Mapping[str, Any]]) -> dict[str, Any]:
 
         if result.get("success"):
             successes += 1
-            attempt_count = int(result.get("attempts") or 0)
+            attempt_count = _result_attempts_to_success(result)
+            attempts_to_success.append(attempt_count)
             if attempt_count <= 1:
                 first_attempt_successes += 1
             elif attempt_count > 1:
                 successful_after_retry += 1
+                task_id = str(result.get("task_id") or "").strip()
+                stage_reasons = _result_retry_taxonomy_reasons(result)
+                if not stage_reasons:
+                    unattributed_recoveries += 1
+                    stage_reasons = ("unattributed",)
+                if task_id:
+                    retry_taxonomy_by_task[task_id] = list(stage_reasons)
+                for stage_reason in stage_reasons:
+                    stage_entry = retry_taxonomy_by_stage.setdefault(
+                        stage_reason,
+                        {"count": 0, "task_ids": []},
+                    )
+                    if task_id:
+                        if task_id not in stage_entry["task_ids"]:
+                            stage_entry["task_ids"].append(task_id)
+                        stage_entry["task_ids"].sort()
+                        stage_entry["count"] = len(stage_entry["task_ids"])
+                    else:
+                        stage_entry["count"] += 1
         attempts.append(int(result.get("attempts") or 0))
 
         knowledge_summaries = list(_iter_knowledge_summaries(result))
@@ -664,6 +689,33 @@ def summarize_task_results(results: list[Mapping[str, Any]]) -> dict[str, Any]:
             "successful_after_retry": successful_after_retry,
             "first_attempt_successes": first_attempt_successes,
         },
+        "first_pass": {
+            "tasks": len(results),
+            "successful_tasks": successes,
+            "first_pass_successes": first_attempt_successes,
+            "rate": round(first_attempt_successes / len(results), 2) if results else 0.0,
+            "success_rate": round(first_attempt_successes / successes, 2) if successes else 0.0,
+        },
+        "attempts_to_success": {
+            "successful_tasks": len(attempts_to_success),
+            "average": round(sum(attempts_to_success) / len(attempts_to_success), 2)
+            if attempts_to_success
+            else 0.0,
+            "median": round(float(median(attempts_to_success)), 2)
+            if attempts_to_success
+            else 0.0,
+            "max": max(attempts_to_success) if attempts_to_success else 0,
+            "distribution": {
+                str(attempt): attempts_to_success.count(attempt)
+                for attempt in sorted(set(attempts_to_success))
+            },
+        },
+        "retry_taxonomy": {
+            "recovered_successes": successful_after_retry,
+            "unattributed_recoveries": unattributed_recoveries,
+            "by_stage": dict(sorted(retry_taxonomy_by_stage.items())),
+            "by_task": dict(sorted(retry_taxonomy_by_task.items())),
+        },
         "reviewer_signals": {
             "tasks_with_reviewer_issues": tasks_with_reviewer_issues,
             "tasks_with_multi_reviewer_issues": tasks_with_multi_reviewer_issues,
@@ -677,6 +729,59 @@ def summarize_task_results(results: list[Mapping[str, Any]]) -> dict[str, Any]:
         "promotion_discipline": summarize_promotion_discipline(results),
         "token_usage": token_usage,
     }
+
+
+def _result_attempts_to_success(result: Mapping[str, Any]) -> int:
+    """Return the task-level attempts-to-success count, normalizing comparison tasks."""
+    method_results = result.get("method_results")
+    if isinstance(method_results, Mapping):
+        method_attempts = [
+            max(int(payload.get("attempts") or 0), 0)
+            for payload in method_results.values()
+            if isinstance(payload, Mapping)
+        ]
+        if method_attempts:
+            return max(method_attempts)
+    return max(int(result.get("attempts") or 0), 0)
+
+
+def _result_retry_taxonomy_reasons(result: Mapping[str, Any]) -> tuple[str, ...]:
+    """Return the stable retry-stage reasons that explain one recovered success."""
+    reasons: list[str] = []
+    method_results = result.get("method_results")
+    if isinstance(method_results, Mapping):
+        for payload in method_results.values():
+            if not isinstance(payload, Mapping):
+                continue
+            if max(int(payload.get("attempts") or 0), 0) <= 1:
+                continue
+            reasons.extend(_payload_retry_taxonomy_reasons(payload))
+    elif _result_attempts_to_success(result) > 1:
+        reasons.extend(_payload_retry_taxonomy_reasons(result))
+    return tuple(dict.fromkeys(reason for reason in reasons if reason))
+
+
+def _payload_retry_taxonomy_reasons(payload: Mapping[str, Any]) -> tuple[str, ...]:
+    """Load ordered distinct builder retry reasons from one payload trace."""
+    trace_path = str(payload.get("platform_trace_path") or "").strip()
+    if not trace_path:
+        return ()
+
+    try:
+        from trellis.agent.platform_traces import load_platform_trace_events
+
+        events = load_platform_trace_events(trace_path)
+    except Exception:
+        return ()
+
+    reasons: list[str] = []
+    for event in events:
+        if event.event != "builder_attempt_failed":
+            continue
+        reason = str((event.details or {}).get("reason") or "").strip()
+        if reason:
+            reasons.append(reason)
+    return tuple(dict.fromkeys(reasons))
 
 
 def summarize_promotion_discipline(results: list[Mapping[str, Any]]) -> dict[str, Any]:
