@@ -45,6 +45,11 @@ manual edit target. Retrieval also suppresses lessons that are marked as
 ``supersedes`` links as metadata so retrieval can prune stale lessons before it
 hydrates full lesson payloads from disk.
 
+Validated and promoted lessons can also be projected into deterministic
+regression payloads through ``trellis.agent.knowledge.lesson_to_test``. That
+projection is reviewable and read-only with respect to the canonical lesson
+store: candidate lessons stay excluded until they clear the promotion gate.
+
 Replay and reflection traces now persist a ``lesson_contract`` validation
 report plus a ``lesson_promotion_outcome`` field, so a task run can show the
 contract that was accepted or rejected before promotion.
