@@ -203,3 +203,55 @@ def test_build_task_learning_benchmark_report_tracks_pass_deltas_and_attribution
     assert artifacts.json_path.exists()
     assert artifacts.text_path.exists()
 
+
+def test_build_task_learning_benchmark_report_ignores_non_reuse_knowledge_metadata():
+    from trellis.agent.task_learning_benchmark import build_task_learning_benchmark_report
+
+    tasks = [_task("T13", "European call PDE")]
+    pass_one = [
+        {
+            **_result(
+                task_id="T13",
+                success=False,
+                attempts=2,
+                elapsed_seconds=10.0,
+                error="build failed",
+                total_tokens=120,
+            ),
+            "knowledge_summary": {
+                "instrument": "european_option",
+                "lesson_count": 0,
+                "prompt_sizes": {"builder": {"compact_chars": 180}},
+            },
+        }
+    ]
+    pass_two = [
+        {
+            **_result(
+                task_id="T13",
+                success=True,
+                attempts=1,
+                elapsed_seconds=4.0,
+                total_tokens=80,
+            ),
+            "knowledge_summary": {
+                "instrument": "european_option",
+                "lesson_count": 0,
+                "prompt_sizes": {"builder": {"compact_chars": 160}},
+            },
+        }
+    ]
+
+    report = build_task_learning_benchmark_report(
+        benchmark_name="non_canary_task_learning",
+        cohort_name="non_canary_pending",
+        git_revision="abc1234",
+        tasks=tasks,
+        pass_runs=[
+            {"pass_number": 1, "label": "pass_1", "results": pass_one},
+            {"pass_number": 2, "label": "pass_2", "results": pass_two},
+        ],
+    )
+
+    assert report["attribution"]["knowledge_assisted_improvements"]["task_ids"] == []
+    assert report["attribution"]["unexplained_improvements"]["task_ids"] == ["T13"]

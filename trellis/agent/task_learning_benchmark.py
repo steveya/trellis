@@ -370,8 +370,16 @@ def _empty_attribution() -> dict[str, Any]:
 def _result_has_knowledge_signal(result: Mapping[str, Any]) -> bool:
     knowledge_summary = result.get("knowledge_summary") or {}
     if isinstance(knowledge_summary, Mapping):
-        if any(_normalize_strings(value) for value in knowledge_summary.values()):
-            return True
+        explicit_summary_keys = (
+            "lesson_ids",
+            "lesson_titles",
+            "selected_artifact_ids",
+            "selected_artifact_titles",
+            "selected_artifacts_by_audience",
+        )
+        for key in explicit_summary_keys:
+            if _normalize_strings(knowledge_summary.get(key)):
+                return True
     reflection = result.get("reflection") or {}
     if not isinstance(reflection, Mapping):
         return False
