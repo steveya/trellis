@@ -22,11 +22,14 @@ Current status:
 - `QUA-544` is complete with a measured `3/3` proving-success bar, `2/3`
   task-level first-pass success, and the residual `KL01` semantic-validation
   retry split into `QUA-779`.
+- `QUA-429` is complete.
+- `QUA-447` is complete.
 - Wave 1 is complete.
 - Wave 2 is complete.
+- Wave 3 is complete.
 - `QUA-417` has been rewritten as a low-priority route-registry maintenance
   cleanup rather than a core burn-down tranche.
-- The next actionable ticket in queue order is `QUA-429`.
+- The next actionable ticket in queue order is `QUA-545`.
 
 ## Operating Rules
 
@@ -158,8 +161,11 @@ Execution started with `QUA-458`, continued through `QUA-710`, `QUA-428`,
 `QUA-430`, the `QUA-700` umbrella closeout, and `QUA-543`. `QUA-417` was
 rewritten as maintenance cleanup. `QUA-544` then improved the knowledge-light
 proving tranche to `3/3` success and split the remaining `KL01`
-semantic-validation retry into `QUA-779`, so the active queue now moves next
-to `QUA-429`.
+semantic-validation retry into `QUA-779`. `QUA-429` then added the base
+deterministic lesson-to-test seam for validated/promoted lessons, and
+`QUA-447` extended that seam with semantic, lowering, bridge, and
+route-boundary template families, so the active queue now moves next to
+`QUA-545`.
 
 Current architectural note:
 

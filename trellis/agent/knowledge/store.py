@@ -699,6 +699,54 @@ class KnowledgeStore:
         self._lessons_cache[lesson_id] = lesson
         return lesson
 
+    def list_lessons(
+        self,
+        *,
+        lesson_ids: tuple[str, ...] | None = None,
+        statuses: tuple[LessonStatus, ...] = (
+            LessonStatus.PROMOTED,
+            LessonStatus.VALIDATED,
+        ),
+    ) -> tuple[Lesson, ...]:
+        """Return hydrated lessons filtered by id and lifecycle state.
+
+        The ordering is stable for downstream deterministic consumers:
+        promoted lessons first, then validated lessons, then by severity and id.
+        """
+        allowed_statuses = {status for status in statuses}
+        selected_ids = {
+            str(lesson_id).strip()
+            for lesson_id in (lesson_ids or ())
+            if str(lesson_id).strip()
+        }
+        status_priority = {
+            LessonStatus.PROMOTED: 0,
+            LessonStatus.VALIDATED: 1,
+            LessonStatus.CANDIDATE: 2,
+            LessonStatus.ARCHIVED: 3,
+        }
+        eligible = [
+            index
+            for index in self._lesson_index
+            if index.status in allowed_statuses
+            and (not selected_ids or index.id in selected_ids)
+        ]
+        ordered = sorted(
+            eligible,
+            key=lambda index: (
+                status_priority.get(index.status, 99),
+                _SEVERITY_ORDER.get(index.severity, 99),
+                index.id,
+            ),
+        )
+        hydrated: list[Lesson] = []
+        for index in ordered:
+            lesson = self._load_lesson(index.id)
+            if lesson is None or lesson.status not in allowed_statuses:
+                continue
+            hydrated.append(lesson)
+        return tuple(hydrated)
+
     # --------------------------------------------------------------------- #
     # Warm tier: cookbooks
     # --------------------------------------------------------------------- #
