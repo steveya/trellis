@@ -149,6 +149,40 @@ That makes the learning mechanism auditable. A later reviewer can see not just
 that a lesson exists, but how it was captured, whether the contract passed, and
 whether it stayed candidate, validated, promoted, or duplicate.
 
+Short-Term Learning Benchmark
+-----------------------------
+
+The near-term learning claim for Trellis is narrower than autonomous library
+development.
+
+Today the honest claim is:
+
+- repeated runs can carry forward validated or promoted knowledge
+- that carry-forward can reduce failures, retries, elapsed time, and token use
+- the effect can be measured without changing the underlying code revision
+
+That is what ``scripts/run_task_learning_benchmark.py`` measures.
+
+The benchmark uses a non-canary cohort from ``TASKS.yaml`` and repeated passes
+at a fixed git revision. By default it also forces fresh builds so the score
+is not dominated by trivial adapter reuse. The report records:
+
+- success and failure deltas across passes
+- task-level ``first_pass`` and ``attempts_to_success``
+- stage-level ``retry_taxonomy``
+- elapsed time and token usage
+- shared-knowledge and lesson-promotion signals
+- attribution buckets for:
+
+  * knowledge-assisted improvements
+  * residual knowledge gaps
+  * residual implementation gaps
+  * residual market/provider noise
+
+That benchmark is the short-term learning milestone because it tests whether
+the platform gets better at rerunning broader tasks with knowledge it has
+already captured.
+
 Current Boundaries
 ------------------
 
@@ -159,6 +193,8 @@ still limits:
 - the executor retry path captures candidate lessons but does not auto-promote them
 - task reruns and human review are still needed to confirm whether a captured
   lesson should become stable guidance
+- the repeated-pass benchmark measures knowledge reuse only; it does not prove
+  autonomous code authoring or autonomous primitive implementation
 
 Those limits are intentional. They keep the learning loop explicit and
 reviewable rather than silently mutating policy.
