@@ -229,3 +229,24 @@ def test_materialize_route_boundary_regression_from_wrapper_signature_drift():
     assert payload.template_family == "route_boundary_regression"
     assert payload.target_test_file == "tests/test_agent/test_semantic_validators.py"
     assert "route_helper_signature_preserved" in payload.assertion_focus
+
+
+def test_rendered_fragment_sanitizes_title_rationale_and_test_name():
+    from trellis.agent.knowledge.lesson_to_test import materialize_lesson_regression
+
+    payload = materialize_lesson_regression(
+        _lesson(
+            lesson_id="9 weird.lesson-id",
+            title='Odd """title"""\nwith newline',
+            category="market_data",
+            symptom="single-line symptom",
+            root_cause="single-line root cause",
+            fix='Preserve a thin fallback boundary\nand keep the """guard""" visible.',
+        )
+    )
+
+    assert payload is not None
+    assert 'def test_n_9_weird_lesson_id_odd_title_with_newline():' in payload.rendered_fragment
+    assert 'Odd \\"\\"\\"title\\"\\"\\" with newline' in payload.rendered_fragment
+    assert '"""Regression guard for 9 weird.lesson-id: Odd \\"\\"\\"title\\"\\"\\" with newline."""' in payload.rendered_fragment
+    assert "\nwith newline" not in payload.rendered_fragment

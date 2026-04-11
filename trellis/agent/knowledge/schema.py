@@ -221,7 +221,7 @@ class LessonRegressionTemplate:
 
 @dataclass(frozen=True)
 class LessonRegressionPayload:
-    """Materialized regression payload derived from a validated lesson."""
+    """Materialized regression payload derived from a validated or promoted lesson."""
 
     lesson_id: str
     lesson_title: str

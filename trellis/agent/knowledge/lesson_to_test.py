@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import re
 from typing import Iterable
 
@@ -250,19 +251,8 @@ def materialize_lesson_regression(lesson: Lesson) -> LessonRegressionPayload | N
         tags=template.tags,
         source_trace=lesson.source_trace,
     )
-    return LessonRegressionPayload(
-        lesson_id=payload.lesson_id,
-        lesson_title=payload.lesson_title,
-        lesson_category=payload.lesson_category,
-        lesson_status=payload.lesson_status,
-        template_family=payload.template_family,
-        target_test_file=payload.target_test_file,
-        applies_when=payload.applies_when,
-        rationale=payload.rationale,
-        assertion_focus=payload.assertion_focus,
-        fixture_hints=payload.fixture_hints,
-        tags=payload.tags,
-        source_trace=payload.source_trace,
+    return replace(
+        payload,
         rendered_fragment=render_lesson_regression_fragment(payload),
     )
 
@@ -295,13 +285,17 @@ def render_lesson_regression_fragment(payload: LessonRegressionPayload) -> str:
     methods = ", ".join(f"`{item}`" for item in payload.applies_when.method) or "`any`"
     features = ", ".join(f"`{item}`" for item in payload.applies_when.features) or "`none`"
     instruments = ", ".join(f"`{item}`" for item in payload.applies_when.instrument) or "`generic`"
+    docstring_text = _sanitize_fragment_text(
+        f"Regression guard for {payload.lesson_id}: {payload.lesson_title}."
+    )
+    rationale = _sanitize_fragment_text(payload.rationale)
     lines = [
         f"def {test_name}():",
-        f'    """Regression guard for {payload.lesson_id}: {payload.lesson_title}."""',
+        f'    """{docstring_text}"""',
         f"    # Template family: `{payload.template_family}`",
         f"    # Target file hint: `{payload.target_test_file}`",
         f"    # Applies when: method={methods}; features={features}; instrument={instruments}",
-        f"    # Rationale: {payload.rationale}",
+        f"    # Rationale: {rationale}",
     ]
     if payload.assertion_focus:
         lines.append("    # Assertion focus:")
@@ -347,9 +341,23 @@ def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
     return any(marker in text for marker in markers)
 
 
+def _identifier_fragment(value: str, *, fallback: str) -> str:
+    fragment = re.sub(r"[^a-z0-9_]+", "_", value.lower()).strip("_")
+    fragment = re.sub(r"_+", "_", fragment)
+    if not fragment:
+        fragment = fallback
+    if fragment[0].isdigit():
+        fragment = f"n_{fragment}"
+    return fragment
+
+
+def _sanitize_fragment_text(value: str) -> str:
+    sanitized = str(value).replace('"""', '\\"\\"\\"')
+    sanitized = re.sub(r"\s+", " ", sanitized).strip()
+    return sanitized
+
+
 def _test_name(lesson_id: str, title: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")
-    slug = re.sub(r"_+", "_", slug)
-    if not slug:
-        slug = "lesson_regression"
-    return f"test_{lesson_id}_{slug}"
+    lesson_id_slug = _identifier_fragment(lesson_id, fallback="lesson")
+    slug = _identifier_fragment(title, fallback="lesson_regression")
+    return f"test_{lesson_id_slug}_{slug}"
