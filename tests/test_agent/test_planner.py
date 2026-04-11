@@ -3,7 +3,7 @@
 import pytest
 
 from trellis.agent.planner import (
-    BuildPlan, BuildStep, FieldDef, SpecSchema, STATIC_SPECS, _plan_static, plan_build,
+    BuildPlan, BuildStep, FieldDef, SpecSchema, STATIC_SPECS, _infer_method_hint, _plan_static, plan_build,
 )
 
 
@@ -262,8 +262,8 @@ class TestPlanBuild:
         )
 
         assert plan.spec_schema is not None
-        assert plan.spec_schema.spec_name == "AmericanOptionSpec"
-        assert plan.payoff_class_name == "AmericanOptionPayoff"
+        assert plan.spec_schema.spec_name == "AmericanPutTreeSpec"
+        assert plan.payoff_class_name == "AmericanPutTreePayoff"
         assert [field.name for field in plan.spec_schema.fields] == [
             "spot",
             "strike",
@@ -272,6 +272,10 @@ class TestPlanBuild:
             "exercise_style",
             "day_count",
         ]
+
+    def test_infer_method_hint_does_not_match_tree_substrings_inside_other_words(self):
+        assert _infer_method_hint("main street spot-vol quote pack") is None
+        assert _infer_method_hint("american put lattice benchmark") == "rate_tree"
 
     def test_plan_gap_analysis(self):
         plan = plan_build(

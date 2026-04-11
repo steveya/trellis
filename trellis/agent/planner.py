@@ -310,8 +310,8 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
         ],
     ),
     "american_put_tree": SpecSchema(
-        class_name="AmericanOptionPayoff",
-        spec_name="AmericanOptionSpec",
+        class_name="AmericanPutTreePayoff",
+        spec_name="AmericanPutTreeSpec",
         requirements=["discount_curve", "black_vol_surface"],
         fields=[
             FieldDef("spot", "float", "Current spot price"),
@@ -637,7 +637,7 @@ def _infer_method_hint(desc_lower: str, *, preferred_method: str | None = None) 
         return "monte_carlo"
     if "monte carlo" in desc_lower or " monte_carlo" in desc_lower:
         return "monte_carlo"
-    if "rate_tree" in desc_lower or "tree" in desc_lower or "lattice" in desc_lower:
+    if "rate_tree" in desc_lower or re.search(r"\b(?:rate[_ ]tree|binomial tree|tree|lattice)\b", desc_lower):
         return "rate_tree"
     if "analytical" in desc_lower or "garman_kohlhagen" in desc_lower:
         return "analytical"

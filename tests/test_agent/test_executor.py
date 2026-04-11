@@ -856,8 +856,8 @@ def test_generate_skeleton_prefills_exact_binding_imports_without_generic_noise(
     from trellis.agent.planner import FieldDef, SpecSchema
 
     spec_schema = SpecSchema(
-        class_name="AmericanOptionPayoff",
-        spec_name="AmericanPutEquitySpec",
+        class_name="AmericanPutTreePayoff",
+        spec_name="AmericanPutTreeSpec",
         requirements=["discount_curve", "black_vol_surface"],
         fields=[
             FieldDef("spot", "float", "Spot"),
