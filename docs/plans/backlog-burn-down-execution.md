@@ -9,7 +9,7 @@ This program turns the audited backlog into a strict execution order with
 reviewable delivery slices, validation gates, and closeout rules that match
 `AGENTS.md`.
 
-Status mirror last synced: `2026-04-10`
+Status mirror last synced: `2026-04-11`
 
 Current status:
 
@@ -24,12 +24,16 @@ Current status:
   retry split into `QUA-779`.
 - `QUA-429` is complete.
 - `QUA-447` is complete.
+- `QUA-545` is complete as the short-term learning-evidence slice: repeated
+  non-canary passes, a fixed-revision scorecard, and explicit attribution for
+  knowledge-assisted improvements versus residual gaps.
 - Wave 1 is complete.
 - Wave 2 is complete.
 - Wave 3 is complete.
+- Wave 4 is complete except for the low-priority `QUA-417` maintenance tail.
 - `QUA-417` has been rewritten as a low-priority route-registry maintenance
   cleanup rather than a core burn-down tranche.
-- The next actionable ticket in queue order is `QUA-545`.
+- The next actionable ticket in queue order is `QUA-417`.
 
 ## Operating Rules
 
@@ -57,8 +61,8 @@ These tickets are actionable backlog burn-down work:
 7. `QUA-544` proving runs: first-pass knowledge-light reliability
 8. `QUA-429` lesson-to-test pipeline base slice
 9. `QUA-447` semantic template follow-on for the lesson-to-test path
-10. `QUA-545` maintenance tail for residual cleanup that does not justify a
-    broader project
+10. `QUA-545` short-term learning evidence: repeated non-canary passes and a
+    knowledge-reuse scorecard
 11. `QUA-417` route registry cleanup: collapse redundant optional utility
     bindings
 
@@ -136,11 +140,11 @@ Current note:
   move the tranche to `3/3` success; the remaining non-first-pass retry path
   is isolated in `QUA-779`
 
-### Wave 4: Maintenance tail
+### Wave 4: Short-term learning evidence and maintenance tail
 
 | Order | Ticket | Expected artifact |
 | --- | --- | --- |
-| 10 | `QUA-545` | Residual maintenance cleanup with explicit scope boundary |
+| 10 | `QUA-545` | Non-canary multi-pass learning scorecard with explicit attribution |
 | 11 | `QUA-417` | Route-registry metadata compaction for optional utility bindings |
 
 ## Ticket Selection Rule
@@ -161,11 +165,10 @@ Execution started with `QUA-458`, continued through `QUA-710`, `QUA-428`,
 `QUA-430`, the `QUA-700` umbrella closeout, and `QUA-543`. `QUA-417` was
 rewritten as maintenance cleanup. `QUA-544` then improved the knowledge-light
 proving tranche to `3/3` success and split the remaining `KL01`
-semantic-validation retry into `QUA-779`. `QUA-429` then added the base
-deterministic lesson-to-test seam for validated/promoted lessons, and
-`QUA-447` extended that seam with semantic, lowering, bridge, and
-route-boundary template families, so the active queue now moves next to
-`QUA-545`.
+semantic-validation retry into `QUA-779`. `QUA-429` and `QUA-447` then landed
+the deterministic lesson-to-test path, and `QUA-545` added the repeated-pass
+non-canary learning benchmark, so the active queue now moves next to
+`QUA-417`.
 
 Current architectural note:
 
@@ -178,19 +181,22 @@ Current architectural note:
   or promoted lessons into regression payloads
 - `QUA-447` remains the semantic-specific follow-on for lowering, validation,
   bridge, and route-boundary template families
+- `QUA-545` is the short-term learning-evidence slice: repeated non-canary
+  passes at a fixed revision, fresh-build-by-default execution, and honest
+  attribution of what improved because of reusable knowledge versus what still
+  needs implementation work
 
 Plain-English goal:
 
-- build the base lesson-to-test pipeline now that the proving tranche is
-  stable enough to turn repeat misses into durable regression coverage
+- keep the last backlog tail focused on low-priority route cleanup now that the
+  short-term learning benchmark exists and the broader learning loop can be
+  measured directly
 
 Primary files and surfaces:
 
-- `trellis/agent/knowledge/promotion.py`
-- `trellis/agent/knowledge/store.py`
-- `trellis/agent/knowledge/reflect.py`
-- `trellis/agent/test_resolution.py`
-- `trellis/agent/executor.py` for resolved-failure provenance into the lesson
-  pipeline
-- a new deterministic lesson-to-test materialization surface and its
-  `tests/test_agent/` coverage
+- `trellis/agent/task_learning_benchmark.py`
+- `scripts/run_task_learning_benchmark.py`
+- `docs/developer/task_and_eval_loops.rst`
+- `docs/developer/learning_mechanism.rst`
+- `tests/test_agent/test_task_learning_benchmark.py`
+- `tests/test_agent/test_task_learning_benchmark_runner.py`

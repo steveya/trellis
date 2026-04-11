@@ -50,6 +50,7 @@ The repo ships a small task-operations toolchain:
 - ``scripts/run_tasks.py``: run a contiguous task block or all pending tasks
 - ``scripts/rerun_ids.py``: re-run specific task ids
 - ``scripts/benchmark_tasks.py``: benchmark cached generated payoffs without rebuilding
+- ``scripts/run_task_learning_benchmark.py``: run repeated non-canary passes at a fixed revision and emit a learning scorecard
 - ``scripts/remediate.py``: analyze failures, categorize knowledge gaps, and patch common knowledge issues
 - ``scripts/evaluate_shared_memory.py``: compare two task-result tranches and render a shared-memory improvement report
 - ``scripts/should_run_canary.py``: decide whether current local changes justify the focused core canary gate
@@ -182,6 +183,52 @@ For comparison tasks, ``attempts_to_success`` is normalized by the slowest
 successful method leg, not by summing all nested attempts. Two methods that
 both succeed on their first method-local attempt still count as a first-pass
 task-level success.
+
+For broader short-term learning evidence, use
+``scripts/run_task_learning_benchmark.py``. That runner selects a non-canary
+cohort from ``TASKS.yaml`` and executes repeated passes at the same git
+revision. The benchmark is asking a narrower question than a canary or stress
+gate:
+
+- do later passes fail less often?
+- do first-pass success and attempts-to-success improve?
+- do elapsed time and token usage fall?
+- do those improvements line up with reused knowledge signals?
+
+The runner defaults to ``fresh_build=True``. That is deliberate. Reusing
+admitted adapters would swamp the signal and turn the benchmark into a warm
+cache measurement instead of a knowledge-carry-forward measurement. Reuse mode
+still exists, but only when you explicitly want warm-path operational data.
+
+Each pass writes:
+
+- a raw task-result file under ``task_runs/learning_benchmarks/raw/``
+- a pass summary JSON beside that raw file
+- a Markdown plus JSON scorecard under ``task_runs/learning_benchmarks/reports/``
+
+The scorecard reports:
+
+- success and failure counts
+- task-level ``first_pass``
+- ``attempts_to_success``
+- ``retry_taxonomy``
+- elapsed-time totals
+- token-usage totals
+- shared-knowledge reuse signals
+- attribution buckets separating knowledge-assisted improvements from residual
+  knowledge gaps, implementation gaps, and market/provider noise
+
+Use it like this:
+
+.. code-block:: bash
+
+   /Users/steveyang/miniforge3/bin/python3 scripts/run_task_learning_benchmark.py --limit 10 --passes 2
+
+If you want to inspect the selected cohort first:
+
+.. code-block:: bash
+
+   /Users/steveyang/miniforge3/bin/python3 scripts/run_task_learning_benchmark.py --list-tasks --limit 10
 
 Task-run artifacts now preserve analytical trace paths alongside the existing
 platform traces. When a build loop emits an analytical route, the stored task
