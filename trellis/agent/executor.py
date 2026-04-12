@@ -4361,12 +4361,12 @@ def _skill_record_rank(
     method_score = int(bool(method_token and method_token in record_methods))
     hard_constraint_score = int(str(getattr(record, "instruction_type", "") or "") == "hard_constraint")
     return (
-        -route_id_score,
-        -route_family_score,
+        -hard_constraint_score,
         -instrument_score,
         -method_score,
+        -route_family_score,
+        -route_id_score,
         kind_order.index(record.kind),
-        -hard_constraint_score,
         -int(getattr(record, "precedence_rank", 0) or 0),
         -float(getattr(record, "confidence", 0.0) or 0.0),
         str(getattr(record, "skill_id", "") or ""),

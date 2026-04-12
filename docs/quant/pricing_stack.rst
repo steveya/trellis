@@ -187,6 +187,11 @@ Route selection now follows that same minimization rule. The deterministic
 scorer no longer emits route-id or route-family one-hot authority; it ranks
 routes from family capability, blocker state, and backend-binding facts such as
 ``route_helper`` / ``pricing_kernel`` / ``cashflow_engine`` surfaces instead.
+The generated prompt-skill layer now follows the same contract: exact helper
+and schedule constraints still surface when needed, but route-card notes are
+kept as historical metadata rather than live ``route_hint`` authority, and
+prompt ranking no longer gives first-class priority to exact ``route:<id>``
+tag matches over broader family / method / instrument fit.
 
 For rate-style swaption comparison builds, the semantic compiler now also keeps
 the contract-level convention surface attached to each method-specific plan.

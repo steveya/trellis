@@ -364,6 +364,241 @@ def test_executor_actual_market_retry_expands_and_records_selected_artifacts(mon
     ]
 
 
+def test_prompt_skill_selection_skips_historical_route_notes_even_on_exact_route_match(monkeypatch):
+    from trellis.agent.knowledge.skills import select_prompt_skill_artifacts
+
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.skills.load_skill_index",
+        lambda: SimpleNamespace(
+            records=(
+                SimpleNamespace(
+                    skill_id="route_hint:pde_theta_1d:note:1",
+                    kind="historical_note",
+                    title="Legacy PDE route note",
+                    summary="Construct Grid and theta_method_1d manually.",
+                    source_artifact="pde_theta_1d",
+                    source_path="",
+                    instrument_types=("european_option",),
+                    method_families=("pde_solver",),
+                    route_families=("pde_solver",),
+                    failure_buckets=(),
+                    concepts=(),
+                    tags=("route:pde_theta_1d",),
+                    origin="canonical",
+                    parents=(),
+                    supersedes=(),
+                    status="promoted",
+                    confidence=1.0,
+                    updated_at="",
+                    precedence_rank=50,
+                    instruction_type="route_hint",
+                    source_kind="route_card",
+                    lineage_status="derived",
+                    lineage_evidence=("route.match_method_to_cookbook",),
+                ),
+                SimpleNamespace(
+                    skill_id="route_hint:pde_theta_1d:route-helper",
+                    kind="route_hint",
+                    title="PDE helper contract",
+                    summary="Use the checked helper surface instead of bespoke solver glue.",
+                    source_artifact="pde_theta_1d",
+                    source_path="",
+                    instrument_types=("european_option",),
+                    method_families=("pde_solver",),
+                    route_families=("pde_solver",),
+                    failure_buckets=(),
+                    concepts=(),
+                    tags=("module:trellis.models.equity_option_pde",),
+                    origin="canonical",
+                    parents=(),
+                    supersedes=(),
+                    status="promoted",
+                    confidence=1.0,
+                    updated_at="",
+                    precedence_rank=100,
+                    instruction_type="hard_constraint",
+                    source_kind="route_card",
+                    lineage_status="derived",
+                    lineage_evidence=("route.match_method_to_cookbook",),
+                ),
+            ),
+        ),
+    )
+
+    artifacts = select_prompt_skill_artifacts(
+        "European option PDE retry",
+        audience="builder",
+        stage="validation_failed",
+        instrument_type="european_option",
+        pricing_method="pde_solver",
+        route_ids=("pde_theta_1d",),
+        route_families=("pde_solver",),
+    )
+
+    assert [artifact["id"] for artifact in artifacts] == [
+        "route_hint:pde_theta_1d:route-helper",
+    ]
+
+
+def test_prompt_skill_selection_prefers_hard_constraints_over_exact_route_note_matches(monkeypatch):
+    from trellis.agent.knowledge.skills import select_prompt_skill_artifacts
+
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.skills.load_skill_index",
+        lambda: SimpleNamespace(
+            records=(
+                SimpleNamespace(
+                    skill_id="route_hint:local_vol_monte_carlo:note:1",
+                    kind="route_hint",
+                    title="Route-local note",
+                    summary="Legacy local-vol route note.",
+                    source_artifact="local_vol_monte_carlo",
+                    source_path="",
+                    instrument_types=("european_option",),
+                    method_families=("monte_carlo",),
+                    route_families=("local_vol",),
+                    failure_buckets=(),
+                    concepts=(),
+                    tags=("route:local_vol_monte_carlo",),
+                    origin="canonical",
+                    parents=(),
+                    supersedes=(),
+                    status="promoted",
+                    confidence=1.0,
+                    updated_at="",
+                    precedence_rank=50,
+                    instruction_type="route_hint",
+                    source_kind="route_card",
+                    lineage_status="derived",
+                    lineage_evidence=("route.match_method_to_cookbook",),
+                ),
+                SimpleNamespace(
+                    skill_id="route_hint:local_vol_monte_carlo:route-helper",
+                    kind="route_hint",
+                    title="Local-vol helper",
+                    summary="Use the approved local-vol helper directly.",
+                    source_artifact="local_vol_monte_carlo",
+                    source_path="",
+                    instrument_types=("european_option",),
+                    method_families=("monte_carlo",),
+                    route_families=("local_vol",),
+                    failure_buckets=(),
+                    concepts=(),
+                    tags=(),
+                    origin="canonical",
+                    parents=(),
+                    supersedes=(),
+                    status="promoted",
+                    confidence=1.0,
+                    updated_at="",
+                    precedence_rank=100,
+                    instruction_type="hard_constraint",
+                    source_kind="route_card",
+                    lineage_status="derived",
+                    lineage_evidence=("route.match_method_to_cookbook",),
+                ),
+            ),
+        ),
+    )
+
+    artifacts = select_prompt_skill_artifacts(
+        "Local-vol retry",
+        audience="builder",
+        stage="validation_failed",
+        instrument_type="european_option",
+        pricing_method="monte_carlo",
+        route_ids=("local_vol_monte_carlo",),
+        route_families=("local_vol",),
+    )
+
+    assert [artifact["id"] for artifact in artifacts][:2] == [
+        "route_hint:local_vol_monte_carlo:route-helper",
+        "route_hint:local_vol_monte_carlo:note:1",
+    ]
+
+
+def test_executor_stage_aware_skills_prefer_hard_constraints_over_route_note_matches(monkeypatch):
+    from trellis.agent.executor import KnowledgeRetrievalRequest, _stage_aware_skill_artifacts
+
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.load_skill_index",
+        lambda: SimpleNamespace(
+            records=(
+                SimpleNamespace(
+                    skill_id="route_hint:local_vol_monte_carlo:note:1",
+                    kind="route_hint",
+                    title="Route-local note",
+                    summary="Legacy local-vol route note.",
+                    source_artifact="local_vol_monte_carlo",
+                    source_path="",
+                    instrument_types=("european_option",),
+                    method_families=("monte_carlo",),
+                    route_families=("local_vol",),
+                    failure_buckets=(),
+                    concepts=(),
+                    tags=("route:local_vol_monte_carlo",),
+                    origin="canonical",
+                    parents=(),
+                    supersedes=(),
+                    status="promoted",
+                    confidence=1.0,
+                    updated_at="",
+                    precedence_rank=50,
+                    instruction_type="route_hint",
+                    source_kind="route_card",
+                ),
+                SimpleNamespace(
+                    skill_id="route_hint:local_vol_monte_carlo:route-helper",
+                    kind="route_hint",
+                    title="Local-vol helper",
+                    summary="Use the approved local-vol helper directly.",
+                    source_artifact="local_vol_monte_carlo",
+                    source_path="",
+                    instrument_types=("european_option",),
+                    method_families=("monte_carlo",),
+                    route_families=("local_vol",),
+                    failure_buckets=(),
+                    concepts=(),
+                    tags=(),
+                    origin="canonical",
+                    parents=(),
+                    supersedes=(),
+                    status="promoted",
+                    confidence=1.0,
+                    updated_at="",
+                    precedence_rank=100,
+                    instruction_type="hard_constraint",
+                    source_kind="route_card",
+                ),
+            ),
+        ),
+    )
+
+    artifacts = _stage_aware_skill_artifacts(
+        KnowledgeRetrievalRequest(
+            audience="builder",
+            stage="validation_failed",
+            attempt_number=2,
+            knowledge_surface="compact",
+            prompt_surface="builder",
+            retry_reason="validation",
+            instrument_type="european_option",
+            pricing_method="monte_carlo",
+            product_ir=SimpleNamespace(instrument="european_option", route_families=("local_vol",)),
+            compiled_request=SimpleNamespace(
+                generation_plan=SimpleNamespace(
+                    primitive_plan=SimpleNamespace(route="local_vol_monte_carlo", route_family="local_vol"),
+                ),
+            ),
+        )
+    )
+
+    assert [artifact["id"] for artifact in artifacts][:2] == [
+        "route_hint:local_vol_monte_carlo:route-helper",
+        "route_hint:local_vol_monte_carlo:note:1",
+    ]
+
+
 def test_executor_stage_aware_skills_skip_duplicate_guidance(monkeypatch):
     from trellis.agent.executor import _builder_knowledge_context_for_attempt
 

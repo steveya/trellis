@@ -320,6 +320,11 @@ longer treat route ids as first-class authority; they rank candidates from
 family capability, blocker state, and backend-binding role facts. This keeps
 selection aligned with the retired route-card surface instead of letting
 route-id or route-family signals quietly reintroduce route-first behavior.
+The retry/prompt guidance layer now matches that boundary as well: exact helper
+and schedule constraints can still surface as hard constraints, but route-card
+notes are no longer projected as live ``route_hint`` records and the prompt
+rankers no longer sort exact ``route:<id>`` matches ahead of broader
+instrument / method / family fit.
 
 Callable-bond wrappers now follow the same “thin public shell over reusable
 family helpers” rule as the newer event-aware routes. The public PDE/tree

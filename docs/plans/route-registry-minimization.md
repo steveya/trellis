@@ -237,6 +237,16 @@ These gaps do not invalidate the completed `QUA-546` / `QUA-727` work. They do
 mean route minimization still has a small maintenance tail after the completed
 planned tranches.
 
+- `QUA-790` tracks the prompt / retry guidance tail after scorer cleanup.
+  `trellis/agent/knowledge/skills.py` still projected route-card notes as live
+  `route_hint` records and both the prompt ranker and executor-side retry
+  retrieval still sorted exact `route:<id>` matches ahead of broader
+  instrument / method / family fit.
+- `QUA-791` tracks the offline learned-ranker tail. The experimental
+  `trellis/agent/route_learning.py` scaffold still emitted
+  `route:<id>` / `route_family:<family>` feature authority even though the live
+  scorer no longer does.
+
 ## 2026-04-12 Route-Card Retirement Program
 
 A fresh audit after the live `KL01` FX rerun showed that the remaining route
@@ -339,7 +349,7 @@ semantic/family/lane surface.
 
 ## Linear Mirror
 
-Status mirror last synced: `2026-04-11`
+Status mirror last synced: `2026-04-12`
 
 ### Workstream Ticket
 
@@ -364,3 +374,5 @@ Status mirror last synced: `2026-04-11`
 | `QUA-784` | Route surfaces: generic Monte Carlo and basket routes collapse to family-first metadata | Done |
 | `QUA-785` | Route inventory: audit metadata-first residual route cards against representative tasks | Done |
 | `QUA-777` | Route scoring: remove residual route-identity authority after route-card retirement | Done |
+| `QUA-790` | Route prompts: demote residual route-note authority in skill selection | Done |
+| `QUA-791` | Route learning: align offline learned-ranker features with minimized scorer contract | Backlog |
