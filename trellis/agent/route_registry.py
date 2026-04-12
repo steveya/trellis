@@ -997,7 +997,7 @@ def compile_route_binding_authority(
     if not route_id and primitive_plan is None and route_spec is None:
         return None
 
-    binding_catalog = load_backend_binding_catalog(registry=registry or load_route_registry())
+    binding_catalog = load_backend_binding_catalog(registry=registry)
     binding_spec = None
     if route_id:
         binding = find_backend_binding_by_route_id(route_id, binding_catalog)

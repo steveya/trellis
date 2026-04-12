@@ -217,9 +217,11 @@ def _resolve_binding_primitives(
     payoff_family = getattr(product_ir, "payoff_family", "") if product_ir is not None else ""
     model_family = getattr(product_ir, "model_family", "generic") if product_ir is not None else "generic"
 
+    explicit_default: tuple[PrimitiveRef, ...] | None = None
     for cond in binding.conditional_primitives:
         if isinstance(cond.when, str) and cond.when == "default":
-            return cond.primitives if cond.primitives else binding.primitives
+            explicit_default = cond.primitives if cond.primitives else binding.primitives
+            continue
         if isinstance(cond.when, dict) and _matches_condition(
             cond.when,
             payoff_family,
@@ -228,7 +230,7 @@ def _resolve_binding_primitives(
             product_ir,
         ):
             return cond.primitives if cond.primitives else binding.primitives
-    return binding.primitives
+    return explicit_default if explicit_default is not None else binding.primitives
 
 
 def _resolve_binding_route_family(
