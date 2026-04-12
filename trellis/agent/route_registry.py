@@ -1151,10 +1151,7 @@ def compile_route_binding_authority(
         if str(item).strip()
     )
     validation_bundle_id = str(getattr(validation_contract, "bundle_id", "") or "")
-    exact_validation_bundle_id = (
-        str(getattr(validation_contract, "exact_bundle_id", "") or "").strip()
-        or validation_bundle_id
-    )
+    exact_validation_bundle_id = str(getattr(validation_contract, "exact_bundle_id", "") or "").strip()
     validation_check_ids = tuple(
         str(getattr(check, "check_id", "") or "").strip()
         for check in (getattr(validation_contract, "deterministic_checks", ()) or ())

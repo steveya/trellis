@@ -300,20 +300,21 @@ def _resolve_backend_binding_identity(
     """Return the exact backend-binding identity when available."""
     if _lowering_errors_for(semantic_blueprint):
         return None
+    has_exact_backend_fit = _generation_plan_has_exact_backend_fit(generation_plan)
     if (
-        _generation_plan_has_exact_backend_fit(generation_plan)
+        has_exact_backend_fit
         and generation_plan is not None
         and getattr(generation_plan, "backend_binding_id", None)
     ):
         return str(getattr(generation_plan, "backend_binding_id", None) or "").strip() or None
     primitive_plan = getattr(generation_plan, "primitive_plan", None)
     if (
-        _generation_plan_has_exact_backend_fit(generation_plan)
+        has_exact_backend_fit
         and primitive_plan is not None
         and getattr(primitive_plan, "backend_binding_id", None)
     ):
         return str(getattr(primitive_plan, "backend_binding_id", None) or "").strip() or None
-    if not route_id or _lowering_errors_for(semantic_blueprint):
+    if not route_id:
         return None
     from trellis.agent.backend_bindings import resolve_backend_binding_by_route_id
 
