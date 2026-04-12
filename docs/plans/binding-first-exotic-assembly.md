@@ -181,10 +181,13 @@ Status mirror last synced: `2026-04-12`
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-804` | Exotic benchmark: define constructable proof cohort for binding-first assembly | Backlog |
+| `QUA-804` | Exotic benchmark: define constructable proof cohort for binding-first assembly | Done |
 | `QUA-808` | Exotic assembly: prove event-control-schedule structures without new route identities | Backlog |
 | `QUA-809` | Exotic assembly: prove basket-credit and loss-distribution structures on binding roles | Backlog |
 | `QUA-815` | Exotic program closeout: measure proof-cohort outcomes on the binding-first runtime | Backlog |
+
+The benchmark contract for those proof tickets lives in
+`docs/plans/binding-first-exotic-proof-cohort.md`.
 
 ## Cross-Epic Sequencing Constraints
 
