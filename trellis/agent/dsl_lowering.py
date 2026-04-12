@@ -163,17 +163,17 @@ def lower_semantic_blueprint(
             )
             continue
 
-        bindings = tuple(
-            DslTargetBinding(
-                module=primitive.module,
-                symbol=primitive.symbol,
-                role=primitive.role,
-                required=primitive.required,
-            )
-            for primitive in resolve_route_primitives(route, product_ir)
+        binding_spec = _resolve_backend_binding_for_route(
+            route_id,
+            product_ir=product_ir,
+        )
+        bindings = _target_bindings_for_route(
+            route,
+            product_ir=product_ir,
+            binding_spec=binding_spec,
         )
 
-        route_family = resolve_route_family(route, product_ir)
+        route_family = str(getattr(binding_spec, "route_family", "") or resolve_route_family(route, product_ir))
         adapters = resolve_route_adapters(route, product_ir)
         notes = resolve_route_notes(route, product_ir)
         try:
@@ -281,6 +281,39 @@ def lower_semantic_blueprint(
         expr=None,
         normalized_expr=None,
         errors=tuple(errors),
+    )
+
+
+def _resolve_backend_binding_for_route(
+    route_id: str,
+    *,
+    product_ir,
+):
+    """Resolve the canonical backend binding for one route when available."""
+    try:
+        from trellis.agent.backend_bindings import resolve_backend_binding_by_route_id
+
+        return resolve_backend_binding_by_route_id(route_id, product_ir=product_ir)
+    except Exception:
+        return None
+
+
+def _target_bindings_for_route(
+    route,
+    *,
+    product_ir,
+    binding_spec,
+) -> tuple[DslTargetBinding, ...]:
+    """Resolve DSL bindings from the binding catalog before falling back to route cards."""
+    primitives = tuple(getattr(binding_spec, "primitives", ()) or resolve_route_primitives(route, product_ir))
+    return tuple(
+        DslTargetBinding(
+            module=primitive.module,
+            symbol=primitive.symbol,
+            role=primitive.role,
+            required=primitive.required,
+        )
+        for primitive in primitives
     )
 
 

@@ -196,6 +196,27 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("quanto_adjustment_analytical"), spec)
         assert any(f.category == "route_helper_not_called" for f in findings)
 
+    def test_prefers_plan_primitives_over_route_card_for_route_helper_checks(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_garman_kohlhagen"][0]
+        spec = replace(spec, primitives=())
+        plan = _make_plan(
+            "analytical_garman_kohlhagen",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.fx_vanilla",
+                    "price_fx_vanilla_analytical",
+                    "route_helper",
+                ),
+            ),
+        )
+        source = '''
+def evaluate(self, market_state):
+    return 42.0
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, plan, spec)
+        assert any(f.category == "route_helper_not_called" for f in findings)
+
     def test_flags_missing_discount(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         source = '''

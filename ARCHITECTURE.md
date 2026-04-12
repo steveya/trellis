@@ -85,6 +85,10 @@ maintenance around the deterministic engines.
   on `PrimitivePlan` and `GenerationPlan`, so runtime plans no longer need to
   rediscover exact helper identity from route ids later in validation or trace
   code.
+- `trellis/agent/dsl_lowering.py` and
+  `trellis/agent/semantic_validators/algorithm_contract.py` now consume the
+  resolved binding surface first, so exact helper/kernel/schedule lookup is
+  binding-first even while route ids still exist as transitional aliases.
 - `trellis/agent/route_registry.py`, `trellis/agent/build_gate.py`,
   `trellis/agent/family_lowering_ir.py`, and `trellis/agent/dsl_lowering.py`
   govern admissibility and lowering onto checked route families. The route

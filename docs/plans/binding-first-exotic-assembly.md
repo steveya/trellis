@@ -149,7 +149,7 @@ Status mirror last synced: `2026-04-12`
 | --- | --- |
 | `QUA-798` | Backend binding: introduce canonical binding catalog beside route registry | Done |
 | `QUA-799` | Backend binding: carry binding identity through primitive and generation plans | Done |
-| `QUA-800` | Backend binding: move exact helper and kernel lookup onto binding specs | Backlog |
+| `QUA-800` | Backend binding: move exact helper and kernel lookup onto binding specs | Done |
 | `QUA-810` | Route aliases: collapse route registry to transitional alias and admissibility shell | Backlog |
 
 ### Ordered Lowering And Assembly Queue
