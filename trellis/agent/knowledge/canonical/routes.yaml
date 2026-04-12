@@ -31,28 +31,12 @@ routes:
       supported_state_tags: [terminal_markov, recombining_safe]
       supports_calibration: false
     primitives:
-      - module: trellis.models.resolution.quanto
-        symbol: resolve_quanto_inputs
-        role: market_binding
-      - module: trellis.models.black
-        symbol: black76_call
-        role: pricing_kernel
-      - module: trellis.models.black
-        symbol: black76_put
-        role: pricing_kernel
-      - module: trellis.models.analytical.quanto
-        symbol: price_quanto_option_analytical
-        role: pricing_kernel
       - module: trellis.models.quanto_option
         symbol: price_quanto_option_analytical_from_market_state
         role: route_helper
-    adapters:
-      - reuse_shared_quanto_market_binding
-      - apply_quanto_adjustment_terms
-      - reuse_shared_quanto_analytical_route_helper
+    adapters: []
     notes:
-      - "Quanto analytical routing should preserve domestic payout semantics instead of degrading to vanilla FX pricing."
-      - "Resolve shared market inputs first, then price through the checked-in quanto analytical helper."
+      - "Use `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state(...)` as the exact backend helper for analytical quanto requests."
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -77,20 +61,12 @@ routes:
       supported_state_tags: [terminal_markov, recombining_safe]
       supports_calibration: false
     primitives:
-      - module: trellis.models.resolution.quanto
-        symbol: resolve_quanto_inputs
-        role: market_binding
-      - module: trellis.models.monte_carlo.quanto
-        symbol: price_quanto_option_monte_carlo
-        role: pricing_kernel
       - module: trellis.models.quanto_option
         symbol: price_quanto_option_monte_carlo_from_market_state
         role: route_helper
-    adapters:
-      - reuse_shared_quanto_market_binding
-      - reuse_shared_quanto_mc_route_helper
+    adapters: []
     notes:
-      - "Quanto Monte Carlo routing should use the checked-in joint underlier/FX helper instead of rebuilding process, engine, and discount glue ad hoc."
+      - "Use `trellis.models.quanto_option.price_quanto_option_monte_carlo_from_market_state(...)` as the exact backend helper for Monte Carlo quanto requests."
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -485,8 +461,7 @@ routes:
         role: route_helper
     adapters: []
     notes:
-      - "For vanilla European FX options on the Monte Carlo lane, prefer `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo(...)`."
-      - "Treat the generated route as a thin adapter over the checked FX helper; do not rebuild GBM drift, curve resolution, or payoff discounting inline."
+      - "Use `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo(...)` as the exact backend helper for vanilla FX Monte Carlo requests."
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -994,20 +969,12 @@ routes:
       supported_state_tags: [terminal_markov, recombining_safe]
       supports_calibration: false
     primitives:
-      - module: trellis.models.analytical.fx
-        symbol: garman_kohlhagen_price_raw
-        role: pricing_kernel
       - module: trellis.models.fx_vanilla
         symbol: price_fx_vanilla_analytical
         role: route_helper
-      - module: trellis.core.date_utils
-        symbol: year_fraction
-        role: time_measure
-    adapters:
-      - map_fx_spot_and_curves_to_garman_kohlhagen_inputs
+    adapters: []
     notes:
-      - "For European vanilla FX options, map spot FX and domestic/foreign curves to resolved inputs, then call `garman_kohlhagen_price_raw(spec.option_type, resolved)` from `trellis.models.analytical.fx`."
-      - "Treat Garman-Kohlhagen as the model identity and compatibility surface, but keep the generated route thin by delegating to the checked helper instead of rebuilding the basis assembly inline."
+      - "Use `trellis.models.fx_vanilla.price_fx_vanilla_analytical(...)` as the exact backend helper for analytical vanilla FX requests."
     market_data_access:
       required:
         discount_curve: [market_state.discount]

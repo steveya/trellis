@@ -255,6 +255,8 @@ def test_detect_adapter_lifecycle_records_flags_stale_checked_in_adapter(monkeyp
     assert stale[0].replacement == "trellis.instruments._agent._fresh.example_adapter"
     assert fresh[0].supersedes == (stale[0].adapter_id,)
     assert fresh[0].module_path == "trellis.instruments._agent._fresh.example_adapter"
+    assert "validated fresh-build replacement" not in fresh[0].reason.lower()
+    assert "await" in fresh[0].reason.lower() or "pending" in fresh[0].reason.lower()
 
 
 def test_detect_adapter_lifecycle_records_keeps_fx_and_quanto_shells_fresh():

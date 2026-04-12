@@ -254,11 +254,8 @@ def test_builds_fx_analytical_plan_for_fx_option_context():
     assert plan.primitive_plan is not None
     assert plan.primitive_plan.route == "analytical_garman_kohlhagen"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert {
-        "garman_kohlhagen_price_raw",
-        "year_fraction",
-    } <= primitive_symbols
-    assert "map_fx_spot_and_curves_to_garman_kohlhagen_inputs" in plan.primitive_plan.adapters
+    assert primitive_symbols == {"price_fx_vanilla_analytical"}
+    assert plan.primitive_plan.adapters == ()
     assert plan.primitive_plan.blockers == ()
 
 
@@ -285,8 +282,8 @@ def test_builds_quanto_analytical_plan_with_shared_resolution_and_black76():
     assert plan.primitive_plan is not None
     assert plan.primitive_plan.route == "quanto_adjustment_analytical"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert {"black76_call", "black76_put", "resolve_quanto_inputs"} <= primitive_symbols
-    assert "apply_quanto_adjustment_terms" in plan.primitive_plan.adapters
+    assert primitive_symbols == {"price_quanto_option_analytical_from_market_state"}
+    assert plan.primitive_plan.adapters == ()
 
 
 def test_builds_local_vol_monte_carlo_plan_for_local_vol_context():

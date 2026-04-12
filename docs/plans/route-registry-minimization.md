@@ -303,7 +303,7 @@ Status mirror last synced: `2026-04-12`
 | `QUA-730` | Route matching: move canonical selection toward family-first capability predicates | Done |
 | `QUA-731` | Diagnostics: demote route identity behind family IR and lane obligations | Done |
 | `QUA-732` | Compatibility cleanup: retire redundant route aliases after migrated-family adoption | Done |
-| `QUA-778` | Route surfaces: FX and quanto exact-helper routes stop emitting procedural authority | Backlog |
+| `QUA-778` | Route surfaces: FX and quanto exact-helper routes stop emitting procedural authority | Done |
 | `QUA-782` | Route surfaces: credit and copula routes retire procedural authority behind backend helpers | Backlog |
 | `QUA-781` | Route surfaces: rate-tree routes retire procedural authority and stay task-backed | Backlog |
 | `QUA-783` | Route surfaces: analytical Black76, PDE, and FFT routes retire procedural guidance | Backlog |

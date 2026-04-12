@@ -550,7 +550,7 @@ def test_platform_trace_keeps_route_less_semantic_requests_truthful(tmp_path):
             "quanto_adjustment_analytical",
             None,
             "trellis.models.resolution.quanto",
-            "trellis.models.analytical.quanto.price_quanto_option_analytical",
+            "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state",
         ),
         (
             "Himalaya-style ranked observation basket on AAPL, MSFT, NVDA with observation dates "

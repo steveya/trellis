@@ -1118,8 +1118,8 @@ def detect_adapter_lifecycle_records(*, repo_root: Path | None = None) -> list[A
 
     The first pass is warning-only: when a `_fresh` module differs from the
     checked-in module it maps to, we return both the stale checked-in record
-    and the validating fresh-build replacement.  Prompt formatting can then
-    surface the stale adapter before another codegen pass layers on top of it.
+    and the newer fresh-build snapshot. Prompt formatting can then surface the
+    stale adapter before another codegen pass layers on top of it.
     """
     root = Path(repo_root) if repo_root is not None else _REPO_ROOT
     fresh_root = root / "trellis" / "instruments" / "_agent" / "_fresh"
@@ -1165,7 +1165,7 @@ def detect_adapter_lifecycle_records(*, repo_root: Path | None = None) -> list[A
                 validated_against_repo_revision=repo_revision,
                 supersedes=(checked_in_module_path,),
                 replacement=checked_in_module_path,
-                reason="validated fresh-build replacement for a stale checked-in adapter",
+                reason="fresh-build snapshot differs from the checked-in adapter and is awaiting runtime validation",
                 code_hash=fresh_hash,
             )
         )

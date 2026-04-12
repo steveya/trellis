@@ -1,8 +1,8 @@
 meta:
-  recorded_at: '2026-04-11T00:34:30.994893+00:00'
+  recorded_at: '2026-04-12T04:12:58.817719+00:00'
   provider: openai
   model: gpt-5.4-mini
-  total_calls: 6
+  total_calls: 4
   name: T13
 calls:
 - seq: 0
@@ -10,10 +10,10 @@ calls:
   stage: code_generation
   prompt_hash: 6197fcb39b14239a94033474adabc4fc9ff165d3541c3677a5215aa29ea6d480
   response_text: "from trellis.models.equity_option_pde import price_vanilla_equity_option_pde\n\
-    \n        option_type = str(spec.option_type).lower()\n        if option_type\
-    \ not in {\"call\", \"put\"}:\n            raise ValueError(f\"Unsupported option_type:\
-    \ {spec.option_type!r}\")\n\n        return float(price_vanilla_equity_option_pde(market_state,\
-    \ spec, theta=0.5))"
+    \n        theta = 0.5\n        option_type = (spec.option_type or \"call\").lower()\n\
+    \        if option_type not in {\"call\", \"put\"}:\n            raise ValueError(f\"\
+    Unsupported option_type: {spec.option_type!r}\")\n\n        pv = price_vanilla_equity_option_pde(market_state,\
+    \ spec, theta=theta)\n        return float(pv)"
   prompt_text: "You are implementing the evaluate() method for `EuropeanOptionAnalyticalPayoff`\
     \ in the Trellis pricing library.\n\n## Complete module (skeleton — everything\
     \ is fixed except evaluate)\n```python\n\"\"\"Agent-generated payoff: Build a\
@@ -380,8 +380,26 @@ calls:
 - seq: 1
   function: llm_generate_json
   stage: critic
-  prompt_hash: 19905e8fe29033e0111a46fdac5b198cf70dd914f2c271d8d00d8e8fe2543ce7
-  response_text: '{}'
+  prompt_hash: fd8b82824485c6f9a40c1267ee0611f929ef90a395b34a496babd4fe02671fb7
+  response_text: '{"status": "suspect", "concerns": [{"check_id": "volatility_input_usage",
+    "description": "The implementation hardcodes a theta-method PDE call without any
+    explicit volatility plumbing in the adapter, so pricing may be insensitive to
+    the market volatility input if the backend helper is not correctly consuming `black_vol_surface`.",
+    "severity": "error", "evidence": "The adapter only forwards `market_state` and
+    `spec` into `price_vanilla_equity_option_pde(...)` and never references vol directly;
+    given the stated boundary contract, any mismatch in the helper''s expected market-state
+    fields would make the price effectively vol-blind.", "remediation": "Verify the
+    backend helper is reading the required `expiry_black_vol`/`black_vol_surface`
+    from `market_state`; if not, wire the volatility surface explicitly into the pricing
+    path or use the exact expected market-state schema.", "status": "suspect"}, {"check_id":
+    "price_non_negative", "description": "There is no explicit safeguard against negative
+    PDE output, so a boundary/interop mismatch could return a negative option value.",
+    "severity": "warning", "evidence": "The code returns `float(pv)` directly from
+    `price_vanilla_equity_option_pde(...)` with no sanity clamp or validation, and
+    the imported helper is assumed rather than asserted to respect call-option positivity.",
+    "remediation": "Add post-price sanity validation or confirm the helper is contractually
+    guaranteed to return a non-negative vanilla call PV under the default market state.",
+    "status": "suspect"}]}'
   prompt_text: "You are a quantitative model validator reviewing agent-generated pricing\
     \ code.\nYour job is to find deterministic review concerns, not to praise. Be\
     \ adversarial.\n\n## Code to review\n```python\n\"\"\"Agent-generated payoff:\
@@ -433,29 +451,30 @@ calls:
     \    @property\n    def spec(self) -> EuropeanOptionSpec:\n        return self._spec\n\
     \n    @property\n    def requirements(self) -> set[str]:\n        return {\"black_vol_surface\"\
     , \"discount_curve\"}\n\n    def evaluate(self, market_state: MarketState) ->\
-    \ float:\n        spec = self._spec\n        option_type = str(spec.option_type).lower()\n\
-    \        if option_type not in {\"call\", \"put\"}:\n            raise ValueError(f\"\
-    Unsupported option_type: {spec.option_type!r}\")\n\n        return float(price_vanilla_equity_option_pde(market_state,\
-    \ spec, theta=0.5))\n\n```\n\n## Instrument description\nBuild a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nEuropean call option on\
-    \ a non-dividend-paying stock.\nS0=100, K=105, T=1Y, risk-free rate r=5%, volatility\
-    \ sigma=20%.\nSolve with the Black-Scholes PDE operator using Crank-Nicolson\n\
-    (theta=0.5) and fully implicit (theta=1.0) on a 200-point spot grid\n× 100 time\
-    \ steps.\nMeasure convergence order by doubling the grid: the CN scheme should\n\
-    show O(dt^2 + dS^2) convergence and the implicit scheme O(dt + dS^2).\nCompare\
-    \ both to the Black-Scholes analytical price.\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_0.5\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_0.5\n\n## Shared Knowledge\n\
-    ## Distilled Review Memory\n\n- Review principles:\n  - `P1`: Always calibrate\
-    \ rate trees to the discount curve before pricing\n  - `P2`: Callable bonds need\
-    \ issuer_call lattice control, discrete coupons, and exercise=par+coupon\n  -\
-    \ `P3`: Convert vol units at the boundary between market data and model\n- Review\
-    \ checkpoints:\n  - GRID: Use at least 200 spatial points and 200+ time steps.\
-    \ For barrier options, use non-uniform grid concentrated near the barrier.\n \
-    \ - BOUNDARY CONDITIONS: Set V(0,t)=0 for calls, V(S_max,t)=S_max-K*exp(-r*(T-t))\
+    \ float:\n        spec = self._spec\n        theta = 0.5\n        option_type\
+    \ = (spec.option_type or \"call\").lower()\n        if option_type not in {\"\
+    call\", \"put\"}:\n            raise ValueError(f\"Unsupported option_type: {spec.option_type!r}\"\
+    )\n\n        pv = price_vanilla_equity_option_pde(market_state, spec, theta=theta)\n\
+    \        return float(pv)\n\n```\n\n## Instrument description\nBuild a pricer\
+    \ for: European call: theta-method convergence order measurement\n\nEuropean call\
+    \ option on a non-dividend-paying stock.\nS0=100, K=105, T=1Y, risk-free rate\
+    \ r=5%, volatility sigma=20%.\nSolve with the Black-Scholes PDE operator using\
+    \ Crank-Nicolson\n(theta=0.5) and fully implicit (theta=1.0) on a 200-point spot\
+    \ grid\n× 100 time steps.\nMeasure convergence order by doubling the grid: the\
+    \ CN scheme should\nshow O(dt^2 + dS^2) convergence and the implicit scheme O(dt\
+    \ + dS^2).\nCompare both to the Black-Scholes analytical price.\n\nConstruct methods:\
+    \ pde_solver\nComparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver),\
+    \ black_scholes (analytical)\nCross-validation harness:\n  internal targets: theta_0.5,\
+    \ theta_1.0\n  analytical benchmark: black_scholes\n  external targets: quantlib\n\
+    New component: convergence_order_diagnostic\n\nImplementation target: theta_0.5\n\
+    Preferred method family: pde_solver\n\nImplementation target: theta_0.5\n\n##\
+    \ Shared Knowledge\n## Distilled Review Memory\n\n- Review principles:\n  - `P1`:\
+    \ Always calibrate rate trees to the discount curve before pricing\n  - `P2`:\
+    \ Callable bonds need issuer_call lattice control, discrete coupons, and exercise=par+coupon\n\
+    \  - `P3`: Convert vol units at the boundary between market data and model\n-\
+    \ Review checkpoints:\n  - GRID: Use at least 200 spatial points and 200+ time\
+    \ steps. For barrier options, use non-uniform grid concentrated near the barrier.\n\
+    \  - BOUNDARY CONDITIONS: Set V(0,t)=0 for calls, V(S_max,t)=S_max-K*exp(-r*(T-t))\
     \ for calls. For puts: V(0,t)=K*exp(-r*(T-t)), V(S_max,t)=0.\n  - STABILITY: Crank-Nicolson\
     \ (theta=0.5) is second-order but may oscillate near discontinuities. Use Rannacher\
     \ smoothing (2-4 implicit steps at start) for digital/barrier payoffs.\n- Canonical\
@@ -536,9 +555,11 @@ calls:
   function: llm_generate
   stage: code_generation
   prompt_hash: 8e039b86d1bc1edf4c59ba3560080cfcca289bef296bcd00d2459ccd5c177204
-  response_text: "spec = self._spec\n        from trellis.models.equity_option_pde\
-    \ import price_vanilla_equity_option_pde\n\n        theta = 0.5\n        return\
-    \ float(price_vanilla_equity_option_pde(market_state, spec, theta=theta) * spec.notional)"
+  response_text: "from trellis.models.equity_option_pde import price_vanilla_equity_option_pde\n\
+    \n        # Thin adapter to the checked-in vanilla equity PDE helper.\n      \
+    \  # The helper owns grid sizing, boundary conditions, theta-method solve,\n \
+    \       # and interpolation back to the spot.\n        return float(price_vanilla_equity_option_pde(market_state,\
+    \ spec, theta=1.0))"
   prompt_text: "You are implementing the evaluate() method for `EuropeanOptionAnalyticalPayoff`\
     \ in the Trellis pricing library.\n\n## Complete module (skeleton — everything\
     \ is fixed except evaluate)\n```python\n\"\"\"Agent-generated payoff: Build a\
@@ -903,1097 +924,19 @@ calls:
     \ no explanation — just the Python code."
   model: gpt-5.4-mini
 - seq: 3
-  function: llm_generate
-  stage: code_generation
-  prompt_hash: 02ceb803d7d2a2db2c7cb0ec9a388d0d0c8c7aeff3870060932895a816bd3ca5
-  response_text: "spec = self._spec\n        if not hasattr(market_state, \"vol_surface\"\
-    ) or market_state.vol_surface is None:\n            raise ValueError(\"market_state.vol_surface\
-    \ is required for PDE pricing\")\n        if not hasattr(market_state, \"discount\"\
-    ) or market_state.discount is None:\n            raise ValueError(\"market_state.discount\
-    \ is required for PDE pricing\")\n\n        T = year_fraction(market_state.as_of,\
-    \ spec.expiry_date, spec.day_count)\n        if T <= 0.0:\n            intrinsic\
-    \ = max(spec.spot - spec.strike, 0.0) if spec.option_type.lower() == \"call\"\
-    \ else max(spec.strike - spec.spot, 0.0)\n            return float(spec.notional\
-    \ * intrinsic)\n\n        theta = 1.0\n        if \"0.5\" in type(self).__doc__\
-    \ if type(self).__doc__ else False:\n            theta = 0.5\n        price =\
-    \ price_vanilla_equity_option_pde(market_state, spec, theta=theta)\n        return\
-    \ float(price * spec.notional)"
-  prompt_text: "You are implementing the evaluate() method for `EuropeanOptionAnalyticalPayoff`\
-    \ in the Trellis pricing library.\n\n## Complete module (skeleton — everything\
-    \ is fixed except evaluate)\n```python\n\"\"\"Agent-generated payoff: Build a\
-    \ pricer for: European call: theta-method convergence order measurement\n\nEuropean\
-    \ call option on a non-dividend-paying stock.\nS0=100, K=105, T=1Y, risk-free\
-    \ rate r=5%, volatility sigma=20%.\nSolve with the Black-Scholes PDE operator\
-    \ using Crank-Nicolson\n(theta=0.5) and fully implicit (theta=1.0) on a 200-point\
-    \ spot grid\n× 100 time steps.\nMeasure convergence order by doubling the grid:\
-    \ the CN scheme should\nshow O(dt^2 + dS^2) convergence and the implicit scheme\
-    \ O(dt + dS^2).\nCompare both to the Black-Scholes analytical price.\n\nConstruct\
-    \ methods: pde_solver\nComparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver),\
-    \ black_scholes (analytical)\nCross-validation harness:\n  internal targets: theta_0.5,\
-    \ theta_1.0\n  analytical benchmark: black_scholes\n  external targets: quantlib\n\
-    New component: convergence_order_diagnostic\n\nImplementation target: theta_1.0\n\
-    Preferred method family: pde_solver\n\nImplementation target: theta_1.0.\"\"\"\
-    \n\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\n\
-    from datetime import date\n\nfrom trellis.core.market_state import MarketState\n\
-    from trellis.core.types import DayCountConvention\nfrom trellis.models.equity_option_pde\
-    \ import price_vanilla_equity_option_pde\n\n\n\n@dataclass(frozen=True)\nclass\
-    \ EuropeanOptionSpec:\n    \"\"\"Specification for Build a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nEuropean call option on\
-    \ a non-dividend-paying stock.\nS0=100, K=105, T=1Y, risk-free rate r=5%, volatility\
-    \ sigma=20%.\nSolve with the Black-Scholes PDE operator using Crank-Nicolson\n\
-    (theta=0.5) and fully implicit (theta=1.0) on a 200-point spot grid\n× 100 time\
-    \ steps.\nMeasure convergence order by doubling the grid: the CN scheme should\n\
-    show O(dt^2 + dS^2) convergence and the implicit scheme O(dt + dS^2).\nCompare\
-    \ both to the Black-Scholes analytical price.\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_1.0\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_1.0.\"\"\"\n    notional:\
-    \ float\n    spot: float\n    strike: float\n    expiry_date: date\n    option_type:\
-    \ str = 'call'\n    day_count: DayCountConvention = DayCountConvention.ACT_365\n\
-    \n\nclass EuropeanOptionAnalyticalPayoff:\n    \"\"\"Build a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nEuropean call option on\
-    \ a non-dividend-paying stock.\nS0=100, K=105, T=1Y, risk-free rate r=5%, volatility\
-    \ sigma=20%.\nSolve with the Black-Scholes PDE operator using Crank-Nicolson\n\
-    (theta=0.5) and fully implicit (theta=1.0) on a 200-point spot grid\n× 100 time\
-    \ steps.\nMeasure convergence order by doubling the grid: the CN scheme should\n\
-    show O(dt^2 + dS^2) convergence and the implicit scheme O(dt + dS^2).\nCompare\
-    \ both to the Black-Scholes analytical price.\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_1.0\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_1.0.\"\"\"\n\n   \
-    \ def __init__(self, spec: EuropeanOptionSpec):\n        self._spec = spec\n\n\
-    \    @property\n    def spec(self) -> EuropeanOptionSpec:\n        return self._spec\n\
-    \n    @property\n    def requirements(self) -> set[str]:\n        return {\"black_vol_surface\"\
-    , \"discount_curve\"}\n\n    def evaluate(self, market_state: MarketState) ->\
-    \ float:\n        spec = self._spec\n        raise NotImplementedError(\"evaluate\
-    \ not yet implemented\")\n\n```\n\n## Your task\nWrite ONLY the body of the `evaluate()`\
-    \ method. The signature is already defined:\n\n    def evaluate(self, market_state:\
-    \ MarketState) -> float:\n\n## Spec fields available via self._spec\n- `self._spec.notional`\
-    \ (float): Notional / number of shares\n- `self._spec.spot` (float): Current spot\
-    \ price\n- `self._spec.strike` (float): Option strike price\n- `self._spec.expiry_date`\
-    \ (date): Option expiry date\n- `self._spec.option_type` (str): Option type: 'call'\
-    \ or 'put'\n- `self._spec.day_count` (DayCountConvention): Day count convention\n\
-    \n## Pricing Method (selected by the quant agent — you MUST use this)\nMethod:\
-    \ **pde_solver**\nReasoning: product_ir_compiler\nSelection basis and assumptions:\n\
-    - Selection basis: `explicit_preference`\n- Assumptions / defaulted context:\n\
-    \  - `simplest_valid_assumption_set`\n  - `finite_difference_discretization_route`\n\
-    \  - `boundary_conditions_required`\nRoute-bound modules to import and use:\n\
-    - `trellis.models.equity_option_pde`\n\nYou MUST import and use these route-bound\
-    \ modules in your implementation.\nDo not import a generic parent package such\
-    \ as `from trellis.models import ...` just to satisfy the method family.\n\n##\
-    \ API Map — start here before guessing module paths\n\nUse this navigation card\
-    \ to choose the right module family first. Confirm exact symbols with `find_symbol`\
-    \ or `list_exports` before calling `read_module`.\n\n### Core Types\n#### MarketState\n\
-    - Module: `trellis.core.market_state`\n- Class: `MarketState`\n- Frozen: `true`\n\
-    - Fields: `as_of`, `settlement`, `discount`, `forward_curve`, `vol_surface`, `state_space`,\
-    \ `credit_curve`, `forecast_curves`, `fx_rates`\n- Accessors: `discount_factor`,\
-    \ `zero_rate`, `forward_rate`, `forecast_forward`, `black_vol`, `survival_prob`,\
-    \ `hazard_rate`, `risky_discount`\n- Capabilities: `discount_curve → discount\
-    \ is not None`, `forward_curve → forward_curve is not None (auto from discount)`,\
-    \ `black_vol_surface → vol_surface is not None`, `state_space → state_space is\
-    \ not None`, `credit_curve → credit_curve is not None`, `fx_rates → fx_rates is\
-    \ not None`\n#### Payoff\n- Module: `trellis.core.payoff`\n- Protocol: `Payoff`\n\
-    - Required methods: `evaluate`\n- Required properties: `requirements`\n- Runtime\
-    \ checkable: `true`\n- Notes:\n  - Each payoff handles its own discounting internally\n\
-    \  - The returned float is the final PV\n  - DeterministicCashflowPayoff wraps\
-    \ any Instrument into Payoff\n\n### Model Families\n#### equity_tree\n- Module:\
-    \ `trellis.models.equity_option_tree`\n- Key imports:\n  - `from trellis.models.equity_option_tree\
-    \ import price_vanilla_equity_option_tree`\n  - `from trellis.models.trees.lattice\
-    \ import build_spot_lattice, lattice_backward_induction`\n- Notes:\n  - American/Bermudan\
-    \ equity options should prefer the checked-in helper `price_vanilla_equity_option_tree(...)`\n\
-    \  - If you need the lower-level path, import the lattice builder/backward induction\
-    \ submodules directly\n#### rate_lattice\n- Module: `trellis.models.trees.lattice`\n\
-    - Key imports:\n  - `from trellis.models.trees.lattice import build_rate_lattice,\
-    \ lattice_backward_induction`\n  - `from trellis.models.zcb_option_tree import\
-    \ price_zcb_option_tree`\n- Notes:\n  - Callable bonds, puttable bonds, and Bermudan\
-    \ swaptions use a calibrated rate lattice from a TreeModel specification such\
-    \ as Hull-White or Black-Derman-Toy\n  - lattice_backward_induction handles cashflow_at_node\
-    \ and exercise_fn\n#### monte_carlo\n- Module: `trellis.models.monte_carlo`\n\
-    - Key imports:\n  - `from trellis.models.monte_carlo.engine import MonteCarloEngine`\n\
-    \  - `from trellis.models.monte_carlo.lsm import longstaff_schwartz, longstaff_schwartz_result`\n\
-    \  - `from trellis.models.monte_carlo.early_exercise import EarlyExercisePolicyResult,\
-    \ LeastSquaresContinuationEstimator`\n  - `from trellis.models.monte_carlo.schemes\
-    \ import LaguerreBasis`\n  - `from trellis.models.monte_carlo import euler_maruyama,\
-    \ milstein, brownian_bridge`\n  - `from trellis.models.monte_carlo import antithetic,\
-    \ control_variate`\n  - `from trellis.models.processes.gbm import GBM`\n- Notes:\n\
-    \  - For American/Bermudan Monte Carlo, simulate paths then call an approved early-exercise\
-    \ control primitive; Trellis currently implements longstaff_schwartz\n  - If the\
-    \ control primitive uses continuation regression, choose the estimator or basis\
-    \ explicitly; LaguerreBasis is optional, not mandatory\n#### qmc\n- Module: `trellis.models.qmc`\n\
-    - Key imports:\n  - `from trellis.models.qmc import sobol_normals, brownian_bridge`\n\
-    \  - `from trellis.models.processes.gbm import GBM`\n- Notes:\n  - QMC is an accelerator\
-    \ family layered on Monte Carlo-style estimators\n  - Current support is Sobol-based\
-    \ normal draws and Brownian-bridge construction\n#### pde\n- Module: `trellis.models.pde`\n\
-    - Key imports:\n  - `from trellis.models.equity_option_pde import price_vanilla_equity_option_pde`\n\
-    \  - `from trellis.models.pde.grid import Grid`\n  - `from trellis.models.pde.theta_method\
-    \ import theta_method_1d`\n  - `from trellis.models.pde.operator import BlackScholesOperator`\n\
-    \  - `from trellis.models.pde import psor_1d  # American options`\n  - `from trellis.models.pde\
-    \ import HullWhitePDEOperator`\n- Notes:\n  - Vanilla European equity PDE routes\
-    \ should prefer the checked-in helper `price_vanilla_equity_option_pde(...)`\n\
-    \  - Use theta_method_1d, NOT legacy crank_nicolson_1d or implicit_fd_1d\n####\
-    \ fft\n- Module: `trellis.models.transforms`\n- Key imports:\n  - `from trellis.models.transforms\
-    \ import fft_price, cos_price`\n- Notes:\n  - fft_price expects CF of log(S_T)\
-    \ — include log(S0)\n  - cos_price expects CF of log(S_T/S0) — log-return only\n\
-    #### copulas\n- Module: `trellis.models.copulas`\n- Key imports:\n  - `from trellis.models.copulas\
-    \ import GaussianCopula, StudentTCopula, FactorCopula`\n#### analytical\n- Module:\
-    \ `trellis.models.zcb_option`\n- Key imports:\n  - `from trellis.models.zcb_option\
-    \ import resolve_zcb_option_hw_inputs, price_zcb_option_jamshidian`\n  - `from\
-    \ trellis.models.analytical.jamshidian import ResolvedJamshidianInputs, zcb_option_hw_raw`\n\
-    \  - `from trellis.models.analytical import zcb_option_hw`\n  - `from trellis.models.analytical\
-    \ import terminal_vanilla_from_basis`\n  - `from trellis.models.rate_style_swaption\
-    \ import ResolvedSwaptionBlack76Inputs, resolve_swaption_black76_inputs, price_swaption_black76_raw,\
-    \ price_bermudan_swaption_black76_lower_bound`\n#### calibration\n- Module: `trellis.models.calibration`\n\
-    - Key imports:\n  - `from trellis.models.calibration import implied_vol, implied_vol_jaeckel`\n\
-    \  - `from trellis.models.calibration import RatesCalibrationResult, calibrate_cap_floor_black_vol,\
-    \ calibrate_swaption_black_vol, swaption_terms`\n  - `from trellis.models.calibration\
-    \ import calibrate_sabr`\n  - `from trellis.models.calibration import dupire_local_vol`\n\
-    \n### Utilities\n#### black76\n- Module: `trellis.models.black`\n- Imports:\n\
-    \  - `from trellis.models.black import black76_call, black76_put, black76_asset_or_nothing_call,\
-    \ black76_asset_or_nothing_put, black76_cash_or_nothing_call, black76_cash_or_nothing_put`\n\
-    #### garman_kohlhagen\n- Module: `trellis.models.analytical.fx`\n- Imports:\n\
-    \  - `from trellis.models.analytical.fx import ResolvedGarmanKohlhagenInputs,\
-    \ garman_kohlhagen_price_raw`\n  - `from trellis.models.black import garman_kohlhagen_call,\
-    \ garman_kohlhagen_put`\n#### rate_style_swaption\n- Module: `trellis.models.rate_style_swaption`\n\
-    - Imports:\n  - `from trellis.models.rate_style_swaption import ResolvedSwaptionBlack76Inputs,\
-    \ resolve_swaption_black76_inputs, price_swaption_black76_raw, price_swaption_black76`\n\
-    \  - `from trellis.models.rate_style_swaption import price_bermudan_swaption_black76_lower_bound`\n\
-    #### jamshidian_zcb_option\n- Module: `trellis.models.zcb_option`\n- Imports:\n\
-    \  - `from trellis.models.zcb_option import ResolvedZCBOptionInputs, resolve_zcb_option_hw_inputs,\
-    \ price_zcb_option_jamshidian`\n  - `from trellis.models.analytical.jamshidian\
-    \ import ResolvedJamshidianInputs, zcb_option_hw_raw`\n#### schedule\n- Module:\
-    \ `trellis.core.date_utils`\n- Imports:\n  - `from trellis.core.date_utils import\
-    \ generate_schedule`\n#### day_count\n- Module: `trellis.core.date_utils`\n- Imports:\n\
-    \  - `from trellis.core.date_utils import year_fraction`\n#### vol_surface\n-\
-    \ Module: `trellis.models.vol_surface`\n- Imports:\n  - `from trellis.models.vol_surface\
-    \ import VolSurface, FlatVol`\n#### cashflow_engine\n- Module: `trellis.models.cashflow_engine`\n\
-    - Imports:\n  - `from trellis.models.cashflow_engine import Waterfall, Tranche`\n\
-    \  - `from trellis.models.cashflow_engine import PSA, CPR, RateDependent`\n  -\
-    \ `from trellis.models.cashflow_engine import level_pay, scheduled, custom`\n\
-    #### credit_curve\n- Module: `trellis.curves.credit_curve`\n- Imports:\n  - `from\
-    \ trellis.curves.credit_curve import CreditCurve`\n- Notes:\n  - CreditCurve.flat(hazard_rate)\
-    \ is the simplest starting point for CDS or nth-to-default tasks\n## Distilled\
-    \ Build Memory\n\n- Product: `european_option` / `vanilla_option` / `european`\n\
-    - Default method family: `pde_solver`\n- Method intent: One-dimensional finite-difference\
-    \ theta-method pricing with optional obstacle handling\n- Non-negotiable requirements:\n\
-    \  - GRID: Use at least 200 spatial points and 200+ time steps. For barrier options,\
-    \ use non-uniform grid concentrated near the barrier.\n  - BOUNDARY CONDITIONS:\
-    \ Set V(0,t)=0 for calls, V(S_max,t)=S_max-K*exp(-r*(T-t)) for calls. For puts:\
-    \ V(0,t)=K*exp(-r*(T-t)), V(S_max,t)=0.\n  - STABILITY: Crank-Nicolson (theta=0.5)\
-    \ is second-order but may oscillate near discontinuities. Use Rannacher smoothing\
-    \ (2-4 implicit steps at start) for digital/barrier payoffs.\n- Canonical model\
-    \ grammar:\n  - `local_vol_surface_workflow` -> `Dupire local vol`\n  - `sabr_smile_workflow`\
-    \ -> `SABR smile`\n- Repeated fixes to reuse:\n  - `BlackScholesOperator constructor\
-    \ mismatch` -> Import BlackScholesOperator from trellis.models.pde.operator and\
-    \ pass callables, for example BlackScholesOperator(lambda s, t: sigma, lambda\
-    \ t: r). Add a signature smoke test or cookbook template to lock the constructor\
-    \ shape and keep the solver path aligned with the real API.\n  - `PDE price blow-up\
-    \ from unit/scale mismatch` -> Build Grid(x_min=0.0, x_max=S_max, n_x=n_x, T=T,\
-    \ n_t=n_t), construct BlackScholesOperator(lambda s, t: sigma, lambda t: r), call\
-    \ theta_method_1d(grid, op, terminal, theta=0.5, lower_bc_fn=..., upper_bc_fn=...),\
-    \ then interpolate the returned vector with np.interp(spec.spot, grid.x, V) before\
-    \ multiplying by notional.\n\n## Generated Skills\n- [cookbook] fft_pricing: Characteristic-function\
-    \ pricing for European-style options under models such as Heston\n- [lesson] Unit\
-    \ conversion causes huge PV: Enforce and document input conventions (vol as decimal,\
-    \ discount curve vs zero rate semantics, notional scaling), derive r from discount\
-    \ factors via r = -ln(df)/T or use forward/Black76 consistently, add unit/conversi...\n\
-    \n## Stage-Aware Skills\n- [route_hint] vanilla_equity_theta_pde route helper:\
-    \ Use the selected route helper directly inside `evaluate()`; do not rebuild the\
-    \ process, engine, or discount glue manually.\n- [route_hint] vanilla_equity_theta_pde\
-    \ note 1: For vanilla European equity PDE routes, prefer `price_vanilla_equity_option_pde(market_state,\
-    \ spec, theta=...)` so the adapter stays thin.\n## Retry Focus\n- Match the runtime\
-    \ contract exactly: required curves, units, and payoff-leg signs must be explicit\
-    \ in code.\n- Prefer a smaller, explicit implementation over a broad helper abstraction\
-    \ when recovering from validation failures.\n## Route-Specific Recovery\n- Vanilla\
-    \ European PDE routes should stay on the checked-in helper surface whenever the\
-    \ contract is plain call/put Black-Scholes.\n- Prefer `from trellis.models.equity_option_pde\
-    \ import price_vanilla_equity_option_pde` and delegate to that helper from the\
-    \ adapter.\n- Map `implementation_target=theta_0.5` to `theta=0.5` and `implementation_target=theta_1.0`\
-    \ to `theta=1.0`.\n- Do not rebuild terminal intrinsic branches, boundary callables,\
-    \ scalar interpolation, or discount-to-rate glue inline when the checked-in helper\
-    \ already matches the route.\n- Use the lower-level `Grid`, `BlackScholesOperator`,\
-    \ and `theta_method_1d` primitives only if the payoff or boundary contract genuinely\
-    \ differs from plain vanilla European call/put.\n## Structured Lane Card\n- Method\
-    \ family: `pde_solver`\n- Instrument type: `european_option`\n- Lane boundary:\
-    \ family=`pde_solver`, kind=`exact_target_binding`, exact_bindings=`trellis.models.equity_option_pde.price_vanilla_equity_option_pde`\n\
-    - Lane obligations:\n  - Lane family: `pde_solver`\n  - Plan kind: `exact_target_binding`\n\
-    \  - Market bindings: `black_vol_surface`, `discount_curve`\n  - State obligations:\
-    \ `spot`, `strike`, `expiry`, `expiry_black_vol`\n  - Exact backend bindings:\n\
-    \    - `trellis.models.equity_option_pde.price_vanilla_equity_option_pde`\n  -\
-    \ Exact binding signatures:\n    - `price_vanilla_equity_option_pde(market_state:\
-    \ 'EquityPDEMarketStateLike', spec: 'VanillaEquityOptionSpecLike', *, theta: 'float'\
-    \ = 0.5, n_x: 'int | None' = None, n_t: 'int | None' = None, s_max_multiplier:\
-    \ 'float' = 4.0) -> 'float'`\n- Route authority:\n  - binding=`trellis.models.equity_option_pde.price_vanilla_equity_option_pde`,\
-    \ engine=`pde_solver`, authority=`exact_backend_fit`\n  - Route alias: `vanilla_equity_theta_pde`\n\
-    \  - Validation bundle: `pde_solver:european_option`\n  - Validation checks: `check_non_negativity`,\
-    \ `check_price_sanity`, `check_vol_sensitivity`, `check_vol_monotonicity`\n  -\
-    \ Exact target bindings: `trellis.models.equity_option_pde.price_vanilla_equity_option_pde`\n\
-    - Backend binding:\n  - Route: `vanilla_equity_theta_pde`\n  - Engine family:\
-    \ `pde_solver`\n  - Route family: `pde_solver`\n  - Selected primitives:\n   \
-    \ - `trellis.models.equity_option_pde.price_vanilla_equity_option_pde` (route_helper)\n\
-    \  - Resolved instructions:\n    - [hard_constraint] Use the route helper directly\
-    \ inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.\n\
-    \    - [historical_note] For vanilla European equity PDE routes, prefer `price_vanilla_equity_option_pde(market_state,\
-    \ spec, theta=...)` so the adapter stays thin.\n    - [historical_note] Map `implementation_target=theta_0.5`\
-    \ to `theta=0.5` and `implementation_target=theta_1.0` to `theta=1.0`.\n    -\
-    \ [historical_note] The checked-in helper already owns grid sizing, terminal payoff\
-    \ assembly, boundary conditions, theta-method solve, and interpolation back to\
-    \ spot.\n    - [historical_note] Use the lower-level `Grid + BlackScholesOperator\
-    \ + theta_method_1d` path only when the payoff or boundary contract genuinely\
-    \ differs from plain vanilla European call/put.\n  - Required adapters:\n    -\
-    \ `reuse_checked_in_vanilla_equity_pde_helper`\n  - Backend notes:\n    - For\
-    \ vanilla European equity PDE routes, prefer `price_vanilla_equity_option_pde(market_state,\
-    \ spec, theta=...)` so the adapter stays thin.\n    - Map `implementation_target=theta_0.5`\
-    \ to `theta=0.5` and `implementation_target=theta_1.0` to `theta=1.0`.\n    -\
-    \ The checked-in helper already owns grid sizing, terminal payoff assembly, boundary\
-    \ conditions, theta-method solve, and interpolation back to spot.\n    - Use the\
-    \ lower-level `Grid + BlackScholesOperator + theta_method_1d` path only when the\
-    \ payoff or boundary contract genuinely differs from plain vanilla European call/put.\n\
-    - Primary modules to inspect/reuse:\n  - `trellis.models.pde.theta_method`\n-\
-    \ Post-build test targets:\n  - `tests/test_agent/test_build_loop.py`\n- Instruction\
-    \ precedence: follow the lane obligations in this card first. Treat backend route/helper\
-    \ details as exact-fit bindings, not as permission to invent a different numerical\
-    \ path.\n- Treat route authority as backend-fit evidence, not as permission to\
-    \ invent a different synthesis plan.\n- Use approved Trellis imports only. Prefer\
-    \ thin adapters when the compiler found an exact backend; otherwise build the\
-    \ smallest lane-consistent kernel the plan requires.\n## Backend Lookup (Secondary\
-    \ To Lane Obligations)\n- Lane family: `pde_solver`\n- Lane plan kind: `exact_target_binding`\n\
-    - Method family: `pde_solver`\n- Route: `vanilla_equity_theta_pde`\n- Engine family:\
-    \ `pde_solver`\n- Required primitive symbols:\n  - `trellis.models.equity_option_pde.price_vanilla_equity_option_pde`\n\
-    - Adapter obligations:\n  - `reuse_checked_in_vanilla_equity_pde_helper`\n## Thin\
-    \ Adapter Plan\n- Target payoff class: `EuropeanOptionAnalyticalPayoff`\n- Required\
-    \ market reads:\n  - `market_state.vol_surface.black_vol(...)`\n  - `market_state.discount`\n\
-    - Required primitive calls:\n  - `trellis.models.equity_option_pde.price_vanilla_equity_option_pde`\n\
-    - Required adapter steps:\n  - `reuse_checked_in_vanilla_equity_pde_helper`\n\
-    - Return contract: Return a Python `float` present value from `evaluate()`.\n\
-    ## Invariant Pack\n- The generated payoff should be compatible with these deterministic\
-    \ validation checks:\n  - `check_non_negativity`\n  - `check_price_sanity`\n \
-    \ - `check_vol_sensitivity`\n  - `check_vol_monotonicity`\n## Family Route Guidance\n\
-    - For vanilla European PDE routes, prefer `price_vanilla_equity_option_pde(market_state,\
-    \ self._spec, theta=...)` from `trellis.models.equity_option_pde`.\n- Map `implementation_target=theta_0.5`\
-    \ to `theta=0.5` and `implementation_target=theta_1.0` to `theta=1.0`.\n- Keep\
-    \ the wrapper thin: delegate grid sizing, boundary conditions, terminal payoff\
-    \ assembly, theta-method solve, and interpolation back to spot to the checked-in\
-    \ helper.\n- Only fall back to direct `Grid + BlackScholesOperator + theta_method_1d`\
-    \ assembly when the payoff or boundary contract genuinely differs from plain vanilla\
-    \ European call/put.\n## Conventions\n- evaluate() returns a FLOAT — the present\
-    \ value (PV) of the instrument\n- You MUST handle all discounting internally —\
-    \ use `market_state.discount.discount(t)`\n- For forward rates: `market_state.forecast_forward_curve(self._spec.rate_index)`\n\
-    - For vol: `market_state.vol_surface.black_vol(T, strike)`\n- For discount factors:\
-    \ `market_state.discount.discount(t)`\n- `market_state.fx_rates[pair]` returns\
-    \ an `FXRate` wrapper; extract `.spot` before scalar arithmetic or process seeding\n\
-    - Schedule generation: prefer `build_payment_timeline(...)`, `build_observation_timeline(...)`,\
-    \ or `build_period_schedule(...)` for accrual/event routes; use `generate_schedule(start,\
-    \ end, freq)` only for plain date lists with no period semantics\n- Year fractions:\
-    \ `year_fraction(date1, date2, day_count)`\n- Never use wall-clock dates such\
-    \ as `date.today()` or `datetime.now()` inside `evaluate()`; derive valuation\
-    \ time from `market_state` or shared resolver outputs.\n- Black76: `black76_call(F,\
-    \ K, sigma, T)`, `black76_put(F, K, sigma, T)` — undiscounted\n- Black76 digital:\
-    \ `black76_cash_or_nothing_call(F, K, sigma, T)`, `black76_cash_or_nothing_put(F,\
-    \ K, sigma, T)` — undiscounted cash-or-nothing digitals\n- For CDS / nth-to-default:\
-    \ use `market_state.credit_curve.survival_probability(t)` and `market_state.credit_curve.hazard_rate(t)`\
-    \ on an explicit payment/default schedule; do not route credit-default pricing\
-    \ through Black76 call/put primitives.\n- For equity trees: prefer `from trellis.models.equity_option_tree\
-    \ import price_vanilla_equity_option_tree`; the lower-level lattice path is `from\
-    \ trellis.models.trees.lattice import build_spot_lattice, lattice_backward_induction`\n\
-    - For vanilla European PDE routes: prefer `from trellis.models.equity_option_pde\
-    \ import price_vanilla_equity_option_pde`; the lower-level fallback is `from trellis.models.pde.grid\
-    \ import Grid`, `from trellis.models.pde.operator import BlackScholesOperator`,\
-    \ and `from trellis.models.pde.theta_method import theta_method_1d`\n- For rate\
-    \ lattices: prefer helper surfaces such as `price_callable_bond_tree(...)`, `price_bermudan_swaption_tree(...)`,\
-    \ or `price_zcb_option_tree(...)`; the lower-level fallback is `from trellis.models.trees.lattice\
-    \ import build_rate_lattice, lattice_backward_induction`\n- For schedule-dependent\
-    \ rate lattices: `from trellis.models.trees.control import lattice_steps_from_timeline,\
-    \ resolve_lattice_exercise_policy`\n- For MC: `from trellis.models.monte_carlo\
-    \ import MonteCarloEngine`\n- For QMC accelerators: `from trellis.models.qmc import\
-    \ sobol_normals, brownian_bridge`\n- For copulas: `from trellis.models.copulas\
-    \ import GaussianCopula, FactorCopula`\n- Do not invent MonteCarloEngine method\
-    \ strings. Valid `method=` values are `euler`, `milstein`, and `exact`.\n- For\
-    \ Monte Carlo early exercise, use an approved control primitive; do not pretend\
-    \ that `MonteCarloEngine.price(...)` or `method=\"lsm\"` implements early exercise.\
-    \ Approved policy classes: `longstaff_schwartz` [implemented], `tsitsiklis_van_roy`\
-    \ [implemented], `primal_dual_mc` [implemented], `stochastic_mesh` [implemented].\
-    \ Currently implemented in Trellis: `longstaff_schwartz`, `tsitsiklis_van_roy`,\
-    \ `primal_dual_mc`, `stochastic_mesh`.\n- If you use `LaguerreBasis`, import it\
-    \ from `trellis.models.monte_carlo.schemes`, not from `trellis.models.monte_carlo.lsm`.\n\
-    - For FFT/COS pricing, characteristic functions must accept vector `u` and use\
-    \ array-safe numerics such as `numpy`, not scalar `math`/`cmath`.\n- Black76 basis:\
-    \ `black76_asset_or_nothing_call(F, K, sigma, T)`, `black76_asset_or_nothing_put(F,\
-    \ K, sigma, T)`, `black76_cash_or_nothing_call(F, K, sigma, T)`, `black76_cash_or_nothing_put(F,\
-    \ K, sigma, T)` — exact terminal basis claims.\n- For terminal vanilla payoffs,\
-    \ prefer exact basis assembly via `terminal_vanilla_from_basis(...)` from `trellis.models.analytical`.\n\
-    - For FX vanilla options, treat the route as Garman-Kohlhagen: map spot FX and\
-    \ domestic/foreign discount factors to `ResolvedGarmanKohlhagenInputs`, then prefer\
-    \ `garman_kohlhagen_price_raw(spec.option_type, resolved)` from `trellis.models.analytical.fx`;\
-    \ use explicit basis-claim assembly only when the request explicitly needs the\
-    \ decomposition.\n- For cash-or-nothing digital options, use the Black76 digital\
-    \ helpers directly; do not approximate them with vanilla call/put prices or divide\
-    \ by spot.\n- You MUST use only real, approved `trellis.*` imports from the structured\
-    \ generation plan and import registry\n- Treat the compiler-emitted lane obligations\
-    \ in the structured generation plan as the backbone of the implementation.\n-\
-    \ Reuse the listed exact backend bindings when present; otherwise build the smallest\
-    \ lane-consistent kernel that satisfies the construction steps.\n- Do not replace\
-    \ selected primitives with bespoke numerical kernels or alternative Trellis routes\
-    \ unless the plan explicitly permits a new lane implementation.\n- Do not add\
-    \ wildcard imports\n- If the approved modules do not contain what you need, reuse\
-    \ the closest existing implementation and keep the gap explicit instead of inventing\
-    \ a path\n\n## Reference implementations\n\n### Payoff protocol + Cashflows/PresentValue\
-    \ return types\n```python\n\"\"\"Payoff protocol and base classes for pricing\
-    \ instruments.\n\nEvery priceable instrument in Trellis implements the Payoff\
-    \ protocol.\nA payoff takes market data (via MarketState) and returns a present\
-    \ value.\nThis module also provides base classes for two common pricing patterns:\n\
-    \n- ResolvedInputPayoff: for analytical or tree-based pricing where market\n \
-    \ data is extracted once, then fed into a pricing formula.\n- MonteCarloPathPayoff:\
-    \ for simulation-based pricing where paths are\n  generated and payoffs are computed\
-    \ per path then averaged.\n\"\"\"\n\nfrom __future__ import annotations\n\nfrom\
-    \ abc import ABC, abstractmethod\nfrom datetime import date\nfrom typing import\
-    \ Generic, Protocol, TypeVar, runtime_checkable\n\nfrom trellis.core.date_utils\
-    \ import year_fraction\nfrom trellis.core.differentiable import get_numpy\nfrom\
-    \ trellis.core.market_state import MarketState\nfrom trellis.core.types import\
-    \ DayCountC\n# [truncated reference]\n```\n\n### Date utilities used by generated\
-    \ payoffs\n```python\n\"\"\"Date utilities: day count conventions, schedule generation,\
-    \ year fractions.\"\"\"\n\nfrom __future__ import annotations\n\nimport calendar\n\
-    from collections.abc import Iterable\nfrom datetime import date, datetime, timedelta\n\
-    from typing import Union\n\nfrom trellis.core.types import (\n    ContractTimeline,\n\
-    \    DayCountConvention,\n    EventSchedule,\n    Frequency,\n    TimelineRole,\n\
-    )\n\nDateLike = Union[date, datetime]\nExplicitDateInput = ContractTimeline |\
-    \ EventSchedule | Iterable[DateLike | str] | str\n\n\ndef _to_date(d: DateLike)\
-    \ -> date:\n    \"\"\"Normalize ``date``/``datetime`` inputs to plain ``date``\
-    \ objects.\"\"\"\n    if isinstance(d, datetime):\n        return d.date()\n \
-    \   return d\n\n\ndef add_months(dt: DateLike, months: int) -> date:\n    \"\"\
-    \"Add *months* calendar months, clamping the day to the new month's max.\"\"\"\
-    \n    d = _to_date(dt)\n    total_months = d.month - 1 + months\n    year = d.year\
-    \ + total\n# [truncated reference]\n```\n\n### MarketState capabilities and access\
-    \ patterns\n```python\n\"\"\"MarketState: immutable container of market data used\
-    \ for pricing.\n\nA MarketState holds everything a payoff needs to compute a price:\n\
-    discount curves, volatility surfaces, spot prices, credit curves, etc.\nIt is\
-    \ frozen (immutable) so that multiple payoffs can safely share the\nsame market\
-    \ snapshot without risk of accidental modification.\n\"\"\"\n\nfrom __future__\
-    \ import annotations\n\nfrom dataclasses import dataclass\nfrom datetime import\
-    \ date\nfrom typing import TYPE_CHECKING\n\nfrom trellis.core.types import DiscountCurve\n\
-    \nif TYPE_CHECKING:\n    from trellis.core.state_space import StateSpace\n   \
-    \ from trellis.curves.credit_curve import CreditCurve\n    from trellis.curves.forward_curve\
-    \ import ForwardCurve\n    from trellis.instruments.fx import FXRate\n    from\
-    \ trellis.models.vol_surface import VolSurface\n\n\nclass MissingCapabilityError(Exception):\n\
-    \    \"\"\"Raised when a MarketState lacks market data r\n# [truncated reference]\n\
-    ```\n\n### Frequency/day-count types\n```python\n\"\"\"Core protocols, enums,\
-    \ and data structures shared across Trellis.\n\nDefines the fundamental types\
-    \ that most other modules depend on:\nfrequency enums, day count conventions,\
-    \ the DiscountCurve and Instrument\nprotocols, and simple data containers like\
-    \ schedules and pricing results.\n\"\"\"\n\nfrom __future__ import annotations\n\
-    \nfrom dataclasses import dataclass, field\nfrom datetime import date\nfrom enum\
-    \ import Enum\nfrom typing import Protocol, runtime_checkable\n\n# ---------------------------------------------------------------------------\n\
-    # Greek specification types\n# ---------------------------------------------------------------------------\n\
-    \n# What risk sensitivities to compute alongside the price.\n#   None       —\
-    \ price only, no sensitivities\n#   \"all\"      — every known sensitivity (dv01,\
-    \ duration, convexity, etc.)\n#   list[str]  — specific sensitivities by name\
-    \ (e.g. [\"dv01\", \"duration\"])\n# [truncated reference]\n```\n\n[omitted 6\
-    \ additional reference modules]\n\n\n## Output\nReturn the COMPLETE Python module\
-    \ — copy the skeleton exactly, but replace the\n`raise NotImplementedError(...)`\
-    \ line with the actual implementation of `evaluate()`.\nDo NOT change imports,\
-    \ class names, spec fields, or the requirements property.\nOnly implement the\
-    \ evaluate() method body. You may add imports at the top.\nNo markdown fences,\
-    \ no explanation — just the Python code.\n\n## VALIDATION FAILURES (your previous\
-    \ code had these issues):\n- [check_price_sanity] Price sanity check failed: |PV|\
-    \ = 1044.07, which exceeds 10.0× typical notional (100). The model likely has\
-    \ a unit conversion error (e.g., passing Black vol to a rate tree).\n  Actual:\
-    \ 1044.0689196990409\n  Expected: |PV| <= 1000.0000\n  Context: available_capabilities=['black_vol_surface',\
-    \ 'discount_curve', 'forward_curve'], discount_curve_type=YieldCurve, forecast_curve_keys=[],\
-    \ fx_pairs=[], max_multiple=10.0, model_parameter_keys=[], settlement=2024-11-15,\
-    \ spot=None, underlier_spot_keys=[], vol_surface_type=FlatVol\n\n\nFix ALL of\
-    \ the above issues in your implementation."
-  model: gpt-5.4-mini
-- seq: 4
-  function: llm_generate
-  stage: code_generation
-  prompt_hash: acc46459935ccedced278e7df0940f0027abbb9aa941f33aa36dce8770195fab
-  response_text: "spec = self._spec\n        from trellis.core.date_utils import year_fraction\n\
-    \        from trellis.models.equity_option_pde import price_vanilla_equity_option_pde\n\
-    \n        price = price_vanilla_equity_option_pde(market_state, spec, theta=1.0)\n\
-    \        return float(price)"
-  prompt_text: "You are implementing the evaluate() method for `EuropeanOptionAnalyticalPayoff`\
-    \ in the Trellis pricing library.\n\n## Complete module (skeleton — everything\
-    \ is fixed except evaluate)\n```python\n\"\"\"Agent-generated payoff: Build a\
-    \ pricer for: European call: theta-method convergence order measurement\n\nEuropean\
-    \ call option on a non-dividend-paying stock.\nS0=100, K=105, T=1Y, risk-free\
-    \ rate r=5%, volatility sigma=20%.\nSolve with the Black-Scholes PDE operator\
-    \ using Crank-Nicolson\n(theta=0.5) and fully implicit (theta=1.0) on a 200-point\
-    \ spot grid\n× 100 time steps.\nMeasure convergence order by doubling the grid:\
-    \ the CN scheme should\nshow O(dt^2 + dS^2) convergence and the implicit scheme\
-    \ O(dt + dS^2).\nCompare both to the Black-Scholes analytical price.\n\nConstruct\
-    \ methods: pde_solver\nComparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver),\
-    \ black_scholes (analytical)\nCross-validation harness:\n  internal targets: theta_0.5,\
-    \ theta_1.0\n  analytical benchmark: black_scholes\n  external targets: quantlib\n\
-    New component: convergence_order_diagnostic\n\nImplementation target: theta_1.0\n\
-    Preferred method family: pde_solver\n\nImplementation target: theta_1.0.\"\"\"\
-    \n\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\n\
-    from datetime import date\n\nfrom trellis.core.market_state import MarketState\n\
-    from trellis.core.types import DayCountConvention\nfrom trellis.models.equity_option_pde\
-    \ import price_vanilla_equity_option_pde\n\n\n\n@dataclass(frozen=True)\nclass\
-    \ EuropeanOptionSpec:\n    \"\"\"Specification for Build a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nEuropean call option on\
-    \ a non-dividend-paying stock.\nS0=100, K=105, T=1Y, risk-free rate r=5%, volatility\
-    \ sigma=20%.\nSolve with the Black-Scholes PDE operator using Crank-Nicolson\n\
-    (theta=0.5) and fully implicit (theta=1.0) on a 200-point spot grid\n× 100 time\
-    \ steps.\nMeasure convergence order by doubling the grid: the CN scheme should\n\
-    show O(dt^2 + dS^2) convergence and the implicit scheme O(dt + dS^2).\nCompare\
-    \ both to the Black-Scholes analytical price.\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_1.0\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_1.0.\"\"\"\n    notional:\
-    \ float\n    spot: float\n    strike: float\n    expiry_date: date\n    option_type:\
-    \ str = 'call'\n    day_count: DayCountConvention = DayCountConvention.ACT_365\n\
-    \n\nclass EuropeanOptionAnalyticalPayoff:\n    \"\"\"Build a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nEuropean call option on\
-    \ a non-dividend-paying stock.\nS0=100, K=105, T=1Y, risk-free rate r=5%, volatility\
-    \ sigma=20%.\nSolve with the Black-Scholes PDE operator using Crank-Nicolson\n\
-    (theta=0.5) and fully implicit (theta=1.0) on a 200-point spot grid\n× 100 time\
-    \ steps.\nMeasure convergence order by doubling the grid: the CN scheme should\n\
-    show O(dt^2 + dS^2) convergence and the implicit scheme O(dt + dS^2).\nCompare\
-    \ both to the Black-Scholes analytical price.\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_1.0\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_1.0.\"\"\"\n\n   \
-    \ def __init__(self, spec: EuropeanOptionSpec):\n        self._spec = spec\n\n\
-    \    @property\n    def spec(self) -> EuropeanOptionSpec:\n        return self._spec\n\
-    \n    @property\n    def requirements(self) -> set[str]:\n        return {\"black_vol_surface\"\
-    , \"discount_curve\"}\n\n    def evaluate(self, market_state: MarketState) ->\
-    \ float:\n        spec = self._spec\n        raise NotImplementedError(\"evaluate\
-    \ not yet implemented\")\n\n```\n\n## Your task\nWrite ONLY the body of the `evaluate()`\
-    \ method. The signature is already defined:\n\n    def evaluate(self, market_state:\
-    \ MarketState) -> float:\n\n## Spec fields available via self._spec\n- `self._spec.notional`\
-    \ (float): Notional / number of shares\n- `self._spec.spot` (float): Current spot\
-    \ price\n- `self._spec.strike` (float): Option strike price\n- `self._spec.expiry_date`\
-    \ (date): Option expiry date\n- `self._spec.option_type` (str): Option type: 'call'\
-    \ or 'put'\n- `self._spec.day_count` (DayCountConvention): Day count convention\n\
-    \n## Pricing Method (selected by the quant agent — you MUST use this)\nMethod:\
-    \ **pde_solver**\nReasoning: product_ir_compiler\nSelection basis and assumptions:\n\
-    - Selection basis: `explicit_preference`\n- Assumptions / defaulted context:\n\
-    \  - `simplest_valid_assumption_set`\n  - `finite_difference_discretization_route`\n\
-    \  - `boundary_conditions_required`\nRoute-bound modules to import and use:\n\
-    - `trellis.models.equity_option_pde`\n\nYou MUST import and use these route-bound\
-    \ modules in your implementation.\nDo not import a generic parent package such\
-    \ as `from trellis.models import ...` just to satisfy the method family.\n\n##\
-    \ API Map — start here before guessing module paths\n\nUse this navigation card\
-    \ to choose the right module family first. Confirm exact symbols with `find_symbol`\
-    \ or `list_exports` before calling `read_module`.\n\n### Core Types\n#### MarketState\n\
-    - Module: `trellis.core.market_state`\n- Class: `MarketState`\n- Frozen: `true`\n\
-    - Fields: `as_of`, `settlement`, `discount`, `forward_curve`, `vol_surface`, `state_space`,\
-    \ `credit_curve`, `forecast_curves`, `fx_rates`\n- Accessors: `discount_factor`,\
-    \ `zero_rate`, `forward_rate`, `forecast_forward`, `black_vol`, `survival_prob`,\
-    \ `hazard_rate`, `risky_discount`\n- Capabilities: `discount_curve → discount\
-    \ is not None`, `forward_curve → forward_curve is not None (auto from discount)`,\
-    \ `black_vol_surface → vol_surface is not None`, `state_space → state_space is\
-    \ not None`, `credit_curve → credit_curve is not None`, `fx_rates → fx_rates is\
-    \ not None`\n#### Payoff\n- Module: `trellis.core.payoff`\n- Protocol: `Payoff`\n\
-    - Required methods: `evaluate`\n- Required properties: `requirements`\n- Runtime\
-    \ checkable: `true`\n- Notes:\n  - Each payoff handles its own discounting internally\n\
-    \  - The returned float is the final PV\n  - DeterministicCashflowPayoff wraps\
-    \ any Instrument into Payoff\n\n### Model Families\n#### equity_tree\n- Module:\
-    \ `trellis.models.equity_option_tree`\n- Key imports:\n  - `from trellis.models.equity_option_tree\
-    \ import price_vanilla_equity_option_tree`\n  - `from trellis.models.trees.lattice\
-    \ import build_spot_lattice, lattice_backward_induction`\n- Notes:\n  - American/Bermudan\
-    \ equity options should prefer the checked-in helper `price_vanilla_equity_option_tree(...)`\n\
-    \  - If you need the lower-level path, import the lattice builder/backward induction\
-    \ submodules directly\n#### rate_lattice\n- Module: `trellis.models.trees.lattice`\n\
-    - Key imports:\n  - `from trellis.models.trees.lattice import build_rate_lattice,\
-    \ lattice_backward_induction`\n  - `from trellis.models.zcb_option_tree import\
-    \ price_zcb_option_tree`\n- Notes:\n  - Callable bonds, puttable bonds, and Bermudan\
-    \ swaptions use a calibrated rate lattice from a TreeModel specification such\
-    \ as Hull-White or Black-Derman-Toy\n  - lattice_backward_induction handles cashflow_at_node\
-    \ and exercise_fn\n  - Zero-coupon bond option tree routes should prefer `price_zcb_option_tree(...)`\
-    \ instead of rebuilding nested backward induction inline\n#### monte_carlo\n-\
-    \ Module: `trellis.models.monte_carlo`\n- Key imports:\n  - `from trellis.models.monte_carlo.engine\
-    \ import MonteCarloEngine`\n  - `from trellis.models.monte_carlo.lsm import longstaff_schwartz,\
-    \ longstaff_schwartz_result`\n  - `from trellis.models.monte_carlo.early_exercise\
-    \ import EarlyExercisePolicyResult, LeastSquaresContinuationEstimator`\n  - `from\
-    \ trellis.models.monte_carlo.schemes import LaguerreBasis`\n  - `from trellis.models.monte_carlo\
-    \ import euler_maruyama, milstein, brownian_bridge`\n  - `from trellis.models.monte_carlo\
-    \ import antithetic, control_variate`\n  - `from trellis.models.processes.gbm\
-    \ import GBM`\n- Notes:\n  - For American/Bermudan Monte Carlo, simulate paths\
-    \ then call an approved early-exercise control primitive; Trellis currently implements\
-    \ longstaff_schwartz\n  - If the control primitive uses continuation regression,\
-    \ choose the estimator or basis explicitly; LaguerreBasis is optional, not mandatory\n\
-    \  - Do not invent method='lsm' on MonteCarloEngine\n#### qmc\n- Module: `trellis.models.qmc`\n\
-    - Key imports:\n  - `from trellis.models.qmc import sobol_normals, brownian_bridge`\n\
-    \  - `from trellis.models.processes.gbm import GBM`\n- Notes:\n  - QMC is an accelerator\
-    \ family layered on Monte Carlo-style estimators\n  - Current support is Sobol-based\
-    \ normal draws and Brownian-bridge construction\n#### pde\n- Module: `trellis.models.pde`\n\
-    - Key imports:\n  - `from trellis.models.equity_option_pde import price_vanilla_equity_option_pde`\n\
-    \  - `from trellis.models.pde.grid import Grid`\n  - `from trellis.models.pde.theta_method\
-    \ import theta_method_1d`\n  - `from trellis.models.pde.operator import BlackScholesOperator`\n\
-    \  - `from trellis.models.pde import psor_1d  # American options`\n  - `from trellis.models.pde\
-    \ import HullWhitePDEOperator`\n- Notes:\n  - Vanilla European equity PDE routes\
-    \ should prefer the checked-in helper `price_vanilla_equity_option_pde(...)`\n\
-    \  - Use theta_method_1d, NOT legacy crank_nicolson_1d or implicit_fd_1d\n  -\
-    \ theta=0.5 for Crank-Nicolson, theta=1.0 for fully implicit\n  - Grid constructor:\
-    \ Grid(x_min, x_max, n_x, T, n_t, log_spacing=False); never omit x_min or n_t\n\
-    \  - BlackScholesOperator constructor: BlackScholesOperator(sigma_fn, r_fn); pass\
-    \ callables, not scalar r/sigma keywords\n#### fft\n- Module: `trellis.models.transforms`\n\
-    - Key imports:\n  - `from trellis.models.transforms import fft_price, cos_price`\n\
-    - Notes:\n  - fft_price expects CF of log(S_T) — include log(S0)\n  - cos_price\
-    \ expects CF of log(S_T/S0) — log-return only\n#### copulas\n- Module: `trellis.models.copulas`\n\
-    - Key imports:\n  - `from trellis.models.copulas import GaussianCopula, StudentTCopula,\
-    \ FactorCopula`\n#### analytical\n- Module: `trellis.models.zcb_option`\n- Key\
-    \ imports:\n  - `from trellis.models.zcb_option import resolve_zcb_option_hw_inputs,\
-    \ price_zcb_option_jamshidian`\n  - `from trellis.models.analytical.jamshidian\
-    \ import ResolvedJamshidianInputs, zcb_option_hw_raw`\n  - `from trellis.models.analytical\
-    \ import zcb_option_hw`\n  - `from trellis.models.analytical import terminal_vanilla_from_basis`\n\
-    \  - `from trellis.models.rate_style_swaption import ResolvedSwaptionBlack76Inputs,\
-    \ resolve_swaption_black76_inputs, price_swaption_black76_raw, price_bermudan_swaption_black76_lower_bound`\n\
-    #### calibration\n- Module: `trellis.models.calibration`\n- Key imports:\n  -\
-    \ `from trellis.models.calibration import implied_vol, implied_vol_jaeckel`\n\
-    \  - `from trellis.models.calibration import RatesCalibrationResult, calibrate_cap_floor_black_vol,\
-    \ calibrate_swaption_black_vol, swaption_terms`\n  - `from trellis.models.calibration\
-    \ import calibrate_sabr`\n  - `from trellis.models.calibration import dupire_local_vol`\n\
-    \n### Utilities\n#### black76\n- Module: `trellis.models.black`\n- Imports:\n\
-    \  - `from trellis.models.black import black76_call, black76_put, black76_asset_or_nothing_call,\
-    \ black76_asset_or_nothing_put, black76_cash_or_nothing_call, black76_cash_or_nothing_put`\n\
-    #### garman_kohlhagen\n- Module: `trellis.models.analytical.fx`\n- Imports:\n\
-    \  - `from trellis.models.analytical.fx import ResolvedGarmanKohlhagenInputs,\
-    \ garman_kohlhagen_price_raw`\n  - `from trellis.models.black import garman_kohlhagen_call,\
-    \ garman_kohlhagen_put`\n#### rate_style_swaption\n- Module: `trellis.models.rate_style_swaption`\n\
-    - Imports:\n  - `from trellis.models.rate_style_swaption import ResolvedSwaptionBlack76Inputs,\
-    \ resolve_swaption_black76_inputs, price_swaption_black76_raw, price_swaption_black76`\n\
-    \  - `from trellis.models.rate_style_swaption import price_bermudan_swaption_black76_lower_bound`\n\
-    #### jamshidian_zcb_option\n- Module: `trellis.models.zcb_option`\n- Imports:\n\
-    \  - `from trellis.models.zcb_option import ResolvedZCBOptionInputs, resolve_zcb_option_hw_inputs,\
-    \ price_zcb_option_jamshidian`\n  - `from trellis.models.analytical.jamshidian\
-    \ import ResolvedJamshidianInputs, zcb_option_hw_raw`\n#### schedule\n- Module:\
-    \ `trellis.core.date_utils`\n- Imports:\n  - `from trellis.core.date_utils import\
-    \ generate_schedule`\n#### day_count\n- Module: `trellis.core.date_utils`\n- Imports:\n\
-    \  - `from trellis.core.date_utils import year_fraction`\n#### vol_surface\n-\
-    \ Module: `trellis.models.vol_surface`\n- Imports:\n  - `from trellis.models.vol_surface\
-    \ import VolSurface, FlatVol`\n#### cashflow_engine\n- Module: `trellis.models.cashflow_engine`\n\
-    - Imports:\n  - `from trellis.models.cashflow_engine import Waterfall, Tranche`\n\
-    \  - `from trellis.models.cashflow_engine import PSA, CPR, RateDependent`\n  -\
-    \ `from trellis.models.cashflow_engine import level_pay, scheduled, custom`\n\
-    #### credit_curve\n- Module: `trellis.curves.credit_curve`\n- Imports:\n  - `from\
-    \ trellis.curves.credit_curve import CreditCurve`\n- Notes:\n  - CreditCurve.flat(hazard_rate)\
-    \ is the simplest starting point for CDS or nth-to-default tasks\n  - CreditCurve.from_spreads(cds_spreads,\
-    \ recovery) bootstraps a hazard-rate term structure from CDS quotes\n\n## AVAILABLE\
-    \ IMPORTS — use ONLY these, NEVER invent module paths\n\n**CRITICAL**: If a module\
-    \ or symbol is not listed below, it does NOT exist.\nDo NOT guess paths like 'pde_solver',\
-    \ 'simulation', 'pricing', 'pdesolvers'.\nDo NOT use CamelCase in module paths\
-    \ (e.g., NOT 'coxRossRubinstein').\nEvery import in your code MUST come from this\
-    \ list.\n\n\n### Core\nfrom trellis.core.capabilities import MarketDataCapability,\
-    \ MethodCapability, analyze_gap, capability_summary, check_market_data, discover_capabilities,\
-    \ normalize_capability_name, normalize_market_data_requirements, validate_market_data_requirements\n\
-    from trellis.core.date_utils import add_months, build_contract_timeline, build_contract_timeline_from_dates,\
-    \ build_exercise_timeline_from_dates, build_observation_timeline, build_payment_timeline,\
-    \ build_period_schedule, coerce_contract_timeline_from_dates, generate_schedule,\
-    \ get_accrual_fraction, get_bracketing_dates, normalize_explicit_dates, year_fraction\n\
-    from trellis.core.differentiable import get_numpy, gradient, hessian, jacobian\n\
-    from trellis.core.market_state import MarketState, MissingCapabilityError\nfrom\
-    \ trellis.core.payoff import Cashflows, DeterministicCashflowPayoff, MonteCarloPathPayoff,\
-    \ Payoff, PresentValue, ResolvedInputPayoff\nfrom trellis.core.runtime_contract\
-    \ import ContractAwareMapping, ContractState, ContractViolation, MarketStateContractProxy,\
-    \ ResolvedInputs, RuntimeContext, wrap_market_state_with_contract\nfrom trellis.core.state_space\
-    \ import StateSpace\nfrom trellis.core.types import CashflowSchedule, ContractTimeline,\
-    \ DataProvider, DayCountConvention, DiscountCurve, DslMeasure, EventSchedule,\
-    \ Frequency, Instrument, PricingResult, SchedulePeriod, TimelineRole, normalize_dsl_measure\n\
-    \n### Curves\nfrom trellis.curves.bootstrap import BootstrapCalibrationDiagnostics,\
-    \ BootstrapCalibrationResult, BootstrapConventionBundle, BootstrapCurveInputBundle,\
-    \ BootstrapInstrument, BootstrapQuoteBucket, bootstrap, bootstrap_curve_input_bundle_from_payload,\
-    \ bootstrap_curve_result, bootstrap_named_curve_results, bootstrap_named_yield_curves,\
-    \ bootstrap_yield_curve, build_bootstrap_quote_buckets, build_bootstrap_solve_request,\
-    \ bump_bootstrap_quote_buckets\nfrom trellis.curves.credit_curve import CreditCurve\n\
-    from trellis.curves.forward_curve import ForwardCurve\nfrom trellis.curves.interpolation\
-    \ import linear_interp, log_linear_interp\nfrom trellis.curves.scenario_packs\
-    \ import RateCurveScenario, build_rate_curve_scenario_pack\nfrom trellis.curves.shocks\
-    \ import CurveShockBucket, CurveShockSurface, CurveShockWarning, build_curve_shock_surface\n\
-    from trellis.curves.yield_curve import YieldCurve\n\n### Models — Analytical\n\
-    from trellis.models.analytical import terminal_vanilla_from_basis\nfrom trellis.models.analytical.barrier\
-    \ import ResolvedBarrierInputs, barrier_image_raw, barrier_option_price, barrier_regime_selector_raw,\
-    \ down_and_in_call, down_and_in_call_raw, down_and_out_call, down_and_out_call_raw,\
-    \ rebate_raw, vanilla_call_raw\nfrom trellis.models.analytical.fx import ResolvedGarmanKohlhagenInputs,\
-    \ garman_kohlhagen_call_raw, garman_kohlhagen_price_raw, garman_kohlhagen_put_raw\n\
-    from trellis.models.analytical.jamshidian import ResolvedJamshidianInputs, zcb_option_hw,\
-    \ zcb_option_hw_raw\nfrom trellis.models.analytical.quanto import QuantoAnalyticalSpecLike,\
-    \ price_quanto_option_analytical, price_quanto_option_raw\nfrom trellis.models.analytical.support.cross_asset\
-    \ import effective_covariance_term, exchange_option_effective_vol, foreign_to_domestic_forward_bridge,\
-    \ quanto_adjusted_forward\nfrom trellis.models.analytical.support.discounting\
-    \ import continuous_rate_from_simple_rate, discount_factor_from_zero_rate, discounted_value,\
-    \ forward_discount_ratio, implied_zero_rate, safe_time_fraction, simple_rate_from_discount_factor\n\
-    from trellis.models.analytical.support.forwards import forward_from_carry_rate,\
-    \ forward_from_discount_factors, forward_from_dividend_yield\nfrom trellis.models.analytical.support.payoffs\
-    \ import asset_or_nothing_intrinsic, call_put_parity_gap, cash_or_nothing_intrinsic,\
-    \ normalized_option_type, terminal_intrinsic, terminal_vanilla_from_basis\nfrom\
-    \ trellis.models.black import black76_asset_or_nothing_call, black76_asset_or_nothing_put,\
-    \ black76_call, black76_cash_or_nothing_call, black76_cash_or_nothing_put, black76_put,\
-    \ garman_kohlhagen_call, garman_kohlhagen_put\nfrom trellis.models.resolution.basket_semantics\
-    \ import BasketSpecLike, CorrelationPreflightError, CorrelationPreflightReport,\
-    \ ResolvedBasketSemantics, resolve_basket_semantics\nfrom trellis.models.resolution.quanto\
-    \ import QuantoSpecLike, ResolvedQuantoInputs, resolve_quanto_correlation, resolve_quanto_foreign_curve,\
-    \ resolve_quanto_inputs, resolve_quanto_underlier_spot\nfrom trellis.models.resolution.short_rate_claims\
-    \ import DiscountBondClaimSpecLike, DiscountCurveLike, FlatShortRateVolSurface,\
-    \ ResolvedDiscountBondClaim, ResolvedShortRateRegime, ShortRateClaimMarketStateLike,\
-    \ ShortRateComparisonRegime, VolSurfaceLike, extract_short_rate_comparison_regime,\
-    \ normalize_discount_bond_strike, resolve_discount_bond_claim_inputs, resolve_discount_bond_option_type,\
-    \ resolve_short_rate_regime\nfrom trellis.models.resolution.single_state_diffusion\
-    \ import DiscountCurveLike, ResolvedSingleStateDiffusionInputs, SingleStateDiffusionMarketStateLike,\
-    \ SingleStateDiffusionSpecLike, VolSurfaceLike, gbm_log_ratio_char_fn, gbm_log_spot_char_fn,\
-    \ put_from_call_parity, resolve_single_state_diffusion_inputs, terminal_intrinsic_from_resolved\n\
-    \n### Models — Trees\nfrom trellis.models.trees.algebra import AnalyticalCalibration,\
-    \ CalibratedLatticeData, CalibrationDiagnostics, CalibrationStrategy, EventOverlaySpec,\
-    \ LatticeAlgebraEligibilityDecision, LatticeContractSpec, LatticeControlSpec,\
-    \ LatticeLinearClaimSpec, LatticeMeshSpec, LatticeModelSpec, LatticeRecipe, LatticeTopologySpec,\
-    \ LocalVolCalibration, NO_CALIBRATION_TARGET, NoCalibrationTarget, TERM_STRUCTURE_TARGET,\
-    \ TermStructureCalibration, TermStructureTarget, TwoFactorAnalyticalCalibration,\
-    \ VolSurfaceTarget, build_lattice, compile_lattice_recipe, equity_tree, lattice_algebra_eligible,\
-    \ price_on_lattice, short_rate_tree, with_control, with_overlay\nfrom trellis.models.trees.backward_induction\
-    \ import backward_induction\nfrom trellis.models.trees.binomial import BinomialTree\n\
-    from trellis.models.trees.control import ExerciseObjective, LatticeExercisePolicy,\
-    \ build_exercise_timeline_from_dates, build_payment_timeline, lattice_step_from_time,\
-    \ lattice_steps_from_timeline, merge_lattice_exercise_policy, resolve_lattice_exercise_policy,\
-    \ resolve_lattice_exercise_policy_from_control_style\nfrom trellis.models.trees.lattice\
-    \ import RecombiningLattice, build_generic_lattice, build_lattice, build_rate_lattice,\
-    \ build_spot_lattice, calibrate_lattice, lattice_backward_induction, price_on_lattice\n\
-    from trellis.models.trees.models import TreeModel, bdt_displacement, bdt_mean_reversion_probabilities,\
-    \ binomial_mean_reversion_probabilities_from_metric, equal_probabilities, ho_lee_displacement,\
-    \ hw_displacement, hw_mean_reversion_probabilities, identity_state_metric, log_rate_state_metric,\
-    \ lognormal_rate, normal_rate, shifted_lognormal_rate, standard_discount, trinomial_mean_reversion_probabilities_from_metric\n\
-    from trellis.models.trees.product_lattice import ProductRecombiningLattice2D,\
-    \ build_product_spot_lattice_2d\nfrom trellis.models.trees.trinomial import TrinomialTree\n\
-    \n### Models — Monte Carlo\nfrom trellis.models.monte_carlo.basket_state import\
-    \ build_basket_path_requirement, evaluate_ranked_observation_basket_paths, evaluate_ranked_observation_basket_state,\
-    \ observation_step_indices\nfrom trellis.models.monte_carlo.brownian_bridge import\
-    \ brownian_bridge\nfrom trellis.models.monte_carlo.discretization import euler_maruyama,\
-    \ exact_simulation, milstein\nfrom trellis.models.monte_carlo.early_exercise import\
-    \ ContinuationEstimator, EarlyExerciseDiagnostics, EarlyExercisePolicyResult,\
-    \ FastLaguerreContinuationEstimator, FastPolynomialContinuationEstimator, LeastSquaresContinuationEstimator,\
-    \ default_continuation_estimator, normalize_exercise_steps, polynomial_basis\n\
-    from trellis.models.monte_carlo.engine import MonteCarloEngine\nfrom trellis.models.monte_carlo.event_aware\
-    \ import EventAwareMonteCarloEvent, EventAwareMonteCarloProblem, EventAwareMonteCarloProblemSpec,\
-    \ EventAwareMonteCarloProcessSpec, build_discounted_swap_pv_payload, build_event_aware_monte_carlo_problem,\
-    \ build_event_aware_monte_carlo_problem_from_family_ir, build_event_aware_monte_carlo_process,\
-    \ build_event_time_map_from_family_ir, build_short_rate_discount_reducer, build_timed_event_aware_monte_carlo_problem_from_family_ir,\
-    \ price_event_aware_monte_carlo, resolve_hull_white_monte_carlo_process_inputs\n\
-    from trellis.models.monte_carlo.event_state import PathEventRecord, PathEventSpec,\
-    \ PathEventState, PathEventTimeline, apply_path_event_spec, build_event_path_requirement,\
-    \ event_step_indices, replay_path_event_timeline\nfrom trellis.models.monte_carlo.local_vol\
-    \ import LocalVolMonteCarloResult, local_vol_european_vanilla_price, local_vol_european_vanilla_price_result\n\
-    from trellis.models.monte_carlo.lsm import laguerre_basis, longstaff_schwartz,\
-    \ longstaff_schwartz_result\nfrom trellis.models.monte_carlo.path_state import\
-    \ BarrierMonitor, MonteCarloPathRequirement, MonteCarloPathState, PathReducer,\
-    \ StateAwarePayoff, barrier_payoff, terminal_value_payoff\nfrom trellis.models.monte_carlo.primal_dual\
-    \ import primal_dual_mc, primal_dual_mc_result\nfrom trellis.models.monte_carlo.profiling\
-    \ import MonteCarloPathKernelBenchmark, benchmark_path_kernel\nfrom trellis.models.monte_carlo.quanto\
-    \ import QuantoMonteCarloSpecLike, build_quanto_mc_initial_state, build_quanto_mc_process,\
-    \ price_quanto_option_monte_carlo, recommended_quanto_mc_engine_kwargs, terminal_quanto_option_payoff\n\
-    from trellis.models.monte_carlo.ranked_observation_payoffs import RankedObservationBasketSpecLike,\
-    \ build_ranked_observation_basket_initial_state, build_ranked_observation_basket_process,\
-    \ build_ranked_observation_basket_state_payoff, price_ranked_observation_basket_monte_carlo,\
-    \ recommended_ranked_observation_basket_mc_engine_kwargs, terminal_ranked_observation_basket_payoff\n\
-    from trellis.models.monte_carlo.schemes import Antithetic, BasisFunction, ChebyshevBasis,\
-    \ DiscretizationScheme, Euler, Exact, HermiteBasis, LaguerreBasis, LogEuler, Milstein,\
-    \ PolynomialBasis\nfrom trellis.models.monte_carlo.semantic_basket import RankedObservationBasketMonteCarloPayoff,\
-    \ RankedObservationBasketPathContract, RankedObservationBasketSpec, build_ranked_observation_basket_path_contract,\
-    \ price_ranked_observation_basket_monte_carlo\nfrom trellis.models.monte_carlo.single_state_diffusion\
-    \ import ResolvedSingleStateMonteCarloInputs, SingleStateMonteCarloResult, build_single_state_terminal_claim_monte_carlo_problem,\
-    \ build_single_state_terminal_claim_monte_carlo_problem_from_resolved, price_single_state_terminal_claim_monte_carlo_result,\
-    \ resolve_single_state_terminal_claim_monte_carlo_inputs\nfrom trellis.models.monte_carlo.stochastic_mesh\
-    \ import stochastic_mesh, stochastic_mesh_result\nfrom trellis.models.monte_carlo.tv_regression\
-    \ import tsitsiklis_van_roy, tsitsiklis_van_roy_result\nfrom trellis.models.monte_carlo.variance_reduction\
-    \ import antithetic, antithetic_normals, brownian_bridge_increments, control_variate,\
-    \ sobol_normals\n\n### Models — QMC\nfrom trellis.models.qmc import brownian_bridge,\
-    \ sobol_normals\n\n### Models — PDE\nfrom trellis.models.pde import crank_nicolson_1d,\
-    \ implicit_fd_1d\nfrom trellis.models.pde.crank_nicolson import crank_nicolson_1d\n\
-    from trellis.models.pde.event_aware import CompiledEventAwarePDEEventBucket, EventAwarePDEBoundarySpec,\
-    \ EventAwarePDEEventBucket, EventAwarePDEGridSpec, EventAwarePDEOperatorSpec,\
-    \ EventAwarePDEProblem, EventAwarePDEProblemSpec, EventAwarePDETransform, apply_event_bucket,\
-    \ apply_event_transform, build_event_aware_pde_operator, build_event_aware_pde_problem,\
-    \ evaluate_boundary_value, interpolate_pde_values, solve_event_aware_pde\nfrom\
-    \ trellis.models.pde.grid import Grid\nfrom trellis.models.pde.implicit_fd import\
-    \ implicit_fd_1d\nfrom trellis.models.pde.operator import BlackScholesOperator,\
-    \ CEVOperator, HeatOperator, PDEOperator\nfrom trellis.models.pde.psor import\
-    \ psor_1d\nfrom trellis.models.pde.rate_operator import HullWhitePDEOperator\n\
-    from trellis.models.pde.theta_method import theta_method_1d\nfrom trellis.models.pde.thomas\
-    \ import thomas_solve\n\n### Models — Transforms (FFT/COS)\nfrom trellis.models.transforms.cos_method\
-    \ import cos_price\nfrom trellis.models.transforms.fft_pricer import fft_price\n\
-    from trellis.models.transforms.single_state_diffusion import ResolvedSingleStateTransformInputs,\
-    \ SingleStateTransformResult, price_single_state_terminal_claim_transform_result,\
-    \ resolve_single_state_terminal_claim_transform_inputs\n\n### Models — Processes\n\
-    from trellis.models.processes.base import StochasticProcess\nfrom trellis.models.processes.cir\
-    \ import CIR\nfrom trellis.models.processes.correlated_gbm import CorrelatedGBM\n\
-    from trellis.models.processes.gbm import GBM\nfrom trellis.models.processes.heston\
-    \ import Heston, HestonRuntimeBinding, build_heston_parameter_payload, extract_heston_parameter_payload,\
-    \ resolve_heston_runtime_binding\nfrom trellis.models.processes.hull_white import\
-    \ HullWhite\nfrom trellis.models.processes.jump_diffusion import MertonJumpDiffusion\n\
-    from trellis.models.processes.local_vol import LocalVol\nfrom trellis.models.processes.sabr\
-    \ import SABRProcess\nfrom trellis.models.processes.vasicek import Vasicek\n\n\
-    ### Models — Copulas\nfrom trellis.models.copulas.factor import FactorCopula\n\
-    from trellis.models.copulas.gaussian import GaussianCopula\nfrom trellis.models.copulas.student_t\
-    \ import StudentTCopula\n\n### Models — Calibration\nfrom trellis.models.calibration.benchmarking\
-    \ import CalibrationBenchmarkArtifacts, CalibrationBenchmarkMeasurement, CalibrationBenchmarkScenario,\
-    \ benchmark_calibration_scenario, benchmark_calibration_workflow, build_calibration_benchmark_report,\
-    \ build_supported_calibration_benchmark_report, render_calibration_benchmark_report,\
-    \ save_calibration_benchmark_report, supported_calibration_benchmark_scenarios\n\
-    from trellis.models.calibration.credit import CreditHazardCalibrationQuote, CreditHazardCalibrationResult,\
-    \ calibrate_single_name_credit_curve_workflow\nfrom trellis.models.calibration.heston_fit\
-    \ import HestonSmileCalibrationResult, HestonSmileFitDiagnostics, HestonSmilePoint,\
-    \ HestonSmileSurface, build_heston_smile_surface, calibrate_heston_smile_workflow,\
-    \ fit_heston_smile_surface\nfrom trellis.models.calibration.implied_vol import\
-    \ implied_vol, implied_vol_jaeckel\nfrom trellis.models.calibration.local_vol\
-    \ import LocalVolCalibrationResult, LocalVolSurfaceDiagnostics, calibrate_local_vol_surface_workflow,\
-    \ dupire_local_vol, dupire_local_vol_result\nfrom trellis.models.calibration.materialization\
-    \ import CalibratedObjectMaterialization, materialize_black_vol_surface, materialize_credit_curve,\
-    \ materialize_local_vol_surface, materialize_model_parameter_set, resolve_materialized_object\n\
-    from trellis.models.calibration.quote_maps import CalibrationQuoteMap, QuoteAxisSpec,\
-    \ QuoteMapSpec, QuoteSemanticsSpec, QuoteSettlementSpec, QuoteTransformResult,\
-    \ QuoteUnitSpec, build_identity_quote_map, build_implied_vol_quote_map, supported_quote_map_surface\n\
-    from trellis.models.calibration.rates import HullWhiteCalibrationInstrument, HullWhiteCalibrationResult,\
-    \ RatesCalibrationResult, SwaptionLike, calibrate_cap_floor_black_vol, calibrate_hull_white,\
-    \ calibrate_swaption_black_vol, swaption_terms\nfrom trellis.models.calibration.sabr_fit\
-    \ import SABRSmileCalibrationResult, SABRSmileFitDiagnostics, SABRSmilePoint,\
-    \ SABRSmileSurface, build_sabr_smile_surface, calibrate_sabr, calibrate_sabr_smile_workflow,\
-    \ fit_sabr_smile_surface\nfrom trellis.models.calibration.solve_request import\
-    \ ConstraintSpec, ObjectiveBundle, SolveBackendRecord, SolveBackendRegistry, SolveBounds,\
-    \ SolveProvenance, SolveReplayArtifact, SolveRequest, SolveResult, UnsupportedSolveCapabilityError,\
-    \ WarmStart, build_solve_provenance, build_solve_replay_artifact, execute_solve_request\n\
-    \n### Models — Cashflow Engine\nfrom trellis.models.cashflow_engine.amortization\
-    \ import custom, level_pay, scheduled\nfrom trellis.models.cashflow_engine.prepayment\
-    \ import CPR, PSA, RateDependent\nfrom trellis.models.cashflow_engine.waterfall\
-    \ import Tranche, Waterfall\n\n### Models — Vol Surface\nfrom trellis.models.vol_surface\
-    \ import FlatVol, GridVolSurface, VolSurface\nfrom trellis.models.vol_surface_shocks\
-    \ import VolSurfaceShockBucket, VolSurfaceShockSurface, VolSurfaceShockWarning,\
-    \ build_vol_surface_shock_surface\n\n### Instruments (reference)\nfrom trellis.instruments.barrier_option\
-    \ import BarrierOptionPayoff, BarrierOptionSpec\nfrom trellis.instruments.bond\
-    \ import Bond, ParBond\nfrom trellis.instruments.callable_bond import CallableBondPayoff,\
-    \ CallableBondSpec\nfrom trellis.instruments.cap import CapFloorSpec, CapPayoff,\
-    \ FloorPayoff\nfrom trellis.instruments.nth_to_default import NthToDefaultPayoff,\
-    \ NthToDefaultSpec, price_nth_to_default_basket\nfrom trellis.instruments.swap\
-    \ import SwapPayoff, SwapSpec, par_swap_rate\n\n## Key Principles\n\n- **P1**:\
-    \ Always calibrate rate trees to the discount curve before pricing\n- **P2**:\
-    \ Callable bonds need issuer_call lattice control, discrete coupons, and exercise=par+coupon\n\
-    - **P3**: Convert vol units at the boundary between market data and model\n- **P4**:\
-    \ Monte Carlo: use ≥10k paths, verify SE <1% of price, use Laguerre basis at high\
-    \ vol (σ ≥ 0.40) to avoid LSM polynomial bias\n- **P5**: Numerical stability:\
-    \ use theta_method_1d with BlackScholesOperator (not legacy crank_nicolson_1d),\
-    \ center COS truncation on first cumulant to prevent overflow\n- **P6**: Cross-validation:\
-    \ measure the actual gap first, then set tolerance to 2-3x the measured gap —\
-    \ never wider than 1% of price or 5bp\n- **P7**: Bermudan swaption: all exercise\
-    \ dates enter the SAME underlying swap (start=first_exercise, end=first_exercise+tenor)\
-    \ — do not create a fresh shorter swap at each exercise date\n- **P8**: OAS computation:\
-    \ keep sigma_HW (vol model) fixed during the spread root-finding loop — only shift\
-    \ the discount curve, never recompute vol from the shifted forward rate\n- **P9**:\
-    \ Separate semantic understanding, method arbitration, and numerical pricing:\
-    \ draft the contract first, choose and explain the method second, and only then\
-    \ call the pricing kernel.\n- **P10**: Bootstrap before pricing: launch with the\
-    \ repo-pinned Python and an explicit shell/workdir, validate imports and module\
-    \ compilation first, and treat interpreter mismatches, shell-launch failures,\
-    \ ModuleNotFoundError, ImportError, and SyntaxError as setup defects, not pricing\
-    \ failures.\n- **P11**: Partial requests are normal: draft the semantic contract\
-    \ first, infer the required-input checklist from the product IR and method requirements,\
-    \ and let the LLM or a mock input provider fill only the missing market-data and\
-    \ convention gaps. Never guess silently.\n\n## Pricing Method: pde_solver\n\n\
-    One-dimensional finite-difference theta-method pricing with optional obstacle\
-    \ handling\n\n## Cookbook: PDE (finite difference theta-method)\nUse this pattern\
-    \ for low-dimensional Markov claims where a 1D PDE is natural.\n\nFor plain European\
-    \ call/put equity routes, prefer the checked-in helper\n`price_vanilla_equity_option_pde(market_state,\
-    \ spec, theta=...)` from\n`trellis.models.equity_option_pde` so the adapter stays\
-    \ thin.\n\n```python\ndef evaluate(self, market_state):\n    from trellis.core.date_utils\
-    \ import year_fraction\n    from trellis.models.pde.grid import Grid\n    from\
-    \ trellis.models.pde.theta_method import theta_method_1d\n    from trellis.models.pde.operator\
-    \ import BlackScholesOperator\n    import numpy as np\n\n    spec = self._spec\n\
-    \    T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)\n\
-    \    r = float(market_state.discount.zero_rate(T))\n    sigma = float(market_state.vol_surface.black_vol(T,\
-    \ spec.strike))\n\n    S_max = 4.0 * spec.spot\n    n_x = 201\n    n_t = max(200,\
-    \ int(round(T * 252)))\n    grid = Grid(x_min=0.0, x_max=S_max, n_x=n_x, T=T,\
-    \ n_t=n_t)\n    # >>> INSTRUMENT-SPECIFIC: define terminal payoff and boundary\
-    \ conditions <<<\n    terminal = np.maximum(grid.x - spec.strike, 0.0)\n    op\
-    \ = BlackScholesOperator(lambda s, t: sigma, lambda t: r)\n\n    V = theta_method_1d(\n\
-    \        grid,\n        op,\n        terminal,\n        theta=0.5,\n        lower_bc_fn=lambda\
-    \ t: 0.0,\n        upper_bc_fn=lambda t: S_max - spec.strike * np.exp(-r * (T\
-    \ - t)),\n    )\n\n    # For American puts, pass exercise_values and exercise_fn=max.\n\
-    \    # For barrier or digital payoffs, use rannacher_timesteps to smooth\n   \
-    \ # the first backward steps and keep the boundary conditions explicit.\n\n  \
-    \  price = float(np.interp(spec.spot, grid.x, V))\n    return price * spec.notional\n\
-    ```\n\n\n## Product Semantics\n\n- Instrument: `european_option`\n- Payoff family:\
-    \ `vanilla_option`\n- Exercise style: `european`\n- State dependence: `terminal_markov`\n\
-    - Schedule dependence: `False`\n- Model family: `equity_diffusion`\n- Payoff traits:\
-    \ `discounting`, `vol_surface_dependence`\n- Candidate engine families: `analytical`\n\
-    \n## DATA CONTRACTS (input conventions)\n\n### VOL_BLACK_FOR_PDE\n- Source: `market_state.vol_surface.black_vol(T,\
-    \ K)`\n- Convention: Black lognormal implied vol (annualized)\n- Typical range:\
-    \ 0.10 to 0.60\n- **Your model expects**: Black lognormal vol (same units — no\
-    \ conversion needed)\n- **Conversion**: `none — use directly as sigma in BlackScholesOperator\
-    \ or GBM diffusion`\n- Model range after conversion: 0.10 to 0.60\n\n\n## MODELING\
-    \ REQUIREMENTS (you MUST satisfy all of these)\n\n1. GRID: Use at least 200 spatial\
-    \ points and 200+ time steps. For barrier options, use non-uniform grid concentrated\
-    \ near the barrier.\n\n2. BOUNDARY CONDITIONS: Set V(0,t)=0 for calls, V(S_max,t)=S_max-K*exp(-r*(T-t))\
-    \ for calls. For puts: V(0,t)=K*exp(-r*(T-t)), V(S_max,t)=0.\n\n3. STABILITY:\
-    \ Crank-Nicolson (theta=0.5) is second-order but may oscillate near discontinuities.\
-    \ Use Rannacher smoothing (2-4 implicit steps at start) for digital/barrier payoffs.\n\
-    \n4. PDE ROUTE SCOPE: Use Grid from trellis.models.pde.grid, BlackScholesOperator\
-    \ from trellis.models.pde.operator, and theta_method_1d from trellis.models.pde.theta_method.\
-    \ For American puts, pass exercise_values and exercise_fn=max. Keep lower_bc_fn\
-    \ / upper_bc_fn callables explicit for barrier and digital payoffs, and do not\
-    \ invent log_grid_pde, uniform_grid_pde, absorbing, or dirichlet helper tokens.\n\
-    \nThese are not optional. Failure to satisfy them produces incorrect prices.\n\
-    \n## Canonical Model Grammar (supported calibration workflows)\n\n### `local_vol_surface_workflow`\
-    \ — Dupire local-vol workflow\n- Model: `Dupire local vol`\n- Quote families:\
-    \ `implied_vol`\n- Calibration workflows: `calibrate_local_vol_surface_workflow`\n\
-    - Runtime materialization kind: `local_vol_surface`\n- Deferred scope: `stochastic_local_vol`,\
-    \ `local_vol_extrapolation_governance`\n### `sabr_smile_workflow` — SABR smile\
-    \ calibration\n- Model: `SABR smile`\n- Quote families: `implied_vol`\n- Calibration\
-    \ workflows: `calibrate_sabr_smile_workflow`\n- Deferred scope: `term_structure_sabr`,\
-    \ `direct_market_state_materialization`\n### `heston_smile_workflow` — Heston\
-    \ smile calibration\n- Model: `Heston`\n- Quote families: `implied_vol`\n- Calibration\
-    \ workflows: `calibrate_heston_smile_workflow`\n- Runtime materialization kind:\
-    \ `model_parameter_set`\n- Deferred scope: `term_structure_heston`, `hybrid_equity_rates`\n\
-    ### `credit_single_name_reduced_form` — Reduced-form single-name CDS calibration\n\
-    - Model: `Reduced-form single-name credit`\n- Quote families: `spread`, `hazard`\n\
-    - Calibration workflows: `calibrate_single_name_credit_curve_workflow`\n- Runtime\
-    \ materialization kind: `credit_curve`\n- Deferred scope: `basket_credit`, `structural_credit`,\
-    \ `hybrid_credit_equity`\n### `rates_bootstrap_curve` — Rates bootstrap curve\
-    \ authority\n- Model: `Rates bootstrap curve bundle`\n- Quote families: `par_rate`,\
-    \ `price`\n- Calibration workflows: `build_bootstrap_solve_request`\n- Runtime\
-    \ materialization kind: `market_curves`\n- Rates curve roles: `discount_curve`,\
-    \ `forecast_curve`\n- Deferred scope: `cross_currency_bootstrap`, `calendar_complete_bootstrap`\n\
-    \n## Lessons (ranked by relevance)\n\n### [CRITICAL] BlackScholesOperator constructor\
-    \ mismatch\n**Symptom:** TypeError: BlackScholesOperator.__init__() got an unexpected\
-    \ keyword argument 'r'.\n**Why:** The generated code treated the PDE operator\
-    \ as if it accepted scalar 'r' and 'sigma' keywords, but trellis.models.pde.operator.BlackScholesOperator\
-    \ actually expects callables '(sigma_fn, r_fn)'. The mismatch caused constructor\
-    \ failure during module build.\n**Fix:** Import BlackScholesOperator from trellis.models.pde.operator\
-    \ and pass callables, for example BlackScholesOperator(lambda s, t: sigma, lambda\
-    \ t: r). Add a signature smoke test or cookbook template to lock the constructor\
-    \ shape and keep the solver path aligned with the real API.\n\n### [CRITICAL]\
-    \ PDE price blow-up from unit/scale mismatch\n**Symptom:** Final PV magnitude\
-    \ far exceeds expected scale (machine-check: |PV| > 10 × notional) or the PDE\
-    \ route returns a boundary-like price instead of the spot price.\n**Why:** The\
-    \ generated PDE branch called theta_method_1d with the obsolete operator/s_grid/t_grid/boundary_conditions\
-    \ signature and then read the wrong element of the result instead of interpolating\
-    \ the returned solution over grid.x. The actual API is theta_method_1d(grid, operator,\
-    \ terminal_condition, theta=..., lower_bc_fn=..., upper_bc_fn=...), and it returns\
-    \ the full solution vector at t=0.\n**Fix:** Build Grid(x_min=0.0, x_max=S_max,\
-    \ n_x=n_x, T=T, n_t=n_t), construct BlackScholesOperator(lambda s, t: sigma, lambda\
-    \ t: r), call theta_method_1d(grid, op, terminal, theta=0.5, lower_bc_fn=...,\
-    \ upper_bc_fn=...), then interpolate the returned vector with np.interp(spec.spot,\
-    \ grid.x, V) before multiplying by notional.\n\n### [CRITICAL] Use exact PDE import\
-    \ paths\n**Symptom:** ImportError shows `Grid` and `theta_method_1d` are not exported\
-    \ by `trellis.models.pde`.\n**Why:** The implementation guessed PDE module exports\
-    \ instead of using the exact supported import paths. The build then failed before\
-    \ any pricing logic could run.\n**Fix:** Inspect the actual trellis PDE package\
-    \ structure and import the grid/operator/solver objects from their real modules.\
-    \ Keep the solver call isolated so module-path errors are caught immediately during\
-    \ validation.\n\n### [CRITICAL] Undefined boundary condition symbol\n**Symptom:**\
-    \ NameError: name 'absorbing' is not defined when constructing the BarrierCallSpec\
-    \ (or assigning pde_boundary_condition).\n**Why:** The code used an undefined\
-    \ Python name 'absorbing' instead of a string literal or an imported/defined constant\
-    \ for the PDE boundary condition. There was no validation or unit test to catch\
-    \ the NameError before build.\n**Fix:** Use a quoted string (e.g. 'absorbing')\
-    \ or import/define the boundary-condition constant from the PDE module; add a\
-    \ small input validation that boundary-condition values belong to the allowed\
-    \ set.\n\n### [CRITICAL] Incorrect PDE API import (Grid not exported)\n**Symptom:**\
-    \ ImportError / AttributeError: 'Grid' is not exported by trellis.models.pde (or\
-    \ module has no attribute 'Grid').\n**Why:** The pricer attempted to import or\
-    \ reference a symbol (Grid) that is not part of the public API of trellis.models.pde;\
-    \ additionally the spec contained literal unquoted identifiers and malformed defaults\
-    \ which would cause name errors. This mismatch between assumed library exports\
-    \ and the actual library surface caused the build to fail.\n**Fix:** Inspect the\
-    \ actual exported symbols in trellis.models.pde (e.g. via help() or module.__all__),\
-    \ and replace the non-exported 'Grid' usage with the correct factory/function/class\
-    \ provided by the module (or implement a local grid builder). Also correct spec\
-    \ field defaults (quote string literals) and validate names with a small import/unit\
-    \ test before full build.\n\n### [CRITICAL] Unit conversion causes extreme PV\n\
-    **Symptom:** Price sanity check triggered: |PV| > 10 * typical_notional (e.g.,\
-    \ |PV| = 9995.24 > 1000)\n**Why:** Market-data / model-input unit mismatch (most\
-    \ commonly a volatility expressed in percent vs decimal, or a rate/discount representation\
-    \ mismatch) caused the PDE operator to receive parameters off by orders of magnitude.\n\
-    **Fix:** Normalize and validate market data before passing to the PDE (convert\
-    \ vol from percent->decimal, convert rates to the operator's expected form or\
-    \ supply discount factors), add assertive checks on ranges and shapes, and run\
-    \ a small-price sanity test before accepting results.\n\n### [CRITICAL] Incorrect\
-    \ PDE imports and malformed code\n**Symptom:** ImportError: 'trellis.models.pde'\
-    \ does not export 'Grid' OR SyntaxError: unexpected indent in generated module.\n\
-    **Why:** The generator guessed an incorrect trellis export (Grid) and produced\
-    \ malformed Python (incorrect indentation) while synthesizing the PDE solver;\
-    \ the combination prevented module import/execution.\n**Fix:** Use exact, confirmed\
-    \ trellis import paths (inspect the package or __all__), construct the spatial\
-    \ grid from the actual provided API if Grid isn't exported, and validate/ lint\
-    \ generated code (check indentation) before runtime. Add a minimal unit test that\
-    \ imports and runs evaluate() to catch these errors early.\n\n\n## Generated Skills\n\
-    - [cookbook] fft_pricing: Characteristic-function pricing for European-style options\
-    \ under models such as Heston\n- [lesson] Unit conversion causes huge PV: Enforce\
-    \ and document input conventions (vol as decimal, discount curve vs zero rate\
-    \ semantics, notional scaling), derive r from discount factors via r = -ln(df)/T\
-    \ or use forward/Black76 consistently, add unit/conversi...\n\n## Stage-Aware\
-    \ Skills\n- [route_hint] vanilla_equity_theta_pde route helper: Use the selected\
-    \ route helper directly inside `evaluate()`; do not rebuild the process, engine,\
-    \ or discount glue manually.\n- [route_hint] vanilla_equity_theta_pde note 1:\
-    \ For vanilla European equity PDE routes, prefer `price_vanilla_equity_option_pde(market_state,\
-    \ spec, theta=...)` so the adapter stays thin.\n- [route_hint] vanilla_equity_theta_pde\
-    \ note 2: Map `implementation_target=theta_0.5` to `theta=0.5` and `implementation_target=theta_1.0`\
-    \ to `theta=1.0`.\n- [route_hint] vanilla_equity_theta_pde note 3: The checked-in\
-    \ helper already owns grid sizing, terminal payoff assembly, boundary conditions,\
-    \ theta-method solve, and interpolation back to spot.\n- [route_hint] vanilla_equity_theta_pde\
-    \ note 4: Use the lower-level `Grid + BlackScholesOperator + theta_method_1d`\
-    \ path only when the payoff or boundary contract genuinely differs from plain\
-    \ vanilla European call/put.\n## Retry Focus\n- Recover against the real task\
-    \ market contract: required curves, spots, and volatility surfaces must be read\
-    \ from the live market_state.\n- Do not fix actual-market failures by hard-coding\
-    \ fixture values or widening fallback defaults inside evaluate().\n## Route-Specific\
-    \ Recovery\n- Vanilla European PDE routes should stay on the checked-in helper\
-    \ surface whenever the contract is plain call/put Black-Scholes.\n- Prefer `from\
-    \ trellis.models.equity_option_pde import price_vanilla_equity_option_pde` and\
-    \ delegate to that helper from the adapter.\n- Map `implementation_target=theta_0.5`\
-    \ to `theta=0.5` and `implementation_target=theta_1.0` to `theta=1.0`.\n- Do not\
-    \ rebuild terminal intrinsic branches, boundary callables, scalar interpolation,\
-    \ or discount-to-rate glue inline when the checked-in helper already matches the\
-    \ route.\n- Use the lower-level `Grid`, `BlackScholesOperator`, and `theta_method_1d`\
-    \ primitives only if the payoff or boundary contract genuinely differs from plain\
-    \ vanilla European call/put.\n## Semantic Repair Card\n- Method family: `pde_solver`\n\
-    - Instrument type: `european_option`\n- Lane boundary: family=`pde_solver`, kind=`exact_target_binding`,\
-    \ exact_bindings=`trellis.models.equity_option_pde.price_vanilla_equity_option_pde`\n\
-    - Route: `vanilla_equity_theta_pde`\n- Engine family: `pde_solver`\n- Route family:\
-    \ `pde_solver`\n- Required primitives:\n  - `trellis.models.equity_option_pde.price_vanilla_equity_option_pde`\
-    \ (route_helper)\n- Required adapters:\n  - `reuse_checked_in_vanilla_equity_pde_helper`\n\
-    - Route notes:\n  - For vanilla European equity PDE routes, prefer `price_vanilla_equity_option_pde(market_state,\
-    \ spec, theta=...)` so the adapter stays thin.\n  - Map `implementation_target=theta_0.5`\
-    \ to `theta=0.5` and `implementation_target=theta_1.0` to `theta=1.0`.\n  - The\
-    \ checked-in helper already owns grid sizing, terminal payoff assembly, boundary\
-    \ conditions, theta-method solve, and interpolation back to spot.\n  - Use the\
-    \ lower-level `Grid + BlackScholesOperator + theta_method_1d` path only when the\
-    \ payoff or boundary contract genuinely differs from plain vanilla European call/put.\n\
-    - Match the product semantics, required primitives, and approved imports exactly.\n\
-    - Return the complete module again, not only an evaluate-body fragment, patch,\
-    \ or diff.\n## Backend Lookup (Secondary To Lane Obligations)\n- Lane family:\
-    \ `pde_solver`\n- Lane plan kind: `exact_target_binding`\n- Method family: `pde_solver`\n\
-    - Route: `vanilla_equity_theta_pde`\n- Engine family: `pde_solver`\n- Required\
-    \ primitive symbols:\n  - `trellis.models.equity_option_pde.price_vanilla_equity_option_pde`\n\
-    - Adapter obligations:\n  - `reuse_checked_in_vanilla_equity_pde_helper`\n## Thin\
-    \ Adapter Plan\n- Target payoff class: `EuropeanOptionAnalyticalPayoff`\n- Required\
-    \ market reads:\n  - `market_state.vol_surface.black_vol(...)`\n  - `market_state.discount`\n\
-    - Required primitive calls:\n  - `trellis.models.equity_option_pde.price_vanilla_equity_option_pde`\n\
-    - Required adapter steps:\n  - `reuse_checked_in_vanilla_equity_pde_helper`\n\
-    - Return contract: Return a Python `float` present value from `evaluate()`.\n\
-    ## Invariant Pack\n- The generated payoff should be compatible with these deterministic\
-    \ validation checks:\n  - `check_non_negativity`\n  - `check_price_sanity`\n \
-    \ - `check_vol_sensitivity`\n  - `check_vol_monotonicity`\n## Family Route Guidance\n\
-    - For vanilla European PDE routes, prefer `price_vanilla_equity_option_pde(market_state,\
-    \ self._spec, theta=...)` from `trellis.models.equity_option_pde`.\n- Map `implementation_target=theta_0.5`\
-    \ to `theta=0.5` and `implementation_target=theta_1.0` to `theta=1.0`.\n- Keep\
-    \ the wrapper thin: delegate grid sizing, boundary conditions, terminal payoff\
-    \ assembly, theta-method solve, and interpolation back to spot to the checked-in\
-    \ helper.\n- Only fall back to direct `Grid + BlackScholesOperator + theta_method_1d`\
-    \ assembly when the payoff or boundary contract genuinely differs from plain vanilla\
-    \ European call/put.\n## Conventions\n- evaluate() returns a FLOAT — the present\
-    \ value (PV) of the instrument\n- You MUST handle all discounting internally —\
-    \ use `market_state.discount.discount(t)`\n- For forward rates: `market_state.forecast_forward_curve(self._spec.rate_index)`\n\
-    - For vol: `market_state.vol_surface.black_vol(T, strike)`\n- For discount factors:\
-    \ `market_state.discount.discount(t)`\n- `market_state.fx_rates[pair]` returns\
-    \ an `FXRate` wrapper; extract `.spot` before scalar arithmetic or process seeding\n\
-    - Schedule generation: prefer `build_payment_timeline(...)`, `build_observation_timeline(...)`,\
-    \ or `build_period_schedule(...)` for accrual/event routes; use `generate_schedule(start,\
-    \ end, freq)` only for plain date lists with no period semantics\n- Year fractions:\
-    \ `year_fraction(date1, date2, day_count)`\n- Never use wall-clock dates such\
-    \ as `date.today()` or `datetime.now()` inside `evaluate()`; derive valuation\
-    \ time from `market_state` or shared resolver outputs.\n- Black76: `black76_call(F,\
-    \ K, sigma, T)`, `black76_put(F, K, sigma, T)` — undiscounted\n- Black76 digital:\
-    \ `black76_cash_or_nothing_call(F, K, sigma, T)`, `black76_cash_or_nothing_put(F,\
-    \ K, sigma, T)` — undiscounted cash-or-nothing digitals\n- For CDS / nth-to-default:\
-    \ use `market_state.credit_curve.survival_probability(t)` and `market_state.credit_curve.hazard_rate(t)`\
-    \ on an explicit payment/default schedule; do not route credit-default pricing\
-    \ through Black76 call/put primitives.\n- For equity trees: prefer `from trellis.models.equity_option_tree\
-    \ import price_vanilla_equity_option_tree`; the lower-level lattice path is `from\
-    \ trellis.models.trees.lattice import build_spot_lattice, lattice_backward_induction`\n\
-    - For vanilla European PDE routes: prefer `from trellis.models.equity_option_pde\
-    \ import price_vanilla_equity_option_pde`; the lower-level fallback is `from trellis.models.pde.grid\
-    \ import Grid`, `from trellis.models.pde.operator import BlackScholesOperator`,\
-    \ and `from trellis.models.pde.theta_method import theta_method_1d`\n- For rate\
-    \ lattices: prefer helper surfaces such as `price_callable_bond_tree(...)`, `price_bermudan_swaption_tree(...)`,\
-    \ or `price_zcb_option_tree(...)`; the lower-level fallback is `from trellis.models.trees.lattice\
-    \ import build_rate_lattice, lattice_backward_induction`\n- For schedule-dependent\
-    \ rate lattices: `from trellis.models.trees.control import lattice_steps_from_timeline,\
-    \ resolve_lattice_exercise_policy`\n- For MC: `from trellis.models.monte_carlo\
-    \ import MonteCarloEngine`\n- For QMC accelerators: `from trellis.models.qmc import\
-    \ sobol_normals, brownian_bridge`\n- For copulas: `from trellis.models.copulas\
-    \ import GaussianCopula, FactorCopula`\n- Do not invent MonteCarloEngine method\
-    \ strings. Valid `method=` values are `euler`, `milstein`, and `exact`.\n- For\
-    \ Monte Carlo early exercise, use an approved control primitive; do not pretend\
-    \ that `MonteCarloEngine.price(...)` or `method=\"lsm\"` implements early exercise.\
-    \ Approved policy classes: `longstaff_schwartz` [implemented], `tsitsiklis_van_roy`\
-    \ [implemented], `primal_dual_mc` [implemented], `stochastic_mesh` [implemented].\
-    \ Currently implemented in Trellis: `longstaff_schwartz`, `tsitsiklis_van_roy`,\
-    \ `primal_dual_mc`, `stochastic_mesh`.\n- If you use `LaguerreBasis`, import it\
-    \ from `trellis.models.monte_carlo.schemes`, not from `trellis.models.monte_carlo.lsm`.\n\
-    - For FFT/COS pricing, characteristic functions must accept vector `u` and use\
-    \ array-safe numerics such as `numpy`, not scalar `math`/`cmath`.\n- Black76 basis:\
-    \ `black76_asset_or_nothing_call(F, K, sigma, T)`, `black76_asset_or_nothing_put(F,\
-    \ K, sigma, T)`, `black76_cash_or_nothing_call(F, K, sigma, T)`, `black76_cash_or_nothing_put(F,\
-    \ K, sigma, T)` — exact terminal basis claims.\n- For terminal vanilla payoffs,\
-    \ prefer exact basis assembly via `terminal_vanilla_from_basis(...)` from `trellis.models.analytical`.\n\
-    - For FX vanilla options, treat the route as Garman-Kohlhagen: map spot FX and\
-    \ domestic/foreign discount factors to `ResolvedGarmanKohlhagenInputs`, then prefer\
-    \ `garman_kohlhagen_price_raw(spec.option_type, resolved)` from `trellis.models.analytical.fx`;\
-    \ use explicit basis-claim assembly only when the request explicitly needs the\
-    \ decomposition.\n- For cash-or-nothing digital options, use the Black76 digital\
-    \ helpers directly; do not approximate them with vanilla call/put prices or divide\
-    \ by spot.\n- You MUST use only real, approved `trellis.*` imports from the structured\
-    \ generation plan and import registry\n- Treat the compiler-emitted lane obligations\
-    \ in the structured generation plan as the backbone of the implementation.\n-\
-    \ Reuse the listed exact backend bindings when present; otherwise build the smallest\
-    \ lane-consistent kernel that satisfies the construction steps.\n- Do not replace\
-    \ selected primitives with bespoke numerical kernels or alternative Trellis routes\
-    \ unless the plan explicitly permits a new lane implementation.\n- Do not add\
-    \ wildcard imports\n- If the approved modules do not contain what you need, reuse\
-    \ the closest existing implementation and keep the gap explicit instead of inventing\
-    \ a path\n\n## Reference implementations\n\n### Payoff protocol + Cashflows/PresentValue\
-    \ return types\n```python\n\"\"\"Payoff protocol and base classes for pricing\
-    \ instruments.\n\nEvery priceable instrument in Trellis implements the Payoff\
-    \ protocol.\nA payoff takes market data (via MarketState) and returns a present\
-    \ value.\nThis module also provides base classes for two common pricing patterns:\n\
-    \n- ResolvedInputPayoff: for analytical or tree-based pricing where market\n \
-    \ data is extracted once, then fed into a pricing formula.\n- MonteCarloPathPayoff:\
-    \ for simulation-based pricing where paths are\n  generated and payoffs are computed\
-    \ per path then averaged.\n\"\"\"\n\nfrom __future__ import annotations\n\nfrom\
-    \ abc import ABC, abstractmethod\nfrom datetime import date\nfrom typing import\
-    \ Generic, Protocol, TypeVar, runtime_c\n# [truncated reference]\n```\n\n### Date\
-    \ utilities used by generated payoffs\n```python\n\"\"\"Date utilities: day count\
-    \ conventions, schedule generation, year fractions.\"\"\"\n\nfrom __future__ import\
-    \ annotations\n\nimport calendar\nfrom collections.abc import Iterable\nfrom datetime\
-    \ import date, datetime, timedelta\nfrom typing import Union\n\nfrom trellis.core.types\
-    \ import (\n    ContractTimeline,\n    DayCountConvention,\n    EventSchedule,\n\
-    \    Frequency,\n    TimelineRole,\n)\n\nDateLike = Union[date, datetime]\nExplicitDateInput\
-    \ = ContractTimeline | EventSchedule | Iterable[DateLike | str] | str\n\n\ndef\
-    \ _to_date(d: DateLike) -> date:\n    \"\"\"Normalize ``date``/``datetime`` inputs\
-    \ to plain ``date`` objects.\"\"\"\n    if isinstance(d, datetime):\n        return\
-    \ d.date()\n    return d\n\n\ndef add_months(dt:\n# [truncated reference]\n```\n\
-    \n[omitted 8 additional reference modules]\n\n\n## Output\nReturn the COMPLETE\
-    \ Python module — copy the skeleton exactly, but replace the\n`raise NotImplementedError(...)`\
-    \ line with the actual implementation of `evaluate()`.\nDo NOT change imports,\
-    \ class names, spec fields, or the requirements property.\nOnly implement the\
-    \ evaluate() method body. You may add imports at the top.\nNo markdown fences,\
-    \ no explanation — just the Python code.\n\n## ACTUAL MARKET SMOKE FAILURES (your\
-    \ previous code had these issues):\n- Actual market state smoke test failed: name\
-    \ 'year_fraction' is not defined\n\nThe generated payoff must also run against\
-    \ the real task market_state, not just synthetic validation fixtures."
-  model: gpt-5.4-mini
-- seq: 5
   function: llm_generate_json
   stage: critic
-  prompt_hash: ccb2106a9d074f5b00efa0f3ba697a8c71074eefc464ef4f1a9fb1f4942e7ccf
-  response_text: '{"check_id": "volatility_input_usage", "description": "Potential
-    volatility insensitivity / route misuse in the PDE adapter", "severity": "error",
-    "evidence": "`evaluate()` delegates to `price_vanilla_equity_option_pde(market_state,
-    spec, theta=1.0)` with no local validation or binding of the required `expiry_black_vol`
-    input, despite the compiled route contract requiring `black_vol_surface` and `expiry_black_vol`.
-    The spec object only carries spot/strike/expiry and the code never uses the imported
-    `year_fraction`, so there is a real risk the routed price is not responding to
-    volatility as intended or is using a fallback/default surface incorrectly.", "remediation":
-    "Ensure the market_state actually supplies the expiry volatility required by the
-    route contract, and add explicit validation that the pricing output changes materially
-    when flat vol is shifted from 5% to 40%. If the helper requires a richer spec,
-    pass the correct vanilla-equity spec object rather than this custom dataclass.",
-    "status": "suspect"}'
+  prompt_hash: 545a41a824b9e6fe20e4dddd64a9dec50a7e5aa084d0ed1556438e65e1d961f6
+  response_text: '{"check_id": "volatility_input_usage", "description": "Volatility
+    may be effectively ignored because the implementation binds only spot/strike/expiry
+    and relies on a helper whose volatility sourcing is opaque.", "severity": "warning",
+    "evidence": "`evaluate()` forwards `market_state` and `spec` directly to `price_vanilla_equity_option_pde(...)`
+    with `theta=1.0`, but this wrapper exposes no explicit volatility plumbing and
+    the review memory flags a known failure mode where PDE code becomes volatility-insensitive
+    or misbinds the surface/curve inputs.", "remediation": "Verify that `market_state`
+    actually contains and forwards the black vol surface into the PDE helper, and
+    that the helper uses it in the operator coefficients rather than falling back
+    to a default or constant volatility.", "status": "suspect"}'
   prompt_text: "You are a quantitative model validator reviewing agent-generated pricing\
     \ code.\nYour job is to find deterministic review concerns, not to praise. Be\
     \ adversarial.\n\n## Code to review\n```python\n\"\"\"Agent-generated payoff:\
@@ -2045,158 +988,48 @@ calls:
     \    @property\n    def spec(self) -> EuropeanOptionSpec:\n        return self._spec\n\
     \n    @property\n    def requirements(self) -> set[str]:\n        return {\"black_vol_surface\"\
     , \"discount_curve\"}\n\n    def evaluate(self, market_state: MarketState) ->\
-    \ float:\n        spec = self._spec\n        spec = self._spec\n        from trellis.core.date_utils\
-    \ import year_fraction\n        from trellis.models.equity_option_pde import price_vanilla_equity_option_pde\n\
-    \n        price = price_vanilla_equity_option_pde(market_state, spec, theta=1.0)\n\
-    \        return float(price)\n\n```\n\n## Instrument description\nBuild a pricer\
-    \ for: European call: theta-method convergence order measurement\n\nEuropean call\
-    \ option on a non-dividend-paying stock.\nS0=100, K=105, T=1Y, risk-free rate\
-    \ r=5%, volatility sigma=20%.\nSolve with the Black-Scholes PDE operator using\
-    \ Crank-Nicolson\n(theta=0.5) and fully implicit (theta=1.0) on a 200-point spot\
-    \ grid\n× 100 time steps.\nMeasure convergence order by doubling the grid: the\
-    \ CN scheme should\nshow O(dt^2 + dS^2) convergence and the implicit scheme O(dt\
-    \ + dS^2).\nCompare both to the Black-Scholes analytical price.\n\nConstruct methods:\
-    \ pde_solver\nComparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver),\
-    \ black_scholes (analytical)\nCross-validation harness:\n  internal targets: theta_0.5,\
-    \ theta_1.0\n  analytical benchmark: black_scholes\n  external targets: quantlib\n\
-    New component: convergence_order_diagnostic\n\nImplementation target: theta_1.0\n\
-    Preferred method family: pde_solver\n\nImplementation target: theta_1.0\n\n##\
-    \ Shared Knowledge\n## Shared Review Principles\n\n- **P1**: Always calibrate\
-    \ rate trees to the discount curve before pricing\n- **P2**: Callable bonds need\
-    \ issuer_call lattice control, discrete coupons, and exercise=par+coupon\n- **P3**:\
-    \ Convert vol units at the boundary between market data and model\n- **P4**: Monte\
-    \ Carlo: use ≥10k paths, verify SE <1% of price, use Laguerre basis at high vol\
-    \ (σ ≥ 0.40) to avoid LSM polynomial bias\n- **P5**: Numerical stability: use\
-    \ theta_method_1d with BlackScholesOperator (not legacy crank_nicolson_1d), center\
-    \ COS truncation on first cumulant to prevent overflow\n- **P6**: Cross-validation:\
-    \ measure the actual gap first, then set tolerance to 2-3x the measured gap —\
-    \ never wider than 1% of price or 5bp\n- **P7**: Bermudan swaption: all exercise\
-    \ dates enter the SAME underlying swap (start=first_exercise, end=first_exercise+tenor)\
-    \ — do not create a fresh shorter swap at each exercise date\n- **P8**: OAS computation:\
-    \ keep sigma_HW (vol model) fixed during the spread root-finding loop — only shift\
-    \ the discount curve, never recompute vol from the shifted forward rate\n- **P9**:\
-    \ Separate semantic understanding, method arbitration, and numerical pricing:\
-    \ draft the contract first, choose and explain the method second, and only then\
-    \ call the pricing kernel.\n- **P10**: Bootstrap before pricing: launch with the\
-    \ repo-pinned Python and an explicit shell/workdir, validate imports and module\
-    \ compilation first, and treat interpreter mismatches, shell-launch failures,\
-    \ ModuleNotFoundError, ImportError, and SyntaxError as setup defects, not pricing\
-    \ failures.\n- **P11**: Partial requests are normal: draft the semantic contract\
-    \ first, infer the required-input checklist from the product IR and method requirements,\
-    \ and let the LLM or a mock input provider fill only the missing market-data and\
-    \ convention gaps. Never guess silently.\n\n## Product Semantics\n\n- Instrument:\
-    \ `european_option`\n- Exercise style: `european`\n- State dependence: `terminal_markov`\n\
-    - Model family: `equity_diffusion`\n- Payoff traits: `discounting`, `vol_surface_dependence`\n\
-    \n## REVIEWER CHECKPOINTS\n\n- GRID: Use at least 200 spatial points and 200+\
-    \ time steps. For barrier options, use non-uniform grid concentrated near the\
-    \ barrier.\n- BOUNDARY CONDITIONS: Set V(0,t)=0 for calls, V(S_max,t)=S_max-K*exp(-r*(T-t))\
-    \ for calls. For puts: V(0,t)=K*exp(-r*(T-t)), V(S_max,t)=0.\n- STABILITY: Crank-Nicolson\
-    \ (theta=0.5) is second-order but may oscillate near discontinuities. Use Rannacher\
-    \ smoothing (2-4 implicit steps at start) for digital/barrier payoffs.\n- PDE\
-    \ ROUTE SCOPE: Use Grid from trellis.models.pde.grid, BlackScholesOperator from\
-    \ trellis.models.pde.operator, and theta_method_1d from trellis.models.pde.theta_method.\
-    \ For American puts, pass exercise_values and exercise_fn=max. Keep lower_bc_fn\
-    \ / upper_bc_fn callables explicit for barrier and digital payoffs, and do not\
-    \ invent log_grid_pde, uniform_grid_pde, absorbing, or dirichlet helper tokens.\n\
-    \n## Canonical Model Grammar Hints\n\n### `local_vol_surface_workflow` — Dupire\
-    \ local-vol workflow\n- Model: `Dupire local vol`\n- Quote families: `implied_vol`\n\
-    - Calibration workflows: `calibrate_local_vol_surface_workflow`\n- Runtime materialization\
-    \ kind: `local_vol_surface`\n- Deferred scope: `stochastic_local_vol`, `local_vol_extrapolation_governance`\n\
-    ### `sabr_smile_workflow` — SABR smile calibration\n- Model: `SABR smile`\n- Quote\
-    \ families: `implied_vol`\n- Calibration workflows: `calibrate_sabr_smile_workflow`\n\
-    - Deferred scope: `term_structure_sabr`, `direct_market_state_materialization`\n\
-    ### `heston_smile_workflow` — Heston smile calibration\n- Model: `Heston`\n- Quote\
-    \ families: `implied_vol`\n- Calibration workflows: `calibrate_heston_smile_workflow`\n\
-    - Runtime materialization kind: `model_parameter_set`\n- Deferred scope: `term_structure_heston`,\
-    \ `hybrid_equity_rates`\n### `credit_single_name_reduced_form` — Reduced-form\
-    \ single-name CDS calibration\n- Model: `Reduced-form single-name credit`\n- Quote\
-    \ families: `spread`, `hazard`\n- Calibration workflows: `calibrate_single_name_credit_curve_workflow`\n\
-    - Runtime materialization kind: `credit_curve`\n- Deferred scope: `basket_credit`,\
-    \ `structural_credit`, `hybrid_credit_equity`\n### `rates_bootstrap_curve` — Rates\
-    \ bootstrap curve authority\n- Model: `Rates bootstrap curve bundle`\n- Quote\
-    \ families: `par_rate`, `price`\n- Calibration workflows: `build_bootstrap_solve_request`\n\
-    - Runtime materialization kind: `market_curves`\n- Rates curve roles: `discount_curve`,\
-    \ `forecast_curve`\n- Deferred scope: `cross_currency_bootstrap`, `calendar_complete_bootstrap`\n\
-    \n## Shared Failure Memory\n\n### [CRITICAL] BlackScholesOperator constructor\
-    \ mismatch\n**Symptom:** TypeError: BlackScholesOperator.__init__() got an unexpected\
-    \ keyword argument 'r'.\n**Why:** The generated code treated the PDE operator\
-    \ as if it accepted scalar 'r' and 'sigma' keywords, but trellis.models.pde.operator.BlackScholesOperator\
-    \ actually expects callables '(sigma_fn, r_fn)'. The mismatch caused constructor\
-    \ failure during module build.\n**Fix:** Import BlackScholesOperator from trellis.models.pde.operator\
-    \ and pass callables, for example BlackScholesOperator(lambda s, t: sigma, lambda\
-    \ t: r). Add a signature smoke test or cookbook template to lock the constructor\
-    \ shape and keep the solver path aligned with the real API.\n\n### [CRITICAL]\
-    \ PDE price blow-up from unit/scale mismatch\n**Symptom:** Final PV magnitude\
-    \ far exceeds expected scale (machine-check: |PV| > 10 × notional) or the PDE\
-    \ route returns a boundary-like price instead of the spot price.\n**Why:** The\
-    \ generated PDE branch called theta_method_1d with the obsolete operator/s_grid/t_grid/boundary_conditions\
+    \ float:\n        spec = self._spec\n        # Thin adapter to the checked-in\
+    \ vanilla equity PDE helper.\n        # The helper owns grid sizing, boundary\
+    \ conditions, theta-method solve,\n        # and interpolation back to the spot.\n\
+    \        return float(price_vanilla_equity_option_pde(market_state, spec, theta=1.0))\n\
+    \n```\n\n## Instrument description\nBuild a pricer for: European call: theta-method\
+    \ convergence order measurement\n\nEuropean call option on a non-dividend-paying\
+    \ stock.\nS0=100, K=105, T=1Y, risk-free rate r=5%, volatility sigma=20%.\nSolve\
+    \ with the Black-Scholes PDE operator using Crank-Nicolson\n(theta=0.5) and fully\
+    \ implicit (theta=1.0) on a 200-point spot grid\n× 100 time steps.\nMeasure convergence\
+    \ order by doubling the grid: the CN scheme should\nshow O(dt^2 + dS^2) convergence\
+    \ and the implicit scheme O(dt + dS^2).\nCompare both to the Black-Scholes analytical\
+    \ price.\n\nConstruct methods: pde_solver\nComparison targets: theta_0.5 (pde_solver),\
+    \ theta_1.0 (pde_solver), black_scholes (analytical)\nCross-validation harness:\n\
+    \  internal targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n\
+    \  external targets: quantlib\nNew component: convergence_order_diagnostic\n\n\
+    Implementation target: theta_1.0\nPreferred method family: pde_solver\n\nImplementation\
+    \ target: theta_1.0\n\n## Shared Knowledge\n## Distilled Review Memory\n\n- Review\
+    \ principles:\n  - `P1`: Always calibrate rate trees to the discount curve before\
+    \ pricing\n  - `P2`: Callable bonds need issuer_call lattice control, discrete\
+    \ coupons, and exercise=par+coupon\n  - `P3`: Convert vol units at the boundary\
+    \ between market data and model\n- Review checkpoints:\n  - GRID: Use at least\
+    \ 200 spatial points and 200+ time steps. For barrier options, use non-uniform\
+    \ grid concentrated near the barrier.\n  - BOUNDARY CONDITIONS: Set V(0,t)=0 for\
+    \ calls, V(S_max,t)=S_max-K*exp(-r*(T-t)) for calls. For puts: V(0,t)=K*exp(-r*(T-t)),\
+    \ V(S_max,t)=0.\n  - STABILITY: Crank-Nicolson (theta=0.5) is second-order but\
+    \ may oscillate near discontinuities. Use Rannacher smoothing (2-4 implicit steps\
+    \ at start) for digital/barrier payoffs.\n- Canonical model grammar:\n  - `local_vol_surface_workflow`\
+    \ -> `Dupire local vol`\n  - `sabr_smile_workflow` -> `SABR smile`\n- Known failure\
+    \ traps:\n  - `BlackScholesOperator constructor mismatch` -> The generated code\
+    \ treated the PDE operator as if it accepted scalar 'r' and 'sigma' keywords,\
+    \ but trellis.models.pde.operator.BlackScholesOperator actually expects callables\
+    \ '(sigma_fn, r_fn)'. The mismatch caused constructor failure during module build.\n\
+    \  - `PDE price blow-up from unit/scale mismatch` -> The generated PDE branch\
+    \ called theta_method_1d with the obsolete operator/s_grid/t_grid/boundary_conditions\
     \ signature and then read the wrong element of the result instead of interpolating\
     \ the returned solution over grid.x. The actual API is theta_method_1d(grid, operator,\
     \ terminal_condition, theta=..., lower_bc_fn=..., upper_bc_fn=...), and it returns\
-    \ the full solution vector at t=0.\n**Fix:** Build Grid(x_min=0.0, x_max=S_max,\
-    \ n_x=n_x, T=T, n_t=n_t), construct BlackScholesOperator(lambda s, t: sigma, lambda\
-    \ t: r), call theta_method_1d(grid, op, terminal, theta=0.5, lower_bc_fn=...,\
-    \ upper_bc_fn=...), then interpolate the returned vector with np.interp(spec.spot,\
-    \ grid.x, V) before multiplying by notional.\n\n### [CRITICAL] Use exact PDE import\
-    \ paths\n**Symptom:** ImportError shows `Grid` and `theta_method_1d` are not exported\
-    \ by `trellis.models.pde`.\n**Why:** The implementation guessed PDE module exports\
-    \ instead of using the exact supported import paths. The build then failed before\
-    \ any pricing logic could run.\n**Fix:** Inspect the actual trellis PDE package\
-    \ structure and import the grid/operator/solver objects from their real modules.\
-    \ Keep the solver call isolated so module-path errors are caught immediately during\
-    \ validation.\n\n### [CRITICAL] Undefined boundary condition symbol\n**Symptom:**\
-    \ NameError: name 'absorbing' is not defined when constructing the BarrierCallSpec\
-    \ (or assigning pde_boundary_condition).\n**Why:** The code used an undefined\
-    \ Python name 'absorbing' instead of a string literal or an imported/defined constant\
-    \ for the PDE boundary condition. There was no validation or unit test to catch\
-    \ the NameError before build.\n**Fix:** Use a quoted string (e.g. 'absorbing')\
-    \ or import/define the boundary-condition constant from the PDE module; add a\
-    \ small input validation that boundary-condition values belong to the allowed\
-    \ set.\n\n### [CRITICAL] Incorrect PDE API import (Grid not exported)\n**Symptom:**\
-    \ ImportError / AttributeError: 'Grid' is not exported by trellis.models.pde (or\
-    \ module has no attribute 'Grid').\n**Why:** The pricer attempted to import or\
-    \ reference a symbol (Grid) that is not part of the public API of trellis.models.pde;\
-    \ additionally the spec contained literal unquoted identifiers and malformed defaults\
-    \ which would cause name errors. This mismatch between assumed library exports\
-    \ and the actual library surface caused the build to fail.\n**Fix:** Inspect the\
-    \ actual exported symbols in trellis.models.pde (e.g. via help() or module.__all__),\
-    \ and replace the non-exported 'Grid' usage with the correct factory/function/class\
-    \ provided by the module (or implement a local grid builder). Also correct spec\
-    \ field defaults (quote string literals) and validate names with a small import/unit\
-    \ test before full build.\n\n### [CRITICAL] Unit conversion causes extreme PV\n\
-    **Symptom:** Price sanity check triggered: |PV| > 10 * typical_notional (e.g.,\
-    \ |PV| = 9995.24 > 1000)\n**Why:** Market-data / model-input unit mismatch (most\
-    \ commonly a volatility expressed in percent vs decimal, or a rate/discount representation\
-    \ mismatch) caused the PDE operator to receive parameters off by orders of magnitude.\n\
-    **Fix:** Normalize and validate market data before passing to the PDE (convert\
-    \ vol from percent->decimal, convert rates to the operator's expected form or\
-    \ supply discount factors), add assertive checks on ranges and shapes, and run\
-    \ a small-price sanity test before accepting results.\n\n### [CRITICAL] Incorrect\
-    \ PDE imports and malformed code\n**Symptom:** ImportError: 'trellis.models.pde'\
-    \ does not export 'Grid' OR SyntaxError: unexpected indent in generated module.\n\
-    **Why:** The generator guessed an incorrect trellis export (Grid) and produced\
-    \ malformed Python (incorrect indentation) while synthesizing the PDE solver;\
-    \ the combination prevented module import/execution.\n**Fix:** Use exact, confirmed\
-    \ trellis import paths (inspect the package or __all__), construct the spatial\
-    \ grid from the actual provided API if Grid isn't exported, and validate/ lint\
-    \ generated code (check indentation) before runtime. Add a minimal unit test that\
-    \ imports and runs evaluate() to catch these errors early.\n\n\n## Generated Skills\n\
-    - [lesson] Unit conversion causes huge PV: Enforce and document input conventions\
-    \ (vol as decimal, discount curve vs zero rate semantics, notional scaling), derive\
-    \ r from discount factors via r = -ln(df)/T or use forward/Black76 consistently,\
-    \ add unit/conversi...\n\n## Stage-Aware Skills\n- [route_hint] vanilla_equity_theta_pde\
-    \ route helper: Use the selected route helper directly inside `evaluate()`; do\
-    \ not rebuild the process, engine, or discount glue manually.\n- [route_hint]\
-    \ vanilla_equity_theta_pde note 1: For vanilla European equity PDE routes, prefer\
-    \ `price_vanilla_equity_option_pde(market_state, spec, theta=...)` so the adapter\
-    \ stays thin.\n- [route_hint] vanilla_equity_theta_pde note 2: Map `implementation_target=theta_0.5`\
-    \ to `theta=0.5` and `implementation_target=theta_1.0` to `theta=1.0`.\n- [route_hint]\
-    \ vanilla_equity_theta_pde note 3: The checked-in helper already owns grid sizing,\
-    \ terminal payoff assembly, boundary conditions, theta-method solve, and interpolation\
-    \ back to spot.\n- [route_hint] vanilla_equity_theta_pde note 4: Use the lower-level\
-    \ `Grid + BlackScholesOperator + theta_method_1d` path only when the payoff or\
-    \ boundary contract genuinely differs from plain vanilla European call/put.\n\n\
-    \n## Compiled Route Contract\n- Method family: `pde_solver`\n- Instrument type:\
+    \ the full solution vector at t=0.\n\n## Generated Skills\n- [lesson] Unit conversion\
+    \ causes huge PV: Enforce and document input conventions (vol as decimal, discount\
+    \ curve vs zero rate semantics, notional scaling), derive r from discount factors\
+    \ via r = -ln(df)/T or use forward/Black76 consistently, add unit/conversi...\n\
+    \n\n## Compiled Route Contract\n- Method family: `pde_solver`\n- Instrument type:\
     \ `european_option`\n- Lane boundary: family=`pde_solver`, kind=`exact_target_binding`,\
     \ exact_bindings=`trellis.models.equity_option_pde.price_vanilla_equity_option_pde`\n\
     - Lane obligations:\n  - Lane family: `pde_solver`\n  - Plan kind: `exact_target_binding`\n\
