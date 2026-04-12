@@ -83,6 +83,7 @@ def test_route_hint_lineage_links_back_to_matching_cookbook():
     record = get_skill_record("route_hint:analytical_garman_kohlhagen:note:1")
 
     assert record is not None
+    assert record.kind == "historical_note"
     assert record.lineage_status == "derived"
     assert "route.match_method_to_cookbook" in record.lineage_evidence
     assert "cookbook:analytical" in record.parents
@@ -109,6 +110,15 @@ def test_ambiguous_route_hint_cookbook_backfill_is_left_unresolved():
     assert record.parents == ()
     assert record.lineage_status == "advisory"
     assert record.lineage_evidence == ("route.match_method_to_cookbook_ambiguous",)
+
+
+def test_route_notes_are_not_projected_as_live_route_hints():
+    route_hint_ids = {
+        record.skill_id
+        for record in query_skill_records(kind="route_hint")
+    }
+
+    assert "route_hint:analytical_garman_kohlhagen:note:1" not in route_hint_ids
 
 
 def test_skill_index_generation_is_deterministic():

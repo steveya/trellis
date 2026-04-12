@@ -1,28 +1,42 @@
 meta:
-  recorded_at: '2026-04-12T08:13:51.594685+00:00'
+  recorded_at: '2026-04-12T12:46:18.350571+00:00'
   provider: openai
   model: gpt-5.4-mini
-  total_calls: 4
+  total_calls: 6
   name: T38
 calls:
 - seq: 0
   function: llm_generate
   stage: code_generation
-  prompt_hash: 61d9527e9e53bafef67a8eb3f23ed84d2ff81f1b281017bdf90af6f410c28218
-  response_text: "def evaluate(self, market_state: MarketState) -> float:\n      \
-    \  from trellis.core.differentiable import get_numpy\n        from trellis.models.credit_default_swap\
-    \ import build_cds_schedule, price_cds_monte_carlo\n\n        spec = self._spec\n\
-    \        np = get_numpy()\n\n        spread = float(spec.spread)\n        if spread\
-    \ > 1.0:\n            spread *= 1e-4\n\n        schedule = build_cds_schedule(\n\
+  prompt_hash: b6e7c7998645f2509476762d576facad203263e35ed8f3bb597feb597b4dfb22
+  response_text: "from trellis.core.differentiable import get_numpy\n        from\
+    \ trellis.models.credit_default_swap import build_cds_schedule, price_cds_monte_carlo\n\
+    \n        np = get_numpy()\n        spec = self._spec\n\n        spread = float(spec.spread)\n\
+    \        if spread > 1.0:\n            spread *= 1e-4\n\n        schedule = build_cds_schedule(\n\
     \            spec.start_date,\n            spec.end_date,\n            spec.frequency,\n\
     \            day_count=spec.day_count,\n            time_origin=spec.start_date,\n\
     \        )\n\n        n_paths = int(spec.n_paths) if getattr(spec, \"n_paths\"\
-    , None) is not None else 250000\n        n_paths = max(n_paths, 10000)\n\n   \
-    \     price = price_cds_monte_carlo(\n            notional=float(spec.notional),\n\
-    \            spread_quote=spread,\n            recovery=float(spec.recovery),\n\
-    \            schedule=schedule,\n            credit_curve=market_state.credit_curve,\n\
-    \            discount_curve=market_state.discount,\n            n_paths=n_paths,\n\
-    \            seed=42,\n        )\n        return float(price)"
+    , None) is not None else 250000\n\n        try:\n            pv = price_cds_monte_carlo(\n\
+    \                notional=float(spec.notional),\n                spread_quote=spread,\n\
+    \                recovery=float(spec.recovery),\n                schedule=schedule,\n\
+    \                credit_curve=market_state.credit_curve,\n                discount_curve=market_state.discount,\n\
+    \                n_paths=n_paths,\n                seed=42,\n            )\n \
+    \           return float(pv)\n        except TypeError:\n            pass\n\n\
+    \        credit_curve = market_state.credit_curve\n        discount_curve = market_state.discount\n\
+    \n        premium_leg = 0.0\n        protection_leg = 0.0\n\n        prev_t =\
+    \ 0.0\n        alive_prob = 1.0\n\n        periods = getattr(schedule, \"periods\"\
+    , schedule)\n        for period in periods:\n            t_pay = float(getattr(period,\
+    \ \"t_payment\", getattr(period, \"payment_time\", 0.0)))\n            accrual\
+    \ = float(getattr(period, \"accrual_fraction\", getattr(period, \"year_fraction\"\
+    , 0.0)))\n\n            s_prev = float(credit_curve.survival_probability(prev_t))\n\
+    \            s_pay = float(credit_curve.survival_probability(t_pay))\n       \
+    \     default_prob = 0.0 if s_prev <= 0.0 else max(0.0, min(1.0, 1.0 - (s_pay\
+    \ / s_prev)))\n\n            df = float(discount_curve.discount(t_pay))\n    \
+    \        protection_leg += float(spec.notional) * (1.0 - float(spec.recovery))\
+    \ * df * alive_prob * default_prob\n            premium_leg += float(spec.notional)\
+    \ * spread * accrual * df * alive_prob * s_pay / max(s_prev, 1e-16)\n\n      \
+    \      alive_prob *= (1.0 - default_prob)\n            prev_t = t_pay\n\n    \
+    \    return float(protection_leg - premium_leg)"
   prompt_text: "You are implementing the evaluate() method for `CDSPayoff` in the\
     \ Trellis pricing library.\n\n## Complete module (skeleton — everything is fixed\
     \ except evaluate)\n```python\n\"\"\"Agent-generated payoff: Build a pricer for:\
@@ -220,12 +234,13 @@ calls:
     \ the payoff as a thin adapter that calls trellis.core.differentiable.get_numpy\
     \ to obtain numpy arrays, perform all pathwise computations in numpy, and ensure\
     \ the payoff returns a 1D array of shape (n_paths,). Follow other assembly constraints\
-    \ (no banned imports, correct output shape).\n\n## Generated Skills\n- [lesson]\
-    \ NthToDefaultPayoff analytical must use Gaussian copula integration, not independent\
-    \ binomial: Use the Gaussian copula conditional independence formula (integrate\
-    \ over common factor Z). This is the analytical counterpart of the GaussianCopula\
-    \ MC. from math import comb from scipy import integrate from scipy.stat...\n\n\
-    ## Instrument Disambiguation\n- Treat this request as a single-name CDS / credit_default_swap\
+    \ (no banned imports, correct output shape).\n\n## Generated Skills\n- [route_hint]\
+    \ credit_default_swap_analytical route helper: Use the selected route helper directly\
+    \ inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.\
+    \ [lineage: derived from cookbook:analytical]\n- [route_hint] credit_default_swap_monte_carlo\
+    \ route helper: Use the selected route helper directly inside `evaluate()`; do\
+    \ not rebuild the process, engine, or discount glue manually.\n\n## Instrument\
+    \ Disambiguation\n- Treat this request as a single-name CDS / credit_default_swap\
     \ contract.\n- Do not reinterpret CDS here as nth_to_default, basket CDS, first-to-default,\
     \ or any multi-name credit product.\n- Do not import copula or Gaussian-copula\
     \ machinery unless the request explicitly says nth-to-default, first-to-default,\
@@ -479,21 +494,578 @@ calls:
     \ no explanation — just the Python code."
   model: gpt-5.4-mini
 - seq: 1
+  function: llm_generate
+  stage: code_generation
+  prompt_hash: 0e2d382b43d685f790ad8877f4888ea0e5663beb8e8a89b8f3519c6eb1457599
+  response_text: "np = get_numpy()\n        spec = self._spec\n\n        if market_state.credit_curve\
+    \ is None:\n            raise ValueError(\"market_state.credit_curve is required\
+    \ for CDS pricing\")\n        if market_state.discount is None:\n            raise\
+    \ ValueError(\"market_state.discount is required for CDS pricing\")\n\n      \
+    \  spread = float(spec.spread)\n        if spread > 1.0:\n            spread *=\
+    \ 1e-4\n\n        schedule = build_cds_schedule(\n            spec.start_date,\n\
+    \            spec.end_date,\n            spec.frequency,\n            spec.day_count,\n\
+    \            time_origin=spec.start_date,\n        )\n\n        try:\n       \
+    \     pv = price_cds_monte_carlo(\n                notional=float(spec.notional),\n\
+    \                spread_quote=spread,\n                recovery=float(spec.recovery),\n\
+    \                schedule=schedule,\n                credit_curve=market_state.credit_curve,\n\
+    \                discount_curve=market_state.discount,\n                n_paths=int(spec.n_paths),\n\
+    \                seed=42,\n            )\n            return float(pv)\n     \
+    \   except TypeError:\n            premium_leg = 0.0\n            protection_leg\
+    \ = 0.0\n            alive = None\n            rng = np.random.default_rng(42)\n\
+    \n            periods = getattr(schedule, \"periods\", schedule)\n           \
+    \ for period in periods:\n                t_pay = float(period.t_payment)\n  \
+    \              accrual = float(period.accrual_fraction)\n                s_prev\
+    \ = float(\n                    market_state.credit_curve.survival_probability(float(period.t_start))\n\
+    \                )\n                s_pay = float(market_state.credit_curve.survival_probability(t_pay))\n\
+    \                default_prob = 0.0 if s_prev <= 0.0 else max(0.0, min(1.0, 1.0\
+    \ - s_pay / s_prev))\n\n                if alive is None:\n                  \
+    \  alive = np.ones(int(spec.n_paths), dtype=bool)\n\n                u = rng.random(int(spec.n_paths))\n\
+    \                default_in_interval = alive & (u < default_prob)\n          \
+    \      protection_leg += (\n                    float(spec.notional)\n       \
+    \             * (1.0 - float(spec.recovery))\n                    * float(market_state.discount.discount(t_pay))\n\
+    \                    * float(np.mean(default_in_interval))\n                )\n\
+    \                alive &= ~default_in_interval\n                premium_leg +=\
+    \ (\n                    float(spec.notional)\n                    * spread\n\
+    \                    * accrual\n                    * float(market_state.discount.discount(t_pay))\n\
+    \                    * float(np.mean(alive))\n                )\n\n          \
+    \  return float(protection_leg - premium_leg)"
+  prompt_text: "You are implementing the evaluate() method for `CDSPayoff` in the\
+    \ Trellis pricing library.\n\n## Complete module (skeleton — everything is fixed\
+    \ except evaluate)\n```python\n\"\"\"Agent-generated payoff: Build a pricer for:\
+    \ CDS pricing: hazard rate MC vs survival prob analytical\n\nStandard single-name\
+    \ CDS, protection buyer side.\nNotional: $10,000,000.  Maturity: 5Y from settlement.\n\
+    Premium leg: quarterly payments, Act/360 day count.\nRunning CDS spread: 150 bp.\
+    \  Recovery rate: 40%.\nUse the investment-grade (IG) credit curve from the market\
+    \ snapshot\n(as_of 2024-11-15) — this provides term-dependent hazard rates\nbootstrapped\
+    \ from market CDS spreads at 1Y, 3Y, 5Y, and 10Y tenors.\nDo NOT use a flat hazard\
+    \ rate — the model must respect the full\nhazard rate term structure.\nUse the\
+    \ USD OIS curve for risk-free discounting.\nMethod 1: Monte Carlo simulation of\
+    \ default times from the hazard curve.\nMethod 2: Analytical (deterministic) survival-probability\
+    \ integration.\nCompute the mark-to-market PV (protection leg minus premium leg).\n\
+    \nConstruct methods: monte_carlo\nComparison targets: mc_cds (monte_carlo), analytical_cds\
+    \ (analytical)\nCross-validation harness:\n  internal targets: mc_cds, analytical_cds\n\
+    \  external targets: quantlib, financepy\nNew component: cds_pricing\n\nImplementation\
+    \ target: mc_cds\nPreferred method family: monte_carlo\n\nImplementation target:\
+    \ mc_cds.\"\"\"\n\nfrom __future__ import annotations\n\nfrom dataclasses import\
+    \ dataclass\nfrom datetime import date\n\nfrom trellis.core.market_state import\
+    \ MarketState\nfrom trellis.core.types import DayCountConvention, Frequency\n\
+    from trellis.core.differentiable import get_numpy\nfrom trellis.models.credit_default_swap\
+    \ import build_cds_schedule, price_cds_monte_carlo, interval_default_probability\n\
+    \n\n\n@dataclass(frozen=True)\nclass CDSSpec:\n    \"\"\"Specification for Build\
+    \ a pricer for: CDS pricing: hazard rate MC vs survival prob analytical\n\nStandard\
+    \ single-name CDS, protection buyer side.\nNotional: $10,000,000.  Maturity: 5Y\
+    \ from settlement.\nPremium leg: quarterly payments, Act/360 day count.\nRunning\
+    \ CDS spread: 150 bp.  Recovery rate: 40%.\nUse the investment-grade (IG) credit\
+    \ curve from the market snapshot\n(as_of 2024-11-15) — this provides term-dependent\
+    \ hazard rates\nbootstrapped from market CDS spreads at 1Y, 3Y, 5Y, and 10Y tenors.\n\
+    Do NOT use a flat hazard rate — the model must respect the full\nhazard rate term\
+    \ structure.\nUse the USD OIS curve for risk-free discounting.\nMethod 1: Monte\
+    \ Carlo simulation of default times from the hazard curve.\nMethod 2: Analytical\
+    \ (deterministic) survival-probability integration.\nCompute the mark-to-market\
+    \ PV (protection leg minus premium leg).\n\nConstruct methods: monte_carlo\nComparison\
+    \ targets: mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation\
+    \ harness:\n  internal targets: mc_cds, analytical_cds\n  external targets: quantlib,\
+    \ financepy\nNew component: cds_pricing\n\nImplementation target: mc_cds\nPreferred\
+    \ method family: monte_carlo\n\nImplementation target: mc_cds.\"\"\"\n    notional:\
+    \ float\n    spread: float\n    start_date: date\n    end_date: date\n    recovery:\
+    \ float = 0.4\n    frequency: Frequency = Frequency.QUARTERLY\n    day_count:\
+    \ DayCountConvention = DayCountConvention.ACT_360\n    n_paths: int = 250000\n\
+    \n\nclass CDSPayoff:\n    \"\"\"Build a pricer for: CDS pricing: hazard rate MC\
+    \ vs survival prob analytical\n\nStandard single-name CDS, protection buyer side.\n\
+    Notional: $10,000,000.  Maturity: 5Y from settlement.\nPremium leg: quarterly\
+    \ payments, Act/360 day count.\nRunning CDS spread: 150 bp.  Recovery rate: 40%.\n\
+    Use the investment-grade (IG) credit curve from the market snapshot\n(as_of 2024-11-15)\
+    \ — this provides term-dependent hazard rates\nbootstrapped from market CDS spreads\
+    \ at 1Y, 3Y, 5Y, and 10Y tenors.\nDo NOT use a flat hazard rate — the model must\
+    \ respect the full\nhazard rate term structure.\nUse the USD OIS curve for risk-free\
+    \ discounting.\nMethod 1: Monte Carlo simulation of default times from the hazard\
+    \ curve.\nMethod 2: Analytical (deterministic) survival-probability integration.\n\
+    Compute the mark-to-market PV (protection leg minus premium leg).\n\nConstruct\
+    \ methods: monte_carlo\nComparison targets: mc_cds (monte_carlo), analytical_cds\
+    \ (analytical)\nCross-validation harness:\n  internal targets: mc_cds, analytical_cds\n\
+    \  external targets: quantlib, financepy\nNew component: cds_pricing\n\nImplementation\
+    \ target: mc_cds\nPreferred method family: monte_carlo\n\nImplementation target:\
+    \ mc_cds.\"\"\"\n\n    def __init__(self, spec: CDSSpec):\n        self._spec\
+    \ = spec\n\n    @property\n    def spec(self) -> CDSSpec:\n        return self._spec\n\
+    \n    @property\n    def requirements(self) -> set[str]:\n        return {\"credit_curve\"\
+    , \"discount_curve\"}\n\n    def evaluate(self, market_state: MarketState) ->\
+    \ float:\n        spec = self._spec\n        raise NotImplementedError(\"evaluate\
+    \ not yet implemented\")\n\n```\n\n## Your task\nWrite ONLY the body of the `evaluate()`\
+    \ method. The signature is already defined:\n\n    def evaluate(self, market_state:\
+    \ MarketState) -> float:\n\n## Spec fields available via self._spec\n- `self._spec.notional`\
+    \ (float): Protection notional\n- `self._spec.spread` (float): CDS running spread\
+    \ in decimal form (e.g. 0.015 = 150bps, not 150.0)\n- `self._spec.recovery` (float):\
+    \ Recovery rate\n- `self._spec.start_date` (date): Protection start date\n- `self._spec.end_date`\
+    \ (date): Protection end date\n- `self._spec.frequency` (Frequency): Premium payment\
+    \ frequency\n- `self._spec.day_count` (DayCountConvention): Day count convention\n\
+    - `self._spec.n_paths` (int): Number of Monte Carlo paths for comparison-quality\
+    \ CDS pricing\n\n## Pricing Method (selected by the quant agent — you MUST use\
+    \ this)\nMethod: **monte_carlo**\nReasoning: product_ir_compiler\nSelection basis\
+    \ and assumptions:\n- Selection basis: `explicit_preference`\n- Assumptions /\
+    \ defaulted context:\n  - `simplest_valid_assumption_set`\n  - `simulation_based_valuation_route`\n\
+    \  - `path_sampling_required`\n  - `multiple_valid_methods_available`\n  - `schedule_dependent_product`\n\
+    Route-bound modules to import and use:\n- `trellis.models.credit_default_swap`\n\
+    - `trellis.core.differentiable`\n\nYou MUST import and use these route-bound modules\
+    \ in your implementation.\nDo not import a generic parent package such as `from\
+    \ trellis.models import ...` just to satisfy the method family.\n\n## API Map\
+    \ — start here before guessing module paths\n\nUse this navigation card to choose\
+    \ the right module family first. Confirm exact symbols with `find_symbol` or `list_exports`\
+    \ before calling `read_module`.\n\n### Core Types\n#### MarketState\n- Module:\
+    \ `trellis.core.market_state`\n- Class: `MarketState`\n- Frozen: `true`\n- Fields:\
+    \ `as_of`, `settlement`, `discount`, `forward_curve`, `vol_surface`, `state_space`,\
+    \ `credit_curve`, `forecast_curves`, `fx_rates`\n- Accessors: `discount_factor`,\
+    \ `zero_rate`, `forward_rate`, `forecast_forward`, `black_vol`, `survival_prob`,\
+    \ `hazard_rate`, `risky_discount`\n- Capabilities: `discount_curve → discount\
+    \ is not None`, `forward_curve → forward_curve is not None (auto from discount)`,\
+    \ `black_vol_surface → vol_surface is not None`, `state_space → state_space is\
+    \ not None`, `credit_curve → credit_curve is not None`, `fx_rates → fx_rates is\
+    \ not None`\n#### Payoff\n- Module: `trellis.core.payoff`\n- Protocol: `Payoff`\n\
+    - Required methods: `evaluate`\n- Required properties: `requirements`\n- Runtime\
+    \ checkable: `true`\n- Notes:\n  - Each payoff handles its own discounting internally\n\
+    \  - The returned float is the final PV\n  - DeterministicCashflowPayoff wraps\
+    \ any Instrument into Payoff\n\n### Model Families\n#### equity_tree\n- Module:\
+    \ `trellis.models.equity_option_tree`\n- Key imports:\n  - `from trellis.models.equity_option_tree\
+    \ import price_vanilla_equity_option_tree`\n  - `from trellis.models.trees.lattice\
+    \ import build_spot_lattice, lattice_backward_induction`\n- Notes:\n  - American/Bermudan\
+    \ equity options should prefer the checked-in helper `price_vanilla_equity_option_tree(...)`\n\
+    \  - If you need the lower-level path, import the lattice builder/backward induction\
+    \ submodules directly\n#### rate_lattice\n- Module: `trellis.models.trees.lattice`\n\
+    - Key imports:\n  - `from trellis.models.trees.lattice import build_rate_lattice,\
+    \ lattice_backward_induction`\n  - `from trellis.models.zcb_option_tree import\
+    \ price_zcb_option_tree`\n- Notes:\n  - Callable bonds, puttable bonds, and Bermudan\
+    \ swaptions use a calibrated rate lattice from a TreeModel specification such\
+    \ as Hull-White or Black-Derman-Toy\n  - lattice_backward_induction handles cashflow_at_node\
+    \ and exercise_fn\n#### monte_carlo\n- Module: `trellis.models.monte_carlo`\n\
+    - Key imports:\n  - `from trellis.models.monte_carlo.engine import MonteCarloEngine`\n\
+    \  - `from trellis.models.monte_carlo.lsm import longstaff_schwartz, longstaff_schwartz_result`\n\
+    \  - `from trellis.models.monte_carlo.early_exercise import EarlyExercisePolicyResult,\
+    \ LeastSquaresContinuationEstimator`\n  - `from trellis.models.monte_carlo.schemes\
+    \ import LaguerreBasis`\n  - `from trellis.models.monte_carlo import euler_maruyama,\
+    \ milstein, brownian_bridge`\n  - `from trellis.models.monte_carlo import antithetic,\
+    \ control_variate`\n  - `from trellis.models.processes.gbm import GBM`\n- Notes:\n\
+    \  - For American/Bermudan Monte Carlo, simulate paths then call an approved early-exercise\
+    \ control primitive; Trellis currently implements longstaff_schwartz\n  - If the\
+    \ control primitive uses continuation regression, choose the estimator or basis\
+    \ explicitly; LaguerreBasis is optional, not mandatory\n#### qmc\n- Module: `trellis.models.qmc`\n\
+    - Key imports:\n  - `from trellis.models.qmc import sobol_normals, brownian_bridge`\n\
+    \  - `from trellis.models.processes.gbm import GBM`\n- Notes:\n  - QMC is an accelerator\
+    \ family layered on Monte Carlo-style estimators\n  - Current support is Sobol-based\
+    \ normal draws and Brownian-bridge construction\n#### pde\n- Module: `trellis.models.pde`\n\
+    - Key imports:\n  - `from trellis.models.equity_option_pde import price_vanilla_equity_option_pde`\n\
+    \  - `from trellis.models.pde.grid import Grid`\n  - `from trellis.models.pde.theta_method\
+    \ import theta_method_1d`\n  - `from trellis.models.pde.operator import BlackScholesOperator`\n\
+    \  - `from trellis.models.pde import psor_1d  # American options`\n  - `from trellis.models.pde\
+    \ import HullWhitePDEOperator`\n- Notes:\n  - Vanilla European equity PDE routes\
+    \ should prefer the checked-in helper `price_vanilla_equity_option_pde(...)`\n\
+    \  - Use theta_method_1d, NOT legacy crank_nicolson_1d or implicit_fd_1d\n####\
+    \ fft\n- Module: `trellis.models.transforms.fft_pricer`\n- Key imports:\n  - `from\
+    \ trellis.models.transforms.fft_pricer import fft_price`\n  - `from trellis.models.transforms.cos_method\
+    \ import cos_price`\n- Notes:\n  - Concrete transform helpers live in submodules;\
+    \ do not import `trellis.models.transforms` directly.\n  - fft_price expects CF\
+    \ of log(S_T) — include log(S0)\n#### copulas\n- Module: `trellis.models.copulas.factor`\n\
+    - Key imports:\n  - `from trellis.models.copulas.factor import FactorCopula`\n\
+    \  - `from trellis.models.copulas.gaussian import GaussianCopula`\n  - `from trellis.models.copulas.student_t\
+    \ import StudentTCopula`\n#### analytical\n- Module: `trellis.models.zcb_option`\n\
+    - Key imports:\n  - `from trellis.models.zcb_option import resolve_zcb_option_hw_inputs,\
+    \ price_zcb_option_jamshidian`\n  - `from trellis.models.analytical.jamshidian\
+    \ import ResolvedJamshidianInputs, zcb_option_hw_raw`\n  - `from trellis.models.analytical\
+    \ import zcb_option_hw`\n  - `from trellis.models.analytical import terminal_vanilla_from_basis`\n\
+    \  - `from trellis.models.rate_style_swaption import ResolvedSwaptionBlack76Inputs,\
+    \ resolve_swaption_black76_inputs, price_swaption_black76_raw, price_bermudan_swaption_black76_lower_bound`\n\
+    #### calibration\n- Module: `trellis.models.calibration`\n- Key imports:\n  -\
+    \ `from trellis.models.calibration import implied_vol, implied_vol_jaeckel`\n\
+    \  - `from trellis.models.calibration import RatesCalibrationResult, calibrate_cap_floor_black_vol,\
+    \ calibrate_swaption_black_vol, swaption_terms`\n  - `from trellis.models.calibration\
+    \ import calibrate_sabr`\n  - `from trellis.models.calibration import dupire_local_vol`\n\
+    \n### Utilities\n#### black76\n- Module: `trellis.models.black`\n- Imports:\n\
+    \  - `from trellis.models.black import black76_call, black76_put, black76_asset_or_nothing_call,\
+    \ black76_asset_or_nothing_put, black76_cash_or_nothing_call, black76_cash_or_nothing_put`\n\
+    #### garman_kohlhagen\n- Module: `trellis.models.analytical.fx`\n- Imports:\n\
+    \  - `from trellis.models.analytical.fx import ResolvedGarmanKohlhagenInputs,\
+    \ garman_kohlhagen_price_raw`\n  - `from trellis.models.black import garman_kohlhagen_call,\
+    \ garman_kohlhagen_put`\n#### rate_style_swaption\n- Module: `trellis.models.rate_style_swaption`\n\
+    - Imports:\n  - `from trellis.models.rate_style_swaption import ResolvedSwaptionBlack76Inputs,\
+    \ resolve_swaption_black76_inputs, price_swaption_black76_raw, price_swaption_black76`\n\
+    \  - `from trellis.models.rate_style_swaption import price_bermudan_swaption_black76_lower_bound`\n\
+    #### jamshidian_zcb_option\n- Module: `trellis.models.zcb_option`\n- Imports:\n\
+    \  - `from trellis.models.zcb_option import ResolvedZCBOptionInputs, resolve_zcb_option_hw_inputs,\
+    \ price_zcb_option_jamshidian`\n  - `from trellis.models.analytical.jamshidian\
+    \ import ResolvedJamshidianInputs, zcb_option_hw_raw`\n#### schedule\n- Module:\
+    \ `trellis.core.date_utils`\n- Imports:\n  - `from trellis.core.date_utils import\
+    \ generate_schedule`\n#### day_count\n- Module: `trellis.core.date_utils`\n- Imports:\n\
+    \  - `from trellis.core.date_utils import year_fraction`\n#### vol_surface\n-\
+    \ Module: `trellis.models.vol_surface`\n- Imports:\n  - `from trellis.models.vol_surface\
+    \ import VolSurface, FlatVol`\n#### cashflow_engine\n- Module: `trellis.models.cashflow_engine`\n\
+    - Imports:\n  - `from trellis.models.cashflow_engine import Waterfall, Tranche`\n\
+    \  - `from trellis.models.cashflow_engine import PSA, CPR, RateDependent`\n  -\
+    \ `from trellis.models.cashflow_engine import level_pay, scheduled, custom`\n\
+    #### credit_curve\n- Module: `trellis.curves.credit_curve`\n- Imports:\n  - `from\
+    \ trellis.curves.credit_curve import CreditCurve`\n- Notes:\n  - CreditCurve.flat(hazard_rate)\
+    \ is the simplest starting point for CDS or nth-to-default tasks\n## Distilled\
+    \ Build Memory\n\n- Product: `cds` / `cds` / `none`\n- Default method family:\
+    \ `monte_carlo`\n- Method intent: Path simulation for path-dependent or high-dimensional\
+    \ claims, including LSM-based exercise when needed\n- Non-negotiable requirements:\n\
+    \  - CONVERGENCE: Use at least 10,000 paths. Verify that the standard error is\
+    \ <1% of the price. If path-dependent, use at least 100 time steps per year.\n\
+    \  - DISCRETE OBSERVATIONS: For instruments with discrete fixing/observation dates\
+    \ (Asian options, barriers), simulate paths that pass through those exact dates.\
+    \ Do not interpolate between steps.\n  - EARLY EXERCISE: For American or Bermudan\
+    \ exercise in Monte Carlo, use an approved optimal-stopping control primitive\
+    \ instead of inventing method=\"lsm\" or treating engine.price(...) as a substitute\
+    \ for early-exercise control. Trellis currently implements longstaff_schwartz.\
+    \ Planned policy classes include tsitsiklis_van_roy, primal_dual_mc, and stochastic_mesh.\
+    \ If the control primitive uses continuation regression, the basis or estimator\
+    \ choice is explicit; LaguerreBasis is a common option, not a mandatory route\
+    \ primitive.\n- Canonical model grammar:\n  - `credit_single_name_reduced_form`\
+    \ -> `Reduced-form single-name credit`\n  - `heston_smile_workflow` -> `Heston`\n\
+    - Repeated fixes to reuse:\n  - `MC payoff must use market_state.discount` ->\
+    \ Implement the MC payoff to explicitly call market_state.discount.discount(time)\
+    \ for all discounting and return a 1D numpy array of per-path present values.\
+    \ Run a quick syntax/lint pass on generated code to eliminate indentation/SyntaxError\
+    \ issues before submission.\n  - `MC payoff must use required primitives` -> Rebuild\
+    \ the payoff as a thin adapter that calls trellis.core.differentiable.get_numpy\
+    \ to obtain numpy arrays, perform all pathwise computations in numpy, and ensure\
+    \ the payoff returns a 1D array of shape (n_paths,). Follow other assembly constraints\
+    \ (no banned imports, correct output shape).\n\n## Generated Skills\n- [route_hint]\
+    \ credit_default_swap_analytical route helper: Use the selected route helper directly\
+    \ inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.\
+    \ [lineage: derived from cookbook:analytical]\n- [route_hint] credit_default_swap_monte_carlo\
+    \ route helper: Use the selected route helper directly inside `evaluate()`; do\
+    \ not rebuild the process, engine, or discount glue manually.\n\n## Stage-Aware\
+    \ Skills\n- [route_hint] credit_default_swap_monte_carlo schedule builder: Use\
+    \ `trellis.models.credit_default_swap.build_cds_schedule` to build the route schedule\
+    \ before pricing.\n- [route_hint] credit_default_swap_monte_carlo avoid hard-coded\
+    \ schedule grids: Do not hard-code observation or payment grids inside the payoff\
+    \ body.\n## Retry Focus\n- Regenerate from the canonical scaffold; do not improvise\
+    \ a new module shape.\n- Keep indentation, imports, and class/spec names aligned\
+    \ with the approved route skeleton.\n## Route-Specific Recovery\n- Single-name\
+    \ CDS Monte Carlo does not need an equity price process, spot diffusion, or volatility\
+    \ path.\n- Do not import `trellis.models.processes.gbm` or any adjacent equity-process\
+    \ fallback just to make Monte Carlo compile.\n- Do not import or instantiate `MonteCarloEngine`\
+    \ for a single-name CDS route. That engine expects a diffusion process and is\
+    \ the wrong scaffold here.\n- Stay within the approved CDS route backbone: credit-curve\
+    \ default-time sampling, discounting, schedule generation, and leg aggregation.\n\
+    - Prefer `from trellis.models.credit_default_swap import build_cds_schedule, price_cds_monte_carlo`\
+    \ and delegate to those helpers from the adapter.\n- Prefer `build_period_schedule(spec.start_date,\
+    \ spec.end_date, spec.frequency, day_count=spec.day_count, time_origin=spec.start_date)`\
+    \ so the route iterates over explicit periods instead of rebuilding coupon boundaries\
+    \ by hand.\n- Use `from trellis.core.differentiable import get_numpy`, `np = get_numpy()`,\
+    \ and direct `np.random.default_rng(...)` draws for default times instead.\n-\
+    \ Track accrual dates and survival/default times separately: use `prev_date` for\
+    \ `year_fraction(prev_date, pay_date, ...)` and `prev_t` for survival/default-time\
+    \ thresholds.\n- Do not compare float year-fractions to `date` objects, and do\
+    \ not pass floats into the date positions of `year_fraction(...)`.\n- Use `period.payment_date`,\
+    \ `period.accrual_fraction`, and `period.t_payment` from that schedule object\
+    \ so the Monte Carlo leg covers the full CDS horizon without reconstructing payment_dates\
+    \ manually.\n- This route must price a Monte Carlo expectation over many paths.\
+    \ Use `n_paths = ...`, `alive = np.ones(n_paths, dtype=bool)`, and vectorized\
+    \ `default_in_interval` arrays.\n- Do not hard-code `n_paths=50000` for a comparison-quality\
+    \ single-name CDS build. If the spec exposes `n_paths`, pass `spec.n_paths` through\
+    \ to `price_cds_monte_carlo(...)`; otherwise use a comparison-stable path count\
+    \ such as `250000`.\n- Keep the CDS comparison build reproducible with `seed=42`\
+    \ unless the spec explicitly carries another seed.\n- Do not collapse the Monte\
+    \ Carlo CDS leg to scalar `alive`, a single `rng.random()` draw per payment date,\
+    \ or a one-scenario loop that breaks after default.\n- Compute interval default\
+    \ probability from survival ratios: `default_prob = max(0.0, min(1.0, 1.0 - s_pay\
+    \ / s_prev))` using `survival_probability(prev_t)` and `survival_probability(t_pay)`.\n\
+    - Do not replace that interval default probability with a midpoint-hazard shortcut\
+    \ like `1.0 - exp(-hazard * dt)` when survival probabilities are available.\n\
+    - For this comparison route, keep protection-leg discounting aligned with the\
+    \ analytical schedule loop: accrue interval default mass with the payment-date\
+    \ discount factor `discount(t_pay)`.\n- Do not discount protection at sampled\
+    \ default times `tau` or replace interval default mass with sampled settlement-time\
+    \ discounting in the comparison build.\n- Use `spec.start_date` as the time origin\
+    \ for Monte Carlo schedule times. Do not switch this route to `market_state.as_of`\
+    \ while the analytical comparator uses `spec.start_date`.\n- Carry a persistent\
+    \ `alive` indicator across the schedule; do not overwrite the default state from\
+    \ scratch inside each interval.\n- Use per-interval conditional default draws:\
+    \ `default_in_interval = alive & (u < conditional_default_prob)`, accrue protection\
+    \ on that interval only, then update `alive &= ~default_in_interval` before the\
+    \ next coupon date.\n- Update `alive` before premium accrual. The premium leg\
+    \ should use the fraction of paths still alive through the payment date, not the\
+    \ start-of-interval alive state, so the Monte Carlo leg timing matches the analytical\
+    \ schedule loop in expectation.\n- Normalize the running spread immediately with\
+    \ `spread = float(spec.spread)` and `if spread > 1.0: spread *= 1e-4` before any\
+    \ premium-leg accrual.\n- After that normalization step, use only the local `spread`\
+    \ variable; do not read raw `spec.spread` again inside the loop.\n- Validation\
+    \ contract: semantically equivalent quotes `100` and `0.01` must produce the same\
+    \ CDS PV up to numerical tolerance.\n## Instrument Disambiguation\n- Treat this\
+    \ request as a single-name CDS / credit_default_swap contract.\n- Do not reinterpret\
+    \ CDS here as nth_to_default, basket CDS, first-to-default, or any multi-name\
+    \ credit product.\n- Do not import copula or Gaussian-copula machinery unless\
+    \ the request explicitly says nth-to-default, first-to-default, basket CDS, or\
+    \ multiple reference names.\n## Structured Lane Card\n- Method family: `monte_carlo`\n\
+    - Instrument type: `cds`\n- Semantic contract: `credit_default_swap`, request=`credit_default_swap`,\
+    \ bridge=`canonical_semantic`, instrument=`cds`, payoff=`credit_default_swap`,\
+    \ structure=`single_reference_entity`\n- Valuation context: market_source=`unbound_market_snapshot`\n\
+    - Lane boundary: family=`monte_carlo`, kind=`exact_target_binding`, timeline_roles=`settlement`,\
+    \ `payment`, `observation`, exact_bindings=`trellis.models.credit_default_swap.build_cds_schedule`,\
+    \ `trellis.models.credit_default_swap.price_cds_monte_carlo`\n- Lowering boundary:\
+    \ family_ir=`CreditDefaultSwapIR`, expr=`ThenExpr`, helpers=`trellis.models.credit_default_swap.build_cds_schedule`,\
+    \ `trellis.models.credit_default_swap.interval_default_probability`, route_alias=`credit_default_swap_monte_carlo`\n\
+    - Validation contract: bundle=`monte_carlo:credit_default_swap`, checks=`check_cds_spread_quote_normalization`,\
+    \ `check_cds_credit_curve_sensitivity`, `premium_leg_accrues_on_schedule`, `protection_leg_triggers_on_default`,\
+    \ residual_risks=`comparison_relations_unspecified`\n- Lane obligations:\n  -\
+    \ Lane family: `monte_carlo`\n  - Plan kind: `exact_target_binding`\n  - Timeline\
+    \ roles: `settlement`, `payment`, `observation`\n  - Market bindings: `discount_curve`,\
+    \ `credit_curve`\n  - Control semantics: `pricing_mode:monte_carlo`, `schedule_role:payment_dates`\n\
+    \  - State obligations: `survival_state`, `premium_leg_schedule`, `default_indicator`\n\
+    \  - Construction steps:\n    - Build the CDS schedule with `build_cds_schedule`\
+    \ and keep the leg semantics explicit: premium_leg, protection_leg.\n    - Bind\
+    \ discount and credit-curve inputs to the `monte_carlo` lane without routing through\
+    \ equity-option kernels.\n    - Price the schedule-driven contract through `price_cds_monte_carlo`\
+    \ unless the request introduces a genuinely new credit kernel.\n  - Exact backend\
+    \ bindings:\n    - `trellis.models.credit_default_swap.build_cds_schedule`\n \
+    \   - `trellis.models.credit_default_swap.interval_default_probability`\n    -\
+    \ `trellis.models.credit_default_swap.price_cds_monte_carlo`\n    - `trellis.core.differentiable.get_numpy`\n\
+    \  - Exact binding signatures:\n    - `build_cds_schedule(start_date: 'date',\
+    \ end_date: 'date', frequency: 'Frequency', day_count: 'DayCountConvention', *,\
+    \ time_origin: 'date | None' = None) -> 'EventSchedule'`\n    - `price_cds_monte_carlo(*,\
+    \ notional: 'float', spread_quote: 'float', recovery: 'float', schedule: 'EventSchedule',\
+    \ credit_curve: 'CreditCurveLike', discount_curve: 'DiscountCurveLike', n_paths:\
+    \ 'int' = 50000, seed: 'int' = 42) -> 'float'`\n- Route authority:\n  - binding=`trellis.models.credit_default_swap.price_cds_monte_carlo`,\
+    \ engine=`monte_carlo`, authority=`exact_backend_fit`\n  - Route alias: `credit_default_swap_monte_carlo`\n\
+    \  - Validation bundle: `monte_carlo:credit_default_swap`\n  - Validation checks:\
+    \ `check_cds_spread_quote_normalization`, `check_cds_credit_curve_sensitivity`,\
+    \ `check_non_negativity`, `check_price_sanity`\n  - Canary coverage: canaries=`T38`\n\
+    \  - Helper authority: `trellis.models.credit_default_swap.build_cds_schedule`,\
+    \ `trellis.models.credit_default_swap.interval_default_probability`\n  - Exact\
+    \ target bindings: `trellis.models.credit_default_swap.build_cds_schedule`, `trellis.models.credit_default_swap.price_cds_monte_carlo`\n\
+    - Backend binding:\n  - Route: `credit_default_swap_monte_carlo`\n  - Engine family:\
+    \ `monte_carlo`\n  - Route family: `credit_default_swap`\n  - Selected primitives:\n\
+    \    - `trellis.models.credit_default_swap.build_cds_schedule` (schedule_builder)\n\
+    \    - `trellis.models.credit_default_swap.interval_default_probability` (event_probability)\n\
+    \    - `trellis.models.credit_default_swap.price_cds_monte_carlo` (route_helper)\n\
+    \    - `trellis.core.differentiable.get_numpy` (array_backend)\n  - Resolved instructions:\n\
+    \    - [hard_constraint] Use the route helper directly inside `evaluate()`; do\
+    \ not rebuild the process, engine, or discount glue manually.\n    - [route_hint]\
+    \ Use `trellis.models.credit_default_swap.build_cds_schedule` to build the route\
+    \ schedule before pricing.\n    - [route_hint] Do not hard-code observation or\
+    \ payment grids inside the payoff body.\n  - Schedule construction:\n    - [route_hint]\
+    \ Use `trellis.models.credit_default_swap.build_cds_schedule` to build the route\
+    \ schedule before pricing.\n    - [route_hint] Do not hard-code observation or\
+    \ payment grids inside the payoff body.\n- Primary modules to inspect/reuse:\n\
+    \  - `trellis.core.differentiable`\n  - `trellis.models.credit_default_swap`\n\
+    \  - `trellis.models.monte_carlo.engine`\n- Post-build test targets:\n  - `tests/test_agent/test_build_loop.py`\n\
+    - Instruction precedence: follow the lane obligations in this card first. Treat\
+    \ backend route/helper details as exact-fit bindings, not as permission to invent\
+    \ a different numerical path.\n- Treat route authority as backend-fit evidence,\
+    \ not as permission to invent a different synthesis plan.\n- Use approved Trellis\
+    \ imports only. Prefer thin adapters when the compiler found an exact backend;\
+    \ otherwise build the smallest lane-consistent kernel the plan requires.\n## Backend\
+    \ Lookup (Secondary To Lane Obligations)\n- Lane family: `monte_carlo`\n- Lane\
+    \ plan kind: `exact_target_binding`\n- Method family: `monte_carlo`\n- Route:\
+    \ `credit_default_swap_monte_carlo`\n- Engine family: `monte_carlo`\n- Required\
+    \ primitive symbols:\n  - `trellis.models.credit_default_swap.build_cds_schedule`\n\
+    \  - `trellis.models.credit_default_swap.interval_default_probability`\n  - `trellis.models.credit_default_swap.price_cds_monte_carlo`\n\
+    \  - `trellis.core.differentiable.get_numpy`\n## Thin Adapter Plan\n- Target payoff\
+    \ class: `CDSPayoff`\n- Required market reads:\n  - `market_state.credit_curve`\n\
+    \  - `market_state.discount`\n- Required primitive calls:\n  - `trellis.models.credit_default_swap.interval_default_probability`\n\
+    \  - `trellis.models.credit_default_swap.price_cds_monte_carlo`\n  - `trellis.core.differentiable.get_numpy`\n\
+    - Return contract: Return a Python `float` present value from `evaluate()`.\n\
+    ## Invariant Pack\n- The generated payoff should be compatible with these deterministic\
+    \ validation checks:\n  - `check_cds_spread_quote_normalization`\n  - `check_cds_credit_curve_sensitivity`\n\
+    \  - `check_non_negativity`\n  - `check_price_sanity`\n## Family Route Guidance\n\
+    - For single-name CDS Monte Carlo routes, keep the premium leg and protection\
+    \ leg on an explicit payment/default schedule for one reference entity.\n- Prefer\
+    \ `build_cds_schedule` and `price_cds_monte_carlo` from `trellis.models.credit_default_swap`\
+    \ so the adapter delegates to checked-in CDS helpers instead of open-coding the\
+    \ leg loop.\n- If the spec exposes `n_paths`, pass `spec.n_paths` through to `price_cds_monte_carlo(...)`\
+    \ instead of hard-coding a smaller path count in the adapter.\n- Do not hard-code\
+    \ `n_paths=50000` for a comparison-quality CDS route. Use `spec.n_paths` when\
+    \ available; otherwise pick a comparison-stable path count such as `250000`.\n\
+    - Keep comparison-task randomness reproducible with `seed=42` unless the spec\
+    \ explicitly carries a different seed input.\n- Do not import or instantiate `MonteCarloEngine`\
+    \ for this route. Here Monte Carlo means direct random default-time draws, not\
+    \ a generic diffusion-engine wrapper.\n- CDS running spreads are often quoted\
+    \ in basis points in task text. Normalize them at the top of `evaluate()` with\
+    \ `spread = float(spec.spread)` and `if spread > 1.0: spread *= 1e-4`, for example\
+    \ `150 bp -> 0.015`.\n- After that normalization step, use only the local `spread`\
+    \ variable in the premium leg. Do not read raw `spec.spread` again later in the\
+    \ body.\n- Treat `100` and `0.01` as semantically equivalent CDS running spreads.\
+    \ The route should price them the same up to numerical tolerance.\n- Start the\
+    \ body with `from trellis.core.differentiable import get_numpy` and `np = get_numpy()`\
+    \ so the route uses the approved array backend.\n- Use `rng = np.random.default_rng(...)`\
+    \ or equivalent direct RNG draws to sample default times from the credit curve\
+    \ hazard structure.\n- Use `market_state.credit_curve.hazard_rate(t)` or `market_state.credit_curve.survival_probability(t)`\
+    \ directly on the schedule; do not hide the credit curve behind an alias.\n- Use\
+    \ `market_state.discount.discount(t)` directly for each payment-date discount\
+    \ factor.\n- Build the explicit schedule with `build_period_schedule(spec.start_date,\
+    \ spec.end_date, spec.frequency, day_count=spec.day_count, time_origin=spec.start_date)`\
+    \ and iterate over `period.payment_date`, `period.accrual_fraction`, and `period.t_payment`.\n\
+    - This route must price a Monte Carlo expectation over many paths. Use `n_paths\
+    \ = ...`, `alive = np.ones(n_paths, dtype=bool)`, vectorized `default_in_interval`,\
+    \ and return a path average such as `float(np.mean(protection_pv - premium_pv))`.\n\
+    - Do not collapse the Monte Carlo leg to scalar `alive`, a single `rng.random()`\
+    \ draw per coupon date, or a one-scenario loop with `break` after default.\n-\
+    \ Compute interval default probability from `survival_probability(prev_t)` and\
+    \ `survival_probability(t_pay)` as `1.0 - s_pay / s_prev` when `s_prev > 0.0`.\n\
+    - Use `hazard_rate` only for within-interval default-time interpolation after\
+    \ an interval default is sampled; do not replace the interval default probability\
+    \ with `1.0 - exp(-hazard * dt)` when survival probabilities are available.\n\
+    - For this comparison route, keep protection-leg discounting aligned with the\
+    \ analytical schedule loop: use the payment-date discount factor `discount(t_pay)`\
+    \ for interval default mass.\n- Do not discount protection at sampled default\
+    \ times `tau` or replace interval default mass with sampled settlement-time discounting\
+    \ in the comparison build.\n- Use `spec.start_date` as the time origin for Monte\
+    \ Carlo schedule times so the MC and analytical CDS legs share the same `t` convention.\n\
+    - If you track both accrual dates and survival/default times, keep `prev_date`\
+    \ and `prev_t` as separate variables. Do not compare float year-fractions to `date`\
+    \ objects or pass floats into `year_fraction(...)` date slots.\n- Keep a persistent\
+    \ `alive` indicator across the schedule. Sample `default_in_interval` once per\
+    \ accrual interval, add protection only on that interval, then update `alive`\
+    \ before the next payment date.\n- Update `alive` immediately after drawing `default_in_interval`,\
+    \ then use the updated `alive` state for premium accrual at the payment date.\n\
+    - Premium accrual should use the fraction of paths still alive through the payment\
+    \ date, not the start-of-interval alive state. Do not overwrite or reinitialize\
+    \ the default state inside each loop iteration.\n- Keep the body as a single explicit\
+    \ schedule loop plus a final `premium_leg` / `protection_leg` PV aggregation;\
+    \ do not invent helper names or route credit-default pricing through Black76.\n\
+    - Do not import copulas or reinterpret a single-name CDS as nth-to-default, basket\
+    \ CDS, or first-to-default.\n- A good shape is: initialize `premium_leg = 0.0`,\
+    \ `protection_leg = 0.0`, loop over the payment dates, update both legs, then\
+    \ `return protection_leg - premium_leg`.\n## Conventions\n- evaluate() returns\
+    \ a FLOAT — the present value (PV) of the instrument\n- You MUST handle all discounting\
+    \ internally — use `market_state.discount.discount(t)`\n- For forward rates: `market_state.forecast_forward_curve(self._spec.rate_index)`\n\
+    - For vol: `market_state.vol_surface.black_vol(T, strike)`\n- For discount factors:\
+    \ `market_state.discount.discount(t)`\n- `market_state.fx_rates[pair]` returns\
+    \ an `FXRate` wrapper; extract `.spot` before scalar arithmetic or process seeding\n\
+    - Schedule generation: prefer `build_payment_timeline(...)`, `build_observation_timeline(...)`,\
+    \ or `build_period_schedule(...)` for accrual/event routes; use `generate_schedule(start,\
+    \ end, freq)` only for plain date lists with no period semantics\n- Year fractions:\
+    \ `year_fraction(date1, date2, day_count)`\n- Never use wall-clock dates such\
+    \ as `date.today()` or `datetime.now()` inside `evaluate()`; derive valuation\
+    \ time from `market_state` or shared resolver outputs.\n- Black76: `black76_call(F,\
+    \ K, sigma, T)`, `black76_put(F, K, sigma, T)` — undiscounted\n- Black76 digital:\
+    \ `black76_cash_or_nothing_call(F, K, sigma, T)`, `black76_cash_or_nothing_put(F,\
+    \ K, sigma, T)` — undiscounted cash-or-nothing digitals\n- For CDS / nth-to-default:\
+    \ use `market_state.credit_curve.survival_probability(t)` and `market_state.credit_curve.hazard_rate(t)`\
+    \ on an explicit payment/default schedule; do not route credit-default pricing\
+    \ through Black76 call/put primitives.\n- For equity trees: prefer `from trellis.models.equity_option_tree\
+    \ import price_vanilla_equity_option_tree`; the lower-level lattice path is `from\
+    \ trellis.models.trees.lattice import build_spot_lattice, lattice_backward_induction`\n\
+    - For vanilla European PDE routes: prefer `from trellis.models.equity_option_pde\
+    \ import price_vanilla_equity_option_pde`; the lower-level fallback is `from trellis.models.pde.grid\
+    \ import Grid`, `from trellis.models.pde.operator import BlackScholesOperator`,\
+    \ and `from trellis.models.pde.theta_method import theta_method_1d`\n- For rate\
+    \ lattices: prefer helper surfaces such as `price_callable_bond_tree(...)`, `price_bermudan_swaption_tree(...)`,\
+    \ or `price_zcb_option_tree(...)`; the lower-level fallback is `from trellis.models.trees.lattice\
+    \ import build_rate_lattice, lattice_backward_induction`\n- For schedule-dependent\
+    \ rate lattices: `from trellis.models.trees.control import lattice_steps_from_timeline,\
+    \ resolve_lattice_exercise_policy`\n- For MC: `from trellis.models.monte_carlo\
+    \ import MonteCarloEngine`\n- For QMC accelerators: `from trellis.models.qmc import\
+    \ sobol_normals, brownian_bridge`\n- For copulas: `from trellis.models.copulas\
+    \ import GaussianCopula, FactorCopula`\n- Do not invent MonteCarloEngine method\
+    \ strings. Valid `method=` values are `euler`, `milstein`, and `exact`.\n- For\
+    \ Monte Carlo early exercise, use an approved control primitive; do not pretend\
+    \ that `MonteCarloEngine.price(...)` or `method=\"lsm\"` implements early exercise.\
+    \ Approved policy classes: `longstaff_schwartz` [implemented], `tsitsiklis_van_roy`\
+    \ [implemented], `primal_dual_mc` [implemented], `stochastic_mesh` [implemented].\
+    \ Currently implemented in Trellis: `longstaff_schwartz`, `tsitsiklis_van_roy`,\
+    \ `primal_dual_mc`, `stochastic_mesh`.\n- If you use `LaguerreBasis`, import it\
+    \ from `trellis.models.monte_carlo.schemes`, not from `trellis.models.monte_carlo.lsm`.\n\
+    - For FFT/COS pricing, characteristic functions must accept vector `u` and use\
+    \ array-safe numerics such as `numpy`, not scalar `math`/`cmath`.\n- Black76 basis:\
+    \ `black76_asset_or_nothing_call(F, K, sigma, T)`, `black76_asset_or_nothing_put(F,\
+    \ K, sigma, T)`, `black76_cash_or_nothing_call(F, K, sigma, T)`, `black76_cash_or_nothing_put(F,\
+    \ K, sigma, T)` — exact terminal basis claims.\n- For terminal vanilla payoffs,\
+    \ prefer exact basis assembly via `terminal_vanilla_from_basis(...)` from `trellis.models.analytical`.\n\
+    - For FX vanilla options, treat the route as Garman-Kohlhagen: map spot FX and\
+    \ domestic/foreign discount factors to `ResolvedGarmanKohlhagenInputs`, then prefer\
+    \ `garman_kohlhagen_price_raw(spec.option_type, resolved)` from `trellis.models.analytical.fx`;\
+    \ use explicit basis-claim assembly only when the request explicitly needs the\
+    \ decomposition.\n- For cash-or-nothing digital options, use the Black76 digital\
+    \ helpers directly; do not approximate them with vanilla call/put prices or divide\
+    \ by spot.\n- You MUST use only real, approved `trellis.*` imports from the structured\
+    \ generation plan and import registry\n- Treat the compiler-emitted lane obligations\
+    \ in the structured generation plan as the backbone of the implementation.\n-\
+    \ Reuse the listed exact backend bindings when present; otherwise build the smallest\
+    \ lane-consistent kernel that satisfies the construction steps.\n- Do not replace\
+    \ selected primitives with bespoke numerical kernels or alternative Trellis routes\
+    \ unless the plan explicitly permits a new lane implementation.\n- Do not add\
+    \ wildcard imports\n- If the approved modules do not contain what you need, reuse\
+    \ the closest existing implementation and keep the gap explicit instead of inventing\
+    \ a path\n\n## Reference implementations\n\n### Payoff protocol + Cashflows/PresentValue\
+    \ return types\n```python\n\"\"\"Payoff protocol and base classes for pricing\
+    \ instruments.\n\nEvery priceable instrument in Trellis implements the Payoff\
+    \ protocol.\nA payoff takes market data (via MarketState) and returns a present\
+    \ value.\nThis module also provides base classes for two common pricing patterns:\n\
+    \n- ResolvedInputPayoff: for analytical or tree-based pricing where market\n \
+    \ data is extracted once, then fed into a pricing formula.\n- MonteCarloPathPayoff:\
+    \ for simulation-based pricing where paths are\n  generated and payoffs are computed\
+    \ per path then averaged.\n\"\"\"\n\nfrom __future__ import annotations\n\nfrom\
+    \ abc import ABC, abstractmethod\nfrom datetime import date\nfrom typing import\
+    \ Generic, Protocol, TypeVar, runtime_checkable\n\nfrom trellis.core.date_utils\
+    \ import year_fraction\nfrom trellis.core.differentiable import get_numpy\nfrom\
+    \ trellis.core.market_state import MarketState\nfrom trellis.core.types import\
+    \ DayCountC\n# [truncated reference]\n```\n\n### Date utilities used by generated\
+    \ payoffs\n```python\n\"\"\"Date utilities: day count conventions, schedule generation,\
+    \ year fractions.\"\"\"\n\nfrom __future__ import annotations\n\nimport calendar\n\
+    from collections.abc import Iterable\nfrom datetime import date, datetime, timedelta\n\
+    from typing import Union\n\nfrom trellis.core.types import (\n    ContractTimeline,\n\
+    \    DayCountConvention,\n    EventSchedule,\n    Frequency,\n    TimelineRole,\n\
+    )\n\nDateLike = Union[date, datetime]\nExplicitDateInput = ContractTimeline |\
+    \ EventSchedule | Iterable[DateLike | str] | str\n\n\ndef _to_date(d: DateLike)\
+    \ -> date:\n    \"\"\"Normalize ``date``/``datetime`` inputs to plain ``date``\
+    \ objects.\"\"\"\n    if isinstance(d, datetime):\n        return d.date()\n \
+    \   return d\n\n\ndef add_months(dt: DateLike, months: int) -> date:\n    \"\"\
+    \"Add *months* calendar months, clamping the day to the new month's max.\"\"\"\
+    \n    d = _to_date(dt)\n    total_months = d.month - 1 + months\n    year = d.year\
+    \ + total\n# [truncated reference]\n```\n\n### MarketState capabilities and access\
+    \ patterns\n```python\n\"\"\"MarketState: immutable container of market data used\
+    \ for pricing.\n\nA MarketState holds everything a payoff needs to compute a price:\n\
+    discount curves, volatility surfaces, spot prices, credit curves, etc.\nIt is\
+    \ frozen (immutable) so that multiple payoffs can safely share the\nsame market\
+    \ snapshot without risk of accidental modification.\n\"\"\"\n\nfrom __future__\
+    \ import annotations\n\nfrom dataclasses import dataclass\nfrom datetime import\
+    \ date\nfrom typing import TYPE_CHECKING\n\nfrom trellis.core.types import DiscountCurve\n\
+    \nif TYPE_CHECKING:\n    from trellis.core.state_space import StateSpace\n   \
+    \ from trellis.curves.credit_curve import CreditCurve\n    from trellis.curves.forward_curve\
+    \ import ForwardCurve\n    from trellis.instruments.fx import FXRate\n    from\
+    \ trellis.models.vol_surface import VolSurface\n\n\nclass MissingCapabilityError(Exception):\n\
+    \    \"\"\"Raised when a MarketState lacks market data r\n# [truncated reference]\n\
+    ```\n\n### Frequency/day-count types\n```python\n\"\"\"Core protocols, enums,\
+    \ and data structures shared across Trellis.\n\nDefines the fundamental types\
+    \ that most other modules depend on:\nfrequency enums, day count conventions,\
+    \ the DiscountCurve and Instrument\nprotocols, and simple data containers like\
+    \ schedules and pricing results.\n\"\"\"\n\nfrom __future__ import annotations\n\
+    \nfrom dataclasses import dataclass, field\nfrom datetime import date\nfrom enum\
+    \ import Enum\nfrom typing import Protocol, runtime_checkable\n\n# ---------------------------------------------------------------------------\n\
+    # Greek specification types\n# ---------------------------------------------------------------------------\n\
+    \n# What risk sensitivities to compute alongside the price.\n#   None       —\
+    \ price only, no sensitivities\n#   \"all\"      — every known sensitivity (dv01,\
+    \ duration, convexity, etc.)\n#   list[str]  — specific sensitivities by name\
+    \ (e.g. [\"dv01\", \"duration\"])\n# [truncated reference]\n```\n\n[omitted 1\
+    \ additional reference modules]\n\n\n## Output\nReturn the COMPLETE Python module\
+    \ — copy the skeleton exactly, but replace the\n`raise NotImplementedError(...)`\
+    \ line with the actual implementation of `evaluate()`.\nDo NOT change imports,\
+    \ class names, spec fields, or the requirements property.\nOnly implement the\
+    \ evaluate() method body. You may add imports at the top.\nNo markdown fences,\
+    \ no explanation — just the Python code.\n\n## CODE GENERATION FAILURE (your previous\
+    \ module could not be produced):\n- attempt 1: RuntimeError: Agent failed to produce\
+    \ valid module after 1 attempts: SyntaxError at line 153, column 9: expected 'except'\
+    \ or 'finally' block\nCode preview:\n 151:             seed=42,\n 152:       \
+    \  )\n 153:         return float(pv)\n 154:         except TypeError:\n 155: \
+    \            pass\n\nRegenerate the full module from the canonical scaffold. Keep\
+    \ the route-local raw kernel/adaptor split, use only approved Trellis imports,\
+    \ and return valid Python that compiles on the first pass."
+  model: gpt-5.4-mini
+- seq: 2
   function: llm_generate_json
   stage: critic
-  prompt_hash: 8a87b649b3555874b94aa12e0133e63029506e9c83fe0941ceb2bf1fb32c9f55
+  prompt_hash: 7b49a31fe8a5f067d366f34f4a58d787c765e81aacc7af1862a7edf2fdfbfac0
   response_text: '{"check_id": "price_non_negative", "description": "CDS PV can be
-    negative because the implementation returns protection-leg minus premium-leg for
-    a protection buyer, but the spread normalization and sign conventions are not
-    validated against the contract definition.", "severity": "warning", "evidence":
-    "`evaluate()` calls `price_cds_monte_carlo(... spread_quote=spread, recovery=...,
-    ...)` and returns the raw result. The instrument text says \"protection buyer
-    side\" and \"Compute the mark-to-market PV (protection leg minus premium leg)\",
-    but no safeguard ensures the route helper interprets this as a positive buyer
-    PV under the provided spread. If the helper uses a different sign convention,
-    the returned MTM can be negative.", "remediation": "Confirm the route helper''s
-    CDS sign convention against the contract definition and, if needed, map the returned
-    value to buyer-side PV consistently before returning it.", "status": "suspect"}'
+    negative because the implementation computes protection leg minus premium leg
+    for the protection buyer, which is the wrong sign convention for a long CDS payoff
+    under the review check.", "severity": "error", "evidence": "`evaluate()` returns
+    `price_cds_monte_carlo(...)` or `protection_leg - premium_leg` in the fallback
+    path. For a standard protection-buyer CDS, the long position should not be modeled
+    as a non-negative payoff under this check; this code explicitly allows negative
+    MTM when the premium leg exceeds protection.", "remediation": "Align the payoff
+    sign with the intended long CDS convention used by the pricing harness, or if
+    the product is meant to be a buyer-side MTM, ensure the deterministic check is
+    applied to the correct contract orientation and not a long-only non-negative assertion.",
+    "status": "suspect"}'
   prompt_text: "You are a quantitative model validator reviewing agent-generated pricing\
     \ code.\nYour job is to find deterministic review concerns, not to praise. Be\
     \ adversarial.\n\n## Code to review\n```python\n\"\"\"Agent-generated payoff:\
@@ -554,77 +1126,210 @@ calls:
     \ = spec\n\n    @property\n    def spec(self) -> CDSSpec:\n        return self._spec\n\
     \n    @property\n    def requirements(self) -> set[str]:\n        return {\"credit_curve\"\
     , \"discount_curve\"}\n\n    def evaluate(self, market_state: MarketState) ->\
-    \ float:\n        spec = self._spec\n        from trellis.core.differentiable\
-    \ import get_numpy\n        from trellis.models.credit_default_swap import build_cds_schedule,\
-    \ price_cds_monte_carlo\n\n        spec = self._spec\n        np = get_numpy()\n\
-    \n        spread = float(spec.spread)\n        if spread > 1.0:\n            spread\
-    \ *= 1e-4\n\n        schedule = build_cds_schedule(\n            spec.start_date,\n\
-    \            spec.end_date,\n            spec.frequency,\n            day_count=spec.day_count,\n\
-    \            time_origin=spec.start_date,\n        )\n\n        n_paths = int(spec.n_paths)\
-    \ if getattr(spec, \"n_paths\", None) is not None else 250000\n        n_paths\
-    \ = max(n_paths, 10000)\n\n        price = price_cds_monte_carlo(\n          \
-    \  notional=float(spec.notional),\n            spread_quote=spread,\n        \
-    \    recovery=float(spec.recovery),\n            schedule=schedule,\n        \
-    \    credit_curve=market_state.credit_curve,\n            discount_curve=market_state.discount,\n\
-    \            n_paths=n_paths,\n            seed=42,\n        )\n        return\
-    \ float(price)\n\n```\n\n## Instrument description\nBuild a pricer for: CDS pricing:\
-    \ hazard rate MC vs survival prob analytical\n\nStandard single-name CDS, protection\
-    \ buyer side.\nNotional: $10,000,000.  Maturity: 5Y from settlement.\nPremium\
-    \ leg: quarterly payments, Act/360 day count.\nRunning CDS spread: 150 bp.  Recovery\
-    \ rate: 40%.\nUse the investment-grade (IG) credit curve from the market snapshot\n\
-    (as_of 2024-11-15) — this provides term-dependent hazard rates\nbootstrapped from\
-    \ market CDS spreads at 1Y, 3Y, 5Y, and 10Y tenors.\nDo NOT use a flat hazard\
-    \ rate — the model must respect the full\nhazard rate term structure.\nUse the\
-    \ USD OIS curve for risk-free discounting.\nMethod 1: Monte Carlo simulation of\
-    \ default times from the hazard curve.\nMethod 2: Analytical (deterministic) survival-probability\
-    \ integration.\nCompute the mark-to-market PV (protection leg minus premium leg).\n\
-    \nConstruct methods: monte_carlo\nComparison targets: mc_cds (monte_carlo), analytical_cds\
-    \ (analytical)\nCross-validation harness:\n  internal targets: mc_cds, analytical_cds\n\
-    \  external targets: quantlib, financepy\nNew component: cds_pricing\n\nImplementation\
-    \ target: mc_cds\nPreferred method family: monte_carlo\n\nImplementation target:\
-    \ mc_cds\n\n## Shared Knowledge\n## Distilled Review Memory\n\n- Review principles:\n\
-    \  - `P1`: Always calibrate rate trees to the discount curve before pricing\n\
-    \  - `P2`: Callable bonds need issuer_call lattice control, discrete coupons,\
-    \ and exercise=par+coupon\n  - `P3`: Convert vol units at the boundary between\
-    \ market data and model\n- Review checkpoints:\n  - CONVERGENCE: Use at least\
-    \ 10,000 paths. Verify that the standard error is <1% of the price. If path-dependent,\
-    \ use at least 100 time steps per year.\n  - DISCRETE OBSERVATIONS: For instruments\
-    \ with discrete fixing/observation dates (Asian options, barriers), simulate paths\
-    \ that pass through those exact dates. Do not interpolate between steps.\n  -\
-    \ EARLY EXERCISE: For American or Bermudan exercise in Monte Carlo, use an approved\
-    \ optimal-stopping control primitive instead of inventing method=\"lsm\" or treating\
-    \ engine.price(...) as a substitute for early-exercise control. Trellis currently\
-    \ implements longstaff_schwartz. Planned policy classes include tsitsiklis_van_roy,\
-    \ primal_dual_mc, and stochastic_mesh. If the control primitive uses continuation\
-    \ regression, the basis or estimator choice is explicit; LaguerreBasis is a common\
-    \ option, not a mandatory route primitive.\n- Canonical model grammar:\n  - `credit_single_name_reduced_form`\
-    \ -> `Reduced-form single-name credit`\n  - `heston_smile_workflow` -> `Heston`\n\
-    - Known failure traps:\n  - `MC payoff must use market_state.discount` -> The\
-    \ generated Monte Carlo payoff did not call the required market_state.discount\
-    \ API (so the MC harness could not detect discount-curve usage) and the agent-produced\
-    \ module contained a Python indentation/syntax error preventing compilation. Additionally,\
+    \ float:\n        spec = self._spec\n        np = get_numpy()\n        spec =\
+    \ self._spec\n\n        if market_state.credit_curve is None:\n            raise\
+    \ ValueError(\"market_state.credit_curve is required for CDS pricing\")\n    \
+    \    if market_state.discount is None:\n            raise ValueError(\"market_state.discount\
+    \ is required for CDS pricing\")\n\n        spread = float(spec.spread)\n    \
+    \    if spread > 1.0:\n            spread *= 1e-4\n\n        schedule = build_cds_schedule(\n\
+    \            spec.start_date,\n            spec.end_date,\n            spec.frequency,\n\
+    \            spec.day_count,\n            time_origin=spec.start_date,\n     \
+    \   )\n\n        try:\n            pv = price_cds_monte_carlo(\n             \
+    \   notional=float(spec.notional),\n                spread_quote=spread,\n   \
+    \             recovery=float(spec.recovery),\n                schedule=schedule,\n\
+    \                credit_curve=market_state.credit_curve,\n                discount_curve=market_state.discount,\n\
+    \                n_paths=int(spec.n_paths),\n                seed=42,\n      \
+    \      )\n            return float(pv)\n        except TypeError:\n          \
+    \  premium_leg = 0.0\n            protection_leg = 0.0\n            alive = None\n\
+    \            rng = np.random.default_rng(42)\n\n            periods = getattr(schedule,\
+    \ \"periods\", schedule)\n            for period in periods:\n               \
+    \ t_pay = float(period.t_payment)\n                accrual = float(period.accrual_fraction)\n\
+    \                s_prev = float(\n                    market_state.credit_curve.survival_probability(float(period.t_start))\n\
+    \                )\n                s_pay = float(market_state.credit_curve.survival_probability(t_pay))\n\
+    \                default_prob = 0.0 if s_prev <= 0.0 else max(0.0, min(1.0, 1.0\
+    \ - s_pay / s_prev))\n\n                if alive is None:\n                  \
+    \  alive = np.ones(int(spec.n_paths), dtype=bool)\n\n                u = rng.random(int(spec.n_paths))\n\
+    \                default_in_interval = alive & (u < default_prob)\n          \
+    \      protection_leg += (\n                    float(spec.notional)\n       \
+    \             * (1.0 - float(spec.recovery))\n                    * float(market_state.discount.discount(t_pay))\n\
+    \                    * float(np.mean(default_in_interval))\n                )\n\
+    \                alive &= ~default_in_interval\n                premium_leg +=\
+    \ (\n                    float(spec.notional)\n                    * spread\n\
+    \                    * accrual\n                    * float(market_state.discount.discount(t_pay))\n\
+    \                    * float(np.mean(alive))\n                )\n\n          \
+    \  return float(protection_leg - premium_leg)\n\n```\n\n## Instrument description\n\
+    Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical\n\n\
+    Standard single-name CDS, protection buyer side.\nNotional: $10,000,000.  Maturity:\
+    \ 5Y from settlement.\nPremium leg: quarterly payments, Act/360 day count.\nRunning\
+    \ CDS spread: 150 bp.  Recovery rate: 40%.\nUse the investment-grade (IG) credit\
+    \ curve from the market snapshot\n(as_of 2024-11-15) — this provides term-dependent\
+    \ hazard rates\nbootstrapped from market CDS spreads at 1Y, 3Y, 5Y, and 10Y tenors.\n\
+    Do NOT use a flat hazard rate — the model must respect the full\nhazard rate term\
+    \ structure.\nUse the USD OIS curve for risk-free discounting.\nMethod 1: Monte\
+    \ Carlo simulation of default times from the hazard curve.\nMethod 2: Analytical\
+    \ (deterministic) survival-probability integration.\nCompute the mark-to-market\
+    \ PV (protection leg minus premium leg).\n\nConstruct methods: monte_carlo\nComparison\
+    \ targets: mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation\
+    \ harness:\n  internal targets: mc_cds, analytical_cds\n  external targets: quantlib,\
+    \ financepy\nNew component: cds_pricing\n\nImplementation target: mc_cds\nPreferred\
+    \ method family: monte_carlo\n\nImplementation target: mc_cds\n\n## Shared Knowledge\n\
+    ## Shared Review Principles\n\n- **P1**: Always calibrate rate trees to the discount\
+    \ curve before pricing\n- **P2**: Callable bonds need issuer_call lattice control,\
+    \ discrete coupons, and exercise=par+coupon\n- **P3**: Convert vol units at the\
+    \ boundary between market data and model\n- **P4**: Monte Carlo: use ≥10k paths,\
+    \ verify SE <1% of price, use Laguerre basis at high vol (σ ≥ 0.40) to avoid LSM\
+    \ polynomial bias\n- **P5**: Numerical stability: use theta_method_1d with BlackScholesOperator\
+    \ (not legacy crank_nicolson_1d), center COS truncation on first cumulant to prevent\
+    \ overflow\n- **P6**: Cross-validation: measure the actual gap first, then set\
+    \ tolerance to 2-3x the measured gap — never wider than 1% of price or 5bp\n-\
+    \ **P7**: Bermudan swaption: all exercise dates enter the SAME underlying swap\
+    \ (start=first_exercise, end=first_exercise+tenor) — do not create a fresh shorter\
+    \ swap at each exercise date\n- **P8**: OAS computation: keep sigma_HW (vol model)\
+    \ fixed during the spread root-finding loop — only shift the discount curve, never\
+    \ recompute vol from the shifted forward rate\n- **P9**: Separate semantic understanding,\
+    \ method arbitration, and numerical pricing: draft the contract first, choose\
+    \ and explain the method second, and only then call the pricing kernel.\n- **P10**:\
+    \ Bootstrap before pricing: launch with the repo-pinned Python and an explicit\
+    \ shell/workdir, validate imports and module compilation first, and treat interpreter\
+    \ mismatches, shell-launch failures, ModuleNotFoundError, ImportError, and SyntaxError\
+    \ as setup defects, not pricing failures.\n- **P11**: Partial requests are normal:\
+    \ draft the semantic contract first, infer the required-input checklist from the\
+    \ product IR and method requirements, and let the LLM or a mock input provider\
+    \ fill only the missing market-data and convention gaps. Never guess silently.\n\
+    \n## Product Semantics\n\n- Instrument: `cds`\n- Exercise style: `none`\n- State\
+    \ dependence: `schedule_dependent`\n- Model family: `generic`\n- Payoff traits:\
+    \ `credit_risk`, `discounting`, `fixed_coupons`\n\n## REVIEWER CHECKPOINTS\n\n\
+    - CONVERGENCE: Use at least 10,000 paths. Verify that the standard error is <1%\
+    \ of the price. If path-dependent, use at least 100 time steps per year.\n- DISCRETE\
+    \ OBSERVATIONS: For instruments with discrete fixing/observation dates (Asian\
+    \ options, barriers), simulate paths that pass through those exact dates. Do not\
+    \ interpolate between steps.\n- EARLY EXERCISE: For American or Bermudan exercise\
+    \ in Monte Carlo, use an approved optimal-stopping control primitive instead of\
+    \ inventing method=\"lsm\" or treating engine.price(...) as a substitute for early-exercise\
+    \ control. Trellis currently implements longstaff_schwartz. Planned policy classes\
+    \ include tsitsiklis_van_roy, primal_dual_mc, and stochastic_mesh. If the control\
+    \ primitive uses continuation regression, the basis or estimator choice is explicit;\
+    \ LaguerreBasis is a common option, not a mandatory route primitive.\n- CREDIT-SURVIVAL\
+    \ MC: For single-name CDS, sample one default time from the credit_curve hazard\
+    \ rates or survival probabilities on an explicit payment schedule. For nth-to-default,\
+    \ keep multi-name default-order and copula logic explicit instead of reusing the\
+    \ CDS loop. Declare credit_curve and discount_curve requirements and do not route\
+    \ credit-default pricing through Black76 or equity GBM option logic.\n\n## Canonical\
+    \ Model Grammar Hints\n\n### `credit_single_name_reduced_form` — Reduced-form\
+    \ single-name CDS calibration\n- Model: `Reduced-form single-name credit`\n- Quote\
+    \ families: `spread`, `hazard`\n- Calibration workflows: `calibrate_single_name_credit_curve_workflow`\n\
+    - Runtime materialization kind: `credit_curve`\n- Deferred scope: `basket_credit`,\
+    \ `structural_credit`, `hybrid_credit_equity`\n### `heston_smile_workflow` — Heston\
+    \ smile calibration\n- Model: `Heston`\n- Quote families: `implied_vol`\n- Calibration\
+    \ workflows: `calibrate_heston_smile_workflow`\n- Runtime materialization kind:\
+    \ `model_parameter_set`\n- Deferred scope: `term_structure_heston`, `hybrid_equity_rates`\n\
+    ### `local_vol_surface_workflow` — Dupire local-vol workflow\n- Model: `Dupire\
+    \ local vol`\n- Quote families: `implied_vol`\n- Calibration workflows: `calibrate_local_vol_surface_workflow`\n\
+    - Runtime materialization kind: `local_vol_surface`\n- Deferred scope: `stochastic_local_vol`,\
+    \ `local_vol_extrapolation_governance`\n### `rates_bootstrap_curve` — Rates bootstrap\
+    \ curve authority\n- Model: `Rates bootstrap curve bundle`\n- Quote families:\
+    \ `par_rate`, `price`\n- Calibration workflows: `build_bootstrap_solve_request`\n\
+    - Runtime materialization kind: `market_curves`\n- Rates curve roles: `discount_curve`,\
+    \ `forecast_curve`\n- Deferred scope: `cross_currency_bootstrap`, `calendar_complete_bootstrap`\n\
+    ### `sabr_smile_workflow` — SABR smile calibration\n- Model: `SABR smile`\n- Quote\
+    \ families: `implied_vol`\n- Calibration workflows: `calibrate_sabr_smile_workflow`\n\
+    - Deferred scope: `term_structure_sabr`, `direct_market_state_materialization`\n\
+    \n## Shared Failure Memory\n\n### [CRITICAL] MC payoff must use market_state.discount\n\
+    **Symptom:** Engine error lite.monte_carlo_discount_access_missing (no market_state.discount\
+    \ access) and module compile SyntaxError reported.\n**Why:** The generated Monte\
+    \ Carlo payoff did not call the required market_state.discount API (so the MC\
+    \ harness could not detect discount-curve usage) and the agent-produced module\
+    \ contained a Python indentation/syntax error preventing compilation. Additionally,\
     \ the payoff shape requirement (1D per-path PV) was not respected in prior attempts.\n\
-    \  - `MC payoff must use required primitives` -> The generated Monte‑Carlo payoff\
-    \ was implemented as ordinary numpy/opaque operations and did not adapt to the\
-    \ selected assembly's required semantic primitive (trellis.core.differentiable.get_numpy).\
-    \ The payoff also risked returning the wrong shape (e.g. (n_paths, n_steps+1)).\n\
-    \n## Generated Skills\n- [lesson] NthToDefaultPayoff analytical must use Gaussian\
-    \ copula integration, not independent binomial: Use the Gaussian copula conditional\
-    \ independence formula (integrate over common factor Z). This is the analytical\
-    \ counterpart of the GaussianCopula MC. from math import comb from scipy import\
-    \ integrate from scipy.stat...\n\n## Instrument Disambiguation\n- Treat this request\
-    \ as a single-name CDS / credit_default_swap contract.\n- Do not reinterpret CDS\
-    \ here as nth_to_default, basket CDS, first-to-default, or any multi-name credit\
-    \ product.\n- Do not import copula or Gaussian-copula machinery unless the request\
-    \ explicitly says nth-to-default, first-to-default, basket CDS, or multiple reference\
-    \ names.\n\n\n## Compiled Route Contract\n- Method family: `monte_carlo`\n- Instrument\
-    \ type: `cds`\n- Semantic contract: `credit_default_swap`, request=`credit_default_swap`,\
-    \ bridge=`canonical_semantic`, instrument=`cds`, payoff=`credit_default_swap`,\
-    \ structure=`single_reference_entity`\n- Valuation context: market_source=`unbound_market_snapshot`\n\
-    - Lane boundary: family=`monte_carlo`, kind=`exact_target_binding`, timeline_roles=`settlement`,\
-    \ `payment`, `observation`, exact_bindings=`trellis.models.credit_default_swap.build_cds_schedule`,\
-    \ `trellis.models.credit_default_swap.price_cds_monte_carlo`\n- Lowering boundary:\
-    \ family_ir=`CreditDefaultSwapIR`, expr=`ThenExpr`, helpers=`trellis.models.credit_default_swap.build_cds_schedule`,\
+    **Fix:** Implement the MC payoff to explicitly call market_state.discount.discount(time)\
+    \ for all discounting and return a 1D numpy array of per-path present values.\
+    \ Run a quick syntax/lint pass on generated code to eliminate indentation/SyntaxError\
+    \ issues before submission.\n\n### [CRITICAL] MC payoff must use required primitives\n\
+    **Symptom:** Assembly runtime error: generated payoff function did not call trellis.core.differentiable.get_numpy.\n\
+    **Why:** The generated Monte‑Carlo payoff was implemented as ordinary numpy/opaque\
+    \ operations and did not adapt to the selected assembly's required semantic primitive\
+    \ (trellis.core.differentiable.get_numpy). The payoff also risked returning the\
+    \ wrong shape (e.g. (n_paths, n_steps+1)).\n**Fix:** Rebuild the payoff as a thin\
+    \ adapter that calls trellis.core.differentiable.get_numpy to obtain numpy arrays,\
+    \ perform all pathwise computations in numpy, and ensure the payoff returns a\
+    \ 1D array of shape (n_paths,). Follow other assembly constraints (no banned imports,\
+    \ correct output shape).\n\n### [CRITICAL] MC payoff missing required primitives\n\
+    **Symptom:** Assembly failure: generated payoff code did not call trellis.core.date_utils.generate_schedule\
+    \ (assembly.required_primitive_missing).\n**Why:** The payoff implementation was\
+    \ written as a standalone routine and did not act as a thin adapter around required\
+    \ primitives (date utilities and market-state discount access). It also did not\
+    \ follow engine-family expectations for CDS Monte Carlo (e.g., GaussianCopula\
+    \ and market_state.discount usage).\n**Fix:** Rebuild the payoff as a thin adapter\
+    \ that calls trellis.core.date_utils.generate_schedule for schedule creation and\
+    \ uses market_state.discount for discounting; ensure the MC CDS route uses the\
+    \ GaussianCopula kernel and matches the Monte Carlo engine-family primitives.\n\
+    \n### [CRITICAL] Route gate rejected MC CDS\n**Symptom:** Build fails before code\
+    \ generation with route admissibility errors mentioning unsupported_state_tag:recombining_safe\
+    \ and unsupported_state_tag:terminal_markov for credit_default_swap_monte_carlo.\n\
+    **Why:** The selected Monte Carlo CDS route was not admissible under the compiler's\
+    \ state-tag constraints, so the product was never mapped to a valid simulation\
+    \ kernel. This is a route-selection failure rather than a pricing-formula error.\n\
+    **Fix:** Add or select a CDS Monte Carlo route that explicitly supports the required\
+    \ state tags for default-time simulation, or fall back to the validated analytical\
+    \ survival-probability route. Ensure the route descriptor includes the accepted\
+    \ primitives and avoids unsupported recombining/terminal-Markov assumptions.\n\
+    \n### [CRITICAL] MC CDS route gate rejection\n**Symptom:** Build gate fails before\
+    \ code generation with unsupported_state_tag errors for `recombining_safe` and\
+    \ `terminal_markov` on `credit_default_swap_monte_carlo`.\n**Why:** The Monte\
+    \ Carlo CDS route was not admissible for the product's state-tag requirements,\
+    \ so the planner rejected the implementation path before any payoff logic could\
+    \ be built. This usually means the chosen MC template does not declare support\
+    \ for the product's non-recombining, terminal-state-dependent credit payoff structure.\n\
+    **Fix:** Use a CDS-specific Monte Carlo route/template that explicitly supports\
+    \ credit risk and path-dependent default timing, or switch to an analytical survival-probability\
+    \ route for the deterministic benchmark. Ensure the route declares the required\
+    \ state tags and primitives for default-time simulation and discounted cashflow\
+    \ valuation.\n\n### [CRITICAL] MC CDS payoff unit/date bugs\n**Symptom:** Monte‑Carlo\
+    \ PV magnitude is implausible (|PV| > 10 × notional) or negative during smoke\
+    \ tests.\n**Why:** The MC payoff implementation used incorrect units/inputs (e.g.,\
+    \ passed a rate or vol in wrong units) and did not use the supplied MarketState\
+    \ discount factors or required primitives; additionally a Date vs float comparison\
+    \ and generated-code indentation/syntax errors caused the module to fail compilation.\n\
+    **Fix:** Use market_state.discount for present value calculations, validate and\
+    \ scale all cashflows to notional units, convert date differences to year fractions\
+    \ before numerical comparisons, sample default times from the hazard-rate process\
+    \ or convert hazard→survival correctly, and fix generator indentation/format to\
+    \ produce syntactically valid code.\n\n### [CRITICAL] MC payoff unit / discounting\
+    \ mismatch\n**Symptom:** Monte Carlo PV magnitude is absurd (|PV| >> 10 × notional)\
+    \ or negative sign observed (e.g., PV = -65791.71 for notional=100).\n**Why:**\
+    \ The payoff used either incorrect primitives (omitted market_state.discount or\
+    \ wrong time units) or had a unit conversion/sign error (e.g., using instantaneous\
+    \ rates as discounts, mis-specified survival/hazard mapping, or passing vols/rates\
+    \ to the wrong API). As a result, discounting and scaling are wrong and payoffs\
+    \ blow up or flip sign.\n**Fix:** Compute path payoffs using the market_state.discount(t)\
+    \ discount factors, apply the correct hazard→survival→default-time mapping (or\
+    \ sample default times from the hazard), ensure notional units match the market\
+    \ data units, and assert sanity checks (PV within e.g. 10× notional).\n\n\n##\
+    \ Generated Skills\n- [route_hint] credit_default_swap_analytical route helper:\
+    \ Use the selected route helper directly inside `evaluate()`; do not rebuild the\
+    \ process, engine, or discount glue manually. [lineage: derived from cookbook:analytical]\n\
+    - [route_hint] credit_default_swap_monte_carlo route helper: Use the selected\
+    \ route helper directly inside `evaluate()`; do not rebuild the process, engine,\
+    \ or discount glue manually.\n\n## Stage-Aware Skills\n- [route_hint] credit_default_swap_monte_carlo\
+    \ schedule builder: Use `trellis.models.credit_default_swap.build_cds_schedule`\
+    \ to build the route schedule before pricing.\n- [route_hint] credit_default_swap_monte_carlo\
+    \ avoid hard-coded schedule grids: Do not hard-code observation or payment grids\
+    \ inside the payoff body.\n- [lesson] CDS/NTD Monte Carlo must use GaussianCopula,\
+    \ not MonteCarloEngine: Use GaussianCopula.sample_default_times() from trellis.models.copulas.gaussian.\
+    \ Do NOT use MonteCarloEngine for credit products. Canonical NTD Monte Carlo pattern\
+    \ (see trellis/instruments/nth_to_default.py): from trel...\n## Instrument Disambiguation\n\
+    - Treat this request as a single-name CDS / credit_default_swap contract.\n- Do\
+    \ not reinterpret CDS here as nth_to_default, basket CDS, first-to-default, or\
+    \ any multi-name credit product.\n- Do not import copula or Gaussian-copula machinery\
+    \ unless the request explicitly says nth-to-default, first-to-default, basket\
+    \ CDS, or multiple reference names.\n\n\n## Compiled Route Contract\n- Method\
+    \ family: `monte_carlo`\n- Instrument type: `cds`\n- Semantic contract: `credit_default_swap`,\
+    \ request=`credit_default_swap`, bridge=`canonical_semantic`, instrument=`cds`,\
+    \ payoff=`credit_default_swap`, structure=`single_reference_entity`\n- Valuation\
+    \ context: market_source=`unbound_market_snapshot`\n- Lane boundary: family=`monte_carlo`,\
+    \ kind=`exact_target_binding`, timeline_roles=`settlement`, `payment`, `observation`,\
+    \ exact_bindings=`trellis.models.credit_default_swap.build_cds_schedule`, `trellis.models.credit_default_swap.price_cds_monte_carlo`\n\
+    - Lowering boundary: family_ir=`CreditDefaultSwapIR`, expr=`ThenExpr`, helpers=`trellis.models.credit_default_swap.build_cds_schedule`,\
     \ `trellis.models.credit_default_swap.interval_default_probability`, route_alias=`credit_default_swap_monte_carlo`\n\
     - Validation contract: bundle=`monte_carlo:credit_default_swap`, checks=`check_cds_spread_quote_normalization`,\
     \ `check_cds_credit_curve_sensitivity`, `premium_leg_accrues_on_schedule`, `protection_leg_triggers_on_default`,\
@@ -687,11 +1392,108 @@ calls:
     Focus on pricing errors that the deterministic checks can confirm.\nReturn at\
     \ most 3 concerns, ordered by severity.\nReturn ONLY the JSON array."
   model: gpt-5.4-mini
-- seq: 2
+- seq: 3
+  function: llm_generate_json
+  stage: unscoped
+  prompt_hash: 79dae77c8dff429692240394868dec50dbb766b301ffdd72cafc716abba6c6eb
+  response_text: '{"category": "monte_carlo", "title": "Catch exceptions correctly",
+    "mistake": "The code returned inside a try block before the except clause, causing
+    invalid Python syntax.", "why": "This happens when control flow is edited without
+    preserving block structure; the mental model failure is treating a try/except
+    like normal sequential code instead of a required paired construct. The parser
+    expects every try to be immediately followed by except or finally, so misplaced
+    indentation or an early return breaks the module.", "detect": "Run a syntax check
+    or parser before execution and inspect any try/except blocks for proper indentation
+    and ordering.", "fix": "Keep returns outside the try block and ensure every try
+    has a matching except or finally with correct indentation."}'
+  prompt_text: "You fixed these validation failures for a Build a pricer for: CDS\
+    \ pricing: hazard rate MC vs survival prob analytical\n\nStandard single-name\
+    \ CDS, protection buyer side.\nNotional: $10,000,000.  Maturity: 5Y from settlement.\n\
+    Premium leg: quarterly payments, Act/360 day count.\nRunning CDS spread: 150 bp.\
+    \  Recovery rate: 40%.\nUse the investment-grade (IG) credit curve from the market\
+    \ snapshot\n(as_of 2024-11-15) — this provides term-dependent hazard rates\nbootstrapped\
+    \ from market CDS spreads at 1Y, 3Y, 5Y, and 10Y tenors.\nDo NOT use a flat hazard\
+    \ rate — the model must respect the full\nhazard rate term structure.\nUse the\
+    \ USD OIS curve for risk-free discounting.\nMethod 1: Monte Carlo simulation of\
+    \ default times from the hazard curve.\nMethod 2: Analytical (deterministic) survival-probability\
+    \ integration.\nCompute the mark-to-market PV (protection leg minus premium leg).\n\
+    \nConstruct methods: monte_carlo\nComparison targets: mc_cds (monte_carlo), analytical_cds\
+    \ (analytical)\nCross-validation harness:\n  internal targets: mc_cds, analytical_cds\n\
+    \  external targets: quantlib, financepy\nNew component: cds_pricing\n\nImplementation\
+    \ target: mc_cds\nPreferred method family: monte_carlo\n\nImplementation target:\
+    \ mc_cds\n(monte_carlo method):\n\n- attempt 1: RuntimeError: Agent failed to\
+    \ produce valid module after 1 attempts: SyntaxError at line 153, column 9: expected\
+    \ 'except' or 'finally' block\nCode preview:\n 151:             seed=42,\n 152:\
+    \         )\n 153:         return float(pv)\n 154:         except TypeError:\n\
+    \ 155:             pass\n\nDistill ONE concise lesson learned. Return JSON:\n\
+    {\n  \"category\": \"calibration|volatility|backward_induction|finite_differences|monte_carlo|market_data\"\
+    ,\n  \"title\": \"Short title (max 10 words)\",\n  \"mistake\": \"What went wrong\
+    \ (1 sentence)\",\n  \"why\": \"Why it happens — the mental model failure (1-2\
+    \ sentences)\",\n  \"detect\": \"How to detect this issue (1 sentence)\",\n  \"\
+    fix\": \"How to fix it (1 sentence)\"\n}\n\nOnly return JSON, no markdown."
+  model: gpt-5.4-mini
+- seq: 4
   function: llm_generate
   stage: code_generation
-  prompt_hash: c069da6203a1cd88a7747ae13cd8065c2b7994bbdf2c763faf2fe3ad357c8a3b
-  response_text: "spec = self._spec\n\n        if market_state.credit_curve is None:\n\
+  prompt_hash: 672502d9ff304aeef7a90b100afe86bc29cc3bb5e24b16d6c7b5dcc497cdeadb
+  response_text: "\"\"\"Agent-generated payoff: Build a pricer for: CDS pricing: hazard\
+    \ rate MC vs survival prob analytical\n\nStandard single-name CDS, protection\
+    \ buyer side.\nNotional: $10,000,000.  Maturity: 5Y from settlement.\nPremium\
+    \ leg: quarterly payments, Act/360 day count.\nRunning CDS spread: 150 bp.  Recovery\
+    \ rate: 40%.\nUse the investment-grade (IG) credit curve from the market snapshot\n\
+    (as_of 2024-11-15) — this provides term-dependent hazard rates\nbootstrapped from\
+    \ market CDS spreads at 1Y, 3Y, 5Y, and 10Y tenors.\nDo NOT use a flat hazard\
+    \ rate — the model must respect the full\nhazard rate term structure.\nUse the\
+    \ USD OIS curve for risk-free discounting.\nMethod 1: Monte Carlo simulation of\
+    \ default times from the hazard curve.\nMethod 2: Analytical (deterministic) survival-probability\
+    \ integration.\nCompute the mark-to-market PV (protection leg minus premium leg).\n\
+    \nConstruct methods: monte_carlo\nComparison targets: mc_cds (monte_carlo), analytical_cds\
+    \ (analytical)\nCross-validation harness:\n  internal targets: mc_cds, analytical_cds\n\
+    \  external targets: quantlib, financepy\nNew component: cds_pricing\n\nImplementation\
+    \ target: analytical_cds\nPreferred method family: analytical\n\nImplementation\
+    \ target: analytical_cds.\"\"\"\n\nfrom __future__ import annotations\n\nfrom\
+    \ dataclasses import dataclass\nfrom datetime import date\n\nfrom trellis.core.market_state\
+    \ import MarketState\nfrom trellis.core.types import DayCountConvention, Frequency\n\
+    from trellis.models.credit_default_swap import build_cds_schedule, price_cds_analytical\n\
+    \n\n\n@dataclass(frozen=True)\nclass CDSSpec:\n    \"\"\"Specification for Build\
+    \ a pricer for: CDS pricing: hazard rate MC vs survival prob analytical\n\nStandard\
+    \ single-name CDS, protection buyer side.\nNotional: $10,000,000.  Maturity: 5Y\
+    \ from settlement.\nPremium leg: quarterly payments, Act/360 day count.\nRunning\
+    \ CDS spread: 150 bp.  Recovery rate: 40%.\nUse the investment-grade (IG) credit\
+    \ curve from the market snapshot\n(as_of 2024-11-15) — this provides term-dependent\
+    \ hazard rates\nbootstrapped from market CDS spreads at 1Y, 3Y, 5Y, and 10Y tenors.\n\
+    Do NOT use a flat hazard rate — the model must respect the full\nhazard rate term\
+    \ structure.\nUse the USD OIS curve for risk-free discounting.\nMethod 1: Monte\
+    \ Carlo simulation of default times from the hazard curve.\nMethod 2: Analytical\
+    \ (deterministic) survival-probability integration.\nCompute the mark-to-market\
+    \ PV (protection leg minus premium leg).\n\nConstruct methods: monte_carlo\nComparison\
+    \ targets: mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation\
+    \ harness:\n  internal targets: mc_cds, analytical_cds\n  external targets: quantlib,\
+    \ financepy\nNew component: cds_pricing\n\nImplementation target: analytical_cds\n\
+    Preferred method family: analytical\n\nImplementation target: analytical_cds.\"\
+    \"\"\n    notional: float\n    spread: float\n    start_date: date\n    end_date:\
+    \ date\n    recovery: float = 0.4\n    frequency: Frequency = Frequency.QUARTERLY\n\
+    \    day_count: DayCountConvention = DayCountConvention.ACT_360\n\n\nclass CDSPayoff:\n\
+    \    \"\"\"Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical\n\
+    \nStandard single-name CDS, protection buyer side.\nNotional: $10,000,000.  Maturity:\
+    \ 5Y from settlement.\nPremium leg: quarterly payments, Act/360 day count.\nRunning\
+    \ CDS spread: 150 bp.  Recovery rate: 40%.\nUse the investment-grade (IG) credit\
+    \ curve from the market snapshot\n(as_of 2024-11-15) — this provides term-dependent\
+    \ hazard rates\nbootstrapped from market CDS spreads at 1Y, 3Y, 5Y, and 10Y tenors.\n\
+    Do NOT use a flat hazard rate — the model must respect the full\nhazard rate term\
+    \ structure.\nUse the USD OIS curve for risk-free discounting.\nMethod 1: Monte\
+    \ Carlo simulation of default times from the hazard curve.\nMethod 2: Analytical\
+    \ (deterministic) survival-probability integration.\nCompute the mark-to-market\
+    \ PV (protection leg minus premium leg).\n\nConstruct methods: monte_carlo\nComparison\
+    \ targets: mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation\
+    \ harness:\n  internal targets: mc_cds, analytical_cds\n  external targets: quantlib,\
+    \ financepy\nNew component: cds_pricing\n\nImplementation target: analytical_cds\n\
+    Preferred method family: analytical\n\nImplementation target: analytical_cds.\"\
+    \"\"\n\n    def __init__(self, spec: CDSSpec):\n        self._spec = spec\n\n\
+    \    @property\n    def spec(self) -> CDSSpec:\n        return self._spec\n\n\
+    \    @property\n    def requirements(self) -> set[str]:\n        return {\"credit_curve\"\
+    , \"discount_curve\"}\n\n    def evaluate(self, market_state: MarketState) ->\
+    \ float:\n        spec = self._spec\n        if market_state.credit_curve is None:\n\
     \            raise ValueError(\"CDSPayoff requires market_state.credit_curve\"\
     )\n        if market_state.discount is None:\n            raise ValueError(\"\
     CDSPayoff requires market_state.discount\")\n\n        spread = spec.spread\n\
@@ -898,17 +1700,18 @@ calls:
     \ notional, coupon/spread, recovery rate, accrual-on-default rule, settlement\
     \ lag) and add or link an instrument-specific cookbook/evaluate() template plus\
     \ the primitive payoff adapter; ensure discount and hazard inputs use pinned conventions\
-    \ and consistent units.\n\n## Generated Skills\n- [lesson] NthToDefaultPayoff\
-    \ analytical must use Gaussian copula integration, not independent binomial: Use\
-    \ the Gaussian copula conditional independence formula (integrate over common\
-    \ factor Z). This is the analytical counterpart of the GaussianCopula MC. from\
-    \ math import comb from scipy import integrate from scipy.stat...\n\n## Instrument\
-    \ Disambiguation\n- Treat this request as a single-name CDS / credit_default_swap\
-    \ contract.\n- Do not reinterpret CDS here as nth_to_default, basket CDS, first-to-default,\
-    \ or any multi-name credit product.\n- Do not import copula or Gaussian-copula\
-    \ machinery unless the request explicitly says nth-to-default, first-to-default,\
-    \ basket CDS, or multiple reference names.\n## Structured Lane Card\n- Method\
-    \ family: `analytical`\n- Instrument type: `cds`\n- Semantic contract: `credit_default_swap`,\
+    \ and consistent units.\n\n## Generated Skills\n- [route_hint] credit_default_swap_analytical\
+    \ route helper: Use the selected route helper directly inside `evaluate()`; do\
+    \ not rebuild the process, engine, or discount glue manually. [lineage: derived\
+    \ from cookbook:analytical]\n- [route_hint] credit_default_swap_monte_carlo route\
+    \ helper: Use the selected route helper directly inside `evaluate()`; do not rebuild\
+    \ the process, engine, or discount glue manually.\n\n## Instrument Disambiguation\n\
+    - Treat this request as a single-name CDS / credit_default_swap contract.\n- Do\
+    \ not reinterpret CDS here as nth_to_default, basket CDS, first-to-default, or\
+    \ any multi-name credit product.\n- Do not import copula or Gaussian-copula machinery\
+    \ unless the request explicitly says nth-to-default, first-to-default, basket\
+    \ CDS, or multiple reference names.\n## Structured Lane Card\n- Method family:\
+    \ `analytical`\n- Instrument type: `cds`\n- Semantic contract: `credit_default_swap`,\
     \ request=`credit_default_swap`, bridge=`canonical_semantic`, instrument=`cds`,\
     \ payoff=`credit_default_swap`, structure=`single_reference_entity`\n- Valuation\
     \ context: market_source=`unbound_market_snapshot`\n- Lane boundary: family=`analytical`,\
@@ -1115,23 +1918,21 @@ calls:
     \ evaluate() method body. You may add imports at the top.\nNo markdown fences,\
     \ no explanation — just the Python code."
   model: gpt-5.4-mini
-- seq: 3
+- seq: 5
   function: llm_generate_json
   stage: critic
-  prompt_hash: 2a3b514a3bf7279e1bdcf028104e3505571bab8415c5edfc1b06be6eae55bd61
-  response_text: '{"check_id": "price_non_negative", "description": "Premium spread
-    unit normalization is only handled for values above 1.0, so an input of 150 bp
-    is converted to 0.015, but a valid decimal spread below 1.0 would bypass conversion.
-    This creates a unit-convention ambiguity in the only pricing input passed to the
-    analytical CDS routine and can produce a materially wrong PV, including negative
-    values when combined with the wrong spread scale.", "severity": "error", "evidence":
-    "In evaluate(), `spread = spec.spread; if spread > 1.0: spread = spread / 10000.0`
-    and then `spread_quote=spread` is passed to `price_cds_analytical(...)`. The code
-    never validates whether the spec spread is bps or decimal and silently assumes
-    bps only when >1.0.", "remediation": "Require an explicit spread unit contract
-    and normalize deterministically (or reject ambiguous inputs). Pass a clearly defined
-    decimal spread_quote to the analytical pricer after validating the convention.",
-    "status": "suspect"}'
+  prompt_hash: c3e11c996d4501897b8a4f67b70b4f6355563804b37e43b68bbc3fa51ddac5ba
+  response_text: '{"check_id": "price_non_negative", "description": "CDS PV sign is
+    likely inverted for the requested protection buyer payoff.", "severity": "error",
+    "evidence": "The instrument description says to compute PV as \"protection leg
+    minus premium leg\" for a protection buyer, but the code directly returns `price_cds_analytical(...)`
+    without any explicit sign control or validation that the helper follows the requested
+    buyer-side convention. If the helper returns the standard buyer PV, this should
+    be positive; if it returns seller PV or a net premium-leg-minus-protection convention,
+    the output can become negative.", "remediation": "Verify the payoff convention
+    of `price_cds_analytical` and explicitly map it to protection buyer PV before
+    returning; if necessary, negate or re-label the helper output consistently with
+    the requested convention.", "status": "suspect"}'
   prompt_text: "You are a quantitative model validator reviewing agent-generated pricing\
     \ code.\nYour job is to find deterministic review concerns, not to praise. Be\
     \ adversarial.\n\n## Code to review\n```python\n\"\"\"Agent-generated payoff:\
@@ -1191,19 +1992,19 @@ calls:
     \      self._spec = spec\n\n    @property\n    def spec(self) -> CDSSpec:\n  \
     \      return self._spec\n\n    @property\n    def requirements(self) -> set[str]:\n\
     \        return {\"credit_curve\", \"discount_curve\"}\n\n    def evaluate(self,\
-    \ market_state: MarketState) -> float:\n        spec = self._spec\n        spec\
-    \ = self._spec\n\n        if market_state.credit_curve is None:\n            raise\
-    \ ValueError(\"CDSPayoff requires market_state.credit_curve\")\n        if market_state.discount\
-    \ is None:\n            raise ValueError(\"CDSPayoff requires market_state.discount\"\
-    )\n\n        spread = spec.spread\n        if spread > 1.0:\n            spread\
-    \ = spread / 10000.0\n\n        schedule = build_cds_schedule(\n            spec.start_date,\n\
+    \ market_state: MarketState) -> float:\n        spec = self._spec\n        if\
+    \ market_state.credit_curve is None:\n            raise ValueError(\"CDSPayoff\
+    \ requires market_state.credit_curve\")\n        if market_state.discount is None:\n\
+    \            raise ValueError(\"CDSPayoff requires market_state.discount\")\n\n\
+    \        spread = spec.spread\n        if spread > 1.0:\n            spread =\
+    \ spread / 10000.0\n\n        schedule = build_cds_schedule(\n            spec.start_date,\n\
     \            spec.end_date,\n            spec.frequency,\n            spec.day_count,\n\
     \            time_origin=spec.start_date,\n        )\n\n        return float(\n\
     \            price_cds_analytical(\n                notional=spec.notional,\n\
     \                spread_quote=spread,\n                recovery=spec.recovery,\n\
     \                schedule=schedule,\n                credit_curve=market_state.credit_curve,\n\
     \                discount_curve=market_state.discount,\n            )\n      \
-    \  )\n\n```\n\n## Instrument description\nBuild a pricer for: CDS pricing: hazard\
+    \  )\n```\n\n## Instrument description\nBuild a pricer for: CDS pricing: hazard\
     \ rate MC vs survival prob analytical\n\nStandard single-name CDS, protection\
     \ buyer side.\nNotional: $10,000,000.  Maturity: 5Y from settlement.\nPremium\
     \ leg: quarterly payments, Act/360 day count.\nRunning CDS spread: 150 bp.  Recovery\
@@ -1242,20 +2043,21 @@ calls:
     \ an explicit instrument product shape (schedule, accrual, coupon/spread, recovery,\
     \ settlement conventions, payoff adapter) but the request/DSl omitted these fields\
     \ and no instrument-specific cookbook or payoff adapter was available.\n\n## Generated\
-    \ Skills\n- [lesson] NthToDefaultPayoff analytical must use Gaussian copula integration,\
-    \ not independent binomial: Use the Gaussian copula conditional independence formula\
-    \ (integrate over common factor Z). This is the analytical counterpart of the\
-    \ GaussianCopula MC. from math import comb from scipy import integrate from scipy.stat...\n\
-    \n## Instrument Disambiguation\n- Treat this request as a single-name CDS / credit_default_swap\
-    \ contract.\n- Do not reinterpret CDS here as nth_to_default, basket CDS, first-to-default,\
-    \ or any multi-name credit product.\n- Do not import copula or Gaussian-copula\
-    \ machinery unless the request explicitly says nth-to-default, first-to-default,\
-    \ basket CDS, or multiple reference names.\n\n\n## Compiled Route Contract\n-\
-    \ Method family: `analytical`\n- Instrument type: `cds`\n- Semantic contract:\
-    \ `credit_default_swap`, request=`credit_default_swap`, bridge=`canonical_semantic`,\
-    \ instrument=`cds`, payoff=`credit_default_swap`, structure=`single_reference_entity`\n\
-    - Valuation context: market_source=`unbound_market_snapshot`\n- Lane boundary:\
-    \ family=`analytical`, kind=`exact_target_binding`, timeline_roles=`settlement`,\
+    \ Skills\n- [route_hint] credit_default_swap_analytical route helper: Use the\
+    \ selected route helper directly inside `evaluate()`; do not rebuild the process,\
+    \ engine, or discount glue manually. [lineage: derived from cookbook:analytical]\n\
+    - [route_hint] credit_default_swap_monte_carlo route helper: Use the selected\
+    \ route helper directly inside `evaluate()`; do not rebuild the process, engine,\
+    \ or discount glue manually.\n\n## Instrument Disambiguation\n- Treat this request\
+    \ as a single-name CDS / credit_default_swap contract.\n- Do not reinterpret CDS\
+    \ here as nth_to_default, basket CDS, first-to-default, or any multi-name credit\
+    \ product.\n- Do not import copula or Gaussian-copula machinery unless the request\
+    \ explicitly says nth-to-default, first-to-default, basket CDS, or multiple reference\
+    \ names.\n\n\n## Compiled Route Contract\n- Method family: `analytical`\n- Instrument\
+    \ type: `cds`\n- Semantic contract: `credit_default_swap`, request=`credit_default_swap`,\
+    \ bridge=`canonical_semantic`, instrument=`cds`, payoff=`credit_default_swap`,\
+    \ structure=`single_reference_entity`\n- Valuation context: market_source=`unbound_market_snapshot`\n\
+    - Lane boundary: family=`analytical`, kind=`exact_target_binding`, timeline_roles=`settlement`,\
     \ `payment`, `observation`, exact_bindings=`trellis.models.credit_default_swap.build_cds_schedule`,\
     \ `trellis.models.credit_default_swap.price_cds_analytical`\n- Lowering boundary:\
     \ family_ir=`CreditDefaultSwapIR`, expr=`ThenExpr`, helpers=`trellis.models.credit_default_swap.build_cds_schedule`,\

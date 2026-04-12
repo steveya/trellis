@@ -1,5 +1,5 @@
 meta:
-  recorded_at: '2026-04-12T08:14:00.121990+00:00'
+  recorded_at: '2026-04-12T12:44:24.400878+00:00'
   provider: openai
   model: gpt-5.4-mini
   total_calls: 4
@@ -8,12 +8,13 @@ calls:
 - seq: 0
   function: llm_generate
   stage: code_generation
-  prompt_hash: 2a64647692922bb86ead207f5c5e25b8e2721a4ea9021cfee65e8932d0b6d140
-  response_text: "from trellis.models.equity_option_pde import price_vanilla_equity_option_pde\n\
-    \n        spec = self._spec\n        if spec.option_type.lower() not in {\"call\"\
-    , \"put\"}:\n            raise ValueError(f\"Unsupported option_type: {spec.option_type!r}\"\
-    )\n\n        return float(price_vanilla_equity_option_pde(market_state, spec,\
-    \ theta=0.5))"
+  prompt_hash: d5c83af4493fd91969606ace2708b4ce85e15cee9c05ba34eda4d6dc02475bb0
+  response_text: "spec = self._spec\n        from trellis.models.equity_option_pde\
+    \ import price_vanilla_equity_option_pde\n\n        if spec.option_type.lower()\
+    \ not in {\"call\", \"put\"}:\n            raise ValueError(f\"Unsupported option_type:\
+    \ {spec.option_type!r}\")\n\n        price = price_vanilla_equity_option_pde(\n\
+    \            market_state,\n            spec,\n            theta=0.5,\n      \
+    \  )\n        return float(price)"
   prompt_text: "You are implementing the evaluate() method for `EuropeanOptionAnalyticalPayoff`\
     \ in the Trellis pricing library.\n\n## Complete module (skeleton — everything\
     \ is fixed except evaluate)\n```python\n\"\"\"Agent-generated payoff: Build a\
@@ -194,12 +195,12 @@ calls:
     \ n_t=n_t), construct BlackScholesOperator(lambda s, t: sigma, lambda t: r), call\
     \ theta_method_1d(grid, op, terminal, theta=0.5, lower_bc_fn=..., upper_bc_fn=...),\
     \ then interpolate the returned vector with np.interp(spec.spot, grid.x, V) before\
-    \ multiplying by notional.\n\n## Generated Skills\n- [cookbook] fft_pricing: Characteristic-function\
-    \ pricing for European-style options under models such as Heston\n- [lesson] Unit\
-    \ conversion causes huge PV: Enforce and document input conventions (vol as decimal,\
-    \ discount curve vs zero rate semantics, notional scaling), derive r from discount\
-    \ factors via r = -ln(df)/T or use forward/Black76 consistently, add unit/conversi...\n\
-    ## Structured Lane Card\n- Method family: `pde_solver`\n- Instrument type: `european_option`\n\
+    \ multiplying by notional.\n\n## Generated Skills\n- [route_hint] vanilla_equity_theta_pde\
+    \ route helper: Use the selected route helper directly inside `evaluate()`; do\
+    \ not rebuild the process, engine, or discount glue manually. [lineage: derived\
+    \ from cookbook:pde_solver]\n- [cookbook] fft_pricing: Characteristic-function\
+    \ pricing for European-style options under models such as Heston\n## Structured\
+    \ Lane Card\n- Method family: `pde_solver`\n- Instrument type: `european_option`\n\
     - Lane boundary: family=`pde_solver`, kind=`exact_target_binding`, exact_bindings=`trellis.models.equity_option_pde.price_vanilla_equity_option_pde`\n\
     - Lane obligations:\n  - Lane family: `pde_solver`\n  - Plan kind: `exact_target_binding`\n\
     \  - Market bindings: `black_vol_surface`, `discount_curve`\n  - State obligations:\
@@ -365,22 +366,19 @@ calls:
 - seq: 1
   function: llm_generate_json
   stage: critic
-  prompt_hash: c5ee52114675b0788354000d53d529708f33eb71f179655b5c3ae63b0ebefb90
-  response_text: '{"check_id": "volatility_input_usage", "description": "The PDE pricer
-    likely ignores or mishandles volatility/state inputs because the spec is never
-    populated from the instrument description and the code delegates directly to the
-    backend with no explicit construction of the required market state fields.", "severity":
-    "warning", "evidence": "`EuropeanOptionSpec` only stores `notional, spot, strike,
-    expiry_date, option_type, day_count`; there is no volatility field, and `evaluate()`
-    simply calls `price_vanilla_equity_option_pde(market_state, spec, theta=0.5)`
-    without any local wiring of `black_vol_surface` or `expiry_black_vol`. Under the
-    compiled route contract, the backend requires `black_vol_surface`, `discount_curve`,
-    `spot`, `strike`, `expiry`, and `expiry_black_vol`. If the generated market state
-    does not supply these consistently, the price will be effectively insensitive
-    to volatility or fail route validation.", "remediation": "Extend the spec/market-state
-    plumbing to explicitly carry and bind the flat volatility surface and expiry vol
-    into the PDE backend inputs, and verify the route helper receives the required
-    fields.", "status": "suspect"}'
+  prompt_hash: f044b6b44be8242bbc1b37f3a13874fb5fca8c8be3258e5da5d6d3e539173fc2
+  response_text: '{"check_id": "volatility_input_usage", "description": "Volatility
+    is not explicitly wired into the PDE pricer input path, so the implementation
+    may be insensitive to vol shifts.", "severity": "error", "evidence": "`evaluate()`
+    only forwards `market_state` and `spec` to `price_vanilla_equity_option_pde(...)`
+    and this wrapper does not construct or validate the required `expiry_black_vol`
+    state; the spec/requirements contract says the backend needs `black_vol_surface`
+    and `expiry_black_vol`, but the code never references or enforces them. If the
+    helper cannot extract vol from `market_state`, pricing will not respond to volatility
+    changes.", "remediation": "Ensure the market state passed into `price_vanilla_equity_option_pde`
+    contains the option expiry Black vol input and that the wrapper validates/threads
+    the correct volatility surface or expiry vol through the exact backend binding.",
+    "status": "suspect"}'
   prompt_text: "You are a quantitative model validator reviewing agent-generated pricing\
     \ code.\nYour job is to find deterministic review concerns, not to praise. Be\
     \ adversarial.\n\n## Code to review\n```python\n\"\"\"Agent-generated payoff:\
@@ -432,29 +430,31 @@ calls:
     \    @property\n    def spec(self) -> EuropeanOptionSpec:\n        return self._spec\n\
     \n    @property\n    def requirements(self) -> set[str]:\n        return {\"black_vol_surface\"\
     , \"discount_curve\"}\n\n    def evaluate(self, market_state: MarketState) ->\
-    \ float:\n        spec = self._spec\n        spec = self._spec\n        if spec.option_type.lower()\
+    \ float:\n        spec = self._spec\n        spec = self._spec\n        from trellis.models.equity_option_pde\
+    \ import price_vanilla_equity_option_pde\n\n        if spec.option_type.lower()\
     \ not in {\"call\", \"put\"}:\n            raise ValueError(f\"Unsupported option_type:\
-    \ {spec.option_type!r}\")\n\n        return float(price_vanilla_equity_option_pde(market_state,\
-    \ spec, theta=0.5))\n\n```\n\n## Instrument description\nBuild a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nEuropean call option on\
-    \ a non-dividend-paying stock.\nS0=100, K=105, T=1Y, risk-free rate r=5%, volatility\
-    \ sigma=20%.\nSolve with the Black-Scholes PDE operator using Crank-Nicolson\n\
-    (theta=0.5) and fully implicit (theta=1.0) on a 200-point spot grid\n× 100 time\
-    \ steps.\nMeasure convergence order by doubling the grid: the CN scheme should\n\
-    show O(dt^2 + dS^2) convergence and the implicit scheme O(dt + dS^2).\nCompare\
-    \ both to the Black-Scholes analytical price.\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_0.5\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_0.5\n\n## Shared Knowledge\n\
-    ## Distilled Review Memory\n\n- Review principles:\n  - `P1`: Always calibrate\
-    \ rate trees to the discount curve before pricing\n  - `P2`: Callable bonds need\
-    \ issuer_call lattice control, discrete coupons, and exercise=par+coupon\n  -\
-    \ `P3`: Convert vol units at the boundary between market data and model\n- Review\
-    \ checkpoints:\n  - GRID: Use at least 200 spatial points and 200+ time steps.\
-    \ For barrier options, use non-uniform grid concentrated near the barrier.\n \
-    \ - BOUNDARY CONDITIONS: Set V(0,t)=0 for calls, V(S_max,t)=S_max-K*exp(-r*(T-t))\
+    \ {spec.option_type!r}\")\n\n        price = price_vanilla_equity_option_pde(\n\
+    \            market_state,\n            spec,\n            theta=0.5,\n      \
+    \  )\n        return float(price)\n\n```\n\n## Instrument description\nBuild a\
+    \ pricer for: European call: theta-method convergence order measurement\n\nEuropean\
+    \ call option on a non-dividend-paying stock.\nS0=100, K=105, T=1Y, risk-free\
+    \ rate r=5%, volatility sigma=20%.\nSolve with the Black-Scholes PDE operator\
+    \ using Crank-Nicolson\n(theta=0.5) and fully implicit (theta=1.0) on a 200-point\
+    \ spot grid\n× 100 time steps.\nMeasure convergence order by doubling the grid:\
+    \ the CN scheme should\nshow O(dt^2 + dS^2) convergence and the implicit scheme\
+    \ O(dt + dS^2).\nCompare both to the Black-Scholes analytical price.\n\nConstruct\
+    \ methods: pde_solver\nComparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver),\
+    \ black_scholes (analytical)\nCross-validation harness:\n  internal targets: theta_0.5,\
+    \ theta_1.0\n  analytical benchmark: black_scholes\n  external targets: quantlib\n\
+    New component: convergence_order_diagnostic\n\nImplementation target: theta_0.5\n\
+    Preferred method family: pde_solver\n\nImplementation target: theta_0.5\n\n##\
+    \ Shared Knowledge\n## Distilled Review Memory\n\n- Review principles:\n  - `P1`:\
+    \ Always calibrate rate trees to the discount curve before pricing\n  - `P2`:\
+    \ Callable bonds need issuer_call lattice control, discrete coupons, and exercise=par+coupon\n\
+    \  - `P3`: Convert vol units at the boundary between market data and model\n-\
+    \ Review checkpoints:\n  - GRID: Use at least 200 spatial points and 200+ time\
+    \ steps. For barrier options, use non-uniform grid concentrated near the barrier.\n\
+    \  - BOUNDARY CONDITIONS: Set V(0,t)=0 for calls, V(S_max,t)=S_max-K*exp(-r*(T-t))\
     \ for calls. For puts: V(0,t)=K*exp(-r*(T-t)), V(S_max,t)=0.\n  - STABILITY: Crank-Nicolson\
     \ (theta=0.5) is second-order but may oscillate near discontinuities. Use Rannacher\
     \ smoothing (2-4 implicit steps at start) for digital/barrier payoffs.\n- Canonical\
@@ -468,13 +468,12 @@ calls:
     \ signature and then read the wrong element of the result instead of interpolating\
     \ the returned solution over grid.x. The actual API is theta_method_1d(grid, operator,\
     \ terminal_condition, theta=..., lower_bc_fn=..., upper_bc_fn=...), and it returns\
-    \ the full solution vector at t=0.\n\n## Generated Skills\n- [lesson] Unit conversion\
-    \ causes huge PV: Enforce and document input conventions (vol as decimal, discount\
-    \ curve vs zero rate semantics, notional scaling), derive r from discount factors\
-    \ via r = -ln(df)/T or use forward/Black76 consistently, add unit/conversi...\n\
-    \n\n## Compiled Route Contract\n- Method family: `pde_solver`\n- Instrument type:\
-    \ `european_option`\n- Lane boundary: family=`pde_solver`, kind=`exact_target_binding`,\
-    \ exact_bindings=`trellis.models.equity_option_pde.price_vanilla_equity_option_pde`\n\
+    \ the full solution vector at t=0.\n\n## Generated Skills\n- [route_hint] vanilla_equity_theta_pde\
+    \ route helper: Use the selected route helper directly inside `evaluate()`; do\
+    \ not rebuild the process, engine, or discount glue manually. [lineage: derived\
+    \ from cookbook:pde_solver]\n\n\n## Compiled Route Contract\n- Method family:\
+    \ `pde_solver`\n- Instrument type: `european_option`\n- Lane boundary: family=`pde_solver`,\
+    \ kind=`exact_target_binding`, exact_bindings=`trellis.models.equity_option_pde.price_vanilla_equity_option_pde`\n\
     - Lane obligations:\n  - Lane family: `pde_solver`\n  - Plan kind: `exact_target_binding`\n\
     \  - Market bindings: `black_vol_surface`, `discount_curve`\n  - State obligations:\
     \ `spot`, `strike`, `expiry`, `expiry_black_vol`\n  - Exact backend bindings:\n\
@@ -518,58 +517,11 @@ calls:
 - seq: 2
   function: llm_generate
   stage: code_generation
-  prompt_hash: aa9e8e8aecd2e3f05aa0fe6bcd60915b4c332bfc498c5b90a8e4654b8c0d04de
-  response_text: "\"\"\"Agent-generated payoff: Build a pricer for: European call:\
-    \ theta-method convergence order measurement\n\nEuropean call option on a non-dividend-paying\
-    \ stock.\nS0=100, K=105, T=1Y, risk-free rate r=5%, volatility sigma=20%.\nSolve\
-    \ with the Black-Scholes PDE operator using Crank-Nicolson\n(theta=0.5) and fully\
-    \ implicit (theta=1.0) on a 200-point spot grid\n× 100 time steps.\nMeasure convergence\
-    \ order by doubling the grid: the CN scheme should\nshow O(dt^2 + dS^2) convergence\
-    \ and the implicit scheme O(dt + dS^2).\nCompare both to the Black-Scholes analytical\
-    \ price.\n\nConstruct methods: pde_solver\nComparison targets: theta_0.5 (pde_solver),\
-    \ theta_1.0 (pde_solver), black_scholes (analytical)\nCross-validation harness:\n\
-    \  internal targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n\
-    \  external targets: quantlib\nNew component: convergence_order_diagnostic\n\n\
-    Implementation target: theta_1.0\nPreferred method family: pde_solver\n\nImplementation\
-    \ target: theta_1.0.\"\"\"\n\nfrom __future__ import annotations\n\nfrom dataclasses\
-    \ import dataclass\nfrom datetime import date\n\nfrom trellis.core.market_state\
-    \ import MarketState\nfrom trellis.core.types import DayCountConvention\nfrom\
-    \ trellis.models.equity_option_pde import price_vanilla_equity_option_pde\n\n\n\
-    \n@dataclass(frozen=True)\nclass EuropeanOptionSpec:\n    \"\"\"Specification\
-    \ for Build a pricer for: European call: theta-method convergence order measurement\n\
-    \nEuropean call option on a non-dividend-paying stock.\nS0=100, K=105, T=1Y, risk-free\
-    \ rate r=5%, volatility sigma=20%.\nSolve with the Black-Scholes PDE operator\
-    \ using Crank-Nicolson\n(theta=0.5) and fully implicit (theta=1.0) on a 200-point\
-    \ spot grid\n× 100 time steps.\nMeasure convergence order by doubling the grid:\
-    \ the CN scheme should\nshow O(dt^2 + dS^2) convergence and the implicit scheme\
-    \ O(dt + dS^2).\nCompare both to the Black-Scholes analytical price.\n\nConstruct\
-    \ methods: pde_solver\nComparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver),\
-    \ black_scholes (analytical)\nCross-validation harness:\n  internal targets: theta_0.5,\
-    \ theta_1.0\n  analytical benchmark: black_scholes\n  external targets: quantlib\n\
-    New component: convergence_order_diagnostic\n\nImplementation target: theta_1.0\n\
-    Preferred method family: pde_solver\n\nImplementation target: theta_1.0.\"\"\"\
-    \n    notional: float\n    spot: float\n    strike: float\n    expiry_date: date\n\
-    \    option_type: str = 'call'\n    day_count: DayCountConvention = DayCountConvention.ACT_365\n\
-    \n\nclass EuropeanOptionAnalyticalPayoff:\n    \"\"\"Build a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nEuropean call option on\
-    \ a non-dividend-paying stock.\nS0=100, K=105, T=1Y, risk-free rate r=5%, volatility\
-    \ sigma=20%.\nSolve with the Black-Scholes PDE operator using Crank-Nicolson\n\
-    (theta=0.5) and fully implicit (theta=1.0) on a 200-point spot grid\n× 100 time\
-    \ steps.\nMeasure convergence order by doubling the grid: the CN scheme should\n\
-    show O(dt^2 + dS^2) convergence and the implicit scheme O(dt + dS^2).\nCompare\
-    \ both to the Black-Scholes analytical price.\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_1.0\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_1.0.\"\"\"\n\n   \
-    \ def __init__(self, spec: EuropeanOptionSpec):\n        self._spec = spec\n\n\
-    \    @property\n    def spec(self) -> EuropeanOptionSpec:\n        return self._spec\n\
-    \n    @property\n    def requirements(self) -> set[str]:\n        return {\"black_vol_surface\"\
-    , \"discount_curve\"}\n\n    def evaluate(self, market_state: MarketState) ->\
-    \ float:\n        spec = self._spec\n        return float(\n            price_vanilla_equity_option_pde(\n\
-    \                market_state,\n                spec,\n                theta=1.0,\n\
-    \            )\n        )"
+  prompt_hash: 8e108fde98618ef2e02e0ea63081d7a891510ae7db1b2921dfc872ab62915680
+  response_text: "spec = self._spec\n        from trellis.models.equity_option_pde\
+    \ import price_vanilla_equity_option_pde\n\n        return float(\n          \
+    \  price_vanilla_equity_option_pde(\n                market_state,\n         \
+    \       spec,\n                theta=1.0,\n            )\n        )"
   prompt_text: "You are implementing the evaluate() method for `EuropeanOptionAnalyticalPayoff`\
     \ in the Trellis pricing library.\n\n## Complete module (skeleton — everything\
     \ is fixed except evaluate)\n```python\n\"\"\"Agent-generated payoff: Build a\
@@ -750,12 +702,12 @@ calls:
     \ n_t=n_t), construct BlackScholesOperator(lambda s, t: sigma, lambda t: r), call\
     \ theta_method_1d(grid, op, terminal, theta=0.5, lower_bc_fn=..., upper_bc_fn=...),\
     \ then interpolate the returned vector with np.interp(spec.spot, grid.x, V) before\
-    \ multiplying by notional.\n\n## Generated Skills\n- [cookbook] fft_pricing: Characteristic-function\
-    \ pricing for European-style options under models such as Heston\n- [lesson] Unit\
-    \ conversion causes huge PV: Enforce and document input conventions (vol as decimal,\
-    \ discount curve vs zero rate semantics, notional scaling), derive r from discount\
-    \ factors via r = -ln(df)/T or use forward/Black76 consistently, add unit/conversi...\n\
-    ## Structured Lane Card\n- Method family: `pde_solver`\n- Instrument type: `european_option`\n\
+    \ multiplying by notional.\n\n## Generated Skills\n- [route_hint] vanilla_equity_theta_pde\
+    \ route helper: Use the selected route helper directly inside `evaluate()`; do\
+    \ not rebuild the process, engine, or discount glue manually. [lineage: derived\
+    \ from cookbook:pde_solver]\n- [cookbook] fft_pricing: Characteristic-function\
+    \ pricing for European-style options under models such as Heston\n## Structured\
+    \ Lane Card\n- Method family: `pde_solver`\n- Instrument type: `european_option`\n\
     - Lane boundary: family=`pde_solver`, kind=`exact_target_binding`, exact_bindings=`trellis.models.equity_option_pde.price_vanilla_equity_option_pde`\n\
     - Lane obligations:\n  - Lane family: `pde_solver`\n  - Plan kind: `exact_target_binding`\n\
     \  - Market bindings: `black_vol_surface`, `discount_curve`\n  - State obligations:\
@@ -921,19 +873,19 @@ calls:
 - seq: 3
   function: llm_generate_json
   stage: critic
-  prompt_hash: b91fc4607ae31a7dac3d88185dba5b197a250f5d4e064ab30b82cb41ef290c33
+  prompt_hash: 02f7a7ca3391193cbd871fe83e5f7381edd7f0c86a2864333407d1f38b7ea838
   response_text: '{"check_id": "volatility_input_usage", "description": "Volatility
-    may be effectively ignored or miswired in the PDE route because the wrapper only
-    passes `market_state` and `spec` to a generic backend helper without any explicit
-    linkage to the required `expiry_black_vol` state.", "severity": "warning", "evidence":
-    "`evaluate()` calls `price_vanilla_equity_option_pde(market_state, spec, theta=1.0)`
-    directly, while the compiled route contract explicitly requires the `expiry_black_vol`
-    state obligation and warns about prior operator-signature mismatch / unit-scale
-    drift. There is no code here that verifies the backend is consuming the volatility
-    from `market_state` rather than defaulting or dropping it.", "remediation": "Ensure
-    the market state passed into `price_vanilla_equity_option_pde` contains and uses
-    the expiry volatility, and add an explicit sanity check that price changes materially
-    when vol is varied.", "status": "suspect"}'
+    is not surfaced in the spec or explicitly bound in the pricer, so the PDE price
+    may be insensitive to market vol inputs.", "severity": "error", "evidence": "`EuropeanOptionSpec`
+    only stores notional, spot, strike, expiry_date, option_type, and day_count. `evaluate()`
+    forwards `market_state` and `spec` directly to `price_vanilla_equity_option_pde(...)`
+    with no explicit sigma/vol extraction or validation. Given the compiled route
+    obligations require `expiry_black_vol`, this code can easily end up pricing without
+    actually using volatility in the boundary state or solver setup.", "remediation":
+    "Ensure the market state passed into the route helper includes the required flat/term
+    vol surface or expiry_black_vol, and verify the helper consumes it; if necessary,
+    add explicit vol propagation/checks before calling the PDE pricer.", "status":
+    "suspect"}'
   prompt_text: "You are a quantitative model validator reviewing agent-generated pricing\
     \ code.\nYour job is to find deterministic review concerns, not to praise. Be\
     \ adversarial.\n\n## Code to review\n```python\n\"\"\"Agent-generated payoff:\
@@ -985,48 +937,49 @@ calls:
     \    @property\n    def spec(self) -> EuropeanOptionSpec:\n        return self._spec\n\
     \n    @property\n    def requirements(self) -> set[str]:\n        return {\"black_vol_surface\"\
     , \"discount_curve\"}\n\n    def evaluate(self, market_state: MarketState) ->\
-    \ float:\n        spec = self._spec\n        return float(\n            price_vanilla_equity_option_pde(\n\
-    \                market_state,\n                spec,\n                theta=1.0,\n\
-    \            )\n        )\n```\n\n## Instrument description\nBuild a pricer for:\
-    \ European call: theta-method convergence order measurement\n\nEuropean call option\
-    \ on a non-dividend-paying stock.\nS0=100, K=105, T=1Y, risk-free rate r=5%, volatility\
-    \ sigma=20%.\nSolve with the Black-Scholes PDE operator using Crank-Nicolson\n\
-    (theta=0.5) and fully implicit (theta=1.0) on a 200-point spot grid\n× 100 time\
-    \ steps.\nMeasure convergence order by doubling the grid: the CN scheme should\n\
-    show O(dt^2 + dS^2) convergence and the implicit scheme O(dt + dS^2).\nCompare\
-    \ both to the Black-Scholes analytical price.\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_1.0\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_1.0\n\n## Shared Knowledge\n\
-    ## Distilled Review Memory\n\n- Review principles:\n  - `P1`: Always calibrate\
-    \ rate trees to the discount curve before pricing\n  - `P2`: Callable bonds need\
-    \ issuer_call lattice control, discrete coupons, and exercise=par+coupon\n  -\
-    \ `P3`: Convert vol units at the boundary between market data and model\n- Review\
-    \ checkpoints:\n  - GRID: Use at least 200 spatial points and 200+ time steps.\
-    \ For barrier options, use non-uniform grid concentrated near the barrier.\n \
-    \ - BOUNDARY CONDITIONS: Set V(0,t)=0 for calls, V(S_max,t)=S_max-K*exp(-r*(T-t))\
-    \ for calls. For puts: V(0,t)=K*exp(-r*(T-t)), V(S_max,t)=0.\n  - STABILITY: Crank-Nicolson\
-    \ (theta=0.5) is second-order but may oscillate near discontinuities. Use Rannacher\
-    \ smoothing (2-4 implicit steps at start) for digital/barrier payoffs.\n- Canonical\
-    \ model grammar:\n  - `local_vol_surface_workflow` -> `Dupire local vol`\n  -\
-    \ `sabr_smile_workflow` -> `SABR smile`\n- Known failure traps:\n  - `BlackScholesOperator\
-    \ constructor mismatch` -> The generated code treated the PDE operator as if it\
-    \ accepted scalar 'r' and 'sigma' keywords, but trellis.models.pde.operator.BlackScholesOperator\
-    \ actually expects callables '(sigma_fn, r_fn)'. The mismatch caused constructor\
-    \ failure during module build.\n  - `PDE price blow-up from unit/scale mismatch`\
-    \ -> The generated PDE branch called theta_method_1d with the obsolete operator/s_grid/t_grid/boundary_conditions\
+    \ float:\n        spec = self._spec\n        spec = self._spec\n        from trellis.models.equity_option_pde\
+    \ import price_vanilla_equity_option_pde\n\n        return float(\n          \
+    \  price_vanilla_equity_option_pde(\n                market_state,\n         \
+    \       spec,\n                theta=1.0,\n            )\n        )\n\n```\n\n\
+    ## Instrument description\nBuild a pricer for: European call: theta-method convergence\
+    \ order measurement\n\nEuropean call option on a non-dividend-paying stock.\n\
+    S0=100, K=105, T=1Y, risk-free rate r=5%, volatility sigma=20%.\nSolve with the\
+    \ Black-Scholes PDE operator using Crank-Nicolson\n(theta=0.5) and fully implicit\
+    \ (theta=1.0) on a 200-point spot grid\n× 100 time steps.\nMeasure convergence\
+    \ order by doubling the grid: the CN scheme should\nshow O(dt^2 + dS^2) convergence\
+    \ and the implicit scheme O(dt + dS^2).\nCompare both to the Black-Scholes analytical\
+    \ price.\n\nConstruct methods: pde_solver\nComparison targets: theta_0.5 (pde_solver),\
+    \ theta_1.0 (pde_solver), black_scholes (analytical)\nCross-validation harness:\n\
+    \  internal targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n\
+    \  external targets: quantlib\nNew component: convergence_order_diagnostic\n\n\
+    Implementation target: theta_1.0\nPreferred method family: pde_solver\n\nImplementation\
+    \ target: theta_1.0\n\n## Shared Knowledge\n## Distilled Review Memory\n\n- Review\
+    \ principles:\n  - `P1`: Always calibrate rate trees to the discount curve before\
+    \ pricing\n  - `P2`: Callable bonds need issuer_call lattice control, discrete\
+    \ coupons, and exercise=par+coupon\n  - `P3`: Convert vol units at the boundary\
+    \ between market data and model\n- Review checkpoints:\n  - GRID: Use at least\
+    \ 200 spatial points and 200+ time steps. For barrier options, use non-uniform\
+    \ grid concentrated near the barrier.\n  - BOUNDARY CONDITIONS: Set V(0,t)=0 for\
+    \ calls, V(S_max,t)=S_max-K*exp(-r*(T-t)) for calls. For puts: V(0,t)=K*exp(-r*(T-t)),\
+    \ V(S_max,t)=0.\n  - STABILITY: Crank-Nicolson (theta=0.5) is second-order but\
+    \ may oscillate near discontinuities. Use Rannacher smoothing (2-4 implicit steps\
+    \ at start) for digital/barrier payoffs.\n- Canonical model grammar:\n  - `local_vol_surface_workflow`\
+    \ -> `Dupire local vol`\n  - `sabr_smile_workflow` -> `SABR smile`\n- Known failure\
+    \ traps:\n  - `BlackScholesOperator constructor mismatch` -> The generated code\
+    \ treated the PDE operator as if it accepted scalar 'r' and 'sigma' keywords,\
+    \ but trellis.models.pde.operator.BlackScholesOperator actually expects callables\
+    \ '(sigma_fn, r_fn)'. The mismatch caused constructor failure during module build.\n\
+    \  - `PDE price blow-up from unit/scale mismatch` -> The generated PDE branch\
+    \ called theta_method_1d with the obsolete operator/s_grid/t_grid/boundary_conditions\
     \ signature and then read the wrong element of the result instead of interpolating\
     \ the returned solution over grid.x. The actual API is theta_method_1d(grid, operator,\
     \ terminal_condition, theta=..., lower_bc_fn=..., upper_bc_fn=...), and it returns\
-    \ the full solution vector at t=0.\n\n## Generated Skills\n- [lesson] Unit conversion\
-    \ causes huge PV: Enforce and document input conventions (vol as decimal, discount\
-    \ curve vs zero rate semantics, notional scaling), derive r from discount factors\
-    \ via r = -ln(df)/T or use forward/Black76 consistently, add unit/conversi...\n\
-    \n\n## Compiled Route Contract\n- Method family: `pde_solver`\n- Instrument type:\
-    \ `european_option`\n- Lane boundary: family=`pde_solver`, kind=`exact_target_binding`,\
-    \ exact_bindings=`trellis.models.equity_option_pde.price_vanilla_equity_option_pde`\n\
+    \ the full solution vector at t=0.\n\n## Generated Skills\n- [route_hint] vanilla_equity_theta_pde\
+    \ route helper: Use the selected route helper directly inside `evaluate()`; do\
+    \ not rebuild the process, engine, or discount glue manually. [lineage: derived\
+    \ from cookbook:pde_solver]\n\n\n## Compiled Route Contract\n- Method family:\
+    \ `pde_solver`\n- Instrument type: `european_option`\n- Lane boundary: family=`pde_solver`,\
+    \ kind=`exact_target_binding`, exact_bindings=`trellis.models.equity_option_pde.price_vanilla_equity_option_pde`\n\
     - Lane obligations:\n  - Lane family: `pde_solver`\n  - Plan kind: `exact_target_binding`\n\
     \  - Market bindings: `black_vol_surface`, `discount_curve`\n  - State obligations:\
     \ `spot`, `strike`, `expiry`, `expiry_black_vol`\n  - Exact backend bindings:\n\

@@ -674,11 +674,10 @@ def _project_route_hints(*, cookbook_ids: set[str]) -> list[SkillRecord]:
                 )
 
         for index, note in enumerate(route.notes, start=1):
-            instruction_type = "route_hint" if "do not" in note.lower() else "historical_note"
             records.append(
                 SkillRecord(
                     skill_id=f"route_hint:{route.id}:note:{index}",
-                    kind="route_hint",
+                    kind="historical_note",
                     title=f"{route.id} note {index}",
                     summary=note,
                     source_artifact=route.id,
@@ -696,7 +695,7 @@ def _project_route_hints(*, cookbook_ids: set[str]) -> list[SkillRecord]:
                     confidence=route.confidence,
                     updated_at="",
                     precedence_rank=50 - index,
-                    instruction_type=instruction_type,
+                    instruction_type="historical_note",
                     source_kind="route_card",
                     lineage_status=lineage_status,
                     lineage_evidence=lineage_evidence,
@@ -707,7 +706,7 @@ def _project_route_hints(*, cookbook_ids: set[str]) -> list[SkillRecord]:
             records.append(
                 SkillRecord(
                     skill_id=f"route_hint:{route.id}:dynamic:{index}",
-                    kind="route_hint",
+                    kind="historical_note",
                     title=f"{route.id} dynamic note {index}",
                     summary=note.template,
                     source_artifact=route.id,
@@ -850,12 +849,12 @@ def _skill_prompt_rank(
     method_score = int(bool(method_token and method_token in record_methods))
     hard_constraint_score = int(str(getattr(record, "instruction_type", "") or "") == "hard_constraint")
     return (
-        -route_id_score,
-        -route_family_score,
+        -hard_constraint_score,
         -instrument_score,
         -method_score,
+        -route_family_score,
+        -route_id_score,
         kind_order.index(record.kind),
-        -hard_constraint_score,
         -int(getattr(record, "precedence_rank", 0) or 0),
         -float(getattr(record, "confidence", 0.0) or 0.0),
         str(getattr(record, "skill_id", "") or ""),
