@@ -179,8 +179,8 @@ Status mirror last synced: `2026-04-12`
 
 ### Ordered Exotic Composition Proof Queue
 
-| Ticket | Status |
-| --- | --- |
+| Ticket | Description | Status |
+| --- | --- | --- |
 | `QUA-804` | Exotic benchmark: define constructable proof cohort for binding-first assembly | Done |
 | `QUA-808` | Exotic assembly: prove event-control-schedule structures without new route identities | Backlog |
 | `QUA-809` | Exotic assembly: prove basket-credit and loss-distribution structures on binding roles | Backlog |

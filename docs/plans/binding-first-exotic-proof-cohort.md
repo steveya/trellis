@@ -100,7 +100,7 @@ These tasks define the `QUA-809` proof surface.
 | `T53` Multi-name portfolio loss distribution: recursive vs FFT vs MC | `proved` | loss-distribution composition across recursive, transform, and MC bindings | Core proof that loss aggregation is binding-role-driven rather than route-driven |
 | `E26` Nth-to-default basket: Gaussian copula vs default-time MC | `proved` | basket-credit hybrid under the stress tranche | Stress follow-on for `T50` |
 | `T102` Rainbow option (best-of-two): Stulz formula vs MC | `proved` | multi-underlier basket state and dependence-aware exact binding | Keeps non-credit basket composition in scope |
-| `T126` Spread option: Kirk approximation vs 2D MC vs 2D FFT | `proved` | multi-factor transform and MC parity on a non-credit hybrid payoff | Checks binding-first assembly across analytical, transform, and MC lanes |
+| `T126` Spread option (Kirk approximation) vs 2D MC vs 2D FFT | `proved` | multi-factor transform and MC parity on a non-credit hybrid payoff | Checks binding-first assembly across analytical, transform, and MC lanes |
 
 ## Acceptance Rules For Later Tickets
 
