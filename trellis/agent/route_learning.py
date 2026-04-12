@@ -10,6 +10,10 @@ candidate routes after:
 This module builds a small offline dataset from synthetic and known products,
 fits a simple linear scorer, and evaluates route choices under the same hard
 blocker semantics as the live build path.
+
+The scaffold is still experimental-only. Its feature extraction is intentionally
+kept aligned with the minimized live scorer contract so future retraining work
+cannot silently reintroduce route-id or route-family authority.
 """
 
 from __future__ import annotations
@@ -19,6 +23,8 @@ from dataclasses import dataclass
 from trellis.agent.codegen_guardrails import PrimitivePlan, rank_primitive_routes
 from trellis.agent.knowledge.decompose import decompose_to_ir
 from trellis.agent.quant import PricingPlan
+from trellis.agent.route_registry import find_route_by_id, resolve_route_family
+from trellis.agent.route_scorer import ScoringContext, extract_scoring_features
 from trellis.core.differentiable import get_numpy
 
 
@@ -157,7 +163,11 @@ def build_route_training_rows(
                 target=target,
                 decision=decision,
                 blockers=candidate.blockers,
-                feature_map=extract_route_feature_map(candidate, product_ir),
+                feature_map=extract_route_feature_map(
+                    candidate,
+                    product_ir,
+                    pricing_plan=pricing_plan,
+                ),
             ))
     return tuple(rows)
 
@@ -206,7 +216,11 @@ def rank_routes_with_learned_model(
         LearnedRouteCandidate(
             route=candidate.route,
             learned_score=ranker.score_feature_map(
-                extract_route_feature_map(candidate, product_ir)
+                extract_route_feature_map(
+                    candidate,
+                    product_ir,
+                    pricing_plan=pricing_plan,
+                )
             ),
             heuristic_score=candidate.score,
             blockers=candidate.blockers,
@@ -260,10 +274,26 @@ def learned_route_decision(
     )
 
 
-def extract_route_feature_map(candidate: PrimitivePlan, product_ir) -> dict[str, float]:
-    """Extract a stable numeric feature map for route learning."""
-    route_family = getattr(candidate, "route_family", "") or candidate.engine_family
-    route_families = set(getattr(product_ir, "route_families", ()) or ())
+def extract_route_feature_map(
+    candidate: PrimitivePlan,
+    product_ir,
+    *,
+    pricing_plan: PricingPlan | None = None,
+) -> dict[str, float]:
+    """Extract a stable numeric feature map aligned with the live scorer."""
+    route_spec = find_route_by_id(candidate.route)
+    if route_spec is not None:
+        route_family = resolve_route_family(route_spec, product_ir)
+        return extract_scoring_features(
+            ScoringContext(
+                product_ir=product_ir,
+                route_spec=route_spec,
+                pricing_plan=pricing_plan,
+                blockers=list(candidate.blockers),
+                route_family=route_family,
+            )
+        )
+
     feature_map: dict[str, float] = {
         "bias": 1.0,
         "blocker_count": float(len(candidate.blockers)),
@@ -271,14 +301,20 @@ def extract_route_feature_map(candidate: PrimitivePlan, product_ir) -> dict[str,
         "schedule_dependence": 1.0 if product_ir.schedule_dependence else 0.0,
         "has_unresolved_primitives": 1.0 if product_ir.unresolved_primitives else 0.0,
         "engine_family_matches_ir": 1.0 if candidate.engine_family in product_ir.candidate_engine_families else 0.0,
-        "route_family_matches_ir": 1.0 if route_family in route_families else 0.0,
     }
-    feature_map[f"route:{candidate.route}"] = 1.0
+    roles = {primitive.role for primitive in getattr(candidate, "primitives", ())}
+    exact_surface_roles = {"route_helper", "pricing_kernel", "cashflow_engine"}
+
+    feature_map["binding_role_count"] = float(len(roles))
+    feature_map["binding_has_exact_surface"] = 1.0 if roles.intersection(exact_surface_roles) else 0.0
+    feature_map["family_capability_ok"] = 1.0
     feature_map[f"engine_family:{candidate.engine_family}"] = 1.0
-    feature_map[f"route_family:{route_family}"] = 1.0
     feature_map[f"exercise:{product_ir.exercise_style}"] = 1.0
     feature_map[f"state:{product_ir.state_dependence}"] = 1.0
     feature_map[f"model:{product_ir.model_family}"] = 1.0
+    feature_map[f"payoff:{product_ir.payoff_family}"] = 1.0
+    for role in roles:
+        feature_map[f"binding_role:{role}"] = 1.0
     for blocker in candidate.blockers:
         feature_map[f"blocker:{blocker}"] = 1.0
     return feature_map

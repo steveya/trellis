@@ -242,10 +242,11 @@ planned tranches.
   `route_hint` records and both the prompt ranker and executor-side retry
   retrieval still sorted exact `route:<id>` matches ahead of broader
   instrument / method / family fit.
-- `QUA-791` tracks the offline learned-ranker tail. The experimental
-  `trellis/agent/route_learning.py` scaffold still emitted
-  `route:<id>` / `route_family:<family>` feature authority even though the live
-  scorer no longer does.
+- `QUA-791` closed the offline learned-ranker tail. The experimental
+  `trellis/agent/route_learning.py` scaffold now reuses the live minimized
+  scorer features through the same backend-binding / family-capability surface
+  and no longer emits `route:<id>` / `route_family:<family>` one-hot
+  authority.
 
 ## 2026-04-12 Route-Card Retirement Program
 
@@ -375,4 +376,4 @@ Status mirror last synced: `2026-04-12`
 | `QUA-785` | Route inventory: audit metadata-first residual route cards against representative tasks | Done |
 | `QUA-777` | Route scoring: remove residual route-identity authority after route-card retirement | Done |
 | `QUA-790` | Route prompts: demote residual route-note authority in skill selection | Done |
-| `QUA-791` | Route learning: align offline learned-ranker features with minimized scorer contract | Backlog |
+| `QUA-791` | Route learning: align offline learned-ranker features with minimized scorer contract | Done |

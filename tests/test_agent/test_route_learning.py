@@ -33,7 +33,8 @@ def test_build_route_training_rows_emits_proceed_and_block_decisions():
     assert any(
         row.instrument == "callable_bond"
         and row.route == "exercise_lattice"
-        and row.feature_map["route_family_matches_ir"] == 1.0
+        and row.feature_map["family_capability_ok"] == 1.0
+        and row.feature_map["binding_has_exact_surface"] == 1.0
         for row in rows
     )
     assert any(
@@ -41,6 +42,51 @@ def test_build_route_training_rows_emits_proceed_and_block_decisions():
         and row.decision == "block"
         for row in rows
     )
+    assert all("route_family_matches_ir" not in row.feature_map for row in rows)
+    assert all(
+        not any(
+            feature_name.startswith("route:") or feature_name.startswith("route_family:")
+            for feature_name in row.feature_map
+        )
+        for row in rows
+    )
+
+
+def test_extract_route_feature_map_matches_minimized_live_scorer_contract():
+    from trellis.agent.codegen_guardrails import rank_primitive_routes
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+    from trellis.agent.quant import PricingPlan
+    from trellis.agent.route_learning import extract_route_feature_map
+
+    product_ir = decompose_to_ir(
+        "European payer swaption",
+        instrument_type="swaption",
+    )
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.black"],
+        required_market_data=set(product_ir.required_market_data),
+        model_to_build="swaption",
+        reasoning="test",
+    )
+    ranked = rank_primitive_routes(
+        pricing_plan=pricing_plan,
+        product_ir=product_ir,
+    )
+    candidate = next(candidate for candidate in ranked if candidate.route == "analytical_black76")
+
+    feature_map = extract_route_feature_map(
+        candidate,
+        product_ir,
+        pricing_plan=pricing_plan,
+    )
+
+    assert feature_map["family_capability_ok"] == 1.0
+    assert feature_map["binding_role:route_helper"] == 1.0
+    assert feature_map["binding_has_exact_surface"] == 1.0
+    assert "route_family_matches_ir" not in feature_map
+    assert "route:analytical_black76" not in feature_map
+    assert "route_family:analytical" not in feature_map
 
 
 def test_fit_linear_route_ranker_prefers_exercise_routes_for_known_products():
