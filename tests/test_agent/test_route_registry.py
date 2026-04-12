@@ -888,10 +888,12 @@ class TestAnalyticalRoutes:
         assert resolve_route_adapters(spec, self.BERMUDAN_SWAPTION_IR) == ()
 
     def test_rate_cap_floor_strip_analytical_admissibility_accepts_structural_schedule_contract(self, registry):
+        from dataclasses import replace
+
         from trellis.agent.semantic_contracts import make_rate_cap_floor_strip_contract
 
-        spec = find_route_by_id("analytical_black76", registry)
-        assert spec is not None
+        black76_spec = find_route_by_id("analytical_black76", registry)
+        assert black76_spec is not None
 
         contract = make_rate_cap_floor_strip_contract(
             description="5Y cap on SOFR with quarterly caplets under Black-76",
@@ -901,10 +903,27 @@ class TestAnalyticalRoutes:
         )
         bp = _semantic_blueprint_for(contract, preferred_method="analytical")
 
-        decision = evaluate_route_admissibility(spec, semantic_blueprint=bp)
+        decision = evaluate_route_admissibility(black76_spec, semantic_blueprint=bp)
 
         assert decision.ok
         assert "unsupported_event_support:automatic_triggers" not in decision.failures
+
+        raw_bp = replace(
+            bp,
+            dsl_lowering=replace(bp.dsl_lowering, family_ir=None),
+        )
+        raw_decision = evaluate_route_admissibility(black76_spec, semantic_blueprint=raw_bp)
+        assert not raw_decision.ok
+        assert "unsupported_event_support:automatic_triggers" in raw_decision.failures
+
+        zcb_spec = find_route_by_id("zcb_option_analytical", registry)
+        assert zcb_spec is not None
+        zcb_decision = evaluate_route_admissibility(zcb_spec, semantic_blueprint=bp)
+        assert not zcb_decision.ok
+        assert all(
+            failure != "unsupported_event_support:automatic_triggers"
+            for failure in zcb_decision.failures
+        )
 
     def test_engine_family(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
