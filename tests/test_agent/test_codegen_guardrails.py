@@ -417,7 +417,10 @@ def test_cds_monte_carlo_route_uses_single_name_credit_default_swap_assembly():
     assert "price_cds_monte_carlo" in card
     assert "spread_quote" in card
     assert "n_paths" in card
-    assert "survival_probability" in card
+    assert "survival_probability" not in card
+    assert "Required adapters:" not in card
+    assert "use_credit_curve_hazard_rate_or_survival_probability" not in card
+    assert "Do not hard-code n_paths=50000" not in card
 
 
 def test_cds_analytical_route_card_surfaces_helper_signature_keywords():
@@ -443,8 +446,12 @@ def test_cds_analytical_route_card_surfaces_helper_signature_keywords():
     card = render_generation_route_card(plan)
 
     assert "price_cds_analytical" in card
+    assert "build_cds_schedule" in card
     assert "spread_quote" in card
     assert "discount_curve" in card
+    assert "survival_probability" not in card
+    assert "Required adapters:" not in card
+    assert "Do not reinterpret a single-name CDS" not in card
 
 
 def test_nth_to_default_monte_carlo_route_uses_copula_assembly():
@@ -474,7 +481,38 @@ def test_nth_to_default_monte_carlo_route_uses_copula_assembly():
     assert plan.primitive_plan.route_family == "nth_to_default"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert "GaussianCopula" in primitive_symbols
-    assert "single-name CDS" in card
+    assert "price_nth_to_default_basket" in card
+    assert "single-name CDS" not in card
+    assert "Required adapters:" not in card
+
+
+def test_copula_loss_distribution_route_stays_helper_backed():
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="copula",
+        method_modules=["trellis.models.copulas.factor"],
+        required_market_data={"discount_curve", "credit_curve"},
+        model_to_build="cdo",
+        reasoning="test",
+    )
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="cdo",
+        inspected_modules=("trellis.models.copulas.factor",),
+        product_ir=decompose_to_ir(
+            "CDO tranche: Gaussian vs Student-t copula",
+            instrument_type="cdo",
+        ),
+    )
+
+    card = render_generation_route_card(plan)
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "copula_loss_distribution"
+    assert "price_credit_basket_tranche" in card
+    assert "Required adapters:" not in card
+    assert "Prefer the semantic-facing basket-credit helper" not in card
 
 
 def test_sanitize_generated_source_strips_single_outer_fence():

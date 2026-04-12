@@ -547,6 +547,31 @@ def test_classify_semantic_gap_treats_cds_as_credit_request():
     assert "discount_curve" in report.missing_market_inputs
     assert "credit_curve" in report.missing_market_inputs
 
+
+@pytest.mark.parametrize(
+    ("description", "instrument_type", "semantic_id"),
+    [
+        ("CDO tranche: Gaussian vs Student-t copula", "cdo", "credit_basket_tranche"),
+        (
+            "Nth-to-default: MC correlated defaults vs semi-analytical",
+            "nth_to_default",
+            "nth_to_default",
+        ),
+    ],
+)
+def test_classify_semantic_gap_uses_resolved_credit_concept_as_shape_authority(
+    description: str,
+    instrument_type: str,
+    semantic_id: str,
+):
+    from trellis.agent.semantic_contract_validation import classify_semantic_gap
+
+    report = classify_semantic_gap(description, instrument_type=instrument_type)
+
+    assert report.semantic_concept_id == semantic_id
+    assert report.requires_clarification is False
+    assert "semantic_product_shape" not in report.missing_contract_fields
+
 def test_accepts_fixed_t39_transform_artifact():
     from trellis.agent.semantic_validation import validate_semantics
 

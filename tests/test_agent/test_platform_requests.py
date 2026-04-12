@@ -697,6 +697,33 @@ def test_compile_build_request_routes_rate_cap_family_through_semantic_contract(
     assert "semantic_gap" not in compiled.request.metadata
 
 
+@pytest.mark.parametrize(
+    ("description", "instrument_type", "expected_instrument"),
+    [
+        ("CDO tranche: Gaussian vs Student-t copula", "cdo", "cdo"),
+        (
+            "Nth-to-default: MC correlated defaults vs semi-analytical",
+            "nth_to_default",
+            "nth_to_default",
+        ),
+    ],
+)
+def test_compile_build_request_does_not_block_title_only_credit_builder_requests(
+    description: str,
+    instrument_type: str,
+    expected_instrument: str,
+):
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(description, instrument_type=instrument_type)
+
+    assert compiled.request.metadata["semantic_gap"]["requires_clarification"] is False
+    assert "semantic_product_shape" not in compiled.request.metadata["semantic_gap"]["missing_contract_fields"]
+    assert compiled.execution_plan.reason == "free_form_build_request"
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.instrument == expected_instrument
+
+
 def test_novel_request_persists_semantic_extension_trace(monkeypatch, tmp_path):
     from trellis.agent.platform_requests import compile_build_request
     import trellis.agent.knowledge.promotion as promotion_mod

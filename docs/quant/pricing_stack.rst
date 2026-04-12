@@ -220,6 +220,12 @@ The end-to-end typed boundary is currently proven for:
 - ``copula_loss_distribution`` on tranche-style basket-credit comparison tasks
   through the semantic-facing basket-credit helper surface
 
+For those credit and copula routes, the route cards are now intentionally thin.
+They preserve backend binding, admissibility, validation ownership, and canary
+provenance, but no longer carry procedural guidance about schedule-step
+survival updates, copula initialization, or tranche-loss assembly when the
+checked helper surface already owns that construction.
+
 These route IDs and helper-backed numerical kernels are preserved. The new work
 changes validation, binding, admissibility, and lowering, not the pricing math.
 For single-name CDS comparison builds, the typed boundary now also carries a

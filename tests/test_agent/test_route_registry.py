@@ -1311,6 +1311,18 @@ class TestFallbackRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
+    def test_credit_and_copula_routes_are_thin_backend_bindings(self, registry):
+        for route_id in (
+            "credit_default_swap_analytical",
+            "credit_default_swap_monte_carlo",
+            "nth_to_default_monte_carlo",
+            "copula_loss_distribution",
+        ):
+            spec = find_route_by_id(route_id, registry)
+            assert spec is not None
+            assert spec.adapters == ()
+            assert spec.notes == ()
+
     def test_waterfall_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "waterfall_cashflows"][0]
         new_prims = resolve_route_primitives(spec, None)

@@ -101,20 +101,8 @@ routes:
       - module: trellis.models.credit_default_swap
         symbol: price_cds_analytical
         role: route_helper
-    adapters:
-      - use_credit_curve_survival_probability_thin_adapter
-      - declare_credit_curve_and_discount_curve_requirements
-    notes:
-      - "For single-name CDS analytical pricing, prefer the checked-in build_cds_schedule(...) and price_cds_analytical(...) helpers so the adapter stays thin."
-      - "CDS running spreads are often quoted in basis points in task text. Convert them to decimals before accrual, for example 150 bp -> 0.015."
-      - "Use market_state.credit_curve.survival_probability(t) directly for schedule-step survival updates and market_state.discount.discount(t) for discounting."
-      - "Use spec.start_date as the time origin for year_fraction-based schedule times so the analytical and Monte Carlo comparators share the same t convention."
-      - "Discount both the premium leg and the interval default mass with the payment-date discount factor discount(pay_t)."
-      - "Keep the premium leg to spread * accrual * df * survival only. Do not add a separate accrued-on-default premium adjustment term."
-      - "Do not average adjacent discount factors, trapezoid the protection leg, or introduce midpoint discount terms such as 0.5 * (prev_discount + discount)."
-      - "If the helper cannot be reused, fall back to explicit periods from build_period_schedule(...); use period.accrual_fraction, period.t_payment, and period.payment_date directly."
-      - "Do not reinterpret a single-name CDS as nth-to-default, basket CDS, or first-to-default."
-      - "Do not import copulas or reuse Black76 call/put primitives for credit-default pricing."
+    adapters: []
+    notes: []
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -151,33 +139,8 @@ routes:
       - module: trellis.core.differentiable
         symbol: get_numpy
         role: array_backend
-    adapters:
-      - use_credit_curve_hazard_rate_or_survival_probability
-      - declare_credit_curve_and_discount_curve_requirements
-    notes:
-      - "For single-name CDS Monte Carlo pricing, prefer the checked-in build_cds_schedule(...) and price_cds_monte_carlo(...) helpers so the adapter stays thin."
-      - "If the spec exposes n_paths, pass spec.n_paths through to price_cds_monte_carlo(...) instead of hard-coding a smaller comparison-path count in the adapter."
-      - "Do not hard-code n_paths=50000 for comparison-quality single-name CDS. Use spec.n_paths when available; otherwise choose a comparison-stable count such as 250000."
-      - "Keep comparison-task randomness reproducible with seed=42 unless the spec explicitly carries a different seed input."
-      - "Do not import or instantiate `MonteCarloEngine` for a single-name CDS route. Here Monte Carlo means direct random default-time draws on the explicit payment schedule, not a generic diffusion-engine wrapper."
-      - "Use market_state.credit_curve.survival_probability(t0/t1) to bracket each payment interval; use hazard_rate only for within-interval interpolation of the default time."
-      - "Use market_state.discount.discount(t) directly for every discount factor so the route checker can see discount-curve access."
-      - "If the helper cannot be reused, fall back to build_period_schedule(...) so the adapter iterates over explicit periods with accrual fractions and model times instead of rebuilding payment_dates and prev_date logic by hand."
-      - "This route must price a Monte Carlo expectation over many paths. Use alive and default_in_interval as n_paths-shaped arrays and return a path average."
-      - "Do not collapse the Monte Carlo CDS leg to scalar alive state, a single RNG draw per payment date, or a one-scenario loop that breaks after default."
-      - "Compute interval default probabilities from survival ratios 1 - S(t_pay) / S(t_prev) when S(t_prev) > 0."
-      - "Use hazard_rate only for within-interval default-time interpolation after an interval default is selected. Do not replace interval default probability with a midpoint-hazard approximation when survival probabilities are available."
-      - "For comparison tasks, keep protection-leg discounting aligned with the analytical schedule loop and use the payment-date discount factor discount(t_pay) for interval default mass."
-      - "Do not discount protection at sampled default times tau in the comparison build."
-      - "Use spec.start_date as the time origin for Monte Carlo schedule times so the MC and analytical CDS comparators share the same t convention."
-      - "If the route tracks both accrual dates and survival/default times, keep `prev_date` and `prev_t` separate. Do not compare float year-fractions to `date` objects or pass floats into `year_fraction(...)` date slots."
-      - "Carry a persistent `alive` indicator across the schedule and update it after each interval. Do not overwrite the default state from scratch inside the loop."
-      - "Sample conditional defaults per interval, accrue protection only on `default_in_interval`, and stop premium accrual after default so the Monte Carlo leg timing matches the analytical schedule loop in expectation."
-      - "Update `alive` before premium accrual at the payment date. Premium should use the end-of-interval alive state, not the start-of-interval alive state."
-      - "CDS running spreads are often quoted in basis points in task text. Convert them to decimals before accrual, for example 150 bp -> 0.015."
-      - "Keep the adapter thin: schedule generation, direct RNG-based default-time sampling, discounting, and leg aggregation only."
-      - "For comparison tasks, keep the premium/protection leg timing aligned with the analytical schedule loop so Monte Carlo and deterministic survival integration differ only by sampling noise."
-      - "Do not import GaussianCopula, FactorCopula, basket CDS helpers, or nth-to-default route notes for a single-name CDS."
+    adapters: []
+    notes: []
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -224,14 +187,8 @@ routes:
         role: path_simulation
         required: false
         excluded: true
-    adapters:
-      - use_credit_curve_hazard_rate_or_survival_probability
-      - declare_credit_curve_and_discount_curve_requirements
-    notes:
-      - "For nth-to-default and first-to-default basket-credit pricing, keep the multi-name contract explicit: reference entities, default order, and dependence assumptions stay visible."
-      - "Use approved copula helpers only for multi-name basket credit. Do not collapse nth-to-default into a single-name CDS premium/protection loop."
-      - "Use market_state.credit_curve for marginal default inputs and market_state.discount.discount(t) for discounting."
-      - "Do not reinterpret nth-to-default as a single-name CDS."
+    adapters: []
+    notes: []
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -1192,10 +1149,8 @@ routes:
       - module: trellis.models.copulas.student_t
         symbol: StudentTCopula
         role: loss_distribution
-    adapters:
-      - map_credit_curve_to_marginal_default_probabilities
-    notes:
-      - "Prefer the semantic-facing basket-credit helper for tranche-style CDO requests instead of rebuilding copula initialization or tranche-loss projection inline."
+    adapters: []
+    notes: []
     market_data_access:
       required:
         credit_curve: [market_state.credit_curve]
