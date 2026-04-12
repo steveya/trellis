@@ -409,6 +409,11 @@ For the migrated families above:
 - typed ``obligations`` and ``SemanticTimeline`` are authoritative for settlement
 - typed ``EventMachine`` is authoritative for automatic event semantics
 - legacy ``settlement_rule`` and ``event_transitions`` are mirrors only
+- helper-backed analytical / PDE / FFT routes admit on lowered family IR and
+  typed schedule/state semantics, not on route-card instructions
+- structural cap/floor strips lowered onto ``AnalyticalBlack76IR`` use typed
+  ``schedule_state`` authority and no longer fail the generic
+  ``unsupported_event_support:automatic_triggers`` gate
 
 Validation now distinguishes:
 

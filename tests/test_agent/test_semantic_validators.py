@@ -257,6 +257,118 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("analytical_garman_kohlhagen"), spec)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
+    def test_flags_vanilla_equity_transform_helper_signature_mismatch(self, registry):
+        spec = [r for r in registry.routes if r.id == "transform_fft"][0]
+        vanilla_ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            model_family="equity_diffusion",
+        )
+        spec = replace(spec, primitives=resolve_route_primitives(spec, vanilla_ir))
+        source = '''
+from trellis.models.equity_option_transforms import price_vanilla_equity_option_transform
+
+def evaluate(self, market_state):
+    return price_vanilla_equity_option_transform(
+        market_state=market_state,
+        spec=self._spec,
+        spot=self._spec.spot,
+    )
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("transform_fft", "fft_pricing"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_accepts_vanilla_equity_transform_helper_surface(self, registry):
+        spec = [r for r in registry.routes if r.id == "transform_fft"][0]
+        vanilla_ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            model_family="equity_diffusion",
+        )
+        spec = replace(spec, primitives=resolve_route_primitives(spec, vanilla_ir))
+        source = '''
+from trellis.models.equity_option_transforms import price_vanilla_equity_option_transform
+
+def evaluate(self, market_state):
+    return price_vanilla_equity_option_transform(market_state, self._spec, method="fft")
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("transform_fft", "fft_pricing"), spec)
+        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_flags_vanilla_equity_monte_carlo_helper_signature_mismatch(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        vanilla_ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            model_family="equity_diffusion",
+        )
+        spec = replace(spec, primitives=resolve_route_primitives(spec, vanilla_ir))
+        source = '''
+from trellis.models.equity_option_monte_carlo import price_vanilla_equity_option_monte_carlo
+
+def evaluate(self, market_state):
+    return price_vanilla_equity_option_monte_carlo(
+        market_state=market_state,
+        spec=self._spec,
+        spot=self._spec.spot,
+    )
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("monte_carlo_paths", "monte_carlo"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_accepts_vanilla_equity_monte_carlo_helper_surface(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        vanilla_ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            model_family="equity_diffusion",
+        )
+        spec = replace(spec, primitives=resolve_route_primitives(spec, vanilla_ir))
+        source = '''
+from trellis.models.equity_option_monte_carlo import price_vanilla_equity_option_monte_carlo
+
+def evaluate(self, market_state):
+    return price_vanilla_equity_option_monte_carlo(market_state, self._spec, n_paths=50000)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("monte_carlo_paths", "monte_carlo"), spec)
+        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_flags_vanilla_equity_pde_helper_signature_mismatch(self, registry):
+        spec = [r for r in registry.routes if r.id == "vanilla_equity_theta_pde"][0]
+        source = '''
+from trellis.models.equity_option_pde import price_vanilla_equity_option_pde
+
+def evaluate(self, market_state):
+    return price_vanilla_equity_option_pde(
+        market_state=market_state,
+        spec=self._spec,
+        strike=self._spec.strike,
+    )
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("vanilla_equity_theta_pde", "pde_solver"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_accepts_vanilla_equity_pde_helper_surface(self, registry):
+        spec = [r for r in registry.routes if r.id == "vanilla_equity_theta_pde"][0]
+        source = '''
+from trellis.models.equity_option_pde import price_vanilla_equity_option_pde
+
+def evaluate(self, market_state):
+    return price_vanilla_equity_option_pde(market_state, self._spec, theta=0.5)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("vanilla_equity_theta_pde", "pde_solver"), spec)
+        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+
     def test_flags_quanto_exact_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "quanto_adjustment_analytical"][0]
         source = '''

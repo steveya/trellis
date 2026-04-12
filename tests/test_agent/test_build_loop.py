@@ -332,6 +332,39 @@ def test_reference_modules_include_generic_rate_tree_surfaces_for_callable_bond(
     assert ("trellis.models.trees.control", "Lattice exercise/control helpers") in modules
 
 
+def test_reference_modules_use_concrete_transform_surfaces_for_fft_pricing():
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import _reference_modules
+
+    modules = _reference_modules(
+        pricing_plan=SimpleNamespace(method="fft_pricing"),
+        instrument_type="european_option",
+    )
+
+    assert ("trellis.models.transforms", "Transform package exports") not in modules
+    assert ("trellis.models.transforms.fft_pricer", "FFT transform pricer") in modules
+    assert ("trellis.models.transforms.cos_method", "COS transform pricer") in modules
+    assert ("trellis.models.equity_option_transforms", "Vanilla equity transform helper") in modules
+
+
+def test_reference_modules_use_concrete_copula_surfaces():
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import _reference_modules
+
+    modules = _reference_modules(
+        pricing_plan=SimpleNamespace(method="copula"),
+        instrument_type="nth_to_default",
+    )
+
+    assert ("trellis.models.copulas", "Copula package exports") not in modules
+    assert ("trellis.models.copulas.factor", "Factor copula kernel") in modules
+    assert ("trellis.models.copulas.gaussian", "Gaussian copula kernel") in modules
+    assert ("trellis.models.copulas.student_t", "Student-t copula kernel") in modules
+    assert ("trellis.models.credit_basket_copula", "Credit basket copula helper") in modules
+
+
 def test_generate_quanto_monte_carlo_skeleton_uses_family_helper_surface():
     from types import SimpleNamespace
 

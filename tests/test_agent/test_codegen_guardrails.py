@@ -7,6 +7,7 @@ from trellis.agent.codegen_guardrails import (
     render_generation_plan,
     render_review_contract_card,
     render_generation_route_card,
+    render_semantic_repair_card,
     sanitize_generated_source,
     validate_generated_imports,
 )
@@ -214,6 +215,21 @@ def test_generation_route_card_for_fx_exact_helper_stays_helper_only():
     assert "map_fx_spot_and_curves_to_garman_kohlhagen_inputs" not in text
 
 
+def test_generation_route_card_for_swaption_analytical_stays_helper_only():
+    compiled = compile_build_request(
+        "European swaption on fixed-for-float swap",
+        instrument_type="swaption",
+        preferred_method="analytical",
+    )
+
+    text = render_generation_route_card(compiled.generation_plan)
+
+    assert "price_swaption_black76" in text
+    assert "reuse_checked_in_rate_style_swaption_helper" not in text
+    assert "Hull-White-implied Black vol" not in text
+    assert "Backend notes:" not in text
+
+
 def test_generation_route_card_for_quanto_exact_helper_stays_helper_only():
     compiled = compile_build_request(
         "Quanto option on SAP in USD with EUR underlier currency expiring 2025-11-15",
@@ -283,6 +299,50 @@ def test_generation_route_card_for_zcb_option_tree_stays_helper_only():
     assert "price_zcb_option_tree" in text
     assert "build_generic_lattice" not in text
     assert "MODEL_REGISTRY" not in text
+
+
+def test_generation_route_card_for_vanilla_equity_pde_stays_helper_only():
+    compiled = compile_build_request(
+        "European equity call on AAPL",
+        instrument_type="european_option",
+        preferred_method="pde_solver",
+    )
+
+    text = render_generation_route_card(compiled.generation_plan)
+
+    assert "price_vanilla_equity_option_pde" in text
+    assert "reuse_checked_in_vanilla_equity_pde_helper" not in text
+    assert "Grid + BlackScholesOperator + theta_method_1d" not in text
+    assert "Backend notes:" not in text
+
+
+def test_generation_route_card_for_vanilla_equity_fft_stays_helper_only():
+    compiled = compile_build_request(
+        "European equity call on AAPL via FFT",
+        instrument_type="european_option",
+        preferred_method="fft_pricing",
+    )
+
+    text = render_generation_route_card(compiled.generation_plan)
+
+    assert "price_vanilla_equity_option_transform" in text
+    assert "build_vector_safe_characteristic_function" not in text
+    assert "GBM characteristic functions" not in text
+    assert "Backend notes:" not in text
+
+
+def test_semantic_repair_card_for_helper_backed_pde_route_omits_route_notes_and_adapters():
+    compiled = compile_build_request(
+        "European equity call on AAPL",
+        instrument_type="european_option",
+        preferred_method="pde_solver",
+    )
+
+    text = render_semantic_repair_card(compiled.generation_plan)
+
+    assert "price_vanilla_equity_option_pde" in text
+    assert "Required adapters:" not in text
+    assert "Route notes:" not in text
 
 
 def test_review_contract_card_renders_wrapper_route_and_validation_scope():

@@ -1,5 +1,6 @@
 """Tests for the structured import registry."""
 
+import trellis.agent.knowledge.import_registry as import_registry
 from trellis.agent.knowledge.import_registry import (
     find_symbol_modules,
     get_import_registry,
@@ -51,3 +52,22 @@ def test_module_exists_rejects_unknown_modules():
 def test_formatted_registry_mentions_known_import():
     registry_text = get_import_registry()
     assert "from trellis.models.black import" in registry_text
+
+
+def test_static_registry_fallback_covers_route_minimization_modules(monkeypatch):
+    import_registry.reset_registry_cache()
+    monkeypatch.setattr(
+        import_registry,
+        "_build_registry_data_from_introspection",
+        lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    snapshot = import_registry.get_registry_snapshot()
+
+    assert "trellis.models.equity_option_transforms" in snapshot
+    assert "price_vanilla_equity_option_transform" in snapshot["trellis.models.equity_option_transforms"]
+    assert "trellis.models.credit_basket_copula" in snapshot
+    assert "price_credit_basket_tranche" in snapshot["trellis.models.credit_basket_copula"]
+    assert "trellis.models.transforms.single_state_diffusion" in snapshot
+    assert "resolve_single_state_diffusion_inputs" in snapshot["trellis.models.transforms.single_state_diffusion"]
+
+    import_registry.reset_registry_cache()

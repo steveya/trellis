@@ -767,7 +767,7 @@ def test_evaluate_prompt_compact_surface_mentions_swaption_helper_route():
             primitives=(
                 PrimitiveRef("trellis.models.rate_style_swaption", "price_swaption_black76", "route_helper"),
             ),
-            adapters=("reuse_checked_in_rate_style_swaption_helper",),
+            adapters=(),
             blockers=(),
         ),
     )

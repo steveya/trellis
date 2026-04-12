@@ -488,6 +488,12 @@ class TestMonteCarloPathsRoutes:
         payoff_family="vanilla_option",
         exercise_style="european",
     )
+    GENERIC_IR = ProductIR(
+        instrument="path_dependent_note",
+        payoff_family="path_dependent_generic",
+        exercise_style="none",
+        model_family="generic",
+    )
 
     def test_candidate(self, registry):
         new = _new_routes(registry, "monte_carlo", self.EUROPEAN_IR)
@@ -504,6 +510,13 @@ class TestMonteCarloPathsRoutes:
             ),
         }
         assert _prim_set(new_prims) == expected_prims
+
+    def test_default_branch_preserves_base_adapters_and_notes_for_generic_requests(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+
+        assert resolve_route_primitives(spec, self.GENERIC_IR) == spec.primitives
+        assert resolve_route_adapters(spec, self.GENERIC_IR) == spec.adapters
+        assert resolve_route_notes(spec, self.GENERIC_IR) == spec.notes
 
     def test_admissibility_hydrates_process_and_path_contracts(self, registry):
         generic = find_route_by_id("monte_carlo_paths", registry)
@@ -853,11 +866,10 @@ class TestAnalyticalRoutes:
             ),
         }
 
-    def test_swaption_notes_pin_helper_backed_route(self, registry):
+    def test_swaption_helper_route_is_thin(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
-        notes = resolve_route_notes(spec, self.SWAPTION_IR)
-        assert any("price_swaption_black76" in note for note in notes)
-        assert any("Hull-White-implied Black vol" in note for note in notes)
+        assert resolve_route_notes(spec, self.SWAPTION_IR) == ()
+        assert resolve_route_adapters(spec, self.SWAPTION_IR) == ()
 
     def test_bermudan_swaption_primitives_use_lower_bound_helper(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
@@ -869,6 +881,49 @@ class TestAnalyticalRoutes:
                 "route_helper",
             ),
         }
+
+    def test_bermudan_swaption_analytical_route_is_thin(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        assert resolve_route_notes(spec, self.BERMUDAN_SWAPTION_IR) == ()
+        assert resolve_route_adapters(spec, self.BERMUDAN_SWAPTION_IR) == ()
+
+    def test_rate_cap_floor_strip_analytical_admissibility_accepts_structural_schedule_contract(self, registry):
+        from dataclasses import replace
+
+        from trellis.agent.semantic_contracts import make_rate_cap_floor_strip_contract
+
+        black76_spec = find_route_by_id("analytical_black76", registry)
+        assert black76_spec is not None
+
+        contract = make_rate_cap_floor_strip_contract(
+            description="5Y cap on SOFR with quarterly caplets under Black-76",
+            instrument_class="cap",
+            observation_schedule=("2026-03-20", "2026-06-20", "2026-09-20", "2026-12-20"),
+            preferred_method="analytical",
+        )
+        bp = _semantic_blueprint_for(contract, preferred_method="analytical")
+
+        decision = evaluate_route_admissibility(black76_spec, semantic_blueprint=bp)
+
+        assert decision.ok
+        assert "unsupported_event_support:automatic_triggers" not in decision.failures
+
+        raw_bp = replace(
+            bp,
+            dsl_lowering=replace(bp.dsl_lowering, family_ir=None),
+        )
+        raw_decision = evaluate_route_admissibility(black76_spec, semantic_blueprint=raw_bp)
+        assert not raw_decision.ok
+        assert "unsupported_event_support:automatic_triggers" in raw_decision.failures
+
+        zcb_spec = find_route_by_id("zcb_option_analytical", registry)
+        assert zcb_spec is not None
+        zcb_decision = evaluate_route_admissibility(zcb_spec, semantic_blueprint=bp)
+        assert not zcb_decision.ok
+        assert all(
+            failure != "unsupported_event_support:automatic_triggers"
+            for failure in zcb_decision.failures
+        )
 
     def test_engine_family(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
@@ -1069,6 +1124,17 @@ class TestFallbackRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
+    def test_vanilla_equity_transform_helper_route_is_thin(self, registry):
+        spec = [r for r in registry.routes if r.id == "transform_fft"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            model_family="equity_diffusion",
+        )
+        assert resolve_route_notes(spec, ir) == ()
+        assert resolve_route_adapters(spec, ir) == ()
+
     def test_stochastic_vol_transform_primitives_fall_back_to_raw_kernels(self, registry):
         spec = [r for r in registry.routes if r.id == "transform_fft"][0]
         ir = ProductIR(
@@ -1107,6 +1173,16 @@ class TestFallbackRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
+    def test_vanilla_equity_pde_helper_route_is_thin(self, registry):
+        spec = [r for r in registry.routes if r.id == "vanilla_equity_theta_pde"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+        )
+        assert resolve_route_notes(spec, ir) == ()
+        assert resolve_route_adapters(spec, ir) == ()
+
     def test_holder_max_equity_pde_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "pde_theta_1d"][0]
         ir = ProductIR(
@@ -1121,6 +1197,17 @@ class TestFallbackRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
+    def test_holder_max_equity_pde_helper_route_is_thin(self, registry):
+        spec = [r for r in registry.routes if r.id == "pde_theta_1d"][0]
+        ir = ProductIR(
+            instrument="american_option",
+            payoff_family="vanilla_option",
+            exercise_style="bermudan",
+            model_family="equity_diffusion",
+        )
+        assert resolve_route_notes(spec, ir) == ()
+        assert resolve_route_adapters(spec, ir) == ()
+
     def test_callable_bond_pde_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "pde_theta_1d"][0]
         ir = ProductIR(
@@ -1134,6 +1221,17 @@ class TestFallbackRoutes:
             ("trellis.models.callable_bond_pde", "price_callable_bond_pde", "route_helper"),
         }
         assert _prim_set(new_prims) == expected_prims
+
+    def test_callable_bond_pde_helper_route_is_thin(self, registry):
+        spec = [r for r in registry.routes if r.id == "pde_theta_1d"][0]
+        ir = ProductIR(
+            instrument="callable_bond",
+            payoff_family="callable_fixed_income",
+            exercise_style="issuer_call",
+            model_family="interest_rate",
+        )
+        assert resolve_route_notes(spec, ir) == ()
+        assert resolve_route_adapters(spec, ir) == ()
 
     def test_pde_admissibility_hydrates_operator_and_event_contracts(self, registry):
         vanilla = find_route_by_id("vanilla_equity_theta_pde", registry)
