@@ -524,6 +524,7 @@ from trellis.models.monte_carlo.variance_reduction import antithetic, control_va
 from trellis.models.monte_carlo.schemes import Euler, Milstein, Exact, LogEuler, LaguerreBasis, PolynomialBasis
 from trellis.models.monte_carlo.ranked_observation_payoffs import build_ranked_observation_basket_initial_state, build_ranked_observation_basket_process, build_ranked_observation_basket_state_payoff, price_ranked_observation_basket_monte_carlo, recommended_ranked_observation_basket_mc_engine_kwargs, terminal_ranked_observation_basket_payoff
 from trellis.models.monte_carlo.semantic_basket import RankedObservationBasketMonteCarloPayoff, RankedObservationBasketSpec
+from trellis.models.equity_option_monte_carlo import build_vanilla_equity_monte_carlo_problem, price_single_state_terminal_claim_monte_carlo_result, price_vanilla_equity_option_monte_carlo, price_vanilla_equity_option_monte_carlo_result, resolve_single_state_terminal_claim_monte_carlo_inputs, resolve_vanilla_equity_monte_carlo_inputs
 
 ### Models — QMC
 from trellis.models.qmc import brownian_bridge, sobol_normals
@@ -535,10 +536,13 @@ from trellis.models.pde.rate_operator import HullWhitePDEOperator
 from trellis.models.pde.psor import psor_1d
 from trellis.models.pde.grid import Grid
 from trellis.models.pde.thomas import thomas_solve
+from trellis.models.equity_option_pde import build_event_aware_equity_pde_problem, build_event_aware_pde_problem, build_vanilla_equity_pde_problem, interpolate_pde_values, price_event_aware_equity_option_pde, price_vanilla_equity_option_pde, resolve_vanilla_equity_pde_inputs, solve_event_aware_equity_option_pde_surface, solve_event_aware_pde, solve_vanilla_equity_option_pde_surface
 
 ### Models — Transforms (FFT/COS)
 from trellis.models.transforms.cos_method import cos_price
 from trellis.models.transforms.fft_pricer import fft_price
+from trellis.models.transforms.single_state_diffusion import price_single_state_terminal_claim_transform_result, resolve_single_state_diffusion_inputs, resolve_single_state_terminal_claim_transform_inputs
+from trellis.models.equity_option_transforms import gbm_log_ratio_char_fn, gbm_log_spot_char_fn, price_vanilla_equity_option_transform, price_vanilla_equity_option_transform_result, put_from_call_parity, resolve_single_state_terminal_claim_transform_inputs, resolve_vanilla_equity_transform_inputs, terminal_intrinsic_from_resolved
 
 ### Models — Processes
 from trellis.models.processes.gbm import GBM
@@ -554,6 +558,7 @@ from trellis.models.processes.local_vol import LocalVol
 from trellis.models.copulas.gaussian import GaussianCopula
 from trellis.models.copulas.factor import FactorCopula
 from trellis.models.copulas.student_t import StudentTCopula
+from trellis.models.credit_basket_copula import price_credit_basket_nth_to_default, price_credit_basket_tranche, price_credit_basket_tranche_result, price_nth_to_default_basket, resolve_credit_basket_inputs
 
 ### Models — Calibration
 from trellis.models.calibration.implied_vol import implied_vol, implied_vol_jaeckel

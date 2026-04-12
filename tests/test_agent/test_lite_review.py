@@ -233,7 +233,7 @@ def price(spec, market_state):
             primitives=(
                 PrimitiveRef("trellis.models.rate_style_swaption", "price_swaption_black76", "route_helper"),
             ),
-            adapters=("reuse_checked_in_rate_style_swaption_helper",),
+            adapters=(),
             blockers=(),
         ),
     )
@@ -287,7 +287,7 @@ def price(spec, market_state):
             primitives=(
                 PrimitiveRef("trellis.models.rate_style_swaption_tree", "price_swaption_tree", "route_helper"),
             ),
-            adapters=("reuse_checked_in_rate_style_swaption_helper",),
+            adapters=(),
             blockers=(),
         ),
     )
@@ -341,7 +341,7 @@ def price(spec, market_state):
             primitives=(
                 PrimitiveRef("trellis.models.rate_style_swaption", "price_swaption_monte_carlo", "route_helper"),
             ),
-            adapters=("reuse_checked_in_rate_style_swaption_helper",),
+            adapters=(),
             blockers=(),
         ),
     )
@@ -695,7 +695,7 @@ def price(spec, market_state):
                     "route_helper",
                 ),
             ),
-            adapters=("reuse_checked_in_vanilla_equity_pde_helper",),
+            adapters=(),
             blockers=(),
         ),
     )
