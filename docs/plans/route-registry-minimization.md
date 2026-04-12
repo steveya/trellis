@@ -290,6 +290,18 @@ The active route-card retirement queue is now tracked under umbrella
 5. `QUA-784` generic Monte Carlo and basket routes:
    `monte_carlo_paths`, `correlated_basket_monte_carlo`
    Validation cohort: `T37`, `T53`, `T102`, `T104`, `T126`, `E21`, `E22`, `E24`, `E26`
+   Closeout status: both route cards are now metadata-first, with explicit
+   empty adapter / note overrides through conditional resolution. Ranked-
+   observation baskets stay on `correlated_basket_monte_carlo`, generic
+   `basket_option` wrappers now stay on `monte_carlo_paths`, and explicit
+   credit-basket cues on generic basket wrappers upgrade through the semantic /
+   decomposition layer to `nth_to_default_monte_carlo` instead of widening into
+   the basket helper route. `E21` and `E22` still pass; `E26` now reaches the
+   correct nth-to-default helper pair and carries only a downstream comparison
+   failure outside this slice; `T102` now stays on the generic Monte Carlo path
+   and carries only downstream build-quality gaps outside this slice; `T37`,
+   `T53`, and `E24` no longer fail because of route-card authority but remain
+   broader out-of-scope comparison / semantic gaps.
 6. `QUA-785` metadata-first residual audit:
    `exercise_monte_carlo`, `local_vol_monte_carlo`, `qmc_sobol_paths`,
    `waterfall_cashflows`
@@ -326,6 +338,6 @@ Status mirror last synced: `2026-04-12`
 | `QUA-782` | Route surfaces: credit and copula routes retire procedural authority behind backend helpers | Done |
 | `QUA-781` | Route surfaces: rate-tree routes retire procedural authority and stay task-backed | Done |
 | `QUA-783` | Route surfaces: analytical Black76, PDE, and FFT routes retire procedural guidance | Done |
-| `QUA-784` | Route surfaces: generic Monte Carlo and basket routes collapse to family-first metadata | Backlog |
+| `QUA-784` | Route surfaces: generic Monte Carlo and basket routes collapse to family-first metadata | Done |
 | `QUA-785` | Route inventory: audit metadata-first residual route cards against representative tasks | Backlog |
 | `QUA-777` | Route scoring: remove residual route-identity authority after route-card retirement | Backlog |

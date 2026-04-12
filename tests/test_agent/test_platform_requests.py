@@ -756,6 +756,46 @@ def test_compile_build_request_does_not_block_title_only_credit_builder_requests
     assert compiled.product_ir.instrument == expected_instrument
 
 
+def test_compile_build_request_treats_generic_basket_wrapper_as_nth_to_default_when_credit_cues_dominate():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "Nth-to-default basket: Gaussian copula vs default-time MC",
+        instrument_type="basket_option",
+        preferred_method="monte_carlo",
+    )
+
+    assert compiled.semantic_contract is None
+    assert compiled.execution_plan.reason == "free_form_build_request"
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.instrument == "nth_to_default"
+    assert compiled.product_ir.route_families == ("nth_to_default",)
+    assert compiled.pricing_plan is not None
+    assert compiled.pricing_plan.method == "monte_carlo"
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.primitive_plan is not None
+    assert compiled.generation_plan.primitive_plan.route == "nth_to_default_monte_carlo"
+
+
+def test_compile_build_request_keeps_generic_basket_option_off_ranked_observation_route():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "Rainbow option (best-of-two): Stulz formula vs MC",
+        instrument_type="basket_option",
+        preferred_method="monte_carlo",
+    )
+
+    assert compiled.semantic_contract is None
+    assert compiled.execution_plan.reason == "free_form_build_request"
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.instrument == "basket_option"
+    assert compiled.product_ir.payoff_family == "basket_option"
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.primitive_plan is not None
+    assert compiled.generation_plan.primitive_plan.route == "monte_carlo_paths"
+
+
 def test_novel_request_persists_semantic_extension_trace(monkeypatch, tmp_path):
     from trellis.agent.platform_requests import compile_build_request
     import trellis.agent.knowledge.promotion as promotion_mod

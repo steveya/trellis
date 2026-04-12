@@ -307,6 +307,14 @@ accurate because the generic vanilla MC routes have not yet all switched over
 to that family, even though the compiler now emits it for the bounded
 schedule-driven swaption slice.
 
+The generic Monte Carlo route cards are now also explicitly metadata-first.
+`monte_carlo_paths` and `correlated_basket_monte_carlo` still exist as backend
+binding records, but they no longer carry procedural synthesis guidance. The
+semantic and decomposition layers now decide when a generic `basket_option`
+wrapper stays on the generic Monte Carlo path, when ranked-observation traits
+refine it onto the basket helper route, and when explicit credit-basket cues
+upgrade it to the nth-to-default family before route binding.
+
 Callable-bond wrappers now follow the same “thin public shell over reusable
 family helpers” rule as the newer event-aware routes. The public PDE/tree
 helpers still exist, but coupon timeline compilation, embedded exercise

@@ -1202,6 +1202,19 @@ class TestCreditConceptResolution:
         resolution = resolve_semantic_concept("first to default basket on IG credits")
         assert resolution.concept_id == "nth_to_default"
 
+    def test_nth_to_default_draft_accepts_generic_basket_wrapper_when_credit_cues_are_explicit(self):
+        from trellis.agent.semantic_contracts import draft_semantic_contract
+
+        contract = draft_semantic_contract(
+            "First-to-default basket on IBM, GE with maturity 2027-06-20 and Gaussian copula default correlation",
+            instrument_type="basket_option",
+        )
+
+        assert contract is not None
+        assert contract.semantic_id == "nth_to_default"
+        assert contract.product.instrument_class == "nth_to_default"
+        assert contract.product.constituents == ("IBM", "GE")
+
     def test_ambiguous_credit_with_overlapping_cues(self):
         """Request matching cues from both CDS and NTD should be ambiguous or contested."""
         from trellis.agent.semantic_concepts import resolve_semantic_concept

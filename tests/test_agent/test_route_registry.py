@@ -386,7 +386,8 @@ class TestBasketRoutes:
 
     def test_monte_carlo_candidate(self, registry):
         new = _new_routes(registry, "monte_carlo", self.BASKET_IR)
-        assert new == ("correlated_basket_monte_carlo",)
+        assert new[0] == "correlated_basket_monte_carlo"
+        assert "monte_carlo_paths" in new
 
     def test_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "correlated_basket_monte_carlo"][0]
@@ -396,6 +397,8 @@ class TestBasketRoutes:
             ("trellis.models.monte_carlo.semantic_basket", "price_ranked_observation_basket_monte_carlo", "route_helper"),
         }
         assert _prim_set(new_prims) == expected_prims
+        assert resolve_route_adapters(spec, self.BASKET_IR) == ()
+        assert resolve_route_notes(spec, self.BASKET_IR) == ()
 
     def test_admissibility_rejects_strategic_control_for_basket_event_route(self, registry):
         from dataclasses import replace
@@ -494,10 +497,22 @@ class TestMonteCarloPathsRoutes:
         exercise_style="none",
         model_family="generic",
     )
+    GENERIC_BASKET_IR = ProductIR(
+        instrument="basket_option",
+        payoff_family="basket_option",
+        payoff_traits=("vanilla_option",),
+        exercise_style="european",
+        model_family="generic",
+    )
 
     def test_candidate(self, registry):
         new = _new_routes(registry, "monte_carlo", self.EUROPEAN_IR)
         assert "monte_carlo_paths" in new
+
+    def test_generic_basket_candidate_stays_on_generic_monte_carlo_surface(self, registry):
+        new = _new_routes(registry, "monte_carlo", self.GENERIC_BASKET_IR)
+        assert "monte_carlo_paths" in new
+        assert "correlated_basket_monte_carlo" not in new
 
     def test_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
@@ -517,6 +532,14 @@ class TestMonteCarloPathsRoutes:
         assert resolve_route_primitives(spec, self.GENERIC_IR) == spec.primitives
         assert resolve_route_adapters(spec, self.GENERIC_IR) == spec.adapters
         assert resolve_route_notes(spec, self.GENERIC_IR) == spec.notes
+
+    def test_helper_backed_branches_do_not_reintroduce_route_notes_or_adapters(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+
+        assert resolve_route_adapters(spec, self.EUROPEAN_IR) == ()
+        assert resolve_route_notes(spec, self.EUROPEAN_IR) == ()
+        assert resolve_route_adapters(spec, self.GENERIC_IR) == ()
+        assert resolve_route_notes(spec, self.GENERIC_IR) == ()
 
     def test_admissibility_hydrates_process_and_path_contracts(self, registry):
         generic = find_route_by_id("monte_carlo_paths", registry)

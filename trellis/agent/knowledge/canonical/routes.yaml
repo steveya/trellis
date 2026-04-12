@@ -208,7 +208,6 @@ routes:
       non_european_penalty: -1.5
     match:
       methods: [monte_carlo, qmc]
-      instruments: [basket_option]
       payoff_family: [basket_path_payoff]
       payoff_traits: [ranked_observation]
     admissibility:
@@ -227,18 +226,8 @@ routes:
       - module: trellis.models.monte_carlo.semantic_basket
         symbol: price_ranked_observation_basket_monte_carlo
         role: route_helper
-    adapters:
-      - reuse_shared_basket_market_binding
-      - reuse_shared_basket_mc_route_helper
-    notes:
-      - "Basket Monte Carlo routing should use generic basket semantics and snapshot-based state instead of a product-specific mountain-range branch."
-      - "The generated basket adapter must require a real `black_vol_surface` plus discounting and spot inputs; do not treat basket pricing as discount-curve only."
-      - "Parse `spec.underlyings` into a Python list of ticker strings and `spec.observation_dates` into `date` objects before basket resolution; do not pass raw comma-separated strings into the resolver."
-      - "Bind the market state with `resolve_basket_semantics(...)`, then delegate straight to `price_ranked_observation_basket_monte_carlo(...)` through a thin adapter; do not import process primitives directly in the generated adapter."
-      - "Use `resolved.constituent_spots` as the multi-asset initial state for the Monte Carlo helper; do not reshape or index the raw `MarketState` as if it were a path tensor."
-      - "Build `RankedObservationBasketSpec` with `constituents` and `option_type`; do not pass `basket_assets`, `asset_names`, `underlyings`, `is_call`, or `start_date` into the shared spec."
-      - "Reuse `RankedObservationBasketSpec` and `RankedObservationBasketMonteCarloPayoff` from `trellis.models.monte_carlo.semantic_basket`, import only `trellis.models.resolution.basket_semantics` and `trellis.models.monte_carlo.semantic_basket` for the basket adapter, and do not invent extra `trellis.models.*` basket or payoff subpackages."
-      - "Do not introduce a bespoke basket spec name such as `HimalayaBasketSpec` or reimplement rank/remove/aggregate logic inline."
+    adapters: []
+    notes: []
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -326,7 +315,7 @@ routes:
       penalize_when_market_data: {local_vol_surface: -3.0}
     match:
       methods: [monte_carlo]
-      exclude_instruments: [quanto_option, cds, nth_to_default, basket_option]
+      exclude_instruments: [quanto_option, cds, nth_to_default]
     admissibility:
       control_styles: [identity]
       event_support: automatic
@@ -351,10 +340,8 @@ routes:
       - module: trellis.models.monte_carlo.event_aware
         symbol: price_event_aware_monte_carlo
         role: route_helper
-    adapters:
-      - build_payoff_vector_from_paths
-    notes:
-      - "Prefer existing MC simulation helpers over bespoke path loops."
+    adapters: []
+    notes: []
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -368,9 +355,7 @@ routes:
             symbol: price_vanilla_equity_option_monte_carlo
             role: route_helper
         adapters: []
-        notes:
-          - "For vanilla European equity options, prefer `trellis.models.equity_option_monte_carlo.price_vanilla_equity_option_monte_carlo(...)`."
-          - "Treat the generated route as a thin adapter over the checked family helper; do not rebuild GBM process construction, scheme wiring, or variance-reduction glue inline."
+        notes: []
       - when:
           payoff_family: swaption
           exercise_style: [european]
@@ -380,9 +365,7 @@ routes:
             symbol: price_swaption_monte_carlo
             role: route_helper
         adapters: []
-        notes:
-          - "For European rate-style swaptions, prefer `trellis.models.rate_style_swaption.price_swaption_monte_carlo(...)`."
-          - "Treat the generated route as a thin adapter over the checked family helper; do not rebuild Hull-White process resolution, event payload assembly, or Monte Carlo plumbing inline."
+        notes: []
       - when: default
         primitives: []
         adapters: []
