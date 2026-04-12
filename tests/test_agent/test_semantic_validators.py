@@ -310,6 +310,25 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("credit_default_swap_analytical"), spec)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
+    def test_rejects_credit_default_swap_analytical_positional_calls(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap_analytical"][0]
+        source = '''
+from trellis.models.credit_default_swap import price_cds_analytical
+
+def evaluate(self, market_state):
+    return price_cds_analytical(
+        self._spec.notional,
+        self._spec.spread_quote,
+        self._spec.recovery,
+        schedule,
+        market_state.credit_curve,
+        market_state.discount_curve,
+    )
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("credit_default_swap_analytical"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+
     def test_flags_credit_default_swap_monte_carlo_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap_monte_carlo"][0]
         source = '''
@@ -350,6 +369,26 @@ def evaluate(self, market_state):
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("credit_default_swap_monte_carlo", "monte_carlo"), spec)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_rejects_credit_default_swap_monte_carlo_positional_calls(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap_monte_carlo"][0]
+        source = '''
+from trellis.models.credit_default_swap import price_cds_monte_carlo
+
+def evaluate(self, market_state):
+    return price_cds_monte_carlo(
+        self._spec.notional,
+        self._spec.spread_quote,
+        self._spec.recovery,
+        schedule,
+        market_state.credit_curve,
+        market_state.discount_curve,
+        self._spec.n_paths,
+    )
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("credit_default_swap_monte_carlo", "monte_carlo"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_flags_nth_to_default_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "nth_to_default_monte_carlo"][0]
@@ -392,6 +431,27 @@ def evaluate(self, market_state):
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("nth_to_default_monte_carlo", "monte_carlo"), spec)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_rejects_nth_to_default_positional_calls(self, registry):
+        spec = [r for r in registry.routes if r.id == "nth_to_default_monte_carlo"][0]
+        source = '''
+from trellis.instruments.nth_to_default import price_nth_to_default_basket
+
+def evaluate(self, market_state):
+    return price_nth_to_default_basket(
+        self._spec.notional,
+        len(self._spec.reference_entities),
+        self._spec.nth_default,
+        self._spec.horizon,
+        self._spec.correlation,
+        self._spec.recovery,
+        market_state.credit_curve,
+        market_state.discount_curve,
+    )
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("nth_to_default_monte_carlo", "monte_carlo"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_flags_credit_basket_tranche_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "copula_loss_distribution"][0]

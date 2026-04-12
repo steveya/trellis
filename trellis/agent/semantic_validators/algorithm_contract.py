@@ -42,6 +42,7 @@ _DISCOUNT_PATTERNS = (
 _EXACT_HELPER_SIGNATURES = {
     "price_cds_analytical": {
         "min_positional_args": 0,
+        "keyword_only": True,
         "required_parameters": (
             "notional",
             "spread_quote",
@@ -77,6 +78,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_cds_monte_carlo": {
         "min_positional_args": 0,
+        "keyword_only": True,
         "required_parameters": (
             "notional",
             "spread_quote",
@@ -158,6 +160,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_nth_to_default_basket": {
         "min_positional_args": 0,
+        "keyword_only": True,
         "required_parameters": (
             "notional",
             "n_names",
@@ -488,6 +491,9 @@ def _call_satisfies_required_surface(
     keyword_surface_ok: bool,
 ) -> bool:
     """Return whether one helper call satisfies the declared required surface."""
+    if bool(signature.get("keyword_only")) and call.args:
+        return False
+
     required_parameters = tuple(str(item) for item in signature.get("required_parameters", ()) or ())
     positional_markers = tuple(signature.get("required_positional_markers", ()) or ())
 
