@@ -192,6 +192,10 @@ and schedule constraints still surface when needed, but route-card notes are
 kept as historical metadata rather than live ``route_hint`` authority, and
 prompt ranking no longer gives first-class priority to exact ``route:<id>``
 tag matches over broader family / method / instrument fit.
+The experimental offline route-learning scaffold now reuses that same
+minimized feature surface instead of emitting its own route-id or
+route-family one-hots, so future retraining work cannot silently regress the
+live scorer contract.
 
 For rate-style swaption comparison builds, the semantic compiler now also keeps
 the contract-level convention surface attached to each method-specific plan.

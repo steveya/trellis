@@ -325,6 +325,10 @@ and schedule constraints can still surface as hard constraints, but route-card
 notes are no longer projected as live ``route_hint`` records and the prompt
 rankers no longer sort exact ``route:<id>`` matches ahead of broader
 instrument / method / family fit.
+The offline ``trellis.agent.route_learning`` scaffold is now explicitly
+experimental-only and reuses the live scorer feature contract instead of
+encoding separate route-id or route-family authority, so later retraining work
+starts from the minimized surface rather than an older route-first one.
 
 Callable-bond wrappers now follow the same “thin public shell over reusable
 family helpers” rule as the newer event-aware routes. The public PDE/tree
