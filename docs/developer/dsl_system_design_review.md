@@ -215,6 +215,14 @@ such as ``zcb_option`` now blocks fallback drafting into a generic
 ``vanilla_option`` contract when the prose only happens to contain generic
 ``option`` language.
 
+The analytical / PDE / FFT helper cohort now behaves the same way.
+Helper-backed Black76 swaption routes, vanilla-equity PDE / event-aware PDE
+helper branches, and the vanilla-equity transform helper keep only backend
+binding, admissibility, and signature-validation authority. When generated code
+tries to reconstruct spot/strike/time bundles or call those helpers on the
+wrong surface, semantic validation now fails directly instead of leaning on
+route-card repair prose.
+
 The Monte Carlo compiler now has the matching bounded family surface for the
 next migration tranche:
 

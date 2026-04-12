@@ -24,6 +24,7 @@ import yaml
 
 from trellis.agent.codegen_guardrails import PrimitiveRef
 from trellis.agent.family_lowering_ir import (
+    AnalyticalBlack76IR,
     EventAwareMonteCarloIR,
     EventAwarePDEIR,
     TransformPricingIR,
@@ -73,8 +74,8 @@ class ConditionalPrimitive:
 
     when: dict[str, Any] | str  # dict of trait conditions, or "default"
     primitives: tuple[PrimitiveRef, ...] = ()
-    adapters: tuple[str, ...] = ()
-    notes: tuple[str, ...] = ()
+    adapters: tuple[str, ...] | None = None
+    notes: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -282,8 +283,8 @@ def _parse_conditional_primitives(raw: list | None) -> tuple[ConditionalPrimitiv
     for entry in raw:
         when = entry.get("when", "default")
         primitives = tuple(_parse_primitive(p) for p in entry.get("primitives", ()))
-        adapters = tuple(entry.get("adapters", ()))
-        notes = tuple(entry.get("notes", ()))
+        adapters = None if "adapters" not in entry else tuple(entry.get("adapters", ()))
+        notes = None if "notes" not in entry else tuple(entry.get("notes", ()))
         result.append(ConditionalPrimitive(
             when=when,
             primitives=primitives,
@@ -869,10 +870,10 @@ def resolve_route_adapters(
 
     for cond in spec.conditional_primitives:
         if isinstance(cond.when, str) and cond.when == "default":
-            return cond.adapters if cond.adapters else spec.adapters
+            return spec.adapters if cond.adapters is None else cond.adapters
         if isinstance(cond.when, dict):
             if _matches_condition(cond.when, payoff_family, exercise, model_family, product_ir):
-                return cond.adapters if cond.adapters else spec.adapters
+                return spec.adapters if cond.adapters is None else cond.adapters
 
     return spec.adapters
 
@@ -895,8 +896,8 @@ def resolve_route_notes(
                 matched = True
             elif isinstance(cond.when, dict):
                 matched = _matches_condition(cond.when, payoff_family, exercise, model_family, product_ir)
-            if matched and cond.notes:
-                base_notes = list(cond.notes)
+            if matched:
+                base_notes = list(spec.notes if cond.notes is None else cond.notes)
                 break
 
     # Resolve dynamic notes
@@ -1327,7 +1328,14 @@ def evaluate_route_admissibility(
     ):
         failures.append("unsupported_phase_order:custom_same_day_order")
 
-    if _has_automatic_events(product) and admissibility.event_support == "none":
+    if (
+        _has_automatic_events(product)
+        and admissibility.event_support == "none"
+        and not _allows_structural_schedule_strip_on_non_event_route(
+            family_ir=family_ir,
+            supported_state_tags=set(admissibility.supported_state_tags or ()),
+        )
+    ):
         failures.append("unsupported_event_support:automatic_triggers")
 
     if spec.engine_family == "lattice":
@@ -1467,6 +1475,25 @@ def _has_automatic_events(product) -> bool:
         if typed_surface_present:
             return True
     return bool(getattr(product, "schedule_dependence", False) and getattr(product, "event_transitions", ()))
+
+
+def _allows_structural_schedule_strip_on_non_event_route(
+    *,
+    family_ir,
+    supported_state_tags: set[str],
+) -> bool:
+    """Allow structural schedule strips lowered onto thin analytical helper surfaces.
+
+    Schedule-driven cap/floor strips lower to an analytical Black-76 family IR
+    with explicit schedule-state support but no event-machine runtime. Those
+    should not be rejected by the generic automatic-event guard.
+    """
+    if "schedule_state" not in supported_state_tags:
+        return False
+    return (
+        isinstance(family_ir, AnalyticalBlack76IR)
+        and str(getattr(family_ir, "payoff_family", "") or "") == "rate_cap_floor_strip"
+    )
 
 
 def _requires_cross_currency_support(product, market_binding_spec, valuation_context) -> bool:

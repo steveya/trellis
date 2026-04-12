@@ -140,7 +140,8 @@ def test_builds_pde_plan_for_european_option_uses_helper_route():
     primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
     assert primitive_symbols == {"price_vanilla_equity_option_pde"}
     assert primitive_modules == {"trellis.models.equity_option_pde"}
-    assert any("theta_0.5" in note for note in plan.primitive_plan.notes)
+    assert plan.primitive_plan.adapters == ()
+    assert plan.primitive_plan.notes == ()
 
 
 def test_builds_primitive_plan_for_swaption():
@@ -167,6 +168,8 @@ def test_builds_primitive_plan_for_swaption():
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert {"price_swaption_black76"} <= primitive_symbols
     assert "black76_call" not in primitive_symbols
+    assert plan.primitive_plan.adapters == ()
+    assert plan.primitive_plan.notes == ()
     assert plan.primitive_plan.blockers == ()
 
 

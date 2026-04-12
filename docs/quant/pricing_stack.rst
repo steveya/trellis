@@ -254,6 +254,21 @@ helpers, but the route cards no longer carry lattice-construction or
 short-rate-input assembly instructions once the helper surface already owns
 that work.
 
+The analytical / PDE / FFT helper cohort now follows the same rule. The
+helper-backed Black76 swaption routes, the vanilla-equity PDE helper, the
+bounded event-aware PDE helper branches, and the vanilla-equity transform
+helper keep backend binding, admissibility, and validation ownership while
+dropping route-card adapter prose and backend notes once the checked helper
+surface already owns that assembly. Exact-helper validation now enforces the
+thin ``(market_state, spec, ...)`` call surface for those helpers instead of
+letting comparator or repair scaffolds rebuild raw market-input bundles inline.
+
+For schedule-driven cap/floor strips lowered onto ``analytical_black76``, the
+typed schedule state now carries admissibility directly. Structural
+caplet/floorlet strips no longer get rejected as generic ``automatic`` event
+routes when the lowered family IR is already the checked analytical strip
+surface.
+
 Below those public callable wrappers, the reusable coupon/event/control layer
 now lives in ``trellis.models.short_rate_fixed_income``. Coupon schedule
 compilation, embedded issuer/holder exercise semantics, straight-bond

@@ -3467,7 +3467,10 @@ def _reference_modules(
             modules.append(("trellis.models.processes.gbm", "GBM process reference"))
         elif method == "copula":
             modules.append(("trellis.instruments.nth_to_default", "NthToDefaultPayoff (copula reference)"))
-            modules.append(("trellis.models.copulas", "Copula package exports"))
+            modules.append(("trellis.models.credit_basket_copula", "Credit basket copula helper"))
+            modules.append(("trellis.models.copulas.factor", "Factor copula kernel"))
+            modules.append(("trellis.models.copulas.gaussian", "Gaussian copula kernel"))
+            modules.append(("trellis.models.copulas.student_t", "Student-t copula kernel"))
         elif method == "pde_solver":
             modules.append(("trellis.models.pde", "PDE package exports"))
             modules.append(("trellis.models.pde.theta_method", "Theta-method solver reference"))
@@ -3476,7 +3479,11 @@ def _reference_modules(
             if normalized_instrument == "european_option":
                 modules.append(("trellis.models.equity_option_pde", "Vanilla equity PDE helper"))
         elif method == "fft_pricing":
-            modules.append(("trellis.models.transforms", "Transform package exports"))
+            modules.append(("trellis.models.transforms.fft_pricer", "FFT transform pricer"))
+            modules.append(("trellis.models.transforms.cos_method", "COS transform pricer"))
+            modules.append(("trellis.models.transforms.single_state_diffusion", "Transform diffusion contracts"))
+            if normalized_instrument == "european_option":
+                modules.append(("trellis.models.equity_option_transforms", "Vanilla equity transform helper"))
             modules.append(("trellis.models.processes.heston", "Heston process reference"))
         elif method == "waterfall":
             modules.append(("trellis.models.cashflow_engine.waterfall", "Cashflow waterfall reference"))

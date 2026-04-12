@@ -129,6 +129,81 @@ _EXACT_HELPER_SIGNATURES = {
             "`expiry_date`, and optional exercise fields instead of inventing helper keywords."
         ),
     },
+    "price_vanilla_equity_option_monte_carlo": {
+        "min_positional_args": 2,
+        "max_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({
+            "market_state",
+            "spec",
+            "scheme",
+            "variance_reduction",
+            "n_paths",
+            "n_steps",
+            "seed",
+        }),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_vanilla_equity_option_monte_carlo(...)` expects `(market_state, "
+            "spec, *, scheme=..., variance_reduction=..., n_paths=..., n_steps=..., "
+            "seed=...)`. Pass the live market state and original spec-like object "
+            "instead of spot/strike scalars or hand-built Monte Carlo plumbing."
+        ),
+    },
+    "price_vanilla_equity_option_transform": {
+        "min_positional_args": 2,
+        "max_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({
+            "market_state",
+            "spec",
+            "method",
+            "fft_alpha",
+            "fft_points",
+            "fft_eta",
+            "cos_points",
+            "cos_truncation",
+        }),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_vanilla_equity_option_transform(...)` expects `(market_state, spec, "
+            "*, method=..., fft_alpha=..., fft_points=..., fft_eta=..., cos_points=..., "
+            "cos_truncation=...)`. Pass the live market state and original spec-like "
+            "object instead of raw transform arguments or reconstructed spot/strike inputs."
+        ),
+    },
+    "price_vanilla_equity_option_pde": {
+        "min_positional_args": 2,
+        "max_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({
+            "market_state",
+            "spec",
+            "theta",
+            "n_x",
+            "n_t",
+            "s_max_multiplier",
+        }),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_vanilla_equity_option_pde(...)` expects `(market_state, spec, *, "
+            "theta=..., n_x=..., n_t=..., s_max_multiplier=...)`. Pass the live market "
+            "state and original spec-like object instead of explicit spot/strike/time "
+            "keywords or manual PDE setup."
+        ),
+    },
     "price_callable_bond_tree": {
         "min_positional_args": 2,
         "max_positional_args": 2,

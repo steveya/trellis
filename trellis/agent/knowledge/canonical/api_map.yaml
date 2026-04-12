@@ -125,10 +125,12 @@ pde:
 # Model imports — FFT / Fourier
 # ---------------------------------------------------------------------------
 fft:
-  module: trellis.models.transforms
+  module: trellis.models.transforms.fft_pricer
   key_imports:
-    - "from trellis.models.transforms import fft_price, cos_price"
+    - "from trellis.models.transforms.fft_pricer import fft_price"
+    - "from trellis.models.transforms.cos_method import cos_price"
   notes:
+    - "Concrete transform helpers live in submodules; do not import `trellis.models.transforms` directly."
     - "fft_price expects CF of log(S_T) — include log(S0)"
     - "cos_price expects CF of log(S_T/S0) — log-return only"
 
@@ -136,9 +138,11 @@ fft:
 # Model imports — copulas
 # ---------------------------------------------------------------------------
 copulas:
-  module: trellis.models.copulas
+  module: trellis.models.copulas.factor
   key_imports:
-    - "from trellis.models.copulas import GaussianCopula, StudentTCopula, FactorCopula"
+    - "from trellis.models.copulas.factor import FactorCopula"
+    - "from trellis.models.copulas.gaussian import GaussianCopula"
+    - "from trellis.models.copulas.student_t import StudentTCopula"
 
 # ---------------------------------------------------------------------------
 # Model imports — analytical
