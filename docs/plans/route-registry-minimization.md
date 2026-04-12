@@ -268,10 +268,14 @@ The active route-card retirement queue is now tracked under umbrella
    `exercise_lattice`, `rate_tree_backward_induction`,
    `zcb_option_rate_tree`, `zcb_option_analytical`
    Validation cohort: `T01`, `T04`, `T05`, `T17`
+   Closeout status: route cards thinned and helper-signature enforcement landed;
+   `T01` and `T05` recovered, `T17` carries forward to `QUA-783`, and the
+   residual `T04` comparison mismatch is tracked in `QUA-786` outside this
+   route-surface workstream
 4. `QUA-783` analytical / PDE / FFT routes:
    `analytical_black76`, `vanilla_equity_theta_pde`, `pde_theta_1d`,
    `transform_fft`
-   Validation cohort: `T13`, `T39`, `T53`, `T73`, `T94`, `E21`, `E22`, `T103`
+   Validation cohort: `T13`, `T17`, `T39`, `T53`, `T73`, `T94`, `E21`, `E22`, `T103`
 5. `QUA-784` generic Monte Carlo and basket routes:
    `monte_carlo_paths`, `correlated_basket_monte_carlo`
    Validation cohort: `T37`, `T53`, `T102`, `T104`, `T126`, `E21`, `E22`, `E24`, `E26`
@@ -309,7 +313,7 @@ Status mirror last synced: `2026-04-12`
 | `QUA-732` | Compatibility cleanup: retire redundant route aliases after migrated-family adoption | Done |
 | `QUA-778` | Route surfaces: FX and quanto exact-helper routes stop emitting procedural authority | Done |
 | `QUA-782` | Route surfaces: credit and copula routes retire procedural authority behind backend helpers | Done |
-| `QUA-781` | Route surfaces: rate-tree routes retire procedural authority and stay task-backed | Backlog |
+| `QUA-781` | Route surfaces: rate-tree routes retire procedural authority and stay task-backed | Done |
 | `QUA-783` | Route surfaces: analytical Black76, PDE, and FFT routes retire procedural guidance | Backlog |
 | `QUA-784` | Route surfaces: generic Monte Carlo and basket routes collapse to family-first metadata | Backlog |
 | `QUA-785` | Route inventory: audit metadata-first residual route cards against representative tasks | Backlog |

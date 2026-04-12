@@ -335,6 +335,7 @@ The checked helper-backed lattice routes remain:
 
 - ``trellis.models.callable_bond_tree.price_callable_bond_tree``
 - ``trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree``
+- ``trellis.models.zcb_option_tree.price_zcb_option_tree``
 
 Target API Design
 -----------------

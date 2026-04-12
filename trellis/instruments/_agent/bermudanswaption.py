@@ -17,10 +17,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from trellis.core.date_utils import generate_schedule, year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.black import black76_call, black76_put
+from trellis.models.rate_style_swaption import price_bermudan_swaption_black76_lower_bound
 
 
 
@@ -77,8 +76,4 @@ Implementation target: black76_european_lower_bound."""
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        spec = self._spec
-        from trellis.models.rate_style_swaption import price_bermudan_swaption_black76_lower_bound
-
-        # Thin analytical adapter: delegate to the checked-in route helper.
         return float(price_bermudan_swaption_black76_lower_bound(market_state, spec))

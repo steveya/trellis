@@ -205,6 +205,16 @@ loops, survival/default plumbing, copula initialization, and tranche-loss
 projection are no longer carried as route-card instructions once the checked
 helpers already own that surface.
 
+The rate-tree cohort now follows the same discipline. ``exercise_lattice``,
+``rate_tree_backward_induction``, ``zcb_option_rate_tree``, and
+``zcb_option_analytical`` still expose the backend binding and the validation
+surface, but they no longer supply prompt-level lattice or short-rate
+construction guidance when the checked helper already owns that assembly. The
+semantic drafting boundary is also stricter here: an explicit ``instrument_type``
+such as ``zcb_option`` now blocks fallback drafting into a generic
+``vanilla_option`` contract when the prose only happens to contain generic
+``option`` language.
+
 The Monte Carlo compiler now has the matching bounded family surface for the
 next migration tranche:
 

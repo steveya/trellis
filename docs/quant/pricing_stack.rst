@@ -247,6 +247,12 @@ generic exotics runtime. The callable-bond slice now also projects callable
 analytics directly off that tree boundary: effective ``oas_duration`` plus a
 callable-specific scenario ladder that compares callable price, straight-bond
 reference price, and embedded call option value under parallel rate shocks.
+The same route-thinning rule now also applies to the short-rate ZCB-option
+cohort. ``zcb_option_rate_tree`` and ``zcb_option_analytical`` remain as
+backend-binding identities for the checked Hull-White tree and Jamshidian
+helpers, but the route cards no longer carry lattice-construction or
+short-rate-input assembly instructions once the helper surface already owns
+that work.
 
 Below those public callable wrappers, the reusable coupon/event/control layer
 now lives in ``trellis.models.short_rate_fixed_income``. Coupon schedule
