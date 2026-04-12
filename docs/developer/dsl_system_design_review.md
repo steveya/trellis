@@ -198,6 +198,13 @@ route-local input mappers as live build instructions. Review and validation are
 expected to fail if generated code bypasses that helper surface or calls it on
 the wrong signature.
 
+The credit and copula helper cohort now follows the same rule. The
+single-name CDS, nth-to-default, and tranche-style basket-credit route cards
+keep only backend binding, admissibility, and validation ownership. Schedule
+loops, survival/default plumbing, copula initialization, and tranche-loss
+projection are no longer carried as route-card instructions once the checked
+helpers already own that surface.
+
 The Monte Carlo compiler now has the matching bounded family surface for the
 next migration tranche:
 

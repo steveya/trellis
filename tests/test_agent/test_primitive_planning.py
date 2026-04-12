@@ -197,7 +197,7 @@ def test_builds_cds_monte_carlo_plan_without_generic_mc_engine():
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert {"build_cds_schedule", "interval_default_probability", "price_cds_monte_carlo", "get_numpy"} <= primitive_symbols
     assert "MonteCarloEngine" not in primitive_symbols
-    assert any("Do not import or instantiate `MonteCarloEngine`" in note for note in plan.primitive_plan.notes)
+    assert plan.primitive_plan.notes == ()
 
 
 def test_builds_equity_analytical_plan_for_european_option():

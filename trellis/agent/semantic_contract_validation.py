@@ -397,12 +397,15 @@ def classify_semantic_gap(
     request_text = _combined_request_text(description, instrument_type, term_sheet)
     normalized_text = _normalize_text(request_text)
     cues = _semantic_cues(normalized_text)
-    has_any_semantic_cue = any(cues.values())
     concept_resolution = resolve_semantic_concept(
         description,
         instrument_type=instrument_type,
         term_sheet=term_sheet,
     )
+    has_shape_authority = cues["shape"] or _semantic_concept_supplies_shape_authority(
+        concept_resolution
+    )
+    has_any_semantic_cue = any(cues.values()) or has_shape_authority
     if not _should_surface_semantic_concept_in_gap(concept_resolution, cues):
         concept_resolution = SemanticConceptResolution(
             request_text=request_text,
@@ -415,7 +418,7 @@ def classify_semantic_gap(
     missing_route_helpers: list[str] = []
     missing_knowledge_artifacts: list[str] = []
 
-    if cues["shape"]:
+    if has_shape_authority:
         missing_contract_fields.extend(("underlier_structure", "payoff_rule", "settlement_rule"))
         missing_knowledge_artifacts.append("semantic_contract_lesson")
     if cues["schedule"]:
@@ -434,7 +437,7 @@ def classify_semantic_gap(
             missing_market_inputs.append("correlation_matrix")
     if cues["basket"] and cues["path"]:
         missing_route_helpers.append("correlated_basket_route_helper")
-    if instrument_type and not cues["shape"]:
+    if instrument_type and not has_shape_authority:
         missing_knowledge_artifacts.append("instrument_specific_lesson")
 
     if not has_any_semantic_cue:
@@ -956,6 +959,16 @@ def _should_surface_semantic_concept_in_gap(
     if definition.concept_role == "supporting_atom" and cues["shape"]:
         return False
     return True
+
+
+def _semantic_concept_supplies_shape_authority(concept_resolution) -> bool:
+    """Whether resolved semantic identity already nails down the product shape."""
+    if not getattr(concept_resolution, "concept_id", ""):
+        return False
+    return getattr(concept_resolution, "resolution_kind", "") in {
+        "reuse_existing_concept",
+        "thin_compatibility_wrapper",
+    }
 
 
 def _semantic_concept_summary_from_report(report: SemanticGapReport) -> dict[str, object] | None:

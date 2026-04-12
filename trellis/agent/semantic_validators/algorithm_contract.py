@@ -40,6 +40,77 @@ _DISCOUNT_PATTERNS = (
 )
 
 _EXACT_HELPER_SIGNATURES = {
+    "price_cds_analytical": {
+        "min_positional_args": 0,
+        "required_parameters": (
+            "notional",
+            "spread_quote",
+            "recovery",
+            "schedule",
+            "credit_curve",
+            "discount_curve",
+        ),
+        "required_keyword_groups": (
+            frozenset({
+                "notional",
+                "spread_quote",
+                "recovery",
+                "schedule",
+                "credit_curve",
+                "discount_curve",
+            }),
+        ),
+        "allowed_keywords": frozenset({
+            "notional",
+            "spread_quote",
+            "recovery",
+            "schedule",
+            "credit_curve",
+            "discount_curve",
+        }),
+        "message": (
+            "`price_cds_analytical(...)` is a keyword-only helper expecting "
+            "`notional=..., spread_quote=..., recovery=..., schedule=..., "
+            "credit_curve=..., discount_curve=...`. Use the checked helper surface "
+            "directly instead of rebuilding leg math or inventing alternate keywords."
+        ),
+    },
+    "price_cds_monte_carlo": {
+        "min_positional_args": 0,
+        "required_parameters": (
+            "notional",
+            "spread_quote",
+            "recovery",
+            "schedule",
+            "credit_curve",
+            "discount_curve",
+        ),
+        "required_keyword_groups": (
+            frozenset({
+                "notional",
+                "spread_quote",
+                "recovery",
+                "schedule",
+                "credit_curve",
+                "discount_curve",
+            }),
+        ),
+        "allowed_keywords": frozenset({
+            "notional",
+            "spread_quote",
+            "recovery",
+            "schedule",
+            "credit_curve",
+            "discount_curve",
+            "n_paths",
+            "seed",
+        }),
+        "message": (
+            "`price_cds_monte_carlo(...)` is a keyword-only helper expecting "
+            "`notional=..., spread_quote=..., recovery=..., schedule=..., "
+            "credit_curve=..., discount_curve=...` with optional `n_paths` and `seed`."
+        ),
+    },
     "price_vanilla_equity_option_tree": {
         "min_positional_args": 2,
         "required_parameters": ("market_state", "spec"),
@@ -83,6 +154,69 @@ _EXACT_HELPER_SIGNATURES = {
             "`price_fx_vanilla_monte_carlo(...)` expects `(market_state, spec, seed=...)`. "
             "Pass the live `market_state` and the original spec-like object instead of "
             "resolved process inputs or raw Monte Carlo plumbing."
+        ),
+    },
+    "price_nth_to_default_basket": {
+        "min_positional_args": 0,
+        "required_parameters": (
+            "notional",
+            "n_names",
+            "n_th",
+            "horizon",
+            "correlation",
+            "recovery",
+            "credit_curve",
+            "discount_curve",
+        ),
+        "required_keyword_groups": (
+            frozenset({
+                "notional",
+                "n_names",
+                "n_th",
+                "horizon",
+                "correlation",
+                "recovery",
+                "credit_curve",
+                "discount_curve",
+            }),
+        ),
+        "allowed_keywords": frozenset({
+            "notional",
+            "n_names",
+            "n_th",
+            "horizon",
+            "correlation",
+            "recovery",
+            "credit_curve",
+            "discount_curve",
+        }),
+        "message": (
+            "`price_nth_to_default_basket(...)` is a keyword-only helper expecting "
+            "`notional=..., n_names=..., n_th=..., horizon=..., correlation=..., "
+            "recovery=..., credit_curve=..., discount_curve=...`."
+        ),
+    },
+    "price_credit_basket_tranche": {
+        "min_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({
+            "market_state",
+            "spec",
+            "copula_family",
+            "degrees_of_freedom",
+            "n_paths",
+            "seed",
+        }),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_credit_basket_tranche(...)` expects `(market_state, spec, *, "
+            "copula_family=..., degrees_of_freedom=..., n_paths=..., seed=...)`. "
+            "Pass the live market state and original tranche spec instead of "
+            "rebuilding copula loss plumbing inline."
         ),
     },
     "price_quanto_option_analytical_from_market_state": {
