@@ -1,0 +1,85 @@
+\documentclass[11pt]{article}
+\input{../common/preamble.tex}
+
+\title{Trellis II: Mathematical and Computational Lanes for Semantic Derivatives Pricing}
+\author{Draft}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This paper should explain the mathematical and computational substrate that
+lets one semantic request lower onto multiple deterministic pricing families.
+The main claim is that \trellis{} succeeds by combining contract algebra,
+event/control compilation, bounded family IRs, and reusable numerical kernels
+rather than by relying on a single universal solver representation.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+
+Frame the paper as the bridge between rich product semantics and bounded
+numerical execution.
+
+\section{Why Bounded Family IRs}
+
+Explain why the system does not use one monolithic universal pricing IR.
+
+\section{Contract Algebra and Analytical Support}
+
+Cover:
+\begin{itemize}
+    \item contracts as syntax
+    \item valuation as semantics
+    \item semantics-preserving rewrites
+    \item reusable analytical kernels
+\end{itemize}
+
+\section{Event and Control as Numerical Interface}
+
+Cover:
+\begin{itemize}
+    \item \eventprogramir{}
+    \item \controlprogramir{}
+    \item how shared semantic programs project into family-specific forms
+\end{itemize}
+
+\section{Family Lanes}
+
+Suggested subsections:
+\begin{itemize}
+    \item analytical
+    \item exercise lattice
+    \item PDE
+    \item event-aware Monte Carlo
+    \item transforms
+    \item basket credit / copula
+\end{itemize}
+
+\section{Calibration and Market Binding}
+
+Explain how model binding, quote regimes, calibration surfaces, and market
+context stay explicit rather than route-local.
+
+\section{Case Studies}
+
+Suggested cases:
+\begin{itemize}
+    \item transform family hardening
+    \item event-aware Monte Carlo swaption path
+    \item short-rate helper extraction
+\end{itemize}
+
+\section{Support Boundary and Limitations}
+
+Use \code{LIMITATIONS.md} directly to keep the paper honest about current
+coverage, especially for calibration, risk, xVA, and performance.
+
+\section{Conclusion}
+
+Restate the main result: the computational novelty lies in family-specific
+semantic lowering onto deterministic quantitative kernels.
+
+\end{document}
