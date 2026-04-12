@@ -42,6 +42,7 @@ _DISCOUNT_PATTERNS = (
 _EXACT_HELPER_SIGNATURES = {
     "price_vanilla_equity_option_tree": {
         "min_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
         "required_keyword_groups": (frozenset({"market_state", "spec"}),),
         "allowed_keywords": frozenset({"market_state", "spec", "model", "n_steps"}),
         "required_positional_markers": (
@@ -56,6 +57,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_fx_vanilla_analytical": {
         "min_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
         "required_keyword_groups": (frozenset({"market_state", "spec"}),),
         "allowed_keywords": frozenset({"market_state", "spec"}),
         "required_positional_markers": (
@@ -70,6 +72,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_fx_vanilla_monte_carlo": {
         "min_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
         "required_keyword_groups": (frozenset({"market_state", "spec"}),),
         "allowed_keywords": frozenset({"market_state", "spec", "seed"}),
         "required_positional_markers": (
@@ -84,6 +87,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_quanto_option_analytical_from_market_state": {
         "min_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
         "required_keyword_groups": (frozenset({"market_state", "spec"}),),
         "allowed_keywords": frozenset({"market_state", "spec"}),
         "required_positional_markers": (
@@ -98,6 +102,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_quanto_option_monte_carlo_from_market_state": {
         "min_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
         "required_keyword_groups": (frozenset({"market_state", "spec"}),),
         "allowed_keywords": frozenset({"market_state", "spec"}),
         "required_positional_markers": (
@@ -244,7 +249,12 @@ class AlgorithmContractValidator:
                     set(group).issubset(keyword_names)
                     for group in required_keyword_groups
                 )
-                if len(call.args) < int(signature["min_positional_args"]) and not keyword_surface_ok:
+                if not _call_satisfies_required_surface(
+                    call,
+                    signature=signature,
+                    keyword_names=keyword_names,
+                    keyword_surface_ok=keyword_surface_ok,
+                ):
                     findings.append(SemanticFinding(
                         validator="algorithm_contract",
                         severity="error",
@@ -334,6 +344,33 @@ class AlgorithmContractValidator:
                 ),
             )]
         return []
+
+
+def _call_satisfies_required_surface(
+    call: ast.Call,
+    *,
+    signature: dict[str, object],
+    keyword_names: set[str],
+    keyword_surface_ok: bool,
+) -> bool:
+    """Return whether one helper call satisfies the declared required surface."""
+    required_parameters = tuple(str(item) for item in signature.get("required_parameters", ()) or ())
+    positional_markers = tuple(signature.get("required_positional_markers", ()) or ())
+
+    if required_parameters:
+        for index, parameter in enumerate(required_parameters):
+            if index < len(call.args):
+                if index < len(positional_markers):
+                    markers = tuple(str(marker) for marker in positional_markers[index])
+                    if markers and not _argument_matches_markers(call.args[index], markers):
+                        return False
+                continue
+            if parameter in keyword_names:
+                continue
+            return False
+        return True
+
+    return len(call.args) >= int(signature["min_positional_args"]) or keyword_surface_ok
 
 
 def _argument_matches_markers(node: ast.AST, markers: tuple[str, ...]) -> bool:

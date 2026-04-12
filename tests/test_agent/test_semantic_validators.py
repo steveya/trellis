@@ -245,6 +245,18 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("analytical_garman_kohlhagen"), spec)
         assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
+    def test_accepts_fx_exact_helper_with_mixed_positional_and_keyword_args(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_garman_kohlhagen"][0]
+        source = '''
+from trellis.models.fx_vanilla import price_fx_vanilla_analytical
+
+def evaluate(self, market_state):
+    return price_fx_vanilla_analytical(market_state, spec=self._spec)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("analytical_garman_kohlhagen"), spec)
+        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+
     def test_flags_quanto_exact_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "quanto_adjustment_analytical"][0]
         source = '''
