@@ -177,6 +177,10 @@ class BackendBindingAuthority:
     approved_modules: tuple[str, ...] = ()
     primitive_refs: tuple[str, ...] = ()
     helper_refs: tuple[str, ...] = ()
+    pricing_kernel_refs: tuple[str, ...] = ()
+    schedule_builder_refs: tuple[str, ...] = ()
+    cashflow_engine_refs: tuple[str, ...] = ()
+    market_binding_refs: tuple[str, ...] = ()
     admissibility: RouteAdmissibilitySpec = RouteAdmissibilitySpec()
     admissibility_failures: tuple[str, ...] = ()
 
@@ -981,39 +985,66 @@ def compile_route_binding_authority(
     registry: RouteRegistry | None = None,
 ) -> RouteBindingAuthority | None:
     """Compile the structured route-binding authority packet for one request."""
+    from trellis.agent.backend_bindings import (
+        find_backend_binding_by_route_id,
+        load_backend_binding_catalog,
+        resolve_backend_binding_spec,
+    )
+
     route_id = _route_id_for_authority(generation_plan=generation_plan, semantic_blueprint=semantic_blueprint)
     primitive_plan = getattr(generation_plan, "primitive_plan", None)
     route_spec = find_route_by_id(route_id, registry) if route_id else None
     if not route_id and primitive_plan is None and route_spec is None:
         return None
 
+    binding_catalog = load_backend_binding_catalog(registry=registry)
+    binding_spec = None
+    if route_id:
+        binding = find_backend_binding_by_route_id(route_id, binding_catalog)
+        if binding is not None:
+            binding_spec = resolve_backend_binding_spec(
+                binding,
+                product_ir=product_ir,
+                primitive_plan=primitive_plan,
+            )
+
     route_family = (
-        str(getattr(route_spec, "route_family", "") or "").strip()
+        str(getattr(binding_spec, "route_family", "") or "").strip()
+        or str(getattr(route_spec, "route_family", "") or "").strip()
         or str(getattr(primitive_plan, "route_family", "") or "").strip()
         or str(getattr(validation_contract, "route_family", "") or "").strip()
     )
     engine_family = (
-        str(getattr(route_spec, "engine_family", "") or "").strip()
+        str(getattr(binding_spec, "engine_family", "") or "").strip()
+        or str(getattr(route_spec, "engine_family", "") or "").strip()
         or str(getattr(primitive_plan, "engine_family", "") or "").strip()
         or route_family
     )
-    exact_target_refs = tuple(getattr(generation_plan, "lane_exact_binding_refs", ()) or ())
+    exact_target_refs = (
+        tuple(getattr(generation_plan, "lane_exact_binding_refs", ()) or ())
+        or tuple(getattr(binding_spec, "exact_target_refs", ()) or ())
+    )
     helper_refs = tuple(
         dict.fromkeys(
             str(ref).strip()
             for ref in (
                 getattr(generation_plan, "lowering_helper_refs", ())
                 or getattr(getattr(semantic_blueprint, "dsl_lowering", None), "helper_refs", ())
+                or getattr(binding_spec, "helper_refs", ())
                 or ()
             )
             if str(ref).strip()
         )
     )
-    primitive_refs = _primitive_refs_for(
+    primitive_refs = tuple(getattr(binding_spec, "primitive_refs", ()) or ()) or _primitive_refs_for(
         primitive_plan=primitive_plan,
         route_spec=route_spec,
         product_ir=product_ir,
     )
+    pricing_kernel_refs = tuple(getattr(binding_spec, "pricing_kernel_refs", ()) or ())
+    schedule_builder_refs = tuple(getattr(binding_spec, "schedule_builder_refs", ()) or ())
+    cashflow_engine_refs = tuple(getattr(binding_spec, "cashflow_engine_refs", ()) or ())
+    market_binding_refs = tuple(getattr(binding_spec, "market_binding_refs", ()) or ())
     approved_modules = tuple(
         dict.fromkeys(
             str(module).strip()
@@ -1062,7 +1093,7 @@ def compile_route_binding_authority(
         "repo_revision": str(getattr(generation_plan, "repo_revision", "") or ""),
     }
     backend_binding = BackendBindingAuthority(
-        binding_id=_backend_binding_id_for(
+        binding_id=str(getattr(binding_spec, "binding_id", "") or "").strip() or _backend_binding_id_for(
             engine_family=engine_family,
             route_family=route_family,
             exact_target_refs=exact_target_refs,
@@ -1076,6 +1107,10 @@ def compile_route_binding_authority(
         approved_modules=approved_modules,
         primitive_refs=primitive_refs,
         helper_refs=helper_refs,
+        pricing_kernel_refs=pricing_kernel_refs,
+        schedule_builder_refs=schedule_builder_refs,
+        cashflow_engine_refs=cashflow_engine_refs,
+        market_binding_refs=market_binding_refs,
         admissibility=admissibility,
         admissibility_failures=admissibility_failures,
     )
@@ -1112,6 +1147,10 @@ def route_binding_authority_summary(
             "approved_modules": list(backend_binding.approved_modules),
             "primitive_refs": list(backend_binding.primitive_refs),
             "helper_refs": list(backend_binding.helper_refs),
+            "pricing_kernel_refs": list(backend_binding.pricing_kernel_refs),
+            "schedule_builder_refs": list(backend_binding.schedule_builder_refs),
+            "cashflow_engine_refs": list(backend_binding.cashflow_engine_refs),
+            "market_binding_refs": list(backend_binding.market_binding_refs),
             "admissibility": {
                 "supported_control_styles": list(backend_binding.admissibility.supported_control_styles),
                 "event_support": backend_binding.admissibility.event_support,

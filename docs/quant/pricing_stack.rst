@@ -31,6 +31,10 @@ Layering
      - ``ProductIR``, ``PricingPlan``, ``RouteSpec``, ``BuildGateDecision``
      - Checked summary, method choice, typed admissibility, and gatekeeping
      - ``trellis/agent/semantic_contract_compiler.py``, ``trellis/agent/route_registry.py``, ``trellis/agent/build_gate.py``
+   * - Backend binding catalog
+     - ``BackendBindingSpec``, ``ResolvedBackendBindingSpec``, binding catalogs
+     - Canonical exact helper/kernel/schedule/cashflow binding facts used by routing and validation
+     - ``trellis/agent/backend_bindings.py``
    * - Family lowering
      - family-specific lowering IRs + DSL lowering
      - Narrow typed lowering onto checked-in helper-backed routes
@@ -52,8 +56,8 @@ The current semantic pricing path is:
 1. Normalize a request into a ``SemanticContract``.
 2. Validate typed semantics, including phase order, obligations, and controller semantics.
 3. Build a ``ValuationContext`` and compile ``RequiredDataSpec`` plus ``MarketBindingSpec``.
-4. Build ``ProductIR`` and select a pricing method and candidate route.
-5. Apply typed route admissibility through ``BuildGateDecision``.
+4. Build ``ProductIR`` and select a pricing method plus candidate backend bindings.
+5. Apply typed admissibility through ``BuildGateDecision`` and resolve the exact binding surface.
 6. Lower onto a family-specific IR and then onto a checked helper or kernel.
 7. Execute the existing deterministic numerical code.
 
@@ -187,6 +191,10 @@ Route selection now follows that same minimization rule. The deterministic
 scorer no longer emits route-id or route-family one-hot authority; it ranks
 routes from family capability, blocker state, and backend-binding facts such as
 ``route_helper`` / ``pricing_kernel`` / ``cashflow_engine`` surfaces instead.
+Those exact helper/kernel facts are now materialized through
+``trellis.agent.backend_bindings`` as a separate canonical binding catalog, and
+the route registry derives its backend-binding authority summary from that
+catalog rather than acting as the only source of exact backend identity.
 The generated prompt-skill layer now follows the same contract: exact helper
 and schedule constraints still surface when needed, but route-card notes are
 kept as historical metadata rather than live ``route_hint`` authority, and
