@@ -139,7 +139,9 @@ def test_compile_build_request_attaches_route_binding_authority_packet():
     assert backend_binding["binding_id"] == "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
     assert backend_binding["engine_family"] == "analytical"
     assert backend_binding["exact_backend_fit"] is True
-    assert "trellis.models.resolution.quanto.resolve_quanto_inputs" in backend_binding["primitive_refs"]
+    assert backend_binding["primitive_refs"] == [
+        "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
+    ]
     assert "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state" in backend_binding["helper_refs"]
     assert authority["validation_bundle_id"] == "analytical:quanto_option"
     assert "check_non_negativity" in authority["validation_check_ids"]

@@ -412,6 +412,106 @@ def price(spec, market_state):
     assert "lite.analytical_garman_kohlhagen_forward_curve_access_missing" in issue_codes
 
 
+def test_lite_review_flags_missing_required_exact_helper_for_fx_route():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.analytical.fx import garman_kohlhagen_price_raw
+
+def evaluate(self, market_state):
+    return garman_kohlhagen_price_raw("call", resolved)
+"""
+
+    plan = GenerationPlan(
+        method="analytical",
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.fx_vanilla",),
+        approved_modules=("trellis.models.fx_vanilla", "trellis.models.analytical.fx"),
+        symbols_to_reuse=("price_fx_vanilla_analytical", "garman_kohlhagen_price_raw"),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="analytical_garman_kohlhagen",
+            engine_family="analytical",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.fx_vanilla",
+                    "price_fx_vanilla_analytical",
+                    "route_helper",
+                ),
+            ),
+            adapters=(),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.fx_vanilla"],
+        required_market_data={"discount_curve", "forward_curve", "black_vol_surface", "spot"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.analytical_garman_kohlhagen_route_helper_missing" in issue_codes
+
+
+def test_lite_review_does_not_treat_instance_method_as_exact_helper_call():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+def evaluate(self, market_state):
+    return self.price_fx_vanilla_analytical(market_state, self._spec)
+"""
+
+    plan = GenerationPlan(
+        method="analytical",
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.fx_vanilla",),
+        approved_modules=("trellis.models.fx_vanilla",),
+        symbols_to_reuse=("price_fx_vanilla_analytical",),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="analytical_garman_kohlhagen",
+            engine_family="analytical",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.fx_vanilla",
+                    "price_fx_vanilla_analytical",
+                    "route_helper",
+                ),
+            ),
+            adapters=(),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.fx_vanilla"],
+        required_market_data={"discount_curve", "forward_curve", "black_vol_surface", "spot"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.analytical_garman_kohlhagen_route_helper_missing" in issue_codes
+
+
 def test_lite_review_rejects_monte_carlo_route_without_market_access():
     from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan
     from trellis.agent.lite_review import review_generated_code

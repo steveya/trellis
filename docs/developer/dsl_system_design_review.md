@@ -191,6 +191,13 @@ mark their route alias as internal-only, in which case:
 - operator-facing trace and prompt surfaces suppress the alias
 - the backend binding id or family IR remains the only surfaced explanation
 
+The same rule now applies inside migrated exact-helper route cards for the FX
+and quanto cohort. When the backend binding is already a stable semantic-facing
+helper, the route card no longer surfaces raw-kernel reconstruction steps or
+route-local input mappers as live build instructions. Review and validation are
+expected to fail if generated code bypasses that helper surface or calls it on
+the wrong signature.
+
 The Monte Carlo compiler now has the matching bounded family surface for the
 next migration tranche:
 

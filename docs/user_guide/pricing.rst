@@ -236,6 +236,14 @@ binding id that the runtime actually reuses. Build and review prompts consume
 that packet only after the lane obligations so route guidance stays a
 backend-fit constraint rather than a route-first synthesis plan.
 
+For the migrated FX and quanto exact-helper lanes, that backend-fit packet is
+now intentionally helper-only. Prompt and trace surfaces expose the semantic-
+facing helper binding such as
+``price_fx_vanilla_analytical(market_state, spec)`` or
+``price_quanto_option_analytical_from_market_state(market_state, spec)``
+instead of surfacing raw kernels or route-local input-mapping instructions as
+live build authority.
+
 The trace boundary also exposes a family-first ``construction_identity``
 summary. For operators, that is now the primary readout:
 

@@ -171,8 +171,8 @@ def test_generation_plan_renders_compiled_semantic_and_validation_boundary():
     assert "Plan kind: `exact_target_binding`" in text
     assert "- Lowering boundary:" in text
     assert "route_alias=`quanto_adjustment_analytical`" not in text
-    assert "expr=`ThenExpr`" in text
-    assert "price_quanto_option_analytical" in text
+    assert "expr=`ContractAtom`" in text
+    assert "price_quanto_option_analytical_from_market_state" in text
     assert "- Validation contract:" in text
     assert "bundle=`analytical:quanto_option`" in text
     assert "check_non_negativity" in text
@@ -198,6 +198,35 @@ def test_generation_route_card_keeps_lane_obligations_ahead_of_route_authority()
     assert text.index("- Lane obligations:") < text.index("- Route authority:")
     assert text.index("- Route authority:") < text.index("- Backend binding:")
     assert "Treat route authority as backend-fit evidence, not as permission to invent a different synthesis plan." in text
+
+
+def test_generation_route_card_for_fx_exact_helper_stays_helper_only():
+    compiled = compile_build_request(
+        "FX vanilla option: Garman-Kohlhagen vs MC",
+        instrument_type="european_option",
+        preferred_method="analytical",
+    )
+
+    text = render_generation_route_card(compiled.generation_plan)
+
+    assert "price_fx_vanilla_analytical" in text
+    assert "garman_kohlhagen_price_raw" not in text
+    assert "map_fx_spot_and_curves_to_garman_kohlhagen_inputs" not in text
+
+
+def test_generation_route_card_for_quanto_exact_helper_stays_helper_only():
+    compiled = compile_build_request(
+        "Quanto option on SAP in USD with EUR underlier currency expiring 2025-11-15",
+        instrument_type="quanto_option",
+        preferred_method="analytical",
+    )
+
+    text = render_generation_route_card(compiled.generation_plan)
+
+    assert "price_quanto_option_analytical_from_market_state" in text
+    assert "resolve_quanto_inputs" not in text
+    assert "trellis.models.analytical.quanto.price_quanto_option_analytical" not in text
+    assert "apply_quanto_adjustment_terms" not in text
 
 
 def test_review_contract_card_renders_wrapper_route_and_validation_scope():

@@ -42,11 +42,77 @@ _DISCOUNT_PATTERNS = (
 _EXACT_HELPER_SIGNATURES = {
     "price_vanilla_equity_option_tree": {
         "min_positional_args": 2,
-        "allowed_keywords": frozenset({"model", "n_steps"}),
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({"market_state", "spec", "model", "n_steps"}),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
         "message": (
             "`price_vanilla_equity_option_tree(...)` expects `(market_state, spec_like, "
             "model=..., n_steps=...)`. Pass a spec-like object with `spot`, `strike`, "
             "`expiry_date`, and optional exercise fields instead of inventing helper keywords."
+        ),
+    },
+    "price_fx_vanilla_analytical": {
+        "min_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({"market_state", "spec"}),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_fx_vanilla_analytical(...)` expects `(market_state, spec)`. "
+            "Pass the live `market_state` and the original spec-like object instead of "
+            "resolved GK inputs, option-type literals, or raw-kernel arguments."
+        ),
+    },
+    "price_fx_vanilla_monte_carlo": {
+        "min_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({"market_state", "spec", "seed"}),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_fx_vanilla_monte_carlo(...)` expects `(market_state, spec, seed=...)`. "
+            "Pass the live `market_state` and the original spec-like object instead of "
+            "resolved process inputs or raw Monte Carlo plumbing."
+        ),
+    },
+    "price_quanto_option_analytical_from_market_state": {
+        "min_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({"market_state", "spec"}),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_quanto_option_analytical_from_market_state(...)` expects "
+            "`(market_state, spec)`. Pass the live `market_state` and the original "
+            "spec-like object instead of resolved quanto inputs or raw Black helpers."
+        ),
+    },
+    "price_quanto_option_monte_carlo_from_market_state": {
+        "min_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({"market_state", "spec"}),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_quanto_option_monte_carlo_from_market_state(...)` expects "
+            "`(market_state, spec)`. Pass the live `market_state` and the original "
+            "spec-like object instead of resolved quanto inputs or ad hoc MC glue."
         ),
     },
 }
@@ -173,7 +239,22 @@ class AlgorithmContractValidator:
             if signature is None:
                 continue
             for call in _find_calls_for_symbol(tree, prim.symbol):
-                if len(call.args) < int(signature["min_positional_args"]):
+                keyword_names = {
+                    keyword.arg
+                    for keyword in call.keywords
+                    if keyword.arg is not None
+                }
+                required_keyword_groups = tuple(signature.get("required_keyword_groups", ()) or ())
+                keyword_surface_ok = not required_keyword_groups or any(
+                    set(group).issubset(keyword_names)
+                    for group in required_keyword_groups
+                )
+                if not _call_satisfies_required_surface(
+                    call,
+                    signature=signature,
+                    keyword_names=keyword_names,
+                    keyword_surface_ok=keyword_surface_ok,
+                ):
                     findings.append(SemanticFinding(
                         validator="algorithm_contract",
                         severity="error",
@@ -182,11 +263,6 @@ class AlgorithmContractValidator:
                         line=getattr(call, "lineno", None),
                     ))
                     continue
-                keyword_names = {
-                    keyword.arg
-                    for keyword in call.keywords
-                    if keyword.arg is not None
-                }
                 unexpected = sorted(keyword_names - set(signature["allowed_keywords"]))
                 if unexpected:
                     findings.append(SemanticFinding(
@@ -199,6 +275,21 @@ class AlgorithmContractValidator:
                         ),
                         line=getattr(call, "lineno", None),
                     ))
+                    continue
+                positional_markers = tuple(signature.get("required_positional_markers", ()) or ())
+                if positional_markers:
+                    for index, markers in enumerate(positional_markers):
+                        if index >= len(call.args):
+                            break
+                        if not _argument_matches_markers(call.args[index], tuple(str(marker) for marker in markers)):
+                            findings.append(SemanticFinding(
+                                validator="algorithm_contract",
+                                severity="error",
+                                category="route_helper_signature_mismatch",
+                                message=str(signature["message"]),
+                                line=getattr(call, "lineno", None),
+                            ))
+                            break
         return findings
 
     def _check_discount_application(
@@ -253,3 +344,40 @@ class AlgorithmContractValidator:
                 ),
             )]
         return []
+
+
+def _call_satisfies_required_surface(
+    call: ast.Call,
+    *,
+    signature: dict[str, object],
+    keyword_names: set[str],
+    keyword_surface_ok: bool,
+) -> bool:
+    """Return whether one helper call satisfies the declared required surface."""
+    required_parameters = tuple(str(item) for item in signature.get("required_parameters", ()) or ())
+    positional_markers = tuple(signature.get("required_positional_markers", ()) or ())
+
+    if required_parameters:
+        for index, parameter in enumerate(required_parameters):
+            if index < len(call.args):
+                if index < len(positional_markers):
+                    markers = tuple(str(marker) for marker in positional_markers[index])
+                    if markers and not _argument_matches_markers(call.args[index], markers):
+                        return False
+                continue
+            if parameter in keyword_names:
+                continue
+            return False
+        return True
+
+    return len(call.args) >= int(signature["min_positional_args"]) or keyword_surface_ok
+
+
+def _argument_matches_markers(node: ast.AST, markers: tuple[str, ...]) -> bool:
+    """Return whether one AST argument resembles the expected semantic surface."""
+    try:
+        text = ast.unparse(node)
+    except Exception:
+        return False
+    normalized = text.replace(" ", "").lower()
+    return any(marker.lower() in normalized for marker in markers)

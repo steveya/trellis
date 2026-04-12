@@ -294,12 +294,7 @@ class TestQuantoRoutes:
     def test_analytical_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "quanto_adjustment_analytical"][0]
         new_prims = resolve_route_primitives(spec, self.IR)
-        new_adapters = resolve_route_adapters(spec, self.IR)
         expected_prims = {
-            ("trellis.models.resolution.quanto", "resolve_quanto_inputs", "market_binding"),
-            ("trellis.models.black", "black76_call", "pricing_kernel"),
-            ("trellis.models.black", "black76_put", "pricing_kernel"),
-            ("trellis.models.analytical.quanto", "price_quanto_option_analytical", "pricing_kernel"),
             (
                 "trellis.models.quanto_option",
                 "price_quanto_option_analytical_from_market_state",
@@ -307,7 +302,7 @@ class TestQuantoRoutes:
             ),
         }
         assert _prim_set(new_prims) == expected_prims
-        assert "reuse_shared_quanto_market_binding" in new_adapters
+        assert resolve_route_adapters(spec, self.IR) == ()
 
     def test_engine_family(self, registry):
         spec = [r for r in registry.routes if r.id == "quanto_adjustment_analytical"][0]
@@ -950,9 +945,7 @@ class TestFXAnalyticalRoutes:
         spec = [r for r in registry.routes if r.id == "analytical_garman_kohlhagen"][0]
         new_prims = resolve_route_primitives(spec, self.FX_IR)
         expected_prims = {
-            ("trellis.models.analytical.fx", "garman_kohlhagen_price_raw", "pricing_kernel"),
             ("trellis.models.fx_vanilla", "price_fx_vanilla_analytical", "route_helper"),
-            ("trellis.core.date_utils", "year_fraction", "time_measure"),
         }
         assert _prim_set(new_prims) == expected_prims
 

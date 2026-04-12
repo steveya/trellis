@@ -307,16 +307,28 @@ def _route_specific_issues(
 
     if route == "analytical_black76" and "map_spot_discount_and_vol_to_forward_black76" not in adapters:
         return tuple(issues)
-    if route == "analytical_garman_kohlhagen" and "map_fx_spot_and_curves_to_garman_kohlhagen_inputs" not in adapters:
-        return tuple(issues)
     if primitive_plan is not None:
-        required_helper_symbols = tuple(
-            primitive.symbol
+        required_helper_bindings = tuple(
+            (primitive.symbol, primitive.module)
             for primitive in primitive_plan.primitives
             if primitive.required and primitive.role == "route_helper"
         )
-        if required_helper_symbols and any(symbol in signals.call_names for symbol in required_helper_symbols):
-            return tuple(issues)
+        if required_helper_bindings:
+            if any(
+                _call_names_include_symbol(signals.call_names, symbol, module=module)
+                for symbol, module in required_helper_bindings
+            ):
+                return tuple(issues)
+            issues.append(
+                LiteReviewIssue(
+                    code=f"lite.{route}_route_helper_missing",
+                    message=(
+                        f"The `{route}` route must delegate through the required exact helper "
+                        + ", ".join(f"`{symbol}`" for symbol, _ in required_helper_bindings)
+                        + " instead of rebuilding lower-level route logic inline."
+                    ),
+                )
+            )
 
     required_accesses = _route_required_accesses_for(route)
     for capability, prefixes in required_accesses.items():
@@ -332,6 +344,15 @@ def _route_specific_issues(
         )
 
     return tuple(issues)
+
+
+def _call_names_include_symbol(call_names: tuple[str, ...], symbol: str, *, module: str | None = None) -> bool:
+    """Return whether one collected call name targets ``symbol``."""
+    accepted = {symbol}
+    if module:
+        accepted.add(f"{module}.{symbol}")
+        accepted.add(f"{module.rsplit('.', 1)[-1]}.{symbol}")
+    return any(call_name in accepted for call_name in call_names)
 
 
 def _route_required_accesses_for(route: str | None) -> dict[str, tuple[str, ...]]:

@@ -233,6 +233,45 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("exercise_lattice", "lattice"), spec)
         assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
+    def test_flags_fx_exact_helper_signature_mismatch(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_garman_kohlhagen"][0]
+        source = '''
+from trellis.models.fx_vanilla import price_fx_vanilla_analytical
+
+def evaluate(self, market_state):
+    return price_fx_vanilla_analytical(self._spec.option_type, resolved)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("analytical_garman_kohlhagen"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_accepts_fx_exact_helper_with_mixed_positional_and_keyword_args(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_garman_kohlhagen"][0]
+        source = '''
+from trellis.models.fx_vanilla import price_fx_vanilla_analytical
+
+def evaluate(self, market_state):
+    return price_fx_vanilla_analytical(market_state, spec=self._spec)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("analytical_garman_kohlhagen"), spec)
+        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_flags_quanto_exact_helper_signature_mismatch(self, registry):
+        spec = [r for r in registry.routes if r.id == "quanto_adjustment_analytical"][0]
+        source = '''
+from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
+
+def evaluate(self, market_state):
+    return price_quanto_option_analytical_from_market_state(
+        spec=self._spec,
+        resolved_inputs=resolved,
+    )
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("quanto_adjustment_analytical"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+
     def test_helper_backed_pde_route_does_not_require_low_level_engine_signatures(self, registry):
         spec = [r for r in registry.routes if r.id == "vanilla_equity_theta_pde"][0]
         source = '''
