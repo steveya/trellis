@@ -195,6 +195,10 @@ Those exact helper/kernel facts are now materialized through
 ``trellis.agent.backend_bindings`` as a separate canonical binding catalog, and
 the route registry derives its backend-binding authority summary from that
 catalog rather than acting as the only source of exact backend identity.
+The runtime plans now also carry that identity directly: ``PrimitivePlan`` and
+``GenerationPlan`` persist ``backend_binding_id`` plus exact helper/kernel and
+schedule-builder refs, so later validation, traces, and replay do not need to
+reconstruct the binding contract from a route alias.
 The generated prompt-skill layer now follows the same contract: exact helper
 and schedule constraints still surface when needed, but route-card notes are
 kept as historical metadata rather than live ``route_hint`` authority, and

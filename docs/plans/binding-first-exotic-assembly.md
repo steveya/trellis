@@ -73,7 +73,9 @@ identity and assembly authority.
 
 ### What still needs to move
 
-- `PrimitivePlan` / `GenerationPlan` still center `route` and `route_family`
+- `PrimitivePlan` / `GenerationPlan` now carry explicit backend-binding
+  identity, but downstream lowering/validation surfaces still treat route ids
+  as the dominant join key
 - family lowering still branches directly on `route_id`
 - DSL lowering still resolves helpers/kernels/schedules by route id
 - validation and trace contracts still store route identity as primary runtime
@@ -145,8 +147,8 @@ Status mirror last synced: `2026-04-12`
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-798` | Backend binding: introduce canonical binding catalog beside route registry | Backlog |
-| `QUA-799` | Backend binding: carry binding identity through primitive and generation plans | Backlog |
+| `QUA-798` | Backend binding: introduce canonical binding catalog beside route registry | Done |
+| `QUA-799` | Backend binding: carry binding identity through primitive and generation plans | Done |
 | `QUA-800` | Backend binding: move exact helper and kernel lookup onto binding specs | Backlog |
 | `QUA-810` | Route aliases: collapse route registry to transitional alias and admissibility shell | Backlog |
 

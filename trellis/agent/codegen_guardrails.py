@@ -161,6 +161,15 @@ class PrimitivePlan:
     adapters: tuple[str, ...]
     blockers: tuple[str, ...]
     route_family: str = ""
+    backend_binding_id: str = ""
+    backend_binding_aliases: tuple[str, ...] = ()
+    backend_exact_target_refs: tuple[str, ...] = ()
+    backend_helper_refs: tuple[str, ...] = ()
+    backend_pricing_kernel_refs: tuple[str, ...] = ()
+    backend_schedule_builder_refs: tuple[str, ...] = ()
+    backend_cashflow_engine_refs: tuple[str, ...] = ()
+    backend_market_binding_refs: tuple[str, ...] = ()
+    backend_compatibility_alias_policy: str = "operator_visible"
     notes: tuple[str, ...] = ()
     score: float = 0.0
 
@@ -204,6 +213,17 @@ class GenerationPlan:
     lane_reusable_primitives: tuple[str, ...] = ()
     lane_exact_binding_refs: tuple[str, ...] = ()
     lane_unresolved_primitives: tuple[str, ...] = ()
+    backend_binding_id: str = ""
+    backend_binding_aliases: tuple[str, ...] = ()
+    backend_exact_target_refs: tuple[str, ...] = ()
+    backend_helper_refs: tuple[str, ...] = ()
+    backend_pricing_kernel_refs: tuple[str, ...] = ()
+    backend_schedule_builder_refs: tuple[str, ...] = ()
+    backend_cashflow_engine_refs: tuple[str, ...] = ()
+    backend_market_binding_refs: tuple[str, ...] = ()
+    backend_engine_family: str = ""
+    backend_route_family: str = ""
+    backend_compatibility_alias_policy: str = "operator_visible"
     lowering_route_id: str = ""
     lowering_expr_kind: str = ""
     lowering_family_ir_type: str = ""
@@ -350,6 +370,14 @@ def build_generation_plan(
         product_ir=product_ir,
         instrument_type=instrument_type,
     )
+    lane_plan_kind = str(getattr(lane_plan, "plan_kind", "") or "")
+    backend_exact_target_refs = tuple(getattr(primitive_plan, "backend_exact_target_refs", ()) or ())
+    if not backend_exact_target_refs and lane_plan_kind == "exact_target_binding":
+        backend_exact_target_refs = tuple(getattr(lane_plan, "exact_target_refs", ()) or ())
+    backend_binding_id = (
+        str(getattr(primitive_plan, "backend_binding_id", "") or "").strip()
+        or (str(backend_exact_target_refs[0]).strip() if backend_exact_target_refs else "")
+    )
 
     plan = GenerationPlan(
         method=method,
@@ -367,7 +395,7 @@ def build_generation_plan(
         package_map=package_map,
         test_map=test_map,
         lane_family=str(getattr(lane_plan, "lane_family", "") or ""),
-        lane_plan_kind=str(getattr(lane_plan, "plan_kind", "") or ""),
+        lane_plan_kind=lane_plan_kind,
         lane_timeline_roles=tuple(getattr(lane_plan, "timeline_roles", ()) or ()),
         lane_market_requirements=tuple(getattr(lane_plan, "market_requirements", ()) or ()),
         lane_state_obligations=tuple(getattr(lane_plan, "state_obligations", ()) or ()),
@@ -380,6 +408,28 @@ def build_generation_plan(
         ),
         lane_exact_binding_refs=tuple(getattr(lane_plan, "exact_target_refs", ()) or ()),
         lane_unresolved_primitives=tuple(getattr(lane_plan, "unresolved_primitives", ()) or ()),
+        backend_binding_id=backend_binding_id,
+        backend_binding_aliases=tuple(getattr(primitive_plan, "backend_binding_aliases", ()) or ()),
+        backend_exact_target_refs=backend_exact_target_refs,
+        backend_helper_refs=tuple(getattr(primitive_plan, "backend_helper_refs", ()) or ()),
+        backend_pricing_kernel_refs=tuple(
+            getattr(primitive_plan, "backend_pricing_kernel_refs", ()) or ()
+        ),
+        backend_schedule_builder_refs=tuple(
+            getattr(primitive_plan, "backend_schedule_builder_refs", ()) or ()
+        ),
+        backend_cashflow_engine_refs=tuple(
+            getattr(primitive_plan, "backend_cashflow_engine_refs", ()) or ()
+        ),
+        backend_market_binding_refs=tuple(
+            getattr(primitive_plan, "backend_market_binding_refs", ()) or ()
+        ),
+        backend_engine_family=str(getattr(primitive_plan, "engine_family", "") or ""),
+        backend_route_family=str(getattr(primitive_plan, "route_family", "") or ""),
+        backend_compatibility_alias_policy=str(
+            getattr(primitive_plan, "backend_compatibility_alias_policy", None)
+            or "operator_visible"
+        ),
     )
     plan = replace(
         plan,
@@ -939,6 +989,24 @@ def enrich_generation_plan(
         semantic_id=semantic_id,
         requested_instrument_type=requested_instrument_type,
     )
+    lane_plan_kind = str(getattr(lane_plan, "plan_kind", "") or "")
+    preserve_backend_binding = bool(
+        plan.primitive_plan is not None or lane_plan_kind == "exact_target_binding"
+    )
+    backend_exact_target_refs = tuple(getattr(plan, "backend_exact_target_refs", ()) or ())
+    if not plan.primitive_plan and lane_plan_kind == "exact_target_binding":
+        backend_exact_target_refs = tuple(getattr(lane_plan, "exact_target_refs", ()) or ())
+    elif not preserve_backend_binding:
+        backend_exact_target_refs = ()
+    backend_binding_id = (
+        str(getattr(plan.primitive_plan, "backend_binding_id", "") or "").strip()
+        or (str(backend_exact_target_refs[0]).strip() if backend_exact_target_refs else "")
+        or (
+            str(getattr(plan, "backend_binding_id", "") or "").strip()
+            if preserve_backend_binding
+            else ""
+        )
+    )
 
     enriched_plan = replace(
         plan,
@@ -955,7 +1023,7 @@ def enrich_generation_plan(
         ),
         valuation_requested_outputs=tuple(getattr(semantic_blueprint, "requested_outputs", ()) or ()),
         lane_family=str(getattr(lane_plan, "lane_family", "") or ""),
-        lane_plan_kind=str(getattr(lane_plan, "plan_kind", "") or ""),
+        lane_plan_kind=lane_plan_kind,
         lane_timeline_roles=tuple(getattr(lane_plan, "timeline_roles", ()) or ()),
         lane_market_requirements=tuple(getattr(lane_plan, "market_requirements", ()) or ()),
         lane_state_obligations=tuple(getattr(lane_plan, "state_obligations", ()) or ()),
@@ -968,6 +1036,53 @@ def enrich_generation_plan(
         ),
         lane_exact_binding_refs=tuple(getattr(lane_plan, "exact_target_refs", ()) or ()),
         lane_unresolved_primitives=tuple(getattr(lane_plan, "unresolved_primitives", ()) or ()),
+        backend_binding_id=backend_binding_id,
+        backend_binding_aliases=(
+            tuple(getattr(plan, "backend_binding_aliases", ()) or ())
+            if preserve_backend_binding
+            else ()
+        ),
+        backend_exact_target_refs=backend_exact_target_refs,
+        backend_helper_refs=(
+            tuple(getattr(plan, "backend_helper_refs", ()) or ())
+            if preserve_backend_binding
+            else ()
+        ),
+        backend_pricing_kernel_refs=(
+            tuple(getattr(plan, "backend_pricing_kernel_refs", ()) or ())
+            if preserve_backend_binding
+            else ()
+        ),
+        backend_schedule_builder_refs=(
+            tuple(getattr(plan, "backend_schedule_builder_refs", ()) or ())
+            if preserve_backend_binding
+            else ()
+        ),
+        backend_cashflow_engine_refs=(
+            tuple(getattr(plan, "backend_cashflow_engine_refs", ()) or ())
+            if preserve_backend_binding
+            else ()
+        ),
+        backend_market_binding_refs=(
+            tuple(getattr(plan, "backend_market_binding_refs", ()) or ())
+            if preserve_backend_binding
+            else ()
+        ),
+        backend_engine_family=(
+            str(getattr(plan, "backend_engine_family", "") or "")
+            if preserve_backend_binding
+            else ""
+        ),
+        backend_route_family=(
+            str(getattr(plan, "backend_route_family", "") or "")
+            if preserve_backend_binding
+            else ""
+        ),
+        backend_compatibility_alias_policy=(
+            str(getattr(plan, "backend_compatibility_alias_policy", "") or "operator_visible")
+            if preserve_backend_binding
+            else "operator_visible"
+        ),
         lowering_route_id=str(getattr(lowering, "route_id", "") or ""),
         lowering_expr_kind=(
             "" if lowering is None or getattr(lowering, "normalized_expr", None) is None
@@ -1387,10 +1502,16 @@ def rank_primitive_routes(
         resolve_route_notes,
         resolve_route_primitives,
     )
+    from trellis.agent.backend_bindings import (
+        find_backend_binding_by_route_id,
+        load_backend_binding_catalog,
+        resolve_backend_binding_spec,
+    )
     from trellis.agent.route_scorer import RouteScorer, ScoringContext
 
     method = normalize_method(pricing_plan.method)
     registry = load_route_registry()
+    binding_catalog = load_backend_binding_catalog(registry=registry)
     candidates = match_candidate_routes(
         registry, method, product_ir, pricing_plan=pricing_plan,
     )
@@ -1409,6 +1530,13 @@ def rank_primitive_routes(
         route_family = resolve_route_family(spec, product_ir)
         if route == "exercise_lattice" and route_family == "equity_tree":
             engine_family = "tree"
+        binding_spec = None
+        binding_entry = find_backend_binding_by_route_id(route, binding_catalog)
+        if binding_entry is not None:
+            binding_spec = resolve_backend_binding_spec(
+                binding_entry,
+                product_ir=product_ir,
+            )
 
         ctx = ScoringContext(
             product_ir=product_ir,
@@ -1427,6 +1555,17 @@ def rank_primitive_routes(
             adapters=tuple(adapters),
             blockers=tuple(dict.fromkeys(blockers)),
             notes=tuple(notes),
+            backend_binding_id=str(getattr(binding_spec, "binding_id", "") or ""),
+            backend_binding_aliases=tuple(getattr(binding_spec, "aliases", ()) or ()),
+            backend_exact_target_refs=tuple(getattr(binding_spec, "exact_target_refs", ()) or ()),
+            backend_helper_refs=tuple(getattr(binding_spec, "helper_refs", ()) or ()),
+            backend_pricing_kernel_refs=tuple(getattr(binding_spec, "pricing_kernel_refs", ()) or ()),
+            backend_schedule_builder_refs=tuple(getattr(binding_spec, "schedule_builder_refs", ()) or ()),
+            backend_cashflow_engine_refs=tuple(getattr(binding_spec, "cashflow_engine_refs", ()) or ()),
+            backend_market_binding_refs=tuple(getattr(binding_spec, "market_binding_refs", ()) or ()),
+            backend_compatibility_alias_policy=str(
+                getattr(binding_spec, "compatibility_alias_policy", None) or "operator_visible"
+            ),
             score=route_score.final_score,
         )
         ranked.append(plan)

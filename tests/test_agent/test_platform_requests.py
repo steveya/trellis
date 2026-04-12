@@ -132,6 +132,12 @@ def test_compile_build_request_attaches_route_binding_authority_packet():
     authority = compiled.request.metadata["route_binding_authority"]
     backend_binding = authority["backend_binding"]
 
+    assert compiled.generation_plan.backend_binding_id == backend_binding["binding_id"]
+    assert compiled.generation_plan.backend_exact_target_refs == tuple(backend_binding["exact_target_refs"])
+    assert compiled.generation_plan.backend_helper_refs == tuple(backend_binding["helper_refs"])
+    assert compiled.generation_plan.backend_engine_family == backend_binding["engine_family"]
+    assert compiled.generation_plan.backend_route_family == authority["route_family"]
+    assert compiled.generation_plan.backend_compatibility_alias_policy == authority["compatibility_alias_policy"]
     assert authority["route_id"] == "quanto_adjustment_analytical"
     assert authority["route_family"] == "analytical"
     assert authority["authority_kind"] == "exact_backend_fit"
@@ -1010,16 +1016,27 @@ def test_request_missing_schedule_returns_semantic_error():
 
 
 @pytest.mark.parametrize(
-    "preferred_method,expected_route,expected_expr_kind",
+    "preferred_method,expected_route,expected_expr_kind,expected_helper",
     [
-        ("analytical", "credit_default_swap_analytical", "ThenExpr"),
-        ("monte_carlo", "credit_default_swap_monte_carlo", "ThenExpr"),
+        (
+            "analytical",
+            "credit_default_swap_analytical",
+            "ThenExpr",
+            "trellis.models.credit_default_swap.price_cds_analytical",
+        ),
+        (
+            "monte_carlo",
+            "credit_default_swap_monte_carlo",
+            "ThenExpr",
+            "trellis.models.credit_default_swap.price_cds_monte_carlo",
+        ),
     ],
 )
 def test_compile_build_request_uses_credit_default_swap_semantic_contract_blueprint(
     preferred_method,
     expected_route,
     expected_expr_kind,
+    expected_helper,
 ):
     from trellis.agent.platform_requests import compile_build_request
 
@@ -1049,6 +1066,10 @@ def test_compile_build_request_uses_credit_default_swap_semantic_contract_bluepr
         compiled.request.metadata["semantic_blueprint"]["dsl_family_ir"]["schedule_builder_symbol"]
         == "build_cds_schedule"
     )
+    authority = compiled.request.metadata["route_binding_authority"]
+    primitive_refs = authority["backend_binding"]["primitive_refs"]
+    assert expected_helper in primitive_refs
+    assert any(ref.endswith(".build_cds_schedule") for ref in primitive_refs)
     assert "trellis.models.credit_default_swap" in compiled.semantic_blueprint.target_modules
 
 

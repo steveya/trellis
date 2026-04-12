@@ -621,6 +621,14 @@ def test_platform_trace_persists_semantic_checkpoint_and_generation_boundary(
     assert boundary["generation_boundary"]["route_binding_authority"]["route_id"] == expected_route_id
     assert trace.generation_boundary["route_binding_authority"]["authority_kind"] == "exact_backend_fit"
     assert (
+        trace.generation_boundary["primitive_plan"]["backend_binding_id"]
+        == trace.generation_boundary["route_binding_authority"]["backend_binding"]["binding_id"]
+    )
+    assert (
+        boundary["generation_boundary"]["primitive_plan"]["backend_binding_id"]
+        == boundary["generation_boundary"]["route_binding_authority"]["backend_binding"]["binding_id"]
+    )
+    assert (
         trace.generation_boundary["route_binding_authority"]["backend_binding"]["engine_family"]
         in {"analytical", "monte_carlo"}
     )
