@@ -195,6 +195,7 @@ class RouteBindingAuthority:
     backend_binding: BackendBindingAuthority
     compatibility_alias_policy: str = "operator_visible"
     validation_bundle_id: str = ""
+    exact_validation_bundle_id: str = ""
     validation_check_ids: tuple[str, ...] = ()
     canary_task_ids: tuple[str, ...] = ()
     provenance: dict[str, object] = field(default_factory=dict)
@@ -1150,6 +1151,10 @@ def compile_route_binding_authority(
         if str(item).strip()
     )
     validation_bundle_id = str(getattr(validation_contract, "bundle_id", "") or "")
+    exact_validation_bundle_id = (
+        str(getattr(validation_contract, "exact_bundle_id", "") or "").strip()
+        or validation_bundle_id
+    )
     validation_check_ids = tuple(
         str(getattr(check, "check_id", "") or "").strip()
         for check in (getattr(validation_contract, "deterministic_checks", ()) or ())
@@ -1213,6 +1218,7 @@ def compile_route_binding_authority(
         backend_binding=backend_binding,
         compatibility_alias_policy=compatibility_alias_policy,
         validation_bundle_id=validation_bundle_id,
+        exact_validation_bundle_id=exact_validation_bundle_id,
         validation_check_ids=validation_check_ids,
         canary_task_ids=canary_task_ids,
         provenance=provenance,
@@ -1261,6 +1267,7 @@ def route_binding_authority_summary(
             "admissibility_failures": list(backend_binding.admissibility_failures),
         },
         "validation_bundle_id": authority.validation_bundle_id,
+        "exact_validation_bundle_id": authority.exact_validation_bundle_id,
         "validation_check_ids": list(authority.validation_check_ids),
         "canary_task_ids": list(authority.canary_task_ids),
         "provenance": dict(authority.provenance),

@@ -204,6 +204,11 @@ The runtime plans now also carry that identity directly: ``PrimitivePlan`` and
 ``GenerationPlan`` persist ``backend_binding_id`` plus exact helper/kernel and
 schedule-builder refs, so later validation, traces, and replay do not need to
 reconstruct the binding contract from a route alias.
+The validation surface now follows the same split: ``CompiledValidationContract``
+keeps the generic validation pack id in ``bundle_id`` but also emits an
+exact binding-scoped validation identity for exact-fit requests, so route ids
+are no longer required as the primary exact-fit key in validation summaries,
+route-binding authority packets, or downstream trace consumers.
 That exact-surface contract now also drives live plan construction, DSL
 lowering, and semantic helper review: those paths resolve helpers, kernels,
 and schedule builders from ``trellis.agent.backend_bindings`` first and only
