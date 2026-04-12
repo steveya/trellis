@@ -55,6 +55,7 @@ class ResolvedBackendBindingSpec:
     aliases: tuple[str, ...] = ()
     compatibility_alias_policy: str = "operator_visible"
     binding_id: str = ""
+    primitives: tuple[PrimitiveRef, ...] = ()
     primitive_refs: tuple[str, ...] = ()
     helper_refs: tuple[str, ...] = ()
     pricing_kernel_refs: tuple[str, ...] = ()
@@ -170,6 +171,7 @@ def resolve_backend_binding_spec(
         aliases=binding.aliases,
         compatibility_alias_policy=binding.compatibility_alias_policy,
         binding_id=binding_id,
+        primitives=primitives,
         primitive_refs=primitive_refs,
         helper_refs=helper_refs,
         pricing_kernel_refs=pricing_kernel_refs,
@@ -177,6 +179,24 @@ def resolve_backend_binding_spec(
         cashflow_engine_refs=cashflow_engine_refs,
         market_binding_refs=market_binding_refs,
         exact_target_refs=exact_target_refs,
+    )
+
+
+def resolve_backend_binding_by_route_id(
+    route_id: str,
+    *,
+    product_ir: ProductIR | None = None,
+    primitive_plan=None,
+    catalog: BackendBindingCatalog | None = None,
+) -> ResolvedBackendBindingSpec | None:
+    """Resolve one binding surface by route id or alias."""
+    binding = find_backend_binding_by_route_id(route_id, catalog)
+    if binding is None:
+        return None
+    return resolve_backend_binding_spec(
+        binding,
+        product_ir=product_ir,
+        primitive_plan=primitive_plan,
     )
 
 

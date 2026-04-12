@@ -456,12 +456,14 @@ class AlgorithmContractValidator:
         if route_spec is None:
             return ()
 
+        exact_surface_primitives = _exact_surface_primitives(plan, route_spec)
+
         # 1. Engine family consistency
-        findings.extend(self._check_engine_family(source, route_spec))
+        findings.extend(self._check_engine_family(source, route_spec, exact_surface_primitives))
 
         # 2. Route helper usage
-        findings.extend(self._check_route_helper(source, route_spec))
-        findings.extend(self._check_exact_helper_surface(source, route_spec))
+        findings.extend(self._check_route_helper(source, route_spec, exact_surface_primitives))
+        findings.extend(self._check_exact_helper_surface(source, route_spec, exact_surface_primitives))
 
         # 3. Discount application
         findings.extend(self._check_discount_application(source, route_spec))
@@ -472,7 +474,10 @@ class AlgorithmContractValidator:
         return tuple(findings)
 
     def _check_engine_family(
-        self, source: str, route_spec: RouteSpec,
+        self,
+        source: str,
+        route_spec: RouteSpec,
+        exact_surface_primitives,
     ) -> list[SemanticFinding]:
         """Verify code uses the expected engine family signatures."""
         engine = route_spec.engine_family
@@ -482,7 +487,7 @@ class AlgorithmContractValidator:
 
         helper_symbols = tuple(
             prim.symbol
-            for prim in route_spec.primitives
+            for prim in exact_surface_primitives
             if prim.role == "route_helper" and prim.required
         )
         if helper_symbols and any(_calls_symbol(source, symbol) for symbol in helper_symbols):
@@ -503,11 +508,14 @@ class AlgorithmContractValidator:
         return []
 
     def _check_route_helper(
-        self, source: str, route_spec: RouteSpec,
+        self,
+        source: str,
+        route_spec: RouteSpec,
+        exact_surface_primitives,
     ) -> list[SemanticFinding]:
         """Verify route_helper primitives are actually called."""
         findings = []
-        for prim in route_spec.primitives:
+        for prim in exact_surface_primitives:
             if prim.role == "route_helper" and prim.required:
                 if not _calls_symbol(source, prim.symbol):
                     findings.append(SemanticFinding(
@@ -523,7 +531,10 @@ class AlgorithmContractValidator:
         return findings
 
     def _check_exact_helper_surface(
-        self, source: str, route_spec: RouteSpec,
+        self,
+        source: str,
+        route_spec: RouteSpec,
+        exact_surface_primitives,
     ) -> list[SemanticFinding]:
         """Verify exact backend helpers are called with an admissible surface."""
         try:
@@ -532,7 +543,7 @@ class AlgorithmContractValidator:
             return []
 
         findings: list[SemanticFinding] = []
-        for prim in route_spec.primitives:
+        for prim in exact_surface_primitives:
             if prim.role != "route_helper" or not prim.required:
                 continue
             signature = _EXACT_HELPER_SIGNATURES.get(prim.symbol)
@@ -644,6 +655,18 @@ class AlgorithmContractValidator:
                 ),
             )]
         return []
+
+
+def _exact_surface_primitives(
+    plan: GenerationPlan,
+    route_spec: RouteSpec,
+):
+    """Prefer the compiled plan's resolved primitives over route-card primitives."""
+    primitive_plan = getattr(plan, "primitive_plan", None)
+    plan_primitives = tuple(getattr(primitive_plan, "primitives", ()) or ())
+    if plan_primitives:
+        return plan_primitives
+    return tuple(getattr(route_spec, "primitives", ()) or ())
 
 
 def _call_satisfies_required_surface(

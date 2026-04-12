@@ -53,6 +53,7 @@ def test_resolve_backend_binding_spec_captures_helper_schedule_and_cashflow_role
     )
 
     assert cds_resolved.binding_id == "trellis.models.credit_default_swap.price_cds_monte_carlo"
+    assert cds_resolved.primitives[0].symbol == "build_cds_schedule"
     assert cds_resolved.helper_refs == (
         "trellis.models.credit_default_swap.price_cds_monte_carlo",
     )

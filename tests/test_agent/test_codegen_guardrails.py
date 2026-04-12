@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from trellis.agent.codegen_guardrails import (
+    PrimitiveRef,
     build_generation_plan,
+    rank_primitive_routes,
     render_generation_plan,
     render_review_contract_card,
     render_generation_route_card,
@@ -84,6 +88,87 @@ def test_generation_plan_carries_backend_binding_identity_for_exact_helper_route
         "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state",
     )
     assert compiled.generation_plan.backend_compatibility_alias_policy == "internal_only"
+
+
+def test_rank_primitive_routes_prefers_binding_spec_primitives_when_route_card_is_stale(monkeypatch):
+    from trellis.agent import backend_bindings as backend_bindings_module
+    from trellis.agent import route_registry as route_registry_module
+    from trellis.agent import route_scorer as route_scorer_module
+
+    stale_helper = PrimitiveRef("trellis.models.stale", "stale_helper", "route_helper")
+    fresh_helper = PrimitiveRef("trellis.models.synthetic", "fresh_helper", "route_helper")
+    spec = SimpleNamespace(
+        id="synthetic_route",
+        engine_family="analytical",
+        route_family="analytical",
+        score_hints={},
+        aliases=(),
+    )
+
+    monkeypatch.setattr(
+        route_registry_module,
+        "load_route_registry",
+        lambda: SimpleNamespace(routes=(spec,)),
+    )
+    monkeypatch.setattr(
+        route_registry_module,
+        "match_candidate_routes",
+        lambda registry, method, product_ir, pricing_plan=None: (spec,),
+    )
+    monkeypatch.setattr(
+        route_registry_module,
+        "resolve_route_primitives",
+        lambda spec, product_ir: (stale_helper,),
+    )
+    monkeypatch.setattr(route_registry_module, "resolve_route_adapters", lambda spec, product_ir: ())
+    monkeypatch.setattr(route_registry_module, "resolve_route_notes", lambda spec, product_ir: ())
+    monkeypatch.setattr(route_registry_module, "resolve_route_family", lambda spec, product_ir: "analytical")
+    monkeypatch.setattr(
+        backend_bindings_module,
+        "load_backend_binding_catalog",
+        lambda registry=None: object(),
+    )
+    monkeypatch.setattr(
+        backend_bindings_module,
+        "resolve_backend_binding_by_route_id",
+        lambda route_id, product_ir=None, primitive_plan=None, catalog=None: SimpleNamespace(
+            primitives=(fresh_helper,),
+            binding_id="trellis.models.synthetic.fresh_helper",
+            aliases=(),
+            exact_target_refs=("trellis.models.synthetic.fresh_helper",),
+            helper_refs=("trellis.models.synthetic.fresh_helper",),
+            pricing_kernel_refs=(),
+            schedule_builder_refs=(),
+            cashflow_engine_refs=(),
+            market_binding_refs=(),
+            compatibility_alias_policy="operator_visible",
+            engine_family="analytical",
+            route_family="analytical",
+        ),
+    )
+
+    class _FakeScorer:
+        def __init__(self, registry):
+            self.registry = registry
+
+        def score_route(self, ctx):
+            return SimpleNamespace(final_score=1.0)
+
+    monkeypatch.setattr(route_scorer_module, "RouteScorer", _FakeScorer)
+
+    ranked = rank_primitive_routes(
+        pricing_plan=PricingPlan(
+            method="analytical",
+            method_modules=["trellis.models.synthetic"],
+            required_market_data=set(),
+            model_to_build="synthetic",
+            reasoning="test",
+        ),
+        product_ir=None,
+    )
+
+    assert ranked[0].primitives == (fresh_helper,)
+    assert ranked[0].backend_binding_id == "trellis.models.synthetic.fresh_helper"
 
 
 def test_validate_generated_imports_accepts_valid_code():

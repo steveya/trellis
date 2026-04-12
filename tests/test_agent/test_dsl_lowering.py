@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+from trellis.agent.codegen_guardrails import PrimitiveRef
 from trellis.agent.dsl_algebra import ChoiceExpr, ContractAtom, ThenExpr, ControlStyle
 from trellis.agent.family_lowering_ir import (
     AnalyticalBlack76IR,
@@ -104,6 +107,48 @@ def test_callable_bond_lowers_to_explicit_issuer_choice_plus_helper_targets():
         in lowering.helper_refs
     )
     assert "trellis.models.callable_bond_tree" in blueprint.route_modules
+
+
+def test_quanto_lowering_prefers_binding_spec_targets_when_route_primitives_are_stale(monkeypatch):
+    from trellis.agent import backend_bindings as backend_bindings_module
+    from trellis.agent import dsl_lowering as dsl_lowering_module
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_quanto_option_contract
+
+    monkeypatch.setattr(
+        dsl_lowering_module,
+        "resolve_route_primitives",
+        lambda route, product_ir: (),
+    )
+    monkeypatch.setattr(
+        backend_bindings_module,
+        "resolve_backend_binding_by_route_id",
+        lambda route_id, product_ir=None, primitive_plan=None, catalog=None: SimpleNamespace(
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.quanto_option",
+                    "price_quanto_option_analytical_from_market_state",
+                    "route_helper",
+                ),
+            ),
+            route_family="analytical",
+        ),
+    )
+
+    contract = make_quanto_option_contract(
+        description="Quanto option on SAP in USD with EUR underlier currency expiring 2025-11-15",
+        underliers=("SAP",),
+        observation_schedule=("2025-11-15",),
+        preferred_method="analytical",
+    )
+    blueprint = compile_semantic_contract(contract, preferred_method="analytical")
+
+    lowering = blueprint.dsl_lowering
+    assert lowering is not None
+    assert lowering.errors == ()
+    assert lowering.helper_refs == (
+        "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state",
+    )
 
 
 def test_callable_bond_pde_lowers_to_event_aware_helper():

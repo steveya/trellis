@@ -199,6 +199,10 @@ The runtime plans now also carry that identity directly: ``PrimitivePlan`` and
 ``GenerationPlan`` persist ``backend_binding_id`` plus exact helper/kernel and
 schedule-builder refs, so later validation, traces, and replay do not need to
 reconstruct the binding contract from a route alias.
+That exact-surface contract now also drives live plan construction, DSL
+lowering, and semantic helper review: those paths resolve helpers, kernels,
+and schedule builders from ``trellis.agent.backend_bindings`` first and only
+fall back to route-card primitives when no binding surface exists.
 The generated prompt-skill layer now follows the same contract: exact helper
 and schedule constraints still surface when needed, but route-card notes are
 kept as historical metadata rather than live ``route_hint`` authority, and
