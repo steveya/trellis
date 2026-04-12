@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from trellis.agent.backend_bindings import (
+    clear_backend_binding_catalog_cache,
     find_backend_binding_by_route_id,
     load_backend_binding_catalog,
     resolve_backend_binding_spec,
@@ -88,3 +91,37 @@ def test_resolve_backend_binding_spec_uses_route_conditionals_for_exact_targets(
         swaption_resolved.binding_id
         == "trellis.models.rate_style_swaption.price_swaption_black76"
     )
+
+
+def test_binding_catalog_cache_tracks_route_registry_freshness(monkeypatch):
+    clear_backend_binding_catalog_cache()
+
+    registry_one = SimpleNamespace(routes=())
+    registry_two = SimpleNamespace(routes=())
+    calls = iter((registry_one, registry_two))
+
+    from trellis.agent import route_registry as route_registry_module
+
+    monkeypatch.setattr(
+        route_registry_module,
+        "_cache_key",
+        lambda *, include_discovered: (include_discovered, 1.0, 0.0, "rev-a"),
+    )
+    monkeypatch.setattr(
+        route_registry_module,
+        "load_route_registry",
+        lambda *, include_discovered=False: next(calls),
+    )
+
+    first = load_backend_binding_catalog()
+    second = load_backend_binding_catalog()
+    assert first is second
+
+    monkeypatch.setattr(
+        route_registry_module,
+        "_cache_key",
+        lambda *, include_discovered: (include_discovered, 2.0, 0.0, "rev-a"),
+    )
+
+    third = load_backend_binding_catalog()
+    assert third is not first

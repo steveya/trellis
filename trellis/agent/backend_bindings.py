@@ -13,7 +13,6 @@ from typing import Any
 
 from trellis.agent.codegen_guardrails import PrimitiveRef
 from trellis.agent.knowledge.schema import ProductIR
-from trellis.agent.knowledge.import_registry import get_repo_revision
 
 
 @dataclass(frozen=True)
@@ -73,11 +72,13 @@ class BackendBindingCatalog:
     _route_index: dict[str, tuple[int, ...]] = field(default_factory=dict, repr=False)
 
 
-_CATALOG_CACHE: dict[tuple[bool, str], BackendBindingCatalog] = {}
+_CATALOG_CACHE: dict[tuple, BackendBindingCatalog] = {}
 
 
-def _cache_key(*, include_discovered: bool) -> tuple[bool, str]:
-    return (include_discovered, get_repo_revision())
+def _cache_key(*, include_discovered: bool) -> tuple:
+    from trellis.agent import route_registry as route_registry_module
+
+    return tuple(route_registry_module._cache_key(include_discovered=include_discovered))
 
 
 def load_backend_binding_catalog(
