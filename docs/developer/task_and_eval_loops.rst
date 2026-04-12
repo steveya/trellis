@@ -476,6 +476,10 @@ runtime contract, or ``ProductIR`` already supplies the family. Description
 heuristics remain only as the final fallback when no structural family signal
 exists yet. The residual text-pattern table is intentionally narrower now:
 generic ``bond`` and ``swap`` wording no longer produce a family on their own,
+and an explicit family such as ``zcb_option`` no longer gets silently redrafted
+into a generic ``vanilla_option`` semantic contract just because the request
+text contains phrases like ``European call option``. That keeps exact helper
+binding on the intended family-first path for the short-rate comparison cohort.
 so ingress fallback only fires for phrases that still correspond to defended
 task families rather than widening broad desk summaries into a pricing schema.
 

@@ -568,10 +568,7 @@ routes:
             symbol: price_callable_bond_tree
             role: route_helper
         adapters: []
-        notes:
-          - "Use `trellis.models.callable_bond_tree.price_callable_bond_tree(...)` directly inside `evaluate()` for callable or puttable bond tree routes."
-          - "Treat callable-bond tree generation as a thin adapter over the checked-in helper; do not rebuild lattice assembly, coupon maps, or exercise-step logic inline."
-          - "Keep volatility access explicit in the adapter with `market_state.vol_surface.black_vol(...)` before passing control to the helper."
+        notes: []
       - when:
           payoff_family: swaption
           exercise_style: [bermudan]
@@ -581,10 +578,7 @@ routes:
             symbol: price_bermudan_swaption_tree
             role: route_helper
         adapters: []
-        notes:
-          - "Use `trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree(...)` directly inside `evaluate()` for Bermudan swaption tree routes."
-          - "Treat Bermudan swaption tree generation as a thin adapter over the checked-in helper; do not rebuild swap-value rollback, fixed-leg maps, or exercise-step logic inline."
-          - "Keep volatility access explicit in the adapter with `market_state.vol_surface.black_vol(...)` before passing control to the helper."
+        notes: []
       - when: default
         primitives:
           - module: trellis.models.trees.lattice
@@ -621,17 +615,8 @@ routes:
             symbol: lattice_steps_from_timeline
             role: step_mapper
             required: false
-        adapters:
-          - map_cashflows_and_exercise_dates_to_tree_steps
-          - resolve_schedule_dependent_lattice_control_policy
-        notes:
-          - "Use lattice_backward_induction with a checked-in lattice exercise policy for callable, puttable, and Bermudan products."
-          - "Keep volatility access explicit in the adapter with `market_state.vol_surface.black_vol(...)` before converting Black vol into the rate-tree volatility parameter."
-          - "For model-specific calibrated trees such as BDT or explicit Hull-White comparisons, import `build_generic_lattice` from `trellis.models.trees.lattice` and `MODEL_REGISTRY` from `trellis.models.trees.models`."
-          - "Use `market_state.discount.zero_rate(...)`, not `market_state.zero_rate(...)`, when reading the short-rate seed from the market state."
-          - "Prefer the checked-in product-specific helper when one exists, such as `price_callable_bond_tree(...)` for callable bonds or `price_bermudan_swaption_tree(...)` for Bermudan swaptions."
-          - "Prefer resolve_lattice_exercise_policy(...) so issuer-call, holder-put, and Bermudan semantics stay explicit instead of repeating exercise_type/exercise_fn conventions inline."
-          - "Treat `trellis.models.trees.control` as the lattice-timeline facade: timeline builders live there alongside `lattice_step_from_time(...)` and `lattice_steps_from_timeline(...)`."
+        adapters: []
+        notes: []
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -671,10 +656,7 @@ routes:
             symbol: price_swaption_tree
             role: route_helper
         adapters: []
-        notes:
-          - "For single-exercise European rate-style swaptions on the rate-tree route, prefer `trellis.models.rate_style_swaption_tree.price_swaption_tree(...)`."
-          - "Treat the rate-tree swaption build as a thin adapter over the checked-in helper; do not rebuild exercise-step selection, swap rollback, or lattice payoff glue inline."
-          - "The checked-in helper assumes the live forward-starting European surface where `spec.swap_start == spec.expiry_date`."
+        notes: []
       - when: default
         primitives:
           - module: trellis.models.trees.lattice
@@ -683,13 +665,8 @@ routes:
           - module: trellis.models.trees.lattice
             symbol: lattice_backward_induction
             role: backward_induction
-        adapters:
-          - map_cashflows_and_exercise_dates_to_tree_steps
-        notes:
-          - "Use calibrated rate-tree primitives for scheduled early-exercise products."
-          - "The real Hull-White convenience-builder contract is `build_rate_lattice(r0, sigma_hw, mean_reversion, T, n_steps, discount_curve=market_state.discount)`."
-          - "Do not invent keyword-only variants such as `maturity=...`, `steps=...`, or `market_state=...` when calling `build_rate_lattice(...)`."
-          - "For explicit model selection, prefer `build_generic_lattice(MODEL_REGISTRY[\"hull_white\"|\"ho_lee\"|\"bdt\"], r0=..., sigma=..., a=..., T=..., n_steps=..., discount_curve=market_state.discount)`."
+        adapters: []
+        notes: []
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -718,13 +695,8 @@ routes:
       - module: trellis.models.zcb_option_tree
         symbol: price_zcb_option_tree
         role: route_helper
-    adapters:
-      - reuse_checked_in_zcb_option_tree_helper
-    notes:
-      - "For zero-coupon bond option trees, prefer `price_zcb_option_tree(market_state, spec, model=\"ho_lee\"|\"hull_white\")` so the adapter stays thin."
-      - "Map `implementation_target=ho_lee_tree` to `model=\"ho_lee\"` and `implementation_target=hull_white_tree` to `model=\"hull_white\"`."
-      - "If you must drop to lower-level lattice assembly, import `build_generic_lattice` from `trellis.models.trees.lattice` and `MODEL_REGISTRY` from `trellis.models.trees.models`."
-      - "When building the lower-level tree directly, use `MODEL_REGISTRY[\"ho_lee\"]` or `MODEL_REGISTRY[\"hull_white\"]`, seed `r0` from `market_state.discount.zero_rate(...)`, read vol from `market_state.vol_surface.black_vol(...)`, and cover the full `spec.bond_maturity_date` horizon."
+    adapters: []
+    notes: []
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -890,14 +862,8 @@ routes:
       - module: trellis.models.zcb_option
         symbol: price_zcb_option_jamshidian
         role: route_helper
-    adapters:
-      - reuse_checked_in_zcb_option_analytical_helper
-    notes:
-      - "For European zero-coupon bond option analytics, prefer `price_zcb_option_jamshidian(market_state, spec, mean_reversion=...)` from `trellis.models.zcb_option`."
-      - "If you need the resolved-input lane under that wrapper, use `resolve_zcb_option_hw_inputs(...)` from `trellis.models.zcb_option`, then delegate the traced kernel to `zcb_option_hw_raw(...)` from `trellis.models.analytical.jamshidian`."
-      - "Do not fall back to Black76 on a forward bond price when the request explicitly asks for Jamshidian / Hull-White."
-      - "Normalize strike quotes to unit face before the closed-form kernel: treat `63` on `100` face as `0.63`."
-      - "Use `spec.expiry_date` and `spec.bond_maturity_date`; the underlying bond maturity must be strictly after expiry."
+    adapters: []
+    notes: []
     market_data_access:
       required:
         discount_curve: [market_state.discount]

@@ -272,6 +272,142 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("quanto_adjustment_analytical"), spec)
         assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
+    def test_flags_callable_bond_tree_helper_signature_mismatch(self, registry):
+        spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
+        callable_ir = ProductIR(
+            instrument="callable_bond",
+            payoff_family="callable_fixed_income",
+            exercise_style="issuer_call",
+            model_family="short_rate",
+        )
+        spec = replace(spec, primitives=resolve_route_primitives(spec, callable_ir))
+        source = '''
+from trellis.models.callable_bond_tree import price_callable_bond_tree
+
+def evaluate(self, market_state):
+    return price_callable_bond_tree(spec=self._spec, market_state=market_state, maturity=5.0)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("exercise_lattice", "lattice"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_accepts_callable_bond_tree_helper_surface(self, registry):
+        spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
+        callable_ir = ProductIR(
+            instrument="callable_bond",
+            payoff_family="callable_fixed_income",
+            exercise_style="issuer_call",
+            model_family="short_rate",
+        )
+        spec = replace(spec, primitives=resolve_route_primitives(spec, callable_ir))
+        source = '''
+from trellis.models.callable_bond_tree import price_callable_bond_tree
+
+def evaluate(self, market_state):
+    return price_callable_bond_tree(market_state, self._spec, model="hull_white", sigma=0.01)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("exercise_lattice", "lattice"), spec)
+        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_flags_rate_tree_swaption_helper_signature_mismatch(self, registry):
+        spec = [r for r in registry.routes if r.id == "rate_tree_backward_induction"][0]
+        swaption_ir = ProductIR(
+            instrument="swaption",
+            payoff_family="swaption",
+            exercise_style="european",
+            model_family="interest_rate",
+        )
+        spec = replace(spec, primitives=resolve_route_primitives(spec, swaption_ir))
+        source = '''
+from trellis.models.rate_style_swaption_tree import price_swaption_tree
+
+def evaluate(self, market_state):
+    return price_swaption_tree(spec=self._spec, market_state=market_state, exercise_steps=12)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("rate_tree_backward_induction", "lattice"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_accepts_rate_tree_swaption_helper_surface(self, registry):
+        spec = [r for r in registry.routes if r.id == "rate_tree_backward_induction"][0]
+        swaption_ir = ProductIR(
+            instrument="swaption",
+            payoff_family="swaption",
+            exercise_style="european",
+            model_family="interest_rate",
+        )
+        spec = replace(spec, primitives=resolve_route_primitives(spec, swaption_ir))
+        source = '''
+from trellis.models.rate_style_swaption_tree import price_swaption_tree
+
+def evaluate(self, market_state):
+    return price_swaption_tree(market_state, self._spec, model="hull_white", mean_reversion=0.05)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("rate_tree_backward_induction", "lattice"), spec)
+        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_flags_zcb_option_tree_helper_signature_mismatch(self, registry):
+        spec = [r for r in registry.routes if r.id == "zcb_option_rate_tree"][0]
+        zcb_ir = ProductIR(
+            instrument="zcb_option",
+            payoff_family="zcb_option",
+            exercise_style="european",
+        )
+        spec = replace(spec, primitives=resolve_route_primitives(spec, zcb_ir))
+        source = '''
+from trellis.models.zcb_option_tree import price_zcb_option_tree
+
+def evaluate(self, market_state):
+    return price_zcb_option_tree(self._spec, market_state, steps=100)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("zcb_option_rate_tree", "lattice"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_accepts_zcb_option_tree_helper_surface(self, registry):
+        spec = [r for r in registry.routes if r.id == "zcb_option_rate_tree"][0]
+        zcb_ir = ProductIR(
+            instrument="zcb_option",
+            payoff_family="zcb_option",
+            exercise_style="european",
+        )
+        spec = replace(spec, primitives=resolve_route_primitives(spec, zcb_ir))
+        source = '''
+from trellis.models.zcb_option_tree import price_zcb_option_tree
+
+def evaluate(self, market_state):
+    return price_zcb_option_tree(market_state, self._spec, model="ho_lee", n_steps=200)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("zcb_option_rate_tree", "lattice"), spec)
+        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_flags_zcb_option_jamshidian_helper_signature_mismatch(self, registry):
+        spec = [r for r in registry.routes if r.id == "zcb_option_analytical"][0]
+        source = '''
+from trellis.models.zcb_option import price_zcb_option_jamshidian
+
+def evaluate(self, market_state):
+    return price_zcb_option_jamshidian(self._spec, market_state, strike=0.63)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("zcb_option_analytical"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_accepts_zcb_option_jamshidian_helper_surface(self, registry):
+        spec = [r for r in registry.routes if r.id == "zcb_option_analytical"][0]
+        source = '''
+from trellis.models.zcb_option import price_zcb_option_jamshidian
+
+def evaluate(self, market_state):
+    return price_zcb_option_jamshidian(market_state, self._spec, mean_reversion=0.1)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("zcb_option_analytical"), spec)
+        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+
     def test_flags_credit_default_swap_analytical_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap_analytical"][0]
         source = '''
@@ -309,6 +445,25 @@ def evaluate(self, market_state):
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("credit_default_swap_analytical"), spec)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_rejects_credit_default_swap_analytical_positional_calls(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap_analytical"][0]
+        source = '''
+from trellis.models.credit_default_swap import price_cds_analytical
+
+def evaluate(self, market_state):
+    return price_cds_analytical(
+        self._spec.notional,
+        self._spec.spread_quote,
+        self._spec.recovery,
+        schedule,
+        market_state.credit_curve,
+        market_state.discount_curve,
+    )
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("credit_default_swap_analytical"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_flags_credit_default_swap_monte_carlo_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap_monte_carlo"][0]
@@ -351,6 +506,26 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("credit_default_swap_monte_carlo", "monte_carlo"), spec)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
+    def test_rejects_credit_default_swap_monte_carlo_positional_calls(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap_monte_carlo"][0]
+        source = '''
+from trellis.models.credit_default_swap import price_cds_monte_carlo
+
+def evaluate(self, market_state):
+    return price_cds_monte_carlo(
+        self._spec.notional,
+        self._spec.spread_quote,
+        self._spec.recovery,
+        schedule,
+        market_state.credit_curve,
+        market_state.discount_curve,
+        self._spec.n_paths,
+    )
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("credit_default_swap_monte_carlo", "monte_carlo"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+
     def test_flags_nth_to_default_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "nth_to_default_monte_carlo"][0]
         source = '''
@@ -392,6 +567,27 @@ def evaluate(self, market_state):
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("nth_to_default_monte_carlo", "monte_carlo"), spec)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_rejects_nth_to_default_positional_calls(self, registry):
+        spec = [r for r in registry.routes if r.id == "nth_to_default_monte_carlo"][0]
+        source = '''
+from trellis.instruments.nth_to_default import price_nth_to_default_basket
+
+def evaluate(self, market_state):
+    return price_nth_to_default_basket(
+        self._spec.notional,
+        len(self._spec.reference_entities),
+        self._spec.nth_default,
+        self._spec.horizon,
+        self._spec.correlation,
+        self._spec.recovery,
+        market_state.credit_curve,
+        market_state.discount_curve,
+    )
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("nth_to_default_monte_carlo", "monte_carlo"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_flags_credit_basket_tranche_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "copula_loss_distribution"][0]

@@ -4677,6 +4677,16 @@ def _normalize_instrument_alias(instrument_type: str | None) -> str:
     return str(instrument_type or "").strip().lower().replace(" ", "_")
 
 
+_GENERIC_SEMANTIC_DRAFT_ALIASES = frozenset({
+    "",
+    "option",
+    "product",
+    "instrument",
+    "derivative",
+    "security",
+})
+
+
 def _matches_semantic_draft_profile(
     text: str,
     instrument_type: str | None,
@@ -4686,8 +4696,11 @@ def _matches_semantic_draft_profile(
     """Return whether request text/instrument matches one declarative drafting profile."""
     lower = text.lower()
     normalized_instrument = _normalize_instrument_alias(instrument_type)
-    if normalized_instrument and normalized_instrument in profile.instrument_aliases:
-        return True
+    if normalized_instrument:
+        if normalized_instrument in profile.instrument_aliases:
+            return True
+        if normalized_instrument not in _GENERIC_SEMANTIC_DRAFT_ALIASES:
+            return False
     if any(cue in lower for cue in profile.negative_cues):
         return False
     return any(cue in lower for cue in profile.positive_cues)

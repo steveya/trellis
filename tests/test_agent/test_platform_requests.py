@@ -256,6 +256,38 @@ def test_compile_build_request_emits_fallback_lane_plan_for_american_tree_route(
     assert "price_vanilla_equity_option_tree" in " ".join(compiled.generation_plan.lane_construction_steps)
 
 
+def test_compile_build_request_keeps_explicit_zcb_option_off_generic_vanilla_semantics():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        (
+            "Build a pricer for: ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical\n\n"
+            "European call option on a zero-coupon bond.\n"
+            "Settlement / valuation date: 2024-11-15.\n"
+            "Option expiry: 2027-11-15.\n"
+            "Underlying bond maturity: 2033-11-15.\n"
+            "Strike: 63 per 100 face (= 0.63 per unit face).\n"
+            "Face / notional: 100.\n"
+            "Shared short-rate comparison regime:\n"
+            "- flat discount curve at 5%\n"
+            "- flat short-rate volatility sigma = 0.01\n"
+            "- Hull-White mean reversion a = 0.1\n"
+            "- Ho-Lee uses the same sigma with zero mean reversion\n\n"
+            "Construct methods: rate_tree\n"
+            "Comparison targets: ho_lee_tree (rate_tree), hull_white_tree (rate_tree), jamshidian (analytical)"
+        ),
+        instrument_type="zcb_option",
+        preferred_method="rate_tree",
+    )
+
+    assert compiled.semantic_contract is None
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.instrument == "zcb_option"
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.primitive_plan is not None
+    assert compiled.generation_plan.primitive_plan.route == "zcb_option_rate_tree"
+
+
 def test_compile_build_request_emits_fallback_lane_plan_for_fx_monte_carlo_route():
     from trellis.agent.platform_requests import compile_build_request
 

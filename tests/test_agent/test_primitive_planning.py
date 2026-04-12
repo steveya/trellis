@@ -340,6 +340,7 @@ def test_builds_zcb_option_analytical_plan():
     assert plan.primitive_plan.route == "zcb_option_analytical"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert primitive_symbols == {"price_zcb_option_jamshidian"}
+    assert plan.primitive_plan.adapters == ()
 
 
 def test_builds_zcb_option_rate_tree_plan():
@@ -368,6 +369,7 @@ def test_builds_zcb_option_rate_tree_plan():
     assert plan.primitive_plan.route == "zcb_option_rate_tree"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert primitive_symbols == {"price_zcb_option_tree"}
+    assert plan.primitive_plan.adapters == ()
 
 
 def test_builds_exercise_lattice_plan_for_callable_bond():

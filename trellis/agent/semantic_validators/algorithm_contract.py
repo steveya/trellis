@@ -42,6 +42,7 @@ _DISCOUNT_PATTERNS = (
 _EXACT_HELPER_SIGNATURES = {
     "price_cds_analytical": {
         "min_positional_args": 0,
+        "keyword_only": True,
         "required_parameters": (
             "notional",
             "spread_quote",
@@ -77,6 +78,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_cds_monte_carlo": {
         "min_positional_args": 0,
+        "keyword_only": True,
         "required_parameters": (
             "notional",
             "spread_quote",
@@ -126,6 +128,54 @@ _EXACT_HELPER_SIGNATURES = {
             "`expiry_date`, and optional exercise fields instead of inventing helper keywords."
         ),
     },
+    "price_callable_bond_tree": {
+        "min_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({"market_state", "spec", "model", "mean_reversion", "sigma", "n_steps"}),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_callable_bond_tree(...)` expects `(market_state, spec, *, "
+            "model=..., mean_reversion=..., sigma=..., n_steps=...)`. "
+            "Pass the live market state and original callable/puttable bond spec "
+            "instead of inventing lattice-builder keywords."
+        ),
+    },
+    "price_bermudan_swaption_tree": {
+        "min_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({"market_state", "spec", "model", "mean_reversion", "sigma", "n_steps"}),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_bermudan_swaption_tree(...)` expects `(market_state, spec, *, "
+            "model=..., mean_reversion=..., sigma=..., n_steps=...)`. "
+            "Pass the live market state and the original Bermudan swaption spec "
+            "instead of rebuilding lattice rollback or exercise glue inline."
+        ),
+    },
+    "price_swaption_tree": {
+        "min_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({"market_state", "spec", "model", "mean_reversion", "sigma", "n_steps"}),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_swaption_tree(...)` expects `(market_state, spec, *, "
+            "model=..., mean_reversion=..., sigma=..., n_steps=...)`. "
+            "Pass the live market state and the original European rate-style swaption spec "
+            "instead of inventing exercise-step or lattice-builder keywords."
+        ),
+    },
     "price_fx_vanilla_analytical": {
         "min_positional_args": 2,
         "required_parameters": ("market_state", "spec"),
@@ -158,6 +208,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_nth_to_default_basket": {
         "min_positional_args": 0,
+        "keyword_only": True,
         "required_parameters": (
             "notional",
             "n_names",
@@ -217,6 +268,37 @@ _EXACT_HELPER_SIGNATURES = {
             "copula_family=..., degrees_of_freedom=..., n_paths=..., seed=...)`. "
             "Pass the live market state and original tranche spec instead of "
             "rebuilding copula loss plumbing inline."
+        ),
+    },
+    "price_zcb_option_tree": {
+        "min_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({"market_state", "spec", "model", "mean_reversion", "sigma", "n_steps"}),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_zcb_option_tree(...)` expects `(market_state, spec, *, "
+            "model=..., mean_reversion=..., sigma=..., n_steps=...)`. "
+            "Pass the live market state and original ZCB-option spec instead of "
+            "inventing direct lattice-builder keywords."
+        ),
+    },
+    "price_zcb_option_jamshidian": {
+        "min_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({"market_state", "spec", "mean_reversion"}),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_zcb_option_jamshidian(...)` expects `(market_state, spec, *, "
+            "mean_reversion=...)`. Pass the live market state and original ZCB-option "
+            "spec instead of resolved inputs or ad hoc strike plumbing."
         ),
     },
     "price_quanto_option_analytical_from_market_state": {
@@ -488,6 +570,9 @@ def _call_satisfies_required_surface(
     keyword_surface_ok: bool,
 ) -> bool:
     """Return whether one helper call satisfies the declared required surface."""
+    if bool(signature.get("keyword_only")) and call.args:
+        return False
+
     required_parameters = tuple(str(item) for item in signature.get("required_parameters", ()) or ())
     positional_markers = tuple(signature.get("required_positional_markers", ()) or ())
 

@@ -1,11 +1,16 @@
 """Agent-generated payoff: Build a pricer for: ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical
 
-Price a 1Y European option on a zero-coupon bond maturing at T=5Y.
-Face value $100, strike price $88. Hull-White model: mean reversion
-a=0.1, short-rate vol sigma=0.01, initial short rate r0=0.05.
-Flat yield curve at 5%.
-Cross-validate Ho-Lee tree, Hull-White tree, and Jamshidian analytical
-decomposition.  All three should agree within 2%.
+European call option on a zero-coupon bond.
+Settlement / valuation date: 2024-11-15.
+Option expiry: 2027-11-15.
+Underlying bond maturity: 2033-11-15.
+Strike: 63 per 100 face (= 0.63 per unit face).
+Face / notional: 100.
+Shared short-rate comparison regime:
+- flat discount curve at 5%
+- flat short-rate volatility sigma = 0.01
+- Hull-White mean reversion a = 0.1
+- Ho-Lee uses the same sigma with zero mean reversion
 
 Construct methods: rate_tree
 Comparison targets: ho_lee_tree (rate_tree), hull_white_tree (rate_tree), jamshidian (analytical)
@@ -35,12 +40,17 @@ from trellis.models.zcb_option import price_zcb_option_jamshidian
 class ZCBOptionSpec:
     """Specification for Build a pricer for: ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical
 
-Price a 1Y European option on a zero-coupon bond maturing at T=5Y.
-Face value $100, strike price $88. Hull-White model: mean reversion
-a=0.1, short-rate vol sigma=0.01, initial short rate r0=0.05.
-Flat yield curve at 5%.
-Cross-validate Ho-Lee tree, Hull-White tree, and Jamshidian analytical
-decomposition.  All three should agree within 2%.
+European call option on a zero-coupon bond.
+Settlement / valuation date: 2024-11-15.
+Option expiry: 2027-11-15.
+Underlying bond maturity: 2033-11-15.
+Strike: 63 per 100 face (= 0.63 per unit face).
+Face / notional: 100.
+Shared short-rate comparison regime:
+- flat discount curve at 5%
+- flat short-rate volatility sigma = 0.01
+- Hull-White mean reversion a = 0.1
+- Ho-Lee uses the same sigma with zero mean reversion
 
 Construct methods: rate_tree
 Comparison targets: ho_lee_tree (rate_tree), hull_white_tree (rate_tree), jamshidian (analytical)
@@ -59,18 +69,23 @@ Implementation target: jamshidian."""
     expiry_date: date
     bond_maturity_date: date
     day_count: DayCountConvention = DayCountConvention.ACT_365
-    option_type: str = "'call'"
+    option_type: str = 'call'
 
 
 class ZCBOptionPayoff:
     """Build a pricer for: ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical
 
-Price a 1Y European option on a zero-coupon bond maturing at T=5Y.
-Face value $100, strike price $88. Hull-White model: mean reversion
-a=0.1, short-rate vol sigma=0.01, initial short rate r0=0.05.
-Flat yield curve at 5%.
-Cross-validate Ho-Lee tree, Hull-White tree, and Jamshidian analytical
-decomposition.  All three should agree within 2%.
+European call option on a zero-coupon bond.
+Settlement / valuation date: 2024-11-15.
+Option expiry: 2027-11-15.
+Underlying bond maturity: 2033-11-15.
+Strike: 63 per 100 face (= 0.63 per unit face).
+Face / notional: 100.
+Shared short-rate comparison regime:
+- flat discount curve at 5%
+- flat short-rate volatility sigma = 0.01
+- Hull-White mean reversion a = 0.1
+- Ho-Lee uses the same sigma with zero mean reversion
 
 Construct methods: rate_tree
 Comparison targets: ho_lee_tree (rate_tree), hull_white_tree (rate_tree), jamshidian (analytical)
@@ -98,25 +113,20 @@ Implementation target: jamshidian."""
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-
-        # Resolve and validate the required market data.
-        if market_state.discount is None:
-            raise ValueError("ZCBOptionPayoff requires a discount curve in market_state")
-        if market_state.vol_surface is None:
-            raise ValueError("ZCBOptionPayoff requires a black vol surface in market_state")
-        if market_state.as_of is None:
-            raise ValueError("ZCBOptionPayoff requires market_state.as_of to be set")
+        if spec.option_type.lower() not in {"call", "put"}:
+            raise ValueError(f"Unsupported option_type: {spec.option_type!r}")
 
         if spec.bond_maturity_date <= spec.expiry_date:
             raise ValueError("bond_maturity_date must be strictly after expiry_date")
 
-        option_type = str(spec.option_type).strip().strip("'").strip('"').lower()
-        if option_type not in {"call", "put"}:
-            raise ValueError("option_type must be 'call' or 'put'")
-
-        # Prefer the checked-in analytical helper for Jamshidian pricing.
         try:
-            return float(price_zcb_option_jamshidian(market_state, spec, mean_reversion=0.1))
+            return float(
+                price_zcb_option_jamshidian(
+                    market_state,
+                    spec,
+                    mean_reversion=0.1,
+                )
+            )
         except TypeError:
-            # Fallback for helper variants that do not accept mean_reversion as a keyword.
+            # Fallback for implementations that infer mean reversion from market/model state.
             return float(price_zcb_option_jamshidian(market_state, spec))

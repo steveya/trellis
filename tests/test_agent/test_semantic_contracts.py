@@ -215,6 +215,22 @@ def test_ranked_observation_basket_emits_typed_semantic_surface():
     assert contract.product.event_machine is not None
 
 
+def test_explicit_zcb_option_instrument_does_not_draft_generic_vanilla_option():
+    contract = _draft_contract(
+        (
+            "European call option on a zero-coupon bond. "
+            "Settlement / valuation date: 2024-11-15. "
+            "Option expiry: 2027-11-15. "
+            "Underlying bond maturity: 2033-11-15. "
+            "Strike: 63 per 100 face (= 0.63 per unit face). "
+            "Face / notional: 100."
+        ),
+        instrument_type="zcb_option",
+    )
+
+    assert contract is None
+
+
 def test_range_accrual_trade_entry_contract_validates_and_surfaces_term_fields():
     from trellis.agent.semantic_contract_validation import validate_semantic_contract
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract

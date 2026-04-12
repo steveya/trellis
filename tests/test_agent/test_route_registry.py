@@ -762,6 +762,11 @@ class TestRateTreeRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
+    def test_callable_bond_helper_route_is_thin(self, registry):
+        spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
+        notes = resolve_route_notes(spec, self.CALLABLE_IR)
+        assert notes == ()
+
     def test_puttable_bond_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         new_prims = resolve_route_primitives(spec, self.PUTTABLE_IR)
@@ -778,6 +783,11 @@ class TestRateTreeRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
+    def test_bermudan_swaption_helper_route_is_thin(self, registry):
+        spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
+        notes = resolve_route_notes(spec, self.BERMUDAN_IR)
+        assert notes == ()
+
     def test_rate_tree_swaption_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "rate_tree_backward_induction"][0]
         new_prims = resolve_route_primitives(spec, self.EUROPEAN_SWAPTION_IR)
@@ -786,10 +796,10 @@ class TestRateTreeRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
-    def test_rate_tree_swaption_notes_pin_helper_backed_route(self, registry):
+    def test_rate_tree_swaption_helper_route_is_thin(self, registry):
         spec = [r for r in registry.routes if r.id == "rate_tree_backward_induction"][0]
         notes = resolve_route_notes(spec, self.EUROPEAN_SWAPTION_IR)
-        assert any("price_swaption_tree" in note for note in notes)
+        assert notes == ()
 
     def test_backward_induction_engine_family(self, registry):
         spec = [r for r in registry.routes if r.id == "rate_tree_backward_induction"][0]
@@ -872,11 +882,10 @@ class TestAnalyticalRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
-    def test_zcb_notes_pin_resolved_jamshidian_lane(self, registry):
+    def test_zcb_analytical_route_is_thin(self, registry):
         spec = [r for r in registry.routes if r.id == "zcb_option_analytical"][0]
         notes = resolve_route_notes(spec, self.ZCB_IR)
-        assert any("resolve_zcb_option_hw_inputs" in note for note in notes)
-        assert any("zcb_option_hw_raw" in note for note in notes)
+        assert notes == ()
 
     def test_admissibility_rejects_pathwise_state_tags_on_black76(self, registry):
         from dataclasses import replace
@@ -927,6 +936,28 @@ class TestZCBRateTreeRoutes:
             ("trellis.models.zcb_option_tree", "price_zcb_option_tree", "route_helper"),
         }
         assert _prim_set(new_prims) == expected_prims
+
+    def test_zcb_rate_tree_route_is_thin(self, registry):
+        spec = [r for r in registry.routes if r.id == "zcb_option_rate_tree"][0]
+        notes = resolve_route_notes(spec, self.IR)
+        assert notes == ()
+
+
+def test_rate_tree_routes_keep_backend_binding_metadata_only(registry):
+    exercise = find_route_by_id("exercise_lattice", registry)
+    backward = find_route_by_id("rate_tree_backward_induction", registry)
+    zcb_tree = find_route_by_id("zcb_option_rate_tree", registry)
+    zcb_analytical = find_route_by_id("zcb_option_analytical", registry)
+
+    assert exercise is not None
+    assert backward is not None
+    assert zcb_tree is not None
+    assert zcb_analytical is not None
+
+    assert zcb_tree.adapters == ()
+    assert zcb_tree.notes == ()
+    assert zcb_analytical.adapters == ()
+    assert zcb_analytical.notes == ()
 
 
 # ---------------------------------------------------------------------------
