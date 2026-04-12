@@ -1,0 +1,106 @@
+\documentclass[11pt]{article}
+\input{../common/preamble.tex}
+
+\title{Trellis I: A Request-to-Outcome Compiler for Agent-Assisted Derivatives Pricing}
+\author{Draft}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This paper should explain how \trellis{} turns ambiguous pricing requests into
+defensible deterministic pricing outcomes. The central claim is that
+agent-pricing becomes viable when the LLM is constrained to semantic parsing,
+planning, and guarded artifact generation around a typed compiler and a
+deterministic numerical runtime, rather than being placed in the pricing hot
+path.
+\end{abstract}
+
+\tableofcontents
+
+\section{Introduction}
+
+\subsection{Problem}
+Explain why naive prompt-to-code pricing is unsafe for quantitative finance.
+
+\subsection{Contribution}
+State the compiler thesis clearly:
+\begin{itemize}
+    \item unified request normalization
+    \item typed semantic compilation
+    \item admissibility and lowering before pricing
+    \item deterministic validation and traceability
+\end{itemize}
+
+\section{From Front Doors to a Canonical Request}
+
+Cover:
+\begin{itemize}
+    \item \code{ask(...)}
+    \item \code{Session}
+    \item \code{Pipeline}
+    \item structured user-defined products
+    \item comparison and task-runner flows
+\end{itemize}
+
+Key objects:
+\begin{itemize}
+    \item \platformrequest{}
+    \item \code{CompiledPlatformRequest}
+    \item \code{ExecutionPlan}
+\end{itemize}
+
+\section{Semantic Compilation}
+
+Cover:
+\begin{itemize}
+    \item \semanticcontract{}
+    \item semantic validation
+    \item \valuationcontext{}
+    \item required data and market binding
+    \item \productir{}
+\end{itemize}
+
+\section{Admissibility, Lowering, and Route Selection}
+
+Cover:
+\begin{itemize}
+    \item route registry and build gate
+    \item \eventprogramir{} and \controlprogramir{}
+    \item lowering onto bounded family IRs
+    \item helper-backed deterministic routes
+\end{itemize}
+
+\section{Validation and Traces}
+
+Cover:
+\begin{itemize}
+    \item validation as a compiled contract
+    \item deterministic checks versus residual model review
+    \item canonical trace surfaces and replayability
+\end{itemize}
+
+\section{Case Studies}
+
+Suggested cases:
+\begin{itemize}
+    \item one direct deterministic pricing request
+    \item one guarded build path
+    \item one comparison-task path
+\end{itemize}
+
+\section{What This Paper Does Not Claim}
+
+\begin{itemize}
+    \item the LLM does not perform deterministic pricing
+    \item the compiler does not imply universal numerical support
+    \item unsupported capability remains bounded by documented limitations
+\end{itemize}
+
+\section{Conclusion}
+
+Restate the main result: the meaningful innovation is a governed semantic
+compiler around deterministic quantitative engines.
+
+\end{document}
