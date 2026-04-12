@@ -488,6 +488,12 @@ class TestMonteCarloPathsRoutes:
         payoff_family="vanilla_option",
         exercise_style="european",
     )
+    GENERIC_IR = ProductIR(
+        instrument="path_dependent_note",
+        payoff_family="path_dependent_generic",
+        exercise_style="none",
+        model_family="generic",
+    )
 
     def test_candidate(self, registry):
         new = _new_routes(registry, "monte_carlo", self.EUROPEAN_IR)
@@ -504,6 +510,13 @@ class TestMonteCarloPathsRoutes:
             ),
         }
         assert _prim_set(new_prims) == expected_prims
+
+    def test_default_branch_preserves_base_adapters_and_notes_for_generic_requests(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+
+        assert resolve_route_primitives(spec, self.GENERIC_IR) == spec.primitives
+        assert resolve_route_adapters(spec, self.GENERIC_IR) == spec.adapters
+        assert resolve_route_notes(spec, self.GENERIC_IR) == spec.notes
 
     def test_admissibility_hydrates_process_and_path_contracts(self, registry):
         generic = find_route_by_id("monte_carlo_paths", registry)

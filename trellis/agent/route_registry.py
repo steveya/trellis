@@ -870,10 +870,18 @@ def resolve_route_adapters(
 
     for cond in spec.conditional_primitives:
         if isinstance(cond.when, str) and cond.when == "default":
-            return spec.adapters if cond.adapters is None else cond.adapters
+            if cond.adapters is None:
+                return spec.adapters
+            if not cond.primitives and not cond.adapters:
+                return spec.adapters
+            return cond.adapters
         if isinstance(cond.when, dict):
             if _matches_condition(cond.when, payoff_family, exercise, model_family, product_ir):
-                return spec.adapters if cond.adapters is None else cond.adapters
+                if cond.adapters is None:
+                    return spec.adapters
+                if not cond.primitives and not cond.adapters:
+                    return spec.adapters
+                return cond.adapters
 
     return spec.adapters
 
@@ -897,7 +905,12 @@ def resolve_route_notes(
             elif isinstance(cond.when, dict):
                 matched = _matches_condition(cond.when, payoff_family, exercise, model_family, product_ir)
             if matched:
-                base_notes = list(spec.notes if cond.notes is None else cond.notes)
+                if cond.notes is None:
+                    base_notes = list(spec.notes)
+                elif not cond.primitives and not cond.notes:
+                    base_notes = list(spec.notes)
+                else:
+                    base_notes = list(cond.notes)
                 break
 
     # Resolve dynamic notes
