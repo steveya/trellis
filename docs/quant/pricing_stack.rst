@@ -183,6 +183,11 @@ The first migrated vanilla cases now use that boundary directly:
   dependence-family controls without exposing the raw scalar copula kernels as
   the public route helper
 
+Route selection now follows that same minimization rule. The deterministic
+scorer no longer emits route-id or route-family one-hot authority; it ranks
+routes from family capability, blocker state, and backend-binding facts such as
+``route_helper`` / ``pricing_kernel`` / ``cashflow_engine`` surfaces instead.
+
 For rate-style swaption comparison builds, the semantic compiler now also keeps
 the contract-level convention surface attached to each method-specific plan.
 Fixed-leg and floating-leg day-count terms, rate-index bindings, and the

@@ -24,6 +24,7 @@ from trellis.agent.route_registry import (
     RouteRegistry,
     RouteSpec,
     evaluate_route_capability_match,
+    resolve_route_primitives,
 )
 from trellis.core.differentiable import get_numpy
 
@@ -137,9 +138,16 @@ def extract_scoring_features(ctx: ScoringContext) -> dict[str, float]:
         "route_confidence": spec.confidence,
         "successful_builds": float(min(spec.successful_builds, 20)),
     }
+    resolved_primitives = tuple(resolve_route_primitives(spec, ir))
+    resolved_roles = {primitive.role for primitive in resolved_primitives}
+    exact_surface_roles = {"route_helper", "pricing_kernel", "cashflow_engine"}
+
+    features["binding_role_count"] = float(len(resolved_roles))
+    features["binding_has_exact_surface"] = 1.0 if resolved_roles.intersection(exact_surface_roles) else 0.0
+    for role in resolved_roles:
+        features[f"binding_role:{role}"] = 1.0
 
     if ir is not None:
-        ir_route_families = set(getattr(ir, "route_families", ()) or ())
         capability = evaluate_route_capability_match(spec, ir)
         features["product_supported"] = 1.0 if ir.supported else 0.0
         features["schedule_dependence"] = 1.0 if ir.schedule_dependence else 0.0
@@ -147,7 +155,6 @@ def extract_scoring_features(ctx: ScoringContext) -> dict[str, float]:
         features["engine_family_matches_ir"] = (
             1.0 if spec.engine_family in ir.candidate_engine_families else 0.0
         )
-        features["route_family_matches_ir"] = 1.0 if route_family in ir_route_families else 0.0
         features["family_capability_ok"] = 1.0 if capability.ok else 0.0
         features["family_capability_match_count"] = float(len(capability.matched_predicates))
         features[f"exercise:{ir.exercise_style}"] = 1.0
@@ -159,9 +166,7 @@ def extract_scoring_features(ctx: ScoringContext) -> dict[str, float]:
         for failure in capability.failures:
             features[f"capability_failure:{failure}"] = 1.0
 
-    features[f"route:{spec.id}"] = 1.0
     features[f"engine_family:{spec.engine_family}"] = 1.0
-    features[f"route_family:{route_family}"] = 1.0
     features[f"status:{spec.status}"] = 1.0
 
     for blocker in ctx.blockers:

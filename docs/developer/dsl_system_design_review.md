@@ -315,6 +315,12 @@ wrapper stays on the generic Monte Carlo path, when ranked-observation traits
 refine it onto the basket helper route, and when explicit credit-basket cues
 upgrade it to the nth-to-default family before route binding.
 
+Route scoring now follows the same rule. The learned and heuristic scorers no
+longer treat route ids as first-class authority; they rank candidates from
+family capability, blocker state, and backend-binding role facts. This keeps
+selection aligned with the retired route-card surface instead of letting
+route-id or route-family signals quietly reintroduce route-first behavior.
+
 Callable-bond wrappers now follow the same “thin public shell over reusable
 family helpers” rule as the newer event-aware routes. The public PDE/tree
 helpers still exist, but coupon timeline compilation, embedded exercise

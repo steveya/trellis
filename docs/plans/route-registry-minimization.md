@@ -322,6 +322,15 @@ The active route-card retirement queue is now tracked under umbrella
    this audit slice.
 7. `QUA-777` route scoring tail after the route-card surfaces themselves are
    retired
+   Closeout status: the learned and heuristic scorers no longer treat
+   `route:<id>` or `route_family:<family>` as first-class authority. Feature
+   extraction and fallback scoring now rank candidates from family capability,
+   blocker state, and backend-binding roles such as `route_helper`,
+   `pricing_kernel`, and `cashflow_engine`. Representative route-retirement
+   cohort reruns still pass on the modern surface (`T01`, `T13`, `T38`,
+   `T105`), and `E26` continues to land on the correct nth-to-default helper
+   pair while carrying only its downstream comparison failure outside this
+   workstream.
 
 This queue is intentionally task-backed. The goal is not to delete route files
 in the abstract. The goal is to remove route-card synthesis authority while
@@ -330,14 +339,14 @@ semantic/family/lane surface.
 
 ## Linear Mirror
 
-Status mirror last synced: `2026-04-12`
+Status mirror last synced: `2026-04-11`
 
 ### Workstream Ticket
 
 | Ticket | Status |
 | --- | --- |
 | `QUA-727` | Route registry minimization: family-first backend binding cleanup | Done |
-| `QUA-780` | Route surfaces: task-backed retirement of residual route-card synthesis authority | Backlog |
+| `QUA-780` | Route surfaces: task-backed retirement of residual route-card synthesis authority | Done |
 
 ### Ordered Queue
 
@@ -354,4 +363,4 @@ Status mirror last synced: `2026-04-12`
 | `QUA-783` | Route surfaces: analytical Black76, PDE, and FFT routes retire procedural guidance | Done |
 | `QUA-784` | Route surfaces: generic Monte Carlo and basket routes collapse to family-first metadata | Done |
 | `QUA-785` | Route inventory: audit metadata-first residual route cards against representative tasks | Done |
-| `QUA-777` | Route scoring: remove residual route-identity authority after route-card retirement | Backlog |
+| `QUA-777` | Route scoring: remove residual route-identity authority after route-card retirement | Done |
