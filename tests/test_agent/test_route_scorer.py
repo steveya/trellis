@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from trellis.agent.knowledge.schema import ProductIR
+from trellis.agent.codegen_guardrails import PrimitiveRef
 from trellis.agent.route_registry import RouteAdmissibilitySpec, RouteSpec, load_route_registry
 from trellis.agent.route_scorer import (
     LearnedModel,
@@ -49,11 +50,15 @@ class TestFeatureExtraction:
         features = extract_scoring_features(ctx)
         assert features["bias"] == 1.0
         assert features["blocker_count"] == 0.0
-        assert features["route:analytical_black76"] == 1.0
         assert features["engine_family:analytical"] == 1.0
         assert features["exercise:european"] == 1.0
         assert features["payoff:swaption"] == 1.0
         assert features["family_capability_ok"] == 1.0
+        assert features["binding_role:route_helper"] == 1.0
+        assert features["binding_has_exact_surface"] == 1.0
+        assert "route:analytical_black76" not in features
+        assert "route_family:analytical" not in features
+        assert "route_family_matches_ir" not in features
 
     def test_blocker_features(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
@@ -249,6 +254,88 @@ class TestScoring:
 
         assert matching_score.final_score > mismatched_score.final_score
 
+    def test_helper_backed_route_scores_above_generic_route_without_identity_features(self, scorer):
+        helper_backed = RouteSpec(
+            id="helper_backed_mc",
+            engine_family="monte_carlo",
+            route_family="monte_carlo",
+            status="promoted",
+            confidence=1.0,
+            match_methods=("monte_carlo",),
+            match_instruments=None,
+            exclude_instruments=(),
+            match_payoff_family=None,
+            match_payoff_traits=None,
+            match_exercise=None,
+            exclude_exercise=(),
+            match_required_market_data=None,
+            exclude_required_market_data=None,
+            primitives=(
+                PrimitiveRef(
+                    module="trellis.models.monte_carlo.event_aware",
+                    symbol="price_event_aware_monte_carlo",
+                    role="route_helper",
+                ),
+            ),
+            conditional_primitives=(),
+            conditional_route_family=None,
+            adapters=(),
+            notes=(),
+            admissibility=RouteAdmissibilitySpec(
+                supported_state_tags=("terminal_markov",),
+            ),
+        )
+        generic = RouteSpec(
+            id="generic_mc",
+            engine_family="monte_carlo",
+            route_family="monte_carlo",
+            status="promoted",
+            confidence=1.0,
+            match_methods=("monte_carlo",),
+            match_instruments=None,
+            exclude_instruments=(),
+            match_payoff_family=None,
+            match_payoff_traits=None,
+            match_exercise=None,
+            exclude_exercise=(),
+            match_required_market_data=None,
+            exclude_required_market_data=None,
+            primitives=(
+                PrimitiveRef(
+                    module="trellis.models.processes.gbm",
+                    symbol="GBM",
+                    role="state_process",
+                ),
+                PrimitiveRef(
+                    module="trellis.models.monte_carlo.engine",
+                    symbol="MonteCarloEngine",
+                    role="path_simulation",
+                ),
+            ),
+            conditional_primitives=(),
+            conditional_route_family=None,
+            adapters=(),
+            notes=(),
+            admissibility=RouteAdmissibilitySpec(
+                supported_state_tags=("terminal_markov",),
+            ),
+        )
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            candidate_engine_families=("monte_carlo",),
+            route_families=("monte_carlo",),
+        )
+
+        helper_score = scorer.score_route(
+            ScoringContext(product_ir=ir, route_spec=helper_backed, pricing_plan=None, blockers=[]),
+        )
+        generic_score = scorer.score_route(
+            ScoringContext(product_ir=ir, route_spec=generic, pricing_plan=None, blockers=[]),
+        )
+
+        assert helper_score.final_score > generic_score.final_score
+
 
 # ---------------------------------------------------------------------------
 # Model persistence
@@ -288,7 +375,7 @@ class TestModelPersistence:
 class TestTrainedModelScoring:
     def test_trained_model_overrides_heuristic(self, registry):
         model = LearnedModel(
-            feature_names=("bias", "route:analytical_black76"),
+            feature_names=("bias", "binding_role:pricing_kernel"),
             weights=(10.0, 5.0),
             training_size=50,
         )

@@ -27,12 +27,11 @@ Implementation target: jamshidian."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
-from trellis.models.resolution.short_rate_claims import resolve_discount_bond_option_type
 from trellis.models.zcb_option import price_zcb_option_jamshidian
 
 
@@ -114,22 +113,25 @@ Implementation target: jamshidian."""
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        option_type = resolve_discount_bond_option_type(spec)
+        option_type = str(spec.option_type).strip().strip("\"'")
+        if option_type not in {"call", "put"}:
+            raise ValueError(f"Unsupported option_type: {spec.option_type!r}")
+        if option_type != spec.option_type:
+            spec = replace(spec, option_type=option_type)
 
         if spec.bond_maturity_date <= spec.expiry_date:
             raise ValueError("bond_maturity_date must be strictly after expiry_date")
 
-        if option_type not in {"call", "put"}:
-            raise ValueError(f"Unsupported option_type: {spec.option_type!r}")
+        if market_state.discount is None:
+            raise ValueError("market_state.discount is required for ZCB option pricing")
+        if market_state.vol_surface is None:
+            raise ValueError("market_state.vol_surface is required for ZCB option pricing")
 
-        try:
-            return float(
-                price_zcb_option_jamshidian(
-                    market_state,
-                    spec,
-                    mean_reversion=0.1,
-                )
-            )
-        except TypeError:
-            # Fallback for implementations that infer mean reversion from market/model state.
-            return float(price_zcb_option_jamshidian(market_state, spec))
+        # Ensure the market snapshot can provide the required expiry volatility.
+        T = (spec.expiry_date - market_state.as_of).days / 365.0
+        if T < 0:
+            raise ValueError("Option expiry must not be before market_state.as_of")
+
+        _ = market_state.vol_surface.black_vol(T, spec.strike / spec.notional if spec.notional else spec.strike)
+
+        return float(price_zcb_option_jamshidian(market_state, spec, mean_reversion=0.1))

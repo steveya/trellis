@@ -1467,27 +1467,32 @@ def _route_score(
 
     ``spec`` is a :class:`RouteSpec` from the route registry.  Route-specific
     bonuses and penalties are declared in ``score_hints`` within routes.yaml
-    rather than hard-coded per route name.
+    rather than hard-coded per route name. Fallback scoring should prefer
+    family capability and backend-binding facts over route identity.
     """
-    from trellis.agent.route_registry import evaluate_route_capability_match
+    from trellis.agent.route_registry import (
+        evaluate_route_capability_match,
+        resolve_route_primitives,
+    )
 
     hints = spec.score_hints if spec is not None else {}
-    route = spec.id if spec is not None else ""
     engine_family = spec.engine_family if spec is not None else ""
     if not route_family:
         route_family = spec.route_family if spec is not None else ""
 
     score = 0.0
-    if route:
-        score += 2.0
-
     if product_ir is not None:
-        # Semantic fit: route_family or engine_family matches ProductIR
-        ir_route_families = set(getattr(product_ir, "route_families", ()) or ())
-        if route_family in ir_route_families:
-            score += 2.5
-        elif engine_family in product_ir.candidate_engine_families:
-            score += 2.5
+        resolved_primitives = tuple(resolve_route_primitives(spec, product_ir))
+        resolved_roles = {primitive.role for primitive in resolved_primitives}
+        exact_surface_roles = {"route_helper", "pricing_kernel", "cashflow_engine"}
+        if engine_family in product_ir.candidate_engine_families:
+            score += 1.5
+        if resolved_roles.intersection(exact_surface_roles):
+            score += 1.5
+        elif "exercise_control" in resolved_roles:
+            score += 0.75
+        elif "low_discrepancy_sampler" in resolved_roles:
+            score += 0.5
 
         capability = evaluate_route_capability_match(spec, product_ir)
         if capability.ok:
