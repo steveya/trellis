@@ -298,13 +298,13 @@ Each coding agent assigned to this workstream should begin with:
 
 ## Linear Mirror
 
-Status mirror last synced: `2026-04-08`
+Status mirror last synced: `2026-04-10`
 
 ### Workstream Ticket
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-719` | Monte Carlo lane: event-aware single-state path family | Backlog |
+| `QUA-719` | Monte Carlo lane: event-aware single-state path family | Done |
 
 ### Ordered Queue
 
@@ -316,4 +316,4 @@ Status mirror last synced: `2026-04-08`
 | `QUA-723` | Monte Carlo migration: express vanilla MC routes through `EventAwareMonteCarloIR` | Done |
 | `QUA-724` | Semantic swaption: preserve conventions and calibration bindings through comparison assembly | Done |
 | `QUA-725` | Monte Carlo proof route: Hull-White European swaption MC and `T73` recovery | Done |
-| `QUA-726` | Monte Carlo lane: docs, observability, and compatibility cleanup | Backlog |
+| `QUA-726` | Monte Carlo lane: docs, observability, and compatibility cleanup | Done |

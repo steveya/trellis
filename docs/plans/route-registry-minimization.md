@@ -212,15 +212,87 @@ Each coding agent assigned to this workstream should begin with:
 - `docs/developer/dsl_system_design_review.md`
 - the completed `QUA-546` umbrella and closeout tickets
 
+## Post-Closeout Audit
+
+The `QUA-727` queue is correctly closed, but a post-closeout audit on
+`2026-04-10` found several smaller residual route-heavy surfaces worth
+tracking as maintenance work rather than as a reopened umbrella:
+
+- `QUA-417` is now a low-priority cleanup slice, not a core minimization
+  tranche. Its role is only to collapse redundant optional utility bindings
+  such as `schedule_builder` / `time_measure` in canonical route cards.
+- `QUA-778` tracks the remaining route-card / route-spec-first build, trace,
+  and validation surfaces. `trellis/agent/codegen_guardrails.py` still turns
+  route-card helpers and notes into `InstructionRecord`s, and
+  `trellis/agent/platform_traces.py` plus validator surfaces such as
+  `trellis/agent/semantic_validators/algorithm_contract.py` still expose or
+  consume `route_method` / `RouteSpec` directly more often than the target end
+  state allows.
+- `QUA-777` tracks the remaining route-scoring gap. `trellis/agent/route_scorer.py`
+  still learns and scores on route identity (`route:<id>`,
+  `route_family:<family>`) and still falls back to the route heuristic in
+  `codegen_guardrails._route_score(...)`.
+
+These gaps do not invalidate the completed `QUA-546` / `QUA-727` work. They do
+mean route minimization still has a small maintenance tail after the completed
+planned tranches.
+
+## 2026-04-12 Route-Card Retirement Program
+
+A fresh audit after the live `KL01` FX rerun showed that the remaining route
+cards are not all equally risky.
+
+Current repo-grounded split:
+
+- 18 route cards still carry constructive authority once
+  `conditional_primitives` are included
+- 4 route cards already look metadata-first and should be audited before any
+  code-changing cleanup is invented
+
+The active route-card retirement queue is now tracked under umbrella
+`QUA-780`, with task-backed child slices:
+
+1. `QUA-778` FX and quanto exact-helper routes:
+   `analytical_garman_kohlhagen`, `monte_carlo_fx_vanilla`,
+   `quanto_adjustment_analytical`, `correlated_gbm_monte_carlo`
+   Validation cohort: `KL01`, `T105`, `T108`, `E25`
+2. `QUA-782` credit and copula helper routes:
+   `credit_default_swap_analytical`, `credit_default_swap_monte_carlo`,
+   `nth_to_default_monte_carlo`, `copula_loss_distribution`
+   Validation cohort: `T38`, `T49`, `T50`, `T53`, `E26`, `T124`, `KL03`
+3. `QUA-781` rate-tree routes:
+   `exercise_lattice`, `rate_tree_backward_induction`,
+   `zcb_option_rate_tree`, `zcb_option_analytical`
+   Validation cohort: `T01`, `T04`, `T05`, `T17`
+4. `QUA-783` analytical / PDE / FFT routes:
+   `analytical_black76`, `vanilla_equity_theta_pde`, `pde_theta_1d`,
+   `transform_fft`
+   Validation cohort: `T13`, `T39`, `T73`, `T94`, `E21`, `E22`, `T103`
+5. `QUA-784` generic Monte Carlo and basket routes:
+   `monte_carlo_paths`, `correlated_basket_monte_carlo`
+   Validation cohort: `T37`, `T102`, `T104`, `T126`, `E21`, `E22`, `E24`
+6. `QUA-785` metadata-first residual audit:
+   `exercise_monte_carlo`, `local_vol_monte_carlo`, `qmc_sobol_paths`,
+   `waterfall_cashflows`
+   Representative cohort: `T14`, `T36`, `E23`, `E27`
+7. `QUA-777` route scoring tail after the route-card surfaces themselves are
+   retired
+
+This queue is intentionally task-backed. The goal is not to delete route files
+in the abstract. The goal is to remove route-card synthesis authority while
+proving that the corresponding task cohorts still process on the modern
+semantic/family/lane surface.
+
 ## Linear Mirror
 
-Status mirror last synced: `2026-04-09`
+Status mirror last synced: `2026-04-12`
 
 ### Workstream Ticket
 
 | Ticket | Status |
 | --- | --- |
 | `QUA-727` | Route registry minimization: family-first backend binding cleanup | Done |
+| `QUA-780` | Route surfaces: task-backed retirement of residual route-card synthesis authority | Backlog |
 
 ### Ordered Queue
 
@@ -231,3 +303,10 @@ Status mirror last synced: `2026-04-09`
 | `QUA-730` | Route matching: move canonical selection toward family-first capability predicates | Done |
 | `QUA-731` | Diagnostics: demote route identity behind family IR and lane obligations | Done |
 | `QUA-732` | Compatibility cleanup: retire redundant route aliases after migrated-family adoption | Done |
+| `QUA-778` | Route surfaces: FX and quanto exact-helper routes stop emitting procedural authority | Backlog |
+| `QUA-782` | Route surfaces: credit and copula routes retire procedural authority behind backend helpers | Backlog |
+| `QUA-781` | Route surfaces: rate-tree routes retire procedural authority and stay task-backed | Backlog |
+| `QUA-783` | Route surfaces: analytical Black76, PDE, and FFT routes retire procedural guidance | Backlog |
+| `QUA-784` | Route surfaces: generic Monte Carlo and basket routes collapse to family-first metadata | Backlog |
+| `QUA-785` | Route inventory: audit metadata-first residual route cards against representative tasks | Backlog |
+| `QUA-777` | Route scoring: remove residual route-identity authority after route-card retirement | Backlog |

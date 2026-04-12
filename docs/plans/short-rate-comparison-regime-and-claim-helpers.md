@@ -15,8 +15,9 @@ comparison tasks stop failing for assembly reasons.
 
 ## Current Status
 
-As of April 8, 2026, the proving canary `T01` is passing on the new runtime
-path:
+As of April 10, 2026, the proving canary `T01` is passing on the new runtime
+path, and both the validation / exact-binding recovery slice (`QUA-751`) and
+the docs / observability cleanup slice (`QUA-750`) are closed in Linear:
 
 - the task comparison assumptions are materialized once into a typed
   short-rate comparison regime on `MarketState`
@@ -216,7 +217,21 @@ Acceptance:
 - tree and analytical helpers consume the same regime/claim normalization layer
 - direct route-local literal binding is no longer needed
 
-### `QUA-750` Validation and exact binding: recover `T01`
+### `QUA-750` Docs, observability, and canary hardening
+
+Objective:
+
+Document the new comparison-regime path and short-rate helper layer, update
+trace and observability surfaces, and sync the canary mirror after `T01`
+recovery.
+
+Acceptance:
+
+- official docs updated
+- trace/runtime metadata exposes the typed short-rate comparison regime
+- canary plan reflects `T01` recovery on the new architecture
+
+### `QUA-751` Validation and exact binding: recover `T01`
 
 Objective:
 
@@ -228,26 +243,14 @@ Acceptance:
 - `ho_lee_tree` stays on the checked ZCB tree helper surface
 - `hull_white_tree` resolves volatility from the typed comparison regime rather
   than a local literal
-- `T01` passes live
-
-### `QUA-751` Docs, observability, and canary hardening
-
-Objective:
-
-Document the new comparison-regime path and short-rate helper layer, update
-trace/observability surfaces, and sync the canary mirror.
-
-Acceptance:
-
-- official docs updated
-- trace/runtime metadata exposes the typed short-rate comparison regime
 - canary plan reflects `T01` recovery on the new architecture
+- `T01` passes live
 
 ## Critical Path
 
 The intended order is:
 
-`QUA-747 -> QUA-748 -> QUA-749 -> QUA-750 -> QUA-751`
+`QUA-747 -> QUA-748 -> QUA-749 -> QUA-751 -> QUA-750`
 
 This order matters:
 
