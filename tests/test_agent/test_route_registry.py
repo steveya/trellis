@@ -480,6 +480,19 @@ class TestExerciseMonteCarloRoutes:
         spec = [r for r in registry.routes if r.id == "exercise_monte_carlo"][0]
         assert spec.engine_family == "exercise"
 
+    def test_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "exercise_monte_carlo"][0]
+        new_prims = resolve_route_primitives(spec, self.AMERICAN_IR)
+        expected_prims = {
+            ("trellis.models.processes.gbm", "GBM", "state_process"),
+            ("trellis.models.monte_carlo.engine", "MonteCarloEngine", "path_simulation"),
+            ("trellis.models.monte_carlo.lsm", "longstaff_schwartz", "exercise_control"),
+            ("trellis.models.monte_carlo.tv_regression", "tsitsiklis_van_roy", "exercise_control"),
+            ("trellis.models.monte_carlo.primal_dual", "primal_dual_mc", "exercise_control"),
+            ("trellis.models.monte_carlo.stochastic_mesh", "stochastic_mesh", "exercise_control"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
 
 # ---------------------------------------------------------------------------
 # Monte Carlo paths (vanilla European)
@@ -719,6 +732,16 @@ class TestQMCRoutes:
     def test_candidate(self, registry):
         new = _new_routes(registry, "qmc", self.IR)
         assert "qmc_sobol_paths" in new
+
+    def test_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "qmc_sobol_paths"][0]
+        new_prims = resolve_route_primitives(spec, self.IR)
+        expected_prims = {
+            ("trellis.models.qmc", "sobol_normals", "low_discrepancy_sampler"),
+            ("trellis.models.qmc", "brownian_bridge", "path_construction"),
+            ("trellis.models.processes.gbm", "GBM", "state_process"),
+        }
+        assert _prim_set(new_prims) == expected_prims
 
 
 # ---------------------------------------------------------------------------
@@ -1483,6 +1506,10 @@ class TestFallbackRoutes:
             ("trellis.models.cashflow_engine.waterfall", "Tranche", "cashflow_engine"),
         }
         assert _prim_set(new_prims) == expected_prims
+
+    def test_waterfall_has_no_notes(self, registry):
+        spec = [r for r in registry.routes if r.id == "waterfall_cashflows"][0]
+        assert spec.notes == ()
 
 
 # ---------------------------------------------------------------------------
