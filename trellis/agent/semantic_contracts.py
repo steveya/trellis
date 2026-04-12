@@ -4684,6 +4684,8 @@ _GENERIC_SEMANTIC_DRAFT_ALIASES = frozenset({
     "instrument",
     "derivative",
     "security",
+    "basket_option",
+    "basket_path_payoff",
 })
 
 

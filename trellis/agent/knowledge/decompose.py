@@ -326,13 +326,37 @@ def _match_static_decomposition(
 
 def _infer_instrument(description: str, instrument_type: str | None) -> str | None:
     """Infer the most specific supported instrument key from text."""
+    desc = _normalise(description)
     if instrument_type:
         normalized = _normalise(instrument_type)
         if normalized in {"credit_default_swap"}:
             normalized = "cds"
+        if normalized in {"basket_option", "basket_path_payoff"}:
+            if any(
+                cue in desc
+                for cue in (
+                    "nth_to_default",
+                    "nth to default",
+                    "nth-default",
+                    "first_to_default",
+                    "first to default",
+                    "default correlation",
+                    "basket cds",
+                )
+            ):
+                return "nth_to_default"
+            if any(
+                cue in desc
+                for cue in (
+                    "cdo tranche",
+                    "collateralized debt obligation",
+                    "attachment",
+                    "detachment",
+                )
+            ):
+                return "cdo"
         return normalized
 
-    desc = _normalise(description)
     patterns = [
         ("bermudan_swaption", ("bermudan_swaption", "bermudan swaption")),
         ("callable_bond", ("callable_bond", "callable bond")),
@@ -602,8 +626,12 @@ def _payoff_family_for(
 ) -> str:
     """Map an instrument/trait set onto a stable payoff-family label."""
     product_traits = {"asian", "barrier", "lookback", "callable", "puttable"}
-    if instrument in {"basket_option", "ranked_observation_basket"}:
+    if instrument == "ranked_observation_basket":
         return "basket_path_payoff"
+    if instrument == "basket_option":
+        if "ranked_observation" in payoff_traits:
+            return "basket_path_payoff"
+        return "basket_option"
     if len(product_traits.intersection(payoff_traits)) >= 2:
         return "composite_option"
     if instrument in {"swaption", "bermudan_swaption"}:

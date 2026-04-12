@@ -119,7 +119,7 @@ def test_qmc_generation_plan_approves_qmc_family_modules():
     assert "brownian_bridge" in plan.symbols_to_reuse
 
 
-def test_basket_route_card_calls_helper_directly():
+def test_basket_route_card_stays_backend_binding_only():
     description = (
         "Price a Himalaya-style basket on AAPL, MSFT, NVDA, and AMZN. "
         "Observe monthly on 2026-04-01, 2026-05-01, and 2026-06-01. "
@@ -136,20 +136,35 @@ def test_basket_route_card_calls_helper_directly():
     card = render_generation_route_card(compiled.generation_plan)
 
     assert "correlated_basket_monte_carlo" in card
-    assert "Parse `spec.underlyings` into a Python list of ticker strings" in card
     assert "resolve_basket_semantics" in card
     assert "price_ranked_observation_basket_monte_carlo" in card
-    assert "RankedObservationBasketSpec" in card
-    assert "Bind the market state with `resolve_basket_semantics(...)`" in card
-    assert "delegate straight to `price_ranked_observation_basket_monte_carlo(...)` through a thin adapter" in card
-    assert "import only `trellis.models.resolution.basket_semantics` and `trellis.models.monte_carlo.semantic_basket`" in card
-    assert "do not import process primitives directly" in card
-    assert "Do not introduce a bespoke basket spec name such as `HimalayaBasketSpec` or reimplement rank/remove/aggregate logic inline." in card
+    assert "Required adapters:" not in card
+    assert "Backend notes:" not in card
+    assert "Parse `spec.underlyings` into a Python list of ticker strings" not in card
+    assert "delegate straight to `price_ranked_observation_basket_monte_carlo(...)` through a thin adapter" not in card
+    assert "HimalayaBasketSpec" not in card
     assert "CorrelatedGBM" not in card
     assert "trellis.models.processes.correlated_gbm" not in card
     assert "trellis.models.basket" not in card
     assert "trellis.models.ranked_observation" not in card
     assert "trellis.models.payoff" not in card
+
+
+def test_generation_route_card_for_generic_monte_carlo_stays_backend_binding_only():
+    compiled = compile_build_request(
+        "Path-dependent note with monthly averaging under Monte Carlo",
+        instrument_type="structured_note",
+        preferred_method="monte_carlo",
+    )
+
+    card = render_generation_route_card(compiled.generation_plan)
+
+    assert "monte_carlo_paths" in card
+    assert "price_event_aware_monte_carlo" in card
+    assert "Required adapters:" not in card
+    assert "Backend notes:" not in card
+    assert "build_payoff_vector_from_paths" not in card
+    assert "Prefer existing MC simulation helpers over bespoke path loops." not in card
 
 
 def test_generation_plan_renders_compiled_semantic_and_validation_boundary():
