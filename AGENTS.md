@@ -267,17 +267,43 @@ implementation ticket unless the user explicitly overrides it.
 
 ### Required execution order
 
-1. Review upstream context before coding.
-2. Announce the current ticket number and its plain-English goal on screen.
-3. Implement the current ticket with test-driven development.
-4. Update the relevant docs and `LIMITATIONS.md` if necessary after the implementation and tests pass.
-5. Leave a handoff note in Linear describing what changed and any caveats.
-6. Mark the ticket `Done`, then update the mirrored ticket table in the
-   relevant plan doc.
-7. Conduct a self-review, fix any issues found, and make a meaningful git
-   commit for the landed slice.
+1. Audit the ticket against the current codebase, plan docs, and live Linear
+   state before coding.
+2. Review upstream context.
+3. Announce the current ticket number and its plain-English goal on screen,
+   then create a dedicated branch for the slice.
+4. Implement the current ticket with test-driven development.
+5. Update the relevant docs and `LIMITATIONS.md` if necessary after the
+   implementation and tests pass.
+6. Leave a Linear handoff note, conduct a local self-review, and make a
+   meaningful commit on the ticket branch.
+7. Push a PR, request GitHub/Copilot review, and treat review comments as part
+   of the ticket.
+8. Fix Copilot comments, CI/CD failures, and branch conflicts until the PR is
+   merge-ready.
+9. Merge the PR, delete the branch, and sync local `main`.
+10. Mark the ticket `Done`, then update the mirrored ticket table in the
+    relevant plan doc.
+11. If the ticket closes a wave, epic, or umbrella, do a post-closeout review
+    and open follow-on tickets for any residual scoped gaps.
 
-### Step 1: Review upstream context
+### Step 1: Audit the ticket before coding
+
+Before treating a ticket as implementation-ready, the implementer must:
+
+- compare the ticket body against the current codebase and the current plan
+  mirror
+- confirm the ticket still matches the live code paths and current backlog
+  objective
+- rewrite, narrow, split, or close the ticket if it is stale, already
+  satisfied, or aimed at the wrong surface
+- create follow-on tickets when the real remaining work is narrower or
+  differently shaped than the original issue
+
+Do not start coding from a stale ticket just because it is next in the queue.
+Correct the tracking artifact first.
+
+### Step 2: Review upstream context
 
 Before writing code, the implementer must:
 
@@ -290,18 +316,21 @@ Before writing code, the implementer must:
 If an upstream ticket is not done, do not start implementation unless the user
 explicitly approves working around the blocker.
 
-### Step 2: Announce the current ticket on screen
+### Step 3: Announce the current ticket and create a branch
 
 Before coding, print the ticket number and a short plain-English explanation
-of what the ticket aims to do in the current terminal/chat session.
+of what the ticket aims to do in the current terminal/chat session, then create
+or switch to a dedicated branch for the slice.
 
 Minimum expectation:
 
 - include the Linear ticket id, for example `QUA-568`
 - explain the ticket goal in one or two plain-English sentences
 - do this after reading upstream tickets and before writing code
+- use a dedicated branch, normally with the `codex/` prefix, unless the user
+  explicitly requests otherwise
 
-### Step 3: Implement with TDD
+### Step 4: Implement with TDD
 
 For code-changing tickets:
 
@@ -319,7 +348,7 @@ Minimum expectation:
 For documentation-only or planning-only tickets, state explicitly in the ticket
 that TDD does not apply.
 
-### Step 4: Update docs and `LIMITATIONS.md` after tests pass
+### Step 5: Update docs and `LIMITATIONS.md` after tests pass
 
 When behavior, APIs, runtime flow, governance, validation, or operator workflow
 changes, update the relevant official docs after the implementation is stable:
@@ -339,9 +368,10 @@ Doc and limitation updates are part of completing the ticket, not optional
 follow-up work, unless the ticket is explicitly scoped as doc-free and
 limitation-neutral.
 
-### Step 5: Leave a Linear handoff note
+### Step 6: Leave a Linear handoff note, self-review, and commit locally
 
-Before marking the ticket done, add a Linear comment with this information:
+Before opening or promoting the PR, add a Linear comment with this
+information:
 
 - what was implemented
 - which tests were added or updated
@@ -354,19 +384,64 @@ Before marking the ticket done, add a Linear comment with this information:
 If the ticket is blocked or only partially complete, leave the same note but do
 not mark it done.
 
-### Step 6: Mark done and update the mirrored plan table
+Before pushing the branch, the implementer must do one reviewer-style pass over
+the actual diff:
 
-Linear is the source of truth for ticket state. The plan tables in:
+- review the changed code and tests as a reviewer, not just as the author
+- fix any issues found inside the ticket scope
+- rerun any targeted validation affected by those review fixes
+- create a meaningful git commit message that describes the landed outcome, not
+  just the activity
 
-- `docs/plans/unified-platform-migration.md`
-- `docs/plans/trellis-mcp-implementation.md`
+This step is meant to catch the last class of local, regional, or workflow
+issues before the code leaves the local branch.
 
-are a repo-local mirror for subsequent coding agents.
+### Step 7: Push a PR and request review
+
+After the local slice is committed:
+
+- push the branch
+- open a PR, using a draft PR when the slice is not yet review-ready
+- request or trigger GitHub/Copilot review when available
+- treat PR review as part of the ticket, not as an optional external step
+
+### Step 8: Address Copilot comments, CI/CD failures, and conflicts
+
+A ticket is not complete while the PR still has actionable review feedback,
+failing required checks, or branch conflicts.
+
+Minimum expectation:
+
+- respond to actionable Copilot review comments
+- implement the needed fixes
+- resolve review threads when the fix is landed
+- fix failing GitHub checks that are in scope for the ticket
+- resolve branch conflicts before merge
+
+Do not defer obvious in-scope PR fixes into separate tickets just because the
+local code already worked once.
+
+### Step 9: Merge, delete the branch, and sync local `main`
+
+Once the PR is green and review-ready:
+
+- merge it
+- close the PR
+- delete the branch locally and remotely when appropriate
+- sync local `main` to the merged state
+
+If the user explicitly approves bypassing a non-critical check for a docs-only
+change or similar narrow case, record that in the PR or final closeout note.
+
+### Step 10: Mark done and update the mirrored plan table
+
+Linear is the source of truth for ticket state. The relevant plan doc is the
+repo-local execution mirror for subsequent coding agents.
 
 Mark the ticket `Done` only when:
 
-- the code is landed
-- the agreed validation passed
+- the PR is merged
+- the agreed validation passed, or an explicit approved exception is recorded
 - the relevant docs are updated or the ticket explicitly records why no docs
   changed
 - `LIMITATIONS.md` is updated when the support contract moved, or the ticket
@@ -381,22 +456,15 @@ After the ticket is moved to `Done` in Linear:
 - do not mark the plan-table row `Done` before the Linear ticket is actually
   closed
 
-### Step 7: Self-review and commit the landed slice
+### Step 11: Post-closeout review for wave or umbrella completion
 
-After the ticket is `Done` in Linear and the mirrored plan row is updated, the
-implementer must do one more pass over the actual diff:
+When a ticket completes a wave, epic, or umbrella tranche:
 
-- review the changed code and tests as a reviewer, not just as the author
-- fix any issues found inside the ticket scope
-- rerun any targeted validation affected by those review fixes
-- if the review uncovers a problem that invalidates the `Done` criteria, update
-  the Linear ticket state or leave a follow-up note before treating the slice
-  as complete
-- create a meaningful git commit message that describes the landed outcome, not
-  just the activity
-
-This step is meant to catch the last class of local, regional, or workflow
-issues before the branch is pushed or handed off for PR review.
+- do one more review pass on the merged state, not just the branch diff
+- look for residual scoped risks, stale backlog tickets, or now-obvious follow-
+  on work
+- open follow-on Linear tickets for remaining real gaps
+- update the plan mirror if the closeout changes the next actionable queue
 
 ### Recommended Linear closeout template
 
@@ -405,6 +473,8 @@ Use this structure for the final implementation note:
 - Implemented:
 - Tests:
 - Docs:
+- `LIMITATIONS.md`:
+- PR / merge:
 - Caveats:
 - Follow-ons:
 

@@ -348,6 +348,11 @@ in the abstract. The goal is to remove route-card synthesis authority while
 proving that the corresponding task cohorts still process on the modern
 semantic/family/lane surface.
 
+This workstream is now complete enough that the follow-on architecture program
+is tracked separately in `docs/plans/binding-first-exotic-assembly.md` under
+umbrella `QUA-792`. That sequel replaces route as a runtime primitive rather
+than merely minimizing route-card authority.
+
 ## Linear Mirror
 
 Status mirror last synced: `2026-04-12`
