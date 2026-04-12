@@ -78,9 +78,14 @@ maintenance around the deterministic engines.
   `trellis/agent/valuation_context.py`, and
   `trellis/agent/market_binding.py` hold the typed semantic and valuation
   boundary.
+- `trellis/agent/backend_bindings.py` is the canonical catalog of exact helper,
+  kernel, schedule-builder, cashflow-engine, and market-binding facts used by
+  the runtime.
 - `trellis/agent/route_registry.py`, `trellis/agent/build_gate.py`,
   `trellis/agent/family_lowering_ir.py`, and `trellis/agent/dsl_lowering.py`
-  govern admissibility and lowering onto checked route families.
+  govern admissibility and lowering onto checked route families. The route
+  registry is now a compatibility and admissibility surface over the binding
+  catalog, not the only source of exact backend identity.
 - `trellis/agent/quant.py`, `trellis/agent/planner.py`,
   `trellis/agent/builder.py`, `trellis/agent/critic.py`,
   `trellis/agent/arbiter.py`, and `trellis/agent/executor.py` implement the
@@ -137,11 +142,12 @@ The agent-assisted path is:
 
 1. Enter through `trellis.ask(...)` or `Session.ask(...)`.
 2. Normalize the request in `trellis.agent.platform_requests`.
-3. Compile semantic contracts, valuation context, required data, and route
-   candidates.
-4. Reuse an existing checked route when possible; otherwise plan/build/review a
-   payoff adapter that lands under `trellis/instruments/_agent/`.
-5. Execute pricing through the same deterministic runtime after the route is
+3. Compile semantic contracts, valuation context, required data, and candidate
+   backend bindings.
+4. Reuse an existing checked helper/kernel binding when possible; otherwise
+   plan/build/review a payoff adapter that lands under
+   `trellis/instruments/_agent/`.
+5. Execute pricing through the same deterministic runtime after the binding is
    admitted.
 
 ### Batch and scenario execution
