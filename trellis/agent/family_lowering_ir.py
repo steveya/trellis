@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import re
+from typing import TYPE_CHECKING
 
 from trellis.core.types import TimelineRole
+
+if TYPE_CHECKING:
+    from trellis.agent.backend_bindings import ResolvedBackendBindingSpec
 
 
 def _tuple_unique(values) -> tuple[str, ...]:
@@ -775,6 +779,208 @@ def _lookup_by_composite_key(bindings, *keys: str) -> str:
     return ""
 
 
+def _resolve_family_lowering_binding(
+    route_id: str,
+    *,
+    product_ir,
+) -> ResolvedBackendBindingSpec | None:
+    """Resolve the typed binding surface used for family-lowering dispatch."""
+    if not str(route_id or "").strip():
+        return None
+    from trellis.agent.backend_bindings import resolve_backend_binding_by_route_id
+
+    return resolve_backend_binding_by_route_id(route_id, product_ir=product_ir)
+
+
+def _binding_symbols_for_role(
+    binding_spec: ResolvedBackendBindingSpec | None,
+    role: str,
+) -> frozenset[str]:
+    """Return normalized binding symbols for one primitive role."""
+    if binding_spec is None:
+        return frozenset()
+    normalized_role = str(role or "").strip().lower()
+    return frozenset(
+        str(primitive.symbol or "").strip()
+        for primitive in getattr(binding_spec, "primitives", ()) or ()
+        if str(getattr(primitive, "role", "") or "").strip().lower() == normalized_role
+        and str(getattr(primitive, "symbol", "") or "").strip()
+    )
+
+
+def _binding_has_role(
+    binding_spec: ResolvedBackendBindingSpec | None,
+    role: str,
+) -> bool:
+    """Return whether the binding surface exposes one primitive role."""
+    return bool(_binding_symbols_for_role(binding_spec, role))
+
+
+def _binding_has_symbol(
+    binding_spec: ResolvedBackendBindingSpec | None,
+    role: str,
+    symbol: str,
+) -> bool:
+    """Return whether the binding surface exposes one exact primitive symbol."""
+    return str(symbol or "").strip() in _binding_symbols_for_role(binding_spec, role)
+
+
+def _binding_has_any_symbol(
+    binding_spec: ResolvedBackendBindingSpec | None,
+    role: str,
+    *symbols: str,
+) -> bool:
+    """Return whether the binding surface exposes any symbol from the given role."""
+    available = _binding_symbols_for_role(binding_spec, role)
+    return any(str(symbol or "").strip() in available for symbol in symbols)
+
+
+def _binding_supports_black76_analytical(
+    binding_spec: ResolvedBackendBindingSpec | None,
+    *,
+    route_id: str,
+) -> bool:
+    """Return whether the binding surface fits the Black76 analytical lane."""
+    if _binding_has_all_symbols(binding_spec, "pricing_kernel", "black76_call", "black76_put"):
+        return True
+    return route_id == "analytical_black76" and binding_spec is None
+
+
+def _binding_has_all_symbols(
+    binding_spec: ResolvedBackendBindingSpec | None,
+    role: str,
+    *symbols: str,
+) -> bool:
+    """Return whether the binding surface exposes all given role symbols."""
+    available = _binding_symbols_for_role(binding_spec, role)
+    return all(str(symbol or "").strip() in available for symbol in symbols)
+
+
+def _binding_supports_transform_pricing(
+    binding_spec: ResolvedBackendBindingSpec | None,
+    *,
+    route_id: str,
+) -> bool:
+    """Return whether the binding surface fits the transform-pricing lane."""
+    if _binding_has_role(binding_spec, "transform_pricer"):
+        return True
+    if _binding_has_symbol(binding_spec, "route_helper", "price_vanilla_equity_option_transform"):
+        return True
+    return route_id == "transform_fft" and binding_spec is None
+
+
+def _binding_supports_vanilla_equity_pde(
+    binding_spec: ResolvedBackendBindingSpec | None,
+    *,
+    route_id: str,
+) -> bool:
+    """Return whether the binding surface fits the vanilla-equity PDE lane."""
+    if _binding_has_symbol(binding_spec, "route_helper", "price_vanilla_equity_option_pde"):
+        return True
+    return route_id == "vanilla_equity_theta_pde" and binding_spec is None
+
+
+def _binding_supports_event_aware_pde(
+    binding_spec: ResolvedBackendBindingSpec | None,
+    *,
+    route_id: str,
+) -> bool:
+    """Return whether the binding surface fits the event-aware PDE lane."""
+    if _binding_has_all_symbols(binding_spec, "grid", "Grid") and _binding_has_role(
+        binding_spec,
+        "spatial_operator",
+    ) and _binding_has_role(binding_spec, "time_stepping"):
+        return True
+    if _binding_has_any_symbol(
+        binding_spec,
+        "route_helper",
+        "price_event_aware_equity_option_pde",
+        "price_callable_bond_pde",
+    ):
+        return True
+    return route_id == "pde_theta_1d" and binding_spec is None
+
+
+def _binding_supports_event_aware_monte_carlo(
+    binding_spec: ResolvedBackendBindingSpec | None,
+    *,
+    route_id: str,
+) -> bool:
+    """Return whether the binding surface fits the bounded event-aware MC lane."""
+    if _binding_has_role(binding_spec, "path_simulation") and _binding_has_role(binding_spec, "state_process"):
+        return True
+    if _binding_has_any_symbol(
+        binding_spec,
+        "route_helper",
+        "price_event_aware_monte_carlo",
+        "price_vanilla_equity_option_monte_carlo",
+        "price_swaption_monte_carlo",
+    ):
+        return True
+    return route_id in {"monte_carlo_paths", "local_vol_monte_carlo"} and binding_spec is None
+
+
+def _binding_supports_exercise_lattice(
+    binding_spec: ResolvedBackendBindingSpec | None,
+    *,
+    route_id: str,
+) -> bool:
+    """Return whether the binding surface fits the exercise-lattice lane."""
+    if _binding_has_role(binding_spec, "lattice_builder") and _binding_has_role(
+        binding_spec,
+        "backward_induction",
+    ):
+        return True
+    if _binding_has_any_symbol(
+        binding_spec,
+        "route_helper",
+        "price_vanilla_equity_option_tree",
+        "price_callable_bond_tree",
+        "price_bermudan_swaption_tree",
+    ):
+        return True
+    return route_id == "exercise_lattice" and binding_spec is None
+
+
+def _binding_supports_correlated_basket_monte_carlo(
+    binding_spec: ResolvedBackendBindingSpec | None,
+    *,
+    route_id: str,
+) -> bool:
+    """Return whether the binding surface fits the ranked-basket MC lane."""
+    if _binding_has_symbol(binding_spec, "market_binding", "resolve_basket_semantics"):
+        return True
+    if _binding_has_symbol(binding_spec, "route_helper", "price_ranked_observation_basket_monte_carlo"):
+        return True
+    return route_id == "correlated_basket_monte_carlo" and binding_spec is None
+
+
+def _binding_supports_credit_default_swap(
+    binding_spec: ResolvedBackendBindingSpec | None,
+    *,
+    route_id: str,
+) -> bool:
+    """Return whether the binding surface fits the CDS lowering lane."""
+    if _binding_has_symbol(binding_spec, "schedule_builder", "build_cds_schedule"):
+        return True
+    if _binding_has_any_symbol(binding_spec, "route_helper", "price_cds_analytical", "price_cds_monte_carlo"):
+        return True
+    return route_id in {"credit_default_swap_analytical", "credit_default_swap_monte_carlo"} and binding_spec is None
+
+
+def _binding_supports_nth_to_default(
+    binding_spec: ResolvedBackendBindingSpec | None,
+    *,
+    route_id: str,
+) -> bool:
+    """Return whether the binding surface fits the nth-to-default copula lane."""
+    if _binding_has_symbol(binding_spec, "default_time_sampler", "GaussianCopula"):
+        return True
+    if _binding_has_symbol(binding_spec, "route_helper", "price_nth_to_default_basket"):
+        return True
+    return route_id == "nth_to_default_monte_carlo" and binding_spec is None
+
+
 def _resolve_exercise_lattice_profile(contract, product_ir) -> ExerciseLatticeProfile | None:
     """Return the declared exercise-lattice lowering profile for one semantic contract."""
     for profile in _EXERCISE_LATTICE_PROFILES:
@@ -793,17 +999,19 @@ def build_family_lowering_ir(
     market_binding_spec=None,
 ) -> FamilyLoweringIR | None:
     """Build a typed family IR for migrated routes, else return ``None``."""
+    binding_spec = _resolve_family_lowering_binding(route_id, product_ir=product_ir)
+    resolved_route_family = str(getattr(binding_spec, "route_family", "") or route_family)
     common_kwargs = _common_kwargs(
         contract,
         product_ir=product_ir,
         valuation_context=valuation_context,
         market_binding_spec=market_binding_spec,
         route_id=route_id,
-        route_family=route_family,
+        route_family=resolved_route_family,
     )
 
     if _is_vanilla_european_contract(contract, product_ir):
-        if route_id == "analytical_black76":
+        if _binding_supports_black76_analytical(binding_spec, route_id=route_id):
             option_type = _option_type_for_contract(contract)
             return AnalyticalBlack76IR(
                 option_type=option_type,
@@ -811,14 +1019,14 @@ def build_family_lowering_ir(
                 **common_kwargs,
             )
 
-        if route_id == "transform_fft":
+        if _binding_supports_transform_pricing(binding_spec, route_id=route_id):
             return _build_transform_pricing_ir(
                 contract,
                 product_ir=product_ir,
                 **common_kwargs,
             )
 
-        if route_id == "vanilla_equity_theta_pde":
+        if _binding_supports_vanilla_equity_pde(binding_spec, route_id=route_id):
             control_program = _build_control_program(contract.product)
             return VanillaEquityPDEIR(
                 option_type=_option_type_for_contract(contract),
@@ -831,7 +1039,10 @@ def build_family_lowering_ir(
                 ),
                 **common_kwargs,
             )
-    if _is_rate_cap_floor_strip_contract(contract, product_ir) and route_id == "analytical_black76":
+    if _is_rate_cap_floor_strip_contract(contract, product_ir) and _binding_supports_black76_analytical(
+        binding_spec,
+        route_id=route_id,
+    ):
         option_type = _option_type_for_contract(contract)
         return AnalyticalBlack76IR(
             option_type=option_type,
@@ -839,35 +1050,37 @@ def build_family_lowering_ir(
             market_mapping="discount_curve_forward_curve_black_vol_to_caplet_strip",
             **common_kwargs,
         )
-    if route_id == "pde_theta_1d":
+    if _binding_supports_event_aware_pde(binding_spec, route_id=route_id):
         return _build_event_aware_pde_ir(
             contract,
             product_ir=product_ir,
             **common_kwargs,
         )
-    if route_id in {"monte_carlo_paths", "local_vol_monte_carlo"}:
+    if _binding_supports_event_aware_monte_carlo(binding_spec, route_id=route_id):
         return _build_event_aware_monte_carlo_ir(
             contract,
             product_ir=product_ir,
+            binding_spec=binding_spec,
             **common_kwargs,
         )
 
-    if route_id == "exercise_lattice":
+    if _binding_supports_exercise_lattice(binding_spec, route_id=route_id):
         return _build_exercise_lattice_ir(contract, product_ir=product_ir, **common_kwargs)
-    if route_id == "correlated_basket_monte_carlo":
+    if _binding_supports_correlated_basket_monte_carlo(binding_spec, route_id=route_id):
         return _build_correlated_basket_monte_carlo_ir(
             contract,
             product_ir=product_ir,
             market_binding_spec=market_binding_spec,
             **common_kwargs,
         )
-    if route_id in {"credit_default_swap_analytical", "credit_default_swap_monte_carlo"}:
+    if _binding_supports_credit_default_swap(binding_spec, route_id=route_id):
         return _build_credit_default_swap_ir(
             contract,
             product_ir=product_ir,
+            binding_spec=binding_spec,
             **common_kwargs,
         )
-    if route_id == "nth_to_default_monte_carlo":
+    if _binding_supports_nth_to_default(binding_spec, route_id=route_id):
         return _build_nth_to_default_ir(
             contract,
             product_ir=product_ir,
@@ -1230,6 +1443,7 @@ def _build_event_aware_monte_carlo_ir(
     contract,
     *,
     product_ir,
+    binding_spec: ResolvedBackendBindingSpec | None = None,
     route_id: str,
     route_family: str,
     product_instrument: str,
@@ -1251,7 +1465,11 @@ def _build_event_aware_monte_carlo_ir(
         return None
 
     state_spec = _mc_state_spec_for_product(product)
-    process_spec = _mc_process_spec_for_product(product, route_id=route_id)
+    process_spec = _mc_process_spec_for_product(
+        product,
+        binding_spec=binding_spec,
+        route_id=route_id,
+    )
     if not state_spec.state_variable or not process_spec.process_family:
         return None
 
@@ -1353,9 +1571,23 @@ def _mc_state_spec_for_product(product) -> MCStateSpec:
     return MCStateSpec()
 
 
-def _mc_process_spec_for_product(product, *, route_id: str) -> MCProcessSpec:
+def _mc_process_spec_for_product(
+    product,
+    *,
+    binding_spec: ResolvedBackendBindingSpec | None = None,
+    route_id: str,
+) -> MCProcessSpec:
     """Infer the bounded Monte Carlo process contract from semantic metadata."""
-    if route_id == "local_vol_monte_carlo":
+    if _binding_has_symbol(binding_spec, "state_process", "LocalVol") or _binding_has_symbol(
+        binding_spec,
+        "pricing_kernel",
+        "local_vol_european_vanilla_price",
+    ):
+        return MCProcessSpec(
+            process_family="local_vol_1d",
+            simulation_scheme="euler_local_vol",
+        )
+    if route_id == "local_vol_monte_carlo" and binding_spec is None:
         return MCProcessSpec(
             process_family="local_vol_1d",
             simulation_scheme="euler_local_vol",
@@ -1970,10 +2202,39 @@ def _build_correlated_basket_monte_carlo_ir(
     )
 
 
+def _credit_default_swap_pricing_mode(
+    binding_spec: ResolvedBackendBindingSpec | None,
+    *,
+    route_id: str,
+) -> str:
+    """Return the CDS pricing mode implied by the binding surface."""
+    if _binding_has_symbol(binding_spec, "event_probability", "interval_default_probability"):
+        return "monte_carlo"
+    if _binding_has_symbol(binding_spec, "route_helper", "price_cds_monte_carlo"):
+        return "monte_carlo"
+    if _binding_has_symbol(binding_spec, "route_helper", "price_cds_analytical"):
+        return "analytical"
+    return "monte_carlo" if route_id == "credit_default_swap_monte_carlo" else "analytical"
+
+
+def _credit_default_swap_helper_symbol(
+    binding_spec: ResolvedBackendBindingSpec | None,
+    *,
+    route_id: str,
+) -> str:
+    """Return the CDS helper symbol implied by the binding surface."""
+    if _binding_has_symbol(binding_spec, "route_helper", "price_cds_monte_carlo"):
+        return "price_cds_monte_carlo"
+    if _binding_has_symbol(binding_spec, "route_helper", "price_cds_analytical"):
+        return "price_cds_analytical"
+    return "price_cds_monte_carlo" if route_id == "credit_default_swap_monte_carlo" else "price_cds_analytical"
+
+
 def _build_credit_default_swap_ir(
     contract,
     *,
     product_ir,
+    binding_spec: ResolvedBackendBindingSpec | None = None,
     route_id: str,
     route_family: str,
     product_instrument: str,
@@ -2005,12 +2266,8 @@ def _build_credit_default_swap_ir(
         route_name="Credit-default-swap",
     )
 
-    helper_symbol = (
-        "price_cds_monte_carlo"
-        if route_id == "credit_default_swap_monte_carlo"
-        else "price_cds_analytical"
-    )
-    pricing_mode = "monte_carlo" if route_id == "credit_default_swap_monte_carlo" else "analytical"
+    helper_symbol = _credit_default_swap_helper_symbol(binding_spec, route_id=route_id)
+    pricing_mode = _credit_default_swap_pricing_mode(binding_spec, route_id=route_id)
     state_tags = (
         ("pathwise_only", "schedule_state")
         if pricing_mode == "monte_carlo"
