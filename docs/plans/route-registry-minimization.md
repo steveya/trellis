@@ -306,6 +306,17 @@ The active route-card retirement queue is now tracked under umbrella
    `exercise_monte_carlo`, `local_vol_monte_carlo`, `qmc_sobol_paths`,
    `waterfall_cashflows`
    Representative cohort: `T14`, `T36`, `E23`, `E27`
+   Closeout status: audit only; no route-card edits landed. `waterfall_cashflows`
+   is already a thin backend-binding surface with no note-driven synthesis.
+   `qmc_sobol_paths` remains a generic accelerator alias over Monte Carlo-style
+   estimators, and the residual note/adaptor wording is method-level guidance
+   rather than product-local synthesis authority. `exercise_monte_carlo` and
+   `local_vol_monte_carlo` still act as legitimate bridge surfaces: the former
+   owns approved early-exercise control selection, and the latter still binds a
+   pricing kernel rather than a fully packaged family helper. Those are not
+   harmless aliases, but they also are not good candidates for opportunistic
+   compaction in this residual-audit slice, so the audit outcome is keep as-is
+   and move on to route-scoring cleanup instead of inventing cleanup work.
 7. `QUA-777` route scoring tail after the route-card surfaces themselves are
    retired
 
@@ -339,5 +350,5 @@ Status mirror last synced: `2026-04-12`
 | `QUA-781` | Route surfaces: rate-tree routes retire procedural authority and stay task-backed | Done |
 | `QUA-783` | Route surfaces: analytical Black76, PDE, and FFT routes retire procedural guidance | Done |
 | `QUA-784` | Route surfaces: generic Monte Carlo and basket routes collapse to family-first metadata | Done |
-| `QUA-785` | Route inventory: audit metadata-first residual route cards against representative tasks | Backlog |
+| `QUA-785` | Route inventory: audit metadata-first residual route cards against representative tasks | Done |
 | `QUA-777` | Route scoring: remove residual route-identity authority after route-card retirement | Backlog |
