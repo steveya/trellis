@@ -286,3 +286,61 @@ def test_zcb_artifact_normalizes_quoted_option_type():
     )
 
     assert price_payoff(mod.ZCBOptionPayoff(spec), market_state) > 0.0
+
+
+def test_zcb_artifact_accepts_case_variants_and_bond_market_aliases():
+    sys.path.insert(0, str(ROOT))
+    mod = import_module("trellis.instruments._agent.zcboption")
+    settle = date(2024, 11, 15)
+    market_state = MarketState(
+        as_of=settle,
+        settlement=settle,
+        discount=YieldCurve.flat(0.05, max_tenor=12.0),
+        vol_surface=FlatVol(0.20),
+        model_parameters={
+            "model_family": "hull_white",
+            "mean_reversion": 0.1,
+            "sigma": 0.01,
+        },
+    )
+
+    for option_type in ("Call", "PUT", "payer", "receiver"):
+        spec = mod.ZCBOptionSpec(
+            notional=100.0,
+            strike=63.0,
+            expiry_date=date(2027, 11, 15),
+            bond_maturity_date=date(2033, 11, 15),
+            option_type=option_type,
+        )
+        assert price_payoff(mod.ZCBOptionPayoff(spec), market_state) > 0.0
+
+
+def test_zcb_artifact_does_not_probe_vol_surface_when_sigma_is_calibrated():
+    sys.path.insert(0, str(ROOT))
+    mod = import_module("trellis.instruments._agent.zcboption")
+    settle = date(2024, 11, 15)
+
+    class ExplodingVolSurface:
+        def black_vol(self, t: float, strike: float) -> float:
+            raise AssertionError("zcb artifact should not probe vol_surface when sigma is present")
+
+    market_state = MarketState(
+        as_of=settle,
+        settlement=settle,
+        discount=YieldCurve.flat(0.05, max_tenor=12.0),
+        vol_surface=ExplodingVolSurface(),
+        model_parameters={
+            "model_family": "hull_white",
+            "mean_reversion": 0.1,
+            "sigma": 0.01,
+        },
+    )
+    spec = mod.ZCBOptionSpec(
+        notional=100.0,
+        strike=63.0,
+        expiry_date=date(2027, 11, 15),
+        bond_maturity_date=date(2033, 11, 15),
+        option_type="call",
+    )
+
+    assert price_payoff(mod.ZCBOptionPayoff(spec), market_state) > 0.0

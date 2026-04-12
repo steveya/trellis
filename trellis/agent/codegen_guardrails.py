@@ -1481,7 +1481,7 @@ def _route_score(
         route_family = spec.route_family if spec is not None else ""
 
     score = 0.0
-    if product_ir is not None:
+    if product_ir is not None and spec is not None:
         resolved_primitives = tuple(resolve_route_primitives(spec, product_ir))
         resolved_roles = {primitive.role for primitive in resolved_primitives}
         exact_surface_roles = {"route_helper", "pricing_kernel", "cashflow_engine"}

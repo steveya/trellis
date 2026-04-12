@@ -165,6 +165,17 @@ class TestScoring:
         assert scorer_result.final_score == heuristic_result
         assert scorer_result.heuristic_score == heuristic_result
 
+    def test_heuristic_score_handles_missing_route_spec(self):
+        from trellis.agent.codegen_guardrails import _route_score
+
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            candidate_engine_families=("analytical",),
+        )
+
+        assert _route_score(None, ir, []) == 0.0
+
     def test_rank_routes_returns_sorted(self, scorer, registry):
         from trellis.agent.route_registry import resolve_route_family
         specs = [r for r in registry.routes if r.id in ("exercise_lattice", "rate_tree_backward_induction")]
