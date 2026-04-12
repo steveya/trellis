@@ -114,6 +114,11 @@ families. The shared compiler program consists of:
 - ``EventProgramIR``
 - ``ControlProgramIR``
 
+Family lowering is now binding-first as well: the compiler resolves the exact
+binding surface before it emits these family IRs, and the family dispatch
+logic keys off binding roles and exact helper/kernel symbols rather than
+direct route-id branches.
+
 Those objects are the canonical semantic authority for scheduled events,
 exercise/call control, and same-day phase ordering. Family IRs then project
 that shared program into their bounded numerical forms:

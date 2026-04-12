@@ -156,7 +156,7 @@ Status mirror last synced: `2026-04-12`
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-801` | Family lowering: replace route-id special cases with binding-role dispatch | Backlog |
+| `QUA-801` | Family lowering: replace route-id special cases with binding-role dispatch | Done |
 | `QUA-805` | DSL lowering: resolve helpers, kernels, schedules, and controls from binding roles | Backlog |
 | `QUA-811` | Semantic blockers: rename route-shaped helper gaps to binding and primitive taxonomy | Backlog |
 

@@ -89,6 +89,10 @@ maintenance around the deterministic engines.
   `trellis/agent/semantic_validators/algorithm_contract.py` now consume the
   resolved binding surface first, so exact helper/kernel/schedule lookup is
   binding-first even while route ids still exist as transitional aliases.
+- `trellis/agent/family_lowering_ir.py` now resolves the same binding surface
+  before it emits family IRs, so family selection no longer depends primarily
+  on direct route-id branches for analytical, lattice, Monte Carlo, credit,
+  or copula lowering.
 - `trellis/agent/route_registry.py`, `trellis/agent/build_gate.py`,
   `trellis/agent/family_lowering_ir.py`, and `trellis/agent/dsl_lowering.py`
   govern admissibility and lowering onto checked route families. The route

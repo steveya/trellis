@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from trellis.agent.backend_bindings import ResolvedBackendBindingSpec
+from trellis.agent.codegen_guardrails import PrimitiveRef
 from trellis.agent.family_lowering_ir import (
     AnalyticalBlack76IR,
     CorrelatedBasketMonteCarloIR,
@@ -35,6 +37,53 @@ def _make_bermudan_equity_pde_contract():
         observation_schedule=("2026-03-20", "2026-06-20", "2026-09-20", "2026-12-20"),
         preferred_method="pde_solver",
         exercise_style="bermudan",
+    )
+
+
+def _resolved_binding_spec(
+    *primitives: PrimitiveRef,
+    route_id: str,
+    route_family: str,
+    engine_family: str,
+) -> ResolvedBackendBindingSpec:
+    primitive_refs = tuple(
+        dict.fromkeys(f"{primitive.module}.{primitive.symbol}" for primitive in primitives)
+    )
+
+    def refs_for_role(role: str) -> tuple[str, ...]:
+        return tuple(
+            dict.fromkeys(
+                f"{primitive.module}.{primitive.symbol}"
+                for primitive in primitives
+                if primitive.role == role
+            )
+        )
+
+    return ResolvedBackendBindingSpec(
+        route_id=route_id,
+        engine_family=engine_family,
+        route_family=route_family,
+        binding_id=f"{engine_family}.{route_id}",
+        primitives=tuple(primitives),
+        primitive_refs=primitive_refs,
+        helper_refs=refs_for_role("route_helper"),
+        pricing_kernel_refs=refs_for_role("pricing_kernel"),
+        schedule_builder_refs=refs_for_role("schedule_builder"),
+        cashflow_engine_refs=refs_for_role("cashflow_engine"),
+        market_binding_refs=refs_for_role("market_binding"),
+        exact_target_refs=primitive_refs,
+    )
+
+
+def _patch_binding(monkeypatch, binding_spec: ResolvedBackendBindingSpec) -> None:
+    import trellis.agent.family_lowering_ir as family_lowering_ir
+
+    monkeypatch.setattr(
+        family_lowering_ir,
+        "_resolve_family_lowering_binding",
+        lambda route_id, *, product_ir=None: (
+            binding_spec if route_id == binding_spec.route_id else None
+        ),
     )
 
 
@@ -765,3 +814,312 @@ def test_nth_to_default_compiles_to_family_ir():
     assert family_ir.reference_entities == ("ACME", "BRAVO", "CHARLIE", "DELTA", "ECHO")
     assert family_ir.required_input_ids == blueprint.required_market_data
     assert family_ir.requested_outputs == ("price", "scenario_pnl")
+
+
+def test_black76_family_ir_dispatches_from_binding_surface_not_route_id(monkeypatch):
+    from trellis.agent.family_lowering_ir import build_family_lowering_ir
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+    contract = make_vanilla_option_contract(
+        description="EUR call on AAPL, K=150, T=1y",
+        underliers=("AAPL",),
+        observation_schedule=("2026-06-20",),
+    )
+    blueprint = compile_semantic_contract(contract)
+    synthetic_route_id = "binding_black76_terminal"
+    _patch_binding(
+        monkeypatch,
+        _resolved_binding_spec(
+            PrimitiveRef("trellis.models.black", "black76_call", "pricing_kernel"),
+            PrimitiveRef("trellis.models.black", "black76_put", "pricing_kernel"),
+            PrimitiveRef(
+                "trellis.models.analytical",
+                "terminal_vanilla_from_basis",
+                "assembly_helper",
+                required=False,
+            ),
+            PrimitiveRef("trellis.models.time", "year_fraction", "time_measure", required=False),
+            route_id=synthetic_route_id,
+            route_family="analytical",
+            engine_family="analytical",
+        ),
+    )
+
+    family_ir = build_family_lowering_ir(
+        contract,
+        route_id=synthetic_route_id,
+        route_family="legacy_route_family_should_not_matter",
+        product_ir=blueprint.product_ir,
+    )
+
+    assert isinstance(family_ir, AnalyticalBlack76IR)
+    assert family_ir.route_id == synthetic_route_id
+    assert family_ir.route_family == "analytical"
+    assert family_ir.kernel_symbol == "black76_call"
+
+
+def test_exercise_lattice_dispatches_from_binding_surface_not_route_id(monkeypatch):
+    from trellis.agent.family_lowering_ir import build_family_lowering_ir
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_callable_bond_contract
+
+    contract = make_callable_bond_contract(
+        description="Callable bond with annual coupons and issuer call dates 2026-01-15, 2027-01-15",
+        observation_schedule=("2026-01-15", "2027-01-15"),
+    )
+    blueprint = compile_semantic_contract(contract)
+    synthetic_route_id = "binding_tree_callable"
+    _patch_binding(
+        monkeypatch,
+        _resolved_binding_spec(
+            PrimitiveRef(
+                "trellis.models.trees.callable_bond",
+                "price_callable_bond_tree",
+                "route_helper",
+            ),
+            PrimitiveRef(
+                "trellis.models.trees.lattice",
+                "build_rate_lattice",
+                "lattice_builder",
+            ),
+            PrimitiveRef(
+                "trellis.models.trees.lattice",
+                "lattice_backward_induction",
+                "backward_induction",
+            ),
+            PrimitiveRef(
+                "trellis.models.trees.control",
+                "resolve_lattice_exercise_policy",
+                "control_policy",
+            ),
+            route_id=synthetic_route_id,
+            route_family="lattice",
+            engine_family="lattice",
+        ),
+    )
+
+    family_ir = build_family_lowering_ir(
+        contract,
+        route_id=synthetic_route_id,
+        route_family="legacy_route_family_should_not_matter",
+        product_ir=blueprint.product_ir,
+    )
+
+    assert isinstance(family_ir, ExerciseLatticeIR)
+    assert family_ir.route_id == synthetic_route_id
+    assert family_ir.route_family == "lattice"
+    assert family_ir.helper_symbol == "price_callable_bond_tree"
+
+
+def test_event_aware_pde_dispatches_from_binding_surface_not_route_id(monkeypatch):
+    from trellis.agent.family_lowering_ir import build_family_lowering_ir
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_callable_bond_contract
+
+    contract = make_callable_bond_contract(
+        description="Callable bond with annual coupons and issuer call dates 2026-01-15, 2027-01-15",
+        observation_schedule=("2026-01-15", "2027-01-15"),
+        preferred_method="pde_solver",
+    )
+    blueprint = compile_semantic_contract(contract, preferred_method="pde_solver")
+    synthetic_route_id = "binding_callable_pde"
+    _patch_binding(
+        monkeypatch,
+        _resolved_binding_spec(
+            PrimitiveRef("trellis.models.pde.grid", "Grid", "grid"),
+            PrimitiveRef(
+                "trellis.models.pde.operator",
+                "BlackScholesOperator",
+                "spatial_operator",
+            ),
+            PrimitiveRef(
+                "trellis.models.pde.theta_method",
+                "theta_method_1d",
+                "time_stepping",
+            ),
+            PrimitiveRef(
+                "trellis.models.callable_bond_pde",
+                "price_callable_bond_pde",
+                "route_helper",
+            ),
+            route_id=synthetic_route_id,
+            route_family="pde_solver",
+            engine_family="pde_solver",
+        ),
+    )
+
+    family_ir = build_family_lowering_ir(
+        contract,
+        route_id=synthetic_route_id,
+        route_family="legacy_route_family_should_not_matter",
+        product_ir=blueprint.product_ir,
+    )
+
+    assert isinstance(family_ir, EventAwarePDEIR)
+    assert family_ir.route_id == synthetic_route_id
+    assert family_ir.route_family == "pde_solver"
+    assert family_ir.helper_symbol == "price_callable_bond_pde"
+
+
+def test_local_vol_monte_carlo_dispatches_from_binding_surface_not_route_id(monkeypatch):
+    from trellis.agent.family_lowering_ir import build_family_lowering_ir
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+    contract = make_vanilla_option_contract(
+        description="EUR call on AAPL under local-vol Monte Carlo",
+        underliers=("AAPL",),
+        observation_schedule=("2026-06-20",),
+        preferred_method="monte_carlo",
+    )
+    blueprint = compile_semantic_contract(contract, preferred_method="monte_carlo")
+    synthetic_route_id = "binding_local_vol_mc"
+    _patch_binding(
+        monkeypatch,
+        _resolved_binding_spec(
+            PrimitiveRef(
+                "trellis.models.processes.local_vol",
+                "LocalVol",
+                "state_process",
+            ),
+            PrimitiveRef(
+                "trellis.models.monte_carlo.engine",
+                "MonteCarloEngine",
+                "path_simulation",
+            ),
+            PrimitiveRef(
+                "trellis.models.local_vol",
+                "local_vol_european_vanilla_price",
+                "pricing_kernel",
+            ),
+            route_id=synthetic_route_id,
+            route_family="monte_carlo",
+            engine_family="monte_carlo",
+        ),
+    )
+
+    family_ir = build_family_lowering_ir(
+        contract,
+        route_id=synthetic_route_id,
+        route_family="legacy_route_family_should_not_matter",
+        product_ir=blueprint.product_ir,
+    )
+
+    assert isinstance(family_ir, EventAwareMonteCarloIR)
+    assert family_ir.route_id == synthetic_route_id
+    assert family_ir.route_family == "monte_carlo"
+    assert family_ir.process_spec.process_family == "local_vol_1d"
+    assert family_ir.process_spec.simulation_scheme == "euler_local_vol"
+
+
+def test_credit_default_swap_dispatches_from_binding_surface_not_route_id(monkeypatch):
+    from trellis.agent.family_lowering_ir import build_family_lowering_ir
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_credit_default_swap_contract
+
+    contract = make_credit_default_swap_contract(
+        description="Single-name CDS on ACME Monte Carlo",
+        observation_schedule=("2026-06-20", "2026-09-20", "2026-12-20", "2027-03-20", "2027-06-20"),
+        preferred_method="monte_carlo",
+    )
+    blueprint = compile_semantic_contract(contract, preferred_method="monte_carlo")
+    synthetic_route_id = "binding_cds_mc"
+    _patch_binding(
+        monkeypatch,
+        _resolved_binding_spec(
+            PrimitiveRef(
+                "trellis.models.credit_schedule",
+                "build_cds_schedule",
+                "schedule_builder",
+            ),
+            PrimitiveRef(
+                "trellis.models.credit_survival",
+                "interval_default_probability",
+                "event_probability",
+            ),
+            PrimitiveRef("trellis.models.cds", "price_cds_monte_carlo", "route_helper"),
+            PrimitiveRef(
+                "trellis.core.differentiable",
+                "get_numpy",
+                "array_backend",
+            ),
+            route_id=synthetic_route_id,
+            route_family="credit_default_swap",
+            engine_family="monte_carlo",
+        ),
+    )
+
+    family_ir = build_family_lowering_ir(
+        contract,
+        route_id=synthetic_route_id,
+        route_family="legacy_route_family_should_not_matter",
+        product_ir=blueprint.product_ir,
+    )
+
+    assert isinstance(family_ir, CreditDefaultSwapIR)
+    assert family_ir.route_id == synthetic_route_id
+    assert family_ir.route_family == "credit_default_swap"
+    assert family_ir.pricing_mode == "monte_carlo"
+    assert family_ir.helper_symbol == "price_cds_monte_carlo"
+
+
+def test_nth_to_default_dispatches_from_binding_surface_not_route_id(monkeypatch):
+    from trellis.agent.family_lowering_ir import build_family_lowering_ir
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_nth_to_default_contract
+
+    contract = make_nth_to_default_contract(
+        description="First-to-default basket on ACME, BRAVO, CHARLIE, DELTA, ECHO through 2029-11-15",
+        observation_schedule=("2029-11-15",),
+        reference_entities=("ACME", "BRAVO", "CHARLIE", "DELTA", "ECHO"),
+        trigger_rank=1,
+    )
+    blueprint = compile_semantic_contract(contract)
+    synthetic_route_id = "binding_nth_to_default"
+    _patch_binding(
+        monkeypatch,
+        _resolved_binding_spec(
+            PrimitiveRef(
+                "trellis.models.schedule",
+                "generate_schedule",
+                "schedule_builder",
+            ),
+            PrimitiveRef(
+                "trellis.models.time",
+                "year_fraction",
+                "time_measure",
+            ),
+            PrimitiveRef(
+                "trellis.models.copula",
+                "GaussianCopula",
+                "default_time_sampler",
+            ),
+            PrimitiveRef(
+                "trellis.models.nth_to_default",
+                "price_nth_to_default_basket",
+                "route_helper",
+            ),
+            PrimitiveRef(
+                "trellis.models.monte_carlo.engine",
+                "MonteCarloEngine",
+                "path_simulation",
+            ),
+            route_id=synthetic_route_id,
+            route_family="nth_to_default",
+            engine_family="monte_carlo",
+        ),
+    )
+
+    family_ir = build_family_lowering_ir(
+        contract,
+        route_id=synthetic_route_id,
+        route_family="legacy_route_family_should_not_matter",
+        product_ir=blueprint.product_ir,
+    )
+
+    assert isinstance(family_ir, NthToDefaultIR)
+    assert family_ir.route_id == synthetic_route_id
+    assert family_ir.route_family == "nth_to_default"
+    assert family_ir.helper_symbol == "price_nth_to_default_basket"
+    assert family_ir.copula_symbol == "GaussianCopula"
