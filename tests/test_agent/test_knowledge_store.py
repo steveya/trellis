@@ -430,6 +430,8 @@ class TestKnowledgeStore:
         assert "garman_kohlhagen_price_raw" in k["cookbook"].template
         assert "fx_rates" in requirements_text
         assert "forward_curve" in requirements_text
+        lesson_ids = [lesson.id for lesson in k["lessons"]]
+        assert "md_114" in lesson_ids
 
     def test_retrieve_swaption_ir_includes_helper_backed_black76_guidance(self):
         from trellis.agent.knowledge import retrieve_for_product_ir
@@ -658,6 +660,30 @@ class TestKnowledgeStore:
         assert stats["misses"] == 1
         assert stats["hits"] == 1
         assert stats["size"] >= 1
+
+    def test_retrieval_cache_key_includes_semantic_rerank_inputs(self):
+        from trellis.agent.knowledge.schema import RetrievalSpec
+        from trellis.agent.knowledge.store import KnowledgeStore
+
+        store = KnowledgeStore()
+        base = RetrievalSpec(
+            method="analytical",
+            features=["fx", "vanilla_option", "forward_rate"],
+            instrument="european_option",
+            model_family="fx",
+            semantic_text_markers=("garman kohlhagen",),
+            reusable_primitives=("garman_kohlhagen_price_raw",),
+        )
+        changed = RetrievalSpec(
+            method="analytical",
+            features=["fx", "vanilla_option", "forward_rate"],
+            instrument="european_option",
+            model_family="fx",
+            semantic_text_markers=("resolved garman kohlhagen inputs",),
+            reusable_primitives=("ResolvedGarmanKohlhagenInputs",),
+        )
+
+        assert store._retrieval_cache_key(base) != store._retrieval_cache_key(changed)
 
     def test_live_repo_state_helpers_are_revision_keyed(self):
         from trellis.agent.knowledge import (

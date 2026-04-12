@@ -22,6 +22,10 @@ Current status:
 - `QUA-544` is complete with a measured `3/3` proving-success bar, `2/3`
   task-level first-pass success, and the residual `KL01` semantic-validation
   retry split into `QUA-779`.
+- `QUA-779` is complete. The residual `KL01` first-pass miss was on the
+  analytical `gk_analytical` leg, and the fix now enriches `ProductIR`
+  retrieval with market-data-derived features plus generic semantic text
+  markers so active lessons can surface the right lane-specific guidance.
 - `QUA-429` is complete.
 - `QUA-447` is complete.
 - `QUA-545` is complete as the short-term learning-evidence slice: repeated
@@ -138,7 +142,7 @@ Current note:
 
 - `QUA-544` delivered the proving summary and route/packet hardening needed to
   move the tranche to `3/3` success; the remaining non-first-pass retry path
-  is isolated in `QUA-779`
+  was isolated in `QUA-779`, which is now complete
 
 ### Wave 4: Short-term learning evidence and maintenance tail
 
@@ -165,10 +169,10 @@ Execution started with `QUA-458`, continued through `QUA-710`, `QUA-428`,
 `QUA-430`, the `QUA-700` umbrella closeout, and `QUA-543`. `QUA-417` was
 rewritten as maintenance cleanup. `QUA-544` then improved the knowledge-light
 proving tranche to `3/3` success and split the remaining `KL01`
-semantic-validation retry into `QUA-779`. `QUA-429` and `QUA-447` then landed
-the deterministic lesson-to-test path, and `QUA-545` added the repeated-pass
-non-canary learning benchmark, so the active queue now moves next to
-`QUA-417`.
+first-pass retrieval miss into `QUA-779`, which is now also complete.
+`QUA-429` and `QUA-447` then landed the deterministic lesson-to-test path,
+and `QUA-545` added the repeated-pass non-canary learning benchmark, so the
+active queue now moves next to `QUA-417`.
 
 Current architectural note:
 

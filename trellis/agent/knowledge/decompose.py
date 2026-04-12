@@ -7,6 +7,7 @@ uses LLM to decompose into known features from the taxonomy.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from typing import TYPE_CHECKING
 
@@ -277,6 +278,7 @@ def retrieval_spec_from_ir(
     features.update(_retrieval_features_from_exercise(ir.exercise_style))
     features.update(_retrieval_features_from_state(ir.state_dependence))
     features.update(_retrieval_features_from_model(ir.model_family))
+    features.update(_retrieval_features_from_market_data(ir.required_market_data))
     if normalize_method(preferred_method or "") == "pde_solver":
         features.add("pde_grid")
 
@@ -289,6 +291,8 @@ def retrieval_spec_from_ir(
         schedule_dependence=ir.schedule_dependence,
         model_family=ir.model_family,
         candidate_engine_families=tuple(ir.candidate_engine_families),
+        semantic_text_markers=_semantic_text_markers_from_ir(ir),
+        reusable_primitives=tuple(ir.reusable_primitives),
         unresolved_primitives=tuple(ir.unresolved_primitives),
     )
 
@@ -525,6 +529,70 @@ def _retrieval_features_from_model(model_family: str) -> set[str]:
     if model_family == "stochastic_volatility":
         return {"stochastic_vol"}
     return set()
+
+
+def _retrieval_features_from_market_data(
+    required_market_data: frozenset[str] | set[str] | tuple[str, ...],
+) -> set[str]:
+    """Map required market-data capabilities onto retrieval features.
+
+    ProductIR carries precise market-data requirements, but the retrieval bridge
+    previously dropped them and kept only payoff traits. That made knowledge
+    ranking too generic for routes that depend on specific foreign-carry /
+    forward-rate contracts, such as the FX vanilla analytical lane.
+    """
+    mapping = {
+        "forward_curve": {"forward_rate"},
+        "forecast_curve": {"forward_rate"},
+        "fx_rates": {"fx"},
+    }
+    features: set[str] = set()
+    for capability in required_market_data:
+        features.update(mapping.get(str(capability).strip(), set()))
+    return features
+
+
+def _semantic_text_markers_from_ir(ir: ProductIR) -> tuple[str, ...]:
+    """Build generic high-signal text markers for lesson reranking.
+
+    Keep these markers focused on helper and primitive identity. Broader
+    product-family labels are already represented in the indexed retrieval
+    features and instrument fields; repeating them here perturbs unrelated
+    canary prompt surfaces without adding much disambiguation value.
+    """
+    raw_markers: list[str] = []
+    raw_markers.extend(ir.reusable_primitives)
+    raw_markers.extend(ir.unresolved_primitives)
+    if ir.model_family == "fx":
+        raw_markers.extend(
+            value
+            for value in (
+                ir.instrument,
+                ir.payoff_family,
+                ir.model_family,
+            )
+            if value and value != "generic"
+        )
+        raw_markers.extend(ir.payoff_traits)
+
+    markers: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_markers:
+        text = str(raw).strip()
+        if not text:
+            continue
+        variants = (
+            text.lower(),
+            text.replace("_", " ").lower(),
+            re.sub(r"(?<!^)(?=[A-Z])", " ", text).strip().lower(),
+        )
+        for variant in variants:
+            normalized = " ".join(variant.split())
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            markers.append(normalized)
+    return tuple(markers)
 
 
 def _payoff_family_for(

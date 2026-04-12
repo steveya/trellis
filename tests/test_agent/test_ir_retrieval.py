@@ -21,6 +21,42 @@ def test_retrieval_spec_from_american_put_ir_contains_semantic_fields():
     assert "exercise" in spec.candidate_engine_families
 
 
+def test_retrieval_spec_from_fx_ir_includes_market_data_derived_features():
+    from trellis.agent.knowledge.decompose import build_product_ir, retrieval_spec_from_ir
+
+    ir = build_product_ir(
+        description="European FX call option on EURUSD",
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("fx", "vanilla_option"),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        schedule_dependence=False,
+        model_family="fx",
+        candidate_engine_families=("analytical", "monte_carlo"),
+        required_market_data={
+            "discount_curve",
+            "forward_curve",
+            "black_vol_surface",
+            "fx_rates",
+            "spot",
+        },
+        reusable_primitives=("ResolvedGarmanKohlhagenInputs", "garman_kohlhagen_price_raw"),
+        supported=True,
+        preferred_method="analytical",
+    )
+
+    spec = retrieval_spec_from_ir(ir, preferred_method="analytical")
+
+    assert spec.method == "analytical"
+    assert "fx" in spec.features
+    assert "vanilla_option" in spec.features
+    assert "forward_rate" in spec.features
+    assert "european option" in spec.semantic_text_markers
+    assert "vanilla option" in spec.semantic_text_markers
+    assert "garman kohlhagen price raw" in spec.semantic_text_markers
+
+
 def test_retrieve_for_product_ir_surfaces_ir_summary_and_unresolved_primitives():
     from trellis.agent.knowledge import format_knowledge_for_prompt, retrieve_for_product_ir
     from trellis.agent.knowledge.decompose import decompose_to_ir
