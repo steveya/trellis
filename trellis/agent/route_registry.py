@@ -994,7 +994,20 @@ def compile_route_binding_authority(
     route_id = _route_id_for_authority(generation_plan=generation_plan, semantic_blueprint=semantic_blueprint)
     primitive_plan = getattr(generation_plan, "primitive_plan", None)
     route_spec = find_route_by_id(route_id, registry) if route_id else None
-    if not route_id and primitive_plan is None and route_spec is None:
+    lane_plan_kind = str(getattr(generation_plan, "lane_plan_kind", "") or "").strip()
+    has_plan_binding_identity = bool(
+        lane_plan_kind == "exact_target_binding"
+        and (
+            str(getattr(generation_plan, "backend_binding_id", "") or "").strip()
+            or tuple(getattr(generation_plan, "backend_exact_target_refs", ()) or ())
+            or tuple(getattr(generation_plan, "backend_helper_refs", ()) or ())
+            or tuple(getattr(generation_plan, "backend_pricing_kernel_refs", ()) or ())
+            or tuple(getattr(generation_plan, "backend_schedule_builder_refs", ()) or ())
+            or tuple(getattr(generation_plan, "backend_cashflow_engine_refs", ()) or ())
+            or tuple(getattr(generation_plan, "backend_market_binding_refs", ()) or ())
+        )
+    )
+    if not route_id and primitive_plan is None and route_spec is None and not has_plan_binding_identity:
         return None
 
     binding_catalog = load_backend_binding_catalog(registry=registry)
@@ -1009,26 +1022,39 @@ def compile_route_binding_authority(
             )
 
     route_family = (
-        str(getattr(binding_spec, "route_family", "") or "").strip()
+        str(getattr(generation_plan, "backend_route_family", "") or "").strip()
+        or str(getattr(binding_spec, "route_family", "") or "").strip()
         or str(getattr(route_spec, "route_family", "") or "").strip()
         or str(getattr(primitive_plan, "route_family", "") or "").strip()
         or str(getattr(validation_contract, "route_family", "") or "").strip()
     )
     engine_family = (
-        str(getattr(binding_spec, "engine_family", "") or "").strip()
+        str(getattr(generation_plan, "backend_engine_family", "") or "").strip()
+        or str(getattr(binding_spec, "engine_family", "") or "").strip()
         or str(getattr(route_spec, "engine_family", "") or "").strip()
         or str(getattr(primitive_plan, "engine_family", "") or "").strip()
         or route_family
     )
-    exact_target_refs = (
-        tuple(getattr(generation_plan, "lane_exact_binding_refs", ()) or ())
-        or tuple(getattr(binding_spec, "exact_target_refs", ()) or ())
+    exact_target_refs = tuple(
+        dict.fromkeys(
+            str(ref).strip()
+            for ref in (
+                getattr(generation_plan, "backend_exact_target_refs", ())
+                or getattr(primitive_plan, "backend_exact_target_refs", ())
+                or getattr(generation_plan, "lane_exact_binding_refs", ())
+                or getattr(binding_spec, "exact_target_refs", ())
+                or ()
+            )
+            if str(ref).strip()
+        )
     )
     helper_refs = tuple(
         dict.fromkeys(
             str(ref).strip()
             for ref in (
-                getattr(generation_plan, "lowering_helper_refs", ())
+                getattr(generation_plan, "backend_helper_refs", ())
+                or getattr(primitive_plan, "backend_helper_refs", ())
+                or getattr(generation_plan, "lowering_helper_refs", ())
                 or getattr(getattr(semantic_blueprint, "dsl_lowering", None), "helper_refs", ())
                 or getattr(binding_spec, "helper_refs", ())
                 or ()
@@ -1036,15 +1062,70 @@ def compile_route_binding_authority(
             if str(ref).strip()
         )
     )
-    primitive_refs = tuple(getattr(binding_spec, "primitive_refs", ()) or ()) or _primitive_refs_for(
+    primitive_refs = tuple(
+        dict.fromkeys(
+            str(ref).strip()
+            for ref in (
+                getattr(generation_plan, "backend_exact_target_refs", ())
+                or getattr(primitive_plan, "backend_exact_target_refs", ())
+                or getattr(binding_spec, "primitive_refs", ())
+                or ()
+            )
+            if str(ref).strip()
+        )
+    ) or _primitive_refs_for(
         primitive_plan=primitive_plan,
         route_spec=route_spec,
         product_ir=product_ir,
     )
-    pricing_kernel_refs = tuple(getattr(binding_spec, "pricing_kernel_refs", ()) or ())
-    schedule_builder_refs = tuple(getattr(binding_spec, "schedule_builder_refs", ()) or ())
-    cashflow_engine_refs = tuple(getattr(binding_spec, "cashflow_engine_refs", ()) or ())
-    market_binding_refs = tuple(getattr(binding_spec, "market_binding_refs", ()) or ())
+    pricing_kernel_refs = tuple(
+        dict.fromkeys(
+            str(ref).strip()
+            for ref in (
+                getattr(generation_plan, "backend_pricing_kernel_refs", ())
+                or getattr(primitive_plan, "backend_pricing_kernel_refs", ())
+                or getattr(binding_spec, "pricing_kernel_refs", ())
+                or ()
+            )
+            if str(ref).strip()
+        )
+    )
+    schedule_builder_refs = tuple(
+        dict.fromkeys(
+            str(ref).strip()
+            for ref in (
+                getattr(generation_plan, "backend_schedule_builder_refs", ())
+                or getattr(primitive_plan, "backend_schedule_builder_refs", ())
+                or getattr(binding_spec, "schedule_builder_refs", ())
+                or ()
+            )
+            if str(ref).strip()
+        )
+    )
+    cashflow_engine_refs = tuple(
+        dict.fromkeys(
+            str(ref).strip()
+            for ref in (
+                getattr(generation_plan, "backend_cashflow_engine_refs", ())
+                or getattr(primitive_plan, "backend_cashflow_engine_refs", ())
+                or getattr(binding_spec, "cashflow_engine_refs", ())
+                or ()
+            )
+            if str(ref).strip()
+        )
+    )
+    market_binding_refs = tuple(
+        dict.fromkeys(
+            str(ref).strip()
+            for ref in (
+                getattr(generation_plan, "backend_market_binding_refs", ())
+                or getattr(primitive_plan, "backend_market_binding_refs", ())
+                or getattr(binding_spec, "market_binding_refs", ())
+                or ()
+            )
+            if str(ref).strip()
+        )
+    )
     approved_modules = tuple(
         dict.fromkeys(
             str(module).strip()
@@ -1092,8 +1173,18 @@ def compile_route_binding_authority(
         "lane_plan_kind": str(getattr(generation_plan, "lane_plan_kind", "") or ""),
         "repo_revision": str(getattr(generation_plan, "repo_revision", "") or ""),
     }
+    compatibility_alias_policy = (
+        str(getattr(generation_plan, "backend_compatibility_alias_policy", "") or "").strip()
+        or str(getattr(primitive_plan, "backend_compatibility_alias_policy", "") or "").strip()
+        or str(getattr(binding_spec, "compatibility_alias_policy", "") or "").strip()
+        or str(getattr(route_spec, "compatibility_alias_policy", "") or "").strip()
+        or "operator_visible"
+    )
     backend_binding = BackendBindingAuthority(
-        binding_id=str(getattr(binding_spec, "binding_id", "") or "").strip() or _backend_binding_id_for(
+        binding_id=str(getattr(generation_plan, "backend_binding_id", "") or "").strip()
+        or str(getattr(primitive_plan, "backend_binding_id", "") or "").strip()
+        or str(getattr(binding_spec, "binding_id", "") or "").strip()
+        or _backend_binding_id_for(
             engine_family=engine_family,
             route_family=route_family,
             exact_target_refs=exact_target_refs,
@@ -1119,7 +1210,7 @@ def compile_route_binding_authority(
         route_family=route_family,
         authority_kind=authority_kind,
         backend_binding=backend_binding,
-        compatibility_alias_policy=str(getattr(route_spec, "compatibility_alias_policy", "") or "operator_visible"),
+        compatibility_alias_policy=compatibility_alias_policy,
         validation_bundle_id=validation_bundle_id,
         validation_check_ids=validation_check_ids,
         canary_task_ids=canary_task_ids,

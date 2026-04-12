@@ -560,6 +560,13 @@ def _generation_boundary_summary(
                 "route": getattr(primitive_plan, "route", ""),
                 "engine_family": getattr(primitive_plan, "engine_family", ""),
                 "route_family": getattr(primitive_plan, "route_family", ""),
+                "backend_binding_id": getattr(primitive_plan, "backend_binding_id", ""),
+                "backend_exact_target_refs": list(
+                    getattr(primitive_plan, "backend_exact_target_refs", ()) or ()
+                ),
+                "backend_helper_refs": list(
+                    getattr(primitive_plan, "backend_helper_refs", ()) or ()
+                ),
                 "adapters": list(getattr(primitive_plan, "adapters", ()) or ()),
                 "blockers": list(getattr(primitive_plan, "blockers", ()) or ()),
             }

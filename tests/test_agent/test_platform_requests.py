@@ -132,6 +132,12 @@ def test_compile_build_request_attaches_route_binding_authority_packet():
     authority = compiled.request.metadata["route_binding_authority"]
     backend_binding = authority["backend_binding"]
 
+    assert compiled.generation_plan.backend_binding_id == backend_binding["binding_id"]
+    assert compiled.generation_plan.backend_exact_target_refs == tuple(backend_binding["exact_target_refs"])
+    assert compiled.generation_plan.backend_helper_refs == tuple(backend_binding["helper_refs"])
+    assert compiled.generation_plan.backend_engine_family == backend_binding["engine_family"]
+    assert compiled.generation_plan.backend_route_family == authority["route_family"]
+    assert compiled.generation_plan.backend_compatibility_alias_policy == authority["compatibility_alias_policy"]
     assert authority["route_id"] == "quanto_adjustment_analytical"
     assert authority["route_family"] == "analytical"
     assert authority["authority_kind"] == "exact_backend_fit"

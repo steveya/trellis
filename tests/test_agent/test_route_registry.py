@@ -8,6 +8,7 @@ from __future__ import annotations
 import pytest
 
 from dataclasses import replace
+from types import SimpleNamespace
 
 from trellis.agent.codegen_guardrails import PrimitiveRef
 from trellis.agent.family_lowering_ir import (
@@ -35,6 +36,7 @@ from trellis.agent.route_registry import (
     resolve_route_notes,
     resolve_route_primitives,
     validate_registry,
+    compile_route_binding_authority,
 )
 
 
@@ -270,6 +272,40 @@ class TestRegistryValidation:
         assert analytical_quanto.reuse_module_paths == ("instruments/_agent/quantooptionanalytical.py",)
         assert monte_carlo_quanto is not None
         assert monte_carlo_quanto.reuse_module_paths == ("instruments/_agent/quantooptionmontecarlo.py",)
+
+    def test_compile_route_binding_authority_accepts_plan_carried_binding_identity_without_route(self):
+        authority = compile_route_binding_authority(
+            generation_plan=SimpleNamespace(
+                primitive_plan=None,
+                backend_binding_id="trellis.models.synthetic.price_bound_helper",
+                backend_exact_target_refs=("trellis.models.synthetic.price_bound_helper",),
+                backend_helper_refs=("trellis.models.synthetic.price_bound_helper",),
+                backend_pricing_kernel_refs=(),
+                backend_schedule_builder_refs=(),
+                backend_cashflow_engine_refs=(),
+                backend_market_binding_refs=(),
+                backend_engine_family="analytical",
+                backend_route_family="analytical",
+                backend_compatibility_alias_policy="internal_only",
+                approved_modules=("trellis.models.synthetic",),
+                lane_plan_kind="exact_target_binding",
+                method="analytical",
+                lane_family="analytical",
+                repo_revision="test-rev",
+            ),
+        )
+
+        assert authority is not None
+        assert authority.route_id == ""
+        assert authority.route_family == "analytical"
+        assert authority.authority_kind == "exact_backend_fit"
+        assert authority.compatibility_alias_policy == "internal_only"
+        assert authority.backend_binding.binding_id == "trellis.models.synthetic.price_bound_helper"
+        assert authority.backend_binding.engine_family == "analytical"
+        assert authority.backend_binding.exact_backend_fit is True
+        assert authority.backend_binding.exact_target_refs == (
+            "trellis.models.synthetic.price_bound_helper",
+        )
 
 
 # ---------------------------------------------------------------------------

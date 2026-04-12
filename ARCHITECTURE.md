@@ -81,6 +81,10 @@ maintenance around the deterministic engines.
 - `trellis/agent/backend_bindings.py` is the canonical catalog of exact helper,
   kernel, schedule-builder, cashflow-engine, and market-binding facts used by
   the runtime.
+- `trellis/agent/codegen_guardrails.py` now carries those backend-binding facts
+  on `PrimitivePlan` and `GenerationPlan`, so runtime plans no longer need to
+  rediscover exact helper identity from route ids later in validation or trace
+  code.
 - `trellis/agent/route_registry.py`, `trellis/agent/build_gate.py`,
   `trellis/agent/family_lowering_ir.py`, and `trellis/agent/dsl_lowering.py`
   govern admissibility and lowering onto checked route families. The route

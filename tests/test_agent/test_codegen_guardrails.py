@@ -64,6 +64,28 @@ def test_generation_plan_includes_common_modules_and_targets():
     assert plan.test_map is not None
 
 
+def test_generation_plan_carries_backend_binding_identity_for_exact_helper_routes():
+    compiled = compile_build_request(
+        "Quanto option on SAP in USD with EUR underlier currency expiring 2025-11-15",
+        instrument_type="quanto_option",
+        model="claude-sonnet-4-6",
+    )
+
+    assert compiled.generation_plan.primitive_plan is not None
+    assert compiled.generation_plan.backend_binding_id == (
+        "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
+    )
+    assert compiled.generation_plan.backend_engine_family == "analytical"
+    assert compiled.generation_plan.backend_route_family == "analytical"
+    assert compiled.generation_plan.backend_exact_target_refs == (
+        "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state",
+    )
+    assert compiled.generation_plan.backend_helper_refs == (
+        "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state",
+    )
+    assert compiled.generation_plan.backend_compatibility_alias_policy == "internal_only"
+
+
 def test_validate_generated_imports_accepts_valid_code():
     report = validate_generated_imports(VALID_SOURCE, _analytical_plan())
     assert report.ok
