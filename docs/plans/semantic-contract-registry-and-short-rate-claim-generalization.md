@@ -177,11 +177,11 @@ short-rate follow-on:
 
 | Issue | Title | Status |
 | --- | --- | --- |
-| `QUA-746` | Semantic comparison regimes: short-rate market objects and claim helper generalization | Backlog |
+| `QUA-746` | Semantic comparison regimes: short-rate market objects and claim helper generalization | Done |
 | `QUA-747` | Task runtime: typed short-rate comparison regime objects | Done |
 | `QUA-748` | Helper layers: shared short-rate regime resolver and discount-bond claim kit | Done |
 | `QUA-749` | Short-rate wrappers: migrate ZCB analytical and tree helpers onto shared claim kits | Done |
-| `QUA-751` | Validation and exact binding: recover T01 on typed short-rate regimes | Backlog |
+| `QUA-751` | Validation and exact binding: recover T01 on typed short-rate regimes | Done |
 
 ### New umbrella
 
@@ -228,7 +228,7 @@ These two tracks are linked but not identical:
 - Track B is the next reusable short-rate helper extraction.
 
 They can overlap in time, but the callable-bond short-rate extraction should
-reuse the already-planned `QUA-746` foundation rather than bypass it.
+reuse the already-landed `QUA-746` foundation rather than bypass it.
 
 ## Validation Expectations
 
