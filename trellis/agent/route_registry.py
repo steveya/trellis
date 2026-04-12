@@ -1065,18 +1065,19 @@ def compile_route_binding_authority(
     primitive_refs = tuple(
         dict.fromkeys(
             str(ref).strip()
-            for ref in (
-                getattr(generation_plan, "backend_exact_target_refs", ())
-                or getattr(primitive_plan, "backend_exact_target_refs", ())
-                or getattr(binding_spec, "primitive_refs", ())
-                or ()
+            for refs in (
+                getattr(binding_spec, "primitive_refs", ()) or (),
+                _primitive_refs_for(
+                    primitive_plan=primitive_plan,
+                    route_spec=route_spec,
+                    product_ir=product_ir,
+                ),
+                getattr(generation_plan, "backend_exact_target_refs", ()) or (),
+                getattr(primitive_plan, "backend_exact_target_refs", ()) or (),
             )
+            for ref in refs
             if str(ref).strip()
         )
-    ) or _primitive_refs_for(
-        primitive_plan=primitive_plan,
-        route_spec=route_spec,
-        product_ir=product_ir,
     )
     pricing_kernel_refs = tuple(
         dict.fromkeys(
