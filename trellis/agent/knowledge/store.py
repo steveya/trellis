@@ -1150,6 +1150,8 @@ class KnowledgeStore:
             spec.schedule_dependence,
             spec.model_family,
             tuple(spec.candidate_engine_families),
+            tuple(spec.semantic_text_markers),
+            tuple(spec.reusable_primitives),
             tuple(spec.unresolved_primitives),
             tuple(spec.error_signatures),
             spec.max_lessons,

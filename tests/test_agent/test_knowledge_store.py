@@ -661,6 +661,30 @@ class TestKnowledgeStore:
         assert stats["hits"] == 1
         assert stats["size"] >= 1
 
+    def test_retrieval_cache_key_includes_semantic_rerank_inputs(self):
+        from trellis.agent.knowledge.schema import RetrievalSpec
+        from trellis.agent.knowledge.store import KnowledgeStore
+
+        store = KnowledgeStore()
+        base = RetrievalSpec(
+            method="analytical",
+            features=["fx", "vanilla_option", "forward_rate"],
+            instrument="european_option",
+            model_family="fx",
+            semantic_text_markers=("garman kohlhagen",),
+            reusable_primitives=("garman_kohlhagen_price_raw",),
+        )
+        changed = RetrievalSpec(
+            method="analytical",
+            features=["fx", "vanilla_option", "forward_rate"],
+            instrument="european_option",
+            model_family="fx",
+            semantic_text_markers=("resolved garman kohlhagen inputs",),
+            reusable_primitives=("ResolvedGarmanKohlhagenInputs",),
+        )
+
+        assert store._retrieval_cache_key(base) != store._retrieval_cache_key(changed)
+
     def test_live_repo_state_helpers_are_revision_keyed(self):
         from trellis.agent.knowledge import (
             get_package_map,

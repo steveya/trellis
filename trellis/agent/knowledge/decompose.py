@@ -553,21 +553,27 @@ def _retrieval_features_from_market_data(
 
 
 def _semantic_text_markers_from_ir(ir: ProductIR) -> tuple[str, ...]:
-    """Build generic high-signal text markers for lesson reranking."""
+    """Build generic high-signal text markers for lesson reranking.
+
+    Keep these markers focused on helper and primitive identity. Broader
+    product-family labels are already represented in the indexed retrieval
+    features and instrument fields; repeating them here perturbs unrelated
+    canary prompt surfaces without adding much disambiguation value.
+    """
     raw_markers: list[str] = []
-    raw_markers.extend(
-        value
-        for value in (
-            ir.instrument,
-            ir.payoff_family,
-            ir.model_family,
-        )
-        if value and value != "generic"
-    )
-    raw_markers.extend(ir.payoff_traits)
-    raw_markers.extend(ir.route_families)
     raw_markers.extend(ir.reusable_primitives)
     raw_markers.extend(ir.unresolved_primitives)
+    if ir.model_family == "fx":
+        raw_markers.extend(
+            value
+            for value in (
+                ir.instrument,
+                ir.payoff_family,
+                ir.model_family,
+            )
+            if value and value != "generic"
+        )
+        raw_markers.extend(ir.payoff_traits)
 
     markers: list[str] = []
     seen: set[str] = set()
