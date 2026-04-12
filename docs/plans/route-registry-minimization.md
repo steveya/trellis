@@ -316,7 +316,10 @@ The active route-card retirement queue is now tracked under umbrella
    pricing kernel rather than a fully packaged family helper. Those are not
    harmless aliases, but they also are not good candidates for opportunistic
    compaction in this residual-audit slice, so the audit outcome is keep as-is
-   and move on to route-scoring cleanup instead of inventing cleanup work.
+   and move on to route-scoring cleanup instead of inventing cleanup work. The
+   remaining directive note on `local_vol_monte_carlo` is explicitly carried
+   into `QUA-777` as part of the scoring / residual-authority tail rather than
+   this audit slice.
 7. `QUA-777` route scoring tail after the route-card surfaces themselves are
    retired
 
