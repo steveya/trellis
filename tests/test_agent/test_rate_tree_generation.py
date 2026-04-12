@@ -171,6 +171,35 @@ def test_callable_artifact_prices_plausibly_against_reference_tree():
     assert abs(artifact_price - reference_price) / reference_price < 0.05
 
 
+def test_callable_artifact_works_with_calibrated_model_parameters_only():
+    sys.path.insert(0, str(ROOT))
+    mod = import_module("trellis.instruments._agent.callablebond")
+    settle = date(2024, 11, 15)
+    market_state = MarketState(
+        as_of=settle,
+        settlement=settle,
+        discount=YieldCurve.flat(0.05, max_tenor=31.0),
+        model_parameters={
+            "model_family": "hull_white",
+            "mean_reversion": 0.03,
+            "sigma": 0.004,
+        },
+    )
+    spec = mod.CallableBondSpec(
+        notional=100.0,
+        coupon=0.05,
+        start_date=settle,
+        end_date=date(2034, 11, 15),
+        call_dates=(
+            date(2027, 11, 15),
+            date(2029, 11, 15),
+            date(2031, 11, 15),
+        ),
+    )
+
+    assert price_payoff(mod.CallableBondPayoff(spec), market_state) > 0.0
+
+
 def test_bermudan_artifact_prices_plausibly_against_reference_tree():
     sys.path.insert(0, str(ROOT))
     from tests.test_tasks.test_t04_bermudan_swaption import (
@@ -231,3 +260,29 @@ def test_bermudan_artifact_prices_plausibly_against_reference_tree():
     )
 
     assert abs(artifact_price - reference_price) / reference_price < 0.20
+
+
+def test_zcb_artifact_normalizes_quoted_option_type():
+    sys.path.insert(0, str(ROOT))
+    mod = import_module("trellis.instruments._agent.zcboption")
+    settle = date(2024, 11, 15)
+    market_state = MarketState(
+        as_of=settle,
+        settlement=settle,
+        discount=YieldCurve.flat(0.05, max_tenor=12.0),
+        vol_surface=FlatVol(0.20),
+        model_parameters={
+            "model_family": "hull_white",
+            "mean_reversion": 0.1,
+            "sigma": 0.01,
+        },
+    )
+    spec = mod.ZCBOptionSpec(
+        notional=100.0,
+        strike=63.0,
+        expiry_date=date(2027, 11, 15),
+        bond_maturity_date=date(2033, 11, 15),
+        option_type="'call'",
+    )
+
+    assert price_payoff(mod.ZCBOptionPayoff(spec), market_state) > 0.0

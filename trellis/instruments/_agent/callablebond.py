@@ -72,15 +72,13 @@ Implementation target: hw_rate_tree."""
 
     @property
     def requirements(self) -> set[str]:
-        return {"black_vol_surface", "discount_curve"}
+        return {"discount_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
 
         if market_state.discount is None:
             raise ValueError("CallableBondPayoff requires a discount curve in market_state")
-        if market_state.vol_surface is None:
-            raise ValueError("CallableBondPayoff requires a black vol surface in market_state")
 
         # Thin adapter to the checked-in callable bond tree helper.
         return float(

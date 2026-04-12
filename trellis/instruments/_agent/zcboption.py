@@ -32,6 +32,7 @@ from datetime import date
 
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
+from trellis.models.resolution.short_rate_claims import resolve_discount_bond_option_type
 from trellis.models.zcb_option import price_zcb_option_jamshidian
 
 
@@ -113,11 +114,13 @@ Implementation target: jamshidian."""
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        if spec.option_type.lower() not in {"call", "put"}:
-            raise ValueError(f"Unsupported option_type: {spec.option_type!r}")
+        option_type = resolve_discount_bond_option_type(spec)
 
         if spec.bond_maturity_date <= spec.expiry_date:
             raise ValueError("bond_maturity_date must be strictly after expiry_date")
+
+        if option_type not in {"call", "put"}:
+            raise ValueError(f"Unsupported option_type: {spec.option_type!r}")
 
         try:
             return float(

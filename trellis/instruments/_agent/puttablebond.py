@@ -69,7 +69,7 @@ Implementation target: callable_tree_symmetry."""
 
     @property
     def requirements(self) -> set[str]:
-        return {"black_vol_surface", "discount_curve"}
+        return {"discount_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec

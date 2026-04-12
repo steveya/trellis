@@ -115,6 +115,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_vanilla_equity_option_tree": {
         "min_positional_args": 2,
+        "max_positional_args": 2,
         "required_parameters": ("market_state", "spec"),
         "required_keyword_groups": (frozenset({"market_state", "spec"}),),
         "allowed_keywords": frozenset({"market_state", "spec", "model", "n_steps"}),
@@ -130,6 +131,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_callable_bond_tree": {
         "min_positional_args": 2,
+        "max_positional_args": 2,
         "required_parameters": ("market_state", "spec"),
         "required_keyword_groups": (frozenset({"market_state", "spec"}),),
         "allowed_keywords": frozenset({"market_state", "spec", "model", "mean_reversion", "sigma", "n_steps"}),
@@ -146,6 +148,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_bermudan_swaption_tree": {
         "min_positional_args": 2,
+        "max_positional_args": 2,
         "required_parameters": ("market_state", "spec"),
         "required_keyword_groups": (frozenset({"market_state", "spec"}),),
         "allowed_keywords": frozenset({"market_state", "spec", "model", "mean_reversion", "sigma", "n_steps"}),
@@ -162,6 +165,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_swaption_tree": {
         "min_positional_args": 2,
+        "max_positional_args": 2,
         "required_parameters": ("market_state", "spec"),
         "required_keyword_groups": (frozenset({"market_state", "spec"}),),
         "allowed_keywords": frozenset({"market_state", "spec", "model", "mean_reversion", "sigma", "n_steps"}),
@@ -178,6 +182,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_fx_vanilla_analytical": {
         "min_positional_args": 2,
+        "max_positional_args": 2,
         "required_parameters": ("market_state", "spec"),
         "required_keyword_groups": (frozenset({"market_state", "spec"}),),
         "allowed_keywords": frozenset({"market_state", "spec"}),
@@ -193,6 +198,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_fx_vanilla_monte_carlo": {
         "min_positional_args": 2,
+        "max_positional_args": 2,
         "required_parameters": ("market_state", "spec"),
         "required_keyword_groups": (frozenset({"market_state", "spec"}),),
         "allowed_keywords": frozenset({"market_state", "spec", "seed"}),
@@ -249,6 +255,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_credit_basket_tranche": {
         "min_positional_args": 2,
+        "max_positional_args": 2,
         "required_parameters": ("market_state", "spec"),
         "required_keyword_groups": (frozenset({"market_state", "spec"}),),
         "allowed_keywords": frozenset({
@@ -272,6 +279,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_zcb_option_tree": {
         "min_positional_args": 2,
+        "max_positional_args": 2,
         "required_parameters": ("market_state", "spec"),
         "required_keyword_groups": (frozenset({"market_state", "spec"}),),
         "allowed_keywords": frozenset({"market_state", "spec", "model", "mean_reversion", "sigma", "n_steps"}),
@@ -288,6 +296,7 @@ _EXACT_HELPER_SIGNATURES = {
     },
     "price_zcb_option_jamshidian": {
         "min_positional_args": 2,
+        "max_positional_args": 2,
         "required_parameters": ("market_state", "spec"),
         "required_keyword_groups": (frozenset({"market_state", "spec"}),),
         "allowed_keywords": frozenset({"market_state", "spec", "mean_reversion"}),
@@ -570,6 +579,10 @@ def _call_satisfies_required_surface(
     keyword_surface_ok: bool,
 ) -> bool:
     """Return whether one helper call satisfies the declared required surface."""
+    max_positional_args = signature.get("max_positional_args")
+    if max_positional_args is not None and len(call.args) > int(max_positional_args):
+        return False
+
     if bool(signature.get("keyword_only")) and call.args:
         return False
 

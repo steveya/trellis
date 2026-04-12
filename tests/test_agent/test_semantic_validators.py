@@ -310,6 +310,25 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("exercise_lattice", "lattice"), spec)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
+    def test_rejects_callable_bond_tree_positional_optional_argument(self, registry):
+        spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
+        callable_ir = ProductIR(
+            instrument="callable_bond",
+            payoff_family="callable_fixed_income",
+            exercise_style="issuer_call",
+            model_family="short_rate",
+        )
+        spec = replace(spec, primitives=resolve_route_primitives(spec, callable_ir))
+        source = '''
+from trellis.models.callable_bond_tree import price_callable_bond_tree
+
+def evaluate(self, market_state):
+    return price_callable_bond_tree(market_state, self._spec, "hull_white")
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("exercise_lattice", "lattice"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+
     def test_flags_rate_tree_swaption_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "rate_tree_backward_induction"][0]
         swaption_ir = ProductIR(
@@ -407,6 +426,18 @@ def evaluate(self, market_state):
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("zcb_option_analytical"), spec)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_rejects_zcb_option_jamshidian_positional_optional_argument(self, registry):
+        spec = [r for r in registry.routes if r.id == "zcb_option_analytical"][0]
+        source = '''
+from trellis.models.zcb_option import price_zcb_option_jamshidian
+
+def evaluate(self, market_state):
+    return price_zcb_option_jamshidian(market_state, self._spec, 0.1)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("zcb_option_analytical"), spec)
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_flags_credit_default_swap_analytical_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap_analytical"][0]
