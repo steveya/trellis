@@ -306,9 +306,10 @@ def test_build_task_diagnosis_packet_summarizes_failure(tmp_path):
     assert packet["post_build"]["latest_phase"] == "reflection_completed"
     assert packet["runtime_controls"]["llm_wait_log_path"] == "/tmp/t999_waits.jsonl"
     assert packet["telemetry"]["selected_artifacts"][0]["artifact_id"] == "route_hint:callable_bond_tree"
-    assert packet["telemetry"]["route_observations"][0]["route_id"] == "callable_bond_tree"
-    assert packet["telemetry"]["route_observations"][0]["primary_label"] == "EventAwarePDEIR"
-    assert packet["telemetry"]["route_observations"][0]["task_ids"] == ["T02"]
+    assert packet["telemetry"]["selected_artifacts"][0]["binding_aliases"] == ["callable_bond_tree"]
+    assert packet["telemetry"]["binding_observations"][0]["binding_alias"] == "callable_bond_tree"
+    assert packet["telemetry"]["binding_observations"][0]["primary_label"] == "EventAwarePDEIR"
+    assert packet["telemetry"]["binding_observations"][0]["task_ids"] == ["T02"]
     assert packet["trace_index"][0]["construction_label"] == "EventAwarePDEIR"
 
     rendered = render_task_diagnosis_dossier(packet)
@@ -463,9 +464,9 @@ def test_build_task_diagnosis_packet_keeps_platform_action_out_of_route_ids(tmp_
 
     packet = build_task_diagnosis_packet(record)
 
-    assert packet["telemetry"]["route_observations"][0]["route_id"] == ""
-    assert packet["telemetry"]["route_observations"][0]["route_family"] == "analytical"
-    assert packet["telemetry"]["route_observations"][0]["primary_label"] == "analytical"
+    assert packet["telemetry"]["binding_observations"][0]["route_id"] == ""
+    assert packet["telemetry"]["binding_observations"][0]["binding_family"] == "analytical"
+    assert packet["telemetry"]["binding_observations"][0]["primary_label"] == "analytical"
 
 
 def test_build_task_diagnosis_packet_uses_binding_operator_metadata_in_operator_views(tmp_path):
@@ -509,7 +510,11 @@ def test_build_task_diagnosis_packet_uses_binding_operator_metadata_in_operator_
     rendered = render_task_diagnosis_dossier(packet)
 
     assert packet["trace_index"][0]["construction_label"] == "FX vanilla analytical binding"
-    assert packet["telemetry"]["route_observations"][0]["primary_label"] == "FX vanilla analytical binding"
-    assert packet["telemetry"]["route_observations"][0]["binding_diagnostic_label"] == "fx_vanilla_analytical_binding"
+    assert packet["telemetry"]["binding_observations"][0]["primary_label"] == (
+        "FX vanilla analytical binding"
+    )
+    assert packet["telemetry"]["binding_observations"][0]["binding_diagnostic_label"] == (
+        "fx_vanilla_analytical_binding"
+    )
     assert "FX vanilla analytical binding" in rendered
     assert "fx_vanilla_analytical_binding" in rendered

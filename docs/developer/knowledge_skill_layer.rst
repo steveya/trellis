@@ -136,16 +136,19 @@ The first-pass telemetry surface includes:
 
 * run outcome and retry/degradation flags
 * selected-artifact observations keyed by ``artifact_id``
-* route observations keyed by route id and route family
+* binding observations keyed by backend binding identity, family, and alias
 * aggregated counters via ``load_latest_skill_telemetry_rollup()``
-* route-health counters via ``load_latest_route_health_rollup()``
+* binding-health counters via ``load_latest_binding_health_rollup()``
 * stable ranking-input projections via ``load_latest_skill_ranking_inputs()``
-  and ``load_latest_route_ranking_inputs()``
+  and ``load_latest_binding_ranking_inputs()``
 
-Route-health observations also carry instruction-resolution counts from
+Binding-health observations also carry instruction-resolution counts from
 analytical traces when they exist, so maintenance tooling can answer both
-"which skills were present for this outcome?" and "how healthy was the route
-selection that consumed them?" without reparsing raw trace markdown.
+"which skills were present for this outcome?" and "how healthy was the
+selected binding surface?" without reparsing raw trace markdown.
+
+Compatibility aliases still expose the old route-named observation fields and
+loaders, but the binding-first names are now the primary supported surface.
 
 The retained ranking-input contract is intentionally small:
 

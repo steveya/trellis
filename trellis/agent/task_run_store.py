@@ -622,6 +622,15 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
             or (runtime_contract.get("snapshot_reference") or {}).get("selected_curve_names")
             or {}
         )
+        binding_health = _normalize_binding_health(
+            raw_health=route_health_snapshot(analytical_trace),
+            construction_identity=context.get("construction_identity") or {},
+            semantic_blueprint=(context.get("semantic_blueprint") or {}),
+            trace_kind=data.get("trace_type", "analytical"),
+            trace_action=route.get("name"),
+            trace_method=route.get("family"),
+            trace_status=data.get("status"),
+        )
         return {
             "path": str(trace_path),
             "exists": True,
@@ -649,7 +658,8 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
             "instruction_resolution_conflict_count": len(
                 instruction_resolution.get("conflicts") or []
             ),
-            "route_health": route_health_snapshot(analytical_trace),
+            "binding_health": binding_health,
+            "route_health": dict(binding_health),
             "token_usage": data.get("token_usage") or {},
             "request_metadata": context,
             "linear_issue": None,
@@ -691,44 +701,17 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
         or construction_identity.get("operator_metadata")
         or {}
     )
-    route_health = {
-        "route_id": str(
-            route_binding_authority.get("route_id")
-            or semantic_blueprint.get("dsl_route")
-            or ""
-        ).strip(),
-        "route_family": str(
-            route_binding_authority.get("route_family")
-            or semantic_blueprint.get("dsl_route_family")
-            or data.get("route_method")
-            or ""
-        ).strip(),
-        "trace_status": str(data.get("status") or "").strip(),
-        "effective_instruction_ids": [],
-        "effective_instruction_count": 0,
-        "hard_constraint_count": 0,
-        "conflict_count": 0,
-        "canary_task_ids": list(route_binding_authority.get("canary_task_ids") or []),
-        "primary_kind": str(construction_identity.get("primary_kind") or "").strip(),
-        "primary_label": str(construction_identity.get("primary_label") or "").strip(),
-        "backend_binding_id": str(construction_identity.get("backend_binding_id") or "").strip(),
-        "binding_display_name": str(
-            construction_identity.get("binding_display_name")
-            or operator_metadata.get("display_name")
-            or ""
-        ).strip(),
-        "binding_short_description": str(
-            construction_identity.get("binding_short_description")
-            or operator_metadata.get("short_description")
-            or ""
-        ).strip(),
-        "binding_diagnostic_label": str(
-            construction_identity.get("binding_diagnostic_label")
-            or operator_metadata.get("diagnostic_label")
-            or ""
-        ).strip(),
-        "route_alias": str(construction_identity.get("route_alias") or "").strip(),
-    }
+    binding_health = _normalize_binding_health(
+        raw_health={},
+        construction_identity=construction_identity,
+        route_binding_authority=route_binding_authority,
+        semantic_blueprint=semantic_blueprint,
+        trace_kind="platform",
+        trace_action=data.get("action"),
+        trace_method=data.get("route_method"),
+        trace_status=data.get("status"),
+        operator_metadata=operator_metadata,
+    )
     return {
         "path": str(trace_path),
         "exists": True,
@@ -749,12 +732,124 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
         "semantic_role_ownership_trigger": semantic_role_ownership.get("trigger_condition"),
         "semantic_role_ownership_artifact": semantic_role_ownership.get("artifact_kind"),
         "construction_identity": construction_identity,
+        "binding_authority": route_binding_authority,
         "route_binding_authority": route_binding_authority,
-        "route_health": route_health,
+        "binding_health": binding_health,
+        "route_health": dict(binding_health),
         "token_usage": data.get("token_usage") or {},
         "request_metadata": metadata,
         "linear_issue": linear if linear else None,
         "github_issue": github if github else None,
+    }
+
+
+def _normalize_binding_health(
+    *,
+    raw_health: Mapping[str, Any] | None,
+    construction_identity: Mapping[str, Any] | None = None,
+    route_binding_authority: Mapping[str, Any] | None = None,
+    semantic_blueprint: Mapping[str, Any] | None = None,
+    trace_kind: str = "",
+    trace_action: Any = None,
+    trace_method: Any = None,
+    trace_status: Any = None,
+    operator_metadata: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Normalize trace health onto binding-first telemetry fields."""
+    raw_health = dict(raw_health or {})
+    construction_identity = dict(construction_identity or {})
+    route_binding_authority = dict(route_binding_authority or {})
+    semantic_blueprint = dict(semantic_blueprint or {})
+    operator_metadata = dict(operator_metadata or {})
+    route_id = str(
+        raw_health.get("route_id")
+        or route_binding_authority.get("route_id")
+        or semantic_blueprint.get("dsl_route")
+        or ""
+    ).strip()
+    if not route_id and trace_kind and trace_kind != "platform":
+        route_id = str(trace_action or "").strip()
+    route_family = str(
+        raw_health.get("route_family")
+        or route_binding_authority.get("route_family")
+        or semantic_blueprint.get("dsl_route_family")
+        or trace_method
+        or ""
+    ).strip()
+    binding_id = str(
+        raw_health.get("binding_id")
+        or raw_health.get("backend_binding_id")
+        or construction_identity.get("backend_binding_id")
+        or ""
+    ).strip()
+    binding_family = str(
+        raw_health.get("binding_family")
+        or construction_identity.get("backend_engine_family")
+        or route_family
+        or trace_method
+        or ""
+    ).strip()
+    binding_alias = str(
+        raw_health.get("binding_alias")
+        or raw_health.get("route_alias")
+        or construction_identity.get("route_alias")
+        or route_id
+        or ""
+    ).strip()
+    binding_display_name = str(
+        raw_health.get("binding_display_name")
+        or construction_identity.get("binding_display_name")
+        or operator_metadata.get("display_name")
+        or ""
+    ).strip()
+    binding_short_description = str(
+        raw_health.get("binding_short_description")
+        or construction_identity.get("binding_short_description")
+        or operator_metadata.get("short_description")
+        or ""
+    ).strip()
+    binding_diagnostic_label = str(
+        raw_health.get("binding_diagnostic_label")
+        or construction_identity.get("binding_diagnostic_label")
+        or operator_metadata.get("diagnostic_label")
+        or ""
+    ).strip()
+    primary_kind = str(
+        raw_health.get("primary_kind")
+        or construction_identity.get("primary_kind")
+        or ""
+    ).strip()
+    primary_label = str(
+        raw_health.get("primary_label")
+        or construction_identity.get("primary_label")
+        or binding_display_name
+        or binding_family
+        or binding_alias
+        or "unknown"
+    ).strip()
+    return {
+        "binding_id": binding_id,
+        "binding_family": binding_family,
+        "binding_alias": binding_alias,
+        "route_id": route_id,
+        "route_family": route_family,
+        "route_alias": binding_alias,
+        "trace_status": str(raw_health.get("trace_status") or trace_status or "").strip(),
+        "effective_instruction_ids": list(raw_health.get("effective_instruction_ids") or []),
+        "effective_instruction_count": int(raw_health.get("effective_instruction_count") or 0),
+        "hard_constraint_count": int(raw_health.get("hard_constraint_count") or 0),
+        "conflict_count": int(raw_health.get("conflict_count") or 0),
+        "canary_task_ids": list(
+            route_binding_authority.get("canary_task_ids")
+            or raw_health.get("canary_task_ids")
+            or []
+        ),
+        "primary_kind": primary_kind,
+        "primary_label": primary_label,
+        "backend_binding_id": binding_id,
+        "binding_display_name": binding_display_name,
+        "binding_short_description": binding_short_description,
+        "binding_diagnostic_label": binding_diagnostic_label,
     }
 
 
@@ -1032,7 +1127,7 @@ def summarize_skill_telemetry(
     method_runs: Mapping[str, Any],
     workflow: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Summarize selected-skill attribution and route health for one task run."""
+    """Summarize selected-skill attribution and binding health for one task run."""
     learning = dict(result.get("learning") or {})
     outcome = _telemetry_run_outcome(
         result=result,
@@ -1042,7 +1137,7 @@ def summarize_skill_telemetry(
     retry_count = _telemetry_retry_count(result=result, method_runs=method_runs)
     degraded = _telemetry_is_degraded(result=result, method_runs=method_runs)
     comparison_status = str((result.get("cross_validation") or {}).get("status") or "").strip()
-    route_observations = _route_observations(
+    binding_observations = _route_observations(
         traces=traces,
         method_runs=method_runs,
         outcome=outcome,
@@ -1052,14 +1147,14 @@ def summarize_skill_telemetry(
     )
     selected_artifacts = _selected_artifact_observations(
         learning=learning,
-        route_observations=route_observations,
+        route_observations=binding_observations,
         outcome=outcome,
         retry_count=retry_count,
         degraded=degraded,
     )
     selected_artifact_ids = [item["artifact_id"] for item in selected_artifacts]
     if selected_artifact_ids:
-        for item in route_observations:
+        for item in binding_observations:
             item["selected_artifact_ids"] = list(selected_artifact_ids)
     return {
         "task_kind": task_kind,
@@ -1069,7 +1164,8 @@ def summarize_skill_telemetry(
         "degraded": degraded,
         "comparison_status": comparison_status,
         "selected_artifacts": selected_artifacts,
-        "route_observations": route_observations,
+        "binding_observations": binding_observations,
+        "route_observations": [dict(item) for item in binding_observations],
     }
 
 
@@ -1094,6 +1190,9 @@ def aggregate_skill_telemetry(records: list[Mapping[str, Any]]) -> dict[str, Any
                     "kind": str(item.get("kind") or "").strip(),
                     "selection_count": 0,
                     "audiences": [],
+                    "binding_ids": [],
+                    "binding_families": [],
+                    "binding_aliases": [],
                     "route_ids": [],
                     "route_families": [],
                     **_rollup_counter_fields(),
@@ -1106,7 +1205,14 @@ def aggregate_skill_telemetry(records: list[Mapping[str, Any]]) -> dict[str, Any
                 task_id=task_id,
                 persisted_at=persisted_at,
             )
-            for key in ("audiences", "route_ids", "route_families"):
+            for key in (
+                "audiences",
+                "binding_ids",
+                "binding_families",
+                "binding_aliases",
+                "route_ids",
+                "route_families",
+            ):
                 for value in item.get(key) or []:
                     if value and value not in aggregate[key]:
                         aggregate[key].append(value)
@@ -1118,26 +1224,34 @@ def aggregate_skill_telemetry(records: list[Mapping[str, Any]]) -> dict[str, Any
     return rollup
 
 
-def aggregate_route_health(records: list[Mapping[str, Any]]) -> dict[str, Any]:
-    """Roll up route observations across persisted task-run records."""
-    aggregates: dict[tuple[str, str], dict[str, Any]] = {}
+def aggregate_binding_health(records: list[Mapping[str, Any]]) -> dict[str, Any]:
+    """Roll up binding observations across persisted task-run records."""
+    aggregates: dict[tuple[str, str, str], dict[str, Any]] = {}
     for record in records:
         telemetry = dict(record.get("telemetry") or {})
         task_id = str(record.get("task_id") or "").strip()
         persisted_at = str(record.get("persisted_at") or "").strip()
-        for item in telemetry.get("route_observations") or []:
+        for item in telemetry.get("binding_observations") or telemetry.get("route_observations") or []:
             if not isinstance(item, Mapping):
                 continue
-            route_id = str(item.get("route_id") or "").strip()
-            route_family = str(item.get("route_family") or "").strip()
-            if not route_id and not route_family:
+            binding_id = str(item.get("binding_id") or item.get("backend_binding_id") or "").strip()
+            binding_family = str(item.get("binding_family") or item.get("route_family") or "").strip()
+            binding_alias = str(item.get("binding_alias") or item.get("route_alias") or item.get("route_id") or "").strip()
+            if not binding_id and not binding_family and not binding_alias:
                 continue
-            key = (route_id, route_family)
+            key = (binding_id, binding_family, binding_alias)
             aggregate = aggregates.setdefault(
                 key,
                 {
-                    "route_id": route_id,
-                    "route_family": route_family,
+                    "binding_id": binding_id,
+                    "binding_family": binding_family,
+                    "binding_alias": binding_alias,
+                    "route_id": str(item.get("route_id") or "").strip(),
+                    "route_family": str(item.get("route_family") or "").strip(),
+                    "route_alias": str(item.get("route_alias") or binding_alias).strip(),
+                    "primary_label": str(item.get("primary_label") or "").strip(),
+                    "binding_display_name": str(item.get("binding_display_name") or "").strip(),
+                    "binding_diagnostic_label": str(item.get("binding_diagnostic_label") or "").strip(),
                     "observation_count": 0,
                     "trace_kinds": [],
                     "selected_artifact_ids": [],
@@ -1167,13 +1281,24 @@ def aggregate_route_health(records: list[Mapping[str, Any]]) -> dict[str, Any]:
             aggregate["conflict_count_total"] += int(item.get("conflict_count") or 0)
     rollup = {
         "run_count": len(records),
-        "routes": sorted(
+        "bindings": sorted(
             aggregates.values(),
-            key=lambda item: (item["route_family"], item["route_id"]),
+            key=lambda item: (
+                item["binding_family"],
+                item["binding_display_name"],
+                item["binding_id"],
+                item["binding_alias"],
+            ),
         ),
     }
-    rollup["ranking_inputs"] = build_route_ranking_inputs(rollup)["routes"]
+    rollup["routes"] = rollup["bindings"]
+    rollup["ranking_inputs"] = build_binding_ranking_inputs(rollup)["bindings"]
     return rollup
+
+
+def aggregate_route_health(records: list[Mapping[str, Any]]) -> dict[str, Any]:
+    """Compatibility wrapper for legacy route-health rollup callers."""
+    return aggregate_binding_health(records)
 
 
 def load_latest_skill_telemetry_rollup(
@@ -1185,13 +1310,22 @@ def load_latest_skill_telemetry_rollup(
     return load_latest_telemetry_rollups(root=root, task_kind=task_kind)["skill_telemetry"]
 
 
+def load_latest_binding_health_rollup(
+    *,
+    root: Path = ROOT,
+    task_kind: str | None = None,
+) -> dict[str, Any]:
+    """Load the latest task runs and aggregate binding-health observations."""
+    return load_latest_telemetry_rollups(root=root, task_kind=task_kind)["binding_health"]
+
+
 def load_latest_route_health_rollup(
     *,
     root: Path = ROOT,
     task_kind: str | None = None,
 ) -> dict[str, Any]:
-    """Load the latest task runs and aggregate route-health observations."""
-    return load_latest_telemetry_rollups(root=root, task_kind=task_kind)["route_health"]
+    """Compatibility wrapper for legacy route-health rollup callers."""
+    return load_latest_binding_health_rollup(root=root, task_kind=task_kind)
 
 
 def load_latest_telemetry_rollups(
@@ -1201,9 +1335,11 @@ def load_latest_telemetry_rollups(
 ) -> dict[str, Any]:
     """Load the latest task runs once and rebuild both telemetry rollups."""
     records = load_latest_task_run_records(root=root, task_kind=task_kind)
+    binding_health = aggregate_binding_health(records)
     return {
         "skill_telemetry": aggregate_skill_telemetry(records),
-        "route_health": aggregate_route_health(records),
+        "binding_health": binding_health,
+        "route_health": binding_health,
     }
 
 
@@ -1228,6 +1364,12 @@ def build_skill_ranking_inputs(rollup: Mapping[str, Any]) -> dict[str, Any]:
                 "avg_retry_count": _fraction(item.get("retry_count_total"), selection_count),
                 "last_seen_at": str(item.get("last_seen_at") or "").strip(),
                 "first_seen_at": str(item.get("first_seen_at") or "").strip(),
+                "binding_coverage_count": len(
+                    item.get("binding_ids")
+                    or item.get("binding_aliases")
+                    or item.get("binding_families")
+                    or []
+                ),
                 "route_coverage_count": len(item.get("route_ids") or []),
                 "task_coverage_count": len(item.get("task_ids") or []),
             }
@@ -1238,15 +1380,18 @@ def build_skill_ranking_inputs(rollup: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_route_ranking_inputs(rollup: Mapping[str, Any]) -> dict[str, Any]:
-    """Project route-health rollups into stable ranking inputs."""
-    routes = []
-    for item in rollup.get("routes") or []:
+def build_binding_ranking_inputs(rollup: Mapping[str, Any]) -> dict[str, Any]:
+    """Project binding-health rollups into stable ranking inputs."""
+    bindings = []
+    for item in rollup.get("bindings") or rollup.get("routes") or []:
         if not isinstance(item, Mapping):
             continue
         observation_count = int(item.get("observation_count") or 0)
-        routes.append(
+        bindings.append(
             {
+                "binding_id": str(item.get("binding_id") or item.get("backend_binding_id") or "").strip(),
+                "binding_family": str(item.get("binding_family") or item.get("route_family") or "").strip(),
+                "binding_alias": str(item.get("binding_alias") or item.get("route_alias") or item.get("route_id") or "").strip(),
                 "route_id": str(item.get("route_id") or "").strip(),
                 "route_family": str(item.get("route_family") or "").strip(),
                 "observation_count": observation_count,
@@ -1268,16 +1413,34 @@ def build_route_ranking_inputs(rollup: Mapping[str, Any]) -> dict[str, Any]:
                     item.get("conflict_count_total"),
                     observation_count,
                 ),
+                "primary_label": str(item.get("primary_label") or "").strip(),
+                "binding_display_name": str(item.get("binding_display_name") or "").strip(),
+                "binding_diagnostic_label": str(item.get("binding_diagnostic_label") or "").strip(),
                 "last_seen_at": str(item.get("last_seen_at") or "").strip(),
                 "first_seen_at": str(item.get("first_seen_at") or "").strip(),
                 "selected_artifact_count": len(item.get("selected_artifact_ids") or []),
                 "task_coverage_count": len(item.get("task_ids") or []),
             }
         )
-    return {
+    result = {
         "run_count": int(rollup.get("run_count") or 0),
-        "routes": sorted(routes, key=lambda item: (item["route_family"], item["route_id"])),
+        "bindings": sorted(
+            bindings,
+            key=lambda item: (
+                item["binding_family"],
+                item["binding_display_name"],
+                item["binding_id"],
+                item["binding_alias"],
+            ),
+        ),
     }
+    result["routes"] = result["bindings"]
+    return result
+
+
+def build_route_ranking_inputs(rollup: Mapping[str, Any]) -> dict[str, Any]:
+    """Compatibility wrapper for legacy route-ranking callers."""
+    return build_binding_ranking_inputs(rollup)
 
 
 def load_latest_skill_ranking_inputs(
@@ -1291,15 +1454,24 @@ def load_latest_skill_ranking_inputs(
     )
 
 
+def load_latest_binding_ranking_inputs(
+    *,
+    root: Path = ROOT,
+    task_kind: str | None = None,
+) -> dict[str, Any]:
+    """Load the latest task runs and derive binding-ranking inputs."""
+    return build_binding_ranking_inputs(
+        load_latest_telemetry_rollups(root=root, task_kind=task_kind)["binding_health"]
+    )
+
+
 def load_latest_route_ranking_inputs(
     *,
     root: Path = ROOT,
     task_kind: str | None = None,
 ) -> dict[str, Any]:
-    """Load the latest task runs and derive route-ranking inputs."""
-    return build_route_ranking_inputs(
-        load_latest_telemetry_rollups(root=root, task_kind=task_kind)["route_health"]
-    )
+    """Compatibility wrapper for legacy route-ranking callers."""
+    return load_latest_binding_ranking_inputs(root=root, task_kind=task_kind)
 
 
 def _rollup_counter_fields() -> dict[str, Any]:
@@ -1428,10 +1600,25 @@ def _selected_artifact_observations(
         if isinstance(artifacts, list)
     }
     route_ids = _unique_strings(
-        [[item.get("route_id")] for item in route_observations]
+        [str(item.get("route_id") or "").strip() for item in route_observations]
     )
     route_families = _unique_strings(
-        [[item.get("route_family")] for item in route_observations]
+        [str(item.get("route_family") or "").strip() for item in route_observations]
+    )
+    binding_ids = _unique_strings(
+        [
+            str(item.get("binding_id") or item.get("backend_binding_id") or "").strip()
+            for item in route_observations
+        ]
+    )
+    binding_families = _unique_strings(
+        [str(item.get("binding_family") or "").strip() for item in route_observations]
+    )
+    binding_aliases = _unique_strings(
+        [
+            str(item.get("binding_alias") or item.get("route_alias") or "").strip()
+            for item in route_observations
+        ]
     )
 
     artifacts: dict[str, dict[str, Any]] = {}
@@ -1452,6 +1639,9 @@ def _selected_artifact_observations(
                     "retried": retry_count > 0,
                     "retry_count": retry_count,
                     "degraded": degraded,
+                    "binding_ids": list(binding_ids),
+                    "binding_families": list(binding_families),
+                    "binding_aliases": list(binding_aliases),
                     "route_ids": list(route_ids),
                     "route_families": list(route_families),
                     "task_ids": [],
@@ -1471,30 +1661,30 @@ def _route_observations(
     degraded: bool,
     selected_artifact_ids: list[str],
 ) -> list[dict[str, Any]]:
-    """Project route-health observations from trace summaries and method runs."""
+    """Project binding-health observations from trace summaries and method runs."""
     observations: list[dict[str, Any]] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str, str, str]] = set()
 
     for trace in traces:
-        route_health = dict(trace.get("route_health") or {})
+        binding_health = _normalize_binding_health(
+            raw_health=trace.get("binding_health") or trace.get("route_health") or {},
+            construction_identity=trace.get("construction_identity") or {},
+            route_binding_authority=trace.get("binding_authority") or trace.get("route_binding_authority") or {},
+            semantic_blueprint=(dict(trace.get("request_metadata") or {}).get("semantic_blueprint") or {}),
+            trace_kind=str(trace.get("trace_kind") or "").strip(),
+            trace_action=trace.get("action"),
+            trace_method=trace.get("route_method"),
+            trace_status=trace.get("status"),
+        )
         construction_identity = dict(trace.get("construction_identity") or {})
         metadata = dict(trace.get("request_metadata") or {})
-        semantic_blueprint = dict(metadata.get("semantic_blueprint") or {})
         trace_kind = str(trace.get("trace_kind") or "").strip()
-        route_id = (
-            str(route_health.get("route_id") or "").strip()
-            or str(semantic_blueprint.get("dsl_route") or "").strip()
-        )
-        if not route_id and trace_kind != "platform":
-            route_id = str(trace.get("action") or "").strip()
-        route_family = (
-            str(route_health.get("route_family") or "").strip()
-            or str(trace.get("route_method") or "").strip()
-            or str(semantic_blueprint.get("dsl_route_family") or "").strip()
-        )
-        if not route_id and not route_family:
+        binding_id = str(binding_health.get("binding_id") or "").strip()
+        binding_family = str(binding_health.get("binding_family") or "").strip()
+        binding_alias = str(binding_health.get("binding_alias") or "").strip()
+        if not binding_id and not binding_family and not binding_alias:
             continue
-        key = (route_id, route_family, trace_kind)
+        key = (binding_id, binding_family, binding_alias, trace_kind)
         if key in seen:
             continue
         seen.add(key)
@@ -1507,61 +1697,64 @@ def _route_observations(
         instruction_ids.extend(
             [
                 value
-                for value in route_health.get("effective_instruction_ids") or []
+                for value in binding_health.get("effective_instruction_ids") or []
                 if isinstance(value, str) and value.strip() and value not in instruction_ids
             ]
         )
         effective_instruction_count = int(
-            route_health.get("effective_instruction_count")
+            binding_health.get("effective_instruction_count")
             or trace.get("instruction_resolution_effective_count")
             or len(instruction_ids)
         )
-        hard_constraint_count = int(route_health.get("hard_constraint_count") or 0)
+        hard_constraint_count = int(binding_health.get("hard_constraint_count") or 0)
         conflict_count = int(
-            route_health.get("conflict_count")
+            binding_health.get("conflict_count")
             or trace.get("instruction_resolution_conflict_count")
             or 0
         )
         observations.append(
             {
-                "route_id": route_id,
-                "route_family": route_family,
+                "binding_id": binding_id,
+                "binding_family": binding_family,
+                "binding_alias": binding_alias,
+                "route_id": str(binding_health.get("route_id") or "").strip(),
+                "route_family": str(binding_health.get("route_family") or "").strip(),
                 "primary_kind": str(
-                    route_health.get("primary_kind")
+                    binding_health.get("primary_kind")
                     or construction_identity.get("primary_kind")
                     or ""
                 ).strip(),
                 "primary_label": str(
-                    route_health.get("primary_label")
+                    binding_health.get("primary_label")
                     or construction_identity.get("primary_label")
-                    or route_family
-                    or route_id
+                    or binding_family
+                    or binding_alias
                     or "unknown"
                 ).strip(),
                 "backend_binding_id": str(
-                    route_health.get("backend_binding_id")
+                    binding_health.get("backend_binding_id")
                     or construction_identity.get("backend_binding_id")
                     or ""
                 ).strip(),
                 "binding_display_name": str(
-                    route_health.get("binding_display_name")
+                    binding_health.get("binding_display_name")
                     or construction_identity.get("binding_display_name")
                     or ""
                 ).strip(),
                 "binding_short_description": str(
-                    route_health.get("binding_short_description")
+                    binding_health.get("binding_short_description")
                     or construction_identity.get("binding_short_description")
                     or ""
                 ).strip(),
                 "binding_diagnostic_label": str(
-                    route_health.get("binding_diagnostic_label")
+                    binding_health.get("binding_diagnostic_label")
                     or construction_identity.get("binding_diagnostic_label")
                     or ""
                 ).strip(),
                 "route_alias": str(
-                    route_health.get("route_alias")
+                    binding_health.get("route_alias")
                     or construction_identity.get("route_alias")
-                    or route_id
+                    or binding_alias
                     or ""
                 ).strip(),
                 "trace_kind": trace_kind or "unknown",
@@ -1576,26 +1769,29 @@ def _route_observations(
                 "effective_instruction_count": effective_instruction_count,
                 "hard_constraint_count": hard_constraint_count,
                 "conflict_count": conflict_count,
-                "task_ids": list(route_health.get("canary_task_ids") or []),
+                "task_ids": list(binding_health.get("canary_task_ids") or []),
             }
         )
 
     for payload in method_runs.values():
         if not isinstance(payload, Mapping):
             continue
-        route_family = str(payload.get("route_method") or "").strip()
-        if not route_family:
+        binding_family = str(payload.get("route_method") or "").strip()
+        if not binding_family:
             continue
-        key = ("", route_family, "method_run")
+        key = ("", binding_family, "", "method_run")
         if key in seen:
             continue
         seen.add(key)
         observations.append(
             {
+                "binding_id": "",
+                "binding_family": binding_family,
+                "binding_alias": "",
                 "route_id": "",
-                "route_family": route_family,
+                "route_family": binding_family,
                 "primary_kind": "method_family",
-                "primary_label": route_family,
+                "primary_label": binding_family,
                 "backend_binding_id": "",
                 "binding_display_name": "",
                 "binding_short_description": "",

@@ -444,17 +444,22 @@ def test_persist_task_run_record_carries_binding_operator_metadata_into_trace_he
     )
     latest = load_task_run_record(persisted["latest_path"])
 
-    route_health = latest["trace_summaries"][0]["route_health"]
-    observation = latest["telemetry"]["route_observations"][0]
+    binding_health = latest["trace_summaries"][0]["binding_health"]
+    observation = latest["telemetry"]["binding_observations"][0]
 
-    assert route_health["binding_display_name"] == "FX vanilla analytical binding"
-    assert route_health["binding_diagnostic_label"] == "fx_vanilla_analytical_binding"
+    assert binding_health["binding_display_name"] == "FX vanilla analytical binding"
+    assert binding_health["binding_diagnostic_label"] == "fx_vanilla_analytical_binding"
+    assert latest["trace_summaries"][0]["route_health"]["binding_display_name"] == (
+        "FX vanilla analytical binding"
+    )
     assert observation["primary_label"] == "FX vanilla analytical binding"
     assert observation["binding_diagnostic_label"] == "fx_vanilla_analytical_binding"
 
 
-def test_skill_telemetry_rollups_capture_selected_artifacts_and_route_health(tmp_path):
+def test_skill_telemetry_rollups_capture_selected_artifacts_and_binding_health(tmp_path):
     from trellis.agent.task_run_store import (
+        load_latest_binding_health_rollup,
+        load_latest_binding_ranking_inputs,
         load_latest_route_ranking_inputs,
         load_latest_route_health_rollup,
         load_latest_skill_ranking_inputs,
@@ -529,9 +534,11 @@ def test_skill_telemetry_rollups_capture_selected_artifacts_and_route_health(tmp
     )
 
     skill_rollup = load_latest_skill_telemetry_rollup(root=tmp_path)
-    route_rollup = load_latest_route_health_rollup(root=tmp_path)
+    binding_rollup = load_latest_binding_health_rollup(root=tmp_path)
     bundle = load_latest_telemetry_rollups(root=tmp_path)
     skill_ranking = load_latest_skill_ranking_inputs(root=tmp_path)
+    binding_ranking = load_latest_binding_ranking_inputs(root=tmp_path)
+    route_rollup = load_latest_route_health_rollup(root=tmp_path)
     route_ranking = load_latest_route_ranking_inputs(root=tmp_path)
 
     assert skill_rollup["run_count"] == 1
@@ -541,30 +548,37 @@ def test_skill_telemetry_rollups_capture_selected_artifacts_and_route_health(tmp
     assert skill_rollup["artifacts"][0]["retried_count"] == 1
     assert skill_rollup["artifacts"][0]["retry_count_total"] == 1
     assert skill_rollup["artifacts"][0]["audiences"] == ["builder"]
+    assert skill_rollup["artifacts"][0]["binding_aliases"] == ["analytical_black76"]
+    assert skill_rollup["artifacts"][0]["binding_families"] == ["analytical"]
+    assert skill_rollup["artifacts"][0]["route_ids"] == ["analytical_black76"]
     assert skill_rollup["artifacts"][0]["first_seen_at"] == "2026-03-29T12:01:00+00:00"
     assert skill_rollup["artifacts"][0]["last_seen_at"] == "2026-03-29T12:01:00+00:00"
     assert skill_rollup["ranking_inputs"][0]["success_rate"] == 1.0
     assert skill_rollup["ranking_inputs"][0]["retry_rate"] == 1.0
     assert skill_rollup["ranking_inputs"][0]["avg_retry_count"] == 1.0
+    assert skill_rollup["ranking_inputs"][0]["binding_coverage_count"] == 1
 
-    assert route_rollup["run_count"] == 1
-    assert route_rollup["routes"][0]["route_id"] == "analytical_black76"
-    assert route_rollup["routes"][0]["route_family"] == "analytical"
-    assert route_rollup["routes"][0]["success_count"] == 1
-    assert route_rollup["routes"][0]["retried_count"] == 1
-    assert route_rollup["routes"][0]["retry_count_total"] == 1
-    assert route_rollup["routes"][0]["hard_constraint_count_total"] == 1
-    assert route_rollup["routes"][0]["conflict_count_total"] == 1
-    assert route_rollup["ranking_inputs"][0]["avg_effective_instruction_count"] == 1.0
-    assert route_rollup["ranking_inputs"][0]["avg_hard_constraint_count"] == 1.0
-    assert route_rollup["ranking_inputs"][0]["avg_conflict_count"] == 1.0
+    assert binding_rollup["run_count"] == 1
+    assert binding_rollup["bindings"][0]["binding_alias"] == "analytical_black76"
+    assert binding_rollup["bindings"][0]["binding_family"] == "analytical"
+    assert binding_rollup["bindings"][0]["success_count"] == 1
+    assert binding_rollup["bindings"][0]["retried_count"] == 1
+    assert binding_rollup["bindings"][0]["retry_count_total"] == 1
+    assert binding_rollup["bindings"][0]["hard_constraint_count_total"] == 1
+    assert binding_rollup["bindings"][0]["conflict_count_total"] == 1
+    assert binding_rollup["ranking_inputs"][0]["avg_effective_instruction_count"] == 1.0
+    assert binding_rollup["ranking_inputs"][0]["avg_hard_constraint_count"] == 1.0
+    assert binding_rollup["ranking_inputs"][0]["avg_conflict_count"] == 1.0
 
     assert bundle["skill_telemetry"]["artifacts"][0]["artifact_id"] == "route_hint:analytical_black76"
-    assert bundle["route_health"]["routes"][0]["route_id"] == "analytical_black76"
+    assert bundle["binding_health"]["bindings"][0]["binding_alias"] == "analytical_black76"
     assert skill_ranking["artifacts"][0]["artifact_id"] == "route_hint:analytical_black76"
     assert skill_ranking["artifacts"][0]["last_seen_at"] == "2026-03-29T12:01:00+00:00"
+    assert binding_ranking["bindings"][0]["binding_alias"] == "analytical_black76"
+    assert binding_ranking["bindings"][0]["last_seen_at"] == "2026-03-29T12:01:00+00:00"
+
+    assert route_rollup["routes"][0]["route_id"] == "analytical_black76"
     assert route_ranking["routes"][0]["route_id"] == "analytical_black76"
-    assert route_ranking["routes"][0]["last_seen_at"] == "2026-03-29T12:01:00+00:00"
 
 
 def test_persist_task_run_record_supports_framework_task_contract(tmp_path):
@@ -1133,8 +1147,8 @@ def test_persist_task_run_record_does_not_promote_platform_action_to_fake_route_
     )
     latest = load_task_run_record(persisted["latest_path"])
 
+    assert latest["trace_summaries"][0]["binding_health"]["binding_family"] == "analytical"
     assert latest["trace_summaries"][0]["route_health"]["route_id"] == ""
-    assert latest["trace_summaries"][0]["route_health"]["route_family"] == "analytical"
-    assert latest["telemetry"]["route_observations"][0]["route_id"] == ""
-    assert latest["telemetry"]["route_observations"][0]["route_family"] == "analytical"
-    assert latest["telemetry"]["route_observations"][0]["primary_label"] == "analytical"
+    assert latest["telemetry"]["binding_observations"][0]["binding_family"] == "analytical"
+    assert latest["telemetry"]["binding_observations"][0]["route_id"] == ""
+    assert latest["telemetry"]["binding_observations"][0]["primary_label"] == "analytical"

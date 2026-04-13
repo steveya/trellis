@@ -275,19 +275,22 @@ Task-Run Telemetry
 ------------------
 
 ``trellis.agent.task_run_store`` now projects selected generated skills and
-route-health observations into the persisted task-run record.
+binding-health observations into the persisted task-run record.
 
 Use:
 
 - ``load_latest_skill_telemetry_rollup()`` for artifact-level outcome counters
-- ``load_latest_route_health_rollup()`` for route and route-family counters
+- ``load_latest_binding_health_rollup()`` for binding-level health counters
 - ``load_latest_skill_ranking_inputs()`` for the stable retained ranking metrics
-- ``load_latest_route_ranking_inputs()`` for the route-level ranking metrics
+- ``load_latest_binding_ranking_inputs()`` for the binding-level ranking metrics
 
 These rollups are rebuilt from canonical run records rather than from ad hoc
 trace scraping. Diagnosis dossiers also surface the same telemetry so a human
 can move from batch failure to selected-skill attribution without opening raw
 trace files first.
+
+Route-named helpers remain as compatibility wrappers, but new dashboards and
+maintenance tooling should consume the binding-first APIs.
 
 Issue Sync
 ----------
