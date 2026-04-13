@@ -358,15 +358,16 @@ exercise live code generation. Ordinary supported-route runs can still reuse
 exact helper wrappers for stability, but fresh-build canaries no longer get a
 free pass from executor-side deterministic module synthesis.
 
-The same rule now applies to tranche-style basket-credit comparison routes.
+The same rule now applies to tranche-style basket-credit and typed
+loss-distribution comparison routes.
 Curated copula canaries bind through the semantic-facing
 ``trellis.models.credit_basket_copula`` helper surface instead of asking the
 builder to reconstruct tranche-loss projection from raw copula primitives. In
-practice that means the build loop can keep tranche attachment/detachment,
-representative credit-curve binding, and dependence-family selection on a
-checked helper path while semantic validation treats the helper as the public
-assembly contract rather than forcing direct calls to the lower-level loss
-distribution primitives.
+practice that means the build loop can keep tranche attachment/detachment or
+portfolio-loss horizon, representative credit-curve binding, and
+dependence-family selection on a checked helper path while semantic validation
+treats the helper as the public assembly contract rather than forcing direct
+calls to the lower-level loss-distribution primitives.
 
 For the supported swaption tree slice, the comparison harness now has a
 checked-in helper-backed route for single-exercise European rate-tree

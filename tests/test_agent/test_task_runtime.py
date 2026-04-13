@@ -1814,6 +1814,34 @@ def test_task_to_instrument_type_prefers_nth_to_default_over_generic_basket():
     )
 
 
+def test_task_to_instrument_type_detects_credit_loss_distribution():
+    from trellis.agent.task_runtime import task_to_instrument_type
+
+    assert (
+        task_to_instrument_type(
+            {"id": "T53", "title": "Multi-name portfolio loss distribution: recursive vs FFT vs MC"}
+        )
+        == "credit_loss_distribution"
+    )
+
+
+def test_task_to_instrument_type_does_not_misclassify_cdo_or_nth_loss_distribution_titles():
+    from trellis.agent.task_runtime import task_to_instrument_type
+
+    assert (
+        task_to_instrument_type(
+            {"id": "T490", "title": "CDO tranche loss distribution: Gaussian copula vs Student-t copula"}
+        )
+        == "cdo"
+    )
+    assert (
+        task_to_instrument_type(
+            {"id": "T500", "title": "Nth-to-default loss distribution: semi-analytical vs default-time MC"}
+        )
+        == "nth_to_default"
+    )
+
+
 def test_task_to_instrument_type_detects_bare_european_shape():
     from trellis.agent.task_runtime import task_to_instrument_type
 

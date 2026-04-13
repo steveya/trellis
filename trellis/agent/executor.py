@@ -3029,6 +3029,18 @@ def _deterministic_exact_binding_evaluate_body(
             "return float(price_credit_basket_tranche("
             f"market_state, spec{credit_basket_tranche_kwargs}))"
         ),
+        "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_recursive": (
+            "return float(price_credit_portfolio_loss_distribution_recursive("
+            'market_state, spec, copula_family="gaussian"))'
+        ),
+        "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_transform_proxy": (
+            "return float(price_credit_portfolio_loss_distribution_transform_proxy("
+            'market_state, spec, copula_family="gaussian"))'
+        ),
+        "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_monte_carlo": (
+            "return float(price_credit_portfolio_loss_distribution_monte_carlo("
+            'market_state, spec, copula_family="gaussian", n_paths=40000, seed=42))'
+        ),
         "trellis.models.basket_option.price_basket_option_analytical": (
             "return float(price_basket_option_analytical("
             f"market_state, spec{basket_option_kwargs}))"

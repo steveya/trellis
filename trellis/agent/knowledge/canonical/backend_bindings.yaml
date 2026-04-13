@@ -124,6 +124,13 @@ bindings:
         role: route_helper
     conditional_primitives:
       - when:
+          payoff_family: credit_loss_distribution
+          model_family: [credit_copula]
+        primitives:
+          - module: trellis.models.credit_basket_copula
+            symbol: price_credit_portfolio_loss_distribution_monte_carlo
+            role: route_helper
+      - when:
           payoff_family: vanilla_option
           exercise_style: [european]
         primitives:
@@ -412,6 +419,13 @@ bindings:
     route_family: fft_pricing
     conditional_primitives:
       - when:
+          payoff_family: credit_loss_distribution
+          model_family: [credit_copula]
+        primitives:
+          - module: trellis.models.credit_basket_copula
+            symbol: price_credit_portfolio_loss_distribution_transform_proxy
+            role: route_helper
+      - when:
           payoff_family: vanilla_option
           exercise_style: [european]
           model_family: [equity_diffusion]
@@ -491,16 +505,30 @@ bindings:
   - route_id: copula_loss_distribution
     engine_family: copula
     route_family: copula
-    primitives:
-      - module: trellis.models.copulas.factor
-        symbol: FactorCopula
-        role: loss_distribution
-      - module: trellis.models.credit_basket_copula
-        symbol: price_credit_basket_tranche
-        role: route_helper
-      - module: trellis.models.copulas.student_t
-        symbol: StudentTCopula
-        role: loss_distribution
+    conditional_primitives:
+      - when:
+          payoff_family: credit_loss_distribution
+        primitives:
+          - module: trellis.models.copulas.factor
+            symbol: FactorCopula
+            role: loss_distribution
+          - module: trellis.models.credit_basket_copula
+            symbol: price_credit_portfolio_loss_distribution_recursive
+            role: route_helper
+          - module: trellis.models.copulas.student_t
+            symbol: StudentTCopula
+            role: loss_distribution
+      - when: default
+        primitives:
+          - module: trellis.models.copulas.factor
+            symbol: FactorCopula
+            role: loss_distribution
+          - module: trellis.models.credit_basket_copula
+            symbol: price_credit_basket_tranche
+            role: route_helper
+          - module: trellis.models.copulas.student_t
+            symbol: StudentTCopula
+            role: loss_distribution
 
   - route_id: waterfall_cashflows
     engine_family: waterfall

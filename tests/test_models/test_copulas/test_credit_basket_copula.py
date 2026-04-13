@@ -31,6 +31,14 @@ class _NthSpec:
     recovery = 0.4
 
 
+class _LossDistributionSpec:
+    notional = 100_000_000.0
+    n_names = 75
+    end_date = date(2029, 11, 15)
+    correlation = 0.28
+    recovery = 0.4
+
+
 def _market_state(*, hazard: float = 0.02, rate: float = 0.04) -> MarketState:
     return MarketState(
         as_of=SETTLE,
@@ -90,3 +98,35 @@ def test_price_credit_basket_nth_to_default_preserves_compatibility():
     )
 
     assert helper_price == pytest.approx(reference_price)
+
+
+def test_credit_loss_distribution_helpers_agree_on_discounted_expected_loss():
+    from trellis.models.credit_basket_copula import (
+        price_credit_portfolio_loss_distribution_monte_carlo,
+        price_credit_portfolio_loss_distribution_recursive,
+        price_credit_portfolio_loss_distribution_transform_proxy,
+    )
+
+    market_state = _market_state(hazard=0.025)
+    spec = _LossDistributionSpec()
+
+    recursive_price = price_credit_portfolio_loss_distribution_recursive(
+        market_state,
+        spec,
+    )
+    transform_price = price_credit_portfolio_loss_distribution_transform_proxy(
+        market_state,
+        spec,
+    )
+    mc_price = price_credit_portfolio_loss_distribution_monte_carlo(
+        market_state,
+        spec,
+        n_paths=30_000,
+        seed=42,
+    )
+
+    assert recursive_price > 0.0
+    assert transform_price > 0.0
+    assert mc_price > 0.0
+    assert transform_price == pytest.approx(recursive_price, rel=1e-10)
+    assert mc_price == pytest.approx(recursive_price, rel=0.08)

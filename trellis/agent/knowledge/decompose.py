@@ -368,6 +368,16 @@ def _infer_instrument(description: str, instrument_type: str | None) -> str | No
         ("asian_option", ("asian_option", "asian option")),
         ("heston_option", ("heston_option", "heston option", "heston")),
         ("variance_swap", ("variance_swap", "variance swap")),
+        (
+            "credit_loss_distribution",
+            (
+                "credit_loss_distribution",
+                "portfolio_loss_distribution",
+                "portfolio loss distribution",
+                "multi-name portfolio loss distribution",
+                "recursive loss distribution",
+            ),
+        ),
         ("cds", ("cds", "credit default swap", "credit_default_swap")),
         ("nth_to_default", ("nth_to_default", "nth-to-default", "nth to default")),
         ("swaption", ("swaption",)),
@@ -660,6 +670,8 @@ def _payoff_family_for(
         return "barrier_option"
     if instrument in {"american_put", "american_option", "european_option", "heston_option"}:
         return "vanilla_option"
+    if instrument == "credit_loss_distribution":
+        return "credit_loss_distribution"
     if instrument in {"cdo", "nth_to_default"}:
         return "credit_basket"
     if instrument == "mbs":
@@ -748,7 +760,7 @@ def _model_family_for(
         return "jump_diffusion"
     if instrument in {"swap", "swaption", "bermudan_swaption", "callable_bond", "puttable_bond", "bond", "cap", "floor", "zcb_option"}:
         return "interest_rate"
-    if method == "copula" or instrument in {"cdo", "nth_to_default"}:
+    if method == "copula" or instrument in {"cdo", "nth_to_default", "credit_loss_distribution"}:
         return "credit_copula"
     if method == "waterfall" or instrument == "mbs":
         return "cashflow_structured"

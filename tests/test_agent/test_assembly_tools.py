@@ -140,6 +140,44 @@ def test_build_comparison_harness_plan_ignores_non_method_credit_construct_label
     ]
 
 
+def test_build_comparison_harness_plan_maps_recursive_loss_target_to_copula():
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    plan = build_comparison_harness_plan(
+        {
+            "construct": ["copula", "fft_pricing", "monte_carlo"],
+            "cross_validate": {
+                "internal": ["recursive_method", "fft_loss", "mc_loss"],
+            },
+        }
+    )
+
+    assert [target.target_id for target in plan.targets] == [
+        "recursive_method",
+        "fft_loss",
+        "mc_loss",
+    ]
+    assert [target.preferred_method for target in plan.targets] == [
+        "copula",
+        "fft_pricing",
+        "monte_carlo",
+    ]
+
+
+def test_select_invariant_pack_skips_vol_checks_for_credit_loss_distribution():
+    from trellis.agent.assembly_tools import select_invariant_pack
+
+    pack = select_invariant_pack(
+        instrument_type="credit_loss_distribution",
+        method="monte_carlo",
+    )
+
+    assert "check_non_negativity" in pack.checks
+    assert "check_price_sanity" in pack.checks
+    assert "check_vol_sensitivity" not in pack.checks
+    assert "check_vol_monotonicity" not in pack.checks
+
+
 def test_build_cookbook_candidate_payload_extracts_template():
     from trellis.agent.assembly_tools import build_cookbook_candidate_payload
 

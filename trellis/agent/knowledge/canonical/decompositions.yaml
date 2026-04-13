@@ -242,6 +242,24 @@
   reasoning: "Portfolio credit tranching uses copula for default correlation."
   learned: false
 
+- instrument: credit_loss_distribution
+  features: [credit_risk]
+  method: copula
+  method_modules:
+    - trellis.models.copulas.factor
+    - trellis.models.copulas.gaussian
+    - trellis.models.credit_basket_copula
+  required_market_data: [discount_curve, credit_curve]
+  modeling_requirements:
+    - >-
+      CALIBRATION: Default probabilities must be consistent with the input credit curve.
+      For each name: P(default by T) = 1 - S(T) where S(T) = credit_curve.survival_probability(T).
+    - >-
+      OUTPUT CONTRACT: Loss-distribution comparison tasks should compare the same discounted
+      expected portfolio loss amount across recursive, transform, and Monte Carlo lanes.
+  reasoning: "Portfolio loss-distribution tasks use typed copula helpers instead of tranche-specific glue."
+  learned: false
+
 - instrument: nth_to_default
   features: [credit_risk]
   method: copula

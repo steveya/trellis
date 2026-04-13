@@ -771,6 +771,52 @@ def test_compile_build_request_does_not_block_title_only_credit_builder_requests
     assert compiled.product_ir.instrument == expected_instrument
 
 
+@pytest.mark.parametrize(
+    ("preferred_method", "expected_route", "expected_helper"),
+    [
+        (
+            "copula",
+            "copula_loss_distribution",
+            "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_recursive",
+        ),
+        (
+            "fft_pricing",
+            "transform_fft",
+            "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_transform_proxy",
+        ),
+        (
+            "monte_carlo",
+            "monte_carlo_paths",
+            "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_monte_carlo",
+        ),
+    ],
+)
+def test_compile_build_request_uses_typed_credit_loss_distribution_helpers(
+    preferred_method: str,
+    expected_route: str,
+    expected_helper: str,
+):
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "Multi-name portfolio loss distribution: recursive vs FFT vs MC",
+        instrument_type="credit_loss_distribution",
+        preferred_method=preferred_method,
+    )
+
+    assert compiled.semantic_contract is None
+    assert compiled.execution_plan.reason == "free_form_build_request"
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.instrument == "credit_loss_distribution"
+    assert compiled.product_ir.payoff_family == "credit_loss_distribution"
+    assert compiled.pricing_plan is not None
+    assert compiled.pricing_plan.method == preferred_method
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.primitive_plan is not None
+    assert compiled.generation_plan.primitive_plan.route == expected_route
+    assert compiled.generation_plan.backend_exact_target_refs == (expected_helper,)
+
+
 def test_compile_build_request_treats_generic_basket_wrapper_as_nth_to_default_when_credit_cues_dominate():
     from trellis.agent.platform_requests import compile_build_request
 
@@ -790,6 +836,25 @@ def test_compile_build_request_treats_generic_basket_wrapper_as_nth_to_default_w
     assert compiled.generation_plan is not None
     assert compiled.generation_plan.primitive_plan is not None
     assert compiled.generation_plan.primitive_plan.route == "nth_to_default_monte_carlo"
+
+
+@pytest.mark.parametrize(
+    ("description", "expected_instrument"),
+    [
+        ("CDO tranche loss distribution: Gaussian copula vs Student-t copula", "cdo"),
+        ("Nth-to-default loss distribution: semi-analytical vs default-time MC", "nth_to_default"),
+    ],
+)
+def test_compile_build_request_prefers_specific_credit_basket_shapes_over_loss_distribution_alias(
+    description: str,
+    expected_instrument: str,
+):
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(description)
+
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.instrument == expected_instrument
 
 
 def test_compile_build_request_keeps_generic_basket_option_off_ranked_observation_route():

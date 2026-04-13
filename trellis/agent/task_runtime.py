@@ -247,7 +247,7 @@ def _task_requires_credit_curve(task: dict) -> bool:
     construct_methods = set(_task_construct_methods(task))
     if "credit" in construct_methods:
         return True
-    if task_to_instrument_type(task) == "nth_to_default":
+    if task_to_instrument_type(task) in {"nth_to_default", "credit_loss_distribution"}:
         return True
     title = " ".join(
         part for part in (
@@ -1365,6 +1365,7 @@ def _preferred_method_for_target(target_id: str, construct_methods: list[str]) -
         return normalized_target
 
     explicit_patterns = (
+        ("recursive", "copula"),
         ("analytical", "analytical"),
         ("tree", "rate_tree"),
         ("lattice", "rate_tree"),

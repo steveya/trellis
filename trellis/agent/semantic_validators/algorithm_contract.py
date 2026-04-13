@@ -352,6 +352,71 @@ _EXACT_HELPER_SIGNATURES = {
             "rebuilding copula loss plumbing inline."
         ),
     },
+    "price_credit_portfolio_loss_distribution_recursive": {
+        "min_positional_args": 2,
+        "max_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({
+            "market_state",
+            "spec",
+            "copula_family",
+            "degrees_of_freedom",
+            "n_paths",
+            "seed",
+        }),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_credit_portfolio_loss_distribution_recursive(...)` expects "
+            "`(market_state, spec, *, copula_family=..., degrees_of_freedom=..., "
+            "n_paths=..., seed=...)`."
+        ),
+    },
+    "price_credit_portfolio_loss_distribution_transform_proxy": {
+        "min_positional_args": 2,
+        "max_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({
+            "market_state",
+            "spec",
+            "copula_family",
+        }),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_credit_portfolio_loss_distribution_transform_proxy(...)` expects "
+            "`(market_state, spec, *, copula_family=...)`."
+        ),
+    },
+    "price_credit_portfolio_loss_distribution_monte_carlo": {
+        "min_positional_args": 2,
+        "max_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({
+            "market_state",
+            "spec",
+            "copula_family",
+            "degrees_of_freedom",
+            "n_paths",
+            "seed",
+        }),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_credit_portfolio_loss_distribution_monte_carlo(...)` expects "
+            "`(market_state, spec, *, copula_family=..., degrees_of_freedom=..., "
+            "n_paths=..., seed=...)`."
+        ),
+    },
     "price_zcb_option_tree": {
         "min_positional_args": 2,
         "max_positional_args": 2,

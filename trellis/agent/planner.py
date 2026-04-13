@@ -213,6 +213,19 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_360"),
         ],
     ),
+    "credit_loss_distribution": SpecSchema(
+        class_name="CreditLossDistributionPayoff",
+        spec_name="CreditLossDistributionSpec",
+        requirements=["discount_curve", "credit_curve"],
+        fields=[
+            FieldDef("notional", "float", "Portfolio notional used to scale discounted expected loss", "100_000_000.0"),
+            FieldDef("n_names", "int", "Number of names in the reference portfolio", "100"),
+            FieldDef("end_date", "date", "Loss horizon end date"),
+            FieldDef("correlation", "float", "Portfolio default correlation", "0.3"),
+            FieldDef("recovery", "float", "Portfolio recovery rate", "0.4"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_360"),
+        ],
+    ),
     "nth_to_default": SpecSchema(
         class_name="NthToDefaultPayoff",
         spec_name="NthToDefaultSpec",
