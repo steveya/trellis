@@ -22,16 +22,108 @@ path.
 \section{Introduction}
 
 \subsection{Problem}
-Explain why naive prompt-to-code pricing is unsafe for quantitative finance.
+Most pricing libraries are organized around instruments and pricing engines.
+This is true whether the implementation is explicitly engine-based or more
+product-centered. A European option has one pricing interface, a Bermudan
+swaption another, a callable bond another, and each one is connected to the
+pricing methods that the library already knows how to apply to that product.
+
+This design is sensible. It is reliable, easy to explain, and usually the
+right way to ship a production library. But it also means that similar
+numerical structure is often hidden behind different product interfaces. A
+callable bond and a Bermudan swaption are different products, yet both require
+an event schedule, an exercise rule, and a backward-induction style numerical
+method. Likewise, a European vanilla option might be priced analytically, by a
+lattice, by a PDE, or by Monte Carlo, but in a conventional library these are
+still usually introduced through instrument-specific pricing contracts.
+
+This product-centered organization is easy to see from ordinary library usage.
+In a FinancePy-style workflow, valuation is exposed at the product object:
+
+\begin{lstlisting}[language=Python]
+# Representative FinancePy-style workflow
+model = BlackScholes(...)
+product = EquityAmericanOption(...)
+price = product.value(valuation_date, market_data, model)
+\end{lstlisting}
+
+In a QuantLib-style workflow, the instrument and engine are separated, but the
+engine is still attached through an instrument-specific contract:
+
+\begin{lstlisting}[language=Python]
+# Representative QuantLib-style workflow
+payoff = ql.PlainVanillaPayoff(ql.Option.Call, strike)
+exercise = ql.EuropeanExercise(maturity)
+option = ql.VanillaOption(payoff, exercise)
+
+process = ql.BlackScholesMertonProcess(...)
+engine = ql.AnalyticEuropeanEngine(process)
+option.setPricingEngine(engine)
+price = option.NPV()
+\end{lstlisting}
+
+Both workflows are clear and practical. They also make the usual abstraction
+boundary visible. To move from a European vanilla option to a barrier option,
+an Asian option, a Bermudan swaption, or a callable bond, the user does not
+usually keep one generic claim representation and only change control, state,
+and timeline metadata. Instead, the user typically moves to a different
+product class, and often to a different family of compatible pricing engines.
+
+That is the design point where \trellis{} begins. The central question is not
+simply ``which pricer belongs to this product class?'' The earlier question is:
+what is the product, in computational terms? Is it a terminal payoff or a
+schedule-driven claim? Does it have holder exercise, issuer exercise, or no
+exercise at all? Is it terminal-state, path-dependent, or event-dependent? What
+market objects and model bindings are required before a numerical method can be
+applied?
+
+In the shipped system, those questions are made explicit before method
+selection. The compiler does not begin from a raw ``(product, method)'' pair.
+It begins from typed product semantics and separates:
+\begin{itemize}
+    \item contract meaning
+    \item valuation context and market binding
+    \item admissible numerical families
+    \item exact checked backend bindings
+\end{itemize}
+
+Concretely, the semantic layer records objects such as payoff family,
+exercise style, schedule dependence, state dependence, controller semantics,
+and event structure. Those are then combined with a separate valuation layer
+carrying model, measure, discounting, market-data, and reporting policy. Only
+after that does the compiler lower the request onto a bounded numerical family
+such as \code{AnalyticalBlack76IR}, \code{TransformPricingIR},
+\code{ExerciseLatticeIR}, or \code{EventAwareMonteCarloIR}.
+
+The point is not a universal solver and it is not free-form factorization for
+its own sake. The point is narrower: many products can share the same
+computational lane once their control, state, and timeline obligations are made
+explicit. In that sense, Trellis tries to make semantic structure, rather than
+product-local route identity, the primary source of truth.
+
+This distinction matters for agent-assisted pricing. A prompt or structured
+request should not cause the system to improvise a new product-local pricing
+class whenever it encounters a new surface description. The better question is
+whether the request can be compiled into an already-supported semantic family
+and then lowered onto an already-governed deterministic lane.
 
 \subsection{Contribution}
-State the compiler thesis clearly:
+The contribution of this paper is a request-to-outcome architecture for
+agent-assisted pricing built around four ideas:
 \begin{itemize}
     \item unified request normalization
     \item typed semantic compilation
     \item admissibility and lowering before pricing
     \item deterministic validation and traceability
 \end{itemize}
+
+The more specific claim is a change in abstraction boundary. Instead of asking
+which product class owns a pricing method, Trellis asks which typed semantic
+family can be admitted to which computational lane under which market and
+control obligations. In the current shipped architecture, route identifiers are
+increasingly reduced to backend-binding and compatibility roles, while semantic
+contracts, family registries, and bounded family IRs carry the constructive
+meaning.
 
 \section{From Front Doors to a Canonical Request}
 
