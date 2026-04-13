@@ -915,6 +915,59 @@ def test_deterministic_exact_binding_module_threads_explicit_swaption_comparison
         assert f"{expected_call}(market_state, spec, mean_reversion=0.05, sigma=0.01)" in generated.code
 
 
+@pytest.mark.parametrize(
+    ("helper_ref", "comparison_target", "expected_call"),
+    [
+        (
+            "trellis.models.basket_option.price_basket_option_analytical",
+            "stulz_rainbow",
+            'price_basket_option_analytical(market_state, spec, comparison_target="stulz_rainbow")',
+        ),
+        (
+            "trellis.models.basket_option.price_basket_option_monte_carlo",
+            "mc_spread_2d",
+            'price_basket_option_monte_carlo(market_state, spec, comparison_target="mc_spread_2d", seed=42)',
+        ),
+        (
+            "trellis.models.basket_option.price_basket_option_transform_proxy",
+            "fft_spread_2d",
+            'price_basket_option_transform_proxy(market_state, spec, comparison_target="fft_spread_2d")',
+        ),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_typed_basket_helpers(
+    helper_ref,
+    comparison_target,
+    expected_call,
+):
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(helper_ref,),
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="basket_option",
+    )
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["basket_option"],
+        "Generic basket option",
+        generation_plan=generation_plan,
+    )
+
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert expected_call in generated.code
+
+
 def test_extract_instrument_type_uses_shared_lower_layer_mapping():
     from trellis.agent.executor import _extract_instrument_type
 

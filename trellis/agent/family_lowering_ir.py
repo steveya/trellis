@@ -659,6 +659,7 @@ _TRANSFORM_TERMINAL_PAYOFF_KIND_BY_FAMILY = {
 
 _TRANSFORM_HELPER_BINDINGS = {
     ("vanilla_option", "equity_diffusion"): "price_vanilla_equity_option_transform",
+    ("basket_option", "equity_diffusion"): "price_basket_option_transform_proxy",
 }
 
 
@@ -864,7 +865,12 @@ def _binding_supports_transform_pricing(
     """Return whether the binding surface fits the transform-pricing lane."""
     if _binding_has_role(binding_spec, "transform_pricer"):
         return True
-    if _binding_has_symbol(binding_spec, "route_helper", "price_vanilla_equity_option_transform"):
+    if _binding_has_any_symbol(
+        binding_spec,
+        "route_helper",
+        "price_vanilla_equity_option_transform",
+        "price_basket_option_transform_proxy",
+    ):
         return True
     return route_id == "transform_fft" and binding_spec is None
 

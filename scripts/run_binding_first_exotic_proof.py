@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import sys
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -34,6 +35,30 @@ from trellis.agent.task_runtime import load_tasks, run_task
 from trellis.cli_paths import resolve_repo_path
 
 load_env()
+
+
+@contextmanager
+def _frozen_proof_learning_surface():
+    """Freeze post-build learning while evaluating the proof cohort.
+
+    Proof runs should measure the current binding/runtime surface, not mutate it
+    mid-cohort through reflection or consolidation side effects.
+    """
+    keys = (
+        "TRELLIS_SKIP_POST_BUILD_REFLECTION",
+        "TRELLIS_SKIP_POST_BUILD_CONSOLIDATION",
+    )
+    previous = {key: os.environ.get(key) for key in keys}
+    try:
+        os.environ["TRELLIS_SKIP_POST_BUILD_REFLECTION"] = "1"
+        os.environ["TRELLIS_SKIP_POST_BUILD_CONSOLIDATION"] = "1"
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
@@ -170,23 +195,24 @@ def run_binding_first_exotic_proof(
 
     results = []
     market_state = None
-    for task_id in ordered_task_ids:
-        task = tasks[task_id]
-        print(f"{task_id}: {task['title']}", flush=True)
-        if market_state is None:
-            from trellis.agent.task_runtime import build_market_state
+    with _frozen_proof_learning_surface():
+        for task_id in ordered_task_ids:
+            task = tasks[task_id]
+            print(f"{task_id}: {task['title']}", flush=True)
+            if market_state is None:
+                from trellis.agent.task_runtime import build_market_state
 
-            market_state = build_market_state()
-        result = run_task(
-            task,
-            market_state,
-            model=effective_model,
-            force_rebuild=fresh_build,
-            fresh_build=fresh_build,
-            validation=validation,
-        )
-        results.append(result)
-        output_path.write_text(json.dumps(results, indent=2, default=str))
+                market_state = build_market_state()
+            result = run_task(
+                task,
+                market_state,
+                model=effective_model,
+                force_rebuild=fresh_build,
+                fresh_build=fresh_build,
+                validation=validation,
+            )
+            results.append(result)
+            output_path.write_text(json.dumps(results, indent=2, default=str))
 
     proof_summary = summarize_binding_first_exotic_proof(
         tasks,

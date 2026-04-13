@@ -2495,6 +2495,12 @@ def _make_test_payoff(payoff_cls, spec_schema, settle: date, market_state=None):
         "strike": 0.05,
         "underlyings": "AAPL,MSFT,NVDA",
         "constituents": "AAPL,MSFT,NVDA",
+        "underliers": "SPX,NDX",
+        "spots": "100.0,95.0",
+        "weights": "1.0,-1.0",
+        "vols": "0.20,0.20",
+        "dividend_yields": "0.0,0.0",
+        "basket_style": "weighted_sum",
         "observation_dates": (
             date(2026, 4, 1),
             date(2026, 5, 1),
@@ -2537,6 +2543,14 @@ def _make_test_payoff(payoff_cls, spec_schema, settle: date, market_state=None):
         "correlation": 0.3,
         "recovery": 0.4,
     }
+    basket_context = " ".join(
+        part.strip()
+        for part in (
+            getattr(payoff_cls, "__doc__", "") or "",
+            getattr(module, "__doc__", "") or "",
+        )
+        if part and str(part).strip()
+    ).lower()
     has_spot_field = any(
         field.name in {"spot", "s0", "underlier_spot"} for field in spec_schema.fields
     )
@@ -2553,6 +2567,24 @@ def _make_test_payoff(payoff_cls, spec_schema, settle: date, market_state=None):
         name_defaults["domestic_currency"] = "USD"
         name_defaults["fx_pair"] = "EURUSD"
         name_defaults["quanto_correlation_key"] = None
+    elif spec_schema.spec_name == "BasketOptionSpec":
+        is_spread_basket = any(
+            token in basket_context
+            for token in ("spread option", "kirk_spread", "mc_spread_2d", "fft_spread_2d")
+        )
+        name_defaults["notional"] = 10.0
+        name_defaults["strike"] = 5.0 if is_spread_basket else 100.0
+        name_defaults["underliers"] = "SPX,NDX"
+        name_defaults["spots"] = "100.0,95.0"
+        if is_spread_basket:
+            name_defaults["weights"] = "1.0,-1.0"
+            name_defaults["basket_style"] = "spread"
+        else:
+            name_defaults.pop("weights", None)
+            name_defaults["basket_style"] = "best_of"
+        name_defaults.pop("vols", None)
+        name_defaults["dividend_yields"] = "0.0,0.0"
+        name_defaults["correlation"] = "1.0,0.35;0.35,1.0"
     elif has_spot_field and has_strike_field:
         # Spot-based option specs should be instantiated near-the-money so the
         # smoke tests exercise a representative valuation instead of a deeply
@@ -2899,6 +2931,14 @@ def _credit_basket_tranche_helper_kwargs(comparison_target: str | None) -> str:
     return ', copula_family="gaussian"'
 
 
+def _basket_option_helper_kwargs(comparison_target: str | None) -> str:
+    """Return deterministic helper kwargs for typed basket-option helpers."""
+    target = str(comparison_target or "").strip()
+    if not target:
+        return ""
+    return f', comparison_target="{target}"'
+
+
 def _deterministic_exact_binding_evaluate_body(
     generation_plan,
     *,
@@ -2912,6 +2952,7 @@ def _deterministic_exact_binding_evaluate_body(
     vanilla_equity_transform_kwargs = _vanilla_equity_transform_helper_kwargs(comparison_target)
     zcb_option_tree_kwargs = _zcb_option_tree_helper_kwargs(comparison_target)
     credit_basket_tranche_kwargs = _credit_basket_tranche_helper_kwargs(comparison_target)
+    basket_option_kwargs = _basket_option_helper_kwargs(comparison_target)
     if (
         comparison_target == "black_scholes"
         and "trellis.models.black.black76_call" in refs
@@ -2987,6 +3028,18 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.credit_basket_copula.price_credit_basket_tranche": (
             "return float(price_credit_basket_tranche("
             f"market_state, spec{credit_basket_tranche_kwargs}))"
+        ),
+        "trellis.models.basket_option.price_basket_option_analytical": (
+            "return float(price_basket_option_analytical("
+            f"market_state, spec{basket_option_kwargs}))"
+        ),
+        "trellis.models.basket_option.price_basket_option_monte_carlo": (
+            "return float(price_basket_option_monte_carlo("
+            f"market_state, spec{basket_option_kwargs}, seed=42))"
+        ),
+        "trellis.models.basket_option.price_basket_option_transform_proxy": (
+            "return float(price_basket_option_transform_proxy("
+            f"market_state, spec{basket_option_kwargs}))"
         ),
     }
     for ref, body in helper_bodies.items():

@@ -169,6 +169,73 @@ def test_build_with_knowledge_forwards_request_metadata(monkeypatch):
     }
 
 
+def test_build_with_knowledge_resets_deterministic_planning_caches(monkeypatch):
+    from trellis.agent.knowledge.gap_check import GapReport
+    from trellis.agent.knowledge.schema import ProductDecomposition
+    from trellis.agent.knowledge.autonomous import build_with_knowledge
+    decompose_mod = import_module("trellis.agent.knowledge.decompose")
+
+    decomposition = ProductDecomposition(
+        instrument="basket_option",
+        features=("vanilla",),
+        method="fft_pricing",
+        learned=False,
+    )
+    observed: dict[str, object] = {"cache_reset_calls": 0}
+
+    monkeypatch.setattr(decompose_mod, "decompose", lambda *args, **kwargs: decomposition)
+    monkeypatch.setattr(
+        decompose_mod,
+        "decompose_to_ir",
+        lambda *args, **kwargs: SimpleNamespace(instrument="basket_option"),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.gap_check.gap_check",
+        lambda decomposition: GapReport(confidence=0.8, retrieved_lesson_ids=[]),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.autonomous._reset_deterministic_planning_caches",
+        lambda: observed.__setitem__(
+            "cache_reset_calls",
+            int(observed["cache_reset_calls"]) + 1,
+        ),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.reflect.reflect_on_build",
+        lambda **kwargs: {},
+    )
+
+    def fake_build_payoff(*args, **kwargs):
+        return type("FakeBasketPayoff", (), {})
+
+    monkeypatch.setattr("trellis.agent.executor.build_payoff", fake_build_payoff)
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.retrieve_for_product_ir",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.build_shared_knowledge_payload",
+        lambda knowledge: {
+            "summary": {},
+            "builder_text_distilled": "",
+            "builder_text": "",
+            "builder_text_expanded": "",
+            "review_text_distilled": "",
+            "review_text_expanded": "",
+        },
+    )
+
+    result = build_with_knowledge(
+        "Spread option (Kirk approximation) vs 2D MC vs 2D FFT",
+        instrument_type="basket_option",
+        preferred_method="fft_pricing",
+        comparison_target="fft_spread_2d",
+    )
+
+    assert result.success is True
+    assert observed["cache_reset_calls"] == 1
+
+
 def test_build_with_knowledge_preserves_platform_trace_metadata_on_failure(monkeypatch):
     from trellis.agent.knowledge.gap_check import GapReport
     from trellis.agent.knowledge.schema import ProductDecomposition

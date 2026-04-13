@@ -500,6 +500,7 @@ def _build_with_tracking(
     from trellis.agent.executor import build_payoff
 
     build_description = build_description or description
+    _reset_deterministic_planning_caches()
 
     # Build enhanced knowledge context with gap warnings
     if product_ir is not None:
@@ -629,6 +630,22 @@ def _build_with_tracking(
         executor._record_platform_event = original_record_platform_event
         if 'original_generate' in dir():
             executor._generate_module = original_generate
+
+
+def _reset_deterministic_planning_caches() -> None:
+    """Clear deterministic planner caches before each autonomous build attempt.
+
+    Comparison-target runs and fresh-build proof passes should not inherit
+    route/binding decisions from earlier in-process tasks. Recomputing these
+    small deterministic surfaces is cheap relative to the live build.
+    """
+    from trellis.agent.backend_bindings import clear_backend_binding_catalog_cache
+    from trellis.agent.codegen_guardrails import clear_generation_plan_cache
+    from trellis.agent.route_registry import clear_route_registry_cache
+
+    clear_generation_plan_cache()
+    clear_backend_binding_catalog_cache()
+    clear_route_registry_cache()
 
 
 def _should_skip_reflection(result: BuildResult) -> bool:
