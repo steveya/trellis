@@ -1364,7 +1364,12 @@ def build_skill_ranking_inputs(rollup: Mapping[str, Any]) -> dict[str, Any]:
                 "avg_retry_count": _fraction(item.get("retry_count_total"), selection_count),
                 "last_seen_at": str(item.get("last_seen_at") or "").strip(),
                 "first_seen_at": str(item.get("first_seen_at") or "").strip(),
-                "binding_coverage_count": len(item.get("binding_ids") or []),
+                "binding_coverage_count": len(
+                    item.get("binding_ids")
+                    or item.get("binding_aliases")
+                    or item.get("binding_families")
+                    or []
+                ),
                 "route_coverage_count": len(item.get("route_ids") or []),
                 "task_coverage_count": len(item.get("task_ids") or []),
             }
@@ -1595,19 +1600,25 @@ def _selected_artifact_observations(
         if isinstance(artifacts, list)
     }
     route_ids = _unique_strings(
-        [[item.get("route_id")] for item in route_observations]
+        [str(item.get("route_id") or "").strip() for item in route_observations]
     )
     route_families = _unique_strings(
-        [[item.get("route_family")] for item in route_observations]
+        [str(item.get("route_family") or "").strip() for item in route_observations]
     )
     binding_ids = _unique_strings(
-        [[item.get("binding_id") or item.get("backend_binding_id")] for item in route_observations]
+        [
+            str(item.get("binding_id") or item.get("backend_binding_id") or "").strip()
+            for item in route_observations
+        ]
     )
     binding_families = _unique_strings(
-        [[item.get("binding_family")] for item in route_observations]
+        [str(item.get("binding_family") or "").strip() for item in route_observations]
     )
     binding_aliases = _unique_strings(
-        [[item.get("binding_alias") or item.get("route_alias")] for item in route_observations]
+        [
+            str(item.get("binding_alias") or item.get("route_alias") or "").strip()
+            for item in route_observations
+        ]
     )
 
     artifacts: dict[str, dict[str, Any]] = {}
