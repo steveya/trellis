@@ -119,6 +119,13 @@ binding surface before it emits these family IRs, and the family dispatch
 logic keys off binding roles and exact helper/kernel symbols rather than
 direct route-id branches.
 
+DSL lowering now follows the same contract. Once a family IR or fallback
+binding is selected, helper, pricing-kernel, schedule-builder, market-binding,
+and control atoms are resolved from binding roles first. The lowering result
+still keeps ``route_id`` as a transitional compatibility alias, but the
+executable atom ids and missing-primitive diagnostics are now rooted in
+``binding_id`` rather than route-local wording.
+
 Those objects are the canonical semantic authority for scheduled events,
 exercise/call control, and same-day phase ordering. Family IRs then project
 that shared program into their bounded numerical forms:

@@ -47,6 +47,10 @@ def test_ranked_observation_basket_lowers_to_market_binding_then_helper():
     assert lowering.route_id == "correlated_basket_monte_carlo"
     assert lowering.route_family == "monte_carlo"
     assert lowering.admissibility_errors == ()
+    assert (
+        lowering.binding_id
+        == "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo"
+    )
     assert isinstance(lowering.family_ir, CorrelatedBasketMonteCarloIR)
     assert lowering.family_ir.market_binding_symbol == "resolve_basket_semantics"
     assert lowering.family_ir.helper_symbol == "price_ranked_observation_basket_monte_carlo"
@@ -59,8 +63,14 @@ def test_ranked_observation_basket_lowers_to_market_binding_then_helper():
     binding, helper = lowering.normalized_expr.terms
     assert isinstance(binding, ContractAtom)
     assert isinstance(helper, ContractAtom)
-    assert binding.atom_id == "correlated_basket_monte_carlo:market_binding"
-    assert helper.atom_id == "correlated_basket_monte_carlo:route_helper"
+    assert binding.atom_id == (
+        "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo:"
+        "market_binding"
+    )
+    assert helper.atom_id == (
+        "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo:"
+        "route_helper"
+    )
     assert helper.primitive_ref == (
         "trellis.models.monte_carlo.semantic_basket."
         "price_ranked_observation_basket_monte_carlo"
@@ -288,7 +298,10 @@ def test_rate_style_swaption_monte_carlo_lowers_to_event_aware_compilation_steps
     assert lowering.admissibility_errors == ()
     assert isinstance(lowering.family_ir, EventAwareMonteCarloIR)
     assert isinstance(lowering.normalized_expr, ContractAtom)
-    assert lowering.normalized_expr.atom_id == "monte_carlo_paths:route_helper"
+    assert lowering.binding_id == "trellis.models.rate_style_swaption.price_swaption_monte_carlo"
+    assert lowering.normalized_expr.atom_id == (
+        "trellis.models.rate_style_swaption.price_swaption_monte_carlo:route_helper"
+    )
     assert lowering.normalized_expr.primitive_ref == (
         "trellis.models.rate_style_swaption.price_swaption_monte_carlo"
     )
@@ -323,7 +336,14 @@ def test_vanilla_option_monte_carlo_lowers_to_terminal_only_compilation_steps():
     assert lowering.family_ir.path_requirement_spec.requirement_kind == "terminal_only"
     assert lowering.family_ir.event_kinds == ()
     assert isinstance(lowering.normalized_expr, ContractAtom)
-    assert lowering.normalized_expr.atom_id == "monte_carlo_paths:route_helper"
+    assert (
+        lowering.binding_id
+        == "trellis.models.equity_option_monte_carlo.price_vanilla_equity_option_monte_carlo"
+    )
+    assert lowering.normalized_expr.atom_id == (
+        "trellis.models.equity_option_monte_carlo.price_vanilla_equity_option_monte_carlo:"
+        "route_helper"
+    )
     assert lowering.normalized_expr.primitive_ref == (
         "trellis.models.equity_option_monte_carlo.price_vanilla_equity_option_monte_carlo"
     )
@@ -390,7 +410,14 @@ def test_vanilla_option_transform_lowers_to_checked_in_transform_helper():
     assert lowering.family_ir.control_spec.control_style == "identity"
     assert lowering.family_ir.state_spec.state_tags == ("terminal_markov",)
     assert isinstance(lowering.normalized_expr, ContractAtom)
-    assert lowering.normalized_expr.atom_id == "transform_fft:route_helper"
+    assert (
+        lowering.binding_id
+        == "trellis.models.equity_option_transforms.price_vanilla_equity_option_transform"
+    )
+    assert lowering.normalized_expr.atom_id == (
+        "trellis.models.equity_option_transforms.price_vanilla_equity_option_transform:"
+        "route_helper"
+    )
     assert lowering.normalized_expr.primitive_ref == (
         "trellis.models.equity_option_transforms.price_vanilla_equity_option_transform"
     )
@@ -519,14 +546,19 @@ def test_credit_default_swap_analytical_lowers_to_schedule_then_helper():
     assert lowering.route_id == "credit_default_swap_analytical"
     assert lowering.route_family == "credit_default_swap"
     assert lowering.admissibility_errors == ()
+    assert lowering.binding_id == "trellis.models.credit_default_swap.price_cds_analytical"
     assert isinstance(lowering.family_ir, CreditDefaultSwapIR)
     assert lowering.family_ir.pricing_mode == "analytical"
     assert isinstance(lowering.normalized_expr, ThenExpr)
     schedule_builder, helper = lowering.normalized_expr.terms
     assert isinstance(schedule_builder, ContractAtom)
     assert isinstance(helper, ContractAtom)
-    assert schedule_builder.atom_id == "credit_default_swap_analytical:schedule_builder"
-    assert helper.atom_id == "credit_default_swap_analytical:route_helper"
+    assert schedule_builder.atom_id == (
+        "trellis.models.credit_default_swap.price_cds_analytical:schedule_builder"
+    )
+    assert helper.atom_id == (
+        "trellis.models.credit_default_swap.price_cds_analytical:route_helper"
+    )
     assert schedule_builder.primitive_ref == "trellis.models.credit_default_swap.build_cds_schedule"
     assert helper.primitive_ref == "trellis.models.credit_default_swap.price_cds_analytical"
 
@@ -547,12 +579,60 @@ def test_credit_default_swap_monte_carlo_lowers_to_schedule_then_helper():
     assert lowering.route_id == "credit_default_swap_monte_carlo"
     assert lowering.route_family == "credit_default_swap"
     assert lowering.admissibility_errors == ()
+    assert lowering.binding_id == "trellis.models.credit_default_swap.price_cds_monte_carlo"
     assert isinstance(lowering.family_ir, CreditDefaultSwapIR)
     assert lowering.family_ir.pricing_mode == "monte_carlo"
     assert isinstance(lowering.normalized_expr, ThenExpr)
     schedule_builder, helper = lowering.normalized_expr.terms
     assert schedule_builder.primitive_ref == "trellis.models.credit_default_swap.build_cds_schedule"
     assert helper.primitive_ref == "trellis.models.credit_default_swap.price_cds_monte_carlo"
+
+
+def test_credit_default_swap_missing_schedule_builder_reports_binding_first_error(monkeypatch):
+    from trellis.agent import backend_bindings as backend_bindings_module
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_credit_default_swap_contract
+
+    def _binding_without_schedule_builder(*args, **kwargs):
+        del args, kwargs
+        return backend_bindings_module.ResolvedBackendBindingSpec(
+            route_id="credit_default_swap_analytical",
+            engine_family="analytical",
+            route_family="credit_default_swap",
+            binding_id="trellis.models.credit_default_swap.price_cds_analytical",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.credit_default_swap",
+                    "price_cds_analytical",
+                    "route_helper",
+                ),
+            ),
+            primitive_refs=("trellis.models.credit_default_swap.price_cds_analytical",),
+            helper_refs=("trellis.models.credit_default_swap.price_cds_analytical",),
+            exact_target_refs=("trellis.models.credit_default_swap.price_cds_analytical",),
+        )
+
+    monkeypatch.setattr(
+        backend_bindings_module,
+        "resolve_backend_binding_by_route_id",
+        _binding_without_schedule_builder,
+    )
+
+    contract = make_credit_default_swap_contract(
+        description="Single-name CDS on ACME analytical",
+        observation_schedule=("2026-06-20", "2026-09-20", "2026-12-20", "2027-03-20", "2027-06-20"),
+    )
+    blueprint = compile_semantic_contract(contract)
+
+    lowering = blueprint.dsl_lowering
+    assert lowering is not None
+    assert lowering.expr is None
+    assert lowering.binding_id == "trellis.models.credit_default_swap.price_cds_analytical"
+    assert lowering.errors[0].code == "missing_schedule_builder"
+    assert lowering.errors[0].message == (
+        "Binding 'trellis.models.credit_default_swap.price_cds_analytical' is missing "
+        "the required schedule builder primitive 'build_cds_schedule'."
+    )
 
 
 def test_nth_to_default_lowers_to_helper_backed_credit_basket_route():
