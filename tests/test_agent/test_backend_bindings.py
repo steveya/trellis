@@ -33,6 +33,7 @@ def test_binding_catalog_canonical_load_is_not_derived_from_route_registry(monke
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("route registry should not load")),
     )
 
+    clear_backend_binding_catalog_cache()
     catalog = load_backend_binding_catalog()
 
     assert find_backend_binding_by_route_id("analytical_garman_kohlhagen", catalog) is not None

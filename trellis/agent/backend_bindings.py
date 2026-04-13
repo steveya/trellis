@@ -299,7 +299,11 @@ def _str_tuple(values) -> tuple[str, ...]:
 def _parse_primitives(raw: Any) -> tuple[PrimitiveRef, ...]:
     if not raw:
         return ()
-    return tuple(_parse_primitive(item) for item in raw if isinstance(item, dict))
+    return tuple(
+        _parse_primitive(item)
+        for item in raw
+        if isinstance(item, dict) and item.get("module") and item.get("symbol") and item.get("role")
+    )
 
 
 def _parse_primitive(raw: dict[str, Any]) -> PrimitiveRef:
