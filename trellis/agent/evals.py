@@ -925,6 +925,221 @@ def render_binding_first_exotic_proof_report(report: Mapping[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
+def summarize_binding_first_exotic_program_closeout(
+    reports: Iterable[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Aggregate multiple proof-cohort reports into one program closeout summary."""
+    cohort_summaries: dict[str, dict[str, Any]] = {}
+    by_task: dict[str, dict[str, Any]] = {}
+    failure_buckets: dict[str, int] = {}
+    unknown_route_tasks: list[str] = []
+    elapsed_total = 0.0
+    successful_attempts: list[int] = []
+    token_usage = {
+        "call_count": 0,
+        "calls_with_usage": 0,
+        "calls_without_usage": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "by_stage": {},
+        "by_provider": {},
+    }
+    totals = {
+        "tasks": 0,
+        "passed_gate": 0,
+        "failed_gate": 0,
+        PROOF_OUTCOME_PROVED: 0,
+        PROOF_OUTCOME_HONEST_BLOCK: 0,
+    }
+
+    def _display_artifact_path(value: Any) -> str | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        return Path(text).name if text.startswith("/") else text
+
+    def _merge_token_usage(target: dict[str, Any], source: Mapping[str, Any]) -> None:
+        for key in (
+            "call_count",
+            "calls_with_usage",
+            "calls_without_usage",
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+        ):
+            target[key] = int(target.get(key, 0) or 0) + int(source.get(key, 0) or 0)
+        for bucket_name in ("by_stage", "by_provider"):
+            target_bucket = dict(target.get(bucket_name) or {})
+            for name, payload in dict(source.get(bucket_name) or {}).items():
+                existing = dict(target_bucket.get(name) or {})
+                for key in (
+                    "call_count",
+                    "calls_with_usage",
+                    "calls_without_usage",
+                    "prompt_tokens",
+                    "completion_tokens",
+                    "total_tokens",
+                ):
+                    existing[key] = int(existing.get(key, 0) or 0) + int(payload.get(key, 0) or 0)
+                target_bucket[name] = existing
+            target[bucket_name] = target_bucket
+
+    for raw_report in reports:
+        report = dict(raw_report or {})
+        cohort = str(report.get("cohort") or "").strip() or "unknown"
+        if cohort in cohort_summaries:
+            raise ValueError(f"duplicate binding-first closeout cohort: {cohort}")
+        proof_summary = dict(report.get("proof_summary") or {})
+        task_summary = dict(report.get("task_summary") or {})
+        cohort_summaries[cohort] = {
+            "status": report.get("status"),
+            "task_ids": list(report.get("task_ids") or []),
+            "totals": dict(proof_summary.get("totals") or {}),
+            "failure_buckets": dict(proof_summary.get("failure_buckets") or {}),
+            "task_summary": task_summary,
+            "report_json_path": _display_artifact_path(report.get("report_json_path")),
+            "report_md_path": _display_artifact_path(report.get("report_md_path")),
+            "raw_results_path": _display_artifact_path(report.get("raw_results_path")),
+        }
+
+        for bucket, count in dict(proof_summary.get("failure_buckets") or {}).items():
+            failure_buckets[str(bucket)] = failure_buckets.get(str(bucket), 0) + int(count or 0)
+
+        for task_id, task_report_raw in dict(proof_summary.get("by_task") or {}).items():
+            task_report = {
+                key: (
+                    _display_artifact_path(value)
+                    if key.endswith("_path")
+                    else value
+                )
+                for key, value in dict(task_report_raw or {}).items()
+            }
+            by_task[str(task_id)] = task_report
+            totals["tasks"] += 1
+            if task_report.get("passed_gate"):
+                totals["passed_gate"] += 1
+                if str(task_report.get("outcome_class") or "").strip() != PROOF_OUTCOME_HONEST_BLOCK:
+                    successful_attempts.append(int(task_report.get("attempts_to_success") or 0))
+            else:
+                totals["failed_gate"] += 1
+            outcome_class = str(task_report.get("outcome_class") or "").strip()
+            if outcome_class in totals:
+                totals[outcome_class] += 1
+
+            elapsed_total += float(task_report.get("elapsed_seconds") or 0.0)
+            _merge_token_usage(token_usage, dict(task_report.get("token_usage") or {}))
+            if "unknown" in set(task_report.get("route_ids") or ()):
+                unknown_route_tasks.append(str(task_id))
+
+    first_pass_successes = sum(
+        1
+        for task_report in by_task.values()
+        if task_report.get("passed_gate") and task_report.get("first_pass")
+    )
+    honest_block_certified = sum(
+        1
+        for task_report in by_task.values()
+        if task_report.get("passed_gate")
+        and str(task_report.get("outcome_class") or "").strip() == PROOF_OUTCOME_HONEST_BLOCK
+    )
+    return {
+        "totals": totals,
+        "cohorts": cohort_summaries,
+        "failure_buckets": failure_buckets,
+        "by_task": by_task,
+        "elapsed_seconds_total": round(elapsed_total, 1),
+        "unknown_route_tasks": sorted(set(unknown_route_tasks)),
+        "first_pass": {
+            "tasks": totals["tasks"],
+            "successful_tasks": totals["passed_gate"],
+            "first_pass_successes": first_pass_successes,
+            "rate": (first_pass_successes / totals["tasks"]) if totals["tasks"] else 0.0,
+        },
+        "attempts_to_success": {
+            "successful_tasks": len(successful_attempts),
+            "average": (
+                round(sum(successful_attempts) / len(successful_attempts), 2)
+                if successful_attempts
+                else 0.0
+            ),
+            "median": float(median(successful_attempts)) if successful_attempts else 0.0,
+            "max": max(successful_attempts) if successful_attempts else 0,
+        },
+        "token_usage": token_usage,
+        "honest_block_certified": honest_block_certified,
+    }
+
+
+def render_binding_first_exotic_program_closeout(report: Mapping[str, Any]) -> str:
+    """Render the program-level proof closeout as operator-facing Markdown."""
+    totals = dict(report.get("totals") or {})
+    first_pass = dict(report.get("first_pass") or {})
+    attempts = dict(report.get("attempts_to_success") or {})
+    token_usage = dict(report.get("token_usage") or {})
+    lines = [
+        "# Binding-First Exotic Program Closeout",
+        "",
+        f"- Tasks: `{totals.get('tasks', 0)}`",
+        f"- Passed gate: `{totals.get('passed_gate', 0)}`",
+        f"- Failed gate: `{totals.get('failed_gate', 0)}`",
+        f"- Proved expectations: `{totals.get(PROOF_OUTCOME_PROVED, 0)}`",
+        f"- Honest-block expectations: `{totals.get(PROOF_OUTCOME_HONEST_BLOCK, 0)}`",
+        f"- Certified honest blocks: `{report.get('honest_block_certified', 0)}`",
+        f"- First-pass success rate: `{first_pass.get('rate', 0.0)}`",
+        f"- Average attempts to success (successful tasks): `{attempts.get('average', 0.0)}`",
+        f"- Total elapsed seconds: `{report.get('elapsed_seconds_total', 0.0)}`",
+        f"- Total tokens: `{token_usage.get('total_tokens', 0)}`",
+        f"- Unknown route-id tasks: `{', '.join(report.get('unknown_route_tasks') or []) or 'none'}`",
+        "",
+        "## Failure Buckets",
+    ]
+    for bucket, count in sorted(dict(report.get("failure_buckets") or {}).items()):
+        lines.append(f"- `{bucket}`: `{count}`")
+    lines.extend(
+        [
+            "",
+        "## Cohorts",
+        ]
+    )
+    for cohort, summary_raw in sorted(dict(report.get("cohorts") or {}).items()):
+        summary = dict(summary_raw or {})
+        cohort_totals = dict(summary.get("totals") or {})
+        lines.extend(
+            [
+                f"### {cohort}",
+                f"- Status: `{summary.get('status', '')}`",
+                f"- Passed gate: `{cohort_totals.get('passed_gate', 0)}`",
+                f"- Failed gate: `{cohort_totals.get('failed_gate', 0)}`",
+                f"- Tasks: `{', '.join(summary.get('task_ids') or [])}`",
+                f"- Report JSON: `{summary.get('report_json_path', '')}`",
+                f"- Report Markdown: `{summary.get('report_md_path', '')}`",
+                "",
+            ]
+        )
+    lines.append("## Task View")
+    for task_id, task_report_raw in sorted(dict(report.get("by_task") or {}).items()):
+        task_report = dict(task_report_raw or {})
+        lines.extend(
+            [
+                f"### {task_id} - {task_report.get('title', '')}",
+                f"- Cohort: `{task_report.get('cohort', '')}`",
+                f"- Expected outcome: `{task_report.get('outcome_class', '')}`",
+                f"- Gate passed: `{task_report.get('passed_gate', '')}`",
+                f"- Failure bucket: `{task_report.get('failure_bucket', '')}`",
+                f"- Comparison status: `{task_report.get('comparison_status', '') or 'missing'}`",
+                f"- Binding ids: `{', '.join(task_report.get('binding_ids') or []) or 'none'}`",
+                f"- Route ids: `{', '.join(task_report.get('route_ids') or []) or 'none'}`",
+                f"- First pass: `{task_report.get('first_pass', False)}`",
+                f"- Attempts to success: `{task_report.get('attempts_to_success', 0)}`",
+                f"- Retry taxonomy: `{', '.join(task_report.get('retry_taxonomy') or []) or 'none'}`",
+                f"- Latest diagnosis dossier: `{task_report.get('diagnosis_latest_dossier_path', '') or task_report.get('diagnosis_dossier_path', '') or 'missing'}`",
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def classify_task_result(result: Mapping[str, Any]) -> str:
     """Bucket one task result into a stable outcome/failure class."""
     if result.get("success"):

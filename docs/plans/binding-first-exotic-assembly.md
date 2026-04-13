@@ -194,10 +194,11 @@ Status mirror last synced: `2026-04-13`
 | `QUA-823` | Proof follow-on: nth-to-default helper and basket-credit parsing (`T50`, `E26`) | Backlog |
 | `QUA-824` | Proof follow-on: loss-distribution recursive/FFT/MC constructive stability (`T53`) | Backlog |
 | `QUA-825` | Proof follow-on: multi-underlier basket parsing and FFT spread stability (`T102`, `T126`) | Backlog |
-| `QUA-815` | Exotic program closeout: measure proof-cohort outcomes on the binding-first runtime | Backlog |
+| `QUA-815` | Exotic program closeout: measure proof-cohort outcomes on the binding-first runtime | Done |
 
 The benchmark contract for those proof tickets lives in
-`docs/plans/binding-first-exotic-proof-cohort.md`.
+`docs/plans/binding-first-exotic-proof-cohort.md`, and the measured closeout
+now lives in `docs/plans/binding-first-exotic-proof-closeout.md`.
 
 ## Cross-Epic Sequencing Constraints
 

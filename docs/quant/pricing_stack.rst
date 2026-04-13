@@ -237,6 +237,14 @@ minimized feature surface instead of emitting its own route-id or
 route-family one-hots, so future retraining work cannot silently regress the
 live scorer contract.
 
+That architectural migration should not be overstated. The checked proof
+closeout in ``docs/plans/binding-first-exotic-proof-closeout.md`` and
+``docs/benchmarks/binding_first_exotic_proof_closeout.json`` currently
+certifies only the ``T105`` proof task end to end; the remaining
+event/control and basket-credit/loss cohort items still sit behind concrete
+follow-on tickets. The runtime is binding-first, but broad constructable-exotic
+support is not yet a checked support-contract claim.
+
 For rate-style swaption comparison builds, the semantic compiler now also keeps
 the contract-level convention surface attached to each method-specific plan.
 Fixed-leg and floating-leg day-count terms, rate-index bindings, and the

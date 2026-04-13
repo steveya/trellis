@@ -59,6 +59,7 @@ ground truth until revalidated.
 
 | # | Limitation | Impact | Files |
 |---|-----------|--------|-------|
+| L38 | **Binding-first exotic proof coverage is still partial** — the checked proof closeout certifies only `T105`; the event/control cohort still has open callable-bond, swaption, cap/floor, and honest-block-sentinel gaps, and the basket/credit/loss cohort has not yet recovered its constructive proof tasks | Trellis now has the binding-first runtime architecture, but it is not yet support-contract-correct to claim broad constructable-exotic coverage across the agreed proof cohort | `docs/plans/binding-first-exotic-proof-closeout.md`, `docs/benchmarks/binding_first_exotic_proof_closeout.json`, `tests/evals/binding_first_exotic_proof.yaml`, `trellis/agent/backend_bindings.py`, `trellis/agent/family_lowering_ir.py`, `trellis/agent/dsl_lowering.py` |
 | L33 | **Book and pipeline abstractions are still thin for mixed exotic books** — book aggregation stops at MV/DV01/duration and the pipeline scenario surface remains simple | Trellis is not yet a strong book-level pricing/risk engine even before xVA enters the picture | `trellis/book.py`, `trellis/pipeline.py`, `trellis/analytics/measures.py` |
 | L34 | **There is no exposure or xVA engine** — no exposure cube, no `EE/EPE/PFE`, no `CVA/DVA/FVA/MVA/KVA`, and no implemented collateral/netting semantics | Counterparty-risk analysis is not currently supported beyond basic credit-product pricing | `docs/plans/exotic-desk-roadmap.md` |
 
