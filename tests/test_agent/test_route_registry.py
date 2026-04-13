@@ -306,6 +306,9 @@ class TestRegistryValidation:
         assert authority.backend_binding.exact_target_refs == (
             "trellis.models.synthetic.price_bound_helper",
         )
+        assert authority.operator_metadata is not None
+        assert authority.operator_metadata.display_name == "Bound (analytical)"
+        assert authority.operator_metadata.diagnostic_label == "binding_fallback"
 
 
 # ---------------------------------------------------------------------------

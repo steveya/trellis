@@ -22,6 +22,10 @@ from typing import Any
 
 import yaml
 
+from trellis.agent.binding_operator_metadata import (
+    BindingOperatorMetadata,
+    resolve_binding_operator_metadata,
+)
 from trellis.agent.codegen_guardrails import PrimitiveRef
 from trellis.agent.family_lowering_ir import (
     AnalyticalBlack76IR,
@@ -193,6 +197,7 @@ class RouteBindingAuthority:
     route_family: str
     authority_kind: str
     backend_binding: BackendBindingAuthority
+    operator_metadata: BindingOperatorMetadata | None = None
     compatibility_alias_policy: str = "operator_visible"
     validation_bundle_id: str = ""
     exact_validation_bundle_id: str = ""
@@ -1208,11 +1213,18 @@ def compile_route_binding_authority(
         admissibility=admissibility,
         admissibility_failures=admissibility_failures,
     )
+    operator_metadata = resolve_binding_operator_metadata(
+        binding_id=backend_binding.binding_id,
+        engine_family=backend_binding.engine_family,
+        route_family=route_family,
+        route_id=route_id or str(getattr(primitive_plan, "route", "") or ""),
+    )
     return RouteBindingAuthority(
         route_id=route_id or str(getattr(primitive_plan, "route", "") or ""),
         route_family=route_family,
         authority_kind=authority_kind,
         backend_binding=backend_binding,
+        operator_metadata=operator_metadata,
         compatibility_alias_policy=compatibility_alias_policy,
         validation_bundle_id=validation_bundle_id,
         exact_validation_bundle_id=exact_validation_bundle_id,
@@ -1229,6 +1241,7 @@ def route_binding_authority_summary(
     if authority is None:
         return None
     backend_binding = authority.backend_binding
+    operator_metadata = authority.operator_metadata
     return {
         "route_id": authority.route_id,
         "route_family": authority.route_family,
@@ -1263,6 +1276,15 @@ def route_binding_authority_summary(
             },
             "admissibility_failures": list(backend_binding.admissibility_failures),
         },
+        "operator_metadata": (
+            None
+            if operator_metadata is None
+            else {
+                "display_name": operator_metadata.display_name,
+                "short_description": operator_metadata.short_description,
+                "diagnostic_label": operator_metadata.diagnostic_label,
+            }
+        ),
         "validation_bundle_id": authority.validation_bundle_id,
         "exact_validation_bundle_id": authority.exact_validation_bundle_id,
         "validation_check_ids": list(authority.validation_check_ids),

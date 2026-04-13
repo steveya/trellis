@@ -209,6 +209,11 @@ keeps the generic validation pack id in ``bundle_id`` but also emits an
 exact binding-scoped validation identity for exact-fit requests, so route ids
 are no longer required as the primary exact-fit key in validation summaries,
 route-binding authority packets, or downstream trace consumers.
+Operator-facing binding wording now follows the same rule: display names,
+short descriptions, and diagnostic labels are resolved from a dedicated
+binding metadata catalog rather than route-card prose, and the compiled
+route-binding authority packet carries that metadata for downstream
+diagnostic surfaces.
 That exact-surface contract now also drives live plan construction, DSL
 lowering, and semantic helper review: those paths resolve helpers, kernels,
 and schedule builders from ``trellis.agent.backend_bindings`` first and only

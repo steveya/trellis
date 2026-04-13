@@ -149,6 +149,11 @@ def test_compile_build_request_attaches_route_binding_authority_packet():
         "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
     ]
     assert "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state" in backend_binding["helper_refs"]
+    assert authority["operator_metadata"] == {
+        "display_name": "Quanto option analytical binding",
+        "short_description": "Exact analytical backend binding for semantic quanto option pricing.",
+        "diagnostic_label": "quanto_analytical_binding",
+    }
     assert authority["validation_bundle_id"] == "analytical:quanto_option"
     assert (
         authority["exact_validation_bundle_id"]
