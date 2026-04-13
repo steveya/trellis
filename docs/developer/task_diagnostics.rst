@@ -96,14 +96,18 @@ That section answers:
 - which audience surface consumed them
 - what the normalized run outcome was
 - whether the run required retries or ended in a degraded partial-success state
-- which route or route family was involved, together with any recorded
-  instruction-resolution counts
+- which backend binding was involved, together with any recorded
+  instruction-resolution counts and compatibility route aliases when they exist
 
 For maintenance tooling, the same data is also available as deterministic
 rollups through ``trellis.agent.task_run_store``:
 
 - ``load_latest_skill_telemetry_rollup()``
-- ``load_latest_route_health_rollup()``
+- ``load_latest_binding_health_rollup()``
+
+Legacy ``load_latest_route_health_rollup()`` and route-named observation fields
+remain as compatibility aliases while older tooling migrates, but binding
+identity is now the primary telemetry key.
 
 Canary batch telemetry
 ----------------------
