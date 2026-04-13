@@ -24,6 +24,20 @@ def test_binding_catalog_loads_core_route_backed_bindings():
     } <= route_ids
 
 
+def test_binding_catalog_canonical_load_is_not_derived_from_route_registry(monkeypatch):
+    from trellis.agent import route_registry as route_registry_module
+
+    monkeypatch.setattr(
+        route_registry_module,
+        "load_route_registry",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("route registry should not load")),
+    )
+
+    catalog = load_backend_binding_catalog()
+
+    assert find_backend_binding_by_route_id("analytical_garman_kohlhagen", catalog) is not None
+
+
 def test_resolve_backend_binding_spec_captures_helper_schedule_and_cashflow_roles():
     catalog = load_backend_binding_catalog()
 
@@ -94,24 +108,24 @@ def test_resolve_backend_binding_spec_uses_route_conditionals_for_exact_targets(
     )
 
 
-def test_binding_catalog_cache_tracks_route_registry_freshness(monkeypatch):
+def test_binding_catalog_cache_tracks_binding_catalog_freshness(monkeypatch):
     clear_backend_binding_catalog_cache()
 
-    registry_one = SimpleNamespace(routes=())
-    registry_two = SimpleNamespace(routes=())
-    calls = iter((registry_one, registry_two))
+    from trellis.agent import backend_bindings as backend_bindings_module
 
-    from trellis.agent import route_registry as route_registry_module
+    catalog_one = SimpleNamespace(bindings=())
+    catalog_two = SimpleNamespace(bindings=())
+    calls = iter((catalog_one, catalog_two))
 
     monkeypatch.setattr(
-        route_registry_module,
+        backend_bindings_module,
         "_cache_key",
-        lambda *, include_discovered: (include_discovered, 1.0, 0.0, "rev-a"),
+        lambda *, include_discovered: (include_discovered, 1.0, "rev-a", ()),
     )
     monkeypatch.setattr(
-        route_registry_module,
-        "load_route_registry",
-        lambda *, include_discovered=False: next(calls),
+        backend_bindings_module,
+        "_load_canonical_bindings",
+        lambda: tuple(next(calls).bindings),
     )
 
     first = load_backend_binding_catalog()
@@ -119,9 +133,9 @@ def test_binding_catalog_cache_tracks_route_registry_freshness(monkeypatch):
     assert first is second
 
     monkeypatch.setattr(
-        route_registry_module,
+        backend_bindings_module,
         "_cache_key",
-        lambda *, include_discovered: (include_discovered, 2.0, 0.0, "rev-a"),
+        lambda *, include_discovered: (include_discovered, 2.0, "rev-a", ()),
     )
 
     third = load_backend_binding_catalog()

@@ -1,0 +1,492 @@
+bindings:
+  - route_id: quanto_adjustment_analytical
+    engine_family: analytical
+    route_family: analytical
+    compatibility_alias_policy: internal_only
+    primitives:
+      - module: trellis.models.quanto_option
+        symbol: price_quanto_option_analytical_from_market_state
+        role: route_helper
+
+  - route_id: correlated_gbm_monte_carlo
+    engine_family: monte_carlo
+    route_family: monte_carlo
+    primitives:
+      - module: trellis.models.quanto_option
+        symbol: price_quanto_option_monte_carlo_from_market_state
+        role: route_helper
+
+  - route_id: credit_default_swap_analytical
+    engine_family: analytical
+    route_family: credit_default_swap
+    primitives:
+      - module: trellis.models.credit_default_swap
+        symbol: build_cds_schedule
+        role: schedule_builder
+        required: false
+      - module: trellis.models.credit_default_swap
+        symbol: price_cds_analytical
+        role: route_helper
+
+  - route_id: credit_default_swap_monte_carlo
+    engine_family: monte_carlo
+    route_family: credit_default_swap
+    primitives:
+      - module: trellis.models.credit_default_swap
+        symbol: build_cds_schedule
+        role: schedule_builder
+        required: false
+      - module: trellis.models.credit_default_swap
+        symbol: interval_default_probability
+        role: event_probability
+      - module: trellis.models.credit_default_swap
+        symbol: price_cds_monte_carlo
+        role: route_helper
+      - module: trellis.core.differentiable
+        symbol: get_numpy
+        role: array_backend
+
+  - route_id: nth_to_default_monte_carlo
+    engine_family: monte_carlo
+    route_family: nth_to_default
+    primitives:
+      - module: trellis.core.date_utils
+        symbol: generate_schedule
+        role: schedule_builder
+        required: false
+      - module: trellis.core.date_utils
+        symbol: year_fraction
+        role: time_measure
+      - module: trellis.core.differentiable
+        symbol: get_numpy
+        role: array_backend
+      - module: trellis.models.copulas.gaussian
+        symbol: GaussianCopula
+        role: default_time_sampler
+      - module: trellis.instruments.nth_to_default
+        symbol: price_nth_to_default_basket
+        role: route_helper
+      - module: trellis.models.monte_carlo.engine
+        symbol: MonteCarloEngine
+        role: path_simulation
+        required: false
+        excluded: true
+
+  - route_id: correlated_basket_monte_carlo
+    engine_family: monte_carlo
+    route_family: monte_carlo
+    primitives:
+      - module: trellis.models.resolution.basket_semantics
+        symbol: resolve_basket_semantics
+        role: market_binding
+      - module: trellis.models.monte_carlo.semantic_basket
+        symbol: price_ranked_observation_basket_monte_carlo
+        role: route_helper
+
+  - route_id: exercise_monte_carlo
+    engine_family: exercise
+    route_family: exercise
+    primitives:
+      - module: trellis.models.processes.gbm
+        symbol: GBM
+        role: state_process
+      - module: trellis.models.monte_carlo.engine
+        symbol: MonteCarloEngine
+        role: path_simulation
+      - module: trellis.models.monte_carlo.lsm
+        symbol: longstaff_schwartz
+        role: exercise_control
+        required: false
+      - module: trellis.models.monte_carlo.tv_regression
+        symbol: tsitsiklis_van_roy
+        role: exercise_control
+        required: false
+      - module: trellis.models.monte_carlo.primal_dual
+        symbol: primal_dual_mc
+        role: exercise_control
+        required: false
+      - module: trellis.models.monte_carlo.stochastic_mesh
+        symbol: stochastic_mesh
+        role: exercise_control
+        required: false
+
+  - route_id: monte_carlo_paths
+    engine_family: monte_carlo
+    route_family: monte_carlo
+    primitives:
+      - module: trellis.models.processes.gbm
+        symbol: GBM
+        role: state_process
+      - module: trellis.models.processes.hull_white
+        symbol: HullWhite
+        role: state_process
+      - module: trellis.models.monte_carlo.engine
+        symbol: MonteCarloEngine
+        role: path_simulation
+      - module: trellis.models.monte_carlo.event_aware
+        symbol: price_event_aware_monte_carlo
+        role: route_helper
+    conditional_primitives:
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+        primitives:
+          - module: trellis.models.equity_option_monte_carlo
+            symbol: price_vanilla_equity_option_monte_carlo
+            role: route_helper
+      - when:
+          payoff_family: swaption
+          exercise_style: [european]
+          model_family: [interest_rate, short_rate]
+        primitives:
+          - module: trellis.models.rate_style_swaption
+            symbol: price_swaption_monte_carlo
+            role: route_helper
+      - when: default
+
+  - route_id: monte_carlo_fx_vanilla
+    engine_family: monte_carlo
+    route_family: monte_carlo
+    primitives:
+      - module: trellis.models.fx_vanilla
+        symbol: price_fx_vanilla_monte_carlo
+        role: route_helper
+
+  - route_id: local_vol_monte_carlo
+    engine_family: monte_carlo
+    route_family: monte_carlo
+    primitives:
+      - module: trellis.models.processes.local_vol
+        symbol: LocalVol
+        role: state_process
+      - module: trellis.models.monte_carlo.engine
+        symbol: MonteCarloEngine
+        role: path_simulation
+      - module: trellis.models.monte_carlo.local_vol
+        symbol: local_vol_european_vanilla_price
+        role: pricing_kernel
+
+  - route_id: qmc_sobol_paths
+    engine_family: qmc
+    route_family: qmc
+    primitives:
+      - module: trellis.models.qmc
+        symbol: sobol_normals
+        role: low_discrepancy_sampler
+      - module: trellis.models.qmc
+        symbol: brownian_bridge
+        role: path_construction
+        required: false
+      - module: trellis.models.processes.gbm
+        symbol: GBM
+        role: state_process
+
+  - route_id: exercise_lattice
+    engine_family: lattice
+    route_family: lattice
+    conditional_primitives:
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [american, bermudan]
+        primitives:
+          - module: trellis.models.equity_option_tree
+            symbol: price_vanilla_equity_option_tree
+            role: route_helper
+      - when:
+          payoff_family: [bond, callable_bond, callable_fixed_income]
+          exercise_style: [issuer_call, holder_put, bermudan]
+          model_family: [interest_rate, short_rate]
+        primitives:
+          - module: trellis.models.callable_bond_tree
+            symbol: price_callable_bond_tree
+            role: route_helper
+      - when:
+          payoff_family: swaption
+          exercise_style: [bermudan]
+          model_family: [interest_rate, short_rate]
+        primitives:
+          - module: trellis.models.bermudan_swaption_tree
+            symbol: price_bermudan_swaption_tree
+            role: route_helper
+      - when: default
+        primitives:
+          - module: trellis.models.trees.lattice
+            symbol: build_rate_lattice
+            role: lattice_builder
+          - module: trellis.models.trees.lattice
+            symbol: build_generic_lattice
+            role: generic_lattice_builder
+            required: false
+          - module: trellis.models.trees.lattice
+            symbol: lattice_backward_induction
+            role: backward_induction
+          - module: trellis.models.trees.models
+            symbol: MODEL_REGISTRY
+            role: model_registry
+            required: false
+          - module: trellis.models.trees.control
+            symbol: build_payment_timeline
+            role: payment_timeline_builder
+            required: false
+          - module: trellis.models.trees.control
+            symbol: build_exercise_timeline_from_dates
+            role: exercise_timeline_builder
+            required: false
+          - module: trellis.models.trees.control
+            symbol: resolve_lattice_exercise_policy
+            role: control_policy
+            required: false
+          - module: trellis.models.trees.control
+            symbol: lattice_step_from_time
+            role: single_step_mapper
+            required: false
+          - module: trellis.models.trees.control
+            symbol: lattice_steps_from_timeline
+            role: step_mapper
+            required: false
+    conditional_route_family:
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [american, bermudan]
+          model_family: equity_diffusion
+        route_family: equity_tree
+      - when:
+          exercise_style: [issuer_call, holder_put, bermudan]
+          model_family: interest_rate
+        route_family: rate_lattice
+      - when: default
+        route_family: lattice
+
+  - route_id: rate_tree_backward_induction
+    engine_family: lattice
+    route_family: rate_lattice
+    primitives:
+      - module: trellis.models.trees.lattice
+        symbol: build_rate_lattice
+        role: lattice_builder
+      - module: trellis.models.trees.lattice
+        symbol: lattice_backward_induction
+        role: backward_induction
+    conditional_primitives:
+      - when:
+          payoff_family: swaption
+          exercise_style: [european]
+        primitives:
+          - module: trellis.models.rate_style_swaption_tree
+            symbol: price_swaption_tree
+            role: route_helper
+      - when: default
+        primitives:
+          - module: trellis.models.trees.lattice
+            symbol: build_rate_lattice
+            role: lattice_builder
+          - module: trellis.models.trees.lattice
+            symbol: lattice_backward_induction
+            role: backward_induction
+
+  - route_id: zcb_option_rate_tree
+    engine_family: lattice
+    route_family: rate_lattice
+    primitives:
+      - module: trellis.models.zcb_option_tree
+        symbol: price_zcb_option_tree
+        role: route_helper
+
+  - route_id: analytical_black76
+    engine_family: analytical
+    route_family: analytical
+    compatibility_alias_policy: internal_only
+    conditional_primitives:
+      - when:
+          payoff_family: vanilla_option
+        primitives:
+          - module: trellis.models.black
+            symbol: black76_call
+            role: pricing_kernel
+          - module: trellis.models.black
+            symbol: black76_put
+            role: pricing_kernel
+          - module: trellis.models.black
+            symbol: black76_asset_or_nothing_call
+            role: pricing_kernel
+            required: false
+          - module: trellis.models.black
+            symbol: black76_asset_or_nothing_put
+            role: pricing_kernel
+            required: false
+          - module: trellis.models.black
+            symbol: black76_cash_or_nothing_call
+            role: pricing_kernel
+            required: false
+          - module: trellis.models.black
+            symbol: black76_cash_or_nothing_put
+            role: pricing_kernel
+            required: false
+          - module: trellis.models.analytical
+            symbol: terminal_vanilla_from_basis
+            role: assembly_helper
+            required: false
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: time_measure
+      - when:
+          payoff_family: swaption
+          exercise_style: [bermudan]
+        primitives:
+          - module: trellis.models.rate_style_swaption
+            symbol: price_bermudan_swaption_black76_lower_bound
+            role: route_helper
+      - when:
+          payoff_family: swaption
+          exercise_style: [european]
+        primitives:
+          - module: trellis.models.rate_style_swaption
+            symbol: price_swaption_black76
+            role: route_helper
+      - when: default
+        primitives:
+          - module: trellis.models.black
+            symbol: black76_call
+            role: pricing_kernel
+          - module: trellis.models.black
+            symbol: black76_put
+            role: pricing_kernel
+          - module: trellis.models.black
+            symbol: black76_asset_or_nothing_call
+            role: pricing_kernel
+            required: false
+          - module: trellis.models.black
+            symbol: black76_asset_or_nothing_put
+            role: pricing_kernel
+            required: false
+          - module: trellis.models.black
+            symbol: black76_cash_or_nothing_call
+            role: pricing_kernel
+            required: false
+          - module: trellis.models.black
+            symbol: black76_cash_or_nothing_put
+            role: pricing_kernel
+            required: false
+          - module: trellis.models.analytical
+            symbol: terminal_vanilla_from_basis
+            role: assembly_helper
+            required: false
+          - module: trellis.core.date_utils
+            symbol: build_payment_timeline
+            role: schedule_builder
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: time_measure
+
+  - route_id: zcb_option_analytical
+    engine_family: analytical
+    route_family: analytical
+    primitives:
+      - module: trellis.models.zcb_option
+        symbol: price_zcb_option_jamshidian
+        role: route_helper
+
+  - route_id: analytical_garman_kohlhagen
+    engine_family: analytical
+    route_family: analytical
+    primitives:
+      - module: trellis.models.fx_vanilla
+        symbol: price_fx_vanilla_analytical
+        role: route_helper
+
+  - route_id: transform_fft
+    engine_family: fft_pricing
+    route_family: fft_pricing
+    conditional_primitives:
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [equity_diffusion]
+        primitives:
+          - module: trellis.models.equity_option_transforms
+            symbol: price_vanilla_equity_option_transform
+            role: route_helper
+      - when: default
+        primitives:
+          - module: trellis.models.transforms.fft_pricer
+            symbol: fft_price
+            role: transform_pricer
+          - module: trellis.models.transforms.cos_method
+            symbol: cos_price
+            role: transform_pricer
+            required: false
+
+  - route_id: vanilla_equity_theta_pde
+    engine_family: pde_solver
+    route_family: pde_solver
+    primitives:
+      - module: trellis.models.equity_option_pde
+        symbol: price_vanilla_equity_option_pde
+        role: route_helper
+
+  - route_id: pde_theta_1d
+    engine_family: pde_solver
+    route_family: pde_solver
+    primitives:
+      - module: trellis.models.pde.grid
+        symbol: Grid
+        role: grid
+      - module: trellis.models.pde.operator
+        symbol: BlackScholesOperator
+        role: spatial_operator
+      - module: trellis.models.pde.theta_method
+        symbol: theta_method_1d
+        role: time_stepping
+    conditional_primitives:
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [american, bermudan]
+          model_family: [equity, equity_diffusion]
+        primitives:
+          - module: trellis.models.equity_option_pde
+            symbol: price_event_aware_equity_option_pde
+            role: route_helper
+      - when:
+          payoff_family: callable_fixed_income
+          exercise_style: [issuer_call]
+          model_family: [interest_rate, short_rate]
+        primitives:
+          - module: trellis.models.callable_bond_pde
+            symbol: price_callable_bond_pde
+            role: route_helper
+      - when: default
+        primitives:
+          - module: trellis.models.pde.grid
+            symbol: Grid
+            role: grid
+          - module: trellis.models.pde.operator
+            symbol: BlackScholesOperator
+            role: spatial_operator
+          - module: trellis.models.pde.theta_method
+            symbol: theta_method_1d
+            role: time_stepping
+
+  - route_id: copula_loss_distribution
+    engine_family: copula
+    route_family: copula
+    primitives:
+      - module: trellis.models.copulas.factor
+        symbol: FactorCopula
+        role: loss_distribution
+      - module: trellis.models.credit_basket_copula
+        symbol: price_credit_basket_tranche
+        role: route_helper
+      - module: trellis.models.copulas.student_t
+        symbol: StudentTCopula
+        role: loss_distribution
+
+  - route_id: waterfall_cashflows
+    engine_family: waterfall
+    route_family: waterfall
+    primitives:
+      - module: trellis.models.cashflow_engine.waterfall
+        symbol: Waterfall
+        role: cashflow_engine
+      - module: trellis.models.cashflow_engine.waterfall
+        symbol: Tranche
+        role: cashflow_engine

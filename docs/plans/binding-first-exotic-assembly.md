@@ -150,7 +150,7 @@ Status mirror last synced: `2026-04-13`
 | `QUA-798` | Backend binding: introduce canonical binding catalog beside route registry | Done |
 | `QUA-799` | Backend binding: carry binding identity through primitive and generation plans | Done |
 | `QUA-800` | Backend binding: move exact helper and kernel lookup onto binding specs | Done |
-| `QUA-810` | Route aliases: collapse route registry to transitional alias and admissibility shell | Backlog |
+| `QUA-810` | Route aliases: collapse route registry to transitional alias and admissibility shell | Done |
 
 ### Ordered Lowering And Assembly Queue
 
@@ -159,6 +159,7 @@ Status mirror last synced: `2026-04-13`
 | `QUA-801` | Family lowering: replace route-id special cases with binding-role dispatch | Done |
 | `QUA-805` | DSL lowering: resolve helpers, kernels, schedules, and controls from binding roles | Done |
 | `QUA-811` | Semantic blockers: rename route-shaped helper gaps to binding and primitive taxonomy | Done |
+| `QUA-816` | Constructive guidance: retire residual route adapters and notes from fallback lanes | Backlog |
 
 ### Ordered Validation / Replay Queue
 

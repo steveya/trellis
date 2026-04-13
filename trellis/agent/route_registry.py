@@ -8,8 +8,10 @@ two tiers:
 * **Tier 1 — Canonical seed** routes in ``knowledge/canonical/routes.yaml``
 * **Tier 2 — Discovered** routes in ``knowledge/routes/entries/*.yaml``
 
-The registry is cached per authority mode and validated against the live import
-registry at load time.
+The route registry now owns matching, aliases, admissibility, and temporary
+transition guidance. Exact binding primitives and conditional binding-family
+facts live in ``knowledge/canonical/backend_bindings.yaml`` and are resolved
+through ``trellis.agent.backend_bindings``.
 """
 
 from __future__ import annotations
@@ -843,10 +845,16 @@ def resolve_route_primitives(
     spec: RouteSpec,
     product_ir: ProductIR | None,
 ) -> tuple[PrimitiveRef, ...]:
-    """Apply conditional_primitives based on ProductIR traits.
+    """Return resolved primitives from the binding catalog, falling back to the route shell."""
+    try:
+        from trellis.agent.backend_bindings import resolve_backend_binding_by_route_id
 
-    Returns the final set of primitives for this route + product combination.
-    """
+        binding_spec = resolve_backend_binding_by_route_id(spec.id, product_ir=product_ir)
+        if binding_spec is not None and binding_spec.primitives:
+            return tuple(binding_spec.primitives)
+    except Exception:
+        pass
+
     if not spec.conditional_primitives:
         return spec.primitives
 
@@ -941,7 +949,17 @@ def resolve_route_family(
     spec: RouteSpec,
     product_ir: ProductIR | None,
 ) -> str:
-    """Resolve the route family, applying conditional overrides."""
+    """Resolve the route family from the binding catalog, falling back to the route shell."""
+    try:
+        from trellis.agent.backend_bindings import resolve_backend_binding_by_route_id
+
+        binding_spec = resolve_backend_binding_by_route_id(spec.id, product_ir=product_ir)
+        resolved_family = str(getattr(binding_spec, "route_family", "") or "").strip()
+        if resolved_family:
+            return resolved_family
+    except Exception:
+        pass
+
     if not spec.conditional_route_family:
         return spec.route_family
 
@@ -967,7 +985,14 @@ def get_route_modules(route_id: str, registry: RouteRegistry | None = None) -> t
         registry = load_route_registry()
     for route in registry.routes:
         if route.id == route_id or route_id in route.aliases:
-            return tuple(sorted({p.module for p in route.primitives}))
+            return tuple(
+                sorted(
+                    {
+                        primitive.module
+                        for primitive in resolve_route_primitives(route, None)
+                    }
+                )
+            )
     return ()
 
 

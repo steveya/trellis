@@ -245,6 +245,51 @@ class TestRegistryValidation:
 
         assert tuple(route.id for route in matches) == ("family_mc",)
 
+    def test_route_resolution_prefers_binding_catalog_over_route_shell_fields(self, monkeypatch):
+        from trellis.agent import backend_bindings as backend_bindings_module
+
+        spec = RouteSpec(
+            id="synthetic_binding_route",
+            engine_family="analytical",
+            route_family="legacy_family",
+            status="promoted",
+            confidence=1.0,
+            match_methods=("analytical",),
+            match_instruments=None,
+            exclude_instruments=(),
+            match_payoff_family=None,
+            match_payoff_traits=None,
+            match_exercise=None,
+            exclude_exercise=(),
+            match_required_market_data=None,
+            exclude_required_market_data=None,
+            primitives=(
+                PrimitiveRef("trellis.models.legacy", "old_helper", "route_helper"),
+            ),
+            conditional_primitives=(),
+            conditional_route_family=None,
+            adapters=(),
+            notes=(),
+        )
+        monkeypatch.setattr(
+            backend_bindings_module,
+            "resolve_backend_binding_by_route_id",
+            lambda route_id, product_ir=None: SimpleNamespace(
+                primitives=(
+                    PrimitiveRef("trellis.models.synthetic", "fresh_helper", "route_helper"),
+                ),
+                route_family="binding_family",
+            ),
+        )
+
+        synthetic_ir = ProductIR(instrument="synthetic", payoff_family="synthetic")
+        resolved_primitives = resolve_route_primitives(spec, synthetic_ir)
+
+        assert _prim_set(resolved_primitives) == {
+            ("trellis.models.synthetic", "fresh_helper", "route_helper"),
+        }
+        assert resolve_route_family(spec, synthetic_ir) == "binding_family"
+
     def test_typed_admissibility_hydrates_for_migrated_routes(self, registry):
         analytical = find_route_by_id("analytical_black76", registry)
         lattice = find_route_by_id("exercise_lattice", registry)
