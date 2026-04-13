@@ -1152,3 +1152,87 @@ def test_persist_task_run_record_does_not_promote_platform_action_to_fake_route_
     assert latest["telemetry"]["binding_observations"][0]["binding_family"] == "analytical"
     assert latest["telemetry"]["binding_observations"][0]["route_id"] == ""
     assert latest["telemetry"]["binding_observations"][0]["primary_label"] == "analytical"
+
+
+def test_persist_task_run_record_normalizes_unknown_route_id_to_blank(tmp_path):
+    from trellis.agent.task_run_store import load_task_run_record, persist_task_run_record
+
+    trace_path = (
+        tmp_path
+        / "trellis"
+        / "agent"
+        / "knowledge"
+        / "traces"
+        / "platform"
+        / "executor_build_unknown.yaml"
+    )
+    _write_trace(
+        trace_path,
+        {
+            "request_id": "executor_build_unknown",
+            "status": "failed",
+            "outcome": "request_failed",
+            "action": "compile_only",
+            "route_method": "analytical",
+            "updated_at": "2026-04-12T12:00:00+00:00",
+            "request_metadata": {
+                "task_id": "T105",
+                "task_title": "FX vanilla analytical check",
+                "semantic_blueprint": {
+                    "dsl_route": None,
+                    "dsl_route_family": "analytical",
+                },
+            },
+            "generation_boundary": {
+                "method": "analytical",
+                "construction_identity": {
+                    "primary_kind": "backend_binding",
+                    "primary_label": "FX vanilla analytical binding",
+                    "backend_binding_id": "trellis.models.fx_vanilla.price_fx_vanilla_analytical",
+                    "backend_engine_family": "analytical",
+                    "route_alias": "",
+                },
+                "route_binding_authority": {},
+                "primitive_plan": {},
+            },
+            "route_health": {
+                "route_id": "unknown",
+                "route_family": "analytical",
+                "binding_id": "trellis.models.fx_vanilla.price_fx_vanilla_analytical",
+                "binding_family": "analytical",
+                "trace_status": "failed",
+                "effective_instruction_ids": [],
+                "effective_instruction_count": 0,
+                "hard_constraint_count": 0,
+                "conflict_count": 0,
+                "canary_task_ids": [],
+            },
+        },
+    )
+
+    task = {"id": "T105", "title": "FX vanilla analytical check", "construct": ["analytical"]}
+    result = {
+        "task_id": "T105",
+        "title": "FX vanilla analytical check",
+        "success": False,
+        "cross_validation": {"status": "insufficient_results"},
+        "artifacts": {"platform_trace_paths": [str(trace_path)]},
+        "reflection": {},
+    }
+
+    persisted = persist_task_run_record(
+        task,
+        result,
+        root=tmp_path,
+        persisted_at=datetime(2026, 4, 12, 12, 1, 0, tzinfo=timezone.utc),
+    )
+    latest = load_task_run_record(persisted["latest_path"])
+
+    assert latest["trace_summaries"][0]["binding_health"]["binding_id"] == (
+        "trellis.models.fx_vanilla.price_fx_vanilla_analytical"
+    )
+    assert latest["trace_summaries"][0]["route_health"]["route_id"] == ""
+    assert latest["telemetry"]["binding_observations"][0]["route_id"] == ""
+    assert latest["telemetry"]["binding_observations"][0]["binding_id"] == (
+        "trellis.models.fx_vanilla.price_fx_vanilla_analytical"
+    )

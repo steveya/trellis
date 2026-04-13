@@ -31,9 +31,9 @@ class AnalyticalTraceRoute:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AnalyticalTraceRoute":
         return cls(
-            family=str(data.get("family") or "unknown"),
-            name=str(data.get("name") or "unknown"),
-            model=str(data.get("model") or "unknown"),
+            family=str(data.get("family")) if data.get("family") is not None else "unknown",
+            name=str(data.get("name")) if data.get("name") is not None else "unknown",
+            model=str(data.get("model")) if data.get("model") is not None else "unknown",
         )
 
 
@@ -152,7 +152,7 @@ def build_analytical_trace_from_generation_plan(
     """Construct an analytical trace from a deterministic generation plan."""
     primitive_plan = plan.primitive_plan
     route_family = route_family or plan.method
-    route_name = primitive_plan.route if primitive_plan is not None else "unknown"
+    route_name = str(getattr(primitive_plan, "route", "") or "").strip()
     model = model or (primitive_plan.engine_family if primitive_plan is not None else plan.method)
     trace_id = trace_id or _default_trace_id(route_family, route_name, plan.instrument_type)
     created_at = _now_utc()

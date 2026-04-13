@@ -714,13 +714,18 @@ def _trace_binding_observation(
     selected_artifact_ids: list[str],
 ) -> dict[str, Any] | None:
     """Project one trace summary into a binding-first telemetry observation."""
+    from trellis.agent.route_registry import should_surface_route_alias
+
     route_health = dict(trace.get("binding_health") or trace.get("route_health") or {})
     construction_identity = dict(trace.get("construction_identity") or {})
     route_binding_authority = dict(trace.get("binding_authority") or trace.get("route_binding_authority") or {})
     trace_kind = str(trace.get("trace_kind") or "").strip()
-    route_id = str(route_health.get("route_id") or "").strip()
-    if not route_id and trace_kind != "platform":
-        route_id = str(trace.get("action") or "").strip()
+    authority_route_id = str(route_binding_authority.get("route_id") or "").strip()
+    if authority_route_id and not should_surface_route_alias(route_binding_authority):
+        authority_route_id = ""
+    route_id = str(route_health.get("route_id") or authority_route_id or "").strip()
+    if route_id == "unknown":
+        route_id = ""
     route_family = str(route_health.get("route_family") or trace.get("route_method") or "").strip()
     binding_id = str(
         route_health.get("binding_id")

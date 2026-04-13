@@ -81,7 +81,7 @@ def test_run_binding_first_exotic_closeout_writes_outputs(tmp_path):
                             "failure_bucket": "comparison_insufficient_results",
                             "comparison_status": "insufficient_results",
                             "binding_ids": ["binding.ntd"],
-                            "route_ids": ["unknown"],
+                            "route_ids": [],
                             "first_pass": False,
                             "attempts_to_success": 3,
                             "retry_taxonomy": ["code_generation"],
@@ -107,5 +107,5 @@ def test_run_binding_first_exotic_closeout_writes_outputs(tmp_path):
     summary = json.loads(output_json.read_text())
     assert summary["totals"]["tasks"] == 2
     assert summary["totals"]["passed_gate"] == 1
-    assert summary["unknown_route_tasks"] == ["T50"]
+    assert summary["unknown_route_tasks"] == []
     assert "Binding-First Exotic Program Closeout" in output_md.read_text()

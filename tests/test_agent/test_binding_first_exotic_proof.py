@@ -218,7 +218,7 @@ def test_summarize_binding_first_exotic_program_closeout_aggregates_cohorts():
                             "failure_bucket": "blocked",
                             "comparison_status": "insufficient_results",
                             "binding_ids": [],
-                            "route_ids": ["unknown"],
+                            "route_ids": [],
                             "first_pass": True,
                             "attempts_to_success": 0,
                             "retry_taxonomy": [],
@@ -248,7 +248,7 @@ def test_summarize_binding_first_exotic_program_closeout_aggregates_cohorts():
                             "failure_bucket": "comparison_insufficient_results",
                             "comparison_status": "insufficient_results",
                             "binding_ids": ["binding.ntd"],
-                            "route_ids": ["unknown"],
+                            "route_ids": [],
                             "first_pass": False,
                             "attempts_to_success": 3,
                             "retry_taxonomy": ["code_generation"],
@@ -270,7 +270,7 @@ def test_summarize_binding_first_exotic_program_closeout_aggregates_cohorts():
     assert closeout["attempts_to_success"]["average"] == 1.0
     assert closeout["elapsed_seconds_total"] == 35.0
     assert closeout["token_usage"]["total_tokens"] == 310
-    assert closeout["unknown_route_tasks"] == ["E27", "T50"]
+    assert closeout["unknown_route_tasks"] == []
 
 
 def test_summarize_binding_first_exotic_program_closeout_rejects_duplicate_cohorts():

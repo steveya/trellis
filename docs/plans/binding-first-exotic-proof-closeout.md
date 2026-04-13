@@ -39,7 +39,9 @@ Program totals from `docs/benchmarks/binding_first_exotic_proof_closeout.json`:
 - first-pass success rate: `1 / 11` (`9.1%`)
 - total elapsed time: `1143.1s`
 - total token usage: `883,606`
-- residual `unknown` route ids still surfaced on `T17`, `E27`, `T50`, and `E26`
+- route-identity telemetry was later normalized in `QUA-821`; the residual
+  proof blockers are now the task-specific gaps listed below rather than
+  synthetic `unknown` route ids
 
 The only proved task in the current closeout is:
 
@@ -54,10 +56,10 @@ The only proved task in the current closeout is:
 | `T17` | failed gate | callable-bond PDE lane lacks exact binding or constructive steps | `QUA-817` |
 | `T73` | failed gate | analytical/tree/MC parity drift | `QUA-818` |
 | `E22` | failed gate | cap/floor fresh-build instability and missing reference-target evidence | `QUA-819` |
-| `E27` | failed gate | honest-block sentinel did not persist typed blocker categories cleanly enough for certification | `QUA-820`, `QUA-821` |
+| `E27` | failed gate | honest-block sentinel did not persist typed blocker categories cleanly enough for certification | `QUA-820` |
 | `T49` | failed gate | Student-t tranche lane rebuilt copula plumbing instead of staying on the exact helper contract | `QUA-822` |
-| `T50` | failed gate | nth-to-default helper invocation and basket-credit parsing | `QUA-823`, `QUA-821` |
-| `E26` | failed gate | basket-credit parsing plus residual unknown route telemetry | `QUA-823`, `QUA-821` |
+| `T50` | failed gate | nth-to-default helper invocation and basket-credit parsing | `QUA-823` |
+| `E26` | failed gate | basket-credit parsing | `QUA-823` |
 | `T53` | failed gate | recursive / FFT / MC constructive stability on multi-name loss distribution | `QUA-824` |
 | `T102` | failed gate | multi-underlier market parsing | `QUA-825` |
 | `T126` | failed gate | multi-underlier parsing plus FFT spread-lane instability | `QUA-825` |

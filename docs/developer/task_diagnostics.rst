@@ -139,7 +139,8 @@ when an exact backend binding is known. In practice that means:
 - route-observation tables prefer the binding diagnostic label instead of a
   route id when exact binding metadata is available
 - route ids remain only as transitional aliases when no binding metadata has
-  been resolved
+  been resolved, and synthetic placeholders like ``unknown`` are normalized
+  away before task-run telemetry is persisted
 
 The deterministic loaders are:
 

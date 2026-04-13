@@ -188,7 +188,7 @@ Status mirror last synced: `2026-04-13`
 | `QUA-818` | Proof follow-on: swaption analytical/tree/MC parity drift (`T73`) | Backlog |
 | `QUA-819` | Proof follow-on: cap/floor fresh-build stability and reference-target evidence (`E22`) | Backlog |
 | `QUA-820` | Proof follow-on: structured blocker persistence for honest-block sentinel (`E27`) | Backlog |
-| `QUA-821` | Proof telemetry: remove residual `unknown` route ids from proof traces (`T17`, `E27`, `T50`, `E26`) | Backlog |
+| `QUA-821` | Proof telemetry: remove residual `unknown` route ids from proof traces (`T17`, `E27`, `T50`, `E26`) | Done |
 | `QUA-809` | Exotic assembly: run the basket-credit-loss proof cohort and split residual gaps | Done |
 | `QUA-822` | Proof follow-on: copula tranche exact-helper contract (`T49`) | Backlog |
 | `QUA-823` | Proof follow-on: nth-to-default helper and basket-credit parsing (`T50`, `E26`) | Backlog |

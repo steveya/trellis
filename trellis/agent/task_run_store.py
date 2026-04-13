@@ -756,19 +756,24 @@ def _normalize_binding_health(
     operator_metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Normalize trace health onto binding-first telemetry fields."""
+    from trellis.agent.route_registry import should_surface_route_alias
+
     raw_health = dict(raw_health or {})
     construction_identity = dict(construction_identity or {})
     route_binding_authority = dict(route_binding_authority or {})
     semantic_blueprint = dict(semantic_blueprint or {})
     operator_metadata = dict(operator_metadata or {})
+    authority_route_id = str(route_binding_authority.get("route_id") or "").strip()
+    if authority_route_id and not should_surface_route_alias(route_binding_authority):
+        authority_route_id = ""
     route_id = str(
         raw_health.get("route_id")
-        or route_binding_authority.get("route_id")
+        or authority_route_id
         or semantic_blueprint.get("dsl_route")
         or ""
     ).strip()
-    if not route_id and trace_kind and trace_kind != "platform":
-        route_id = str(trace_action or "").strip()
+    if route_id == "unknown":
+        route_id = ""
     route_family = str(
         raw_health.get("route_family")
         or route_binding_authority.get("route_family")
