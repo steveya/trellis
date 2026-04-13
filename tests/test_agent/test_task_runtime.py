@@ -1570,6 +1570,72 @@ def test_run_task_skips_promotion_candidates_when_cross_validation_fails(monkeyp
     assert result["artifacts"]["promotion_candidate_paths"] == []
 
 
+def test_run_task_aggregates_method_blockers_for_comparison_failures():
+    from trellis.agent.evals import classify_task_result
+    from trellis.agent.task_runtime import run_task
+
+    class FakeResult:
+        def __init__(self, target: str, blocker_details: dict[str, object] | None = None):
+            self.success = False
+            self.attempts = 0
+            self.gap_confidence = 1.0
+            self.knowledge_gaps = []
+            self.payoff_cls = None
+            self.failures = [f"{target} blocked"]
+            self.agent_observations = []
+            self.knowledge_summary = {}
+            self.platform_request_id = f"executor_build_{target}"
+            self.platform_trace_path = f"/tmp/{target}_trace.yaml"
+            self.analytical_trace_path = None
+            self.analytical_trace_text_path = None
+            self.blocker_details = blocker_details
+            self.post_build_tracking = {}
+            self.reflection = {}
+
+    def fake_build(**kwargs):
+        target = kwargs["comparison_target"]
+        if target == "american_pathdep_mc":
+            return FakeResult(
+                target,
+                blocker_details={
+                    "blocker_codes": ["path_dependent_early_exercise_under_stochastic_vol"],
+                    "blocker_report": {
+                        "summary": "Missing stochastic-vol exercise primitive.",
+                        "blockers": [
+                            {
+                                "id": "path_dependent_early_exercise_under_stochastic_vol",
+                                "category": "unsupported_composite",
+                            }
+                        ],
+                    },
+                },
+            )
+        return FakeResult(target)
+
+    result = run_task(
+        {
+            "id": "E27",
+            "title": "American Asian barrier under Heston: PDE vs MC vs FFT should block honestly",
+            "construct": ["pde_solver", "monte_carlo", "fft_pricing"],
+            "cross_validate": {
+                "internal": [
+                    "american_pathdep_pde",
+                    "american_pathdep_mc",
+                    "american_pathdep_fft",
+                ],
+            },
+        },
+        market_state=object(),
+        build_fn=fake_build,
+    )
+
+    assert result["blocker_details"]["method_targets"] == ["american_pathdep_mc"]
+    assert result["blocker_details"]["blocker_report"]["blockers"][0]["category"] == (
+        "unsupported_composite"
+    )
+    assert classify_task_result(result) == "blocked"
+
+
 def test_build_result_payload_includes_blocker_details(tmp_path):
     from trellis.agent.task_runtime import _build_result_payload
 

@@ -35,7 +35,7 @@ Program totals from `docs/benchmarks/binding_first_exotic_proof_closeout.json`:
 - `10` tasks failed the program gate
 - `10` tasks were expected to be `proved`
 - `1` task was expected to be an `honest_block`
-- `0` honest-block sentinels were certified by the gate
+- `0` honest-block sentinels were certified by the gate in the initial closeout run
 - first-pass success rate: `1 / 11` (`9.1%`)
 - total elapsed time: `1143.1s`
 - total token usage: `883,606`
@@ -56,7 +56,7 @@ The only proved task in the current closeout is:
 | `T17` | failed gate | callable-bond PDE lane lacks exact binding or constructive steps | `QUA-817` |
 | `T73` | failed gate | analytical/tree/MC parity drift | `QUA-818` |
 | `E22` | failed gate | cap/floor fresh-build instability and missing reference-target evidence | `QUA-819` |
-| `E27` | failed gate | honest-block sentinel did not persist typed blocker categories cleanly enough for certification | `QUA-820` |
+| `E27` | follow-on recovered | honest-block sentinel is now certified after structured blocker persistence landed | none |
 | `T49` | failed gate | Student-t tranche lane rebuilt copula plumbing instead of staying on the exact helper contract | `QUA-822` |
 | `T50` | failed gate | nth-to-default helper invocation and basket-credit parsing | `QUA-823` |
 | `E26` | failed gate | basket-credit parsing | `QUA-823` |
@@ -85,7 +85,7 @@ The current measured state is:
 
 - event/control/schedule proof is partial
 - basket/credit/loss proof is largely unrecovered
-- the honest-block sentinel path is not yet certified end to end
+- the honest-block sentinel path was initially uncertified, then recovered by `QUA-820`
 - residual `unknown` route telemetry still appears in the proof runtime
 
 So the architecture migration is meaningfully ahead of the capability proof.

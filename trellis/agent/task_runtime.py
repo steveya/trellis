@@ -1125,6 +1125,9 @@ def run_task(
                 "reflection": reflection_payload,
                 "cross_validation": cross_validation,
             })
+            aggregated_blockers = _aggregate_blocker_details(method_results)
+            if aggregated_blockers is not None:
+                result_data["blocker_details"] = aggregated_blockers
             result_data["learning"] = summarize_task_learning(
                 result_data,
                 task_kind="pricing",
@@ -1573,6 +1576,92 @@ def _aggregate_artifacts(method_payloads: dict[str, dict[str, Any]]) -> dict[str
             for payload in method_payloads.values()
         ),
     }
+
+
+def _aggregate_blocker_details(
+    method_payloads: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Merge structured blocker details across comparison-target builds."""
+    method_targets: list[str] = []
+    blocker_codes: list[str] = []
+    raw_blockers: list[str] = []
+    report_summaries: list[str] = []
+    report_blockers: list[dict[str, Any]] = []
+    seen_report_blockers: set[str] = set()
+    workflow_summaries: list[str] = []
+    workflow_items: list[dict[str, Any]] = []
+    seen_workflow_items: set[str] = set()
+    reasons: list[str] = []
+
+    for method, payload in method_payloads.items():
+        details = payload.get("blocker_details")
+        if not isinstance(details, Mapping) or not details:
+            continue
+        method_targets.append(str(method))
+        blocker_codes.extend(
+            str(code).strip()
+            for code in (details.get("blocker_codes") or ())
+            if str(code).strip()
+        )
+        raw_blockers.extend(
+            str(blocker).strip()
+            for blocker in (details.get("blockers") or ())
+            if str(blocker).strip()
+        )
+        blocker_report = details.get("blocker_report") or {}
+        summary = str(blocker_report.get("summary") or "").strip()
+        if summary:
+            report_summaries.append(summary)
+        for blocker in blocker_report.get("blockers") or ():
+            if not isinstance(blocker, Mapping):
+                continue
+            normalized = dict(blocker)
+            dedupe_key = json.dumps(normalized, sort_keys=True, default=str)
+            if dedupe_key in seen_report_blockers:
+                continue
+            seen_report_blockers.add(dedupe_key)
+            report_blockers.append(normalized)
+        workflow = details.get("new_primitive_workflow") or {}
+        workflow_summary = str(workflow.get("summary") or "").strip()
+        if workflow_summary:
+            workflow_summaries.append(workflow_summary)
+        for item in workflow.get("items") or ():
+            if not isinstance(item, Mapping):
+                continue
+            normalized = dict(item)
+            dedupe_key = json.dumps(normalized, sort_keys=True, default=str)
+            if dedupe_key in seen_workflow_items:
+                continue
+            seen_workflow_items.add(dedupe_key)
+            workflow_items.append(normalized)
+        reason = str(details.get("reason") or "").strip()
+        if reason:
+            reasons.append(reason)
+
+    if not method_targets:
+        return None
+
+    aggregated: dict[str, Any] = {
+        "method_targets": sorted(set(method_targets)),
+    }
+    if blocker_codes:
+        aggregated["blocker_codes"] = _unique_strings(blocker_codes)
+    if raw_blockers:
+        aggregated["blockers"] = _unique_strings(raw_blockers)
+    if report_blockers:
+        aggregated["blocker_report"] = {
+            "summary": "; ".join(_unique_strings(report_summaries)),
+            "should_block": True,
+            "blockers": report_blockers,
+        }
+    if workflow_items:
+        aggregated["new_primitive_workflow"] = {
+            "summary": "; ".join(_unique_strings(workflow_summaries)),
+            "items": workflow_items,
+        }
+    if reasons:
+        aggregated["reasons"] = _unique_strings(reasons)
+    return aggregated
 
 
 def _write_benchmark_sidecars(

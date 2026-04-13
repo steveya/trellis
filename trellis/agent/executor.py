@@ -625,6 +625,72 @@ def _semantic_clarification_blocker_details(compiled_request) -> dict[str, objec
     }
 
 
+def _pre_generation_gate_blocker_details(
+    generation_plan,
+    *,
+    gate_decision=None,
+) -> dict[str, object] | None:
+    """Project generation-plan blockers into a persisted structured payload.
+
+    Pre-generation gate blocks happen before the later primitive-blocker branch,
+    so persist the same blocker taxonomy here when it is already available.
+    """
+    from dataclasses import asdict
+
+    details: dict[str, object] = {}
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    raw_blockers = tuple(getattr(primitive_plan, "blockers", ()) or ())
+    if raw_blockers:
+        details["blockers"] = list(raw_blockers)
+
+    blocker_report = getattr(generation_plan, "blocker_report", None)
+    if blocker_report is not None:
+        details["blocker_codes"] = [
+            blocker.id for blocker in getattr(blocker_report, "blockers", ())
+        ]
+        details["blocker_report"] = {
+            "summary": getattr(blocker_report, "summary", ""),
+            "should_block": bool(getattr(blocker_report, "should_block", False)),
+            "blockers": [
+                asdict(blocker)
+                for blocker in getattr(blocker_report, "blockers", ())
+            ],
+        }
+
+    new_primitive_workflow = getattr(generation_plan, "new_primitive_workflow", None)
+    if new_primitive_workflow is not None:
+        details["new_primitive_workflow"] = {
+            "summary": getattr(new_primitive_workflow, "summary", ""),
+            "items": [asdict(item) for item in getattr(new_primitive_workflow, "items", ())],
+        }
+
+    if gate_decision is not None:
+        details["gate_decision"] = asdict(gate_decision)
+        route_admissibility = tuple(
+            getattr(gate_decision, "route_admissibility_failures", ()) or ()
+        )
+        if route_admissibility:
+            details["route_admissibility_failures"] = list(route_admissibility)
+        reason = str(getattr(gate_decision, "reason", "") or "").strip()
+        if reason and "blocker_report" not in details and "route guessing" in reason.lower():
+            details["blocker_codes"] = ["missing_binding_surface:lane_without_exact_binding"]
+            details["blocker_report"] = {
+                "summary": reason,
+                "should_block": True,
+                "blockers": [
+                    {
+                        "id": "missing_binding_surface:lane_without_exact_binding",
+                        "category": "missing_binding_surface",
+                        "primitive_kind": "backend_binding",
+                        "severity": "high",
+                        "summary": reason,
+                    }
+                ],
+            }
+
+    return details or None
+
+
 # ---------------------------------------------------------------------------
 # Audit record writer (non-blocking helper called at build success)
 # ---------------------------------------------------------------------------
@@ -1124,12 +1190,21 @@ def build_payoff(
         from dataclasses import asdict as _gate_asdict
         build_meta["build_gate_decision"] = _gate_asdict(_pre_gen_gate)
     if _pre_gen_gate.decision == "block":
+        blocker_details = _pre_generation_gate_blocker_details(
+            generation_plan,
+            gate_decision=_pre_gen_gate,
+        )
+        if build_meta is not None and blocker_details is not None:
+            build_meta["blocker_details"] = blocker_details
         _record_platform_event(
             compiled_request,
             "build_gate_blocked",
             status="error",
             success=False,
-            details={"gate_decision": _pre_gen_gate.decision, "reason": _pre_gen_gate.reason},
+            details=blocker_details or {
+                "gate_decision": _pre_gen_gate.decision,
+                "reason": _pre_gen_gate.reason,
+            },
         )
         raise RuntimeError(
             f"Build gate blocked pre-generation: {_pre_gen_gate.reason}"

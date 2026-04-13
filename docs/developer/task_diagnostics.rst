@@ -167,6 +167,11 @@ for each task:
 - latest diagnosis packet path
 - any follow-on candidate derived from repeated failures
 
+For comparison tasks, method-level blocker reports are now rolled up into the
+top-level task result as well. That keeps blocked comparison runs classified as
+``blocked`` instead of degrading into a generic ``comparison_insufficient_results``
+bucket when every method failed for a typed blocker reason.
+
 Operationally, the batch report is the front door and the per-task dossier is
 the second click. If a stress rerun looks wrong, read the batch report first,
 then open the linked dossier for the specific task instead of starting from the
