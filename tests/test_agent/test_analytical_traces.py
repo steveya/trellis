@@ -97,3 +97,15 @@ def test_route_health_snapshot_reports_instruction_counts():
     assert snapshot["hard_constraint_count"] == 0
     assert snapshot["conflict_count"] == 0
     assert "analytical_black76:schedule-builder" in snapshot["effective_instruction_ids"]
+
+
+def test_analytical_trace_route_from_dict_preserves_blank_route_name():
+    from trellis.agent.analytical_traces import AnalyticalTraceRoute
+
+    route = AnalyticalTraceRoute.from_dict(
+        {"family": "analytical", "name": "", "model": "black_scholes"}
+    )
+
+    assert route.family == "analytical"
+    assert route.name == ""
+    assert route.model == "black_scholes"
