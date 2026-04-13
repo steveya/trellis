@@ -165,10 +165,6 @@ routes:
       supports_calibration: false
     primitives:
       - module: trellis.core.date_utils
-        symbol: generate_schedule
-        role: schedule_builder
-        required: false
-      - module: trellis.core.date_utils
         symbol: year_fraction
         role: time_measure
       - module: trellis.core.differentiable

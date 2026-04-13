@@ -51,10 +51,6 @@ bindings:
     route_family: nth_to_default
     primitives:
       - module: trellis.core.date_utils
-        symbol: generate_schedule
-        role: schedule_builder
-        required: false
-      - module: trellis.core.date_utils
         symbol: year_fraction
         role: time_measure
       - module: trellis.core.differentiable

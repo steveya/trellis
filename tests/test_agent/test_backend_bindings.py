@@ -147,6 +147,28 @@ def test_resolve_backend_binding_spec_uses_route_conditionals_for_exact_targets(
     )
 
 
+def test_nth_to_default_binding_has_no_schedule_builder_surface():
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id("nth_to_default_monte_carlo", catalog)
+
+    assert binding is not None
+
+    resolved = resolve_backend_binding_spec(
+        binding,
+        product_ir=ProductIR(
+            instrument="nth_to_default",
+            payoff_family="nth_to_default",
+            exercise_style="none",
+            schedule_dependence=True,
+            state_dependence="schedule_state",
+        ),
+    )
+
+    assert resolved.binding_id == "trellis.instruments.nth_to_default.price_nth_to_default_basket"
+    assert resolved.helper_refs == ("trellis.instruments.nth_to_default.price_nth_to_default_basket",)
+    assert resolved.schedule_builder_refs == ()
+
+
 def test_binding_catalog_cache_tracks_binding_catalog_freshness(monkeypatch):
     clear_backend_binding_catalog_cache()
 

@@ -1803,6 +1803,17 @@ def test_task_to_instrument_type_detects_basket_option():
     )
 
 
+def test_task_to_instrument_type_prefers_nth_to_default_over_generic_basket():
+    from trellis.agent.task_runtime import task_to_instrument_type
+
+    assert (
+        task_to_instrument_type(
+            {"id": "E26", "title": "Nth-to-default basket: Gaussian copula vs default-time MC"}
+        )
+        == "nth_to_default"
+    )
+
+
 def test_task_to_instrument_type_detects_bare_european_shape():
     from trellis.agent.task_runtime import task_to_instrument_type
 
