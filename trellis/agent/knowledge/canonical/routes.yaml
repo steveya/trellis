@@ -35,8 +35,7 @@ routes:
         symbol: price_quanto_option_analytical_from_market_state
         role: route_helper
     adapters: []
-    notes:
-      - "Use `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state(...)` as the exact backend helper for analytical quanto requests."
+    notes: []
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -65,8 +64,7 @@ routes:
         symbol: price_quanto_option_monte_carlo_from_market_state
         role: route_helper
     adapters: []
-    notes:
-      - "Use `trellis.models.quanto_option.price_quanto_option_monte_carlo_from_market_state(...)` as the exact backend helper for Monte Carlo quanto requests."
+    notes: []
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -400,8 +398,7 @@ routes:
         symbol: price_fx_vanilla_monte_carlo
         role: route_helper
     adapters: []
-    notes:
-      - "Use `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo(...)` as the exact backend helper for vanilla FX Monte Carlo requests."
+    notes: []
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -871,8 +868,7 @@ routes:
         symbol: price_fx_vanilla_analytical
         role: route_helper
     adapters: []
-    notes:
-      - "Use `trellis.models.fx_vanilla.price_fx_vanilla_analytical(...)` as the exact backend helper for analytical vanilla FX requests."
+    notes: []
     market_data_access:
       required:
         discount_curve: [market_state.discount]
