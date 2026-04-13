@@ -335,6 +335,7 @@ bindings:
             role: time_measure
       - when:
           payoff_family: basket_option
+          payoff_traits: [two_asset_terminal_basket]
           exercise_style: [european]
           model_family: [equity_diffusion]
         primitives:
@@ -420,6 +421,7 @@ bindings:
             role: route_helper
       - when:
           payoff_family: basket_option
+          payoff_traits: [two_asset_terminal_basket]
           exercise_style: [european]
           model_family: [equity_diffusion]
         primitives:

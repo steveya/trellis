@@ -286,44 +286,49 @@ def price_basket_option_transform_proxy(
 def _price_two_asset_spread_kirk(resolved: ResolvedBasketOptionInputs) -> float:
     semantics = resolved.semantics
     F1, F2 = _forwards_from_resolved(semantics)
+    long_idx, short_idx = _spread_leg_indices(resolved.weights)
+    long_weight = float(abs(resolved.weights[long_idx]))
+    short_weight = float(abs(resolved.weights[short_idx]))
+    long_forward = (F1 if long_idx == 0 else F2) * long_weight
+    short_forward = (F1 if short_idx == 0 else F2) * short_weight
     strike = float(resolved.strike)
     if strike < 0.0:
         raise ValueError("Spread-option strike must be non-negative for Kirk pricing")
-    denom = F2 + strike
+    denom = short_forward + strike
     if denom <= 0.0:
         raise ValueError("Spread-option denominator must be positive for Kirk pricing")
 
-    sigma1 = float(resolved.vols[0])
-    sigma2 = float(resolved.vols[1])
-    rho = float(resolved.correlation_matrix[0][1])
-    ratio = F2 / denom
+    sigma_long = float(resolved.vols[long_idx])
+    sigma_short = float(resolved.vols[short_idx])
+    rho = float(resolved.correlation_matrix[long_idx][short_idx])
+    ratio = short_forward / denom
     effective_variance = (
-        sigma1 * sigma1
-        - 2.0 * rho * sigma1 * sigma2 * ratio
-        + sigma2 * sigma2 * ratio * ratio
+        sigma_long * sigma_long
+        - 2.0 * rho * sigma_long * sigma_short * ratio
+        + sigma_short * sigma_short * ratio * ratio
     )
     effective_vol = float(np.sqrt(max(effective_variance, 0.0)))
     if effective_vol <= 0.0 or semantics.T <= 0.0:
-        intrinsic = max(F1 - denom, 0.0)
+        intrinsic = max(long_forward - denom, 0.0)
         if resolved.option_type == "put":
-            intrinsic = max(denom - F1, 0.0)
+            intrinsic = max(denom - long_forward, 0.0)
         return float(semantics.domestic_df) * float(intrinsic)
 
     sqrt_t = float(np.sqrt(float(semantics.T)))
-    d1 = (float(np.log(F1 / denom)) + 0.5 * effective_vol * effective_vol * float(semantics.T)) / (
+    d1 = (float(np.log(long_forward / denom)) + 0.5 * effective_vol * effective_vol * float(semantics.T)) / (
         effective_vol * sqrt_t
     )
     d2 = d1 - effective_vol * sqrt_t
     call = float(
         semantics.domestic_df
         * (
-            F1 * _normal_cdf(d1)
+            long_forward * _normal_cdf(d1)
             - denom * _normal_cdf(d2)
         )
     )
     if resolved.option_type == "call":
         return call
-    return float(call - float(semantics.domestic_df) * (F1 - denom))
+    return float(call - float(semantics.domestic_df) * (long_forward - denom))
 
 
 def _price_two_asset_basket_quadrature(
@@ -393,6 +398,16 @@ def _forwards_from_resolved(semantics: ResolvedBasketSemantics) -> tuple[float, 
     for spot, carry in zip(semantics.constituent_spots, semantics.constituent_carry, strict=True):
         forwards.append(float(spot) * float(raw_np.exp((domestic_rate - float(carry)) * float(semantics.T))))
     return float(forwards[0]), float(forwards[1])
+
+
+def _spread_leg_indices(weights: tuple[float, ...]) -> tuple[int, int]:
+    if len(weights) != 2:
+        raise ValueError("Spread helper requires exactly two basket weights")
+    positive = tuple(idx for idx, value in enumerate(weights) if float(value) > 0.0)
+    negative = tuple(idx for idx, value in enumerate(weights) if float(value) < 0.0)
+    if len(positive) != 1 or len(negative) != 1:
+        raise ValueError("Spread helper requires one positive and one negative weight")
+    return positive[0], negative[0]
 
 
 def _implied_zero_rate(discount_factor: float, T: float) -> float:

@@ -811,6 +811,19 @@ def test_compile_build_request_keeps_generic_basket_option_off_ranked_observatio
     assert compiled.generation_plan.primitive_plan.route == "monte_carlo_paths"
 
 
+def test_compile_build_request_marks_two_asset_terminal_baskets_for_exact_helper_binding():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "Spread option (Kirk approximation) vs 2D MC vs 2D FFT",
+        instrument_type="basket_option",
+        preferred_method="analytical",
+    )
+
+    assert compiled.product_ir is not None
+    assert "two_asset_terminal_basket" in compiled.product_ir.payoff_traits
+
+
 def test_novel_request_persists_semantic_extension_trace(monkeypatch, tmp_path):
     from trellis.agent.platform_requests import compile_build_request
     import trellis.agent.knowledge.promotion as promotion_mod

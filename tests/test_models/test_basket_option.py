@@ -60,6 +60,10 @@ class _SpreadSpec:
     n_paths = 40_000
 
 
+class _WeightedSpreadSpec(_SpreadSpec):
+    weights = "2.0,-1.0"
+
+
 def test_resolve_basket_option_inputs_parses_underliers_and_explicit_correlation():
     from trellis.models.basket_option import resolve_basket_option_inputs
 
@@ -136,6 +140,31 @@ def test_spread_transform_proxy_matches_stabilized_analytical_kernel():
     )
 
     assert transform == pytest.approx(analytical, rel=1e-12)
+
+
+def test_weighted_spread_kirk_tracks_monte_carlo():
+    from trellis.models.basket_option import (
+        price_basket_option_analytical,
+        price_basket_option_monte_carlo,
+    )
+
+    market_state = _market_state()
+    analytical = price_basket_option_analytical(
+        market_state,
+        _WeightedSpreadSpec(),
+        comparison_target="kirk_spread",
+    )
+    monte_carlo = price_basket_option_monte_carlo(
+        market_state,
+        _WeightedSpreadSpec(),
+        comparison_target="mc_spread_2d",
+        n_paths=24_000,
+        seed=42,
+    )
+
+    assert analytical > 0.0
+    assert monte_carlo > 0.0
+    assert monte_carlo == pytest.approx(analytical, rel=0.15)
 
 
 def test_basket_option_helpers_prefer_explicit_vol_surface_over_local_vol_overlay():
