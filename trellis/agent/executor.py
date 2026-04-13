@@ -7,7 +7,7 @@ import json
 import subprocess
 import textwrap
 import time
-from dataclasses import asdict, dataclass, replace as replace_dataclass
+from dataclasses import asdict, dataclass, is_dataclass, replace as replace_dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -39,6 +39,7 @@ from trellis.agent.knowledge.api_map import format_api_map_for_prompt
 
 # Sentinel in the skeleton that gets replaced by the LLM-generated body.
 EVALUATE_SENTINEL = '        raise NotImplementedError("evaluate not yet implemented")'
+_ROUTE_GUESSING_BLOCKER_REASON = "route guessing"
 
 _REPO_REVISION: str | None = None
 
@@ -635,9 +636,17 @@ def _pre_generation_gate_blocker_details(
     Pre-generation gate blocks happen before the later primitive-blocker branch,
     so persist the same blocker taxonomy here when it is already available.
     """
-    from dataclasses import asdict
-
     details: dict[str, object] = {}
+
+    def _serialize_structured_entry(entry: object) -> dict[str, object]:
+        if is_dataclass(entry):
+            return asdict(entry)
+        if isinstance(entry, Mapping):
+            return dict(entry)
+        if hasattr(entry, "__dict__"):
+            return dict(vars(entry))
+        raise TypeError(f"Unsupported structured blocker entry: {type(entry)!r}")
+
     primitive_plan = getattr(generation_plan, "primitive_plan", None)
     raw_blockers = tuple(getattr(primitive_plan, "blockers", ()) or ())
     if raw_blockers:
@@ -652,7 +661,7 @@ def _pre_generation_gate_blocker_details(
             "summary": getattr(blocker_report, "summary", ""),
             "should_block": bool(getattr(blocker_report, "should_block", False)),
             "blockers": [
-                asdict(blocker)
+                _serialize_structured_entry(blocker)
                 for blocker in getattr(blocker_report, "blockers", ())
             ],
         }
@@ -661,7 +670,10 @@ def _pre_generation_gate_blocker_details(
     if new_primitive_workflow is not None:
         details["new_primitive_workflow"] = {
             "summary": getattr(new_primitive_workflow, "summary", ""),
-            "items": [asdict(item) for item in getattr(new_primitive_workflow, "items", ())],
+            "items": [
+                _serialize_structured_entry(item)
+                for item in getattr(new_primitive_workflow, "items", ())
+            ],
         }
 
     if gate_decision is not None:
@@ -672,7 +684,11 @@ def _pre_generation_gate_blocker_details(
         if route_admissibility:
             details["route_admissibility_failures"] = list(route_admissibility)
         reason = str(getattr(gate_decision, "reason", "") or "").strip()
-        if reason and "blocker_report" not in details and "route guessing" in reason.lower():
+        if (
+            reason
+            and "blocker_report" not in details
+            and _ROUTE_GUESSING_BLOCKER_REASON in reason.lower()
+        ):
             details["blocker_codes"] = ["missing_binding_surface:lane_without_exact_binding"]
             details["blocker_report"] = {
                 "summary": reason,
