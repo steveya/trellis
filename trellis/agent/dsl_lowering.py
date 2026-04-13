@@ -1,12 +1,12 @@
-"""Lower normalized DSL fragments onto checked-in helper-backed route targets.
+"""Lower normalized DSL fragments onto checked-in helper-backed binding targets.
 
 This module is the first executable bridge from the semiring/Bellman DSL
 algebra to the checked-in semantic compiler outputs. It is intentionally
 conservative:
 
-- it only lowers routes that already have stable route IDs and helper targets
+- it only lowers bindings that already have stable exact targets
 - it returns structured admissibility errors instead of guessing
-- it treats helper bindings as targets of the DSL, not as the DSL itself
+- it treats exact backend bindings as targets of the DSL, not as the DSL itself
 """
 
 from __future__ import annotations
@@ -70,6 +70,7 @@ class DslLoweringError:
     stage: str
     code: str
     message: str
+    binding_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -85,6 +86,7 @@ class SemanticDslLowering:
     adapters: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
     errors: tuple[DslLoweringError, ...] = ()
+    binding_id: str = ""
 
     @property
     def control_styles(self) -> tuple[ControlStyle, ...]:
@@ -167,6 +169,7 @@ def lower_semantic_blueprint(
             route_id,
             product_ir=product_ir,
         )
+        binding_id = str(getattr(binding_spec, "binding_id", "") or "").strip()
         bindings = _target_bindings_for_route(
             route,
             product_ir=product_ir,
@@ -198,6 +201,7 @@ def lower_semantic_blueprint(
         if family_ir is not None:
             expr, lowering_errors = _build_expr_for_family_ir(
                 route_id=route_id,
+                binding_id=binding_id,
                 family_ir=family_ir,
                 bindings=bindings,
             )
@@ -207,6 +211,7 @@ def lower_semantic_blueprint(
                 product_ir=product_ir,
                 pricing_plan=pricing_plan,
                 route_id=route_id,
+                binding_id=binding_id,
                 route_family=route_family,
                 bindings=bindings,
             )
@@ -226,9 +231,11 @@ def lower_semantic_blueprint(
                         stage="dsl_expr",
                         code=_infer_error_code(error),
                         message=error,
+                        binding_id=binding_id or None,
                     )
                     for error in lowering_errors
                 ),
+                binding_id=binding_id,
             )
             errors.extend(
                 fallback_result.errors
@@ -259,6 +266,7 @@ def lower_semantic_blueprint(
             adapters=adapters,
             notes=notes,
             errors=(),
+            binding_id=binding_id,
         )
 
     if fallback_result is not None:
@@ -272,6 +280,7 @@ def lower_semantic_blueprint(
             adapters=fallback_result.adapters,
             notes=fallback_result.notes,
             errors=tuple(errors),
+            binding_id=fallback_result.binding_id,
         )
 
     return SemanticDslLowering(
@@ -320,6 +329,7 @@ def _target_bindings_for_route(
 def _build_expr_for_family_ir(
     *,
     route_id: str,
+    binding_id: str,
     family_ir,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
@@ -327,48 +337,56 @@ def _build_expr_for_family_ir(
     if isinstance(family_ir, AnalyticalBlack76IR):
         return _build_black76_expr_from_family_ir(
             route_id=route_id,
+            binding_id=binding_id,
             family_ir=family_ir,
             bindings=bindings,
         )
     if isinstance(family_ir, EventAwarePDEIR):
         return _build_event_aware_pde_expr_from_family_ir(
             route_id=route_id,
+            binding_id=binding_id,
             family_ir=family_ir,
             bindings=bindings,
         )
     if isinstance(family_ir, EventAwareMonteCarloIR):
         return _build_event_aware_monte_carlo_expr_from_family_ir(
             route_id=route_id,
+            binding_id=binding_id,
             family_ir=family_ir,
             bindings=bindings,
         )
     if isinstance(family_ir, TransformPricingIR):
         return _build_transform_expr_from_family_ir(
             route_id=route_id,
+            binding_id=binding_id,
             family_ir=family_ir,
             bindings=bindings,
         )
     if isinstance(family_ir, ExerciseLatticeIR):
         return _build_exercise_lattice_expr_from_family_ir(
             route_id=route_id,
+            binding_id=binding_id,
             family_ir=family_ir,
             bindings=bindings,
         )
     if isinstance(family_ir, CorrelatedBasketMonteCarloIR):
         return _build_correlated_basket_mc_expr_from_family_ir(
             route_id=route_id,
+            binding_id=binding_id,
             family_ir=family_ir,
             bindings=bindings,
         )
     if isinstance(family_ir, CreditDefaultSwapIR):
         return _build_credit_default_swap_expr_from_family_ir(
             route_id=route_id,
+            binding_id=binding_id,
             family_ir=family_ir,
             bindings=bindings,
         )
     if isinstance(family_ir, NthToDefaultIR):
         return _build_nth_to_default_expr_from_family_ir(
             route_id=route_id,
+            binding_id=binding_id,
             family_ir=family_ir,
             bindings=bindings,
         )
@@ -383,33 +401,36 @@ def _build_expr_for_route(
     product_ir,
     pricing_plan,
     route_id: str,
+    binding_id: str,
     route_family: str,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
     """Build the semantic DSL fragment for one resolved route."""
     market_signature = _market_signature(contract)
-    if route_id == "analytical_black76":
-        return _build_black76_expr(
-            contract,
-            route_id=route_id,
-            market_signature=market_signature,
-            bindings=bindings,
-        )
     route_helper = next(
         (binding for binding in bindings if binding.role == "route_helper"),
         None,
     )
-    if route_helper is None:
-        return None, (
-            f"Route '{route_id}' has no helper-backed lowering target.",
+    if _can_build_black76_expr(contract, bindings):
+        return _build_black76_expr(
+            contract,
+            route_id=route_id,
+            binding_id=binding_id,
+            market_signature=market_signature,
+            bindings=bindings,
         )
+    if route_helper is None:
+        return None, (_missing_helper_target_message(route_id, binding_id),)
 
     control_style = _control_style_for_product(product_ir)
-    if control_style is not None:
+    if control_style is not None and any(
+        binding.role == "control_policy" for binding in bindings
+    ):
         return _build_control_expr(
             product_ir=product_ir,
             pricing_plan=pricing_plan,
             route_id=route_id,
+            binding_id=binding_id,
             route_family=route_family,
             market_signature=market_signature,
             bindings=bindings,
@@ -421,9 +442,9 @@ def _build_expr_for_route(
     )
     if market_binding is not None:
         binding_atom = ContractAtom(
-            atom_id=f"{route_id}:market_binding",
+            atom_id=_binding_atom_id(route_id, binding_id, "market_binding"),
             primitive_ref=market_binding.primitive_ref,
-            description="Resolve market inputs into a route-local state bundle.",
+            description="Resolve market inputs into a binding-local state bundle.",
             signature=ContractSignature(
                 inputs=market_signature.inputs,
                 outputs=("resolved_state:state",),
@@ -432,9 +453,9 @@ def _build_expr_for_route(
             ),
         )
         helper_atom = ContractAtom(
-            atom_id=f"{route_id}:route_helper",
+            atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
             primitive_ref=route_helper.primitive_ref,
-            description="Delegate the priced route to the checked-in helper.",
+            description="Delegate the priced binding to the checked-in helper.",
             signature=ContractSignature(
                 inputs=("resolved_state:state",),
                 outputs=("price:scalar",),
@@ -445,9 +466,9 @@ def _build_expr_for_route(
         return ThenExpr(terms=(binding_atom, helper_atom)), ()
 
     helper_atom = ContractAtom(
-        atom_id=f"{route_id}:route_helper",
+        atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
         primitive_ref=route_helper.primitive_ref,
-        description="Delegate the priced route to the checked-in helper.",
+        description="Delegate the priced binding to the checked-in helper.",
         signature=ContractSignature(
             inputs=market_signature.inputs,
             outputs=("price:scalar",),
@@ -462,6 +483,7 @@ def _build_black76_expr(
     contract,
     *,
     route_id: str,
+    binding_id: str,
     market_signature: ContractSignature,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
@@ -469,7 +491,7 @@ def _build_black76_expr(
     payoff_family = getattr(contract.product, "payoff_family", "")
     if payoff_family not in {"vanilla_option", "swaption"}:
         return None, (
-            "Route 'analytical_black76' only has an explicit DSL lowering for "
+            f"{_binding_subject(route_id, binding_id)} only has an explicit DSL lowering for "
             "plain vanilla-option and rate-style swaption semantics in this slice.",
         )
 
@@ -484,7 +506,7 @@ def _build_black76_expr(
     ):
         return (
             ContractAtom(
-                atom_id=f"{route_id}:route_helper",
+                atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
                 primitive_ref=route_helper.primitive_ref,
                 description=(
                     "Checked-in analytical lower-bound helper for a Bermudan "
@@ -512,7 +534,7 @@ def _build_black76_expr(
         if market_binding is None:
             return (
                 ContractAtom(
-                    atom_id=f"{route_id}:route_helper",
+                    atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
                     primitive_ref=route_helper.primitive_ref,
                     description="Delegate European rate-style swaption pricing to the checked-in Black76 family helper.",
                     signature=ContractSignature(
@@ -526,7 +548,7 @@ def _build_black76_expr(
             )
 
         binding_atom = ContractAtom(
-            atom_id=f"{route_id}:market_binding",
+            atom_id=_binding_atom_id(route_id, binding_id, "market_binding"),
             primitive_ref=market_binding.primitive_ref,
             description="Resolve market inputs for a European rate-style swaption.",
             signature=ContractSignature(
@@ -537,7 +559,7 @@ def _build_black76_expr(
             ),
         )
         helper_atom = ContractAtom(
-            atom_id=f"{route_id}:route_helper",
+            atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
             primitive_ref=route_helper.primitive_ref,
             description="Delegate European rate-style swaption pricing to the checked-in Black76 raw helper.",
             signature=ContractSignature(
@@ -560,12 +582,10 @@ def _build_black76_expr(
         None,
     )
     if kernel is None:
-        return None, (
-            f"Route '{route_id}' is missing the required pricing kernel '{kernel_name}'.",
-        )
+        return None, (_missing_primitive_message(route_id, binding_id, "pricing kernel", kernel_name),)
 
     kernel_atom = ContractAtom(
-        atom_id=f"{route_id}:{kernel_name}",
+        atom_id=_binding_atom_id(route_id, binding_id, "pricing_kernel", kernel),
         primitive_ref=kernel.primitive_ref,
         description=(
             f"Direct Black76 {option_type} kernel for "
@@ -584,6 +604,7 @@ def _build_black76_expr(
 def _build_black76_expr_from_family_ir(
     *,
     route_id: str,
+    binding_id: str,
     family_ir: AnalyticalBlack76IR,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
@@ -598,12 +619,17 @@ def _build_black76_expr_from_family_ir(
     )
     if kernel is None:
         return None, (
-            f"Route '{route_id}' is missing the required pricing kernel '{family_ir.kernel_symbol}'.",
+            _missing_primitive_message(
+                route_id,
+                binding_id,
+                "pricing kernel",
+                family_ir.kernel_symbol,
+            ),
         )
 
     signature = _market_signature_from_family_ir(family_ir)
     kernel_atom = ContractAtom(
-        atom_id=f"{route_id}:{family_ir.kernel_symbol}",
+        atom_id=_binding_atom_id(route_id, binding_id, "pricing_kernel", kernel),
         primitive_ref=kernel.primitive_ref,
         description=(
             f"Typed Black76 {family_ir.option_type} kernel for plain vanilla payoff "
@@ -617,14 +643,13 @@ def _build_black76_expr_from_family_ir(
 def _build_event_aware_pde_expr_from_family_ir(
     *,
     route_id: str,
+    binding_id: str,
     family_ir: EventAwarePDEIR,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
     """Build a helper-backed event-aware PDE lowering from typed family IR."""
     if not family_ir.helper_symbol:
-        return None, (
-            f"Route '{route_id}' has no helper-backed lowering target.",
-        )
+        return None, (_missing_helper_target_message(route_id, binding_id),)
     route_helper = next(
         (
             binding
@@ -635,11 +660,11 @@ def _build_event_aware_pde_expr_from_family_ir(
     )
     if route_helper is None:
         return None, (
-            f"Route '{route_id}' is missing the required route helper '{family_ir.helper_symbol}'.",
+            _missing_primitive_message(route_id, binding_id, "helper", family_ir.helper_symbol),
         )
 
     helper_atom = ContractAtom(
-        atom_id=f"{route_id}:route_helper",
+        atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
         primitive_ref=route_helper.primitive_ref,
         description=_event_aware_pde_helper_description(family_ir),
         signature=_market_signature_from_family_ir(family_ir),
@@ -650,6 +675,7 @@ def _build_event_aware_pde_expr_from_family_ir(
 def _build_event_aware_monte_carlo_expr_from_family_ir(
     *,
     route_id: str,
+    binding_id: str,
     family_ir: EventAwareMonteCarloIR,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
@@ -666,10 +692,10 @@ def _build_event_aware_monte_carlo_expr_from_family_ir(
         )
         if route_helper is None:
             return None, (
-                f"Route '{route_id}' is missing the required route helper '{family_ir.helper_symbol}'.",
+                _missing_primitive_message(route_id, binding_id, "helper", family_ir.helper_symbol),
             )
         helper_atom = ContractAtom(
-            atom_id=f"{route_id}:route_helper",
+            atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
             primitive_ref=route_helper.primitive_ref,
             description=(
                 f"Typed event-aware Monte Carlo family helper for {family_ir.product_instrument or 'compiled'} "
@@ -695,7 +721,7 @@ def _build_event_aware_monte_carlo_expr_from_family_ir(
     )
     if path_simulation is None:
         return None, (
-            f"Route '{route_id}' is missing the required Monte Carlo path simulation primitive.",
+            _missing_primitive_message(route_id, binding_id, "Monte Carlo path simulation"),
         )
 
     reducer_binding = next(
@@ -712,7 +738,7 @@ def _build_event_aware_monte_carlo_expr_from_family_ir(
     )
 
     process_atom = ContractAtom(
-        atom_id=f"{route_id}:state_process",
+        atom_id=_binding_atom_id(route_id, binding_id, "state_process", process_binding),
         primitive_ref=process_binding.primitive_ref if process_binding is not None else None,
         description=(
             f"Compile the typed {family_ir.process_spec.process_family or 'event-aware'} "
@@ -726,7 +752,7 @@ def _build_event_aware_monte_carlo_expr_from_family_ir(
         ),
     )
     simulation_atom = ContractAtom(
-        atom_id=f"{route_id}:path_simulation",
+        atom_id=_binding_atom_id(route_id, binding_id, "path_simulation", path_simulation),
         primitive_ref=path_simulation.primitive_ref,
         description=(
             f"Simulate paths under the typed {family_ir.path_requirement_spec.requirement_kind or 'terminal_only'} "
@@ -740,7 +766,7 @@ def _build_event_aware_monte_carlo_expr_from_family_ir(
         ),
     )
     reducer_atom = ContractAtom(
-        atom_id=f"{route_id}:payoff_reducer",
+        atom_id=_binding_atom_id(route_id, binding_id, "payoff_reducer", reducer_binding),
         primitive_ref=reducer_binding.primitive_ref if reducer_binding is not None else None,
         description=(
             f"Reduce simulated path state through {family_ir.payoff_reducer_spec.reducer_kind or 'compiled_payoff'} "
@@ -759,6 +785,7 @@ def _build_event_aware_monte_carlo_expr_from_family_ir(
 def _build_transform_expr_from_family_ir(
     *,
     route_id: str,
+    binding_id: str,
     family_ir: TransformPricingIR,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
@@ -775,10 +802,10 @@ def _build_transform_expr_from_family_ir(
         )
         if route_helper is None:
             return None, (
-                f"Route '{route_id}' is missing the required route helper '{family_ir.helper_symbol}'.",
+                _missing_primitive_message(route_id, binding_id, "helper", family_ir.helper_symbol),
             )
         helper_atom = ContractAtom(
-            atom_id=f"{route_id}:route_helper",
+            atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
             primitive_ref=route_helper.primitive_ref,
             description=(
                 f"Typed transform helper for {family_ir.product_instrument or 'compiled'} "
@@ -798,11 +825,11 @@ def _build_transform_expr_from_family_ir(
     )
     if transform_pricer is None:
         return None, (
-            f"Route '{route_id}' is missing the required raw transform pricing primitive.",
+            _missing_primitive_message(route_id, binding_id, "raw transform pricing"),
         )
 
     kernel_atom = ContractAtom(
-        atom_id=f"{route_id}:transform_pricer",
+        atom_id=_binding_atom_id(route_id, binding_id, "transform_pricer", transform_pricer),
         primitive_ref=transform_pricer.primitive_ref,
         description=(
             f"Typed raw transform pricing kernel for {family_ir.product_instrument or 'compiled'} "
@@ -811,6 +838,65 @@ def _build_transform_expr_from_family_ir(
         signature=market_signature,
     )
     return kernel_atom, ()
+
+
+def _can_build_black76_expr(contract, bindings: tuple[DslTargetBinding, ...]) -> bool:
+    """Return whether fallback lowering can use the Black76 family surface."""
+    payoff_family = str(getattr(contract.product, "payoff_family", "") or "").strip()
+    if payoff_family not in {"vanilla_option", "swaption"}:
+        return False
+    return any(
+        binding.role == "pricing_kernel"
+        and binding.symbol in {"black76_call", "black76_put"}
+        for binding in bindings
+    )
+
+
+def _binding_subject(route_id: str, binding_id: str) -> str:
+    """Return a readable binding-first label with route fallback."""
+    if str(binding_id or "").strip():
+        return f"Binding '{binding_id}'"
+    return f"Route '{route_id}'"
+
+
+def _binding_atom_id(
+    route_id: str,
+    binding_id: str,
+    role: str,
+    binding: DslTargetBinding | None = None,
+) -> str:
+    """Return a stable DSL atom id rooted in binding identity."""
+    del binding
+    identity = str(binding_id or "").strip() or route_id
+    if not identity:
+        identity = "unbound"
+    return f"{identity}:{role}"
+
+
+def _missing_helper_target_message(
+    route_id: str,
+    binding_id: str,
+    context: str = "DSL lowering",
+) -> str:
+    """Return a binding-first missing-helper message."""
+    return (
+        f"{_binding_subject(route_id, binding_id)} has no helper-backed lowering target"
+        f" for {context}."
+    )
+
+
+def _missing_primitive_message(
+    route_id: str,
+    binding_id: str,
+    primitive_kind: str,
+    symbol: str | None = None,
+) -> str:
+    """Return a binding-first missing-primitive message."""
+    suffix = f" primitive '{symbol}'" if str(symbol or "").strip() else " primitive"
+    return (
+        f"{_binding_subject(route_id, binding_id)} is missing the required "
+        f"{primitive_kind}{suffix}."
+    )
 
 
 def _binding_supports_mc_process(binding: DslTargetBinding, process_family: str) -> bool:
@@ -845,6 +931,7 @@ def _event_aware_pde_helper_description(family_ir: EventAwarePDEIR) -> str:
 def _build_exercise_lattice_expr_from_family_ir(
     *,
     route_id: str,
+    binding_id: str,
     family_ir: ExerciseLatticeIR,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
@@ -859,7 +946,7 @@ def _build_exercise_lattice_expr_from_family_ir(
     )
     if route_helper is None:
         return None, (
-            f"Route '{route_id}' is missing the required route helper '{family_ir.helper_symbol}'.",
+            _missing_primitive_message(route_id, binding_id, "helper", family_ir.helper_symbol),
         )
 
     control_binding = next(
@@ -874,7 +961,7 @@ def _build_exercise_lattice_expr_from_family_ir(
     control_style = _control_style_from_family_ir(family_ir)
     if control_style is None:
         helper_atom = ContractAtom(
-            atom_id=f"{route_id}:route_helper",
+            atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
             primitive_ref=route_helper.primitive_ref,
             description=(
                 f"Typed exercise-lattice helper for {family_ir.product_instrument} "
@@ -917,6 +1004,7 @@ def _build_exercise_lattice_expr_from_family_ir(
 def _build_correlated_basket_mc_expr_from_family_ir(
     *,
     route_id: str,
+    binding_id: str,
     family_ir: CorrelatedBasketMonteCarloIR,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
@@ -931,7 +1019,12 @@ def _build_correlated_basket_mc_expr_from_family_ir(
     )
     if market_binding is None:
         return None, (
-            f"Route '{route_id}' is missing the required market binding '{family_ir.market_binding_symbol}'.",
+            _missing_primitive_message(
+                route_id,
+                binding_id,
+                "market binding",
+                family_ir.market_binding_symbol,
+            ),
         )
 
     route_helper = next(
@@ -944,12 +1037,12 @@ def _build_correlated_basket_mc_expr_from_family_ir(
     )
     if route_helper is None:
         return None, (
-            f"Route '{route_id}' is missing the required route helper '{family_ir.helper_symbol}'.",
+            _missing_primitive_message(route_id, binding_id, "helper", family_ir.helper_symbol),
         )
 
     market_signature = _market_signature_from_family_ir(family_ir)
     binding_atom = ContractAtom(
-        atom_id=f"{route_id}:market_binding",
+        atom_id=_binding_atom_id(route_id, binding_id, "market_binding", market_binding),
         primitive_ref=market_binding.primitive_ref,
         description=(
             "Typed ranked-observation basket binding that resolves constituent market data, "
@@ -963,7 +1056,7 @@ def _build_correlated_basket_mc_expr_from_family_ir(
         ),
     )
     helper_atom = ContractAtom(
-        atom_id=f"{route_id}:route_helper",
+        atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
         primitive_ref=route_helper.primitive_ref,
         description=(
             f"Typed ranked-observation basket Monte Carlo helper with "
@@ -982,6 +1075,7 @@ def _build_correlated_basket_mc_expr_from_family_ir(
 def _build_credit_default_swap_expr_from_family_ir(
     *,
     route_id: str,
+    binding_id: str,
     family_ir: CreditDefaultSwapIR,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
@@ -996,7 +1090,12 @@ def _build_credit_default_swap_expr_from_family_ir(
     )
     if schedule_builder is None:
         return None, (
-            f"Route '{route_id}' is missing the required schedule builder '{family_ir.schedule_builder_symbol}'.",
+            _missing_primitive_message(
+                route_id,
+                binding_id,
+                "schedule builder",
+                family_ir.schedule_builder_symbol,
+            ),
         )
 
     route_helper = next(
@@ -1009,12 +1108,12 @@ def _build_credit_default_swap_expr_from_family_ir(
     )
     if route_helper is None:
         return None, (
-            f"Route '{route_id}' is missing the required route helper '{family_ir.helper_symbol}'.",
+            _missing_primitive_message(route_id, binding_id, "helper", family_ir.helper_symbol),
         )
 
     market_signature = _market_signature_from_family_ir(family_ir)
     schedule_atom = ContractAtom(
-        atom_id=f"{route_id}:schedule_builder",
+        atom_id=_binding_atom_id(route_id, binding_id, "schedule_builder", schedule_builder),
         primitive_ref=schedule_builder.primitive_ref,
         description="Build the canonical CDS premium schedule shared by the checked-in route helpers.",
         signature=ContractSignature(
@@ -1025,7 +1124,7 @@ def _build_credit_default_swap_expr_from_family_ir(
         ),
     )
     helper_atom = ContractAtom(
-        atom_id=f"{route_id}:route_helper",
+        atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
         primitive_ref=route_helper.primitive_ref,
         description=(
             f"Typed single-name CDS {family_ir.pricing_mode} helper using the checked-in "
@@ -1044,6 +1143,7 @@ def _build_credit_default_swap_expr_from_family_ir(
 def _build_nth_to_default_expr_from_family_ir(
     *,
     route_id: str,
+    binding_id: str,
     family_ir: NthToDefaultIR,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
@@ -1058,7 +1158,7 @@ def _build_nth_to_default_expr_from_family_ir(
     )
     if route_helper is None:
         return None, (
-            f"Route '{route_id}' is missing the required route helper '{family_ir.helper_symbol}'.",
+            _missing_primitive_message(route_id, binding_id, "helper", family_ir.helper_symbol),
         )
 
     copula_binding = next(
@@ -1071,12 +1171,12 @@ def _build_nth_to_default_expr_from_family_ir(
     )
     if copula_binding is None:
         return None, (
-            f"Route '{route_id}' is missing the required copula primitive '{family_ir.copula_symbol}'.",
+            _missing_primitive_message(route_id, binding_id, "copula", family_ir.copula_symbol),
         )
 
     market_signature = _market_signature_from_family_ir(family_ir)
     helper_atom = ContractAtom(
-        atom_id=f"{route_id}:route_helper",
+        atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
         primitive_ref=route_helper.primitive_ref,
         description=(
             f"Typed nth-to-default helper backed by the checked-in "
@@ -1097,6 +1197,7 @@ def _build_control_expr(
     product_ir,
     pricing_plan,
     route_id: str,
+    binding_id: str,
     route_family: str,
     market_signature: ContractSignature,
     bindings: tuple[DslTargetBinding, ...],
@@ -1104,7 +1205,7 @@ def _build_control_expr(
     """Build an explicit Bellman/choice expression for a control route."""
     if pricing_plan.method not in {"rate_tree", "monte_carlo"}:
         return None, (
-            f"Route '{route_id}' is a control route but method '{pricing_plan.method}' "
+            f"{_binding_subject(route_id, binding_id)} is a control binding but method '{pricing_plan.method}' "
             "is not Bellman-compatible.",
         )
 
@@ -1117,7 +1218,7 @@ def _build_control_expr(
         None,
     )
     if route_helper is None:
-        return None, (f"Route '{route_id}' has no helper target for control lowering.",)
+        return None, (_missing_helper_target_message(route_id, binding_id, "control lowering"),)
 
     # The semantic DSL keeps the Bellman choice explicit and treats helper/control
     # bindings as the checked-in implementation targets of that choice.
@@ -1274,6 +1375,7 @@ def _lowering_error(
     stage: str,
     code: str,
     message: str,
+    binding_id: str | None = None,
 ) -> DslLoweringError:
     """Build one structured lowering error record."""
     return DslLoweringError(
@@ -1281,6 +1383,7 @@ def _lowering_error(
         stage=stage,
         code=code,
         message=message,
+        binding_id=binding_id,
     )
 
 
@@ -1301,13 +1404,18 @@ def _infer_error_code(message: str) -> str:
         return "missing_observables"
     if "missing required state tags" in lower:
         return "missing_state_tags"
-    if "missing the required market binding" in lower:
+    if "missing the required market binding" in lower or "missing the required market binding primitive" in lower:
         return "missing_market_binding"
-    if "missing the required pricing kernel" in lower:
+    if "missing the required pricing kernel" in lower or "missing the required pricing kernel primitive" in lower:
         return "missing_pricing_kernel"
-    if "missing the required schedule builder" in lower:
+    if "missing the required schedule builder" in lower or "missing the required schedule builder primitive" in lower:
         return "missing_schedule_builder"
-    if "missing the required route helper" in lower or "has no helper target" in lower or "has no helper-backed lowering target" in lower:
+    if (
+        "missing the required route helper" in lower
+        or "missing the required helper primitive" in lower
+        or "has no helper target" in lower
+        or "has no helper-backed lowering target" in lower
+    ):
         return "missing_route_helper"
     if "family lowering rejected the semantic contract" in lower:
         return "family_ir_rejected"
