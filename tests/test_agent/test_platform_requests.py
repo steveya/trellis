@@ -838,6 +838,25 @@ def test_compile_build_request_treats_generic_basket_wrapper_as_nth_to_default_w
     assert compiled.generation_plan.primitive_plan.route == "nth_to_default_monte_carlo"
 
 
+@pytest.mark.parametrize(
+    ("description", "expected_instrument"),
+    [
+        ("CDO tranche loss distribution: Gaussian copula vs Student-t copula", "cdo"),
+        ("Nth-to-default loss distribution: semi-analytical vs default-time MC", "nth_to_default"),
+    ],
+)
+def test_compile_build_request_prefers_specific_credit_basket_shapes_over_loss_distribution_alias(
+    description: str,
+    expected_instrument: str,
+):
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(description)
+
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.instrument == expected_instrument
+
+
 def test_compile_build_request_keeps_generic_basket_option_off_ranked_observation_route():
     from trellis.agent.platform_requests import compile_build_request
 

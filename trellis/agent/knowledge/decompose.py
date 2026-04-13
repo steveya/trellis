@@ -368,7 +368,16 @@ def _infer_instrument(description: str, instrument_type: str | None) -> str | No
         ("asian_option", ("asian_option", "asian option")),
         ("heston_option", ("heston_option", "heston option", "heston")),
         ("variance_swap", ("variance_swap", "variance swap")),
-        ("credit_loss_distribution", ("credit_loss_distribution", "portfolio_loss_distribution", "loss distribution")),
+        (
+            "credit_loss_distribution",
+            (
+                "credit_loss_distribution",
+                "portfolio_loss_distribution",
+                "portfolio loss distribution",
+                "multi-name portfolio loss distribution",
+                "recursive loss distribution",
+            ),
+        ),
         ("cds", ("cds", "credit default swap", "credit_default_swap")),
         ("nth_to_default", ("nth_to_default", "nth-to-default", "nth to default")),
         ("swaption", ("swaption",)),
