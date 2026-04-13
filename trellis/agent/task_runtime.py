@@ -619,11 +619,39 @@ def _bootstrap_callable_bond_description(task: dict) -> str | None:
     )
 
 
+def _bootstrap_rate_style_swaption_description(task: dict) -> str | None:
+    """Return the canonical proving-case prompt for sparse European swaption tasks."""
+    if str(task.get("description") or "").strip():
+        return None
+
+    title = " ".join(
+        part for part in (
+            str(task.get("title") or ""),
+            str(task.get("description") or ""),
+        )
+        if part
+    ).lower()
+    if "european swaption" not in title:
+        return None
+    if not all(cue in title for cue in ("black76", "hw tree", "hw mc")):
+        return None
+
+    return (
+        "Build a pricer for: European payer swaption\n\n"
+        "Expiry: 2025-11-15. Underlying: 5Y fixed-for-float interest rate swap. "
+        "Strike (fixed rate): 3%. Fixed leg: semi-annual, 30/360. Float leg: "
+        "quarterly 3M SOFR, Act/360. Use the USD OIS curve for discounting and "
+        "the SOFR-3M forecast curve for forward rate projection. "
+        "Hull-White model: mean reversion a=0.05, vol sigma=0.01."
+    )
+
+
 def _effective_task_description(task: dict) -> str:
     """Return the task description after applying any canonical bootstrap prompt."""
     description = (
         _bootstrap_ranked_observation_basket_description(task)
         or _bootstrap_callable_bond_description(task)
+        or _bootstrap_rate_style_swaption_description(task)
         or task_to_description(task)
     )
     context_lines: list[str] = []
