@@ -141,6 +141,118 @@ def test_build_payoff_blocks_on_semantic_clarification(monkeypatch):
         )
 
 
+def test_build_payoff_persists_structured_blockers_when_pre_generation_gate_blocks(monkeypatch):
+    from trellis.agent.executor import build_payoff
+    from trellis.agent.knowledge.schema import BuildGateDecision
+
+    @dataclass
+    class _Blocker:
+        id: str
+        category: str
+        primitive_kind: str
+        severity: str
+        summary: str
+
+    @dataclass
+    class _WorkflowItem:
+        title: str
+
+    @dataclass
+    class _Workflow:
+        summary: str
+        items: tuple[_WorkflowItem, ...]
+
+    @dataclass
+    class _BlockerReport:
+        should_block: bool
+        summary: str
+        blockers: tuple[_Blocker, ...]
+
+    build_meta: dict[str, object] = {}
+    pricing_plan = SimpleNamespace(
+        method="monte_carlo",
+        method_modules=(),
+        required_market_data=set(),
+        model_to_build=None,
+        reasoning="blocked",
+        selection_reason="blocked",
+        assumption_summary=(),
+        sensitivity_support=None,
+    )
+    blocker = _Blocker(
+        id="path_dependent_early_exercise_under_stochastic_vol",
+        category="unsupported_composite",
+        primitive_kind="exercise_control",
+        severity="high",
+        summary="Missing exercise/control primitive for path-dependent early exercise under stochastic volatility.",
+    )
+    generation_plan = SimpleNamespace(
+        method="monte_carlo",
+        instrument_type="barrier_option",
+        primitive_plan=SimpleNamespace(
+            route="exercise_monte_carlo",
+            route_family="monte_carlo",
+            engine_family="monte_carlo",
+            blockers=("path_dependent_early_exercise_under_stochastic_vol",),
+        ),
+        blocker_report=_BlockerReport(
+            should_block=True,
+            summary="Missing exercise/control primitive for path-dependent early exercise under stochastic volatility.",
+            blockers=(blocker,),
+        ),
+        new_primitive_workflow=_Workflow(
+            summary="Implement the missing stochastic-vol exercise primitive.",
+            items=(_WorkflowItem(title="exercise primitive"),),
+        ),
+    )
+    compiled_request = SimpleNamespace(
+        product_ir=SimpleNamespace(instrument="barrier_option"),
+        pricing_plan=pricing_plan,
+        request=SimpleNamespace(request_id="executor_build_blocked_123", request_type="build"),
+        linear_issue_identifier="QUA-820",
+        generation_plan=generation_plan,
+        knowledge_summary={},
+        semantic_blueprint=None,
+    )
+    plan = SimpleNamespace(
+        steps=[SimpleNamespace(module_path="trellis/instruments/_agent/demo.py")],
+        spec_schema=SimpleNamespace(spec_name="DemoSpec", class_name="DemoPayoff", fields=()),
+    )
+
+    monkeypatch.setattr("trellis.agent.executor._record_platform_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr("trellis.agent.planner.plan_build", lambda *args, **kwargs: plan)
+    monkeypatch.setattr("trellis.agent.executor.build_generation_plan", lambda **kwargs: generation_plan)
+    monkeypatch.setattr("trellis.agent.executor._emit_analytical_trace_metadata", lambda **kwargs: None)
+    monkeypatch.setattr(
+        "trellis.agent.build_gate.evaluate_pre_generation_gate",
+        lambda *args, **kwargs: BuildGateDecision(
+            decision="block",
+            reason="Hard blockers detected.",
+            gap_confidence=1.0,
+            gate_source="pre_generation",
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="Build gate blocked pre-generation"):
+        build_payoff(
+            "Blocked build",
+            compiled_request=compiled_request,
+            build_meta=build_meta,
+            market_state=SimpleNamespace(
+                selected_curve_names={},
+                available_capabilities=set(),
+            ),
+            model="gpt-5-mini",
+        )
+
+    blocker_details = build_meta["blocker_details"]
+    assert blocker_details["blocker_codes"] == [
+        "path_dependent_early_exercise_under_stochastic_vol"
+    ]
+    assert blocker_details["blocker_report"]["blockers"][0]["category"] == "unsupported_composite"
+    assert blocker_details["new_primitive_workflow"]["items"][0]["title"] == "exercise primitive"
+
+
 def test_record_lesson_maps_fields_into_canonical_payload(monkeypatch):
     from trellis.agent.test_resolution import Lesson, record_lesson
 
