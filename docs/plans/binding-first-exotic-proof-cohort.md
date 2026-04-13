@@ -93,6 +93,14 @@ These tasks define the `QUA-808` proof surface.
 
 These tasks define the `QUA-809` proof surface.
 
+This sub-cohort intentionally does not add a second honest-block sentinel.
+The program-level sentinel remains `E27` in the event/control/schedule cohort.
+`E26` stays `proved` here on purpose even though
+`tests/evals/stress_tasks.yaml` currently classifies it as `honest_block` on
+the older stress surface. In the binding-first proof program, `E26` is the
+constructive basket-credit stress target that `QUA-823` is expected to recover,
+not a permanent block sentinel.
+
 | Task | Expected outcome | Binding-first capability under test | Notes |
 | --- | --- | --- | --- |
 | `T49` CDO tranche: Gaussian vs Student-t copula | `proved` | tranche attachment/detachment and copula-backed loss bindings | Baseline tranche/loss distribution proof |
@@ -167,6 +175,37 @@ Follow-on tickets opened from that run:
 - `QUA-819` cap/floor fresh-build stability and reference-target evidence (`E22`)
 - `QUA-820` structured blocker persistence for the honest-block sentinel (`E27`)
 - `QUA-821` residual `unknown` route ids in proof telemetry (`T17`, `E27`)
+
+### `QUA-809` live run on `2026-04-13`
+
+Command:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 scripts/run_binding_first_exotic_proof.py \
+  --cohort basket_credit_loss \
+  --output /tmp/qua809_results_live.json \
+  --report-json /tmp/qua809_report_live.json \
+  --report-md /tmp/qua809_report_live.md
+```
+
+Outcome summary:
+
+- no `QUA-809` cohort item reached `proved`
+- `T49` failed on the Student-t tranche lane rebuilding copula plumbing instead
+  of staying on the exact tranche helper contract
+- `T50` and `E26` failed around nth-to-default helper invocation and
+  basket-credit market parsing
+- `T53` failed across recursive, FFT, and MC loss-distribution constructions
+- `T102` and `T126` failed on multi-underlier basket market parsing, and `T126`
+  also failed its FFT spread lane
+
+Follow-on tickets opened from that run:
+
+- `QUA-822` copula tranche exact-helper contract (`T49`)
+- `QUA-823` nth-to-default helper and basket-credit parsing (`T50`, `E26`)
+- `QUA-824` loss-distribution recursive/FFT/MC constructive stability (`T53`)
+- `QUA-825` multi-underlier basket parsing and FFT spread stability (`T102`, `T126`)
+- `QUA-821` broadened to cover residual `unknown` route ids on `T50` and `E26`
 
 ## Review Notes
 
