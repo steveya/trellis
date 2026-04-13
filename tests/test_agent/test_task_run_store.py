@@ -362,6 +362,97 @@ def test_persist_task_run_record_treats_terminal_result_as_not_running_even_with
     assert latest["workflow"]["active_trace_count"] == 1
 
 
+def test_persist_task_run_record_carries_binding_operator_metadata_into_trace_health(tmp_path):
+    from trellis.agent.task_run_store import load_task_run_record, persist_task_run_record
+
+    trace_root = tmp_path / "trellis" / "agent" / "knowledge" / "traces" / "platform"
+    analytical_trace = trace_root / "executor_build_fx.yaml"
+
+    _write_trace(
+        analytical_trace,
+        {
+            "request_id": "executor_build_fx",
+            "status": "succeeded",
+            "outcome": "build_completed",
+            "action": "compile_only",
+            "route_method": "analytical",
+            "updated_at": "2026-04-10T18:00:00+00:00",
+            "request_metadata": {"task_id": "T105", "task_title": "FX vanilla analytical check"},
+            "generation_boundary": {
+                "construction_identity": {
+                    "primary_kind": "backend_binding",
+                    "primary_label": "FX vanilla analytical binding",
+                    "backend_binding_id": "trellis.models.fx_vanilla.price_fx_vanilla_analytical",
+                    "binding_display_name": "FX vanilla analytical binding",
+                    "binding_short_description": "Exact Garman-Kohlhagen analytical helper binding for FX vanilla pricing.",
+                    "binding_diagnostic_label": "fx_vanilla_analytical_binding",
+                    "route_alias": "",
+                },
+                "route_binding_authority": {
+                    "route_id": "analytical_garman_kohlhagen",
+                    "route_family": "analytical",
+                    "authority_kind": "exact_backend_fit",
+                    "operator_metadata": {
+                        "display_name": "FX vanilla analytical binding",
+                        "short_description": "Exact Garman-Kohlhagen analytical helper binding for FX vanilla pricing.",
+                        "diagnostic_label": "fx_vanilla_analytical_binding",
+                    },
+                    "backend_binding": {
+                        "binding_id": "trellis.models.fx_vanilla.price_fx_vanilla_analytical",
+                        "engine_family": "analytical",
+                        "exact_backend_fit": True,
+                        "exact_target_refs": ["trellis.models.fx_vanilla.price_fx_vanilla_analytical"],
+                        "approved_modules": ["trellis.models.fx_vanilla"],
+                        "primitive_refs": [],
+                        "helper_refs": ["trellis.models.fx_vanilla.price_fx_vanilla_analytical"],
+                        "admissibility": {},
+                        "admissibility_failures": [],
+                    },
+                    "validation_bundle_id": "analytical:fx_vanilla",
+                    "exact_validation_bundle_id": (
+                        "analytical:fx_vanilla@trellis.models.fx_vanilla.price_fx_vanilla_analytical"
+                    ),
+                    "canary_task_ids": ["T105"],
+                },
+            },
+            "events": [
+                {
+                    "event": "build_completed",
+                    "status": "ok",
+                    "timestamp": "2026-04-10T18:00:00+00:00",
+                    "details": {"attempts": 1},
+                }
+            ],
+        },
+    )
+
+    task = {"id": "T105", "title": "FX vanilla analytical check", "construct": ["analytical"]}
+    result = {
+        "task_id": "T105",
+        "title": "FX vanilla analytical check",
+        "success": True,
+        "cross_validation": {"status": "passed"},
+        "artifacts": {"platform_trace_paths": [str(analytical_trace)]},
+        "reflection": {},
+    }
+
+    persisted = persist_task_run_record(
+        task,
+        result,
+        root=tmp_path,
+        persisted_at=datetime(2026, 4, 10, 18, 1, 0, tzinfo=timezone.utc),
+    )
+    latest = load_task_run_record(persisted["latest_path"])
+
+    route_health = latest["trace_summaries"][0]["route_health"]
+    observation = latest["telemetry"]["route_observations"][0]
+
+    assert route_health["binding_display_name"] == "FX vanilla analytical binding"
+    assert route_health["binding_diagnostic_label"] == "fx_vanilla_analytical_binding"
+    assert observation["primary_label"] == "FX vanilla analytical binding"
+    assert observation["binding_diagnostic_label"] == "fx_vanilla_analytical_binding"
+
+
 def test_skill_telemetry_rollups_capture_selected_artifacts_and_route_health(tmp_path):
     from trellis.agent.task_run_store import (
         load_latest_route_ranking_inputs,

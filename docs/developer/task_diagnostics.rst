@@ -124,6 +124,19 @@ Each batch record captures:
 - aggregate pass, elapsed-time, token, and attempt metrics
 - per-canary links back to the underlying task-run and diagnosis artifacts
 
+Binding-first operator wording
+------------------------------
+
+The diagnosis packet and dossier now prefer binding-first operator metadata
+when an exact backend binding is known. In practice that means:
+
+- trace construction labels prefer the binding display name instead of a raw
+  backend symbol
+- route-observation tables prefer the binding diagnostic label instead of a
+  route id when exact binding metadata is available
+- route ids remain only as transitional aliases when no binding metadata has
+  been resolved
+
 The deterministic loaders are:
 
 - ``load_canary_batch_records()``

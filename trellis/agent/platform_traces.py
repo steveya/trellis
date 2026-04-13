@@ -589,6 +589,7 @@ def _construction_identity_summary(
     from trellis.agent.route_registry import should_surface_route_alias
 
     backend_binding = dict(route_binding_authority.get("backend_binding") or {})
+    operator_metadata = dict(route_binding_authority.get("operator_metadata") or {})
     exact_backend_fit = bool(
         backend_binding.get("exact_backend_fit")
         if "exact_backend_fit" in backend_binding
@@ -609,10 +610,13 @@ def _construction_identity_summary(
         or str(route_binding_authority.get("engine_family") or "").strip()
         or None
     )
+    binding_display_name = str(operator_metadata.get("display_name") or "").strip() or None
+    binding_short_description = str(operator_metadata.get("short_description") or "").strip() or None
+    binding_diagnostic_label = str(operator_metadata.get("diagnostic_label") or "").strip() or None
 
     if exact_backend_fit and backend_binding_id:
         primary_kind = "backend_binding"
-        primary_label = backend_binding_id
+        primary_label = binding_display_name or backend_binding_id
     elif family_ir_type:
         primary_kind = "family_ir"
         primary_label = family_ir_type
@@ -635,6 +639,10 @@ def _construction_identity_summary(
         "backend_binding_id": backend_binding_id,
         "backend_engine_family": backend_engine_family,
         "backend_exact_fit": exact_backend_fit,
+        "binding_display_name": binding_display_name,
+        "binding_short_description": binding_short_description,
+        "binding_diagnostic_label": binding_diagnostic_label,
+        "operator_metadata": operator_metadata or None,
         "route_alias": route_alias,
         "route_alias_policy": str(route_binding_authority.get("compatibility_alias_policy") or "").strip() or None,
         "route_authority_kind": str(route_binding_authority.get("authority_kind") or "").strip() or None,

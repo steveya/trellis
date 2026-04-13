@@ -234,13 +234,23 @@ def capture_checkpoint(
         construction_identity = route_metadata.get("construction_identity") or {}
         route_binding_authority = route_metadata.get("route_binding_authority") or {}
         backend_binding = route_binding_authority.get("backend_binding") or {}
-        route_decision = str(
-            construction_identity.get("primary_label")
+        exact_backend_binding_id = str(
+            construction_identity.get("backend_binding_id")
             or (
                 backend_binding.get("binding_id")
                 if route_binding_authority.get("authority_kind") == "exact_backend_fit"
+                else ""
+            )
+            or ""
+        ).strip()
+        route_decision = str(
+            (
+                exact_backend_binding_id
+                if str(construction_identity.get("primary_kind") or "").strip() == "backend_binding"
                 else None
             )
+            or construction_identity.get("primary_label")
+            or exact_backend_binding_id
             or lowering.get("family_ir_type")
             or route_metadata.get("lane_plan", {}).get("lane_family")
             or lowering.get("route_id")

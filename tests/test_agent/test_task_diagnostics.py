@@ -466,3 +466,50 @@ def test_build_task_diagnosis_packet_keeps_platform_action_out_of_route_ids(tmp_
     assert packet["telemetry"]["route_observations"][0]["route_id"] == ""
     assert packet["telemetry"]["route_observations"][0]["route_family"] == "analytical"
     assert packet["telemetry"]["route_observations"][0]["primary_label"] == "analytical"
+
+
+def test_build_task_diagnosis_packet_uses_binding_operator_metadata_in_operator_views(tmp_path):
+    from trellis.agent.task_diagnostics import build_task_diagnosis_packet, render_task_diagnosis_dossier
+
+    record = _sample_record(tmp_path)
+    record.pop("telemetry", None)
+    trace = record["trace_summaries"][0]
+    trace["route_health"] = {
+        "route_id": "analytical_garman_kohlhagen",
+        "route_family": "analytical",
+        "trace_status": "succeeded",
+        "effective_instruction_ids": [],
+        "effective_instruction_count": 0,
+        "hard_constraint_count": 0,
+        "conflict_count": 0,
+        "canary_task_ids": ["T105"],
+    }
+    trace["construction_identity"] = {
+        "primary_kind": "backend_binding",
+        "primary_label": "FX vanilla analytical binding",
+        "backend_binding_id": "trellis.models.fx_vanilla.price_fx_vanilla_analytical",
+        "binding_display_name": "FX vanilla analytical binding",
+        "binding_short_description": "Exact Garman-Kohlhagen analytical helper binding for FX vanilla pricing.",
+        "binding_diagnostic_label": "fx_vanilla_analytical_binding",
+        "route_alias": "",
+    }
+    trace["route_binding_authority"] = {
+        "route_id": "analytical_garman_kohlhagen",
+        "route_family": "analytical",
+        "authority_kind": "exact_backend_fit",
+        "operator_metadata": {
+            "display_name": "FX vanilla analytical binding",
+            "short_description": "Exact Garman-Kohlhagen analytical helper binding for FX vanilla pricing.",
+            "diagnostic_label": "fx_vanilla_analytical_binding",
+        },
+        "canary_task_ids": ["T105"],
+    }
+
+    packet = build_task_diagnosis_packet(record)
+    rendered = render_task_diagnosis_dossier(packet)
+
+    assert packet["trace_index"][0]["construction_label"] == "FX vanilla analytical binding"
+    assert packet["telemetry"]["route_observations"][0]["primary_label"] == "FX vanilla analytical binding"
+    assert packet["telemetry"]["route_observations"][0]["binding_diagnostic_label"] == "fx_vanilla_analytical_binding"
+    assert "FX vanilla analytical binding" in rendered
+    assert "fx_vanilla_analytical_binding" in rendered
