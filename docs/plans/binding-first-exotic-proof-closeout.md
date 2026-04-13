@@ -118,4 +118,3 @@ that the checked cohort proves the entire arbitrary-exotic end state.
 
 The closeout ticket ends the first measured proof tranche. It does not imply
 that the broader arbitrary-constructable-exotic end state is already complete.
-follow-ons are done.
