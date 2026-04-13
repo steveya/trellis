@@ -1383,13 +1383,13 @@ class TestPromotion:
             "request_text": "Need an extension for a missing pricing primitive",
             "instrument_type": "callable_bond",
             "semantic_gap": {
-                "summary": "missing route helper",
-                "missing_route_helpers": ["resolve_route"],
+                "summary": "missing binding helper",
+                "missing_binding_helpers": ["resolve_binding"],
             },
             "semantic_extension": {
                 "decision": "extend",
                 "confidence": 0.9,
-                "recommended_next_step": "Add a route helper",
+                "recommended_next_step": "Add a binding helper",
             },
             "route_method": "rate_tree",
         }

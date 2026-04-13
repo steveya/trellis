@@ -1206,8 +1206,8 @@ def _stress_observed_blocker_categories(result: Mapping[str, Any]) -> tuple[str,
             categories.append("semantic_clarification")
         semantic_gap = details.get("semantic_gap") or {}
         if isinstance(semantic_gap, Mapping):
-            if semantic_gap.get("missing_route_helpers"):
-                categories.append("unsupported_route")
+            if _semantic_gap_binding_helpers(semantic_gap):
+                categories.append("missing_binding_surface")
             if semantic_gap.get("missing_runtime_primitives"):
                 categories.append("missing_foundational_primitive")
             if semantic_gap.get("missing_contract_fields"):
@@ -1237,8 +1237,8 @@ def _map_stress_blocker_categories(
         "unknown_gap",
     }:
         mapped.append("missing_foundational_primitive")
-    if raw_category == "unsupported_route":
-        mapped.append("unsupported_route")
+    if raw_category in {"unsupported_route", "missing_binding_surface"}:
+        mapped.append("missing_binding_surface")
     if any(
         token in raw_blocker_id
         for token in (
@@ -1250,9 +1250,23 @@ def _map_stress_blocker_categories(
         mapped.append("unsupported_composite")
     if raw_blocker_id.startswith(("missing_module:", "missing_symbol:")):
         mapped.append("missing_foundational_primitive")
-    if raw_blocker_id.startswith("missing_route_helper:"):
-        mapped.append("unsupported_route")
+    if raw_blocker_id.startswith(("missing_route_helper:", "missing_binding_helper:")):
+        mapped.append("missing_binding_surface")
     return tuple(dict.fromkeys(mapped))
+
+
+def _semantic_gap_binding_helpers(semantic_gap: Mapping[str, Any]) -> tuple[str, ...]:
+    values = (
+        semantic_gap.get("missing_binding_helpers")
+        or semantic_gap.get("missing_route_helpers")
+        or ()
+    )
+    if isinstance(values, str):
+        text = values.strip()
+        return (text,) if text else ()
+    if isinstance(values, (list, tuple)):
+        return tuple(str(item).strip() for item in values if str(item).strip())
+    return ()
 
 
 def _stress_artifact_inventory(

@@ -13,7 +13,7 @@ def test_semantic_role_ownership_summary_selects_quant_for_primitive_proposal():
         semantic_extension={
             "decision": "new_primitive",
             "missing_runtime_primitives": ["generate_schedule"],
-            "missing_route_helpers": [],
+            "missing_binding_helpers": [],
             "missing_market_inputs": [],
         },
     )

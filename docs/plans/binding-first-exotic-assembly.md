@@ -80,8 +80,8 @@ identity and assembly authority.
 - DSL lowering still resolves helpers/kernels/schedules by route id
 - validation and trace contracts still store route identity as primary runtime
   provenance
-- semantic gap taxonomy still uses route-shaped terms such as
-  `missing_route_helpers`
+- semantic gap taxonomy still uses route-shaped helper labels instead of the
+  binding-first blocker vocabulary
 - operator-facing wording still leaks out of route-bound surfaces instead of a
   dedicated operator metadata layer
 
@@ -158,7 +158,7 @@ Status mirror last synced: `2026-04-13`
 | --- | --- |
 | `QUA-801` | Family lowering: replace route-id special cases with binding-role dispatch | Done |
 | `QUA-805` | DSL lowering: resolve helpers, kernels, schedules, and controls from binding roles | Done |
-| `QUA-811` | Semantic blockers: rename route-shaped helper gaps to binding and primitive taxonomy | Backlog |
+| `QUA-811` | Semantic blockers: rename route-shaped helper gaps to binding and primitive taxonomy | Done |
 
 ### Ordered Validation / Replay Queue
 
