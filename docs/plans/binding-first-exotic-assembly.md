@@ -189,7 +189,11 @@ Status mirror last synced: `2026-04-13`
 | `QUA-819` | Proof follow-on: cap/floor fresh-build stability and reference-target evidence (`E22`) | Backlog |
 | `QUA-820` | Proof follow-on: structured blocker persistence for honest-block sentinel (`E27`) | Backlog |
 | `QUA-821` | Proof telemetry: remove residual `unknown` route ids from proof traces | Backlog |
-| `QUA-809` | Exotic assembly: prove basket-credit and loss-distribution structures on binding roles | Backlog |
+| `QUA-809` | Exotic assembly: run the basket-credit-loss proof cohort and split residual gaps | Done |
+| `QUA-822` | Proof follow-on: copula tranche exact-helper contract (`T49`) | Backlog |
+| `QUA-823` | Proof follow-on: nth-to-default helper and basket-credit parsing (`T50`, `E26`) | Backlog |
+| `QUA-824` | Proof follow-on: loss-distribution recursive/FFT/MC constructive stability (`T53`) | Backlog |
+| `QUA-825` | Proof follow-on: multi-underlier basket parsing and FFT spread stability (`T102`, `T126`) | Backlog |
 | `QUA-815` | Exotic program closeout: measure proof-cohort outcomes on the binding-first runtime | Backlog |
 
 The benchmark contract for those proof tickets lives in

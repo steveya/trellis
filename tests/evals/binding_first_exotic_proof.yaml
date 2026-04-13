@@ -63,3 +63,58 @@ E27:
   requires_binding_ids: false
   forbidden_failure_patterns:
     - MissingCapabilityError
+
+T49:
+  cohort: basket_credit_loss
+  outcome_class: proved
+  comparison_targets:
+    - gaussian_copula
+    - student_t_copula
+  requires_binding_ids: true
+
+T50:
+  cohort: basket_credit_loss
+  outcome_class: proved
+  comparison_targets:
+    - mc_defaults
+    - factor_copula_analytical
+  requires_binding_ids: true
+
+T53:
+  cohort: basket_credit_loss
+  outcome_class: proved
+  comparison_targets:
+    - recursive_method
+    - fft_loss
+    - mc_loss
+  requires_binding_ids: true
+
+E26:
+  cohort: basket_credit_loss
+  outcome_class: proved
+  required_mock_capabilities:
+    - discount_curve
+    - credit_curve
+  comparison_targets:
+    - gaussian_copula
+    - mc_default_times
+  requires_binding_ids: true
+  forbidden_failure_patterns:
+    - MissingCapabilityError
+
+T102:
+  cohort: basket_credit_loss
+  outcome_class: proved
+  comparison_targets:
+    - stulz_rainbow
+    - mc_rainbow
+  requires_binding_ids: true
+
+T126:
+  cohort: basket_credit_loss
+  outcome_class: proved
+  comparison_targets:
+    - kirk_spread
+    - mc_spread_2d
+    - fft_spread_2d
+  requires_binding_ids: true
