@@ -53,7 +53,7 @@ The only proved task in the current closeout is:
 | Task | Result | Residual gap | Follow-on |
 | --- | --- | --- | --- |
 | `T105` | proved | none in this closeout slice | none |
-| `T17` | failed gate | callable-bond PDE lane lacks exact binding or constructive steps | `QUA-817` |
+| `T17` | follow-on recovered | title-only callable-bond proof tasks now bootstrap a canonical Bermudan issuer-call schedule and bind the PDE lane to `price_callable_bond_pde(...)` exactly | none |
 | `T73` | failed gate | analytical/tree/MC parity drift | `QUA-818` |
 | `E22` | failed gate | cap/floor fresh-build instability and missing reference-target evidence | `QUA-819` |
 | `E27` | follow-on recovered | honest-block sentinel is now certified after structured blocker persistence landed | none |
@@ -83,10 +83,10 @@ constructable exotic derivatives.
 
 The current measured state is:
 
-- event/control/schedule proof is partial
-- basket/credit/loss proof is largely unrecovered
+- event/control/schedule proof is still partial because `T73` and `E22` remain open
+- basket/credit/loss proof has been recovered across the current cohort
 - the honest-block sentinel path was initially uncertified, then recovered by `QUA-820`
-- residual `unknown` route telemetry still appears in the proof runtime
+- residual `unknown` route telemetry was removed by `QUA-821`
 
 So the architecture migration is meaningfully ahead of the capability proof.
 That is acceptable for this closeout, but it must remain explicit.
@@ -100,8 +100,8 @@ The correct support statement after this closeout is:
   exotic support across the agreed cohort.
 - Current proof-level support is limited to the recovered slices already
   measured in the checked benchmark artifact plus the post-closeout recoveries
-  (`E27`, `T49`, `T50`, `E26`, `T53`, `T102`, `T126`), with the remaining
-  gaps tracked by `QUA-817`, `QUA-818`, and `QUA-819`.
+  (`T17`, `E27`, `T49`, `T50`, `E26`, `T53`, `T102`, `T126`), with the remaining
+  gaps tracked by `QUA-818` and `QUA-819`.
 
 This is why `LIMITATIONS.md` now records the exotic proof cohort as an open
 limitation instead of letting the architecture docs imply the proof is already
