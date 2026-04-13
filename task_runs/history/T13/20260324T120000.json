@@ -2,7 +2,7 @@
   "task_id": "T13",
   "task_kind": "pricing",
   "run_id": "20260324T120000",
-  "persisted_at": "2026-04-13T02:55:10.501877+00:00",
+  "persisted_at": "2026-04-13T06:22:50.060493+00:00",
   "task": {
     "id": "T13",
     "title": "European call: theta-method convergence order"
@@ -247,6 +247,7 @@
     "degraded": false,
     "comparison_status": "",
     "selected_artifacts": [],
+    "binding_observations": [],
     "route_observations": []
   },
   "artifacts": {

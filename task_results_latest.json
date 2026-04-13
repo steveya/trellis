@@ -2,8 +2,8 @@
   "T13": {
     "task_id": "T13",
     "task_kind": "pricing",
-    "run_id": "20260413T025510616638",
-    "persisted_at": "2026-04-13T02:55:10.616788+00:00",
+    "run_id": "20260413T062250272261",
+    "persisted_at": "2026-04-13T06:22:50.272439+00:00",
     "task": {
       "id": "T13",
       "title": "European call: theta-method convergence order",
@@ -14,7 +14,7 @@
       "title": "European call: theta-method convergence order",
       "instrument_type": "european_option",
       "instrument_identity_source": "task.title_or_description",
-      "start_time": "2026-04-13T02:55:10.616638",
+      "start_time": "2026-04-13T06:22:50.272261",
       "comparison_task": false,
       "construct_methods": [
         "pde_solver"
@@ -247,6 +247,7 @@
       "degraded": false,
       "comparison_status": "",
       "selected_artifacts": [],
+      "binding_observations": [],
       "route_observations": []
     },
     "artifacts": {
@@ -324,11 +325,11 @@
       }
     },
     "storage": {
-      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T13/20260413T025510616638.json",
+      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T13/20260413T062250272261.json",
       "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T13.json",
       "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
-      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T13/20260413T025510616638.json",
-      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T13/20260413T025510616638.md",
+      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T13/20260413T062250272261.json",
+      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T13/20260413T062250272261.md",
       "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T13.json",
       "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T13.md"
     }
@@ -336,8 +337,8 @@
   "T997": {
     "task_id": "T997",
     "task_kind": "pricing",
-    "run_id": "20260413T025510507446",
-    "persisted_at": "2026-04-13T02:55:10.507630+00:00",
+    "run_id": "20260413T062250094070",
+    "persisted_at": "2026-04-13T06:22:50.094322+00:00",
     "task": {
       "id": "T997",
       "title": "Himalaya ranked observation basket"
@@ -347,7 +348,7 @@
       "title": "Himalaya ranked observation basket",
       "instrument_type": "basket_option",
       "instrument_identity_source": "task.title_or_description",
-      "start_time": "2026-04-13T02:55:10.507446",
+      "start_time": "2026-04-13T06:22:50.094070",
       "comparison_task": false,
       "construct_methods": [],
       "comparison_targets": [],
@@ -782,6 +783,7 @@
       "degraded": false,
       "comparison_status": "",
       "selected_artifacts": [],
+      "binding_observations": [],
       "route_observations": []
     },
     "artifacts": {
@@ -859,11 +861,11 @@
       }
     },
     "storage": {
-      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T997/20260413T025510507446.json",
+      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T997/20260413T062250094070.json",
       "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T997.json",
       "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
-      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T997/20260413T025510507446.json",
-      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T997/20260413T025510507446.md",
+      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T997/20260413T062250094070.json",
+      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T997/20260413T062250094070.md",
       "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T997.json",
       "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T997.md"
     }
@@ -871,8 +873,8 @@
   "T996": {
     "task_id": "T996",
     "task_kind": "pricing",
-    "run_id": "20260413T025510510989",
-    "persisted_at": "2026-04-13T02:55:10.511177+00:00",
+    "run_id": "20260413T062250110489",
+    "persisted_at": "2026-04-13T06:22:50.110688+00:00",
     "task": {
       "id": "T996",
       "title": "Himalaya ranked observation basket"
@@ -882,7 +884,7 @@
       "title": "Himalaya ranked observation basket",
       "instrument_type": "basket_option",
       "instrument_identity_source": "task.title_or_description",
-      "start_time": "2026-04-13T02:55:10.510989",
+      "start_time": "2026-04-13T06:22:50.110489",
       "comparison_task": false,
       "construct_methods": [],
       "comparison_targets": [],
@@ -1317,6 +1319,7 @@
       "degraded": false,
       "comparison_status": "",
       "selected_artifacts": [],
+      "binding_observations": [],
       "route_observations": []
     },
     "artifacts": {
@@ -1394,11 +1397,11 @@
       }
     },
     "storage": {
-      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T996/20260413T025510510989.json",
+      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T996/20260413T062250110489.json",
       "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T996.json",
       "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
-      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T996/20260413T025510510989.json",
-      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T996/20260413T025510510989.md",
+      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T996/20260413T062250110489.json",
+      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T996/20260413T062250110489.md",
       "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T996.json",
       "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T996.md"
     }
@@ -1406,8 +1409,8 @@
   "T999": {
     "task_id": "T999",
     "task_kind": "pricing",
-    "run_id": "20260413T025510514941",
-    "persisted_at": "2026-04-13T02:55:10.515144+00:00",
+    "run_id": "20260413T062250126776",
+    "persisted_at": "2026-04-13T06:22:50.126990+00:00",
     "task": {
       "id": "T999",
       "title": "Himalaya ranked observation basket"
@@ -1417,7 +1420,7 @@
       "title": "Himalaya ranked observation basket",
       "instrument_type": "basket_option",
       "instrument_identity_source": "task.title_or_description",
-      "start_time": "2026-04-13T02:55:10.514941",
+      "start_time": "2026-04-13T06:22:50.126776",
       "comparison_task": false,
       "construct_methods": [],
       "comparison_targets": [],
@@ -1852,6 +1855,7 @@
       "degraded": false,
       "comparison_status": "",
       "selected_artifacts": [],
+      "binding_observations": [],
       "route_observations": []
     },
     "artifacts": {
@@ -1929,11 +1933,11 @@
       }
     },
     "storage": {
-      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T999/20260413T025510514941.json",
+      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T999/20260413T062250126776.json",
       "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T999.json",
       "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
-      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T999/20260413T025510514941.json",
-      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T999/20260413T025510514941.md",
+      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T999/20260413T062250126776.json",
+      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T999/20260413T062250126776.md",
       "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T999.json",
       "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T999.md"
     }
@@ -1941,8 +1945,8 @@
   "T998": {
     "task_id": "T998",
     "task_kind": "pricing",
-    "run_id": "20260413T025510524203",
-    "persisted_at": "2026-04-13T02:55:10.560867+00:00",
+    "run_id": "20260413T062250159598",
+    "persisted_at": "2026-04-13T06:22:50.200472+00:00",
     "task": {
       "id": "T998",
       "title": "Himalaya ranked observation basket",
@@ -1960,7 +1964,7 @@
       "title": "Himalaya ranked observation basket",
       "instrument_type": "basket_option",
       "instrument_identity_source": "task.title_or_description",
-      "start_time": "2026-04-13T02:55:10.524203",
+      "start_time": "2026-04-13T06:22:50.159598",
       "comparison_task": false,
       "construct_methods": [],
       "comparison_targets": [],
@@ -3923,6 +3927,7 @@
       "degraded": false,
       "comparison_status": "",
       "selected_artifacts": [],
+      "binding_observations": [],
       "route_observations": []
     },
     "artifacts": {
@@ -4012,11 +4017,11 @@
       }
     },
     "storage": {
-      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T998/20260413T025510524203.json",
+      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T998/20260413T062250159598.json",
       "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T998.json",
       "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
-      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T998/20260413T025510524203.json",
-      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T998/20260413T025510524203.md",
+      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T998/20260413T062250159598.json",
+      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T998/20260413T062250159598.md",
       "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T998.json",
       "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T998.md"
     }
@@ -4024,8 +4029,8 @@
   "T74": {
     "task_id": "T74",
     "task_kind": "pricing",
-    "run_id": "20260413T025510623630",
-    "persisted_at": "2026-04-13T02:55:10.624194+00:00",
+    "run_id": "20260413T062250291503",
+    "persisted_at": "2026-04-13T06:22:50.292136+00:00",
     "task": {
       "id": "T74",
       "title": "European equity call: 5-way (tree, PDE, MC, FFT, COS)",
@@ -4052,7 +4057,7 @@
       "title": "European equity call: 5-way (tree, PDE, MC, FFT, COS)",
       "instrument_type": "european_option",
       "instrument_identity_source": "task.title_or_description",
-      "start_time": "2026-04-13T02:55:10.623630",
+      "start_time": "2026-04-13T06:22:50.291503",
       "comparison_task": true,
       "construct_methods": [
         "rate_tree",
@@ -5310,6 +5315,7 @@
       "degraded": false,
       "comparison_status": "passed",
       "selected_artifacts": [],
+      "binding_observations": [],
       "route_observations": []
     },
     "artifacts": {
@@ -5416,11 +5422,11 @@
       }
     },
     "storage": {
-      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T74/20260413T025510623630.json",
+      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T74/20260413T062250291503.json",
       "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T74.json",
       "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
-      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T74/20260413T025510623630.json",
-      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T74/20260413T025510623630.md",
+      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T74/20260413T062250291503.json",
+      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T74/20260413T062250291503.md",
       "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T74.json",
       "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T74.md"
     }
@@ -5428,8 +5434,8 @@
   "T10": {
     "task_id": "T10",
     "task_kind": "pricing",
-    "run_id": "20260413T025512108303",
-    "persisted_at": "2026-04-13T02:55:12.108723+00:00",
+    "run_id": "20260413T062251703171",
+    "persisted_at": "2026-04-13T06:22:51.703662+00:00",
     "task": {
       "id": "T10",
       "title": "Tree convergence study: price oscillation and Richardson extrapolation",
@@ -5447,7 +5453,7 @@
       "title": "Tree convergence study: price oscillation and Richardson extrapolation",
       "instrument_type": null,
       "instrument_identity_source": "missing",
-      "start_time": "2026-04-13T02:55:12.108303",
+      "start_time": "2026-04-13T06:22:51.703171",
       "comparison_task": true,
       "construct_methods": [
         "rate_tree"
@@ -6183,6 +6189,7 @@
       "degraded": false,
       "comparison_status": "passed",
       "selected_artifacts": [],
+      "binding_observations": [],
       "route_observations": []
     },
     "artifacts": {
@@ -6276,11 +6283,11 @@
       }
     },
     "storage": {
-      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T10/20260413T025512108303.json",
+      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T10/20260413T062251703171.json",
       "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T10.json",
       "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
-      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T10/20260413T025512108303.json",
-      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T10/20260413T025512108303.md",
+      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T10/20260413T062251703171.json",
+      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T10/20260413T062251703171.md",
       "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T10.json",
       "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T10.md"
     }
@@ -6288,8 +6295,8 @@
   "T24X": {
     "task_id": "T24X",
     "task_kind": "pricing",
-    "run_id": "20260413T025512118151",
-    "persisted_at": "2026-04-13T02:55:12.118530+00:00",
+    "run_id": "20260413T062251722503",
+    "persisted_at": "2026-04-13T06:22:51.722909+00:00",
     "task": {
       "id": "T24X",
       "title": "Finite element method (FEM) vs finite difference for European",
@@ -6308,7 +6315,7 @@
       "title": "Finite element method (FEM) vs finite difference for European",
       "instrument_type": "european_option",
       "instrument_identity_source": "task.title_or_description",
-      "start_time": "2026-04-13T02:55:12.118151",
+      "start_time": "2026-04-13T06:22:51.722503",
       "comparison_task": true,
       "construct_methods": [
         "pde_solver"
@@ -7044,6 +7051,7 @@
       "degraded": false,
       "comparison_status": "passed",
       "selected_artifacts": [],
+      "binding_observations": [],
       "route_observations": []
     },
     "artifacts": {
@@ -7137,11 +7145,11 @@
       }
     },
     "storage": {
-      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T24X/20260413T025512118151.json",
+      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T24X/20260413T062251722503.json",
       "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T24X.json",
       "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
-      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T24X/20260413T025512118151.json",
-      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T24X/20260413T025512118151.md",
+      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T24X/20260413T062251722503.json",
+      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T24X/20260413T062251722503.md",
       "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T24X.json",
       "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T24X.md"
     }
@@ -7149,8 +7157,8 @@
   "T07": {
     "task_id": "T07",
     "task_kind": "pricing",
-    "run_id": "20260413T025512128428",
-    "persisted_at": "2026-04-13T02:55:12.128791+00:00",
+    "run_id": "20260413T062251739872",
+    "persisted_at": "2026-04-13T06:22:51.740265+00:00",
     "task": {
       "id": "T07",
       "title": "American put: tree vs primal-dual MC vs stochastic mesh",
@@ -7171,7 +7179,7 @@
       "title": "American put: tree vs primal-dual MC vs stochastic mesh",
       "instrument_type": "american_put",
       "instrument_identity_source": "task.title_or_description",
-      "start_time": "2026-04-13T02:55:12.128428",
+      "start_time": "2026-04-13T06:22:51.739872",
       "comparison_task": true,
       "construct_methods": [
         "rate_tree",
@@ -7914,6 +7922,7 @@
       "degraded": false,
       "comparison_status": "passed",
       "selected_artifacts": [],
+      "binding_observations": [],
       "route_observations": []
     },
     "artifacts": {
@@ -8008,11 +8017,11 @@
       }
     },
     "storage": {
-      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T07/20260413T025512128428.json",
+      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T07/20260413T062251739872.json",
       "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T07.json",
       "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
-      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T07/20260413T025512128428.json",
-      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T07/20260413T025512128428.md",
+      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T07/20260413T062251739872.json",
+      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T07/20260413T062251739872.md",
       "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T07.json",
       "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T07.md"
     }
@@ -8020,8 +8029,8 @@
   "E28": {
     "task_id": "E28",
     "task_kind": "pricing",
-    "run_id": "20260413T025512139214",
-    "persisted_at": "2026-04-13T02:55:12.139677+00:00",
+    "run_id": "20260413T062251757336",
+    "persisted_at": "2026-04-13T06:22:51.757872+00:00",
     "task": {
       "id": "E28",
       "title": "European equity call: transform-family separation (FFT vs COS)",
@@ -8041,7 +8050,7 @@
       "title": "European equity call: transform-family separation (FFT vs COS)",
       "instrument_type": "european_option",
       "instrument_identity_source": "task.title_or_description",
-      "start_time": "2026-04-13T02:55:12.139214",
+      "start_time": "2026-04-13T06:22:51.757336",
       "comparison_task": true,
       "construct_methods": [
         "fft_pricing"
@@ -9489,6 +9498,9 @@
           "retried": true,
           "retry_count": 2,
           "degraded": false,
+          "binding_ids": [],
+          "binding_families": [],
+          "binding_aliases": [],
           "route_ids": [],
           "route_families": [],
           "task_ids": []
@@ -9505,6 +9517,9 @@
           "retried": true,
           "retry_count": 2,
           "degraded": false,
+          "binding_ids": [],
+          "binding_families": [],
+          "binding_aliases": [],
           "route_ids": [],
           "route_families": [],
           "task_ids": []
@@ -9521,11 +9536,15 @@
           "retried": true,
           "retry_count": 2,
           "degraded": false,
+          "binding_ids": [],
+          "binding_families": [],
+          "binding_aliases": [],
           "route_ids": [],
           "route_families": [],
           "task_ids": []
         }
       ],
+      "binding_observations": [],
       "route_observations": []
     },
     "artifacts": {
@@ -9706,11 +9725,11 @@
       }
     },
     "storage": {
-      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/E28/20260413T025512139214.json",
+      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/E28/20260413T062251757336.json",
       "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/E28.json",
       "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
-      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/E28/20260413T025512139214.json",
-      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/E28/20260413T025512139214.md",
+      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/E28/20260413T062251757336.json",
+      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/E28/20260413T062251757336.md",
       "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/E28.json",
       "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/E28.md"
     }
@@ -9718,8 +9737,8 @@
   "T105": {
     "task_id": "T105",
     "task_kind": "pricing",
-    "run_id": "20260413T025512179447",
-    "persisted_at": "2026-04-13T02:55:12.179816+00:00",
+    "run_id": "20260413T062251812683",
+    "persisted_at": "2026-04-13T06:22:51.813094+00:00",
     "task": {
       "id": "T105",
       "title": "Quanto option: analytical vs MC proving run",
@@ -9740,7 +9759,7 @@
       "title": "Quanto option: analytical vs MC proving run",
       "instrument_type": "quanto_option",
       "instrument_identity_source": "task.title_or_description",
-      "start_time": "2026-04-13T02:55:12.179447",
+      "start_time": "2026-04-13T06:22:51.812683",
       "comparison_task": true,
       "construct_methods": [
         "analytical",
@@ -10372,6 +10391,7 @@
       "degraded": false,
       "comparison_status": "failed",
       "selected_artifacts": [],
+      "binding_observations": [],
       "route_observations": []
     },
     "artifacts": {
@@ -10483,11 +10503,11 @@
       }
     },
     "storage": {
-      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T105/20260413T025512179447.json",
+      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T105/20260413T062251812683.json",
       "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T105.json",
       "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
-      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T105/20260413T025512179447.json",
-      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T105/20260413T025512179447.md",
+      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T105/20260413T062251812683.json",
+      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T105/20260413T062251812683.md",
       "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T105.json",
       "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T105.md"
     }
@@ -10495,8 +10515,8 @@
   "F01": {
     "task_id": "F01",
     "task_kind": "framework",
-    "run_id": "20260413T025512346572",
-    "persisted_at": "2026-04-13T02:55:12.346629+00:00",
+    "run_id": "20260413T062252003101",
+    "persisted_at": "2026-04-13T06:22:52.003166+00:00",
     "task": {
       "id": "F01",
       "title": "Automatic model selection: agent picks best method per instrument",
@@ -10525,7 +10545,7 @@
       "title": "Automatic model selection: agent picks best method per instrument",
       "instrument_type": null,
       "instrument_identity_source": "missing",
-      "start_time": "2026-04-13T02:55:12.346572",
+      "start_time": "2026-04-13T06:22:52.003101",
       "comparison_task": true,
       "construct_methods": [],
       "comparison_targets": [
@@ -10655,6 +10675,7 @@
       "degraded": false,
       "comparison_status": "",
       "selected_artifacts": [],
+      "binding_observations": [],
       "route_observations": []
     },
     "artifacts": {},
@@ -10720,11 +10741,11 @@
       }
     },
     "storage": {
-      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/F01/20260413T025512346572.json",
+      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/F01/20260413T062252003101.json",
       "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/F01.json",
       "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
-      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/F01/20260413T025512346572.json",
-      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/F01/20260413T025512346572.md",
+      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/F01/20260413T062252003101.json",
+      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/F01/20260413T062252003101.md",
       "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/F01.json",
       "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/F01.md"
     }
@@ -10732,8 +10753,8 @@
   "E21": {
     "task_id": "E21",
     "task_kind": "pricing",
-    "run_id": "20260413T025512396606",
-    "persisted_at": "2026-04-13T02:55:12.432998+00:00",
+    "run_id": "20260413T062252064946",
+    "persisted_at": "2026-04-13T06:22:52.105018+00:00",
     "task": {
       "id": "E21",
       "title": "European equity call: 5-way (tree, PDE, MC, FFT, COS)",
@@ -10763,7 +10784,7 @@
       "title": "European equity call: 5-way (tree, PDE, MC, FFT, COS)",
       "instrument_type": "european_option",
       "instrument_identity_source": "task.title_or_description",
-      "start_time": "2026-04-13T02:55:12.396606",
+      "start_time": "2026-04-13T06:22:52.064946",
       "comparison_task": false,
       "construct_methods": [
         "pde_solver"
@@ -12369,6 +12390,7 @@
       "degraded": false,
       "comparison_status": "",
       "selected_artifacts": [],
+      "binding_observations": [],
       "route_observations": []
     },
     "artifacts": {
@@ -12446,11 +12468,11 @@
       }
     },
     "storage": {
-      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/E21/20260413T025512396606.json",
+      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/E21/20260413T062252064946.json",
       "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/E21.json",
       "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
-      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/E21/20260413T025512396606.json",
-      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/E21/20260413T025512396606.md",
+      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/E21/20260413T062252064946.json",
+      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/E21/20260413T062252064946.md",
       "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/E21.json",
       "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/E21.md"
     }

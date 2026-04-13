@@ -1,0 +1,2 @@
+{"event": "request_compiled", "status": "ok", "timestamp": "2026-04-13T06:22:53.570065+00:00", "details": {"action": "price_existing_payoff", "route_method": "direct_existing", "requires_build": false}}
+{"event": "request_succeeded", "status": "ok", "timestamp": "2026-04-13T06:22:53.605839+00:00", "details": {"run_id": "run_20260413062253_eb565b36", "action": "price_existing_payoff", "status": "succeeded", "payoff_class": "DeterministicCashflowPayoff"}}

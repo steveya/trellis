@@ -30,8 +30,11 @@ from trellis.agent.task_runtime import (
 
 ROOT = Path(__file__).resolve().parents[2]
 STRESS_TASK_MANIFEST = ROOT / "tests" / "evals" / "stress_tasks.yaml"
+BINDING_FIRST_EXOTIC_PROOF_MANIFEST = ROOT / "tests" / "evals" / "binding_first_exotic_proof.yaml"
 STRESS_COMPARE_READY = "compare_ready"
 STRESS_HONEST_BLOCK = "honest_block"
+PROOF_OUTCOME_PROVED = "proved"
+PROOF_OUTCOME_HONEST_BLOCK = "honest_block"
 
 
 @dataclass(frozen=True)
@@ -188,6 +191,44 @@ def load_stress_task_manifest(path: str | Path | None = None) -> dict[str, dict[
     with manifest_path.open() as handle:
         loaded = yaml.safe_load(handle) or {}
     return {str(task_id): dict(spec) for task_id, spec in loaded.items()}
+
+
+def load_binding_first_exotic_proof_manifest(
+    path: str | Path | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Load the canonical binding-first exotic proof manifest."""
+    manifest_path = Path(path) if path is not None else BINDING_FIRST_EXOTIC_PROOF_MANIFEST
+    with manifest_path.open() as handle:
+        loaded = yaml.safe_load(handle) or {}
+    return {str(task_id): dict(spec) for task_id, spec in loaded.items()}
+
+
+def select_binding_first_exotic_proof_tasks(
+    manifest: Mapping[str, Mapping[str, Any]] | None = None,
+    *,
+    cohort: str | None = None,
+    task_ids: Iterable[str] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Select one proof-cohort slice from the manifest."""
+    selected_ids = {str(task_id) for task_id in (task_ids or ()) if str(task_id).strip()}
+    expectations = {
+        str(task_id): dict(spec)
+        for task_id, spec in (manifest or load_binding_first_exotic_proof_manifest()).items()
+    }
+    selected: dict[str, dict[str, Any]] = {}
+    for task_id, spec in expectations.items():
+        if cohort is not None and str(spec.get("cohort") or "").strip() != cohort:
+            continue
+        if selected_ids and task_id not in selected_ids:
+            continue
+        selected[task_id] = spec
+    if selected_ids:
+        missing = tuple(sorted(selected_ids - set(selected)))
+        if missing:
+            raise ValueError(
+                "Unknown proof task ids requested: " + ", ".join(missing)
+            )
+    return selected
 
 
 def _task_contract_required_capabilities(task: Mapping[str, Any]) -> tuple[str, ...]:
@@ -404,6 +445,167 @@ def grade_stress_task_result(
     }
 
 
+def grade_binding_first_exotic_proof_preflight(
+    task: Mapping[str, Any],
+    expectation: Mapping[str, Any],
+    *,
+    market_state: Any | None = None,
+) -> dict[str, GradeResult]:
+    """Grade deterministic readiness for one binding-first proof task."""
+    return grade_stress_task_preflight(
+        dict(task),
+        dict(expectation),
+        market_state=market_state,
+    )
+
+
+def grade_binding_first_exotic_proof_result(
+    task: Mapping[str, Any],
+    expectation: Mapping[str, Any],
+    result: Mapping[str, Any],
+) -> dict[str, GradeResult]:
+    """Grade one live proof-cohort result against the binding-first expectation."""
+    forbidden_patterns = tuple(
+        str(pattern) for pattern in (expectation.get("forbidden_failure_patterns") or ())
+    )
+    haystack = _stress_result_text(result)
+    forbidden_hits = tuple(
+        pattern for pattern in forbidden_patterns if pattern.lower() in haystack
+    )
+
+    outcome_class = _normalize_proof_outcome_class(expectation.get("outcome_class"))
+    bucket = classify_task_result(result)
+    cross_validation = dict(result.get("cross_validation") or {})
+    comparison_status = str(cross_validation.get("status") or "").strip().lower()
+    expected_blocker_categories = tuple(
+        str(category) for category in (expectation.get("expected_blocker_categories") or ())
+    )
+    observed_blocker_categories = _stress_observed_blocker_categories(result)
+    binding_summary = _proof_binding_summary(result)
+    binding_ids = tuple(binding_summary.get("binding_ids") or ())
+    route_ids = tuple(binding_summary.get("route_ids") or ())
+
+    outcome_ok = True
+    outcome_details: list[str] = []
+    if outcome_class == PROOF_OUTCOME_PROVED:
+        if not result.get("success"):
+            outcome_ok = False
+            outcome_details.append(f"proved task did not succeed: bucket={bucket}")
+        if task.get("cross_validate") and comparison_status != "passed":
+            outcome_ok = False
+            outcome_details.append(
+                "proved task did not finish with passed comparison status: "
+                f"{comparison_status or 'missing'}"
+            )
+        if observed_blocker_categories:
+            outcome_ok = False
+            outcome_details.append(
+                "proved task surfaced blocker categories: "
+                + ", ".join(observed_blocker_categories)
+            )
+    elif outcome_class == PROOF_OUTCOME_HONEST_BLOCK:
+        if result.get("success"):
+            outcome_ok = False
+            outcome_details.append("honest-block sentinel unexpectedly succeeded")
+        if expected_blocker_categories:
+            if not observed_blocker_categories:
+                outcome_ok = False
+                outcome_details.append(
+                    "honest-block sentinel did not surface blocker categories"
+                )
+            elif not set(observed_blocker_categories) & set(expected_blocker_categories):
+                outcome_ok = False
+                outcome_details.append(
+                    "honest-block sentinel surfaced unexpected blocker categories: "
+                    f"observed={observed_blocker_categories} expected={expected_blocker_categories}"
+                )
+        elif bucket in {"missing_market_data", "llm_response", "timeout"}:
+            outcome_ok = False
+            outcome_details.append(f"unexpected honest-block outcome bucket: {bucket}")
+
+    binding_ok = True
+    binding_details: list[str] = []
+    requires_binding_ids = expectation.get("requires_binding_ids")
+    if requires_binding_ids is None:
+        requires_binding_ids = outcome_class == PROOF_OUTCOME_PROVED
+    if requires_binding_ids and not binding_ids:
+        binding_ok = False
+        binding_details.append(
+            "proved task did not persist any binding ids in its task-run record"
+        )
+
+    route_identity_ok = True
+    route_identity_details: list[str] = []
+    unknown_route_ids = _unknown_route_ids(route_ids)
+    if unknown_route_ids:
+        route_identity_ok = False
+        route_identity_details.append(
+            "task surfaced non-canonical route ids: " + ", ".join(unknown_route_ids)
+        )
+
+    reference_alignment_ok = True
+    reference_alignment_details: list[str] = []
+    expected_reference_target = str(expectation.get("reference_target") or "").strip()
+    observed_reference_target = str(cross_validation.get("reference_target") or "").strip()
+    if expected_reference_target and comparison_status:
+        if observed_reference_target != expected_reference_target:
+            reference_alignment_ok = False
+            reference_alignment_details.append(
+                "comparison reference target drifted from the proof manifest: "
+                f"observed={observed_reference_target or 'missing'} expected={expected_reference_target}"
+            )
+
+    blocker_alignment_ok = True
+    blocker_alignment_details: list[str] = []
+    if expected_blocker_categories and not result.get("success"):
+        observed = set(observed_blocker_categories)
+        expected = set(expected_blocker_categories)
+        if not observed:
+            blocker_alignment_ok = False
+            blocker_alignment_details.append(
+                "expected blocker categories were not surfaced in the result"
+            )
+        elif not observed & expected:
+            blocker_alignment_ok = False
+            blocker_alignment_details.append(
+                "observed blocker categories did not match the proof expectation: "
+                f"observed={observed_blocker_categories} expected={expected_blocker_categories}"
+            )
+    elif outcome_class == PROOF_OUTCOME_PROVED and observed_blocker_categories:
+        blocker_alignment_ok = False
+        blocker_alignment_details.append(
+            "proved task should not emit blocker categories: "
+            + ", ".join(observed_blocker_categories)
+        )
+
+    return {
+        "forbidden_failure_patterns": GradeResult(
+            not forbidden_hits,
+            tuple(f"forbidden failure pattern observed: {pattern}" for pattern in forbidden_hits),
+        ),
+        "outcome_class_alignment": GradeResult(
+            outcome_ok,
+            tuple(outcome_details),
+        ),
+        "binding_identity_alignment": GradeResult(
+            binding_ok,
+            tuple(binding_details),
+        ),
+        "route_identity_alignment": GradeResult(
+            route_identity_ok,
+            tuple(route_identity_details),
+        ),
+        "blocker_category_alignment": GradeResult(
+            blocker_alignment_ok,
+            tuple(blocker_alignment_details),
+        ),
+        "reference_target_alignment": GradeResult(
+            reference_alignment_ok,
+            tuple(reference_alignment_details),
+        ),
+    }
+
+
 def summarize_stress_preflight(
     tasks: Mapping[str, Mapping[str, Any]],
     *,
@@ -551,6 +753,176 @@ def summarize_stress_tranche(
             and report["follow_on"].get("action") != "no_action"
         ],
     }
+
+
+def summarize_binding_first_exotic_proof(
+    tasks: Mapping[str, Mapping[str, Any]],
+    results: Iterable[Mapping[str, Any]],
+    *,
+    manifest: Mapping[str, Mapping[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Render a canonical summary for one binding-first exotic proof cohort."""
+    expectations = {
+        str(task_id): dict(spec)
+        for task_id, spec in (manifest or load_binding_first_exotic_proof_manifest()).items()
+    }
+    results_by_id = {
+        str(result.get("task_id")): dict(result)
+        for result in results
+        if result.get("task_id")
+    }
+
+    report_by_task: dict[str, dict[str, Any]] = {}
+    totals = {
+        "tasks": 0,
+        "passed_gate": 0,
+        "failed_gate": 0,
+        PROOF_OUTCOME_PROVED: 0,
+        PROOF_OUTCOME_HONEST_BLOCK: 0,
+    }
+    failure_buckets: dict[str, int] = {}
+
+    for task_id, task in tasks.items():
+        expectation = expectations.get(task_id, {})
+        result = results_by_id.get(task_id, {})
+        preflight = (
+            grade_binding_first_exotic_proof_preflight(task, expectation)
+            if expectation else {}
+        )
+        live_report = (
+            grade_binding_first_exotic_proof_result(task, expectation, result)
+            if expectation and result else {}
+        )
+        outcome_class = _normalize_proof_outcome_class(expectation.get("outcome_class")) or "unknown"
+        bucket = classify_task_result(result) if result else "missing"
+        failure_buckets[bucket] = failure_buckets.get(bucket, 0) + 1
+        binding_summary = _proof_binding_summary(result) if result else _empty_proof_binding_summary()
+        passed_gate = all(
+            item.passed for item in (*preflight.values(), *live_report.values())
+        ) if preflight and live_report else False
+
+        totals["tasks"] += 1
+        if outcome_class in totals:
+            totals[outcome_class] += 1
+        if passed_gate:
+            totals["passed_gate"] += 1
+        else:
+            totals["failed_gate"] += 1
+
+        report_by_task[task_id] = {
+            "title": task.get("title"),
+            "cohort": str(expectation.get("cohort") or "").strip(),
+            "outcome_class": outcome_class,
+            "success": bool(result.get("success")),
+            "failure_bucket": bucket,
+            "comparison_status": (result.get("cross_validation") or {}).get("status"),
+            "elapsed_seconds": result.get("elapsed_seconds"),
+            "attempts_to_success": _result_attempts_to_success(result) if result else 0,
+            "first_pass": _result_attempts_to_success(result) <= 1 if result else False,
+            "retry_taxonomy": list(_result_retry_taxonomy_reasons(result)) if result else [],
+            "token_usage": dict(result.get("token_usage_summary") or {}),
+            "binding_ids": list(binding_summary["binding_ids"]),
+            "binding_families": list(binding_summary["binding_families"]),
+            "route_ids": list(binding_summary["route_ids"]),
+            "task_run_latest_path": result.get("task_run_latest_path"),
+            "task_run_history_path": result.get("task_run_history_path"),
+            "diagnosis_packet_path": result.get("task_diagnosis_packet_path"),
+            "diagnosis_dossier_path": result.get("task_diagnosis_dossier_path"),
+            "diagnosis_latest_packet_path": result.get("task_diagnosis_latest_packet_path"),
+            "diagnosis_latest_dossier_path": result.get("task_diagnosis_latest_dossier_path"),
+            "preflight": {
+                key: {"passed": value.passed, "details": list(value.details)}
+                for key, value in preflight.items()
+            },
+            "live_checks": {
+                key: {"passed": value.passed, "details": list(value.details)}
+                for key, value in live_report.items()
+            },
+            "passed_gate": passed_gate,
+        }
+
+    return {
+        "totals": totals,
+        "failure_buckets": failure_buckets,
+        "by_task": report_by_task,
+        "preflight_summary": summarize_stress_preflight(tasks, manifest=expectations),
+        "task_summary": summarize_task_results(list(results_by_id.values())),
+    }
+
+
+def render_binding_first_exotic_proof_report(report: Mapping[str, Any]) -> str:
+    """Render one binding-first exotic proof batch as operator-facing Markdown."""
+    preflight = dict(report.get("preflight_summary") or {})
+    proof_summary = dict(report.get("proof_summary") or report.get("summary") or {})
+    task_summary = dict(report.get("task_summary") or {})
+    lines = [
+        "# Binding-First Exotic Proof Cohort",
+        "",
+        f"- Status: `{report.get('status', '')}`",
+        f"- Cohort: `{report.get('cohort', '')}`",
+        f"- Model: `{report.get('model', '')}`",
+        f"- Validation: `{report.get('validation', '')}`",
+        f"- Fresh build: `{report.get('fresh_build', '')}`",
+        f"- Tasks: `{', '.join(report.get('task_ids') or [])}`",
+        f"- Raw results: `{report.get('raw_results_path', '')}`",
+        f"- Report JSON: `{report.get('report_json_path', '')}`",
+        f"- Report Markdown: `{report.get('report_md_path', '')}`",
+        "",
+        "## Deterministic Preflight",
+        f"- Passed: `{dict(preflight.get('totals') or {}).get('passed', 0)}`",
+        f"- Failed: `{dict(preflight.get('totals') or {}).get('failed', 0)}`",
+    ]
+    failed_tasks = list(preflight.get("failed_tasks") or [])
+    if failed_tasks:
+        lines.append(f"- Blocked tasks: `{', '.join(failed_tasks)}`")
+        return "\n".join(lines).rstrip() + "\n"
+
+    totals = dict(proof_summary.get("totals") or {})
+    lines.extend(
+        [
+            "",
+            "## Proof Summary",
+            f"- Passed gate: `{totals.get('passed_gate', 0)}`",
+            f"- Failed gate: `{totals.get('failed_gate', 0)}`",
+            f"- Proved tasks: `{totals.get(PROOF_OUTCOME_PROVED, 0)}`",
+            f"- Honest-block tasks: `{totals.get(PROOF_OUTCOME_HONEST_BLOCK, 0)}`",
+            f"- First-pass rate: `{dict(task_summary.get('first_pass') or {}).get('rate', 0.0)}`",
+            f"- Avg attempts to success: `{dict(task_summary.get('attempts_to_success') or {}).get('average', 0.0)}`",
+            "",
+            "## Task View",
+        ]
+    )
+    for task_id, task_report in sorted((proof_summary.get("by_task") or {}).items()):
+        task_report = dict(task_report or {})
+        lines.extend(
+            [
+                f"### {task_id} - {task_report.get('title', '')}",
+                f"- Outcome class: `{task_report.get('outcome_class', '')}`",
+                f"- Gate passed: `{task_report.get('passed_gate', '')}`",
+                f"- Success: `{task_report.get('success', '')}`",
+                f"- Failure bucket: `{task_report.get('failure_bucket', '')}`",
+                f"- Comparison status: `{task_report.get('comparison_status', '') or 'missing'}`",
+                f"- Binding ids: `{', '.join(task_report.get('binding_ids') or []) or 'none'}`",
+                f"- Route ids: `{', '.join(task_report.get('route_ids') or []) or 'none'}`",
+                f"- First pass: `{task_report.get('first_pass', False)}`",
+                f"- Attempts to success: `{task_report.get('attempts_to_success', 0)}`",
+                f"- Retry taxonomy: `{', '.join(task_report.get('retry_taxonomy') or []) or 'none'}`",
+                f"- Latest diagnosis dossier: `{task_report.get('diagnosis_latest_dossier_path', '') or task_report.get('diagnosis_dossier_path', '') or 'missing'}`",
+            ]
+        )
+        failing_checks = [
+            (check_name, check)
+            for check_name, check in dict(task_report.get("live_checks") or {}).items()
+            if not check.get("passed")
+        ]
+        if failing_checks:
+            lines.append("- Failed live checks:")
+            for check_name, check in failing_checks:
+                lines.append(f"  - `{check_name}`")
+                for detail in check.get("details") or []:
+                    lines.append(f"    - {detail}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def classify_task_result(result: Mapping[str, Any]) -> str:
@@ -1163,6 +1535,90 @@ def _normalize_stress_outcome_class(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
+def _normalize_proof_outcome_class(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _empty_proof_binding_summary() -> dict[str, tuple[str, ...]]:
+    return {
+        "binding_ids": (),
+        "binding_families": (),
+        "binding_aliases": (),
+        "route_ids": (),
+        "route_families": (),
+    }
+
+
+def _proof_binding_summary(result: Mapping[str, Any]) -> dict[str, tuple[str, ...]]:
+    """Return the persisted binding/route identities observed for one task result."""
+    latest_path = str(
+        result.get("task_run_latest_path") or result.get("task_run_history_path") or ""
+    ).strip()
+    if not latest_path:
+        return _empty_proof_binding_summary()
+
+    path = Path(latest_path)
+    if not path.exists():
+        return _empty_proof_binding_summary()
+
+    try:
+        from trellis.agent.task_run_store import load_task_run_record
+
+        record = load_task_run_record(path)
+    except Exception:
+        return _empty_proof_binding_summary()
+
+    telemetry = dict(record.get("telemetry") or {})
+    observations = telemetry.get("binding_observations") or telemetry.get("route_observations") or ()
+    if not isinstance(observations, list):
+        return _empty_proof_binding_summary()
+
+    binding_ids: list[str] = []
+    binding_families: list[str] = []
+    binding_aliases: list[str] = []
+    route_ids: list[str] = []
+    route_families: list[str] = []
+    for item in observations:
+        if not isinstance(item, Mapping):
+            continue
+        binding_id = str(item.get("binding_id") or item.get("backend_binding_id") or "").strip()
+        binding_family = str(item.get("binding_family") or item.get("route_family") or "").strip()
+        binding_alias = str(item.get("binding_alias") or item.get("route_alias") or "").strip()
+        route_id = str(item.get("route_id") or "").strip()
+        route_family = str(item.get("route_family") or "").strip()
+        if binding_id and binding_id not in binding_ids:
+            binding_ids.append(binding_id)
+        if binding_family and binding_family not in binding_families:
+            binding_families.append(binding_family)
+        if binding_alias and binding_alias not in binding_aliases:
+            binding_aliases.append(binding_alias)
+        if route_id and route_id not in route_ids:
+            route_ids.append(route_id)
+        if route_family and route_family not in route_families:
+            route_families.append(route_family)
+    return {
+        "binding_ids": tuple(binding_ids),
+        "binding_families": tuple(binding_families),
+        "binding_aliases": tuple(binding_aliases),
+        "route_ids": tuple(route_ids),
+        "route_families": tuple(route_families),
+    }
+
+
+def _unknown_route_ids(route_ids: Iterable[str]) -> tuple[str, ...]:
+    observed = tuple(str(route_id).strip() for route_id in route_ids if str(route_id).strip())
+    if not observed:
+        return ()
+    try:
+        from trellis.agent.route_registry import load_route_registry
+
+        registry = load_route_registry(include_discovered=False)
+        known = {str(route.id).strip() for route in getattr(registry, "routes", ())}
+    except Exception:
+        return ()
+    return tuple(route_id for route_id in observed if route_id not in known)
+
+
 def _iter_stress_blocker_details(result: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]:
     blocker_details = result.get("blocker_details")
     if isinstance(blocker_details, Mapping) and blocker_details:
@@ -1230,6 +1686,14 @@ def _map_stress_blocker_categories(
     raw_category = str(category or "").strip().lower()
     raw_blocker_id = str(blocker_id or "").strip().lower()
     mapped: list[str] = []
+    if raw_category in {
+        "unsupported_composite",
+        "missing_foundational_primitive",
+        "missing_binding_surface",
+        "semantic_contract_gap",
+        "semantic_clarification",
+    }:
+        mapped.append(raw_category)
     if raw_category in {
         "numerical_substrate_gap",
         "implementation_gap",
