@@ -130,7 +130,7 @@ ultimately targets.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-04-12`
+Status mirror last synced: `2026-04-13`
 
 ### Ordered Epic Queue
 
