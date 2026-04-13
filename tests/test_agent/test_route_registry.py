@@ -308,7 +308,7 @@ class TestRegistryValidation:
         )
         assert authority.operator_metadata is not None
         assert authority.operator_metadata.display_name == "Bound (analytical)"
-        assert authority.operator_metadata.diagnostic_label == "binding_fallback"
+        assert authority.operator_metadata.diagnostic_label == "price_bound_helper"
 
 
 # ---------------------------------------------------------------------------

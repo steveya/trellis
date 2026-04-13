@@ -21,6 +21,9 @@ class BindingOperatorMetadata:
     diagnostic_label: str
 
 
+_PDE_SOLVER_FALLBACK_BINDING_ID = "pde_solver:pde_solver:fallback"
+
+
 _CANONICAL_BINDING_OPERATOR_METADATA: dict[str, BindingOperatorMetadata] = {
     "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state": BindingOperatorMetadata(
         display_name="Quanto option analytical binding",
@@ -52,7 +55,14 @@ _CANONICAL_BINDING_OPERATOR_METADATA: dict[str, BindingOperatorMetadata] = {
         short_description="Exact Black-76 helper binding for analytical vanilla and swaption pricing.",
         diagnostic_label="black76_analytical_binding",
     ),
-    "pde_solver:pde_solver:fallback": BindingOperatorMetadata(
+    "trellis.models.black.black76_put": BindingOperatorMetadata(
+        display_name="Black-76 analytical put binding",
+        short_description="Exact Black-76 put helper binding for analytical vanilla and swaption pricing.",
+        diagnostic_label="black76_put_analytical_binding",
+    ),
+    # Fallback binding ids intentionally use the shared `engine:route:fallback`
+    # shape from backend_bindings.py / route_registry.py rather than module paths.
+    _PDE_SOLVER_FALLBACK_BINDING_ID: BindingOperatorMetadata(
         display_name="PDE solver fallback binding",
         short_description="Binding-first fallback label for the generic theta-method PDE solver surface.",
         diagnostic_label="pde_solver_fallback_binding",
@@ -97,13 +107,13 @@ def _fallback_binding_operator_metadata(
     display_name = display_root
     if family_bits:
         display_name = f"{display_root} ({' / '.join(dict.fromkeys(family_bits))})"
-    route_fragment = str(route_id or "").strip() or "binding_fallback"
+    route_fragment = str(route_id or "").strip()
     return BindingOperatorMetadata(
         display_name=display_name,
         short_description=(
             f"Fallback operator metadata derived from backend binding `{binding_id}`."
         ),
-        diagnostic_label=_slugify(route_fragment or symbol),
+        diagnostic_label=_slugify(route_fragment) if route_fragment else _slugify(symbol),
     )
 
 
