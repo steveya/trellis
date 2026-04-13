@@ -585,7 +585,7 @@ def _build_black76_expr(
         return None, (_missing_primitive_message(route_id, binding_id, "pricing kernel", kernel_name),)
 
     kernel_atom = ContractAtom(
-        atom_id=_binding_atom_id(route_id, binding_id, "pricing_kernel", kernel),
+        atom_id=_binding_atom_id(route_id, binding_id, "pricing_kernel"),
         primitive_ref=kernel.primitive_ref,
         description=(
             f"Direct Black76 {option_type} kernel for "
@@ -629,7 +629,7 @@ def _build_black76_expr_from_family_ir(
 
     signature = _market_signature_from_family_ir(family_ir)
     kernel_atom = ContractAtom(
-        atom_id=_binding_atom_id(route_id, binding_id, "pricing_kernel", kernel),
+        atom_id=_binding_atom_id(route_id, binding_id, "pricing_kernel"),
         primitive_ref=kernel.primitive_ref,
         description=(
             f"Typed Black76 {family_ir.option_type} kernel for plain vanilla payoff "
@@ -738,7 +738,7 @@ def _build_event_aware_monte_carlo_expr_from_family_ir(
     )
 
     process_atom = ContractAtom(
-        atom_id=_binding_atom_id(route_id, binding_id, "state_process", process_binding),
+        atom_id=_binding_atom_id(route_id, binding_id, "state_process"),
         primitive_ref=process_binding.primitive_ref if process_binding is not None else None,
         description=(
             f"Compile the typed {family_ir.process_spec.process_family or 'event-aware'} "
@@ -752,7 +752,7 @@ def _build_event_aware_monte_carlo_expr_from_family_ir(
         ),
     )
     simulation_atom = ContractAtom(
-        atom_id=_binding_atom_id(route_id, binding_id, "path_simulation", path_simulation),
+        atom_id=_binding_atom_id(route_id, binding_id, "path_simulation"),
         primitive_ref=path_simulation.primitive_ref,
         description=(
             f"Simulate paths under the typed {family_ir.path_requirement_spec.requirement_kind or 'terminal_only'} "
@@ -766,7 +766,7 @@ def _build_event_aware_monte_carlo_expr_from_family_ir(
         ),
     )
     reducer_atom = ContractAtom(
-        atom_id=_binding_atom_id(route_id, binding_id, "payoff_reducer", reducer_binding),
+        atom_id=_binding_atom_id(route_id, binding_id, "payoff_reducer"),
         primitive_ref=reducer_binding.primitive_ref if reducer_binding is not None else None,
         description=(
             f"Reduce simulated path state through {family_ir.payoff_reducer_spec.reducer_kind or 'compiled_payoff'} "
@@ -829,7 +829,7 @@ def _build_transform_expr_from_family_ir(
         )
 
     kernel_atom = ContractAtom(
-        atom_id=_binding_atom_id(route_id, binding_id, "transform_pricer", transform_pricer),
+        atom_id=_binding_atom_id(route_id, binding_id, "transform_pricer"),
         primitive_ref=transform_pricer.primitive_ref,
         description=(
             f"Typed raw transform pricing kernel for {family_ir.product_instrument or 'compiled'} "
@@ -863,10 +863,12 @@ def _binding_atom_id(
     route_id: str,
     binding_id: str,
     role: str,
-    binding: DslTargetBinding | None = None,
 ) -> str:
-    """Return a stable DSL atom id rooted in binding identity."""
-    del binding
+    """Return a stable DSL atom id rooted in binding identity.
+
+    ``role`` identifies the kind of atom within the binding (e.g. 'route_helper',
+    'pricing_kernel', 'market_binding', 'schedule_builder', 'state_process').
+    """
     identity = str(binding_id or "").strip() or route_id
     if not identity:
         identity = "unbound"
@@ -1042,7 +1044,7 @@ def _build_correlated_basket_mc_expr_from_family_ir(
 
     market_signature = _market_signature_from_family_ir(family_ir)
     binding_atom = ContractAtom(
-        atom_id=_binding_atom_id(route_id, binding_id, "market_binding", market_binding),
+        atom_id=_binding_atom_id(route_id, binding_id, "market_binding"),
         primitive_ref=market_binding.primitive_ref,
         description=(
             "Typed ranked-observation basket binding that resolves constituent market data, "
@@ -1113,7 +1115,7 @@ def _build_credit_default_swap_expr_from_family_ir(
 
     market_signature = _market_signature_from_family_ir(family_ir)
     schedule_atom = ContractAtom(
-        atom_id=_binding_atom_id(route_id, binding_id, "schedule_builder", schedule_builder),
+        atom_id=_binding_atom_id(route_id, binding_id, "schedule_builder"),
         primitive_ref=schedule_builder.primitive_ref,
         description="Build the canonical CDS premium schedule shared by the checked-in route helpers.",
         signature=ContractSignature(
@@ -1404,11 +1406,11 @@ def _infer_error_code(message: str) -> str:
         return "missing_observables"
     if "missing required state tags" in lower:
         return "missing_state_tags"
-    if "missing the required market binding" in lower or "missing the required market binding primitive" in lower:
+    if "missing the required market binding" in lower:
         return "missing_market_binding"
-    if "missing the required pricing kernel" in lower or "missing the required pricing kernel primitive" in lower:
+    if "missing the required pricing kernel" in lower:
         return "missing_pricing_kernel"
-    if "missing the required schedule builder" in lower or "missing the required schedule builder primitive" in lower:
+    if "missing the required schedule builder" in lower:
         return "missing_schedule_builder"
     if (
         "missing the required route helper" in lower
