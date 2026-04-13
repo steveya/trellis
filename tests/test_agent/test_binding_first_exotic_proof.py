@@ -51,6 +51,26 @@ def test_binding_first_proof_manifest_matches_task_contracts():
         assert tuple(expectation.get("comparison_targets") or ()) == _expected_comparison_targets(task), task_id
 
 
+def test_select_binding_first_exotic_proof_tasks_rejects_unknown_task_ids():
+    from trellis.agent.evals import (
+        load_binding_first_exotic_proof_manifest,
+        select_binding_first_exotic_proof_tasks,
+    )
+
+    manifest = load_binding_first_exotic_proof_manifest()
+
+    try:
+        select_binding_first_exotic_proof_tasks(
+            manifest,
+            cohort="event_control_schedule",
+            task_ids=["T17", "DOES_NOT_EXIST"],
+        )
+    except ValueError as exc:
+        assert "DOES_NOT_EXIST" in str(exc)
+    else:
+        raise AssertionError("unknown proof task ids should raise ValueError")
+
+
 def test_binding_first_proof_result_flags_missing_binding_ids_for_proved_task():
     from trellis.agent.evals import (
         grade_binding_first_exotic_proof_result,

@@ -30,7 +30,7 @@ from trellis.agent.evals import (
     select_binding_first_exotic_proof_tasks,
     summarize_binding_first_exotic_proof,
 )
-from trellis.agent.task_runtime import build_market_state, load_tasks, run_task
+from trellis.agent.task_runtime import load_tasks, run_task
 from trellis.cli_paths import resolve_repo_path
 
 load_env()
@@ -88,11 +88,15 @@ def run_binding_first_exotic_proof(
     report_md_path: Path,
 ) -> int:
     manifest = load_binding_first_exotic_proof_manifest()
-    selected_manifest = select_binding_first_exotic_proof_tasks(
-        manifest,
-        cohort=cohort,
-        task_ids=task_ids,
-    )
+    try:
+        selected_manifest = select_binding_first_exotic_proof_tasks(
+            manifest,
+            cohort=cohort,
+            task_ids=task_ids,
+        )
+    except ValueError as exc:
+        print(str(exc))
+        return 1
     if not selected_manifest:
         print(f"No proof tasks selected for cohort={cohort!r} task_ids={task_ids or []}")
         return 1
@@ -104,14 +108,12 @@ def run_binding_first_exotic_proof(
         print(str(exc))
         return 1
 
-    market_state = build_market_state()
     preflight_by_task: dict[str, dict[str, dict[str, object]]] = {}
     preflight_failed = False
     for task_id in ordered_task_ids:
         report = grade_binding_first_exotic_proof_preflight(
             tasks[task_id],
             selected_manifest[task_id],
-            market_state=market_state,
         )
         preflight_by_task[task_id] = {
             key: {"passed": value.passed, "details": list(value.details)}
@@ -167,9 +169,14 @@ def run_binding_first_exotic_proof(
         return 1 if preflight_failed else 0
 
     results = []
+    market_state = None
     for task_id in ordered_task_ids:
         task = tasks[task_id]
         print(f"{task_id}: {task['title']}", flush=True)
+        if market_state is None:
+            from trellis.agent.task_runtime import build_market_state
+
+            market_state = build_market_state()
         result = run_task(
             task,
             market_state,

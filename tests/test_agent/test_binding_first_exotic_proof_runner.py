@@ -109,17 +109,13 @@ def test_run_binding_first_exotic_proof_writes_report_and_summary(tmp_path, monk
     monkeypatch.setattr(module, "_load_selected_tasks", lambda task_ids: {task_id: tasks[task_id] for task_id in task_ids})
     monkeypatch.setattr(
         module,
-        "build_market_state",
-        lambda: SimpleNamespace(
-            available_capabilities=(
-                "discount_curve",
-                "forward_curve",
-                "fx_rates",
-                "spot",
-                "black_vol_surface",
-                "model_parameters",
-            )
-        ),
+        "grade_binding_first_exotic_proof_preflight",
+        lambda *args, **kwargs: {
+            "task_contract_alignment": SimpleNamespace(passed=True, details=()),
+            "market_capability_alignment": SimpleNamespace(passed=True, details=()),
+            "comparison_target_inventory": SimpleNamespace(passed=True, details=()),
+            "comparison_target_separation": SimpleNamespace(passed=True, details=()),
+        },
     )
     monkeypatch.setattr(module, "run_task", lambda *args, **kwargs: next(fake_results))
 
@@ -176,10 +172,13 @@ def test_run_binding_first_exotic_proof_returns_nonzero_when_live_gate_fails(tmp
     monkeypatch.setattr(module, "_load_selected_tasks", lambda task_ids: {task_id: tasks[task_id] for task_id in task_ids})
     monkeypatch.setattr(
         module,
-        "build_market_state",
-        lambda: SimpleNamespace(
-            available_capabilities=("discount_curve", "forward_curve", "fx_rates", "spot")
-        ),
+        "grade_binding_first_exotic_proof_preflight",
+        lambda *args, **kwargs: {
+            "task_contract_alignment": SimpleNamespace(passed=True, details=()),
+            "market_capability_alignment": SimpleNamespace(passed=True, details=()),
+            "comparison_target_inventory": SimpleNamespace(passed=True, details=()),
+            "comparison_target_separation": SimpleNamespace(passed=True, details=()),
+        },
     )
     monkeypatch.setattr(
         module,
@@ -201,6 +200,37 @@ def test_run_binding_first_exotic_proof_returns_nonzero_when_live_gate_fails(tmp
         validation="standard",
         fresh_build=True,
         preflight_only=False,
+        output_path=tmp_path / "proof_results.json",
+        report_json_path=tmp_path / "proof_report.json",
+        report_md_path=tmp_path / "proof_report.md",
+    )
+
+    assert exit_code == 1
+
+
+def test_run_binding_first_exotic_proof_rejects_unknown_selected_task_ids(tmp_path, monkeypatch):
+    module = _load_module()
+
+    monkeypatch.setattr(
+        module,
+        "load_binding_first_exotic_proof_manifest",
+        lambda: {
+            "T105": {
+                "cohort": "event_control_schedule",
+                "outcome_class": "proved",
+                "required_mock_capabilities": [],
+                "comparison_targets": [],
+            }
+        },
+    )
+
+    exit_code = module.run_binding_first_exotic_proof(
+        cohort="event_control_schedule",
+        task_ids=["T105", "BAD_ID"],
+        model="test-model",
+        validation="standard",
+        fresh_build=True,
+        preflight_only=True,
         output_path=tmp_path / "proof_results.json",
         report_json_path=tmp_path / "proof_report.json",
         report_md_path=tmp_path / "proof_report.md",

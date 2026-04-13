@@ -222,6 +222,12 @@ def select_binding_first_exotic_proof_tasks(
         if selected_ids and task_id not in selected_ids:
             continue
         selected[task_id] = spec
+    if selected_ids:
+        missing = tuple(sorted(selected_ids - set(selected)))
+        if missing:
+            raise ValueError(
+                "Unknown proof task ids requested: " + ", ".join(missing)
+            )
     return selected
 
 
