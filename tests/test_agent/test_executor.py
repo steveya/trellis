@@ -1285,6 +1285,95 @@ def test_build_payoff_code_generation_stage_uses_instrument_type_metadata(monkey
     assert captured["metadata"]["attempt"] == 1
 
 
+def test_build_payoff_fresh_build_still_uses_deterministic_exact_binding(monkeypatch):
+    from trellis.agent.executor import build_payoff
+
+    pricing_plan = SimpleNamespace(
+        method="copula",
+        method_modules=("trellis.models.credit_basket_copula",),
+        required_market_data={"credit_curve"},
+        model_to_build=None,
+        reasoning="exact binding available",
+        selection_reason="unit_test",
+        assumption_summary=(),
+        sensitivity_support=None,
+    )
+    product_ir = SimpleNamespace(instrument="cdo")
+    compiled_request = SimpleNamespace(
+        product_ir=product_ir,
+        pricing_plan=pricing_plan,
+        request=SimpleNamespace(
+            request_id="executor_build_exact_binding_fresh_123",
+            metadata={"comparison_target": "gaussian_copula"},
+        ),
+        linear_issue_identifier=None,
+        generation_plan=None,
+        knowledge_summary={},
+        semantic_blueprint=None,
+    )
+    plan = SimpleNamespace(
+        steps=[SimpleNamespace(module_path="trellis/instruments/_agent/test_cdo.py")],
+        spec_schema=SimpleNamespace(
+            spec_name="CDOTrancheSpec",
+            class_name="CDOTranchePayoff",
+            fields=(),
+            requirements=(),
+        ),
+    )
+    generation_plan = SimpleNamespace(
+        method="copula",
+        instrument_type="cdo",
+        primitive_plan=SimpleNamespace(
+            engine_family="copula",
+            blockers=(),
+            route="copula_loss_distribution",
+        ),
+        blocker_report=None,
+        new_primitive_workflow=None,
+        lane_exact_binding_refs=("trellis.models.credit_basket_copula.price_credit_basket_tranche",),
+    )
+
+    monkeypatch.setattr("trellis.agent.executor._record_platform_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr("trellis.agent.executor._append_agent_observation", lambda *args, **kwargs: None)
+    monkeypatch.setattr("trellis.agent.planner.plan_build", lambda *args, **kwargs: plan)
+    monkeypatch.setattr("trellis.agent.executor._try_import_existing", lambda plan: None)
+    monkeypatch.setattr("trellis.agent.executor.build_generation_plan", lambda **kwargs: generation_plan)
+    monkeypatch.setattr("trellis.agent.executor._emit_analytical_trace_metadata", lambda **kwargs: None)
+    monkeypatch.setattr("trellis.agent.executor._reference_modules", lambda *args, **kwargs: ())
+    monkeypatch.setattr("trellis.agent.executor._gather_references", lambda modules: [])
+    monkeypatch.setattr("trellis.agent.builder.ensure_agent_package", lambda: None)
+    monkeypatch.setattr("trellis.agent.config.get_default_model", lambda: "gpt-5-mini")
+    monkeypatch.setattr("trellis.agent.config.get_model_for_stage", lambda stage, model=None: model or "gpt-5-mini")
+    monkeypatch.setattr("trellis.agent.config.summarize_llm_usage", lambda records: {})
+    monkeypatch.setattr("trellis.agent.config.enforce_llm_token_budget", lambda stage=None: None)
+
+    def fake_deterministic(*args, **kwargs):
+        raise RuntimeError("deterministic exact binding path used")
+
+    monkeypatch.setattr(
+        "trellis.agent.executor._materialize_deterministic_exact_binding_module",
+        fake_deterministic,
+    )
+    monkeypatch.setattr(
+        "trellis.agent.executor._generate_module",
+        lambda *args, **kwargs: pytest.fail("LLM generation should not run for fresh exact bindings"),
+    )
+
+    with pytest.raises(RuntimeError, match="deterministic exact binding path used"):
+        build_payoff(
+            "CDO tranche exact binding regression",
+            compiled_request=compiled_request,
+            instrument_type="cdo",
+            market_state=SimpleNamespace(
+                selected_curve_names={},
+                available_capabilities={"credit_curve"},
+            ),
+            max_retries=1,
+            model="gpt-5-mini",
+            fresh_build=True,
+        )
+
+
 def test_knowledge_retrieval_stage_maps_builder_retry_reasons():
     from trellis.agent.executor import _knowledge_retrieval_stage
 

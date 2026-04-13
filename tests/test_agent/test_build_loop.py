@@ -1261,9 +1261,13 @@ class TestBuildLoop:
         assert cls.__name__ == "SwaptionPayoff"
         mock_gen_mod.assert_not_called()
 
+    @patch(
+        "trellis.agent.executor._materialize_deterministic_exact_binding_module",
+        return_value=None,
+    )
     @patch("trellis.agent.executor._generate_module")
-    def test_build_fails_on_unapproved_generated_module(self, mock_gen_mod):
-        """Fresh-build codegen rejects unapproved Trellis imports explicitly."""
+    def test_build_fails_on_unapproved_generated_module(self, mock_gen_mod, _mock_exact_binding):
+        """Codegen still rejects unapproved Trellis imports when no exact binding wrapper applies."""
         mock_gen_mod.return_value = UNAPPROVED_QUANTO_IMPORT_MODULE_CODE
 
         from trellis.agent.executor import build_payoff
@@ -1279,9 +1283,17 @@ class TestBuildLoop:
                 max_retries=2,
             )
 
+    @patch(
+        "trellis.agent.executor._materialize_deterministic_exact_binding_module",
+        return_value=None,
+    )
     @patch("trellis.agent.executor._generate_module")
-    def test_build_records_platform_failure_on_code_generation_error(self, mock_gen_mod):
-        """Provider/code-generation failures should be recorded on the platform trace."""
+    def test_build_records_platform_failure_on_code_generation_error(
+        self,
+        mock_gen_mod,
+        _mock_exact_binding,
+    ):
+        """Provider/code-generation failures should be recorded when the build falls back to codegen."""
         mock_gen_mod.side_effect = RuntimeError("OpenAI text request failed after 1 attempts")
 
         from trellis.agent import executor
@@ -1310,8 +1322,12 @@ class TestBuildLoop:
         assert failure_events[-1]["reason"] == "code_generation"
         assert failure_events[-1]["failure_count"] == 1
 
+    @patch(
+        "trellis.agent.executor._materialize_deterministic_exact_binding_module",
+        return_value=None,
+    )
     @patch("trellis.agent.executor._generate_module")
-    def test_build_retries_after_code_generation_error(self, mock_gen_mod):
+    def test_build_retries_after_code_generation_error(self, mock_gen_mod, _mock_exact_binding):
         """Code-generation failures should be retried before the build loop gives up."""
         mock_gen_mod.side_effect = [
             RuntimeError("OpenAI text request failed after 1 attempts"),
@@ -1460,9 +1476,17 @@ class TestBuildLoop:
         assert payoff_cls.__name__ == "QuantoOptionAnalyticalPayoff"
         assert pv == pytest.approx(expected, rel=1e-10)
 
+    @patch(
+        "trellis.agent.executor._materialize_deterministic_exact_binding_module",
+        return_value=None,
+    )
     @patch("trellis.agent.executor._generate_module")
-    def test_build_fresh_build_bypasses_deterministic_quanto_reuse(self, mock_gen_mod):
-        """Fresh-build mode should force codegen even when a deterministic route exists."""
+    def test_build_fresh_build_can_fall_back_to_codegen_without_exact_binding(
+        self,
+        mock_gen_mod,
+        _mock_exact_binding,
+    ):
+        """Fresh-build mode should still invoke codegen when exact binding materialization is unavailable."""
         from trellis.agent.executor import build_payoff
 
         mock_gen_mod.side_effect = RuntimeError("fresh-build invoked")
