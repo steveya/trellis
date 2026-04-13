@@ -115,6 +115,30 @@ class TestNonNegativity:
 
 class TestPriceSanity:
 
+    def test_price_sanity_scales_threshold_by_spec_notional(self):
+        class HighNotionalCapLikePayoff:
+            def __init__(self):
+                self._spec = type("CapLikeSpec", (), {"notional": 1_000_000.0})()
+
+            @property
+            def spec(self):
+                return self._spec
+
+            @property
+            def requirements(self):
+                return {"discount_curve"}
+
+            def evaluate(self, market_state):
+                return 53_753.85
+
+        failures = check_price_sanity(
+            HighNotionalCapLikePayoff(),
+            _ms_factory(),
+            return_diagnostics=True,
+        )
+
+        assert failures == []
+
     def test_price_sanity_surfaces_cds_spread_unit_hint(self):
         class CdsLikePayoff:
             def __init__(self):
@@ -151,6 +175,43 @@ class TestPriceSanity:
         failure = failures[0]
         assert "150 bp -> 0.015" in failure.message
         assert failure.context["cds_spread_hint"] == "basis_points_to_decimal"
+
+    def test_price_sanity_uses_spot_reference_for_basket_like_payoffs(self):
+        class BasketLikePayoff:
+            def __init__(self):
+                self._spec = type(
+                    "BasketSpec",
+                    (),
+                    {
+                        "notional": 10.0,
+                        "underliers": "SPX,NDX",
+                        "spots": "100.0,95.0",
+                    },
+                )()
+
+            @property
+            def spec(self):
+                return self._spec
+
+            @property
+            def requirements(self):
+                return {"discount_curve", "spot"}
+
+            def evaluate(self, market_state):
+                return 142.5
+
+        failures = check_price_sanity(
+            BasketLikePayoff(),
+            MarketState(
+                as_of=SETTLE,
+                settlement=SETTLE,
+                discount=YieldCurve.flat(0.05),
+                underlier_spots={"SPX": 100.0, "NDX": 95.0},
+            ),
+            return_diagnostics=True,
+        )
+
+        assert failures == []
 
 
 class TestCreditDefaultSwapInvariants:

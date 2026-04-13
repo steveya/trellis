@@ -789,6 +789,36 @@ def test_compile_build_request_routes_rate_cap_family_through_semantic_contract(
     assert "semantic_gap" not in compiled.request.metadata
 
 
+def test_compile_build_request_bootstraps_title_only_rate_cap_task_into_exact_mc_binding():
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.task_runtime import _effective_task_description
+
+    description = _effective_task_description(
+        {
+            "id": "E22",
+            "title": "Cap/floor: Black caplet stack vs MC rate simulation",
+            "construct": ["analytical", "monte_carlo"],
+            "cross_validate": {"internal": ["mc_rate_cap"], "analytical": "black76_cap"},
+        }
+    )
+
+    compiled = compile_build_request(
+        description,
+        instrument_type="cap",
+        preferred_method="monte_carlo",
+    )
+
+    assert compiled.execution_plan.reason == "semantic_contract_request"
+    assert compiled.semantic_contract is not None
+    assert compiled.semantic_contract.semantic_id == "rate_cap_floor_strip"
+    assert "Start date: 2025-02-15." in description
+    assert "End date: 2030-02-15." in description
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.backend_binding_id == (
+        "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo"
+    )
+
+
 @pytest.mark.parametrize(
     ("description", "instrument_type", "expected_instrument"),
     [
@@ -919,6 +949,42 @@ def test_compile_build_request_keeps_generic_basket_option_off_ranked_observatio
     assert compiled.generation_plan is not None
     assert compiled.generation_plan.primitive_plan is not None
     assert compiled.generation_plan.primitive_plan.route == "monte_carlo_paths"
+
+
+@pytest.mark.parametrize(
+    ("preferred_method", "expected_binding"),
+    [
+        ("analytical", "trellis.models.basket_option.price_basket_option_analytical"),
+        ("monte_carlo", "trellis.models.basket_option.price_basket_option_monte_carlo"),
+    ],
+)
+def test_compile_build_request_bootstraps_title_only_rainbow_task_into_exact_basket_bindings(
+    preferred_method: str,
+    expected_binding: str,
+):
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.task_runtime import _effective_task_description
+
+    description = _effective_task_description(
+        {
+            "id": "T102",
+            "title": "Rainbow option (best-of-two): Stulz formula vs MC",
+            "construct": ["analytical", "monte_carlo"],
+            "cross_validate": {"internal": ["stulz_rainbow", "mc_rainbow"]},
+        }
+    )
+    compiled = compile_build_request(
+        description,
+        instrument_type="basket_option",
+        preferred_method=preferred_method,
+    )
+
+    assert compiled.execution_plan.reason == "free_form_build_request"
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.instrument == "basket_option"
+    assert "Underliers: SPX,NDX." in description
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.backend_binding_id == expected_binding
 
 
 def test_compile_build_request_marks_two_asset_terminal_baskets_for_exact_helper_binding():

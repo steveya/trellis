@@ -144,6 +144,39 @@ routes:
         discount_curve: [market_state.discount]
         credit_curve: [market_state.credit_curve]
 
+  - id: nth_to_default_analytical
+    engine_family: analytical
+    route_family: nth_to_default
+    status: promoted
+    confidence: 1.0
+    score_hints:
+      payoff_family_bonus: {nth_to_default: 2.0}
+    match:
+      methods: [analytical, copula]
+      instruments: [nth_to_default]
+    admissibility:
+      control_styles: [identity]
+      event_support: automatic
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [remaining_pool, schedule_state]
+      supports_calibration: false
+    primitives:
+      - module: trellis.core.date_utils
+        symbol: year_fraction
+        role: time_measure
+      - module: trellis.instruments.nth_to_default
+        symbol: price_nth_to_default_basket
+        role: route_helper
+    adapters: []
+    notes: []
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        credit_curve: [market_state.credit_curve]
+
   - id: nth_to_default_monte_carlo
     engine_family: monte_carlo
     route_family: nth_to_default

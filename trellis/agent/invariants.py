@@ -183,6 +183,61 @@ def _cds_spread_unit_hint(payoff: Payoff) -> tuple[str, dict[str, float | str]]:
     }
     return hint, context
 
+
+def _parse_float_vector(raw: object) -> tuple[float, ...]:
+    """Parse a comma-delimited float vector used by simple generated specs."""
+    if raw in {None, ""}:
+        return ()
+    values: list[float] = []
+    for token in str(raw).split(","):
+        piece = token.strip()
+        if not piece:
+            continue
+        try:
+            values.append(float(piece))
+        except ValueError:
+            continue
+    return tuple(values)
+
+
+def _parse_name_vector(raw: object) -> tuple[str, ...]:
+    """Parse a comma-delimited name vector used by simple generated specs."""
+    if raw in {None, ""}:
+        return ()
+    return tuple(part.strip() for part in str(raw).split(",") if part.strip())
+
+
+def _spot_reference_scale(payoff: Payoff, market_state: MarketState) -> float | None:
+    """Return a representative underlier spot scale for spot-based payoff sanity checks."""
+    spec = _extract_spec(payoff)
+    for attribute in ("spot", "s0", "underlier_spot"):
+        value = getattr(spec, attribute, None)
+        if isinstance(value, (int, float)) and abs(float(value)) > 0.0:
+            return abs(float(value))
+
+    spot_vector = _parse_float_vector(getattr(spec, "spots", None))
+    if spot_vector:
+        return max(abs(value) for value in spot_vector)
+
+    names = _parse_name_vector(
+        getattr(spec, "underliers", None)
+        or getattr(spec, "underlyings", None)
+        or getattr(spec, "constituents", None)
+    )
+    if names and getattr(market_state, "underlier_spots", None):
+        matched = [
+            float(market_state.underlier_spots[name])
+            for name in names
+            if name in market_state.underlier_spots
+        ]
+        if matched:
+            return max(abs(value) for value in matched)
+
+    spot = getattr(market_state, "spot", None)
+    if isinstance(spot, (int, float)) and abs(float(spot)) > 0.0:
+        return abs(float(spot))
+    return None
+
 def check_price_sanity(
     payoff: Payoff,
     market_state: MarketState,
@@ -195,22 +250,35 @@ def check_price_sanity(
     try:
         pv = price_payoff(payoff, market_state)
         spread_hint, spread_context = _cds_spread_unit_hint(payoff)
-        # Heuristic: price shouldn't exceed max_multiple × 100 (typical notional)
-        if abs(pv) > max_multiple * 100:
+        spec = getattr(payoff, "spec", None)
+        notional = getattr(spec, "notional", None)
+        try:
+            base_notional = abs(float(notional)) if notional is not None else 100.0
+        except (TypeError, ValueError):
+            base_notional = 100.0
+        if base_notional <= 0.0:
+            base_notional = 100.0
+        threshold = max_multiple * base_notional
+        reference_spot = _spot_reference_scale(payoff, market_state)
+        if reference_spot is not None and reference_spot > max_multiple:
+            threshold = max(threshold, base_notional * reference_spot)
+        if abs(pv) > threshold:
             failures.append(
                 InvariantFailure(
                     check="check_price_sanity",
                     message=(
                         f"Price sanity check failed: |PV| = {abs(pv):.2f}, which exceeds "
-                        f"{max_multiple}× typical notional (100). The model likely has a "
+                        f"{max_multiple}× reference scale ({threshold:.4f}). The model likely has a "
                         f"unit conversion error (e.g., passing Black vol to a rate tree)."
                         f"{spread_hint}"
                     ),
                     actual=float(pv),
-                    expected=f"|PV| <= {max_multiple * 100:.4f}",
+                    expected=f"|PV| <= {threshold:.4f}",
                     context={
                         **_market_state_context(market_state),
                         "max_multiple": max_multiple,
+                        "reference_notional": base_notional,
+                        "reference_spot": reference_spot,
                         **spread_context,
                     },
                 )

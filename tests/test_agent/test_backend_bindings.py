@@ -209,26 +209,59 @@ def test_resolve_backend_binding_spec_keeps_generic_multi_asset_baskets_off_two_
     )
 
 
-def test_nth_to_default_binding_has_no_schedule_builder_surface():
+def test_resolve_backend_binding_spec_uses_rate_cap_floor_exact_helpers():
     catalog = load_backend_binding_catalog()
-    binding = find_backend_binding_by_route_id("nth_to_default_monte_carlo", catalog)
+    analytical = find_backend_binding_by_route_id("analytical_black76", catalog)
+    monte_carlo = find_backend_binding_by_route_id("monte_carlo_paths", catalog)
 
-    assert binding is not None
-
-    resolved = resolve_backend_binding_spec(
-        binding,
-        product_ir=ProductIR(
-            instrument="nth_to_default",
-            payoff_family="nth_to_default",
-            exercise_style="none",
-            schedule_dependence=True,
-            state_dependence="schedule_state",
-        ),
+    product_ir = ProductIR(
+        instrument="cap",
+        payoff_family="rate_cap_floor_strip",
+        exercise_style="none",
+        schedule_dependence=True,
+        state_dependence="schedule_dependent",
+        model_family="interest_rate",
     )
 
-    assert resolved.binding_id == "trellis.instruments.nth_to_default.price_nth_to_default_basket"
-    assert resolved.helper_refs == ("trellis.instruments.nth_to_default.price_nth_to_default_basket",)
-    assert resolved.schedule_builder_refs == ()
+    assert analytical is not None
+    assert monte_carlo is not None
+
+    analytical_resolved = resolve_backend_binding_spec(analytical, product_ir=product_ir)
+    monte_carlo_resolved = resolve_backend_binding_spec(monte_carlo, product_ir=product_ir)
+
+    assert analytical_resolved.helper_refs == (
+        "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical",
+    )
+    assert analytical_resolved.binding_id == (
+        "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical"
+    )
+    assert monte_carlo_resolved.helper_refs == (
+        "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo",
+    )
+    assert monte_carlo_resolved.binding_id == (
+        "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo"
+    )
+
+
+def test_nth_to_default_bindings_have_no_schedule_builder_surface():
+    catalog = load_backend_binding_catalog()
+    product_ir = ProductIR(
+        instrument="nth_to_default",
+        payoff_family="nth_to_default",
+        exercise_style="none",
+        schedule_dependence=True,
+        state_dependence="schedule_state",
+    )
+
+    for route_id in ("nth_to_default_analytical", "nth_to_default_monte_carlo"):
+        binding = find_backend_binding_by_route_id(route_id, catalog)
+        assert binding is not None
+
+        resolved = resolve_backend_binding_spec(binding, product_ir=product_ir)
+
+        assert resolved.binding_id == "trellis.instruments.nth_to_default.price_nth_to_default_basket"
+        assert resolved.helper_refs == ("trellis.instruments.nth_to_default.price_nth_to_default_basket",)
+        assert resolved.schedule_builder_refs == ()
 
 
 def test_resolve_backend_binding_spec_uses_credit_loss_distribution_exact_helpers():

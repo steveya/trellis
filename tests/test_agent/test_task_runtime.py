@@ -1943,6 +1943,43 @@ def test_build_market_state_for_task_selects_named_mock_components():
     )
 
 
+def test_effective_task_description_bootstraps_title_only_rate_cap_proof_tasks():
+    from trellis.agent.task_runtime import _effective_task_description
+
+    description = _effective_task_description(
+        {
+            "id": "E22",
+            "title": "Cap/floor: Black caplet stack vs MC rate simulation",
+            "construct": ["analytical", "monte_carlo"],
+            "cross_validate": {"internal": ["mc_rate_cap"], "analytical": "black76_cap"},
+        }
+    )
+
+    assert "USD SOFR cap priced as a Black caplet strip versus forward-rate Monte Carlo" in description
+    assert "Start date: 2025-02-15." in description
+    assert "End date: 2030-02-15." in description
+    assert "Rate index: USD-SOFR-3M." in description
+    assert "Comparison targets: mc_rate_cap (monte_carlo), black76_cap (analytical)" in description
+
+
+def test_effective_task_description_bootstraps_title_only_rainbow_proof_tasks():
+    from trellis.agent.task_runtime import _effective_task_description
+
+    description = _effective_task_description(
+        {
+            "id": "T102",
+            "title": "Rainbow option (best-of-two): Stulz formula vs MC",
+            "construct": ["analytical", "monte_carlo"],
+            "cross_validate": {"internal": ["stulz_rainbow", "mc_rainbow"]},
+        }
+    )
+
+    assert "Rainbow option (best-of-two) on SPX and NDX" in description
+    assert "Underliers: SPX,NDX." in description
+    assert "Basket style: best_of." in description
+    assert "Comparison targets: stulz_rainbow (analytical), mc_rainbow (monte_carlo)" in description
+
+
 def test_build_market_state_for_credit_task_injects_default_credit_curve_when_unspecified():
     from trellis.agent.task_runtime import build_market_state_for_task
     from trellis.core.market_state import MarketState
@@ -2840,6 +2877,111 @@ def test_make_test_payoff_uses_atm_strike_for_spot_based_options(monkeypatch):
     assert payoff.spec.kwargs["spot"] == 100.0
     assert payoff.spec.kwargs["strike"] == 100.0
     assert payoff.spec.kwargs["option_type"] == "call"
+
+
+def test_make_test_payoff_uses_structured_rate_cap_defaults_from_generated_description(monkeypatch):
+    """Structured cap/floor task text should override generic smoke-test placeholders."""
+    from trellis.agent.task_runtime import _make_test_payoff
+    from trellis.core.types import DayCountConvention, Frequency
+
+    class AgentCapSpec:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    module_name = "dummy_agent_cap_adapter"
+    module = ModuleType(module_name)
+    module.AgentCapSpec = AgentCapSpec
+    module.__doc__ = """Agent-generated payoff: Build a pricer for: USD SOFR cap priced as a Black caplet strip versus forward-rate Monte Carlo
+
+Notional: 1000000. Instrument: cap. Strike: 4%. Start date: 2025-02-15. End date: 2030-02-15. Frequency: quarterly. Day count: Act/360. Rate index: USD-SOFR-3M. Discount curve: USD OIS. Forecast curve: USD-SOFR-3M. Black volatility surface: usd_rates_smile. Monte Carlo comparison regime: simulate the caplet strip under the same Black forward-rate volatility surface used by the analytical reference.
+"""
+    monkeypatch.setitem(sys.modules, module_name, module)
+
+    AgentCapPayoff = type(
+        "AgentCapPayoff",
+        (),
+        {
+            "__init__": lambda self, spec: setattr(self, "spec", spec),
+            "__module__": module_name,
+        },
+    )
+
+    spec_schema = SimpleNamespace(
+        spec_name="AgentCapSpec",
+        fields=[
+            SimpleNamespace(name="notional", type="float", default=None),
+            SimpleNamespace(name="strike", type="float", default=None),
+            SimpleNamespace(name="start_date", type="date", default=None),
+            SimpleNamespace(name="end_date", type="date", default=None),
+            SimpleNamespace(name="frequency", type="Frequency", default="Frequency.QUARTERLY"),
+            SimpleNamespace(name="day_count", type="DayCountConvention", default="DayCountConvention.ACT_360"),
+            SimpleNamespace(name="rate_index", type="str | None", default="None"),
+        ],
+    )
+
+    payoff = _make_test_payoff(AgentCapPayoff, spec_schema, date(2024, 11, 15))
+
+    assert payoff.spec.kwargs["notional"] == pytest.approx(1_000_000.0)
+    assert payoff.spec.kwargs["strike"] == pytest.approx(0.04)
+    assert payoff.spec.kwargs["start_date"] == date(2025, 2, 15)
+    assert payoff.spec.kwargs["end_date"] == date(2030, 2, 15)
+    assert payoff.spec.kwargs["frequency"] is Frequency.QUARTERLY
+    assert payoff.spec.kwargs["day_count"] is DayCountConvention.ACT_360
+    assert payoff.spec.kwargs["rate_index"] == "USD-SOFR-3M"
+
+
+def test_make_test_payoff_uses_structured_basket_defaults_from_generated_description(monkeypatch):
+    """Structured basket task text should override generic smoke-test placeholders."""
+    from trellis.agent.task_runtime import _make_test_payoff
+
+    class BasketOptionSpec:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    module_name = "dummy_structured_basket_adapter"
+    module = ModuleType(module_name)
+    module.BasketOptionSpec = BasketOptionSpec
+    module.__doc__ = """Agent-generated payoff: Build a pricer for: Rainbow option (best-of-two) on SPX and NDX
+
+Notional: 10. Underliers: SPX,NDX. Spots: 100.0,95.0. Strike: 100. Expiry date: 2025-11-15. Correlation: 1.0,0.35;0.35,1.0. Basket style: best_of. Option type: call. Dividend yields: 0.0,0.0.
+"""
+    monkeypatch.setitem(sys.modules, module_name, module)
+
+    BasketPayoff = type(
+        "BasketPayoff",
+        (),
+        {
+            "__init__": lambda self, spec: setattr(self, "spec", spec),
+            "__module__": module_name,
+        },
+    )
+
+    spec_schema = SimpleNamespace(
+        spec_name="BasketOptionSpec",
+        fields=[
+            SimpleNamespace(name="notional", type="float", default=None),
+            SimpleNamespace(name="underliers", type="str", default=None),
+            SimpleNamespace(name="spots", type="str", default=None),
+            SimpleNamespace(name="strike", type="float", default=None),
+            SimpleNamespace(name="expiry_date", type="date", default=None),
+            SimpleNamespace(name="correlation", type="str", default=None),
+            SimpleNamespace(name="basket_style", type="str", default=None),
+            SimpleNamespace(name="option_type", type="str", default=None),
+            SimpleNamespace(name="dividend_yields", type="str | None", default=None),
+        ],
+    )
+
+    payoff = _make_test_payoff(BasketPayoff, spec_schema, date(2024, 11, 15))
+
+    assert payoff.spec.kwargs["notional"] == pytest.approx(10.0)
+    assert payoff.spec.kwargs["underliers"] == "SPX,NDX"
+    assert payoff.spec.kwargs["spots"] == "100.0,95.0"
+    assert payoff.spec.kwargs["strike"] == pytest.approx(100.0)
+    assert payoff.spec.kwargs["expiry_date"] == date(2025, 11, 15)
+    assert payoff.spec.kwargs["correlation"] == "1.0,0.35;0.35,1.0"
+    assert payoff.spec.kwargs["basket_style"] == "best_of"
+    assert payoff.spec.kwargs["option_type"] == "call"
+    assert payoff.spec.kwargs["dividend_yields"] == "0.0,0.0"
 
 
 def test_make_test_payoff_aligns_quanto_fixture_to_runtime_market_state():

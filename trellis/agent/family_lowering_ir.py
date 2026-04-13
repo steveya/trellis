@@ -679,6 +679,7 @@ _MC_MARKET_MAPPINGS = {
 
 _MC_HELPER_BINDINGS = {
     ("gbm_1d", "vanilla_option", "european"): "price_vanilla_equity_option_monte_carlo",
+    ("hull_white_1f", "rate_cap_floor_strip", ""): "price_rate_cap_floor_strip_monte_carlo",
     ("hull_white_1f", "swaption", ""): "price_swaption_monte_carlo",
 }
 
@@ -844,6 +845,12 @@ def _binding_supports_black76_analytical(
     """Return whether the binding surface fits the Black76 analytical lane."""
     if _binding_has_all_symbols(binding_spec, "pricing_kernel", "black76_call", "black76_put"):
         return True
+    if _binding_has_any_symbol(
+        binding_spec,
+        "route_helper",
+        "price_rate_cap_floor_strip_analytical",
+    ):
+        return True
     return route_id == "analytical_black76" and binding_spec is None
 
 
@@ -919,6 +926,7 @@ def _binding_supports_event_aware_monte_carlo(
         binding_spec,
         "route_helper",
         "price_event_aware_monte_carlo",
+        "price_rate_cap_floor_strip_monte_carlo",
         "price_vanilla_equity_option_monte_carlo",
         "price_swaption_monte_carlo",
     ):
