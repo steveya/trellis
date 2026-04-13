@@ -58,8 +58,8 @@ The only proved task in the current closeout is:
 | `E22` | failed gate | cap/floor fresh-build instability and missing reference-target evidence | `QUA-819` |
 | `E27` | follow-on recovered | honest-block sentinel is now certified after structured blocker persistence landed | none |
 | `T49` | failed gate | Student-t tranche lane rebuilt copula plumbing instead of staying on the exact helper contract | `QUA-822` |
-| `T50` | failed gate | nth-to-default helper invocation and basket-credit parsing | `QUA-823` |
-| `E26` | failed gate | basket-credit parsing | `QUA-823` |
+| `T50` | follow-on recovered | nth-to-default helper path now proves on the exact helper surface without stale schedule-builder glue | none |
+| `E26` | follow-on recovered | nth-to-default basket ingress now resolves to the credit-basket family instead of generic basket parsing | none |
 | `T53` | failed gate | recursive / FFT / MC constructive stability on multi-name loss distribution | `QUA-824` |
 | `T102` | failed gate | multi-underlier market parsing | `QUA-825` |
 | `T126` | failed gate | multi-underlier parsing plus FFT spread-lane instability | `QUA-825` |
@@ -99,8 +99,9 @@ The correct support statement after this closeout is:
 - Trellis does **not** yet have proof-level evidence for general constructable
   exotic support across the agreed cohort.
 - Current proof-level support is limited to the recovered slices already
-  measured in the checked benchmark artifact, with the remaining gaps tracked
-  by `QUA-817` through `QUA-825`.
+  measured in the checked benchmark artifact plus the post-closeout recoveries
+  (`E27`, `T50`, `E26`), with the remaining gaps tracked by `QUA-817`,
+  `QUA-818`, `QUA-819`, `QUA-822`, `QUA-824`, and `QUA-825`.
 
 This is why `LIMITATIONS.md` now records the exotic proof cohort as an open
 limitation instead of letting the architecture docs imply the proof is already

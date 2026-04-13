@@ -103,13 +103,8 @@ def test_skill_lineage_query_surfaces_children_and_same_source_records():
     assert lineage_index["cookbook:analytical"]["children"] == lineage["children"]
 
 
-def test_ambiguous_route_hint_cookbook_backfill_is_left_unresolved():
-    record = get_skill_record("route_hint:nth_to_default_monte_carlo:schedule-builder")
-
-    assert record is not None
-    assert record.parents == ()
-    assert record.lineage_status == "advisory"
-    assert record.lineage_evidence == ("route.match_method_to_cookbook_ambiguous",)
+def test_nth_to_default_no_longer_projects_schedule_builder_route_hint():
+    assert get_skill_record("route_hint:nth_to_default_monte_carlo:schedule-builder") is None
 
 
 def test_route_notes_are_not_projected_as_live_route_hints():
