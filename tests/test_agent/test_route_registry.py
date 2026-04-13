@@ -290,6 +290,50 @@ class TestRegistryValidation:
         }
         assert resolve_route_family(spec, synthetic_ir) == "binding_family"
 
+    def test_route_resolution_reuses_preloaded_binding_spec(self, monkeypatch):
+        from trellis.agent import backend_bindings as backend_bindings_module
+
+        spec = RouteSpec(
+            id="synthetic_binding_route",
+            engine_family="analytical",
+            route_family="legacy_family",
+            status="promoted",
+            confidence=1.0,
+            match_methods=("analytical",),
+            match_instruments=None,
+            exclude_instruments=(),
+            match_payoff_family=None,
+            match_payoff_traits=None,
+            match_exercise=None,
+            exclude_exercise=(),
+            match_required_market_data=None,
+            exclude_required_market_data=None,
+            primitives=(
+                PrimitiveRef("trellis.models.legacy", "old_helper", "route_helper"),
+            ),
+            conditional_primitives=(),
+            conditional_route_family=None,
+            adapters=(),
+            notes=(),
+        )
+        monkeypatch.setattr(
+            backend_bindings_module,
+            "resolve_backend_binding_by_route_id",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                AssertionError("binding lookup should not run when binding_spec is supplied")
+            ),
+        )
+
+        binding_spec = SimpleNamespace(
+            primitives=(
+                PrimitiveRef("trellis.models.synthetic", "fresh_helper", "route_helper"),
+            ),
+            route_family="binding_family",
+        )
+
+        assert resolve_route_primitives(spec, None, binding_spec=binding_spec) == binding_spec.primitives
+        assert resolve_route_family(spec, None, binding_spec=binding_spec) == "binding_family"
+
     def test_typed_admissibility_hydrates_for_migrated_routes(self, registry):
         analytical = find_route_by_id("analytical_black76", registry)
         lattice = find_route_by_id("exercise_lattice", registry)

@@ -844,12 +844,15 @@ def _state_requirement_satisfied(
 def resolve_route_primitives(
     spec: RouteSpec,
     product_ir: ProductIR | None,
+    *,
+    binding_spec=None,
 ) -> tuple[PrimitiveRef, ...]:
     """Return resolved primitives from the binding catalog, falling back to the route shell."""
     try:
-        from trellis.agent.backend_bindings import resolve_backend_binding_by_route_id
+        if binding_spec is None:
+            from trellis.agent.backend_bindings import resolve_backend_binding_by_route_id
 
-        binding_spec = resolve_backend_binding_by_route_id(spec.id, product_ir=product_ir)
+            binding_spec = resolve_backend_binding_by_route_id(spec.id, product_ir=product_ir)
         if binding_spec is not None and binding_spec.primitives:
             return tuple(binding_spec.primitives)
     except Exception:
@@ -948,12 +951,15 @@ def resolve_route_notes(
 def resolve_route_family(
     spec: RouteSpec,
     product_ir: ProductIR | None,
+    *,
+    binding_spec=None,
 ) -> str:
     """Resolve the route family from the binding catalog, falling back to the route shell."""
     try:
-        from trellis.agent.backend_bindings import resolve_backend_binding_by_route_id
+        if binding_spec is None:
+            from trellis.agent.backend_bindings import resolve_backend_binding_by_route_id
 
-        binding_spec = resolve_backend_binding_by_route_id(spec.id, product_ir=product_ir)
+            binding_spec = resolve_backend_binding_by_route_id(spec.id, product_ir=product_ir)
         resolved_family = str(getattr(binding_spec, "route_family", "") or "").strip()
         if resolved_family:
             return resolved_family
