@@ -65,7 +65,7 @@ The current stack is at a point where both problems are now easy to see:
 - the semantic layer already carries enough meaning that lower layers should
   not keep rediscovering family and method authority through branch order
 - the short-rate helper direction is already started in
-  `docs/plans/short-rate-comparison-regime-and-claim-helpers.md`, but that
+  `doc/plan/done__short-rate-comparison-regime-and-claim-helpers.md`, but that
   workstream currently proves the shared layer through ZCB helpers rather than
   through callable-bond PDE/tree wrappers
 
@@ -74,7 +74,7 @@ This plan turns those observations into a reviewable implementation queue.
 ## Relationship To Existing Plans
 
 This plan depends on the already-created short-rate foundation work in
-`docs/plans/short-rate-comparison-regime-and-claim-helpers.md`:
+`doc/plan/done__short-rate-comparison-regime-and-claim-helpers.md`:
 
 - `QUA-746`
 - `QUA-747`
@@ -84,8 +84,8 @@ This plan depends on the already-created short-rate foundation work in
 
 It is also a semantic-layer follow-on to:
 
-- `docs/plans/semantic-platform-hardening.md`
-- `docs/plans/route-registry-minimization.md`
+- `doc/plan/done__semantic-platform-hardening.md`
+- `doc/plan/done__route-registry-minimization.md`
 
 This plan does not replace those plans. It narrows the next concrete work.
 

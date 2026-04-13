@@ -219,7 +219,7 @@ Each coding agent assigned to this program should begin with:
 - `AGENTS.md`
 - `ARCHITECTURE.md`
 - this plan doc
-- `docs/plans/route-registry-minimization.md`
+- `doc/plan/done__route-registry-minimization.md`
 - `trellis/agent/route_registry.py`
 - `trellis/agent/codegen_guardrails.py`
 - `trellis/agent/family_lowering_ir.py`

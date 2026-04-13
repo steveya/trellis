@@ -6,7 +6,7 @@ This document describes the implementation plan for turning Trellis into an MCP
 server after the unified platform migration is complete.
 
 This plan assumes the preconditions in the
-[Unified Platform Migration Plan](./unified-platform-migration.md) have been
+[Unified Platform Migration Plan](./done__unified-platform-migration.md) have been
 satisfied. It is not a substitute for that migration.
 
 The right mental model is:

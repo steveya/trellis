@@ -66,10 +66,10 @@ Relevant code and docs include:
 - `trellis/models/calibration/quote_maps.py`
 - `trellis/models/monte_carlo/event_aware.py`
 - `trellis/models/pde/event_aware.py`
-- `docs/plans/event-aware-pde-lane.md`
-- `docs/plans/event-aware-monte-carlo-lane.md`
-- `docs/plans/route-registry-minimization.md`
-- `docs/plans/calibration-layer-model-grammar-unification.md`
+- `doc/plan/done__event-aware-pde-lane.md`
+- `doc/plan/done__event-aware-monte-carlo-lane.md`
+- `doc/plan/done__route-registry-minimization.md`
+- `doc/plan/done__calibration-layer-model-grammar-unification.md`
 
 ### Remaining cross-cutting gaps
 
@@ -277,11 +277,11 @@ Each coding agent assigned to this workstream should start with:
 
 - this plan doc
 - `AGENTS.md`
-- `docs/plans/event-aware-pde-lane.md`
-- `docs/plans/event-aware-monte-carlo-lane.md`
-- `docs/plans/route-registry-minimization.md`
-- `docs/plans/calibration-layer-model-grammar-unification.md`
-- `docs/plans/instrument-identity-phaseout.md`
+- `doc/plan/done__event-aware-pde-lane.md`
+- `doc/plan/done__event-aware-monte-carlo-lane.md`
+- `doc/plan/done__route-registry-minimization.md`
+- `doc/plan/done__calibration-layer-model-grammar-unification.md`
+- `doc/plan/done__instrument-identity-phaseout.md`
 - `docs/quant/pricing_stack.rst`
 - `docs/developer/dsl_system_design_review.md`
 - the current Linear ticket body and any upstream blockers

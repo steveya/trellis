@@ -191,8 +191,8 @@ The residual route mechanism should no longer own:
 
 - this plan is a sequel to `QUA-546`, not a duplicate of it
 - it is directly related to:
-  - `docs/plans/event-aware-pde-lane.md`
-  - `docs/plans/event-aware-monte-carlo-lane.md`
+  - `doc/plan/done__event-aware-pde-lane.md`
+  - `doc/plan/done__event-aware-monte-carlo-lane.md`
 - each new family migration should also remove one corresponding slice of
   route-local authority
 
@@ -349,7 +349,7 @@ proving that the corresponding task cohorts still process on the modern
 semantic/family/lane surface.
 
 This workstream is now complete enough that the follow-on architecture program
-is tracked separately in `docs/plans/binding-first-exotic-assembly.md` under
+is tracked separately in `doc/plan/active__binding-first-exotic-assembly.md` under
 umbrella `QUA-792`. That sequel replaces route as a runtime primitive rather
 than merely minimizing route-card authority.
 

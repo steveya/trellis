@@ -264,10 +264,10 @@ both are in place.
 
 ## Dependency Notes
 
-- this plan is related to `docs/plans/canary-suite-stabilization.md` because
+- this plan is related to `doc/plan/done__canary-suite-stabilization.md` because
   `T73` should be recovered through the new MC family rather than through a
   one-off swaption adapter
-- this plan is intentionally parallel to `docs/plans/event-aware-pde-lane.md`
+- this plan is intentionally parallel to `doc/plan/done__event-aware-pde-lane.md`
   so the PDE and Monte Carlo stacks converge on the same compiler shape:
   bounded reusable family IRs instead of proliferating product lanes
 - `CorrelatedBasketMonteCarloIR` remains in place for now; basket migration is a
@@ -282,7 +282,7 @@ Each coding agent assigned to this workstream should begin with:
 - `docs/quant/contract_algebra.rst`
 - `docs/quant/pricing_stack.rst`
 - `docs/developer/dsl_system_design_review.md`
-- `docs/plans/canary-suite-stabilization.md`
+- `doc/plan/done__canary-suite-stabilization.md`
 - the current Linear ticket body plus any upstream blockers
 - the code paths under:
   - `trellis/agent/family_lowering_ir.py`

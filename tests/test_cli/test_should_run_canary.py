@@ -27,7 +27,7 @@ def test_should_run_canary_skips_docs_only_changes():
     decision = should_run_canary(
         [
             "docs/developer/task_and_eval_loops.rst",
-            "docs/plans/backlog-burn-down-execution.md",
+            "doc/plan/active__backlog-burn-down-execution.md",
         ]
     )
 

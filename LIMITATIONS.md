@@ -60,7 +60,7 @@ ground truth until revalidated.
 | # | Limitation | Impact | Files |
 |---|-----------|--------|-------|
 | L33 | **Book and pipeline abstractions are still thin for mixed exotic books** — book aggregation stops at MV/DV01/duration and the pipeline scenario surface remains simple | Trellis is not yet a strong book-level pricing/risk engine even before xVA enters the picture | `trellis/book.py`, `trellis/pipeline.py`, `trellis/analytics/measures.py` |
-| L34 | **There is no exposure or xVA engine** — no exposure cube, no `EE/EPE/PFE`, no `CVA/DVA/FVA/MVA/KVA`, and no implemented collateral/netting semantics | Counterparty-risk analysis is not currently supported beyond basic credit-product pricing | `docs/plans/exotic-desk-roadmap.md` |
+| L34 | **There is no exposure or xVA engine** — no exposure cube, no `EE/EPE/PFE`, no `CVA/DVA/FVA/MVA/KVA`, and no implemented collateral/netting semantics | Counterparty-risk analysis is not currently supported beyond basic credit-product pricing | `doc/plan/done__exotic-desk-roadmap.md` |
 
 ### Performance And Scaling
 

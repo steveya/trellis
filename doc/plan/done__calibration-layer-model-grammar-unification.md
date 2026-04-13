@@ -276,7 +276,7 @@ This order is intentional:
 ## Parallel Workstream Contract
 
 This plan is intended to run in parallel with
-`docs/plans/multi-curve-rates-completion.md`.
+`doc/plan/done__multi-curve-rates-completion.md`.
 
 Recommended two-agent split:
 
@@ -303,7 +303,7 @@ rates outcomes before it claims the rates-side boundary is complete.
 Each local or cloud coding agent assigned to this workstream should start with:
 
 - this plan doc
-- `docs/plans/multi-curve-rates-completion.md` for the rates-side dependency
+- `doc/plan/done__multi-curve-rates-completion.md` for the rates-side dependency
   story
 - `AGENTS.md`
 - the current Linear ticket body plus any hard blockers
