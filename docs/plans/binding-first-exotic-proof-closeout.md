@@ -54,7 +54,7 @@ The only proved task in the current closeout is:
 | --- | --- | --- | --- |
 | `T105` | proved | none in this closeout slice | none |
 | `T17` | follow-on recovered | title-only callable-bond proof tasks now bootstrap a canonical Bermudan issuer-call schedule and bind the PDE lane to `price_callable_bond_pde(...)` exactly | none |
-| `T73` | failed gate | analytical/tree/MC parity drift | `QUA-818` |
+| `T73` | follow-on recovered | title-only swaption proof tasks now bootstrap a semantic rate-style swaption contract with a shared Hull-White comparison regime across Black76, tree, and MC lanes | none |
 | `E22` | failed gate | cap/floor fresh-build instability and missing reference-target evidence | `QUA-819` |
 | `E27` | follow-on recovered | honest-block sentinel is now certified after structured blocker persistence landed | none |
 | `T49` | follow-on recovered | Gaussian and Student-t tranche lanes now stay on `price_credit_basket_tranche(...)` even on fresh builds | none |
@@ -83,7 +83,7 @@ constructable exotic derivatives.
 
 The current measured state is:
 
-- event/control/schedule proof is still partial because `T73` and `E22` remain open
+- event/control/schedule proof is still partial because `E22` remains open
 - basket/credit/loss proof has been recovered across the current cohort
 - the honest-block sentinel path was initially uncertified, then recovered by `QUA-820`
 - residual `unknown` route telemetry was removed by `QUA-821`
@@ -100,8 +100,8 @@ The correct support statement after this closeout is:
   exotic support across the agreed cohort.
 - Current proof-level support is limited to the recovered slices already
   measured in the checked benchmark artifact plus the post-closeout recoveries
-  (`T17`, `E27`, `T49`, `T50`, `E26`, `T53`, `T102`, `T126`), with the remaining
-  gaps tracked by `QUA-818` and `QUA-819`.
+  (`T17`, `T73`, `E27`, `T49`, `T50`, `E26`, `T53`, `T102`, `T126`), with the remaining
+  gap tracked by `QUA-819`.
 
 This is why `LIMITATIONS.md` now records the exotic proof cohort as an open
 limitation instead of letting the architecture docs imply the proof is already

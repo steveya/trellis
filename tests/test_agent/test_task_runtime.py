@@ -1825,6 +1825,24 @@ def test_task_to_instrument_type_detects_credit_loss_distribution():
     )
 
 
+def test_effective_task_description_bootstraps_title_only_swaption_proof_tasks():
+    from trellis.agent.task_runtime import _effective_task_description
+
+    description = _effective_task_description(
+        {
+            "id": "T73",
+            "title": "European swaption: Black76 vs HW tree vs HW MC",
+            "construct": ["analytical", "lattice", "monte_carlo"],
+            "cross_validate": {"internal": ["black76", "hw_tree", "hw_mc"]},
+        }
+    )
+
+    assert "European payer swaption" in description
+    assert "Expiry: 2025-11-15." in description
+    assert "Hull-White model: mean reversion a=0.05, vol sigma=0.01." in description
+    assert "Comparison targets: black76 (analytical), hw_tree (rate_tree), hw_mc (monte_carlo)" in description
+
+
 def test_task_to_instrument_type_does_not_misclassify_cdo_or_nth_loss_distribution_titles():
     from trellis.agent.task_runtime import task_to_instrument_type
 
