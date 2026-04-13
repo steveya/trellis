@@ -138,6 +138,13 @@ bindings:
             symbol: price_vanilla_equity_option_monte_carlo
             role: route_helper
       - when:
+          payoff_family: rate_cap_floor_strip
+          model_family: [interest_rate, short_rate]
+        primitives:
+          - module: trellis.models.rate_cap_floor
+            symbol: price_rate_cap_floor_strip_monte_carlo
+            role: route_helper
+      - when:
           payoff_family: swaption
           exercise_style: [european]
           model_family: [interest_rate, short_rate]
@@ -340,6 +347,12 @@ bindings:
           - module: trellis.core.date_utils
             symbol: year_fraction
             role: time_measure
+      - when:
+          payoff_family: rate_cap_floor_strip
+        primitives:
+          - module: trellis.models.rate_cap_floor
+            symbol: price_rate_cap_floor_strip_analytical
+            role: route_helper
       - when:
           payoff_family: basket_option
           payoff_traits: [two_asset_terminal_basket]

@@ -195,22 +195,31 @@ def check_price_sanity(
     try:
         pv = price_payoff(payoff, market_state)
         spread_hint, spread_context = _cds_spread_unit_hint(payoff)
-        # Heuristic: price shouldn't exceed max_multiple × 100 (typical notional)
-        if abs(pv) > max_multiple * 100:
+        spec = getattr(payoff, "spec", None)
+        notional = getattr(spec, "notional", None)
+        try:
+            base_notional = abs(float(notional)) if notional is not None else 100.0
+        except (TypeError, ValueError):
+            base_notional = 100.0
+        if base_notional <= 0.0:
+            base_notional = 100.0
+        threshold = max_multiple * base_notional
+        if abs(pv) > threshold:
             failures.append(
                 InvariantFailure(
                     check="check_price_sanity",
                     message=(
                         f"Price sanity check failed: |PV| = {abs(pv):.2f}, which exceeds "
-                        f"{max_multiple}× typical notional (100). The model likely has a "
+                        f"{max_multiple}× reference notional ({base_notional:.4f}). The model likely has a "
                         f"unit conversion error (e.g., passing Black vol to a rate tree)."
                         f"{spread_hint}"
                     ),
                     actual=float(pv),
-                    expected=f"|PV| <= {max_multiple * 100:.4f}",
+                    expected=f"|PV| <= {threshold:.4f}",
                     context={
                         **_market_state_context(market_state),
                         "max_multiple": max_multiple,
+                        "reference_notional": base_notional,
                         **spread_context,
                     },
                 )

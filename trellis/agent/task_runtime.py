@@ -619,11 +619,40 @@ def _bootstrap_callable_bond_description(task: dict) -> str | None:
     )
 
 
+def _bootstrap_rate_cap_floor_description(task: dict) -> str | None:
+    """Return a canonical cap/floor proving prompt for sparse strip tasks."""
+    if str(task.get("description") or "").strip():
+        return None
+
+    title = " ".join(
+        part for part in (
+            str(task.get("title") or ""),
+            str(task.get("description") or ""),
+        )
+        if part
+    ).lower()
+    if "cap/floor" not in title:
+        return None
+    if "black caplet stack" not in title or "mc rate simulation" not in title:
+        return None
+
+    return (
+        "Build a pricer for: USD SOFR cap priced as a Black caplet strip versus forward-rate Monte Carlo\n\n"
+        "Notional: 1000000. Instrument: cap. Strike: 4%. Start date: 2025-02-15. "
+        "End date: 2030-02-15. Frequency: quarterly. Day count: Act/360. "
+        "Rate index: USD-SOFR-3M. Discount curve: USD OIS. Forecast curve: "
+        "USD-SOFR-3M. Black volatility surface: usd_rates_smile. "
+        "Monte Carlo comparison regime: simulate the caplet strip under the same "
+        "Black forward-rate volatility surface used by the analytical reference."
+    )
+
+
 def _effective_task_description(task: dict) -> str:
     """Return the task description after applying any canonical bootstrap prompt."""
     description = (
         _bootstrap_ranked_observation_basket_description(task)
         or _bootstrap_callable_bond_description(task)
+        or _bootstrap_rate_cap_floor_description(task)
         or task_to_description(task)
     )
     context_lines: list[str] = []

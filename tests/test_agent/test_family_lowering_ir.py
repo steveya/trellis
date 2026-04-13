@@ -298,6 +298,7 @@ def test_rate_cap_floor_strip_monte_carlo_compiles_to_event_aware_family_ir():
     assert family_ir.payoff_family == "rate_cap_floor_strip"
     assert family_ir.state_spec.state_variable == "short_rate"
     assert family_ir.process_spec.process_family == "hull_white_1f"
+    assert family_ir.helper_symbol == "price_rate_cap_floor_strip_monte_carlo"
     assert family_ir.path_requirement_spec.requirement_kind == "event_replay"
     assert family_ir.payoff_reducer_spec.reducer_kind == "period_option_cashflow_strip"
     assert family_ir.market_mapping == "discount_curve_forward_curve_black_vol_to_rate_option_strip_mc"

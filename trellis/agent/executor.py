@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+import re
 import subprocess
 import textwrap
 import time
@@ -2592,6 +2593,14 @@ def _make_test_payoff(payoff_cls, spec_schema, settle: date, market_state=None):
         name_defaults["notional"] = 10.0
         name_defaults["strike"] = name_defaults["spot"]
 
+    description = getattr(payoff_cls, "__doc__", "") or getattr(module, "__doc__", "") or ""
+    description_defaults = _description_spec_defaults(
+        spec_schema,
+        description=description,
+    )
+    if description_defaults:
+        name_defaults.update(description_defaults)
+
     for field in spec_schema.fields:
         if field.name in name_defaults:
             kwargs[field.name] = name_defaults[field.name]
@@ -2623,6 +2632,103 @@ def _make_test_payoff(payoff_cls, spec_schema, settle: date, market_state=None):
             pass
 
     return payoff_cls(spec)
+
+
+def _description_spec_defaults(spec_schema, *, description: str) -> dict[str, object]:
+    """Extract deterministic spec defaults from structured task descriptions.
+
+    Title-only proof tasks are bootstrapped into canonical prose descriptions.
+    Reuse those explicit terms during smoke tests and comparison pricing so the
+    harness instantiates the same contract surface the builder just implemented.
+    """
+    text = str(description or "")
+    if not text:
+        return {}
+
+    spec_name = str(getattr(spec_schema, "spec_name", "") or "")
+    if spec_name not in {"AgentCapSpec", "AgentFloorSpec"}:
+        return {}
+
+    from trellis.core.types import DayCountConvention, Frequency
+
+    overrides: dict[str, object] = {}
+
+    def _match(pattern: str) -> str | None:
+        matched = re.search(pattern, text, re.IGNORECASE)
+        if matched is None:
+            return None
+        return matched.group(1).strip()
+
+    def _parse_number(raw: str | None) -> float | None:
+        if raw in {None, ""}:
+            return None
+        try:
+            return float(str(raw).replace(",", "").replace("_", ""))
+        except ValueError:
+            return None
+
+    def _parse_percent(raw: str | None) -> float | None:
+        numeric = _parse_number(raw)
+        if numeric is None:
+            return None
+        return numeric / 100.0
+
+    def _parse_date(raw: str | None) -> date | None:
+        if raw in {None, ""}:
+            return None
+        try:
+            return date.fromisoformat(str(raw))
+        except ValueError:
+            return None
+
+    frequency_map = {
+        "annual": Frequency.ANNUAL,
+        "semi-annual": Frequency.SEMI_ANNUAL,
+        "semiannual": Frequency.SEMI_ANNUAL,
+        "quarterly": Frequency.QUARTERLY,
+        "monthly": Frequency.MONTHLY,
+    }
+    day_count_map = {
+        "act/360": DayCountConvention.ACT_360,
+        "act/365": DayCountConvention.ACT_365,
+        "30/360": DayCountConvention.THIRTY_360,
+    }
+
+    notional = _parse_number(_match(r"Notional:\s*([0-9][0-9,_.]*)"))
+    if notional is not None:
+        overrides["notional"] = notional
+
+    strike = _parse_percent(_match(r"Strike:\s*([0-9][0-9,_.]*)%"))
+    if strike is not None:
+        overrides["strike"] = strike
+
+    start_date = _parse_date(_match(r"Start date:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})"))
+    if start_date is not None:
+        overrides["start_date"] = start_date
+
+    end_date = _parse_date(_match(r"End date:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})"))
+    if end_date is not None:
+        overrides["end_date"] = end_date
+
+    frequency = _match(r"Frequency:\s*([A-Za-z-]+)")
+    if frequency is not None:
+        normalized_frequency = frequency.strip().lower()
+        enum_value = frequency_map.get(normalized_frequency)
+        if enum_value is not None:
+            overrides["frequency"] = enum_value
+
+    day_count = _match(r"Day count:\s*([A-Za-z0-9/]+)")
+    if day_count is not None:
+        normalized_day_count = day_count.strip().lower()
+        enum_value = day_count_map.get(normalized_day_count)
+        if enum_value is not None:
+            overrides["day_count"] = enum_value
+
+    rate_index = _match(r"Rate index:\s*([A-Za-z0-9._/-]+)")
+    if rate_index is not None:
+        overrides["rate_index"] = rate_index.rstrip(".,;:")
+
+    return overrides
 
 
 def _smoke_test_actual_market_state(

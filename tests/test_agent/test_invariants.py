@@ -115,6 +115,30 @@ class TestNonNegativity:
 
 class TestPriceSanity:
 
+    def test_price_sanity_scales_threshold_by_spec_notional(self):
+        class HighNotionalCapLikePayoff:
+            def __init__(self):
+                self._spec = type("CapLikeSpec", (), {"notional": 1_000_000.0})()
+
+            @property
+            def spec(self):
+                return self._spec
+
+            @property
+            def requirements(self):
+                return {"discount_curve"}
+
+            def evaluate(self, market_state):
+                return 53_753.85
+
+        failures = check_price_sanity(
+            HighNotionalCapLikePayoff(),
+            _ms_factory(),
+            return_diagnostics=True,
+        )
+
+        assert failures == []
+
     def test_price_sanity_surfaces_cds_spread_unit_hint(self):
         class CdsLikePayoff:
             def __init__(self):

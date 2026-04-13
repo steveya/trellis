@@ -744,6 +744,36 @@ def test_compile_build_request_routes_rate_cap_family_through_semantic_contract(
     assert "semantic_gap" not in compiled.request.metadata
 
 
+def test_compile_build_request_bootstraps_title_only_rate_cap_task_into_exact_mc_binding():
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.task_runtime import _effective_task_description
+
+    description = _effective_task_description(
+        {
+            "id": "E22",
+            "title": "Cap/floor: Black caplet stack vs MC rate simulation",
+            "construct": ["analytical", "monte_carlo"],
+            "cross_validate": {"internal": ["mc_rate_cap"], "analytical": "black76_cap"},
+        }
+    )
+
+    compiled = compile_build_request(
+        description,
+        instrument_type="cap",
+        preferred_method="monte_carlo",
+    )
+
+    assert compiled.execution_plan.reason == "semantic_contract_request"
+    assert compiled.semantic_contract is not None
+    assert compiled.semantic_contract.semantic_id == "rate_cap_floor_strip"
+    assert "Start date: 2025-02-15." in description
+    assert "End date: 2030-02-15." in description
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.backend_binding_id == (
+        "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo"
+    )
+
+
 @pytest.mark.parametrize(
     ("description", "instrument_type", "expected_instrument"),
     [
