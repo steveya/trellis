@@ -78,9 +78,9 @@ maintenance around the deterministic engines.
   `trellis/agent/valuation_context.py`, and
   `trellis/agent/market_binding.py` hold the typed semantic and valuation
   boundary.
-- `trellis/agent/backend_bindings.py` is the canonical catalog of exact helper,
-  kernel, schedule-builder, cashflow-engine, and market-binding facts used by
-  the runtime.
+- `trellis/agent/backend_bindings.py` loads the canonical exact-binding catalog
+  from `trellis/agent/knowledge/canonical/backend_bindings.yaml`, with
+  discovered-route overlays only in explicit analysis mode.
 - `trellis/agent/binding_operator_metadata.py` is the first-class catalog of
   operator-facing binding display names, short descriptions, and diagnostic
   labels, so operator wording no longer has to piggyback on route YAML prose.

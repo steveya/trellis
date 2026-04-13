@@ -1519,20 +1519,33 @@ def rank_primitive_routes(
 
     ranked: list[PrimitivePlan] = []
     for spec in candidates:
-        route_primitives = list(resolve_route_primitives(spec, product_ir))
-        adapters = resolve_route_adapters(spec, product_ir)
-        notes = resolve_route_notes(spec, product_ir)
-        route = spec.id
         binding_spec = resolve_backend_binding_by_route_id(
-            route,
+            spec.id,
             product_ir=product_ir,
             catalog=binding_catalog,
         )
+        route_primitives = list(
+            resolve_route_primitives(
+                spec,
+                product_ir,
+                binding_spec=binding_spec,
+            )
+        )
+        adapters = resolve_route_adapters(spec, product_ir)
+        notes = resolve_route_notes(spec, product_ir)
+        route = spec.id
         primitives = list(getattr(binding_spec, "primitives", ()) or route_primitives)
         blockers = list(product_ir.unresolved_primitives if product_ir is not None else ())
         blockers.extend(_verify_primitives(primitives))
         engine_family = str(getattr(binding_spec, "engine_family", "") or spec.engine_family)
-        route_family = str(getattr(binding_spec, "route_family", "") or resolve_route_family(spec, product_ir))
+        route_family = str(
+            getattr(binding_spec, "route_family", "")
+            or resolve_route_family(
+                spec,
+                product_ir,
+                binding_spec=binding_spec,
+            )
+        )
         if route == "exercise_lattice" and route_family == "equity_tree":
             engine_family = "tree"
 

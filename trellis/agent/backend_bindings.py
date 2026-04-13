@@ -1,17 +1,23 @@
-"""Canonical backend-binding catalog derived from the current route registry.
+"""Canonical backend-binding catalog independent from the route registry.
 
-This module is the first structural step in replacing route cards as the
-primary exact-backend identity surface. The catalog is intentionally loaded
-beside the route registry for now and resolves the exact helper/kernel/schedule
-facts without changing the downstream lowering or validation contracts yet.
+The binding catalog is now the authoritative source for exact runtime binding
+facts: helper/kernel primitives, conditional binding-family overrides, and the
+stable binding identity derived from those surfaces. The route registry remains
+responsible for matching, aliases, admissibility, and temporary transition
+guidance, while discovered routes can still be overlaid into the catalog for
+analysis mode.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
+import yaml
+
 from trellis.agent.codegen_guardrails import PrimitiveRef
+from trellis.agent.knowledge.import_registry import get_repo_revision
 from trellis.agent.knowledge.schema import ProductIR
 
 
@@ -74,12 +80,17 @@ class BackendBindingCatalog:
 
 
 _CATALOG_CACHE: dict[tuple, BackendBindingCatalog] = {}
+_CANONICAL_PATH = Path(__file__).resolve().parent / "knowledge" / "canonical" / "backend_bindings.yaml"
 
 
 def _cache_key(*, include_discovered: bool) -> tuple:
-    from trellis.agent import route_registry as route_registry_module
+    canonical_mtime = _CANONICAL_PATH.stat().st_mtime_ns if _CANONICAL_PATH.exists() else 0
+    discovered_key: tuple[object, ...] = ()
+    if include_discovered:
+        from trellis.agent import route_registry as route_registry_module
 
-    return tuple(route_registry_module._cache_key(include_discovered=include_discovered))
+        discovered_key = tuple(route_registry_module._cache_key(include_discovered=True))
+    return (include_discovered, canonical_mtime, get_repo_revision(), discovered_key)
 
 
 def load_backend_binding_catalog(
@@ -87,27 +98,30 @@ def load_backend_binding_catalog(
     include_discovered: bool = False,
     registry=None,
 ) -> BackendBindingCatalog:
-    """Load the canonical backend-binding catalog beside the route registry."""
+    """Load the canonical backend-binding catalog with optional discovered overlays."""
+    key = None
     if registry is None:
         key = _cache_key(include_discovered=include_discovered)
         cached = _CATALOG_CACHE.get(key)
         if cached is not None:
             return cached
+
+    bindings = list(_load_canonical_bindings())
+    if registry is None and include_discovered:
         from trellis.agent.route_registry import load_route_registry
 
-        registry = load_route_registry(include_discovered=include_discovered)
-    else:
-        key = None
+        registry = load_route_registry(include_discovered=True)
+    if registry is not None:
+        bindings = _overlay_registry_bindings(bindings, registry)
 
-    bindings = tuple(_binding_from_route(route) for route in registry.routes)
     route_index: dict[str, list[int]] = {}
     for idx, binding in enumerate(bindings):
         route_index.setdefault(binding.route_id, []).append(idx)
         for alias in binding.aliases:
             route_index.setdefault(alias, []).append(idx)
     catalog = BackendBindingCatalog(
-        bindings=bindings,
-        _route_index={key_: tuple(value) for key_, value in route_index.items()},
+        bindings=tuple(bindings),
+        _route_index={name: tuple(indexes) for name, indexes in route_index.items()},
     )
     if key is not None:
         _CATALOG_CACHE[key] = catalog
@@ -200,6 +214,46 @@ def resolve_backend_binding_by_route_id(
     )
 
 
+def _load_canonical_bindings() -> tuple[BackendBindingSpec, ...]:
+    raw = _load_yaml(_CANONICAL_PATH, default={})
+    entries = raw.get("bindings") if isinstance(raw, dict) else ()
+    if not isinstance(entries, list):
+        return ()
+    return tuple(_binding_from_raw(entry) for entry in entries if isinstance(entry, dict) and entry.get("route_id"))
+
+
+def _overlay_registry_bindings(
+    bindings: list[BackendBindingSpec],
+    registry,
+) -> list[BackendBindingSpec]:
+    existing = {binding.route_id for binding in bindings}
+    aliases = {
+        alias
+        for binding in bindings
+        for alias in binding.aliases
+    }
+    overlaid = list(bindings)
+    for route in getattr(registry, "routes", ()) or ():
+        route_id = str(getattr(route, "id", "") or "").strip()
+        if not route_id or route_id in existing or route_id in aliases:
+            continue
+        overlaid.append(_binding_from_route(route))
+    return overlaid
+
+
+def _binding_from_raw(raw: dict[str, Any]) -> BackendBindingSpec:
+    return BackendBindingSpec(
+        route_id=str(raw.get("route_id") or "").strip(),
+        engine_family=str(raw.get("engine_family") or "").strip(),
+        route_family=str(raw.get("route_family") or "").strip(),
+        aliases=_str_tuple(raw.get("aliases")),
+        compatibility_alias_policy=str(raw.get("compatibility_alias_policy") or "operator_visible").strip() or "operator_visible",
+        primitives=_parse_primitives(raw.get("primitives")),
+        conditional_primitives=_parse_conditional_primitives(raw.get("conditional_primitives")),
+        conditional_route_family=_parse_conditional_route_family(raw.get("conditional_route_family")),
+    )
+
+
 def _binding_from_route(route) -> BackendBindingSpec:
     return BackendBindingSpec(
         route_id=str(route.id),
@@ -225,6 +279,76 @@ def _binding_from_route(route) -> BackendBindingSpec:
             for block in (getattr(route, "conditional_route_family", ()) or ())
         ),
     )
+
+
+def _load_yaml(path: Path, *, default):
+    if not path.exists():
+        return default
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return default if data is None else data
+
+
+def _str_tuple(values) -> tuple[str, ...]:
+    if not values:
+        return ()
+    if isinstance(values, (str, bytes)):
+        return (str(values),)
+    return tuple(str(value) for value in values if str(value).strip())
+
+
+def _parse_primitives(raw: Any) -> tuple[PrimitiveRef, ...]:
+    if not raw:
+        return ()
+    return tuple(
+        _parse_primitive(item)
+        for item in raw
+        if isinstance(item, dict)
+        and item.get("module")
+        and item.get("symbol")
+        and item.get("role")
+    )
+
+
+def _parse_primitive(raw: dict[str, Any]) -> PrimitiveRef:
+    return PrimitiveRef(
+        module=str(raw["module"]),
+        symbol=str(raw["symbol"]),
+        role=str(raw["role"]),
+        required=raw.get("required", True),
+        excluded=raw.get("excluded", False),
+    )
+
+
+def _parse_conditional_primitives(raw: Any) -> tuple[ConditionalBindingPrimitives, ...]:
+    if not raw:
+        return ()
+    rows: list[ConditionalBindingPrimitives] = []
+    for entry in raw:
+        if not isinstance(entry, dict) or "when" not in entry:
+            continue
+        rows.append(
+            ConditionalBindingPrimitives(
+                when=entry.get("when", "default"),
+                primitives=_parse_primitives(entry.get("primitives")),
+            )
+        )
+    return tuple(rows)
+
+
+def _parse_conditional_route_family(raw: Any) -> tuple[ConditionalBindingFamily, ...]:
+    if not raw:
+        return ()
+    rows: list[ConditionalBindingFamily] = []
+    for entry in raw:
+        if not isinstance(entry, dict) or "when" not in entry or "route_family" not in entry:
+            continue
+        rows.append(
+            ConditionalBindingFamily(
+                when=entry.get("when", "default"),
+                route_family=str(entry.get("route_family") or "").strip(),
+            )
+        )
+    return tuple(rows)
 
 
 def _resolve_binding_primitives(

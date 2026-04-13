@@ -118,11 +118,15 @@ def test_rank_primitive_routes_prefers_binding_spec_primitives_when_route_card_i
     monkeypatch.setattr(
         route_registry_module,
         "resolve_route_primitives",
-        lambda spec, product_ir: (stale_helper,),
+        lambda spec, product_ir, binding_spec=None: (stale_helper,),
     )
     monkeypatch.setattr(route_registry_module, "resolve_route_adapters", lambda spec, product_ir: ())
     monkeypatch.setattr(route_registry_module, "resolve_route_notes", lambda spec, product_ir: ())
-    monkeypatch.setattr(route_registry_module, "resolve_route_family", lambda spec, product_ir: "analytical")
+    monkeypatch.setattr(
+        route_registry_module,
+        "resolve_route_family",
+        lambda spec, product_ir, binding_spec=None: "analytical",
+    )
     monkeypatch.setattr(
         backend_bindings_module,
         "load_backend_binding_catalog",

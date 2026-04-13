@@ -176,7 +176,10 @@ def lower_semantic_blueprint(
             binding_spec=binding_spec,
         )
 
-        route_family = str(getattr(binding_spec, "route_family", "") or resolve_route_family(route, product_ir))
+        route_family = str(
+            getattr(binding_spec, "route_family", "")
+            or resolve_route_family(route, product_ir, binding_spec=binding_spec)
+        )
         adapters = resolve_route_adapters(route, product_ir)
         notes = resolve_route_notes(route, product_ir)
         try:
@@ -314,7 +317,10 @@ def _target_bindings_for_route(
     binding_spec,
 ) -> tuple[DslTargetBinding, ...]:
     """Resolve DSL bindings from the binding catalog before falling back to route cards."""
-    primitives = tuple(getattr(binding_spec, "primitives", ()) or resolve_route_primitives(route, product_ir))
+    primitives = tuple(
+        getattr(binding_spec, "primitives", ())
+        or resolve_route_primitives(route, product_ir, binding_spec=binding_spec)
+    )
     return tuple(
         DslTargetBinding(
             module=primitive.module,
