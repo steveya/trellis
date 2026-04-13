@@ -489,12 +489,24 @@ def _matches_condition(
     product_ir: ProductIR | None,
 ) -> bool:
     payoff_families = _expanded_payoff_families(payoff_family, product_ir)
+    payoff_traits = {
+        str(item).strip().lower()
+        for item in getattr(product_ir, "payoff_traits", ()) or ()
+    }
     for key, expected in when.items():
         if key == "payoff_family":
             if isinstance(expected, list):
                 if not any(candidate in payoff_families for candidate in expected):
                     return False
             elif expected not in payoff_families:
+                return False
+        elif key == "payoff_traits":
+            expected_traits = (
+                {str(item).strip().lower() for item in expected}
+                if isinstance(expected, list)
+                else {str(expected).strip().lower()}
+            )
+            if not expected_traits.issubset(payoff_traits):
                 return False
         elif key == "exercise_style":
             if isinstance(expected, list):

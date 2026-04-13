@@ -397,6 +397,36 @@ def test_vanilla_option_transform_compiles_to_bounded_transform_family_ir():
     assert unsupported_family_ir is None
 
 
+def test_transform_lane_accepts_exact_basket_transform_helper():
+    from trellis.agent.family_lowering_ir import (
+        _binding_supports_transform_pricing,
+        _transform_helper_symbol_for_product,
+        TransformCharacteristicSpec,
+    )
+    from types import SimpleNamespace
+
+    binding_spec = _resolved_binding_spec(
+        PrimitiveRef(
+            module="trellis.models.basket_option",
+            symbol="price_basket_option_transform_proxy",
+            role="route_helper",
+            required=True,
+        ),
+        route_id="transform_fft",
+        route_family="fft_pricing",
+        engine_family="fft_pricing",
+    )
+
+    assert _binding_supports_transform_pricing(
+        binding_spec,
+        route_id="transform_fft",
+    )
+    assert _transform_helper_symbol_for_product(
+        SimpleNamespace(payoff_family="basket_option"),
+        TransformCharacteristicSpec(model_family="equity_diffusion"),
+    ) == "price_basket_option_transform_proxy"
+
+
 def test_callable_bond_compiles_to_exercise_lattice_family_ir():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_callable_bond_contract

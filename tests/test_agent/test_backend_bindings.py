@@ -147,6 +147,68 @@ def test_resolve_backend_binding_spec_uses_route_conditionals_for_exact_targets(
     )
 
 
+def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
+    catalog = load_backend_binding_catalog()
+    analytical = find_backend_binding_by_route_id("analytical_black76", catalog)
+    monte_carlo = find_backend_binding_by_route_id("monte_carlo_paths", catalog)
+    transform = find_backend_binding_by_route_id("transform_fft", catalog)
+
+    product_ir = ProductIR(
+        instrument="basket_option",
+        payoff_family="basket_option",
+        payoff_traits=("two_asset_terminal_basket", "vanilla_option"),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+
+    assert analytical is not None
+    assert monte_carlo is not None
+    assert transform is not None
+
+    analytical_resolved = resolve_backend_binding_spec(analytical, product_ir=product_ir)
+    monte_carlo_resolved = resolve_backend_binding_spec(monte_carlo, product_ir=product_ir)
+    transform_resolved = resolve_backend_binding_spec(transform, product_ir=product_ir)
+
+    assert analytical_resolved.helper_refs == (
+        "trellis.models.basket_option.price_basket_option_analytical",
+    )
+    assert monte_carlo_resolved.helper_refs == (
+        "trellis.models.basket_option.price_basket_option_monte_carlo",
+    )
+    assert transform_resolved.helper_refs == (
+        "trellis.models.basket_option.price_basket_option_transform_proxy",
+    )
+
+
+def test_resolve_backend_binding_spec_keeps_generic_multi_asset_baskets_off_two_asset_exact_helpers():
+    catalog = load_backend_binding_catalog()
+    analytical = find_backend_binding_by_route_id("analytical_black76", catalog)
+    transform = find_backend_binding_by_route_id("transform_fft", catalog)
+
+    product_ir = ProductIR(
+        instrument="basket_option",
+        payoff_family="basket_option",
+        payoff_traits=("vanilla_option",),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+
+    assert analytical is not None
+    assert transform is not None
+
+    analytical_resolved = resolve_backend_binding_spec(analytical, product_ir=product_ir)
+    transform_resolved = resolve_backend_binding_spec(transform, product_ir=product_ir)
+
+    assert analytical_resolved.helper_refs != (
+        "trellis.models.basket_option.price_basket_option_analytical",
+    )
+    assert transform_resolved.helper_refs != (
+        "trellis.models.basket_option.price_basket_option_transform_proxy",
+    )
+
+
 def test_nth_to_default_binding_has_no_schedule_builder_surface():
     catalog = load_backend_binding_catalog()
     binding = find_backend_binding_by_route_id("nth_to_default_monte_carlo", catalog)

@@ -2674,6 +2674,70 @@ def test_make_test_payoff_uses_basket_specific_schedule_defaults(monkeypatch):
     assert payoff.spec.kwargs["expiry_date"] == date(2025, 11, 15)
 
 
+def test_make_test_payoff_uses_typed_multi_underlier_defaults_for_basket_options(monkeypatch):
+    """Generic basket smoke tests should get valid multi-underlier defaults."""
+    from trellis.agent.task_runtime import _make_test_payoff
+
+    class BasketSpec:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    module_name = "dummy_generic_basket_adapter"
+    module = ModuleType(module_name)
+    module.BasketOptionSpec = BasketSpec
+    monkeypatch.setitem(sys.modules, module_name, module)
+
+    RainbowBasketPayoff = type(
+        "RainbowBasketPayoff",
+        (),
+        {
+            "__doc__": "Rainbow option (best-of-two): Stulz formula vs MC",
+            "__init__": lambda self, spec: setattr(self, "spec", spec),
+            "__module__": module_name,
+        },
+    )
+    SpreadBasketPayoff = type(
+        "SpreadBasketPayoff",
+        (),
+        {
+            "__doc__": "Spread option (Kirk approximation) vs 2D MC vs 2D FFT",
+            "__init__": lambda self, spec: setattr(self, "spec", spec),
+            "__module__": module_name,
+        },
+    )
+
+    spec_schema = SimpleNamespace(
+        spec_name="BasketOptionSpec",
+        fields=[
+            SimpleNamespace(name="underliers", type="str", default=None),
+            SimpleNamespace(name="spots", type="str", default=None),
+            SimpleNamespace(name="correlation", type="str", default=None),
+            SimpleNamespace(name="weights", type="str | None", default=None),
+            SimpleNamespace(name="vols", type="str | None", default=None),
+            SimpleNamespace(name="basket_style", type="str", default=None),
+            SimpleNamespace(name="strike", type="float", default=None),
+            SimpleNamespace(name="expiry_date", type="date", default=None),
+            SimpleNamespace(name="notional", type="float", default=None),
+        ],
+    )
+
+    rainbow = _make_test_payoff(RainbowBasketPayoff, spec_schema, date(2024, 11, 15))
+    spread = _make_test_payoff(SpreadBasketPayoff, spec_schema, date(2024, 11, 15))
+
+    assert rainbow.spec.kwargs["underliers"] == "SPX,NDX"
+    assert rainbow.spec.kwargs["spots"] == "100.0,95.0"
+    assert rainbow.spec.kwargs["correlation"] == "1.0,0.35;0.35,1.0"
+    assert rainbow.spec.kwargs["basket_style"] == "best_of"
+    assert rainbow.spec.kwargs["weights"] is None
+    assert rainbow.spec.kwargs["vols"] is None
+    assert rainbow.spec.kwargs["strike"] == pytest.approx(100.0)
+
+    assert spread.spec.kwargs["basket_style"] == "spread"
+    assert spread.spec.kwargs["weights"] == "1.0,-1.0"
+    assert spread.spec.kwargs["vols"] is None
+    assert spread.spec.kwargs["strike"] == pytest.approx(5.0)
+
+
 def test_make_test_payoff_uses_atm_strike_for_spot_based_options(monkeypatch):
     """Spot-based option smoke tests should default to an at-the-money strike."""
     from trellis.agent.task_runtime import _make_test_payoff

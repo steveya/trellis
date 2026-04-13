@@ -138,6 +138,14 @@ bindings:
           - module: trellis.models.rate_style_swaption
             symbol: price_swaption_monte_carlo
             role: route_helper
+      - when:
+          payoff_family: basket_option
+          exercise_style: [european]
+          model_family: [equity_diffusion]
+        primitives:
+          - module: trellis.models.basket_option
+            symbol: price_basket_option_monte_carlo
+            role: route_helper
       - when: default
 
   - route_id: monte_carlo_fx_vanilla
@@ -326,6 +334,15 @@ bindings:
             symbol: year_fraction
             role: time_measure
       - when:
+          payoff_family: basket_option
+          payoff_traits: [two_asset_terminal_basket]
+          exercise_style: [european]
+          model_family: [equity_diffusion]
+        primitives:
+          - module: trellis.models.basket_option
+            symbol: price_basket_option_analytical
+            role: route_helper
+      - when:
           payoff_family: swaption
           exercise_style: [bermudan]
         primitives:
@@ -401,6 +418,15 @@ bindings:
         primitives:
           - module: trellis.models.equity_option_transforms
             symbol: price_vanilla_equity_option_transform
+            role: route_helper
+      - when:
+          payoff_family: basket_option
+          payoff_traits: [two_asset_terminal_basket]
+          exercise_style: [european]
+          model_family: [equity_diffusion]
+        primitives:
+          - module: trellis.models.basket_option
+            symbol: price_basket_option_transform_proxy
             role: route_helper
       - when: default
         primitives:

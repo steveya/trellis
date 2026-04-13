@@ -237,3 +237,79 @@ def test_run_binding_first_exotic_proof_rejects_unknown_selected_task_ids(tmp_pa
     )
 
     assert exit_code == 1
+
+
+def test_run_binding_first_exotic_proof_freezes_post_build_learning_surface(tmp_path, monkeypatch):
+    module = _load_module()
+
+    manifest = {
+        "T105": {
+            "cohort": "event_control_schedule",
+            "outcome_class": "proved",
+            "required_mock_capabilities": [],
+            "comparison_targets": [],
+        }
+    }
+    tasks = {
+        "T105": {
+            "id": "T105",
+            "title": "Quanto option: quanto-adjusted BS vs MC cross-currency",
+            "cross_validate": {"internal": []},
+            "market_assertions": {"requires": []},
+        }
+    }
+    observed_env: list[tuple[str | None, str | None]] = []
+
+    monkeypatch.setattr(module, "load_binding_first_exotic_proof_manifest", lambda: manifest)
+    monkeypatch.setattr(module, "_load_selected_tasks", lambda task_ids: {task_id: tasks[task_id] for task_id in task_ids})
+    monkeypatch.setattr(
+        module,
+        "grade_binding_first_exotic_proof_preflight",
+        lambda *args, **kwargs: {
+            "task_contract_alignment": SimpleNamespace(passed=True, details=()),
+            "market_capability_alignment": SimpleNamespace(passed=True, details=()),
+            "comparison_target_inventory": SimpleNamespace(passed=True, details=()),
+            "comparison_target_separation": SimpleNamespace(passed=True, details=()),
+        },
+    )
+
+    monkeypatch.setenv("TRELLIS_SKIP_POST_BUILD_REFLECTION", "0")
+    monkeypatch.delenv("TRELLIS_SKIP_POST_BUILD_CONSOLIDATION", raising=False)
+
+    def _fake_run_task(*args, **kwargs):
+        import os
+
+        observed_env.append(
+            (
+                os.environ.get("TRELLIS_SKIP_POST_BUILD_REFLECTION"),
+                os.environ.get("TRELLIS_SKIP_POST_BUILD_CONSOLIDATION"),
+            )
+        )
+        return {
+            "task_id": "T105",
+            "success": True,
+            "attempts": 1,
+            "elapsed_seconds": 1.0,
+            "cross_validation": {"status": "passed"},
+            "token_usage_summary": {"total_tokens": 1, "call_count": 1},
+        }
+
+    monkeypatch.setattr(module, "run_task", _fake_run_task)
+
+    exit_code = module.run_binding_first_exotic_proof(
+        cohort="event_control_schedule",
+        task_ids=[],
+        model="test-model",
+        validation="standard",
+        fresh_build=True,
+        preflight_only=False,
+        output_path=tmp_path / "proof_results.json",
+        report_json_path=tmp_path / "proof_report.json",
+        report_md_path=tmp_path / "proof_report.md",
+    )
+
+    assert exit_code == 1
+    assert observed_env == [("1", "1")]
+    import os
+    assert os.environ.get("TRELLIS_SKIP_POST_BUILD_REFLECTION") == "0"
+    assert os.environ.get("TRELLIS_SKIP_POST_BUILD_CONSOLIDATION") is None

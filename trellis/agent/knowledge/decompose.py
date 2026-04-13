@@ -520,6 +520,18 @@ def _traits_from_text(desc: str) -> tuple[str, ...]:
     for trait, aliases in trait_aliases.items():
         if any(alias.replace(" ", "_") in desc for alias in aliases):
             traits.add(trait)
+    if any(
+        marker in desc
+        for marker in (
+            "best_of_two",
+            "best_of",
+            "rainbow_option",
+            "spread_option",
+            "kirk_approximation",
+            "kirk_spread",
+        )
+    ):
+        traits.add("two_asset_terminal_basket")
     if "option" in desc and "asian" not in traits and "barrier" not in traits:
         traits.add("vanilla_option")
     return tuple(sorted(traits))

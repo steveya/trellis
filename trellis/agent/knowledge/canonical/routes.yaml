@@ -360,6 +360,16 @@ routes:
             role: route_helper
         adapters: []
         notes: []
+      - when:
+          payoff_family: basket_option
+          exercise_style: [european]
+          model_family: [equity_diffusion]
+        primitives:
+          - module: trellis.models.basket_option
+            symbol: price_basket_option_monte_carlo
+            role: route_helper
+        adapters: []
+        notes: []
       - when: default
         primitives: []
         adapters: []
@@ -744,6 +754,16 @@ routes:
           - "For plain European call/put comparators, prefer direct `black76_call` / `black76_put` on the forward. Only assemble from asset-or-nothing and cash-or-nothing basis claims when the request explicitly needs the decomposition."
           - "For cash-or-nothing digital options, use the Black76 digital helpers directly instead of a vanilla call/put approximation."
       - when:
+          payoff_family: basket_option
+          exercise_style: [european]
+          model_family: [equity_diffusion]
+        primitives:
+          - module: trellis.models.basket_option
+            symbol: price_basket_option_analytical
+            role: route_helper
+        adapters: []
+        notes: []
+      - when:
           payoff_family: swaption
           exercise_style: [bermudan]
         primitives:
@@ -901,6 +921,16 @@ routes:
         primitives:
           - module: trellis.models.equity_option_transforms
             symbol: price_vanilla_equity_option_transform
+            role: route_helper
+        adapters: []
+        notes: []
+      - when:
+          payoff_family: basket_option
+          exercise_style: [european]
+          model_family: [equity_diffusion]
+        primitives:
+          - module: trellis.models.basket_option
+            symbol: price_basket_option_transform_proxy
             role: route_helper
         adapters: []
         notes: []
