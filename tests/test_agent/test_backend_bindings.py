@@ -27,16 +27,54 @@ def test_binding_catalog_loads_core_route_backed_bindings():
 def test_binding_catalog_canonical_load_is_not_derived_from_route_registry(monkeypatch):
     from trellis.agent import route_registry as route_registry_module
 
+    clear_backend_binding_catalog_cache()
     monkeypatch.setattr(
         route_registry_module,
         "load_route_registry",
         lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("route registry should not load")),
     )
 
-    clear_backend_binding_catalog_cache()
     catalog = load_backend_binding_catalog()
 
     assert find_backend_binding_by_route_id("analytical_garman_kohlhagen", catalog) is not None
+
+
+def test_binding_catalog_skips_malformed_primitive_rows(monkeypatch):
+    from trellis.agent import backend_bindings as backend_bindings_module
+
+    clear_backend_binding_catalog_cache()
+    monkeypatch.setattr(
+        backend_bindings_module,
+        "_load_canonical_bindings",
+        lambda: (
+            backend_bindings_module._binding_from_raw(
+                {
+                    "route_id": "synthetic_binding_route",
+                    "engine_family": "analytical",
+                    "route_family": "synthetic_family",
+                    "primitives": [
+                        {"module": "trellis.models.synthetic", "symbol": "good_helper", "role": "route_helper"},
+                        {"module": "trellis.models.synthetic", "role": "route_helper"},
+                    ],
+                }
+            ),
+        ),
+    )
+
+    try:
+        catalog = load_backend_binding_catalog()
+        binding = find_backend_binding_by_route_id("synthetic_binding_route", catalog)
+
+        assert binding is not None
+        assert binding.primitives == (
+            backend_bindings_module.PrimitiveRef(
+                "trellis.models.synthetic",
+                "good_helper",
+                "route_helper",
+            ),
+        )
+    finally:
+        clear_backend_binding_catalog_cache()
 
 
 def test_resolve_backend_binding_spec_captures_helper_schedule_and_cashflow_roles():

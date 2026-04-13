@@ -302,7 +302,10 @@ def _parse_primitives(raw: Any) -> tuple[PrimitiveRef, ...]:
     return tuple(
         _parse_primitive(item)
         for item in raw
-        if isinstance(item, dict) and item.get("module") and item.get("symbol") and item.get("role")
+        if isinstance(item, dict)
+        and item.get("module")
+        and item.get("symbol")
+        and item.get("role")
     )
 
 
