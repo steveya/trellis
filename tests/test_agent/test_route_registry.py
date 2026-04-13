@@ -456,7 +456,7 @@ class TestCreditRoutes:
 
     def test_nth_to_default_analytical(self, registry):
         new = _new_routes(registry, "analytical", self.NTD_IR)
-        assert new == ()
+        assert new == ("nth_to_default_analytical",)
 
     def test_nth_to_default_monte_carlo(self, registry):
         new = _new_routes(registry, "monte_carlo", self.NTD_IR)
@@ -1618,6 +1618,7 @@ class TestFallbackRoutes:
         for route_id in (
             "credit_default_swap_analytical",
             "credit_default_swap_monte_carlo",
+            "nth_to_default_analytical",
             "nth_to_default_monte_carlo",
             "copula_loss_distribution",
         ):
@@ -1650,6 +1651,7 @@ class TestEngineFamilyCoverage:
         "correlated_gbm_monte_carlo": "monte_carlo",
         "credit_default_swap_analytical": "analytical",
         "credit_default_swap_monte_carlo": "monte_carlo",
+        "nth_to_default_analytical": "analytical",
         "nth_to_default_monte_carlo": "monte_carlo",
         "correlated_basket_monte_carlo": "monte_carlo",
         "exercise_monte_carlo": "exercise",

@@ -110,11 +110,11 @@ maintenance around the deterministic engines.
   govern admissibility and lowering onto checked route families. The route
   registry is now a compatibility and admissibility surface over the binding
   catalog, not the only source of exact backend identity.
-- The binding-first runtime migration is ahead of the capability proof. The
-  current exotic proof closeout only certifies `T105` across the agreed proof
-  cohort; the remaining event/control and basket/credit/loss proof tasks are
-  tracked as open follow-ons in `docs/plans/binding-first-exotic-proof-closeout.md`
-  and `LIMITATIONS.md`.
+- The binding-first runtime migration now has checked proof-level evidence
+  across the agreed `11`-task exotic cohort. That evidence is still bounded:
+  Trellis can honestly claim the measured cohort, not arbitrary constructable
+  exotic support beyond it. The current support contract lives in
+  `docs/plans/binding-first-exotic-proof-closeout.md` and `LIMITATIONS.md`.
 - `trellis/agent/quant.py`, `trellis/agent/planner.py`,
   `trellis/agent/builder.py`, `trellis/agent/critic.py`,
   `trellis/agent/arbiter.py`, and `trellis/agent/executor.py` implement the

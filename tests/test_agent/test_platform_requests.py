@@ -373,6 +373,51 @@ def test_compile_build_request_preserves_swaption_conventions_and_hw_bindings():
     assert "model_parameters" in compiled.semantic_blueprint.market_binding_spec.derivable_inputs
 
 
+@pytest.mark.parametrize(
+    ("preferred_method", "expected_binding"),
+    [
+        ("analytical", "trellis.models.rate_style_swaption.price_swaption_black76"),
+        ("rate_tree", "trellis.models.rate_style_swaption_tree.price_swaption_tree"),
+        ("monte_carlo", "trellis.models.rate_style_swaption.price_swaption_monte_carlo"),
+    ],
+)
+def test_compile_build_request_bootstraps_title_only_swaption_task_into_hw_comparison_regime(
+    preferred_method: str,
+    expected_binding: str,
+):
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.task_runtime import _effective_task_description
+
+    description = _effective_task_description(
+        {
+            "id": "T73",
+            "title": "European swaption: Black76 vs HW tree vs HW MC",
+            "construct": ["analytical", "lattice", "monte_carlo"],
+            "cross_validate": {"internal": ["black76", "hw_tree", "hw_mc"]},
+        }
+    )
+    compiled = compile_build_request(
+        description,
+        instrument_type="swaption",
+        preferred_method=preferred_method,
+    )
+
+    assert compiled.execution_plan.reason == "semantic_contract_request"
+    assert compiled.semantic_contract is not None
+    assert compiled.semantic_contract.semantic_id == "rate_style_swaption"
+    assert compiled.semantic_blueprint is not None
+    engine_model_spec = compiled.semantic_blueprint.valuation_context.engine_model_spec
+    assert engine_model_spec is not None
+    assert engine_model_spec.model_name == "hull_white_1f"
+    assert engine_model_spec.parameter_overrides["mean_reversion"] == pytest.approx(0.05)
+    assert engine_model_spec.parameter_overrides["sigma"] == pytest.approx(0.01)
+    assert engine_model_spec.parameter_overrides["quote_family"] == "implied_vol"
+    assert engine_model_spec.parameter_overrides["quote_convention"] == "black"
+    assert engine_model_spec.parameter_overrides["quote_subject"] == "swaption"
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.backend_binding_id == expected_binding
+
+
 def test_compile_comparison_request_keeps_semantic_swaption_method_plans():
     from trellis.agent.platform_requests import (
         compile_platform_request,
@@ -904,6 +949,42 @@ def test_compile_build_request_keeps_generic_basket_option_off_ranked_observatio
     assert compiled.generation_plan is not None
     assert compiled.generation_plan.primitive_plan is not None
     assert compiled.generation_plan.primitive_plan.route == "monte_carlo_paths"
+
+
+@pytest.mark.parametrize(
+    ("preferred_method", "expected_binding"),
+    [
+        ("analytical", "trellis.models.basket_option.price_basket_option_analytical"),
+        ("monte_carlo", "trellis.models.basket_option.price_basket_option_monte_carlo"),
+    ],
+)
+def test_compile_build_request_bootstraps_title_only_rainbow_task_into_exact_basket_bindings(
+    preferred_method: str,
+    expected_binding: str,
+):
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.task_runtime import _effective_task_description
+
+    description = _effective_task_description(
+        {
+            "id": "T102",
+            "title": "Rainbow option (best-of-two): Stulz formula vs MC",
+            "construct": ["analytical", "monte_carlo"],
+            "cross_validate": {"internal": ["stulz_rainbow", "mc_rainbow"]},
+        }
+    )
+    compiled = compile_build_request(
+        description,
+        instrument_type="basket_option",
+        preferred_method=preferred_method,
+    )
+
+    assert compiled.execution_plan.reason == "free_form_build_request"
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.instrument == "basket_option"
+    assert "Underliers: SPX,NDX." in description
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.backend_binding_id == expected_binding
 
 
 def test_compile_build_request_marks_two_asset_terminal_baskets_for_exact_helper_binding():

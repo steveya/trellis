@@ -2646,7 +2646,7 @@ def _description_spec_defaults(spec_schema, *, description: str) -> dict[str, ob
         return {}
 
     spec_name = str(getattr(spec_schema, "spec_name", "") or "")
-    if spec_name not in {"AgentCapSpec", "AgentFloorSpec"}:
+    if spec_name not in {"AgentCapSpec", "AgentFloorSpec", "BasketOptionSpec"}:
         return {}
 
     from trellis.core.types import DayCountConvention, Frequency
@@ -2658,6 +2658,11 @@ def _description_spec_defaults(spec_schema, *, description: str) -> dict[str, ob
         if matched is None:
             return None
         return matched.group(1).strip()
+
+    def _match_sentence_value(label: str) -> str | None:
+        return _match(
+            rf"{re.escape(label)}:\s*(.+?)(?=(?:\s+[A-Z][A-Za-z ]+:)|\n|$)"
+        )
 
     def _parse_number(raw: str | None) -> float | None:
         if raw in {None, ""}:
@@ -2694,39 +2699,70 @@ def _description_spec_defaults(spec_schema, *, description: str) -> dict[str, ob
         "30/360": DayCountConvention.THIRTY_360,
     }
 
-    notional = _parse_number(_match(r"Notional:\s*([0-9][0-9,_.]*)"))
-    if notional is not None:
-        overrides["notional"] = notional
+    if spec_name in {"AgentCapSpec", "AgentFloorSpec"}:
+        notional = _parse_number(_match(r"Notional:\s*([0-9][0-9,_.]*)"))
+        if notional is not None:
+            overrides["notional"] = notional
 
-    strike = _parse_percent(_match(r"Strike:\s*([0-9][0-9,_.]*)%"))
-    if strike is not None:
-        overrides["strike"] = strike
+        strike = _parse_percent(_match(r"Strike:\s*([0-9][0-9,_.]*)%"))
+        if strike is not None:
+            overrides["strike"] = strike
 
-    start_date = _parse_date(_match(r"Start date:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})"))
-    if start_date is not None:
-        overrides["start_date"] = start_date
+        start_date = _parse_date(_match(r"Start date:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})"))
+        if start_date is not None:
+            overrides["start_date"] = start_date
 
-    end_date = _parse_date(_match(r"End date:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})"))
-    if end_date is not None:
-        overrides["end_date"] = end_date
+        end_date = _parse_date(_match(r"End date:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})"))
+        if end_date is not None:
+            overrides["end_date"] = end_date
 
-    frequency = _match(r"Frequency:\s*([A-Za-z-]+)")
-    if frequency is not None:
-        normalized_frequency = frequency.strip().lower()
-        enum_value = frequency_map.get(normalized_frequency)
-        if enum_value is not None:
-            overrides["frequency"] = enum_value
+        frequency = _match(r"Frequency:\s*([A-Za-z-]+)")
+        if frequency is not None:
+            normalized_frequency = frequency.strip().lower()
+            enum_value = frequency_map.get(normalized_frequency)
+            if enum_value is not None:
+                overrides["frequency"] = enum_value
 
-    day_count = _match(r"Day count:\s*([A-Za-z0-9/]+)")
-    if day_count is not None:
-        normalized_day_count = day_count.strip().lower()
-        enum_value = day_count_map.get(normalized_day_count)
-        if enum_value is not None:
-            overrides["day_count"] = enum_value
+        day_count = _match(r"Day count:\s*([A-Za-z0-9/]+)")
+        if day_count is not None:
+            normalized_day_count = day_count.strip().lower()
+            enum_value = day_count_map.get(normalized_day_count)
+            if enum_value is not None:
+                overrides["day_count"] = enum_value
 
-    rate_index = _match(r"Rate index:\s*([A-Za-z0-9._/-]+)")
-    if rate_index is not None:
-        overrides["rate_index"] = rate_index.rstrip(".,;:")
+        rate_index = _match(r"Rate index:\s*([A-Za-z0-9._/-]+)")
+        if rate_index is not None:
+            overrides["rate_index"] = rate_index.rstrip(".,;:")
+
+    if spec_name == "BasketOptionSpec":
+        notional = _parse_number(_match_sentence_value("Notional"))
+        if notional is not None:
+            overrides["notional"] = notional
+
+        strike = _parse_number(_match_sentence_value("Strike"))
+        if strike is not None:
+            overrides["strike"] = strike
+
+        expiry_date = _parse_date(_match_sentence_value("Expiry date"))
+        if expiry_date is not None:
+            overrides["expiry_date"] = expiry_date
+
+        for label, field_name in (
+            ("Underliers", "underliers"),
+            ("Spots", "spots"),
+            ("Correlation", "correlation"),
+            ("Weights", "weights"),
+            ("Vols", "vols"),
+            ("Dividend yields", "dividend_yields"),
+            ("Basket style", "basket_style"),
+            ("Option type", "option_type"),
+        ):
+            value = _match_sentence_value(label)
+            if value is not None:
+                normalized = value.rstrip(".,;:")
+                if field_name in {"basket_style", "option_type"}:
+                    normalized = normalized.strip().lower()
+                overrides[field_name] = normalized
 
     return overrides
 

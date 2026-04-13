@@ -46,6 +46,17 @@ bindings:
         symbol: get_numpy
         role: array_backend
 
+  - route_id: nth_to_default_analytical
+    engine_family: analytical
+    route_family: nth_to_default
+    primitives:
+      - module: trellis.core.date_utils
+        symbol: year_fraction
+        role: time_measure
+      - module: trellis.instruments.nth_to_default
+        symbol: price_nth_to_default_basket
+        role: route_helper
+
   - route_id: nth_to_default_monte_carlo
     engine_family: monte_carlo
     route_family: nth_to_default
