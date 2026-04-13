@@ -231,6 +231,39 @@ def test_nth_to_default_binding_has_no_schedule_builder_surface():
     assert resolved.schedule_builder_refs == ()
 
 
+def test_resolve_backend_binding_spec_uses_credit_loss_distribution_exact_helpers():
+    catalog = load_backend_binding_catalog()
+    copula = find_backend_binding_by_route_id("copula_loss_distribution", catalog)
+    monte_carlo = find_backend_binding_by_route_id("monte_carlo_paths", catalog)
+    transform = find_backend_binding_by_route_id("transform_fft", catalog)
+
+    product_ir = ProductIR(
+        instrument="credit_loss_distribution",
+        payoff_family="credit_loss_distribution",
+        exercise_style="none",
+        state_dependence="terminal_markov",
+        model_family="credit_copula",
+    )
+
+    assert copula is not None
+    assert monte_carlo is not None
+    assert transform is not None
+
+    copula_resolved = resolve_backend_binding_spec(copula, product_ir=product_ir)
+    monte_carlo_resolved = resolve_backend_binding_spec(monte_carlo, product_ir=product_ir)
+    transform_resolved = resolve_backend_binding_spec(transform, product_ir=product_ir)
+
+    assert copula_resolved.helper_refs == (
+        "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_recursive",
+    )
+    assert monte_carlo_resolved.helper_refs == (
+        "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_monte_carlo",
+    )
+    assert transform_resolved.helper_refs == (
+        "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_transform_proxy",
+    )
+
+
 def test_binding_catalog_cache_tracks_binding_catalog_freshness(monkeypatch):
     clear_backend_binding_catalog_cache()
 

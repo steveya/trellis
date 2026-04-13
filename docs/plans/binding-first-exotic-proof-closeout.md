@@ -60,9 +60,9 @@ The only proved task in the current closeout is:
 | `T49` | follow-on recovered | Gaussian and Student-t tranche lanes now stay on `price_credit_basket_tranche(...)` even on fresh builds | none |
 | `T50` | follow-on recovered | nth-to-default helper path now proves on the exact helper surface without stale schedule-builder glue | none |
 | `E26` | follow-on recovered | nth-to-default basket ingress now resolves to the credit-basket family instead of generic basket parsing | none |
-| `T53` | failed gate | recursive / FFT / MC constructive stability on multi-name loss distribution | `QUA-824` |
-| `T102` | failed gate | multi-underlier market parsing | `QUA-825` |
-| `T126` | failed gate | multi-underlier parsing plus FFT spread-lane instability | `QUA-825` |
+| `T53` | follow-on recovered | recursive / FFT / MC lanes now bind to typed loss-distribution helpers and prove on exact backend surfaces | none |
+| `T102` | follow-on recovered | multi-underlier market parsing now stays on typed basket helper surfaces | none |
+| `T126` | follow-on recovered | multi-underlier spread parsing and FFT stability now prove on the typed basket helper path | none |
 
 ## What This Proves
 
@@ -100,8 +100,8 @@ The correct support statement after this closeout is:
   exotic support across the agreed cohort.
 - Current proof-level support is limited to the recovered slices already
   measured in the checked benchmark artifact plus the post-closeout recoveries
-  (`E27`, `T49`, `T50`, `E26`), with the remaining gaps tracked by `QUA-817`,
-  `QUA-818`, `QUA-819`, `QUA-824`, and `QUA-825`.
+  (`E27`, `T49`, `T50`, `E26`, `T53`, `T102`, `T126`), with the remaining
+  gaps tracked by `QUA-817`, `QUA-818`, and `QUA-819`.
 
 This is why `LIMITATIONS.md` now records the exotic proof cohort as an open
 limitation instead of letting the architecture docs imply the proof is already

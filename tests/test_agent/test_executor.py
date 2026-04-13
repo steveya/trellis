@@ -848,6 +848,56 @@ def test_deterministic_exact_binding_module_materializes_credit_basket_tranche_h
 @pytest.mark.parametrize(
     ("helper_ref", "expected_call"),
     [
+        (
+            "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_recursive",
+            "price_credit_portfolio_loss_distribution_recursive(market_state, spec, copula_family=\"gaussian\")",
+        ),
+        (
+            "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_transform_proxy",
+            "price_credit_portfolio_loss_distribution_transform_proxy(market_state, spec, copula_family=\"gaussian\")",
+        ),
+        (
+            "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_monte_carlo",
+            "price_credit_portfolio_loss_distribution_monte_carlo(market_state, spec, copula_family=\"gaussian\", n_paths=40000, seed=42)",
+        ),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_credit_loss_distribution_wrappers(
+    helper_ref,
+    expected_call,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(helper_ref,),
+        primitive_plan=None,
+        method="copula",
+        instrument_type="credit_loss_distribution",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["credit_loss_distribution"],
+        "Credit loss distribution",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert expected_call in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("helper_ref", "expected_call"),
+    [
         ("trellis.models.rate_style_swaption.price_swaption_black76", "price_swaption_black76"),
         ("trellis.models.rate_style_swaption_tree.price_swaption_tree", "price_swaption_tree"),
         ("trellis.models.rate_style_swaption.price_swaption_monte_carlo", "price_swaption_monte_carlo"),

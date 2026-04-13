@@ -55,6 +55,7 @@ _OPTION_LIKE_INSTRUMENTS = {
 # Vol sensitivity checks are not meaningful and will always produce false failures.
 _CREDIT_INSTRUMENTS = {
     "credit_default_swap",
+    "credit_loss_distribution",
     "nth_to_default",
     "cds",
 }
@@ -467,6 +468,7 @@ def _preferred_method_for_target(target_id: str, construct_methods: list[str]) -
         return normalized_target
 
     explicit_patterns = (
+        ("recursive", "copula"),
         ("analytical", "analytical"),
         ("tree", "rate_tree"),
         ("lattice", "rate_tree"),

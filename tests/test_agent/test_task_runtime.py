@@ -1814,6 +1814,17 @@ def test_task_to_instrument_type_prefers_nth_to_default_over_generic_basket():
     )
 
 
+def test_task_to_instrument_type_detects_credit_loss_distribution():
+    from trellis.agent.task_runtime import task_to_instrument_type
+
+    assert (
+        task_to_instrument_type(
+            {"id": "T53", "title": "Multi-name portfolio loss distribution: recursive vs FFT vs MC"}
+        )
+        == "credit_loss_distribution"
+    )
+
+
 def test_task_to_instrument_type_detects_bare_european_shape():
     from trellis.agent.task_runtime import task_to_instrument_type
 

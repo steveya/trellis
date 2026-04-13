@@ -194,8 +194,9 @@ The first migrated vanilla cases now use that boundary directly:
   shared market-binding and execution helpers rather than separate product
   implementations
 - the copula basket-credit slice now also exposes a semantic-facing helper
-  layer in ``trellis.models.credit_basket_copula`` so tranche-style CDO and
-  nth-to-default requests can bind discount/credit inputs, tranche bounds, and
+  layer in ``trellis.models.credit_basket_copula`` so tranche-style CDO,
+  nth-to-default, and portfolio loss-distribution requests can bind
+  discount/credit inputs, tranche bounds or portfolio horizon, and
   dependence-family controls without exposing the raw scalar copula kernels as
   the public route helper
 

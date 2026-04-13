@@ -60,6 +60,14 @@ class CreditBasketTrancheSpecLike(Protocol):
     end_date: date
 
 
+class CreditLossDistributionSpecLike(Protocol):
+    """Minimal portfolio-loss-distribution spec surface consumed by typed helpers."""
+
+    notional: float
+    n_names: int
+    end_date: date
+
+
 @dataclass(frozen=True)
 class ResolvedCreditBasketInputs:
     """Resolved market and contract inputs for bounded basket-credit helpers."""
@@ -246,6 +254,90 @@ def price_credit_basket_tranche(
     )
 
 
+def price_credit_portfolio_loss_distribution_recursive(
+    market_state: CreditBasketMarketStateLike,
+    spec: CreditLossDistributionSpecLike,
+    *,
+    copula_family: str = "gaussian",
+    degrees_of_freedom: float = 5.0,
+    n_paths: int = 40_000,
+    seed: int | None = 42,
+) -> float:
+    """Return discounted expected portfolio loss via a typed recursive copula lane."""
+    resolved = resolve_credit_basket_inputs(market_state, spec)
+    family = _normalized_copula_family(copula_family)
+    expected_loss_fraction = _expected_portfolio_loss_fraction(
+        resolved,
+        family=family,
+        degrees_of_freedom=degrees_of_freedom,
+        n_paths=n_paths,
+        seed=seed,
+    )
+    return _discounted_expected_portfolio_loss(resolved, expected_loss_fraction)
+
+
+def price_credit_portfolio_loss_distribution_transform_proxy(
+    market_state: CreditBasketMarketStateLike,
+    spec: CreditLossDistributionSpecLike,
+    *,
+    copula_family: str = "gaussian",
+) -> float:
+    """Return discounted expected portfolio loss through a typed transform proxy.
+
+    The transform proxy stays on the checked copula loss surface and uses a
+    Fourier round-trip over the discrete portfolio-loss pmf instead of free-form
+    generated transform glue.
+    """
+    resolved = resolve_credit_basket_inputs(market_state, spec)
+    family = _normalized_copula_family(copula_family)
+    if family != "gaussian":
+        return price_credit_portfolio_loss_distribution_recursive(
+            market_state,
+            spec,
+            copula_family=family,
+        )
+
+    loss_counts, probabilities = FactorCopula(
+        n_names=resolved.n_names,
+        correlation=resolved.correlation,
+    ).loss_distribution(resolved.default_probability)
+    spectrum = raw_np.fft.fft(raw_np.asarray(probabilities, dtype=float))
+    reconstructed = raw_np.real(raw_np.fft.ifft(spectrum))
+    reconstructed = raw_np.clip(reconstructed, 0.0, None)
+    total_probability = float(raw_np.sum(reconstructed))
+    if total_probability <= 0.0:
+        raise ValueError("Transform proxy produced an invalid loss-distribution mass.")
+    reconstructed = reconstructed / total_probability
+    expected_loss_fraction = float(
+        raw_np.sum(_portfolio_loss_fraction(loss_counts, resolved) * reconstructed)
+    )
+    return _discounted_expected_portfolio_loss(resolved, expected_loss_fraction)
+
+
+def price_credit_portfolio_loss_distribution_monte_carlo(
+    market_state: CreditBasketMarketStateLike,
+    spec: CreditLossDistributionSpecLike,
+    *,
+    copula_family: str = "gaussian",
+    degrees_of_freedom: float = 5.0,
+    n_paths: int = 40_000,
+    seed: int | None = 42,
+) -> float:
+    """Return discounted expected portfolio loss via Monte Carlo default sampling."""
+    resolved = resolve_credit_basket_inputs(market_state, spec)
+    defaults_by_horizon = _simulate_default_counts(
+        resolved,
+        family=_normalized_copula_family(copula_family),
+        degrees_of_freedom=degrees_of_freedom,
+        n_paths=n_paths,
+        seed=seed,
+    )
+    expected_loss_fraction = float(
+        raw_np.mean(_portfolio_loss_fraction(defaults_by_horizon, resolved))
+    )
+    return _discounted_expected_portfolio_loss(resolved, expected_loss_fraction)
+
+
 def _credit_basket_horizon(start: date, end: date, day_count: DayCountConvention) -> float:
     """Normalize same-anniversary maturities to whole-year tenors for helper parity."""
     if (start.month, start.day) == (end.month, end.day):
@@ -293,6 +385,31 @@ def _simulate_default_counts(
     return raw_np.sum(default_times <= resolved.horizon, axis=1)
 
 
+def _expected_portfolio_loss_fraction(
+    resolved: ResolvedCreditBasketInputs,
+    *,
+    family: str,
+    degrees_of_freedom: float,
+    n_paths: int,
+    seed: int | None,
+) -> float:
+    if family == "gaussian":
+        loss_counts, probabilities = FactorCopula(
+            n_names=resolved.n_names,
+            correlation=resolved.correlation,
+        ).loss_distribution(resolved.default_probability)
+        return float(raw_np.sum(_portfolio_loss_fraction(loss_counts, resolved) * probabilities))
+
+    defaults_by_horizon = _simulate_default_counts(
+        resolved,
+        family=family,
+        degrees_of_freedom=degrees_of_freedom,
+        n_paths=n_paths,
+        seed=seed,
+    )
+    return float(raw_np.mean(_portfolio_loss_fraction(defaults_by_horizon, resolved)))
+
+
 def _portfolio_loss_fraction(
     default_counts,
     resolved: ResolvedCreditBasketInputs,
@@ -310,10 +427,21 @@ def _discounted_annuity(discount_curve: DiscountCurveLike, horizon: float) -> fl
     return float(raw_np.sum(discounted) / 4.0)
 
 
+def _discounted_expected_portfolio_loss(
+    resolved: ResolvedCreditBasketInputs,
+    expected_loss_fraction: float,
+) -> float:
+    return float(resolved.notional * resolved.discount_factor * expected_loss_fraction)
+
+
 __all__ = [
     "CreditBasketTrancheResult",
+    "CreditLossDistributionSpecLike",
     "ResolvedCreditBasketInputs",
     "price_credit_basket_nth_to_default",
+    "price_credit_portfolio_loss_distribution_monte_carlo",
+    "price_credit_portfolio_loss_distribution_recursive",
+    "price_credit_portfolio_loss_distribution_transform_proxy",
     "price_credit_basket_tranche",
     "price_credit_basket_tranche_result",
     "resolve_credit_basket_inputs",

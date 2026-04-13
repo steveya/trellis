@@ -11,6 +11,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 _INSTRUMENT_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("portfolio loss distribution", "credit_loss_distribution"),
+    ("multi-name portfolio loss distribution", "credit_loss_distribution"),
+    ("recursive loss distribution", "credit_loss_distribution"),
+    ("loss distribution", "credit_loss_distribution"),
     ("zero-coupon bond option", "zcb_option"),
     ("zero coupon bond option", "zcb_option"),
     ("zero-coupon bond", "zcb_option"),
