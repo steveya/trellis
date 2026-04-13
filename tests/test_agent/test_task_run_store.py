@@ -550,6 +550,7 @@ def test_skill_telemetry_rollups_capture_selected_artifacts_and_binding_health(t
     assert skill_rollup["artifacts"][0]["audiences"] == ["builder"]
     assert skill_rollup["artifacts"][0]["binding_aliases"] == ["analytical_black76"]
     assert skill_rollup["artifacts"][0]["binding_families"] == ["analytical"]
+    assert skill_rollup["artifacts"][0]["route_ids"] == ["analytical_black76"]
     assert skill_rollup["artifacts"][0]["first_seen_at"] == "2026-03-29T12:01:00+00:00"
     assert skill_rollup["artifacts"][0]["last_seen_at"] == "2026-03-29T12:01:00+00:00"
     assert skill_rollup["ranking_inputs"][0]["success_rate"] == 1.0
