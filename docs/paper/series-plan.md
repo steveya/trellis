@@ -112,9 +112,9 @@ family IRs, and deterministic kernels across multiple pricing regimes.
 
 - `docs/design_analytical_support_contract_algebra.md`
 - `docs/quant/pricing_stack.rst`
-- `docs/plans/event-aware-monte-carlo-lane.md`
-- `docs/plans/transform-family-ir-and-admissibility-hardening.md`
-- `docs/plans/semantic-contract-registry-and-short-rate-claim-generalization.md`
+- `doc/plan/done__event-aware-monte-carlo-lane.md`
+- `doc/plan/done__transform-family-ir-and-admissibility-hardening.md`
+- `doc/plan/done__semantic-contract-registry-and-short-rate-claim-generalization.md`
 - `LIMITATIONS.md`
 - `trellis/agent/family_lowering_ir.py`
 - `trellis/agent/lane_obligations.py`
@@ -156,8 +156,8 @@ quant software, not merely another memory feature.
 **Primary repo sources:**
 
 - `docs/platform_loop_workstream.md`
-- `docs/plans/backlog-burn-down-execution.md`
-- `docs/plans/lesson-store-refactor.md`
+- `doc/plan/active__backlog-burn-down-execution.md`
+- `doc/plan/draft__lesson-store-refactor.md`
 - `trellis/agent/knowledge/store.py`
 - `trellis/agent/knowledge/retrieval.py`
 - `trellis/agent/knowledge/reflect.py`
