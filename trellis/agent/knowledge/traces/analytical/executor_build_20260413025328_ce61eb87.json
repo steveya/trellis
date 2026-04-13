@@ -1,0 +1,691 @@
+{
+  "context": {
+    "class_name": "FXVanillaMonteCarloPayoff",
+    "generation_plan": {
+      "approved_modules": [
+        "trellis.core.date_utils",
+        "trellis.core.differentiable",
+        "trellis.core.market_state",
+        "trellis.core.payoff",
+        "trellis.core.types",
+        "trellis.models.black",
+        "trellis.models.fx_vanilla",
+        "trellis.models.monte_carlo.basket_state",
+        "trellis.models.monte_carlo.brownian_bridge",
+        "trellis.models.monte_carlo.discretization",
+        "trellis.models.monte_carlo.early_exercise",
+        "trellis.models.monte_carlo.engine",
+        "trellis.models.monte_carlo.event_aware",
+        "trellis.models.monte_carlo.event_state",
+        "trellis.models.monte_carlo.local_vol",
+        "trellis.models.monte_carlo.lsm",
+        "trellis.models.monte_carlo.path_state",
+        "trellis.models.monte_carlo.primal_dual",
+        "trellis.models.monte_carlo.profiling",
+        "trellis.models.monte_carlo.quanto",
+        "trellis.models.monte_carlo.ranked_observation_payoffs",
+        "trellis.models.monte_carlo.schemes",
+        "trellis.models.monte_carlo.semantic_basket",
+        "trellis.models.monte_carlo.single_state_diffusion",
+        "trellis.models.monte_carlo.stochastic_mesh",
+        "trellis.models.monte_carlo.tv_regression",
+        "trellis.models.monte_carlo.variance_reduction"
+      ],
+      "inspected_modules": [
+        "trellis.models.monte_carlo.engine"
+      ],
+      "instruction_resolution": {
+        "conflict_count": 0,
+        "conflicts": [],
+        "dropped_instruction_count": 0,
+        "dropped_instructions": [],
+        "effective_instruction_count": 2,
+        "effective_instructions": [
+          {
+            "conflict_policy": "prefer_newer",
+            "created_at": "",
+            "id": "monte_carlo_fx_vanilla:route-helper",
+            "instruction_type": "hard_constraint",
+            "precedence_rank": 100,
+            "rationale": "The helper already owns the route-specific engine and payoff mapping.",
+            "scope_features": [],
+            "scope_instruments": [
+              "european_option"
+            ],
+            "scope_methods": [
+              "monte_carlo"
+            ],
+            "scope_modules": [
+              "trellis.models.fx_vanilla"
+            ],
+            "scope_routes": [
+              "monte_carlo_fx_vanilla"
+            ],
+            "source_id": "monte_carlo_fx_vanilla:route-helper",
+            "source_kind": "route_card",
+            "source_revision": "",
+            "statement": "Use the route helper directly inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.",
+            "status": "active",
+            "supersedes": [],
+            "title": "Use the selected route helper directly",
+            "updated_at": ""
+          },
+          {
+            "conflict_policy": "prefer_newer",
+            "created_at": "",
+            "id": "monte_carlo_fx_vanilla:note:1",
+            "instruction_type": "historical_note",
+            "precedence_rank": 49,
+            "rationale": "Route notes are retained as structured guidance and resolved by precedence.",
+            "scope_features": [],
+            "scope_instruments": [
+              "european_option"
+            ],
+            "scope_methods": [
+              "monte_carlo"
+            ],
+            "scope_modules": [],
+            "scope_routes": [
+              "monte_carlo_fx_vanilla"
+            ],
+            "source_id": "monte_carlo_fx_vanilla:note:1",
+            "source_kind": "route_card",
+            "source_revision": "",
+            "statement": "Use `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo(...)` as the exact backend helper for vanilla FX Monte Carlo requests.",
+            "status": "active",
+            "supersedes": [],
+            "title": "Route note 1",
+            "updated_at": ""
+          }
+        ],
+        "route": "monte_carlo_fx_vanilla"
+      },
+      "instrument_type": "european_option",
+      "method": "monte_carlo",
+      "primitive_plan": {
+        "engine_family": "monte_carlo",
+        "route": "monte_carlo_fx_vanilla",
+        "route_family": "monte_carlo",
+        "score": 11.75
+      },
+      "proposed_tests": [
+        "tests/test_agent/test_build_loop.py"
+      ],
+      "repo_revision": "3e05e8e455bb894825c363ce38d73be7f6ef7c15",
+      "symbols_to_reuse": [
+        "Antithetic",
+        "BarrierMonitor",
+        "BasisFunction",
+        "CashflowSchedule",
+        "Cashflows",
+        "ChebyshevBasis",
+        "ContinuationEstimator",
+        "ContractTimeline",
+        "DataProvider",
+        "DayCountConvention",
+        "DeterministicCashflowPayoff",
+        "DiscountCurve",
+        "DiscretizationScheme",
+        "DslMeasure",
+        "EarlyExerciseDiagnostics",
+        "EarlyExercisePolicyResult",
+        "Euler",
+        "EventAwareMonteCarloEvent",
+        "EventAwareMonteCarloProblem",
+        "EventAwareMonteCarloProblemSpec",
+        "EventAwareMonteCarloProcessSpec",
+        "EventSchedule",
+        "Exact",
+        "FXVanillaSpecLike",
+        "FastLaguerreContinuationEstimator",
+        "FastPolynomialContinuationEstimator",
+        "Frequency",
+        "HermiteBasis",
+        "Instrument",
+        "LaguerreBasis",
+        "LeastSquaresContinuationEstimator",
+        "LocalVolMonteCarloResult",
+        "LogEuler",
+        "MarketState",
+        "Milstein",
+        "MissingCapabilityError",
+        "MonteCarloEngine",
+        "MonteCarloPathKernelBenchmark",
+        "MonteCarloPathPayoff",
+        "MonteCarloPathRequirement",
+        "MonteCarloPathState",
+        "PathEventRecord",
+        "PathEventSpec",
+        "PathEventState",
+        "PathEventTimeline",
+        "PathReducer",
+        "Payoff",
+        "PolynomialBasis",
+        "PresentValue",
+        "PricingResult",
+        "QuantoMonteCarloSpecLike",
+        "RankedObservationBasketMonteCarloPayoff",
+        "RankedObservationBasketPathContract",
+        "RankedObservationBasketSpec",
+        "RankedObservationBasketSpecLike",
+        "ResolvedFXVanillaInputs",
+        "ResolvedInputPayoff",
+        "ResolvedSingleStateMonteCarloInputs",
+        "SchedulePeriod",
+        "SingleStateMonteCarloResult",
+        "StateAwarePayoff",
+        "TimelineRole",
+        "add_months",
+        "antithetic",
+        "antithetic_normals",
+        "apply_path_event_spec",
+        "barrier_payoff",
+        "benchmark_path_kernel",
+        "black76_asset_or_nothing_call",
+        "black76_asset_or_nothing_put",
+        "black76_call",
+        "black76_cash_or_nothing_call",
+        "black76_cash_or_nothing_put",
+        "black76_put",
+        "brownian_bridge",
+        "brownian_bridge_increments",
+        "build_basket_path_requirement",
+        "build_contract_timeline",
+        "build_contract_timeline_from_dates",
+        "build_discounted_swap_pv_payload",
+        "build_event_aware_monte_carlo_problem",
+        "build_event_aware_monte_carlo_problem_from_family_ir",
+        "build_event_aware_monte_carlo_process",
+        "build_event_path_requirement",
+        "build_event_time_map_from_family_ir",
+        "build_exercise_timeline_from_dates",
+        "build_observation_timeline",
+        "build_payment_timeline",
+        "build_period_schedule",
+        "build_quanto_mc_initial_state",
+        "build_quanto_mc_process",
+        "build_ranked_observation_basket_initial_state",
+        "build_ranked_observation_basket_path_contract",
+        "build_ranked_observation_basket_process",
+        "build_ranked_observation_basket_state_payoff",
+        "build_short_rate_discount_reducer",
+        "build_single_state_terminal_claim_monte_carlo_problem",
+        "build_single_state_terminal_claim_monte_carlo_problem_from_resolved",
+        "build_timed_event_aware_monte_carlo_problem_from_family_ir",
+        "coerce_contract_timeline_from_dates",
+        "control_variate",
+        "default_continuation_estimator",
+        "euler_maruyama",
+        "evaluate_ranked_observation_basket_paths",
+        "evaluate_ranked_observation_basket_state",
+        "event_step_indices",
+        "exact_simulation",
+        "garman_kohlhagen_call",
+        "garman_kohlhagen_put",
+        "generate_schedule",
+        "get_accrual_fraction",
+        "get_bracketing_dates",
+        "get_numpy",
+        "gradient",
+        "hessian",
+        "jacobian",
+        "laguerre_basis",
+        "local_vol_european_vanilla_price",
+        "local_vol_european_vanilla_price_result",
+        "longstaff_schwartz",
+        "longstaff_schwartz_result",
+        "milstein",
+        "normalize_dsl_measure",
+        "normalize_exercise_steps",
+        "normalize_explicit_dates",
+        "observation_step_indices",
+        "polynomial_basis",
+        "price_event_aware_monte_carlo",
+        "price_fx_vanilla_analytical",
+        "price_fx_vanilla_monte_carlo",
+        "price_quanto_option_monte_carlo",
+        "price_ranked_observation_basket_monte_carlo",
+        "price_single_state_terminal_claim_monte_carlo_result",
+        "primal_dual_mc",
+        "primal_dual_mc_result",
+        "recommended_quanto_mc_engine_kwargs",
+        "recommended_ranked_observation_basket_mc_engine_kwargs",
+        "replay_path_event_timeline",
+        "resolve_fx_vanilla_inputs",
+        "resolve_hull_white_monte_carlo_process_inputs",
+        "resolve_single_state_terminal_claim_monte_carlo_inputs",
+        "sobol_normals",
+        "stochastic_mesh",
+        "stochastic_mesh_result",
+        "terminal_quanto_option_payoff",
+        "terminal_ranked_observation_basket_payoff",
+        "terminal_value_payoff",
+        "tsitsiklis_van_roy",
+        "tsitsiklis_van_roy_result",
+        "year_fraction"
+      ],
+      "uncertainty_flags": []
+    },
+    "route_card": "## Structured Lane Card\n- Method family: `monte_carlo`\n- Instrument type: `european_option`\n- Lane boundary: family=`monte_carlo`, kind=`exact_target_binding`, exact_bindings=`trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n- Lane obligations:\n  - Lane family: `monte_carlo`\n  - Plan kind: `exact_target_binding`\n  - Market bindings: `black_vol_surface`, `discount_curve`, `forward_curve`, `fx_rates`\n  - State obligations: `spot`, `strike`, `expiry`, `fx_rate_scalar_spot`\n  - Construction steps:\n    - Resolve scalar FX spot from `market_state.fx_rates[spec.fx_pair].spot` or the bridged scalar `market_state.spot`; do not use the `FXRate` wrapper directly in arithmetic.\n    - Bind domestic and foreign discount factors from `market_state.discount` and `market_state.forecast_curves[...]` before deriving drift or discounting.\n    - Simulate the FX spot under a GBM-style terminal law with drift `r_d - r_f`, then discount the terminal payoff with the domestic curve.\n  - Exact backend bindings:\n    - `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n  - Exact binding signatures:\n    - `price_fx_vanilla_monte_carlo(market_state: 'MarketState', spec: 'FXVanillaSpecLike', *, seed: 'int' = 42) -> 'float'`\n- Route authority:\n  - binding=`trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`, engine=`monte_carlo`, authority=`exact_backend_fit`\n  - Route alias: `monte_carlo_fx_vanilla`\n  - Validation bundle: `monte_carlo:european_option`\n  - Validation checks: `check_non_negativity`, `check_price_sanity`, `check_vol_sensitivity`, `check_vol_monotonicity`\n  - Helper authority: `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n  - Exact target bindings: `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n- Backend binding:\n  - Route: `monte_carlo_fx_vanilla`\n  - Engine family: `monte_carlo`\n  - Route family: `monte_carlo`\n  - Selected primitives:\n    - `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo` (route_helper)\n  - Resolved instructions:\n    - [hard_constraint] Use the route helper directly inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.\n    - [historical_note] Use `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo(...)` as the exact backend helper for vanilla FX Monte Carlo requests.\n  - Backend notes:\n    - Use `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo(...)` as the exact backend helper for vanilla FX Monte Carlo requests.\n- Primary modules to inspect/reuse:\n  - `trellis.models.monte_carlo.engine`\n- Post-build test targets:\n  - `tests/test_agent/test_build_loop.py`\n- Instruction precedence: follow the lane obligations in this card first. Treat backend route/helper details as exact-fit bindings, not as permission to invent a different numerical path.\n- Treat route authority as backend-fit evidence, not as permission to invent a different synthesis plan.\n- Use approved Trellis imports only. Prefer thin adapters when the compiler found an exact backend; otherwise build the smallest lane-consistent kernel the plan requires.",
+    "route_plan": "## Structured Generation Plan\n- Method family: `monte_carlo`\n- Instrument type: `european_option`\n- Lane boundary: family=`monte_carlo`, kind=`exact_target_binding`, exact_bindings=`trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n- Lane obligations:\n  - Lane family: `monte_carlo`\n  - Plan kind: `exact_target_binding`\n  - Market bindings: `black_vol_surface`, `discount_curve`, `forward_curve`, `fx_rates`, `spot`\n  - State obligations: `spot`, `strike`, `expiry`, `fx_rate_scalar_spot`, `foreign_discount_curve`, `expiry_black_vol`\n  - Construction steps:\n    - Resolve scalar FX spot from `market_state.fx_rates[spec.fx_pair].spot` or the bridged scalar `market_state.spot`; do not use the `FXRate` wrapper directly in arithmetic.\n    - Bind domestic and foreign discount factors from `market_state.discount` and `market_state.forecast_curves[...]` before deriving drift or discounting.\n    - Simulate the FX spot under a GBM-style terminal law with drift `r_d - r_f`, then discount the terminal payoff with the domestic curve.\n  - Exact backend bindings:\n    - `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n  - Exact binding signatures:\n    - `price_fx_vanilla_monte_carlo(market_state: 'MarketState', spec: 'FXVanillaSpecLike', *, seed: 'int' = 42) -> 'float'`\n- Route authority:\n  - binding=`trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`, engine=`monte_carlo`, authority=`exact_backend_fit`\n  - Route alias: `monte_carlo_fx_vanilla`\n  - Validation bundle: `monte_carlo:european_option`\n  - Validation checks: `check_non_negativity`, `check_price_sanity`, `check_vol_sensitivity`, `check_vol_monotonicity`\n  - Helper authority: `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n  - Exact target bindings: `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n- Repo revision: `3e05e8e455bb894825c363ce38d73be7f6ef7c15`\n- Inspected modules:\n  - `trellis.models.monte_carlo.engine`\n- Approved Trellis modules for imports:\n  - `trellis.core.date_utils`\n  - `trellis.core.differentiable`\n  - `trellis.core.market_state`\n  - `trellis.core.payoff`\n  - `trellis.core.types`\n  - `trellis.models.black`\n  - `trellis.models.fx_vanilla`\n  - `trellis.models.monte_carlo.basket_state`\n  - `trellis.models.monte_carlo.brownian_bridge`\n  - `trellis.models.monte_carlo.discretization`\n  - `trellis.models.monte_carlo.early_exercise`\n  - `trellis.models.monte_carlo.engine`\n  - `trellis.models.monte_carlo.event_aware`\n  - `trellis.models.monte_carlo.event_state`\n  - `trellis.models.monte_carlo.local_vol`\n  - `trellis.models.monte_carlo.lsm`\n  - `trellis.models.monte_carlo.path_state`\n  - `trellis.models.monte_carlo.primal_dual`\n  - `trellis.models.monte_carlo.profiling`\n  - `trellis.models.monte_carlo.quanto`\n  - `trellis.models.monte_carlo.ranked_observation_payoffs`\n  - `trellis.models.monte_carlo.schemes`\n  - `trellis.models.monte_carlo.semantic_basket`\n  - `trellis.models.monte_carlo.single_state_diffusion`\n  - `trellis.models.monte_carlo.stochastic_mesh`\n  - `trellis.models.monte_carlo.tv_regression`\n  - `trellis.models.monte_carlo.variance_reduction`\n- Public symbols available from the approved modules:\n  - `Antithetic`\n  - `BarrierMonitor`\n  - `BasisFunction`\n  - `CashflowSchedule`\n  - `Cashflows`\n  - `ChebyshevBasis`\n  - `ContinuationEstimator`\n  - `ContractTimeline`\n  - `DataProvider`\n  - `DayCountConvention`\n  - `DeterministicCashflowPayoff`\n  - `DiscountCurve`\n  - `DiscretizationScheme`\n  - `DslMeasure`\n  - `EarlyExerciseDiagnostics`\n  - `EarlyExercisePolicyResult`\n  - `Euler`\n  - `EventAwareMonteCarloEvent`\n  - `EventAwareMonteCarloProblem`\n  - `EventAwareMonteCarloProblemSpec`\n  - `EventAwareMonteCarloProcessSpec`\n  - `EventSchedule`\n  - `Exact`\n  - `FXVanillaSpecLike`\n- Tests to run after generation:\n  - `tests/test_agent/test_build_loop.py`\n- Likely tests for reused symbols:\n  - `Cashflows` -> tests/test_models/test_contingent_cashflows.py\n- Backend binding:\n  - Route: `monte_carlo_fx_vanilla`\n  - Engine family: `monte_carlo`\n  - Route family: `monte_carlo`\n  - Route score: `11.75`\n  - Selected primitives:\n    - `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo` (route_helper)\n  - Resolved instructions:\n    - [hard_constraint] Use the route helper directly inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.\n    - [historical_note] Use `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo(...)` as the exact backend helper for vanilla FX Monte Carlo requests.\n  - Instruction precedence: follow the compiler-emitted lane obligations first, then satisfy the exact backend binding and approved imports. If older guidance conflicts, treat it as stale and obey this plan.\n- Every `trellis.*` import in the generated code MUST come from the approved module list above.\n- If you need functionality outside the approved list, say so explicitly instead of inventing an import.",
+    "selected_curve_names": {},
+    "spec_name": "FXVanillaOptionSpec"
+  },
+  "created_at": "2026-04-13T02:53:30.902205+00:00",
+  "issue_id": null,
+  "json_path": "/home/runner/work/trellis/trellis/trellis/agent/knowledge/traces/analytical/executor_build_20260413025328_ce61eb87.json",
+  "route": {
+    "family": "monte_carlo",
+    "model": "monte_carlo",
+    "name": "monte_carlo_fx_vanilla"
+  },
+  "status": "ok",
+  "steps": [
+    {
+      "id": "executor_build_20260413025328_ce61eb87:root",
+      "inputs": {
+        "issue_id": null,
+        "model": "monte_carlo",
+        "route_family": "monte_carlo",
+        "route_name": "monte_carlo_fx_vanilla",
+        "task_id": "executor_build_20260413025328_ce61eb87"
+      },
+      "kind": "trace",
+      "label": "Analytical build",
+      "notes": [
+        "The trace mirrors the deterministic GenerationPlan used to assemble the route."
+      ],
+      "outputs": {
+        "route": {
+          "family": "monte_carlo",
+          "model": "monte_carlo",
+          "name": "monte_carlo_fx_vanilla"
+        },
+        "status": "ok"
+      },
+      "parent_id": null,
+      "status": "ok"
+    },
+    {
+      "id": "executor_build_20260413025328_ce61eb87:semantic_resolution",
+      "inputs": {
+        "approved_modules": [
+          "trellis.core.date_utils",
+          "trellis.core.differentiable",
+          "trellis.core.market_state",
+          "trellis.core.payoff",
+          "trellis.core.types",
+          "trellis.models.black",
+          "trellis.models.fx_vanilla",
+          "trellis.models.monte_carlo.basket_state",
+          "trellis.models.monte_carlo.brownian_bridge",
+          "trellis.models.monte_carlo.discretization",
+          "trellis.models.monte_carlo.early_exercise",
+          "trellis.models.monte_carlo.engine",
+          "trellis.models.monte_carlo.event_aware",
+          "trellis.models.monte_carlo.event_state",
+          "trellis.models.monte_carlo.local_vol",
+          "trellis.models.monte_carlo.lsm",
+          "trellis.models.monte_carlo.path_state",
+          "trellis.models.monte_carlo.primal_dual",
+          "trellis.models.monte_carlo.profiling",
+          "trellis.models.monte_carlo.quanto",
+          "trellis.models.monte_carlo.ranked_observation_payoffs",
+          "trellis.models.monte_carlo.schemes",
+          "trellis.models.monte_carlo.semantic_basket",
+          "trellis.models.monte_carlo.single_state_diffusion",
+          "trellis.models.monte_carlo.stochastic_mesh",
+          "trellis.models.monte_carlo.tv_regression",
+          "trellis.models.monte_carlo.variance_reduction"
+        ],
+        "inspected_modules": [
+          "trellis.models.monte_carlo.engine"
+        ],
+        "instrument_type": "european_option",
+        "method": "monte_carlo",
+        "repo_revision": "3e05e8e455bb894825c363ce38d73be7f6ef7c15",
+        "symbols_to_reuse": [
+          "Antithetic",
+          "BarrierMonitor",
+          "BasisFunction",
+          "CashflowSchedule",
+          "Cashflows",
+          "ChebyshevBasis",
+          "ContinuationEstimator",
+          "ContractTimeline",
+          "DataProvider",
+          "DayCountConvention",
+          "DeterministicCashflowPayoff",
+          "DiscountCurve",
+          "DiscretizationScheme",
+          "DslMeasure",
+          "EarlyExerciseDiagnostics",
+          "EarlyExercisePolicyResult",
+          "Euler",
+          "EventAwareMonteCarloEvent",
+          "EventAwareMonteCarloProblem",
+          "EventAwareMonteCarloProblemSpec",
+          "EventAwareMonteCarloProcessSpec",
+          "EventSchedule",
+          "Exact",
+          "FXVanillaSpecLike",
+          "FastLaguerreContinuationEstimator",
+          "FastPolynomialContinuationEstimator",
+          "Frequency",
+          "HermiteBasis",
+          "Instrument",
+          "LaguerreBasis",
+          "LeastSquaresContinuationEstimator",
+          "LocalVolMonteCarloResult",
+          "LogEuler",
+          "MarketState",
+          "Milstein",
+          "MissingCapabilityError",
+          "MonteCarloEngine",
+          "MonteCarloPathKernelBenchmark",
+          "MonteCarloPathPayoff",
+          "MonteCarloPathRequirement"
+        ],
+        "uncertainty_flags": []
+      },
+      "kind": "semantic_resolution",
+      "label": "Resolve contract and route",
+      "notes": [
+        "Record the semantic contract that drives route selection, not just the final code path."
+      ],
+      "outputs": {
+        "instruction_resolution": {
+          "conflict_count": 0,
+          "conflicts": [],
+          "dropped_instruction_count": 0,
+          "dropped_instructions": [],
+          "effective_instruction_count": 2,
+          "effective_instructions": [
+            {
+              "conflict_policy": "prefer_newer",
+              "created_at": "",
+              "id": "monte_carlo_fx_vanilla:route-helper",
+              "instruction_type": "hard_constraint",
+              "precedence_rank": 100,
+              "rationale": "The helper already owns the route-specific engine and payoff mapping.",
+              "scope_features": [],
+              "scope_instruments": [
+                "european_option"
+              ],
+              "scope_methods": [
+                "monte_carlo"
+              ],
+              "scope_modules": [
+                "trellis.models.fx_vanilla"
+              ],
+              "scope_routes": [
+                "monte_carlo_fx_vanilla"
+              ],
+              "source_id": "monte_carlo_fx_vanilla:route-helper",
+              "source_kind": "route_card",
+              "source_revision": "",
+              "statement": "Use the route helper directly inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.",
+              "status": "active",
+              "supersedes": [],
+              "title": "Use the selected route helper directly",
+              "updated_at": ""
+            },
+            {
+              "conflict_policy": "prefer_newer",
+              "created_at": "",
+              "id": "monte_carlo_fx_vanilla:note:1",
+              "instruction_type": "historical_note",
+              "precedence_rank": 49,
+              "rationale": "Route notes are retained as structured guidance and resolved by precedence.",
+              "scope_features": [],
+              "scope_instruments": [
+                "european_option"
+              ],
+              "scope_methods": [
+                "monte_carlo"
+              ],
+              "scope_modules": [],
+              "scope_routes": [
+                "monte_carlo_fx_vanilla"
+              ],
+              "source_id": "monte_carlo_fx_vanilla:note:1",
+              "source_kind": "route_card",
+              "source_revision": "",
+              "statement": "Use `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo(...)` as the exact backend helper for vanilla FX Monte Carlo requests.",
+              "status": "active",
+              "supersedes": [],
+              "title": "Route note 1",
+              "updated_at": ""
+            }
+          ],
+          "route": "monte_carlo_fx_vanilla"
+        },
+        "model": "monte_carlo",
+        "primitive_plan_score": 11.75,
+        "route_family": "monte_carlo",
+        "route_name": "monte_carlo_fx_vanilla"
+      },
+      "parent_id": "executor_build_20260413025328_ce61eb87:root",
+      "status": "ok"
+    },
+    {
+      "id": "executor_build_20260413025328_ce61eb87:instruction_lifecycle",
+      "inputs": {
+        "conflict_count": 0,
+        "dropped_instruction_count": 0,
+        "effective_instruction_count": 2,
+        "route": "monte_carlo_fx_vanilla"
+      },
+      "kind": "instruction_lifecycle",
+      "label": "Resolve route guidance lifecycle",
+      "notes": [
+        "List the effective, dropped, and conflicting route guidance records so replay consumers can see what actually governed the build."
+      ],
+      "outputs": {
+        "instruction_resolution": {
+          "conflict_count": 0,
+          "conflicts": [],
+          "dropped_instruction_count": 0,
+          "dropped_instructions": [],
+          "effective_instruction_count": 2,
+          "effective_instructions": [
+            {
+              "conflict_policy": "prefer_newer",
+              "created_at": "",
+              "id": "monte_carlo_fx_vanilla:route-helper",
+              "instruction_type": "hard_constraint",
+              "precedence_rank": 100,
+              "rationale": "The helper already owns the route-specific engine and payoff mapping.",
+              "scope_features": [],
+              "scope_instruments": [
+                "european_option"
+              ],
+              "scope_methods": [
+                "monte_carlo"
+              ],
+              "scope_modules": [
+                "trellis.models.fx_vanilla"
+              ],
+              "scope_routes": [
+                "monte_carlo_fx_vanilla"
+              ],
+              "source_id": "monte_carlo_fx_vanilla:route-helper",
+              "source_kind": "route_card",
+              "source_revision": "",
+              "statement": "Use the route helper directly inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.",
+              "status": "active",
+              "supersedes": [],
+              "title": "Use the selected route helper directly",
+              "updated_at": ""
+            },
+            {
+              "conflict_policy": "prefer_newer",
+              "created_at": "",
+              "id": "monte_carlo_fx_vanilla:note:1",
+              "instruction_type": "historical_note",
+              "precedence_rank": 49,
+              "rationale": "Route notes are retained as structured guidance and resolved by precedence.",
+              "scope_features": [],
+              "scope_instruments": [
+                "european_option"
+              ],
+              "scope_methods": [
+                "monte_carlo"
+              ],
+              "scope_modules": [],
+              "scope_routes": [
+                "monte_carlo_fx_vanilla"
+              ],
+              "source_id": "monte_carlo_fx_vanilla:note:1",
+              "source_kind": "route_card",
+              "source_revision": "",
+              "statement": "Use `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo(...)` as the exact backend helper for vanilla FX Monte Carlo requests.",
+              "status": "active",
+              "supersedes": [],
+              "title": "Route note 1",
+              "updated_at": ""
+            }
+          ],
+          "route": "monte_carlo_fx_vanilla"
+        }
+      },
+      "parent_id": "executor_build_20260413025328_ce61eb87:root",
+      "status": "ok"
+    },
+    {
+      "id": "executor_build_20260413025328_ce61eb87:decomposition",
+      "inputs": {
+        "adapters": [],
+        "blockers": [],
+        "notes": [
+          "Use `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo(...)` as the exact backend helper for vanilla FX Monte Carlo requests."
+        ],
+        "primitives": [
+          {
+            "excluded": false,
+            "module": "trellis.models.fx_vanilla",
+            "required": true,
+            "role": "route_helper",
+            "symbol": "price_fx_vanilla_monte_carlo"
+          }
+        ]
+      },
+      "kind": "decomposition",
+      "label": "Select reusable kernels",
+      "notes": [
+        "Capture the reusable valuation components and any exact basis-claim assembly."
+      ],
+      "outputs": {
+        "reuse_decision": "route_local",
+        "selected_primitives": [
+          {
+            "excluded": false,
+            "module": "trellis.models.fx_vanilla",
+            "required": true,
+            "role": "route_helper",
+            "symbol": "price_fx_vanilla_monte_carlo"
+          }
+        ]
+      },
+      "parent_id": "executor_build_20260413025328_ce61eb87:root",
+      "status": "ok"
+    },
+    {
+      "id": "executor_build_20260413025328_ce61eb87:assembly",
+      "inputs": {
+        "adapters": [],
+        "approved_modules": [
+          "trellis.core.date_utils",
+          "trellis.core.differentiable",
+          "trellis.core.market_state",
+          "trellis.core.payoff",
+          "trellis.core.types",
+          "trellis.models.black",
+          "trellis.models.fx_vanilla",
+          "trellis.models.monte_carlo.basket_state",
+          "trellis.models.monte_carlo.brownian_bridge",
+          "trellis.models.monte_carlo.discretization",
+          "trellis.models.monte_carlo.early_exercise",
+          "trellis.models.monte_carlo.engine",
+          "trellis.models.monte_carlo.event_aware",
+          "trellis.models.monte_carlo.event_state",
+          "trellis.models.monte_carlo.local_vol",
+          "trellis.models.monte_carlo.lsm",
+          "trellis.models.monte_carlo.path_state",
+          "trellis.models.monte_carlo.primal_dual",
+          "trellis.models.monte_carlo.profiling",
+          "trellis.models.monte_carlo.quanto",
+          "trellis.models.monte_carlo.ranked_observation_payoffs",
+          "trellis.models.monte_carlo.schemes",
+          "trellis.models.monte_carlo.semantic_basket",
+          "trellis.models.monte_carlo.single_state_diffusion",
+          "trellis.models.monte_carlo.stochastic_mesh",
+          "trellis.models.monte_carlo.tv_regression",
+          "trellis.models.monte_carlo.variance_reduction"
+        ],
+        "route_helper": "trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo"
+      },
+      "kind": "assembly",
+      "label": "Assemble route from kernels",
+      "notes": [
+        "Prefer thin orchestration around existing analytical kernels and route helpers."
+      ],
+      "outputs": {
+        "assembly_card": "## Structured Lane Card\n- Method family: `monte_carlo`\n- Instrument type: `european_option`\n- Lane boundary: family=`monte_carlo`, kind=`exact_target_binding`, exact_bindings=`trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n- Lane obligations:\n  - Lane family: `monte_carlo`\n  - Plan kind: `exact_target_binding`\n  - Market bindings: `black_vol_surface`, `discount_curve`, `forward_curve`, `fx_rates`\n  - State obligations: `spot`, `strike`, `expiry`, `fx_rate_scalar_spot`\n  - Construction steps:\n    - Resolve scalar FX spot from `market_state.fx_rates[spec.fx_pair].spot` or the bridged scalar `market_state.spot`; do not use the `FXRate` wrapper directly in arithmetic.\n    - Bind domestic and foreign discount factors from `market_state.discount` and `market_state.forecast_curves[...]` before deriving drift or discounting.\n    - Simulate the FX spot under a GBM-style terminal law with drift `r_d - r_f`, then discount the terminal payoff with the domestic curve.\n  - Exact backend bindings:\n    - `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n  - Exact binding signatures:\n    - `price_fx_vanilla_monte_carlo(market_state: 'MarketState', spec: 'FXVanillaSpecLike', *, seed: 'int' = 42) -> 'float'`\n- Route authority:\n  - binding=`trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`, engine=`monte_carlo`, authority=`exact_backend_fit`\n  - Route alias: `monte_carlo_fx_vanilla`\n  - Validation bundle: `monte_carlo:european_option`\n  - Validation checks: `check_non_negativity`, `check_price_sanity`, `check_vol_sensitivity`, `check_vol_monotonicity`\n  - Helper authority: `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n  - Exact target bindings: `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n- Backend binding:\n  - Route: `monte_carlo_fx_vanilla`\n  - Engine family: `monte_carlo`\n  - Route family: `monte_carlo`\n  - Selected primitives:\n    - `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo` (route_helper)\n  - Resolved instructions:\n    - [hard_constraint] Use the route helper directly inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.\n    - [historical_note] Use `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo(...)` as the exact backend helper for vanilla FX Monte Carlo requests.\n  - Backend notes:\n    - Use `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo(...)` as the exact backend helper for vanilla FX Monte Carlo requests.\n- Primary modules to inspect/reuse:\n  - `trellis.models.monte_carlo.engine`\n- Post-build test targets:\n  - `tests/test_agent/test_build_loop.py`\n- Instruction precedence: follow the lane obligations in this card first. Treat backend route/helper details as exact-fit bindings, not as permission to invent a different numerical path.\n- Treat route authority as backend-fit evidence, not as permission to invent a different synthesis plan.\n- Use approved Trellis imports only. Prefer thin adapters when the compiler found an exact backend; otherwise build the smallest lane-consistent kernel the plan requires.",
+        "helper_modules": [
+          "trellis.models.fx_vanilla"
+        ],
+        "route_helper": "trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo"
+      },
+      "parent_id": "executor_build_20260413025328_ce61eb87:root",
+      "status": "ok"
+    },
+    {
+      "id": "executor_build_20260413025328_ce61eb87:validation",
+      "inputs": {
+        "blockers": [],
+        "proposed_tests": [
+          "tests/test_agent/test_build_loop.py"
+        ],
+        "uncertainty_flags": [],
+        "validation": null
+      },
+      "kind": "validation",
+      "label": "Validate route and fallbacks",
+      "notes": [
+        "Record proposed tests, blocker state, and any fallback or reuse notes."
+      ],
+      "outputs": {
+        "blocker_report_present": false,
+        "new_primitive_workflow_present": false,
+        "validation_state": "planned"
+      },
+      "parent_id": "executor_build_20260413025328_ce61eb87:root",
+      "status": "ok"
+    },
+    {
+      "id": "executor_build_20260413025328_ce61eb87:output",
+      "inputs": {
+        "model": "monte_carlo",
+        "route": "monte_carlo_fx_vanilla"
+      },
+      "kind": "output",
+      "label": "Final analytical artifact",
+      "notes": [
+        "Persist both the machine-readable trace and the text rendering from the same source of truth."
+      ],
+      "outputs": {
+        "route_card": "## Structured Lane Card\n- Method family: `monte_carlo`\n- Instrument type: `european_option`\n- Lane boundary: family=`monte_carlo`, kind=`exact_target_binding`, exact_bindings=`trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n- Lane obligations:\n  - Lane family: `monte_carlo`\n  - Plan kind: `exact_target_binding`\n  - Market bindings: `black_vol_surface`, `discount_curve`, `forward_curve`, `fx_rates`\n  - State obligations: `spot`, `strike`, `expiry`, `fx_rate_scalar_spot`\n  - Construction steps:\n    - Resolve scalar FX spot from `market_state.fx_rates[spec.fx_pair].spot` or the bridged scalar `market_state.spot`; do not use the `FXRate` wrapper directly in arithmetic.\n    - Bind domestic and foreign discount factors from `market_state.discount` and `market_state.forecast_curves[...]` before deriving drift or discounting.\n    - Simulate the FX spot under a GBM-style terminal law with drift `r_d - r_f`, then discount the terminal payoff with the domestic curve.\n  - Exact backend bindings:\n    - `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n  - Exact binding signatures:\n    - `price_fx_vanilla_monte_carlo(market_state: 'MarketState', spec: 'FXVanillaSpecLike', *, seed: 'int' = 42) -> 'float'`\n- Route authority:\n  - binding=`trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`, engine=`monte_carlo`, authority=`exact_backend_fit`\n  - Route alias: `monte_carlo_fx_vanilla`\n  - Validation bundle: `monte_carlo:european_option`\n  - Validation checks: `check_non_negativity`, `check_price_sanity`, `check_vol_sensitivity`, `check_vol_monotonicity`\n  - Helper authority: `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n  - Exact target bindings: `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n- Backend binding:\n  - Route: `monte_carlo_fx_vanilla`\n  - Engine family: `monte_carlo`\n  - Route family: `monte_carlo`\n  - Selected primitives:\n    - `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo` (route_helper)\n  - Resolved instructions:\n    - [hard_constraint] Use the route helper directly inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.\n    - [historical_note] Use `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo(...)` as the exact backend helper for vanilla FX Monte Carlo requests.\n  - Backend notes:\n    - Use `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo(...)` as the exact backend helper for vanilla FX Monte Carlo requests.\n- Primary modules to inspect/reuse:\n  - `trellis.models.monte_carlo.engine`\n- Post-build test targets:\n  - `tests/test_agent/test_build_loop.py`\n- Instruction precedence: follow the lane obligations in this card first. Treat backend route/helper details as exact-fit bindings, not as permission to invent a different numerical path.\n- Treat route authority as backend-fit evidence, not as permission to invent a different synthesis plan.\n- Use approved Trellis imports only. Prefer thin adapters when the compiler found an exact backend; otherwise build the smallest lane-consistent kernel the plan requires.",
+        "route_plan": "## Structured Generation Plan\n- Method family: `monte_carlo`\n- Instrument type: `european_option`\n- Lane boundary: family=`monte_carlo`, kind=`exact_target_binding`, exact_bindings=`trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n- Lane obligations:\n  - Lane family: `monte_carlo`\n  - Plan kind: `exact_target_binding`\n  - Market bindings: `black_vol_surface`, `discount_curve`, `forward_curve`, `fx_rates`, `spot`\n  - State obligations: `spot`, `strike`, `expiry`, `fx_rate_scalar_spot`, `foreign_discount_curve`, `expiry_black_vol`\n  - Construction steps:\n    - Resolve scalar FX spot from `market_state.fx_rates[spec.fx_pair].spot` or the bridged scalar `market_state.spot`; do not use the `FXRate` wrapper directly in arithmetic.\n    - Bind domestic and foreign discount factors from `market_state.discount` and `market_state.forecast_curves[...]` before deriving drift or discounting.\n    - Simulate the FX spot under a GBM-style terminal law with drift `r_d - r_f`, then discount the terminal payoff with the domestic curve.\n  - Exact backend bindings:\n    - `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n  - Exact binding signatures:\n    - `price_fx_vanilla_monte_carlo(market_state: 'MarketState', spec: 'FXVanillaSpecLike', *, seed: 'int' = 42) -> 'float'`\n- Route authority:\n  - binding=`trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`, engine=`monte_carlo`, authority=`exact_backend_fit`\n  - Route alias: `monte_carlo_fx_vanilla`\n  - Validation bundle: `monte_carlo:european_option`\n  - Validation checks: `check_non_negativity`, `check_price_sanity`, `check_vol_sensitivity`, `check_vol_monotonicity`\n  - Helper authority: `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n  - Exact target bindings: `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo`\n- Repo revision: `3e05e8e455bb894825c363ce38d73be7f6ef7c15`\n- Inspected modules:\n  - `trellis.models.monte_carlo.engine`\n- Approved Trellis modules for imports:\n  - `trellis.core.date_utils`\n  - `trellis.core.differentiable`\n  - `trellis.core.market_state`\n  - `trellis.core.payoff`\n  - `trellis.core.types`\n  - `trellis.models.black`\n  - `trellis.models.fx_vanilla`\n  - `trellis.models.monte_carlo.basket_state`\n  - `trellis.models.monte_carlo.brownian_bridge`\n  - `trellis.models.monte_carlo.discretization`\n  - `trellis.models.monte_carlo.early_exercise`\n  - `trellis.models.monte_carlo.engine`\n  - `trellis.models.monte_carlo.event_aware`\n  - `trellis.models.monte_carlo.event_state`\n  - `trellis.models.monte_carlo.local_vol`\n  - `trellis.models.monte_carlo.lsm`\n  - `trellis.models.monte_carlo.path_state`\n  - `trellis.models.monte_carlo.primal_dual`\n  - `trellis.models.monte_carlo.profiling`\n  - `trellis.models.monte_carlo.quanto`\n  - `trellis.models.monte_carlo.ranked_observation_payoffs`\n  - `trellis.models.monte_carlo.schemes`\n  - `trellis.models.monte_carlo.semantic_basket`\n  - `trellis.models.monte_carlo.single_state_diffusion`\n  - `trellis.models.monte_carlo.stochastic_mesh`\n  - `trellis.models.monte_carlo.tv_regression`\n  - `trellis.models.monte_carlo.variance_reduction`\n- Public symbols available from the approved modules:\n  - `Antithetic`\n  - `BarrierMonitor`\n  - `BasisFunction`\n  - `CashflowSchedule`\n  - `Cashflows`\n  - `ChebyshevBasis`\n  - `ContinuationEstimator`\n  - `ContractTimeline`\n  - `DataProvider`\n  - `DayCountConvention`\n  - `DeterministicCashflowPayoff`\n  - `DiscountCurve`\n  - `DiscretizationScheme`\n  - `DslMeasure`\n  - `EarlyExerciseDiagnostics`\n  - `EarlyExercisePolicyResult`\n  - `Euler`\n  - `EventAwareMonteCarloEvent`\n  - `EventAwareMonteCarloProblem`\n  - `EventAwareMonteCarloProblemSpec`\n  - `EventAwareMonteCarloProcessSpec`\n  - `EventSchedule`\n  - `Exact`\n  - `FXVanillaSpecLike`\n- Tests to run after generation:\n  - `tests/test_agent/test_build_loop.py`\n- Likely tests for reused symbols:\n  - `Cashflows` -> tests/test_models/test_contingent_cashflows.py\n- Backend binding:\n  - Route: `monte_carlo_fx_vanilla`\n  - Engine family: `monte_carlo`\n  - Route family: `monte_carlo`\n  - Route score: `11.75`\n  - Selected primitives:\n    - `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo` (route_helper)\n  - Resolved instructions:\n    - [hard_constraint] Use the route helper directly inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.\n    - [historical_note] Use `trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo(...)` as the exact backend helper for vanilla FX Monte Carlo requests.\n  - Instruction precedence: follow the compiler-emitted lane obligations first, then satisfy the exact backend binding and approved imports. If older guidance conflicts, treat it as stale and obey this plan.\n- Every `trellis.*` import in the generated code MUST come from the approved module list above.\n- If you need functionality outside the approved list, say so explicitly instead of inventing an import.",
+        "trace_type": "analytical"
+      },
+      "parent_id": "executor_build_20260413025328_ce61eb87:root",
+      "status": "ok"
+    }
+  ],
+  "task_id": "executor_build_20260413025328_ce61eb87",
+  "text_path": "/home/runner/work/trellis/trellis/trellis/agent/knowledge/traces/analytical/executor_build_20260413025328_ce61eb87.md",
+  "trace_id": "executor_build_20260413025328_ce61eb87",
+  "trace_type": "analytical",
+  "updated_at": "2026-04-13T02:53:30.946832+00:00"
+}

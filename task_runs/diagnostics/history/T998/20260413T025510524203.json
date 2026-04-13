@@ -1,0 +1,643 @@
+{
+  "schema_version": 2,
+  "task": {
+    "id": "T998",
+    "title": "Himalaya ranked observation basket",
+    "kind": "pricing",
+    "status": null,
+    "construct": null
+  },
+  "run": {
+    "run_id": "20260413T025510524203",
+    "persisted_at": "2026-04-13T02:55:10.560867+00:00",
+    "task_run_history_path": "/home/runner/work/trellis/trellis/task_runs/history/T998/20260413T025510524203.json",
+    "task_run_latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T998.json",
+    "task_run_latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
+    "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T998/20260413T025510524203.json",
+    "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T998/20260413T025510524203.md",
+    "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T998.json",
+    "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T998.md"
+  },
+  "outcome": {
+    "success": true,
+    "status": "succeeded",
+    "failure_bucket": "success",
+    "decision_stage": "completed",
+    "comparison_status": null,
+    "next_action": "No action required.",
+    "headline": "Himalaya ranked observation basket completed successfully."
+  },
+  "primary_failure": {
+    "bucket": "success",
+    "stage": "completed",
+    "headline": "Run completed successfully.",
+    "likely_cause": "The run failed without a narrower bucketed diagnosis.",
+    "confidence": "low",
+    "signals": []
+  },
+  "method_outcomes": [],
+  "trace_index": [
+    {
+      "scope": "task",
+      "name": "task trace",
+      "ordinal": 1,
+      "path": "/tmp/executor_build_20260325_deadbeef.yaml",
+      "trace_kind": null,
+      "request_id": null,
+      "status": null,
+      "outcome": null,
+      "route_method": null,
+      "construction_label": "",
+      "latest_event": null,
+      "latest_event_status": null,
+      "updated_at": null
+    }
+  ],
+  "learning": {
+    "task_kind": "pricing",
+    "retrieved_lesson_ids": [],
+    "retrieved_lesson_titles": [],
+    "retrieval_stages": [],
+    "retrieval_sources": [],
+    "selected_artifact_ids": [],
+    "selected_artifact_titles": [],
+    "selected_artifacts_by_audience": {},
+    "captured_lesson_ids": [],
+    "lesson_contract_reports": [],
+    "lesson_contract_count": 0,
+    "lesson_contract_outcome": "not_attempted",
+    "lesson_contract_errors": [],
+    "lesson_contract_warnings": [],
+    "lesson_promotion_outcomes": [],
+    "lessons_attributed": 0,
+    "cookbook_enriched": false,
+    "cookbook_candidate_paths": [],
+    "promotion_candidate_paths": [],
+    "knowledge_trace_paths": [],
+    "knowledge_gap_log_paths": [],
+    "reusable_artifact_count": 0,
+    "knowledge_outcome": "no_new_knowledge",
+    "knowledge_outcome_reason": "task succeeded without new reusable knowledge artifacts"
+  },
+  "workflow": {
+    "status": "succeeded",
+    "next_action": "Completed successfully.",
+    "latest_trace": {
+      "path": "/tmp/executor_build_20260325_deadbeef.yaml",
+      "exists": false
+    },
+    "active_trace_count": 0,
+    "post_build_latest_phase": null,
+    "post_build_latest_status": null,
+    "post_build_latest_method": null,
+    "post_build_flags": {},
+    "linked_issues": {
+      "linear": [],
+      "github": []
+    },
+    "comparison_status": null,
+    "method_count": 0
+  },
+  "comparison": {
+    "task": false,
+    "targets": [],
+    "summary": {}
+  },
+  "market": {
+    "source": "mock",
+    "as_of": "2024-11-15",
+    "selected_components": {
+      "discount_curve": "usd_ois",
+      "forecast_curve": "USD-SOFR-3M",
+      "vol_surface": "usd_rates_smile",
+      "model_parameters": "heston_equity"
+    },
+    "selected_curve_names": {
+      "discount_curve": "usd_ois",
+      "forecast_curve": "USD-SOFR-3M",
+      "credit_curve": "usd_ig",
+      "fixing_history": "USD-SOFR-3M"
+    },
+    "available_capabilities": [
+      "black_vol_surface",
+      "credit_curve",
+      "discount_curve",
+      "fixing_history",
+      "forward_curve",
+      "fx_rates",
+      "jump_parameters",
+      "local_vol_surface",
+      "model_parameters",
+      "spot",
+      "state_space"
+    ],
+    "metadata": {
+      "simulated": true,
+      "regime": "easing_cycle",
+      "requested_as_of": "2024-11-15",
+      "snapshot_date": "2024-11-15",
+      "description": "Deterministic stand-in market snapshot derived from embedded yield regimes."
+    },
+    "provenance": {
+      "source": "mock",
+      "source_kind": "synthetic_snapshot",
+      "source_ref": "embedded_regime_snapshot",
+      "prior_family": "embedded_market_regime",
+      "prior_seed": 2092860322429827680,
+      "prior_parameters": {
+        "regime": "easing_cycle",
+        "snapshot_date": "2024-11-15",
+        "requested_as_of": "2024-11-15",
+        "curve_set": "embedded_treasury_yield_regime",
+        "forecast_curve_shifts_bps": {
+          "USD-SOFR-3M": 33.719057,
+          "USD-LIBOR-3M": 56.922273,
+          "EUR-DISC": -181.58045,
+          "GBP-DISC": -81.768622
+        },
+        "surface_sets": {
+          "vol_surfaces": [
+            "regime_rate_vol_surface",
+            "heston_grid_surface"
+          ],
+          "local_vol_surfaces": "dupire_local_vol_surface",
+          "jump_parameter_sets": "regime_jump_pack",
+          "model_parameter_sets": "heston_runtime_payload"
+        },
+        "synthetic_generation_contract": {
+          "version": "v2",
+          "seed": 2092860322429827680,
+          "source_kind": "synthetic_snapshot",
+          "regime": "easing_cycle",
+          "snapshot_date": "2024-11-15",
+          "requested_as_of": "2024-11-15",
+          "model_packs": {
+            "rates": {
+              "family": "shifted_curve_bundle",
+              "anchor_curve_set": "embedded_treasury_yield_regime",
+              "curve_roles": {
+                "discount_curve": "usd_ois",
+                "forecast_curve": "USD-SOFR-3M"
+              },
+              "discount_curve_shifts_bps": {
+                "eur_ois": -181.58045,
+                "gbp_ois": -81.768622
+              },
+              "forecast_basis_bps": {
+                "USD-SOFR-3M": 33.719057,
+                "USD-LIBOR-3M": 56.922273,
+                "EUR-EURIBOR-3M": 30.695454,
+                "GBP-SONIA-3M": 18.562228
+              },
+              "discount_curve_shape_parameters": {
+                "eur_ois": {
+                  "level_bps": -161.8127783166238,
+                  "slope_bps": -19.76767205779431,
+                  "decay_years": 5.002235011747392
+                },
+                "gbp_ois": {
+                  "level_bps": -72.7827661256128,
+                  "slope_bps": -8.98585601061151,
+                  "decay_years": 3.6927178830407605
+                }
+              },
+              "forecast_basis_parameters": {
+                "USD-SOFR-3M": {
+                  "short_end_bps": 33.71905711232904,
+                  "long_run_bps": 18.504746580677228,
+                  "decay_years": 2.528090420961409
+                },
+                "USD-LIBOR-3M": {
+                  "short_end_bps": 56.92227343485316,
+                  "long_run_bps": 31.007853874774113,
+                  "decay_years": 3.0054733751582052
+                },
+                "EUR-EURIBOR-3M": {
+                  "short_end_bps": 30.69545384187434,
+                  "long_run_bps": 13.615867627053799,
+                  "decay_years": 2.90220905569852
+                },
+                "GBP-SONIA-3M": {
+                  "short_end_bps": 18.562227656536148,
+                  "long_run_bps": 8.22894373936824,
+                  "decay_years": 2.401557294643642
+                }
+              },
+              "rate_vol_model": {
+                "family": "sabr",
+                "alpha": 0.2362787207098568,
+                "beta": 0.5,
+                "rho": -0.15115206729207795,
+                "nu": 0.4425721814245702
+              },
+              "rate_vol_levels": [
+                0.3,
+                0.27,
+                0.24,
+                0.22,
+                0.2,
+                0.18
+              ],
+              "rate_vol_surface_family": "regime_rate_vol_surface",
+              "quote_families": [
+                "price",
+                "implied_vol"
+              ]
+            },
+            "credit": {
+              "family": "reduced_form_hazard_curve",
+              "recovery": 0.4,
+              "hazard_rate_inputs": {
+                "usd_ig": {
+                  "1.0": 0.0099911447,
+                  "3.0": 0.0116563355,
+                  "5.0": 0.0133215263,
+                  "10.0": 0.0149867171
+                },
+                "usd_hy": {
+                  "1.0": 0.0471241596,
+                  "3.0": 0.0538561824,
+                  "5.0": 0.0589051995,
+                  "10.0": 0.0639542166
+                }
+              },
+              "quote_families": [
+                "spread",
+                "hazard"
+              ]
+            },
+            "volatility": {
+              "family": "heston_implied_vol_bundle",
+              "implied_vol_surface_family": "heston_grid_surface",
+              "local_vol_surface_family": "dupire_local_vol_surface",
+              "jump_parameter_family": "regime_jump_pack",
+              "model_parameter_family": "heston_runtime_payload",
+              "implied_vol_surface_parameters": {
+                "spx_heston_implied_vol": {
+                  "underlier": "SPX",
+                  "parameter_set_name": "heston_equity",
+                  "expiries": [
+                    0.5,
+                    1.0,
+                    2.0,
+                    3.0,
+                    5.0
+                  ],
+                  "strike_multipliers": [
+                    0.85,
+                    0.95,
+                    1.0,
+                    1.05,
+                    1.15
+                  ],
+                  "quote_family": "implied_vol",
+                  "convention": "black",
+                  "rate_source": "usd_ois_1y_zero"
+                }
+              },
+              "local_vol_surface_sources": {
+                "spx_local_vol": "spx_heston_implied_vol"
+              },
+              "jump_parameter_sets": {
+                "merton_equity": {
+                  "mu": 0.0,
+                  "sigma": 0.209049,
+                  "lam": 0.229954,
+                  "jump_mean": -0.05,
+                  "jump_vol": 0.167239
+                }
+              },
+              "model_parameter_sets": {
+                "heston_equity": {
+                  "kappa": 2.0,
+                  "theta": 0.039117,
+                  "xi": 0.469406,
+                  "rho": -0.68,
+                  "v0": 0.039117
+                }
+              }
+            }
+          },
+          "quote_bundles": {
+            "rates": {
+              "quote_families": [
+                "price",
+                "implied_vol"
+              ],
+              "forecast_basis_by_tenor_bps": {
+                "USD-SOFR-3M": {
+                  "0.25": 32.286529,
+                  "1.0": 28.748632,
+                  "5.0": 20.610049
+                },
+                "USD-LIBOR-3M": {
+                  "0.25": 54.853889,
+                  "1.0": 49.587622,
+                  "5.0": 35.917334
+                },
+                "EUR-EURIBOR-3M": {
+                  "0.25": 29.285783,
+                  "1.0": 25.71724,
+                  "5.0": 16.665614
+                },
+                "GBP-SONIA-3M": {
+                  "0.25": 17.540638,
+                  "1.0": 15.042905,
+                  "5.0": 9.517326
+                }
+              },
+              "rate_vol_surface_names": [
+                "usd_rates_atm",
+                "usd_rates_smile"
+              ]
+            },
+            "credit": {
+              "quote_families": [
+                "spread",
+                "hazard"
+              ],
+              "spread_inputs_decimal": {
+                "usd_ig": {
+                  "1.0": 0.0059946868,
+                  "3.0": 0.0069938013,
+                  "5.0": 0.0079929158,
+                  "10.0": 0.0089920303
+                },
+                "usd_hy": {
+                  "1.0": 0.0282744958,
+                  "3.0": 0.0323137094,
+                  "5.0": 0.0353431197,
+                  "10.0": 0.03837253
+                }
+              }
+            },
+            "volatility": {
+              "quote_families": [
+                "implied_vol",
+                "local_vol"
+              ],
+              "surface_families": {
+                "rate_vol_surface_family": "regime_rate_vol_surface",
+                "implied_vol_surface_family": "heston_grid_surface",
+                "local_vol_surface_family": "dupire_local_vol_surface",
+                "jump_parameter_family": "regime_jump_pack",
+                "model_parameter_family": "heston_runtime_payload"
+              },
+              "implied_vol_surface_names": [
+                "spx_heston_implied_vol"
+              ],
+              "local_vol_surface_names": [
+                "spx_local_vol"
+              ],
+              "local_vol_surface_sources": {
+                "spx_local_vol": "spx_heston_implied_vol"
+              },
+              "jump_parameter_set_names": [
+                "merton_equity"
+              ],
+              "model_parameter_set_names": [
+                "heston_equity"
+              ]
+            }
+          },
+          "runtime_targets": {
+            "discount_curves": [
+              "usd_ois",
+              "eur_ois",
+              "gbp_ois"
+            ],
+            "forecast_curves": [
+              "USD-DISC",
+              "EUR-DISC",
+              "GBP-DISC",
+              "USD-SOFR-3M",
+              "USD-LIBOR-3M",
+              "EUR-EURIBOR-3M",
+              "GBP-SONIA-3M"
+            ],
+            "credit_curves": [
+              "usd_ig",
+              "usd_hy"
+            ],
+            "vol_surfaces": [
+              "usd_rates_atm",
+              "usd_rates_smile",
+              "spx_heston_implied_vol"
+            ],
+            "local_vol_surfaces": [
+              "spx_local_vol"
+            ],
+            "jump_parameter_sets": [
+              "merton_equity"
+            ],
+            "model_parameter_sets": [
+              "heston_equity"
+            ]
+          }
+        },
+        "model_consistency_contract": {
+          "version": "v1",
+          "seed": 2092860322429827680,
+          "source_kind": "synthetic_snapshot",
+          "regime": "easing_cycle",
+          "snapshot_date": "2024-11-15",
+          "requested_as_of": "2024-11-15",
+          "rates": {
+            "workflow": "curve_shifted_from_discount",
+            "curve_roles": {
+              "discount_curve": "usd_ois",
+              "forecast_curve": "USD-SOFR-3M"
+            },
+            "forecast_basis_bps": {
+              "USD-SOFR-3M": 33.719057,
+              "USD-LIBOR-3M": 56.922273,
+              "EUR-EURIBOR-3M": 30.695454,
+              "GBP-SONIA-3M": 18.562228
+            },
+            "forecast_basis_by_tenor_bps": {
+              "USD-SOFR-3M": {
+                "0.25": 32.286529,
+                "1.0": 28.748632,
+                "5.0": 20.610049
+              },
+              "USD-LIBOR-3M": {
+                "0.25": 54.853889,
+                "1.0": 49.587622,
+                "5.0": 35.917334
+              },
+              "EUR-EURIBOR-3M": {
+                "0.25": 29.285783,
+                "1.0": 25.71724,
+                "5.0": 16.665614
+              },
+              "GBP-SONIA-3M": {
+                "0.25": 17.540638,
+                "1.0": 15.042905,
+                "5.0": 9.517326
+              }
+            },
+            "quote_families": [
+              "price",
+              "implied_vol"
+            ],
+            "materialization_targets": [
+              "discount_curves",
+              "forecast_curves"
+            ]
+          },
+          "credit": {
+            "workflow": "calibrate_single_name_credit_curve_workflow",
+            "quote_families": [
+              "spread",
+              "hazard"
+            ],
+            "recovery": 0.4,
+            "spread_inputs_decimal": {
+              "usd_ig": {
+                "1.0": 0.0059946868,
+                "3.0": 0.0069938013,
+                "5.0": 0.0079929158,
+                "10.0": 0.0089920303
+              },
+              "usd_hy": {
+                "1.0": 0.0282744958,
+                "3.0": 0.0323137094,
+                "5.0": 0.0353431197,
+                "10.0": 0.03837253
+              }
+            },
+            "materialization_targets": [
+              "credit_curve"
+            ]
+          },
+          "volatility": {
+            "workflow": "calibration_surface_bundle",
+            "quote_families": [
+              "implied_vol"
+            ],
+            "vol_surfaces": [
+              "usd_rates_atm",
+              "usd_rates_smile",
+              "spx_heston_implied_vol"
+            ],
+            "rate_vol_surfaces": [
+              "usd_rates_atm",
+              "usd_rates_smile"
+            ],
+            "equity_implied_vol_surfaces": [
+              "spx_heston_implied_vol"
+            ],
+            "local_vol_surfaces": [
+              "spx_local_vol"
+            ],
+            "local_vol_surface_sources": {
+              "spx_local_vol": "spx_heston_implied_vol"
+            },
+            "model_parameter_sets": {
+              "heston_equity": {
+                "kappa": 2.0,
+                "theta": 0.039117,
+                "xi": 0.469406,
+                "rho": -0.68,
+                "v0": 0.039117
+              }
+            },
+            "materialization_targets": [
+              "vol_surface",
+              "local_vol_surface",
+              "model_parameters"
+            ]
+          }
+        }
+      },
+      "as_of": "2024-11-15"
+    },
+    "market_parameter_trace": {
+      "selected_parameter_set": "heston_equity",
+      "selected_source_kind": "synthetic_prior",
+      "sources": {
+        "heston_equity": {
+          "source_kind": "synthetic_prior",
+          "source_ref": "embedded_regime_snapshot",
+          "parameter_keys": [
+            "kappa",
+            "rho",
+            "theta",
+            "v0",
+            "xi"
+          ],
+          "details": {
+            "prior_family": "embedded_market_regime",
+            "prior_seed": 2092860322429827680,
+            "synthetic_generation_contract_version": "v2",
+            "model_consistency_contract_version": "v1"
+          }
+        }
+      }
+    }
+  },
+  "framework": {},
+  "telemetry": {
+    "task_kind": "pricing",
+    "run_outcome": "succeeded",
+    "retried": false,
+    "retry_count": 0,
+    "degraded": false,
+    "comparison_status": "",
+    "selected_artifacts": [],
+    "route_observations": []
+  },
+  "runtime_controls": {
+    "skip_post_build_reflection": false,
+    "skip_post_build_consolidation": false,
+    "skip_task_diagnosis_persist": false
+  },
+  "post_build": {
+    "task": {
+      "latest_phase": null,
+      "latest_status": null,
+      "updated_at": null,
+      "event_count": 0,
+      "active_flags": {}
+    },
+    "methods": {},
+    "latest_method": null,
+    "latest_phase": null,
+    "latest_status": null,
+    "active_flags": {}
+  },
+  "evidence": {
+    "top_level_error": null,
+    "top_level_failures": [],
+    "blocker_details": {},
+    "task_contract_error": {},
+    "cross_validation": {},
+    "knowledge_gaps": [],
+    "gap_confidence": 0.9,
+    "method_failures": [],
+    "comparison": {
+      "status": null,
+      "reference_target": null,
+      "prices": {},
+      "deviations_pct": {}
+    }
+  },
+  "model_audit": {
+    "audit_record_paths": [],
+    "environment": {
+      "repo_revision": null,
+      "knowledge_hash": null,
+      "llm_models_used": []
+    }
+  },
+  "consolidated_validation": {},
+  "storage": {
+    "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T998/20260413T025510524203.json",
+    "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T998.json",
+    "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
+    "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T998/20260413T025510524203.json",
+    "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T998/20260413T025510524203.md",
+    "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T998.json",
+    "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T998.md"
+  }
+}

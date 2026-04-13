@@ -1,0 +1,535 @@
+{
+  "task_id": "T997",
+  "task_kind": "pricing",
+  "run_id": "20260413T025510507446",
+  "persisted_at": "2026-04-13T02:55:10.507630+00:00",
+  "task": {
+    "id": "T997",
+    "title": "Himalaya ranked observation basket"
+  },
+  "result": {
+    "task_id": "T997",
+    "title": "Himalaya ranked observation basket",
+    "instrument_type": "basket_option",
+    "instrument_identity_source": "task.title_or_description",
+    "start_time": "2026-04-13T02:55:10.507446",
+    "comparison_task": false,
+    "construct_methods": [],
+    "comparison_targets": [],
+    "cross_validate": null,
+    "new_component": null,
+    "semantic_contract_id": "ranked_observation_basket",
+    "runtime_controls": {
+      "skip_post_build_reflection": false,
+      "skip_post_build_consolidation": false,
+      "skip_task_diagnosis_persist": false
+    },
+    "execution_mode": "live",
+    "market_context": {
+      "source": "default",
+      "as_of": null,
+      "selected_components": {},
+      "selected_curve_names": {},
+      "available_capabilities": [],
+      "metadata": {},
+      "provenance": {}
+    },
+    "runtime_contract": {
+      "task_id": "T997",
+      "task_title": "Himalaya ranked observation basket",
+      "description": "Build a pricer for: Himalaya ranked observation basket\n\nAAPL, MSFT, and NVDA with observation dates 2025-01-15, 2025-02-15, 2025-03-15. At each observation choose the best performer among remaining constituents, remove it, lock the simple return, and settle the average locked returns at maturity.",
+      "instrument_type": "basket_option",
+      "instrument_identity_source": "task.title_or_description",
+      "semantic_contract": {
+        "semantic_id": "ranked_observation_basket",
+        "semantic_version": "c2.0",
+        "semantic_concept": {
+          "semantic_id": "ranked_observation_basket",
+          "semantic_version": "c2.0",
+          "scope": "ranked-observation basket contracts and their thin compatibility wrappers",
+          "description": "Multi-asset ranked-observation basket with remaining-constituent selection, locked returns, and maturity aggregation.",
+          "concept_role": "product_contract",
+          "status": "active",
+          "aliases": [
+            "ranked_observation_basket",
+            "basket_path_payoff",
+            "ranked_selection_basket"
+          ],
+          "compatibility_wrappers": [
+            "basket_option",
+            "basket_path_payoff"
+          ],
+          "required_contract_fields": [
+            "underlier_structure",
+            "payoff_rule",
+            "settlement_rule",
+            "observation_schedule",
+            "selection_scope",
+            "selection_operator",
+            "selection_count",
+            "lock_rule",
+            "aggregation_rule"
+          ],
+          "allowed_contract_fields": [
+            "instrument_class",
+            "underlier_structure",
+            "payoff_family",
+            "payoff_rule",
+            "settlement_rule",
+            "payoff_traits",
+            "exercise_style",
+            "path_dependence",
+            "schedule_dependence",
+            "state_dependence",
+            "model_family",
+            "multi_asset",
+            "observation_schedule",
+            "observation_basis",
+            "selection_operator",
+            "selection_scope",
+            "selection_count",
+            "lock_rule",
+            "aggregation_rule",
+            "maturity_settlement_rule",
+            "constituents",
+            "state_variables",
+            "event_transitions"
+          ],
+          "required_primitives": [
+            "correlated_basket_monte_carlo"
+          ],
+          "route_helpers": [
+            "trellis.models.resolution.basket_semantics",
+            "trellis.models.monte_carlo.semantic_basket"
+          ],
+          "required_market_inputs": [
+            "discount_curve",
+            "underlier_spots",
+            "black_vol_surface",
+            "correlation_matrix"
+          ],
+          "extension_policy": [
+            "reuse_existing_concept",
+            "new_attribute",
+            "thin_compatibility_wrapper",
+            "introduce_new_concept"
+          ],
+          "supersedes": [],
+          "route_family": "monte_carlo",
+          "example_requests": [
+            "Himalaya-style ranked observation basket on AAPL, MSFT, and NVDA"
+          ]
+        },
+        "product": {
+          "instrument_class": "basket_path_payoff",
+          "underlier_structure": "multi_asset_basket",
+          "payoff_family": "basket_path_payoff",
+          "payoff_rule": "ranked_observation_path_payoff",
+          "settlement_rule": "settle_once_at_maturity",
+          "observation_schedule": [
+            "2025-01-15",
+            "2025-02-15",
+            "2025-03-15"
+          ],
+          "constituents": [
+            "AAPL",
+            "MSFT",
+            "NVDA"
+          ],
+          "exercise_style": "none",
+          "path_dependence": "path_dependent",
+          "schedule_dependence": true,
+          "state_dependence": "path_dependent",
+          "selection_scope": "remaining_constituents",
+          "selection_operator": "best_of_remaining",
+          "selection_count": 1,
+          "lock_rule": "remove_selected",
+          "aggregation_rule": "average_locked_returns",
+          "multi_asset": true,
+          "term_fields": {}
+        },
+        "typed_semantics": {
+          "phase_order": [
+            "event",
+            "observation",
+            "decision",
+            "determination",
+            "settlement",
+            "state_update"
+          ],
+          "observables": [
+            {
+              "observable_id": "constituent_spots",
+              "observable_type": "spot_vector",
+              "availability_phase": "observation",
+              "schedule_role": "observation_dates"
+            },
+            {
+              "observable_id": "ranked_constituent_return",
+              "observable_type": "simple_return",
+              "availability_phase": "determination",
+              "schedule_role": "determination_dates"
+            }
+          ],
+          "state_fields": [
+            {
+              "field_name": "remaining_constituents",
+              "kind": "contract_memory",
+              "tags": [
+                "pathwise_only",
+                "remaining_pool"
+              ]
+            },
+            {
+              "field_name": "locked_returns",
+              "kind": "contract_memory",
+              "tags": [
+                "pathwise_only",
+                "locked_cashflow_state"
+              ]
+            }
+          ],
+          "obligations": [
+            {
+              "obligation_id": "maturity_cash_settlement",
+              "settle_date_rule": "settle_once_at_maturity",
+              "settlement_kind": "cash"
+            }
+          ],
+          "controller_protocol": {
+            "controller_style": "identity",
+            "controller_role": "none",
+            "decision_phase": "decision",
+            "schedule_role": ""
+          },
+          "implementation_hints": {
+            "preserve_route_behavior": true,
+            "event_machine_source": "derived_from_event_transitions",
+            "primary_schedule_role": "observation_dates"
+          },
+          "event_machine_present": true
+        },
+        "market_data": {
+          "required_inputs": [
+            "discount_curve",
+            "underlier_spots",
+            "black_vol_surface",
+            "correlation_matrix"
+          ],
+          "optional_inputs": []
+        },
+        "methods": {
+          "family_key": "ranked_observation_basket",
+          "candidate_methods": [
+            "monte_carlo"
+          ],
+          "preferred_method": "monte_carlo",
+          "registered_surface": {
+            "method": "monte_carlo",
+            "target_modules": [
+              "trellis.models.resolution.basket_semantics",
+              "trellis.models.monte_carlo.semantic_basket"
+            ],
+            "primitive_families": [
+              "correlated_basket_monte_carlo"
+            ],
+            "spec_schema_hints": [
+              "basket_option"
+            ]
+          }
+        },
+        "blueprint": {
+          "target_modules": [
+            "trellis.models.resolution.basket_semantics",
+            "trellis.models.monte_carlo.semantic_basket"
+          ],
+          "primitive_families": [
+            "correlated_basket_monte_carlo"
+          ]
+        }
+      },
+      "semantic_contract_id": "ranked_observation_basket",
+      "snapshot_reference": {
+        "source": "default",
+        "as_of": null,
+        "selected_components": {},
+        "selected_curve_names": {},
+        "available_capabilities": [],
+        "metadata": {}
+      },
+      "selected_curve_names": {},
+      "market_provenance": {},
+      "evaluation_tags": [
+        "task_runtime",
+        "market:default",
+        "semantic_contract",
+        "semantic:ranked_observation_basket"
+      ],
+      "simulation_identity": {
+        "seed": 12093666081418194144,
+        "seed_source": "derived_from_request_and_snapshot",
+        "sample_source": {
+          "kind": "market_snapshot",
+          "source": "default",
+          "as_of": null,
+          "snapshot_reference": {
+            "source": "default",
+            "as_of": null,
+            "selected_components": {},
+            "selected_curve_names": {},
+            "available_capabilities": [],
+            "metadata": {}
+          }
+        },
+        "sample_indexing": {
+          "kind": "path_index",
+          "ordering": "simulation_generation_order",
+          "start": 0
+        },
+        "simulation_stream_id": "T997:a2d9ce0e68bdf8c8",
+        "replay_key": "T997:a2d9ce0e68bdf8c8"
+      },
+      "simulation_seed": 12093666081418194144,
+      "sample_source": {
+        "kind": "market_snapshot",
+        "source": "default",
+        "as_of": null,
+        "snapshot_reference": {
+          "source": "default",
+          "as_of": null,
+          "selected_components": {},
+          "selected_curve_names": {},
+          "available_capabilities": [],
+          "metadata": {}
+        }
+      },
+      "sample_indexing": {
+        "kind": "path_index",
+        "ordering": "simulation_generation_order",
+        "start": 0
+      },
+      "simulation_stream_id": "T997:a2d9ce0e68bdf8c8",
+      "replay_key": "T997:a2d9ce0e68bdf8c8",
+      "trace_identifier": null,
+      "trace_path": null,
+      "analytical_trace_path": null,
+      "analytical_trace_text_path": null
+    },
+    "success": true,
+    "attempts": 1,
+    "gap_confidence": 1.0,
+    "knowledge_gaps": [],
+    "payoff_class": "FakeSemanticPayoff",
+    "preferred_method": null,
+    "reference_target": false,
+    "failures": [],
+    "agent_observation_count": 0,
+    "agent_observations": [],
+    "knowledge_summary": {},
+    "token_usage_summary": {},
+    "platform_trace_path": null,
+    "platform_request_id": null,
+    "analytical_trace_path": null,
+    "analytical_trace_text_path": null,
+    "audit_record_path": null,
+    "build_observability": {},
+    "blocker_details": null,
+    "post_build_tracking": {},
+    "reflection": {},
+    "artifacts": {
+      "platform_request_ids": [],
+      "platform_trace_paths": [],
+      "analytical_trace_paths": [],
+      "analytical_trace_text_paths": [],
+      "audit_record_paths": [],
+      "knowledge_trace_paths": [],
+      "cookbook_candidate_paths": [],
+      "promotion_candidate_paths": [],
+      "knowledge_gap_log_paths": []
+    },
+    "learning": {
+      "task_kind": "pricing",
+      "retrieved_lesson_ids": [],
+      "retrieved_lesson_titles": [],
+      "retrieval_stages": [],
+      "retrieval_sources": [],
+      "selected_artifact_ids": [],
+      "selected_artifact_titles": [],
+      "selected_artifacts_by_audience": {},
+      "captured_lesson_ids": [],
+      "lesson_contract_reports": [],
+      "lesson_contract_count": 0,
+      "lesson_contract_outcome": "not_attempted",
+      "lesson_contract_errors": [],
+      "lesson_contract_warnings": [],
+      "lesson_promotion_outcomes": [],
+      "lessons_attributed": 0,
+      "cookbook_enriched": false,
+      "cookbook_candidate_paths": [],
+      "promotion_candidate_paths": [],
+      "knowledge_trace_paths": [],
+      "knowledge_gap_log_paths": [],
+      "reusable_artifact_count": 0,
+      "knowledge_outcome": "no_new_knowledge",
+      "knowledge_outcome_reason": "task succeeded without new reusable knowledge artifacts"
+    },
+    "elapsed_seconds": 0.0
+  },
+  "comparison": {
+    "task": false,
+    "targets": [],
+    "summary": {}
+  },
+  "execution": {
+    "mode": "live",
+    "llm_cassette": {}
+  },
+  "market": {
+    "source": "default",
+    "as_of": null,
+    "selected_components": {},
+    "selected_curve_names": {},
+    "available_capabilities": [],
+    "metadata": {},
+    "provenance": {}
+  },
+  "framework": {},
+  "method_runs": {},
+  "post_build": {
+    "task": {
+      "latest_phase": null,
+      "latest_status": null,
+      "updated_at": null,
+      "event_count": 0,
+      "active_flags": {}
+    },
+    "methods": {},
+    "latest_method": null,
+    "latest_phase": null,
+    "latest_status": null,
+    "active_flags": {}
+  },
+  "token_usage": {
+    "task": {},
+    "methods": {}
+  },
+  "learning": {
+    "task_kind": "pricing",
+    "retrieved_lesson_ids": [],
+    "retrieved_lesson_titles": [],
+    "retrieval_stages": [],
+    "retrieval_sources": [],
+    "selected_artifact_ids": [],
+    "selected_artifact_titles": [],
+    "selected_artifacts_by_audience": {},
+    "captured_lesson_ids": [],
+    "lesson_contract_reports": [],
+    "lesson_contract_count": 0,
+    "lesson_contract_outcome": "not_attempted",
+    "lesson_contract_errors": [],
+    "lesson_contract_warnings": [],
+    "lesson_promotion_outcomes": [],
+    "lessons_attributed": 0,
+    "cookbook_enriched": false,
+    "cookbook_candidate_paths": [],
+    "promotion_candidate_paths": [],
+    "knowledge_trace_paths": [],
+    "knowledge_gap_log_paths": [],
+    "reusable_artifact_count": 0,
+    "knowledge_outcome": "no_new_knowledge",
+    "knowledge_outcome_reason": "task succeeded without new reusable knowledge artifacts"
+  },
+  "telemetry": {
+    "task_kind": "pricing",
+    "run_outcome": "succeeded",
+    "retried": false,
+    "retry_count": 0,
+    "degraded": false,
+    "comparison_status": "",
+    "selected_artifacts": [],
+    "route_observations": []
+  },
+  "artifacts": {
+    "platform_request_ids": [],
+    "platform_trace_paths": [],
+    "analytical_trace_paths": [],
+    "analytical_trace_text_paths": [],
+    "audit_record_paths": [],
+    "knowledge_trace_paths": [],
+    "cookbook_candidate_paths": [],
+    "promotion_candidate_paths": [],
+    "knowledge_gap_log_paths": []
+  },
+  "trace_summaries": [],
+  "issue_refs": {
+    "linear": [],
+    "github": []
+  },
+  "workflow": {
+    "status": "succeeded",
+    "next_action": "Completed successfully.",
+    "latest_trace": null,
+    "active_trace_count": 0,
+    "post_build_latest_phase": null,
+    "post_build_latest_status": null,
+    "post_build_latest_method": null,
+    "post_build_flags": {},
+    "linked_issues": {
+      "linear": [],
+      "github": []
+    },
+    "comparison_status": null,
+    "method_count": 0
+  },
+  "summary": {
+    "success": true,
+    "status": "succeeded",
+    "task_kind": "pricing",
+    "preferred_method": null,
+    "payoff_class": "FakeSemanticPayoff",
+    "error": null,
+    "failures": [],
+    "comparison_status": null,
+    "reference_target": null,
+    "prices": {},
+    "deviations_pct": {},
+    "token_usage": {},
+    "framework_outcome": null,
+    "execution_mode": "live",
+    "learning": {
+      "task_kind": "pricing",
+      "retrieved_lesson_ids": [],
+      "retrieved_lesson_titles": [],
+      "retrieval_stages": [],
+      "retrieval_sources": [],
+      "selected_artifact_ids": [],
+      "selected_artifact_titles": [],
+      "selected_artifacts_by_audience": {},
+      "captured_lesson_ids": [],
+      "lesson_contract_reports": [],
+      "lesson_contract_count": 0,
+      "lesson_contract_outcome": "not_attempted",
+      "lesson_contract_errors": [],
+      "lesson_contract_warnings": [],
+      "lesson_promotion_outcomes": [],
+      "lessons_attributed": 0,
+      "cookbook_enriched": false,
+      "cookbook_candidate_paths": [],
+      "promotion_candidate_paths": [],
+      "knowledge_trace_paths": [],
+      "knowledge_gap_log_paths": [],
+      "reusable_artifact_count": 0,
+      "knowledge_outcome": "no_new_knowledge",
+      "knowledge_outcome_reason": "task succeeded without new reusable knowledge artifacts"
+    }
+  },
+  "storage": {
+    "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T997/20260413T025510507446.json",
+    "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T997.json",
+    "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
+    "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T997/20260413T025510507446.json",
+    "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T997/20260413T025510507446.md",
+    "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T997.json",
+    "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T997.md"
+  }
+}

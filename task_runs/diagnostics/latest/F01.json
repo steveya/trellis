@@ -1,0 +1,162 @@
+{
+  "schema_version": 2,
+  "task": {
+    "id": "F01",
+    "title": "Automatic model selection: agent picks best method per instrument",
+    "kind": "framework",
+    "status": null,
+    "construct": "framework"
+  },
+  "run": {
+    "run_id": "20260413T025512346572",
+    "persisted_at": "2026-04-13T02:55:12.346629+00:00",
+    "task_run_history_path": "/home/runner/work/trellis/trellis/task_runs/history/F01/20260413T025512346572.json",
+    "task_run_latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/F01.json",
+    "task_run_latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
+    "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/F01/20260413T025512346572.json",
+    "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/F01/20260413T025512346572.md",
+    "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/F01.json",
+    "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/F01.md"
+  },
+  "outcome": {
+    "success": false,
+    "status": "failed",
+    "failure_bucket": "comparison_failed",
+    "decision_stage": "task_contract",
+    "comparison_status": null,
+    "next_action": "Inspect the recorded evidence and rerun once the blocking issue is resolved.",
+    "headline": "Automatic model selection: agent picks best method per instrument failed in `task_contract` with `comparison_failed`."
+  },
+  "primary_failure": {
+    "bucket": "comparison_failed",
+    "stage": "task_contract",
+    "headline": "Task failed during task_contract.",
+    "likely_cause": "The task contract itself is invalid, so the run failed before a usable pricing path could be assembled.",
+    "confidence": "medium",
+    "signals": [
+      "Task F01 does not make sense as a pricing-task run. This task describes framework or meta-development work rather than pricing a concrete instrument build. The pricing task runner only supports concrete pricing/comparison tasks over a priceable instrument and method family. The declared market context (as_of, discount_curve, forecast_curve, fx_rate, source, state_space) is therefore not a coherent requirement for this runner. Its cross-validation targets (internal=['agent_selected_method', 'manual_best_method'], external=['quantlib']) describe framework evaluation, not direct pricing output comparison. Suggested action: Route this through a dedicated framework-eval harness, or rewrite it as a concrete pricing/comparison task with a specific instrument, methods, and coherent market inputs.",
+      "Task F01 does not make sense as a pricing-task run.",
+      "{\"code\": \"framework_task_not_priceable\", \"explanation\": \"This task describes framework or meta-development work rather than pricing a concrete instrument build. The pricing task runner only supports concrete pricing/comparison tasks over a priceable instrument and method family. The declared market context (as_of, discount_curve, forecast_curve, fx_rate, source, state_space) is therefore not a coherent requirement for this runner. Its cross-validation targets (internal=['agent_selected_method', 'manual_best_method'], external=['quantlib']) describe framework evaluation, not direct pricing output comparison.\", \"message\": \"Task F01 does not make sense as a pricing-task run.\", \"suggestion\": \"Route this through a dedicated framework-eval harness, or rewrite it as a concrete pricing/comparison task with a specific instrument, methods, and coherent market inputs.\"}"
+    ]
+  },
+  "method_outcomes": [],
+  "trace_index": [],
+  "learning": {
+    "task_kind": "framework",
+    "retrieved_lesson_ids": [],
+    "retrieved_lesson_titles": [],
+    "retrieval_stages": [],
+    "retrieval_sources": [],
+    "selected_artifact_ids": [],
+    "selected_artifact_titles": [],
+    "selected_artifacts_by_audience": {},
+    "captured_lesson_ids": [],
+    "lesson_contract_reports": [],
+    "lesson_contract_count": 0,
+    "lesson_contract_outcome": "not_attempted",
+    "lesson_contract_errors": [],
+    "lesson_contract_warnings": [],
+    "lesson_promotion_outcomes": [],
+    "lessons_attributed": 0,
+    "cookbook_enriched": false,
+    "cookbook_candidate_paths": [],
+    "promotion_candidate_paths": [],
+    "knowledge_trace_paths": [],
+    "knowledge_gap_log_paths": [],
+    "reusable_artifact_count": 0,
+    "knowledge_outcome": "blocked_without_learning",
+    "knowledge_outcome_reason": "task failed before any reusable learning artifact was captured"
+  },
+  "workflow": {
+    "status": "failed",
+    "next_action": "Review the framework task summary and supporting evidence.",
+    "latest_trace": null,
+    "active_trace_count": 0,
+    "linked_issues": {
+      "linear": [],
+      "github": []
+    },
+    "comparison_status": null,
+    "method_count": 0
+  },
+  "comparison": {
+    "task": true,
+    "targets": [
+      "agent_selected_method",
+      "manual_best_method"
+    ],
+    "summary": {}
+  },
+  "market": {},
+  "framework": {},
+  "telemetry": {
+    "task_kind": "framework",
+    "run_outcome": "failed",
+    "retried": false,
+    "retry_count": 0,
+    "degraded": false,
+    "comparison_status": "",
+    "selected_artifacts": [],
+    "route_observations": []
+  },
+  "runtime_controls": {
+    "skip_post_build_reflection": false,
+    "skip_post_build_consolidation": false,
+    "skip_task_diagnosis_persist": false
+  },
+  "post_build": {
+    "task": {
+      "latest_phase": null,
+      "latest_status": null,
+      "updated_at": null,
+      "event_count": 0,
+      "active_flags": {}
+    },
+    "methods": {},
+    "latest_method": null,
+    "latest_phase": null,
+    "latest_status": null,
+    "active_flags": {}
+  },
+  "evidence": {
+    "top_level_error": "Task F01 does not make sense as a pricing-task run. This task describes framework or meta-development work rather than pricing a concrete instrument build. The pricing task runner only supports concrete pricing/comparison tasks over a priceable instrument and method family. The declared market context (as_of, discount_curve, forecast_curve, fx_rate, source, state_space) is therefore not a coherent requirement for this runner. Its cross-validation targets (internal=['agent_selected_method', 'manual_best_method'], external=['quantlib']) describe framework evaluation, not direct pricing output comparison. Suggested action: Route this through a dedicated framework-eval harness, or rewrite it as a concrete pricing/comparison task with a specific instrument, methods, and coherent market inputs.",
+    "top_level_failures": [
+      "Task F01 does not make sense as a pricing-task run."
+    ],
+    "blocker_details": {},
+    "task_contract_error": {
+      "code": "framework_task_not_priceable",
+      "message": "Task F01 does not make sense as a pricing-task run.",
+      "explanation": "This task describes framework or meta-development work rather than pricing a concrete instrument build. The pricing task runner only supports concrete pricing/comparison tasks over a priceable instrument and method family. The declared market context (as_of, discount_curve, forecast_curve, fx_rate, source, state_space) is therefore not a coherent requirement for this runner. Its cross-validation targets (internal=['agent_selected_method', 'manual_best_method'], external=['quantlib']) describe framework evaluation, not direct pricing output comparison.",
+      "suggestion": "Route this through a dedicated framework-eval harness, or rewrite it as a concrete pricing/comparison task with a specific instrument, methods, and coherent market inputs."
+    },
+    "cross_validation": {},
+    "knowledge_gaps": [],
+    "gap_confidence": null,
+    "method_failures": [],
+    "comparison": {
+      "status": null,
+      "reference_target": null,
+      "prices": {},
+      "deviations_pct": {}
+    }
+  },
+  "model_audit": {
+    "audit_record_paths": [],
+    "environment": {
+      "repo_revision": null,
+      "knowledge_hash": null,
+      "llm_models_used": []
+    }
+  },
+  "consolidated_validation": {},
+  "storage": {
+    "history_path": "/home/runner/work/trellis/trellis/task_runs/history/F01/20260413T025512346572.json",
+    "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/F01.json",
+    "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
+    "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/F01/20260413T025512346572.json",
+    "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/F01/20260413T025512346572.md",
+    "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/F01.json",
+    "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/F01.md"
+  }
+}

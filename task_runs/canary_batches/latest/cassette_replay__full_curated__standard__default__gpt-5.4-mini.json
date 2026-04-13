@@ -1,0 +1,78 @@
+{
+  "batch_id": "canary_20260413T025345115550Z",
+  "started_at": "2026-04-13T02:53:45.115550+00:00",
+  "finished_at": "2026-04-13T02:53:45.116310+00:00",
+  "selection": {
+    "requested_task_id": null,
+    "requested_subset": null
+  },
+  "config": {
+    "model": "gpt-5.4-mini",
+    "validation": "standard",
+    "knowledge_profile": "default",
+    "replay": true,
+    "execution_mode": "cassette_replay",
+    "comparison_key": "cassette_replay:full_curated:standard:default:gpt-5.4-mini",
+    "synthetic_source": "pytest"
+  },
+  "manifest": {
+    "version": null,
+    "refresh_cadence": null,
+    "total_budget_usd": 1.0
+  },
+  "summary": {
+    "execution_mode": "cassette_replay",
+    "batch_scope": "full_curated",
+    "scope_slug": "full_curated",
+    "benchmark_eligible": false,
+    "benchmark_exclusion_reason": "synthetic:pytest",
+    "comparison_key": "cassette_replay:full_curated:standard:default:gpt-5.4-mini",
+    "model": "gpt-5.4-mini",
+    "validation": "standard",
+    "knowledge_profile": "default",
+    "synthetic_source": "pytest",
+    "requested_task_id": null,
+    "requested_subset": null,
+    "task_count": 1,
+    "completed_count": 1,
+    "pass_count": 1,
+    "failure_count": 0,
+    "skip_count": 0,
+    "pass_rate": 1.0,
+    "total_elapsed_seconds": 0.0,
+    "avg_elapsed_seconds": 0.0,
+    "median_elapsed_seconds": 0.0,
+    "total_tokens": 0,
+    "avg_tokens": 0.0,
+    "median_tokens": 0,
+    "total_attempts": 0,
+    "avg_attempts": 0.0,
+    "max_attempts": 0,
+    "started_at": "2026-04-13T02:53:45.115550+00:00",
+    "finished_at": "2026-04-13T02:53:45.116310+00:00"
+  },
+  "canaries": [
+    {
+      "batch_id": "canary_20260413T025345115550Z",
+      "task_id": "T38",
+      "engine_family": "credit",
+      "complexity": "complex",
+      "success": true,
+      "skipped": false,
+      "reason": "",
+      "error": "",
+      "execution_mode": "cassette_replay",
+      "benchmark_eligible": false,
+      "elapsed_seconds": 0.0,
+      "attempts": 0,
+      "token_usage": {
+        "total_tokens": 0
+      },
+      "total_tokens": 0,
+      "task_run_history_path": "",
+      "task_run_latest_path": "",
+      "task_diagnosis_packet_path": "",
+      "task_diagnosis_dossier_path": ""
+    }
+  ]
+}

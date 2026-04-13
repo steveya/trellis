@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "audit_id": "executor_build_20260413025310_026a30f6_analytical",
+  "task_id": "standalone",
+  "run_id": "executor_build_20260413025310_026a30f6",
+  "method": "analytical",
+  "instrument_type": "",
+  "timestamp": "2026-04-13T02:53:12.606498+00:00",
+  "source_code": "\"\"\"Agent-generated payoff: European payer swaption.\"\"\"\n\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\nfrom datetime import date\n\nfrom trellis.core.market_state import MarketState\nfrom trellis.core.types import DayCountConvention, Frequency\nfrom trellis.models.rate_style_swaption import price_swaption_black76\n\n\n\n@dataclass(frozen=True)\nclass SwaptionSpec:\n    \"\"\"Specification for European payer swaption.\"\"\"\n    notional: float\n    strike: float\n    expiry_date: date\n    swap_start: date\n    swap_end: date\n    swap_frequency: Frequency = Frequency.SEMI_ANNUAL\n    day_count: DayCountConvention = DayCountConvention.ACT_360\n    rate_index: str | None = None\n    is_payer: bool = True\n\n\nclass SwaptionPayoff:\n    \"\"\"European payer swaption.\"\"\"\n\n    def __init__(self, spec: SwaptionSpec):\n        self._spec = spec\n\n    @property\n    def spec(self) -> SwaptionSpec:\n        return self._spec\n\n    @property\n    def requirements(self) -> set[str]:\n        return {\"black_vol_surface\", \"discount_curve\", \"forward_curve\"}\n\n    def evaluate(self, market_state: MarketState) -> float:\n        spec = self._spec\n        return float(price_swaption_black76(market_state, spec))",
+  "source_code_hash": "4640fce11ec73232",
+  "spec_schema": {
+    "class_name": "SwaptionPayoff",
+    "spec_name": "SwaptionSpec",
+    "requirements": [
+      "discount_curve",
+      "forward_curve",
+      "black_vol_surface"
+    ],
+    "fields": [
+      "notional",
+      "strike",
+      "expiry_date",
+      "swap_start",
+      "swap_end",
+      "swap_frequency",
+      "day_count",
+      "rate_index",
+      "is_payer"
+    ]
+  },
+  "class_name": "SwaptionPayoff",
+  "module_path": "instruments/_agent/swaption.py",
+  "environment": {
+    "repo_revision": "3e05e8e455bb8948",
+    "llm_model_id": "gpt-5.4-mini",
+    "knowledge_hash": "unknown",
+    "python_version": "3.12.3"
+  },
+  "market_state_summary": {},
+  "pricing_plan_summary": {
+    "method": "analytical",
+    "required_market_data": [
+      "black_vol_surface",
+      "discount_curve",
+      "forward_curve"
+    ],
+    "method_modules": [
+      "trellis.models.black"
+    ],
+    "selection_reason": "canonical_method",
+    "modeling_requirements": [
+      "OUTPUT CONTRACT: evaluate() must return a float present value. Return a non-empty JSON-serializable structure only when a caller explicitly expects structured output.",
+      "BLACK-SCHOLES FORWARD CONSISTENCY: Derive the forward from spot and discounting before calling Black-style kernels. With no dividends, F = S0 / discount_curve.discount(T); then PV = discount_curve.discount(T) * Black(F, K, sigma, T). This is valid under lognormal spot (GBM) with deterministic rates and European exercise only.",
+      "EQUITY MARKET DATA CONTRACT: Requires discounting and Black vol. Spot is an instrument/spec input, not a separate MarketState capability unless the product explicitly sources it from a live market snapshot.",
+      "GARMAN-KOHLHAGEN CONSISTENCY: Use spot FX, domestic discounting, foreign discounting, and Black vol. Covered interest parity gives F = S0 * df_foreign / df_domestic; then prefer the checked helper-backed FX vanilla path built on resolved inputs over reassembling Black76 basis claims inline, and use explicit basis-claim assembly only when the decomposition itself is the thing being validated. This is valid under lognormal FX spot with deterministic domestic and foreign rates.",
+      "FX MARKET DATA CONTRACT: Requires `market_state.discount` for domestic discounting, `market_state.forecast_curves[...]` for the selected foreign discount curve, `market_state.forward_curve` for bridged foreign-carry / routing context, `market_state.vol_surface` for Black vol, and `market_state.fx_rates` or `market_state.spot` for spot FX.",
+      "BLACK76 FORWARD-RATE CONSISTENCY: Each period prices independently as a Black76 call or put on the forward rate fixing at period start, discounted to settlement at period end. Valid under lognormal forward rate with deterministic discount factors.",
+      "RATE-STYLE SWAPTION HELPER CONTRACT: For a single-exercise European swaption, prefer the checked helper-backed path `resolve_swaption_black76_inputs(market_state, spec)` -> `ResolvedSwaptionBlack76Inputs` -> `price_swaption_black76_raw(resolved)` from `trellis.models.rate_style_swaption` instead of reassembling annuity, forward-swap-rate, expiry, and payment-count binding inline.",
+      "CAP/FLOOR LOOP CONTRACT: Keep the explicit payment-timeline loop for caplet/floorlet strips. Do not force the single-exercise swaption helper onto period-by-period cap/floor routes.",
+      "FORWARD-RATE MARKET DATA CONTRACT: Requires discount curve, forward curve (via forecast_forward_curve), and Black vol surface. Rate fixing dates and payment dates must match the instrument schedule.",
+      "JAMSHIDIAN ZCB OPTION CONSISTENCY: For European zero-coupon bond options under the Hull-White / Jamshidian contract, prefer the checked helper-backed path `resolve_zcb_option_hw_inputs(...)` -> `ResolvedJamshidianInputs` -> `zcb_option_hw_raw(...)`, or delegate straight to `price_zcb_option_jamshidian(...)` when the wrapper already matches the route. Do not degrade this route to generic Black76 on a forward bond price when the task explicitly asks for Jamshidian / Hull-White.",
+      "ZCB OPTION STRIKE NORMALIZATION: Normalize strike quotes to unit face before the closed-form kernel. Treat `63` on `100` face as `0.63`, and require the underlying bond maturity to remain strictly after option expiry.",
+      "ZCB OPTION MARKET DATA CONTRACT: Requires `market_state.discount` and `market_state.vol_surface`. Resolved inputs should carry discount factors at option expiry and bond maturity plus the mapped Black-style volatility quote at expiry.",
+      "CREDIT-SURVIVAL CONSISTENCY: For single-name CDS, price the premium leg and protection leg directly from credit_curve survival probabilities and hazard rates on an explicit payment schedule. Do not reinterpret CDS as nth-to-default, basket CDS, or first-to-default, and do not reuse Black76 call/put primitives.",
+      "CDS SPREAD UNITS: Running CDS spreads in task text are often quoted in basis points. Convert them to decimals before premium-leg accrual, for example 150 bp -> 0.015; do not multiply accrual by a raw value like 150.0.",
+      "CREDIT MARKET DATA CONTRACT: Requires credit_curve plus discount_curve. Declare both in the generated requirements set and keep the adapter thin around schedule generation, year_fraction, survival_probability, hazard_rate, and discounting.",
+      "DETERMINISTIC CASHFLOW CONTRACT: When all cashflows are known at pricing time and there is no optionality, PV = sum of cashflows * discount_factors. No vol surface or forward curve is needed."
+    ]
+  },
+  "validation_gates": [
+    {
+      "gate": "import",
+      "passed": true,
+      "issues": [],
+      "details": {}
+    },
+    {
+      "gate": "semantic",
+      "passed": true,
+      "issues": [],
+      "details": {}
+    },
+    {
+      "gate": "semantic_validators",
+      "passed": true,
+      "issues": [],
+      "details": {}
+    },
+    {
+      "gate": "lite_review",
+      "passed": true,
+      "issues": [],
+      "details": {}
+    },
+    {
+      "gate": "bundle",
+      "passed": true,
+      "issues": [],
+      "details": {
+        "bundle_id": "analytical:swaption",
+        "validation_contract_id": "analytical:swaption",
+        "route_binding_authority": {
+          "route_id": "analytical_black76",
+          "route_family": "analytical",
+          "authority_kind": "exact_backend_fit",
+          "compatibility_alias_policy": "internal_only",
+          "backend_binding": {
+            "binding_id": "trellis.models.rate_style_swaption.price_swaption_black76",
+            "engine_family": "analytical",
+            "exact_backend_fit": true,
+            "exact_target_refs": [
+              "trellis.models.rate_style_swaption.price_swaption_black76"
+            ],
+            "approved_modules": [
+              "trellis.core.date_utils",
+              "trellis.core.differentiable",
+              "trellis.core.market_state",
+              "trellis.core.payoff",
+              "trellis.core.types",
+              "trellis.models.analytical",
+              "trellis.models.analytical.barrier",
+              "trellis.models.analytical.fx",
+              "trellis.models.analytical.jamshidian",
+              "trellis.models.analytical.quanto",
+              "trellis.models.analytical.support.cross_asset",
+              "trellis.models.analytical.support.discounting",
+              "trellis.models.analytical.support.forwards",
+              "trellis.models.analytical.support.payoffs",
+              "trellis.models.black",
+              "trellis.models.rate_style_swaption"
+            ],
+            "primitive_refs": [
+              "trellis.models.rate_style_swaption.price_swaption_black76"
+            ],
+            "helper_refs": [
+              "trellis.models.rate_style_swaption.price_swaption_black76"
+            ],
+            "pricing_kernel_refs": [],
+            "schedule_builder_refs": [],
+            "cashflow_engine_refs": [],
+            "market_binding_refs": [],
+            "admissibility": {
+              "supported_control_styles": [
+                "identity",
+                "holder_max"
+              ],
+              "event_support": "none",
+              "phase_sensitivity": "default_phase_order_only",
+              "multicurrency_support": "single_currency_only",
+              "supported_outputs": [
+                "price",
+                "scenario_pnl"
+              ],
+              "supports_sensitivity_outputs": true,
+              "supported_state_tags": [
+                "terminal_markov",
+                "recombining_safe",
+                "schedule_state"
+              ],
+              "supported_process_families": [],
+              "supported_path_requirement_kinds": [],
+              "supported_operator_families": [],
+              "supported_characteristic_families": [],
+              "supported_event_transform_kinds": [],
+              "supports_calibration": false
+            },
+            "admissibility_failures": []
+          },
+          "operator_metadata": {
+            "display_name": "Swaption Black-76 (analytical)",
+            "short_description": "Fallback operator metadata derived from backend binding `trellis.models.rate_style_swaption.price_swaption_black76`.",
+            "diagnostic_label": "analytical_black76"
+          },
+          "validation_bundle_id": "analytical:swaption",
+          "exact_validation_bundle_id": "analytical:swaption@trellis.models.rate_style_swaption.price_swaption_black76",
+          "validation_check_ids": [
+            "check_non_negativity",
+            "check_price_sanity",
+            "check_rate_style_swaption_helper_consistency"
+          ],
+          "canary_task_ids": [
+            "T73"
+          ],
+          "provenance": {
+            "semantic_contract_id": "",
+            "requested_instrument_type": "",
+            "product_instrument_type": "swaption",
+            "method": "analytical",
+            "lane_family": "analytical",
+            "lane_plan_kind": "exact_target_binding",
+            "repo_revision": "3e05e8e455bb894825c363ce38d73be7f6ef7c15"
+          }
+        }
+      }
+    },
+    {
+      "gate": "reference_oracle",
+      "passed": true,
+      "issues": [],
+      "details": {
+        "oracle_id": "swaption_black76_exact",
+        "relation": "within_tolerance",
+        "source": "trellis.models.rate_style_swaption.price_swaption_black76"
+      }
+    },
+    {
+      "gate": "critic",
+      "passed": false,
+      "issues": [],
+      "details": {
+        "critic_mode": "advisory",
+        "json_max_retries": 0,
+        "allow_text_fallback": false,
+        "text_max_retries": 0,
+        "error_type": "RuntimeError",
+        "error": "OpenAI json request failed after 1 attempts for model 'gpt-5.4-mini': ModuleNotFoundError: No module named 'openai'",
+        "advisory": true
+      }
+    }
+  ],
+  "all_gates_passed": false,
+  "build_metrics": {
+    "attempt_number": 1,
+    "total_attempts": 1,
+    "token_usage": {},
+    "wall_clock_seconds": 1.295604944229126
+  },
+  "approval_status": "pending_review"
+}

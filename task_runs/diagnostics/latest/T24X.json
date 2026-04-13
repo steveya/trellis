@@ -1,0 +1,323 @@
+{
+  "schema_version": 2,
+  "task": {
+    "id": "T24X",
+    "title": "Finite element method (FEM) vs finite difference for European",
+    "kind": "pricing",
+    "status": null,
+    "construct": "pde"
+  },
+  "run": {
+    "run_id": "20260413T025512118151",
+    "persisted_at": "2026-04-13T02:55:12.118530+00:00",
+    "task_run_history_path": "/home/runner/work/trellis/trellis/task_runs/history/T24X/20260413T025512118151.json",
+    "task_run_latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T24X.json",
+    "task_run_latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
+    "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T24X/20260413T025512118151.json",
+    "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T24X/20260413T025512118151.md",
+    "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T24X.json",
+    "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T24X.md"
+  },
+  "outcome": {
+    "success": true,
+    "status": "succeeded",
+    "failure_bucket": "success",
+    "decision_stage": "completed",
+    "comparison_status": "passed",
+    "next_action": "No action required.",
+    "headline": "Finite element method (FEM) vs finite difference for European completed successfully."
+  },
+  "primary_failure": {
+    "bucket": "success",
+    "stage": "completed",
+    "headline": "Run completed successfully.",
+    "likely_cause": "The run failed without a narrower bucketed diagnosis.",
+    "confidence": "low",
+    "signals": []
+  },
+  "method_outcomes": [
+    {
+      "method": "fem_solver",
+      "success": true,
+      "attempts": 1,
+      "preferred_method": "pde_solver",
+      "failure_bucket": "success",
+      "route_method": null,
+      "trace_path": null,
+      "trace_status": null,
+      "latest_event": null,
+      "comparison_status": null,
+      "token_usage": {},
+      "error": null,
+      "failures": [],
+      "post_build_latest_phase": null,
+      "post_build_latest_status": null
+    },
+    {
+      "method": "fd_theta_method",
+      "success": true,
+      "attempts": 1,
+      "preferred_method": "pde_solver",
+      "failure_bucket": "success",
+      "route_method": null,
+      "trace_path": null,
+      "trace_status": null,
+      "latest_event": null,
+      "comparison_status": null,
+      "token_usage": {},
+      "error": null,
+      "failures": [],
+      "post_build_latest_phase": null,
+      "post_build_latest_status": null
+    },
+    {
+      "method": "black_scholes",
+      "success": true,
+      "attempts": 1,
+      "preferred_method": "analytical",
+      "failure_bucket": "success",
+      "route_method": null,
+      "trace_path": null,
+      "trace_status": null,
+      "latest_event": null,
+      "comparison_status": null,
+      "token_usage": {},
+      "error": null,
+      "failures": [],
+      "post_build_latest_phase": null,
+      "post_build_latest_status": null
+    }
+  ],
+  "trace_index": [],
+  "learning": {
+    "task_kind": "pricing",
+    "retrieved_lesson_ids": [],
+    "retrieved_lesson_titles": [],
+    "retrieval_stages": [],
+    "retrieval_sources": [],
+    "selected_artifact_ids": [],
+    "selected_artifact_titles": [],
+    "selected_artifacts_by_audience": {},
+    "captured_lesson_ids": [],
+    "lesson_contract_reports": [],
+    "lesson_contract_count": 0,
+    "lesson_contract_outcome": "not_attempted",
+    "lesson_contract_errors": [],
+    "lesson_contract_warnings": [],
+    "lesson_promotion_outcomes": [],
+    "lessons_attributed": 0,
+    "cookbook_enriched": false,
+    "cookbook_candidate_paths": [],
+    "promotion_candidate_paths": [],
+    "knowledge_trace_paths": [],
+    "knowledge_gap_log_paths": [],
+    "reusable_artifact_count": 0,
+    "knowledge_outcome": "no_new_knowledge",
+    "knowledge_outcome_reason": "task succeeded without new reusable knowledge artifacts"
+  },
+  "workflow": {
+    "status": "succeeded",
+    "next_action": "Review comparison prices and deviations for consistency across methods.",
+    "latest_trace": null,
+    "active_trace_count": 0,
+    "post_build_latest_phase": null,
+    "post_build_latest_status": null,
+    "post_build_latest_method": null,
+    "post_build_flags": {},
+    "linked_issues": {
+      "linear": [],
+      "github": []
+    },
+    "comparison_status": "passed",
+    "method_count": 3
+  },
+  "comparison": {
+    "task": true,
+    "targets": [
+      "fem_solver",
+      "fd_theta_method",
+      "black_scholes"
+    ],
+    "summary": {
+      "status": "passed",
+      "configured_targets": {
+        "internal": [
+          "fem_solver",
+          "fd_theta_method"
+        ],
+        "analytical": "black_scholes"
+      },
+      "prices": {
+        "fem_solver": 101.0,
+        "fd_theta_method": 101.0,
+        "black_scholes": 101.0
+      },
+      "price_errors": {},
+      "reference_target": "black_scholes",
+      "reference_price": 101.0,
+      "tolerance_pct": 5.0,
+      "deviations_pct": {
+        "fem_solver": 0.0,
+        "fd_theta_method": 0.0
+      },
+      "comparison_relations": {
+        "fem_solver": "within_tolerance",
+        "fd_theta_method": "within_tolerance"
+      },
+      "passed_targets": [
+        "fem_solver",
+        "fd_theta_method"
+      ],
+      "failed_targets": [],
+      "successful_targets": [
+        "fem_solver",
+        "fd_theta_method",
+        "black_scholes"
+      ]
+    }
+  },
+  "market": {
+    "source": "default",
+    "as_of": null,
+    "selected_components": {},
+    "selected_curve_names": {},
+    "available_capabilities": [],
+    "metadata": {},
+    "provenance": {}
+  },
+  "framework": {},
+  "telemetry": {
+    "task_kind": "pricing",
+    "run_outcome": "succeeded",
+    "retried": true,
+    "retry_count": 2,
+    "degraded": false,
+    "comparison_status": "passed",
+    "selected_artifacts": [],
+    "route_observations": []
+  },
+  "runtime_controls": {
+    "skip_post_build_reflection": false,
+    "skip_post_build_consolidation": false,
+    "skip_task_diagnosis_persist": false
+  },
+  "post_build": {
+    "task": {
+      "latest_phase": null,
+      "latest_status": null,
+      "updated_at": null,
+      "event_count": 0,
+      "active_flags": {}
+    },
+    "methods": {
+      "fem_solver": {
+        "latest_phase": null,
+        "latest_status": null,
+        "updated_at": null,
+        "event_count": 0,
+        "active_flags": {}
+      },
+      "fd_theta_method": {
+        "latest_phase": null,
+        "latest_status": null,
+        "updated_at": null,
+        "event_count": 0,
+        "active_flags": {}
+      },
+      "black_scholes": {
+        "latest_phase": null,
+        "latest_status": null,
+        "updated_at": null,
+        "event_count": 0,
+        "active_flags": {}
+      }
+    },
+    "latest_method": null,
+    "latest_phase": null,
+    "latest_status": null,
+    "active_flags": {}
+  },
+  "evidence": {
+    "top_level_error": null,
+    "top_level_failures": [],
+    "blocker_details": {},
+    "task_contract_error": {},
+    "cross_validation": {
+      "status": "passed",
+      "configured_targets": {
+        "internal": [
+          "fem_solver",
+          "fd_theta_method"
+        ],
+        "analytical": "black_scholes"
+      },
+      "prices": {
+        "fem_solver": 101.0,
+        "fd_theta_method": 101.0,
+        "black_scholes": 101.0
+      },
+      "price_errors": {},
+      "reference_target": "black_scholes",
+      "reference_price": 101.0,
+      "tolerance_pct": 5.0,
+      "deviations_pct": {
+        "fem_solver": 0.0,
+        "fd_theta_method": 0.0
+      },
+      "comparison_relations": {
+        "fem_solver": "within_tolerance",
+        "fd_theta_method": "within_tolerance"
+      },
+      "passed_targets": [
+        "fem_solver",
+        "fd_theta_method"
+      ],
+      "failed_targets": [],
+      "successful_targets": [
+        "fem_solver",
+        "fd_theta_method",
+        "black_scholes"
+      ]
+    },
+    "knowledge_gaps": [],
+    "gap_confidence": 0.8,
+    "method_failures": [],
+    "comparison": {
+      "status": null,
+      "reference_target": null,
+      "prices": {},
+      "deviations_pct": {}
+    }
+  },
+  "model_audit": {
+    "audit_record_paths": [],
+    "environment": {
+      "repo_revision": null,
+      "knowledge_hash": null,
+      "llm_models_used": []
+    }
+  },
+  "consolidated_validation": {
+    "fem_solver": {
+      "gates": [],
+      "all_passed": null
+    },
+    "fd_theta_method": {
+      "gates": [],
+      "all_passed": null
+    },
+    "black_scholes": {
+      "gates": [],
+      "all_passed": null
+    }
+  },
+  "storage": {
+    "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T24X/20260413T025512118151.json",
+    "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T24X.json",
+    "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
+    "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T24X/20260413T025512118151.json",
+    "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T24X/20260413T025512118151.md",
+    "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T24X.json",
+    "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T24X.md"
+  }
+}
