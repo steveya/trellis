@@ -80,10 +80,10 @@ def test_route_hint_projection_includes_instruction_lifecycle_records():
 
 
 def test_route_hint_lineage_links_back_to_matching_cookbook():
-    record = get_skill_record("route_hint:analytical_garman_kohlhagen:note:1")
+    record = get_skill_record("route_hint:analytical_garman_kohlhagen:route-helper")
 
     assert record is not None
-    assert record.kind == "historical_note"
+    assert record.kind == "route_hint"
     assert record.lineage_status == "derived"
     assert "route.match_method_to_cookbook" in record.lineage_evidence
     assert "cookbook:analytical" in record.parents
@@ -93,11 +93,11 @@ def test_skill_lineage_query_surfaces_children_and_same_source_records():
     lineage = get_skill_lineage("cookbook:analytical")
 
     assert lineage is not None
-    assert "route_hint:analytical_garman_kohlhagen:note:1" in lineage["children"]
+    assert "route_hint:analytical_garman_kohlhagen:route-helper" in lineage["children"]
 
-    route_lineage = get_skill_lineage("route_hint:analytical_garman_kohlhagen:note:1")
+    route_lineage = get_skill_lineage("route_hint:analytical_garman_kohlhagen:route-helper")
     assert route_lineage is not None
-    assert "route_hint:analytical_garman_kohlhagen:route-helper" in route_lineage["same_source"]
+    assert route_lineage["same_source"] == ()
 
     lineage_index = load_skill_lineage_index()
     assert lineage_index["cookbook:analytical"]["children"] == lineage["children"]
@@ -119,6 +119,13 @@ def test_route_notes_are_not_projected_as_live_route_hints():
     }
 
     assert "route_hint:analytical_garman_kohlhagen:note:1" not in route_hint_ids
+
+
+def test_migrated_exact_helper_routes_do_not_project_duplicate_note_records():
+    assert get_skill_record("route_hint:analytical_garman_kohlhagen:note:1") is None
+    assert get_skill_record("route_hint:quanto_adjustment_analytical:note:1") is None
+    assert get_skill_record("route_hint:correlated_gbm_monte_carlo:note:1") is None
+    assert get_skill_record("route_hint:monte_carlo_fx_vanilla:note:1") is None
 
 
 def test_skill_index_generation_is_deterministic():

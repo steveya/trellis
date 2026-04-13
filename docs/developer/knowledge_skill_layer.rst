@@ -112,7 +112,10 @@ Discovered routes remain available to analysis code paths, but they no longer
 perturb ordinary prompt skill projection unless a caller opts in explicitly.
 Migrated exact-helper routes may also mark that alias as internal-only, which
 suppresses it from operator-facing prompts while retaining the raw id for
-replay and canary history.
+replay and canary history. Once a migrated exact-helper route has first-class
+binding operator metadata, duplicate human-facing route notes should be
+removed from ``routes.yaml`` rather than projected as additional
+``historical_note`` records.
 
 Selection and trace surface
 ---------------------------

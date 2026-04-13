@@ -130,7 +130,7 @@ ultimately targets.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-04-13`
+Status mirror last synced: `2026-04-12`
 
 ### Ordered Epic Queue
 
@@ -175,7 +175,7 @@ Status mirror last synced: `2026-04-13`
 | --- | --- |
 | `QUA-803` | Operator metadata: introduce first-class binding display and diagnostic catalog | Done |
 | `QUA-807` | Operator views: use binding metadata in MCP, session, and task diagnostics surfaces | Done |
-| `QUA-814` | Route YAML cleanup: strip operator-facing wording after binding metadata adoption | Backlog |
+| `QUA-814` | Route YAML cleanup: strip operator-facing wording after binding metadata adoption | Done |
 
 ### Ordered Exotic Composition Proof Queue
 
