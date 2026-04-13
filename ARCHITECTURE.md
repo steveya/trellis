@@ -81,6 +81,9 @@ maintenance around the deterministic engines.
 - `trellis/agent/backend_bindings.py` is the canonical catalog of exact helper,
   kernel, schedule-builder, cashflow-engine, and market-binding facts used by
   the runtime.
+- `trellis/agent/binding_operator_metadata.py` is the first-class catalog of
+  operator-facing binding display names, short descriptions, and diagnostic
+  labels, so operator wording no longer has to piggyback on route YAML prose.
 - `trellis/agent/codegen_guardrails.py` now carries those backend-binding facts
   on `PrimitivePlan` and `GenerationPlan`, so runtime plans no longer need to
   rediscover exact helper identity from route ids later in validation or trace
