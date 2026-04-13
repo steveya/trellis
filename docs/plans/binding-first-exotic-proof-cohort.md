@@ -143,6 +143,12 @@ not a permanent block sentinel.
 - time and token cost
 - any remaining blocker families that still prevent the claimed end state
 
+The checked closeout summary lives in:
+
+- `docs/plans/binding-first-exotic-proof-closeout.md`
+- `docs/benchmarks/binding_first_exotic_proof_closeout.json`
+- `docs/benchmarks/binding_first_exotic_proof_closeout.md`
+
 ## Latest Evidence
 
 ### `QUA-808` live run on `2026-04-13`

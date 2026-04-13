@@ -1,0 +1,1740 @@
+{
+  "totals": {
+    "tasks": 11,
+    "passed_gate": 1,
+    "failed_gate": 10,
+    "proved": 10,
+    "honest_block": 1
+  },
+  "cohorts": {
+    "event_control_schedule": {
+      "status": "failed_gate",
+      "task_ids": [
+        "T17",
+        "T73",
+        "T105",
+        "E22",
+        "E27"
+      ],
+      "totals": {
+        "tasks": 5,
+        "passed_gate": 1,
+        "failed_gate": 4,
+        "proved": 4,
+        "honest_block": 1
+      },
+      "failure_buckets": {
+        "comparison_insufficient_results": 3,
+        "comparison_failed": 1,
+        "success": 1
+      },
+      "task_summary": {
+        "totals": {
+          "tasks": 5,
+          "successes": 1,
+          "failures": 4,
+          "avg_attempts": 2.4
+        },
+        "failure_buckets": {
+          "comparison_insufficient_results": 3,
+          "comparison_failed": 1,
+          "success": 1
+        },
+        "retry_recovery": {
+          "successful_after_retry": 0,
+          "first_attempt_successes": 1
+        },
+        "first_pass": {
+          "tasks": 5,
+          "successful_tasks": 1,
+          "first_pass_successes": 1,
+          "rate": 0.2,
+          "success_rate": 1.0
+        },
+        "attempts_to_success": {
+          "successful_tasks": 1,
+          "average": 1.0,
+          "median": 1.0,
+          "max": 1,
+          "distribution": {
+            "1": 1
+          }
+        },
+        "retry_taxonomy": {
+          "recovered_successes": 0,
+          "unattributed_recoveries": 0,
+          "by_stage": {},
+          "by_task": {}
+        },
+        "reviewer_signals": {
+          "tasks_with_reviewer_issues": 0,
+          "tasks_with_multi_reviewer_issues": 0,
+          "tasks_recovered_after_review": 0,
+          "reviewer_agent_counts": {}
+        },
+        "shared_knowledge": {
+          "tasks_with_shared_context": 5,
+          "tasks_with_lessons": 5
+        },
+        "promotion_discipline": {
+          "successful_tasks": 1,
+          "successful_tasks_with_shared_context": 1,
+          "captured_lessons": 0,
+          "tasks_with_attribution": 1,
+          "cookbook_candidates": 0,
+          "promotion_candidates": 2,
+          "knowledge_traces": 0,
+          "successful_tasks_without_reusable_artifacts": []
+        },
+        "token_usage": {
+          "call_count": 105,
+          "calls_with_usage": 105,
+          "calls_without_usage": 0,
+          "prompt_tokens": 218482,
+          "completion_tokens": 18826,
+          "total_tokens": 237308,
+          "by_stage": {
+            "reflection": {
+              "call_count": 86,
+              "calls_with_usage": 86,
+              "calls_without_usage": 0,
+              "prompt_tokens": 117480,
+              "completion_tokens": 12732,
+              "total_tokens": 130212
+            },
+            "code_generation": {
+              "call_count": 12,
+              "calls_with_usage": 12,
+              "calls_without_usage": 0,
+              "prompt_tokens": 83709,
+              "completion_tokens": 5172,
+              "total_tokens": 88881
+            },
+            "critic": {
+              "call_count": 6,
+              "calls_with_usage": 6,
+              "calls_without_usage": 0,
+              "prompt_tokens": 13086,
+              "completion_tokens": 542,
+              "total_tokens": 13628
+            },
+            "decomposition": {
+              "call_count": 1,
+              "calls_with_usage": 1,
+              "calls_without_usage": 0,
+              "prompt_tokens": 4207,
+              "completion_tokens": 380,
+              "total_tokens": 4587
+            }
+          },
+          "by_provider": {
+            "openai": {
+              "call_count": 105,
+              "calls_with_usage": 105,
+              "calls_without_usage": 0,
+              "prompt_tokens": 218482,
+              "completion_tokens": 18826,
+              "total_tokens": 237308
+            }
+          }
+        }
+      },
+      "report_json_path": "qua808_report_live.json",
+      "report_md_path": "qua808_report_live.md",
+      "raw_results_path": "qua808_results_live.json"
+    },
+    "basket_credit_loss": {
+      "status": "failed_gate",
+      "task_ids": [
+        "T49",
+        "T50",
+        "T53",
+        "E26",
+        "T102",
+        "T126"
+      ],
+      "totals": {
+        "tasks": 6,
+        "passed_gate": 0,
+        "failed_gate": 6,
+        "proved": 6,
+        "honest_block": 0
+      },
+      "failure_buckets": {
+        "comparison_insufficient_results": 6
+      },
+      "task_summary": {
+        "totals": {
+          "tasks": 6,
+          "successes": 0,
+          "failures": 6,
+          "avg_attempts": 6.17
+        },
+        "failure_buckets": {
+          "comparison_insufficient_results": 6
+        },
+        "retry_recovery": {
+          "successful_after_retry": 0,
+          "first_attempt_successes": 0
+        },
+        "first_pass": {
+          "tasks": 6,
+          "successful_tasks": 0,
+          "first_pass_successes": 0,
+          "rate": 0.0,
+          "success_rate": 0.0
+        },
+        "attempts_to_success": {
+          "successful_tasks": 0,
+          "average": 0.0,
+          "median": 0.0,
+          "max": 0,
+          "distribution": {}
+        },
+        "retry_taxonomy": {
+          "recovered_successes": 0,
+          "unattributed_recoveries": 0,
+          "by_stage": {},
+          "by_task": {}
+        },
+        "reviewer_signals": {
+          "tasks_with_reviewer_issues": 0,
+          "tasks_with_multi_reviewer_issues": 0,
+          "tasks_recovered_after_review": 0,
+          "reviewer_agent_counts": {}
+        },
+        "shared_knowledge": {
+          "tasks_with_shared_context": 6,
+          "tasks_with_lessons": 6
+        },
+        "promotion_discipline": {
+          "successful_tasks": 0,
+          "successful_tasks_with_shared_context": 0,
+          "captured_lessons": 0,
+          "tasks_with_attribution": 0,
+          "cookbook_candidates": 0,
+          "promotion_candidates": 0,
+          "knowledge_traces": 0,
+          "successful_tasks_without_reusable_artifacts": []
+        },
+        "token_usage": {
+          "call_count": 152,
+          "calls_with_usage": 152,
+          "calls_without_usage": 0,
+          "prompt_tokens": 587770,
+          "completion_tokens": 58528,
+          "total_tokens": 646298,
+          "by_stage": {
+            "code_generation": {
+              "call_count": 37,
+              "calls_with_usage": 37,
+              "calls_without_usage": 0,
+              "prompt_tokens": 396278,
+              "completion_tokens": 35120,
+              "total_tokens": 431398
+            },
+            "critic": {
+              "call_count": 2,
+              "calls_with_usage": 2,
+              "calls_without_usage": 0,
+              "prompt_tokens": 4587,
+              "completion_tokens": 365,
+              "total_tokens": 4952
+            },
+            "reflection": {
+              "call_count": 100,
+              "calls_with_usage": 100,
+              "calls_without_usage": 0,
+              "prompt_tokens": 141406,
+              "completion_tokens": 16957,
+              "total_tokens": 158363
+            },
+            "decomposition": {
+              "call_count": 10,
+              "calls_with_usage": 10,
+              "calls_without_usage": 0,
+              "prompt_tokens": 43491,
+              "completion_tokens": 3691,
+              "total_tokens": 47182
+            },
+            "spec_design": {
+              "call_count": 3,
+              "calls_with_usage": 3,
+              "calls_without_usage": 0,
+              "prompt_tokens": 2008,
+              "completion_tokens": 2395,
+              "total_tokens": 4403
+            }
+          },
+          "by_provider": {
+            "openai": {
+              "call_count": 152,
+              "calls_with_usage": 152,
+              "calls_without_usage": 0,
+              "prompt_tokens": 587770,
+              "completion_tokens": 58528,
+              "total_tokens": 646298
+            }
+          }
+        }
+      },
+      "report_json_path": "qua809_report_live.json",
+      "report_md_path": "qua809_report_live.md",
+      "raw_results_path": "qua809_results_live.json"
+    }
+  },
+  "failure_buckets": {
+    "comparison_insufficient_results": 9,
+    "comparison_failed": 1,
+    "success": 1
+  },
+  "by_task": {
+    "T17": {
+      "title": "Callable bond: HW rate PDE (PSOR) vs HW tree",
+      "cohort": "event_control_schedule",
+      "outcome_class": "proved",
+      "success": false,
+      "failure_bucket": "comparison_insufficient_results",
+      "comparison_status": "insufficient_results",
+      "elapsed_seconds": 68.5,
+      "attempts_to_success": 1,
+      "first_pass": true,
+      "retry_taxonomy": [],
+      "token_usage": {
+        "call_count": 19,
+        "calls_with_usage": 19,
+        "calls_without_usage": 0,
+        "prompt_tokens": 32473,
+        "completion_tokens": 2497,
+        "total_tokens": 34970,
+        "by_stage": {
+          "reflection": {
+            "call_count": 17,
+            "calls_with_usage": 17,
+            "calls_without_usage": 0,
+            "prompt_tokens": 23053,
+            "completion_tokens": 2444,
+            "total_tokens": 25497
+          },
+          "code_generation": {
+            "call_count": 1,
+            "calls_with_usage": 1,
+            "calls_without_usage": 0,
+            "prompt_tokens": 7186,
+            "completion_tokens": 40,
+            "total_tokens": 7226
+          },
+          "critic": {
+            "call_count": 1,
+            "calls_with_usage": 1,
+            "calls_without_usage": 0,
+            "prompt_tokens": 2234,
+            "completion_tokens": 13,
+            "total_tokens": 2247
+          }
+        },
+        "by_provider": {
+          "openai": {
+            "call_count": 19,
+            "calls_with_usage": 19,
+            "calls_without_usage": 0,
+            "prompt_tokens": 32473,
+            "completion_tokens": 2497,
+            "total_tokens": 34970
+          }
+        }
+      },
+      "binding_ids": [
+        "trellis.models.callable_bond_tree.price_callable_bond_tree"
+      ],
+      "binding_families": [
+        "pde_solver",
+        "lattice",
+        "rate_lattice"
+      ],
+      "route_ids": [
+        "exercise_lattice",
+        "unknown"
+      ],
+      "task_run_latest_path": "T17.json",
+      "task_run_history_path": "20260413T020551918938.json",
+      "diagnosis_packet_path": "20260413T020551918938.json",
+      "diagnosis_dossier_path": "20260413T020551918938.md",
+      "diagnosis_latest_packet_path": "T17.json",
+      "diagnosis_latest_dossier_path": "T17.md",
+      "preflight": {
+        "task_contract_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "market_capability_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_inventory": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_separation": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "live_checks": {
+        "forbidden_failure_patterns": {
+          "passed": true,
+          "details": []
+        },
+        "outcome_class_alignment": {
+          "passed": false,
+          "details": [
+            "proved task did not succeed: bucket=comparison_insufficient_results",
+            "proved task did not finish with passed comparison status: insufficient_results"
+          ]
+        },
+        "binding_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "route_identity_alignment": {
+          "passed": false,
+          "details": [
+            "task surfaced non-canonical route ids: unknown"
+          ]
+        },
+        "blocker_category_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "reference_target_alignment": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "passed_gate": false
+    },
+    "T73": {
+      "title": "European swaption: Black76 vs HW tree vs HW MC",
+      "cohort": "event_control_schedule",
+      "outcome_class": "proved",
+      "success": false,
+      "failure_bucket": "comparison_failed",
+      "comparison_status": "failed",
+      "elapsed_seconds": 93.8,
+      "attempts_to_success": 1,
+      "first_pass": true,
+      "retry_taxonomy": [],
+      "token_usage": {
+        "call_count": 30,
+        "calls_with_usage": 30,
+        "calls_without_usage": 0,
+        "prompt_tokens": 58792,
+        "completion_tokens": 4852,
+        "total_tokens": 63644,
+        "by_stage": {
+          "code_generation": {
+            "call_count": 3,
+            "calls_with_usage": 3,
+            "calls_without_usage": 0,
+            "prompt_tokens": 19774,
+            "completion_tokens": 1184,
+            "total_tokens": 20958
+          },
+          "critic": {
+            "call_count": 3,
+            "calls_with_usage": 3,
+            "calls_without_usage": 0,
+            "prompt_tokens": 6252,
+            "completion_tokens": 397,
+            "total_tokens": 6649
+          },
+          "reflection": {
+            "call_count": 24,
+            "calls_with_usage": 24,
+            "calls_without_usage": 0,
+            "prompt_tokens": 32766,
+            "completion_tokens": 3271,
+            "total_tokens": 36037
+          }
+        },
+        "by_provider": {
+          "openai": {
+            "call_count": 30,
+            "calls_with_usage": 30,
+            "calls_without_usage": 0,
+            "prompt_tokens": 58792,
+            "completion_tokens": 4852,
+            "total_tokens": 63644
+          }
+        }
+      },
+      "binding_ids": [
+        "trellis.models.rate_style_swaption.price_swaption_black76",
+        "trellis.models.rate_style_swaption_tree.price_swaption_tree",
+        "trellis.models.rate_style_swaption.price_swaption_monte_carlo"
+      ],
+      "binding_families": [
+        "analytical",
+        "lattice",
+        "monte_carlo",
+        "rate_lattice"
+      ],
+      "route_ids": [
+        "analytical_black76",
+        "rate_tree_backward_induction",
+        "monte_carlo_paths"
+      ],
+      "task_run_latest_path": "T73.json",
+      "task_run_history_path": "20260413T020700980363.json",
+      "diagnosis_packet_path": "20260413T020700980363.json",
+      "diagnosis_dossier_path": "20260413T020700980363.md",
+      "diagnosis_latest_packet_path": "T73.json",
+      "diagnosis_latest_dossier_path": "T73.md",
+      "preflight": {
+        "task_contract_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "market_capability_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_inventory": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_separation": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "live_checks": {
+        "forbidden_failure_patterns": {
+          "passed": true,
+          "details": []
+        },
+        "outcome_class_alignment": {
+          "passed": false,
+          "details": [
+            "proved task did not succeed: bucket=comparison_failed",
+            "proved task did not finish with passed comparison status: failed"
+          ]
+        },
+        "binding_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "route_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "blocker_category_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "reference_target_alignment": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "passed_gate": false
+    },
+    "T105": {
+      "title": "Quanto option: quanto-adjusted BS vs MC cross-currency",
+      "cohort": "event_control_schedule",
+      "outcome_class": "proved",
+      "success": true,
+      "failure_bucket": "success",
+      "comparison_status": "passed",
+      "elapsed_seconds": 43.8,
+      "attempts_to_success": 1,
+      "first_pass": true,
+      "retry_taxonomy": [],
+      "token_usage": {
+        "call_count": 5,
+        "calls_with_usage": 5,
+        "calls_without_usage": 0,
+        "prompt_tokens": 21660,
+        "completion_tokens": 583,
+        "total_tokens": 22243,
+        "by_stage": {
+          "decomposition": {
+            "call_count": 1,
+            "calls_with_usage": 1,
+            "calls_without_usage": 0,
+            "prompt_tokens": 4207,
+            "completion_tokens": 380,
+            "total_tokens": 4587
+          },
+          "code_generation": {
+            "call_count": 2,
+            "calls_with_usage": 2,
+            "calls_without_usage": 0,
+            "prompt_tokens": 12853,
+            "completion_tokens": 71,
+            "total_tokens": 12924
+          },
+          "critic": {
+            "call_count": 2,
+            "calls_with_usage": 2,
+            "calls_without_usage": 0,
+            "prompt_tokens": 4600,
+            "completion_tokens": 132,
+            "total_tokens": 4732
+          }
+        },
+        "by_provider": {
+          "openai": {
+            "call_count": 5,
+            "calls_with_usage": 5,
+            "calls_without_usage": 0,
+            "prompt_tokens": 21660,
+            "completion_tokens": 583,
+            "total_tokens": 22243
+          }
+        }
+      },
+      "binding_ids": [
+        "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state",
+        "trellis.models.quanto_option.price_quanto_option_monte_carlo_from_market_state"
+      ],
+      "binding_families": [
+        "analytical",
+        "monte_carlo"
+      ],
+      "route_ids": [
+        "quanto_adjustment_analytical",
+        "correlated_gbm_monte_carlo"
+      ],
+      "task_run_latest_path": "T105.json",
+      "task_run_history_path": "20260413T020835913159.json",
+      "diagnosis_packet_path": "20260413T020835913159.json",
+      "diagnosis_dossier_path": "20260413T020835913159.md",
+      "diagnosis_latest_packet_path": "T105.json",
+      "diagnosis_latest_dossier_path": "T105.md",
+      "preflight": {
+        "task_contract_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "market_capability_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_inventory": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_separation": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "live_checks": {
+        "forbidden_failure_patterns": {
+          "passed": true,
+          "details": []
+        },
+        "outcome_class_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "binding_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "route_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "blocker_category_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "reference_target_alignment": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "passed_gate": true
+    },
+    "E22": {
+      "title": "Cap/floor: Black caplet stack vs MC rate simulation",
+      "cohort": "event_control_schedule",
+      "outcome_class": "proved",
+      "success": false,
+      "failure_bucket": "comparison_insufficient_results",
+      "comparison_status": "insufficient_results",
+      "elapsed_seconds": 97.2,
+      "attempts_to_success": 3,
+      "first_pass": false,
+      "retry_taxonomy": [
+        "code_generation",
+        "validation"
+      ],
+      "token_usage": {
+        "call_count": 24,
+        "calls_with_usage": 24,
+        "calls_without_usage": 0,
+        "prompt_tokens": 69106,
+        "completion_tokens": 6785,
+        "total_tokens": 75891,
+        "by_stage": {
+          "code_generation": {
+            "call_count": 6,
+            "calls_with_usage": 6,
+            "calls_without_usage": 0,
+            "prompt_tokens": 43896,
+            "completion_tokens": 3877,
+            "total_tokens": 47773
+          },
+          "reflection": {
+            "call_count": 18,
+            "calls_with_usage": 18,
+            "calls_without_usage": 0,
+            "prompt_tokens": 25210,
+            "completion_tokens": 2908,
+            "total_tokens": 28118
+          }
+        },
+        "by_provider": {
+          "openai": {
+            "call_count": 24,
+            "calls_with_usage": 24,
+            "calls_without_usage": 0,
+            "prompt_tokens": 69106,
+            "completion_tokens": 6785,
+            "total_tokens": 75891
+          }
+        }
+      },
+      "binding_ids": [
+        "trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo",
+        "trellis.models.black.black76_call"
+      ],
+      "binding_families": [
+        "monte_carlo",
+        "analytical"
+      ],
+      "route_ids": [
+        "monte_carlo_paths",
+        "analytical_black76"
+      ],
+      "task_run_latest_path": "E22.json",
+      "task_run_history_path": "20260413T020921361225.json",
+      "diagnosis_packet_path": "20260413T020921361225.json",
+      "diagnosis_dossier_path": "20260413T020921361225.md",
+      "diagnosis_latest_packet_path": "E22.json",
+      "diagnosis_latest_dossier_path": "E22.md",
+      "preflight": {
+        "task_contract_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "market_capability_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_inventory": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_separation": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "live_checks": {
+        "forbidden_failure_patterns": {
+          "passed": true,
+          "details": []
+        },
+        "outcome_class_alignment": {
+          "passed": false,
+          "details": [
+            "proved task did not succeed: bucket=comparison_insufficient_results",
+            "proved task did not finish with passed comparison status: insufficient_results"
+          ]
+        },
+        "binding_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "route_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "blocker_category_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "reference_target_alignment": {
+          "passed": false,
+          "details": [
+            "comparison reference target drifted from the proof manifest: observed=missing expected=black76_cap"
+          ]
+        }
+      },
+      "passed_gate": false
+    },
+    "E27": {
+      "title": "American Asian barrier under Heston: PDE vs MC vs FFT should block honestly",
+      "cohort": "event_control_schedule",
+      "outcome_class": "honest_block",
+      "success": false,
+      "failure_bucket": "comparison_insufficient_results",
+      "comparison_status": "insufficient_results",
+      "elapsed_seconds": 96.9,
+      "attempts_to_success": 0,
+      "first_pass": true,
+      "retry_taxonomy": [],
+      "token_usage": {
+        "call_count": 27,
+        "calls_with_usage": 27,
+        "calls_without_usage": 0,
+        "prompt_tokens": 36451,
+        "completion_tokens": 4109,
+        "total_tokens": 40560,
+        "by_stage": {
+          "reflection": {
+            "call_count": 27,
+            "calls_with_usage": 27,
+            "calls_without_usage": 0,
+            "prompt_tokens": 36451,
+            "completion_tokens": 4109,
+            "total_tokens": 40560
+          }
+        },
+        "by_provider": {
+          "openai": {
+            "call_count": 27,
+            "calls_with_usage": 27,
+            "calls_without_usage": 0,
+            "prompt_tokens": 36451,
+            "completion_tokens": 4109,
+            "total_tokens": 40560
+          }
+        }
+      },
+      "binding_ids": [
+        "exercise:exercise:fallback"
+      ],
+      "binding_families": [
+        "pde_solver",
+        "exercise",
+        "fft_pricing"
+      ],
+      "route_ids": [
+        "exercise_monte_carlo",
+        "unknown"
+      ],
+      "task_run_latest_path": "E27.json",
+      "task_run_history_path": "20260413T021059310859.json",
+      "diagnosis_packet_path": "20260413T021059310859.json",
+      "diagnosis_dossier_path": "20260413T021059310859.md",
+      "diagnosis_latest_packet_path": "E27.json",
+      "diagnosis_latest_dossier_path": "E27.md",
+      "preflight": {
+        "task_contract_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "market_capability_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_inventory": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_separation": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "live_checks": {
+        "forbidden_failure_patterns": {
+          "passed": true,
+          "details": []
+        },
+        "outcome_class_alignment": {
+          "passed": false,
+          "details": [
+            "honest-block sentinel did not surface blocker categories"
+          ]
+        },
+        "binding_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "route_identity_alignment": {
+          "passed": false,
+          "details": [
+            "task surfaced non-canonical route ids: unknown"
+          ]
+        },
+        "blocker_category_alignment": {
+          "passed": false,
+          "details": [
+            "expected blocker categories were not surfaced in the result"
+          ]
+        },
+        "reference_target_alignment": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "passed_gate": false
+    },
+    "T49": {
+      "title": "CDO tranche: Gaussian vs Student-t copula",
+      "cohort": "basket_credit_loss",
+      "outcome_class": "proved",
+      "success": false,
+      "failure_bucket": "comparison_insufficient_results",
+      "comparison_status": "insufficient_results",
+      "elapsed_seconds": 81.5,
+      "attempts_to_success": 3,
+      "first_pass": false,
+      "retry_taxonomy": [
+        "actual_market_smoke"
+      ],
+      "token_usage": {
+        "call_count": 22,
+        "calls_with_usage": 22,
+        "calls_without_usage": 0,
+        "prompt_tokens": 60739,
+        "completion_tokens": 3910,
+        "total_tokens": 64649,
+        "by_stage": {
+          "code_generation": {
+            "call_count": 4,
+            "calls_with_usage": 4,
+            "calls_without_usage": 0,
+            "prompt_tokens": 34899,
+            "completion_tokens": 1319,
+            "total_tokens": 36218
+          },
+          "critic": {
+            "call_count": 1,
+            "calls_with_usage": 1,
+            "calls_without_usage": 0,
+            "prompt_tokens": 2293,
+            "completion_tokens": 196,
+            "total_tokens": 2489
+          },
+          "reflection": {
+            "call_count": 17,
+            "calls_with_usage": 17,
+            "calls_without_usage": 0,
+            "prompt_tokens": 23547,
+            "completion_tokens": 2395,
+            "total_tokens": 25942
+          }
+        },
+        "by_provider": {
+          "openai": {
+            "call_count": 22,
+            "calls_with_usage": 22,
+            "calls_without_usage": 0,
+            "prompt_tokens": 60739,
+            "completion_tokens": 3910,
+            "total_tokens": 64649
+          }
+        }
+      },
+      "binding_ids": [
+        "trellis.models.credit_basket_copula.price_credit_basket_tranche"
+      ],
+      "binding_families": [
+        "copula"
+      ],
+      "route_ids": [
+        "copula_loss_distribution"
+      ],
+      "task_run_latest_path": "T49.json",
+      "task_run_history_path": "20260413T024219666707.json",
+      "diagnosis_packet_path": "20260413T024219666707.json",
+      "diagnosis_dossier_path": "20260413T024219666707.md",
+      "diagnosis_latest_packet_path": "T49.json",
+      "diagnosis_latest_dossier_path": "T49.md",
+      "preflight": {
+        "task_contract_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "market_capability_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_inventory": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_separation": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "live_checks": {
+        "forbidden_failure_patterns": {
+          "passed": true,
+          "details": []
+        },
+        "outcome_class_alignment": {
+          "passed": false,
+          "details": [
+            "proved task did not succeed: bucket=comparison_insufficient_results",
+            "proved task did not finish with passed comparison status: insufficient_results"
+          ]
+        },
+        "binding_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "route_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "blocker_category_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "reference_target_alignment": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "passed_gate": false
+    },
+    "T50": {
+      "title": "Nth-to-default: MC correlated defaults vs semi-analytical",
+      "cohort": "basket_credit_loss",
+      "outcome_class": "proved",
+      "success": false,
+      "failure_bucket": "comparison_insufficient_results",
+      "comparison_status": "insufficient_results",
+      "elapsed_seconds": 79.7,
+      "attempts_to_success": 3,
+      "first_pass": false,
+      "retry_taxonomy": [
+        "actual_market_smoke",
+        "semantic_validation"
+      ],
+      "token_usage": {
+        "call_count": 22,
+        "calls_with_usage": 22,
+        "calls_without_usage": 0,
+        "prompt_tokens": 67888,
+        "completion_tokens": 5047,
+        "total_tokens": 72935,
+        "by_stage": {
+          "code_generation": {
+            "call_count": 4,
+            "calls_with_usage": 4,
+            "calls_without_usage": 0,
+            "prompt_tokens": 42061,
+            "completion_tokens": 2257,
+            "total_tokens": 44318
+          },
+          "reflection": {
+            "call_count": 17,
+            "calls_with_usage": 17,
+            "calls_without_usage": 0,
+            "prompt_tokens": 23533,
+            "completion_tokens": 2621,
+            "total_tokens": 26154
+          },
+          "critic": {
+            "call_count": 1,
+            "calls_with_usage": 1,
+            "calls_without_usage": 0,
+            "prompt_tokens": 2294,
+            "completion_tokens": 169,
+            "total_tokens": 2463
+          }
+        },
+        "by_provider": {
+          "openai": {
+            "call_count": 22,
+            "calls_with_usage": 22,
+            "calls_without_usage": 0,
+            "prompt_tokens": 67888,
+            "completion_tokens": 5047,
+            "total_tokens": 72935
+          }
+        }
+      },
+      "binding_ids": [
+        "trellis.instruments.nth_to_default.price_nth_to_default_basket"
+      ],
+      "binding_families": [
+        "monte_carlo",
+        "analytical",
+        "nth_to_default"
+      ],
+      "route_ids": [
+        "nth_to_default_monte_carlo",
+        "unknown"
+      ],
+      "task_run_latest_path": "T50.json",
+      "task_run_history_path": "20260413T024341517533.json",
+      "diagnosis_packet_path": "20260413T024341517533.json",
+      "diagnosis_dossier_path": "20260413T024341517533.md",
+      "diagnosis_latest_packet_path": "T50.json",
+      "diagnosis_latest_dossier_path": "T50.md",
+      "preflight": {
+        "task_contract_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "market_capability_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_inventory": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_separation": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "live_checks": {
+        "forbidden_failure_patterns": {
+          "passed": true,
+          "details": []
+        },
+        "outcome_class_alignment": {
+          "passed": false,
+          "details": [
+            "proved task did not succeed: bucket=comparison_insufficient_results",
+            "proved task did not finish with passed comparison status: insufficient_results"
+          ]
+        },
+        "binding_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "route_identity_alignment": {
+          "passed": false,
+          "details": [
+            "task surfaced non-canonical route ids: unknown"
+          ]
+        },
+        "blocker_category_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "reference_target_alignment": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "passed_gate": false
+    },
+    "T53": {
+      "title": "Multi-name portfolio loss distribution: recursive vs FFT vs MC",
+      "cohort": "basket_credit_loss",
+      "outcome_class": "proved",
+      "success": false,
+      "failure_bucket": "comparison_insufficient_results",
+      "comparison_status": "insufficient_results",
+      "elapsed_seconds": 139.2,
+      "attempts_to_success": 3,
+      "first_pass": false,
+      "retry_taxonomy": [
+        "actual_market_smoke",
+        "semantic_validation",
+        "code_generation"
+      ],
+      "token_usage": {
+        "call_count": 18,
+        "calls_with_usage": 18,
+        "calls_without_usage": 0,
+        "prompt_tokens": 113217,
+        "completion_tokens": 12634,
+        "total_tokens": 125851,
+        "by_stage": {
+          "decomposition": {
+            "call_count": 3,
+            "calls_with_usage": 3,
+            "calls_without_usage": 0,
+            "prompt_tokens": 12643,
+            "completion_tokens": 1145,
+            "total_tokens": 13788
+          },
+          "spec_design": {
+            "call_count": 3,
+            "calls_with_usage": 3,
+            "calls_without_usage": 0,
+            "prompt_tokens": 2008,
+            "completion_tokens": 2395,
+            "total_tokens": 4403
+          },
+          "code_generation": {
+            "call_count": 9,
+            "calls_with_usage": 9,
+            "calls_without_usage": 0,
+            "prompt_tokens": 92965,
+            "completion_tokens": 7966,
+            "total_tokens": 100931
+          },
+          "reflection": {
+            "call_count": 3,
+            "calls_with_usage": 3,
+            "calls_without_usage": 0,
+            "prompt_tokens": 5601,
+            "completion_tokens": 1128,
+            "total_tokens": 6729
+          }
+        },
+        "by_provider": {
+          "openai": {
+            "call_count": 18,
+            "calls_with_usage": 18,
+            "calls_without_usage": 0,
+            "prompt_tokens": 113217,
+            "completion_tokens": 12634,
+            "total_tokens": 125851
+          }
+        }
+      },
+      "binding_ids": [
+        "trellis.models.black.black76_call",
+        "fft_pricing:fft_pricing:fallback",
+        "trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo"
+      ],
+      "binding_families": [
+        "analytical",
+        "fft_pricing",
+        "monte_carlo"
+      ],
+      "route_ids": [
+        "analytical_black76",
+        "transform_fft",
+        "monte_carlo_paths"
+      ],
+      "task_run_latest_path": "T53.json",
+      "task_run_history_path": "20260413T024501887199.json",
+      "diagnosis_packet_path": "20260413T024501887199.json",
+      "diagnosis_dossier_path": "20260413T024501887199.md",
+      "diagnosis_latest_packet_path": "T53.json",
+      "diagnosis_latest_dossier_path": "T53.md",
+      "preflight": {
+        "task_contract_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "market_capability_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_inventory": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_separation": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "live_checks": {
+        "forbidden_failure_patterns": {
+          "passed": true,
+          "details": []
+        },
+        "outcome_class_alignment": {
+          "passed": false,
+          "details": [
+            "proved task did not succeed: bucket=comparison_insufficient_results",
+            "proved task did not finish with passed comparison status: insufficient_results"
+          ]
+        },
+        "binding_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "route_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "blocker_category_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "reference_target_alignment": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "passed_gate": false
+    },
+    "E26": {
+      "title": "Nth-to-default basket: Gaussian copula vs default-time MC",
+      "cohort": "basket_credit_loss",
+      "outcome_class": "proved",
+      "success": false,
+      "failure_bucket": "comparison_insufficient_results",
+      "comparison_status": "insufficient_results",
+      "elapsed_seconds": 106.5,
+      "attempts_to_success": 3,
+      "first_pass": false,
+      "retry_taxonomy": [
+        "actual_market_smoke"
+      ],
+      "token_usage": {
+        "call_count": 26,
+        "calls_with_usage": 26,
+        "calls_without_usage": 0,
+        "prompt_tokens": 108330,
+        "completion_tokens": 9508,
+        "total_tokens": 117838,
+        "by_stage": {
+          "decomposition": {
+            "call_count": 2,
+            "calls_with_usage": 2,
+            "calls_without_usage": 0,
+            "prompt_tokens": 9634,
+            "completion_tokens": 698,
+            "total_tokens": 10332
+          },
+          "code_generation": {
+            "call_count": 6,
+            "calls_with_usage": 6,
+            "calls_without_usage": 0,
+            "prompt_tokens": 73490,
+            "completion_tokens": 5698,
+            "total_tokens": 79188
+          },
+          "reflection": {
+            "call_count": 18,
+            "calls_with_usage": 18,
+            "calls_without_usage": 0,
+            "prompt_tokens": 25206,
+            "completion_tokens": 3112,
+            "total_tokens": 28318
+          }
+        },
+        "by_provider": {
+          "openai": {
+            "call_count": 26,
+            "calls_with_usage": 26,
+            "calls_without_usage": 0,
+            "prompt_tokens": 108330,
+            "completion_tokens": 9508,
+            "total_tokens": 117838
+          }
+        }
+      },
+      "binding_ids": [
+        "trellis.instruments.nth_to_default.price_nth_to_default_basket"
+      ],
+      "binding_families": [
+        "analytical",
+        "monte_carlo",
+        "nth_to_default"
+      ],
+      "route_ids": [
+        "nth_to_default_monte_carlo",
+        "unknown"
+      ],
+      "task_run_latest_path": "E26.json",
+      "task_run_history_path": "20260413T024721648624.json",
+      "diagnosis_packet_path": "20260413T024721648624.json",
+      "diagnosis_dossier_path": "20260413T024721648624.md",
+      "diagnosis_latest_packet_path": "E26.json",
+      "diagnosis_latest_dossier_path": "E26.md",
+      "preflight": {
+        "task_contract_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "market_capability_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_inventory": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_separation": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "live_checks": {
+        "forbidden_failure_patterns": {
+          "passed": true,
+          "details": []
+        },
+        "outcome_class_alignment": {
+          "passed": false,
+          "details": [
+            "proved task did not succeed: bucket=comparison_insufficient_results",
+            "proved task did not finish with passed comparison status: insufficient_results"
+          ]
+        },
+        "binding_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "route_identity_alignment": {
+          "passed": false,
+          "details": [
+            "task surfaced non-canonical route ids: unknown"
+          ]
+        },
+        "blocker_category_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "reference_target_alignment": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "passed_gate": false
+    },
+    "T102": {
+      "title": "Rainbow option (best-of-two): Stulz formula vs MC",
+      "cohort": "basket_credit_loss",
+      "outcome_class": "proved",
+      "success": false,
+      "failure_bucket": "comparison_insufficient_results",
+      "comparison_status": "insufficient_results",
+      "elapsed_seconds": 131.3,
+      "attempts_to_success": 3,
+      "first_pass": false,
+      "retry_taxonomy": [
+        "lite_review",
+        "semantic_validation",
+        "actual_market_smoke",
+        "code_generation"
+      ],
+      "token_usage": {
+        "call_count": 26,
+        "calls_with_usage": 26,
+        "calls_without_usage": 0,
+        "prompt_tokens": 94102,
+        "completion_tokens": 11082,
+        "total_tokens": 105184,
+        "by_stage": {
+          "decomposition": {
+            "call_count": 2,
+            "calls_with_usage": 2,
+            "calls_without_usage": 0,
+            "prompt_tokens": 8454,
+            "completion_tokens": 769,
+            "total_tokens": 9223
+          },
+          "code_generation": {
+            "call_count": 6,
+            "calls_with_usage": 6,
+            "calls_without_usage": 0,
+            "prompt_tokens": 60252,
+            "completion_tokens": 7164,
+            "total_tokens": 67416
+          },
+          "reflection": {
+            "call_count": 18,
+            "calls_with_usage": 18,
+            "calls_without_usage": 0,
+            "prompt_tokens": 25396,
+            "completion_tokens": 3149,
+            "total_tokens": 28545
+          }
+        },
+        "by_provider": {
+          "openai": {
+            "call_count": 26,
+            "calls_with_usage": 26,
+            "calls_without_usage": 0,
+            "prompt_tokens": 94102,
+            "completion_tokens": 11082,
+            "total_tokens": 105184
+          }
+        }
+      },
+      "binding_ids": [
+        "trellis.models.black.black76_call",
+        "trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo"
+      ],
+      "binding_families": [
+        "analytical",
+        "monte_carlo"
+      ],
+      "route_ids": [
+        "analytical_black76",
+        "monte_carlo_paths"
+      ],
+      "task_run_latest_path": "T102.json",
+      "task_run_history_path": "20260413T024908561122.json",
+      "diagnosis_packet_path": "20260413T024908561122.json",
+      "diagnosis_dossier_path": "20260413T024908561122.md",
+      "diagnosis_latest_packet_path": "T102.json",
+      "diagnosis_latest_dossier_path": "T102.md",
+      "preflight": {
+        "task_contract_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "market_capability_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_inventory": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_separation": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "live_checks": {
+        "forbidden_failure_patterns": {
+          "passed": true,
+          "details": []
+        },
+        "outcome_class_alignment": {
+          "passed": false,
+          "details": [
+            "proved task did not succeed: bucket=comparison_insufficient_results",
+            "proved task did not finish with passed comparison status: insufficient_results"
+          ]
+        },
+        "binding_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "route_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "blocker_category_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "reference_target_alignment": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "passed_gate": false
+    },
+    "T126": {
+      "title": "Spread option (Kirk approximation) vs 2D MC vs 2D FFT",
+      "cohort": "basket_credit_loss",
+      "outcome_class": "proved",
+      "success": false,
+      "failure_bucket": "comparison_insufficient_results",
+      "comparison_status": "insufficient_results",
+      "elapsed_seconds": 204.7,
+      "attempts_to_success": 3,
+      "first_pass": false,
+      "retry_taxonomy": [
+        "semantic_validation",
+        "actual_market_smoke"
+      ],
+      "token_usage": {
+        "call_count": 38,
+        "calls_with_usage": 38,
+        "calls_without_usage": 0,
+        "prompt_tokens": 143494,
+        "completion_tokens": 16347,
+        "total_tokens": 159841,
+        "by_stage": {
+          "decomposition": {
+            "call_count": 3,
+            "calls_with_usage": 3,
+            "calls_without_usage": 0,
+            "prompt_tokens": 12760,
+            "completion_tokens": 1079,
+            "total_tokens": 13839
+          },
+          "code_generation": {
+            "call_count": 8,
+            "calls_with_usage": 8,
+            "calls_without_usage": 0,
+            "prompt_tokens": 92611,
+            "completion_tokens": 10716,
+            "total_tokens": 103327
+          },
+          "reflection": {
+            "call_count": 27,
+            "calls_with_usage": 27,
+            "calls_without_usage": 0,
+            "prompt_tokens": 38123,
+            "completion_tokens": 4552,
+            "total_tokens": 42675
+          }
+        },
+        "by_provider": {
+          "openai": {
+            "call_count": 38,
+            "calls_with_usage": 38,
+            "calls_without_usage": 0,
+            "prompt_tokens": 143494,
+            "completion_tokens": 16347,
+            "total_tokens": 159841
+          }
+        }
+      },
+      "binding_ids": [
+        "trellis.models.black.black76_call",
+        "trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo",
+        "fft_pricing:fft_pricing:fallback"
+      ],
+      "binding_families": [
+        "analytical",
+        "monte_carlo",
+        "fft_pricing"
+      ],
+      "route_ids": [
+        "analytical_black76",
+        "monte_carlo_paths",
+        "transform_fft"
+      ],
+      "task_run_latest_path": "T126.json",
+      "task_run_history_path": "20260413T025120460436.json",
+      "diagnosis_packet_path": "20260413T025120460436.json",
+      "diagnosis_dossier_path": "20260413T025120460436.md",
+      "diagnosis_latest_packet_path": "T126.json",
+      "diagnosis_latest_dossier_path": "T126.md",
+      "preflight": {
+        "task_contract_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "market_capability_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_inventory": {
+          "passed": true,
+          "details": []
+        },
+        "comparison_target_separation": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "live_checks": {
+        "forbidden_failure_patterns": {
+          "passed": true,
+          "details": []
+        },
+        "outcome_class_alignment": {
+          "passed": false,
+          "details": [
+            "proved task did not succeed: bucket=comparison_insufficient_results",
+            "proved task did not finish with passed comparison status: insufficient_results"
+          ]
+        },
+        "binding_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "route_identity_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "blocker_category_alignment": {
+          "passed": true,
+          "details": []
+        },
+        "reference_target_alignment": {
+          "passed": true,
+          "details": []
+        }
+      },
+      "passed_gate": false
+    }
+  },
+  "elapsed_seconds_total": 1143.1,
+  "unknown_route_tasks": [
+    "E26",
+    "E27",
+    "T17",
+    "T50"
+  ],
+  "first_pass": {
+    "tasks": 11,
+    "successful_tasks": 1,
+    "first_pass_successes": 1,
+    "rate": 0.09090909090909091
+  },
+  "attempts_to_success": {
+    "successful_tasks": 1,
+    "average": 1.0,
+    "median": 1.0,
+    "max": 1
+  },
+  "token_usage": {
+    "call_count": 257,
+    "calls_with_usage": 257,
+    "calls_without_usage": 0,
+    "prompt_tokens": 806252,
+    "completion_tokens": 77354,
+    "total_tokens": 883606,
+    "by_stage": {
+      "reflection": {
+        "call_count": 186,
+        "calls_with_usage": 186,
+        "calls_without_usage": 0,
+        "prompt_tokens": 258886,
+        "completion_tokens": 29689,
+        "total_tokens": 288575
+      },
+      "code_generation": {
+        "call_count": 49,
+        "calls_with_usage": 49,
+        "calls_without_usage": 0,
+        "prompt_tokens": 479987,
+        "completion_tokens": 40292,
+        "total_tokens": 520279
+      },
+      "critic": {
+        "call_count": 8,
+        "calls_with_usage": 8,
+        "calls_without_usage": 0,
+        "prompt_tokens": 17673,
+        "completion_tokens": 907,
+        "total_tokens": 18580
+      },
+      "decomposition": {
+        "call_count": 11,
+        "calls_with_usage": 11,
+        "calls_without_usage": 0,
+        "prompt_tokens": 47698,
+        "completion_tokens": 4071,
+        "total_tokens": 51769
+      },
+      "spec_design": {
+        "call_count": 3,
+        "calls_with_usage": 3,
+        "calls_without_usage": 0,
+        "prompt_tokens": 2008,
+        "completion_tokens": 2395,
+        "total_tokens": 4403
+      }
+    },
+    "by_provider": {
+      "openai": {
+        "call_count": 257,
+        "calls_with_usage": 257,
+        "calls_without_usage": 0,
+        "prompt_tokens": 806252,
+        "completion_tokens": 77354,
+        "total_tokens": 883606
+      }
+    }
+  },
+  "honest_block_certified": 0,
+  "source_reports": [
+    "qua808_report_live.json",
+    "qua809_report_live.json"
+  ]
+}

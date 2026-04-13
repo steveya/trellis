@@ -177,3 +177,97 @@ def test_summarize_binding_first_exotic_proof_captures_binding_ids_and_honest_bl
         "trellis.models.fx_vanilla.price_quanto_option_analytical_from_market_state"
     ]
     assert summary["by_task"]["E27"]["failure_bucket"] == "blocked"
+
+
+def test_summarize_binding_first_exotic_program_closeout_aggregates_cohorts():
+    from trellis.agent.evals import summarize_binding_first_exotic_program_closeout
+
+    closeout = summarize_binding_first_exotic_program_closeout(
+        [
+            {
+                "cohort": "event_control_schedule",
+                "status": "failed_gate",
+                "task_ids": ["T105", "E27"],
+                "report_json_path": "/tmp/qua808.json",
+                "report_md_path": "/tmp/qua808.md",
+                "raw_results_path": "/tmp/qua808_results.json",
+                "proof_summary": {
+                    "totals": {"tasks": 2, "passed_gate": 2, "failed_gate": 0, "proved": 1, "honest_block": 1},
+                    "failure_buckets": {"success": 1, "blocked": 1},
+                    "by_task": {
+                        "T105": {
+                            "title": "Quanto option",
+                            "cohort": "event_control_schedule",
+                            "outcome_class": "proved",
+                            "passed_gate": True,
+                            "failure_bucket": "success",
+                            "comparison_status": "passed",
+                            "binding_ids": ["binding.quanto"],
+                            "route_ids": ["quanto_adjustment_analytical"],
+                            "first_pass": True,
+                            "attempts_to_success": 1,
+                            "retry_taxonomy": [],
+                            "elapsed_seconds": 10.0,
+                            "token_usage": {"total_tokens": 100, "call_count": 2},
+                        },
+                        "E27": {
+                            "title": "American Asian barrier",
+                            "cohort": "event_control_schedule",
+                            "outcome_class": "honest_block",
+                            "passed_gate": True,
+                            "failure_bucket": "blocked",
+                            "comparison_status": "insufficient_results",
+                            "binding_ids": [],
+                            "route_ids": ["unknown"],
+                            "first_pass": True,
+                            "attempts_to_success": 0,
+                            "retry_taxonomy": [],
+                            "elapsed_seconds": 5.0,
+                            "token_usage": {"total_tokens": 10, "call_count": 1},
+                        },
+                    },
+                },
+                "task_summary": {},
+            },
+            {
+                "cohort": "basket_credit_loss",
+                "status": "failed_gate",
+                "task_ids": ["T50"],
+                "report_json_path": "/tmp/qua809.json",
+                "report_md_path": "/tmp/qua809.md",
+                "raw_results_path": "/tmp/qua809_results.json",
+                "proof_summary": {
+                    "totals": {"tasks": 1, "passed_gate": 0, "failed_gate": 1, "proved": 1, "honest_block": 0},
+                    "failure_buckets": {"comparison_insufficient_results": 1},
+                    "by_task": {
+                        "T50": {
+                            "title": "Nth-to-default",
+                            "cohort": "basket_credit_loss",
+                            "outcome_class": "proved",
+                            "passed_gate": False,
+                            "failure_bucket": "comparison_insufficient_results",
+                            "comparison_status": "insufficient_results",
+                            "binding_ids": ["binding.ntd"],
+                            "route_ids": ["unknown"],
+                            "first_pass": False,
+                            "attempts_to_success": 3,
+                            "retry_taxonomy": ["code_generation"],
+                            "elapsed_seconds": 20.0,
+                            "token_usage": {"total_tokens": 200, "call_count": 3},
+                        }
+                    },
+                },
+                "task_summary": {},
+            },
+        ]
+    )
+
+    assert closeout["totals"]["tasks"] == 3
+    assert closeout["totals"]["passed_gate"] == 2
+    assert closeout["totals"]["failed_gate"] == 1
+    assert closeout["honest_block_certified"] == 1
+    assert closeout["first_pass"]["first_pass_successes"] == 2
+    assert closeout["attempts_to_success"]["average"] == 0.5
+    assert closeout["elapsed_seconds_total"] == 35.0
+    assert closeout["token_usage"]["total_tokens"] == 310
+    assert closeout["unknown_route_tasks"] == ["E27", "T50"]
