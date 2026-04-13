@@ -84,6 +84,10 @@ maintenance around the deterministic engines.
 - `trellis/agent/binding_operator_metadata.py` is the first-class catalog of
   operator-facing binding display names, short descriptions, and diagnostic
   labels, so operator wording no longer has to piggyback on route YAML prose.
+- `trellis/agent/platform_traces.py`, `trellis/agent/task_run_store.py`, and
+  `trellis/agent/task_diagnostics.py` now consume that binding metadata when
+  they render operator-facing construction summaries, so task dossiers and
+  persisted telemetry no longer need raw route-card wording to stay readable.
 - `trellis/agent/codegen_guardrails.py` now carries those backend-binding facts
   on `PrimitivePlan` and `GenerationPlan`, so runtime plans no longer need to
   rediscover exact helper identity from route ids later in validation or trace

@@ -309,11 +309,13 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
         lines.extend(
             [
                 *_render_table(
-                    headers=("Primary", "Backend", "Outcome", "Health", "Trace"),
+                    headers=("Primary", "Diagnostic", "Outcome", "Health", "Trace"),
                     rows=[
                         (
                             item.get("primary_label"),
-                            item.get("backend_binding_id") or item.get("route_alias") or item.get("route_family"),
+                            item.get("binding_diagnostic_label")
+                            or item.get("route_alias")
+                            or item.get("route_family"),
                             item.get("outcome"),
                             (
                                 "effective="
@@ -625,6 +627,21 @@ def _telemetry_section(record: Mapping[str, Any]) -> dict[str, Any]:
                     or construction_identity.get("backend_binding_id")
                     or ""
                 ).strip(),
+                "binding_display_name": str(
+                    route_health.get("binding_display_name")
+                    or construction_identity.get("binding_display_name")
+                    or ""
+                ).strip(),
+                "binding_short_description": str(
+                    route_health.get("binding_short_description")
+                    or construction_identity.get("binding_short_description")
+                    or ""
+                ).strip(),
+                "binding_diagnostic_label": str(
+                    route_health.get("binding_diagnostic_label")
+                    or construction_identity.get("binding_diagnostic_label")
+                    or ""
+                ).strip(),
                 "route_alias": str(
                     route_health.get("route_alias")
                     or construction_identity.get("route_alias")
@@ -718,6 +735,21 @@ def _enrich_telemetry_route_observations(
         item["backend_binding_id"] = str(
             item.get("backend_binding_id")
             or construction_identity.get("backend_binding_id")
+            or ""
+        ).strip()
+        item["binding_display_name"] = str(
+            item.get("binding_display_name")
+            or construction_identity.get("binding_display_name")
+            or ""
+        ).strip()
+        item["binding_short_description"] = str(
+            item.get("binding_short_description")
+            or construction_identity.get("binding_short_description")
+            or ""
+        ).strip()
+        item["binding_diagnostic_label"] = str(
+            item.get("binding_diagnostic_label")
+            or construction_identity.get("binding_diagnostic_label")
             or ""
         ).strip()
         item["route_alias"] = str(

@@ -213,7 +213,9 @@ Operator-facing binding wording now follows the same rule: display names,
 short descriptions, and diagnostic labels are resolved from a dedicated
 binding metadata catalog rather than route-card prose, and the compiled
 route-binding authority packet carries that metadata for downstream
-diagnostic surfaces.
+diagnostic surfaces. Platform traces, persisted task-run telemetry, and
+task-diagnosis dossiers now render those binding-first labels directly
+instead of reconstructing operator wording from route ids.
 That exact-surface contract now also drives live plan construction, DSL
 lowering, and semantic helper review: those paths resolve helpers, kernels,
 and schedule builders from ``trellis.agent.backend_bindings`` first and only

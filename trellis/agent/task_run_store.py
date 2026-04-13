@@ -686,6 +686,11 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
         or {}
     )
     semantic_blueprint = dict(metadata.get("semantic_blueprint") or {})
+    operator_metadata = dict(
+        route_binding_authority.get("operator_metadata")
+        or construction_identity.get("operator_metadata")
+        or {}
+    )
     route_health = {
         "route_id": str(
             route_binding_authority.get("route_id")
@@ -707,6 +712,21 @@ def _trace_summary(path: str | None) -> dict[str, Any] | None:
         "primary_kind": str(construction_identity.get("primary_kind") or "").strip(),
         "primary_label": str(construction_identity.get("primary_label") or "").strip(),
         "backend_binding_id": str(construction_identity.get("backend_binding_id") or "").strip(),
+        "binding_display_name": str(
+            construction_identity.get("binding_display_name")
+            or operator_metadata.get("display_name")
+            or ""
+        ).strip(),
+        "binding_short_description": str(
+            construction_identity.get("binding_short_description")
+            or operator_metadata.get("short_description")
+            or ""
+        ).strip(),
+        "binding_diagnostic_label": str(
+            construction_identity.get("binding_diagnostic_label")
+            or operator_metadata.get("diagnostic_label")
+            or ""
+        ).strip(),
         "route_alias": str(construction_identity.get("route_alias") or "").strip(),
     }
     return {
@@ -1523,6 +1543,21 @@ def _route_observations(
                     or construction_identity.get("backend_binding_id")
                     or ""
                 ).strip(),
+                "binding_display_name": str(
+                    route_health.get("binding_display_name")
+                    or construction_identity.get("binding_display_name")
+                    or ""
+                ).strip(),
+                "binding_short_description": str(
+                    route_health.get("binding_short_description")
+                    or construction_identity.get("binding_short_description")
+                    or ""
+                ).strip(),
+                "binding_diagnostic_label": str(
+                    route_health.get("binding_diagnostic_label")
+                    or construction_identity.get("binding_diagnostic_label")
+                    or ""
+                ).strip(),
                 "route_alias": str(
                     route_health.get("route_alias")
                     or construction_identity.get("route_alias")
@@ -1562,6 +1597,9 @@ def _route_observations(
                 "primary_kind": "method_family",
                 "primary_label": route_family,
                 "backend_binding_id": "",
+                "binding_display_name": "",
+                "binding_short_description": "",
+                "binding_diagnostic_label": "",
                 "route_alias": "",
                 "trace_kind": "method_run",
                 "trace_status": "ok" if bool(payload.get("success")) else "error",

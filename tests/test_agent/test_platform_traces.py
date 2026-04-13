@@ -335,12 +335,16 @@ def test_platform_trace_summarizes_event_aware_pde_family_ir(tmp_path):
     boundary = load_platform_trace_boundary(trace_path)
     lowering = boundary["generation_boundary"]["lowering"]
     construction_identity = boundary["generation_boundary"]["construction_identity"]
+    operator_metadata = boundary["generation_boundary"]["route_binding_authority"]["operator_metadata"]
     family_ir_summary = lowering["family_ir_summary"]
 
     assert lowering["family_ir_type"] == "EventAwarePDEIR"
     assert construction_identity["primary_kind"] == "backend_binding"
+    assert operator_metadata is not None
+    assert construction_identity["primary_label"] == operator_metadata["display_name"]
     assert construction_identity["route_alias"] == "pde_theta_1d"
     assert construction_identity["backend_binding_id"] == "trellis.models.callable_bond_pde.price_callable_bond_pde"
+    assert construction_identity["binding_diagnostic_label"] == operator_metadata["diagnostic_label"]
     assert family_ir_summary["semantic_control_style"] == "issuer_min"
     assert family_ir_summary["helper_symbol"] == "price_callable_bond_pde"
     assert family_ir_summary["semantic_transform_kinds"] == ["add_cashflow", "project_min"]
@@ -613,6 +617,10 @@ def test_platform_trace_persists_semantic_checkpoint_and_generation_boundary(
     construction_identity = trace.generation_boundary["construction_identity"]
     assert construction_identity["primary_kind"] == "backend_binding"
     assert construction_identity["backend_exact_fit"] is True
+    operator_metadata = trace.generation_boundary["route_binding_authority"]["operator_metadata"]
+    assert operator_metadata is not None
+    assert construction_identity["primary_label"] == operator_metadata["display_name"]
+    assert construction_identity["binding_diagnostic_label"] == operator_metadata["diagnostic_label"]
     assert construction_identity["route_alias"] == expected_route_alias
     assert trace.generation_boundary["lowering"]["route_id"] == expected_route_id
     assert boundary["generation_boundary"]["lowering"]["route_id"] == expected_route_id
@@ -620,7 +628,6 @@ def test_platform_trace_persists_semantic_checkpoint_and_generation_boundary(
     assert trace.generation_boundary["route_binding_authority"]["route_id"] == expected_route_id
     assert boundary["generation_boundary"]["route_binding_authority"]["route_id"] == expected_route_id
     assert trace.generation_boundary["route_binding_authority"]["authority_kind"] == "exact_backend_fit"
-    operator_metadata = trace.generation_boundary["route_binding_authority"]["operator_metadata"]
     assert operator_metadata is not None
     if expected_route_id == "quanto_adjustment_analytical":
         assert operator_metadata["display_name"] == "Quanto option analytical binding"
