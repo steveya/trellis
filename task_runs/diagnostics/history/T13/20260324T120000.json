@@ -9,7 +9,7 @@
   },
   "run": {
     "run_id": "20260324T120000",
-    "persisted_at": "2026-04-13T02:55:10.501877+00:00",
+    "persisted_at": "2026-04-13T06:22:50.060493+00:00",
     "task_run_history_path": "/home/runner/work/trellis/trellis/task_runs/history/T13/20260324T120000.json",
     "task_run_latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T13.json",
     "task_run_latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
@@ -104,6 +104,7 @@
     "degraded": false,
     "comparison_status": "",
     "selected_artifacts": [],
+    "binding_observations": [],
     "route_observations": []
   },
   "runtime_controls": {
