@@ -2307,6 +2307,23 @@ def test_prepare_existing_task_uses_quanto_family_compiled_requirements(monkeypa
     }]
 
 
+def test_effective_task_description_bootstraps_title_only_callable_bond_tasks():
+    from trellis.agent.task_runtime import _effective_task_description
+
+    description = _effective_task_description(
+        {
+            "id": "T17",
+            "title": "Callable bond: HW rate PDE (PSOR) vs HW tree",
+            "construct": ["pde", "lattice"],
+            "cross_validate": {"internal": ["hw_pde_psor", "hw_rate_tree"]},
+        }
+    )
+
+    assert "issuer call dates 2028-01-15, 2030-01-15, and 2032-01-15" in description
+    assert "5% semi-annual coupon" in description
+    assert "Comparison targets: hw_pde_psor (pde_solver), hw_rate_tree (rate_tree)" in description
+
+
 def test_prepare_existing_task_infers_schema_for_matching_generic_module(monkeypatch):
     """Generic cached modules should be benchmarkable when they clearly match the task."""
     from dataclasses import dataclass

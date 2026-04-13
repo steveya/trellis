@@ -184,7 +184,7 @@ Status mirror last synced: `2026-04-13`
 | --- | --- | --- |
 | `QUA-804` | Exotic benchmark: define constructable proof cohort for binding-first assembly | Done |
 | `QUA-808` | Exotic assembly: run the event-control-schedule proof cohort and split residual gaps | Done |
-| `QUA-817` | Proof follow-on: callable-bond PDE exact binding or constructive steps (`T17`) | Backlog |
+| `QUA-817` | Proof follow-on: callable-bond PDE exact binding or constructive steps (`T17`) | Done |
 | `QUA-818` | Proof follow-on: swaption analytical/tree/MC parity drift (`T73`) | Backlog |
 | `QUA-819` | Proof follow-on: cap/floor fresh-build stability and reference-target evidence (`E22`) | Backlog |
 | `QUA-820` | Proof follow-on: structured blocker persistence for honest-block sentinel (`E27`) | Done |

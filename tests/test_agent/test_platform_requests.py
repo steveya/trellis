@@ -978,6 +978,41 @@ def test_callable_bond_request_replays_as_supported_after_schedule_primitive_is_
     assert "semantic_gap" not in replayed.request.metadata
 
 
+def test_compile_build_request_uses_exact_callable_bond_pde_binding_for_bootstrapped_task_prompt():
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.task_runtime import _effective_task_description
+
+    description = _effective_task_description(
+        {
+            "id": "T17",
+            "title": "Callable bond: HW rate PDE (PSOR) vs HW tree",
+            "construct": ["pde", "lattice"],
+            "cross_validate": {"internal": ["hw_pde_psor", "hw_rate_tree"]},
+        }
+    )
+    compiled = compile_build_request(
+        description,
+        instrument_type="callable_bond",
+        preferred_method="pde_solver",
+    )
+
+    assert compiled.execution_plan.reason == "semantic_contract_request"
+    assert compiled.semantic_contract is not None
+    assert compiled.semantic_contract.semantic_id == "callable_bond"
+    assert compiled.pricing_plan is not None
+    assert compiled.pricing_plan.method == "pde_solver"
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.backend_binding_id == "trellis.models.callable_bond_pde.price_callable_bond_pde"
+    assert compiled.generation_plan.lane_plan_kind == "exact_target_binding"
+    assert compiled.generation_plan.lane_exact_binding_refs == (
+        "trellis.models.callable_bond_pde.price_callable_bond_pde"
+    ,)
+    assert compiled.validation_contract is not None
+    assert compiled.validation_contract.backend_binding_id == (
+        "trellis.models.callable_bond_pde.price_callable_bond_pde"
+    )
+
+
 @pytest.mark.parametrize(
     "description,instrument_type,expected_reason,expected_route_method,expected_semantic_id,expected_instrument,expected_payoff_family,expected_pricing_module,expected_generation_module,expected_primitive_route",
     [

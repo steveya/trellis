@@ -596,9 +596,36 @@ def _bootstrap_ranked_observation_basket_description(task: dict) -> str | None:
     )
 
 
+def _bootstrap_callable_bond_description(task: dict) -> str | None:
+    """Return a canonical callable-bond prompt for title-only proof tasks."""
+    if str(task.get("description") or "").strip():
+        return None
+
+    title = " ".join(
+        part for part in (
+            str(task.get("title") or ""),
+            str(task.get("description") or ""),
+        )
+        if part
+    ).lower()
+    if "callable bond" not in title:
+        return None
+
+    return (
+        "Build a pricer for: Callable bond with a Bermudan issuer call schedule\n\n"
+        "USD fixed-rate bond with face 100, 5% semi-annual coupon, start date "
+        "2025-01-15, issuer call dates 2028-01-15, 2030-01-15, and "
+        "2032-01-15 at par, and maturity 2035-01-15."
+    )
+
+
 def _effective_task_description(task: dict) -> str:
     """Return the task description after applying any canonical bootstrap prompt."""
-    description = _bootstrap_ranked_observation_basket_description(task) or task_to_description(task)
+    description = (
+        _bootstrap_ranked_observation_basket_description(task)
+        or _bootstrap_callable_bond_description(task)
+        or task_to_description(task)
+    )
     context_lines: list[str] = []
 
     construct_methods = _task_construct_methods(task)
