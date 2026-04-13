@@ -93,6 +93,14 @@ These tasks define the `QUA-808` proof surface.
 
 These tasks define the `QUA-809` proof surface.
 
+This sub-cohort intentionally does not add a second honest-block sentinel.
+The program-level sentinel remains `E27` in the event/control/schedule cohort.
+`E26` stays `proved` here on purpose even though
+`tests/evals/stress_tasks.yaml` currently classifies it as `honest_block` on
+the older stress surface. In the binding-first proof program, `E26` is the
+constructive basket-credit stress target that `QUA-823` is expected to recover,
+not a permanent block sentinel.
+
 | Task | Expected outcome | Binding-first capability under test | Notes |
 | --- | --- | --- | --- |
 | `T49` CDO tranche: Gaussian vs Student-t copula | `proved` | tranche attachment/detachment and copula-backed loss bindings | Baseline tranche/loss distribution proof |
