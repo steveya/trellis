@@ -130,7 +130,7 @@ ultimately targets.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-04-12`
+Status mirror last synced: `2026-04-13`
 
 ### Ordered Epic Queue
 
@@ -164,7 +164,7 @@ Status mirror last synced: `2026-04-12`
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-802` | Validation contract: key exact-fit validation bundles by binding identity | Backlog |
+| `QUA-802` | Validation contract: key exact-fit validation bundles by binding identity | Done |
 | `QUA-806` | Platform traces and diagnostics: primary construction provenance is binding-first | Backlog |
 | `QUA-812` | Replay and checkpoints: regenerate binding-first canary and learning artifacts | Backlog |
 | `QUA-813` | Task stores and benchmark reports: retire route-primary health summaries | Backlog |

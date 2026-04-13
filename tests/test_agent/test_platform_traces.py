@@ -636,6 +636,10 @@ def test_platform_trace_persists_semantic_checkpoint_and_generation_boundary(
         trace.generation_boundary["route_binding_authority"]["validation_bundle_id"]
         == trace.validation_contract["bundle_id"]
     )
+    assert (
+        trace.generation_boundary["route_binding_authority"]["exact_validation_bundle_id"]
+        == trace.validation_contract["exact_bundle_id"]
+    )
     assert expected_module in trace.generation_boundary["approved_modules"]
     assert expected_module in boundary["generation_boundary"]["approved_modules"]
     if expected_helper is not None:

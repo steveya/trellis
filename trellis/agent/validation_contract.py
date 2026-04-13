@@ -64,6 +64,8 @@ class CompiledValidationContract:
     instrument_type: str
     method: str
     bundle_id: str
+    backend_binding_id: str | None = None
+    exact_bundle_id: str | None = None
     route_id: str | None = None
     route_family: str | None = None
     required_market_data: tuple[str, ...] = ()
@@ -114,6 +116,16 @@ def compile_validation_contract(
         generation_plan=generation_plan,
         semantic_blueprint=semantic_blueprint,
     )
+    backend_binding_id = _resolve_backend_binding_identity(
+        generation_plan=generation_plan,
+        route_id=route_id,
+        product_ir=product_ir,
+        semantic_blueprint=semantic_blueprint,
+    )
+    exact_bundle_id = _exact_bundle_id_for(
+        bundle_id=bundle.bundle_id,
+        backend_binding_id=backend_binding_id,
+    )
     lowering_errors = _lowering_errors_for(semantic_blueprint)
     admissibility_failures = _admissibility_failures_for(
         route_id=route_id,
@@ -159,12 +171,15 @@ def compile_validation_contract(
         "requires_relation_semantics": any(
             relation.relation == "unspecified" for relation in comparison_relations
         ),
+        "has_exact_validation_identity": bool(exact_bundle_id),
     }
     return CompiledValidationContract(
         contract_id=f"{method}:{resolved_instrument}",
         instrument_type=resolved_instrument,
         method=method,
         bundle_id=bundle.bundle_id,
+        backend_binding_id=backend_binding_id,
+        exact_bundle_id=exact_bundle_id,
         route_id=route_id,
         route_family=route_family,
         required_market_data=required_market_data,
@@ -189,6 +204,8 @@ def validation_contract_summary(
         "instrument_type": contract.instrument_type,
         "method": contract.method,
         "bundle_id": contract.bundle_id,
+        "backend_binding_id": contract.backend_binding_id,
+        "exact_bundle_id": contract.exact_bundle_id,
         "route_id": contract.route_id,
         "route_family": contract.route_family,
         "required_market_data": list(contract.required_market_data),
@@ -238,11 +255,31 @@ def _resolve_route_identity(
     semantic_blueprint=None,
 ) -> tuple[str | None, str | None]:
     """Return the selected route id and route family when available."""
+    has_exact_backend_fit = _generation_plan_has_exact_backend_fit(generation_plan) and not _lowering_errors_for(
+        semantic_blueprint
+    )
     primitive_plan = getattr(generation_plan, "primitive_plan", None)
     if primitive_plan is not None and getattr(primitive_plan, "route", None):
         return (
             str(getattr(primitive_plan, "route", None) or "").strip() or None,
-            str(getattr(primitive_plan, "route_family", None) or "").strip() or None,
+            (
+                str(getattr(primitive_plan, "route_family", None) or "").strip()
+                or (
+                    str(getattr(generation_plan, "backend_route_family", None) or "").strip()
+                    if has_exact_backend_fit
+                    else ""
+                )
+                or None
+            ),
+        )
+    if (
+        has_exact_backend_fit
+        and generation_plan is not None
+        and getattr(generation_plan, "backend_route_family", None)
+    ):
+        return (
+            None,
+            str(getattr(generation_plan, "backend_route_family", None) or "").strip() or None,
         )
     lowering = getattr(semantic_blueprint, "dsl_lowering", None)
     if lowering is not None:
@@ -251,6 +288,75 @@ def _resolve_route_identity(
             str(getattr(lowering, "route_family", None) or "").strip() or None,
         )
     return None, None
+
+
+def _resolve_backend_binding_identity(
+    *,
+    generation_plan=None,
+    route_id: str | None = None,
+    product_ir=None,
+    semantic_blueprint=None,
+) -> str | None:
+    """Return the exact backend-binding identity when available."""
+    if _lowering_errors_for(semantic_blueprint):
+        return None
+    has_exact_backend_fit = _generation_plan_has_exact_backend_fit(generation_plan)
+    if (
+        has_exact_backend_fit
+        and generation_plan is not None
+        and getattr(generation_plan, "backend_binding_id", None)
+    ):
+        return str(getattr(generation_plan, "backend_binding_id", None) or "").strip() or None
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    if (
+        has_exact_backend_fit
+        and primitive_plan is not None
+        and getattr(primitive_plan, "backend_binding_id", None)
+    ):
+        return str(getattr(primitive_plan, "backend_binding_id", None) or "").strip() or None
+    if not route_id:
+        return None
+    from trellis.agent.backend_bindings import resolve_backend_binding_by_route_id
+
+    resolved = resolve_backend_binding_by_route_id(
+        route_id,
+        product_ir=product_ir,
+        primitive_plan=primitive_plan,
+    )
+    if resolved is None:
+        return None
+    return str(getattr(resolved, "binding_id", "") or "").strip() or None
+
+
+def _exact_bundle_id_for(
+    *,
+    bundle_id: str,
+    backend_binding_id: str | None,
+) -> str | None:
+    """Return the binding-scoped exact validation identity when available."""
+    normalized_bundle = str(bundle_id or "").strip()
+    normalized_binding = str(backend_binding_id or "").strip()
+    if not normalized_bundle or not normalized_binding:
+        return None
+    return f"{normalized_bundle}@{normalized_binding}"
+
+
+def _generation_plan_has_exact_backend_fit(generation_plan) -> bool:
+    """Return whether the generation plan represents an exact backend fit."""
+    if generation_plan is None:
+        return False
+    if str(getattr(generation_plan, "lane_plan_kind", "") or "").strip() == "exact_target_binding":
+        return True
+    for attr in ("backend_exact_target_refs", "backend_helper_refs"):
+        if tuple(getattr(generation_plan, attr, ()) or ()):
+            return True
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    if primitive_plan is None:
+        return False
+    for attr in ("backend_exact_target_refs", "backend_helper_refs"):
+        if tuple(getattr(primitive_plan, attr, ()) or ()):
+            return True
+    return False
 
 
 def _requested_outputs_for(*, request=None, semantic_blueprint=None) -> tuple[str, ...]:

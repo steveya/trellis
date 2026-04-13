@@ -28,6 +28,14 @@ def test_compile_build_request_attaches_validation_contract_summary():
 
     assert contract is not None
     assert contract.bundle_id == "analytical:quanto_option"
+    assert (
+        contract.backend_binding_id
+        == "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
+    )
+    assert (
+        contract.exact_bundle_id
+        == "analytical:quanto_option@trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
+    )
     assert contract.route_id == "quanto_adjustment_analytical"
     assert contract.route_family == "analytical"
     assert {check.check_id for check in contract.deterministic_checks} >= {
@@ -38,6 +46,14 @@ def test_compile_build_request_attaches_validation_contract_summary():
     }
     assert "black_vol_surface" in contract.required_market_data
     assert compiled.request.metadata["validation_contract"]["bundle_id"] == contract.bundle_id
+    assert (
+        compiled.request.metadata["validation_contract"]["backend_binding_id"]
+        == contract.backend_binding_id
+    )
+    assert (
+        compiled.request.metadata["validation_contract"]["exact_bundle_id"]
+        == contract.exact_bundle_id
+    )
     assert compiled.request.metadata["validation_contract"]["route_id"] == contract.route_id
     assert (
         compiled.request.metadata["validation_contract"]["deterministic_checks"][0]["check_id"]
@@ -136,6 +152,8 @@ def test_compile_validation_contract_prefers_more_specific_product_family_over_g
 
     assert contract is not None
     assert contract.bundle_id == "analytical:zcb_option"
+    assert contract.backend_binding_id is None
+    assert contract.exact_bundle_id is None
     assert contract.instrument_type == "zcb_option"
 
 
@@ -153,6 +171,8 @@ def test_route_less_semantic_request_keeps_validation_contract_truthful():
     contract = compiled.validation_contract
 
     assert contract is not None
+    assert contract.backend_binding_id is None
+    assert contract.exact_bundle_id is None
     assert contract.route_id is None
     assert contract.route_family is None
     check_ids = {check.check_id for check in contract.deterministic_checks}
@@ -276,14 +296,21 @@ def test_representative_semantic_requests_compile_stable_validation_contracts(
     assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == expected_route
     assert contract.route_id == expected_route
     assert contract.bundle_id == expected_bundle
+    assert contract.backend_binding_id
+    assert contract.exact_bundle_id == f"{expected_bundle}@{contract.backend_binding_id}"
     assert set(contract.required_market_data) == required_inputs
     assert contract.lowering_errors == ()
     assert contract.admissibility_failures == expected_admissibility
     assert contract.review_hints["has_lowering_errors"] is False
     assert contract.review_hints["has_admissibility_failures"] == bool(expected_admissibility)
+    assert contract.review_hints["has_exact_validation_identity"] is True
 
     assert contract == contract_again
     assert compiled.request.metadata["validation_contract"]["bundle_id"] == expected_bundle
+    assert (
+        compiled.request.metadata["validation_contract"]["exact_bundle_id"]
+        == contract.exact_bundle_id
+    )
     assert compiled.request.metadata["validation_contract"]["route_id"] == expected_route
 
 
@@ -313,6 +340,14 @@ def test_platform_trace_persists_validation_contract_summary(tmp_path):
     assert len(traces) == 1
     assert traces[0].validation_contract["route_id"] == "credit_default_swap_analytical"
     assert traces[0].validation_contract["bundle_id"] == "analytical:credit_default_swap"
+    assert (
+        traces[0].validation_contract["backend_binding_id"]
+        == "trellis.models.credit_default_swap.price_cds_analytical"
+    )
+    assert (
+        traces[0].validation_contract["exact_bundle_id"]
+        == "analytical:credit_default_swap@trellis.models.credit_default_swap.price_cds_analytical"
+    )
 
 
 def test_validate_build_emits_validation_contract_summary_in_bundle_events(monkeypatch):
@@ -382,10 +417,18 @@ def test_validate_build_emits_validation_contract_summary_in_bundle_events(monke
     executed = next(details for event, details in events if event == "validation_bundle_executed")
     assert selected["validation_contract"]["route_id"] == "quanto_adjustment_analytical"
     assert selected["validation_contract"]["bundle_id"] == "analytical:quanto_option"
+    assert (
+        selected["validation_contract"]["exact_bundle_id"]
+        == "analytical:quanto_option@trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
+    )
     assert selected["route_binding_authority"]["route_id"] == "quanto_adjustment_analytical"
     assert selected["route_binding_authority"]["canary_task_ids"] == ["T105"]
     assert executed["validation_contract"]["bundle_id"] == "analytical:quanto_option"
     assert executed["route_binding_authority"]["validation_bundle_id"] == "analytical:quanto_option"
+    assert (
+        executed["route_binding_authority"]["exact_validation_bundle_id"]
+        == "analytical:quanto_option@trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
+    )
 
 
 def test_validate_build_passes_validation_contract_to_review_policy(monkeypatch):

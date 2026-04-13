@@ -150,6 +150,10 @@ def test_compile_build_request_attaches_route_binding_authority_packet():
     ]
     assert "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state" in backend_binding["helper_refs"]
     assert authority["validation_bundle_id"] == "analytical:quanto_option"
+    assert (
+        authority["exact_validation_bundle_id"]
+        == "analytical:quanto_option@trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
+    )
     assert "check_non_negativity" in authority["validation_check_ids"]
     assert backend_binding["admissibility"]["multicurrency_support"] == "native_payout_with_fx"
     assert backend_binding["admissibility_failures"] == []
