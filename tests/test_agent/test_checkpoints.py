@@ -218,9 +218,22 @@ def _validation_contract(
     route_id: str | None = "analytical_black76",
     bundle_id: str = "analytical:vanilla_option",
 ):
+    binding_ids = {
+        "analytical_black76": "trellis.models.black.black76_call",
+        "quanto_adjustment_analytical": "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state",
+        "analytical_garman_kohlhagen": "trellis.models.fx_vanilla.price_fx_vanilla_analytical",
+        "correlated_basket_monte_carlo": "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo",
+    }
+    backend_binding_id = binding_ids.get(route_id)
     return {
         "contract_id": "analytical:vanilla_option",
         "bundle_id": bundle_id,
+        "backend_binding_id": backend_binding_id,
+        "exact_bundle_id": (
+            f"{bundle_id}::{backend_binding_id}"
+            if backend_binding_id
+            else None
+        ),
         "route_id": route_id,
         "route_family": "analytical",
         "required_market_data": ["discount_curve", "underlier_spot", "black_vol_surface"],
@@ -293,7 +306,7 @@ class TestDecisionCheckpoint:
         assert cp.stages[0].agent == "quant"
 
 
-def test_capture_checkpoint_threads_route_binding_authority_into_route_stage():
+def test_capture_checkpoint_threads_binding_authority_into_binding_stage():
     checkpoint = capture_checkpoint(
         task_id="T73",
         instrument_type="swaption",
@@ -303,15 +316,16 @@ def test_capture_checkpoint_threads_route_binding_authority_into_route_stage():
         outcome="pass",
     )
 
-    route_stage = next(stage for stage in checkpoint.stages if stage.agent == "route")
+    binding_stage = next(stage for stage in checkpoint.stages if stage.agent == "binding")
 
-    assert route_stage.decision == "trellis.models.black.black76_call"
-    assert route_stage.metadata["route_binding_authority"]["authority_kind"] == "exact_backend_fit"
-    assert route_stage.metadata["route_binding_authority"]["canary_task_ids"] == ["T73"]
-    assert route_stage.metadata["construction_identity"]["route_alias"] == "analytical_black76"
+    assert binding_stage.decision == "trellis.models.black.black76_call"
+    assert binding_stage.metadata["binding_authority"]["authority_kind"] == "exact_backend_fit"
+    assert binding_stage.metadata["binding_authority"]["canary_task_ids"] == ["T73"]
+    assert binding_stage.metadata["binding_authority"]["binding_route_alias"] == "analytical_black76"
+    assert binding_stage.metadata["construction_identity"]["route_alias"] == "analytical_black76"
 
 
-def test_capture_checkpoint_keeps_route_stage_unknown_when_lowering_has_no_route():
+def test_capture_checkpoint_keeps_binding_stage_unknown_when_lowering_has_no_route():
     checkpoint = capture_checkpoint(
         task_id="T301",
         instrument_type="range_accrual",
@@ -338,12 +352,12 @@ def test_capture_checkpoint_keeps_route_stage_unknown_when_lowering_has_no_route
         outcome="fail_build",
     )
 
-    route_stage = next(stage for stage in checkpoint.stages if stage.agent == "route")
+    binding_stage = next(stage for stage in checkpoint.stages if stage.agent == "binding")
 
-    assert route_stage.decision == "VanillaOptionIR"
-    assert route_stage.metadata["method"] == "analytical"
-    assert route_stage.metadata["lowering"]["route_id"] is None
-    assert "route_binding_authority" not in route_stage.metadata
+    assert binding_stage.decision == "VanillaOptionIR"
+    assert binding_stage.metadata["method"] == "analytical"
+    assert binding_stage.metadata["lowering"]["route_id"] is None
+    assert "binding_authority" not in binding_stage.metadata
 
 
 # ---------------------------------------------------------------------------
@@ -441,7 +455,7 @@ class TestCaptureCheckpoint:
         assert validator.decision == "fail"
         assert validator.metadata["failure_count"] == 2
 
-    def test_capture_semantic_route_boundary(self):
+    def test_capture_semantic_binding_boundary(self):
         cp = capture_checkpoint(
             task_id="T74",
             instrument_type="european_option",
@@ -456,15 +470,16 @@ class TestCaptureCheckpoint:
         )
 
         agents = [stage.agent for stage in cp.stages]
-        assert agents == ["quant", "semantic", "route", "builder", "validator"]
+        assert agents == ["quant", "semantic", "binding", "builder", "validator"]
 
         semantic = [stage for stage in cp.stages if stage.agent == "semantic"][0]
         assert semantic.decision == "vanilla_option"
         assert semantic.metadata["compatibility_bridge_status"] == "thin_compatibility_wrapper"
 
-        route = [stage for stage in cp.stages if stage.agent == "route"][0]
-        assert route.decision == "trellis.models.black.black76_call"
-        assert route.metadata["valuation_context"]["market_source"] == "unbound_market_snapshot"
+        binding = [stage for stage in cp.stages if stage.agent == "binding"][0]
+        assert binding.decision == "trellis.models.black.black76_call"
+        assert binding.metadata["valuation_context"]["market_source"] == "unbound_market_snapshot"
+        assert binding.metadata["binding_authority"]["binding_route_alias"] == "analytical_black76"
 
         builder = [stage for stage in cp.stages if stage.agent == "builder"][0]
         assert "trellis.models.black" in builder.metadata["approved_modules"]
@@ -472,6 +487,8 @@ class TestCaptureCheckpoint:
         validator = [stage for stage in cp.stages if stage.agent == "validator"][0]
         assert validator.decision == "pass"
         assert validator.metadata["bundle_id"] == "analytical:vanilla_option"
+        assert validator.metadata["backend_binding_id"] == "trellis.models.black.black76_call"
+        assert validator.metadata["binding_route_alias"] == "analytical_black76"
 
 
 # ---------------------------------------------------------------------------
@@ -591,7 +608,7 @@ class TestDiffCheckpoints:
         divs = diff_checkpoints(a, b)
         assert any(d.agent == "semantic" and d.severity == "metadata" for d in divs)
 
-    def test_route_and_approved_module_drift_are_detected(self):
+    def test_binding_and_approved_module_drift_are_detected(self):
         baseline = capture_checkpoint(
             task_id="T105",
             instrument_type="quanto_option",
@@ -637,7 +654,7 @@ class TestDiffCheckpoints:
         )
 
         divs = diff_checkpoints(baseline, changed)
-        assert any(d.agent == "route" and d.severity == "decision" for d in divs)
+        assert any(d.agent == "binding" and d.severity == "decision" for d in divs)
         assert any(d.agent == "builder" and d.severity == "metadata" for d in divs)
 
 
@@ -662,6 +679,45 @@ class TestPersistence:
         for orig, loaded_s in zip(cp.stages, loaded.stages):
             assert orig.agent == loaded_s.agent
             assert orig.decision == loaded_s.decision
+
+    def test_load_checkpoint_normalizes_legacy_route_stage(self, tmp_path):
+        legacy_path = tmp_path / "legacy.yaml"
+        legacy_path.write_text(
+            yaml.dump(
+                {
+                    "task_id": "T73",
+                    "instrument_type": "swaption",
+                    "timestamp": "2026-04-13T00:00:00+00:00",
+                    "outcome": "pass",
+                    "stages": [
+                        {
+                            "agent": "route",
+                            "decision": "trellis.models.black.black76_call",
+                            "metadata": _generation_boundary(),
+                            "output_hash": "legacy-binding",
+                        },
+                        {
+                            "agent": "validator",
+                            "decision": "pass",
+                            "metadata": _validation_contract(),
+                            "output_hash": "legacy-validator",
+                        },
+                    ],
+                },
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+
+        loaded = load_checkpoint(legacy_path)
+
+        binding = next(stage for stage in loaded.stages if stage.agent == "binding")
+        validator = next(stage for stage in loaded.stages if stage.agent == "validator")
+
+        assert binding.metadata["binding_authority"]["binding_route_alias"] == "analytical_black76"
+        assert "route_binding_authority" not in binding.metadata
+        assert validator.metadata["binding_route_alias"] == "analytical_black76"
+        assert "route_id" not in validator.metadata
 
     def test_save_creates_directory(self, tmp_path):
         cp = _make_checkpoint()
@@ -869,7 +925,7 @@ class TestEmitDecisionCheckpoint:
         )
 
     def test_emit_uses_platform_trace_boundary(self, tmp_path, monkeypatch):
-        """Checkpoint emission should pull semantic/route/validation boundary from the trace."""
+        """Checkpoint emission should pull semantic/binding/validation boundary from the trace."""
         from trellis.agent.knowledge.autonomous import BuildResult, _emit_decision_checkpoint
         from trellis.agent.platform_requests import compile_build_request
         from trellis.agent.platform_traces import record_platform_trace
@@ -924,13 +980,18 @@ class TestEmitDecisionCheckpoint:
         assert len(files) == 1
         loaded = load_checkpoint(files[0])
         semantic = [stage for stage in loaded.stages if stage.agent == "semantic"][0]
-        route = [stage for stage in loaded.stages if stage.agent == "route"][0]
+        binding = [stage for stage in loaded.stages if stage.agent == "binding"][0]
         builder = [stage for stage in loaded.stages if stage.agent == "builder"][0]
         validator = [stage for stage in loaded.stages if stage.agent == "validator"][0]
 
         assert semantic.decision == "ranked_observation_basket"
         assert semantic.metadata["compatibility_bridge_status"] == "thin_compatibility_wrapper"
-        assert route.decision == "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo"
+        assert binding.decision == "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo"
+        assert binding.metadata["binding_authority"]["binding_route_alias"] == "correlated_basket_monte_carlo"
         assert "trellis.models.monte_carlo.semantic_basket" in builder.metadata["approved_modules"]
-        assert validator.metadata["route_id"] == "correlated_basket_monte_carlo"
+        assert (
+            validator.metadata["backend_binding_id"]
+            == "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo"
+        )
+        assert validator.metadata["binding_route_alias"] == "correlated_basket_monte_carlo"
         assert validator.metadata["bundle_id"] == "monte_carlo:basket_option"

@@ -69,6 +69,11 @@ task. If no latest checkpoint exists yet, the runner reports that the drift
 check was skipped. Treat that as a signal to refresh the task with a live
 canary run before leaning on drift output for a release claim.
 
+Those checkpoints are now binding-first. Fresh replay and live artifacts emit
+binding identity at the generation boundary, and older route-era checkpoint
+files are normalized on load so drift output is not polluted by the route to
+binding stage rename itself.
+
 If you only want to smoke-test the `gate-canary` wiring without spending
 tokens, use:
 
