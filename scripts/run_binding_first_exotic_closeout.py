@@ -67,7 +67,7 @@ def main(argv: list[str]) -> int:
         ROOT / f"task_results_binding_first_exotic_closeout_{timestamp}.md",
     )
     return run_binding_first_exotic_closeout(
-        report_json_paths=[resolve_repo_path(path, ROOT / path) for path in args.report_json_paths],
+        report_json_paths=[resolve_repo_path(path) for path in args.report_json_paths],
         output_json_path=output_json_path,
         output_md_path=output_md_path,
     )

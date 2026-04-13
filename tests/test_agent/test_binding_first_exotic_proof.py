@@ -267,7 +267,28 @@ def test_summarize_binding_first_exotic_program_closeout_aggregates_cohorts():
     assert closeout["totals"]["failed_gate"] == 1
     assert closeout["honest_block_certified"] == 1
     assert closeout["first_pass"]["first_pass_successes"] == 2
-    assert closeout["attempts_to_success"]["average"] == 0.5
+    assert closeout["attempts_to_success"]["average"] == 1.0
     assert closeout["elapsed_seconds_total"] == 35.0
     assert closeout["token_usage"]["total_tokens"] == 310
     assert closeout["unknown_route_tasks"] == ["E27", "T50"]
+
+
+def test_summarize_binding_first_exotic_program_closeout_rejects_duplicate_cohorts():
+    from trellis.agent.evals import summarize_binding_first_exotic_program_closeout
+
+    report = {
+        "cohort": "event_control_schedule",
+        "proof_summary": {
+            "totals": {"tasks": 0, "passed_gate": 0, "failed_gate": 0, "proved": 0, "honest_block": 0},
+            "failure_buckets": {},
+            "by_task": {},
+        },
+        "task_summary": {},
+    }
+
+    try:
+        summarize_binding_first_exotic_program_closeout([report, report])
+    except ValueError as exc:
+        assert "duplicate" in str(exc)
+    else:
+        raise AssertionError("duplicate cohort names should raise ValueError")

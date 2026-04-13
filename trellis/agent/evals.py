@@ -988,6 +988,8 @@ def summarize_binding_first_exotic_program_closeout(
     for raw_report in reports:
         report = dict(raw_report or {})
         cohort = str(report.get("cohort") or "").strip() or "unknown"
+        if cohort in cohort_summaries:
+            raise ValueError(f"duplicate binding-first closeout cohort: {cohort}")
         proof_summary = dict(report.get("proof_summary") or {})
         task_summary = dict(report.get("task_summary") or {})
         cohort_summaries[cohort] = {
@@ -1017,7 +1019,8 @@ def summarize_binding_first_exotic_program_closeout(
             totals["tasks"] += 1
             if task_report.get("passed_gate"):
                 totals["passed_gate"] += 1
-                successful_attempts.append(int(task_report.get("attempts_to_success") or 0))
+                if str(task_report.get("outcome_class") or "").strip() != PROOF_OUTCOME_HONEST_BLOCK:
+                    successful_attempts.append(int(task_report.get("attempts_to_success") or 0))
             else:
                 totals["failed_gate"] += 1
             outcome_class = str(task_report.get("outcome_class") or "").strip()
@@ -1089,8 +1092,16 @@ def render_binding_first_exotic_program_closeout(report: Mapping[str, Any]) -> s
         f"- Total tokens: `{token_usage.get('total_tokens', 0)}`",
         f"- Unknown route-id tasks: `{', '.join(report.get('unknown_route_tasks') or []) or 'none'}`",
         "",
-        "## Cohorts",
+        "## Failure Buckets",
     ]
+    for bucket, count in sorted(dict(report.get("failure_buckets") or {}).items()):
+        lines.append(f"- `{bucket}`: `{count}`")
+    lines.extend(
+        [
+            "",
+        "## Cohorts",
+        ]
+    )
     for cohort, summary_raw in sorted(dict(report.get("cohorts") or {}).items()):
         summary = dict(summary_raw or {})
         cohort_totals = dict(summary.get("totals") or {})

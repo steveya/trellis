@@ -12,6 +12,11 @@
 - Total tokens: `883606`
 - Unknown route-id tasks: `E26, E27, T17, T50`
 
+## Failure Buckets
+- `comparison_failed`: `1`
+- `comparison_insufficient_results`: `9`
+- `success`: `1`
+
 ## Cohorts
 ### basket_credit_loss
 - Status: `failed_gate`
