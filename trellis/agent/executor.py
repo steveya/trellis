@@ -1363,24 +1363,23 @@ def build_payoff(
         generated_module: GeneratedModuleResult | None = None
         generation_token_usage: dict[str, object] = {}
         try:
-            if not fresh_build:
-                generated_module = _materialize_deterministic_exact_binding_module(
-                    skeleton,
-                    generation_plan,
-                    semantic_blueprint=(
-                        getattr(compiled_request, "semantic_blueprint", None)
-                        if compiled_request is not None
-                        else None
-                    ),
-                    comparison_target=(
-                        (
-                            getattr(getattr(compiled_request, "request", None), "metadata", None)
-                            or {}
-                        ).get("comparison_target")
-                        if compiled_request is not None
-                        else None
-                    ),
-                )
+            generated_module = _materialize_deterministic_exact_binding_module(
+                skeleton,
+                generation_plan,
+                semantic_blueprint=(
+                    getattr(compiled_request, "semantic_blueprint", None)
+                    if compiled_request is not None
+                    else None
+                ),
+                comparison_target=(
+                    (
+                        getattr(getattr(compiled_request, "request", None), "metadata", None)
+                        or {}
+                    ).get("comparison_target")
+                    if compiled_request is not None
+                    else None
+                ),
+            )
             if generated_module is None:
                 with llm_usage_stage(
                     "code_generation",

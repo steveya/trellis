@@ -57,7 +57,7 @@ The only proved task in the current closeout is:
 | `T73` | failed gate | analytical/tree/MC parity drift | `QUA-818` |
 | `E22` | failed gate | cap/floor fresh-build instability and missing reference-target evidence | `QUA-819` |
 | `E27` | follow-on recovered | honest-block sentinel is now certified after structured blocker persistence landed | none |
-| `T49` | failed gate | Student-t tranche lane rebuilt copula plumbing instead of staying on the exact helper contract | `QUA-822` |
+| `T49` | follow-on recovered | Gaussian and Student-t tranche lanes now stay on `price_credit_basket_tranche(...)` even on fresh builds | none |
 | `T50` | failed gate | nth-to-default helper invocation and basket-credit parsing | `QUA-823` |
 | `E26` | failed gate | basket-credit parsing | `QUA-823` |
 | `T53` | failed gate | recursive / FFT / MC constructive stability on multi-name loss distribution | `QUA-824` |
@@ -99,8 +99,9 @@ The correct support statement after this closeout is:
 - Trellis does **not** yet have proof-level evidence for general constructable
   exotic support across the agreed cohort.
 - Current proof-level support is limited to the recovered slices already
-  measured in the checked benchmark artifact, with the remaining gaps tracked
-  by `QUA-817` through `QUA-825`.
+  measured in the checked benchmark artifact plus the post-closeout recoveries
+  (`E27`, `T49`), with the remaining gaps tracked by `QUA-817`, `QUA-818`,
+  `QUA-819`, `QUA-823`, `QUA-824`, and `QUA-825`.
 
 This is why `LIMITATIONS.md` now records the exotic proof cohort as an open
 limitation instead of letting the architecture docs imply the proof is already
