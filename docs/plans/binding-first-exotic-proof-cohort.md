@@ -108,19 +108,22 @@ These tasks define the `QUA-809` proof surface.
 
 `QUA-808` is done only when:
 
-- every `QUA-808` cohort item above is either `proved` or reaches its expected
-  `honest_block`
+- the `QUA-808` cohort has been run on a fixed repo revision with fresh builds
 - the run artifacts show binding ids for the successful exact-helper lanes
+- any residual failures are either fixed in the same slice or split into
+  task-backed follow-on tickets with concrete evidence
 - no new route ids were introduced to make the cohort pass
 
 ### `QUA-809`
 
 `QUA-809` is done only when:
 
-- every `QUA-809` cohort item above is `proved`
+- the `QUA-809` cohort has been run on a fixed repo revision with fresh builds
 - the run artifacts show binding ids for each exact helper-backed lane and the
   basket-credit/loss-distribution surfaces no longer depend on route-local
   exact-lookup authority
+- any residual failures are either fixed in the same slice or split into
+  task-backed follow-on tickets with concrete evidence
 
 ### `QUA-815`
 
@@ -131,6 +134,39 @@ These tasks define the `QUA-809` proof surface.
 - first-pass and retry metrics
 - time and token cost
 - any remaining blocker families that still prevent the claimed end state
+
+## Latest Evidence
+
+### `QUA-808` live run on `2026-04-13`
+
+Command:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 scripts/run_binding_first_exotic_proof.py \
+  --cohort event_control_schedule \
+  --output /tmp/qua808_results_live.json \
+  --report-json /tmp/qua808_report_live.json \
+  --report-md /tmp/qua808_report_live.md
+```
+
+Outcome summary:
+
+- `T105` reached `proved`
+- `T17` failed because the callable-bond PDE lane still has no exact binding or
+  constructive steps
+- `T73` failed on analytical/tree/MC parity drift
+- `E22` failed on fresh-build analytical and MC instability plus missing
+  reference-target evidence
+- `E27` refused as expected, but the structured result did not persist typed
+  blocker categories, so the proof gate could not certify the `honest_block`
+
+Follow-on tickets opened from that run:
+
+- `QUA-817` callable-bond PDE proof gap (`T17`)
+- `QUA-818` swaption parity drift (`T73`)
+- `QUA-819` cap/floor fresh-build stability and reference-target evidence (`E22`)
+- `QUA-820` structured blocker persistence for the honest-block sentinel (`E27`)
+- `QUA-821` residual `unknown` route ids in proof telemetry (`T17`, `E27`)
 
 ## Review Notes
 

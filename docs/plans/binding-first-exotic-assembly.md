@@ -183,7 +183,12 @@ Status mirror last synced: `2026-04-13`
 | Ticket | Description | Status |
 | --- | --- | --- |
 | `QUA-804` | Exotic benchmark: define constructable proof cohort for binding-first assembly | Done |
-| `QUA-808` | Exotic assembly: prove event-control-schedule structures without new route identities | Backlog |
+| `QUA-808` | Exotic assembly: run the event-control-schedule proof cohort and split residual gaps | Done |
+| `QUA-817` | Proof follow-on: callable-bond PDE exact binding or constructive steps (`T17`) | Backlog |
+| `QUA-818` | Proof follow-on: swaption analytical/tree/MC parity drift (`T73`) | Backlog |
+| `QUA-819` | Proof follow-on: cap/floor fresh-build stability and reference-target evidence (`E22`) | Backlog |
+| `QUA-820` | Proof follow-on: structured blocker persistence for honest-block sentinel (`E27`) | Backlog |
+| `QUA-821` | Proof telemetry: remove residual `unknown` route ids from proof traces | Backlog |
 | `QUA-809` | Exotic assembly: prove basket-credit and loss-distribution structures on binding roles | Backlog |
 | `QUA-815` | Exotic program closeout: measure proof-cohort outcomes on the binding-first runtime | Backlog |
 

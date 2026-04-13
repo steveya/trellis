@@ -1,0 +1,65 @@
+T17:
+  cohort: event_control_schedule
+  outcome_class: proved
+  comparison_targets:
+    - hw_pde_psor
+    - hw_rate_tree
+  requires_binding_ids: true
+
+T73:
+  cohort: event_control_schedule
+  outcome_class: proved
+  comparison_targets:
+    - black76
+    - hw_tree
+    - hw_mc
+  requires_binding_ids: true
+
+T105:
+  cohort: event_control_schedule
+  outcome_class: proved
+  required_mock_capabilities:
+    - discount_curve
+    - forward_curve
+    - fx_rates
+    - spot
+  comparison_targets:
+    - quanto_bs
+    - mc_quanto
+  requires_binding_ids: true
+  forbidden_failure_patterns:
+    - MissingCapabilityError
+
+E22:
+  cohort: event_control_schedule
+  outcome_class: proved
+  required_mock_capabilities:
+    - discount_curve
+    - forward_curve
+    - black_vol_surface
+  comparison_targets:
+    - mc_rate_cap
+    - black76_cap
+  reference_target: black76_cap
+  requires_binding_ids: true
+  forbidden_failure_patterns:
+    - MissingCapabilityError
+
+E27:
+  cohort: event_control_schedule
+  outcome_class: honest_block
+  required_mock_capabilities:
+    - discount_curve
+    - black_vol_surface
+    - model_parameters
+    - spot
+  comparison_targets:
+    - american_pathdep_pde
+    - american_pathdep_mc
+    - american_pathdep_fft
+  expected_blocker_categories:
+    - unsupported_composite
+    - missing_foundational_primitive
+  requires_binding_ids: false
+  forbidden_failure_patterns:
+    - MissingCapabilityError
