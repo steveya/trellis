@@ -1,0 +1,1404 @@
+{
+  "task_id": "T74",
+  "task_kind": "pricing",
+  "run_id": "20260413T025510623630",
+  "persisted_at": "2026-04-13T02:55:10.624194+00:00",
+  "task": {
+    "id": "T74",
+    "title": "European equity call: 5-way (tree, PDE, MC, FFT, COS)",
+    "construct": [
+      "lattice",
+      "pde",
+      "monte_carlo",
+      "transforms"
+    ],
+    "cross_validate": {
+      "internal": [
+        "crr_tree",
+        "bs_pde",
+        "mc_exact",
+        "fft",
+        "cos"
+      ],
+      "analytical": "black_scholes"
+    },
+    "new_component": null
+  },
+  "result": {
+    "task_id": "T74",
+    "title": "European equity call: 5-way (tree, PDE, MC, FFT, COS)",
+    "instrument_type": "european_option",
+    "instrument_identity_source": "task.title_or_description",
+    "start_time": "2026-04-13T02:55:10.623630",
+    "comparison_task": true,
+    "construct_methods": [
+      "rate_tree",
+      "pde_solver",
+      "monte_carlo",
+      "fft_pricing"
+    ],
+    "comparison_targets": [
+      "crr_tree",
+      "bs_pde",
+      "mc_exact",
+      "fft",
+      "cos",
+      "black_scholes"
+    ],
+    "cross_validate": {
+      "internal": [
+        "crr_tree",
+        "bs_pde",
+        "mc_exact",
+        "fft",
+        "cos"
+      ],
+      "analytical": "black_scholes"
+    },
+    "new_component": null,
+    "semantic_contract_id": null,
+    "runtime_controls": {
+      "skip_post_build_reflection": false,
+      "skip_post_build_consolidation": false,
+      "skip_task_diagnosis_persist": false
+    },
+    "execution_mode": "live",
+    "market_context": {
+      "source": "default",
+      "as_of": null,
+      "selected_components": {},
+      "selected_curve_names": {},
+      "available_capabilities": [],
+      "metadata": {},
+      "provenance": {}
+    },
+    "runtime_contract": {
+      "task_id": "T74",
+      "task_title": "European equity call: 5-way (tree, PDE, MC, FFT, COS)",
+      "description": "Build a pricer for: European equity call: 5-way (tree, PDE, MC, FFT, COS)\n\nConstruct methods: rate_tree, pde_solver, monte_carlo, fft_pricing\nComparison targets: crr_tree (rate_tree), bs_pde (pde_solver), mc_exact (monte_carlo), fft (fft_pricing), cos (fft_pricing), black_scholes (analytical)\nCross-validation harness:\n  internal targets: crr_tree, bs_pde, mc_exact, fft, cos\n  analytical benchmark: black_scholes",
+      "instrument_type": "european_option",
+      "instrument_identity_source": "task.title_or_description",
+      "semantic_contract": null,
+      "semantic_contract_id": null,
+      "snapshot_reference": {
+        "source": "default",
+        "as_of": null,
+        "selected_components": {},
+        "selected_curve_names": {},
+        "available_capabilities": [],
+        "metadata": {}
+      },
+      "selected_curve_names": {},
+      "market_provenance": {},
+      "evaluation_tags": [
+        "task_runtime",
+        "construct:lattice,pde,monte_carlo,transforms",
+        "market:default",
+        "comparison"
+      ],
+      "simulation_identity": {
+        "seed": 12749776867688462445,
+        "seed_source": "derived_from_request_and_snapshot",
+        "sample_source": {
+          "kind": "market_snapshot",
+          "source": "default",
+          "as_of": null,
+          "snapshot_reference": {
+            "source": "default",
+            "as_of": null,
+            "selected_components": {},
+            "selected_curve_names": {},
+            "available_capabilities": [],
+            "metadata": {}
+          }
+        },
+        "sample_indexing": {
+          "kind": "path_index",
+          "ordering": "simulation_generation_order",
+          "start": 0
+        },
+        "simulation_stream_id": "T74:33018f4b01dfd431",
+        "replay_key": "T74:33018f4b01dfd431"
+      },
+      "simulation_seed": 12749776867688462445,
+      "sample_source": {
+        "kind": "market_snapshot",
+        "source": "default",
+        "as_of": null,
+        "snapshot_reference": {
+          "source": "default",
+          "as_of": null,
+          "selected_components": {},
+          "selected_curve_names": {},
+          "available_capabilities": [],
+          "metadata": {}
+        }
+      },
+      "sample_indexing": {
+        "kind": "path_index",
+        "ordering": "simulation_generation_order",
+        "start": 0
+      },
+      "simulation_stream_id": "T74:33018f4b01dfd431",
+      "replay_key": "T74:33018f4b01dfd431"
+    },
+    "success": true,
+    "attempts": 6,
+    "elapsed_seconds": 0.0,
+    "gap_confidence": 0.75,
+    "knowledge_gaps": [],
+    "method_results": {
+      "crr_tree": {
+        "success": true,
+        "attempts": 1,
+        "gap_confidence": 0.75,
+        "knowledge_gaps": [],
+        "payoff_class": "Crr_TreePayoff",
+        "preferred_method": "rate_tree",
+        "reference_target": false,
+        "failures": [],
+        "agent_observation_count": 0,
+        "agent_observations": [],
+        "knowledge_summary": {},
+        "token_usage_summary": {},
+        "platform_trace_path": null,
+        "platform_request_id": null,
+        "analytical_trace_path": null,
+        "analytical_trace_text_path": null,
+        "audit_record_path": null,
+        "build_observability": {},
+        "blocker_details": null,
+        "post_build_tracking": {},
+        "reflection": {
+          "lesson_captured": "crr_tree_001"
+        },
+        "artifacts": {
+          "platform_request_ids": [],
+          "platform_trace_paths": [],
+          "analytical_trace_paths": [],
+          "analytical_trace_text_paths": [],
+          "audit_record_paths": [],
+          "knowledge_trace_paths": [],
+          "cookbook_candidate_paths": [],
+          "promotion_candidate_paths": [],
+          "knowledge_gap_log_paths": []
+        },
+        "learning": {
+          "task_kind": "pricing",
+          "retrieved_lesson_ids": [],
+          "retrieved_lesson_titles": [],
+          "retrieval_stages": [],
+          "retrieval_sources": [],
+          "selected_artifact_ids": [],
+          "selected_artifact_titles": [],
+          "selected_artifacts_by_audience": {},
+          "captured_lesson_ids": [
+            "crr_tree_001"
+          ],
+          "lesson_contract_reports": [],
+          "lesson_contract_count": 0,
+          "lesson_contract_outcome": "not_attempted",
+          "lesson_contract_errors": [],
+          "lesson_contract_warnings": [],
+          "lesson_promotion_outcomes": [],
+          "lessons_attributed": 0,
+          "cookbook_enriched": false,
+          "cookbook_candidate_paths": [],
+          "promotion_candidate_paths": [],
+          "knowledge_trace_paths": [],
+          "knowledge_gap_log_paths": [],
+          "reusable_artifact_count": 1,
+          "knowledge_outcome": "captured_knowledge",
+          "knowledge_outcome_reason": "captured 1 lesson(s) and related reusable artifacts"
+        }
+      },
+      "bs_pde": {
+        "success": true,
+        "attempts": 1,
+        "gap_confidence": 0.75,
+        "knowledge_gaps": [],
+        "payoff_class": "Bs_PdePayoff",
+        "preferred_method": "pde_solver",
+        "reference_target": false,
+        "failures": [],
+        "agent_observation_count": 0,
+        "agent_observations": [],
+        "knowledge_summary": {},
+        "token_usage_summary": {},
+        "platform_trace_path": null,
+        "platform_request_id": null,
+        "analytical_trace_path": null,
+        "analytical_trace_text_path": null,
+        "audit_record_path": null,
+        "build_observability": {},
+        "blocker_details": null,
+        "post_build_tracking": {},
+        "reflection": {
+          "lesson_captured": "bs_pde_001"
+        },
+        "artifacts": {
+          "platform_request_ids": [],
+          "platform_trace_paths": [],
+          "analytical_trace_paths": [],
+          "analytical_trace_text_paths": [],
+          "audit_record_paths": [],
+          "knowledge_trace_paths": [],
+          "cookbook_candidate_paths": [],
+          "promotion_candidate_paths": [],
+          "knowledge_gap_log_paths": []
+        },
+        "learning": {
+          "task_kind": "pricing",
+          "retrieved_lesson_ids": [],
+          "retrieved_lesson_titles": [],
+          "retrieval_stages": [],
+          "retrieval_sources": [],
+          "selected_artifact_ids": [],
+          "selected_artifact_titles": [],
+          "selected_artifacts_by_audience": {},
+          "captured_lesson_ids": [
+            "bs_pde_001"
+          ],
+          "lesson_contract_reports": [],
+          "lesson_contract_count": 0,
+          "lesson_contract_outcome": "not_attempted",
+          "lesson_contract_errors": [],
+          "lesson_contract_warnings": [],
+          "lesson_promotion_outcomes": [],
+          "lessons_attributed": 0,
+          "cookbook_enriched": false,
+          "cookbook_candidate_paths": [],
+          "promotion_candidate_paths": [],
+          "knowledge_trace_paths": [],
+          "knowledge_gap_log_paths": [],
+          "reusable_artifact_count": 1,
+          "knowledge_outcome": "captured_knowledge",
+          "knowledge_outcome_reason": "captured 1 lesson(s) and related reusable artifacts"
+        }
+      },
+      "mc_exact": {
+        "success": true,
+        "attempts": 1,
+        "gap_confidence": 0.75,
+        "knowledge_gaps": [],
+        "payoff_class": "Mc_ExactPayoff",
+        "preferred_method": "monte_carlo",
+        "reference_target": false,
+        "failures": [],
+        "agent_observation_count": 0,
+        "agent_observations": [],
+        "knowledge_summary": {},
+        "token_usage_summary": {},
+        "platform_trace_path": null,
+        "platform_request_id": null,
+        "analytical_trace_path": null,
+        "analytical_trace_text_path": null,
+        "audit_record_path": null,
+        "build_observability": {},
+        "blocker_details": null,
+        "post_build_tracking": {},
+        "reflection": {
+          "lesson_captured": "mc_exact_001"
+        },
+        "artifacts": {
+          "platform_request_ids": [],
+          "platform_trace_paths": [],
+          "analytical_trace_paths": [],
+          "analytical_trace_text_paths": [],
+          "audit_record_paths": [],
+          "knowledge_trace_paths": [],
+          "cookbook_candidate_paths": [],
+          "promotion_candidate_paths": [],
+          "knowledge_gap_log_paths": []
+        },
+        "learning": {
+          "task_kind": "pricing",
+          "retrieved_lesson_ids": [],
+          "retrieved_lesson_titles": [],
+          "retrieval_stages": [],
+          "retrieval_sources": [],
+          "selected_artifact_ids": [],
+          "selected_artifact_titles": [],
+          "selected_artifacts_by_audience": {},
+          "captured_lesson_ids": [
+            "mc_exact_001"
+          ],
+          "lesson_contract_reports": [],
+          "lesson_contract_count": 0,
+          "lesson_contract_outcome": "not_attempted",
+          "lesson_contract_errors": [],
+          "lesson_contract_warnings": [],
+          "lesson_promotion_outcomes": [],
+          "lessons_attributed": 0,
+          "cookbook_enriched": false,
+          "cookbook_candidate_paths": [],
+          "promotion_candidate_paths": [],
+          "knowledge_trace_paths": [],
+          "knowledge_gap_log_paths": [],
+          "reusable_artifact_count": 1,
+          "knowledge_outcome": "captured_knowledge",
+          "knowledge_outcome_reason": "captured 1 lesson(s) and related reusable artifacts"
+        }
+      },
+      "fft": {
+        "success": true,
+        "attempts": 1,
+        "gap_confidence": 0.75,
+        "knowledge_gaps": [],
+        "payoff_class": "FftPayoff",
+        "preferred_method": "fft_pricing",
+        "reference_target": false,
+        "failures": [],
+        "agent_observation_count": 0,
+        "agent_observations": [],
+        "knowledge_summary": {},
+        "token_usage_summary": {},
+        "platform_trace_path": null,
+        "platform_request_id": null,
+        "analytical_trace_path": null,
+        "analytical_trace_text_path": null,
+        "audit_record_path": null,
+        "build_observability": {},
+        "blocker_details": null,
+        "post_build_tracking": {},
+        "reflection": {
+          "lesson_captured": "fft_001"
+        },
+        "artifacts": {
+          "platform_request_ids": [],
+          "platform_trace_paths": [],
+          "analytical_trace_paths": [],
+          "analytical_trace_text_paths": [],
+          "audit_record_paths": [],
+          "knowledge_trace_paths": [],
+          "cookbook_candidate_paths": [],
+          "promotion_candidate_paths": [],
+          "knowledge_gap_log_paths": []
+        },
+        "learning": {
+          "task_kind": "pricing",
+          "retrieved_lesson_ids": [],
+          "retrieved_lesson_titles": [],
+          "retrieval_stages": [],
+          "retrieval_sources": [],
+          "selected_artifact_ids": [],
+          "selected_artifact_titles": [],
+          "selected_artifacts_by_audience": {},
+          "captured_lesson_ids": [
+            "fft_001"
+          ],
+          "lesson_contract_reports": [],
+          "lesson_contract_count": 0,
+          "lesson_contract_outcome": "not_attempted",
+          "lesson_contract_errors": [],
+          "lesson_contract_warnings": [],
+          "lesson_promotion_outcomes": [],
+          "lessons_attributed": 0,
+          "cookbook_enriched": false,
+          "cookbook_candidate_paths": [],
+          "promotion_candidate_paths": [],
+          "knowledge_trace_paths": [],
+          "knowledge_gap_log_paths": [],
+          "reusable_artifact_count": 1,
+          "knowledge_outcome": "captured_knowledge",
+          "knowledge_outcome_reason": "captured 1 lesson(s) and related reusable artifacts"
+        }
+      },
+      "cos": {
+        "success": true,
+        "attempts": 1,
+        "gap_confidence": 0.75,
+        "knowledge_gaps": [],
+        "payoff_class": "CosPayoff",
+        "preferred_method": "fft_pricing",
+        "reference_target": false,
+        "failures": [],
+        "agent_observation_count": 0,
+        "agent_observations": [],
+        "knowledge_summary": {},
+        "token_usage_summary": {},
+        "platform_trace_path": null,
+        "platform_request_id": null,
+        "analytical_trace_path": null,
+        "analytical_trace_text_path": null,
+        "audit_record_path": null,
+        "build_observability": {},
+        "blocker_details": null,
+        "post_build_tracking": {},
+        "reflection": {
+          "lesson_captured": "cos_001"
+        },
+        "artifacts": {
+          "platform_request_ids": [],
+          "platform_trace_paths": [],
+          "analytical_trace_paths": [],
+          "analytical_trace_text_paths": [],
+          "audit_record_paths": [],
+          "knowledge_trace_paths": [],
+          "cookbook_candidate_paths": [],
+          "promotion_candidate_paths": [],
+          "knowledge_gap_log_paths": []
+        },
+        "learning": {
+          "task_kind": "pricing",
+          "retrieved_lesson_ids": [],
+          "retrieved_lesson_titles": [],
+          "retrieval_stages": [],
+          "retrieval_sources": [],
+          "selected_artifact_ids": [],
+          "selected_artifact_titles": [],
+          "selected_artifacts_by_audience": {},
+          "captured_lesson_ids": [
+            "cos_001"
+          ],
+          "lesson_contract_reports": [],
+          "lesson_contract_count": 0,
+          "lesson_contract_outcome": "not_attempted",
+          "lesson_contract_errors": [],
+          "lesson_contract_warnings": [],
+          "lesson_promotion_outcomes": [],
+          "lessons_attributed": 0,
+          "cookbook_enriched": false,
+          "cookbook_candidate_paths": [],
+          "promotion_candidate_paths": [],
+          "knowledge_trace_paths": [],
+          "knowledge_gap_log_paths": [],
+          "reusable_artifact_count": 1,
+          "knowledge_outcome": "captured_knowledge",
+          "knowledge_outcome_reason": "captured 1 lesson(s) and related reusable artifacts"
+        }
+      },
+      "black_scholes": {
+        "success": true,
+        "attempts": 1,
+        "gap_confidence": 0.75,
+        "knowledge_gaps": [],
+        "payoff_class": "Black_ScholesPayoff",
+        "preferred_method": "analytical",
+        "reference_target": true,
+        "failures": [],
+        "agent_observation_count": 0,
+        "agent_observations": [],
+        "knowledge_summary": {},
+        "token_usage_summary": {},
+        "platform_trace_path": null,
+        "platform_request_id": null,
+        "analytical_trace_path": null,
+        "analytical_trace_text_path": null,
+        "audit_record_path": null,
+        "build_observability": {},
+        "blocker_details": null,
+        "post_build_tracking": {},
+        "reflection": {
+          "lesson_captured": "black_scholes_001"
+        },
+        "artifacts": {
+          "platform_request_ids": [],
+          "platform_trace_paths": [],
+          "analytical_trace_paths": [],
+          "analytical_trace_text_paths": [],
+          "audit_record_paths": [],
+          "knowledge_trace_paths": [],
+          "cookbook_candidate_paths": [],
+          "promotion_candidate_paths": [],
+          "knowledge_gap_log_paths": []
+        },
+        "learning": {
+          "task_kind": "pricing",
+          "retrieved_lesson_ids": [],
+          "retrieved_lesson_titles": [],
+          "retrieval_stages": [],
+          "retrieval_sources": [],
+          "selected_artifact_ids": [],
+          "selected_artifact_titles": [],
+          "selected_artifacts_by_audience": {},
+          "captured_lesson_ids": [
+            "black_scholes_001"
+          ],
+          "lesson_contract_reports": [],
+          "lesson_contract_count": 0,
+          "lesson_contract_outcome": "not_attempted",
+          "lesson_contract_errors": [],
+          "lesson_contract_warnings": [],
+          "lesson_promotion_outcomes": [],
+          "lessons_attributed": 0,
+          "cookbook_enriched": false,
+          "cookbook_candidate_paths": [],
+          "promotion_candidate_paths": [],
+          "knowledge_trace_paths": [],
+          "knowledge_gap_log_paths": [],
+          "reusable_artifact_count": 1,
+          "knowledge_outcome": "captured_knowledge",
+          "knowledge_outcome_reason": "captured 1 lesson(s) and related reusable artifacts"
+        }
+      }
+    },
+    "artifacts": {
+      "platform_request_ids": [],
+      "platform_trace_paths": [],
+      "analytical_trace_paths": [],
+      "analytical_trace_text_paths": [],
+      "audit_record_paths": [],
+      "knowledge_trace_paths": [],
+      "cookbook_candidate_paths": [],
+      "promotion_candidate_paths": [],
+      "knowledge_gap_log_paths": []
+    },
+    "knowledge_summary": {
+      "principle_ids": [],
+      "lesson_ids": [],
+      "lesson_titles": [],
+      "cookbook_methods": [],
+      "data_contracts": [],
+      "unresolved_primitives": [],
+      "retrieval_stages": [],
+      "retrieval_sources": [],
+      "selected_artifact_ids": [],
+      "selected_artifact_titles": [],
+      "selected_artifacts_by_audience": {}
+    },
+    "token_usage_summary": {
+      "call_count": 0,
+      "calls_with_usage": 0,
+      "calls_without_usage": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "by_stage": {},
+      "by_provider": {}
+    },
+    "agent_observation_count": 0,
+    "preferred_method": null,
+    "reflection": {
+      "lesson_captured": [
+        "crr_tree_001",
+        "bs_pde_001",
+        "mc_exact_001",
+        "fft_001",
+        "cos_001",
+        "black_scholes_001"
+      ],
+      "lesson_contract": [],
+      "lesson_promotion_outcome": [],
+      "cookbook_enriched": false,
+      "method_reflections": {
+        "crr_tree": {
+          "lesson_captured": "crr_tree_001"
+        },
+        "bs_pde": {
+          "lesson_captured": "bs_pde_001"
+        },
+        "mc_exact": {
+          "lesson_captured": "mc_exact_001"
+        },
+        "fft": {
+          "lesson_captured": "fft_001"
+        },
+        "cos": {
+          "lesson_captured": "cos_001"
+        },
+        "black_scholes": {
+          "lesson_captured": "black_scholes_001"
+        }
+      }
+    },
+    "cross_validation": {
+      "status": "passed",
+      "configured_targets": {
+        "internal": [
+          "crr_tree",
+          "bs_pde",
+          "mc_exact",
+          "fft",
+          "cos"
+        ],
+        "analytical": "black_scholes"
+      },
+      "prices": {
+        "crr_tree": 10.1,
+        "bs_pde": 10.0,
+        "mc_exact": 10.05,
+        "fft": 9.98,
+        "cos": 10.01,
+        "black_scholes": 10.0
+      },
+      "price_errors": {},
+      "reference_target": "black_scholes",
+      "reference_price": 10.0,
+      "tolerance_pct": 5.0,
+      "deviations_pct": {
+        "crr_tree": 1.0,
+        "bs_pde": 0.0,
+        "mc_exact": 0.5,
+        "fft": 0.2,
+        "cos": 0.1
+      },
+      "comparison_relations": {
+        "crr_tree": "within_tolerance",
+        "bs_pde": "within_tolerance",
+        "mc_exact": "within_tolerance",
+        "fft": "within_tolerance",
+        "cos": "within_tolerance"
+      },
+      "passed_targets": [
+        "crr_tree",
+        "bs_pde",
+        "mc_exact",
+        "fft",
+        "cos"
+      ],
+      "failed_targets": [],
+      "successful_targets": [
+        "crr_tree",
+        "bs_pde",
+        "mc_exact",
+        "fft",
+        "cos",
+        "black_scholes"
+      ]
+    },
+    "learning": {
+      "task_kind": "pricing",
+      "retrieved_lesson_ids": [],
+      "retrieved_lesson_titles": [],
+      "retrieval_stages": [],
+      "retrieval_sources": [],
+      "selected_artifact_ids": [],
+      "selected_artifact_titles": [],
+      "selected_artifacts_by_audience": {},
+      "captured_lesson_ids": [
+        "crr_tree_001",
+        "bs_pde_001",
+        "mc_exact_001",
+        "fft_001",
+        "cos_001",
+        "black_scholes_001"
+      ],
+      "lesson_contract_reports": [],
+      "lesson_contract_count": 0,
+      "lesson_contract_outcome": "not_attempted",
+      "lesson_contract_errors": [],
+      "lesson_contract_warnings": [],
+      "lesson_promotion_outcomes": [],
+      "lessons_attributed": 0,
+      "cookbook_enriched": false,
+      "cookbook_candidate_paths": [],
+      "promotion_candidate_paths": [],
+      "knowledge_trace_paths": [],
+      "knowledge_gap_log_paths": [],
+      "reusable_artifact_count": 6,
+      "knowledge_outcome": "captured_knowledge",
+      "knowledge_outcome_reason": "captured 6 lesson(s) and related reusable artifacts"
+    },
+    "failures": []
+  },
+  "comparison": {
+    "task": true,
+    "targets": [
+      "crr_tree",
+      "bs_pde",
+      "mc_exact",
+      "fft",
+      "cos",
+      "black_scholes"
+    ],
+    "summary": {
+      "status": "passed",
+      "configured_targets": {
+        "internal": [
+          "crr_tree",
+          "bs_pde",
+          "mc_exact",
+          "fft",
+          "cos"
+        ],
+        "analytical": "black_scholes"
+      },
+      "prices": {
+        "crr_tree": 10.1,
+        "bs_pde": 10.0,
+        "mc_exact": 10.05,
+        "fft": 9.98,
+        "cos": 10.01,
+        "black_scholes": 10.0
+      },
+      "price_errors": {},
+      "reference_target": "black_scholes",
+      "reference_price": 10.0,
+      "tolerance_pct": 5.0,
+      "deviations_pct": {
+        "crr_tree": 1.0,
+        "bs_pde": 0.0,
+        "mc_exact": 0.5,
+        "fft": 0.2,
+        "cos": 0.1
+      },
+      "comparison_relations": {
+        "crr_tree": "within_tolerance",
+        "bs_pde": "within_tolerance",
+        "mc_exact": "within_tolerance",
+        "fft": "within_tolerance",
+        "cos": "within_tolerance"
+      },
+      "passed_targets": [
+        "crr_tree",
+        "bs_pde",
+        "mc_exact",
+        "fft",
+        "cos"
+      ],
+      "failed_targets": [],
+      "successful_targets": [
+        "crr_tree",
+        "bs_pde",
+        "mc_exact",
+        "fft",
+        "cos",
+        "black_scholes"
+      ]
+    }
+  },
+  "execution": {
+    "mode": "live",
+    "llm_cassette": {}
+  },
+  "market": {
+    "source": "default",
+    "as_of": null,
+    "selected_components": {},
+    "selected_curve_names": {},
+    "available_capabilities": [],
+    "metadata": {},
+    "provenance": {}
+  },
+  "framework": {},
+  "method_runs": {
+    "crr_tree": {
+      "success": true,
+      "attempts": 1,
+      "gap_confidence": 0.75,
+      "knowledge_gaps": [],
+      "payoff_class": "Crr_TreePayoff",
+      "preferred_method": "rate_tree",
+      "reference_target": false,
+      "failures": [],
+      "agent_observation_count": 0,
+      "agent_observations": [],
+      "knowledge_summary": {},
+      "token_usage_summary": {},
+      "platform_trace_path": null,
+      "platform_request_id": null,
+      "analytical_trace_path": null,
+      "analytical_trace_text_path": null,
+      "audit_record_path": null,
+      "build_observability": {},
+      "blocker_details": null,
+      "post_build_tracking": {},
+      "reflection": {
+        "lesson_captured": "crr_tree_001"
+      },
+      "artifacts": {
+        "platform_request_ids": [],
+        "platform_trace_paths": [],
+        "analytical_trace_paths": [],
+        "analytical_trace_text_paths": [],
+        "audit_record_paths": [],
+        "knowledge_trace_paths": [],
+        "cookbook_candidate_paths": [],
+        "promotion_candidate_paths": [],
+        "knowledge_gap_log_paths": []
+      },
+      "learning": {
+        "task_kind": "pricing",
+        "retrieved_lesson_ids": [],
+        "retrieved_lesson_titles": [],
+        "retrieval_stages": [],
+        "retrieval_sources": [],
+        "selected_artifact_ids": [],
+        "selected_artifact_titles": [],
+        "selected_artifacts_by_audience": {},
+        "captured_lesson_ids": [
+          "crr_tree_001"
+        ],
+        "lesson_contract_reports": [],
+        "lesson_contract_count": 0,
+        "lesson_contract_outcome": "not_attempted",
+        "lesson_contract_errors": [],
+        "lesson_contract_warnings": [],
+        "lesson_promotion_outcomes": [],
+        "lessons_attributed": 0,
+        "cookbook_enriched": false,
+        "cookbook_candidate_paths": [],
+        "promotion_candidate_paths": [],
+        "knowledge_trace_paths": [],
+        "knowledge_gap_log_paths": [],
+        "reusable_artifact_count": 1,
+        "knowledge_outcome": "captured_knowledge",
+        "knowledge_outcome_reason": "captured 1 lesson(s) and related reusable artifacts"
+      },
+      "token_usage": {},
+      "trace_summary": null,
+      "issue_refs": {}
+    },
+    "bs_pde": {
+      "success": true,
+      "attempts": 1,
+      "gap_confidence": 0.75,
+      "knowledge_gaps": [],
+      "payoff_class": "Bs_PdePayoff",
+      "preferred_method": "pde_solver",
+      "reference_target": false,
+      "failures": [],
+      "agent_observation_count": 0,
+      "agent_observations": [],
+      "knowledge_summary": {},
+      "token_usage_summary": {},
+      "platform_trace_path": null,
+      "platform_request_id": null,
+      "analytical_trace_path": null,
+      "analytical_trace_text_path": null,
+      "audit_record_path": null,
+      "build_observability": {},
+      "blocker_details": null,
+      "post_build_tracking": {},
+      "reflection": {
+        "lesson_captured": "bs_pde_001"
+      },
+      "artifacts": {
+        "platform_request_ids": [],
+        "platform_trace_paths": [],
+        "analytical_trace_paths": [],
+        "analytical_trace_text_paths": [],
+        "audit_record_paths": [],
+        "knowledge_trace_paths": [],
+        "cookbook_candidate_paths": [],
+        "promotion_candidate_paths": [],
+        "knowledge_gap_log_paths": []
+      },
+      "learning": {
+        "task_kind": "pricing",
+        "retrieved_lesson_ids": [],
+        "retrieved_lesson_titles": [],
+        "retrieval_stages": [],
+        "retrieval_sources": [],
+        "selected_artifact_ids": [],
+        "selected_artifact_titles": [],
+        "selected_artifacts_by_audience": {},
+        "captured_lesson_ids": [
+          "bs_pde_001"
+        ],
+        "lesson_contract_reports": [],
+        "lesson_contract_count": 0,
+        "lesson_contract_outcome": "not_attempted",
+        "lesson_contract_errors": [],
+        "lesson_contract_warnings": [],
+        "lesson_promotion_outcomes": [],
+        "lessons_attributed": 0,
+        "cookbook_enriched": false,
+        "cookbook_candidate_paths": [],
+        "promotion_candidate_paths": [],
+        "knowledge_trace_paths": [],
+        "knowledge_gap_log_paths": [],
+        "reusable_artifact_count": 1,
+        "knowledge_outcome": "captured_knowledge",
+        "knowledge_outcome_reason": "captured 1 lesson(s) and related reusable artifacts"
+      },
+      "token_usage": {},
+      "trace_summary": null,
+      "issue_refs": {}
+    },
+    "mc_exact": {
+      "success": true,
+      "attempts": 1,
+      "gap_confidence": 0.75,
+      "knowledge_gaps": [],
+      "payoff_class": "Mc_ExactPayoff",
+      "preferred_method": "monte_carlo",
+      "reference_target": false,
+      "failures": [],
+      "agent_observation_count": 0,
+      "agent_observations": [],
+      "knowledge_summary": {},
+      "token_usage_summary": {},
+      "platform_trace_path": null,
+      "platform_request_id": null,
+      "analytical_trace_path": null,
+      "analytical_trace_text_path": null,
+      "audit_record_path": null,
+      "build_observability": {},
+      "blocker_details": null,
+      "post_build_tracking": {},
+      "reflection": {
+        "lesson_captured": "mc_exact_001"
+      },
+      "artifacts": {
+        "platform_request_ids": [],
+        "platform_trace_paths": [],
+        "analytical_trace_paths": [],
+        "analytical_trace_text_paths": [],
+        "audit_record_paths": [],
+        "knowledge_trace_paths": [],
+        "cookbook_candidate_paths": [],
+        "promotion_candidate_paths": [],
+        "knowledge_gap_log_paths": []
+      },
+      "learning": {
+        "task_kind": "pricing",
+        "retrieved_lesson_ids": [],
+        "retrieved_lesson_titles": [],
+        "retrieval_stages": [],
+        "retrieval_sources": [],
+        "selected_artifact_ids": [],
+        "selected_artifact_titles": [],
+        "selected_artifacts_by_audience": {},
+        "captured_lesson_ids": [
+          "mc_exact_001"
+        ],
+        "lesson_contract_reports": [],
+        "lesson_contract_count": 0,
+        "lesson_contract_outcome": "not_attempted",
+        "lesson_contract_errors": [],
+        "lesson_contract_warnings": [],
+        "lesson_promotion_outcomes": [],
+        "lessons_attributed": 0,
+        "cookbook_enriched": false,
+        "cookbook_candidate_paths": [],
+        "promotion_candidate_paths": [],
+        "knowledge_trace_paths": [],
+        "knowledge_gap_log_paths": [],
+        "reusable_artifact_count": 1,
+        "knowledge_outcome": "captured_knowledge",
+        "knowledge_outcome_reason": "captured 1 lesson(s) and related reusable artifacts"
+      },
+      "token_usage": {},
+      "trace_summary": null,
+      "issue_refs": {}
+    },
+    "fft": {
+      "success": true,
+      "attempts": 1,
+      "gap_confidence": 0.75,
+      "knowledge_gaps": [],
+      "payoff_class": "FftPayoff",
+      "preferred_method": "fft_pricing",
+      "reference_target": false,
+      "failures": [],
+      "agent_observation_count": 0,
+      "agent_observations": [],
+      "knowledge_summary": {},
+      "token_usage_summary": {},
+      "platform_trace_path": null,
+      "platform_request_id": null,
+      "analytical_trace_path": null,
+      "analytical_trace_text_path": null,
+      "audit_record_path": null,
+      "build_observability": {},
+      "blocker_details": null,
+      "post_build_tracking": {},
+      "reflection": {
+        "lesson_captured": "fft_001"
+      },
+      "artifacts": {
+        "platform_request_ids": [],
+        "platform_trace_paths": [],
+        "analytical_trace_paths": [],
+        "analytical_trace_text_paths": [],
+        "audit_record_paths": [],
+        "knowledge_trace_paths": [],
+        "cookbook_candidate_paths": [],
+        "promotion_candidate_paths": [],
+        "knowledge_gap_log_paths": []
+      },
+      "learning": {
+        "task_kind": "pricing",
+        "retrieved_lesson_ids": [],
+        "retrieved_lesson_titles": [],
+        "retrieval_stages": [],
+        "retrieval_sources": [],
+        "selected_artifact_ids": [],
+        "selected_artifact_titles": [],
+        "selected_artifacts_by_audience": {},
+        "captured_lesson_ids": [
+          "fft_001"
+        ],
+        "lesson_contract_reports": [],
+        "lesson_contract_count": 0,
+        "lesson_contract_outcome": "not_attempted",
+        "lesson_contract_errors": [],
+        "lesson_contract_warnings": [],
+        "lesson_promotion_outcomes": [],
+        "lessons_attributed": 0,
+        "cookbook_enriched": false,
+        "cookbook_candidate_paths": [],
+        "promotion_candidate_paths": [],
+        "knowledge_trace_paths": [],
+        "knowledge_gap_log_paths": [],
+        "reusable_artifact_count": 1,
+        "knowledge_outcome": "captured_knowledge",
+        "knowledge_outcome_reason": "captured 1 lesson(s) and related reusable artifacts"
+      },
+      "token_usage": {},
+      "trace_summary": null,
+      "issue_refs": {}
+    },
+    "cos": {
+      "success": true,
+      "attempts": 1,
+      "gap_confidence": 0.75,
+      "knowledge_gaps": [],
+      "payoff_class": "CosPayoff",
+      "preferred_method": "fft_pricing",
+      "reference_target": false,
+      "failures": [],
+      "agent_observation_count": 0,
+      "agent_observations": [],
+      "knowledge_summary": {},
+      "token_usage_summary": {},
+      "platform_trace_path": null,
+      "platform_request_id": null,
+      "analytical_trace_path": null,
+      "analytical_trace_text_path": null,
+      "audit_record_path": null,
+      "build_observability": {},
+      "blocker_details": null,
+      "post_build_tracking": {},
+      "reflection": {
+        "lesson_captured": "cos_001"
+      },
+      "artifacts": {
+        "platform_request_ids": [],
+        "platform_trace_paths": [],
+        "analytical_trace_paths": [],
+        "analytical_trace_text_paths": [],
+        "audit_record_paths": [],
+        "knowledge_trace_paths": [],
+        "cookbook_candidate_paths": [],
+        "promotion_candidate_paths": [],
+        "knowledge_gap_log_paths": []
+      },
+      "learning": {
+        "task_kind": "pricing",
+        "retrieved_lesson_ids": [],
+        "retrieved_lesson_titles": [],
+        "retrieval_stages": [],
+        "retrieval_sources": [],
+        "selected_artifact_ids": [],
+        "selected_artifact_titles": [],
+        "selected_artifacts_by_audience": {},
+        "captured_lesson_ids": [
+          "cos_001"
+        ],
+        "lesson_contract_reports": [],
+        "lesson_contract_count": 0,
+        "lesson_contract_outcome": "not_attempted",
+        "lesson_contract_errors": [],
+        "lesson_contract_warnings": [],
+        "lesson_promotion_outcomes": [],
+        "lessons_attributed": 0,
+        "cookbook_enriched": false,
+        "cookbook_candidate_paths": [],
+        "promotion_candidate_paths": [],
+        "knowledge_trace_paths": [],
+        "knowledge_gap_log_paths": [],
+        "reusable_artifact_count": 1,
+        "knowledge_outcome": "captured_knowledge",
+        "knowledge_outcome_reason": "captured 1 lesson(s) and related reusable artifacts"
+      },
+      "token_usage": {},
+      "trace_summary": null,
+      "issue_refs": {}
+    },
+    "black_scholes": {
+      "success": true,
+      "attempts": 1,
+      "gap_confidence": 0.75,
+      "knowledge_gaps": [],
+      "payoff_class": "Black_ScholesPayoff",
+      "preferred_method": "analytical",
+      "reference_target": true,
+      "failures": [],
+      "agent_observation_count": 0,
+      "agent_observations": [],
+      "knowledge_summary": {},
+      "token_usage_summary": {},
+      "platform_trace_path": null,
+      "platform_request_id": null,
+      "analytical_trace_path": null,
+      "analytical_trace_text_path": null,
+      "audit_record_path": null,
+      "build_observability": {},
+      "blocker_details": null,
+      "post_build_tracking": {},
+      "reflection": {
+        "lesson_captured": "black_scholes_001"
+      },
+      "artifacts": {
+        "platform_request_ids": [],
+        "platform_trace_paths": [],
+        "analytical_trace_paths": [],
+        "analytical_trace_text_paths": [],
+        "audit_record_paths": [],
+        "knowledge_trace_paths": [],
+        "cookbook_candidate_paths": [],
+        "promotion_candidate_paths": [],
+        "knowledge_gap_log_paths": []
+      },
+      "learning": {
+        "task_kind": "pricing",
+        "retrieved_lesson_ids": [],
+        "retrieved_lesson_titles": [],
+        "retrieval_stages": [],
+        "retrieval_sources": [],
+        "selected_artifact_ids": [],
+        "selected_artifact_titles": [],
+        "selected_artifacts_by_audience": {},
+        "captured_lesson_ids": [
+          "black_scholes_001"
+        ],
+        "lesson_contract_reports": [],
+        "lesson_contract_count": 0,
+        "lesson_contract_outcome": "not_attempted",
+        "lesson_contract_errors": [],
+        "lesson_contract_warnings": [],
+        "lesson_promotion_outcomes": [],
+        "lessons_attributed": 0,
+        "cookbook_enriched": false,
+        "cookbook_candidate_paths": [],
+        "promotion_candidate_paths": [],
+        "knowledge_trace_paths": [],
+        "knowledge_gap_log_paths": [],
+        "reusable_artifact_count": 1,
+        "knowledge_outcome": "captured_knowledge",
+        "knowledge_outcome_reason": "captured 1 lesson(s) and related reusable artifacts"
+      },
+      "token_usage": {},
+      "trace_summary": null,
+      "issue_refs": {}
+    }
+  },
+  "post_build": {
+    "task": {
+      "latest_phase": null,
+      "latest_status": null,
+      "updated_at": null,
+      "event_count": 0,
+      "active_flags": {}
+    },
+    "methods": {
+      "crr_tree": {
+        "latest_phase": null,
+        "latest_status": null,
+        "updated_at": null,
+        "event_count": 0,
+        "active_flags": {}
+      },
+      "bs_pde": {
+        "latest_phase": null,
+        "latest_status": null,
+        "updated_at": null,
+        "event_count": 0,
+        "active_flags": {}
+      },
+      "mc_exact": {
+        "latest_phase": null,
+        "latest_status": null,
+        "updated_at": null,
+        "event_count": 0,
+        "active_flags": {}
+      },
+      "fft": {
+        "latest_phase": null,
+        "latest_status": null,
+        "updated_at": null,
+        "event_count": 0,
+        "active_flags": {}
+      },
+      "cos": {
+        "latest_phase": null,
+        "latest_status": null,
+        "updated_at": null,
+        "event_count": 0,
+        "active_flags": {}
+      },
+      "black_scholes": {
+        "latest_phase": null,
+        "latest_status": null,
+        "updated_at": null,
+        "event_count": 0,
+        "active_flags": {}
+      }
+    },
+    "latest_method": null,
+    "latest_phase": null,
+    "latest_status": null,
+    "active_flags": {}
+  },
+  "token_usage": {
+    "task": {
+      "call_count": 0,
+      "calls_with_usage": 0,
+      "calls_without_usage": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "by_stage": {},
+      "by_provider": {}
+    },
+    "methods": {}
+  },
+  "learning": {
+    "task_kind": "pricing",
+    "retrieved_lesson_ids": [],
+    "retrieved_lesson_titles": [],
+    "retrieval_stages": [],
+    "retrieval_sources": [],
+    "selected_artifact_ids": [],
+    "selected_artifact_titles": [],
+    "selected_artifacts_by_audience": {},
+    "captured_lesson_ids": [
+      "crr_tree_001",
+      "bs_pde_001",
+      "mc_exact_001",
+      "fft_001",
+      "cos_001",
+      "black_scholes_001"
+    ],
+    "lesson_contract_reports": [],
+    "lesson_contract_count": 0,
+    "lesson_contract_outcome": "not_attempted",
+    "lesson_contract_errors": [],
+    "lesson_contract_warnings": [],
+    "lesson_promotion_outcomes": [],
+    "lessons_attributed": 0,
+    "cookbook_enriched": false,
+    "cookbook_candidate_paths": [],
+    "promotion_candidate_paths": [],
+    "knowledge_trace_paths": [],
+    "knowledge_gap_log_paths": [],
+    "reusable_artifact_count": 6,
+    "knowledge_outcome": "captured_knowledge",
+    "knowledge_outcome_reason": "captured 6 lesson(s) and related reusable artifacts"
+  },
+  "telemetry": {
+    "task_kind": "pricing",
+    "run_outcome": "succeeded",
+    "retried": true,
+    "retry_count": 5,
+    "degraded": false,
+    "comparison_status": "passed",
+    "selected_artifacts": [],
+    "route_observations": []
+  },
+  "artifacts": {
+    "platform_request_ids": [],
+    "platform_trace_paths": [],
+    "analytical_trace_paths": [],
+    "analytical_trace_text_paths": [],
+    "audit_record_paths": [],
+    "knowledge_trace_paths": [],
+    "cookbook_candidate_paths": [],
+    "promotion_candidate_paths": [],
+    "knowledge_gap_log_paths": []
+  },
+  "trace_summaries": [],
+  "issue_refs": {
+    "linear": [],
+    "github": []
+  },
+  "workflow": {
+    "status": "succeeded",
+    "next_action": "Review comparison prices and deviations for consistency across methods.",
+    "latest_trace": null,
+    "active_trace_count": 0,
+    "post_build_latest_phase": null,
+    "post_build_latest_status": null,
+    "post_build_latest_method": null,
+    "post_build_flags": {},
+    "linked_issues": {
+      "linear": [],
+      "github": []
+    },
+    "comparison_status": "passed",
+    "method_count": 6
+  },
+  "summary": {
+    "success": true,
+    "status": "succeeded",
+    "task_kind": "pricing",
+    "preferred_method": null,
+    "payoff_class": null,
+    "error": null,
+    "failures": [],
+    "comparison_status": "passed",
+    "reference_target": "black_scholes",
+    "prices": {
+      "crr_tree": 10.1,
+      "bs_pde": 10.0,
+      "mc_exact": 10.05,
+      "fft": 9.98,
+      "cos": 10.01,
+      "black_scholes": 10.0
+    },
+    "deviations_pct": {
+      "crr_tree": 1.0,
+      "bs_pde": 0.0,
+      "mc_exact": 0.5,
+      "fft": 0.2,
+      "cos": 0.1
+    },
+    "token_usage": {
+      "call_count": 0,
+      "calls_with_usage": 0,
+      "calls_without_usage": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "total_tokens": 0,
+      "by_stage": {},
+      "by_provider": {}
+    },
+    "framework_outcome": null,
+    "execution_mode": "live",
+    "learning": {
+      "task_kind": "pricing",
+      "retrieved_lesson_ids": [],
+      "retrieved_lesson_titles": [],
+      "retrieval_stages": [],
+      "retrieval_sources": [],
+      "selected_artifact_ids": [],
+      "selected_artifact_titles": [],
+      "selected_artifacts_by_audience": {},
+      "captured_lesson_ids": [
+        "crr_tree_001",
+        "bs_pde_001",
+        "mc_exact_001",
+        "fft_001",
+        "cos_001",
+        "black_scholes_001"
+      ],
+      "lesson_contract_reports": [],
+      "lesson_contract_count": 0,
+      "lesson_contract_outcome": "not_attempted",
+      "lesson_contract_errors": [],
+      "lesson_contract_warnings": [],
+      "lesson_promotion_outcomes": [],
+      "lessons_attributed": 0,
+      "cookbook_enriched": false,
+      "cookbook_candidate_paths": [],
+      "promotion_candidate_paths": [],
+      "knowledge_trace_paths": [],
+      "knowledge_gap_log_paths": [],
+      "reusable_artifact_count": 6,
+      "knowledge_outcome": "captured_knowledge",
+      "knowledge_outcome_reason": "captured 6 lesson(s) and related reusable artifacts"
+    }
+  },
+  "storage": {
+    "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T74/20260413T025510623630.json",
+    "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T74.json",
+    "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
+    "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T74/20260413T025510623630.json",
+    "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T74/20260413T025510623630.md",
+    "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T74.json",
+    "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T74.md"
+  }
+}

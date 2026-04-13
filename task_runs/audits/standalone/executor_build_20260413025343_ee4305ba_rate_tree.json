@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "audit_id": "executor_build_20260413025343_ee4305ba_rate_tree",
+  "task_id": "standalone",
+  "run_id": "executor_build_20260413025343_ee4305ba",
+  "method": "rate_tree",
+  "instrument_type": "bermudan_swaption",
+  "timestamp": "2026-04-13T02:53:44.943013+00:00",
+  "source_code": "\"\"\"Agent-generated payoff: Bermudan swaption on HW tree.\"\"\"\n\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\nfrom datetime import date\n\nfrom trellis.core.market_state import MarketState\nfrom trellis.core.types import DayCountConvention, Frequency\n\n\n@dataclass(frozen=True)\nclass BermudanSwaptionSpec:\n    notional: float\n    strike: float\n    exercise_dates: tuple[date, ...]\n    swap_end: date\n    swap_frequency: Frequency = Frequency.SEMI_ANNUAL\n    day_count: DayCountConvention = DayCountConvention.ACT_360\n    rate_index: str | None = None\n    is_payer: bool = True\n\n\nclass BermudanSwaptionPayoff:\n    def __init__(self, spec: BermudanSwaptionSpec):\n        self._spec = spec\n\n    @property\n    def spec(self) -> BermudanSwaptionSpec:\n        return self._spec\n\n    @property\n    def requirements(self) -> set[str]:\n        return {\"black_vol_surface\", \"discount_curve\", \"forward_curve\"}\n\n    def evaluate(self, market_state: MarketState) -> float:\n        from trellis.models.bermudan_swaption_tree import price_bermudan_swaption_tree\n\n        return float(price_bermudan_swaption_tree(market_state, self._spec, model=\"hull_white\"))",
+  "source_code_hash": "3710a4185d580a73",
+  "spec_schema": {
+    "class_name": "BermudanSwaptionPayoff",
+    "spec_name": "BermudanSwaptionSpec",
+    "requirements": [
+      "discount_curve",
+      "forward_curve",
+      "black_vol_surface"
+    ],
+    "fields": [
+      "notional",
+      "strike",
+      "exercise_dates",
+      "swap_end",
+      "swap_frequency",
+      "day_count",
+      "rate_index",
+      "is_payer"
+    ]
+  },
+  "class_name": "BermudanSwaptionPayoff",
+  "module_path": "instruments/_agent/bermudanswaption.py",
+  "environment": {
+    "repo_revision": "3e05e8e455bb8948",
+    "llm_model_id": "gpt-5.4-mini",
+    "knowledge_hash": "unknown",
+    "python_version": "3.12.3"
+  },
+  "market_state_summary": {},
+  "pricing_plan_summary": {
+    "method": "rate_tree",
+    "required_market_data": [
+      "black_vol_surface",
+      "discount_curve",
+      "forward_curve"
+    ],
+    "method_modules": [
+      "trellis.models.trees.lattice"
+    ],
+    "selection_reason": "simplest_valid_default",
+    "modeling_requirements": [
+      "CALIBRATION: The rate tree must be calibrated to reprice the input yield curve. At each time step, solve for theta(t) so that the tree-implied zero-coupon bond price matches curve.discount(T). Verify: tree_zcb(T) \u2248 curve.discount(T) at key tenors.",
+      "DISCRETE CASHFLOWS: Bond coupons and other scheduled payments must be embedded at their actual payment dates (mapped to the nearest tree step), NOT spread uniformly across all steps. Uniform spreading introduces >10% pricing error.",
+      "EXERCISE LOGIC: The call/put decision at each node must compare the CONTINUATION VALUE (discounted expected future value) against the exercise price. The continuation value is computed from the tree's own discount factors, not the flat input rate.",
+      "RATE-LATTICE SCOPE: For callable bonds, puttable bonds, and Bermudan swaptions, use build_rate_lattice/lattice_backward_induction and treat the exact route family as rate_lattice.",
+      "EQUITY-TREE SCOPE: For American/Bermudan equity options, import BinomialTree from trellis.models.trees.binomial and backward_induction from trellis.models.trees.backward_induction, then use BinomialTree.crr(...) and backward_induction(..., exercise_type=\"american\"|\"bermudan\"). Treat the exact route family as equity_tree. Do not invent crr_tree, AMERICAN, or a method=\"lsm\" fallback for the tree route."
+    ]
+  },
+  "validation_gates": [
+    {
+      "gate": "import",
+      "passed": true,
+      "issues": [],
+      "details": {}
+    },
+    {
+      "gate": "semantic",
+      "passed": true,
+      "issues": [],
+      "details": {}
+    },
+    {
+      "gate": "semantic_validators",
+      "passed": true,
+      "issues": [],
+      "details": {}
+    },
+    {
+      "gate": "lite_review",
+      "passed": true,
+      "issues": [],
+      "details": {}
+    }
+  ],
+  "all_gates_passed": true,
+  "build_metrics": {
+    "attempt_number": 1,
+    "total_attempts": 1,
+    "token_usage": {},
+    "wall_clock_seconds": 0.7349903583526611
+  },
+  "approval_status": "pending_review"
+}

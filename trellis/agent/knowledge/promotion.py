@@ -2587,7 +2587,14 @@ def _semantic_extension_trace_key(
             ",".join(str(item) for item in semantic_gap.get("missing_contract_fields", ())),
             ",".join(str(item) for item in semantic_gap.get("missing_market_inputs", ())),
             ",".join(str(item) for item in semantic_gap.get("missing_runtime_primitives", ())),
-            ",".join(str(item) for item in semantic_gap.get("missing_route_helpers", ())),
+            ",".join(
+                str(item)
+                for item in (
+                    semantic_gap.get("missing_binding_helpers")
+                    or semantic_gap.get("missing_route_helpers")
+                    or ()
+                )
+            ),
         )
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
@@ -2615,15 +2622,19 @@ def _semantic_extension_features(
         "missing_contract_fields",
         "missing_market_inputs",
         "missing_runtime_primitives",
-        "missing_route_helpers",
+        "missing_binding_helpers",
         "missing_knowledge_artifacts",
         "proposed_contract_fields",
         "proposed_market_inputs",
         "proposed_runtime_primitives",
-        "proposed_route_helpers",
+        "proposed_binding_helpers",
         "proposed_knowledge_artifacts",
     ):
         values = semantic_extension.get(key) or semantic_gap.get(key) or ()
+        if not values and key == "missing_binding_helpers":
+            values = semantic_extension.get("missing_route_helpers") or semantic_gap.get("missing_route_helpers") or ()
+        if not values and key == "proposed_binding_helpers":
+            values = semantic_extension.get("proposed_route_helpers") or semantic_gap.get("proposed_route_helpers") or ()
         if isinstance(values, str):
             values = (values,)
         for value in values:

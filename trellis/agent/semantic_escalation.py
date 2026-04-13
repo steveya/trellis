@@ -19,7 +19,7 @@ _SEMANTIC_ROLE_MATRIX: tuple[dict[str, object], ...] = (
     {
         "stage": "primitive_proposal",
         "owner_role": "quant",
-        "trigger_condition": "missing_runtime_primitives_or_route_helpers",
+        "trigger_condition": "missing_runtime_primitives_or_binding_helpers",
         "artifact_kind": "SemanticExtensionProposal",
         "can_invent_semantic_schema": False,
         "can_invent_route": True,
@@ -219,10 +219,14 @@ def _default_trigger_condition(
                     missing_runtime_primitives = semantic_extension.get("missing_runtime_primitives") or ()
                     if isinstance(missing_runtime_primitives, (list, tuple)) and missing_runtime_primitives:
                         return str(missing_runtime_primitives[0])
-                    missing_route_helpers = semantic_extension.get("missing_route_helpers") or ()
-                    if isinstance(missing_route_helpers, (list, tuple)) and missing_route_helpers:
-                        return str(missing_route_helpers[0])
-                    return "missing_runtime_primitives_or_route_helpers"
+                    missing_binding_helpers = (
+                        semantic_extension.get("missing_binding_helpers")
+                        or semantic_extension.get("missing_route_helpers")
+                        or ()
+                    )
+                    if isinstance(missing_binding_helpers, (list, tuple)) and missing_binding_helpers:
+                        return str(missing_binding_helpers[0])
+                    return "missing_runtime_primitives_or_binding_helpers"
                 if decision == "mock_inputs":
                     missing_market_inputs = semantic_extension.get("missing_market_inputs") or ()
                     if isinstance(missing_market_inputs, (list, tuple)) and missing_market_inputs:
@@ -233,7 +237,7 @@ def _default_trigger_condition(
                 if decision == "clarification":
                     return "requires_clarification"
                 return decision
-        return "missing_runtime_primitives_or_route_helpers"
+        return "missing_runtime_primitives_or_binding_helpers"
 
     if stage == "route_assembly":
         if semantic_contract:

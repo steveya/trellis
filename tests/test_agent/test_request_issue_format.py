@@ -87,10 +87,10 @@ def test_stress_follow_on_format_includes_repeat_context_and_artifacts():
         "comparison_status": "insufficient_results",
         "observed_blocker_categories": [
             "missing_foundational_primitive",
-            "unsupported_route",
+            "missing_binding_surface",
         ],
         "repeat_count": 3,
-        "signature": "E23::blocked::missing_foundational_primitive,unsupported_route",
+        "signature": "E23::blocked::missing_foundational_primitive,missing_binding_surface",
         "task_run_latest_path": "/tmp/task_runs/latest/E23.json",
         "task_run_history_path": "/tmp/task_runs/history/E23/run.json",
         "diagnosis_dossier_path": "/tmp/task_runs/diagnostics/latest/E23.md",
@@ -105,6 +105,6 @@ def test_stress_follow_on_format_includes_repeat_context_and_artifacts():
     assert "missing foundational primitive" in title
     assert "- source: `connector_stress_gate`" in body
     assert "- repeat_count: `3`" in body
-    assert "- blocker_categories: `missing_foundational_primitive, unsupported_route`" in body
+    assert "- blocker_categories: `missing_foundational_primitive, missing_binding_surface`" in body
     assert "- linked_linear_issues: `QUA-500`" in body
     assert "/tmp/task_runs/diagnostics/latest/E23.md" in body

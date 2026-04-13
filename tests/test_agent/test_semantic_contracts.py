@@ -842,6 +842,8 @@ def test_novel_request_gap_classification_is_structured_and_repeatable():
     summary = semantic_gap_summary(report)
 
     assert summary == semantic_gap_summary(report)
+    assert "missing_binding_helpers" in summary
+    assert "missing_route_helpers" not in summary
     assert report.request_text.startswith("Price a resettable memory note")
     assert report.instrument_type == "structured_note"
     assert not report.requires_clarification
@@ -894,6 +896,8 @@ def test_novel_request_proposal_prefers_new_primitive_for_schedule_state_gap():
     summary = semantic_extension_summary(proposal)
 
     assert summary == semantic_extension_summary(proposal)
+    assert "proposed_binding_helpers" in summary
+    assert "proposed_route_helpers" not in summary
     assert proposal.decision == "new_primitive"
     assert proposal.confidence >= 0.7
     assert "trellis.core.date_utils.generate_schedule" in proposal.proposed_runtime_primitives

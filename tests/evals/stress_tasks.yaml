@@ -80,7 +80,7 @@ E26:
     - mc_default_times
   expected_blocker_categories:
     - missing_foundational_primitive
-    - unsupported_route
+    - missing_binding_surface
   forbidden_failure_patterns:
     - MissingCapabilityError
 

@@ -222,7 +222,7 @@ class SemanticGapReport:
     missing_contract_fields: tuple[str, ...] = ()
     missing_market_inputs: tuple[str, ...] = ()
     missing_runtime_primitives: tuple[str, ...] = ()
-    missing_route_helpers: tuple[str, ...] = ()
+    missing_binding_helpers: tuple[str, ...] = ()
     missing_knowledge_artifacts: tuple[str, ...] = ()
 
     # --- Status ---
@@ -234,6 +234,11 @@ class SemanticGapReport:
         """Return a dict with only non-default, non-empty fields."""
         from trellis.agent.semantic_contracts import _to_compact_dict
         return _to_compact_dict(self)
+
+    @property
+    def missing_route_helpers(self) -> tuple[str, ...]:
+        """Compatibility alias for older trace payloads."""
+        return self.missing_binding_helpers
 
 
 @dataclass(frozen=True)
@@ -264,14 +269,14 @@ class SemanticExtensionProposal:
     missing_contract_fields: tuple[str, ...] = ()
     missing_market_inputs: tuple[str, ...] = ()
     missing_runtime_primitives: tuple[str, ...] = ()
-    missing_route_helpers: tuple[str, ...] = ()
+    missing_binding_helpers: tuple[str, ...] = ()
     missing_knowledge_artifacts: tuple[str, ...] = ()
 
     # --- Proposed Extensions ---
     proposed_contract_fields: tuple[str, ...] = ()
     proposed_market_inputs: tuple[str, ...] = ()
     proposed_runtime_primitives: tuple[str, ...] = ()
-    proposed_route_helpers: tuple[str, ...] = ()
+    proposed_binding_helpers: tuple[str, ...] = ()
     proposed_knowledge_artifacts: tuple[str, ...] = ()
 
     # --- Outcome ---
@@ -283,6 +288,16 @@ class SemanticExtensionProposal:
         """Return a dict with only non-default, non-empty fields."""
         from trellis.agent.semantic_contracts import _to_compact_dict
         return _to_compact_dict(self)
+
+    @property
+    def missing_route_helpers(self) -> tuple[str, ...]:
+        """Compatibility alias for older trace payloads."""
+        return self.missing_binding_helpers
+
+    @property
+    def proposed_route_helpers(self) -> tuple[str, ...]:
+        """Compatibility alias for older trace payloads."""
+        return self.proposed_binding_helpers
 
 
 def validate_semantic_contract(spec) -> SemanticContractValidationReport:
@@ -415,7 +430,7 @@ def classify_semantic_gap(
     missing_contract_fields: list[str] = []
     missing_market_inputs: list[str] = []
     missing_runtime_primitives: list[str] = []
-    missing_route_helpers: list[str] = []
+    missing_binding_helpers: list[str] = []
     missing_knowledge_artifacts: list[str] = []
 
     if has_shape_authority:
@@ -436,7 +451,7 @@ def classify_semantic_gap(
         if cues["basket"]:
             missing_market_inputs.append("correlation_matrix")
     if cues["basket"] and cues["path"]:
-        missing_route_helpers.append("correlated_basket_route_helper")
+        missing_binding_helpers.append("correlated_basket_binding_helper")
     if instrument_type and not has_shape_authority:
         missing_knowledge_artifacts.append("instrument_specific_lesson")
 
@@ -457,8 +472,8 @@ def classify_semantic_gap(
         gap_types.append("missing_market_input_source")
     if missing_runtime_primitives:
         gap_types.append("missing_runtime_primitive")
-    if missing_route_helpers:
-        gap_types.append("missing_route_helper")
+    if missing_binding_helpers:
+        gap_types.append("missing_binding_helper")
     if missing_knowledge_artifacts:
         gap_types.append("missing_knowledge_lesson")
 
@@ -473,7 +488,7 @@ def classify_semantic_gap(
         requires_clarification = True
     can_use_mock_inputs = bool(
         not requires_clarification
-        and (missing_market_inputs or missing_runtime_primitives or missing_route_helpers)
+        and (missing_market_inputs or missing_runtime_primitives or missing_binding_helpers)
     )
 
     summary_parts = []
@@ -492,10 +507,10 @@ def classify_semantic_gap(
             "missing runtime primitives: "
             + ", ".join(dict.fromkeys(missing_runtime_primitives))
         )
-    if missing_route_helpers:
+    if missing_binding_helpers:
         summary_parts.append(
-            "missing route helpers: "
-            + ", ".join(dict.fromkeys(missing_route_helpers))
+            "missing binding helpers: "
+            + ", ".join(dict.fromkeys(missing_binding_helpers))
         )
     if missing_knowledge_artifacts:
         summary_parts.append(
@@ -524,7 +539,7 @@ def classify_semantic_gap(
         missing_contract_fields=tuple(dict.fromkeys(missing_contract_fields)),
         missing_market_inputs=tuple(dict.fromkeys(missing_market_inputs)),
         missing_runtime_primitives=tuple(dict.fromkeys(missing_runtime_primitives)),
-        missing_route_helpers=tuple(dict.fromkeys(missing_route_helpers)),
+        missing_binding_helpers=tuple(dict.fromkeys(missing_binding_helpers)),
         missing_knowledge_artifacts=tuple(dict.fromkeys(missing_knowledge_artifacts)),
         requires_clarification=requires_clarification,
         can_use_mock_inputs=can_use_mock_inputs,
@@ -542,7 +557,7 @@ def semantic_gap_summary(report: SemanticGapReport) -> dict[str, object]:
         "missing_contract_fields": list(report.missing_contract_fields),
         "missing_market_inputs": list(report.missing_market_inputs),
         "missing_runtime_primitives": list(report.missing_runtime_primitives),
-        "missing_route_helpers": list(report.missing_route_helpers),
+        "missing_binding_helpers": list(report.missing_binding_helpers),
         "missing_knowledge_artifacts": list(report.missing_knowledge_artifacts),
         "requires_clarification": report.requires_clarification,
         "can_use_mock_inputs": report.can_use_mock_inputs,
@@ -555,7 +570,7 @@ def propose_semantic_extension(report: SemanticGapReport) -> SemanticExtensionPr
     proposed_contract_fields: list[str] = []
     proposed_market_inputs: list[str] = []
     proposed_runtime_primitives: list[str] = []
-    proposed_route_helpers: list[str] = []
+    proposed_binding_helpers: list[str] = []
     proposed_knowledge_artifacts: list[str] = []
     semantic_concept_extension_kind = report.semantic_concept_extension_kind
 
@@ -568,7 +583,7 @@ def propose_semantic_extension(report: SemanticGapReport) -> SemanticExtensionPr
         proposed_contract_fields.extend(report.missing_contract_fields)
         proposed_knowledge_artifacts.append("clarification_prompt")
     else:
-        if report.missing_runtime_primitives or report.missing_route_helpers:
+        if report.missing_runtime_primitives or report.missing_binding_helpers:
             decision = "new_primitive"
             confidence = 0.75 if report.missing_runtime_primitives else 0.7
         elif report.missing_market_inputs:
@@ -581,14 +596,14 @@ def propose_semantic_extension(report: SemanticGapReport) -> SemanticExtensionPr
         proposed_contract_fields.extend(report.missing_contract_fields)
         proposed_market_inputs.extend(_propose_market_inputs(report))
         proposed_runtime_primitives.extend(_propose_runtime_primitives(report))
-        proposed_route_helpers.extend(_propose_route_helpers(report))
+        proposed_binding_helpers.extend(_propose_binding_helpers(report))
         proposed_knowledge_artifacts.extend(_propose_knowledge_artifacts(report))
         recommended_next_step = _recommend_next_step(
             report,
             decision=decision,
             proposed_market_inputs=proposed_market_inputs,
             proposed_runtime_primitives=proposed_runtime_primitives,
-            proposed_route_helpers=proposed_route_helpers,
+            proposed_binding_helpers=proposed_binding_helpers,
             semantic_concept_extension_kind=semantic_concept_extension_kind,
         )
 
@@ -610,12 +625,12 @@ def propose_semantic_extension(report: SemanticGapReport) -> SemanticExtensionPr
         missing_contract_fields=report.missing_contract_fields,
         missing_market_inputs=report.missing_market_inputs,
         missing_runtime_primitives=report.missing_runtime_primitives,
-        missing_route_helpers=report.missing_route_helpers,
+        missing_binding_helpers=report.missing_binding_helpers,
         missing_knowledge_artifacts=report.missing_knowledge_artifacts,
         proposed_contract_fields=tuple(dict.fromkeys(proposed_contract_fields)),
         proposed_market_inputs=tuple(dict.fromkeys(proposed_market_inputs)),
         proposed_runtime_primitives=tuple(dict.fromkeys(proposed_runtime_primitives)),
-        proposed_route_helpers=tuple(dict.fromkeys(proposed_route_helpers)),
+        proposed_binding_helpers=tuple(dict.fromkeys(proposed_binding_helpers)),
         proposed_knowledge_artifacts=tuple(dict.fromkeys(proposed_knowledge_artifacts)),
         recommended_next_step=recommended_next_step,
         confidence=confidence,
@@ -626,7 +641,7 @@ def propose_semantic_extension(report: SemanticGapReport) -> SemanticExtensionPr
             proposed_contract_fields=tuple(dict.fromkeys(proposed_contract_fields)),
             proposed_market_inputs=tuple(dict.fromkeys(proposed_market_inputs)),
             proposed_runtime_primitives=tuple(dict.fromkeys(proposed_runtime_primitives)),
-            proposed_route_helpers=tuple(dict.fromkeys(proposed_route_helpers)),
+            proposed_binding_helpers=tuple(dict.fromkeys(proposed_binding_helpers)),
             proposed_knowledge_artifacts=tuple(dict.fromkeys(proposed_knowledge_artifacts)),
         ),
     )
@@ -644,12 +659,12 @@ def semantic_extension_summary(report: SemanticExtensionProposal) -> dict[str, o
         "missing_contract_fields": list(report.missing_contract_fields),
         "missing_market_inputs": list(report.missing_market_inputs),
         "missing_runtime_primitives": list(report.missing_runtime_primitives),
-        "missing_route_helpers": list(report.missing_route_helpers),
+        "missing_binding_helpers": list(report.missing_binding_helpers),
         "missing_knowledge_artifacts": list(report.missing_knowledge_artifacts),
         "proposed_contract_fields": list(report.proposed_contract_fields),
         "proposed_market_inputs": list(report.proposed_market_inputs),
         "proposed_runtime_primitives": list(report.proposed_runtime_primitives),
-        "proposed_route_helpers": list(report.proposed_route_helpers),
+        "proposed_binding_helpers": list(report.proposed_binding_helpers),
         "proposed_knowledge_artifacts": list(report.proposed_knowledge_artifacts),
         "recommended_next_step": report.recommended_next_step,
         "confidence": report.confidence,
@@ -799,7 +814,7 @@ def _semantic_extension_trace_key(report: SemanticGapReport, *, decision: str) -
             ",".join(report.missing_contract_fields),
             ",".join(report.missing_market_inputs),
             ",".join(report.missing_runtime_primitives),
-            ",".join(report.missing_route_helpers),
+            ",".join(report.missing_binding_helpers),
         )
     )
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
@@ -833,10 +848,10 @@ def _propose_runtime_primitives(report: SemanticGapReport) -> list[str]:
     return suggestions
 
 
-def _propose_route_helpers(report: SemanticGapReport) -> list[str]:
-    """Translate missing route helpers into reusable semantic route surfaces."""
+def _propose_binding_helpers(report: SemanticGapReport) -> list[str]:
+    """Translate missing binding helpers into reusable semantic binding surfaces."""
     suggestions: list[str] = []
-    if "correlated_basket_route_helper" in report.missing_route_helpers:
+    if "correlated_basket_binding_helper" in report.missing_binding_helpers:
         suggestions.extend(
             (
                 "trellis.models.resolution.basket_semantics",
@@ -864,7 +879,7 @@ def _recommend_next_step(
     decision: str,
     proposed_market_inputs: list[str],
     proposed_runtime_primitives: list[str],
-    proposed_route_helpers: list[str],
+    proposed_binding_helpers: list[str],
     semantic_concept_extension_kind: str,
 ) -> str:
     """Summarize the smallest next step for the extension loop."""
@@ -875,15 +890,15 @@ def _recommend_next_step(
     if semantic_concept_extension_kind == "new_attribute":
         return "Extend the existing semantic concept with the missing attribute and keep the wrapper thin."
     if semantic_concept_extension_kind == "introduce_new_concept":
-        return "Define the smallest new semantic concept before adding any wrapper or route helper."
+        return "Define the smallest new semantic concept before adding any wrapper or binding helper."
     if proposed_runtime_primitives:
         return (
             "Reuse the shared runtime primitive surface and add only the missing thin adapter around "
             f"{proposed_runtime_primitives[0]}."
         )
-    if proposed_route_helpers:
+    if proposed_binding_helpers:
         return (
-            "Bind the request through the shared semantic route helper and keep product-specific glue thin."
+            "Bind the request through the shared semantic binding helper and keep product-specific glue thin."
         )
     if proposed_market_inputs:
         return (
@@ -903,7 +918,7 @@ def _semantic_extension_summary(
     proposed_contract_fields: tuple[str, ...],
     proposed_market_inputs: tuple[str, ...],
     proposed_runtime_primitives: tuple[str, ...],
-    proposed_route_helpers: tuple[str, ...],
+    proposed_binding_helpers: tuple[str, ...],
     proposed_knowledge_artifacts: tuple[str, ...],
 ) -> str:
     """Render one stable human-readable summary for an extension proposal."""
@@ -918,8 +933,8 @@ def _semantic_extension_summary(
         parts.append("inputs=" + ", ".join(proposed_market_inputs))
     if proposed_runtime_primitives:
         parts.append("primitives=" + ", ".join(proposed_runtime_primitives))
-    if proposed_route_helpers:
-        parts.append("helpers=" + ", ".join(proposed_route_helpers))
+    if proposed_binding_helpers:
+        parts.append("binding_helpers=" + ", ".join(proposed_binding_helpers))
     if proposed_knowledge_artifacts:
         parts.append("knowledge=" + ", ".join(proposed_knowledge_artifacts))
     if report.summary:

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "audit_id": "20260413T025426_unknown",
+  "task_id": "standalone",
+  "run_id": "20260413T025426",
+  "method": "unknown",
+  "instrument_type": "",
+  "timestamp": "2026-04-13T02:54:26.053720+00:00",
+  "source_code": "class T: pass",
+  "source_code_hash": "623517928d6bed09",
+  "spec_schema": {
+    "class_name": "",
+    "spec_name": "",
+    "requirements": [],
+    "fields": []
+  },
+  "class_name": "",
+  "module_path": "instruments/_agent/test.py",
+  "environment": {
+    "repo_revision": "3e05e8e455bb8948",
+    "llm_model_id": "test-model",
+    "knowledge_hash": "unknown",
+    "python_version": "3.12.3"
+  },
+  "market_state_summary": {},
+  "pricing_plan_summary": {
+    "method": "",
+    "required_market_data": [],
+    "method_modules": [],
+    "selection_reason": "",
+    "modeling_requirements": []
+  },
+  "validation_gates": [],
+  "all_gates_passed": true,
+  "build_metrics": {
+    "attempt_number": 1,
+    "total_attempts": 1,
+    "token_usage": {},
+    "wall_clock_seconds": 3.838539123535156e-05
+  },
+  "approval_status": "pending_review"
+}

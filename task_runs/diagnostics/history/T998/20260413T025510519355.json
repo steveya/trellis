@@ -1,0 +1,160 @@
+{
+  "schema_version": 2,
+  "task": {
+    "id": "T998",
+    "title": "Himalaya ranked observation basket",
+    "kind": "pricing",
+    "status": null,
+    "construct": null
+  },
+  "run": {
+    "run_id": "20260413T025510519355",
+    "persisted_at": "2026-04-13T02:55:10.519537+00:00",
+    "task_run_history_path": "/home/runner/work/trellis/trellis/task_runs/history/T998/20260413T025510519355.json",
+    "task_run_latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T998.json",
+    "task_run_latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
+    "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T998/20260413T025510519355.json",
+    "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T998/20260413T025510519355.md",
+    "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T998.json",
+    "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T998.md"
+  },
+  "outcome": {
+    "success": true,
+    "status": "succeeded",
+    "failure_bucket": "success",
+    "decision_stage": "completed",
+    "comparison_status": null,
+    "next_action": "No action required.",
+    "headline": "Himalaya ranked observation basket completed successfully."
+  },
+  "primary_failure": {
+    "bucket": "success",
+    "stage": "completed",
+    "headline": "Run completed successfully.",
+    "likely_cause": "The run failed without a narrower bucketed diagnosis.",
+    "confidence": "low",
+    "signals": []
+  },
+  "method_outcomes": [],
+  "trace_index": [],
+  "learning": {
+    "task_kind": "pricing",
+    "retrieved_lesson_ids": [],
+    "retrieved_lesson_titles": [],
+    "retrieval_stages": [],
+    "retrieval_sources": [],
+    "selected_artifact_ids": [],
+    "selected_artifact_titles": [],
+    "selected_artifacts_by_audience": {},
+    "captured_lesson_ids": [],
+    "lesson_contract_reports": [],
+    "lesson_contract_count": 0,
+    "lesson_contract_outcome": "not_attempted",
+    "lesson_contract_errors": [],
+    "lesson_contract_warnings": [],
+    "lesson_promotion_outcomes": [],
+    "lessons_attributed": 0,
+    "cookbook_enriched": false,
+    "cookbook_candidate_paths": [],
+    "promotion_candidate_paths": [],
+    "knowledge_trace_paths": [],
+    "knowledge_gap_log_paths": [],
+    "reusable_artifact_count": 0,
+    "knowledge_outcome": "no_new_knowledge",
+    "knowledge_outcome_reason": "task succeeded without new reusable knowledge artifacts"
+  },
+  "workflow": {
+    "status": "succeeded",
+    "next_action": "Completed successfully.",
+    "latest_trace": null,
+    "active_trace_count": 0,
+    "post_build_latest_phase": null,
+    "post_build_latest_status": null,
+    "post_build_latest_method": null,
+    "post_build_flags": {},
+    "linked_issues": {
+      "linear": [],
+      "github": []
+    },
+    "comparison_status": null,
+    "method_count": 0
+  },
+  "comparison": {
+    "task": false,
+    "targets": [],
+    "summary": {}
+  },
+  "market": {
+    "source": "default",
+    "as_of": null,
+    "selected_components": {},
+    "selected_curve_names": {},
+    "available_capabilities": [],
+    "metadata": {},
+    "provenance": {}
+  },
+  "framework": {},
+  "telemetry": {
+    "task_kind": "pricing",
+    "run_outcome": "succeeded",
+    "retried": false,
+    "retry_count": 0,
+    "degraded": false,
+    "comparison_status": "",
+    "selected_artifacts": [],
+    "route_observations": []
+  },
+  "runtime_controls": {
+    "skip_post_build_reflection": false,
+    "skip_post_build_consolidation": false,
+    "skip_task_diagnosis_persist": false
+  },
+  "post_build": {
+    "task": {
+      "latest_phase": null,
+      "latest_status": null,
+      "updated_at": null,
+      "event_count": 0,
+      "active_flags": {}
+    },
+    "methods": {},
+    "latest_method": null,
+    "latest_phase": null,
+    "latest_status": null,
+    "active_flags": {}
+  },
+  "evidence": {
+    "top_level_error": null,
+    "top_level_failures": [],
+    "blocker_details": {},
+    "task_contract_error": {},
+    "cross_validation": {},
+    "knowledge_gaps": [],
+    "gap_confidence": 0.9,
+    "method_failures": [],
+    "comparison": {
+      "status": null,
+      "reference_target": null,
+      "prices": {},
+      "deviations_pct": {}
+    }
+  },
+  "model_audit": {
+    "audit_record_paths": [],
+    "environment": {
+      "repo_revision": null,
+      "knowledge_hash": null,
+      "llm_models_used": []
+    }
+  },
+  "consolidated_validation": {},
+  "storage": {
+    "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T998/20260413T025510519355.json",
+    "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T998.json",
+    "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
+    "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T998/20260413T025510519355.json",
+    "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T998/20260413T025510519355.md",
+    "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T998.json",
+    "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T998.md"
+  }
+}

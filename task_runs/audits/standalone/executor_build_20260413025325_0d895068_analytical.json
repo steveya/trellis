@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "audit_id": "executor_build_20260413025325_0d895068_analytical",
+  "task_id": "standalone",
+  "run_id": "executor_build_20260413025325_0d895068",
+  "method": "analytical",
+  "instrument_type": "quanto_option",
+  "timestamp": "2026-04-13T02:53:27.736037+00:00",
+  "source_code": "\"\"\"Compatibility adapter for the quanto analytical payoff.\"\"\"\n\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\nfrom datetime import date\n\nfrom trellis.core.market_state import MarketState\nfrom trellis.core.types import DayCountConvention\nfrom trellis.models.quanto_option import price_quanto_option_analytical_from_market_state\n\n\nREQUIREMENTS = frozenset(\n    {\n        \"black_vol_surface\",\n        \"discount_curve\",\n        \"forward_curve\",\n        \"fx_rates\",\n        \"model_parameters\",\n        \"spot\",\n    }\n)\n\n\n@dataclass(frozen=True)\nclass QuantoOptionSpec:\n    \"\"\"Specification for the single-name quanto analytical adapter.\"\"\"\n\n    notional: float\n    strike: float\n    expiry_date: date\n    fx_pair: str\n    underlier_currency: str = \"EUR\"\n    domestic_currency: str = \"USD\"\n    option_type: str = \"call\"\n    quanto_correlation_key: str | None = None\n    day_count: DayCountConvention = DayCountConvention.ACT_365\n\n\nclass QuantoOptionAnalyticalPayoff:\n    \"\"\"Compatibility payoff that delegates through the semantic-facing helper.\"\"\"\n\n    def __init__(self, spec: QuantoOptionSpec):\n        self._spec = spec\n\n    @property\n    def spec(self) -> QuantoOptionSpec:\n        return self._spec\n\n    @property\n    def requirements(self) -> set[str]:\n        return REQUIREMENTS\n\n    def evaluate(self, market_state: MarketState) -> float:\n        return float(price_quanto_option_analytical_from_market_state(market_state, self._spec))",
+  "source_code_hash": "4fc4a468afa2f41c",
+  "spec_schema": {
+    "class_name": "QuantoOptionAnalyticalPayoff",
+    "spec_name": "QuantoOptionSpec",
+    "requirements": [
+      "discount_curve",
+      "forward_curve",
+      "black_vol_surface",
+      "fx_rates",
+      "spot",
+      "model_parameters"
+    ],
+    "fields": [
+      "notional",
+      "strike",
+      "expiry_date",
+      "fx_pair",
+      "underlier_currency",
+      "domestic_currency",
+      "option_type",
+      "quanto_correlation_key",
+      "day_count"
+    ]
+  },
+  "class_name": "QuantoOptionAnalyticalPayoff",
+  "module_path": "instruments/_agent/_fresh/quantooptionanalytical.py",
+  "environment": {
+    "repo_revision": "3e05e8e455bb8948",
+    "llm_model_id": "gpt-5.4-mini",
+    "knowledge_hash": "unknown",
+    "python_version": "3.12.3"
+  },
+  "market_state_summary": {},
+  "pricing_plan_summary": {
+    "method": "analytical",
+    "required_market_data": [
+      "black_vol_surface",
+      "discount_curve",
+      "forward_curve",
+      "fx_rates",
+      "model_parameters",
+      "spot"
+    ],
+    "method_modules": [
+      "trellis.models.black"
+    ],
+    "selection_reason": "explicit_preference",
+    "modeling_requirements": [
+      "OUTPUT CONTRACT: evaluate() must return a float present value. Return a non-empty JSON-serializable structure only when a caller explicitly expects structured output.",
+      "BLACK-SCHOLES FORWARD CONSISTENCY: Derive the forward from spot and discounting before calling Black-style kernels. With no dividends, F = S0 / discount_curve.discount(T); then PV = discount_curve.discount(T) * Black(F, K, sigma, T). This is valid under lognormal spot (GBM) with deterministic rates and European exercise only.",
+      "EQUITY MARKET DATA CONTRACT: Requires discounting and Black vol. Spot is an instrument/spec input, not a separate MarketState capability unless the product explicitly sources it from a live market snapshot.",
+      "GARMAN-KOHLHAGEN CONSISTENCY: Use spot FX, domestic discounting, foreign discounting, and Black vol. Covered interest parity gives F = S0 * df_foreign / df_domestic; then prefer the checked helper-backed FX vanilla path built on resolved inputs over reassembling Black76 basis claims inline, and use explicit basis-claim assembly only when the decomposition itself is the thing being validated. This is valid under lognormal FX spot with deterministic domestic and foreign rates.",
+      "FX MARKET DATA CONTRACT: Requires `market_state.discount` for domestic discounting, `market_state.forecast_curves[...]` for the selected foreign discount curve, `market_state.forward_curve` for bridged foreign-carry / routing context, `market_state.vol_surface` for Black vol, and `market_state.fx_rates` or `market_state.spot` for spot FX.",
+      "BLACK76 FORWARD-RATE CONSISTENCY: Each period prices independently as a Black76 call or put on the forward rate fixing at period start, discounted to settlement at period end. Valid under lognormal forward rate with deterministic discount factors.",
+      "RATE-STYLE SWAPTION HELPER CONTRACT: For a single-exercise European swaption, prefer the checked helper-backed path `resolve_swaption_black76_inputs(market_state, spec)` -> `ResolvedSwaptionBlack76Inputs` -> `price_swaption_black76_raw(resolved)` from `trellis.models.rate_style_swaption` instead of reassembling annuity, forward-swap-rate, expiry, and payment-count binding inline.",
+      "CAP/FLOOR LOOP CONTRACT: Keep the explicit payment-timeline loop for caplet/floorlet strips. Do not force the single-exercise swaption helper onto period-by-period cap/floor routes.",
+      "FORWARD-RATE MARKET DATA CONTRACT: Requires discount curve, forward curve (via forecast_forward_curve), and Black vol surface. Rate fixing dates and payment dates must match the instrument schedule.",
+      "JAMSHIDIAN ZCB OPTION CONSISTENCY: For European zero-coupon bond options under the Hull-White / Jamshidian contract, prefer the checked helper-backed path `resolve_zcb_option_hw_inputs(...)` -> `ResolvedJamshidianInputs` -> `zcb_option_hw_raw(...)`, or delegate straight to `price_zcb_option_jamshidian(...)` when the wrapper already matches the route. Do not degrade this route to generic Black76 on a forward bond price when the task explicitly asks for Jamshidian / Hull-White.",
+      "ZCB OPTION STRIKE NORMALIZATION: Normalize strike quotes to unit face before the closed-form kernel. Treat `63` on `100` face as `0.63`, and require the underlying bond maturity to remain strictly after option expiry.",
+      "ZCB OPTION MARKET DATA CONTRACT: Requires `market_state.discount` and `market_state.vol_surface`. Resolved inputs should carry discount factors at option expiry and bond maturity plus the mapped Black-style volatility quote at expiry.",
+      "CREDIT-SURVIVAL CONSISTENCY: For single-name CDS, price the premium leg and protection leg directly from credit_curve survival probabilities and hazard rates on an explicit payment schedule. Do not reinterpret CDS as nth-to-default, basket CDS, or first-to-default, and do not reuse Black76 call/put primitives.",
+      "CDS SPREAD UNITS: Running CDS spreads in task text are often quoted in basis points. Convert them to decimals before premium-leg accrual, for example 150 bp -> 0.015; do not multiply accrual by a raw value like 150.0.",
+      "CREDIT MARKET DATA CONTRACT: Requires credit_curve plus discount_curve. Declare both in the generated requirements set and keep the adapter thin around schedule generation, year_fraction, survival_probability, hazard_rate, and discounting.",
+      "DETERMINISTIC CASHFLOW CONTRACT: When all cashflows are known at pricing time and there is no optionality, PV = sum of cashflows * discount_factors. No vol surface or forward curve is needed."
+    ]
+  },
+  "validation_gates": [
+    {
+      "gate": "import",
+      "passed": true,
+      "issues": [],
+      "details": {}
+    },
+    {
+      "gate": "semantic",
+      "passed": true,
+      "issues": [],
+      "details": {}
+    },
+    {
+      "gate": "semantic_validators",
+      "passed": true,
+      "issues": [],
+      "details": {}
+    },
+    {
+      "gate": "lite_review",
+      "passed": true,
+      "issues": [],
+      "details": {}
+    }
+  ],
+  "all_gates_passed": true,
+  "build_metrics": {
+    "attempt_number": 2,
+    "total_attempts": 2,
+    "token_usage": {},
+    "wall_clock_seconds": 1.5155723094940186
+  },
+  "approval_status": "pending_review"
+}
