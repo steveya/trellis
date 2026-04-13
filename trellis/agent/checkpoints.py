@@ -170,9 +170,9 @@ def capture_checkpoint(
 
     This extracts decision boundaries from the artifacts that already exist
     in the pipeline (pricing_plan, spec_schema, generated code, build_meta)
-    without requiring changes to executor.py internals. Semantic-route callers
-    can additionally pass compact semantic, generation, and validation
-    summaries to make route drift diffable across reruns.
+    without requiring changes to executor.py internals. Semantic and binding
+    callers can additionally pass compact semantic, generation, and validation
+    summaries to make checkpoint drift diffable across reruns.
     """
     stages: list[StageDecision] = []
     semantic_checkpoint_data = dict(semantic_checkpoint or {})
@@ -215,9 +215,9 @@ def capture_checkpoint(
             }),
         ))
 
-    # Stage 3: Route / lowering boundary.
+    # Stage 3: Binding / lowering boundary.
     if generation_boundary_data:
-        route_metadata = _nonempty_mapping(
+        binding_metadata = _nonempty_mapping(
             source=generation_boundary_data,
             keys=(
                 "method",
@@ -227,12 +227,13 @@ def capture_checkpoint(
                 "construction_identity",
                 "lowering",
                 "route_binding_authority",
+                "lane_plan",
                 "primitive_plan",
             ),
         )
-        lowering = route_metadata.get("lowering") or {}
-        construction_identity = route_metadata.get("construction_identity") or {}
-        route_binding_authority = route_metadata.get("route_binding_authority") or {}
+        lowering = binding_metadata.get("lowering") or {}
+        construction_identity = binding_metadata.get("construction_identity") or {}
+        route_binding_authority = binding_metadata.get("route_binding_authority") or {}
         backend_binding = route_binding_authority.get("backend_binding") or {}
         exact_backend_binding_id = str(
             construction_identity.get("backend_binding_id")
@@ -243,7 +244,16 @@ def capture_checkpoint(
             )
             or ""
         ).strip()
-        route_decision = str(
+        binding_authority = _normalize_binding_authority(
+            construction_identity=construction_identity,
+            lowering=lowering,
+            primitive_plan=binding_metadata.get("primitive_plan") or {},
+            route_binding_authority=route_binding_authority,
+        )
+        if binding_authority:
+            binding_metadata["binding_authority"] = binding_authority
+        binding_metadata.pop("route_binding_authority", None)
+        binding_decision = str(
             (
                 exact_backend_binding_id
                 if str(construction_identity.get("primary_kind") or "").strip() == "backend_binding"
@@ -252,18 +262,18 @@ def capture_checkpoint(
             or construction_identity.get("primary_label")
             or exact_backend_binding_id
             or lowering.get("family_ir_type")
-            or route_metadata.get("lane_plan", {}).get("lane_family")
+            or binding_metadata.get("lane_plan", {}).get("lane_family")
             or lowering.get("route_id")
             or route_binding_authority.get("route_id")
             or "unknown"
         )
         stages.append(StageDecision(
-            agent="route",
-            decision=route_decision,
-            metadata=route_metadata,
+            agent="binding",
+            decision=binding_decision,
+            metadata=binding_metadata,
             output_hash=_hash_value({
-                "decision": route_decision,
-                "metadata": route_metadata,
+                "decision": binding_decision,
+                "metadata": binding_metadata,
             }),
         ))
 
@@ -327,6 +337,8 @@ def capture_checkpoint(
             keys=(
                 "contract_id",
                 "bundle_id",
+                "backend_binding_id",
+                "exact_bundle_id",
                 "route_id",
                 "route_family",
                 "required_market_data",
@@ -337,6 +349,12 @@ def capture_checkpoint(
                 "residual_risks",
             ),
         )
+        route_alias = str(validation_meta.pop("route_id", "") or "").strip()
+        route_family = str(validation_meta.pop("route_family", "") or "").strip()
+        if route_alias:
+            validation_meta["binding_route_alias"] = route_alias
+        if route_family:
+            validation_meta["binding_route_family"] = route_family
         if final_price is not None:
             validation_meta["final_price"] = final_price
         if tolerance is not None:
@@ -356,8 +374,10 @@ def capture_checkpoint(
             keys=(
                 "contract_id",
                 "bundle_id",
-                "route_id",
-                "route_family",
+                "backend_binding_id",
+                "exact_bundle_id",
+                "binding_route_alias",
+                "binding_route_family",
                 "required_market_data",
                 "deterministic_checks",
                 "comparison_relations",
@@ -522,13 +542,21 @@ def _dict_to_checkpoint(d: dict[str, Any]) -> DecisionCheckpoint:
     """Reconstruct a checkpoint from a plain dict."""
     stages = tuple(
         StageDecision(
-            agent=s["agent"],
+            agent=_normalize_loaded_stage_agent(s.get("agent", "")),
             decision=s["decision"],
-            metadata=s.get("metadata", {}),
+            metadata=_normalize_loaded_stage_metadata(
+                agent=s.get("agent", ""),
+                metadata=s.get("metadata", {}),
+            ),
             tokens_used=s.get("tokens_used", 0),
             latency_ms=s.get("latency_ms", 0),
             input_hash=s.get("input_hash", ""),
-            output_hash=s.get("output_hash", ""),
+            output_hash=_normalized_stage_output_hash(
+                agent=s.get("agent", ""),
+                decision=s["decision"],
+                metadata=s.get("metadata", {}),
+                stored_hash=s.get("output_hash", ""),
+            ),
         )
         for s in d.get("stages", [])
     )
@@ -545,6 +573,148 @@ def _dict_to_checkpoint(d: dict[str, Any]) -> DecisionCheckpoint:
         provider=d.get("provider", ""),
         model=d.get("model", ""),
     )
+
+
+def _normalize_binding_authority(
+    *,
+    construction_identity: Mapping[str, Any] | None,
+    lowering: Mapping[str, Any] | None,
+    primitive_plan: Mapping[str, Any] | None,
+    route_binding_authority: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Project legacy route-bound authority into binding-first checkpoint metadata."""
+    construction_identity = construction_identity or {}
+    lowering = lowering or {}
+    primitive_plan = primitive_plan or {}
+    route_binding_authority = route_binding_authority or {}
+    backend_binding = route_binding_authority.get("backend_binding") or {}
+    binding_authority = _nonempty_mapping(
+        source={
+            "authority_kind": route_binding_authority.get("authority_kind")
+            or construction_identity.get("route_authority_kind"),
+            "binding_id": construction_identity.get("backend_binding_id")
+            or backend_binding.get("binding_id"),
+            "binding_engine_family": backend_binding.get("engine_family")
+            or construction_identity.get("backend_engine_family")
+            or primitive_plan.get("engine_family"),
+            "binding_route_alias": route_binding_authority.get("route_id")
+            or lowering.get("route_id")
+            or construction_identity.get("route_alias"),
+            "binding_route_family": route_binding_authority.get("route_family")
+            or lowering.get("route_family")
+            or primitive_plan.get("route_family"),
+            "exact_backend_fit": backend_binding.get("exact_backend_fit")
+            if backend_binding
+            else construction_identity.get("backend_exact_fit"),
+            "helper_refs": backend_binding.get("helper_refs"),
+            "primitive_refs": backend_binding.get("primitive_refs"),
+            "exact_target_refs": backend_binding.get("exact_target_refs"),
+            "approved_modules": backend_binding.get("approved_modules"),
+            "validation_bundle_id": route_binding_authority.get("validation_bundle_id"),
+            "canary_task_ids": route_binding_authority.get("canary_task_ids"),
+        },
+        keys=(
+            "authority_kind",
+            "binding_id",
+            "binding_engine_family",
+            "binding_route_alias",
+            "binding_route_family",
+            "exact_backend_fit",
+            "helper_refs",
+            "primitive_refs",
+            "exact_target_refs",
+            "approved_modules",
+            "validation_bundle_id",
+            "canary_task_ids",
+        ),
+    )
+    if binding_authority == {"exact_backend_fit": False}:
+        return {}
+    return binding_authority
+
+
+def _normalize_validator_metadata(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Normalize validator metadata onto binding-first identity keys."""
+    normalized = dict(metadata or {})
+    route_alias = str(normalized.get("binding_route_alias") or normalized.get("route_id") or "").strip()
+    route_family = str(
+        normalized.get("binding_route_family") or normalized.get("route_family") or ""
+    ).strip()
+    normalized.pop("route_id", None)
+    normalized.pop("route_family", None)
+    if route_alias:
+        normalized["binding_route_alias"] = route_alias
+    if route_family:
+        normalized["binding_route_family"] = route_family
+    return normalized
+
+
+def _normalize_binding_stage_metadata(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Normalize legacy route-stage metadata onto binding-first keys."""
+    normalized = dict(metadata or {})
+    route_binding_authority = normalized.pop("route_binding_authority", {}) or {}
+    binding_authority = normalized.get("binding_authority") or {}
+    if not binding_authority:
+        binding_authority = _normalize_binding_authority(
+            construction_identity=normalized.get("construction_identity"),
+            lowering=normalized.get("lowering"),
+            primitive_plan=normalized.get("primitive_plan"),
+            route_binding_authority=route_binding_authority,
+        )
+    if binding_authority:
+        normalized["binding_authority"] = binding_authority
+    return normalized
+
+
+def _normalize_loaded_stage_agent(agent: str) -> str:
+    """Map legacy checkpoint stage names onto current binding-first names."""
+    return "binding" if agent == "route" else agent
+
+
+def _normalize_loaded_stage_metadata(*, agent: str, metadata: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Normalize persisted stage metadata onto the current checkpoint schema."""
+    normalized_agent = _normalize_loaded_stage_agent(agent)
+    if normalized_agent == "binding":
+        return _normalize_binding_stage_metadata(metadata)
+    if normalized_agent == "validator":
+        return _normalize_validator_metadata(metadata)
+    return dict(metadata or {})
+
+
+def _normalized_stage_output_hash(
+    *,
+    agent: str,
+    decision: str,
+    metadata: Mapping[str, Any] | None,
+    stored_hash: str,
+) -> str:
+    """Recompute hashes for normalized legacy stages to keep drift diffs stable."""
+    normalized_agent = _normalize_loaded_stage_agent(agent)
+    normalized_metadata = _normalize_loaded_stage_metadata(agent=agent, metadata=metadata)
+    if normalized_agent == "binding":
+        return _hash_value({"decision": decision, "metadata": normalized_metadata})
+    if normalized_agent == "validator":
+        return _hash_value({
+            "decision": decision,
+            "metadata": _nonempty_mapping(
+                source=normalized_metadata,
+                keys=(
+                    "contract_id",
+                    "bundle_id",
+                    "backend_binding_id",
+                    "exact_bundle_id",
+                    "binding_route_alias",
+                    "binding_route_family",
+                    "required_market_data",
+                    "deterministic_checks",
+                    "comparison_relations",
+                    "lowering_errors",
+                    "admissibility_failures",
+                    "residual_risks",
+                ),
+            ),
+        })
+    return stored_hash
 
 
 def save_checkpoint(

@@ -73,6 +73,12 @@ step still depends on a latest available decision checkpoint for the replayed
 task, so the runner will explicitly report when no checkpoint exists yet and
 the drift probe was skipped.
 
+Decision checkpoints are now binding-first at the generation boundary. Fresh
+artifacts emit a ``binding`` stage plus binding validation identity, while
+legacy route-era checkpoint YAML is normalized on load so drift comparison can
+still compare old and new runs without treating the stage rename itself as a
+meaningful divergence.
+
 For curated canaries specifically, ``scripts/run_canary.py`` now executes the
 live task entry plus any richer canary-only fields from ``CANARY_TASKS.yaml``.
 That lets sparse manifest rows keep their normal task-inventory shape while
@@ -251,6 +257,11 @@ for run diagnosis; the dossier is the human-facing view that opens first when
 you need to understand a failure or confirm a success. The batch runner now
 surfaces those packet paths directly on the task result so you do not have to
 reconstruct them from traces or summary files.
+
+That packet/checkpoint surface also now treats backend binding identity as the
+primary implementation provenance. Compatibility route aliases may still
+appear, but only as secondary metadata so replay, canary drift, and learning
+artifacts no longer rely on route-primary checkpoint joins.
 
 For cassette-backed canary replays, the task result and persisted task-run
 record now carry explicit execution metadata:

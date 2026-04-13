@@ -166,7 +166,7 @@ Status mirror last synced: `2026-04-13`
 | --- | --- |
 | `QUA-802` | Validation contract: key exact-fit validation bundles by binding identity | Done |
 | `QUA-806` | Platform traces and diagnostics: primary construction provenance is binding-first | Done |
-| `QUA-812` | Replay and checkpoints: regenerate binding-first canary and learning artifacts | Backlog |
+| `QUA-812` | Replay and checkpoints: regenerate binding-first canary and learning artifacts | Done |
 | `QUA-813` | Task stores and benchmark reports: retire route-primary health summaries | Backlog |
 
 ### Ordered Operator Surface Queue
