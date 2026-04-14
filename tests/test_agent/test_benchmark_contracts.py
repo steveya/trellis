@@ -84,6 +84,8 @@ def test_benchmark_spec_overrides_cover_fx_rates_cap_and_swaption_contracts():
     assert swaption["is_payer"] is True
 
     cds = benchmark_spec_overrides(tasks["F007"], root=ROOT)
+    assert cds["valuation_date"] == date(2024, 11, 15)
+    assert cds["pricing_method"] == "analytical"
     assert cds["start_date"] == date(2024, 9, 20)
     assert cds["end_date"] == date(2029, 12, 20)
     assert cds["frequency"] is Frequency.QUARTERLY

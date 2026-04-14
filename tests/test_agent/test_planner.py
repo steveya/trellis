@@ -228,6 +228,15 @@ class TestPlanStatic:
         assert plan.spec_schema is not None
         assert plan.spec_schema.class_name == "CDSPayoff"
         assert any(field.name == "n_paths" for field in plan.spec_schema.fields)
+        assert any(field.name == "valuation_date" for field in plan.spec_schema.fields)
+        assert any(field.name == "pricing_method" for field in plan.spec_schema.fields)
+
+    def test_cds_analytical_static_spec_carries_time_origin_and_method_fields(self):
+        spec = STATIC_SPECS["cds"]
+        field_names = [field.name for field in spec.fields]
+
+        assert "valuation_date" in field_names
+        assert "pricing_method" in field_names
 
 class TestPlanBuild:
 

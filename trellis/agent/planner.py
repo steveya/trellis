@@ -358,6 +358,8 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("end_date", "date", "Protection end date"),
             FieldDef("frequency", "Frequency", "Premium payment frequency", "Frequency.QUARTERLY"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_360"),
+            FieldDef("valuation_date", "date | None", "Valuation date used as the curve-time origin", "None"),
+            FieldDef("pricing_method", "str", "Preferred CDS pricing method", "'analytical'"),
         ],
     ),
 }
@@ -375,6 +377,8 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
             FieldDef("end_date", "date", "Protection end date"),
             FieldDef("frequency", "Frequency", "Premium payment frequency", "Frequency.QUARTERLY"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_360"),
+            FieldDef("valuation_date", "date | None", "Valuation date used as the curve-time origin", "None"),
+            FieldDef("pricing_method", "str", "Preferred CDS pricing method", "'monte_carlo'"),
             FieldDef(
                 "n_paths",
                 "int",

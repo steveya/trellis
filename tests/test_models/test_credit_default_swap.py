@@ -7,6 +7,7 @@ import numpy as np
 
 from trellis.curves.credit_curve import CreditCurve
 from trellis.curves.yield_curve import YieldCurve
+from trellis.core.market_state import MarketState
 from trellis.models.credit_default_swap import (
     build_cds_schedule,
     interval_default_probability,
@@ -15,6 +16,7 @@ from trellis.models.credit_default_swap import (
     price_cds_monte_carlo,
 )
 from trellis.core.types import DayCountConvention, Frequency
+from trellis.instruments._agent.cds import CDSPayoff, CDSSpec
 
 
 SETTLE = date(2024, 11, 15)
@@ -163,3 +165,25 @@ class TestCreditDefaultSwapHelpers:
         )
 
         assert observed == pytest.approx(expected, rel=0.02)
+
+    def test_cds_agent_payoff_uses_valuation_date_for_analytical_benchmarks(self):
+        spec = CDSSpec(
+            notional=10_000_000.0,
+            spread=0.015,
+            recovery=0.4,
+            valuation_date=SETTLE,
+            start_date=date(2024, 9, 20),
+            end_date=date(2029, 12, 20),
+            pricing_method="analytical",
+        )
+        market_state = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.04),
+            credit_curve=CreditCurve.flat(0.025),
+        )
+
+        payoff = CDSPayoff(spec)
+        observed = payoff.evaluate(market_state)
+
+        assert observed == pytest.approx(-5650.965650176979, rel=0.02)

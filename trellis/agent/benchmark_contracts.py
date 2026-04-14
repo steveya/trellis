@@ -659,10 +659,13 @@ def _compound_option_overrides(contract: Mapping[str, Any], *, valuation_date: d
 
 def _cds_overrides(contract: Mapping[str, Any], *, valuation_date: date) -> dict[str, Any]:
     start_date, end_date = _standard_cds_contract_dates(contract, valuation_date=valuation_date)
+    step_in_date = _parse_date(contract.get("step_in_date")) or valuation_date
     return {
         "notional": _float_or_none(contract.get("notional")),
         "spread": _float_or_none(contract.get("running_coupon")),
         "recovery": _float_or_none(contract.get("recovery_rate")),
+        "valuation_date": step_in_date,
+        "pricing_method": "analytical",
         "start_date": start_date,
         "end_date": end_date,
         "frequency": _frequency(contract.get("payment_frequency")),
