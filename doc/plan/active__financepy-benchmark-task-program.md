@@ -100,3 +100,12 @@ its primary abstraction. Instead it uses:
 The remaining market-state work is no longer “create the scenario foundation.” It is
 scenario expansion: adding richer named benchmark markets and deeper coverage across
 the growing parity and extension task sets.
+
+## Follow-on Methodology Pilot
+
+The next benchmark-phase correction is tracked separately in
+`doc/plan/active__fresh-generated-financepy-pilot.md`.
+
+That pilot narrows the evaluation boundary so a selected benchmark subset runs from
+fresh generated adapters only, keeps checked-in `_agent` modules off the benchmark
+critical path, and treats `_agent` promotion as a separate admission workflow.
