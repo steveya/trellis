@@ -104,5 +104,4 @@ Implementation target: analytical."""
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        spec = self._spec
         return float(price_equity_compound_option_analytical(market_state, spec))

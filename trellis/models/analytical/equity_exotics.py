@@ -301,7 +301,14 @@ def price_equity_chooser_option_analytical(market_state: MarketState, spec) -> f
         )
         return call_value - put_value
 
-    critical_spot = float(newton(chooser_balance, x0=spot, tol=1e-8, maxiter=50))
+    try:
+        critical_spot = float(newton(chooser_balance, x0=spot, tol=1e-8, maxiter=50))
+    except RuntimeError as exc:
+        raise ValueError(
+            "Chooser option critical-spot search failed to converge. "
+            "Check that choose_date precedes both expiry dates and that "
+            "market parameters are in a reasonable range."
+        ) from exc
     sigma_choose = sigma * sqrt(choose_time)
     d1 = (log(spot / critical_spot) + (rate - dividend + 0.5 * sigma * sigma) * choose_time) / sigma_choose
     d2 = d1 - sigma_choose
@@ -343,7 +350,14 @@ def price_equity_compound_option_analytical(market_state: MarketState, spec) -> 
             option_type=inner_option_type,
         ) - outer_strike
 
-    critical_spot = float(newton(underlying_minus_outer, x0=spot, tol=1e-8, maxiter=50))
+    try:
+        critical_spot = float(newton(underlying_minus_outer, x0=spot, tol=1e-8, maxiter=50))
+    except RuntimeError as exc:
+        raise ValueError(
+            "Compound option critical-spot search failed to converge. "
+            "Verify that outer_strike is reachable by the inner option value "
+            "and that market parameters are in a reasonable range."
+        ) from exc
     a1 = (log(spot / critical_spot) + (rate - dividend + 0.5 * sigma * sigma) * outer_time) / (sigma * sqrt(outer_time))
     a2 = a1 - sigma * sqrt(outer_time)
     b1 = (log(spot / inner_strike) + (rate - dividend + 0.5 * sigma * sigma) * inner_time) / (sigma * sqrt(inner_time))

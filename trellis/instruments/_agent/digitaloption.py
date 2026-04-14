@@ -100,7 +100,6 @@ Implementation target: analytical."""
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        spec = self._spec
         from trellis.models.analytical import price_equity_digital_option_analytical
 
         return float(price_equity_digital_option_analytical(market_state, spec))

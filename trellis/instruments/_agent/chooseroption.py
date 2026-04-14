@@ -100,7 +100,6 @@ Implementation target: analytical."""
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        spec = self._spec
         if market_state.vol_surface is None:
             raise ValueError("ChooserOptionPayoff requires a black vol surface in market_state")
         if market_state.discount is None:
