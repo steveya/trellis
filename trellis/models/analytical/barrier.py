@@ -297,7 +297,7 @@ def barrier_option_price(
                 price = Cm
         elif barrier_type == "up_and_out":
             if K > B:
-                price = Bm - D  # Use call D? Actually for puts it's different
+                price = Bm - Dm
             else:
                 price = Am - Bm + Cm - Dm
         elif barrier_type == "up_and_in":
