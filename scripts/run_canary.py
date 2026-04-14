@@ -10,7 +10,7 @@ Usage:
     python scripts/run_canary.py --check-drift       # compare against golden traces
     python scripts/run_canary.py --update-golden     # promote passing results to golden
 
-See CANARY_TASKS.yaml for the curated set and QUA-424 for design context.
+See CANARY_TASKS.yaml for the curated set across parity, extension, and legacy-replay tasks.
 """
 
 from __future__ import annotations
@@ -28,10 +28,13 @@ sys.path.insert(0, str(ROOT))
 
 os.environ.setdefault("LLM_PROVIDER", "openai")
 
-import yaml
-
 from trellis.agent.config import load_env
-from canary_common import CANARY_FILE, FULL_TASK_CASSETTES_DIR, merge_canary_task_payload
+from canary_common import (
+    CANARY_FILE,
+    FULL_TASK_CASSETTES_DIR,
+    load_curated_canary_set,
+    merge_canary_task_payload,
+)
 
 load_env()
 
@@ -54,14 +57,9 @@ CANARY_MAX_RETRIES = 3
 def load_canary_set(
     path: Path = CANARY_FILE,
 ) -> tuple[list[dict], dict]:
-    """Load CANARY_TASKS.yaml.  Returns (canary_list, meta)."""
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    meta = {
-        "version": raw.get("version", 1),
-        "total_budget_usd": raw.get("total_budget_usd", 3.0),
-        "refresh_cadence": raw.get("refresh_cadence", "weekly"),
-    }
-    return raw.get("canary_set", []), meta
+    """Load CANARY_TASKS.yaml. Returns (canary_list, meta)."""
+    root = path.resolve().parent
+    return load_curated_canary_set(root=root)
 
 
 def filter_canaries(
@@ -80,6 +78,9 @@ def filter_canaries(
             )
         return matches
     if subset == "core":
+        explicitly_curated = [c for c in canaries if c.get("core") is True]
+        if explicitly_curated:
+            return explicitly_curated
         return [c for c in canaries if c.get("engine_family") in CORE_FAMILIES]
     return canaries
 
@@ -106,6 +107,8 @@ def display_dry_run(canaries: list[dict], meta: dict) -> None:
     print(f"{'=' * 65}")
     print(f"  Total estimated cost: ${total_cost:.2f}")
     print(f"  Budget limit: ${meta['total_budget_usd']:.2f}")
+    if meta.get("source_corpora"):
+        print(f"  Source corpora: {', '.join(meta['source_corpora'])}")
     print()
 
 
@@ -133,7 +136,12 @@ def run_canaries(
     Returns list of result dicts with canary metadata attached.
     """
     from trellis.agent.task_run_store import persist_canary_batch_record
-    from trellis.agent.task_runtime import build_market_state, load_tasks, run_task
+    from trellis.agent.task_runtime import (
+        build_market_state,
+        load_negative_tasks,
+        load_tasks,
+        run_task,
+    )
 
     budget = budget_override or meta.get("total_budget_usd", 3.0)
     cassette_root = (
@@ -143,10 +151,15 @@ def run_canaries(
     )
     started_at = datetime.now(timezone.utc)
     # Canary coverage is curated independently of task lifecycle state, so the
-    # runner must look across the full task registry rather than only "pending"
-    # entries.
-    all_tasks = load_tasks(status=None)
-    task_lookup = {t["id"]: t for t in all_tasks}
+    # runner must look across the full active task surface rather than only
+    # pending pricing entries.
+    task_lookup = {
+        task["id"]: task
+        for task in (
+            list(load_tasks(status=None))
+            + list(load_negative_tasks(status=None))
+        )
+    }
 
     market_state = build_market_state()
     results: list[dict] = []
@@ -167,13 +180,13 @@ def run_canaries(
         task_id = canary["id"]
         task = task_lookup.get(task_id)
         if task is None:
-            print(f"\n  [{idx}/{len(canaries)}] {task_id:6s}  SKIP — not found in TASKS.yaml")
+            print(f"\n  [{idx}/{len(canaries)}] {task_id:6s}  SKIP — not found in active task manifests")
             results.append({
                 "canary_id": task_id,
                 "engine_family": canary.get("engine_family"),
                 "success": False,
                 "skipped": True,
-                "reason": "not_in_tasks_yaml",
+                "reason": "not_in_active_task_manifests",
             })
             continue
         task = merge_canary_task_payload(task, canary)
@@ -181,6 +194,17 @@ def run_canaries(
 
         start = time.time()
         print(f"\n  [{idx}/{len(canaries)}] {task_id:6s}  {canary.get('engine_family', '?'):14s}", end="", flush=True)
+
+        if replay and not canary.get("record_cassette", True):
+            print("  SKIP — replay unsupported")
+            results.append({
+                "canary_id": task_id,
+                "engine_family": canary.get("engine_family"),
+                "success": False,
+                "skipped": True,
+                "reason": "replay_unsupported",
+            })
+            continue
 
         if replay and not cassette_path.exists():
             error = (

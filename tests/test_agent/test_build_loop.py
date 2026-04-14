@@ -779,7 +779,7 @@ def test_validate_build_critic_path_uses_stage_helpers_without_nameerror(monkeyp
 
     monkeypatch.setattr(
         "trellis.agent.executor._make_test_payoff",
-        lambda payoff_cls, spec_schema, settle: DummyPayoff(),
+        lambda payoff_cls, spec_schema, settle, **kwargs: DummyPayoff(),
     )
     monkeypatch.setattr(
         "trellis.agent.review_policy.determine_review_policy",
@@ -883,7 +883,7 @@ def test_validate_build_passes_bounded_standard_critic_policy(monkeypatch):
 
     monkeypatch.setattr(
         "trellis.agent.executor._make_test_payoff",
-        lambda payoff_cls, spec_schema, settle: DummyPayoff(),
+        lambda payoff_cls, spec_schema, settle, **kwargs: DummyPayoff(),
     )
     monkeypatch.setattr(
         "trellis.agent.review_policy.determine_review_policy",

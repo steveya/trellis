@@ -11,7 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-import yaml
+
+from trellis.agent.task_manifests import load_canary_manifest, load_pricing_tasks
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 CASSETTES_DIR = REPO_ROOT / "cassettes"
@@ -27,16 +28,13 @@ def _load_canary_metadata() -> dict[str, dict]:
     """Load CANARY_TASKS.yaml and return a dict keyed by task ID."""
     if not CANARY_FILE.exists():
         return {}
-    raw = yaml.safe_load(CANARY_FILE.read_text(encoding="utf-8"))
-    return {c["id"]: c for c in raw.get("canary_set", [])}
+    canaries, _ = load_canary_manifest(root=REPO_ROOT)
+    return {c["id"]: c for c in canaries}
 
 
 def _load_task_entries() -> dict[str, dict]:
-    """Load TASKS.yaml and return a dict keyed by task ID."""
-    tasks_path = REPO_ROOT / "TASKS.yaml"
-    if not tasks_path.exists():
-        return {}
-    tasks = yaml.safe_load(tasks_path.read_text(encoding="utf-8"))
+    """Load the active pricing-task manifests and return a dict keyed by task ID."""
+    tasks = load_pricing_tasks(root=REPO_ROOT)
     return {t["id"]: t for t in tasks}
 
 
@@ -52,7 +50,7 @@ def canary_meta():
 
 @pytest.fixture
 def task_entries():
-    """The full TASKS.yaml dict, keyed by task ID."""
+    """The full active pricing-task dict, keyed by task ID."""
     return TASK_ENTRIES
 
 

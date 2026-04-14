@@ -20,7 +20,12 @@ _CANARY_PREFIX_REASONS: dict[str, str] = {
     "tests/test_tasks/": "task regression coverage changed",
 }
 _CANARY_FILE_REASONS: dict[str, str] = {
-    "TASKS.yaml": "task manifest changed",
+    "TASKS_BENCHMARK_FINANCEPY.yaml": "benchmark task manifest changed",
+    "TASKS_EXTENSION.yaml": "extension task manifest changed",
+    "TASKS_NEGATIVE.yaml": "negative task manifest changed",
+    "TASKS_PROOF_LEGACY.yaml": "legacy proof task manifest changed",
+    "MARKET_SCENARIOS.yaml": "market scenario registry changed",
+    "FINANCEPY_BINDINGS.yaml": "FinancePy binding catalog changed",
     "CANARY_TASKS.yaml": "canary manifest changed",
     "scripts/run_canary.py": "canary runner changed",
     "scripts/canary_common.py": "canary payload merge changed",

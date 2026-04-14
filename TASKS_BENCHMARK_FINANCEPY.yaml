@@ -1,0 +1,418 @@
+version: 1
+tasks:
+- id: F001
+  title: 'FinancePy parity: European equity vanilla Black-Scholes'
+  status: pending
+  instrument_type: european_option
+  construct: analytical
+  task_kind: pricing
+  description: Price a 1Y at-the-money European call on a non-dividend-paying stock
+    under Black-Scholes. Return price, delta, gamma, vega, and theta. Use the same
+    market data and method as FinancePy BlackScholes.
+  market_scenario_id: flat_usd_equity_vanilla
+  financepy_binding_id: financepy.equity.vanilla.black_scholes
+  greek_targets:
+  - delta
+  - gamma
+  - vega
+  - theta
+  cross_validate:
+    external:
+    - financepy
+    analytical: black_scholes
+    tolerance_pct: 0.25
+  benchmark_contract:
+    product: equity_vanilla
+    option_type: call
+    strike: 100.0
+    spot: 100.0
+    expiry_years: 1.0
+    domestic_rate: 0.05
+    dividend_rate: 0.0
+    volatility: 0.2
+    notional: 1.0
+- id: F002
+  title: 'FinancePy parity: FX vanilla Garman-Kohlhagen'
+  status: pending
+  instrument_type: fx_vanilla_option
+  construct: analytical
+  description: Price a 1Y EURUSD European call with domestic and foreign discounting
+    under the Garman-Kohlhagen analytical model. Return price and the relevant Greeks.
+  market_scenario_id: flat_fx_gk
+  financepy_binding_id: financepy.fx.vanilla.garman_kohlhagen
+  greek_targets:
+  - delta
+  - vega
+  cross_validate:
+    external:
+    - financepy
+    tolerance_pct: 0.5
+  benchmark_contract:
+    product: fx_vanilla
+    option_type: call
+    strike: 1.1
+    spot: 1.1
+    expiry_years: 1.0
+    domestic_rate: 0.045
+    foreign_rate: 0.025
+    volatility: 0.12
+    notional: 1000000.0
+    currency_pair: EURUSD
+    premium_currency: USD
+- id: F003
+  title: 'FinancePy parity: USD cap strip Black'
+  status: pending
+  instrument_type: rate_cap_floor_strip
+  construct: analytical
+  description: Price a USD SOFR cap strip under the FinancePy Black cap/floor model
+    using the shared rates smile scenario. Return price and the relevant risk measures.
+  market_scenario_id: usd_rates_smile
+  financepy_binding_id: financepy.rates.cap_floor.black
+  greek_targets:
+  - vega
+  cross_validate:
+    external:
+    - financepy
+    tolerance_pct: 1.0
+  benchmark_contract:
+    product: rate_cap_floor_strip
+    cap_floor: cap
+    strike: 0.04
+    start_date: '2024-11-15'
+    maturity_tenor: 5Y
+    notional: 1000000.0
+    payment_frequency: quarterly
+    day_count: ACT/360
+    model: black
+- id: F004
+  title: 'FinancePy parity: USD cap strip shifted Black'
+  status: pending
+  instrument_type: rate_cap_floor_strip
+  construct: analytical
+  description: Price the same USD SOFR cap strip under shifted Black. Return price
+    and the relevant risk measures.
+  market_scenario_id: usd_rates_smile
+  financepy_binding_id: financepy.rates.cap_floor.shifted_black
+  greek_targets:
+  - vega
+  cross_validate:
+    external:
+    - financepy
+    tolerance_pct: 1.0
+  benchmark_contract:
+    product: rate_cap_floor_strip
+    cap_floor: cap
+    strike: 0.04
+    start_date: '2024-11-15'
+    maturity_tenor: 5Y
+    notional: 1000000.0
+    payment_frequency: quarterly
+    day_count: ACT/360
+    model: shifted_black
+    shift: 0.01
+- id: F005
+  title: 'FinancePy parity: USD cap strip SABR'
+  status: pending
+  instrument_type: rate_cap_floor_strip
+  construct: analytical
+  description: Price the same USD SOFR cap strip under SABR-implied caplet volatilities.
+    Return price and the relevant risk measures.
+  market_scenario_id: usd_rates_smile
+  financepy_binding_id: financepy.rates.cap_floor.sabr
+  greek_targets:
+  - vega
+  cross_validate:
+    external:
+    - financepy
+    tolerance_pct: 1.5
+  benchmark_contract:
+    product: rate_cap_floor_strip
+    cap_floor: cap
+    strike: 0.04
+    start_date: '2024-11-15'
+    maturity_tenor: 5Y
+    notional: 1000000.0
+    payment_frequency: quarterly
+    day_count: ACT/360
+    model: sabr
+    sabr:
+      alpha: 0.025
+      beta: 0.5
+      rho: -0.2
+      nu: 0.35
+- id: F006
+  title: 'FinancePy parity: European payer swaption Black76'
+  status: pending
+  instrument_type: swaption
+  construct: analytical
+  description: Price a European payer swaption with Black76 under the shared USD rates
+    smile scenario. Return price and the relevant Greeks.
+  market_scenario_id: usd_rates_smile
+  financepy_binding_id: financepy.rates.swaption.black
+  greek_targets:
+  - vega
+  cross_validate:
+    external:
+    - financepy
+    tolerance_pct: 1.0
+  benchmark_contract:
+    product: swaption
+    style: european
+    payer_receiver: payer
+    settle_date: '2024-11-15'
+    exercise_date: '2025-11-15'
+    maturity_date: '2030-11-15'
+    fixed_coupon: 0.03
+    notional: 1000000.0
+    fixed_frequency: semi_annual
+    float_frequency: quarterly
+    fixed_day_count: 30E/360
+    float_day_count: 30E/360
+    model: black76
+- id: F007
+  title: 'FinancePy parity: single-name CDS analytical'
+  status: pending
+  instrument_type: cds
+  construct: analytical
+  description: Price a 5Y single-name CDS under the shared USD IG credit scenario.
+    Return price and any supported Greeks.
+  market_scenario_id: usd_credit_ig
+  financepy_binding_id: financepy.credit.cds.analytical
+  greek_targets:
+  - credit_delta
+  cross_validate:
+    external:
+    - financepy
+    tolerance_pct: 2.0
+  benchmark_contract:
+    product: cds
+    side: protection_buyer
+    step_in_date: '2024-11-15'
+    maturity_tenor: 5Y
+    running_coupon: 0.015
+    notional: 10000000.0
+    recovery_rate: 0.4
+    payment_frequency: quarterly
+    day_count: ACT/360
+- id: F008
+  title: 'FinancePy parity: two-asset rainbow Stulz best-of'
+  status: pending
+  instrument_type: rainbow_option
+  construct: analytical
+  description: Price a best-of-two rainbow call under the Stulz analytical formula.
+    Return price and the relevant sensitivities.
+  market_scenario_id: equity_rainbow_two_asset
+  financepy_binding_id: financepy.equity.rainbow.stulz
+  greek_targets:
+  - delta
+  cross_validate:
+    external:
+    - financepy
+    tolerance_pct: 2.0
+  benchmark_contract:
+    product: rainbow_option
+    payoff: best_of_call
+    expiry_years: 1.0
+    strike: 100.0
+    spots:
+    - 100.0
+    - 95.0
+    dividend_rates:
+    - 0.0
+    - 0.0
+    volatilities:
+    - 0.2
+    - 0.25
+    correlation:
+    - - 1.0
+      - 0.35
+    - - 0.35
+      - 1.0
+    domestic_rate: 0.05
+    num_assets: 2
+- id: F009
+  title: 'FinancePy parity: equity barrier Black-Scholes'
+  status: pending
+  instrument_type: barrier_option
+  construct: analytical
+  description: Price a continuously monitored up-and-out equity call using the FinancePy-compatible
+    Black-Scholes barrier method. Return price and overlapping Greeks.
+  market_scenario_id: equity_barrier_smile
+  financepy_binding_id: financepy.equity.barrier.black_scholes
+  greek_targets:
+  - delta
+  cross_validate:
+    external:
+    - financepy
+    tolerance_pct: 2.0
+  benchmark_contract:
+    product: barrier_option
+    option_type: call
+    barrier_type: up_and_out
+    strike: 100.0
+    barrier: 120.0
+    rebate: 0.0
+    spot: 100.0
+    expiry_years: 1.0
+    domestic_rate: 0.05
+    dividend_rate: 0.0
+    volatility: 0.22
+- id: F010
+  title: 'FinancePy parity: equity digital cash-or-nothing'
+  status: pending
+  instrument_type: digital_option
+  construct: analytical
+  description: Price a cash-or-nothing equity digital option under FinancePy-compatible
+    Black-Scholes assumptions. Return price and overlapping Greeks.
+  market_scenario_id: equity_barrier_smile
+  financepy_binding_id: financepy.equity.digital.black_scholes
+  greek_targets:
+  - delta
+  cross_validate:
+    external:
+    - financepy
+    tolerance_pct: 1.0
+  benchmark_contract:
+    product: digital_option
+    option_type: call
+    payout_type: cash_or_nothing
+    cash_payoff: 10.0
+    strike: 100.0
+    spot: 100.0
+    expiry_years: 1.0
+    domestic_rate: 0.05
+    dividend_rate: 0.0
+    volatility: 0.22
+- id: F011
+  title: 'FinancePy parity: equity fixed lookback option'
+  status: pending
+  instrument_type: lookback_option
+  construct: analytical
+  description: Price a fixed-strike equity lookback call under the FinancePy-compatible
+    lookback analytical model. Return price and any supported Greeks.
+  market_scenario_id: equity_barrier_smile
+  financepy_binding_id: financepy.equity.lookback.fixed
+  greek_targets:
+  - delta
+  cross_validate:
+    external:
+    - financepy
+    tolerance_pct: 2.0
+  benchmark_contract:
+    product: lookback_option
+    option_type: call
+    lookback_type: fixed_strike
+    strike: 100.0
+    spot: 100.0
+    expiry_years: 1.0
+    domestic_rate: 0.05
+    dividend_rate: 0.0
+    volatility: 0.22
+- id: F012
+  title: 'FinancePy parity: equity chooser option'
+  status: pending
+  instrument_type: chooser_option
+  construct: analytical
+  description: Price an equity chooser option under the FinancePy-compatible chooser
+    model. Return price and any supported Greeks.
+  market_scenario_id: flat_usd_equity_vanilla
+  financepy_binding_id: financepy.equity.chooser.black_scholes
+  greek_targets:
+  - delta
+  cross_validate:
+    external:
+    - financepy
+    tolerance_pct: 2.0
+  benchmark_contract:
+    product: chooser_option
+    choose_time_years: 0.5
+    call_strike: 100.0
+    put_strike: 100.0
+    spot: 100.0
+    expiry_years: 1.0
+    domestic_rate: 0.05
+    dividend_rate: 0.0
+    volatility: 0.2
+- id: F013
+  title: 'FinancePy parity: equity compound option'
+  status: pending
+  instrument_type: compound_option
+  construct: analytical
+  description: Price a call-on-call equity compound option under the FinancePy-compatible
+    compound-option model. Return price and any supported Greeks.
+  market_scenario_id: flat_usd_equity_vanilla
+  financepy_binding_id: financepy.equity.compound.black_scholes
+  greek_targets:
+  - delta
+  cross_validate:
+    external:
+    - financepy
+    tolerance_pct: 2.0
+  benchmark_contract:
+    product: compound_option
+    outer_option_type: call
+    inner_option_type: call
+    outer_strike: 12.0
+    inner_strike: 100.0
+    spot: 100.0
+    outer_expiry_years: 0.5
+    inner_expiry_years: 1.0
+    domestic_rate: 0.05
+    dividend_rate: 0.0
+    volatility: 0.2
+- id: F014
+  title: 'FinancePy parity: equity cliquet option'
+  status: pending
+  instrument_type: cliquet_option
+  construct: monte_carlo
+  description: Price an equity cliquet option under a FinancePy-compatible Monte Carlo
+    setup. Return price and any supported Greeks.
+  market_scenario_id: flat_usd_equity_vanilla
+  financepy_binding_id: financepy.equity.cliquet.monte_carlo
+  greek_targets:
+  - delta
+  cross_validate:
+    external:
+    - financepy
+    tolerance_pct: 3.0
+  benchmark_contract:
+    product: cliquet_option
+    option_type: call
+    spot: 100.0
+    local_cap: 0.08
+    local_floor: 0.0
+    global_cap: 0.2
+    global_floor: 0.0
+    domestic_rate: 0.05
+    dividend_rate: 0.0
+    volatility: 0.2
+    observation_times:
+    - 0.25
+    - 0.5
+    - 0.75
+    - 1.0
+    num_paths: 20000
+- id: F015
+  title: 'FinancePy parity: equity variance swap replication'
+  status: pending
+  instrument_type: variance_swap
+  construct: analytical
+  description: Price an equity variance swap under the FinancePy-compatible variance-replication
+    model. Return fair variance strike and the relevant Greeks.
+  market_scenario_id: equity_barrier_smile
+  financepy_binding_id: financepy.equity.variance_swap.analytical
+  greek_targets:
+  - vega
+  cross_validate:
+    external:
+    - financepy
+    tolerance_pct: 3.0
+  benchmark_contract:
+    product: variance_swap
+    spot: 100.0
+    strike_variance: 0.04
+    notional: 100000.0
+    expiry_years: 1.0
+    domestic_rate: 0.05
+    dividend_rate: 0.0
+    volatility: 0.22

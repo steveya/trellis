@@ -25,9 +25,11 @@ sys.path.insert(0, str(ROOT))
 
 os.environ.setdefault("LLM_PROVIDER", "openai")
 
-import yaml
-
-from canary_common import CANARY_FILE, FULL_TASK_CASSETTES_DIR, merge_canary_task_payload
+from canary_common import (
+    FULL_TASK_CASSETTES_DIR,
+    load_curated_canary_set,
+    merge_canary_task_payload,
+)
 from trellis.agent.config import load_env
 
 load_env()
@@ -36,8 +38,8 @@ CANARY_MAX_RETRIES = 3
 
 
 def load_canary_set() -> list[dict]:
-    raw = yaml.safe_load(CANARY_FILE.read_text(encoding="utf-8"))
-    return raw.get("canary_set", [])
+    canaries, _ = load_curated_canary_set()
+    return canaries
 
 
 def record_cassette_for_task(
@@ -96,6 +98,11 @@ def main(argv: list[str] | None = None) -> int:
         if not canaries:
             print(f"Task {args.task} not in CANARY_TASKS.yaml")
             return 1
+        if not canaries[0].get("record_cassette", True):
+            print(f"Task {args.task} is marked record_cassette=false and is not replay-backed.")
+            return 1
+    else:
+        canaries = [c for c in canaries if c.get("record_cassette", True)]
 
     if args.dry_run:
         print(f"\nWould record {len(canaries)} cassettes:")
@@ -119,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
         task_id = canary["id"]
         task = task_lookup.get(task_id)
         if task is None:
-            print(f"\n  [{idx}/{len(canaries)}] {task_id}  SKIP — not in TASKS.yaml")
+            print(f"\n  [{idx}/{len(canaries)}] {task_id}  SKIP — not in active task manifests")
             continue
 
         print(f"\n  [{idx}/{len(canaries)}] {task_id}  {canary.get('engine_family', '?'):14s}", end="", flush=True)

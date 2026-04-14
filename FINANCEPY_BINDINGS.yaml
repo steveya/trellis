@@ -1,0 +1,178 @@
+version: 1
+bindings:
+  financepy.equity.vanilla.black_scholes:
+    instrument_family: equity_vanilla
+    method_family: analytical
+    financepy_class: EquityVanillaOption
+    financepy_model: BlackScholes
+    overlapping_outputs:
+    - price
+    - delta
+    - gamma
+    - vega
+    - theta
+    comparison_modes:
+    - price_parity
+    - warm_runtime
+  financepy.fx.vanilla.garman_kohlhagen:
+    instrument_family: fx_vanilla
+    method_family: analytical
+    financepy_class: FXVanillaOption
+    financepy_model: BlackScholes
+    overlapping_outputs:
+    - price
+    - delta
+    comparison_modes:
+    - price_parity
+    - warm_runtime
+  financepy.rates.cap_floor.black:
+    instrument_family: cap_floor
+    method_family: analytical
+    financepy_class: IborCapFloor
+    financepy_model: IborCapFloorModelTypes.BLACK
+    overlapping_outputs:
+    - price
+    comparison_modes:
+    - price_parity
+    - warm_runtime
+  financepy.rates.cap_floor.shifted_black:
+    instrument_family: cap_floor
+    method_family: analytical
+    financepy_class: IborCapFloor
+    financepy_model: IborCapFloorModelTypes.SHIFTED_BLACK
+    overlapping_outputs:
+    - price
+    comparison_modes:
+    - price_parity
+    - warm_runtime
+  financepy.rates.cap_floor.sabr:
+    instrument_family: cap_floor
+    method_family: analytical
+    financepy_class: IborCapFloor
+    financepy_model: IborCapFloorModelTypes.SABR
+    overlapping_outputs:
+    - price
+    comparison_modes:
+    - price_parity
+    - warm_runtime
+  financepy.rates.swaption.black:
+    instrument_family: swaption
+    method_family: analytical
+    financepy_class: IborSwaption
+    financepy_model: Black76
+    overlapping_outputs:
+    - price
+    comparison_modes:
+    - price_parity
+    - warm_runtime
+  financepy.rates.bermudan_swaption.hw_tree:
+    instrument_family: swaption
+    method_family: lattice
+    financepy_class: IborBermudanSwaption
+    financepy_model: HWTree
+    overlapping_outputs:
+    - price
+    comparison_modes:
+    - price_parity
+    - warm_runtime
+  financepy.credit.cds.analytical:
+    instrument_family: cds
+    method_family: analytical
+    financepy_class: CDS
+    financepy_model: survival_curve
+    overlapping_outputs:
+    - price
+    comparison_modes:
+    - price_parity
+    - warm_runtime
+  financepy.credit.tranche.base_correlation:
+    instrument_family: credit_tranche
+    method_family: copula
+    financepy_class: CDSTranche
+    financepy_model: BaseCorrelation
+    overlapping_outputs:
+    - price
+    comparison_modes:
+    - price_parity
+    - warm_runtime
+  financepy.equity.rainbow.stulz:
+    instrument_family: rainbow_option
+    method_family: analytical
+    financepy_class: EquityRainbowOption
+    financepy_model: Stulz
+    overlapping_outputs:
+    - price
+    comparison_modes:
+    - price_parity
+    - warm_runtime
+  financepy.equity.barrier.black_scholes:
+    instrument_family: barrier_option
+    method_family: analytical
+    financepy_class: EquityBarrierOption
+    financepy_model: BlackScholes
+    overlapping_outputs:
+    - price
+    comparison_modes:
+    - price_parity
+    - warm_runtime
+  financepy.equity.digital.black_scholes:
+    instrument_family: digital_option
+    method_family: analytical
+    financepy_class: EquityDigitalOption
+    financepy_model: BlackScholes
+    overlapping_outputs:
+    - price
+    - delta
+    comparison_modes:
+    - price_parity
+    - warm_runtime
+  financepy.equity.lookback.fixed:
+    instrument_family: lookback_option
+    method_family: analytical
+    financepy_class: EquityFixedLookbackOption
+    financepy_model: BlackScholes
+    overlapping_outputs:
+    - price
+    comparison_modes:
+    - price_parity
+    - warm_runtime
+  financepy.equity.chooser.black_scholes:
+    instrument_family: chooser_option
+    method_family: analytical
+    financepy_class: EquityChooserOption
+    financepy_model: BlackScholes
+    overlapping_outputs:
+    - price
+    comparison_modes:
+    - price_parity
+    - warm_runtime
+  financepy.equity.compound.black_scholes:
+    instrument_family: compound_option
+    method_family: analytical
+    financepy_class: EquityCompoundOption
+    financepy_model: BlackScholes
+    overlapping_outputs:
+    - price
+    comparison_modes:
+    - price_parity
+    - warm_runtime
+  financepy.equity.cliquet.monte_carlo:
+    instrument_family: cliquet_option
+    method_family: monte_carlo
+    financepy_class: EquityCliquetOption
+    financepy_model: MonteCarlo
+    overlapping_outputs:
+    - price
+    comparison_modes:
+    - price_parity
+    - warm_runtime
+  financepy.equity.variance_swap.analytical:
+    instrument_family: variance_swap
+    method_family: analytical
+    financepy_class: EquityVarianceSwap
+    financepy_model: VarianceReplication
+    overlapping_outputs:
+    - price
+    comparison_modes:
+    - price_parity
+    - warm_runtime

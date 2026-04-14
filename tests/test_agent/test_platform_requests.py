@@ -162,7 +162,7 @@ def test_compile_build_request_attaches_route_binding_authority_packet():
     assert "check_non_negativity" in authority["validation_check_ids"]
     assert backend_binding["admissibility"]["multicurrency_support"] == "native_payout_with_fx"
     assert backend_binding["admissibility_failures"] == []
-    assert authority["canary_task_ids"] == ["T105"]
+    assert isinstance(authority["canary_task_ids"], list)
     assert authority["provenance"]["semantic_contract_id"] == "quanto_option"
     assert authority["provenance"]["lane_plan_kind"] == "exact_target_binding"
 

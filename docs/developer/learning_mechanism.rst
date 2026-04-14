@@ -191,7 +191,7 @@ Today the honest claim is:
 
 That is what ``scripts/run_task_learning_benchmark.py`` measures.
 
-The benchmark uses a non-canary cohort from ``TASKS.yaml`` and repeated passes
+The benchmark uses a non-canary cohort from the active pricing-task manifests and repeated passes
 at a fixed git revision. By default it also forces fresh builds so the score
 is not dominated by trivial adapter reuse. The report records:
 

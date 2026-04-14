@@ -473,6 +473,8 @@ def build_task_run_record(
         "task_kind": task_kind,
         "run_id": run_id,
         "persisted_at": persisted_at.astimezone(timezone.utc).isoformat(),
+        "run_started_at": str(result.get("run_started_at") or result.get("start_time") or ""),
+        "run_completed_at": str(result.get("run_completed_at") or ""),
         "task": _task_snapshot(task),
         "result": result_with_learning,
         "comparison": {
@@ -506,6 +508,14 @@ def build_task_run_record(
             "success": bool(result.get("success")),
             "status": workflow["status"],
             "task_kind": task_kind,
+            "task_corpus": str(task.get("task_corpus") or ""),
+            "task_definition_version": task.get("task_definition_version"),
+            "market_scenario_id": str(task.get("market_scenario_id") or ""),
+            "market_scenario_digest": str(
+                dict(task.get("market") or {}).get("scenario_digest")
+                or dict(result.get("market_context") or {}).get("metadata", {}).get("scenario_digest")
+                or ""
+            ),
             "preferred_method": result.get("preferred_method"),
             "payoff_class": result.get("payoff_class"),
             "error": result.get("error"),
@@ -532,6 +542,11 @@ def _task_snapshot(task: dict[str, Any]) -> dict[str, Any]:
         "id",
         "title",
         "status",
+        "task_corpus",
+        "task_definition_version",
+        "task_definition_manifest",
+        "market_scenario_id",
+        "market_scenario_digest",
         "construct",
         "cross_validate",
         "new_component",

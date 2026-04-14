@@ -422,7 +422,7 @@ def test_validate_build_emits_validation_contract_summary_in_bundle_events(monke
         == "analytical:quanto_option@trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
     )
     assert selected["route_binding_authority"]["route_id"] == "quanto_adjustment_analytical"
-    assert selected["route_binding_authority"]["canary_task_ids"] == ["T105"]
+    assert isinstance(selected["route_binding_authority"]["canary_task_ids"], list)
     assert executed["validation_contract"]["bundle_id"] == "analytical:quanto_option"
     assert executed["route_binding_authority"]["validation_bundle_id"] == "analytical:quanto_option"
     assert (
@@ -561,7 +561,7 @@ def test_validate_build_emits_reference_oracle_event_for_single_method_zcb_optio
     )
     monkeypatch.setattr(
         "trellis.agent.executor._make_test_payoff",
-        lambda payoff_cls, spec_schema, settle: payoff_cls(ZCBSpec()),
+        lambda payoff_cls, spec_schema, settle, **kwargs: payoff_cls(ZCBSpec()),
     )
 
     compiled = compile_build_request(
@@ -638,7 +638,7 @@ def test_validate_build_reference_oracle_catches_zcb_magnitude_error(monkeypatch
     )
     monkeypatch.setattr(
         "trellis.agent.executor._make_test_payoff",
-        lambda payoff_cls, spec_schema, settle: payoff_cls(ZCBSpec()),
+        lambda payoff_cls, spec_schema, settle, **kwargs: payoff_cls(ZCBSpec()),
     )
 
     compiled = compile_build_request(

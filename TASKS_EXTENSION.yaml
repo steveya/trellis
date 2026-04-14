@@ -1,0 +1,173 @@
+version: 1
+tasks:
+- id: P001
+  title: 'Trellis extension: Bermudan best-of-two rainbow basket'
+  status: pending
+  instrument_type: rainbow_option
+  construct:
+  - monte_carlo
+  - lattice
+  description: Price a Bermudan best-of-two rainbow call. Return price plus the relevant
+    Greeks and compare internal lower/upper bounds where available.
+  market_scenario_id: equity_rainbow_two_asset
+  validation_policy: invariants_and_cross_method
+  extension_contract:
+    product: rainbow_option
+    style: bermudan
+    payoff: best_of_call
+    strike: 100.0
+    spots:
+    - 100.0
+    - 95.0
+    observation_dates:
+    - '2025-03-15'
+    - '2025-06-15'
+    - '2025-09-15'
+    - '2025-12-15'
+    exercise_dates:
+    - '2025-06-15'
+    - '2025-09-15'
+    - '2025-12-15'
+    volatilities:
+    - 0.2
+    - 0.25
+    correlation:
+    - - 1.0
+      - 0.35
+    - - 0.35
+      - 1.0
+    domestic_rate: 0.05
+- id: P002
+  title: 'Trellis extension: Asian rainbow basket average-best-of'
+  status: pending
+  instrument_type: rainbow_option
+  construct: monte_carlo
+  description: Price an Asian rainbow call whose payoff depends on the average of
+    the best-performing underlying over scheduled observation dates. Return price
+    and pathwise Greeks where available.
+  market_scenario_id: equity_rainbow_two_asset
+  validation_policy: invariants_and_cross_method
+  extension_contract:
+    product: rainbow_option
+    style: asian
+    payoff: average_best_of_call
+    strike: 100.0
+    spots:
+    - 100.0
+    - 95.0
+    observation_dates:
+    - '2025-03-15'
+    - '2025-06-15'
+    - '2025-09-15'
+    - '2025-12-15'
+    volatilities:
+    - 0.2
+    - 0.25
+    correlation:
+    - - 1.0
+      - 0.35
+    - - 0.35
+      - 1.0
+    domestic_rate: 0.05
+- id: P003
+  title: 'Trellis extension: knock-in FX vanilla option'
+  status: pending
+  instrument_type: barrier_option
+  construct:
+  - analytical
+  - monte_carlo
+  description: Price an FX knock-in call with domestic/foreign discounting. Return
+    price and the relevant Greeks and compare analytical and Monte Carlo outputs where
+    possible.
+  market_scenario_id: fx_barrier_smile
+  validation_policy: invariants_and_cross_method
+  extension_contract:
+    product: fx_barrier_option
+    option_type: call
+    barrier_type: down_and_in
+    strike: 1.1
+    barrier: 1.02
+    spot: 1.1
+    expiry_years: 1.0
+    domestic_rate: 0.045
+    foreign_rate: 0.025
+    volatility: 0.14
+    notional: 1000000.0
+    currency_pair: EURUSD
+- id: P004
+  title: 'Trellis extension: callable cap/floor collar with schedule tweaks'
+  status: pending
+  instrument_type: rate_cap_floor_strip
+  construct:
+  - analytical
+  - monte_carlo
+  description: Price a callable cap/floor collar with a non-standard accrual schedule.
+    Return price and the relevant Greeks.
+  market_scenario_id: usd_rates_smile
+  validation_policy: invariants_and_cross_method
+  extension_contract:
+    product: rate_cap_floor_collar
+    style: callable
+    floor_strike: 0.02
+    cap_strike: 0.04
+    start_date: '2024-11-15'
+    maturity_tenor: 5Y
+    callable_dates:
+    - '2026-11-15'
+    - '2027-11-15'
+    - '2028-11-15'
+    irregular_schedule: true
+    notional: 1000000.0
+- id: P005
+  title: 'Trellis extension: Bermudan swaption with irregular exercise schedule'
+  status: pending
+  instrument_type: swaption
+  construct:
+  - lattice
+  - monte_carlo
+  description: Price a Bermudan payer swaption with an irregular exercise calendar
+    under the shared USD rates smile scenario. Return price and relevant Greeks.
+  market_scenario_id: usd_rates_smile
+  validation_policy: invariants_and_cross_method
+  extension_contract:
+    product: swaption
+    style: bermudan
+    payer_receiver: payer
+    settle_date: '2024-11-15'
+    exercise_dates:
+    - '2025-11-15'
+    - '2026-05-15'
+    - '2026-11-15'
+    maturity_date: '2030-11-15'
+    fixed_coupon: 0.03
+    notional: 1000000.0
+    fixed_frequency: semi_annual
+    float_frequency: quarterly
+- id: P006
+  title: 'Trellis extension: basket credit nth-to-default with custom basket weights'
+  status: pending
+  instrument_type: nth_to_default
+  construct:
+  - copula
+  - monte_carlo
+  description: Price an nth-to-default basket with custom basket weights and return
+    price plus spread sensitivities.
+  market_scenario_id: usd_credit_ig
+  validation_policy: invariants_and_cross_method
+  extension_contract:
+    product: nth_to_default
+    nth: 2
+    basket_names:
+    - A
+    - B
+    - C
+    - D
+    basket_weights:
+    - 0.4
+    - 0.2
+    - 0.2
+    - 0.2
+    maturity_tenor: 5Y
+    spread: 0.025
+    recovery_rate: 0.4
+    notional: 5000000.0

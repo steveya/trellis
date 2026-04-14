@@ -453,6 +453,110 @@ def test_build_market_state_for_task_records_selected_mock_model_parameter_trace
     assert "theta" in trace["sources"]["heston_equity"]["parameter_keys"]
 
 
+def test_build_market_state_for_task_materializes_market_scenario_contract():
+    from trellis.agent.task_runtime import benchmark_spec_overrides, build_market_state_for_task
+
+    market_state, market_context = build_market_state_for_task(
+        {
+            "id": "F001",
+            "title": "FinancePy parity: European equity vanilla Black-Scholes",
+            "market_scenario_id": "flat_usd_equity_vanilla",
+            "market": {
+                "source": "mock",
+                "as_of": "2024-11-15",
+                "discount_curve": "usd_ois",
+                "vol_surface": "spx_heston_implied_vol",
+                "underlier_spot": "SPX",
+                "scenario_contract": {
+                    "scenario_id": "flat_usd_equity_vanilla",
+                    "schema_version": 2,
+                    "source": "mock",
+                    "as_of": "2024-11-15",
+                    "description": "Flat USD equity benchmark scenario.",
+                    "selected_components": {
+                        "discount_curve": "usd_ois",
+                        "vol_surface": "spx_heston_implied_vol",
+                        "underlier_spot": "SPX",
+                    },
+                    "constructor_kind": "single_asset_equity",
+                    "valuation_date": "2024-11-15",
+                    "domestic_rate": 0.05,
+                    "black_vol": 0.2,
+                    "underliers": [
+                        {
+                            "name": "SPX",
+                            "spot": 100.0,
+                            "volatility": 0.2,
+                            "carry_rate": 0.0,
+                            "carry_curve_name": "SPX-DISC",
+                        }
+                    ],
+                },
+                "scenario_digest": "digest-flat-equity",
+                "scenario_schema_version": 2,
+                "scenario_constructor_kind": "single_asset_equity",
+            },
+            "benchmark_contract": {
+                "spot": 100.0,
+                "domestic_rate": 0.05,
+                "volatility": 0.2,
+            },
+        }
+    )
+
+    assert market_state.spot == pytest.approx(100.0)
+    assert market_state.discount is not None
+    assert market_state.discount.zero_rate(1.0) == pytest.approx(0.05)
+    assert market_state.vol_surface is not None
+    assert market_state.vol_surface.black_vol(1.0, 100.0) == pytest.approx(0.2)
+    assert market_context["metadata"]["market_scenario_construction"] is True
+    assert market_context["metadata"]["scenario_construction_kind"] == "single_asset_equity"
+    assert market_context["metadata"]["scenario_digest"] == "digest-flat-equity"
+    assert market_context["provenance"]["market_scenario"]["scenario_id"] == "flat_usd_equity_vanilla"
+    assert market_context["provenance"]["market_scenario"]["applied_inputs"]["domestic_rate"] == pytest.approx(0.05)
+
+    overrides = benchmark_spec_overrides(
+        {
+            "benchmark_contract": {
+                "notional": 1.0,
+                "spot": 100.0,
+                "strike": 100.0,
+                "option_type": "call",
+                "expiry_years": 1.0,
+            },
+            "market": {
+                "scenario_contract": {
+                    "scenario_id": "flat_usd_equity_vanilla",
+                    "schema_version": 2,
+                    "source": "mock",
+                    "as_of": "2024-11-15",
+                    "description": "Flat USD equity benchmark scenario.",
+                    "selected_components": {},
+                    "constructor_kind": "single_asset_equity",
+                    "valuation_date": "2024-11-15",
+                    "domestic_rate": 0.05,
+                    "black_vol": 0.2,
+                    "underliers": [
+                        {
+                            "name": "SPX",
+                            "spot": 100.0,
+                            "volatility": 0.2,
+                            "carry_rate": 0.0,
+                            "carry_curve_name": "SPX-DISC",
+                        }
+                    ],
+                },
+                "scenario_schema_version": 2,
+            },
+        }
+    )
+    assert overrides["notional"] == pytest.approx(1.0)
+    assert overrides["spot"] == pytest.approx(100.0)
+    assert overrides["strike"] == pytest.approx(100.0)
+    assert overrides["option_type"] == "call"
+    assert overrides["expiry_date"] == date(2025, 11, 15)
+
+
 def test_task_to_instrument_type_prefers_explicit_task_field():
     from trellis.agent.task_runtime import task_to_instrument_type
 
@@ -2692,6 +2796,7 @@ def test_benchmark_existing_task_uses_cached_payoff(monkeypatch):
         warmups=1,
         timer=fake_timer,
         price_fn=fake_price,
+        spec_overrides={"notional": 1.0},
     )
 
     assert observed == [

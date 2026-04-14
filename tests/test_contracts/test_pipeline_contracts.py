@@ -46,7 +46,7 @@ def _pipeline_test(task_id: str, instrument_type: str | None = None):
 
             task = TASK_ENTRIES.get(task_id)
             if not task:
-                pytest.skip(f"{task_id} not in TASKS.yaml")
+                pytest.skip(f"{task_id} not in active pricing task manifests")
 
             construct = instrument_type or task.get("construct")
             if isinstance(construct, list):
@@ -68,7 +68,7 @@ def _pipeline_test(task_id: str, instrument_type: str | None = None):
 
             task = TASK_ENTRIES.get(task_id)
             if not task:
-                pytest.skip(f"{task_id} not in TASKS.yaml")
+                pytest.skip(f"{task_id} not in active pricing task manifests")
 
             construct = instrument_type or task.get("construct")
             if isinstance(construct, list):

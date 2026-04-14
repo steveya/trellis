@@ -424,8 +424,8 @@ Where Things Live
      - ``trellis.models.trees.algebra``, ``trellis.models.grid_protocols``, ``trellis.models.pde``
      - Shared lattice/PDE rollback contracts, exercise boundaries, local-vol and two-factor lattice extensions
    * - Task runtime
-     - ``task_runtime.py``, ``scripts/*.py``, ``TASKS.yaml``, ``FRAMEWORK_TASKS.yaml``
-     - Batch execution, reruns, benchmarking, remediation, and separate pricing-vs-framework task inventories
+     - ``task_runtime.py``, ``scripts/*.py``, the split task manifests, and ``FRAMEWORK_TASKS.yaml``
+     - Batch execution, reruns, benchmark/negative/canary workflows, and separate pricing-vs-framework task inventories
 
 Read Next
 ---------

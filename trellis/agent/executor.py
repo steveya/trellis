@@ -1614,6 +1614,7 @@ def build_payoff(
             payoff_cls,
             spec_schema,
             market_state,
+            spec_overrides=_benchmark_spec_overrides_from_compiled_request(compiled_request),
         )
         if actual_market_failures:
             failures = actual_market_failures
@@ -1846,10 +1847,16 @@ def _validate_build(
     )
     review_knowledge_text = ""
     review_prompt_surface = "none"
+    benchmark_spec_overrides = _benchmark_spec_overrides_from_compiled_request(compiled_request)
 
     # Try to instantiate the payoff with default test parameters
     try:
-        test_payoff = _make_test_payoff(payoff_cls, spec_schema, settle)
+        test_payoff = _make_test_payoff(
+            payoff_cls,
+            spec_schema,
+            settle,
+            spec_overrides=benchmark_spec_overrides,
+        )
     except Exception as e:
         failures.append(f"Cannot instantiate payoff for validation: {e}")
         if return_failure_details:
@@ -1858,7 +1865,12 @@ def _validate_build(
 
     def payoff_factory():
         """Instantiate a fresh payoff under the generated spec schema."""
-        return _make_test_payoff(payoff_cls, spec_schema, settle)
+        return _make_test_payoff(
+            payoff_cls,
+            spec_schema,
+            settle,
+            spec_overrides=benchmark_spec_overrides,
+        )
 
     bond = Bond(
         face=100, coupon=0.05,
@@ -2441,7 +2453,27 @@ def _resolve_lower_layer_instrument_type(
     return _extract_instrument_type(description)
 
 
-def _make_test_payoff(payoff_cls, spec_schema, settle: date, market_state=None):
+def _benchmark_spec_overrides_from_compiled_request(compiled_request) -> dict[str, object]:
+    """Return normalized benchmark spec overrides carried on the request metadata."""
+    request = getattr(compiled_request, "request", None)
+    request_metadata = dict(getattr(request, "metadata", None) or {})
+    overrides = request_metadata.get("benchmark_spec_overrides")
+    if isinstance(overrides, Mapping):
+        return {
+            str(key): value
+            for key, value in overrides.items()
+            if str(key).strip() and value is not None
+        }
+    return {}
+
+
+def _make_test_payoff(
+    payoff_cls,
+    spec_schema,
+    settle: date,
+    market_state=None,
+    spec_overrides: Mapping[str, object] | None = None,
+):
     """Create a test payoff instance from the spec schema with default values."""
     import sys
     from dataclasses import is_dataclass, replace as replace_dataclass
@@ -2600,6 +2632,12 @@ def _make_test_payoff(payoff_cls, spec_schema, settle: date, market_state=None):
     )
     if description_defaults:
         name_defaults.update(description_defaults)
+
+    if spec_overrides:
+        valid_fields = {field.name for field in spec_schema.fields}
+        for key, value in spec_overrides.items():
+            if key in valid_fields and value is not None:
+                name_defaults[key] = value
 
     for field in spec_schema.fields:
         if field.name in name_defaults:
@@ -2771,6 +2809,7 @@ def _smoke_test_actual_market_state(
     payoff_cls,
     spec_schema,
     market_state,
+    spec_overrides: Mapping[str, object] | None = None,
 ) -> list[str]:
     """Run a lightweight pricing smoke test against the actual task market state."""
     if market_state is None:
@@ -2779,7 +2818,12 @@ def _smoke_test_actual_market_state(
 
     settle = getattr(market_state, "settlement", date(2024, 11, 15))
     try:
-        payoff = _make_test_payoff(payoff_cls, spec_schema, settle)
+        payoff = _make_test_payoff(
+            payoff_cls,
+            spec_schema,
+            settle,
+            spec_overrides=spec_overrides,
+        )
         price_payoff(payoff, market_state)
     except Exception as exc:
         return [f"Actual market state smoke test failed: {exc}"]

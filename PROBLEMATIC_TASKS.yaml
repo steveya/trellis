@@ -1,6 +1,6 @@
 schema_version: 1
 recorded_at: "2026-03-31T17:10:00Z"
-source_manifest: "/Users/steveyang/Projects/steveya/trellis/TASKS.yaml"
+source_manifest: "/Users/steveyang/Projects/steveya/trellis/TASKS_PROOF_LEGACY.yaml"
 tasks:
   - id: "T13"
     task:
