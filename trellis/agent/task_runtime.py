@@ -21,7 +21,18 @@ from typing import Any, Callable, Mapping, get_args, get_origin
 
 _log = logging.getLogger(__name__)
 
-from trellis.agent.executor import _make_test_payoff, _try_import_existing
+from trellis.agent.executor import (
+    _make_test_payoff,
+    _resolve_runtime_spec_schema,
+    _try_import_existing,
+)
+from trellis.agent.benchmark_contracts import (
+    benchmark_preferred_method,
+    benchmark_request_description,
+    benchmark_spec_overrides as benchmark_contract_spec_overrides,
+    canonical_benchmark_instrument_type,
+)
+from trellis.agent.financepy_parity import align_market_state_for_financepy_parity
 from trellis.agent.instrument_identity import (
     InstrumentIdentityResolution,
     normalize_instrument_type,
@@ -410,11 +421,19 @@ def _apply_task_market_scenario(task: Mapping[str, Any], market_state):
     contract = market_scenario_contract_from_task(task, root=ROOT)
     if contract is None:
         return market_state, {}
-    return construct_market_state_for_scenario(
+    scenario_market_state, metadata = construct_market_state_for_scenario(
         contract,
         market_state,
         task_id=str(task.get("id") or ""),
     )
+    aligned_market_state, alignment_metadata = align_market_state_for_financepy_parity(
+        task,
+        scenario_market_state,
+        root=ROOT,
+    )
+    if alignment_metadata:
+        metadata = {**dict(metadata), **dict(alignment_metadata)}
+    return aligned_market_state, metadata
 
 
 def benchmark_spec_overrides(task: Mapping[str, Any]) -> dict[str, Any]:
@@ -424,103 +443,7 @@ def benchmark_spec_overrides(task: Mapping[str, Any]) -> dict[str, Any]:
     task-specific patching. The goal is to instantiate the same contract that
     the parity task declares rather than the repo's generic smoke-test defaults.
     """
-    market_spec = dict(task.get("market") or {})
-    contract_spec = market_scenario_contract_from_task(task, root=ROOT)
-    benchmark_inputs = {} if contract_spec is None else contract_spec.financepy_inputs()
-    contract = dict(task.get("benchmark_contract") or {})
-    if not benchmark_inputs and not contract:
-        return {}
-
-    overrides: dict[str, Any] = {}
-    direct_keys = (
-        "notional",
-        "spot",
-        "strike",
-        "option_type",
-        "currency_pair",
-        "premium_currency",
-        "payer_receiver",
-        "side",
-        "barrier",
-        "barrier_type",
-        "cash_payoff",
-        "global_floor",
-        "global_cap",
-        "local_floor",
-        "local_cap",
-        "running_coupon",
-        "fixed_coupon",
-        "recovery_rate",
-        "lookback_type",
-        "payoff",
-        "style",
-    )
-    for key in direct_keys:
-        value = contract.get(key)
-        if value not in {None, ""}:
-            overrides[key] = value
-
-    if contract.get("dividend_rate") not in {None, ""}:
-        overrides["dividend_yield"] = float(contract["dividend_rate"])
-
-    list_string_fields = (
-        ("spots", "spots"),
-        ("volatilities", "vols"),
-        ("dividend_rates", "dividend_yields"),
-        ("weights", "weights"),
-        ("underliers", "underliers"),
-        ("constituents", "constituents"),
-    )
-    for contract_key, spec_key in list_string_fields:
-        value = contract.get(contract_key)
-        if isinstance(value, (list, tuple)) and value:
-            overrides[spec_key] = ",".join(str(item) for item in value)
-
-    correlation = contract.get("correlation")
-    if isinstance(correlation, (list, tuple)) and correlation:
-        if correlation and isinstance(correlation[0], (list, tuple)):
-            overrides["correlation"] = ";".join(
-                ",".join(str(item) for item in row)
-                for row in correlation
-            )
-        else:
-            overrides["correlation"] = ",".join(str(item) for item in correlation)
-
-    valuation_date_raw = (
-        benchmark_inputs.get("valuation_date")
-        or (
-            contract_spec.valuation_date.isoformat()
-            if contract_spec is not None and contract_spec.valuation_date is not None
-            else None
-        )
-        or market_spec.get("as_of")
-        or DEFAULT_SETTLEMENT.isoformat()
-    )
-    try:
-        valuation_date = date.fromisoformat(str(valuation_date_raw))
-    except ValueError:
-        valuation_date = DEFAULT_SETTLEMENT
-
-    expiry_years = contract.get("expiry_years")
-    if expiry_years not in {None, ""}:
-        overrides["expiry_date"] = valuation_date + timedelta(days=round(float(expiry_years) * 365.0))
-
-    for contract_key, spec_key in (
-        ("exercise_date", "exercise_date"),
-        ("maturity_date", "maturity_date"),
-        ("start_date", "start_date"),
-        ("step_in_date", "step_in_date"),
-        ("settle_date", "settle_date"),
-    ):
-        value = contract.get(contract_key)
-        if value in {None, ""}:
-            continue
-        try:
-            overrides[spec_key] = date.fromisoformat(str(value))
-        except ValueError:
-            continue
-
-    return overrides
+    return benchmark_contract_spec_overrides(task, root=ROOT)
 
 
 def _materialize_task_comparison_regime(task: dict, market_state):
@@ -659,6 +582,9 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
 
 def task_to_description(task: dict) -> str:
     """Convert a pricing-task entry into a pricing-build request string."""
+    benchmark_description = benchmark_request_description(task, root=ROOT)
+    if benchmark_description:
+        return benchmark_description
     description = f"Build a pricer for: {task['title']}"
     extra = str(task.get("description") or "").strip()
     if extra:
@@ -856,6 +782,12 @@ def task_to_instrument_type(task: dict) -> str | None:
 
 def task_to_instrument_identity(task: dict) -> InstrumentIdentityResolution:
     """Resolve task instrument identity and record where it came from."""
+    benchmark_instrument_type = canonical_benchmark_instrument_type(task)
+    if benchmark_instrument_type:
+        return InstrumentIdentityResolution(
+            instrument_type=benchmark_instrument_type,
+            source="task.benchmark_contract",
+        )
     title = " ".join(
         part for part in (
             str(task.get("title") or ""),
@@ -1405,6 +1337,21 @@ def run_task(
                 "preferred_method": preferred_method,
                 "runtime_contract": runtime_contract_result,
             })
+            if result_data.get("success"):
+                try:
+                    result_data.update(
+                        _capture_task_pricing_snapshot(
+                            payoff_cls=getattr(result, "payoff_cls", None),
+                            spec_schema=None,
+                            market_state=market_state,
+                            spec_overrides=task_benchmark_spec_overrides,
+                            price_fn=price_fn,
+                        )
+                    )
+                except Exception as exc:
+                    result_data.setdefault("warnings", []).append(
+                        f"task_pricing_snapshot_failed: {exc}"
+                    )
             result_data["learning"] = summarize_task_learning(
                 result_data,
                 task_kind="pricing",
@@ -2292,6 +2239,7 @@ def prepare_existing_task(task: dict, *, model: str = "gpt-5.4-mini") -> Prepare
     """Resolve a task to an existing generated payoff class without rebuilding."""
     description = task_to_description(task)
     instrument_type = task_to_instrument_type(task)
+    preferred_method = benchmark_preferred_method(task)
 
     if instrument_type is None:
         generic_plan = plan_build(description, set(), model=model)
@@ -2331,11 +2279,21 @@ def prepare_existing_task(task: dict, *, model: str = "gpt-5.4-mini") -> Prepare
     # Falls back to select_pricing_method only on expected registry/plan
     # misses; unexpected errors (RuntimeError, ImportError, …) propagate.
     try:
-        compiled = compile_build_request(
-            description,
-            instrument_type=instrument_type,
-            model=model,
-        )
+        try:
+            compiled = compile_build_request(
+                description,
+                instrument_type=instrument_type,
+                model=model,
+                preferred_method=preferred_method,
+            )
+        except TypeError as exc:
+            if "preferred_method" not in str(exc):
+                raise
+            compiled = compile_build_request(
+                description,
+                instrument_type=instrument_type,
+                model=model,
+            )
     except (AttributeError, KeyError, TypeError, ValueError) as exc:
         _log.warning(
             "compile_build_request degraded for task %s (%s): %s — "
@@ -2414,6 +2372,7 @@ def prepare_existing_task(task: dict, *, model: str = "gpt-5.4-mini") -> Prepare
         raise FileNotFoundError(
             f"No cached agent module found for {task['id']} ({authoritative_instrument_type})"
         )
+    spec_schema = _resolve_runtime_spec_schema(payoff_cls, spec_schema)
 
     return PreparedTask(
         task_id=task["id"],
@@ -2425,6 +2384,52 @@ def prepare_existing_task(task: dict, *, model: str = "gpt-5.4-mini") -> Prepare
         spec_schema=spec_schema,
         compiled_request=compiled,
     )
+
+
+def _capture_task_pricing_snapshot(
+    *,
+    payoff_cls: type | None,
+    spec_schema: object | None,
+    market_state,
+    spec_overrides: Mapping[str, Any] | None = None,
+    price_fn: Callable[[Any, Any], float] | None = None,
+) -> dict[str, Any]:
+    """Price one successful task result under the actual runtime schema."""
+    from trellis.engine.payoff_pricer import price_payoff
+
+    if payoff_cls is None:
+        return {}
+    runtime_spec_schema = _resolve_runtime_spec_schema(payoff_cls, spec_schema)
+    if runtime_spec_schema is None:
+        return {}
+
+    settle = getattr(market_state, "settlement", DEFAULT_SETTLEMENT)
+    payoff = _make_test_payoff(
+        payoff_cls,
+        runtime_spec_schema,
+        settle,
+        market_state=market_state,
+        spec_overrides=spec_overrides,
+    )
+    evaluator = price_fn or price_payoff
+    extra_outputs: dict[str, Any] = {}
+    benchmark_outputs_fn = getattr(payoff, "benchmark_outputs", None)
+    if callable(benchmark_outputs_fn):
+        payload = benchmark_outputs_fn(market_state)
+        if isinstance(payload, Mapping):
+            extra_outputs = {
+                str(key): float(value)
+                for key, value in dict(payload).items()
+                if isinstance(value, (int, float))
+            }
+    if not extra_outputs:
+        return {"price": float(evaluator(payoff, market_state))}
+    if "price" not in extra_outputs:
+        extra_outputs["price"] = float(evaluator(payoff, market_state))
+    return {
+        "price": float(extra_outputs["price"]),
+        "benchmark_outputs": extra_outputs,
+    }
 
 
 def benchmark_existing_task(
@@ -2449,11 +2454,15 @@ def benchmark_existing_task(
     price_fn = price_fn or price_payoff
     prepared = prepare_existing_task(task, model=model)
     settle = getattr(market_state, "settlement", DEFAULT_SETTLEMENT)
+    runtime_spec_schema = _resolve_runtime_spec_schema(
+        prepared.payoff_cls,
+        prepared.spec_schema,
+    )
 
     t0 = timer()
     payoff = _make_test_payoff(
         prepared.payoff_cls,
-        prepared.spec_schema,
+        runtime_spec_schema,
         settle,
         market_state=market_state,
         spec_overrides=spec_overrides,

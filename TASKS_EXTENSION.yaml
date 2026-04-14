@@ -171,3 +171,31 @@ tasks:
     spread: 0.025
     recovery_rate: 0.4
     notional: 5000000.0
+- id: P007
+  title: 'Trellis extension: capped and floored cliquet option'
+  status: pending
+  instrument_type: cliquet_option
+  construct:
+  - analytical
+  - monte_carlo
+  description: Price a capped/floored cliquet-style equity option that extends beyond
+    the FinancePy parity surface. Return price and relevant Greeks, and compare
+    analytical and Monte Carlo outputs where possible.
+  market_scenario_id: flat_usd_equity_vanilla
+  validation_policy: invariants_and_cross_method
+  extension_contract:
+    product: cliquet_option
+    option_type: call
+    spot: 100.0
+    local_cap: 0.08
+    local_floor: 0.0
+    global_cap: 0.2
+    global_floor: 0.0
+    domestic_rate: 0.05
+    dividend_rate: 0.0
+    volatility: 0.2
+    observation_times:
+    - 0.25
+    - 0.5
+    - 0.75
+    - 1.0

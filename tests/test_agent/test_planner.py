@@ -56,7 +56,7 @@ class TestPlanStatic:
 
     def test_unknown_instrument_no_spec(self):
         plan = _plan_static(
-            "variance swap on VIX",
+            "weather derivative on cumulative rainfall",
             {"discount_curve", "black_vol_surface"},
             {"discount_curve", "black_vol_surface"},
             set(),
@@ -65,12 +65,12 @@ class TestPlanStatic:
 
     def test_generic_class_name(self):
         plan = _plan_static(
-            "variance swap on VIX",
+            "weather derivative on cumulative rainfall",
             {"discount_curve"},
             {"discount_curve"},
             set(),
         )
-        assert plan.payoff_class_name == "VarianceSwapPayoff"
+        assert plan.payoff_class_name == "WeatherDerivativePayoff"
 
     def test_barrier_option_has_spec(self):
         plan = _plan_static(
@@ -138,7 +138,19 @@ class TestPlanStatic:
         )
         assert plan.spec_schema is not None
         assert plan.spec_schema.class_name == "ZCBOptionPayoff"
-        assert plan.spec_schema.spec_name == "ZCBOptionSpec"
+
+    def test_explicit_cliquet_instrument_does_not_fall_back_to_floor_regex(self):
+        plan = _plan_static(
+            "Build a pricer for a cliquet option with local floor protection",
+            {"discount_curve", "black_vol_surface"},
+            {"discount_curve", "black_vol_surface"},
+            set(),
+            instrument_type="cliquet_option",
+        )
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.class_name == "CliquetOptionPayoff"
+        assert plan.steps[0].module_path.endswith("cliquetoption.py")
+        assert plan.spec_schema.spec_name == "CliquetOptionSpec"
 
     @pytest.mark.parametrize(
         ("description", "requirements", "instrument_type", "expected_class"),
@@ -216,6 +228,15 @@ class TestPlanStatic:
         assert plan.spec_schema is not None
         assert plan.spec_schema.class_name == "CDSPayoff"
         assert any(field.name == "n_paths" for field in plan.spec_schema.fields)
+        assert any(field.name == "valuation_date" for field in plan.spec_schema.fields)
+        assert any(field.name == "pricing_method" for field in plan.spec_schema.fields)
+
+    def test_cds_analytical_static_spec_carries_time_origin_and_method_fields(self):
+        spec = STATIC_SPECS["cds"]
+        field_names = [field.name for field in spec.fields]
+
+        assert "valuation_date" in field_names
+        assert "pricing_method" in field_names
 
 class TestPlanBuild:
 

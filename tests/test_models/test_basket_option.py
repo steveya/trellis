@@ -183,3 +183,22 @@ def test_basket_option_helpers_prefer_explicit_vol_surface_over_local_vol_overla
     )
 
     assert high_vol > low_vol
+
+
+def test_agent_basket_option_wrapper_uses_typed_best_of_helper_path():
+    from trellis.instruments._agent.basketoption import BasketOptionPayoff, BasketOptionSpec
+
+    spec = BasketOptionSpec(
+        notional=100.0,
+        underliers="SPX,NDX",
+        spots="100.0,95.0",
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        correlation="1.0,0.35;0.35,1.0",
+        basket_style="best_of",
+        option_type="call",
+    )
+
+    price = BasketOptionPayoff(spec).evaluate(_market_state())
+
+    assert price > 0.0

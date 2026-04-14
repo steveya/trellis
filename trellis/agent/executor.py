@@ -8,10 +8,11 @@ import re
 import subprocess
 import textwrap
 import time
-from dataclasses import asdict, dataclass, is_dataclass, replace as replace_dataclass
+from dataclasses import MISSING, asdict, dataclass, fields, is_dataclass, replace as replace_dataclass
 from datetime import date, datetime
+from importlib import import_module
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, get_args, get_origin
 from types import SimpleNamespace
 
 from trellis.agent.codegen_guardrails import (
@@ -1609,6 +1610,7 @@ def build_payoff(
         file_path = write_module(output_module_path, code)
         mod = dynamic_import(file_path, module_name)
         payoff_cls = getattr(mod, spec_schema.class_name)
+        spec_schema = _resolve_runtime_spec_schema(payoff_cls, spec_schema)
 
         actual_market_failures = _smoke_test_actual_market_state(
             payoff_cls,
@@ -1848,12 +1850,13 @@ def _validate_build(
     review_knowledge_text = ""
     review_prompt_surface = "none"
     benchmark_spec_overrides = _benchmark_spec_overrides_from_compiled_request(compiled_request)
+    runtime_spec_schema = _resolve_runtime_spec_schema(payoff_cls, spec_schema)
 
     # Try to instantiate the payoff with default test parameters
     try:
         test_payoff = _make_test_payoff(
             payoff_cls,
-            spec_schema,
+            runtime_spec_schema,
             settle,
             spec_overrides=benchmark_spec_overrides,
         )
@@ -1867,7 +1870,7 @@ def _validate_build(
         """Instantiate a fresh payoff under the generated spec schema."""
         return _make_test_payoff(
             payoff_cls,
-            spec_schema,
+            runtime_spec_schema,
             settle,
             spec_overrides=benchmark_spec_overrides,
         )
@@ -2672,6 +2675,137 @@ def _make_test_payoff(
     return payoff_cls(spec)
 
 
+def _resolve_runtime_spec_schema(payoff_cls, spec_schema):
+    """Prefer the actual payoff-module dataclass schema when it is richer."""
+    if payoff_cls is None:
+        return spec_schema
+
+    try:
+        module = import_module(payoff_cls.__module__)
+    except Exception:
+        return spec_schema
+
+    inferred = _runtime_infer_spec_schema_from_module(module, payoff_cls)
+    if inferred is None:
+        return spec_schema
+    if spec_schema is None:
+        return inferred
+
+    planned_name = str(getattr(spec_schema, "spec_name", "") or "")
+    inferred_name = str(getattr(inferred, "spec_name", "") or "")
+    if planned_name and inferred_name and planned_name != inferred_name:
+        return spec_schema
+
+    planned_fields = {
+        str(getattr(field, "name", "") or "")
+        for field in getattr(spec_schema, "fields", ())
+        if str(getattr(field, "name", "") or "")
+    }
+    inferred_fields = {
+        str(getattr(field, "name", "") or "")
+        for field in getattr(inferred, "fields", ())
+        if str(getattr(field, "name", "") or "")
+    }
+    if not inferred_fields.issuperset(planned_fields):
+        return spec_schema
+
+    planned_requirements = {
+        str(item) for item in getattr(spec_schema, "requirements", ()) if str(item).strip()
+    }
+    inferred_requirements = {
+        str(item) for item in getattr(inferred, "requirements", ()) if str(item).strip()
+    }
+    if inferred_fields == planned_fields and inferred_requirements == planned_requirements:
+        return spec_schema
+    return inferred
+
+
+def _runtime_infer_spec_schema_from_module(module, payoff_cls: type):
+    """Infer a planner-compatible schema directly from the payoff module dataclass."""
+    from trellis.agent.planner import FieldDef, SpecSchema
+
+    spec_cls = None
+    for value in module.__dict__.values():
+        if isinstance(value, type) and is_dataclass(value) and value.__name__.endswith("Spec"):
+            spec_cls = value
+            break
+    if spec_cls is None:
+        return None
+
+    field_defs = []
+    for field in fields(spec_cls):
+        field_defs.append(
+            FieldDef(
+                name=field.name,
+                type=_runtime_annotation_to_field_type(field.type),
+                description="",
+                default=None
+                if field.default is MISSING and field.default_factory is MISSING
+                else repr(field.default if field.default is not MISSING else None),
+            )
+        )
+
+    return SpecSchema(
+        class_name=payoff_cls.__name__,
+        spec_name=spec_cls.__name__,
+        requirements=[],
+        fields=field_defs,
+    )
+
+
+def _runtime_annotation_to_field_type(annotation) -> str:
+    """Map runtime annotations to the planner field-type strings."""
+    if isinstance(annotation, str):
+        normalized = annotation.replace(" ", "")
+        if normalized == "tuple[date,...]":
+            return "tuple[date, ...]"
+        if normalized in {"tuple[date,...]|None", "None|tuple[date,...]"}:
+            return "tuple[date, ...] | None"
+        if annotation in {
+            "float",
+            "int",
+            "str",
+            "bool",
+            "date",
+            "str | None",
+            "float | None",
+            "int | None",
+            "tuple[date, ...]",
+            "tuple[date, ...] | None",
+            "Frequency",
+            "DayCountConvention",
+        }:
+            return annotation
+        return "str"
+
+    if annotation is float:
+        return "float"
+    if annotation is int:
+        return "int"
+    if annotation is str:
+        return "str"
+    if annotation is bool:
+        return "bool"
+    if annotation is date:
+        return "date"
+
+    origin = get_origin(annotation)
+    args = get_args(annotation)
+    if origin is tuple and args == (date, Ellipsis):
+        return "tuple[date, ...]"
+    if args and type(None) in args:
+        non_none = tuple(arg for arg in args if arg is not type(None))
+        if len(non_none) == 1:
+            inner = _runtime_annotation_to_field_type(non_none[0])
+            if inner in {"float", "int", "str", "tuple[date, ...]"}:
+                return f"{inner} | None"
+
+    annotation_name = getattr(annotation, "__name__", None)
+    if annotation_name in {"Frequency", "DayCountConvention"}:
+        return annotation_name
+    return "str"
+
+
 def _description_spec_defaults(spec_schema, *, description: str) -> dict[str, object]:
     """Extract deterministic spec defaults from structured task descriptions.
 
@@ -2817,10 +2951,11 @@ def _smoke_test_actual_market_state(
     from trellis.engine.payoff_pricer import price_payoff
 
     settle = getattr(market_state, "settlement", date(2024, 11, 15))
+    runtime_spec_schema = _resolve_runtime_spec_schema(payoff_cls, spec_schema)
     try:
         payoff = _make_test_payoff(
             payoff_cls,
-            spec_schema,
+            runtime_spec_schema,
             settle,
             spec_overrides=spec_overrides,
         )
@@ -3238,6 +3373,29 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.basket_option.price_basket_option_transform_proxy": (
             "return float(price_basket_option_transform_proxy("
             f"market_state, spec{basket_option_kwargs}))"
+        ),
+        "trellis.models.analytical.barrier.barrier_option_price": (
+            "if market_state.discount is None:\n"
+            '    raise ValueError("market_state.discount is required for analytical barrier pricing")\n'
+            "if market_state.vol_surface is None:\n"
+            '    raise ValueError("market_state.vol_surface is required for analytical barrier pricing")\n'
+            "T = max(float(year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)), 0.0)\n"
+            "if T <= 0.0:\n"
+            "    return 0.0\n"
+            "sigma = float(market_state.vol_surface.black_vol(max(T, 1e-6), spec.strike))\n"
+            "rate = float(market_state.discount.zero_rate(T))\n"
+            "price = barrier_option_price(\n"
+            "    float(spec.spot),\n"
+            "    float(spec.strike),\n"
+            "    float(spec.barrier),\n"
+            "    rate,\n"
+            "    sigma,\n"
+            "    T,\n"
+            '    barrier_type=str(spec.barrier_type),\n'
+            '    option_type=str(spec.option_type),\n'
+            "    rebate=float(getattr(spec, 'rebate', 0.0) or 0.0),\n"
+            ")\n"
+            "return float(spec.notional) * float(price)"
         ),
     }
     for ref, body in helper_bodies.items():

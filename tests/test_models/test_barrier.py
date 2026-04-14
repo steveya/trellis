@@ -150,6 +150,39 @@ class TestBarrierOptionPriceDispatcher:
         bs_call = S * _norm.cdf(d1) - K * math.exp(-self.r * self.T) * _norm.cdf(d2)
         assert out + inn == pytest.approx(bs_call, rel=1e-3)
 
+    def test_up_put_in_out_parity_when_strike_exceeds_barrier(self):
+        """Up-barrier put: out + in should sum to vanilla in the K > B regime."""
+        S, K, B = 100.0, 120.0, 110.0
+        out = barrier_option_price(
+            S,
+            K,
+            B,
+            self.r,
+            self.sigma,
+            self.T,
+            barrier_type="up_and_out",
+            option_type="put",
+        )
+        inn = barrier_option_price(
+            S,
+            K,
+            B,
+            self.r,
+            self.sigma,
+            self.T,
+            barrier_type="up_and_in",
+            option_type="put",
+        )
+        from scipy.stats import norm as _norm
+        import math
+
+        d1 = (math.log(S / K) + (self.r + 0.5 * self.sigma**2) * self.T) / (
+            self.sigma * math.sqrt(self.T)
+        )
+        d2 = d1 - self.sigma * math.sqrt(self.T)
+        bs_put = K * math.exp(-self.r * self.T) * _norm.cdf(-d2) - S * _norm.cdf(-d1)
+        assert out + inn == pytest.approx(bs_put, rel=1e-3)
+
     # --- Edge cases ---
 
     def test_expired_option_returns_zero(self):
@@ -198,3 +231,19 @@ class TestBarrierOptionPriceDispatcher:
                 self.S, self.K, self.B, self.r, self.sigma, self.T,
                 barrier_type="sideways_and_out", option_type="call",
             )
+
+    def test_discrete_monitoring_alignment_matches_financepy_reference_case(self):
+        price = barrier_option_price(
+            100.0,
+            100.0,
+            120.0,
+            0.05,
+            0.22,
+            1.0,
+            barrier_type="up_and_out",
+            option_type="call",
+            q=0.0,
+            observations_per_year=252,
+        )
+
+        assert price == pytest.approx(1.0873716740767274, rel=5e-5)

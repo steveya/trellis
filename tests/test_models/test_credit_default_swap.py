@@ -3,9 +3,11 @@
 from datetime import date
 
 import pytest
+import numpy as np
 
 from trellis.curves.credit_curve import CreditCurve
 from trellis.curves.yield_curve import YieldCurve
+from trellis.core.market_state import MarketState
 from trellis.models.credit_default_swap import (
     build_cds_schedule,
     interval_default_probability,
@@ -14,6 +16,7 @@ from trellis.models.credit_default_swap import (
     price_cds_monte_carlo,
 )
 from trellis.core.types import DayCountConvention, Frequency
+from trellis.instruments._agent.cds import CDSPayoff, CDSSpec
 
 
 SETTLE = date(2024, 11, 15)
@@ -41,6 +44,18 @@ class TestCreditDefaultSwapHelpers:
         )
 
         assert schedule.time_origin == SETTLE
+
+    def test_build_cds_schedule_applies_standard_business_day_adjustment(self):
+        schedule = build_cds_schedule(
+            date(2024, 9, 20),
+            date(2029, 12, 20),
+            Frequency.QUARTERLY,
+            DayCountConvention.ACT_360,
+            time_origin=SETTLE,
+        )
+
+        assert schedule.periods[3].payment_date == date(2025, 9, 22)
+        assert schedule.periods[4].payment_date == date(2025, 12, 22)
 
     def test_normalize_cds_running_spread_accepts_bps_and_decimal(self):
         assert normalize_cds_running_spread(100.0) == pytest.approx(0.01)
@@ -106,3 +121,69 @@ class TestCreditDefaultSwapHelpers:
         )
 
         assert monte_carlo == pytest.approx(analytical, abs=0.02)
+
+    def test_cds_analytical_matches_financepy_flat_hazard_benchmark(self):
+        financepy = pytest.importorskip("financepy")
+        from financepy.market.curves.discount_curve_flat import DiscountCurveFlat
+        from financepy.products.credit.cds import CDS
+        from financepy.products.credit.cds_curve import CDSCurve
+        from financepy.utils.date import Date
+        from financepy.utils.day_count import DayCountTypes
+        from financepy.utils.frequency import FrequencyTypes
+
+        value_dt = Date(15, 11, 2024)
+        discount_curve = DiscountCurveFlat(value_dt, 0.04)
+        cds = CDS(
+            value_dt,
+            "5Y",
+            0.015,
+            notional=10_000_000.0,
+            long_protect=True,
+            freq_type=FrequencyTypes.QUARTERLY,
+            dc_type=DayCountTypes.ACT_360,
+        )
+        issuer_curve = CDSCurve(value_dt, [], discount_curve, 0.4)
+        maturity_years = max((cds.maturity_dt - value_dt) / 365.0, 1.0)
+        issuer_curve._times = np.asarray([0.0, float(maturity_years)], dtype=float)
+        issuer_curve._qs = np.asarray([1.0, np.exp(-0.025 * maturity_years)], dtype=float)
+        expected = float(cds.value(value_dt, issuer_curve, 0.4)["clean_pv"])
+
+        schedule = build_cds_schedule(
+            date(2024, 9, 20),
+            date(2029, 12, 20),
+            Frequency.QUARTERLY,
+            DayCountConvention.ACT_360,
+            time_origin=SETTLE,
+        )
+        observed = price_cds_analytical(
+            notional=10_000_000.0,
+            spread_quote=0.015,
+            recovery=0.4,
+            schedule=schedule,
+            credit_curve=CreditCurve.flat(0.025),
+            discount_curve=YieldCurve.flat(0.04),
+        )
+
+        assert observed == pytest.approx(expected, rel=0.02)
+
+    def test_cds_agent_payoff_uses_valuation_date_for_analytical_benchmarks(self):
+        spec = CDSSpec(
+            notional=10_000_000.0,
+            spread=0.015,
+            recovery=0.4,
+            valuation_date=SETTLE,
+            start_date=date(2024, 9, 20),
+            end_date=date(2029, 12, 20),
+            pricing_method="analytical",
+        )
+        market_state = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.04),
+            credit_curve=CreditCurve.flat(0.025),
+        )
+
+        payoff = CDSPayoff(spec)
+        observed = payoff.evaluate(market_state)
+
+        assert observed == pytest.approx(-5650.965650176979, rel=0.02)

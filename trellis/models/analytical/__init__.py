@@ -39,6 +39,16 @@ from trellis.models.analytical.barrier import (
     rebate_raw,
     vanilla_call_raw,
 )
+from trellis.models.analytical.equity_exotics import (
+    ResolvedEquityAnalyticalInputs,
+    equity_variance_swap_outputs_analytical,
+    price_equity_cliquet_option_analytical,
+    price_equity_chooser_option_analytical,
+    price_equity_compound_option_analytical,
+    price_equity_digital_option_analytical,
+    price_equity_fixed_lookback_option_analytical,
+    price_equity_variance_swap_analytical,
+)
 __all__ = [
     "zcb_option_hw",
     "barrier_option_price",
@@ -50,7 +60,15 @@ __all__ = [
     "down_and_in_call_raw",
     "rebate_raw",
     "ResolvedBarrierInputs",
+    "ResolvedEquityAnalyticalInputs",
+    "equity_variance_swap_outputs_analytical",
+    "price_equity_cliquet_option_analytical",
     "vanilla_call_raw",
+    "price_equity_chooser_option_analytical",
+    "price_equity_compound_option_analytical",
+    "price_equity_digital_option_analytical",
+    "price_equity_fixed_lookback_option_analytical",
+    "price_equity_variance_swap_analytical",
     "price_quanto_option_analytical",
     "price_quanto_option_raw",
     "ResolvedJamshidianInputs",

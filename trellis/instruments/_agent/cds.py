@@ -1,26 +1,16 @@
-"""Agent-generated payoff: Build a pricer for: CDS par spread: hazard rate bootstrap vs closed-form
+"""Agent-generated payoff: Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical
 
-Bootstrap a hazard rate curve from CDS par spreads, then reprice
-each input CDS to verify the curve reproduces the market spreads.
-Input CDS maturities and par spreads:
-  1Y: 50 bp, 2Y: 80 bp, 3Y: 100 bp, 5Y: 150 bp, 7Y: 200 bp.
-Recovery rate: 40%.  Flat risk-free rate: 3%.
-Method 1: piecewise-constant hazard rate bootstrap (solve for each
-segment so that the model CDS spread matches the market spread).
-Method 2: closed-form analytical CDS pricing using the bootstrapped
-curve — verify round-trip consistency (repriced spreads should match
-input spreads to within 0.1 bp).
-
-Comparison targets: bootstrapped_cds (analytical), analytical_cds (analytical)
+Construct methods: monte_carlo
+Comparison targets: mc_cds (monte_carlo), analytical_cds (analytical)
 Cross-validation harness:
-  internal targets: bootstrapped_cds, analytical_cds
+  internal targets: mc_cds, analytical_cds
   external targets: quantlib, financepy
-New component: cds_bootstrap
+New component: cds_pricing
 
-Implementation target: analytical_cds
-Preferred method family: analytical
+Implementation target: mc_cds
+Preferred method family: monte_carlo
 
-Implementation target: analytical_cds."""
+Implementation target: mc_cds."""
 
 from __future__ import annotations
 
@@ -29,35 +19,29 @@ from datetime import date
 
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.credit_default_swap import build_cds_schedule, price_cds_analytical
+from trellis.models.credit_default_swap import (
+    build_cds_schedule,
+    price_cds_analytical,
+    price_cds_monte_carlo,
+)
 
 
 
 @dataclass(frozen=True)
 class CDSSpec:
-    """Specification for Build a pricer for: CDS par spread: hazard rate bootstrap vs closed-form
+    """Specification for Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical
 
-Bootstrap a hazard rate curve from CDS par spreads, then reprice
-each input CDS to verify the curve reproduces the market spreads.
-Input CDS maturities and par spreads:
-  1Y: 50 bp, 2Y: 80 bp, 3Y: 100 bp, 5Y: 150 bp, 7Y: 200 bp.
-Recovery rate: 40%.  Flat risk-free rate: 3%.
-Method 1: piecewise-constant hazard rate bootstrap (solve for each
-segment so that the model CDS spread matches the market spread).
-Method 2: closed-form analytical CDS pricing using the bootstrapped
-curve — verify round-trip consistency (repriced spreads should match
-input spreads to within 0.1 bp).
-
-Comparison targets: bootstrapped_cds (analytical), analytical_cds (analytical)
+Construct methods: monte_carlo
+Comparison targets: mc_cds (monte_carlo), analytical_cds (analytical)
 Cross-validation harness:
-  internal targets: bootstrapped_cds, analytical_cds
+  internal targets: mc_cds, analytical_cds
   external targets: quantlib, financepy
-New component: cds_bootstrap
+New component: cds_pricing
 
-Implementation target: analytical_cds
-Preferred method family: analytical
+Implementation target: mc_cds
+Preferred method family: monte_carlo
 
-Implementation target: analytical_cds."""
+Implementation target: mc_cds."""
     notional: float
     spread: float
     start_date: date
@@ -65,32 +49,25 @@ Implementation target: analytical_cds."""
     recovery: float = 0.4
     frequency: Frequency = Frequency.QUARTERLY
     day_count: DayCountConvention = DayCountConvention.ACT_360
+    valuation_date: date | None = None
+    pricing_method: str = "analytical"
+    n_paths: int | None = None
 
 
 class CDSPayoff:
-    """Build a pricer for: CDS par spread: hazard rate bootstrap vs closed-form
+    """Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical
 
-Bootstrap a hazard rate curve from CDS par spreads, then reprice
-each input CDS to verify the curve reproduces the market spreads.
-Input CDS maturities and par spreads:
-  1Y: 50 bp, 2Y: 80 bp, 3Y: 100 bp, 5Y: 150 bp, 7Y: 200 bp.
-Recovery rate: 40%.  Flat risk-free rate: 3%.
-Method 1: piecewise-constant hazard rate bootstrap (solve for each
-segment so that the model CDS spread matches the market spread).
-Method 2: closed-form analytical CDS pricing using the bootstrapped
-curve — verify round-trip consistency (repriced spreads should match
-input spreads to within 0.1 bp).
-
-Comparison targets: bootstrapped_cds (analytical), analytical_cds (analytical)
+Construct methods: monte_carlo
+Comparison targets: mc_cds (monte_carlo), analytical_cds (analytical)
 Cross-validation harness:
-  internal targets: bootstrapped_cds, analytical_cds
+  internal targets: mc_cds, analytical_cds
   external targets: quantlib, financepy
-New component: cds_bootstrap
+New component: cds_pricing
 
-Implementation target: analytical_cds
-Preferred method family: analytical
+Implementation target: mc_cds
+Preferred method family: monte_carlo
 
-Implementation target: analytical_cds."""
+Implementation target: mc_cds."""
 
     def __init__(self, spec: CDSSpec):
         self._spec = spec
@@ -105,26 +82,49 @@ Implementation target: analytical_cds."""
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        spec = self._spec
+
         spread = float(spec.spread)
         if spread > 1.0:
-            spread /= 10000.0
+            spread *= 1e-4
 
         schedule = build_cds_schedule(
             spec.start_date,
             spec.end_date,
             spec.frequency,
-            spec.day_count,
-            time_origin=spec.start_date,
+            day_count=spec.day_count,
+            time_origin=spec.valuation_date or spec.start_date,
         )
 
+        credit_curve = market_state.credit_curve
+        discount_curve = market_state.discount
+        pricing_method = str(getattr(spec, "pricing_method", "analytical") or "analytical").strip().lower()
+        n_paths = getattr(spec, "n_paths", None)
+
+        if pricing_method == "monte_carlo" or (
+            pricing_method not in {"", "analytical"} and n_paths is not None
+        ):
+            path_count = int(n_paths) if n_paths is not None else 250000
+            if path_count < 10000:
+                path_count = 10000
+            return float(
+                price_cds_monte_carlo(
+                    notional=spec.notional,
+                    spread_quote=spread,
+                    recovery=spec.recovery,
+                    schedule=schedule,
+                    credit_curve=credit_curve,
+                    discount_curve=discount_curve,
+                    n_paths=path_count,
+                    seed=42,
+                )
+            )
         return float(
             price_cds_analytical(
                 notional=spec.notional,
                 spread_quote=spread,
                 recovery=spec.recovery,
                 schedule=schedule,
-                credit_curve=market_state.credit_curve,
-                discount_curve=market_state.discount,
+                credit_curve=credit_curve,
+                discount_curve=discount_curve,
             )
         )
