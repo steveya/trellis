@@ -21,6 +21,7 @@ from trellis.agent.config import load_env
 from trellis.agent.financepy_benchmark import (
     DEFAULT_FINANCEPY_BENCHMARK_ROOT,
     build_financepy_benchmark_report,
+    extract_trellis_benchmark_outputs,
     load_financepy_benchmark_tasks,
     persist_financepy_benchmark_record,
     save_financepy_benchmark_report,
@@ -28,7 +29,13 @@ from trellis.agent.financepy_benchmark import (
 )
 from trellis.agent.financepy_reference import price_financepy_reference
 from trellis.agent.task_manifests import load_financepy_bindings
-from trellis.agent.task_runtime import benchmark_existing_task, build_market_state, run_task
+from trellis.agent.task_runtime import (
+    benchmark_existing_task,
+    benchmark_spec_overrides,
+    build_market_state,
+    build_market_state_for_task,
+    run_task,
+)
 
 load_env()
 
@@ -58,27 +65,6 @@ def _git_revision() -> str:
         check=False,
     )
     return completed.stdout.strip() or "unknown"
-
-
-def _extract_trellis_outputs(result: dict[str, Any], warm_benchmark: dict[str, Any] | None) -> dict[str, Any]:
-    outputs: dict[str, Any] = {}
-    if warm_benchmark and warm_benchmark.get("last_price") is not None:
-        outputs["price"] = warm_benchmark["last_price"]
-    summary = dict(result.get("summary") or {})
-    prices = dict(summary.get("prices") or {})
-    for key, value in prices.items():
-        outputs.setdefault(key, value)
-    comparison = dict(result.get("comparison") or {})
-    for key, value in dict(comparison.get("prices") or {}).items():
-        outputs.setdefault(key, value)
-    payload = dict(result.get("result") or {})
-    for key in ("price", "fair_value"):
-        if payload.get(key) is not None:
-            outputs.setdefault("price", payload[key])
-    greeks = dict(payload.get("greeks") or {})
-    if greeks:
-        outputs["greeks"] = greeks
-    return outputs
 
 
 def _output_value(outputs: dict[str, Any], key: str) -> Any:
@@ -181,16 +167,18 @@ def main(argv: list[str] | None = None) -> int:
         financepy_result: dict[str, Any] | None = None
         comparison_summary: dict[str, Any]
         status = "failed"
+        task_market_state, _ = build_market_state_for_task(task, market_state)
 
         if cold_result.get("success"):
             status = "priced"
             try:
                 warm_result = benchmark_existing_task(
                     task,
-                    market_state=market_state,
+                    market_state=task_market_state,
                     repeats=args.repeats,
                     warmups=args.warmups,
                     model=args.model,
+                    spec_overrides=benchmark_spec_overrides(task),
                 )
             except Exception as exc:
                 warm_result = {"error": str(exc)}
@@ -200,7 +188,7 @@ def main(argv: list[str] | None = None) -> int:
             except Exception as exc:
                 financepy_result = {"error": str(exc)}
 
-        trellis_outputs = _extract_trellis_outputs(cold_result, warm_result)
+        trellis_outputs = extract_trellis_benchmark_outputs(cold_result, warm_result)
         comparison_summary = _compare_outputs(
             task=task,
             binding=financepy_bindings.get(str(task.get("financepy_binding_id") or ""), {}),

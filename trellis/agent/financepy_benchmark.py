@@ -76,6 +76,38 @@ def persist_financepy_benchmark_record(
     }
 
 
+def extract_trellis_benchmark_outputs(
+    result: Mapping[str, Any],
+    warm_benchmark: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Extract comparable Trellis outputs from a benchmark run.
+
+    The cold agent run is the source of truth for parity. Warm benchmark runs
+    are only a runtime probe and should only backfill missing values.
+    """
+    outputs: dict[str, Any] = {}
+    summary = dict(result.get("summary") or {})
+    for key, value in dict(summary.get("prices") or {}).items():
+        outputs.setdefault(key, value)
+
+    comparison = dict(result.get("comparison") or {})
+    for key, value in dict(comparison.get("prices") or {}).items():
+        outputs.setdefault(key, value)
+
+    payload = dict(result.get("result") or {})
+    for key in ("price", "fair_value"):
+        if payload.get(key) is not None:
+            outputs.setdefault("price", payload[key])
+
+    greeks = dict(payload.get("greeks") or {})
+    if greeks:
+        outputs["greeks"] = greeks
+
+    if warm_benchmark and warm_benchmark.get("last_price") is not None:
+        outputs.setdefault("price", warm_benchmark["last_price"])
+    return outputs
+
+
 def build_financepy_benchmark_report(
     *,
     benchmark_name: str,

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from trellis.agent.financepy_benchmark import (
     build_financepy_benchmark_report,
+    extract_trellis_benchmark_outputs,
     load_financepy_benchmark_tasks,
     persist_financepy_benchmark_record,
     select_financepy_benchmark_tasks,
@@ -76,3 +77,18 @@ def test_build_financepy_benchmark_report_accumulates_totals():
     assert report["comparison_pass_count"] == 1
     assert report["token_usage_total"] == 20
     assert report["cold_elapsed_seconds_total"] == 4.0
+
+
+def test_extract_trellis_benchmark_outputs_prefers_cold_run_prices_over_warm_probe():
+    outputs = extract_trellis_benchmark_outputs(
+        {
+            "summary": {"prices": {"analytical": 10.45}},
+            "comparison": {"prices": {"black_scholes": 10.45}},
+            "result": {"price": 10.45},
+        },
+        {"last_price": 398.35},
+    )
+
+    assert outputs["price"] == 10.45
+    assert outputs["analytical"] == 10.45
+    assert outputs["black_scholes"] == 10.45

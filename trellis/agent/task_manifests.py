@@ -213,8 +213,15 @@ def _materialize_market_from_scenario(
     selected = dict(scenario.get("selected_components") or {})
     if not scenario:
         return {}
-    return {
+    market = {
         "source": scenario.get("source"),
         "as_of": scenario.get("as_of"),
         **selected,
     }
+    benchmark_inputs = scenario.get("benchmark_inputs")
+    if isinstance(benchmark_inputs, Mapping) and benchmark_inputs:
+        market["benchmark_inputs"] = dict(benchmark_inputs)
+    description = str(scenario.get("description") or "").strip()
+    if description:
+        market["scenario_description"] = description
+    return market

@@ -67,3 +67,13 @@ Every benchmark runner must persist append-only records with at least:
 - `scripts/run_negative_benchmark.py` runs clarification / honest-block tasks and persists timestamped history
 - `scripts/run_canary.py` and `scripts/record_cassettes.py` use the rebuilt canary manifest
 - `TASKS.yaml` is removed after the cutover; retained proof-only legacy tasks live in `TASKS_PROOF_LEGACY.yaml`
+
+## Market Scenario Follow-On
+
+The benchmark cutover surfaced a broader market-state gap: the mock resolver catalog
+is still much thinner than the new benchmark and extension corpora assume, so many
+parity tasks currently rely on a benchmark-market overlay rather than first-class
+named scenario constructors. That gap is tracked as `QUA-837` with follow-on tickets
+for benchmark-aligned scenario schema, flat/textbook constructors, carry unification,
+multi-asset support, and coverage audit. The overlay path is acceptable as the
+bridge for `QUA-826`, but it is not the intended long-term market-state surface.

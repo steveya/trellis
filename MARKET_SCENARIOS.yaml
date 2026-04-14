@@ -7,7 +7,8 @@ scenarios:
       tasks.
     selected_components:
       discount_curve: usd_ois
-      vol_surface: flat_20pct
+      vol_surface: spx_heston_implied_vol
+      underlier_spot: SPX
     benchmark_inputs:
       valuation_date: '2024-11-15'
       stock_price: 100.0
@@ -21,8 +22,9 @@ scenarios:
       parity.
     selected_components:
       discount_curve: usd_ois
-      forecast_curve: eur_ois
-      vol_surface: flat_fx_12pct
+      forecast_curve: EUR-DISC
+      fx_rate: EURUSD
+      vol_surface: spx_heston_implied_vol
     benchmark_inputs:
       valuation_date: '2024-11-15'
       spot_fx: 1.1
@@ -36,7 +38,7 @@ scenarios:
       and swaption tasks.
     selected_components:
       discount_curve: usd_ois
-      forecast_curve: usd_sofr_3m
+      forecast_curve: USD-SOFR-3M
       vol_surface: usd_rates_smile
     benchmark_inputs:
       valuation_date: '2024-11-15'
@@ -68,7 +70,8 @@ scenarios:
     description: Equity smile surface for barrier/digital/lookback tasks.
     selected_components:
       discount_curve: usd_ois
-      vol_surface: equity_smile
+      vol_surface: spx_heston_implied_vol
+      underlier_spot: SPX
     benchmark_inputs:
       valuation_date: '2024-11-15'
       stock_price: 100.0
@@ -82,7 +85,7 @@ scenarios:
       basket tasks.
     selected_components:
       discount_curve: usd_ois
-      vol_surface: equity_smile
+      vol_surface: spx_heston_implied_vol
     benchmark_inputs:
       valuation_date: '2024-11-15'
       stock_prices:
@@ -106,8 +109,9 @@ scenarios:
     description: FX smile setup for FX barrier/digital/lookback/rainbow tasks.
     selected_components:
       discount_curve: usd_ois
-      forecast_curve: eur_ois
-      vol_surface: fx_smile
+      forecast_curve: EUR-DISC
+      fx_rate: EURUSD
+      vol_surface: spx_heston_implied_vol
     benchmark_inputs:
       valuation_date: '2024-11-15'
       spot_fx: 1.1

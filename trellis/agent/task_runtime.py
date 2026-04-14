@@ -12,7 +12,7 @@ import json
 import logging
 import os
 from dataclasses import MISSING, dataclass, fields, is_dataclass, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from importlib import import_module
 from pathlib import Path
 from statistics import mean, median
@@ -401,6 +401,236 @@ def build_market_state():
         )
 
 
+def _flat_yield_curve(rate: object | None):
+    """Return a flat yield curve when a numeric rate is available."""
+    if rate in {None, ""}:
+        return None
+    from trellis.curves.yield_curve import YieldCurve
+
+    return YieldCurve.flat(float(rate), max_tenor=31.0)
+
+
+def _flat_credit_curve(hazard_rate: object | None):
+    """Return a flat credit curve when a numeric hazard rate is available."""
+    if hazard_rate in {None, ""}:
+        return None
+    from trellis.curves.credit_curve import CreditCurve
+
+    return CreditCurve.flat(float(hazard_rate), max_tenor=31.0)
+
+
+def _benchmark_market_overlay(task: dict, market_state):
+    """Apply benchmark-specific flat market overrides onto a resolved MarketState.
+
+    FinancePy parity tasks define textbook flat scenarios in ``benchmark_inputs``.
+    The repo's synthetic mock snapshot is intentionally richer and can drift
+    materially from those textbook assumptions, so parity tasks need an overlay
+    layer rather than raw snapshot selection alone.
+    """
+    market_spec = dict(task.get("market") or {})
+    benchmark_inputs = dict(market_spec.get("benchmark_inputs") or {})
+    benchmark_contract = dict(task.get("benchmark_contract") or {})
+    if not benchmark_inputs and not benchmark_contract:
+        return market_state, {}
+
+    from trellis.instruments.fx import FXRate
+    from trellis.models.vol_surface import FlatVol
+
+    discount_curve = (
+        _flat_yield_curve(benchmark_inputs.get("flat_discount_rate"))
+        or _flat_yield_curve(benchmark_contract.get("domestic_rate"))
+        or market_state.discount
+    )
+    credit_curve = (
+        _flat_credit_curve(benchmark_inputs.get("issuer_hazard_rate"))
+        or market_state.credit_curve
+    )
+    forecast_curves = dict(getattr(market_state, "forecast_curves", None) or {})
+    forecast_curve_name = str(market_spec.get("forecast_curve") or "").strip()
+    forecast_rate = None
+    if benchmark_inputs.get("flat_forward_rate") not in {None, ""}:
+        forecast_rate = benchmark_inputs.get("flat_forward_rate")
+    elif benchmark_contract.get("foreign_rate") not in {None, ""}:
+        forecast_rate = benchmark_contract.get("foreign_rate")
+    if forecast_curve_name and forecast_rate not in {None, ""}:
+        forecast_curves[forecast_curve_name] = _flat_yield_curve(forecast_rate)
+
+    vol_quote = None
+    for candidate in (
+        benchmark_contract.get("volatility"),
+        benchmark_inputs.get("black_vol"),
+        benchmark_inputs.get("shifted_black_vol"),
+    ):
+        if candidate not in {None, ""}:
+            vol_quote = float(candidate)
+            break
+    vol_surface = FlatVol(vol_quote) if vol_quote is not None else market_state.vol_surface
+
+    fx_rates = dict(getattr(market_state, "fx_rates", None) or {})
+    fx_pair = str(benchmark_contract.get("currency_pair") or market_spec.get("fx_rate") or "").strip()
+    fx_spot = benchmark_contract.get("spot")
+    if fx_spot in {None, ""}:
+        fx_spot = benchmark_inputs.get("spot_fx")
+    if fx_pair and fx_spot not in {None, ""} and len(fx_pair) == 6:
+        fx_rates[fx_pair] = FXRate(
+            spot=float(fx_spot),
+            domestic=fx_pair[3:],
+            foreign=fx_pair[:3],
+        )
+
+    spot = market_state.spot
+    underlier_spots = dict(getattr(market_state, "underlier_spots", None) or {})
+    underlier_name = str(market_spec.get("underlier_spot") or "").strip()
+    spot_value = benchmark_contract.get("spot")
+    if spot_value in {None, ""}:
+        spot_value = benchmark_inputs.get("stock_price")
+    if spot_value not in {None, ""}:
+        spot = float(spot_value)
+        if underlier_name:
+            underlier_spots[underlier_name] = spot
+    elif fx_pair and fx_spot not in {None, ""}:
+        underlier_spots[fx_pair] = float(fx_spot)
+
+    applied_inputs = {
+        key: value
+        for key, value in (
+            ("discount_rate", benchmark_inputs.get("flat_discount_rate") or benchmark_contract.get("domestic_rate")),
+            ("forecast_rate", forecast_rate),
+            ("credit_hazard_rate", benchmark_inputs.get("issuer_hazard_rate")),
+            ("volatility", vol_quote),
+            ("spot", spot_value if spot_value not in {None, ""} else fx_spot),
+            ("fx_pair", fx_pair or None),
+            ("underlier_spot", underlier_name or None),
+        )
+        if value not in {None, ""}
+    }
+    if not applied_inputs:
+        return market_state, {}
+
+    overlay_provenance = dict(getattr(market_state, "market_provenance", None) or {})
+    overlay_provenance["benchmark_overlay"] = {
+        "task_id": str(task.get("id") or ""),
+        "market_scenario_id": str(task.get("market_scenario_id") or ""),
+        "applied_inputs": applied_inputs,
+    }
+    overlay_state = replace(
+        market_state,
+        discount=discount_curve,
+        forward_curve=None if discount_curve is not None else getattr(market_state, "forward_curve", None),
+        credit_curve=credit_curve,
+        forecast_curves=forecast_curves or None,
+        vol_surface=vol_surface,
+        fx_rates=fx_rates or None,
+        spot=spot,
+        underlier_spots=underlier_spots or None,
+        market_provenance=overlay_provenance,
+    )
+    return overlay_state, {
+        "benchmark_market_overlay": True,
+        "benchmark_overlay_inputs": applied_inputs,
+    }
+
+
+def benchmark_spec_overrides(task: Mapping[str, Any]) -> dict[str, Any]:
+    """Return generic spec overrides implied by one benchmark contract.
+
+    This is task-program level behavior for the benchmark corpora, not
+    task-specific patching. The goal is to instantiate the same contract that
+    the parity task declares rather than the repo's generic smoke-test defaults.
+    """
+    market_spec = dict(task.get("market") or {})
+    benchmark_inputs = dict(market_spec.get("benchmark_inputs") or {})
+    contract = dict(task.get("benchmark_contract") or {})
+    if not benchmark_inputs and not contract:
+        return {}
+
+    overrides: dict[str, Any] = {}
+    direct_keys = (
+        "notional",
+        "spot",
+        "strike",
+        "option_type",
+        "currency_pair",
+        "premium_currency",
+        "payer_receiver",
+        "side",
+        "barrier",
+        "barrier_type",
+        "cash_payoff",
+        "global_floor",
+        "global_cap",
+        "local_floor",
+        "local_cap",
+        "running_coupon",
+        "fixed_coupon",
+        "recovery_rate",
+        "lookback_type",
+        "payoff",
+        "style",
+    )
+    for key in direct_keys:
+        value = contract.get(key)
+        if value not in {None, ""}:
+            overrides[key] = value
+
+    if contract.get("dividend_rate") not in {None, ""}:
+        overrides["dividend_yield"] = float(contract["dividend_rate"])
+
+    list_string_fields = (
+        ("spots", "spots"),
+        ("volatilities", "vols"),
+        ("dividend_rates", "dividend_yields"),
+        ("weights", "weights"),
+        ("underliers", "underliers"),
+        ("constituents", "constituents"),
+    )
+    for contract_key, spec_key in list_string_fields:
+        value = contract.get(contract_key)
+        if isinstance(value, (list, tuple)) and value:
+            overrides[spec_key] = ",".join(str(item) for item in value)
+
+    correlation = contract.get("correlation")
+    if isinstance(correlation, (list, tuple)) and correlation:
+        if correlation and isinstance(correlation[0], (list, tuple)):
+            overrides["correlation"] = ";".join(
+                ",".join(str(item) for item in row)
+                for row in correlation
+            )
+        else:
+            overrides["correlation"] = ",".join(str(item) for item in correlation)
+
+    valuation_date_raw = (
+        benchmark_inputs.get("valuation_date")
+        or market_spec.get("as_of")
+        or DEFAULT_SETTLEMENT.isoformat()
+    )
+    try:
+        valuation_date = date.fromisoformat(str(valuation_date_raw))
+    except ValueError:
+        valuation_date = DEFAULT_SETTLEMENT
+
+    expiry_years = contract.get("expiry_years")
+    if expiry_years not in {None, ""}:
+        overrides["expiry_date"] = valuation_date + timedelta(days=round(float(expiry_years) * 365.0))
+
+    for contract_key, spec_key in (
+        ("exercise_date", "exercise_date"),
+        ("maturity_date", "maturity_date"),
+        ("start_date", "start_date"),
+        ("step_in_date", "step_in_date"),
+        ("settle_date", "settle_date"),
+    ):
+        value = contract.get(contract_key)
+        if value in {None, ""}:
+            continue
+        try:
+            overrides[spec_key] = date.fromisoformat(str(value))
+        except ValueError:
+            continue
+
+    return overrides
+
+
 def _materialize_task_comparison_regime(task: dict, market_state):
     """Attach one bounded task-level comparison regime to the runtime market state."""
     comparison_spec = task.get("comparison_regime")
@@ -465,6 +695,7 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
     snapshot = build_market_snapshot_for_task(task)
     if snapshot is None:
         market_state = fallback_market_state if fallback_market_state is not None else build_market_state()
+        market_state, overlay_metadata = _benchmark_market_overlay(task, market_state)
         market_state = _inject_default_credit_curve_for_task(task, market_state)
         market_state = _materialize_task_comparison_regime(task, market_state)
         selected_curve_names = _selected_curve_names_from_market_state(market_state)
@@ -475,7 +706,7 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
             "selected_components": {},
             "selected_curve_names": selected_curve_names,
             "available_capabilities": sorted(getattr(market_state, "available_capabilities", ())),
-            "metadata": {},
+            "metadata": dict(overlay_metadata),
             "provenance": market_provenance,
         }
         market_parameter_trace = _market_parameter_trace_summary(market_context)
@@ -503,6 +734,7 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
         jump_parameters=selected_components.get("jump_parameters"),
         model_parameters=selected_components.get("model_parameters"),
     )
+    market_state, overlay_metadata = _benchmark_market_overlay(task, market_state)
     had_credit_curve_before = getattr(market_state, "credit_curve", None) is not None
     market_state = _inject_default_credit_curve_for_task(task, market_state)
     market_state = _materialize_task_comparison_regime(task, market_state)
@@ -523,7 +755,7 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
         "selected_components": selected_components,
         "selected_curve_names": selected_curve_names,
         "available_capabilities": sorted(market_state.available_capabilities),
-        "metadata": dict(snapshot.metadata),
+        "metadata": {**dict(snapshot.metadata), **dict(overlay_metadata)},
         "provenance": market_provenance,
     }
     market_parameter_trace = _market_parameter_trace_summary(market_context)
@@ -1078,6 +1310,7 @@ def run_task(
             semantic_contract=semantic_contract,
             market_context=market_context,
         )
+        task_benchmark_spec_overrides = benchmark_spec_overrides(task)
         base_request_metadata = {
             "task_id": task_id,
             "task_title": task["title"],
@@ -1085,6 +1318,8 @@ def run_task(
             "instrument_identity_source": instrument_identity.source,
             "runtime_contract": runtime_contract,
         }
+        if task_benchmark_spec_overrides:
+            base_request_metadata["benchmark_spec_overrides"] = dict(task_benchmark_spec_overrides)
         if knowledge_profile:
             base_request_metadata["knowledge_profile"] = knowledge_profile
         if semantic_contract is not None:
@@ -1153,7 +1388,22 @@ def run_task(
                 live_results,
                 market_state,
                 configured_targets=task.get("cross_validate") or {},
-                payoff_factory=payoff_factory,
+                payoff_factory=payoff_factory
+                or (
+                    lambda payoff_cls, spec_schema, settle: _make_test_payoff(
+                        payoff_cls,
+                        (
+                            spec_schema
+                            or _infer_spec_schema_from_module(
+                                import_module(payoff_cls.__module__),
+                                payoff_cls,
+                            )
+                        ),
+                        settle,
+                        market_state=market_state,
+                        spec_overrides=task_benchmark_spec_overrides,
+                    )
+                ),
                 price_fn=price_fn,
             )
             _write_benchmark_sidecars(method_results, cross_validation)
@@ -2294,6 +2544,7 @@ def benchmark_existing_task(
     model: str = "gpt-5.4-mini",
     timer: Callable[[], float] = perf_counter,
     price_fn: Callable[[Any, Any], float] | None = None,
+    spec_overrides: Mapping[str, Any] | None = None,
 ) -> dict:
     """Benchmark pricing runtime for an existing generated payoff class."""
     from trellis.engine.payoff_pricer import price_payoff
@@ -2313,6 +2564,7 @@ def benchmark_existing_task(
         prepared.spec_schema,
         settle,
         market_state=market_state,
+        spec_overrides=spec_overrides,
     )
     instantiate_seconds = timer() - t0
 
