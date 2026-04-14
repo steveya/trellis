@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from trellis.agent.financepy_benchmark import (
     build_financepy_benchmark_report,
     extract_trellis_benchmark_outputs,
@@ -14,6 +16,8 @@ from trellis.agent.financepy_reference import price_financepy_reference
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+pytest.importorskip("financepy")
 
 
 def test_select_financepy_benchmark_tasks_filters_requested_ids():
