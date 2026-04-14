@@ -12,6 +12,7 @@ from typing import Any, Mapping
 import yaml
 
 from trellis.agent.analytical_traces import AnalyticalTrace, route_health_snapshot
+from trellis.agent.runtime_revisions import runtime_revision_metadata
 from trellis.agent.task_diagnostics import (
     DIAGNOSIS_HISTORY_ROOT,
     DIAGNOSIS_LATEST_ROOT,
@@ -168,6 +169,7 @@ def persist_canary_batch_record(
     """Persist one explicit canary-batch record and stable latest view."""
     batch_id = f"canary_{started_at.astimezone(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}"
     execution_mode = "cassette_replay" if replay else "live"
+    revisions = runtime_revision_metadata()
     batch_scope, scope_slug = _canary_batch_scope(
         requested_task_id=requested_task_id,
         requested_subset=requested_subset,
@@ -203,6 +205,8 @@ def persist_canary_batch_record(
         validation=validation,
         knowledge_profile=knowledge_profile,
         comparison_key=comparison_key,
+        git_sha=revisions["git_sha"],
+        knowledge_revision=revisions["knowledge_revision"],
         requested_task_id=requested_task_id,
         requested_subset=requested_subset,
         started_at=started_at,
@@ -223,6 +227,8 @@ def persist_canary_batch_record(
             "replay": replay,
             "execution_mode": execution_mode,
             "comparison_key": comparison_key,
+            "git_sha": revisions["git_sha"],
+            "knowledge_revision": revisions["knowledge_revision"],
             "synthetic_source": synthetic_source or None,
         },
         "manifest": {
@@ -382,6 +388,8 @@ def _summarize_canary_batch(
     validation: str,
     knowledge_profile: str,
     comparison_key: str,
+    git_sha: str,
+    knowledge_revision: str,
     requested_task_id: str | None,
     requested_subset: str | None,
     started_at: datetime,
@@ -410,6 +418,8 @@ def _summarize_canary_batch(
         "model": model,
         "validation": validation,
         "knowledge_profile": knowledge_profile,
+        "git_sha": git_sha,
+        "knowledge_revision": knowledge_revision,
         "synthetic_source": synthetic_source or None,
         "requested_task_id": requested_task_id,
         "requested_subset": requested_subset,
@@ -467,6 +477,7 @@ def build_task_run_record(
         method_runs=method_runs,
         workflow=workflow,
     )
+    revisions = runtime_revision_metadata(result)
 
     return {
         "task_id": task["id"],
@@ -475,6 +486,8 @@ def build_task_run_record(
         "persisted_at": persisted_at.astimezone(timezone.utc).isoformat(),
         "run_started_at": str(result.get("run_started_at") or result.get("start_time") or ""),
         "run_completed_at": str(result.get("run_completed_at") or ""),
+        "git_sha": revisions["git_sha"],
+        "knowledge_revision": revisions["knowledge_revision"],
         "task": _task_snapshot(task),
         "result": result_with_learning,
         "comparison": {
@@ -525,6 +538,8 @@ def build_task_run_record(
             "prices": dict((result.get("cross_validation") or {}).get("prices") or {}),
             "deviations_pct": dict((result.get("cross_validation") or {}).get("deviations_pct") or {}),
             "token_usage": dict(result.get("token_usage_summary") or {}),
+            "git_sha": revisions["git_sha"],
+            "knowledge_revision": revisions["knowledge_revision"],
             "framework_outcome": framework.get("outcome_type"),
             "execution_mode": str(result.get("execution_mode") or "live"),
             "learning": learning,

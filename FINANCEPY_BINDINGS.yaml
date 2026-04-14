@@ -122,7 +122,6 @@ bindings:
     financepy_model: BlackScholes
     overlapping_outputs:
     - price
-    - delta
     comparison_modes:
     - price_parity
     - warm_runtime

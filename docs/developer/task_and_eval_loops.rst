@@ -59,6 +59,7 @@ The repo ships a small task-operations toolchain:
 - ``scripts/run_task_learning_benchmark.py``: run repeated non-canary passes at a fixed revision and emit a learning scorecard
 - ``scripts/run_financepy_benchmark.py``: run the FinancePy parity corpus with timestamped run-history persistence
 - ``scripts/run_negative_benchmark.py``: run the clarification / honest-block corpus with timestamped run-history persistence
+- ``scripts/run_benchmark_history_scorecard.py``: build a repeated-run scorecard from append-only FinancePy or negative benchmark history
 - ``scripts/remediate.py``: analyze failures, categorize knowledge gaps, and patch common knowledge issues
 - ``scripts/evaluate_shared_memory.py``: compare two task-result tranches and render a shared-memory improvement report
 - ``scripts/should_run_canary.py``: decide whether current local changes justify the focused core canary gate
@@ -123,12 +124,14 @@ instead of letting the recording run mutate later retrieval inputs.
 
 Every FinancePy benchmark run now also writes append-only timestamped records
 under ``task_runs/financepy_benchmarks/`` with explicit ``run_started_at`` and
-``run_completed_at`` fields so repeated reruns can be compared across code and
-knowledge revisions.
+``run_completed_at`` fields so repeated reruns can be compared across code,
+knowledge, and campaign revisions. The runner also emits a repeated-run
+scorecard from the matching append-only history slice.
 
 Negative-task benchmark runs do the same under
 ``task_runs/negative_benchmarks/`` so clarification and honest-block behavior
-can be tracked across repeated library and knowledge updates.
+can be tracked across repeated library and knowledge updates, again with a
+scorecard generated from append-only history.
 
 Every canary batch now also writes a dedicated aggregate telemetry record under
 ``task_runs/canary_batches/``:
@@ -137,6 +140,10 @@ Every canary batch now also writes a dedicated aggregate telemetry record under
   per-batch history
 - ``task_runs/canary_batches/latest/<scope>.json`` keeps the latest batch for a
   stable comparison scope such as ``live__full_curated__standard__default``
+
+Canary batch summaries now also persist the repo revision and normalized
+knowledge revision so replay and live batches can be compared against the
+library/knowledge state that produced them.
 
 Those records sit on top of the existing per-task run history. They do not
 replace ``task_runs/history/``; instead they provide the trustworthy canary

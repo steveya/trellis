@@ -36,3 +36,7 @@ def test_build_task_run_record_carries_manifest_and_timestamp_metadata():
     assert record["summary"]["market_scenario_digest"] == "digest-flat-equity"
     assert record["summary"]["task_corpus"] == "benchmark_financepy"
     assert record["summary"]["task_definition_version"] == 2
+    assert record["git_sha"]
+    assert record["knowledge_revision"]
+    assert record["summary"]["git_sha"] == record["git_sha"]
+    assert record["summary"]["knowledge_revision"] == record["knowledge_revision"]

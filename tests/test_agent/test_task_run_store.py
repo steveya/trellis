@@ -861,6 +861,8 @@ def test_persist_canary_batch_record_writes_history_and_latest_views(tmp_path):
     assert record["summary"]["batch_scope"] == "full_curated"
     assert record["summary"]["benchmark_eligible"] is True
     assert record["summary"]["comparison_key"] == "live:full_curated:standard:default:gpt-5.4-mini"
+    assert record["summary"]["git_sha"]
+    assert record["summary"]["knowledge_revision"]
     assert record["summary"]["task_count"] == 2
     assert record["summary"]["pass_count"] == 1
     assert record["summary"]["failure_count"] == 1

@@ -65,8 +65,21 @@ Every benchmark runner must persist append-only records with at least:
 - `scripts/run_tasks.py` runs the active pricing corpora
 - `scripts/run_financepy_benchmark.py` runs FinancePy parity tasks and persists timestamped history
 - `scripts/run_negative_benchmark.py` runs clarification / honest-block tasks and persists timestamped history
+- `scripts/run_benchmark_history_scorecard.py` builds repeated-run scorecards from append-only benchmark history
 - `scripts/run_canary.py` and `scripts/record_cassettes.py` use the rebuilt canary manifest
 - `TASKS.yaml` is removed after the cutover; retained proof-only legacy tasks live in `TASKS_PROOF_LEGACY.yaml`
+
+`QUA-834` is now materially implemented on top of that cutover:
+
+- benchmark and canary persistence carries repo and knowledge revisions alongside timestamps
+- FinancePy and negative runners emit repeated-run scorecards from append-only history
+- benchmark campaigns can be filtered and compared without mutating the underlying task-run store
+
+`QUA-831` is also now materially implemented:
+
+- tranche-two FinancePy parity coverage lives in `F009` through `F015`
+- the binding registry and FinancePy reference adapter cover barrier, digital, lookback, chooser, compound, cliquet, and variance families
+- overlap metadata is kept aligned with the actual FinancePy reference outputs
 
 ## Market Scenario Foundation
 

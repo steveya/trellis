@@ -53,6 +53,32 @@ def test_price_financepy_reference_supports_equity_vanilla_and_fx():
     assert "delta" in fx["outputs"]
 
 
+def test_financepy_benchmark_manifest_includes_tranche_two_families():
+    tasks = {task["id"]: task for task in load_financepy_benchmark_tasks(root=ROOT)}
+    assert {"F009", "F010", "F011", "F012", "F013", "F014", "F015"} <= set(tasks)
+
+
+@pytest.mark.parametrize(
+    ("task_id", "expected_outputs"),
+    [
+        ("F009", ("price",)),
+        ("F010", ("price",)),
+        ("F011", ("price",)),
+        ("F012", ("price",)),
+        ("F013", ("price",)),
+        ("F014", ("price",)),
+        ("F015", ("price",)),
+    ],
+)
+def test_price_financepy_reference_supports_tranche_two_families(task_id, expected_outputs):
+    tasks = {task["id"]: task for task in load_financepy_benchmark_tasks(root=ROOT)}
+    result = price_financepy_reference(tasks[task_id], root=ROOT)
+
+    assert result["elapsed_seconds"] >= 0.0
+    for output_name in expected_outputs:
+        assert output_name in result["outputs"]
+
+
 def test_build_financepy_benchmark_report_accumulates_totals():
     report = build_financepy_benchmark_report(
         benchmark_name="financepy_suite",

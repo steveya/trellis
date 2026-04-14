@@ -18,6 +18,11 @@ sys.path.insert(0, str(ROOT))
 os.environ.setdefault("LLM_PROVIDER", "openai")
 
 from trellis.agent.config import load_env
+from trellis.agent.benchmark_history import (
+    build_benchmark_history_scorecard,
+    load_benchmark_history_records,
+    save_benchmark_history_scorecard,
+)
 from trellis.agent.financepy_benchmark import (
     DEFAULT_FINANCEPY_BENCHMARK_ROOT,
     build_financepy_benchmark_report,
@@ -28,6 +33,7 @@ from trellis.agent.financepy_benchmark import (
     select_financepy_benchmark_tasks,
 )
 from trellis.agent.financepy_reference import price_financepy_reference
+from trellis.agent.runtime_revisions import runtime_revision_metadata
 from trellis.agent.task_manifests import load_financepy_bindings
 from trellis.agent.task_runtime import (
     benchmark_existing_task,
@@ -53,6 +59,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--output-root")
     parser.add_argument("--report-name", default="financepy_parity")
+    parser.add_argument("--campaign-id")
     return parser.parse_args(argv)
 
 
@@ -149,7 +156,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     output_root = Path(args.output_root) if args.output_root else DEFAULT_FINANCEPY_BENCHMARK_ROOT
-    git_revision = _git_revision()
+    revisions = runtime_revision_metadata()
+    git_revision = revisions["git_sha"] or _git_revision()
+    knowledge_revision = revisions["knowledge_revision"]
+    campaign_id = str(args.campaign_id or args.report_name).strip()
     financepy_bindings = load_financepy_bindings(root=ROOT)
     market_state = build_market_state()
     benchmark_runs: list[dict[str, Any]] = []
@@ -211,7 +221,9 @@ def main(argv: list[str] | None = None) -> int:
             "market_scenario_id": task.get("market_scenario_id"),
             "market_scenario_digest": dict(task.get("market") or {}).get("scenario_digest"),
             "financepy_binding_id": task.get("financepy_binding_id"),
+            "benchmark_campaign_id": campaign_id,
             "git_sha": git_revision,
+            "knowledge_revision": knowledge_revision,
             "run_id": f"{task['id']}_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}",
             "run_started_at": run_started_at,
             "run_completed_at": run_completed_at,
@@ -240,7 +252,36 @@ def main(argv: list[str] | None = None) -> int:
         ],
     )
     artifacts = save_financepy_benchmark_report(report, root=output_root, stem=args.report_name)
-    print(json.dumps({"report_json": str(artifacts.json_path), "report_md": str(artifacts.text_path)}, indent=2))
+    scorecard = build_benchmark_history_scorecard(
+        scorecard_name=f"{args.report_name}_scorecard",
+        benchmark_kind="financepy",
+        benchmark_runs=load_benchmark_history_records(
+            benchmark_root=output_root,
+            task_ids=[task["id"] for task in tasks],
+            campaign_id=campaign_id,
+        ),
+        campaign_id=campaign_id,
+        notes=[
+            "Task history is loaded from append-only benchmark records.",
+            "A task is counted as passing when the latest FinancePy comparison passes.",
+        ],
+    )
+    scorecard_artifacts = save_benchmark_history_scorecard(
+        scorecard,
+        reports_root=output_root / "reports",
+        stem=f"{args.report_name}_scorecard",
+    )
+    print(
+        json.dumps(
+            {
+                "report_json": str(artifacts.json_path),
+                "report_md": str(artifacts.text_path),
+                "scorecard_json": str(scorecard_artifacts.json_path),
+                "scorecard_md": str(scorecard_artifacts.text_path),
+            },
+            indent=2,
+        )
+    )
     return 0
 
 
