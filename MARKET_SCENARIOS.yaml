@@ -1,0 +1,122 @@
+version: 1
+scenarios:
+  flat_usd_equity_vanilla:
+    source: mock
+    as_of: '2024-11-15'
+    description: Flat USD equity benchmark scenario for textbook Black-Scholes parity
+      tasks.
+    selected_components:
+      discount_curve: usd_ois
+      vol_surface: flat_20pct
+    benchmark_inputs:
+      valuation_date: '2024-11-15'
+      stock_price: 100.0
+      domestic_rate: 0.05
+      dividend_rate: 0.0
+      volatility: 0.2
+  flat_fx_gk:
+    source: mock
+    as_of: '2024-11-15'
+    description: Flat domestic/foreign discount curves and flat FX vol for Garman-Kohlhagen
+      parity.
+    selected_components:
+      discount_curve: usd_ois
+      forecast_curve: eur_ois
+      vol_surface: flat_fx_12pct
+    benchmark_inputs:
+      valuation_date: '2024-11-15'
+      spot_fx: 1.1
+      domestic_rate: 0.045
+      foreign_rate: 0.025
+      volatility: 0.12
+  usd_rates_smile:
+    source: mock
+    as_of: '2024-11-15'
+    description: USD OIS + SOFR forward curves with a rates smile surface for cap/floor
+      and swaption tasks.
+    selected_components:
+      discount_curve: usd_ois
+      forecast_curve: usd_sofr_3m
+      vol_surface: usd_rates_smile
+    benchmark_inputs:
+      valuation_date: '2024-11-15'
+      flat_discount_rate: 0.04
+      flat_forward_rate: 0.0425
+      black_vol: 0.2
+      shifted_black_vol: 0.19
+      shift: 0.01
+      sabr:
+        alpha: 0.025
+        beta: 0.5
+        rho: -0.2
+        nu: 0.35
+  usd_credit_ig:
+    source: mock
+    as_of: '2024-11-15'
+    description: USD OIS discounting plus IG credit curve for CDS parity.
+    selected_components:
+      discount_curve: usd_ois
+      credit_curve: usd_ig
+    benchmark_inputs:
+      valuation_date: '2024-11-15'
+      flat_discount_rate: 0.04
+      issuer_hazard_rate: 0.025
+      recovery_rate: 0.4
+  equity_barrier_smile:
+    source: mock
+    as_of: '2024-11-15'
+    description: Equity smile surface for barrier/digital/lookback tasks.
+    selected_components:
+      discount_curve: usd_ois
+      vol_surface: equity_smile
+    benchmark_inputs:
+      valuation_date: '2024-11-15'
+      stock_price: 100.0
+      domestic_rate: 0.05
+      dividend_rate: 0.0
+      volatility: 0.22
+  equity_rainbow_two_asset:
+    source: mock
+    as_of: '2024-11-15'
+    description: Two-underlier equity market state with correlation for rainbow and
+      basket tasks.
+    selected_components:
+      discount_curve: usd_ois
+      vol_surface: equity_smile
+    benchmark_inputs:
+      valuation_date: '2024-11-15'
+      stock_prices:
+      - 100.0
+      - 95.0
+      domestic_rate: 0.05
+      dividend_rates:
+      - 0.0
+      - 0.0
+      volatilities:
+      - 0.2
+      - 0.25
+      correlation:
+      - - 1.0
+        - 0.35
+      - - 0.35
+        - 1.0
+  fx_barrier_smile:
+    source: mock
+    as_of: '2024-11-15'
+    description: FX smile setup for FX barrier/digital/lookback/rainbow tasks.
+    selected_components:
+      discount_curve: usd_ois
+      forecast_curve: eur_ois
+      vol_surface: fx_smile
+    benchmark_inputs:
+      valuation_date: '2024-11-15'
+      spot_fx: 1.1
+      domestic_rate: 0.045
+      foreign_rate: 0.025
+      volatility: 0.14
+  negative_request_only:
+    source: mock
+    as_of: '2024-11-15'
+    description: No preselected market components; used for clarification and honest-block
+      tasks.
+    selected_components: {}

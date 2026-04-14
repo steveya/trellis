@@ -1,18 +1,31 @@
+version: 1
+tasks:
 - id: T01
   title: 'ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical'
   instrument_type: zcb_option
-  description: |
-    European call option on a zero-coupon bond.
+  description: 'European call option on a zero-coupon bond.
+
     Settlement / valuation date: 2024-11-15.
+
     Option expiry: 2027-11-15.
+
     Underlying bond maturity: 2033-11-15.
+
     Strike: 63 per 100 face (= 0.63 per unit face).
+
     Face / notional: 100.
+
     Shared short-rate comparison regime:
+
     - flat discount curve at 5%
+
     - flat short-rate volatility sigma = 0.01
+
     - Hull-White mean reversion a = 0.1
+
     - Ho-Lee uses the same sigma with zero mean reversion
+
+    '
   construct: lattice
   new_component: jamshidian_decomposition
   comparison_regime:
@@ -328,7 +341,7 @@
     analytical: black_scholes
   status: pending
 - id: T27
-  title: LSM basis function shootout at σ=0.20 and σ=0.40
+  title: "LSM basis function shootout at \u03C3=0.20 and \u03C3=0.40"
   construct: monte_carlo
   new_component: null
   cross_validate:
@@ -1126,7 +1139,8 @@
     analytical: vega_sum_identity
   status: pending
 - id: T94
-  title: 'FX market bridge: Garman-Kohlhagen vs MC with explicit domestic/foreign curve selection'
+  title: 'FX market bridge: Garman-Kohlhagen vs MC with explicit domestic/foreign
+    curve selection'
   construct:
   - analytical
   - monte_carlo

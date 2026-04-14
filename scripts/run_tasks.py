@@ -1,10 +1,11 @@
-"""Run TASKS.yaml tasks through the knowledge-aware build pipeline.
+"""Run pricing tasks through the knowledge-aware build pipeline.
 
 Usage:
     python scripts/run_tasks.py T13 T24           # run T13 through T24
-    python scripts/run_tasks.py T25 T37           # run T25 through T37
+    python scripts/run_tasks.py F001 F008         # run FinancePy parity tasks
     python scripts/run_tasks.py all               # run all pending
     python scripts/run_tasks.py --reuse T13 T24   # reuse existing modules when present
+    python scripts/run_tasks.py --corpus benchmark_financepy all
 """
 
 from __future__ import annotations
@@ -54,6 +55,13 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="Use the compiler-first minimal knowledge profile during task builds.",
     )
     parser.add_argument("--validation", default="standard")
+    parser.add_argument(
+        "--corpus",
+        action="append",
+        dest="corpora",
+        default=[],
+        help="Filter to one or more task corpora (benchmark_financepy, extension, market_construction, proof_legacy).",
+    )
     parser.add_argument("--output")
     return parser.parse_args(argv)
 
@@ -153,6 +161,17 @@ if __name__ == "__main__":
     else:
         print(f"Usage: {sys.argv[0]} [--reuse] [--model MODEL] [start_id end_id | all]")
         sys.exit(1)
+
+    if args.corpora:
+        allowed = {str(corpus).strip().lower() for corpus in args.corpora if str(corpus).strip()}
+        tasks = [
+            task
+            for task in tasks
+            if str(task.get("task_corpus") or "").strip().lower() in allowed
+        ]
+        if not tasks:
+            print(f"No tasks matched corpora: {sorted(allowed)}")
+            sys.exit(1)
 
     run_block(
         tasks,

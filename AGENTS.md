@@ -42,7 +42,7 @@ the miniforge interpreter.
 - Run `scripts/remediate.py --analyze-only` to check for knowledge gaps
 
 ### Role: Task Runner
-**Scope:** `scripts/`, `TASKS.yaml`, `FRAMEWORK_TASKS.yaml`, `task_results_*.json`
+**Scope:** `scripts/`, `TASKS_BENCHMARK_FINANCEPY.yaml`, `TASKS_EXTENSION.yaml`, `TASKS_NEGATIVE.yaml`, `TASKS_PROOF_LEGACY.yaml`, `FRAMEWORK_TASKS.yaml`, `task_results_*.json`
 **Task:** Execute pricing tasks via `build_with_knowledge()`, analyze failures, trigger remediation.
 **Rules:**
 - Use `python scripts/run_tasks.py T13 T24` to run task blocks
@@ -81,7 +81,12 @@ the miniforge interpreter.
 | `trellis/agent/prompts.py` | Knowledge Agent | Prompt templates |
 | `scripts/` | Task Runner | Run/remediate scripts |
 | `tests/` | Test Agent | All test files |
-| `TASKS.yaml` | Task Runner | Priceable task definitions |
+| `TASKS_BENCHMARK_FINANCEPY.yaml` | Task Runner | FinancePy parity benchmark tasks |
+| `TASKS_EXTENSION.yaml` | Task Runner | Trellis-only extension tasks |
+| `TASKS_NEGATIVE.yaml` | Task Runner | Clarification / honest-block tasks |
+| `TASKS_PROOF_LEGACY.yaml` | Task Runner | Legacy proof-task inventory retained for replay and regression |
+| `MARKET_SCENARIOS.yaml` | Task Runner | Shared benchmark market scenarios |
+| `FINANCEPY_BINDINGS.yaml` | Task Runner | FinancePy binding catalog |
 | `FRAMEWORK_TASKS.yaml` | Task Runner | Framework/meta task inventory |
 | `LIMITATIONS.md` | Test Agent | Known issues |
 
@@ -571,7 +576,7 @@ Every completed review ticket should leave behind:
 
 ## Current State (March 2026)
 
-- **131 priceable tasks** in `TASKS.yaml`
+- **Split pricing task corpora** across FinancePy parity, Trellis extension, negative, and legacy proof manifests
 - **23 framework/meta tasks** in `FRAMEWORK_TASKS.yaml`
 - **~110 attempted**, ~99 succeeded (90%)
 - **46 lessons** in knowledge system (21 promoted, 17 archived, 8 candidate)
@@ -593,9 +598,13 @@ Every completed review ticket should leave behind:
 
 1. `ARCHITECTURE.md` — Current high-level architecture guide
 2. `LIMITATIONS.md` — Known issues and resolved items
-3. `TASKS.yaml` — Priceable task inventory with status
-4. `FRAMEWORK_TASKS.yaml` — Framework/meta task inventory
-5. `trellis/agent/knowledge/canonical/features.yaml` — Feature taxonomy
-6. `trellis/agent/knowledge/canonical/decompositions.yaml` — Product → feature mappings
-7. `trellis/agent/knowledge/canonical/api_map.yaml` — Small family-level API navigation map
-8. `trellis/agent/knowledge/import_registry.py` — All valid imports
+3. `TASKS_BENCHMARK_FINANCEPY.yaml` — FinancePy parity benchmark tasks
+4. `TASKS_EXTENSION.yaml` — Trellis-only extension tasks
+5. `TASKS_NEGATIVE.yaml` — Clarification / honest-block tasks
+6. `TASKS_PROOF_LEGACY.yaml` — Legacy proof-task inventory
+7. `MARKET_SCENARIOS.yaml` — Shared benchmark market scenarios
+8. `FINANCEPY_BINDINGS.yaml` — FinancePy binding catalog
+9. `trellis/agent/knowledge/canonical/features.yaml` — Feature taxonomy
+10. `trellis/agent/knowledge/canonical/decompositions.yaml` — Product → feature mappings
+11. `trellis/agent/knowledge/canonical/api_map.yaml` — Small family-level API navigation map
+12. `trellis/agent/knowledge/import_registry.py` — All valid imports

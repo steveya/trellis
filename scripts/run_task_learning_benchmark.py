@@ -52,9 +52,16 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--validation", default="standard")
     parser.add_argument("--limit", type=int)
     parser.add_argument(
+        "--corpus",
+        action="append",
+        dest="corpora",
+        default=[],
+        help="Optional task-corpus filter (benchmark_financepy, extension, market_construction, proof_legacy).",
+    )
+    parser.add_argument(
         "--include-done",
         action="store_true",
-        help="Include tasks already marked done in TASKS.yaml.",
+        help="Include tasks already marked done in the active pricing-task manifests.",
     )
     parser.add_argument(
         "--knowledge-light",
@@ -78,6 +85,7 @@ def build_learning_tasks(
     requested_ids: list[str] | None = None,
     include_done: bool = False,
     limit: int | None = None,
+    corpora: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Return the selected non-canary task-learning cohort."""
     all_tasks = load_tasks(status=None)
@@ -89,6 +97,17 @@ def build_learning_tasks(
         requested_ids=requested_ids,
         limit=limit,
     )
+    allowed_corpora = {
+        str(corpus).strip().lower()
+        for corpus in (corpora or ())
+        if str(corpus).strip()
+    }
+    if allowed_corpora:
+        selected = [
+            task
+            for task in selected
+            if str(task.get("task_corpus") or "").strip().lower() in allowed_corpora
+        ]
     if requested_ids:
         requested = {
             str(task_id).strip()
@@ -267,6 +286,7 @@ def main(argv: list[str]) -> int:
             requested_ids=args.task_ids or None,
             include_done=args.include_done,
             limit=args.limit,
+            corpora=args.corpora,
         )
     except ValueError as exc:
         print(str(exc))

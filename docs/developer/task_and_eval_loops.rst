@@ -7,8 +7,14 @@ knowledge system are actually improving over time.
 Task Corpus
 -----------
 
-``TASKS.yaml`` is the canonical pricing-task manifest, while
-``FRAMEWORK_TASKS.yaml`` holds non-priceable framework/meta tasks.
+The pricing-task surface is split across:
+
+- ``TASKS_BENCHMARK_FINANCEPY.yaml`` for FinancePy parity tasks
+- ``TASKS_EXTENSION.yaml`` for Trellis-only nearby variants
+- ``TASKS_NEGATIVE.yaml`` for clarification / honest-block tasks
+- ``TASKS_PROOF_LEGACY.yaml`` for retained proof-only legacy tasks
+
+``FRAMEWORK_TASKS.yaml`` still holds non-priceable framework/meta tasks.
 ``trellis.agent.task_runtime`` turns pricing-task entries into offline-ready
 execution contexts, market states, method plans, and benchmarkable generated
 modules.
@@ -47,10 +53,12 @@ Operational Scripts
 
 The repo ships a small task-operations toolchain:
 
-- ``scripts/run_tasks.py``: run a contiguous task block or all pending tasks
+- ``scripts/run_tasks.py``: run a contiguous task block or all pending pricing tasks, optionally filtered by corpus
 - ``scripts/rerun_ids.py``: re-run specific task ids
 - ``scripts/benchmark_tasks.py``: benchmark cached generated payoffs without rebuilding
 - ``scripts/run_task_learning_benchmark.py``: run repeated non-canary passes at a fixed revision and emit a learning scorecard
+- ``scripts/run_financepy_benchmark.py``: run the FinancePy parity corpus with timestamped run-history persistence
+- ``scripts/run_negative_benchmark.py``: run the clarification / honest-block corpus with timestamped run-history persistence
 - ``scripts/remediate.py``: analyze failures, categorize knowledge gaps, and patch common knowledge issues
 - ``scripts/evaluate_shared_memory.py``: compare two task-result tranches and render a shared-memory improvement report
 - ``scripts/should_run_canary.py``: decide whether current local changes justify the focused core canary gate
@@ -112,6 +120,15 @@ but it does not write new lessons, traces, cookbook candidates, or promotion
 candidates back into the canonical knowledge store. This keeps the replay
 prompt surface aligned with the state that the cassette was recorded against
 instead of letting the recording run mutate later retrieval inputs.
+
+Every FinancePy benchmark run now also writes append-only timestamped records
+under ``task_runs/financepy_benchmarks/`` with explicit ``run_started_at`` and
+``run_completed_at`` fields so repeated reruns can be compared across code and
+knowledge revisions.
+
+Negative-task benchmark runs do the same under
+``task_runs/negative_benchmarks/`` so clarification and honest-block behavior
+can be tracked across repeated library and knowledge updates.
 
 Every canary batch now also writes a dedicated aggregate telemetry record under
 ``task_runs/canary_batches/``:
@@ -200,7 +217,7 @@ of stopping at a more generic lesson from the same method family.
 
 For broader short-term learning evidence, use
 ``scripts/run_task_learning_benchmark.py``. That runner selects a non-canary
-cohort from ``TASKS.yaml`` and executes repeated passes at the same git
+cohort from the active pricing-task manifests and executes repeated passes at the same git
 revision. The benchmark is asking a narrower question than a canary or stress
 gate:
 

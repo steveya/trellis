@@ -1,0 +1,75 @@
+version: 1
+tasks:
+- id: N001
+  title: 'Negative task: vague equity option request'
+  status: pending
+  description: Price an option on a stock for me.
+  expected_outcome: clarification_requested
+  market_scenario_id: negative_request_only
+  clarification_contract:
+    missing_fields:
+    - underlier
+    - option_type
+    - strike
+    - expiry
+    - market_context
+- id: N002
+  title: 'Negative task: missing swaption conventions'
+  status: pending
+  description: Price a 5Y into 5Y swaption at 3%.
+  expected_outcome: clarification_requested
+  market_scenario_id: negative_request_only
+  clarification_contract:
+    missing_fields:
+    - payer_receiver
+    - exercise_style
+    - settlement_convention
+    - curve_convention
+- id: N003
+  title: 'Negative task: ambiguous CDS side and spread units'
+  status: pending
+  description: Price a 5Y CDS at 150 with 40% recovery.
+  expected_outcome: clarification_requested
+  market_scenario_id: negative_request_only
+  clarification_contract:
+    missing_fields:
+    - protection_side
+    - spread_units
+    - currency
+    - discount_curve
+- id: N004
+  title: 'Negative task: unsupported fully specified hybrid'
+  status: pending
+  description: Price a five-asset autocallable quanto convertible with stochastic
+    rates and stochastic dividends.
+  expected_outcome: honest_block
+  market_scenario_id: negative_request_only
+  clarification_contract:
+    unsupported_reason: hybrid_outside_constructable_scope
+    expected_blockers:
+    - multi_asset_autocallable
+    - quanto_convertible
+    - stochastic_rates
+    - stochastic_dividends
+- id: N005
+  title: 'Negative task: barrier request missing barrier level and monitoring'
+  status: pending
+  description: Price a knock-out call on SPX.
+  expected_outcome: clarification_requested
+  market_scenario_id: negative_request_only
+  clarification_contract:
+    missing_fields:
+    - barrier_level
+    - barrier_type
+    - monitoring_frequency
+- id: N006
+  title: 'Negative task: bond option without strike or exercise style'
+  status: pending
+  description: Price a bond option on a 10Y Treasury.
+  expected_outcome: clarification_requested
+  market_scenario_id: negative_request_only
+  clarification_contract:
+    missing_fields:
+    - strike
+    - exercise_style
+    - expiry

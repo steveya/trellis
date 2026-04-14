@@ -42,7 +42,9 @@ recommends the focused `core` canary subset when changes touch:
 - `trellis/agent/`, `trellis/core/`, `trellis/curves/`, `trellis/models/`, or
   `trellis/instruments/`
 - `tests/test_agent/`, `tests/test_contracts/`, or `tests/test_tasks/`
-- `TASKS.yaml`, `CANARY_TASKS.yaml`, `scripts/run_canary.py`,
+- `TASKS_BENCHMARK_FINANCEPY.yaml`, `TASKS_EXTENSION.yaml`,
+  `TASKS_NEGATIVE.yaml`, `TASKS_PROOF_LEGACY.yaml`, `MARKET_SCENARIOS.yaml`,
+  `FINANCEPY_BINDINGS.yaml`, `CANARY_TASKS.yaml`, `scripts/run_canary.py`,
   `scripts/canary_common.py`, or `scripts/record_cassettes.py`
 
 For explicit path checks, repeat `--path`:

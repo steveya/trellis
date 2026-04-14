@@ -115,8 +115,9 @@ class TestLoadCanarySet:
         assert "rate_tree" in t01["covers"]
 
     def test_missing_file_raises(self, tmp_path):
-        with pytest.raises(FileNotFoundError):
-            load_canary_set(tmp_path / "nonexistent.yaml")
+        canaries, meta = load_canary_set(tmp_path / "nonexistent.yaml")
+        assert canaries == []
+        assert meta["version"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -593,6 +594,7 @@ class TestCanaryFileValidity:
             assert "id" in c, f"Missing id in canary: {c}"
             assert "engine_family" in c, f"Missing engine_family in {c['id']}"
             assert "rationale" in c, f"Missing rationale in {c['id']}"
+            assert "canary_kind" in c, f"Missing canary_kind in {c['id']}"
 
     def test_real_canary_file_covers_engine_families(self):
         real_path = ROOT / "CANARY_TASKS.yaml"
@@ -600,53 +602,51 @@ class TestCanaryFileValidity:
             pytest.skip("CANARY_TASKS.yaml not found in repo root")
         canaries, _ = load_canary_set(real_path)
         families = {c["engine_family"] for c in canaries}
-        # Must cover at least these core families
-        assert "lattice" in families
-        assert "monte_carlo" in families
-        assert "pde" in families
-        assert "credit" in families
+        # Must cover the benchmark program mix: parity, extension, negative, and legacy replay.
         assert "analytical" in families
+        assert "rates" in families
+        assert "credit" in families
+        assert "extension" in families
+        assert "negative" in families
 
-    def test_real_canary_ids_exist_in_tasks_yaml(self):
+    def test_real_canary_file_covers_canary_kinds(self):
         real_path = ROOT / "CANARY_TASKS.yaml"
-        tasks_path = ROOT / "TASKS.yaml"
-        if not real_path.exists() or not tasks_path.exists():
-            pytest.skip("CANARY_TASKS.yaml or TASKS.yaml not found")
+        if not real_path.exists():
+            pytest.skip("CANARY_TASKS.yaml not found in repo root")
         canaries, _ = load_canary_set(real_path)
-        tasks = yaml.safe_load(tasks_path.read_text())
-        task_ids = {t["id"] for t in tasks}
+        canary_kinds = {c["canary_kind"] for c in canaries}
+        assert "parity" in canary_kinds
+        assert "extension" in canary_kinds
+        assert "negative" in canary_kinds
+        assert "legacy_replay" in canary_kinds
+
+    def test_real_canary_ids_exist_in_active_task_manifests(self):
+        from trellis.agent.task_manifests import load_active_task_lookup
+
+        real_path = ROOT / "CANARY_TASKS.yaml"
+        if not real_path.exists():
+            pytest.skip("CANARY_TASKS.yaml not found in repo root")
+        canaries, _ = load_canary_set(real_path)
+        task_lookup = load_active_task_lookup(root=ROOT)
         for c in canaries:
-            assert c["id"] in task_ids, f"Canary {c['id']} not found in TASKS.yaml"
+            assert c["id"] in task_lookup, f"Canary {c['id']} not found in active task manifests"
 
-    def test_real_canary_file_pins_migrated_semantic_routes(self):
-        from trellis.agent.task_runtime import task_to_instrument_type
-
+    def test_real_canary_file_keeps_replay_backed_legacy_tasks(self):
         real_path = ROOT / "CANARY_TASKS.yaml"
-        tasks_path = ROOT / "TASKS.yaml"
-        if not real_path.exists() or not tasks_path.exists():
-            pytest.skip("CANARY_TASKS.yaml or TASKS.yaml not found")
-
+        if not real_path.exists():
+            pytest.skip("CANARY_TASKS.yaml not found in repo root")
         canaries, _ = load_canary_set(real_path)
-        tasks = yaml.safe_load(tasks_path.read_text())
-        task_lookup = {task["id"]: task for task in tasks}
         canary_lookup = {canary["id"]: canary for canary in canaries}
 
-        expected_ids = {"T02", "T13", "T73", "T105"}
+        expected_ids = {"T13", "T38", "F001", "F002", "P003", "N001"}
         assert expected_ids <= set(canary_lookup)
 
-        instrument_types = {
-            task_to_instrument_type(task_lookup[task_id])
-            for task_id in expected_ids
-        }
-        assert instrument_types == {
-            "callable_bond",
-            "european_option",
-            "swaption",
-            "quanto_option",
-        }
-
-        assert "semantic_contract" in canary_lookup["T105"]["covers"]
-        assert "helper_route" in canary_lookup["T105"]["covers"]
+        assert canary_lookup["T13"]["canary_kind"] == "legacy_replay"
+        assert canary_lookup["T38"]["canary_kind"] == "legacy_replay"
+        assert canary_lookup["F001"]["canary_kind"] == "parity"
+        assert canary_lookup["P003"]["canary_kind"] == "extension"
+        assert canary_lookup["N001"]["canary_kind"] == "negative"
+        assert "financepy_parity" in canary_lookup["F002"]["covers"]
 
 
 # ---------------------------------------------------------------------------

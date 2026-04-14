@@ -1,7 +1,8 @@
 """Helpers for running pricing tasks without an LLM and benchmarking results.
 
-Loads task definitions from TASKS.yaml, resolves their generated payoff
-modules, and runs them against market data to measure correctness and timing.
+Loads task definitions from the active pricing-task manifests, resolves their
+generated payoff modules, and runs them against market data to measure
+correctness and timing.
 """
 
 from __future__ import annotations
@@ -32,11 +33,16 @@ from trellis.agent.planner import FieldDef, SpecSchema
 from trellis.agent.planner import plan_build
 from trellis.agent.platform_requests import compile_build_request
 from trellis.agent.quant import select_pricing_method
+from trellis.agent.task_manifests import (
+    FRAMEWORK_TASKS_MANIFEST,
+    filter_loaded_tasks,
+    load_framework_tasks as load_framework_task_manifest,
+    load_negative_tasks as load_negative_task_manifest,
+    load_pricing_tasks as load_pricing_task_manifests,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PRICING_TASKS_MANIFEST = "TASKS.yaml"
-FRAMEWORK_TASKS_MANIFEST = "FRAMEWORK_TASKS.yaml"
 DEFAULT_SETTLEMENT = date(2024, 11, 15)
 _MARKET_SELECTION_KEYS = (
     "discount_curve",
@@ -338,46 +344,6 @@ _GENERIC_FALLBACK_AGENT_MODULES: tuple[tuple[tuple[str, ...], str, str], ...] = 
 )
 
 
-def _load_task_manifest(
-    manifest_name: str,
-    *,
-    root: Path = ROOT,
-) -> list[dict]:
-    import yaml
-
-    with open(root / manifest_name) as f:
-        tasks = yaml.safe_load(f)
-
-    if not isinstance(tasks, list):
-        return []
-    return tasks
-
-
-def _filter_loaded_tasks(
-    tasks: list[dict],
-    start_id: str | None = None,
-    end_id: str | None = None,
-    *,
-    status: str | None = "pending",
-) -> list[dict]:
-    filtered = list(tasks)
-
-    if status is not None:
-        filtered = [task for task in filtered if task.get("status") == status]
-
-    if start_id and end_id:
-        start_num = int(start_id.lstrip("TE"))
-        end_num = int(end_id.lstrip("TE"))
-        prefix = start_id[0]
-        filtered = [
-            task for task in filtered
-            if task["id"].startswith(prefix)
-            and start_num <= int(task["id"].lstrip("TE")) <= end_num
-        ]
-
-    return filtered
-
-
 def load_tasks(
     start_id: str | None = None,
     end_id: str | None = None,
@@ -385,9 +351,9 @@ def load_tasks(
     root: Path = ROOT,
     status: str | None = "pending",
 ) -> list[dict]:
-    """Load pricing tasks from ``TASKS.yaml`` with optional status/range filters."""
-    tasks = _load_task_manifest(PRICING_TASKS_MANIFEST, root=root)
-    return _filter_loaded_tasks(tasks, start_id, end_id, status=status)
+    """Load priceable tasks across the active task corpora with legacy-compatible filters."""
+    tasks = load_pricing_task_manifests(root=root)
+    return filter_loaded_tasks(tasks, start_id, end_id, status=status)
 
 
 def load_framework_tasks(
@@ -398,8 +364,20 @@ def load_framework_tasks(
     status: str | None = "pending",
 ) -> list[dict]:
     """Load framework/meta tasks from ``FRAMEWORK_TASKS.yaml``."""
-    tasks = _load_task_manifest(FRAMEWORK_TASKS_MANIFEST, root=root)
-    return _filter_loaded_tasks(tasks, start_id, end_id, status=status)
+    tasks = load_framework_task_manifest(root=root)
+    return filter_loaded_tasks(tasks, start_id, end_id, status=status)
+
+
+def load_negative_tasks(
+    start_id: str | None = None,
+    end_id: str | None = None,
+    *,
+    root: Path = ROOT,
+    status: str | None = "pending",
+) -> list[dict]:
+    """Load clarification / honest-block tasks from the dedicated negative corpus."""
+    tasks = load_negative_task_manifest(root=root)
+    return filter_loaded_tasks(tasks, start_id, end_id, status=status)
 
 
 def build_market_state():
@@ -556,7 +534,7 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
 
 
 def task_to_description(task: dict) -> str:
-    """Convert a ``TASKS.yaml`` entry into a pricing-build request string."""
+    """Convert a pricing-task entry into a pricing-build request string."""
     description = f"Build a pricer for: {task['title']}"
     extra = str(task.get("description") or "").strip()
     if extra:
@@ -1072,6 +1050,7 @@ def run_task(
         "instrument_type": instrument_type,
         "instrument_identity_source": instrument_identity.source,
         "start_time": now_fn().isoformat(),
+        "run_started_at": now_fn().isoformat(),
         "comparison_task": comparison_task,
         "construct_methods": construct_methods,
         "comparison_targets": [target.target_id for target in comparison_targets],
@@ -1080,6 +1059,10 @@ def run_task(
         "semantic_contract_id": getattr(getattr(semantic_contract, "product", None), "semantic_id", None),
         "runtime_controls": _runtime_bisection_controls(),
         "execution_mode": execution_mode,
+        "task_corpus": str(task.get("task_corpus") or ""),
+        "task_definition_version": task.get("task_definition_version"),
+        "task_definition_manifest": str(task.get("task_definition_manifest") or ""),
+        "market_scenario_id": str(task.get("market_scenario_id") or ""),
     }
     if cassette_context is not None:
         result_data["llm_cassette"] = cassette_context
@@ -1313,6 +1296,8 @@ def run_task(
             "error": str(exc)[:200],
         })
         print(f"  [ERROR] {elapsed:.1f}s: {type(exc).__name__}: {str(exc)[:100]}")
+
+    result_data["run_completed_at"] = now_fn().isoformat()
 
     try:
         persisted = persist_task_run_record(task, result_data)
