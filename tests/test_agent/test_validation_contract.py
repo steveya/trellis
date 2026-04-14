@@ -561,7 +561,7 @@ def test_validate_build_emits_reference_oracle_event_for_single_method_zcb_optio
     )
     monkeypatch.setattr(
         "trellis.agent.executor._make_test_payoff",
-        lambda payoff_cls, spec_schema, settle: payoff_cls(ZCBSpec()),
+        lambda payoff_cls, spec_schema, settle, **kwargs: payoff_cls(ZCBSpec()),
     )
 
     compiled = compile_build_request(
@@ -638,7 +638,7 @@ def test_validate_build_reference_oracle_catches_zcb_magnitude_error(monkeypatch
     )
     monkeypatch.setattr(
         "trellis.agent.executor._make_test_payoff",
-        lambda payoff_cls, spec_schema, settle: payoff_cls(ZCBSpec()),
+        lambda payoff_cls, spec_schema, settle, **kwargs: payoff_cls(ZCBSpec()),
     )
 
     compiled = compile_build_request(
