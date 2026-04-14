@@ -122,7 +122,6 @@ def main(argv: list[str] | None = None) -> int:
             "run_completed_at": run_completed_at,
             "execution_mode": "cold_agent_negative",
             "status": evaluation["observed_outcome"],
-            "success_status": evaluation["observed_outcome"],
             "expected_outcome": evaluation["expected_outcome"],
             "observed_outcome": evaluation["observed_outcome"],
             "passed_expectation": evaluation["passed"],

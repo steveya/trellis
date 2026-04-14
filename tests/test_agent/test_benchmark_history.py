@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from trellis.agent.benchmark_history import (
     build_benchmark_history_scorecard,
     load_benchmark_history_records,
@@ -122,3 +124,50 @@ def test_build_benchmark_history_scorecard_tracks_improvement(tmp_path):
     )
     assert artifacts.json_path.exists()
     assert artifacts.text_path.exists()
+
+
+def test_build_benchmark_history_scorecard_tracks_regression():
+    records = [
+        {
+            "task_id": "F002",
+            "title": "Barrier",
+            "task_corpus": "benchmark_financepy",
+            "run_id": "run_1",
+            "run_started_at": "2026-04-14T01:00:00+00:00",
+            "run_completed_at": "2026-04-14T01:00:04+00:00",
+            "execution_mode": "cold_agent_plus_financepy_reference",
+            "git_sha": "aaaa1111",
+            "knowledge_revision": "know1111",
+            "comparison_summary": {"status": "passed"},
+            "cold_agent_elapsed_seconds": 4.0,
+            "cold_agent_token_usage": {"total_tokens": 180},
+        },
+        {
+            "task_id": "F002",
+            "title": "Barrier",
+            "task_corpus": "benchmark_financepy",
+            "run_id": "run_2",
+            "run_started_at": "2026-04-15T01:00:00+00:00",
+            "run_completed_at": "2026-04-15T01:00:06+00:00",
+            "execution_mode": "cold_agent_plus_financepy_reference",
+            "git_sha": "bbbb2222",
+            "knowledge_revision": "know2222",
+            "comparison_summary": {"status": "failed"},
+            "cold_agent_elapsed_seconds": 6.0,
+            "cold_agent_token_usage": {"total_tokens": 220},
+        },
+    ]
+
+    report = build_benchmark_history_scorecard(
+        scorecard_name="regression_scorecard",
+        benchmark_kind="financepy",
+        benchmark_runs=records,
+        campaign_id="daily_suite",
+    )
+
+    assert report["regressed_count"] == 1
+    assert report["improved_count"] == 0
+    assert report["latest_pass_count"] == 0
+    assert report["tasks"][0]["transition"] == "regressed"
+    assert report["tasks"][0]["elapsed_seconds_delta"] == pytest.approx(2.0)
+    assert report["tasks"][0]["token_total_delta"] == 40

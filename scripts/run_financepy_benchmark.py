@@ -229,7 +229,6 @@ def main(argv: list[str] | None = None) -> int:
             "run_completed_at": run_completed_at,
             "execution_mode": "cold_agent_plus_financepy_reference",
             "status": status,
-            "success_status": status,
             "cold_agent_elapsed_seconds": round(float(cold_result.get("elapsed_seconds") or 0.0), 6),
             "cold_agent_token_usage": dict(cold_result.get("token_usage_summary") or {}),
             "warm_agent_mean_seconds": None if warm_result is None else warm_result.get("mean_seconds"),
