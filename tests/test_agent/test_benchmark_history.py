@@ -1,0 +1,124 @@
+from __future__ import annotations
+
+import json
+
+from trellis.agent.benchmark_history import (
+    build_benchmark_history_scorecard,
+    load_benchmark_history_records,
+    render_benchmark_history_scorecard,
+    save_benchmark_history_scorecard,
+)
+
+
+def test_load_benchmark_history_records_filters_campaign_and_task(tmp_path):
+    history_root = tmp_path / "history"
+    (history_root / "F001").mkdir(parents=True)
+    (history_root / "F002").mkdir(parents=True)
+    (history_root / "F001" / "run_a.json").write_text(
+        json.dumps(
+            {
+                "task_id": "F001",
+                "benchmark_campaign_id": "daily_suite",
+                "run_started_at": "2026-04-14T01:00:00+00:00",
+                "run_id": "run_a",
+            }
+        )
+    )
+    (history_root / "F002" / "run_b.json").write_text(
+        json.dumps(
+            {
+                "task_id": "F002",
+                "benchmark_campaign_id": "smoke",
+                "run_started_at": "2026-04-14T01:05:00+00:00",
+                "run_id": "run_b",
+            }
+        )
+    )
+
+    records = load_benchmark_history_records(
+        benchmark_root=tmp_path,
+        task_ids=["F001"],
+        campaign_id="daily_suite",
+    )
+
+    assert len(records) == 1
+    assert records[0]["task_id"] == "F001"
+
+
+def test_build_benchmark_history_scorecard_tracks_improvement(tmp_path):
+    records = [
+        {
+            "task_id": "F001",
+            "title": "Vanilla",
+            "task_corpus": "benchmark_financepy",
+            "run_id": "run_1",
+            "run_started_at": "2026-04-14T01:00:00+00:00",
+            "run_completed_at": "2026-04-14T01:00:05+00:00",
+            "execution_mode": "cold_agent_plus_financepy_reference",
+            "git_sha": "aaaa1111",
+            "knowledge_revision": "know1111",
+            "comparison_summary": {"status": "failed"},
+            "cold_agent_elapsed_seconds": 5.0,
+            "cold_agent_token_usage": {"total_tokens": 200},
+        },
+        {
+            "task_id": "F001",
+            "title": "Vanilla",
+            "task_corpus": "benchmark_financepy",
+            "run_id": "run_2",
+            "run_started_at": "2026-04-15T01:00:00+00:00",
+            "run_completed_at": "2026-04-15T01:00:03+00:00",
+            "execution_mode": "cold_agent_plus_financepy_reference",
+            "git_sha": "bbbb2222",
+            "knowledge_revision": "know2222",
+            "comparison_summary": {"status": "passed"},
+            "cold_agent_elapsed_seconds": 3.0,
+            "cold_agent_token_usage": {"total_tokens": 150},
+        },
+        {
+            "task_id": "N001",
+            "title": "Clarification",
+            "task_corpus": "negative",
+            "run_id": "run_3",
+            "run_started_at": "2026-04-15T01:00:00+00:00",
+            "run_completed_at": "2026-04-15T01:00:02+00:00",
+            "execution_mode": "cold_agent_negative",
+            "git_sha": "bbbb2222",
+            "knowledge_revision": "know2222",
+            "passed_expectation": True,
+            "observed_outcome": "clarification_requested",
+            "elapsed_seconds": 2.0,
+            "token_usage_summary": {"total_tokens": 75},
+        },
+    ]
+
+    financepy_report = build_benchmark_history_scorecard(
+        scorecard_name="financepy_daily_scorecard",
+        benchmark_kind="financepy",
+        benchmark_runs=[records[0], records[1]],
+        campaign_id="daily_suite",
+    )
+    negative_report = build_benchmark_history_scorecard(
+        scorecard_name="negative_daily_scorecard",
+        benchmark_kind="negative",
+        benchmark_runs=[records[2]],
+        campaign_id="daily_suite",
+    )
+
+    assert financepy_report["improved_count"] == 1
+    assert financepy_report["latest_pass_count"] == 1
+    assert financepy_report["tasks"][0]["transition"] == "improved"
+    assert financepy_report["tasks"][0]["latest"]["knowledge_revision"] == "know2222"
+    assert negative_report["latest_pass_count"] == 1
+    assert negative_report["tasks"][0]["latest"]["result_label"] == "passed_expectation"
+
+    rendered = render_benchmark_history_scorecard(financepy_report)
+    assert "Improved" in rendered
+
+    artifacts = save_benchmark_history_scorecard(
+        financepy_report,
+        reports_root=tmp_path,
+        stem="financepy_daily_scorecard",
+    )
+    assert artifacts.json_path.exists()
+    assert artifacts.text_path.exists()
