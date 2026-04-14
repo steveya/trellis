@@ -690,6 +690,40 @@ def test_deterministic_exact_binding_module_materializes_black_scholes_comparato
     assert EVALUATE_SENTINEL not in generated.code
 
 
+def test_deterministic_exact_binding_module_materializes_barrier_helper_with_time_import():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.analytical.barrier.barrier_option_price",
+        ),
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="barrier_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["barrier_option"],
+        "Barrier option analytical comparator",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert "from trellis.core.date_utils import year_fraction" in generated.code
+    assert "barrier_option_price(" in generated.code
+    assert "year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 def test_deterministic_black_scholes_comparator_satisfies_required_primitive_validation():
     from trellis.agent.executor import (
         _generate_skeleton,
@@ -1475,6 +1509,121 @@ def test_build_payoff_fresh_build_still_uses_deterministic_exact_binding(monkeyp
             model="gpt-5-mini",
             fresh_build=True,
         )
+
+
+def test_build_payoff_fresh_build_bypasses_cached_generated_module_even_without_deterministic_route(
+    monkeypatch,
+):
+    from trellis.agent.executor import build_payoff
+
+    pricing_plan = SimpleNamespace(
+        method="analytical",
+        method_modules=("trellis.models.black",),
+        required_market_data=set(),
+        model_to_build=None,
+        reasoning="fresh build",
+        selection_reason="unit_test",
+        assumption_summary=(),
+        sensitivity_support=None,
+    )
+    product_ir = SimpleNamespace(instrument="barrier_option")
+    compiled_request = SimpleNamespace(
+        product_ir=product_ir,
+        pricing_plan=pricing_plan,
+        request=SimpleNamespace(request_id="executor_build_fresh_barrier_123", metadata={}),
+        linear_issue_identifier=None,
+        generation_plan=None,
+        knowledge_summary={},
+        semantic_blueprint=None,
+    )
+    plan = SimpleNamespace(
+        steps=[SimpleNamespace(module_path="instruments/_agent/barrieroption.py")],
+        spec_schema=SimpleNamespace(
+            spec_name="BarrierOptionSpec",
+            class_name="BarrierOptionPayoff",
+            fields=(),
+            requirements=(),
+        ),
+    )
+    generation_plan = SimpleNamespace(
+        method="analytical",
+        instrument_type="barrier_option",
+        primitive_plan=SimpleNamespace(
+            engine_family="analytical",
+            blockers=(),
+            route="barrier_analytical",
+        ),
+        blocker_report=None,
+        new_primitive_workflow=None,
+        lane_exact_binding_refs=(),
+    )
+
+    monkeypatch.setattr("trellis.agent.executor._record_platform_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr("trellis.agent.executor._append_agent_observation", lambda *args, **kwargs: None)
+    monkeypatch.setattr("trellis.agent.planner.plan_build", lambda *args, **kwargs: plan)
+    monkeypatch.setattr(
+        "trellis.agent.executor._try_import_existing",
+        lambda plan: type("CachedBarrierPayoff", (), {}),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.executor._is_deterministic_supported_route",
+        lambda plan: False,
+    )
+    monkeypatch.setattr("trellis.agent.executor.build_generation_plan", lambda **kwargs: generation_plan)
+    monkeypatch.setattr("trellis.agent.executor._emit_analytical_trace_metadata", lambda **kwargs: None)
+    monkeypatch.setattr("trellis.agent.executor._reference_modules", lambda *args, **kwargs: ())
+    monkeypatch.setattr("trellis.agent.executor._gather_references", lambda modules: [])
+    monkeypatch.setattr("trellis.agent.builder.ensure_agent_package", lambda: None)
+    monkeypatch.setattr("trellis.agent.config.get_default_model", lambda: "gpt-5-mini")
+    monkeypatch.setattr(
+        "trellis.agent.config.get_model_for_stage",
+        lambda stage, model=None: model or "gpt-5-mini",
+    )
+    monkeypatch.setattr("trellis.agent.config.summarize_llm_usage", lambda records: {})
+    monkeypatch.setattr("trellis.agent.config.enforce_llm_token_budget", lambda stage=None: None)
+    monkeypatch.setattr(
+        "trellis.agent.executor._materialize_deterministic_exact_binding_module",
+        lambda *args, **kwargs: None,
+    )
+
+    def fake_generate(*args, **kwargs):
+        raise RuntimeError("fresh build generation path used")
+
+    monkeypatch.setattr("trellis.agent.executor._generate_module", fake_generate)
+
+    with pytest.raises(RuntimeError, match="fresh build generation path used"):
+        build_payoff(
+            "Barrier option fresh build regression",
+            compiled_request=compiled_request,
+            instrument_type="barrier_option",
+            market_state=SimpleNamespace(
+                selected_curve_names={},
+                available_capabilities={"discount_curve", "black_vol_surface"},
+            ),
+            max_retries=1,
+            model="gpt-5-mini",
+            fresh_build=True,
+        )
+
+
+def test_resolve_output_target_uses_benchmark_generated_root_for_financepy_tasks():
+    from trellis.agent.executor import _resolve_output_target
+
+    output_file_path, output_module_path, module_name = _resolve_output_target(
+        "instruments/_agent/barrieroption.py",
+        fresh_build=True,
+        request_metadata={
+            "task_corpus": "benchmark_financepy",
+            "task_id": "F009",
+            "comparison_target": "analytical",
+        },
+    )
+
+    assert "task_runs/financepy_benchmarks/generated/f009/analytical/barrieroption.py" in str(
+        output_file_path
+    ).replace("\\", "/")
+    assert output_module_path == "task_runs/financepy_benchmarks/generated/f009/analytical/barrieroption.py"
+    assert module_name == "trellis_benchmarks._fresh.f009.analytical.barrieroption"
 
 
 def test_knowledge_retrieval_stage_maps_builder_retry_reasons():

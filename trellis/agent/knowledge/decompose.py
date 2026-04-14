@@ -7,6 +7,7 @@ uses LLM to decompose into known features from the taxonomy.
 
 from __future__ import annotations
 
+from dataclasses import replace
 import re
 from typing import Any
 from typing import TYPE_CHECKING
@@ -242,7 +243,7 @@ def build_product_ir(
         )
     )
 
-    return ProductIR(
+    return _augment_ir_with_promoted_route_support(_augment_ir_with_contextual_support(ProductIR(
         instrument=normalized_instrument,
         payoff_family=payoff_family or _payoff_family_for(
             normalized_instrument,
@@ -261,7 +262,7 @@ def build_product_ir(
         unresolved_primitives=resolved_unresolved_primitives,
         supported=len(resolved_unresolved_primitives) == 0 if supported is None else supported,
         event_machine=event_machine,
-    )
+    ), description))
 
 
 def retrieval_spec_from_ir(
@@ -443,7 +444,7 @@ def _product_ir_from_decomposition(
     ):
         route_families = tuple(dict.fromkeys((*route_families, "analytical")))
         candidate_engine_families = tuple(dict.fromkeys((*candidate_engine_families, "analytical")))
-    return ProductIR(
+    return _augment_ir_with_promoted_route_support(_augment_ir_with_contextual_support(ProductIR(
         instrument=instrument,
         payoff_family=_payoff_family_for(instrument, payoff_traits, description),
         payoff_traits=payoff_traits,
@@ -459,7 +460,7 @@ def _product_ir_from_decomposition(
         reusable_primitives=decomposition.method_modules,
         unresolved_primitives=(),
         supported=True,
-    )
+    ), description))
 
 
 def _infer_composite_ir(
@@ -494,7 +495,7 @@ def _infer_composite_ir(
         exercise_style,
         model_family,
     )
-    return ProductIR(
+    return _augment_ir_with_promoted_route_support(_augment_ir_with_contextual_support(ProductIR(
         instrument=instrument or _normalise(description),
         payoff_family=_payoff_family_for(instrument or "", payoff_traits, description),
         payoff_traits=payoff_traits,
@@ -508,7 +509,7 @@ def _infer_composite_ir(
         reusable_primitives=_reusable_primitives_for(payoff_traits, model_family),
         unresolved_primitives=unresolved_primitives,
         supported=len(unresolved_primitives) == 0,
-    )
+    ), description))
 
 
 def _traits_from_text(desc: str) -> tuple[str, ...]:
@@ -796,6 +797,140 @@ def _candidate_engine_families_for(
     if model_family == "stochastic_volatility" and "monte_carlo" not in families:
         families.append("monte_carlo")
     return tuple(families)
+
+
+def _augment_ir_with_contextual_support(ir: ProductIR, description: str) -> ProductIR:
+    """Augment ProductIR with high-signal request context missing from static decompositions."""
+    if not _looks_like_fx_option_context(description, instrument_type=ir.instrument):
+        return ir
+
+    candidate_engine_families = list(ir.candidate_engine_families)
+    for family in ("analytical", "monte_carlo"):
+        if family not in candidate_engine_families:
+            candidate_engine_families.append(family)
+
+    required_market_data = set(ir.required_market_data)
+    required_market_data.update({"fx_rates", "forward_curve", "spot"})
+
+    return replace(
+        ir,
+        model_family="fx",
+        candidate_engine_families=tuple(candidate_engine_families),
+        required_market_data=frozenset(
+            normalize_market_data_requirements(required_market_data)
+        ),
+    )
+
+
+def _augment_ir_with_promoted_route_support(ir: ProductIR) -> ProductIR:
+    """Augment ProductIR with compatible promoted route families from the live registry."""
+    from trellis.agent.route_registry import load_route_registry
+
+    route_families = list(ir.route_families)
+    candidate_engine_families = list(ir.candidate_engine_families)
+
+    for route in load_route_registry().routes:
+        if route.status != "promoted":
+            continue
+        if not _route_matches_product_ir(route, ir):
+            continue
+
+        route_family = str(getattr(route, "route_family", "") or "").strip()
+        if (
+            route_family
+            and getattr(route, "match_instruments", None) is not None
+            and ir.instrument in route.match_instruments
+            and route_family not in route_families
+        ):
+            route_families.append(route_family)
+
+        for engine_family in _candidate_engine_families_from_route(route.engine_family):
+            if engine_family and engine_family not in candidate_engine_families:
+                candidate_engine_families.append(engine_family)
+
+    if tuple(route_families) == tuple(ir.route_families) and tuple(candidate_engine_families) == tuple(ir.candidate_engine_families):
+        return ir
+    return replace(
+        ir,
+        route_families=tuple(route_families),
+        candidate_engine_families=tuple(candidate_engine_families),
+    )
+
+
+def _route_matches_product_ir(route, ir: ProductIR) -> bool:
+    """Return whether one promoted route is structurally compatible with ProductIR."""
+    instrument = getattr(ir, "instrument", None)
+    exercise = getattr(ir, "exercise_style", "none")
+    payoff_family = getattr(ir, "payoff_family", "")
+    payoff_traits = set(getattr(ir, "payoff_traits", ()) or ())
+    required_market_data = set(getattr(ir, "required_market_data", ()) or ())
+
+    if route.exclude_instruments and instrument in route.exclude_instruments:
+        return False
+    if route.match_exercise is not None and exercise not in route.match_exercise:
+        return False
+    if route.exclude_exercise and exercise in route.exclude_exercise:
+        return False
+    if route.match_required_market_data is not None and not all(
+        item in required_market_data for item in route.match_required_market_data
+    ):
+        return False
+    if route.exclude_required_market_data is not None and any(
+        item in required_market_data for item in route.exclude_required_market_data
+    ):
+        return False
+
+    instrument_ok = route.match_instruments is not None and instrument in route.match_instruments
+    payoff_family_ok = route.match_payoff_family is not None and payoff_family in route.match_payoff_family
+    payoff_traits_ok = route.match_payoff_traits is not None and bool(
+        payoff_traits.intersection(route.match_payoff_traits)
+    )
+    has_positive_filter = (
+        route.match_instruments is not None
+        or route.match_payoff_family is not None
+        or route.match_payoff_traits is not None
+    )
+    if has_positive_filter and not (instrument_ok or payoff_family_ok or payoff_traits_ok):
+        return False
+    return has_positive_filter
+
+
+def _candidate_engine_families_from_route(engine_family: str) -> tuple[str, ...]:
+    """Map one route engine-family label onto ProductIR engine-family hints."""
+    normalized = str(engine_family or "").strip().lower()
+    mapping = {
+        "analytical": ("analytical",),
+        "monte_carlo": ("monte_carlo",),
+        "qmc": ("qmc",),
+        "pde_solver": ("pde",),
+        "pde": ("pde",),
+        "rate_tree": ("lattice",),
+        "tree": ("lattice",),
+        "lattice": ("lattice",),
+        "copula": ("copula",),
+        "waterfall": ("cashflow",),
+        "cashflow": ("cashflow",),
+    }
+    return mapping.get(normalized, (normalized,) if normalized else ())
+
+
+def _looks_like_fx_option_context(
+    description: str | None,
+    *,
+    instrument_type: str | None = None,
+) -> bool:
+    """Detect a vanilla FX-option context from free-form request text."""
+    if instrument_type == "fx_option":
+        return True
+    if not description:
+        return False
+    lower = description.lower()
+    if any(
+        token in lower
+        for token in ("fx option", "fx vanilla", "forex option", "garman-kohlhagen", "gk analytical")
+    ):
+        return True
+    return re.search(r"\b[A-Z]{6}\b", description) is not None
 
 
 def _route_families_for(

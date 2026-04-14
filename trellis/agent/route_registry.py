@@ -818,6 +818,10 @@ def _family_aliases(family: str) -> set[str]:
         aliases.update({"rate_tree", "tree", "lattice", "exercise", "rate_lattice"})
     if value in {"pde", "pde_solver"}:
         aliases.update({"pde", "pde_solver"})
+    if value in {"fft_pricing", "transforms", "transform_fft"}:
+        aliases.update({"fft_pricing", "transforms", "transform_fft"})
+    if value in {"cashflow", "waterfall"}:
+        aliases.update({"cashflow", "waterfall"})
     return aliases
 
 

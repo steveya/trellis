@@ -226,6 +226,32 @@ def test_nth_to_default_uses_dedicated_credit_basket_route():
     assert ranked[0].score > 0.0
 
 
+def test_nth_to_default_copula_prefers_default_time_sampler_route():
+    from trellis.agent.codegen_guardrails import rank_primitive_routes
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="copula",
+        method_modules=["trellis.models.copulas.gaussian"],
+        required_market_data={"discount_curve", "credit_curve"},
+        model_to_build="nth_to_default",
+        reasoning="test",
+    )
+    product_ir = decompose_to_ir(
+        "First-to-default basket on five names with Gaussian copula",
+        instrument_type="nth_to_default",
+    )
+
+    ranked = rank_primitive_routes(
+        pricing_plan=pricing_plan,
+        product_ir=product_ir,
+    )
+
+    assert ranked
+    assert ranked[0].route == "nth_to_default_monte_carlo"
+    assert ranked[0].score > ranked[1].score
+
+
 def test_generation_plan_selects_highest_scored_route():
     from trellis.agent.codegen_guardrails import build_generation_plan, rank_primitive_routes
     from trellis.agent.knowledge.decompose import decompose_to_ir

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import json
 import math
 import logging
 from dataclasses import dataclass, replace
@@ -1292,8 +1293,88 @@ def record_promotion_candidate(
         "code": source,
     }
     with open(path, "w") as f:
-        yaml.dump(
-            payload,
+        yaml.safe_dump(
+            _yaml_safe_data(payload),
+            f,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True,
+        )
+    return str(path)
+
+
+def record_benchmark_promotion_candidate(
+    *,
+    benchmark_record: Mapping[str, object],
+) -> str | None:
+    """Persist one benchmark-validated fresh-generated adapter for later admission review."""
+    generated_artifact = dict(benchmark_record.get("generated_artifact") or {})
+    generated_file_path = str(generated_artifact.get("file_path") or "").strip()
+    execution_module_name = str(generated_artifact.get("module_name") or "").strip()
+    if not generated_file_path or not execution_module_name:
+        return None
+    if not bool(generated_artifact.get("is_fresh_build")):
+        return None
+
+    source_path = Path(generated_file_path)
+    if not source_path.exists():
+        return None
+    source = source_path.read_text()
+    if not source.strip():
+        return None
+
+    timestamp = datetime.now()
+    candidate_dir = _TRACES_DIR / "promotion_candidates"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    task_id = str(benchmark_record.get("task_id") or "unknown").strip() or "unknown"
+    filename = (
+        f"{timestamp.strftime('%Y%m%d_%H%M%S')}_{task_id.lower()}_financepy_benchmark.yaml"
+    )
+    path = candidate_dir / filename
+    admission_target_module_name = str(
+        generated_artifact.get("admission_target_module_name") or ""
+    ).strip() or _recommended_module_path(execution_module_name)
+    admission_target_file_path = str(
+        generated_artifact.get("admission_target_file_path") or ""
+    ).strip() or str(_recommended_file_path(admission_target_module_name))
+    payload = {
+        "timestamp": timestamp.isoformat(),
+        "validation_source": "financepy_benchmark",
+        "task_id": task_id,
+        "task_title": str(benchmark_record.get("title") or ""),
+        "instrument_type": str(benchmark_record.get("instrument_type") or ""),
+        "comparison_target": str(benchmark_record.get("benchmark_execution_policy") or "benchmark"),
+        "preferred_method": str(benchmark_record.get("preferred_method") or ""),
+        "reference_target": True,
+        "payoff_class": str(generated_artifact.get("class_name") or ""),
+        "module_path": execution_module_name,
+        "admission_target_module_name": admission_target_module_name,
+        "admission_target_file_path": admission_target_file_path,
+        "attempts": 0,
+        "platform_request_id": None,
+        "platform_trace_path": None,
+        "market_context": {
+            "market_scenario_id": str(benchmark_record.get("market_scenario_id") or ""),
+        },
+        "generated_artifact": generated_artifact,
+        "benchmark_provenance": {
+            "benchmark_kind": "financepy",
+            "benchmark_campaign_id": str(benchmark_record.get("benchmark_campaign_id") or ""),
+            "benchmark_run_id": str(benchmark_record.get("run_id") or ""),
+            "benchmark_record_path": str(benchmark_record.get("history_path") or ""),
+            "benchmark_latest_path": str(benchmark_record.get("latest_path") or ""),
+            "git_sha": str(benchmark_record.get("git_sha") or ""),
+            "knowledge_revision": str(benchmark_record.get("knowledge_revision") or ""),
+            "status": str(benchmark_record.get("status") or ""),
+            "comparison_summary": dict(benchmark_record.get("comparison_summary") or {}),
+            "generated_artifact": generated_artifact,
+        },
+        "code_hash": hashlib.sha256(source.strip().encode()).hexdigest()[:12],
+        "code": source,
+    }
+    with open(path, "w") as f:
+        yaml.safe_dump(
+            _yaml_safe_data(payload),
             f,
             default_flow_style=False,
             sort_keys=False,
@@ -1419,18 +1500,30 @@ def review_promotion_candidate(
     comparison_target = str(data.get("comparison_target") or "").strip()
     payoff_class = str(data.get("payoff_class") or "").strip()
     module_path = str(data.get("module_path") or "").strip()
+    validation_source = str(data.get("validation_source") or "").strip().lower()
     code = str(data.get("code") or "")
     cross_validation = data.get("cross_validation") or {}
     if not isinstance(cross_validation, dict):
         cross_validation = {}
+    benchmark_provenance = data.get("benchmark_provenance") or {}
+    if not isinstance(benchmark_provenance, dict):
+        benchmark_provenance = {}
+    generated_artifact = data.get("generated_artifact") or {}
+    if not isinstance(generated_artifact, dict):
+        generated_artifact = {}
     successful_targets = _as_str_set(cross_validation.get("successful_targets"))
     passed_targets = _as_str_set(cross_validation.get("passed_targets"))
     price_errors = cross_validation.get("price_errors") or {}
     prices = cross_validation.get("prices") or {}
     deviations_pct = cross_validation.get("deviations_pct") or {}
     tolerance_pct = float(cross_validation.get("tolerance_pct", 0.0) or 0.0)
-    recommended_module_path = _recommended_module_path(module_path)
-    recommended_file_path = _recommended_file_path(recommended_module_path)
+    recommended_module_path = (
+        str(data.get("admission_target_module_name") or "").strip()
+        or _recommended_module_path(module_path)
+    )
+    recommended_file_path = Path(
+        str(data.get("admission_target_file_path") or "").strip()
+    ) if str(data.get("admission_target_file_path") or "").strip() else _recommended_file_path(recommended_module_path)
     adapter_records = [
         record
         for record in detect_adapter_lifecycle_records()
@@ -1465,46 +1558,146 @@ def review_promotion_candidate(
             "candidate module path comes from the fresh-build namespace",
             failure_detail=f"module path `{module_path}` is not a fresh-build route",
         ),
-        _review_check(
-            "platform_trace_recorded",
-            _path_exists(data.get("platform_trace_path")),
-            "candidate references an existing platform trace",
-            failure_detail="platform trace path is missing or unreadable",
-        ),
-        _review_check(
-            "cross_validation_passed",
-            str(cross_validation.get("status") or "").strip().lower() == "passed",
-            "task-level cross-validation passed",
-            failure_detail=f"cross-validation status was `{cross_validation.get('status')}`",
-        ),
-        _review_check(
-            "target_priced",
-            comparison_target in prices,
-            f"cross-validation recorded a price for `{comparison_target}`",
-            failure_detail=f"no price recorded for `{comparison_target}`",
-        ),
-        _review_check(
-            "target_has_no_price_error",
-            comparison_target not in price_errors,
-            f"`{comparison_target}` has no cross-validation pricing error",
-            failure_detail=f"price error for `{comparison_target}`: {price_errors.get(comparison_target)}",
-        ),
-        _review_check(
-            "target_marked_successful",
-            comparison_target in successful_targets and comparison_target in passed_targets,
-            f"`{comparison_target}` is marked successful and passed in cross-validation",
-            failure_detail=f"`{comparison_target}` missing from successful/passed targets",
-        ),
-        _review_check(
-            "target_within_tolerance",
-            comparison_target in deviations_pct and float(deviations_pct.get(comparison_target, tolerance_pct + 1.0)) <= tolerance_pct,
-            f"`{comparison_target}` stayed within configured tolerance",
-            failure_detail=(
-                f"deviation for `{comparison_target}` was {deviations_pct.get(comparison_target)!r} "
-                f"with tolerance {tolerance_pct}"
-            ),
-        ),
     ]
+    if validation_source == "financepy_benchmark":
+        benchmark_record_path = Path(str(benchmark_provenance.get("benchmark_record_path") or ""))
+        benchmark_record: dict[str, object] = {}
+        if benchmark_record_path.exists():
+            try:
+                loaded = json.loads(benchmark_record_path.read_text())
+                if isinstance(loaded, dict):
+                    benchmark_record = loaded
+            except Exception:
+                benchmark_record = {}
+        benchmark_summary = benchmark_provenance.get("comparison_summary") or benchmark_record.get(
+            "comparison_summary"
+        ) or {}
+        if not isinstance(benchmark_summary, dict):
+            benchmark_summary = {}
+        benchmark_artifact = benchmark_provenance.get("generated_artifact") or benchmark_record.get(
+            "generated_artifact"
+        ) or {}
+        if not isinstance(benchmark_artifact, dict):
+            benchmark_artifact = {}
+        benchmark_deviations = benchmark_summary.get("output_deviation_pct") or {}
+        if not isinstance(benchmark_deviations, Mapping):
+            benchmark_deviations = {}
+        benchmark_tolerance = float(benchmark_summary.get("tolerance_pct", 0.0) or 0.0)
+        checks.extend(
+            [
+                _review_check(
+                    "benchmark_record_exists",
+                    benchmark_record_path.exists(),
+                    "benchmark record path is readable",
+                    failure_detail="benchmark record path is missing or unreadable",
+                ),
+                _review_check(
+                    "benchmark_priced",
+                    str(benchmark_provenance.get("status") or benchmark_record.get("status") or "").strip()
+                    == "priced",
+                    "benchmark run priced successfully",
+                    failure_detail=(
+                        "benchmark run status was "
+                        f"`{benchmark_provenance.get('status') or benchmark_record.get('status')}`"
+                    ),
+                ),
+                _review_check(
+                    "benchmark_comparison_passed",
+                    str(benchmark_summary.get("status") or "").strip().lower() == "passed",
+                    "benchmark comparison passed",
+                    failure_detail=f"benchmark comparison status was `{benchmark_summary.get('status')}`",
+                ),
+                _review_check(
+                    "benchmark_generated_artifact_present",
+                    bool(str(benchmark_artifact.get("module_name") or "").strip())
+                    and bool(str(benchmark_artifact.get("file_path") or "").strip()),
+                    "benchmark recorded generated-artifact provenance",
+                    failure_detail="benchmark generated-artifact provenance is missing",
+                ),
+                _review_check(
+                    "benchmark_generated_artifact_fresh",
+                    bool(benchmark_artifact.get("is_fresh_build")),
+                    "benchmark executed a fresh-generated artifact",
+                    failure_detail="benchmark generated artifact was not marked fresh",
+                ),
+                _review_check(
+                    "benchmark_module_matches_candidate",
+                    str(benchmark_artifact.get("module_name") or "").strip() == module_path,
+                    "candidate module matches the validated benchmark artifact",
+                    failure_detail=(
+                        f"benchmark module `{benchmark_artifact.get('module_name')}` "
+                        f"did not match candidate module `{module_path}`"
+                    ),
+                ),
+                _review_check(
+                    "benchmark_hash_matches_candidate",
+                    _hashes_equivalent(
+                        benchmark_artifact.get("code_hash"),
+                        data.get("code_hash"),
+                    ),
+                    "candidate source hash matches the validated benchmark artifact",
+                    failure_detail=(
+                        f"benchmark code hash `{benchmark_artifact.get('code_hash')}` "
+                        f"did not match candidate hash `{data.get('code_hash')}`"
+                    ),
+                ),
+                _review_check(
+                    "benchmark_within_tolerance",
+                    bool(benchmark_deviations)
+                    and all(float(value) <= benchmark_tolerance for value in benchmark_deviations.values()),
+                    "benchmark outputs stayed within tolerance",
+                    failure_detail=(
+                        f"benchmark deviations {dict(benchmark_deviations)} exceeded tolerance "
+                        f"{benchmark_tolerance}"
+                    ),
+                ),
+            ]
+        )
+    else:
+        checks.extend(
+            [
+                _review_check(
+                    "platform_trace_recorded",
+                    _path_exists(data.get("platform_trace_path")),
+                    "candidate references an existing platform trace",
+                    failure_detail="platform trace path is missing or unreadable",
+                ),
+                _review_check(
+                    "cross_validation_passed",
+                    str(cross_validation.get("status") or "").strip().lower() == "passed",
+                    "task-level cross-validation passed",
+                    failure_detail=f"cross-validation status was `{cross_validation.get('status')}`",
+                ),
+                _review_check(
+                    "target_priced",
+                    comparison_target in prices,
+                    f"cross-validation recorded a price for `{comparison_target}`",
+                    failure_detail=f"no price recorded for `{comparison_target}`",
+                ),
+                _review_check(
+                    "target_has_no_price_error",
+                    comparison_target not in price_errors,
+                    f"`{comparison_target}` has no cross-validation pricing error",
+                    failure_detail=f"price error for `{comparison_target}`: {price_errors.get(comparison_target)}",
+                ),
+                _review_check(
+                    "target_marked_successful",
+                    comparison_target in successful_targets and comparison_target in passed_targets,
+                    f"`{comparison_target}` is marked successful and passed in cross-validation",
+                    failure_detail=f"`{comparison_target}` missing from successful/passed targets",
+                ),
+                _review_check(
+                    "target_within_tolerance",
+                    comparison_target in deviations_pct
+                    and float(deviations_pct.get(comparison_target, tolerance_pct + 1.0)) <= tolerance_pct,
+                    f"`{comparison_target}` stayed within configured tolerance",
+                    failure_detail=(
+                        f"deviation for `{comparison_target}` was {deviations_pct.get(comparison_target)!r} "
+                        f"with tolerance {tolerance_pct}"
+                    ),
+                ),
+            ]
+        )
     approved = all(check["passed"] for check in checks if check["blocking"])
     adapter_lifecycle_stage = "deprecated" if approved else "stale"
     review = {
@@ -1517,6 +1710,7 @@ def review_promotion_candidate(
         "preferred_method": data.get("preferred_method"),
         "payoff_class": payoff_class,
         "module_path": module_path,
+        "validation_source": validation_source or "cross_validation",
         "recommended_module_path": recommended_module_path,
         "recommended_file_path": str(recommended_file_path),
         "status": "approved" if approved else "rejected",
@@ -1603,7 +1797,7 @@ def adopt_promotion_candidate(
         ),
         _review_check(
             "candidate_hash_matches",
-            bool(source_hash) and source_hash == snapshot_hash,
+            _hashes_equivalent(source_hash, snapshot_hash),
             "candidate source hash matches the recorded snapshot hash",
             failure_detail=f"candidate hash mismatch: expected {snapshot_hash!r}, got {source_hash!r}",
         ),
@@ -2493,6 +2687,24 @@ def _source_hash(source: str) -> str:
     return hashlib.sha256(normalized.encode()).hexdigest()[:12] if normalized else ""
 
 
+def _hashes_equivalent(left: object, right: object) -> bool:
+    """Treat short recorded hashes as valid prefixes of full content hashes."""
+    lhs = str(left or "").strip().lower()
+    rhs = str(right or "").strip().lower()
+    if not lhs or not rhs:
+        return False
+    return lhs == rhs or lhs.startswith(rhs) or rhs.startswith(lhs)
+
+
+def _yaml_safe_data(value: object) -> object:
+    """Convert nested payloads into YAML-safe plain Python primitives."""
+    if isinstance(value, Mapping):
+        return {str(key): _yaml_safe_data(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_yaml_safe_data(item) for item in value]
+    return value
+
+
 def _review_check(
     name: str,
     passed: bool,
@@ -2520,7 +2732,13 @@ def _record_promotion_review(review: dict[str, object]) -> str:
     filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{task_id}_{target}_{status}.yaml"
     path = review_dir / filename
     with open(path, "w") as f:
-        yaml.dump(review, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        yaml.safe_dump(
+            _yaml_safe_data(review),
+            f,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True,
+        )
     return str(path)
 
 
@@ -2534,7 +2752,13 @@ def _record_promotion_adoption(adoption: dict[str, object]) -> str:
     filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{task_id}_{target}_{status}.yaml"
     path = adoption_dir / filename
     with open(path, "w") as f:
-        yaml.dump(adoption, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+        yaml.safe_dump(
+            _yaml_safe_data(adoption),
+            f,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True,
+        )
     return str(path)
 
 

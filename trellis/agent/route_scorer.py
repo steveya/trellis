@@ -146,6 +146,13 @@ def extract_scoring_features(ctx: ScoringContext) -> dict[str, float]:
     features["binding_has_exact_surface"] = 1.0 if resolved_roles.intersection(exact_surface_roles) else 0.0
     for role in resolved_roles:
         features[f"binding_role:{role}"] = 1.0
+    if ir is not None:
+        model_family = str(getattr(ir, "model_family", "") or "").strip()
+        model_support_roles = {
+            "credit_copula": {"default_time_sampler", "loss_distribution"},
+        }.get(model_family, set())
+        for role in resolved_roles.intersection(model_support_roles):
+            features[f"model_support_role:{model_family}:{role}"] = 1.0
 
     if ir is not None:
         capability = evaluate_route_capability_match(spec, ir)

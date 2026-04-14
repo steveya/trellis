@@ -346,10 +346,10 @@ def _primitive_routes(
         product_ir=product_ir,
     )
     routes: list[str] = []
-    if ranked:
-        routes.append(ranked[0].route)
-    else:
+    if explicit_routes:
         routes.extend(explicit_routes)
+    elif ranked:
+        routes.append(ranked[0].route)
     if contract.product.payoff_family == "basket_path_payoff" and "correlated_basket_monte_carlo" not in routes:
         routes.append("correlated_basket_monte_carlo")
     return tuple(routes)

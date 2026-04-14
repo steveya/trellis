@@ -181,6 +181,48 @@ def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
     )
 
 
+def test_resolve_backend_binding_spec_uses_equity_barrier_exact_helper():
+    catalog = load_backend_binding_catalog()
+    barrier = find_backend_binding_by_route_id("equity_barrier_analytical", catalog)
+
+    product_ir = ProductIR(
+        instrument="barrier_option",
+        payoff_family="barrier_option",
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+
+    assert barrier is not None
+
+    resolved = resolve_backend_binding_spec(barrier, product_ir=product_ir)
+
+    assert resolved.helper_refs == (
+        "trellis.models.analytical.barrier.barrier_option_price",
+    )
+
+
+def test_resolve_backend_binding_spec_uses_equity_chooser_exact_helper():
+    catalog = load_backend_binding_catalog()
+    chooser = find_backend_binding_by_route_id("equity_chooser_analytical", catalog)
+
+    product_ir = ProductIR(
+        instrument="chooser_option",
+        payoff_family="chooser_option",
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+
+    assert chooser is not None
+
+    resolved = resolve_backend_binding_spec(chooser, product_ir=product_ir)
+
+    assert resolved.helper_refs == (
+        "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical",
+    )
+
+
 def test_resolve_backend_binding_spec_keeps_generic_multi_asset_baskets_off_two_asset_exact_helpers():
     catalog = load_backend_binding_catalog()
     analytical = find_backend_binding_by_route_id("analytical_black76", catalog)

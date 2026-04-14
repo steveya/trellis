@@ -119,6 +119,28 @@ class TestFeatureExtraction:
         assert features["capability_failure:family_identity_mismatch"] == 1.0
         assert features["capability_failure:schedule_dependence_unsupported"] == 1.0
 
+    def test_credit_copula_features_record_default_time_sampler_support(self, registry):
+        spec = [r for r in registry.routes if r.id == "nth_to_default_monte_carlo"][0]
+        ir = ProductIR(
+            instrument="nth_to_default",
+            payoff_family="credit_basket",
+            state_dependence="terminal_markov",
+            model_family="credit_copula",
+            candidate_engine_families=("copula", "monte_carlo"),
+            route_families=("nth_to_default",),
+        )
+        ctx = ScoringContext(
+            product_ir=ir,
+            route_spec=spec,
+            pricing_plan=None,
+            blockers=[],
+        )
+
+        features = extract_scoring_features(ctx)
+
+        assert features["binding_role:default_time_sampler"] == 1.0
+        assert features["model_support_role:credit_copula:default_time_sampler"] == 1.0
+
 
 # ---------------------------------------------------------------------------
 # Scoring

@@ -31,14 +31,17 @@ from trellis.agent.financepy_benchmark import (
     DEFAULT_FINANCEPY_BENCHMARK_ROOT,
     build_financepy_benchmark_report,
     extract_trellis_benchmark_outputs,
+    financepy_benchmark_execution_policy,
     load_financepy_benchmark_tasks,
     persist_financepy_benchmark_record,
     save_financepy_benchmark_report,
     select_financepy_benchmark_tasks,
 )
 from trellis.agent.financepy_reference import price_financepy_reference
+from trellis.agent.knowledge.promotion import record_benchmark_promotion_candidate
 from trellis.agent.runtime_revisions import runtime_revision_metadata
 from trellis.agent.task_runtime import (
+    benchmark_generated_artifact,
     benchmark_existing_task,
     benchmark_spec_overrides,
     build_market_state,
@@ -61,6 +64,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--skip-financepy", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--force-rebuild", action="store_true")
+    parser.add_argument(
+        "--execution-policy",
+        choices=("auto", "cached_existing", "fresh_generated"),
+        default="auto",
+    )
     parser.add_argument("--output-root")
     parser.add_argument("--report-name", default="financepy_parity")
     parser.add_argument("--campaign-id")
@@ -169,11 +177,17 @@ def main(argv: list[str] | None = None) -> int:
 
     for task in tasks:
         run_started_at = datetime.now(timezone.utc).isoformat()
+        execution_policy = financepy_benchmark_execution_policy(
+            task,
+            requested_policy=args.execution_policy,
+        )
+        fresh_generated = execution_policy == "fresh_generated"
         cold_result = run_task(
             task,
             market_state,
             model=args.model,
             force_rebuild=args.force_rebuild,
+            fresh_build=fresh_generated,
             validation=args.validation,
         )
         warm_result: dict[str, Any] | None = None
@@ -181,18 +195,39 @@ def main(argv: list[str] | None = None) -> int:
         comparison_summary: dict[str, Any]
         status = "failed"
         task_market_state, _ = build_market_state_for_task(task, market_state)
+        generated_artifact = dict(cold_result.get("generated_artifact") or {})
+        fresh_boundary_error = ""
+        if fresh_generated:
+            if not generated_artifact:
+                fresh_boundary_error = "missing generated artifact provenance for fresh-generated benchmark"
+            elif not bool(generated_artifact.get("is_fresh_build")):
+                fresh_boundary_error = (
+                    "fresh-generated benchmark resolved to a non-fresh adapter path"
+                )
 
         if cold_result.get("success"):
             status = "priced"
             try:
-                warm_result = benchmark_existing_task(
-                    task,
-                    market_state=task_market_state,
-                    repeats=args.repeats,
-                    warmups=args.warmups,
-                    model=args.model,
-                    spec_overrides=benchmark_spec_overrides(task),
-                )
+                if fresh_generated:
+                    if fresh_boundary_error:
+                        raise RuntimeError(fresh_boundary_error)
+                    warm_result = benchmark_generated_artifact(
+                        task,
+                        generated_artifact=generated_artifact,
+                        market_state=task_market_state,
+                        repeats=args.repeats,
+                        warmups=args.warmups,
+                        spec_overrides=benchmark_spec_overrides(task),
+                    )
+                else:
+                    warm_result = benchmark_existing_task(
+                        task,
+                        market_state=task_market_state,
+                        repeats=args.repeats,
+                        warmups=args.warmups,
+                        model=args.model,
+                        spec_overrides=benchmark_spec_overrides(task),
+                    )
             except Exception as exc:
                 warm_result = {"error": str(exc)}
         if not args.skip_financepy:
@@ -222,6 +257,10 @@ def main(argv: list[str] | None = None) -> int:
             trellis_outputs=trellis_outputs_normalized,
             financepy_outputs=financepy_outputs_normalized,
         )
+        if fresh_boundary_error:
+            comparison_summary["status"] = "benchmark_boundary_violation"
+            comparison_summary["boundary_error"] = fresh_boundary_error
+            status = "failed"
         if financepy_result and financepy_result.get("error"):
             comparison_summary["status"] = "financepy_error"
             comparison_summary["financepy_error"] = financepy_result["error"]
@@ -232,6 +271,8 @@ def main(argv: list[str] | None = None) -> int:
         record = {
             "task_id": task["id"],
             "title": task["title"],
+            "instrument_type": task.get("instrument_type"),
+            "preferred_method": task.get("construct"),
             "task_corpus": task.get("task_corpus"),
             "task_definition_version": task.get("task_definition_version"),
             "task_definition_manifest": task.get("task_definition_manifest"),
@@ -245,19 +286,37 @@ def main(argv: list[str] | None = None) -> int:
             "run_started_at": run_started_at,
             "run_completed_at": run_completed_at,
             "execution_mode": "cold_agent_plus_financepy_reference",
+            "benchmark_execution_policy": execution_policy,
             "status": status,
             "cold_agent_elapsed_seconds": round(float(cold_result.get("elapsed_seconds") or 0.0), 6),
             "cold_agent_token_usage": dict(cold_result.get("token_usage_summary") or {}),
             "warm_agent_mean_seconds": None if warm_result is None else warm_result.get("mean_seconds"),
             "warm_agent_last_price": None if warm_result is None else warm_result.get("last_price"),
+            "warm_agent_execution_mode": (
+                "fresh_generated_artifact" if fresh_generated else "cached_existing_artifact"
+            ),
             "financepy_elapsed_seconds": None if financepy_result is None else financepy_result.get("elapsed_seconds"),
             "trellis_outputs": trellis_outputs,
             "trellis_outputs_normalized": trellis_outputs_normalized,
             "financepy_outputs": financepy_outputs,
             "financepy_outputs_normalized": financepy_outputs_normalized,
+            "generated_artifact": generated_artifact,
             "comparison_summary": comparison_summary,
         }
         record.update(persist_financepy_benchmark_record(record, root=output_root))
+        if fresh_generated and comparison_summary.get("status") == "passed":
+            try:
+                promotion_candidate_path = record_benchmark_promotion_candidate(
+                    benchmark_record=record,
+                )
+            except Exception as exc:
+                comparison_summary.setdefault("warnings", []).append(
+                    f"promotion_candidate_record_error: {exc}"
+                )
+                promotion_candidate_path = None
+            if promotion_candidate_path:
+                record["promotion_candidate_path"] = promotion_candidate_path
+                record.update(persist_financepy_benchmark_record(record, root=output_root))
         benchmark_runs.append(record)
 
     report = build_financepy_benchmark_report(
@@ -266,7 +325,7 @@ def main(argv: list[str] | None = None) -> int:
         benchmark_runs=benchmark_runs,
         notes=[
             "Cold timing measures the end-to-end agent path.",
-            "Warm timing measures the checked-in/generated payoff runtime only.",
+            "Warm timing measures the selected artifact runtime only.",
             "FinancePy comparisons only use overlapping outputs.",
         ],
     )

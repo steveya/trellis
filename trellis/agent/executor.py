@@ -42,6 +42,8 @@ from trellis.agent.knowledge.api_map import format_api_map_for_prompt
 # Sentinel in the skeleton that gets replaced by the LLM-generated body.
 EVALUATE_SENTINEL = '        raise NotImplementedError("evaluate not yet implemented")'
 _ROUTE_GUESSING_BLOCKER_REASON = "route guessing"
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+TRELLIS_PACKAGE_ROOT = REPO_ROOT / "trellis"
 
 _REPO_REVISION: str | None = None
 
@@ -55,7 +57,7 @@ def _get_repo_revision() -> str:
         result = subprocess.run(
             ["git", "rev-parse", "HEAD"],
             capture_output=True, text=True, timeout=5,
-            cwd=Path(__file__).parent.parent.parent,
+            cwd=REPO_ROOT,
         )
         if result.returncode == 0:
             _REPO_REVISION = result.stdout.strip()[:16]
@@ -1035,8 +1037,8 @@ def build_payoff(
     # Step 3b: Reuse supported deterministic adapters and explicit cached builds.
     existing = _try_import_existing(plan)
     reuse_reason = None
-    if existing is not None:
-        if _is_deterministic_supported_route(plan) and not fresh_build:
+    if existing is not None and not fresh_build:
+        if _is_deterministic_supported_route(plan):
             reuse_reason = "deterministic_supported_route"
         elif not force_rebuild:
             reuse_reason = "cached_generated_module"
@@ -1073,7 +1075,7 @@ def build_payoff(
             market_state=market_state,
         )
         return existing
-    if existing is not None and _is_deterministic_supported_route(plan) and fresh_build:
+    if existing is not None and fresh_build:
         _record_platform_event(
             compiled_request,
             "existing_generated_module_bypassed",
@@ -1297,10 +1299,27 @@ def build_payoff(
 
     ensure_agent_package()
     step = plan.steps[0]
-    output_module_path = step.module_path
-    if fresh_build and _is_deterministic_supported_route(plan):
-        output_module_path = _fresh_build_module_path(step.module_path)
-    module_name = f"trellis.{output_module_path.replace('/', '.').replace('.py', '')}"
+    output_file_path, output_module_path, module_name = _resolve_output_target(
+        step.module_path,
+        fresh_build=fresh_build,
+        request_metadata=request_metadata,
+    )
+    if build_meta is not None:
+        admission_target_module_path = str(step.module_path or "").replace("\\", "/").strip()
+        build_meta["execution_module_name"] = module_name
+        build_meta["execution_module_path"] = output_module_path
+        build_meta["execution_file_path"] = str(output_file_path.resolve())
+        build_meta["admission_target_module_path"] = admission_target_module_path
+        build_meta["admission_target_module_name"] = (
+            f"trellis.{admission_target_module_path.replace('/', '.').replace('.py', '')}"
+            if admission_target_module_path
+            else None
+        )
+        build_meta["admission_target_file_path"] = (
+            str((TRELLIS_PACKAGE_ROOT / admission_target_module_path).resolve())
+            if admission_target_module_path
+            else None
+        )
     _record_platform_event(
         compiled_request,
         "build_started",
@@ -1607,7 +1626,7 @@ def build_payoff(
             issue.code for issue in lite_review_report.issues
         )))
 
-        file_path = write_module(output_module_path, code)
+        file_path = _write_generated_module(output_file_path, output_module_path, code)
         mod = dynamic_import(file_path, module_name)
         payoff_cls = getattr(mod, spec_schema.class_name)
         spec_schema = _resolve_runtime_spec_schema(payoff_cls, spec_schema)
@@ -3374,6 +3393,24 @@ def _deterministic_exact_binding_evaluate_body(
             "return float(price_basket_option_transform_proxy("
             f"market_state, spec{basket_option_kwargs}))"
         ),
+        "trellis.models.analytical.equity_exotics.price_equity_digital_option_analytical": (
+            "return float(price_equity_digital_option_analytical(market_state, spec))"
+        ),
+        "trellis.models.analytical.equity_exotics.price_equity_fixed_lookback_option_analytical": (
+            "return float(price_equity_fixed_lookback_option_analytical(market_state, spec))"
+        ),
+        "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical": (
+            "return float(price_equity_chooser_option_analytical(market_state, spec))"
+        ),
+        "trellis.models.analytical.equity_exotics.price_equity_compound_option_analytical": (
+            "return float(price_equity_compound_option_analytical(market_state, spec))"
+        ),
+        "trellis.models.analytical.equity_exotics.price_equity_cliquet_option_analytical": (
+            "return float(price_equity_cliquet_option_analytical(market_state, spec))"
+        ),
+        "trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical": (
+            "return float(price_equity_variance_swap_analytical(market_state, spec))"
+        ),
         "trellis.models.analytical.barrier.barrier_option_price": (
             "if market_state.discount is None:\n"
             '    raise ValueError("market_state.discount is required for analytical barrier pricing")\n'
@@ -3384,6 +3421,10 @@ def _deterministic_exact_binding_evaluate_body(
             "    return 0.0\n"
             "sigma = float(market_state.vol_surface.black_vol(max(T, 1e-6), spec.strike))\n"
             "rate = float(market_state.discount.zero_rate(T))\n"
+            "carry_rates = dict(getattr(market_state, 'model_parameters', None) or {}).get('underlier_carry_rates') or {}\n"
+            "carry_rate = 0.0\n"
+            "if isinstance(carry_rates, dict) and len(carry_rates) == 1:\n"
+            "    carry_rate = float(next(iter(carry_rates.values())))\n"
             "price = barrier_option_price(\n"
             "    float(spec.spot),\n"
             "    float(spec.strike),\n"
@@ -3394,6 +3435,8 @@ def _deterministic_exact_binding_evaluate_body(
             '    barrier_type=str(spec.barrier_type),\n'
             '    option_type=str(spec.option_type),\n'
             "    rebate=float(getattr(spec, 'rebate', 0.0) or 0.0),\n"
+            "    q=carry_rate,\n"
+            "    observations_per_year=getattr(spec, 'observations_per_year', None),\n"
             ")\n"
             "return float(spec.notional) * float(price)"
         ),
@@ -3419,6 +3462,10 @@ def _materialize_deterministic_exact_binding_module(
     )
     if body is None:
         return None
+    skeleton = _inject_top_level_imports(
+        skeleton,
+        list(_deterministic_exact_binding_import_lines(body)),
+    )
     rendered = skeleton.replace(
         EVALUATE_SENTINEL,
         textwrap.indent(body, "        "),
@@ -3430,6 +3477,20 @@ def _materialize_deterministic_exact_binding_module(
         code=source_report.sanitized_source.expandtabs(4),
         source_report=source_report,
     )
+
+
+def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
+    """Return extra imports required by deterministic exact-binding bodies.
+
+    Exact helper bodies can reference shared support functions that are not part
+    of the exact backend-binding symbol set. Keep those imports explicit here so
+    fresh-generated proof runs exercise the same declared dependency surface as
+    ordinary generated modules.
+    """
+    imports: list[str] = []
+    if "year_fraction(" in body:
+        imports.append("from trellis.core.date_utils import year_fraction")
+    return tuple(imports)
 
 
 def _generate_module(
@@ -3927,6 +3988,97 @@ def _fresh_build_module_path(module_path: str) -> str:
     """Map a deterministic route path to an isolated scratch module for proving runs."""
     path = Path(module_path)
     return str(path.parent / "_fresh" / path.name)
+
+
+def _resolve_output_target(
+    module_path: str,
+    *,
+    fresh_build: bool,
+    request_metadata: Mapping[str, object] | None,
+) -> tuple[Path, str, str]:
+    """Resolve the output file path, module path, and import name for one build."""
+    normalized_module_path = str(module_path or "").replace("\\", "/").strip()
+    if fresh_build and _is_agent_module_path(normalized_module_path):
+        benchmark_root = _benchmark_fresh_build_root(request_metadata)
+        if benchmark_root is not None:
+            output_file_path = benchmark_root / Path(normalized_module_path).name
+            output_module_path = str(output_file_path.relative_to(REPO_ROOT)).replace("\\", "/")
+            module_name = _benchmark_fresh_build_module_name(
+                normalized_module_path,
+                request_metadata=request_metadata,
+            )
+            return output_file_path, output_module_path, module_name
+        output_module_path = _fresh_build_module_path(normalized_module_path)
+        output_file_path = TRELLIS_PACKAGE_ROOT / output_module_path
+        module_name = f"trellis.{output_module_path.replace('/', '.').replace('.py', '')}"
+        return output_file_path, output_module_path, module_name
+
+    output_file_path = TRELLIS_PACKAGE_ROOT / normalized_module_path
+    module_name = f"trellis.{normalized_module_path.replace('/', '.').replace('.py', '')}"
+    return output_file_path, normalized_module_path, module_name
+
+
+def _benchmark_fresh_build_root(
+    request_metadata: Mapping[str, object] | None,
+) -> Path | None:
+    """Return the repo-local benchmark artifact root for fresh FinancePy pilot builds."""
+    metadata = dict(request_metadata or {})
+    if str(metadata.get("task_corpus") or "").strip().lower() != "benchmark_financepy":
+        return None
+    task_id = _normalize_fresh_build_token(metadata.get("task_id")) or "unknown_task"
+    target = (
+        _normalize_fresh_build_token(metadata.get("comparison_target"))
+        or _normalize_fresh_build_token(metadata.get("preferred_method"))
+        or "default"
+    )
+    return REPO_ROOT / "task_runs" / "financepy_benchmarks" / "generated" / task_id / target
+
+
+def _benchmark_fresh_build_module_name(
+    module_path: str,
+    *,
+    request_metadata: Mapping[str, object] | None,
+) -> str:
+    """Return a stable import name for benchmark-only fresh-generated modules."""
+    metadata = dict(request_metadata or {})
+    task_id = _normalize_fresh_build_token(metadata.get("task_id")) or "unknown_task"
+    target = (
+        _normalize_fresh_build_token(metadata.get("comparison_target"))
+        or _normalize_fresh_build_token(metadata.get("preferred_method"))
+        or "default"
+    )
+    stem = _normalize_fresh_build_token(Path(module_path).stem) or "module"
+    return f"trellis_benchmarks._fresh.{task_id}.{target}.{stem}"
+
+
+def _normalize_fresh_build_token(value: object | None) -> str:
+    """Normalize path/module-name tokens for fresh benchmark artifacts."""
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    return re.sub(r"[^a-z0-9_]+", "_", text).strip("_")
+
+
+def _write_generated_module(
+    output_file_path: Path,
+    output_module_path: str,
+    code: str,
+) -> Path:
+    """Write generated source either into the package tree or a benchmark artifact root."""
+    normalized_module_path = str(output_module_path or "").replace("\\", "/")
+    if normalized_module_path.startswith("task_runs/"):
+        output_file_path.parent.mkdir(parents=True, exist_ok=True)
+        output_file_path.write_text(code)
+        return output_file_path
+    return write_module(output_module_path, code)
+
+
+def _is_agent_module_path(module_path: str) -> bool:
+    """Return whether a planner step resolves under the generated adapter package."""
+    normalized = module_path.replace("\\", "/").strip()
+    return normalized.startswith("instruments/_agent/") or normalized.startswith(
+        "trellis/instruments/_agent/"
+    )
 
 
 def _reference_modules(

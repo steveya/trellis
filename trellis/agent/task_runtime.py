@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import os
+import sys
 from dataclasses import MISSING, dataclass, fields, is_dataclass, replace
 from datetime import date, datetime, timedelta
 from importlib import import_module
@@ -1138,6 +1139,7 @@ def run_task(
         base_request_metadata = {
             "task_id": task_id,
             "task_title": task["title"],
+            "task_corpus": str(task.get("task_corpus") or ""),
             "instrument_type": instrument_type,
             "instrument_identity_source": instrument_identity.source,
             "runtime_contract": runtime_contract,
@@ -1282,6 +1284,7 @@ def run_task(
                 "knowledge_gaps": all_gaps,
                 "method_results": method_results,
                 "artifacts": _aggregate_artifacts(method_results),
+                "generated_artifact": _select_generated_artifact(method_results),
                 "knowledge_summary": _aggregate_knowledge_summaries(method_results),
                 "token_usage_summary": _aggregate_token_usage(method_results),
                 "agent_observation_count": sum(
@@ -1619,6 +1622,7 @@ def _build_result_payload(
         "analytical_trace_path": getattr(result, "analytical_trace_path", None),
         "analytical_trace_text_path": getattr(result, "analytical_trace_text_path", None),
         "audit_record_path": getattr(result, "audit_record_path", None),
+        "generated_artifact": _generated_artifact_from_result(result),
         "build_observability": _trace_observability(
             getattr(result, "platform_trace_path", None)
         ),
@@ -1706,6 +1710,7 @@ def _aggregate_failures(result: Mapping[str, Any]) -> list[str]:
 def _artifacts_from_payload(payload: dict[str, Any]) -> dict[str, list[str]]:
     """Collect stable artifact references from one build payload."""
     reflection = payload.get("reflection") or {}
+    generated_artifact = dict(payload.get("generated_artifact") or {})
     return {
         "platform_request_ids": _unique_strings([payload.get("platform_request_id")]),
         "platform_trace_paths": _unique_strings([payload.get("platform_trace_path")]),
@@ -1718,6 +1723,8 @@ def _artifacts_from_payload(payload: dict[str, Any]) -> dict[str, list[str]]:
         "cookbook_candidate_paths": _unique_strings([reflection.get("cookbook_candidate_saved")]),
         "promotion_candidate_paths": _unique_strings([reflection.get("promotion_candidate_saved")]),
         "knowledge_gap_log_paths": _unique_strings([reflection.get("knowledge_gap_log_saved")]),
+        "generated_module_paths": _unique_strings([generated_artifact.get("module_path")]),
+        "generated_file_paths": _unique_strings([generated_artifact.get("file_path")]),
     }
 
 
@@ -1760,7 +1767,154 @@ def _aggregate_artifacts(method_payloads: dict[str, dict[str, Any]]) -> dict[str
             payload.get("artifacts", {}).get("knowledge_gap_log_paths", ())
             for payload in method_payloads.values()
         ),
+        "generated_module_paths": _unique_strings(
+            payload.get("artifacts", {}).get("generated_module_paths", ())
+            for payload in method_payloads.values()
+        ),
+        "generated_file_paths": _unique_strings(
+            payload.get("artifacts", {}).get("generated_file_paths", ())
+            for payload in method_payloads.values()
+        ),
     }
+
+
+def _select_generated_artifact(
+    method_payloads: Mapping[str, Mapping[str, Any]],
+    *,
+    preferred_method: str | None = None,
+) -> dict[str, Any]:
+    """Choose the most relevant generated artifact from comparison-target payloads."""
+
+    def _artifact_for(method_id: str | None) -> dict[str, Any]:
+        if not method_id:
+            return {}
+        payload = method_payloads.get(method_id)
+        if not isinstance(payload, Mapping):
+            return {}
+        artifact = payload.get("generated_artifact")
+        return dict(artifact) if isinstance(artifact, Mapping) else {}
+
+    preferred_artifact = _artifact_for(preferred_method)
+    if preferred_artifact:
+        return preferred_artifact
+
+    for payload in method_payloads.values():
+        if not isinstance(payload, Mapping):
+            continue
+        artifact = payload.get("generated_artifact")
+        if not isinstance(artifact, Mapping) or not artifact:
+            continue
+        if bool(payload.get("reference_target")) and bool(payload.get("success")):
+            return dict(artifact)
+
+    for payload in method_payloads.values():
+        if not isinstance(payload, Mapping):
+            continue
+        artifact = payload.get("generated_artifact")
+        if isinstance(artifact, Mapping) and artifact and bool(payload.get("success")):
+            return dict(artifact)
+
+    for payload in method_payloads.values():
+        if not isinstance(payload, Mapping):
+            continue
+        artifact = payload.get("generated_artifact")
+        if isinstance(artifact, Mapping) and artifact:
+            return dict(artifact)
+
+    return {}
+
+
+def _generated_artifact_from_result(result: Any) -> dict[str, Any]:
+    """Return stable provenance for the payoff module executed by one build result."""
+    payoff_cls = getattr(result, "payoff_cls", None)
+    if payoff_cls is None:
+        return {}
+
+    module_name = str(getattr(payoff_cls, "__module__", "") or "").strip()
+    if not module_name:
+        return {}
+
+    module = sys.modules.get(module_name)
+    file_path = ""
+    module_path = ""
+    code_hash = ""
+    if module is not None:
+        module_file = getattr(module, "__file__", None)
+        if module_file:
+            resolved = Path(module_file).resolve()
+            file_path = str(resolved)
+            try:
+                module_path = str(resolved.relative_to(ROOT)).replace("\\", "/")
+            except ValueError:
+                module_path = str(resolved)
+            try:
+                code_hash = hashlib.sha256(resolved.read_bytes()).hexdigest()
+            except OSError:
+                code_hash = ""
+
+    if not code_hash:
+        code = str(getattr(result, "code", "") or "")
+        if code:
+            code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+    normalized_module_path = module_path.replace("\\", "/")
+    normalized_file_path = file_path.replace("\\", "/")
+    is_fresh_build = (
+        "._fresh." in module_name
+        or "/_fresh/" in normalized_module_path
+        or "/_fresh/" in normalized_file_path
+        or "/financepy_benchmarks/generated/" in normalized_module_path
+        or "/financepy_benchmarks/generated/" in normalized_file_path
+    )
+    return {
+        "module_name": module_name,
+        "class_name": payoff_cls.__name__,
+        "file_path": file_path,
+        "module_path": module_path,
+        "code_hash": code_hash,
+        "is_fresh_build": is_fresh_build,
+        "execution_module_name": str(getattr(result, "execution_module_name", "") or ""),
+        "execution_module_path": str(getattr(result, "execution_module_path", "") or ""),
+        "execution_file_path": str(getattr(result, "execution_file_path", "") or ""),
+        "admission_target_module_name": str(
+            getattr(result, "admission_target_module_name", "") or ""
+        ),
+        "admission_target_module_path": str(
+            getattr(result, "admission_target_module_path", "") or ""
+        ),
+        "admission_target_file_path": str(
+            getattr(result, "admission_target_file_path", "") or ""
+        ),
+    }
+
+
+def _load_generated_artifact_payoff(
+    generated_artifact: Mapping[str, Any],
+) -> tuple[type, SpecSchema | None]:
+    """Load a generated payoff class from persisted artifact provenance."""
+    from trellis.agent.builder import dynamic_import
+
+    module_name = str(generated_artifact.get("module_name") or "").strip()
+    class_name = str(generated_artifact.get("class_name") or "").strip()
+    file_path_raw = str(generated_artifact.get("file_path") or "").strip()
+    if not module_name or not class_name:
+        raise ValueError("generated artifact provenance is missing module or class metadata")
+
+    if file_path_raw:
+        module = dynamic_import(Path(file_path_raw), module_name)
+    else:
+        module = import_module(module_name)
+
+    payoff_cls = getattr(module, class_name, None)
+    if payoff_cls is None:
+        raise AttributeError(
+            f"Generated artifact `{module_name}` does not export `{class_name}`"
+        )
+    spec_schema = _resolve_runtime_spec_schema(
+        payoff_cls,
+        _infer_spec_schema_from_module(module, payoff_cls),
+    )
+    return payoff_cls, spec_schema
 
 
 def _aggregate_blocker_details(
@@ -2491,6 +2645,69 @@ def benchmark_existing_task(
         "min_seconds": round(min(durations), 6),
         "max_seconds": round(max(durations), 6),
         "last_price": last_price,
+    }
+
+
+def benchmark_generated_artifact(
+    task: dict,
+    *,
+    generated_artifact: Mapping[str, Any],
+    market_state,
+    repeats: int = 5,
+    warmups: int = 1,
+    timer: Callable[[], float] = perf_counter,
+    price_fn: Callable[[Any, Any], float] | None = None,
+    spec_overrides: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Benchmark an already-built generated artifact without falling back to cached adapters."""
+    from trellis.engine.payoff_pricer import price_payoff
+
+    if repeats < 1:
+        raise ValueError("repeats must be >= 1")
+    if warmups < 0:
+        raise ValueError("warmups must be >= 0")
+
+    price_fn = price_fn or price_payoff
+    payoff_cls, runtime_spec_schema = _load_generated_artifact_payoff(generated_artifact)
+    settle = getattr(market_state, "settlement", DEFAULT_SETTLEMENT)
+
+    t0 = timer()
+    payoff = _make_test_payoff(
+        payoff_cls,
+        runtime_spec_schema,
+        settle,
+        market_state=market_state,
+        spec_overrides=spec_overrides,
+    )
+    instantiate_seconds = timer() - t0
+
+    for _ in range(warmups):
+        price_fn(payoff, market_state)
+
+    durations: list[float] = []
+    last_price: float | None = None
+    for _ in range(repeats):
+        start = timer()
+        last_price = price_fn(payoff, market_state)
+        durations.append(timer() - start)
+
+    return {
+        "task_id": str(task.get("id") or ""),
+        "title": str(task.get("title") or ""),
+        "instrument_type": canonical_benchmark_instrument_type(task) or str(task.get("instrument_type") or ""),
+        "payoff_class": payoff_cls.__name__,
+        "warmups": warmups,
+        "repeats": repeats,
+        "instantiate_seconds": round(instantiate_seconds, 6),
+        "mean_seconds": round(mean(durations), 6),
+        "min_seconds": round(min(durations), 6),
+        "max_seconds": round(max(durations), 6),
+        "last_price": last_price,
+        "execution_module_name": str(generated_artifact.get("module_name") or ""),
+        "execution_module_path": str(generated_artifact.get("module_path") or ""),
+        "execution_file_path": str(generated_artifact.get("file_path") or ""),
+        "execution_code_hash": str(generated_artifact.get("code_hash") or ""),
+        "execution_is_fresh_build": bool(generated_artifact.get("is_fresh_build")),
     }
 
 

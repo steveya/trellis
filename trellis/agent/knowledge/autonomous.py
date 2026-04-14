@@ -55,6 +55,12 @@ class BuildResult:
     analytical_trace_path: str | None = None
     analytical_trace_text_path: str | None = None
     audit_record_path: str | None = None
+    execution_module_name: str | None = None
+    execution_module_path: str | None = None
+    execution_file_path: str | None = None
+    admission_target_module_name: str | None = None
+    admission_target_module_path: str | None = None
+    admission_target_file_path: str | None = None
     blocker_details: dict[str, Any] | None = None
     token_usage_summary: dict[str, Any] = field(default_factory=dict)
     gate_decision: object | None = None  # BuildGateDecision when gate evaluated
@@ -277,6 +283,12 @@ def build_with_knowledge(
             result.analytical_trace_path = build_meta.get("analytical_trace_path")
             result.analytical_trace_text_path = build_meta.get("analytical_trace_text_path")
             result.audit_record_path = build_meta.get("audit_record_path")
+            result.execution_module_name = build_meta.get("execution_module_name")
+            result.execution_module_path = build_meta.get("execution_module_path")
+            result.execution_file_path = build_meta.get("execution_file_path")
+            result.admission_target_module_name = build_meta.get("admission_target_module_name")
+            result.admission_target_module_path = build_meta.get("admission_target_module_path")
+            result.admission_target_file_path = build_meta.get("admission_target_file_path")
             result.blocker_details = build_meta.get("blocker_details")
         except BuildTrackingFailure as exc:
             result.failures = [str(exc.cause)]
@@ -289,6 +301,12 @@ def build_with_knowledge(
             result.analytical_trace_path = exc.meta.get("analytical_trace_path")
             result.analytical_trace_text_path = exc.meta.get("analytical_trace_text_path")
             result.audit_record_path = exc.meta.get("audit_record_path")
+            result.execution_module_name = exc.meta.get("execution_module_name")
+            result.execution_module_path = exc.meta.get("execution_module_path")
+            result.execution_file_path = exc.meta.get("execution_file_path")
+            result.admission_target_module_name = exc.meta.get("admission_target_module_name")
+            result.admission_target_module_path = exc.meta.get("admission_target_module_path")
+            result.admission_target_file_path = exc.meta.get("admission_target_file_path")
             result.blocker_details = exc.meta.get("blocker_details")
         except Exception as e:
             result.failures = [str(e)]
