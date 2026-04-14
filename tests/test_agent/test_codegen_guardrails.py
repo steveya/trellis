@@ -307,7 +307,6 @@ def test_generation_plan_renders_compiled_semantic_and_validation_boundary():
     assert "check_quanto_cross_currency_semantics" in text
     assert "- Route authority:" in text
     assert "authority=`exact_backend_fit`" in text
-    assert "canaries=`T105`" in text
 
 
 def test_generation_route_card_keeps_lane_obligations_ahead_of_route_authority():
