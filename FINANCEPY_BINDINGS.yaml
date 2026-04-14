@@ -25,6 +25,10 @@ bindings:
     comparison_modes:
     - price_parity
     - warm_runtime
+    normalization:
+      price:
+        source: financepy
+        scale_by_contract_field: notional
   financepy.rates.cap_floor.black:
     instrument_family: cap_floor
     method_family: analytical
@@ -35,6 +39,8 @@ bindings:
     comparison_modes:
     - price_parity
     - warm_runtime
+    market_alignment:
+      curve_regime: single_curve_forecast
   financepy.rates.cap_floor.shifted_black:
     instrument_family: cap_floor
     method_family: analytical
@@ -45,6 +51,8 @@ bindings:
     comparison_modes:
     - price_parity
     - warm_runtime
+    market_alignment:
+      curve_regime: single_curve_forecast
   financepy.rates.cap_floor.sabr:
     instrument_family: cap_floor
     method_family: analytical
@@ -55,6 +63,8 @@ bindings:
     comparison_modes:
     - price_parity
     - warm_runtime
+    market_alignment:
+      curve_regime: single_curve_forecast
   financepy.rates.swaption.black:
     instrument_family: swaption
     method_family: analytical
@@ -65,6 +75,8 @@ bindings:
     comparison_modes:
     - price_parity
     - warm_runtime
+    market_alignment:
+      curve_regime: single_curve_discount
   financepy.rates.bermudan_swaption.hw_tree:
     instrument_family: swaption
     method_family: lattice
@@ -125,6 +137,10 @@ bindings:
     comparison_modes:
     - price_parity
     - warm_runtime
+    normalization:
+      price:
+        source: financepy
+        scale_by_contract_field: cash_payoff
   financepy.equity.lookback.fixed:
     instrument_family: lookback_option
     method_family: analytical
@@ -155,11 +171,11 @@ bindings:
     comparison_modes:
     - price_parity
     - warm_runtime
-  financepy.equity.cliquet.monte_carlo:
+  financepy.equity.cliquet.black_scholes:
     instrument_family: cliquet_option
-    method_family: monte_carlo
+    method_family: analytical
     financepy_class: EquityCliquetOption
-    financepy_model: MonteCarlo
+    financepy_model: BlackScholes
     overlapping_outputs:
     - price
     comparison_modes:
@@ -172,6 +188,7 @@ bindings:
     financepy_model: VarianceReplication
     overlapping_outputs:
     - price
+    - fair_strike_variance
     comparison_modes:
     - price_parity
     - warm_runtime

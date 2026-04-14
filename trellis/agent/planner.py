@@ -157,6 +157,97 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("expiry_date", "date", "Option expiry date"),
             FieldDef("barrier_type", "str", "Type: 'up_and_out', 'down_and_out', 'up_and_in', 'down_and_in'"),
             FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("rebate", "float", "Cash rebate paid when the barrier event knocks out", "0.0"),
+            FieldDef("observations_per_year", "int | None", "Discrete monitoring frequency per year; None means continuous monitoring", "None"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+        ],
+    ),
+    "digital_option": SpecSchema(
+        class_name="DigitalOptionPayoff",
+        spec_name="DigitalOptionSpec",
+        requirements=["discount_curve", "black_vol_surface"],
+        fields=[
+            FieldDef("notional", "float", "Notional / payout multiplier"),
+            FieldDef("spot", "float", "Current spot price"),
+            FieldDef("strike", "float", "Digital strike"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("payout_type", "str", "Digital payout type", "'cash_or_nothing'"),
+            FieldDef("cash_payoff", "float", "Cash amount paid when the option finishes in the money", "1.0"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+        ],
+    ),
+    "lookback_option": SpecSchema(
+        class_name="LookbackOptionPayoff",
+        spec_name="LookbackOptionSpec",
+        requirements=["discount_curve", "black_vol_surface"],
+        fields=[
+            FieldDef("notional", "float", "Notional / number of shares"),
+            FieldDef("spot", "float", "Current spot price"),
+            FieldDef("strike", "float", "Lookback strike"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("lookback_type", "str", "Lookback style", "'fixed_strike'"),
+            FieldDef("running_extreme", "float | None", "Observed running max/min aligned with option type", "None"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+        ],
+    ),
+    "chooser_option": SpecSchema(
+        class_name="ChooserOptionPayoff",
+        spec_name="ChooserOptionSpec",
+        requirements=["discount_curve", "black_vol_surface"],
+        fields=[
+            FieldDef("notional", "float", "Notional / number of shares"),
+            FieldDef("spot", "float", "Current spot price"),
+            FieldDef("choose_date", "date", "Chooser decision date"),
+            FieldDef("call_expiry_date", "date", "Call expiry date"),
+            FieldDef("put_expiry_date", "date", "Put expiry date"),
+            FieldDef("call_strike", "float", "Call strike"),
+            FieldDef("put_strike", "float", "Put strike"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+        ],
+    ),
+    "compound_option": SpecSchema(
+        class_name="CompoundOptionPayoff",
+        spec_name="CompoundOptionSpec",
+        requirements=["discount_curve", "black_vol_surface"],
+        fields=[
+            FieldDef("notional", "float", "Notional / number of shares"),
+            FieldDef("spot", "float", "Current spot price"),
+            FieldDef("outer_expiry_date", "date", "Outer option expiry date"),
+            FieldDef("inner_expiry_date", "date", "Inner option expiry date"),
+            FieldDef("outer_strike", "float", "Outer option strike"),
+            FieldDef("inner_strike", "float", "Inner option strike"),
+            FieldDef("outer_option_type", "str", "Outer option type: 'call' or 'put'", "'call'"),
+            FieldDef("inner_option_type", "str", "Inner option type: 'call' or 'put'", "'call'"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+        ],
+    ),
+    "cliquet_option": SpecSchema(
+        class_name="CliquetOptionPayoff",
+        spec_name="CliquetOptionSpec",
+        requirements=["discount_curve", "black_vol_surface"],
+        fields=[
+            FieldDef("notional", "float", "Notional / number of shares"),
+            FieldDef("spot", "float", "Current spot price"),
+            FieldDef("expiry_date", "date", "Final cliquet expiry date"),
+            FieldDef("observation_dates", "tuple[date, ...]", "Ordered reset observation dates"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.THIRTY_E_360"),
+        ],
+    ),
+    "variance_swap": SpecSchema(
+        class_name="VarianceSwapPayoff",
+        spec_name="VarianceSwapSpec",
+        requirements=["discount_curve", "black_vol_surface"],
+        fields=[
+            FieldDef("notional", "float", "Variance notional"),
+            FieldDef("spot", "float", "Current spot level"),
+            FieldDef("strike_variance", "float", "Variance strike"),
+            FieldDef("expiry_date", "date", "Variance swap maturity date"),
+            FieldDef("realized_variance", "float", "Realized variance accrued to the valuation date", "0.0"),
+            FieldDef("replication_strikes", "str | None", "Comma-separated strike grid for variance-replication parity checks", "None"),
+            FieldDef("replication_volatilities", "str | None", "Comma-separated volatility grid aligned with replication_strikes", "None"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
         ],
     ),
@@ -525,8 +616,11 @@ def _plan_static(
             class_name = spec_schema.class_name
             module_name = class_name.lower().replace("payoff", "")
             module = f"instruments/_agent/{module_name}.py"
+        elif norm:
+            class_name = "".join(part.capitalize() for part in norm.split("_")) + "Payoff"
+            module = f"instruments/_agent/{class_name.lower().replace('payoff', '')}.py"
 
-    if spec_schema is None:
+    if spec_schema is None and class_name is None:
         # Match against STATIC_SPECS — longer keys first to avoid partial matches
         for key in sorted(STATIC_SPECS.keys(), key=len, reverse=True):
             if key.replace("_", " ") in desc_lower or key in desc_lower:

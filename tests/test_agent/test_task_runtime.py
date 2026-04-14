@@ -128,6 +128,98 @@ def test_run_task_replays_the_same_simulation_identity_for_the_same_request_and_
     assert first_identity["simulation_stream_id"].startswith("T997:")
 
 
+def test_run_task_records_cold_benchmark_price_using_runtime_schema():
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import build_market_state, run_task
+    from trellis.instruments._agent.barrieroption import BarrierOptionPayoff
+
+    class FakeResult:
+        success = True
+        attempts = 1
+        gap_confidence = 1.0
+        knowledge_gaps = []
+        payoff_cls = BarrierOptionPayoff
+        failures = []
+        reflection = {}
+
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_BENCHMARK_FINANCEPY.yaml")
+    }
+
+    result = run_task(
+        tasks["F009"],
+        market_state=build_market_state(),
+        build_fn=lambda **_kwargs: FakeResult(),
+        model="test-model",
+    )
+
+    assert result["success"] is True
+    assert result["price"] == pytest.approx(1.0873716740767274, rel=5e-5)
+
+
+def test_run_task_records_benchmark_outputs_from_payoff_snapshot():
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import build_market_state, run_task
+
+    module_name = "tests.fake_variance_swap_agent"
+    module = ModuleType(module_name)
+
+    @dataclass(frozen=True)
+    class VarianceSwapSpec:
+        notional: float
+        spot: float
+        strike_variance: float
+        expiry_date: date
+
+    class VarianceSwapPayoff:
+        def __init__(self, spec: VarianceSwapSpec):
+            self.spec = spec
+
+        @property
+        def requirements(self) -> set[str]:
+            return {"discount_curve", "black_vol_surface"}
+
+        def evaluate(self, market_state):
+            return 800.1257160347096
+
+        def benchmark_outputs(self, market_state):
+            return {
+                "price": 800.1257160347096,
+                "fair_strike_variance": 0.048411342420965765,
+            }
+
+    VarianceSwapSpec.__module__ = module_name
+    VarianceSwapPayoff.__module__ = module_name
+    module.VarianceSwapSpec = VarianceSwapSpec
+    module.VarianceSwapPayoff = VarianceSwapPayoff
+    sys.modules[module_name] = module
+
+    class FakeResult:
+        success = True
+        attempts = 1
+        gap_confidence = 1.0
+        knowledge_gaps = []
+        payoff_cls = VarianceSwapPayoff
+        failures = []
+        reflection = {}
+
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_BENCHMARK_FINANCEPY.yaml")
+    }
+
+    result = run_task(
+        tasks["F015"],
+        market_state=build_market_state(),
+        build_fn=lambda **_kwargs: FakeResult(),
+        model="test-model",
+    )
+
+    assert result["price"] == pytest.approx(800.1257160347096)
+    assert result["benchmark_outputs"]["fair_strike_variance"] == pytest.approx(0.048411342420965765)
+
+
 def test_run_task_uses_an_explicit_simulation_seed_when_one_is_provided():
     from trellis.agent.task_runtime import run_task
 
@@ -2832,6 +2924,45 @@ def test_benchmark_existing_task_supports_generic_cached_transform_task():
     assert result["payoff_class"] == "FFTvsCOSPricer"
     assert result["mean_seconds"] >= 0.0
     assert result["last_price"] > 0.0
+
+
+def test_benchmark_existing_task_prefers_runtime_schema_over_stale_static_schema(monkeypatch):
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import PreparedTask, benchmark_existing_task, benchmark_spec_overrides, build_market_state_for_task, build_market_state
+    from trellis.instruments._agent.barrieroption import BarrierOptionPayoff
+
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_BENCHMARK_FINANCEPY.yaml")
+    }
+    task = tasks["F009"]
+    market_state, _ = build_market_state_for_task(task, build_market_state())
+    prepared = PreparedTask(
+        task_id="F009",
+        title=task["title"],
+        description="Build a pricer for: FinancePy parity: equity barrier Black-Scholes",
+        instrument_type="barrier_option",
+        requirements={"discount_curve", "black_vol_surface"},
+        payoff_cls=BarrierOptionPayoff,
+        spec_schema=STATIC_SPECS["barrier_option"],
+        compiled_request=None,
+    )
+
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime.prepare_existing_task",
+        lambda task, model="gpt-5.4-mini": prepared,
+    )
+
+    result = benchmark_existing_task(
+        task,
+        market_state=market_state,
+        repeats=1,
+        warmups=0,
+        spec_overrides=benchmark_spec_overrides(task),
+    )
+
+    assert result["last_price"] == pytest.approx(1.0873716740767274, rel=5e-5)
 
 
 def test_make_test_payoff_uses_basket_specific_schedule_defaults(monkeypatch):

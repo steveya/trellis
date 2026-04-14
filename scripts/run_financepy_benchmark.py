@@ -23,6 +23,10 @@ from trellis.agent.benchmark_history import (
     load_benchmark_history_records,
     save_benchmark_history_scorecard,
 )
+from trellis.agent.financepy_parity import (
+    financepy_binding_for_task,
+    normalize_benchmark_outputs,
+)
 from trellis.agent.financepy_benchmark import (
     DEFAULT_FINANCEPY_BENCHMARK_ROOT,
     build_financepy_benchmark_report,
@@ -34,7 +38,6 @@ from trellis.agent.financepy_benchmark import (
 )
 from trellis.agent.financepy_reference import price_financepy_reference
 from trellis.agent.runtime_revisions import runtime_revision_metadata
-from trellis.agent.task_manifests import load_financepy_bindings
 from trellis.agent.task_runtime import (
     benchmark_existing_task,
     benchmark_spec_overrides,
@@ -57,6 +60,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--warmups", type=int, default=1)
     parser.add_argument("--skip-financepy", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--force-rebuild", action="store_true")
     parser.add_argument("--output-root")
     parser.add_argument("--report-name", default="financepy_parity")
     parser.add_argument("--campaign-id")
@@ -160,7 +164,6 @@ def main(argv: list[str] | None = None) -> int:
     git_revision = revisions["git_sha"] or _git_revision()
     knowledge_revision = revisions["knowledge_revision"]
     campaign_id = str(args.campaign_id or args.report_name).strip()
-    financepy_bindings = load_financepy_bindings(root=ROOT)
     market_state = build_market_state()
     benchmark_runs: list[dict[str, Any]] = []
 
@@ -170,7 +173,7 @@ def main(argv: list[str] | None = None) -> int:
             task,
             market_state,
             model=args.model,
-            force_rebuild=True,
+            force_rebuild=args.force_rebuild,
             validation=args.validation,
         )
         warm_result: dict[str, Any] | None = None
@@ -198,12 +201,26 @@ def main(argv: list[str] | None = None) -> int:
             except Exception as exc:
                 financepy_result = {"error": str(exc)}
 
+        binding = financepy_binding_for_task(task, root=ROOT)
         trellis_outputs = extract_trellis_benchmark_outputs(cold_result, warm_result)
+        trellis_outputs_normalized = normalize_benchmark_outputs(
+            task,
+            trellis_outputs,
+            source="trellis",
+            root=ROOT,
+        )
+        financepy_outputs = {} if financepy_result is None else dict(financepy_result.get("outputs") or {})
+        financepy_outputs_normalized = normalize_benchmark_outputs(
+            task,
+            financepy_outputs,
+            source="financepy",
+            root=ROOT,
+        )
         comparison_summary = _compare_outputs(
             task=task,
-            binding=financepy_bindings.get(str(task.get("financepy_binding_id") or ""), {}),
-            trellis_outputs=trellis_outputs,
-            financepy_outputs=(financepy_result or {}).get("outputs") if financepy_result else None,
+            binding=binding,
+            trellis_outputs=trellis_outputs_normalized,
+            financepy_outputs=financepy_outputs_normalized,
         )
         if financepy_result and financepy_result.get("error"):
             comparison_summary["status"] = "financepy_error"
@@ -235,7 +252,9 @@ def main(argv: list[str] | None = None) -> int:
             "warm_agent_last_price": None if warm_result is None else warm_result.get("last_price"),
             "financepy_elapsed_seconds": None if financepy_result is None else financepy_result.get("elapsed_seconds"),
             "trellis_outputs": trellis_outputs,
-            "financepy_outputs": {} if financepy_result is None else dict(financepy_result.get("outputs") or {}),
+            "trellis_outputs_normalized": trellis_outputs_normalized,
+            "financepy_outputs": financepy_outputs,
+            "financepy_outputs_normalized": financepy_outputs_normalized,
             "comparison_summary": comparison_summary,
         }
         record.update(persist_financepy_benchmark_record(record, root=output_root))

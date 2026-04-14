@@ -65,6 +65,52 @@ def _flat_curve(rate: float, value_date):
     return DiscountCurveFlat(value_date, float(rate))
 
 
+def _fp_option_type(value: object | None):
+    from financepy.utils.global_types import OptionTypes
+
+    return OptionTypes.EUROPEAN_PUT if str(value or "call").strip().lower() == "put" else OptionTypes.EUROPEAN_CALL
+
+
+def _fp_frequency(value: object | None):
+    from financepy.utils.frequency import FrequencyTypes
+
+    normalized = str(value or "quarterly").strip().lower().replace("-", "_")
+    return {
+        "monthly": FrequencyTypes.MONTHLY,
+        "quarterly": FrequencyTypes.QUARTERLY,
+        "semi_annual": FrequencyTypes.SEMI_ANNUAL,
+        "semiannual": FrequencyTypes.SEMI_ANNUAL,
+        "annual": FrequencyTypes.ANNUAL,
+    }.get(normalized, FrequencyTypes.QUARTERLY)
+
+
+def _fp_day_count(value: object | None):
+    from financepy.utils.day_count import DayCountTypes
+
+    normalized = str(value or "30e/360").strip().lower().replace("-", "_")
+    return {
+        "act/360": DayCountTypes.ACT_360,
+        "act_360": DayCountTypes.ACT_360,
+        "act/365": DayCountTypes.ACT_365F,
+        "act_365": DayCountTypes.ACT_365F,
+        "30e/360": DayCountTypes.THIRTY_E_360,
+        "30e_360": DayCountTypes.THIRTY_E_360,
+        "30/360": DayCountTypes.THIRTY_360_BOND,
+        "30_360": DayCountTypes.THIRTY_360_BOND,
+    }.get(normalized, DayCountTypes.THIRTY_E_360)
+
+
+def _float_sequence(value: object | None) -> np.ndarray:
+    if isinstance(value, np.ndarray):
+        return value.astype(float)
+    if isinstance(value, (list, tuple)):
+        return np.asarray([float(item) for item in value], dtype=float)
+    text = str(value or "").strip()
+    if not text:
+        return np.asarray([], dtype=float)
+    return np.asarray([float(item.strip()) for item in text.split(",") if item.strip()], dtype=float)
+
+
 def _maybe_method_outputs(option, methods: list[str], *args) -> dict[str, float]:
     outputs: dict[str, float] = {}
     for method_name in methods:
@@ -214,11 +260,12 @@ def _cds_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str,
         freq_type=FrequencyTypes.QUARTERLY,
         dc_type=DayCountTypes.ACT_360,
     )
-    issuer_curve = CDSCurve(
-        value_dt,
-        [cds],
-        discount_curve,
-        float(contract["recovery_rate"]),
+    issuer_curve = CDSCurve(value_dt, [], discount_curve, float(contract["recovery_rate"]))
+    maturity_years = max((cds.maturity_dt - value_dt) / 365.0, 1.0)
+    issuer_curve._times = np.asarray([0.0, float(maturity_years)], dtype=float)
+    issuer_curve._qs = np.asarray(
+        [1.0, float(np.exp(-float(inputs["issuer_hazard_rate"]) * maturity_years))],
+        dtype=float,
     )
     value = cds.value(value_dt, issuer_curve, float(contract["recovery_rate"]))
     outputs = {"price": float(value["clean_pv"])}
@@ -283,6 +330,7 @@ def _barrier_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[
         float(contract["strike"]),
         barrier_types[str(contract["barrier_type"])],
         float(contract["barrier"]),
+        num_obs_per_year=int(contract.get("observations_per_year") or 252),
         notional=float(contract.get("notional", 1.0)),
     )
     discount_curve = _flat_curve(float(contract["domestic_rate"]), value_dt)
@@ -393,26 +441,19 @@ def _compound_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping
 def _cliquet_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:
     from financepy.models.black_scholes import BlackScholes
     from financepy.products.equity.equity_cliquet_option import EquityCliquetOption
-    from financepy.utils.day_count import DayCountTypes
-    from financepy.utils.frequency import FrequencyTypes
-    from financepy.utils.global_types import OptionTypes
 
     value_dt = _fp_date(scenario_inputs["valuation_date"])
-    final_expiry = value_dt.add_tenor("1Y")
+    final_expiry = value_dt.add_tenor(f"{max(int(round(float(contract.get('expiry_years') or 1.0) * 12.0)), 1)}M")
     option = EquityCliquetOption(
         value_dt,
         final_expiry,
-        OptionTypes.EUROPEAN_CALL,
-        FrequencyTypes.QUARTERLY,
-        DayCountTypes.THIRTY_E_360,
+        _fp_option_type(contract.get("option_type")),
+        _fp_frequency(contract.get("reset_frequency")),
+        _fp_day_count(contract.get("day_count")),
     )
     discount_curve = _flat_curve(float(contract["domestic_rate"]), value_dt)
     dividend_curve = _flat_curve(float(contract["dividend_rate"]), value_dt)
-    model = BlackScholes(
-        float(contract["volatility"]),
-        num_steps_per_year=52,
-        num_paths=int(contract.get("num_paths") or 10000),
-    )
+    model = BlackScholes(float(contract["volatility"]))
     return {
         "price": float(option.value(value_dt, float(contract["spot"]), discount_curve, dividend_curve, model))
     }
@@ -425,12 +466,18 @@ def _variance_swap_reference(*, contract: Mapping[str, Any], scenario_inputs: Ma
     discount_curve = _flat_curve(float(contract["domestic_rate"]), value_dt)
     swap = EquityVarianceSwap(
         value_dt,
-        "1Y",
+        f"{max(int(round(float(contract.get('expiry_years') or 1.0) * 12.0)), 1)}M",
         float(contract["strike_variance"]),
         notional=float(contract["notional"]),
     )
-    strike_grid = np.asarray([60.0, 80.0, 100.0, 120.0, 140.0], dtype=float)
-    vol_grid = np.asarray([0.26, 0.24, 0.22, 0.23, 0.25], dtype=float)
+    strike_grid = _float_sequence(contract.get("replication_strikes"))
+    vol_grid = _float_sequence(contract.get("replication_volatilities"))
+    if strike_grid.size == 0:
+        spot = float(contract["spot"])
+        strike_grid = np.asarray([0.6, 0.8, 1.0, 1.2, 1.4], dtype=float) * spot
+    if vol_grid.size == 0:
+        flat_vol = float(contract.get("volatility") or scenario_inputs.get("volatility") or scenario_inputs.get("black_vol") or 0.2)
+        vol_grid = np.full(strike_grid.shape, flat_vol, dtype=float)
     fair_strike_var = float(
         swap.fair_strike_approx(
             value_dt,
@@ -459,6 +506,6 @@ _BINDING_ADAPTERS: dict[str, Any] = {
     "financepy.equity.lookback.fixed": _lookback_reference,
     "financepy.equity.chooser.black_scholes": _chooser_reference,
     "financepy.equity.compound.black_scholes": _compound_reference,
-    "financepy.equity.cliquet.monte_carlo": _cliquet_reference,
+    "financepy.equity.cliquet.black_scholes": _cliquet_reference,
     "financepy.equity.variance_swap.analytical": _variance_swap_reference,
 }

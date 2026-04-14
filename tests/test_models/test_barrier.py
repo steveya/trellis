@@ -198,3 +198,19 @@ class TestBarrierOptionPriceDispatcher:
                 self.S, self.K, self.B, self.r, self.sigma, self.T,
                 barrier_type="sideways_and_out", option_type="call",
             )
+
+    def test_discrete_monitoring_alignment_matches_financepy_reference_case(self):
+        price = barrier_option_price(
+            100.0,
+            100.0,
+            120.0,
+            0.05,
+            0.22,
+            1.0,
+            barrier_type="up_and_out",
+            option_type="call",
+            q=0.0,
+            observations_per_year=252,
+        )
+
+        assert price == pytest.approx(1.0873716740767274, rel=5e-5)

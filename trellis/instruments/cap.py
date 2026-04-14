@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from trellis.conventions.calendar import BusinessDayAdjustment, Calendar, WEEKEND_ONLY
 from trellis.core.date_utils import build_period_schedule
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
@@ -28,6 +29,27 @@ class CapFloorSpec:
     frequency: Frequency = Frequency.QUARTERLY
     day_count: DayCountConvention = DayCountConvention.ACT_360
     rate_index: str | None = None
+    calendar_name: str | None = None
+    business_day_adjustment: str | None = None
+    model: str | None = None
+    shift: float | None = None
+    sabr: dict[str, float] | None = None
+
+
+def _calendar_from_name(name: str | None) -> Calendar | None:
+    normalized = str(name or "").strip().lower()
+    if not normalized:
+        return None
+    if normalized == "weekend_only":
+        return WEEKEND_ONLY
+    raise ValueError(f"Unsupported calendar_name {name!r}")
+
+
+def _business_day_adjustment_from_name(name: str | None) -> BusinessDayAdjustment:
+    normalized = str(name or "").strip().lower()
+    if not normalized:
+        return BusinessDayAdjustment.UNADJUSTED
+    return BusinessDayAdjustment(normalized)
 
 
 def _capfloor_pv(
@@ -49,6 +71,8 @@ def _capfloor_pv(
         spec.start_date,
         spec.end_date,
         spec.frequency,
+        calendar=_calendar_from_name(spec.calendar_name),
+        bda=_business_day_adjustment_from_name(spec.business_day_adjustment),
         day_count=spec.day_count,
         time_origin=market_state.settlement,
     )

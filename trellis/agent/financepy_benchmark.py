@@ -86,26 +86,56 @@ def extract_trellis_benchmark_outputs(
     are only a runtime probe and should only backfill missing values.
     """
     outputs: dict[str, Any] = {}
-    summary = dict(result.get("summary") or {})
-    for key, value in dict(summary.get("prices") or {}).items():
-        outputs.setdefault(key, value)
-
-    comparison = dict(result.get("comparison") or {})
-    for key, value in dict(comparison.get("prices") or {}).items():
-        outputs.setdefault(key, value)
-
+    _merge_benchmark_output_candidate(outputs, result)
     payload = dict(result.get("result") or {})
-    for key in ("price", "fair_value"):
+    _merge_benchmark_output_candidate(outputs, payload)
+    _merge_benchmark_output_candidate(outputs, warm_benchmark)
+    return outputs
+
+
+def _merge_benchmark_output_candidate(
+    outputs: dict[str, Any],
+    payload: Mapping[str, Any] | None,
+) -> None:
+    if not isinstance(payload, Mapping):
+        return
+
+    for key in ("price", "fair_value", "last_price"):
         if payload.get(key) is not None:
             outputs.setdefault("price", payload[key])
 
+    benchmark_outputs = dict(payload.get("benchmark_outputs") or {})
+    for key, value in benchmark_outputs.items():
+        outputs.setdefault(key, value)
+
     greeks = dict(payload.get("greeks") or {})
     if greeks:
-        outputs["greeks"] = greeks
+        outputs.setdefault("greeks", greeks)
 
-    if warm_benchmark and warm_benchmark.get("last_price") is not None:
-        outputs.setdefault("price", warm_benchmark["last_price"])
-    return outputs
+    summary = dict(payload.get("summary") or {})
+    for key, value in dict(summary.get("prices") or {}).items():
+        outputs.setdefault(key, value)
+    summary_greeks = dict(summary.get("greeks") or {})
+    if summary_greeks:
+        outputs.setdefault("greeks", summary_greeks)
+
+    comparison = dict(payload.get("comparison") or {})
+    comparison_prices = dict(comparison.get("prices") or {})
+    if not comparison_prices:
+        comparison_summary = dict(comparison.get("summary") or {})
+        comparison_prices = dict(comparison_summary.get("prices") or {})
+        reference_target = str(comparison_summary.get("reference_target") or "").strip()
+        if reference_target and reference_target in comparison_prices:
+            outputs.setdefault("price", comparison_prices[reference_target])
+        elif len(comparison_prices) == 1:
+            outputs.setdefault("price", next(iter(comparison_prices.values())))
+    for key, value in comparison_prices.items():
+        outputs.setdefault(key, value)
+    comparison_greeks = dict(comparison.get("greeks") or {})
+    if not comparison_greeks:
+        comparison_greeks = dict(dict(comparison.get("summary") or {}).get("greeks") or {})
+    if comparison_greeks:
+        outputs.setdefault("greeks", comparison_greeks)
 
 
 def build_financepy_benchmark_report(

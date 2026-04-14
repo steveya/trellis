@@ -112,6 +112,7 @@ def test_build_financepy_benchmark_report_accumulates_totals():
 def test_extract_trellis_benchmark_outputs_prefers_cold_run_prices_over_warm_probe():
     outputs = extract_trellis_benchmark_outputs(
         {
+            "price": 10.45,
             "summary": {"prices": {"analytical": 10.45}},
             "comparison": {"prices": {"black_scholes": 10.45}},
             "result": {"price": 10.45},
@@ -122,3 +123,80 @@ def test_extract_trellis_benchmark_outputs_prefers_cold_run_prices_over_warm_pro
     assert outputs["price"] == 10.45
     assert outputs["analytical"] == 10.45
     assert outputs["black_scholes"] == 10.45
+
+
+def test_extract_trellis_benchmark_outputs_backfills_price_from_warm_probe_only_when_cold_run_has_none():
+    outputs = extract_trellis_benchmark_outputs(
+        {
+            "summary": {},
+            "comparison": {},
+            "result": {},
+        },
+        {"last_price": 398.35},
+    )
+
+    assert outputs["price"] == 398.35
+
+
+def test_extract_trellis_benchmark_outputs_merges_benchmark_outputs_payload():
+    outputs = extract_trellis_benchmark_outputs(
+        {
+            "benchmark_outputs": {
+                "price": 12.3,
+                "fair_strike_variance": 0.048,
+            }
+        },
+        {},
+    )
+
+    assert outputs["price"] == 12.3
+    assert outputs["fair_strike_variance"] == 0.048
+
+
+def test_extract_trellis_benchmark_outputs_reads_nested_result_comparison_prices():
+    outputs = extract_trellis_benchmark_outputs(
+        {
+            "result": {
+                "comparison": {
+                    "summary": {
+                        "prices": {
+                            "analytical": 10.45,
+                            "black_scholes": 10.45,
+                        }
+                    }
+                }
+            }
+        },
+        {},
+    )
+
+    assert outputs["analytical"] == 10.45
+    assert outputs["black_scholes"] == 10.45
+
+
+def test_extract_trellis_benchmark_outputs_maps_reference_target_price_from_comparison_summary():
+    outputs = extract_trellis_benchmark_outputs(
+        {
+            "comparison": {
+                "summary": {
+                    "reference_target": "black_scholes",
+                    "prices": {
+                        "analytical": 10.45,
+                        "black_scholes": 10.45,
+                    },
+                }
+            }
+        },
+        {},
+    )
+
+    assert outputs["price"] == 10.45
+    assert outputs["analytical"] == 10.45
+    assert outputs["black_scholes"] == 10.45
+
+
+def test_financepy_benchmark_cli_defaults_to_non_mutating_cold_runs():
+    from scripts import run_financepy_benchmark as runner
+
+    assert runner._parse_args([]).force_rebuild is False
+    assert runner._parse_args(["--force-rebuild"]).force_rebuild is True

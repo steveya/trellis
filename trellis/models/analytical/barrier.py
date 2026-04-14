@@ -142,6 +142,8 @@ def barrier_option_price(
     barrier_type: str = "down_and_out",
     option_type: str = "call",
     rebate: float = 0.0,
+    q: float = 0.0,
+    observations_per_year: int | None = None,
 ) -> float:
     """Price a European barrier option using the Reiner-Rubinstein formulas.
 
@@ -173,6 +175,23 @@ def barrier_option_price(
     """
     if T <= 0:
         return 0.0
+
+    if rebate != 0.0 and observations_per_year not in {None, 0}:
+        raise ValueError("Discrete-monitoring barrier pricing currently supports zero rebate only")
+
+    if observations_per_year not in {None, 0} or q != 0.0:
+        return _barrier_option_price_general(
+            S=S,
+            K=K,
+            B=B,
+            r=r,
+            q=q,
+            sigma=sigma,
+            T=T,
+            barrier_type=barrier_type,
+            option_type=option_type,
+            observations_per_year=observations_per_year,
+        )
 
     if barrier_type == "down_and_out" and option_type == "call":
         return down_and_out_call(S, K, B, r, sigma, T, rebate=rebate)
@@ -290,6 +309,188 @@ def barrier_option_price(
             raise ValueError(f"Unknown barrier_type: {barrier_type}")
 
     return float(max(price + E, 0.0))
+
+
+def _barrier_option_price_general(
+    *,
+    S: float,
+    K: float,
+    B: float,
+    r: float,
+    q: float,
+    sigma: float,
+    T: float,
+    barrier_type: str,
+    option_type: str,
+    observations_per_year: int | None,
+) -> float:
+    """General barrier dispatcher with carry and optional BGK monitoring adjustment.
+
+    This follows the same analytical structure as FinancePy's barrier reference:
+    continuous-monitoring formulas with an optional Broadie-Glasserman-Kou barrier
+    shift for discretely monitored barriers.
+    """
+
+    opt_type_map = {
+        ("down_and_out", "call"): 1,
+        ("down_and_in", "call"): 2,
+        ("up_and_in", "call"): 3,
+        ("up_and_out", "call"): 4,
+        ("up_and_in", "put"): 5,
+        ("up_and_out", "put"): 6,
+        ("down_and_out", "put"): 7,
+        ("down_and_in", "put"): 8,
+    }
+    opt_type_code = opt_type_map.get((barrier_type, option_type))
+    if opt_type_code is None:
+        raise ValueError(f"Unknown barrier_type/option_type combination: {barrier_type}/{option_type}")
+
+    ln_s0_k = np.log(S / K)
+    sqrt_t = np.sqrt(T)
+    sigma_rt_t = sigma * sqrt_t
+    sigma_sq = sigma * sigma
+    mu = r - q
+    d1 = (ln_s0_k + (mu + sigma_sq / 2.0) * T) / sigma_rt_t
+    d2 = (ln_s0_k + (mu - sigma_sq / 2.0) * T) / sigma_rt_t
+    df = np.exp(-r * T)
+    dq = np.exp(-q * T)
+
+    vanilla_call = S * dq * norm.cdf(d1) - K * df * norm.cdf(d2)
+    vanilla_put = K * df * norm.cdf(-d2) - S * dq * norm.cdf(-d1)
+
+    if S >= B:
+        if opt_type_code in {4, 6}:
+            return 0.0
+        if opt_type_code in {3}:
+            return float(vanilla_call)
+        if opt_type_code in {5}:
+            return float(vanilla_put)
+    else:
+        if opt_type_code in {1, 7}:
+            return 0.0
+        if opt_type_code in {2}:
+            return float(vanilla_call)
+        if opt_type_code in {8}:
+            return float(vanilla_put)
+
+    h = float(B)
+    if observations_per_year not in {None, 0}:
+        num_observations = 1.0 + T * float(observations_per_year)
+        dt = T / num_observations
+        shift = 0.5826 * sigma * np.sqrt(dt)
+        if barrier_type.startswith("down"):
+            h = B * np.exp(-shift)
+        else:
+            h = B * np.exp(shift)
+
+    sigma_safe = max(float(sigma), 1e-8)
+    sigma_sq = sigma_safe * sigma_safe
+    ll = (mu + sigma_sq / 2.0) / sigma_sq
+    y = np.log(h * h / (S * K)) / (sigma_safe * sqrt_t) + ll * sigma_safe * sqrt_t
+    x1 = np.log(S / h) / (sigma_safe * sqrt_t) + ll * sigma_safe * sqrt_t
+    y1 = np.log(h / S) / (sigma_safe * sqrt_t) + ll * sigma_safe * sqrt_t
+    h_over_s = h / S
+
+    if opt_type_code == 1:  # down-and-out call
+        if h >= K:
+            price = (
+                S * dq * norm.cdf(x1)
+                - K * df * norm.cdf(x1 - sigma_safe * sqrt_t)
+                - S * dq * pow(h_over_s, 2.0 * ll) * norm.cdf(y1)
+                + K * df * pow(h_over_s, 2.0 * ll - 2.0) * norm.cdf(y1 - sigma_safe * sqrt_t)
+            )
+        else:
+            knock_in = (
+                S * dq * pow(h_over_s, 2.0 * ll) * norm.cdf(y)
+                - K * df * pow(h_over_s, 2.0 * ll - 2.0) * norm.cdf(y - sigma_safe * sqrt_t)
+            )
+            price = vanilla_call - knock_in
+    elif opt_type_code == 2:  # down-and-in call
+        if h <= K:
+            price = (
+                S * dq * pow(h_over_s, 2.0 * ll) * norm.cdf(y)
+                - K * df * pow(h_over_s, 2.0 * ll - 2.0) * norm.cdf(y - sigma_safe * sqrt_t)
+            )
+        else:
+            knock_out = (
+                S * dq * norm.cdf(x1)
+                - K * df * norm.cdf(x1 - sigma_safe * sqrt_t)
+                - S * dq * pow(h_over_s, 2.0 * ll) * norm.cdf(y1)
+                + K * df * pow(h_over_s, 2.0 * ll - 2.0) * norm.cdf(y1 - sigma_safe * sqrt_t)
+            )
+            price = vanilla_call - knock_out
+    elif opt_type_code == 3:  # up-and-in call
+        if h >= K:
+            price = (
+                S * dq * norm.cdf(x1)
+                - K * df * norm.cdf(x1 - sigma_safe * sqrt_t)
+                - S * dq * pow(h_over_s, 2.0 * ll) * (norm.cdf(-y) - norm.cdf(-y1))
+                + K * df * pow(h_over_s, 2.0 * ll - 2.0) * (norm.cdf(-y + sigma_safe * sqrt_t) - norm.cdf(-y1 + sigma_safe * sqrt_t))
+            )
+        else:
+            price = vanilla_call
+    elif opt_type_code == 4:  # up-and-out call
+        if h > K:
+            knock_in = (
+                S * dq * norm.cdf(x1)
+                - K * df * norm.cdf(x1 - sigma_safe * sqrt_t)
+                - S * dq * pow(h_over_s, 2.0 * ll) * (norm.cdf(-y) - norm.cdf(-y1))
+                + K * df * pow(h_over_s, 2.0 * ll - 2.0) * (norm.cdf(-y + sigma_safe * sqrt_t) - norm.cdf(-y1 + sigma_safe * sqrt_t))
+            )
+            price = vanilla_call - knock_in
+        else:
+            price = 0.0
+    elif opt_type_code == 5:  # up-and-in put
+        if h > K:
+            price = (
+                -S * dq * pow(h_over_s, 2.0 * ll) * norm.cdf(-y)
+                + K * df * pow(h_over_s, 2.0 * ll - 2.0) * norm.cdf(-y + sigma_safe * sqrt_t)
+            )
+        else:
+            knock_out = (
+                -S * dq * norm.cdf(-x1)
+                + K * df * norm.cdf(-x1 + sigma_safe * sqrt_t)
+                + S * dq * pow(h_over_s, 2.0 * ll) * norm.cdf(-y1)
+                - K * df * pow(h_over_s, 2.0 * ll - 2.0) * norm.cdf(-y1 + sigma_safe * sqrt_t)
+            )
+            price = vanilla_put - knock_out
+    elif opt_type_code == 6:  # up-and-out put
+        if h >= K:
+            knock_in = (
+                -S * dq * pow(h_over_s, 2.0 * ll) * norm.cdf(-y)
+                + K * df * pow(h_over_s, 2.0 * ll - 2.0) * norm.cdf(-y + sigma_safe * sqrt_t)
+            )
+            price = vanilla_put - knock_in
+        else:
+            price = (
+                -S * dq * norm.cdf(-x1)
+                + K * df * norm.cdf(-x1 + sigma_safe * sqrt_t)
+                + S * dq * pow(h_over_s, 2.0 * ll) * norm.cdf(-y1)
+                - K * df * pow(h_over_s, 2.0 * ll - 2.0) * norm.cdf(-y1 + sigma_safe * sqrt_t)
+            )
+    elif opt_type_code == 7:  # down-and-out put
+        if h >= K:
+            price = 0.0
+        else:
+            knock_in = (
+                -S * dq * norm.cdf(-x1)
+                + K * df * norm.cdf(-x1 + sigma_safe * sqrt_t)
+                + S * dq * pow(h_over_s, 2.0 * ll) * (norm.cdf(y) - norm.cdf(y1))
+                - K * df * pow(h_over_s, 2.0 * ll - 2.0) * (norm.cdf(y - sigma_safe * sqrt_t) - norm.cdf(y1 - sigma_safe * sqrt_t))
+            )
+            price = vanilla_put - knock_in
+    else:  # down-and-in put
+        if h >= K:
+            price = vanilla_put
+        else:
+            price = (
+                -S * dq * norm.cdf(-x1)
+                + K * df * norm.cdf(-x1 + sigma_safe * sqrt_t)
+                + S * dq * pow(h_over_s, 2.0 * ll) * (norm.cdf(y) - norm.cdf(y1))
+                - K * df * pow(h_over_s, 2.0 * ll - 2.0) * (norm.cdf(y - sigma_safe * sqrt_t) - norm.cdf(y1 - sigma_safe * sqrt_t))
+            )
+
+    return float(max(price, 0.0))
 
 
 def _legacy_down_and_out_call(

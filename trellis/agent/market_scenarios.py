@@ -45,9 +45,13 @@ def _stable_json(payload: Mapping[str, object]) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
 
 
-def _flat_yield_curve(rate: float | None):
+def _flat_yield_curve(rate: float | None, *, value_date: date | None = None):
     if rate is None:
         return None
+    if value_date is not None:
+        from trellis.curves.date_aware_flat_curve import DateAwareFlatYieldCurve
+
+        return DateAwareFlatYieldCurve(value_date=value_date, flat_rate=float(rate), max_tenor=31.0)
     from trellis.curves.yield_curve import YieldCurve
 
     return YieldCurve.flat(float(rate), max_tenor=31.0)
@@ -317,7 +321,8 @@ def construct_market_state_for_scenario(
     from trellis.instruments.fx import FXRate
     from trellis.models.vol_surface import FlatVol
 
-    discount = _flat_yield_curve(contract.domestic_rate) or market_state.discount
+    curve_value_date = contract.valuation_date or contract.as_of
+    discount = _flat_yield_curve(contract.domestic_rate, value_date=curve_value_date) or market_state.discount
     credit_curve = _flat_credit_curve(contract.hazard_rate) or market_state.credit_curve
     forecast_curves = dict(getattr(market_state, "forecast_curves", None) or {})
     fx_rates = dict(getattr(market_state, "fx_rates", None) or {})
@@ -337,7 +342,7 @@ def construct_market_state_for_scenario(
         for underlier in contract.underliers:
             underlier_spots[underlier.name] = float(underlier.spot)
             curve_name = underlier.carry_curve_name or f"{underlier.name}-DISC"
-            forecast_curves[curve_name] = _flat_yield_curve(float(underlier.carry_rate))
+            forecast_curves[curve_name] = _flat_yield_curve(float(underlier.carry_rate), value_date=curve_value_date)
             underlier_carry_rates[underlier.name] = float(underlier.carry_rate)
         if contract.underliers:
             spot = float(contract.underliers[0].spot)
@@ -368,12 +373,15 @@ def construct_market_state_for_scenario(
         foreign_curve_name = contract.foreign_curve_name or contract.forecast_curve_name
         foreign_rate = contract.foreign_rate if contract.foreign_rate is not None else contract.forecast_rate
         if foreign_curve_name and foreign_rate is not None:
-            forecast_curves[foreign_curve_name] = _flat_yield_curve(float(foreign_rate))
+            forecast_curves[foreign_curve_name] = _flat_yield_curve(float(foreign_rate), value_date=curve_value_date)
             applied_inputs["foreign_curve_name"] = foreign_curve_name
 
     if contract.constructor_kind == "flat_rates":
         if contract.forecast_curve_name and contract.forecast_rate is not None:
-            forecast_curves[contract.forecast_curve_name] = _flat_yield_curve(float(contract.forecast_rate))
+            forecast_curves[contract.forecast_curve_name] = _flat_yield_curve(
+                float(contract.forecast_rate),
+                value_date=curve_value_date,
+            )
             applied_inputs["forecast_curve_name"] = contract.forecast_curve_name
         if contract.shifted_black_vol is not None:
             model_parameters["shifted_black_vol"] = float(contract.shifted_black_vol)

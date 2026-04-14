@@ -16,11 +16,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from trellis.core.date_utils import generate_schedule, year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.black import black76_call, black76_put
-from trellis.models.resolution.basket_semantics import resolve_basket_semantics
+from trellis.models.basket_option import (
+    price_basket_option_analytical,
+    price_basket_option_monte_carlo,
+)
 
 
 
@@ -79,55 +80,19 @@ Implementation target: mc_default_times."""
 
     @property
     def requirements(self) -> set[str]:
-        return {"discount_curve", "spot"}
+        return {"discount_curve", "spot", "black_vol_surface"}
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        from trellis.models.monte_carlo.semantic_basket import (
-            price_ranked_observation_basket_monte_carlo,
+        requires_path_runtime = any(
+            value is not None
+            for value in (
+                spec.averaging_type,
+                spec.n_observations,
+                spec.barrier_level,
+                spec.barrier_direction,
+            )
         )
-
-        spec = self._spec
-
-        underlyings = [item.strip() for item in spec.underliers.split(",") if item.strip()]
-        spots = [item.strip() for item in spec.spots.split(",") if item.strip()]
-
-        weights = None
-        if spec.weights is not None:
-            weights = [item.strip() for item in spec.weights.split(",") if item.strip()]
-
-        vols = None
-        if spec.vols is not None:
-            vols = [item.strip() for item in spec.vols.split(",") if item.strip()]
-
-        dividend_yields = None
-        if spec.dividend_yields is not None:
-            dividend_yields = [item.strip() for item in spec.dividend_yields.split(",") if item.strip()]
-
-        correlation = [
-            [float(cell.strip()) for cell in row.split(",") if cell.strip()]
-            for row in spec.correlation.split(";")
-            if row.strip()
-        ]
-
-        ranked_spec = BasketOptionSpec(
-            notional=spec.notional,
-            underliers=",".join(underlyings),
-            spots=",".join(spots),
-            strike=spec.strike,
-            expiry_date=spec.expiry_date,
-            correlation=";".join(",".join(str(cell) for cell in row) for row in correlation),
-            weights=",".join(weights) if weights is not None else None,
-            vols=",".join(vols) if vols is not None else None,
-            dividend_yields=",".join(dividend_yields) if dividend_yields is not None else None,
-            basket_style=spec.basket_style,
-            option_type=spec.option_type,
-            averaging_type=spec.averaging_type,
-            n_observations=spec.n_observations,
-            barrier_level=spec.barrier_level,
-            barrier_direction=spec.barrier_direction,
-            day_count=spec.day_count,
-        )
-
-        resolved = resolve_basket_semantics(market_state, ranked_spec)
-        return float(price_ranked_observation_basket_monte_carlo(ranked_spec, resolved))
+        if requires_path_runtime:
+            return float(price_basket_option_monte_carlo(market_state, spec))
+        return float(price_basket_option_analytical(market_state, spec))

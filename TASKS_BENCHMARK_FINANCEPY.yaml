@@ -235,7 +235,7 @@ tasks:
   status: pending
   instrument_type: barrier_option
   construct: analytical
-  description: Price a continuously monitored up-and-out equity call using the FinancePy-compatible
+  description: Price a discretely monitored up-and-out equity call using the FinancePy-compatible
     Black-Scholes barrier method. Return price and overlapping Greeks.
   market_scenario_id: equity_barrier_smile
   financepy_binding_id: financepy.equity.barrier.black_scholes
@@ -257,6 +257,8 @@ tasks:
     domestic_rate: 0.05
     dividend_rate: 0.0
     volatility: 0.22
+    monitoring: discrete
+    observations_per_year: 252
 - id: F010
   title: 'FinancePy parity: equity digital cash-or-nothing'
   status: pending
@@ -364,11 +366,11 @@ tasks:
   title: 'FinancePy parity: equity cliquet option'
   status: pending
   instrument_type: cliquet_option
-  construct: monte_carlo
-  description: Price an equity cliquet option under a FinancePy-compatible Monte Carlo
-    setup. Return price and any supported Greeks.
+  construct: analytical
+  description: Price a reset-style equity cliquet option under the FinancePy-compatible
+    Black-Scholes setup. Return price and any supported Greeks.
   market_scenario_id: flat_usd_equity_vanilla
-  financepy_binding_id: financepy.equity.cliquet.monte_carlo
+  financepy_binding_id: financepy.equity.cliquet.black_scholes
   greek_targets:
   - delta
   cross_validate:
@@ -379,19 +381,18 @@ tasks:
     product: cliquet_option
     option_type: call
     spot: 100.0
-    local_cap: 0.08
-    local_floor: 0.0
-    global_cap: 0.2
-    global_floor: 0.0
+    notional: 1.0
+    expiry_years: 1.0
+    reset_frequency: quarterly
+    schedule_generation: backward
+    adjust_schedule_anchors: true
+    calendar_name: weekend_only
+    business_day_adjustment: following
+    day_count: 30e/360
+    time_day_count: act/365
     domestic_rate: 0.05
     dividend_rate: 0.0
     volatility: 0.2
-    observation_times:
-    - 0.25
-    - 0.5
-    - 0.75
-    - 1.0
-    num_paths: 20000
 - id: F015
   title: 'FinancePy parity: equity variance swap replication'
   status: pending
@@ -413,6 +414,19 @@ tasks:
     strike_variance: 0.04
     notional: 100000.0
     expiry_years: 1.0
+    realized_variance: 0.0
     domestic_rate: 0.05
     dividend_rate: 0.0
     volatility: 0.22
+    replication_strikes:
+    - 60.0
+    - 80.0
+    - 100.0
+    - 120.0
+    - 140.0
+    replication_volatilities:
+    - 0.26
+    - 0.24
+    - 0.22
+    - 0.23
+    - 0.25

@@ -8,11 +8,13 @@ normalization, or premium/protection leg timing by hand.
 from __future__ import annotations
 
 from datetime import date
+from math import ceil
 from typing import Protocol
 
-from trellis.core.date_utils import build_period_schedule
+from trellis.core.date_utils import build_period_schedule, year_fraction
 from trellis.core.differentiable import get_numpy
-from trellis.core.types import DayCountConvention, EventSchedule, Frequency
+from trellis.core.types import DayCountConvention, EventSchedule, Frequency, SchedulePeriod
+from trellis.conventions.calendar import BusinessDayAdjustment, Calendar, WEEKEND_ONLY
 from trellis.models.contingent_cashflows import (
     CouponAccrual,
     ProtectionPayment,
@@ -22,6 +24,8 @@ from trellis.models.contingent_cashflows import (
 )
 
 np = get_numpy()
+_CDS_CURVE_DAY_COUNT = DayCountConvention.ACT_365
+_CDS_PROTECTION_STEPS_PER_YEAR = 25
 
 
 class CreditCurveLike(Protocol):
@@ -59,6 +63,8 @@ def build_cds_schedule(
     day_count: DayCountConvention,
     *,
     time_origin: date | None = None,
+    calendar: Calendar | None = None,
+    business_day_adjustment: BusinessDayAdjustment | None = None,
 ) -> EventSchedule:
     """Build the canonical single-name CDS schedule.
 
@@ -72,6 +78,8 @@ def build_cds_schedule(
         frequency,
         day_count=day_count,
         time_origin=origin,
+        calendar=calendar or WEEKEND_ONLY,
+        bda=business_day_adjustment or BusinessDayAdjustment.FOLLOWING,
     )
 
 
@@ -104,6 +112,82 @@ def _require_period_measurements(schedule: EventSchedule) -> tuple:
     return schedule.periods
 
 
+def _curve_time(origin: date, target: date) -> float:
+    """Return the curve/discounter time coordinate for one schedule date."""
+    return float(year_fraction(origin, target, _CDS_CURVE_DAY_COUNT))
+
+
+def _elapsed_coupon_fraction(
+    period: SchedulePeriod,
+    *,
+    valuation_origin: date,
+) -> float:
+    """Return the clean-accrual fraction already earned at valuation."""
+    if period.start_date >= valuation_origin or period.end_date <= valuation_origin:
+        return 0.0
+    total_days = max((period.end_date - period.start_date).days, 1)
+    elapsed_days = max((valuation_origin - period.start_date).days, 0)
+    return min(max(elapsed_days / total_days, 0.0), 1.0)
+
+
+def _integrated_default_leg_terms(
+    *,
+    notional: float,
+    spread: float,
+    recovery: float,
+    accrual_fraction: float,
+    period_start: float,
+    period_end: float,
+    credit_curve: CreditCurveLike,
+    discount_curve: DiscountCurveLike,
+    steps_per_year: int = _CDS_PROTECTION_STEPS_PER_YEAR,
+) -> tuple[float, float]:
+    """Integrate protection and accrued-on-default terms over one period."""
+    start = max(float(period_start), 0.0)
+    end = max(float(period_end), 0.0)
+    if end <= start:
+        return 0.0, 0.0
+
+    n_steps = max(int(ceil((end - start) * max(int(steps_per_year), 1))), 1)
+    dt = (end - start) / n_steps
+    total_interval = max(float(period_end) - float(period_start), 1e-12)
+
+    protection_leg = 0.0
+    accrued_on_default = 0.0
+    for step in range(n_steps):
+        t_start = start + step * dt
+        t_end = start + (step + 1) * dt
+        t_mid = 0.5 * (t_start + t_end)
+        survival_start = float(credit_curve.survival_probability(t_start))
+        survival_end = float(credit_curve.survival_probability(t_end))
+        default_prob = max(0.0, survival_start - survival_end)
+        if default_prob <= 0.0:
+            continue
+        discount = float(discount_curve.discount(t_mid))
+        protection_leg += protection_payment_pv(
+            ProtectionPayment(
+                notional=notional,
+                recovery=recovery,
+                default_probability=default_prob,
+                discount_factor=discount,
+            )
+        )
+        accrued_fraction_elapsed = max(
+            0.0,
+            min((t_mid - float(period_start)) / total_interval, 1.0),
+        )
+        accrued_on_default += coupon_cashflow_pv(
+            CouponAccrual(
+                notional=notional,
+                rate=spread,
+                accrual=accrual_fraction * accrued_fraction_elapsed,
+                discount_factor=discount,
+                weight=default_prob,
+            )
+        )
+    return protection_leg, accrued_on_default
+
+
 def price_cds_analytical(
     *,
     notional: float,
@@ -118,17 +202,21 @@ def price_cds_analytical(
     spread = normalize_cds_running_spread(spread_quote)
     if not periods or notional == 0.0:
         return 0.0
+    valuation_origin = schedule.time_origin or schedule.start_date
 
     premium_leg = 0.0
     protection_leg = 0.0
-    survival_prev = 1.0
+    accrued_to_valuation = 0.0
+    accrued_on_default = 0.0
 
     for period in periods:
         accrual = float(period.accrual_fraction)
-        t_end = float(period.t_end)
-        t_pay = float(period.t_payment)
+        t_start = _curve_time(valuation_origin, period.start_date)
+        t_end = _curve_time(valuation_origin, period.end_date)
+        t_pay = _curve_time(valuation_origin, period.payment_date)
+        if t_end <= 0.0:
+            continue
         survival = float(credit_curve.survival_probability(t_end))
-        default_prob = max(0.0, survival_prev - survival)
         discount = float(discount_curve.discount(t_pay))
 
         premium_leg += coupon_cashflow_pv(
@@ -140,17 +228,26 @@ def price_cds_analytical(
                 weight=survival,
             )
         )
-        protection_leg += protection_payment_pv(
-            ProtectionPayment(
-                notional=notional,
-                recovery=recovery,
-                default_probability=default_prob,
-                discount_factor=discount,
-            )
+        accrued_to_valuation += (
+            notional
+            * spread
+            * accrual
+            * _elapsed_coupon_fraction(period, valuation_origin=valuation_origin)
         )
-        survival_prev = survival
+        period_protection, period_accrued_default = _integrated_default_leg_terms(
+            notional=notional,
+            spread=spread,
+            recovery=recovery,
+            accrual_fraction=accrual,
+            period_start=t_start,
+            period_end=t_end,
+            credit_curve=credit_curve,
+            discount_curve=discount_curve,
+        )
+        protection_leg += period_protection
+        accrued_on_default += period_accrued_default
 
-    return float(protection_leg - premium_leg)
+    return float(protection_leg - premium_leg - accrued_on_default + accrued_to_valuation)
 
 
 def price_cds_monte_carlo(
@@ -176,34 +273,72 @@ def price_cds_monte_carlo(
     alive = np.ones(n_paths, dtype=bool)
     premium_leg = 0.0
     protection_leg = 0.0
-    t_prev = 0.0
+    accrued_on_default = 0.0
+    accrued_to_valuation = 0.0
+    valuation_origin = schedule.time_origin or schedule.start_date
 
     for period in periods:
         accrual = float(period.accrual_fraction)
-        t_end = float(period.t_end)
-        t_pay = float(period.t_payment)
-        discount = float(discount_curve.discount(t_pay))
-        default_prob = interval_default_probability(credit_curve, t_prev, t_end)
-        default_in_interval = alive & (rng.uniform(size=n_paths) < default_prob)
-        alive = alive & (~default_in_interval)
+        t_start = _curve_time(valuation_origin, period.start_date)
+        t_end = _curve_time(valuation_origin, period.end_date)
+        t_pay = _curve_time(valuation_origin, period.payment_date)
+        if t_end <= 0.0:
+            continue
+
+        accrued_to_valuation += (
+            notional
+            * spread
+            * accrual
+            * _elapsed_coupon_fraction(period, valuation_origin=valuation_origin)
+        )
+
+        start = max(t_start, 0.0)
+        end = max(t_end, 0.0)
+        if end > start:
+            n_steps = max(int(ceil((end - start) * _CDS_PROTECTION_STEPS_PER_YEAR)), 1)
+            dt = (end - start) / n_steps
+            total_interval = max(t_end - t_start, 1e-12)
+            for step in range(n_steps):
+                step_start = start + step * dt
+                step_end = start + (step + 1) * dt
+                step_mid = 0.5 * (step_start + step_end)
+                default_prob = interval_default_probability(credit_curve, step_start, step_end)
+                if default_prob <= 0.0:
+                    continue
+                default_in_step = alive & (rng.uniform(size=n_paths) < default_prob)
+                if np.any(default_in_step):
+                    discount = float(discount_curve.discount(step_mid))
+                    protection_leg += protection_payment_pv(
+                        ProtectionPayment(
+                            notional=notional,
+                            recovery=recovery,
+                            default_probability=float(np.mean(default_in_step)),
+                            discount_factor=discount,
+                        )
+                    )
+                    accrued_fraction_elapsed = max(
+                        0.0,
+                        min((step_mid - t_start) / total_interval, 1.0),
+                    )
+                    accrued_on_default += coupon_cashflow_pv(
+                        CouponAccrual(
+                            notional=notional,
+                            rate=spread,
+                            accrual=accrual * accrued_fraction_elapsed,
+                            discount_factor=discount,
+                            weight=float(np.mean(default_in_step)),
+                        )
+                    )
+                    alive = alive & (~default_in_step)
 
         premium_leg += coupon_cashflow_pv(
             CouponAccrual(
                 notional=notional,
                 rate=spread,
                 accrual=accrual,
-                discount_factor=discount,
+                discount_factor=float(discount_curve.discount(t_pay)),
                 weight=float(np.mean(alive)),
             )
         )
-        protection_leg += protection_payment_pv(
-            ProtectionPayment(
-                notional=notional,
-                recovery=recovery,
-                default_probability=float(np.mean(default_in_interval)),
-                discount_factor=discount,
-            )
-        )
-        t_prev = t_end
 
-    return float(protection_leg - premium_leg)
+    return float(protection_leg - premium_leg - accrued_on_default + accrued_to_valuation)
