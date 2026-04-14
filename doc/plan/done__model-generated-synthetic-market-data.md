@@ -173,8 +173,8 @@ Each local or cloud coding agent assigned to this workstream should start with:
 - this plan doc
 - `AGENTS.md`
 - `docs/market_data_workstream.md`
-- `docs/plans/calibration-layer-model-grammar-unification.md`
-- `docs/plans/multi-curve-rates-completion.md`
+- `doc/plan/done__calibration-layer-model-grammar-unification.md`
+- `doc/plan/done__multi-curve-rates-completion.md`
 - the current Linear ticket body plus any hard blockers
 - the code paths under `trellis/data/mock.py`,
   `trellis/models/calibration/`, `trellis/core/market_state.py`,

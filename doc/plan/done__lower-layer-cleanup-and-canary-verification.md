@@ -267,6 +267,6 @@ Residual debt kept explicit:
   more than first-pass efficiency
 - the transform lane still wants a true lowered transform-family IR in the
   future; see
-  ``docs/plans/transform-family-ir-and-admissibility-hardening.md`` for the
+  ``doc/plan/done__transform-family-ir-and-admissibility-hardening.md`` for the
   follow-on tranche that replaces the bounded route-metadata/model-family fix
   with a real lowered transform family contract

@@ -197,8 +197,8 @@ Status mirror last synced: `2026-04-13`
 | `QUA-815` | Exotic program closeout: measure proof-cohort outcomes on the binding-first runtime | Done |
 
 The benchmark contract for those proof tickets lives in
-`docs/plans/binding-first-exotic-proof-cohort.md`, and the measured closeout
-now lives in `docs/plans/binding-first-exotic-proof-closeout.md`.
+`doc/plan/done__binding-first-exotic-proof-cohort.md`, and the measured closeout
+now lives in `doc/plan/done__binding-first-exotic-proof-closeout.md`.
 
 ## Cross-Epic Sequencing Constraints
 
@@ -235,7 +235,7 @@ Each coding agent assigned to this program should begin with:
 - `AGENTS.md`
 - `ARCHITECTURE.md`
 - this plan doc
-- `docs/plans/route-registry-minimization.md`
+- `doc/plan/done__route-registry-minimization.md`
 - `trellis/agent/route_registry.py`
 - `trellis/agent/codegen_guardrails.py`
 - `trellis/agent/family_lowering_ir.py`

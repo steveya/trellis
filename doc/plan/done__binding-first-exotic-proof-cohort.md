@@ -145,7 +145,7 @@ not a permanent block sentinel.
 
 The checked closeout summary lives in:
 
-- `docs/plans/binding-first-exotic-proof-closeout.md`
+- `doc/plan/done__binding-first-exotic-proof-closeout.md`
 - `docs/benchmarks/binding_first_exotic_proof_closeout.json`
 - `docs/benchmarks/binding_first_exotic_proof_closeout.md`
 

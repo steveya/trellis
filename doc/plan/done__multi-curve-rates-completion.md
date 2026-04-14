@@ -136,7 +136,7 @@ calibration-layer model grammar.
 ## Parallel Workstream Contract
 
 This plan is meant to run in parallel with
-`docs/plans/calibration-layer-model-grammar-unification.md`.
+`doc/plan/done__calibration-layer-model-grammar-unification.md`.
 
 Recommended two-agent split:
 

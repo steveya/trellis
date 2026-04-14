@@ -208,21 +208,21 @@ Note:
   caveat no longer reopens the stabilization umbrella; it is now an
   operational note on top of an otherwise complete canary workflow.
 - `T01` is now green through the short-rate comparison-regime workstream in
-  `docs/plans/short-rate-comparison-regime-and-claim-helpers.md` under
+  `doc/plan/done__short-rate-comparison-regime-and-claim-helpers.md` under
   `QUA-746` through `QUA-751`. The recovery path materializes task-level
   short-rate comparison assumptions onto `MarketState` and keeps the tree and
   analytical comparators on the shared short-rate helper layer instead of
   rediscovering model literals from prose.
 - `QUA-706` is now satisfied through the event-aware PDE lane landed under
-  `docs/plans/event-aware-pde-lane.md`. The acceptance ticket closes the canary
+  `doc/plan/done__event-aware-pde-lane.md`. The acceptance ticket closes the canary
   using the recovered PDE/tree path rather than a local helper-only patch.
 - `QUA-707` is now satisfied through `QUA-725` under
-  `docs/plans/event-aware-monte-carlo-lane.md`. The recovery path stays on the
+  `doc/plan/done__event-aware-monte-carlo-lane.md`. The recovery path stays on the
   generic event-aware Monte Carlo family and the stabilized helper-backed
   comparison wrappers rather than introducing a swaption-specific Monte Carlo
   lane.
 - `QUA-708` and `QUA-709` are now satisfied through the helper-layer extraction
-  workstream in `docs/plans/general-helper-layer-extraction.md`. `T40` stays on
+  workstream in `doc/plan/active__general-helper-layer-extraction.md`. `T40` stays on
   the reusable transform and MC helper surfaces, and `T49` stays on the
   semantic-facing basket-credit helper layer rather than the older raw
   nth-to-default boundary.

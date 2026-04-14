@@ -486,13 +486,13 @@ Use this structure for the final implementation note:
 ## Code Review Workflow
 
 When the task is a code review rather than a feature implementation, use the
-repo-wide review program in `docs/plans/code-review-program.md` and the Linear
+repo-wide review program in `doc/plan/done__code-review-program.md` and the Linear
 workstream under `QUA-647`.
 
 ### Review ticket selection
 
 - Linear is the source of truth for review-ticket state.
-- Use the mirrored queue in `docs/plans/code-review-program.md`.
+- Use the mirrored queue in `doc/plan/done__code-review-program.md`.
 - Pick the earliest review ticket in the ordered queue whose status is not
   `Done`, unless the user explicitly redirects to a different slice.
 - Tickets in the same wave may run in parallel only when their write scopes do
@@ -528,7 +528,7 @@ workstream under `QUA-647`.
    - inbound and outbound module interactions
    - current local / regional / global coverage map
    - relevant docs, benchmarks, and `LIMITATIONS.md` entries
-   - use the `Review Dossier Template` in `docs/plans/code-review-program.md`
+   - use the `Review Dossier Template` in `doc/plan/done__code-review-program.md`
 3. Announce the ticket number and the plain-English review goal before editing.
 4. Perform the static review of code and tests.
 5. Run the targeted tests for the slice and the broader regression required by
@@ -560,7 +560,7 @@ Before marking a review ticket `Done`:
   - Shim removal candidates:
   - Follow-on tickets:
   - Disposition:
-- update the mirrored ticket row in `docs/plans/code-review-program.md`
+- update the mirrored ticket row in `doc/plan/done__code-review-program.md`
 - do not mark the ticket `Done` if a hard blocker remains unresolved
 
 ### Code review deliverables

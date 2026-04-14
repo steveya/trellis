@@ -253,7 +253,7 @@ Each coding agent assigned to this workstream should begin with:
 - `docs/quant/contract_algebra.rst`
 - `docs/quant/lattice_algebra.rst`
 - `docs/developer/dsl_system_design_review.md`
-- `docs/plans/canary-suite-stabilization.md`
+- `doc/plan/done__canary-suite-stabilization.md`
 - the current Linear ticket body plus any upstream blockers
 - the code paths under:
   - `trellis/agent/family_lowering_ir.py`

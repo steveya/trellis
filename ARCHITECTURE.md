@@ -114,7 +114,7 @@ maintenance around the deterministic engines.
   across the agreed `11`-task exotic cohort. That evidence is still bounded:
   Trellis can honestly claim the measured cohort, not arbitrary constructable
   exotic support beyond it. The current support contract lives in
-  `docs/plans/binding-first-exotic-proof-closeout.md` and `LIMITATIONS.md`.
+  `doc/plan/done__binding-first-exotic-proof-closeout.md` and `LIMITATIONS.md`.
 - `trellis/agent/quant.py`, `trellis/agent/planner.py`,
   `trellis/agent/builder.py`, `trellis/agent/critic.py`,
   `trellis/agent/arbiter.py`, and `trellis/agent/executor.py` implement the

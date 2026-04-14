@@ -239,7 +239,7 @@ route-family one-hots, so future retraining work cannot silently regress the
 live scorer contract.
 
 That architectural migration should still not be overstated. The checked proof
-closeout in ``docs/plans/binding-first-exotic-proof-closeout.md`` and
+closeout in ``doc/plan/done__binding-first-exotic-proof-closeout.md`` and
 ``docs/benchmarks/binding_first_exotic_proof_closeout.json`` now certifies the
 agreed ``11``-task binding-first exotic proof cohort end to end, including the
 honest-block sentinel. That is a real support-contract step up, but it is
