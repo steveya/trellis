@@ -1,5 +1,5 @@
 meta:
-  recorded_at: '2026-04-14T07:16:39.137347+00:00'
+  recorded_at: '2026-04-14T08:09:04.668510+00:00'
   provider: openai
   model: gpt-5.4-mini
   total_calls: 5
@@ -8,36 +8,20 @@ calls:
 - seq: 0
   function: llm_generate
   stage: code_generation
-  prompt_hash: 4ec3af0570a97129f7c6ed04fbd6d59164d28611ed3ae04e0b5fe77652c7cc11
+  prompt_hash: b35c0393c3bd057099f17a1c8db873f9bbb99c9a1bce1064bccf5ff5cdf0fd9c
   response_text: "from trellis.core.differentiable import get_numpy\n        from\
-    \ trellis.core.date_utils import year_fraction\n        from trellis.models.credit_default_swap\
-    \ import build_cds_schedule, price_cds_monte_carlo\n\n        np = get_numpy()\n\
-    \        spec = self._spec\n\n        spread = float(spec.spread)\n        if\
-    \ spread > 1.0:\n            spread *= 1e-4\n\n        schedule = build_cds_schedule(\n\
+    \ trellis.models.credit_default_swap import build_cds_schedule, price_cds_monte_carlo\n\
+    \n        np = get_numpy()\n        spec = self._spec\n\n        spread = float(spec.spread)\n\
+    \        if spread > 1.0:\n            spread *= 1e-4\n\n        valuation_date\
+    \ = spec.valuation_date or spec.start_date\n        schedule = build_cds_schedule(\n\
     \            spec.start_date,\n            spec.end_date,\n            spec.frequency,\n\
-    \            day_count=spec.day_count,\n            time_origin=spec.start_date,\n\
-    \        )\n\n        credit_curve = market_state.credit_curve\n        discount_curve\
-    \ = market_state.discount\n\n        n_paths = int(spec.n_paths) if getattr(spec,\
-    \ \"n_paths\", None) is not None else 250000\n        if n_paths < 10000:\n  \
-    \          n_paths = 10000\n\n        try:\n            return float(\n      \
-    \          price_cds_monte_carlo(\n                    notional=spec.notional,\n\
-    \                    spread_quote=spread,\n                    recovery=spec.recovery,\n\
-    \                    schedule=schedule,\n                    credit_curve=credit_curve,\n\
-    \                    discount_curve=discount_curve,\n                    n_paths=n_paths,\n\
-    \                    seed=42,\n                )\n            )\n        except\
-    \ Exception:\n            premium_leg = 0.0\n            protection_leg = 0.0\n\
-    \            prev_t = 0.0\n            prev_date = spec.start_date\n\n       \
-    \     for period in schedule:\n                t_pay = getattr(period, \"t_payment\"\
-    , year_fraction(spec.start_date, period.payment_date, spec.day_count))\n     \
-    \           accrual_frac = float(getattr(period, \"accrual_fraction\", year_fraction(prev_date,\
-    \ period.payment_date, spec.day_count)))\n\n                s_prev = float(credit_curve.survival_probability(prev_t))\n\
-    \                s_pay = float(credit_curve.survival_probability(t_pay))\n   \
-    \             default_prob = 0.0 if s_prev <= 0.0 else max(0.0, min(1.0, 1.0 -\
-    \ s_pay / s_prev))\n\n                df = float(discount_curve.discount(t_pay))\n\
-    \                premium_leg += spec.notional * spread * accrual_frac * df * s_pay\n\
-    \                protection_leg += spec.notional * (1.0 - spec.recovery) * df\
-    \ * default_prob\n\n                prev_t = t_pay\n                prev_date\
-    \ = period.payment_date\n\n            return float(protection_leg - premium_leg)"
+    \            spec.day_count,\n            time_origin=valuation_date,\n      \
+    \  )\n\n        return float(\n            price_cds_monte_carlo(\n          \
+    \      notional=float(spec.notional),\n                spread_quote=spread,\n\
+    \                recovery=float(spec.recovery),\n                schedule=schedule,\n\
+    \                credit_curve=market_state.credit_curve,\n                discount_curve=market_state.discount,\n\
+    \                n_paths=int(spec.n_paths),\n                seed=42,\n      \
+    \      )\n        )"
   prompt_text: "You are implementing the evaluate() method for `CDSPayoff` in the\
     \ Trellis pricing library.\n\n## Complete module (skeleton — everything is fixed\
     \ except evaluate)\n```python\n\"\"\"Agent-generated payoff: Build a pricer for:\
@@ -59,7 +43,8 @@ calls:
     \ method family: monte_carlo\n\nImplementation target: mc_cds.\"\"\"\n    notional:\
     \ float\n    spread: float\n    start_date: date\n    end_date: date\n    recovery:\
     \ float = 0.4\n    frequency: Frequency = Frequency.QUARTERLY\n    day_count:\
-    \ DayCountConvention = DayCountConvention.ACT_360\n    n_paths: int = 250000\n\
+    \ DayCountConvention = DayCountConvention.ACT_360\n    valuation_date: date |\
+    \ None = None\n    pricing_method: str = 'monte_carlo'\n    n_paths: int = 250000\n\
     \n\nclass CDSPayoff:\n    \"\"\"Build a pricer for: CDS pricing: hazard rate MC\
     \ vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison targets:\
     \ mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation harness:\n\
@@ -79,6 +64,8 @@ calls:
     \ rate\n- `self._spec.start_date` (date): Protection start date\n- `self._spec.end_date`\
     \ (date): Protection end date\n- `self._spec.frequency` (Frequency): Premium payment\
     \ frequency\n- `self._spec.day_count` (DayCountConvention): Day count convention\n\
+    - `self._spec.valuation_date` (date | None): Valuation date used as the curve-time\
+    \ origin\n- `self._spec.pricing_method` (str): Preferred CDS pricing method\n\
     - `self._spec.n_paths` (int): Number of Monte Carlo paths for comparison-quality\
     \ CDS pricing\n\n## Pricing Method (selected by the quant agent — you MUST use\
     \ this)\nMethod: **monte_carlo**\nReasoning: product_ir_compiler\nSelection basis\
@@ -454,20 +441,16 @@ calls:
 - seq: 1
   function: llm_generate_json
   stage: critic
-  prompt_hash: 33fbd24e988d11ba3ad5e4b41b7aa537a52cdef255a8d9d59ab893b86c24ee64
-  response_text: '{"check_id": "price_non_negative", "description": "Fallback analytical
-    branch can return a negative CDS PV for a standard long-protection payoff when
-    premium leg exceeds protection leg due to sign convention.", "severity": "warning",
-    "evidence": "In the exception path, the function returns `float(protection_leg
-    - premium_leg)`. For a CDS marked as protection buyer, PV is typically protection
-    minus premium, but the code does not document or enforce the sign convention on
-    `spec.spread`; if `spread` is interpreted as an upfront or quoted spread in the
-    wrong unit, the fallback can produce an unjustified negative PV. The branch is
-    reachable whenever `price_cds_monte_carlo(...)` raises.", "remediation": "Make
-    the payoff sign convention explicit and validate spread units before pricing;
-    if the product is intended to be long protection, ensure the fallback uses the
-    same contract convention as the Monte Carlo helper and rejects invalid spread
-    inputs rather than silently computing a potentially negative PV.", "status": "suspect"}'
+  prompt_hash: 79f8259bd820ae8789aa5d68d6001cc645f5265d1b60e7d058c72ca1363a7b65
+  response_text: '{"check_id": "price_non_negative", "description": "Potentially mis-normalized
+    spread quote can drive the CDS PV negative or nonsensical.", "severity": "error",
+    "evidence": "In `evaluate()`, the code rescales `spec.spread` only when `spread
+    > 1.0` via `spread *= 1e-4`. This treats any quote above 1.0 as basis points but
+    leaves values already in decimal form unchanged; if the input convention differs,
+    the premium leg may be grossly mis-scaled relative to default leg, producing an
+    invalid PV.", "remediation": "Normalize the spread quote explicitly according
+    to the product convention at the API boundary, rather than using a heuristic threshold
+    on `> 1.0`.", "status": "suspect"}'
   prompt_text: "You are a quantitative model validator reviewing agent-generated pricing\
     \ code.\nYour job is to find deterministic review concerns, not to praise. Be\
     \ adversarial.\n\n## Code to review\n```python\n\"\"\"Agent-generated payoff:\
@@ -489,10 +472,11 @@ calls:
     \ target: mc_cds\nPreferred method family: monte_carlo\n\nImplementation target:\
     \ mc_cds.\"\"\"\n    notional: float\n    spread: float\n    start_date: date\n\
     \    end_date: date\n    recovery: float = 0.4\n    frequency: Frequency = Frequency.QUARTERLY\n\
-    \    day_count: DayCountConvention = DayCountConvention.ACT_360\n    n_paths:\
-    \ int = 250000\n\n\nclass CDSPayoff:\n    \"\"\"Build a pricer for: CDS pricing:\
-    \ hazard rate MC vs survival prob analytical\n\nConstruct methods: monte_carlo\n\
-    Comparison targets: mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation\
+    \    day_count: DayCountConvention = DayCountConvention.ACT_360\n    valuation_date:\
+    \ date | None = None\n    pricing_method: str = 'monte_carlo'\n    n_paths: int\
+    \ = 250000\n\n\nclass CDSPayoff:\n    \"\"\"Build a pricer for: CDS pricing: hazard\
+    \ rate MC vs survival prob analytical\n\nConstruct methods: monte_carlo\nComparison\
+    \ targets: mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation\
     \ harness:\n  internal targets: mc_cds, analytical_cds\n  external targets: quantlib,\
     \ financepy\nNew component: cds_pricing\n\nImplementation target: mc_cds\nPreferred\
     \ method family: monte_carlo\n\nImplementation target: mc_cds.\"\"\"\n\n    def\
@@ -500,36 +484,20 @@ calls:
     \    def spec(self) -> CDSSpec:\n        return self._spec\n\n    @property\n\
     \    def requirements(self) -> set[str]:\n        return {\"credit_curve\", \"\
     discount_curve\"}\n\n    def evaluate(self, market_state: MarketState) -> float:\n\
-    \        spec = self._spec\n        from trellis.core.date_utils import year_fraction\n\
-    \        from trellis.models.credit_default_swap import build_cds_schedule, price_cds_monte_carlo\n\
-    \n        np = get_numpy()\n        spec = self._spec\n\n        spread = float(spec.spread)\n\
-    \        if spread > 1.0:\n            spread *= 1e-4\n\n        schedule = build_cds_schedule(\n\
-    \        spec.start_date,\n        spec.end_date,\n        spec.frequency,\n \
-    \       day_count=spec.day_count,\n        time_origin=spec.start_date,\n    \
-    \    )\n\n        credit_curve = market_state.credit_curve\n        discount_curve\
-    \ = market_state.discount\n\n        n_paths = int(spec.n_paths) if getattr(spec,\
-    \ \"n_paths\", None) is not None else 250000\n        if n_paths < 10000:\n  \
-    \          n_paths = 10000\n\n        try:\n            return float(\n      \
-    \      price_cds_monte_carlo(\n                notional=spec.notional,\n     \
-    \           spread_quote=spread,\n                recovery=spec.recovery,\n  \
-    \              schedule=schedule,\n                credit_curve=credit_curve,\n\
-    \                discount_curve=discount_curve,\n                n_paths=n_paths,\n\
-    \                seed=42,\n            )\n        )\n        except Exception:\n\
-    \            premium_leg = 0.0\n        protection_leg = 0.0\n        prev_t =\
-    \ 0.0\n        prev_date = spec.start_date\n\n        for period in schedule:\n\
-    \            t_pay = getattr(period, \"t_payment\", year_fraction(spec.start_date,\
-    \ period.payment_date, spec.day_count))\n            accrual_frac = float(getattr(period,\
-    \ \"accrual_fraction\", year_fraction(prev_date, period.payment_date, spec.day_count)))\n\
-    \n            s_prev = float(credit_curve.survival_probability(prev_t))\n    \
-    \        s_pay = float(credit_curve.survival_probability(t_pay))\n           \
-    \ default_prob = 0.0 if s_prev <= 0.0 else max(0.0, min(1.0, 1.0 - s_pay / s_prev))\n\
-    \n            df = float(discount_curve.discount(t_pay))\n            premium_leg\
-    \ += spec.notional * spread * accrual_frac * df * s_pay\n            protection_leg\
-    \ += spec.notional * (1.0 - spec.recovery) * df * default_prob\n\n           \
-    \ prev_t = t_pay\n            prev_date = period.payment_date\n\n        return\
-    \ float(protection_leg - premium_leg)\n\n```\n\n## Instrument description\nBuild\
-    \ a pricer for: CDS pricing: hazard rate MC vs survival prob analytical\n\nConstruct\
-    \ methods: monte_carlo\nComparison targets: mc_cds (monte_carlo), analytical_cds\
+    \        spec = self._spec\n        from trellis.models.credit_default_swap import\
+    \ build_cds_schedule, price_cds_monte_carlo\n\n        np = get_numpy()\n    \
+    \    spec = self._spec\n\n        spread = float(spec.spread)\n        if spread\
+    \ > 1.0:\n            spread *= 1e-4\n\n        valuation_date = spec.valuation_date\
+    \ or spec.start_date\n        schedule = build_cds_schedule(\n        spec.start_date,\n\
+    \        spec.end_date,\n        spec.frequency,\n        spec.day_count,\n  \
+    \      time_origin=valuation_date,\n        )\n\n        return float(\n     \
+    \   price_cds_monte_carlo(\n            notional=float(spec.notional),\n     \
+    \       spread_quote=spread,\n            recovery=float(spec.recovery),\n   \
+    \         schedule=schedule,\n            credit_curve=market_state.credit_curve,\n\
+    \            discount_curve=market_state.discount,\n            n_paths=int(spec.n_paths),\n\
+    \            seed=42,\n        )\n        )\n\n```\n\n## Instrument description\n\
+    Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical\n\n\
+    Construct methods: monte_carlo\nComparison targets: mc_cds (monte_carlo), analytical_cds\
     \ (analytical)\nCross-validation harness:\n  internal targets: mc_cds, analytical_cds\n\
     \  external targets: quantlib, financepy\nNew component: cds_pricing\n\nImplementation\
     \ target: mc_cds\nPreferred method family: monte_carlo\n\nImplementation target:\
@@ -630,24 +598,26 @@ calls:
   function: llm_generate_json
   stage: spec_design
   prompt_hash: eb9b058a770a906ffd0669b7b008f69826230d7ab43bfc2a9ffc1f2c6cb8e2ea
-  response_text: '{"class_name": "CDSPricerPayoff", "spec_name": "CDSPricerSpec",
+  response_text: '{"class_name": "CDSPricingPayoff", "spec_name": "CDSPricingSpec",
     "requirements": ["credit_curve", "discount_curve"], "fields": [{"name": "notional",
-    "type": "float", "description": "Contract notional used to scale protection and
-    premium leg cash flows.", "default": null}, {"name": "spread", "type": "float",
-    "description": "Running CDS premium spread quoted as a decimal rate per annum.",
-    "default": null}, {"name": "start_date", "type": "date", "description": "Protection
-    start date for the CDS contract.", "default": null}, {"name": "end_date", "type":
-    "date", "description": "Contract end date / maturity date for the CDS protection
-    leg.", "default": null}, {"name": "frequency", "type": "Frequency", "description":
-    "Premium payment frequency for the CDS coupon schedule.", "default": "Frequency.QUARTERLY"},
-    {"name": "day_count", "type": "DayCountConvention", "description": "Day count
-    convention used to accrue premium payments.", "default": "DayCountConvention.ACT_360"},
-    {"name": "recovery_rate", "type": "float", "description": "Recovery rate assumed
-    in the protection leg payoff.", "default": 0.4}, {"name": "is_payer", "type":
-    "bool", "description": "True if the trade pays fixed premium and receives protection.",
-    "default": true}, {"name": "rate_index", "type": "str | None", "description":
-    "Optional reference rate or curve identifier for multi-curve discounting setups.",
-    "default": null}]}'
+    "type": "float", "description": "CDS notional amount used to scale protection
+    and premium leg cash flows.", "default": null}, {"name": "spread", "type": "float",
+    "description": "Contract running spread quoted as a decimal rate (for example,
+    0.01 for 100 bps).", "default": null}, {"name": "start_date", "type": "date",
+    "description": "Protection start date for the CDS contract.", "default": null},
+    {"name": "end_date", "type": "date", "description": "CDS maturity date / protection
+    end date.", "default": null}, {"name": "frequency", "type": "Frequency", "description":
+    "Premium payment frequency used to generate the coupon schedule.", "default":
+    "Frequency.QUARTERLY"}, {"name": "day_count", "type": "DayCountConvention", "description":
+    "Day count convention used for accrual and premium leg year fractions.", "default":
+    "DayCountConvention.ACT_360"}, {"name": "recovery_rate", "type": "float", "description":
+    "Assumed recovery rate used in protection leg valuation.", "default": 0.4}, {"name":
+    "is_payer", "type": "bool", "description": "Indicator for premium direction; True
+    means the protection buyer pays the fixed spread.", "default": true}, {"name":
+    "coupon_stub_at_start", "type": "bool", "description": "Whether an initial stub
+    period is allowed at the start of the premium schedule.", "default": true}, {"name":
+    "coupon_stub_at_end", "type": "bool", "description": "Whether a final stub period
+    is allowed at the end of the premium schedule.", "default": true}]}'
   prompt_text: "You are designing the specification dataclass for a payoff in the\
     \ Trellis pricing library.\n\n## Task\nDesign the spec fields for: Build a pricer\
     \ for: CDS pricing: hazard rate MC vs survival prob analytical\n\nConstruct methods:\
@@ -691,76 +661,79 @@ calls:
 - seq: 3
   function: llm_generate
   stage: code_generation
-  prompt_hash: c93b510d429a3041027ef3494cf537f06726914b1e15539815c09a2216965cbe
-  response_text: "from trellis.models.credit_default_swap import build_cds_schedule,\
-    \ price_cds_analytical\n\n        spec = self._spec\n        if market_state.discount\
-    \ is None:\n            raise ValueError(\"CDSPricerPayoff requires a discount\
-    \ curve in market_state.discount\")\n        if market_state.credit_curve is None:\n\
-    \            raise ValueError(\"CDSPricerPayoff requires a credit curve in market_state.credit_curve\"\
-    )\n\n        spread = float(spec.spread)\n        if spread > 1.0:\n         \
-    \   spread *= 1e-4\n\n        schedule = build_cds_schedule(\n            spec.start_date,\n\
-    \            spec.end_date,\n            spec.frequency,\n            spec.day_count,\n\
+  prompt_hash: 5eb12616815579c2dc1ecb96d8d82ad31345911a1f6308e8472be64b69978d9d
+  response_text: "spec = self._spec\n\n        if market_state.credit_curve is None:\n\
+    \            raise ValueError(\"CDSPricingPayoff requires market_state.credit_curve\"\
+    )\n        if market_state.discount is None:\n            raise ValueError(\"\
+    CDSPricingPayoff requires market_state.discount\")\n\n        spread = spec.spread\n\
+    \        if abs(spread) > 1.0:\n            spread = spread / 10000.0\n\n    \
+    \    schedule = build_cds_schedule(\n            spec.start_date,\n          \
+    \  spec.end_date,\n            spec.frequency,\n            spec.day_count,\n\
     \            time_origin=spec.start_date,\n        )\n\n        pv = price_cds_analytical(\n\
-    \            notional=float(spec.notional),\n            spread_quote=spread,\n\
-    \            recovery=float(spec.recovery_rate),\n            schedule=schedule,\n\
-    \            credit_curve=market_state.credit_curve,\n            discount_curve=market_state.discount,\n\
-    \        )\n\n        return float(pv if spec.is_payer else -pv)"
-  prompt_text: "You are implementing the evaluate() method for `CDSPricerPayoff` in\
-    \ the Trellis pricing library.\n\n## Complete module (skeleton — everything is\
-    \ fixed except evaluate)\n```python\n\"\"\"Agent-generated payoff: Build a pricer\
-    \ for: CDS pricing: hazard rate MC vs survival prob analytical\n\nConstruct methods:\
-    \ monte_carlo\nComparison targets: mc_cds (monte_carlo), analytical_cds (analytical)\n\
-    Cross-validation harness:\n  internal targets: mc_cds, analytical_cds\n  external\
-    \ targets: quantlib, financepy\nNew component: cds_pricing\n\nImplementation target:\
-    \ analytical_cds\nPreferred method family: analytical\n\nImplementation target:\
-    \ analytical_cds.\"\"\"\n\nfrom __future__ import annotations\n\nfrom dataclasses\
-    \ import dataclass\nfrom datetime import date\n\nfrom trellis.core.market_state\
+    \            notional=spec.notional,\n            spread_quote=spread,\n     \
+    \       recovery=spec.recovery_rate,\n            schedule=schedule,\n       \
+    \     credit_curve=market_state.credit_curve,\n            discount_curve=market_state.discount,\n\
+    \        )\n\n        return float(pv)"
+  prompt_text: "You are implementing the evaluate() method for `CDSPricingPayoff`\
+    \ in the Trellis pricing library.\n\n## Complete module (skeleton — everything\
+    \ is fixed except evaluate)\n```python\n\"\"\"Agent-generated payoff: Build a\
+    \ pricer for: CDS pricing: hazard rate MC vs survival prob analytical\n\nConstruct\
+    \ methods: monte_carlo\nComparison targets: mc_cds (monte_carlo), analytical_cds\
+    \ (analytical)\nCross-validation harness:\n  internal targets: mc_cds, analytical_cds\n\
+    \  external targets: quantlib, financepy\nNew component: cds_pricing\n\nImplementation\
+    \ target: analytical_cds\nPreferred method family: analytical\n\nImplementation\
+    \ target: analytical_cds.\"\"\"\n\nfrom __future__ import annotations\n\nfrom\
+    \ dataclasses import dataclass\nfrom datetime import date\n\nfrom trellis.core.market_state\
     \ import MarketState\nfrom trellis.core.types import DayCountConvention, Frequency\n\
     from trellis.models.credit_default_swap import build_cds_schedule, price_cds_analytical\n\
-    \n\n\n@dataclass(frozen=True)\nclass CDSPricerSpec:\n    \"\"\"Specification for\
-    \ Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical\n\
+    \n\n\n@dataclass(frozen=True)\nclass CDSPricingSpec:\n    \"\"\"Specification\
+    \ for Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical\n\
     \nConstruct methods: monte_carlo\nComparison targets: mc_cds (monte_carlo), analytical_cds\
     \ (analytical)\nCross-validation harness:\n  internal targets: mc_cds, analytical_cds\n\
     \  external targets: quantlib, financepy\nNew component: cds_pricing\n\nImplementation\
     \ target: analytical_cds\nPreferred method family: analytical\n\nImplementation\
     \ target: analytical_cds.\"\"\"\n    notional: float\n    spread: float\n    start_date:\
-    \ date\n    end_date: date\n    rate_index: str | None\n    frequency: Frequency\
-    \ = Frequency.QUARTERLY\n    day_count: DayCountConvention = DayCountConvention.ACT_360\n\
-    \    recovery_rate: float = 0.4\n    is_payer: bool = True\n\n\nclass CDSPricerPayoff:\n\
-    \    \"\"\"Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical\n\
-    \nConstruct methods: monte_carlo\nComparison targets: mc_cds (monte_carlo), analytical_cds\
+    \ date\n    end_date: date\n    frequency: Frequency = Frequency.QUARTERLY\n \
+    \   day_count: DayCountConvention = DayCountConvention.ACT_360\n    recovery_rate:\
+    \ float = 0.4\n    is_payer: bool = True\n    coupon_stub_at_start: bool = True\n\
+    \    coupon_stub_at_end: bool = True\n\n\nclass CDSPricingPayoff:\n    \"\"\"\
+    Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical\n\n\
+    Construct methods: monte_carlo\nComparison targets: mc_cds (monte_carlo), analytical_cds\
     \ (analytical)\nCross-validation harness:\n  internal targets: mc_cds, analytical_cds\n\
     \  external targets: quantlib, financepy\nNew component: cds_pricing\n\nImplementation\
     \ target: analytical_cds\nPreferred method family: analytical\n\nImplementation\
-    \ target: analytical_cds.\"\"\"\n\n    def __init__(self, spec: CDSPricerSpec):\n\
-    \        self._spec = spec\n\n    @property\n    def spec(self) -> CDSPricerSpec:\n\
+    \ target: analytical_cds.\"\"\"\n\n    def __init__(self, spec: CDSPricingSpec):\n\
+    \        self._spec = spec\n\n    @property\n    def spec(self) -> CDSPricingSpec:\n\
     \        return self._spec\n\n    @property\n    def requirements(self) -> set[str]:\n\
     \        return {\"credit_curve\", \"discount_curve\"}\n\n    def evaluate(self,\
     \ market_state: MarketState) -> float:\n        spec = self._spec\n        raise\
     \ NotImplementedError(\"evaluate not yet implemented\")\n\n```\n\n## Your task\n\
     Write ONLY the body of the `evaluate()` method. The signature is already defined:\n\
     \n    def evaluate(self, market_state: MarketState) -> float:\n\n## Spec fields\
-    \ available via self._spec\n- `self._spec.notional` (float): Contract notional\
+    \ available via self._spec\n- `self._spec.notional` (float): CDS notional amount\
     \ used to scale protection and premium leg cash flows.\n- `self._spec.spread`\
-    \ (float): Running CDS premium spread quoted as a decimal rate per annum.\n- `self._spec.start_date`\
-    \ (date): Protection start date for the CDS contract.\n- `self._spec.end_date`\
-    \ (date): Contract end date / maturity date for the CDS protection leg.\n- `self._spec.frequency`\
-    \ (Frequency): Premium payment frequency for the CDS coupon schedule.\n- `self._spec.day_count`\
-    \ (DayCountConvention): Day count convention used to accrue premium payments.\n\
-    - `self._spec.recovery_rate` (float): Recovery rate assumed in the protection\
-    \ leg payoff.\n- `self._spec.is_payer` (bool): True if the trade pays fixed premium\
-    \ and receives protection.\n- `self._spec.rate_index` (str | None): Optional reference\
-    \ rate or curve identifier for multi-curve discounting setups.\n\n## Pricing Method\
-    \ (selected by the quant agent — you MUST use this)\nMethod: **analytical**\n\
-    Reasoning: product_ir_compiler\nSelection basis and assumptions:\n- Selection\
-    \ basis: `explicit_preference`\n- Assumptions / defaulted context:\n  - `simplest_valid_assumption_set`\n\
-    \  - `closed_form_or_quasi_closed_form_route`\n  - `no_path_sampling_required`\n\
-    \  - `schedule_dependent_product`\nRoute-bound modules to import and use:\n- `trellis.models.credit_default_swap`\n\
-    \nYou MUST import and use these route-bound modules in your implementation.\n\
-    Do not import a generic parent package such as `from trellis.models import ...`\
-    \ just to satisfy the method family.\n\n## API Map — start here before guessing\
-    \ module paths\n\nUse this navigation card to choose the right module family first.\
-    \ Confirm exact symbols with `find_symbol` or `list_exports` before calling `read_module`.\n\
+    \ (float): Contract running spread quoted as a decimal rate (for example, 0.01\
+    \ for 100 bps).\n- `self._spec.start_date` (date): Protection start date for the\
+    \ CDS contract.\n- `self._spec.end_date` (date): CDS maturity date / protection\
+    \ end date.\n- `self._spec.frequency` (Frequency): Premium payment frequency used\
+    \ to generate the coupon schedule.\n- `self._spec.day_count` (DayCountConvention):\
+    \ Day count convention used for accrual and premium leg year fractions.\n- `self._spec.recovery_rate`\
+    \ (float): Assumed recovery rate used in protection leg valuation.\n- `self._spec.is_payer`\
+    \ (bool): Indicator for premium direction; True means the protection buyer pays\
+    \ the fixed spread.\n- `self._spec.coupon_stub_at_start` (bool): Whether an initial\
+    \ stub period is allowed at the start of the premium schedule.\n- `self._spec.coupon_stub_at_end`\
+    \ (bool): Whether a final stub period is allowed at the end of the premium schedule.\n\
+    \n## Pricing Method (selected by the quant agent — you MUST use this)\nMethod:\
+    \ **analytical**\nReasoning: product_ir_compiler\nSelection basis and assumptions:\n\
+    - Selection basis: `explicit_preference`\n- Assumptions / defaulted context:\n\
+    \  - `simplest_valid_assumption_set`\n  - `closed_form_or_quasi_closed_form_route`\n\
+    \  - `no_path_sampling_required`\n  - `schedule_dependent_product`\nRoute-bound\
+    \ modules to import and use:\n- `trellis.models.credit_default_swap`\n\nYou MUST\
+    \ import and use these route-bound modules in your implementation.\nDo not import\
+    \ a generic parent package such as `from trellis.models import ...` just to satisfy\
+    \ the method family.\n\n## API Map — start here before guessing module paths\n\
+    \nUse this navigation card to choose the right module family first. Confirm exact\
+    \ symbols with `find_symbol` or `list_exports` before calling `read_module`.\n\
     \n### Core Types\n#### MarketState\n- Module: `trellis.core.market_state`\n- Class:\
     \ `MarketState`\n- Frozen: `true`\n- Fields: `as_of`, `settlement`, `discount`,\
     \ `forward_curve`, `vol_surface`, `state_space`, `credit_curve`, `forecast_curves`,\
@@ -934,8 +907,8 @@ calls:
     \ plan kind: `exact_target_binding`\n- Method family: `analytical`\n- Route: `credit_default_swap_analytical`\n\
     - Engine family: `analytical`\n- Required primitive symbols:\n  - `trellis.models.credit_default_swap.build_cds_schedule`\n\
     \  - `trellis.models.credit_default_swap.price_cds_analytical`\n## Thin Adapter\
-    \ Plan\n- Target payoff class: `CDSPricerPayoff`\n- Required market reads:\n \
-    \ - `market_state.credit_curve`\n  - `market_state.discount`\n- Required primitive\
+    \ Plan\n- Target payoff class: `CDSPricingPayoff`\n- Required market reads:\n\
+    \  - `market_state.credit_curve`\n  - `market_state.discount`\n- Required primitive\
     \ calls:\n  - `trellis.models.credit_default_swap.price_cds_analytical`\n- Return\
     \ contract: Return a Python `float` present value from `evaluate()`.\n## Invariant\
     \ Pack\n- The generated payoff should be compatible with these deterministic validation\
@@ -1086,19 +1059,8 @@ calls:
 - seq: 4
   function: llm_generate_json
   stage: critic
-  prompt_hash: 033cf8e4e3f038d133817f497b37255babccf9387fe0eaea76a44258cc37b3be
-  response_text: '{"check_id": "price_non_negative", "description": "The CDS payoff
-    sign is flipped for payer CDS, which can produce a negative PV for a long protection
-    position.", "severity": "error", "evidence": "evaluate() returns `float(pv if
-    spec.is_payer else -pv)`. For a payer CDS, the caller is typically buying protection,
-    but the code returns the raw analytical PV without enforcing the protection-leg
-    sign convention; if `price_cds_analytical` is positive for the contract value,
-    this makes the payer case positive and the receiver case negative, and any mismatch
-    in the backend convention can easily yield negative PVs for the long-only default-protection
-    leg.", "remediation": "Verify the backend sign convention and map payer/receiver
-    explicitly so the returned PV matches the intended protection-buyer convention;
-    do not negate based only on `is_payer` without confirming the analytical kernel''s
-    output sign.", "status": "suspect"}'
+  prompt_hash: a05d0b289cb67b5f25c91ee3ce3e343ff37617bd491f57ed54bde44993f3359b
+  response_text: '{}'
   prompt_text: "You are a quantitative model validator reviewing agent-generated pricing\
     \ code.\nYour job is to find deterministic review concerns, not to praise. Be\
     \ adversarial.\n\n## Code to review\n```python\n\"\"\"Agent-generated payoff:\
@@ -1111,49 +1073,50 @@ calls:
     \ dataclasses import dataclass\nfrom datetime import date\n\nfrom trellis.core.market_state\
     \ import MarketState\nfrom trellis.core.types import DayCountConvention, Frequency\n\
     from trellis.models.credit_default_swap import build_cds_schedule, price_cds_analytical\n\
-    \n\n\n@dataclass(frozen=True)\nclass CDSPricerSpec:\n    \"\"\"Specification for\
-    \ Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical\n\
+    \n\n\n@dataclass(frozen=True)\nclass CDSPricingSpec:\n    \"\"\"Specification\
+    \ for Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical\n\
     \nConstruct methods: monte_carlo\nComparison targets: mc_cds (monte_carlo), analytical_cds\
     \ (analytical)\nCross-validation harness:\n  internal targets: mc_cds, analytical_cds\n\
     \  external targets: quantlib, financepy\nNew component: cds_pricing\n\nImplementation\
     \ target: analytical_cds\nPreferred method family: analytical\n\nImplementation\
     \ target: analytical_cds.\"\"\"\n    notional: float\n    spread: float\n    start_date:\
-    \ date\n    end_date: date\n    rate_index: str | None\n    frequency: Frequency\
-    \ = Frequency.QUARTERLY\n    day_count: DayCountConvention = DayCountConvention.ACT_360\n\
-    \    recovery_rate: float = 0.4\n    is_payer: bool = True\n\n\nclass CDSPricerPayoff:\n\
-    \    \"\"\"Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical\n\
-    \nConstruct methods: monte_carlo\nComparison targets: mc_cds (monte_carlo), analytical_cds\
+    \ date\n    end_date: date\n    frequency: Frequency = Frequency.QUARTERLY\n \
+    \   day_count: DayCountConvention = DayCountConvention.ACT_360\n    recovery_rate:\
+    \ float = 0.4\n    is_payer: bool = True\n    coupon_stub_at_start: bool = True\n\
+    \    coupon_stub_at_end: bool = True\n\n\nclass CDSPricingPayoff:\n    \"\"\"\
+    Build a pricer for: CDS pricing: hazard rate MC vs survival prob analytical\n\n\
+    Construct methods: monte_carlo\nComparison targets: mc_cds (monte_carlo), analytical_cds\
     \ (analytical)\nCross-validation harness:\n  internal targets: mc_cds, analytical_cds\n\
     \  external targets: quantlib, financepy\nNew component: cds_pricing\n\nImplementation\
     \ target: analytical_cds\nPreferred method family: analytical\n\nImplementation\
-    \ target: analytical_cds.\"\"\"\n\n    def __init__(self, spec: CDSPricerSpec):\n\
-    \        self._spec = spec\n\n    @property\n    def spec(self) -> CDSPricerSpec:\n\
+    \ target: analytical_cds.\"\"\"\n\n    def __init__(self, spec: CDSPricingSpec):\n\
+    \        self._spec = spec\n\n    @property\n    def spec(self) -> CDSPricingSpec:\n\
     \        return self._spec\n\n    @property\n    def requirements(self) -> set[str]:\n\
     \        return {\"credit_curve\", \"discount_curve\"}\n\n    def evaluate(self,\
     \ market_state: MarketState) -> float:\n        spec = self._spec\n        spec\
-    \ = self._spec\n        if market_state.discount is None:\n            raise ValueError(\"\
-    CDSPricerPayoff requires a discount curve in market_state.discount\")\n      \
-    \  if market_state.credit_curve is None:\n            raise ValueError(\"CDSPricerPayoff\
-    \ requires a credit curve in market_state.credit_curve\")\n\n        spread =\
-    \ float(spec.spread)\n        if spread > 1.0:\n            spread *= 1e-4\n\n\
-    \        schedule = build_cds_schedule(\n        spec.start_date,\n        spec.end_date,\n\
-    \        spec.frequency,\n        spec.day_count,\n        time_origin=spec.start_date,\n\
-    \        )\n\n        pv = price_cds_analytical(\n        notional=float(spec.notional),\n\
-    \        spread_quote=spread,\n        recovery=float(spec.recovery_rate),\n \
-    \       schedule=schedule,\n        credit_curve=market_state.credit_curve,\n\
-    \        discount_curve=market_state.discount,\n        )\n\n        return float(pv\
-    \ if spec.is_payer else -pv)\n\n```\n\n## Instrument description\nBuild a pricer\
-    \ for: CDS pricing: hazard rate MC vs survival prob analytical\n\nConstruct methods:\
-    \ monte_carlo\nComparison targets: mc_cds (monte_carlo), analytical_cds (analytical)\n\
-    Cross-validation harness:\n  internal targets: mc_cds, analytical_cds\n  external\
-    \ targets: quantlib, financepy\nNew component: cds_pricing\n\nImplementation target:\
-    \ analytical_cds\nPreferred method family: analytical\n\nImplementation target:\
-    \ analytical_cds\n\n## Shared Knowledge\n## Distilled Review Memory\n\n- Review\
-    \ principles:\n  - `P1`: Always calibrate rate trees to the discount curve before\
-    \ pricing\n  - `P2`: Callable bonds need issuer_call lattice control, discrete\
-    \ coupons, and exercise=par+coupon\n  - `P3`: Convert vol units at the boundary\
-    \ between market data and model\n- Review checkpoints:\n  - OUTPUT CONTRACT: evaluate()\
-    \ must return a float present value. Return a non-empty JSON-serializable structure\
+    \ = self._spec\n\n        if market_state.credit_curve is None:\n            raise\
+    \ ValueError(\"CDSPricingPayoff requires market_state.credit_curve\")\n      \
+    \  if market_state.discount is None:\n            raise ValueError(\"CDSPricingPayoff\
+    \ requires market_state.discount\")\n\n        spread = spec.spread\n        if\
+    \ abs(spread) > 1.0:\n            spread = spread / 10000.0\n\n        schedule\
+    \ = build_cds_schedule(\n            spec.start_date,\n            spec.end_date,\n\
+    \            spec.frequency,\n            spec.day_count,\n            time_origin=spec.start_date,\n\
+    \        )\n\n        pv = price_cds_analytical(\n            notional=spec.notional,\n\
+    \            spread_quote=spread,\n            recovery=spec.recovery_rate,\n\
+    \            schedule=schedule,\n            credit_curve=market_state.credit_curve,\n\
+    \            discount_curve=market_state.discount,\n        )\n\n        return\
+    \ float(pv)\n\n```\n\n## Instrument description\nBuild a pricer for: CDS pricing:\
+    \ hazard rate MC vs survival prob analytical\n\nConstruct methods: monte_carlo\n\
+    Comparison targets: mc_cds (monte_carlo), analytical_cds (analytical)\nCross-validation\
+    \ harness:\n  internal targets: mc_cds, analytical_cds\n  external targets: quantlib,\
+    \ financepy\nNew component: cds_pricing\n\nImplementation target: analytical_cds\n\
+    Preferred method family: analytical\n\nImplementation target: analytical_cds\n\
+    \n## Shared Knowledge\n## Distilled Review Memory\n\n- Review principles:\n  -\
+    \ `P1`: Always calibrate rate trees to the discount curve before pricing\n  -\
+    \ `P2`: Callable bonds need issuer_call lattice control, discrete coupons, and\
+    \ exercise=par+coupon\n  - `P3`: Convert vol units at the boundary between market\
+    \ data and model\n- Review checkpoints:\n  - OUTPUT CONTRACT: evaluate() must\
+    \ return a float present value. Return a non-empty JSON-serializable structure\
     \ only when a caller explicitly expects structured output.\n  - BLACK-SCHOLES\
     \ FORWARD CONSISTENCY: Derive the forward from spot and discounting before calling\
     \ Black-style kernels. With no dividends, F = S0 / discount_curve.discount(T);\
