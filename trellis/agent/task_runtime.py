@@ -28,6 +28,10 @@ from trellis.agent.instrument_identity import (
     resolve_authoritative_instrument_type,
     resolve_instrument_identity,
 )
+from trellis.agent.market_scenarios import (
+    construct_market_state_for_scenario,
+    market_scenario_contract_from_task,
+)
 from trellis.agent.knowledge.methods import is_known_method, normalize_method
 from trellis.agent.planner import FieldDef, SpecSchema
 from trellis.agent.planner import plan_build
@@ -401,134 +405,16 @@ def build_market_state():
         )
 
 
-def _flat_yield_curve(rate: object | None):
-    """Return a flat yield curve when a numeric rate is available."""
-    if rate in {None, ""}:
-        return None
-    from trellis.curves.yield_curve import YieldCurve
-
-    return YieldCurve.flat(float(rate), max_tenor=31.0)
-
-
-def _flat_credit_curve(hazard_rate: object | None):
-    """Return a flat credit curve when a numeric hazard rate is available."""
-    if hazard_rate in {None, ""}:
-        return None
-    from trellis.curves.credit_curve import CreditCurve
-
-    return CreditCurve.flat(float(hazard_rate), max_tenor=31.0)
-
-
-def _benchmark_market_overlay(task: dict, market_state):
-    """Apply benchmark-specific flat market overrides onto a resolved MarketState.
-
-    FinancePy parity tasks define textbook flat scenarios in ``benchmark_inputs``.
-    The repo's synthetic mock snapshot is intentionally richer and can drift
-    materially from those textbook assumptions, so parity tasks need an overlay
-    layer rather than raw snapshot selection alone.
-    """
-    market_spec = dict(task.get("market") or {})
-    benchmark_inputs = dict(market_spec.get("benchmark_inputs") or {})
-    benchmark_contract = dict(task.get("benchmark_contract") or {})
-    if not benchmark_inputs and not benchmark_contract:
+def _apply_task_market_scenario(task: Mapping[str, Any], market_state):
+    """Apply one normalized market-scenario contract onto a MarketState."""
+    contract = market_scenario_contract_from_task(task, root=ROOT)
+    if contract is None:
         return market_state, {}
-
-    from trellis.instruments.fx import FXRate
-    from trellis.models.vol_surface import FlatVol
-
-    discount_curve = (
-        _flat_yield_curve(benchmark_inputs.get("flat_discount_rate"))
-        or _flat_yield_curve(benchmark_contract.get("domestic_rate"))
-        or market_state.discount
-    )
-    credit_curve = (
-        _flat_credit_curve(benchmark_inputs.get("issuer_hazard_rate"))
-        or market_state.credit_curve
-    )
-    forecast_curves = dict(getattr(market_state, "forecast_curves", None) or {})
-    forecast_curve_name = str(market_spec.get("forecast_curve") or "").strip()
-    forecast_rate = None
-    if benchmark_inputs.get("flat_forward_rate") not in {None, ""}:
-        forecast_rate = benchmark_inputs.get("flat_forward_rate")
-    elif benchmark_contract.get("foreign_rate") not in {None, ""}:
-        forecast_rate = benchmark_contract.get("foreign_rate")
-    if forecast_curve_name and forecast_rate not in {None, ""}:
-        forecast_curves[forecast_curve_name] = _flat_yield_curve(forecast_rate)
-
-    vol_quote = None
-    for candidate in (
-        benchmark_contract.get("volatility"),
-        benchmark_inputs.get("black_vol"),
-        benchmark_inputs.get("shifted_black_vol"),
-    ):
-        if candidate not in {None, ""}:
-            vol_quote = float(candidate)
-            break
-    vol_surface = FlatVol(vol_quote) if vol_quote is not None else market_state.vol_surface
-
-    fx_rates = dict(getattr(market_state, "fx_rates", None) or {})
-    fx_pair = str(benchmark_contract.get("currency_pair") or market_spec.get("fx_rate") or "").strip()
-    fx_spot = benchmark_contract.get("spot")
-    if fx_spot in {None, ""}:
-        fx_spot = benchmark_inputs.get("spot_fx")
-    if fx_pair and fx_spot not in {None, ""} and len(fx_pair) == 6:
-        fx_rates[fx_pair] = FXRate(
-            spot=float(fx_spot),
-            domestic=fx_pair[3:],
-            foreign=fx_pair[:3],
-        )
-
-    spot = market_state.spot
-    underlier_spots = dict(getattr(market_state, "underlier_spots", None) or {})
-    underlier_name = str(market_spec.get("underlier_spot") or "").strip()
-    spot_value = benchmark_contract.get("spot")
-    if spot_value in {None, ""}:
-        spot_value = benchmark_inputs.get("stock_price")
-    if spot_value not in {None, ""}:
-        spot = float(spot_value)
-        if underlier_name:
-            underlier_spots[underlier_name] = spot
-    elif fx_pair and fx_spot not in {None, ""}:
-        underlier_spots[fx_pair] = float(fx_spot)
-
-    applied_inputs = {
-        key: value
-        for key, value in (
-            ("discount_rate", benchmark_inputs.get("flat_discount_rate") or benchmark_contract.get("domestic_rate")),
-            ("forecast_rate", forecast_rate),
-            ("credit_hazard_rate", benchmark_inputs.get("issuer_hazard_rate")),
-            ("volatility", vol_quote),
-            ("spot", spot_value if spot_value not in {None, ""} else fx_spot),
-            ("fx_pair", fx_pair or None),
-            ("underlier_spot", underlier_name or None),
-        )
-        if value not in {None, ""}
-    }
-    if not applied_inputs:
-        return market_state, {}
-
-    overlay_provenance = dict(getattr(market_state, "market_provenance", None) or {})
-    overlay_provenance["benchmark_overlay"] = {
-        "task_id": str(task.get("id") or ""),
-        "market_scenario_id": str(task.get("market_scenario_id") or ""),
-        "applied_inputs": applied_inputs,
-    }
-    overlay_state = replace(
+    return construct_market_state_for_scenario(
+        contract,
         market_state,
-        discount=discount_curve,
-        forward_curve=None if discount_curve is not None else getattr(market_state, "forward_curve", None),
-        credit_curve=credit_curve,
-        forecast_curves=forecast_curves or None,
-        vol_surface=vol_surface,
-        fx_rates=fx_rates or None,
-        spot=spot,
-        underlier_spots=underlier_spots or None,
-        market_provenance=overlay_provenance,
+        task_id=str(task.get("id") or ""),
     )
-    return overlay_state, {
-        "benchmark_market_overlay": True,
-        "benchmark_overlay_inputs": applied_inputs,
-    }
 
 
 def benchmark_spec_overrides(task: Mapping[str, Any]) -> dict[str, Any]:
@@ -539,7 +425,8 @@ def benchmark_spec_overrides(task: Mapping[str, Any]) -> dict[str, Any]:
     the parity task declares rather than the repo's generic smoke-test defaults.
     """
     market_spec = dict(task.get("market") or {})
-    benchmark_inputs = dict(market_spec.get("benchmark_inputs") or {})
+    contract_spec = market_scenario_contract_from_task(task, root=ROOT)
+    benchmark_inputs = {} if contract_spec is None else contract_spec.financepy_inputs()
     contract = dict(task.get("benchmark_contract") or {})
     if not benchmark_inputs and not contract:
         return {}
@@ -601,6 +488,11 @@ def benchmark_spec_overrides(task: Mapping[str, Any]) -> dict[str, Any]:
 
     valuation_date_raw = (
         benchmark_inputs.get("valuation_date")
+        or (
+            contract_spec.valuation_date.isoformat()
+            if contract_spec is not None and contract_spec.valuation_date is not None
+            else None
+        )
         or market_spec.get("as_of")
         or DEFAULT_SETTLEMENT.isoformat()
     )
@@ -695,7 +587,7 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
     snapshot = build_market_snapshot_for_task(task)
     if snapshot is None:
         market_state = fallback_market_state if fallback_market_state is not None else build_market_state()
-        market_state, overlay_metadata = _benchmark_market_overlay(task, market_state)
+        market_state, overlay_metadata = _apply_task_market_scenario(task, market_state)
         market_state = _inject_default_credit_curve_for_task(task, market_state)
         market_state = _materialize_task_comparison_regime(task, market_state)
         selected_curve_names = _selected_curve_names_from_market_state(market_state)
@@ -734,7 +626,7 @@ def build_market_state_for_task(task: dict, fallback_market_state=None):
         jump_parameters=selected_components.get("jump_parameters"),
         model_parameters=selected_components.get("model_parameters"),
     )
-    market_state, overlay_metadata = _benchmark_market_overlay(task, market_state)
+    market_state, overlay_metadata = _apply_task_market_scenario(task, market_state)
     had_credit_curve_before = getattr(market_state, "credit_curve", None) is not None
     market_state = _inject_default_credit_curve_for_task(task, market_state)
     market_state = _materialize_task_comparison_regime(task, market_state)

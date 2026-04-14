@@ -8,6 +8,8 @@ from typing import Any
 
 import yaml
 
+from trellis.agent.market_scenarios import load_market_scenario_contracts
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -94,12 +96,9 @@ def load_canary_task_lookup(*, root: Path = ROOT) -> dict[str, dict[str, Any]]:
 
 def load_market_scenarios(*, root: Path = ROOT) -> dict[str, dict[str, Any]]:
     """Load the canonical market-scenario registry keyed by scenario id."""
-    payload = _load_yaml_mapping(root / MARKET_SCENARIOS_MANIFEST)
-    scenarios = payload.get("scenarios") or {}
     return {
-        str(scenario_id): dict(data)
-        for scenario_id, data in dict(scenarios).items()
-        if str(scenario_id).strip() and isinstance(data, Mapping)
+        scenario_id: contract.to_market_spec()
+        for scenario_id, contract in load_market_scenario_contracts(root=root).items()
     }
 
 
@@ -191,13 +190,7 @@ def _manifest_to_corpus_name(manifest_name: str) -> str:
 
 
 def _load_market_scenarios_mapping(root: Path) -> dict[str, dict[str, Any]]:
-    payload = _load_yaml_mapping(root / MARKET_SCENARIOS_MANIFEST)
-    scenarios = payload.get("scenarios") or {}
-    return {
-        str(scenario_id): dict(data)
-        for scenario_id, data in dict(scenarios).items()
-        if str(scenario_id).strip() and isinstance(data, Mapping)
-    }
+    return load_market_scenarios(root=root)
 
 
 def _materialize_market_from_scenario(
@@ -218,6 +211,22 @@ def _materialize_market_from_scenario(
         "as_of": scenario.get("as_of"),
         **selected,
     }
+    scenario_contract = dict(scenario.get("scenario_contract") or scenario)
+    if scenario_contract:
+        market["scenario_contract"] = scenario_contract
+    scenario_digest = str(scenario.get("scenario_digest") or "").strip()
+    if scenario_digest:
+        market["scenario_digest"] = scenario_digest
+    scenario_schema_version = scenario.get("schema_version") or scenario.get("scenario_schema_version")
+    if scenario_schema_version is not None:
+        market["scenario_schema_version"] = int(scenario_schema_version)
+    constructor_kind = str(
+        scenario.get("constructor_kind")
+        or scenario.get("scenario_constructor_kind")
+        or ""
+    ).strip()
+    if constructor_kind:
+        market["scenario_constructor_kind"] = constructor_kind
     benchmark_inputs = scenario.get("benchmark_inputs")
     if isinstance(benchmark_inputs, Mapping) and benchmark_inputs:
         market["benchmark_inputs"] = dict(benchmark_inputs)

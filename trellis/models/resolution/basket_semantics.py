@@ -400,6 +400,16 @@ def _resolve_constituent_vol(
     spot: float,
     T: float,
 ) -> float:
+    params = market_state.model_parameters or {}
+    underlier_vols = dict(params.get("underlier_vols") or {})
+    for key in (
+        constituent,
+        constituent.upper(),
+        constituent.lower(),
+        constituent.replace(" ", "_"),
+    ):
+        if key in underlier_vols:
+            return float(underlier_vols[key])
     if market_state.local_vol_surface is not None and callable(market_state.local_vol_surface):
         return float(market_state.local_vol_surface(spot, T))
     if market_state.vol_surface is not None:
@@ -412,6 +422,16 @@ def _resolve_constituent_carry(
     constituent: str,
     T: float,
 ) -> float:
+    params = market_state.model_parameters or {}
+    underlier_carry = dict(params.get("underlier_carry_rates") or {})
+    for key in (
+        constituent,
+        constituent.upper(),
+        constituent.lower(),
+        constituent.replace(" ", "_"),
+    ):
+        if key in underlier_carry:
+            return float(underlier_carry[key])
     forecast_curves = market_state.forecast_curves or {}
     for key in (
         constituent,

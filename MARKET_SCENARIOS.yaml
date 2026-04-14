@@ -1,49 +1,67 @@
-version: 1
+version: 2
 scenarios:
   flat_usd_equity_vanilla:
     source: mock
-    as_of: '2024-11-15'
-    description: Flat USD equity benchmark scenario for textbook Black-Scholes parity
-      tasks.
+    as_of: "2024-11-15"
+    description: Flat USD equity benchmark scenario for textbook Black-Scholes parity tasks.
     selected_components:
       discount_curve: usd_ois
       vol_surface: spx_heston_implied_vol
       underlier_spot: SPX
-    benchmark_inputs:
-      valuation_date: '2024-11-15'
-      stock_price: 100.0
+    constructor:
+      kind: single_asset_equity
+      valuation_date: "2024-11-15"
       domestic_rate: 0.05
-      dividend_rate: 0.0
-      volatility: 0.2
+      black_vol: 0.2
+      underlier:
+        name: SPX
+        spot: 100.0
+        volatility: 0.2
+        carry:
+          kind: dividend_yield
+          rate: 0.0
+          curve_name: SPX-DISC
+
   flat_fx_gk:
     source: mock
-    as_of: '2024-11-15'
-    description: Flat domestic/foreign discount curves and flat FX vol for Garman-Kohlhagen
-      parity.
+    as_of: "2024-11-15"
+    description: Flat domestic/foreign discount curves and flat FX vol for Garman-Kohlhagen parity.
     selected_components:
       discount_curve: usd_ois
       forecast_curve: EUR-DISC
       fx_rate: EURUSD
       vol_surface: spx_heston_implied_vol
-    benchmark_inputs:
-      valuation_date: '2024-11-15'
-      spot_fx: 1.1
+    constructor:
+      kind: single_asset_fx
+      valuation_date: "2024-11-15"
       domestic_rate: 0.045
       foreign_rate: 0.025
-      volatility: 0.12
+      foreign_curve_name: EUR-DISC
+      fx_pair: EURUSD
+      black_vol: 0.12
+      underlier:
+        name: EURUSD
+        spot: 1.1
+        volatility: 0.12
+        carry:
+          kind: foreign_discount_rate
+          rate: 0.025
+          curve_name: EUR-DISC
+
   usd_rates_smile:
     source: mock
-    as_of: '2024-11-15'
-    description: USD OIS + SOFR forward curves with a rates smile surface for cap/floor
-      and swaption tasks.
+    as_of: "2024-11-15"
+    description: USD OIS + SOFR forward curves with rates benchmark inputs for cap/floor and swaption tasks.
     selected_components:
       discount_curve: usd_ois
       forecast_curve: USD-SOFR-3M
       vol_surface: usd_rates_smile
-    benchmark_inputs:
-      valuation_date: '2024-11-15'
-      flat_discount_rate: 0.04
-      flat_forward_rate: 0.0425
+    constructor:
+      kind: flat_rates
+      valuation_date: "2024-11-15"
+      domestic_rate: 0.04
+      forecast_rate: 0.0425
+      forecast_curve_name: USD-SOFR-3M
       black_vol: 0.2
       shifted_black_vol: 0.19
       shift: 0.01
@@ -52,75 +70,107 @@ scenarios:
         beta: 0.5
         rho: -0.2
         nu: 0.35
+
   usd_credit_ig:
     source: mock
-    as_of: '2024-11-15'
-    description: USD OIS discounting plus IG credit curve for CDS parity.
+    as_of: "2024-11-15"
+    description: USD OIS discounting plus IG credit benchmark inputs for CDS parity.
     selected_components:
       discount_curve: usd_ois
       credit_curve: usd_ig
-    benchmark_inputs:
-      valuation_date: '2024-11-15'
-      flat_discount_rate: 0.04
-      issuer_hazard_rate: 0.025
+    constructor:
+      kind: flat_credit
+      valuation_date: "2024-11-15"
+      domestic_rate: 0.04
+      hazard_rate: 0.025
       recovery_rate: 0.4
+
   equity_barrier_smile:
     source: mock
-    as_of: '2024-11-15'
-    description: Equity smile surface for barrier/digital/lookback tasks.
+    as_of: "2024-11-15"
+    description: Single-asset equity benchmark scenario for barrier, digital, and lookback tasks.
     selected_components:
       discount_curve: usd_ois
       vol_surface: spx_heston_implied_vol
       underlier_spot: SPX
-    benchmark_inputs:
-      valuation_date: '2024-11-15'
-      stock_price: 100.0
+    constructor:
+      kind: single_asset_equity
+      valuation_date: "2024-11-15"
       domestic_rate: 0.05
-      dividend_rate: 0.0
-      volatility: 0.22
+      black_vol: 0.22
+      underlier:
+        name: SPX
+        spot: 100.0
+        volatility: 0.22
+        carry:
+          kind: dividend_yield
+          rate: 0.0
+          curve_name: SPX-DISC
+
   equity_rainbow_two_asset:
     source: mock
-    as_of: '2024-11-15'
-    description: Two-underlier equity market state with correlation for rainbow and
-      basket tasks.
+    as_of: "2024-11-15"
+    description: Two-underlier equity benchmark scenario with explicit carry and correlation for rainbow and basket tasks.
     selected_components:
       discount_curve: usd_ois
       vol_surface: spx_heston_implied_vol
-    benchmark_inputs:
-      valuation_date: '2024-11-15'
-      stock_prices:
-      - 100.0
-      - 95.0
+    constructor:
+      kind: multi_asset_equity
+      valuation_date: "2024-11-15"
       domestic_rate: 0.05
-      dividend_rates:
-      - 0.0
-      - 0.0
-      volatilities:
-      - 0.2
-      - 0.25
-      correlation:
-      - - 1.0
-        - 0.35
-      - - 0.35
-        - 1.0
+      black_vol: 0.2
+      underliers:
+        - name: AAPL
+          spot: 100.0
+          volatility: 0.2
+          carry:
+            kind: dividend_yield
+            rate: 0.0
+            curve_name: AAPL-DISC
+        - name: MSFT
+          spot: 95.0
+          volatility: 0.25
+          carry:
+            kind: dividend_yield
+            rate: 0.0
+            curve_name: MSFT-DISC
+      correlation_source:
+        kind: explicit
+        matrix:
+          - [1.0, 0.35]
+          - [0.35, 1.0]
+
   fx_barrier_smile:
     source: mock
-    as_of: '2024-11-15'
-    description: FX smile setup for FX barrier/digital/lookback/rainbow tasks.
+    as_of: "2024-11-15"
+    description: Single-asset FX benchmark scenario for FX barrier, digital, and lookback tasks.
     selected_components:
       discount_curve: usd_ois
       forecast_curve: EUR-DISC
       fx_rate: EURUSD
       vol_surface: spx_heston_implied_vol
-    benchmark_inputs:
-      valuation_date: '2024-11-15'
-      spot_fx: 1.1
+    constructor:
+      kind: single_asset_fx
+      valuation_date: "2024-11-15"
       domestic_rate: 0.045
       foreign_rate: 0.025
-      volatility: 0.14
+      foreign_curve_name: EUR-DISC
+      fx_pair: EURUSD
+      black_vol: 0.14
+      underlier:
+        name: EURUSD
+        spot: 1.1
+        volatility: 0.14
+        carry:
+          kind: foreign_discount_rate
+          rate: 0.025
+          curve_name: EUR-DISC
+
   negative_request_only:
     source: mock
-    as_of: '2024-11-15'
-    description: No preselected market components; used for clarification and honest-block
-      tasks.
+    as_of: "2024-11-15"
+    description: No preselected market components; used for clarification and honest-block tasks.
     selected_components: {}
+    constructor:
+      kind: request_only
+      valuation_date: "2024-11-15"

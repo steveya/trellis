@@ -8,7 +8,8 @@ from typing import Any
 
 import numpy as np
 
-from trellis.agent.task_manifests import load_financepy_bindings, load_market_scenarios
+from trellis.agent.market_scenarios import load_market_scenario_contracts
+from trellis.agent.task_manifests import load_financepy_bindings
 
 
 def price_financepy_reference(
@@ -22,13 +23,15 @@ def price_financepy_reference(
         raise ValueError(f"Task {task.get('id')} is missing financepy_binding_id")
 
     bindings = load_financepy_bindings(root=root) if root is not None else load_financepy_bindings()
-    scenarios = load_market_scenarios(root=root) if root is not None else load_market_scenarios()
+    scenarios = load_market_scenario_contracts(root=root) if root is not None else load_market_scenario_contracts()
     binding = dict(bindings.get(binding_id) or {})
     if not binding:
         raise KeyError(f"Unknown FinancePy binding: {binding_id}")
 
     scenario_id = str(task.get("market_scenario_id") or "").strip()
-    scenario = dict(scenarios.get(scenario_id) or {})
+    scenario = scenarios.get(scenario_id)
+    if scenario is None:
+        raise KeyError(f"Unknown market scenario: {scenario_id}")
     contract = dict(task.get("benchmark_contract") or {})
 
     adapter = _BINDING_ADAPTERS.get(binding_id)
@@ -36,7 +39,7 @@ def price_financepy_reference(
         raise NotImplementedError(f"No FinancePy adapter implemented for {binding_id}")
 
     started = perf_counter()
-    outputs = adapter(contract=contract, scenario=scenario)
+    outputs = adapter(contract=contract, scenario_inputs=scenario.financepy_inputs())
     elapsed = round(perf_counter() - started, 6)
     overlapping = list(binding.get("overlapping_outputs") or ())
     return {
@@ -86,12 +89,12 @@ def _maybe_method_outputs(option, methods: list[str], *args) -> dict[str, float]
     return outputs
 
 
-def _equity_vanilla_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict[str, float]:
+def _equity_vanilla_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:
     from financepy.models.black_scholes import BlackScholes
     from financepy.products.equity.equity_vanilla_option import EquityVanillaOption
     from financepy.utils.global_types import OptionTypes
 
-    value_dt = _fp_date(scenario["benchmark_inputs"]["valuation_date"])
+    value_dt = _fp_date(scenario_inputs["valuation_date"])
     expiry_dt = value_dt.add_tenor(f"{int(contract['expiry_years'] * 12)}M")
     model = BlackScholes(float(contract["volatility"]))
     discount_curve = _flat_curve(float(contract["domestic_rate"]), value_dt)
@@ -108,12 +111,12 @@ def _equity_vanilla_reference(*, contract: Mapping[str, Any], scenario: Mapping[
     return outputs
 
 
-def _fx_vanilla_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict[str, float]:
+def _fx_vanilla_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:
     from financepy.models.black_scholes import BlackScholes
     from financepy.products.fx.fx_vanilla_option import FXVanillaOption
     from financepy.utils.global_types import OptionTypes
 
-    value_dt = _fp_date(scenario["benchmark_inputs"]["valuation_date"])
+    value_dt = _fp_date(scenario_inputs["valuation_date"])
     expiry_dt = value_dt.add_tenor(f"{int(contract['expiry_years'] * 12)}M")
     model = BlackScholes(float(contract["volatility"]))
     domestic_curve = _flat_curve(float(contract["domestic_rate"]), value_dt)
@@ -133,7 +136,7 @@ def _fx_vanilla_reference(*, contract: Mapping[str, Any], scenario: Mapping[str,
     return outputs
 
 
-def _cap_floor_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict[str, float]:
+def _cap_floor_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:
     from financepy.models.black import Black
     from financepy.models.black_shifted import BlackShifted
     from financepy.models.sabr import SABR
@@ -142,7 +145,7 @@ def _cap_floor_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, 
     from financepy.utils.frequency import FrequencyTypes
     from financepy.utils.global_types import FinCapFloorTypes
 
-    inputs = dict(scenario.get("benchmark_inputs") or {})
+    inputs = dict(scenario_inputs or {})
     value_dt = _fp_date(inputs["valuation_date"])
     libor_curve = _flat_curve(float(inputs["flat_forward_rate"]), value_dt)
     model_name = str(contract.get("model") or "black")
@@ -165,14 +168,14 @@ def _cap_floor_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, 
     return {"price": float(option.value(value_dt, libor_curve, model))}
 
 
-def _swaption_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict[str, float]:
+def _swaption_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:
     from financepy.models.black import Black
     from financepy.products.rates.ibor_swaption import IborSwaption
     from financepy.utils.day_count import DayCountTypes
     from financepy.utils.frequency import FrequencyTypes
     from financepy.utils.global_types import SwapTypes
 
-    inputs = dict(scenario.get("benchmark_inputs") or {})
+    inputs = dict(scenario_inputs or {})
     value_dt = _fp_date(inputs["valuation_date"])
     exercise_dt = _fp_date(contract["exercise_date"])
     maturity_dt = _fp_date(contract["maturity_date"])
@@ -193,13 +196,13 @@ def _swaption_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, A
     return {"price": float(option.value(value_dt, discount_curve, model))}
 
 
-def _cds_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict[str, float]:
+def _cds_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:
     from financepy.products.credit.cds import CDS
     from financepy.products.credit.cds_curve import CDSCurve
     from financepy.utils.day_count import DayCountTypes
     from financepy.utils.frequency import FrequencyTypes
 
-    inputs = dict(scenario.get("benchmark_inputs") or {})
+    inputs = dict(scenario_inputs or {})
     value_dt = _fp_date(inputs["valuation_date"])
     discount_curve = _flat_curve(float(inputs["flat_discount_rate"]), value_dt)
     cds = CDS(
@@ -228,13 +231,13 @@ def _cds_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, Any]) 
     return outputs
 
 
-def _rainbow_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict[str, float]:
+def _rainbow_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:
     from financepy.products.equity.equity_rainbow_option import (
         EquityRainbowOption,
         EquityRainbowOptionTypes,
     )
 
-    inputs = dict(scenario.get("benchmark_inputs") or {})
+    inputs = dict(scenario_inputs or {})
     value_dt = _fp_date(inputs["valuation_date"])
     expiry_dt = value_dt.add_tenor(f"{int(contract['expiry_years'] * 12)}M")
     option = EquityRainbowOption(
@@ -262,7 +265,7 @@ def _rainbow_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, An
     }
 
 
-def _barrier_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict[str, float]:
+def _barrier_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:
     from financepy.models.black_scholes import BlackScholes
     from financepy.products.equity.equity_barrier_option import EquityBarrierOption
     from financepy.utils.global_types import EquityBarrierTypes
@@ -273,7 +276,7 @@ def _barrier_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, An
         "down_and_out": EquityBarrierTypes.DOWN_AND_OUT_CALL,
         "down_and_in": EquityBarrierTypes.DOWN_AND_IN_CALL,
     }
-    value_dt = _fp_date(scenario["benchmark_inputs"]["valuation_date"])
+    value_dt = _fp_date(scenario_inputs["valuation_date"])
     expiry_dt = value_dt.add_tenor(f"{int(contract['expiry_years'] * 12)}M")
     option = EquityBarrierOption(
         expiry_dt,
@@ -290,7 +293,7 @@ def _barrier_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, An
     }
 
 
-def _digital_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict[str, float]:
+def _digital_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:
     from financepy.models.black_scholes import BlackScholes
     from financepy.products.equity.equity_digital_option import (
         EquityDigitalOption,
@@ -298,7 +301,7 @@ def _digital_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, An
     )
     from financepy.utils.global_types import OptionTypes
 
-    value_dt = _fp_date(scenario["benchmark_inputs"]["valuation_date"])
+    value_dt = _fp_date(scenario_inputs["valuation_date"])
     expiry_dt = value_dt.add_tenor(f"{int(contract['expiry_years'] * 12)}M")
     option = EquityDigitalOption(
         expiry_dt,
@@ -314,11 +317,11 @@ def _digital_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, An
     }
 
 
-def _lookback_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict[str, float]:
+def _lookback_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:
     from financepy.products.equity.equity_fixed_lookback_option import EquityFixedLookbackOption
     from financepy.utils.global_types import OptionTypes
 
-    value_dt = _fp_date(scenario["benchmark_inputs"]["valuation_date"])
+    value_dt = _fp_date(scenario_inputs["valuation_date"])
     expiry_dt = value_dt.add_tenor(f"{int(contract['expiry_years'] * 12)}M")
     option = EquityFixedLookbackOption(
         expiry_dt,
@@ -341,11 +344,11 @@ def _lookback_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, A
     }
 
 
-def _chooser_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict[str, float]:
+def _chooser_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:
     from financepy.models.black_scholes import BlackScholes
     from financepy.products.equity.equity_chooser_option import EquityChooserOption
 
-    value_dt = _fp_date(scenario["benchmark_inputs"]["valuation_date"])
+    value_dt = _fp_date(scenario_inputs["valuation_date"])
     choose_dt = value_dt.add_tenor(f"{int(contract['choose_time_years'] * 12)}M")
     expiry_dt = value_dt.add_tenor(f"{int(contract['expiry_years'] * 12)}M")
     option = EquityChooserOption(
@@ -363,12 +366,12 @@ def _chooser_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, An
     }
 
 
-def _compound_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict[str, float]:
+def _compound_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:
     from financepy.models.black_scholes import BlackScholes
     from financepy.products.equity.equity_compound_option import EquityCompoundOption
     from financepy.utils.global_types import OptionTypes
 
-    value_dt = _fp_date(scenario["benchmark_inputs"]["valuation_date"])
+    value_dt = _fp_date(scenario_inputs["valuation_date"])
     outer_expiry = value_dt.add_tenor(f"{int(contract['outer_expiry_years'] * 12)}M")
     inner_expiry = value_dt.add_tenor(f"{int(contract['inner_expiry_years'] * 12)}M")
     option = EquityCompoundOption(
@@ -387,14 +390,14 @@ def _compound_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, A
     }
 
 
-def _cliquet_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict[str, float]:
+def _cliquet_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:
     from financepy.models.black_scholes import BlackScholes
     from financepy.products.equity.equity_cliquet_option import EquityCliquetOption
     from financepy.utils.day_count import DayCountTypes
     from financepy.utils.frequency import FrequencyTypes
     from financepy.utils.global_types import OptionTypes
 
-    value_dt = _fp_date(scenario["benchmark_inputs"]["valuation_date"])
+    value_dt = _fp_date(scenario_inputs["valuation_date"])
     final_expiry = value_dt.add_tenor("1Y")
     option = EquityCliquetOption(
         value_dt,
@@ -415,10 +418,10 @@ def _cliquet_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, An
     }
 
 
-def _variance_swap_reference(*, contract: Mapping[str, Any], scenario: Mapping[str, Any]) -> dict[str, float]:
+def _variance_swap_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:
     from financepy.products.equity.equity_variance_swap import EquityVarianceSwap
 
-    value_dt = _fp_date(scenario["benchmark_inputs"]["valuation_date"])
+    value_dt = _fp_date(scenario_inputs["valuation_date"])
     discount_curve = _flat_curve(float(contract["domestic_rate"]), value_dt)
     swap = EquityVarianceSwap(
         value_dt,

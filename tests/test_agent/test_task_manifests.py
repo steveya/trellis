@@ -32,14 +32,30 @@ def test_load_task_manifest_materializes_market_from_scenario(tmp_path):
     (tmp_path / "MARKET_SCENARIOS.yaml").write_text(
         yaml.safe_dump(
             {
-                "version": 1,
+                "version": 2,
                 "scenarios": {
                     "flat_case": {
                         "source": "mock",
                         "as_of": "2024-11-15",
+                        "description": "Flat single-asset test scenario.",
                         "selected_components": {
                             "discount_curve": "usd_ois",
-                            "vol_surface": "flat_20pct",
+                            "vol_surface": "spx_heston_implied_vol",
+                        },
+                        "constructor": {
+                            "kind": "single_asset_equity",
+                            "valuation_date": "2024-11-15",
+                            "domestic_rate": 0.05,
+                            "black_vol": 0.2,
+                            "underlier": {
+                                "name": "SPX",
+                                "spot": 100.0,
+                                "volatility": 0.2,
+                                "carry": {
+                                    "rate": 0.0,
+                                    "curve_name": "SPX-DISC",
+                                },
+                            },
                         },
                     }
                 },
@@ -69,9 +85,12 @@ def test_load_task_manifest_materializes_market_from_scenario(tmp_path):
     task = tasks[0]
     assert task["task_definition_version"] == 3
     assert task["task_corpus"] == "benchmark_financepy"
-    assert task["market"] == {
-        "source": "mock",
-        "as_of": "2024-11-15",
-        "discount_curve": "usd_ois",
-        "vol_surface": "flat_20pct",
-    }
+    assert task["market"]["source"] == "mock"
+    assert task["market"]["as_of"] == "2024-11-15"
+    assert task["market"]["discount_curve"] == "usd_ois"
+    assert task["market"]["vol_surface"] == "spx_heston_implied_vol"
+    assert task["market"]["scenario_constructor_kind"] == "single_asset_equity"
+    assert task["market"]["scenario_schema_version"] == 2
+    assert task["market"]["benchmark_inputs"]["stock_price"] == 100.0
+    assert task["market"]["benchmark_inputs"]["domestic_rate"] == 0.05
+    assert task["market"]["scenario_digest"]

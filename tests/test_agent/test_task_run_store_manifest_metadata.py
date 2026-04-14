@@ -15,6 +15,7 @@ def test_build_task_run_record_carries_manifest_and_timestamp_metadata():
             "task_definition_version": 2,
             "task_definition_manifest": "TASKS_BENCHMARK_FINANCEPY.yaml",
             "market_scenario_id": "flat_usd_equity_vanilla",
+            "market": {"scenario_digest": "digest-flat-equity"},
         },
         {
             "success": True,
@@ -32,5 +33,6 @@ def test_build_task_run_record_carries_manifest_and_timestamp_metadata():
     assert record["task"]["task_corpus"] == "benchmark_financepy"
     assert record["task"]["task_definition_version"] == 2
     assert record["task"]["market_scenario_id"] == "flat_usd_equity_vanilla"
+    assert record["summary"]["market_scenario_digest"] == "digest-flat-equity"
     assert record["summary"]["task_corpus"] == "benchmark_financepy"
     assert record["summary"]["task_definition_version"] == 2

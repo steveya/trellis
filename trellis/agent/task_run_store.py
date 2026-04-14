@@ -511,6 +511,11 @@ def build_task_run_record(
             "task_corpus": str(task.get("task_corpus") or ""),
             "task_definition_version": task.get("task_definition_version"),
             "market_scenario_id": str(task.get("market_scenario_id") or ""),
+            "market_scenario_digest": str(
+                dict(task.get("market") or {}).get("scenario_digest")
+                or dict(result.get("market_context") or {}).get("metadata", {}).get("scenario_digest")
+                or ""
+            ),
             "preferred_method": result.get("preferred_method"),
             "payoff_class": result.get("payoff_class"),
             "error": result.get("error"),
@@ -541,6 +546,7 @@ def _task_snapshot(task: dict[str, Any]) -> dict[str, Any]:
         "task_definition_version",
         "task_definition_manifest",
         "market_scenario_id",
+        "market_scenario_digest",
         "construct",
         "cross_validate",
         "new_component",

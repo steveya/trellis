@@ -103,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
             "task_definition_version": task.get("task_definition_version"),
             "task_definition_manifest": task.get("task_definition_manifest"),
             "market_scenario_id": task.get("market_scenario_id"),
+            "market_scenario_digest": dict(task.get("market") or {}).get("scenario_digest"),
             "git_sha": git_revision,
             "run_id": f"{task['id']}_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}",
             "run_started_at": run_started_at,

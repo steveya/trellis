@@ -68,12 +68,22 @@ Every benchmark runner must persist append-only records with at least:
 - `scripts/run_canary.py` and `scripts/record_cassettes.py` use the rebuilt canary manifest
 - `TASKS.yaml` is removed after the cutover; retained proof-only legacy tasks live in `TASKS_PROOF_LEGACY.yaml`
 
-## Market Scenario Follow-On
+## Market Scenario Foundation
 
-The benchmark cutover surfaced a broader market-state gap: the mock resolver catalog
-is still much thinner than the new benchmark and extension corpora assume, so many
-parity tasks currently rely on a benchmark-market overlay rather than first-class
-named scenario constructors. That gap is tracked as `QUA-837` with follow-on tickets
-for benchmark-aligned scenario schema, flat/textbook constructors, carry unification,
-multi-asset support, and coverage audit. The overlay path is acceptable as the
-bridge for `QUA-826`, but it is not the intended long-term market-state surface.
+`QUA-837` is now implemented as the market-state follow-on to the benchmark cutover.
+The benchmark/task path no longer depends on an ad hoc benchmark-market overlay as
+its primary abstraction. Instead it uses:
+
+- schema-v2 scenario contracts in `MARKET_SCENARIOS.yaml`
+- normalized scenario loading in `trellis/agent/market_scenarios.py`
+- first-class flat/textbook constructors for single-asset equity, FX, rates, credit,
+  and request-only negative tasks
+- carry-aware translation from benchmark contract/scenario inputs into runtime market
+  state and FinancePy-compatible reference inputs
+- multi-asset underlier spot/vol/carry/correlation support for basket and rainbow tasks
+- scenario digests persisted into task materialization and append-only run history
+- a dedicated coverage audit script for benchmark, extension, negative, and canary corpora
+
+The remaining market-state work is no longer “create the scenario foundation.” It is
+scenario expansion: adding richer named benchmark markets and deeper coverage across
+the growing parity and extension task sets.
