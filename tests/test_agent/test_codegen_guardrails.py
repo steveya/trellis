@@ -35,6 +35,14 @@ INVALID_SYMBOL_SOURCE = """\
 from trellis.models.black import not_a_real_symbol
 """
 
+AGENT_IMPORT_SOURCE = """\
+from trellis.instruments._agent.europeanoptionanalytical import price
+"""
+
+AGENT_MODULE_IMPORT_SOURCE = """\
+import trellis.instruments._agent.europeanoptionanalytical
+"""
+
 CONTROL_TIMELINE_SOURCE = """\
 from trellis.models.trees.control import (
     build_exercise_timeline_from_dates,
@@ -191,6 +199,21 @@ def test_validate_generated_imports_rejects_invalid_symbol():
     report = validate_generated_imports(INVALID_SYMBOL_SOURCE, _analytical_plan())
     assert not report.ok
     assert any("not exported" in error for error in report.errors)
+
+
+def test_validate_generated_imports_rejects_admitted_agent_from_import():
+    report = validate_generated_imports(AGENT_IMPORT_SOURCE, _analytical_plan())
+    assert not report.ok
+    assert any(
+        "trellis.instruments._agent" in error and "admitted" in error.lower()
+        for error in report.errors
+    )
+
+
+def test_validate_generated_imports_rejects_admitted_agent_module_import():
+    report = validate_generated_imports(AGENT_MODULE_IMPORT_SOURCE, _analytical_plan())
+    assert not report.ok
+    assert any("trellis.instruments._agent" in error for error in report.errors)
 
 
 def test_validate_generated_imports_accepts_control_timeline_facade_exports():

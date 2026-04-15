@@ -82,6 +82,33 @@ These cover:
 4. pilot guardrails and validation
    Add contract tests and rerun the pilot subset against FinancePy with timestamped history.
 
+## Ticket Status Mirror
+
+Last synced: 2026-04-15.
+
+| Ticket   | Title                                                                     | Status   |
+|----------|---------------------------------------------------------------------------|----------|
+| QUA-865  | Pilot runner executes parity tasks from ephemeral generated adapters      | Done     |
+| QUA-866  | Block checked-in `_agent` adapters on the pilot benchmark critical path   | In review |
+| QUA-867  | Separate `_agent` promotion from FinancePy benchmark execution            | In review |
+| QUA-868  | Validate fresh-generated pilot subset against FinancePy with scorecard    | In review |
+
+After the three PRs land, the pilot is finished by invoking, in order:
+
+```
+python scripts/run_financepy_benchmark.py F001 F002 F003 F007 F009 F012 \
+    --execution-policy=fresh_generated --campaign-id=pilot
+python scripts/pilot_parity_scorecard.py --campaign-id=pilot
+# for each passing candidate:
+python scripts/promote_agent_adapter.py --candidate <path> [--dry-run]
+```
+
+Selection rule: pick the earliest ticket whose status is not `Done` and whose
+blockers are satisfied. The three open tickets are logically sequential —
+QUA-866 provides the fail-closed guardrail that QUA-867's promotion flow
+relies on, and QUA-868 consumes the output of both to produce a defensible
+scorecard.
+
 ## Success Criteria
 
 - The selected pilot tasks price from fresh generated adapters only.

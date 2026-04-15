@@ -1303,6 +1303,10 @@ def record_promotion_candidate(
     return str(path)
 
 
+class PromotionAdmissionError(RuntimeError):
+    """Raised when a benchmark-validated candidate fails pre-admission provenance checks."""
+
+
 def record_benchmark_promotion_candidate(
     *,
     benchmark_record: Mapping[str, object],
@@ -1319,14 +1323,52 @@ def record_benchmark_promotion_candidate(
     source_path = Path(generated_file_path)
     if not source_path.exists():
         return None
-    source = source_path.read_text()
-    if not source.strip():
+    # Read the source as raw bytes and decode without universal-newline
+    # translation.  `Path.read_text()` would normalize `\r\n` to `\n` on
+    # Windows, breaking the byte-faithful hash equality the admission flow
+    # depends on.  (PR #590 round-5 Copilot review.)
+    try:
+        source_bytes = source_path.read_bytes()
+    except OSError:
+        return None
+    if not source_bytes.strip():
+        return None
+    try:
+        source = source_bytes.decode("utf-8")
+    except UnicodeDecodeError:
         return None
 
     timestamp = datetime.now()
     candidate_dir = _TRACES_DIR / "promotion_candidates"
     candidate_dir.mkdir(parents=True, exist_ok=True)
     task_id = str(benchmark_record.get("task_id") or "unknown").strip() or "unknown"
+    # Hash scheme must match the benchmark record's `generated_artifact.code_hash`
+    # exactly, otherwise admission's hash equality check rejects valid
+    # candidates.  The record uses `sha256(read_bytes()).hexdigest()` (full
+    # 64-char hex, no normalization).  Prefer that hash directly when present;
+    # fall back to a byte-faithful re-hash of the bytes we just read.
+    record_artifact_hash = str(generated_artifact.get("code_hash") or "").strip()
+    if record_artifact_hash:
+        code_hash = record_artifact_hash
+    else:
+        code_hash = hashlib.sha256(source_bytes).hexdigest()
+
+    # Dedup: if a previously emitted candidate for the same task already
+    # carries the same `code_hash`, the generated artifact is byte-identical
+    # to a prior accepted run.  Reuse the existing record instead of writing
+    # a second copy so repeated reruns of a stable pilot don't accumulate
+    # N x tasks YAML files.  This is QUA-875.
+    pattern = f"*_{task_id.lower()}_financepy_benchmark.yaml"
+    for existing_path in sorted(candidate_dir.glob(pattern)):
+        try:
+            existing_payload = yaml.safe_load(existing_path.read_text()) or {}
+        except Exception:
+            continue
+        if not isinstance(existing_payload, Mapping):
+            continue
+        if _hashes_equivalent(existing_payload.get("code_hash"), code_hash):
+            return str(existing_path)
+
     filename = (
         f"{timestamp.strftime('%Y%m%d_%H%M%S')}_{task_id.lower()}_financepy_benchmark.yaml"
     )
@@ -1347,6 +1389,12 @@ def record_benchmark_promotion_candidate(
         "preferred_method": str(benchmark_record.get("preferred_method") or ""),
         "reference_target": True,
         "payoff_class": str(generated_artifact.get("class_name") or ""),
+        # `module_name` is the unambiguous import-name field for benchmark
+        # candidates; `module_path` is preserved for backward compatibility
+        # with older candidate readers (it carried the same value here, but
+        # in `record_promotion_candidate` it is a filesystem-style path).
+        # (PR #590 round-3 Copilot review.)
+        "module_name": execution_module_name,
         "module_path": execution_module_name,
         "admission_target_module_name": admission_target_module_name,
         "admission_target_file_path": admission_target_file_path,
@@ -1369,7 +1417,7 @@ def record_benchmark_promotion_candidate(
             "comparison_summary": dict(benchmark_record.get("comparison_summary") or {}),
             "generated_artifact": generated_artifact,
         },
-        "code_hash": hashlib.sha256(source.strip().encode()).hexdigest()[:12],
+        "code_hash": code_hash,
         "code": source,
     }
     with open(path, "w") as f:
@@ -1381,6 +1429,377 @@ def record_benchmark_promotion_candidate(
             allow_unicode=True,
         )
     return str(path)
+
+
+def promote_benchmark_candidate(
+    candidate_path: str | Path,
+    *,
+    repo_root: Path | None = None,
+    dry_run: bool = False,
+    promoted_by: str = "",
+) -> dict[str, object]:
+    """Admit a benchmark-validated fresh-build candidate into ``_agent``.
+
+    The caller selects a promotion-candidate YAML that was emitted by
+    :func:`record_benchmark_promotion_candidate`.  This function refuses
+    (``PromotionAdmissionError``) unless every provenance link is intact:
+
+    * deterministic review (:func:`review_promotion_candidate`) is ``approved``
+    * the candidate's recorded benchmark history file still exists
+    * ``run_id``, ``git_sha``, ``knowledge_revision``, module name, and
+      recorded code hash in the history record all match the candidate
+    * the candidate's embedded source hashes to the recorded hash
+
+    On approval the fresh-build source is written to the admission target
+    under ``trellis/instruments/_agent/`` and a structured admission log is
+    persisted next to the candidate under
+    ``trellis/agent/knowledge/traces/promotion_admissions/``.  ``dry_run``
+    performs the checks without touching the adapter tree.
+
+    Refs: QUA-867 (epic QUA-864).
+    """
+    path = Path(candidate_path)
+    if not path.is_file():
+        raise PromotionAdmissionError(
+            f"QUA-867: promotion candidate not found: {path}"
+        )
+    try:
+        data = yaml.safe_load(path.read_text()) or {}
+    except Exception as exc:  # pragma: no cover - surfaced via error path
+        raise PromotionAdmissionError(
+            f"QUA-867: candidate snapshot could not be parsed: {exc}"
+        ) from exc
+    if not isinstance(data, Mapping):
+        raise PromotionAdmissionError(
+            "QUA-867: candidate snapshot is not a mapping"
+        )
+
+    review = review_promotion_candidate(path, persist=False)
+    if str(review.get("status") or "").strip().lower() != "approved":
+        failed = sorted(
+            {
+                str(check.get("name") or "")
+                for check in review.get("checks") or ()
+                if isinstance(check, Mapping)
+                and not bool(check.get("passed"))
+                and bool(check.get("blocking", True))
+            }
+        )
+        raise PromotionAdmissionError(
+            "QUA-867: review rejected candidate; "
+            f"failing blocking checks: {', '.join(failed) or 'unknown'}"
+        )
+
+    benchmark_provenance = data.get("benchmark_provenance") or {}
+    if not isinstance(benchmark_provenance, Mapping):
+        benchmark_provenance = {}
+    benchmark_record_path_text = str(
+        benchmark_provenance.get("benchmark_record_path") or ""
+    ).strip()
+    if not benchmark_record_path_text:
+        raise PromotionAdmissionError(
+            "QUA-867: candidate does not reference a benchmark record path"
+        )
+    benchmark_record_path = Path(benchmark_record_path_text)
+    if not benchmark_record_path.is_absolute():
+        # The runner stores repo-relative paths like
+        # `task_runs/financepy_benchmarks/history/F009/F009_*.json` in the
+        # benchmark record (and downstream candidates inherit it).  Resolve
+        # against the caller's `repo_root` first; fall back to the candidate
+        # file's parent for older candidate-relative snapshots.  (PR #590
+        # round-4 Copilot review.)
+        repo_root_for_record = (
+            Path(repo_root) if repo_root is not None else _REPO_ROOT
+        )
+        repo_relative = (repo_root_for_record / benchmark_record_path).resolve()
+        candidate_relative = (path.parent / benchmark_record_path).resolve()
+        if repo_relative.is_file():
+            benchmark_record_path = repo_relative
+        elif candidate_relative.is_file():
+            benchmark_record_path = candidate_relative
+        else:
+            benchmark_record_path = repo_relative  # report the repo-rooted path
+    if not benchmark_record_path.is_file():
+        raise PromotionAdmissionError(
+            f"QUA-867: benchmark record is missing or unreadable: {benchmark_record_path}"
+        )
+    try:
+        benchmark_record = json.loads(benchmark_record_path.read_text())
+    except Exception as exc:
+        raise PromotionAdmissionError(
+            f"QUA-867: benchmark record could not be parsed: {exc}"
+        ) from exc
+    if not isinstance(benchmark_record, Mapping):
+        raise PromotionAdmissionError(
+            "QUA-867: benchmark record is not a mapping"
+        )
+
+    candidate_run_id = str(benchmark_provenance.get("benchmark_run_id") or "").strip()
+    record_run_id = str(benchmark_record.get("run_id") or "").strip()
+    if candidate_run_id != record_run_id or not candidate_run_id:
+        raise PromotionAdmissionError(
+            "QUA-867: benchmark run_id mismatch "
+            f"(candidate={candidate_run_id!r}, record={record_run_id!r})"
+        )
+
+    candidate_git_sha = str(benchmark_provenance.get("git_sha") or "").strip()
+    record_git_sha = str(benchmark_record.get("git_sha") or "").strip()
+    if candidate_git_sha != record_git_sha or not candidate_git_sha:
+        raise PromotionAdmissionError(
+            "QUA-867: benchmark git_sha mismatch "
+            f"(candidate={candidate_git_sha!r}, record={record_git_sha!r})"
+        )
+
+    candidate_knowledge_revision = str(
+        benchmark_provenance.get("knowledge_revision") or ""
+    ).strip()
+    record_knowledge_revision = str(
+        benchmark_record.get("knowledge_revision") or ""
+    ).strip()
+    if candidate_knowledge_revision != record_knowledge_revision or not candidate_knowledge_revision:
+        raise PromotionAdmissionError(
+            "QUA-867: benchmark knowledge_revision mismatch "
+            f"(candidate={candidate_knowledge_revision!r}, record={record_knowledge_revision!r})"
+        )
+
+    record_artifact = benchmark_record.get("generated_artifact") or {}
+    if not isinstance(record_artifact, Mapping):
+        record_artifact = {}
+    # Prefer the explicit `module_name` field; fall back to the legacy
+    # `module_path` slot for older benchmark candidates.  (PR #590 round-3.)
+    candidate_module_name = str(
+        data.get("module_name") or data.get("module_path") or ""
+    ).strip()
+    record_module_name = str(record_artifact.get("module_name") or "").strip()
+    if candidate_module_name != record_module_name or not candidate_module_name:
+        raise PromotionAdmissionError(
+            "QUA-867: candidate module does not match benchmark generated_artifact "
+            f"(candidate={candidate_module_name!r}, record={record_module_name!r})"
+        )
+
+    candidate_hash = str(data.get("code_hash") or "").strip()
+    record_hash = str(record_artifact.get("code_hash") or "").strip()
+    if not _hashes_equivalent(candidate_hash, record_hash):
+        raise PromotionAdmissionError(
+            "QUA-867: candidate code hash does not match benchmark artifact hash "
+            f"(candidate={candidate_hash!r}, record={record_hash!r})"
+        )
+
+    candidate_record_summary = benchmark_provenance.get("comparison_summary") or {}
+    if not isinstance(candidate_record_summary, Mapping):
+        candidate_record_summary = {}
+    live_record_summary = benchmark_record.get("comparison_summary") or {}
+    if not isinstance(live_record_summary, Mapping):
+        live_record_summary = {}
+    live_status = str(live_record_summary.get("status") or "").strip().lower()
+    if live_status != "passed":
+        raise PromotionAdmissionError(
+            "QUA-867: live benchmark record status is not `passed` "
+            f"(status={live_status!r}); benchmark provenance and validated run record "
+            "do not match"
+        )
+    candidate_status = str(candidate_record_summary.get("status") or "").strip().lower()
+    if candidate_status and candidate_status != live_status:
+        raise PromotionAdmissionError(
+            "QUA-867: candidate comparison_summary status differs from live record "
+            f"(candidate={candidate_status!r}, record={live_status!r})"
+        )
+
+    source_text = str(data.get("code") or "")
+    if not source_text.strip():
+        raise PromotionAdmissionError(
+            "QUA-867: candidate snapshot has no embedded source"
+        )
+    # Verify the recorded `code_hash` matches the actual artifact.  We
+    # already verified `candidate_hash == record_hash` above; here we make
+    # sure the on-disk fresh-build artifact (the bytes the benchmark run
+    # actually executed) still hashes the same way -- this is the
+    # authoritative check on Windows/POSIX alike because it never goes
+    # through text-mode universal-newline translation.  When the artifact
+    # has been cleaned up we fall back to hashing the embedded source's
+    # UTF-8 bytes; the latter can diverge from the record hash on Windows
+    # if the source was loaded via `read_text()` somewhere upstream, so
+    # `_hashes_equivalent` (which accepts legacy 12-char prefixes) is the
+    # right comparator there.  (PR #590 round-5 Copilot review.)
+    record_artifact_file_path_text = str(record_artifact.get("file_path") or "").strip()
+    record_artifact_file_path = (
+        Path(record_artifact_file_path_text) if record_artifact_file_path_text else None
+    )
+    on_disk_hash = ""
+    if (
+        record_artifact_file_path is not None
+        and record_artifact_file_path.is_file()
+    ):
+        try:
+            on_disk_hash = hashlib.sha256(
+                record_artifact_file_path.read_bytes()
+            ).hexdigest()
+        except OSError:
+            on_disk_hash = ""
+        if on_disk_hash and not _hashes_equivalent(candidate_hash, on_disk_hash):
+            raise PromotionAdmissionError(
+                "QUA-867: candidate code hash does not match the on-disk "
+                f"fresh-build artifact at {record_artifact_file_path} "
+                f"(recorded={candidate_hash!r}, on_disk={on_disk_hash[:12]!r})"
+            )
+    embedded_source_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+    if not on_disk_hash and not _hashes_equivalent(candidate_hash, embedded_source_hash):
+        raise PromotionAdmissionError(
+            "QUA-867: candidate code hash does not match embedded source "
+            f"(recorded={candidate_hash!r}, computed={embedded_source_hash[:12]!r})"
+        )
+    # Prefer the on-disk hash (byte-faithful) when available; otherwise fall
+    # back to the embedded-source hash for the admission log's `code_hash`
+    # field so audits can trace exactly what was admitted.
+    computed_hash = on_disk_hash or embedded_source_hash
+
+    admission_target_module_name = str(
+        data.get("admission_target_module_name")
+        or _recommended_module_path(candidate_module_name)
+    ).strip()
+    if not (
+        admission_target_module_name == "trellis.instruments._agent"
+        or admission_target_module_name.startswith("trellis.instruments._agent.")
+    ):
+        raise PromotionAdmissionError(
+            "QUA-867: admission target is not under trellis.instruments._agent: "
+            f"{admission_target_module_name}"
+        )
+    # `trellis.instruments._agent._fresh.*` is the scratch isolation namespace
+    # used by the deterministic-route fresh-build fallback.  It is NOT the
+    # admitted surface; refusing it here prevents a tampered or mis-generated
+    # candidate from "promoting" code into the scratch tree under the guise
+    # of admitted code.  (PR #590 Copilot review.)
+    if admission_target_module_name == "trellis.instruments._agent._fresh" or (
+        admission_target_module_name.startswith("trellis.instruments._agent._fresh.")
+    ):
+        raise PromotionAdmissionError(
+            "QUA-867: admission target cannot be under the "
+            "trellis.instruments._agent._fresh isolation namespace: "
+            f"{admission_target_module_name}"
+        )
+
+    resolved_repo_root = (
+        Path(repo_root) if repo_root is not None else _REPO_ROOT
+    ).resolve()
+    admitted_agent_root = (
+        resolved_repo_root / "trellis" / "instruments" / "_agent"
+    ).resolve()
+
+    # Always derive the admission target file path from the validated
+    # `admission_target_module_name`.  Any caller-supplied
+    # `admission_target_file_path` is consulted only as a sanity check; if it
+    # disagrees with the module-derived path, the module-derived path wins.
+    # This stops a tampered candidate from overwriting arbitrary repository
+    # files even when the module name passes the prefix check above.
+    # (PR #590 Copilot/Codex P1 review.)
+    derived_target_file_path = _recommended_file_path(admission_target_module_name)
+    if not derived_target_file_path.is_absolute():
+        derived_target_file_path = resolved_repo_root / derived_target_file_path
+    derived_target_file_path = derived_target_file_path.resolve()
+    try:
+        derived_target_file_path.relative_to(admitted_agent_root)
+    except ValueError:
+        raise PromotionAdmissionError(
+            "QUA-867: admission target resolves outside trellis/instruments/_agent: "
+            f"{derived_target_file_path}"
+        )
+
+    yaml_admission_target_file_path_text = str(
+        data.get("admission_target_file_path") or ""
+    ).strip()
+    if yaml_admission_target_file_path_text:
+        yaml_target = Path(yaml_admission_target_file_path_text)
+        if not yaml_target.is_absolute():
+            yaml_target = resolved_repo_root / yaml_target
+        yaml_target = yaml_target.resolve()
+        if yaml_target != derived_target_file_path:
+            # Caller-supplied path disagrees with the module-derived path; do
+            # not honor the override.  Fail closed to make the divergence
+            # visible rather than silently writing somewhere unexpected.
+            raise PromotionAdmissionError(
+                "QUA-867: candidate `admission_target_file_path` "
+                f"({yaml_target}) disagrees with the module-derived target "
+                f"({derived_target_file_path}); refusing to honor the override"
+            )
+
+    admission_target_file_path = derived_target_file_path
+
+    # UTC keeps the admission log timestamp consistent with the runner's
+    # `run_started_at` / `run_completed_at` fields and with the
+    # `created_at` on the scorecard.  (PR #590 Copilot review.)
+    from datetime import timezone as _tz
+
+    admission_timestamp = datetime.now(_tz.utc)
+    admission_payload: dict[str, object] = {
+        "status": "would_promote" if dry_run else "promoted",
+        "dry_run": bool(dry_run),
+        "promoted_by": str(promoted_by or "").strip(),
+        "admission_timestamp": admission_timestamp.isoformat(),
+        "candidate_path": str(path),
+        "admission_target_module_name": admission_target_module_name,
+        "admission_target_file_path": str(admission_target_file_path),
+        "benchmark_run_id": candidate_run_id,
+        "benchmark_record_path": str(benchmark_record_path),
+        "git_sha": candidate_git_sha,
+        "knowledge_revision": candidate_knowledge_revision,
+        "candidate_code_hash": candidate_hash,
+        "code_hash": computed_hash,
+        "review_status": str(review.get("status") or ""),
+        "review_path": str(review.get("review_path") or ""),
+    }
+
+    if not dry_run:
+        admission_target_file_path.parent.mkdir(parents=True, exist_ok=True)
+        # Write the on-disk fresh-build artifact bytes directly when we have
+        # them -- those are exactly the bytes the benchmark hashed and ran,
+        # so a tampered candidate can't sneak divergent source past
+        # admission by keeping `code_hash` aligned with the on-disk file
+        # while mutating the YAML-embedded `code`.  When the artifact has
+        # been cleaned up after the run we fall back to writing the
+        # embedded source bytes -- and only after one more hash equality
+        # check so a divergent embedded source still fails closed.
+        # (PR #590 round-6 Copilot review.)
+        if on_disk_hash:
+            admitted_bytes = record_artifact_file_path.read_bytes()
+        else:
+            admitted_bytes = source_text.encode("utf-8")
+            admitted_hash = hashlib.sha256(admitted_bytes).hexdigest()
+            if not _hashes_equivalent(candidate_hash, admitted_hash):
+                raise PromotionAdmissionError(
+                    "QUA-867: refusing to admit divergent embedded source "
+                    f"(recorded={candidate_hash!r}, "
+                    f"would_admit={admitted_hash[:12]!r})"
+                )
+        admission_target_file_path.write_bytes(admitted_bytes)
+        # Match the runner's `_generated_artifact_from_result` scheme
+        # (`sha256(read_bytes())`) so the admission log's `code_hash` is
+        # directly comparable to the benchmark record's hash.
+        admission_payload["code_hash"] = hashlib.sha256(
+            admission_target_file_path.read_bytes()
+        ).hexdigest()
+
+    admissions_dir = _TRACES_DIR / "promotion_admissions"
+    admissions_dir.mkdir(parents=True, exist_ok=True)
+    task_id = _safe_filename_fragment(str(data.get("task_id") or "task"))
+    target_fragment = _safe_filename_fragment(
+        admission_target_module_name.rsplit(".", 1)[-1] or "adapter"
+    )
+    status_fragment = "dry_run" if dry_run else "admitted"
+    admission_log_path = admissions_dir / (
+        f"{admission_timestamp.strftime('%Y%m%d_%H%M%S')}_"
+        f"{task_id}_{target_fragment}_{status_fragment}.yaml"
+    )
+    with open(admission_log_path, "w") as handle:
+        yaml.safe_dump(
+            _yaml_safe_data(admission_payload),
+            handle,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True,
+        )
+    admission_payload["admission_log_path"] = str(admission_log_path)
+    return admission_payload
 
 
 def format_adapter_lifecycle_warnings(
@@ -1499,7 +1918,12 @@ def review_promotion_candidate(
 
     comparison_target = str(data.get("comparison_target") or "").strip()
     payoff_class = str(data.get("payoff_class") or "").strip()
-    module_path = str(data.get("module_path") or "").strip()
+    # Benchmark candidates emit `module_name` as the unambiguous import-name
+    # field; older candidates only had `module_path`.  Prefer `module_name`
+    # when present, fall back to `module_path` for compat.  (PR #590 round-3.)
+    module_path = str(
+        data.get("module_name") or data.get("module_path") or ""
+    ).strip()
     validation_source = str(data.get("validation_source") or "").strip().lower()
     code = str(data.get("code") or "")
     cross_validation = data.get("cross_validation") or {}
@@ -1566,6 +1990,20 @@ def review_promotion_candidate(
         benchmark_record_path = (
             Path(benchmark_record_path_str) if benchmark_record_path_str else None
         )
+        # Resolve repo-relative paths against the repository root first
+        # (the runner stores `task_runs/...`-style paths), falling back to
+        # the candidate file's parent for older candidate-relative
+        # snapshots.  Mirrors `promote_benchmark_candidate`.  (PR #590
+        # round-4 Copilot review.)
+        if benchmark_record_path is not None and not benchmark_record_path.is_absolute():
+            repo_relative = (_REPO_ROOT / benchmark_record_path).resolve()
+            candidate_relative = (path.parent / benchmark_record_path).resolve()
+            if repo_relative.is_file():
+                benchmark_record_path = repo_relative
+            elif candidate_relative.is_file():
+                benchmark_record_path = candidate_relative
+            else:
+                benchmark_record_path = repo_relative
         benchmark_record: dict[str, object] = {}
         if benchmark_record_path is not None and benchmark_record_path.is_file():
             try:
