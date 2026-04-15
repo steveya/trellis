@@ -221,6 +221,8 @@ def test_render_pilot_parity_scorecard_includes_pilot_summary_block():
             "boundary_violation_count": 1,
             "missing_run_count": 0,
             "latest_pass_count": 5,
+            "deviation_median_pct": 0.0,
+            "deviation_outlier_count": 0,
         },
         "residual_misses": [
             {
@@ -252,6 +254,8 @@ def test_save_pilot_parity_scorecard_writes_timestamped_stem(tmp_path):
             "boundary_violation_count": 0,
             "missing_run_count": 6,
             "latest_pass_count": 0,
+            "deviation_median_pct": 0.0,
+            "deviation_outlier_count": 0,
         },
         "residual_misses": [],
         "tasks": [],
@@ -270,6 +274,103 @@ def test_save_pilot_parity_scorecard_writes_timestamped_stem(tmp_path):
     assert "20260415T120000Z" in artifacts.json_path.name
     assert artifacts.json_path.suffix == ".json"
     assert artifacts.text_path.suffix == ".md"
+
+
+def _record_with_deviation(task_id: str, deviation_pct: float) -> dict:
+    record = _fresh_record(task_id)
+    record["comparison_summary"] = dict(record["comparison_summary"])
+    record["comparison_summary"]["output_deviation_pct"] = {"price": deviation_pct}
+    return record
+
+
+def test_build_pilot_parity_scorecard_flags_deviation_outlier(tmp_path):
+    devs = {
+        "F001": 0.005,
+        "F002": 0.0002,
+        "F003": 0.001,
+        "F007": 0.93,
+        "F009": 0.003,
+        "F012": 0.10,
+    }
+    for task_id, dev in devs.items():
+        _write_history_record(tmp_path, _record_with_deviation(task_id, dev))
+
+    records = load_pilot_benchmark_records(benchmark_root=tmp_path)
+    scorecard = build_pilot_parity_scorecard(
+        scorecard_name="financepy_pilot",
+        benchmark_runs=records,
+    )
+
+    summary = scorecard["pilot_summary"]
+    # Both F007 (0.93%) and F012 (0.10%) are >10x the pilot median (~0.004%)
+    # and above the suppression floor.  Both deserve a human look before
+    # promotion -- exactly the F007-shape signal QUA-873 was built to surface.
+    assert summary["deviation_outlier_count"] == 2
+    assert 0.0 < summary["deviation_median_pct"] < 0.93
+
+    by_task = {task["task_id"]: task for task in scorecard["tasks"]}
+    assert by_task["F007"]["outlier_flag"] is True
+    assert by_task["F012"]["outlier_flag"] is True
+    assert by_task["F007"]["max_output_deviation_pct"] == 0.93
+    assert by_task["F007"]["deviation_vs_pilot_median"] is not None
+    assert by_task["F007"]["deviation_vs_pilot_median"] >= 10.0
+    # Tasks at or near the median are not flagged.
+    for other in ("F001", "F002", "F003", "F009"):
+        assert by_task[other]["outlier_flag"] is False
+
+    outlier_misses = [
+        miss
+        for miss in scorecard["residual_misses"]
+        if miss["category"] == "deviation_outlier"
+    ]
+    assert {miss["task_id"] for miss in outlier_misses} == {"F007", "F012"}
+
+
+def test_build_pilot_parity_scorecard_no_outliers_when_all_within_ratio(tmp_path):
+    devs = {
+        "F001": 0.005,
+        "F002": 0.004,
+        "F003": 0.006,
+        "F007": 0.007,
+        "F009": 0.003,
+        "F012": 0.005,
+    }
+    for task_id, dev in devs.items():
+        _write_history_record(tmp_path, _record_with_deviation(task_id, dev))
+
+    records = load_pilot_benchmark_records(benchmark_root=tmp_path)
+    scorecard = build_pilot_parity_scorecard(
+        scorecard_name="financepy_pilot",
+        benchmark_runs=records,
+    )
+
+    summary = scorecard["pilot_summary"]
+    assert summary["deviation_outlier_count"] == 0
+    assert all(task["outlier_flag"] is False for task in scorecard["tasks"])
+
+
+def test_render_pilot_parity_scorecard_emits_deviation_outlier_section(tmp_path):
+    devs = {
+        "F001": 0.005,
+        "F002": 0.0002,
+        "F003": 0.001,
+        "F007": 0.93,
+        "F009": 0.003,
+        "F012": 0.10,
+    }
+    for task_id, dev in devs.items():
+        _write_history_record(tmp_path, _record_with_deviation(task_id, dev))
+
+    records = load_pilot_benchmark_records(benchmark_root=tmp_path)
+    scorecard = build_pilot_parity_scorecard(
+        scorecard_name="financepy_pilot",
+        benchmark_runs=records,
+    )
+
+    text = render_pilot_parity_scorecard(scorecard)
+    assert "## Deviation Outliers" in text
+    assert "F007" in text
+    assert "Deviation median" in text
 
 
 def test_pilot_parity_scorecard_cli_writes_artifacts(tmp_path, monkeypatch, capsys):

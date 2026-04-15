@@ -11,12 +11,83 @@ task-specific patches.  Built to close QUA-868 under epic QUA-864.
 from __future__ import annotations
 
 import json
+import statistics
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+
+# Floor below which we suppress outlier flags so a near-zero median (numerical
+# noise) cannot turn every other passing task into an outlier.  The 5% number
+# I floated when the ticket was written assumed real pilot deviations were on
+# the order of percent; in practice the FinancePy pilot data sat at <1% with
+# F007 at 0.93%, so the floor has to be much lower or the F007-shape signal
+# is suppressed entirely.  0.05% catches F007 against a near-zero median while
+# still suppressing noise around legitimately tiny deviations.
+_DEVIATION_OUTLIER_FLOOR_PCT = 0.05
+_DEVIATION_OUTLIER_RATIO = 10.0
+
+
+def _max_output_deviation_pct(record: Mapping[str, Any]) -> float | None:
+    """Return the largest output_deviation_pct in a benchmark record, or None."""
+    summary = record.get("comparison_summary") or {}
+    if not isinstance(summary, Mapping):
+        return None
+    deviations = summary.get("output_deviation_pct") or {}
+    if not isinstance(deviations, Mapping):
+        return None
+    values: list[float] = []
+    for raw in deviations.values():
+        try:
+            values.append(abs(float(raw)))
+        except (TypeError, ValueError):
+            continue
+    if not values:
+        return None
+    return max(values)
+
+
+def _classify_deviation_outliers(
+    *,
+    task_summaries: list[dict[str, Any]],
+    latest_records_by_task: Mapping[str, Mapping[str, Any]],
+    floor_pct: float = _DEVIATION_OUTLIER_FLOOR_PCT,
+    ratio: float = _DEVIATION_OUTLIER_RATIO,
+) -> tuple[float, int]:
+    """Annotate task summaries with deviation outlier flags and return (median, count)."""
+    deviations: dict[str, float] = {}
+    for summary in task_summaries:
+        task_id = summary.get("task_id")
+        record = latest_records_by_task.get(task_id) if task_id else None
+        if record is None:
+            continue
+        max_dev = _max_output_deviation_pct(record)
+        if max_dev is None:
+            continue
+        deviations[task_id] = max_dev
+
+    median = statistics.median(deviations.values()) if deviations else 0.0
+    threshold = max(floor_pct, ratio * median)
+    outlier_count = 0
+    for summary in task_summaries:
+        task_id = summary.get("task_id")
+        max_dev = deviations.get(task_id) if task_id else None
+        summary["max_output_deviation_pct"] = (
+            round(float(max_dev), 6) if max_dev is not None else None
+        )
+        if max_dev is None or median <= 0.0:
+            ratio_to_median = None
+        else:
+            ratio_to_median = round(max_dev / median, 6)
+        summary["deviation_vs_pilot_median"] = ratio_to_median
+        flagged = max_dev is not None and max_dev > threshold
+        summary["outlier_flag"] = bool(flagged)
+        if flagged:
+            outlier_count += 1
+    return round(median, 6), outlier_count
 
 from trellis.agent.benchmark_history import (
     _build_task_history_summary,
@@ -90,6 +161,7 @@ def build_pilot_parity_scorecard(
 
     task_summaries: list[dict[str, Any]] = []
     residual_misses: list[dict[str, Any]] = []
+    latest_records_by_task: dict[str, Mapping[str, Any]] = {}
     enforced = 0
     violations = 0
     missing = 0
@@ -115,6 +187,7 @@ def build_pilot_parity_scorecard(
             task_id, runs, benchmark_kind="financepy"
         )
         latest_record = dict(runs[-1])
+        latest_records_by_task[task_id] = latest_record
         boundary = latest_record.get("fresh_generated_boundary") or {}
         if not isinstance(boundary, Mapping):
             boundary = {}
@@ -165,11 +238,46 @@ def build_pilot_parity_scorecard(
             )
         task_summaries.append(summary)
 
+    median_deviation_pct, outlier_count = _classify_deviation_outliers(
+        task_summaries=task_summaries,
+        latest_records_by_task=latest_records_by_task,
+    )
+    already_missed = {miss["task_id"] for miss in residual_misses}
+    for summary in task_summaries:
+        if not summary.get("outlier_flag"):
+            continue
+        task_id = summary.get("task_id") or ""
+        if task_id in already_missed:
+            # Already escalated for a more serious reason (parity failure,
+            # boundary violation, missing run); do not double-list.
+            continue
+        latest_snapshot = summary.get("latest") or {}
+        residual_misses.append(
+            {
+                "task_id": task_id,
+                "category": "deviation_outlier",
+                "reason": (
+                    f"max output deviation {summary.get('max_output_deviation_pct')}% "
+                    f"exceeds {_DEVIATION_OUTLIER_RATIO}x pilot median "
+                    f"{median_deviation_pct}% "
+                    f"(floor {_DEVIATION_OUTLIER_FLOOR_PCT}%)"
+                ),
+                "run_id": str(latest_snapshot.get("run_id") or ""),
+                "run_started_at": str(latest_snapshot.get("run_started_at") or ""),
+                "git_sha": str(latest_snapshot.get("git_sha") or ""),
+                "knowledge_revision": str(
+                    latest_snapshot.get("knowledge_revision") or ""
+                ),
+            }
+        )
+
     pilot_summary = {
         "fresh_generated_enforced_count": enforced,
         "boundary_violation_count": violations,
         "missing_run_count": missing,
         "latest_pass_count": latest_pass,
+        "deviation_median_pct": median_deviation_pct,
+        "deviation_outlier_count": outlier_count,
     }
     return {
         "scorecard_name": scorecard_name,
@@ -202,10 +310,26 @@ def render_pilot_parity_scorecard(scorecard: Mapping[str, Any]) -> str:
         f"- Boundary violations: `{summary.get('boundary_violation_count', 0)}`",
         f"- Missing runs: `{summary.get('missing_run_count', 0)}`",
         f"- Latest pass count: `{summary.get('latest_pass_count', 0)}`",
+        f"- Deviation median: `{summary.get('deviation_median_pct', 0.0)}%`",
+        f"- Deviation outliers: `{summary.get('deviation_outlier_count', 0)}`",
     ]
     if scorecard.get("notes"):
         lines.extend(["", "## Notes"])
         lines.extend(f"- {note}" for note in scorecard["notes"])
+
+    outlier_tasks = [
+        task
+        for task in (scorecard.get("tasks") or ())
+        if task.get("outlier_flag")
+    ]
+    if outlier_tasks:
+        lines.extend(["", "## Deviation Outliers"])
+        for task in outlier_tasks:
+            lines.append(
+                f"- `{task.get('task_id', '')}` "
+                f"max_deviation=`{task.get('max_output_deviation_pct')}%` "
+                f"vs_pilot_median=`{task.get('deviation_vs_pilot_median')}x`"
+            )
 
     residual = scorecard.get("residual_misses") or ()
     lines.extend(["", "## Residual Misses"])
@@ -242,6 +366,9 @@ def render_pilot_parity_scorecard(scorecard: Mapping[str, Any]) -> str:
                 f"`{latest.get('git_sha', '')}` "
                 f"`{latest.get('knowledge_revision', '')}`",
                 f"- Latest passed: `{latest.get('passed', False)}`",
+                f"- Max output deviation: `{task.get('max_output_deviation_pct')}%`",
+                f"- Vs pilot median: `{task.get('deviation_vs_pilot_median')}x`",
+                f"- Outlier: `{task.get('outlier_flag', False)}`",
             ]
         )
         if task.get("fresh_generated_boundary_status") == "violated":
