@@ -1293,8 +1293,27 @@ def extract_trellis_imports(source: str) -> tuple[ImportReference, ...]:
     return tuple(imports)
 
 
+_ADMITTED_AGENT_IMPORT_PREFIX = "trellis.instruments._agent"
+
+
+def _is_admitted_agent_import(module_name: str) -> bool:
+    """Return whether the import targets the admitted generated adapter tree."""
+    text = str(module_name or "").strip()
+    if not text:
+        return False
+    return text == _ADMITTED_AGENT_IMPORT_PREFIX or text.startswith(
+        _ADMITTED_AGENT_IMPORT_PREFIX + "."
+    )
+
+
 def validate_generated_imports(source: str, plan: GenerationPlan) -> ImportValidationReport:
-    """Validate that generated Trellis imports are real and approved."""
+    """Validate that generated Trellis imports are real and approved.
+
+    ``trellis.instruments._agent`` is always rejected because that package is
+    the admitted/generated adapter surface: it must never be a dependency of
+    newly generated code, and blocking it keeps the fresh-generated FinancePy
+    pilot path honest (QUA-866).
+    """
     try:
         imports = extract_trellis_imports(source)
     except SyntaxError as exc:
@@ -1309,6 +1328,14 @@ def validate_generated_imports(source: str, plan: GenerationPlan) -> ImportValid
         if ref.symbol == "*":
             errors.append(
                 f"Line {ref.lineno}: wildcard imports from `{ref.module}` are not allowed."
+            )
+            continue
+
+        if _is_admitted_agent_import(ref.module):
+            errors.append(
+                f"Line {ref.lineno}: imports from `{ref.module}` are not allowed. "
+                "`trellis.instruments._agent` is the admitted generated adapter "
+                "tree and must not be a dependency of freshly generated code."
             )
             continue
 

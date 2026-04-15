@@ -37,6 +37,10 @@ from trellis.agent.financepy_benchmark import (
     save_financepy_benchmark_report,
     select_financepy_benchmark_tasks,
 )
+from trellis.agent.fresh_generated_boundary import (
+    FreshGeneratedBoundaryError,
+    enforce_fresh_generated_boundary,
+)
 from trellis.agent.financepy_reference import price_financepy_reference
 from trellis.agent.knowledge.promotion import record_benchmark_promotion_candidate
 from trellis.agent.runtime_revisions import runtime_revision_metadata
@@ -84,6 +88,20 @@ def _git_revision() -> str:
         check=False,
     )
     return completed.stdout.strip() or "unknown"
+
+
+def _read_generated_artifact_source(generated_artifact: dict[str, Any]) -> str | None:
+    """Best-effort read of the persisted fresh-build source for boundary inspection."""
+    file_path_text = str(generated_artifact.get("file_path") or "").strip()
+    if not file_path_text:
+        return None
+    file_path = Path(file_path_text)
+    if not file_path.is_absolute():
+        file_path = ROOT / file_path
+    try:
+        return file_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
 
 
 def _output_value(outputs: dict[str, Any], key: str) -> Any:
@@ -196,21 +214,23 @@ def main(argv: list[str] | None = None) -> int:
         status = "failed"
         task_market_state, _ = build_market_state_for_task(task, market_state)
         generated_artifact = dict(cold_result.get("generated_artifact") or {})
-        fresh_boundary_error = ""
-        if fresh_generated:
-            if not generated_artifact:
-                fresh_boundary_error = "missing generated artifact provenance for fresh-generated benchmark"
-            elif not bool(generated_artifact.get("is_fresh_build")):
-                fresh_boundary_error = (
-                    "fresh-generated benchmark resolved to a non-fresh adapter path"
-                )
+        boundary_check = enforce_fresh_generated_boundary(
+            task,
+            generated_artifact if generated_artifact else None,
+            execution_policy=execution_policy,
+            generated_source=_read_generated_artifact_source(generated_artifact),
+            raise_on_violation=False,
+        )
 
         if cold_result.get("success"):
             status = "priced"
             try:
                 if fresh_generated:
-                    if fresh_boundary_error:
-                        raise RuntimeError(fresh_boundary_error)
+                    if boundary_check.status == "violated":
+                        raise FreshGeneratedBoundaryError(
+                            f"QUA-866: fresh-generated boundary violation for task "
+                            f"{task['id']}: {boundary_check.reason}"
+                        )
                     warm_result = benchmark_generated_artifact(
                         task,
                         generated_artifact=generated_artifact,
@@ -257,9 +277,10 @@ def main(argv: list[str] | None = None) -> int:
             trellis_outputs=trellis_outputs_normalized,
             financepy_outputs=financepy_outputs_normalized,
         )
-        if fresh_boundary_error:
+        if boundary_check.status == "violated":
             comparison_summary["status"] = "benchmark_boundary_violation"
-            comparison_summary["boundary_error"] = fresh_boundary_error
+            comparison_summary["boundary_error"] = boundary_check.reason
+            comparison_summary["boundary_violations"] = list(boundary_check.violations)
             status = "failed"
         if financepy_result and financepy_result.get("error"):
             comparison_summary["status"] = "financepy_error"
@@ -301,6 +322,7 @@ def main(argv: list[str] | None = None) -> int:
             "financepy_outputs": financepy_outputs,
             "financepy_outputs_normalized": financepy_outputs_normalized,
             "generated_artifact": generated_artifact,
+            "fresh_generated_boundary": boundary_check.as_record(),
             "comparison_summary": comparison_summary,
         }
         record.update(persist_financepy_benchmark_record(record, root=output_root))

@@ -228,3 +228,23 @@ def test_financepy_benchmark_cli_defaults_to_non_mutating_cold_runs():
     assert runner._parse_args([]).force_rebuild is False
     assert runner._parse_args([]).execution_policy == "auto"
     assert runner._parse_args(["--force-rebuild"]).force_rebuild is True
+
+
+def test_read_generated_artifact_source_returns_none_when_file_missing(tmp_path):
+    from scripts import run_financepy_benchmark as runner
+
+    assert runner._read_generated_artifact_source({}) is None
+    assert (
+        runner._read_generated_artifact_source(
+            {"file_path": str(tmp_path / "does_not_exist.py")}
+        )
+        is None
+    )
+
+
+def test_read_generated_artifact_source_reads_persisted_file(tmp_path):
+    from scripts import run_financepy_benchmark as runner
+
+    target = tmp_path / "module.py"
+    target.write_text("x = 1\n", encoding="utf-8")
+    assert runner._read_generated_artifact_source({"file_path": str(target)}) == "x = 1\n"
