@@ -381,3 +381,109 @@ def test_promote_agent_adapter_cli_requires_exactly_one_candidate_source(capsys)
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "error"
     assert "candidate" in payload["error"].lower()
+
+
+def test_promote_benchmark_candidate_resolves_relative_record_path(
+    tmp_path, monkeypatch
+):
+    """Relative benchmark_record_path resolves against the candidate file.
+
+    PR #590 Copilot review: a candidate that stored a repo-relative
+    `benchmark_record_path` would fail admission when the CLI was invoked
+    from a different CWD.  Resolve relative paths against `path.parent`.
+    """
+    from trellis.agent.knowledge.promotion import promote_benchmark_candidate
+
+    candidate_path, record = _prepare_record_and_candidate(tmp_path, monkeypatch)
+    history_path = Path(record["history_path"])
+    candidate = yaml.safe_load(candidate_path.read_text())
+    import os as _os
+    relative = _os.path.relpath(history_path, candidate_path.parent.resolve())
+    candidate["benchmark_provenance"]["benchmark_record_path"] = str(relative)
+    candidate_path.write_text(yaml.safe_dump(candidate, sort_keys=False))
+
+    result = promote_benchmark_candidate(
+        candidate_path, repo_root=tmp_path, dry_run=True
+    )
+
+    assert result["status"] == "would_promote"
+
+
+def test_promote_benchmark_candidate_rejects_agent_fresh_admission_target(
+    tmp_path, monkeypatch
+):
+    """`_agent._fresh.*` is the scratch namespace, not the admitted surface.
+
+    PR #590 Copilot review: a candidate naming the isolation namespace as
+    its admission target should fail closed.
+    """
+    from trellis.agent.knowledge.promotion import (
+        PromotionAdmissionError,
+        promote_benchmark_candidate,
+    )
+
+    candidate_path, _record = _prepare_record_and_candidate(tmp_path, monkeypatch)
+    candidate = yaml.safe_load(candidate_path.read_text())
+    candidate["admission_target_module_name"] = (
+        "trellis.instruments._agent._fresh.barrieroption"
+    )
+    candidate_path.write_text(yaml.safe_dump(candidate, sort_keys=False))
+
+    with pytest.raises(PromotionAdmissionError) as exc_info:
+        promote_benchmark_candidate(candidate_path, repo_root=tmp_path)
+    assert "_fresh" in str(exc_info.value)
+
+
+def test_promote_benchmark_candidate_rejects_yaml_target_file_path_mismatch(
+    tmp_path, monkeypatch
+):
+    """A YAML-supplied admission_target_file_path that disagrees with the
+    module-derived path is rejected -- otherwise a tampered candidate could
+    overwrite arbitrary files in the repo (PR #590 Copilot/Codex P1)."""
+    from trellis.agent.knowledge.promotion import (
+        PromotionAdmissionError,
+        promote_benchmark_candidate,
+    )
+
+    candidate_path, _record = _prepare_record_and_candidate(tmp_path, monkeypatch)
+    candidate = yaml.safe_load(candidate_path.read_text())
+    candidate["admission_target_file_path"] = str(
+        tmp_path / "trellis" / "core" / "evil_overwrite_target.py"
+    )
+    candidate_path.write_text(yaml.safe_dump(candidate, sort_keys=False))
+
+    with pytest.raises(PromotionAdmissionError) as exc_info:
+        promote_benchmark_candidate(candidate_path, repo_root=tmp_path)
+    message = str(exc_info.value).lower()
+    assert "admission_target_file_path" in message or "disagrees" in message
+
+
+def test_promote_benchmark_candidate_admission_target_is_under_agent_tree(
+    tmp_path, monkeypatch
+):
+    """The resolved admission target must be inside trellis/instruments/_agent/."""
+    from trellis.agent.knowledge.promotion import promote_benchmark_candidate
+
+    candidate_path, _record = _prepare_record_and_candidate(tmp_path, monkeypatch)
+    result = promote_benchmark_candidate(
+        candidate_path, repo_root=tmp_path, dry_run=True
+    )
+    target = Path(result["admission_target_file_path"])
+    expected_root = (tmp_path / "trellis" / "instruments" / "_agent").resolve()
+    target.relative_to(expected_root)  # raises ValueError if outside
+
+
+def test_promote_benchmark_candidate_admission_timestamp_is_utc(
+    tmp_path, monkeypatch
+):
+    """Admission log timestamp is UTC (PR #590 Copilot review)."""
+    from trellis.agent.knowledge.promotion import promote_benchmark_candidate
+
+    candidate_path, _record = _prepare_record_and_candidate(tmp_path, monkeypatch)
+    result = promote_benchmark_candidate(
+        candidate_path, repo_root=tmp_path, dry_run=True
+    )
+    timestamp = result["admission_timestamp"]
+    assert isinstance(timestamp, str)
+    # UTC ISO format ends in `+00:00` or `Z`.
+    assert timestamp.endswith("+00:00") or timestamp.endswith("Z")

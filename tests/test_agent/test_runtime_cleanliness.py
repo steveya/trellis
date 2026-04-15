@@ -103,3 +103,47 @@ def test_status_as_record_round_trips():
     status = WorkingTreeStatus(clean=False, dirty_paths=("foo.py", "bar.py"))
     record = status.as_record()
     assert record == {"clean": False, "dirty_paths": ["foo.py", "bar.py"]}
+
+
+def test_inspect_working_tree_treats_rename_source_outside_ignore_as_dirty(tmp_path):
+    """A tracked source file renamed *into* an ignored prefix is still dirty.
+
+    PR #590 Codex P2 review: the original parser only kept the destination
+    side, so `trellis/core/foo.py -> task_runs/foo.py` was incorrectly
+    treated as clean.
+    """
+    _init_repo(tmp_path)
+    src_dir = tmp_path / "trellis" / "core"
+    src_dir.mkdir(parents=True)
+    tracked_source = src_dir / "foo.py"
+    tracked_source.write_text("x = 1\n")
+    git_env = {
+        "HOME": str(tmp_path),
+        "PATH": "/usr/bin:/bin",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "t@example.com",
+    }
+    subprocess.run(
+        ["git", "add", "trellis/core/foo.py"],
+        cwd=tmp_path,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "add tracked source"],
+        cwd=tmp_path,
+        check=True,
+        env=git_env,
+    )
+    (tmp_path / "task_runs").mkdir()
+    subprocess.run(
+        ["git", "mv", "trellis/core/foo.py", "task_runs/foo.py"],
+        cwd=tmp_path,
+        check=True,
+    )
+
+    status = inspect_working_tree(tmp_path)
+
+    # The rename source side is not under an ignored prefix, so the tree is
+    # dirty even though the destination is.
+    assert status.clean is False
+    assert any(p.startswith("trellis/core/") for p in status.dirty_paths)

@@ -1475,6 +1475,12 @@ def promote_benchmark_candidate(
             "QUA-867: candidate does not reference a benchmark record path"
         )
     benchmark_record_path = Path(benchmark_record_path_text)
+    if not benchmark_record_path.is_absolute():
+        # Candidates emitted via `persist_financepy_benchmark_record` may store
+        # repo-relative paths.  Resolve against the candidate file's parent so
+        # an admission run from a different CWD still finds the record.
+        # (PR #590 Copilot review.)
+        benchmark_record_path = (path.parent / benchmark_record_path).resolve()
     if not benchmark_record_path.is_file():
         raise PromotionAdmissionError(
             f"QUA-867: benchmark record is missing or unreadable: {benchmark_record_path}"
@@ -1573,30 +1579,80 @@ def promote_benchmark_candidate(
         data.get("admission_target_module_name")
         or _recommended_module_path(candidate_module_name)
     ).strip()
-    if not admission_target_module_name.startswith("trellis.instruments._agent"):
+    if not (
+        admission_target_module_name == "trellis.instruments._agent"
+        or admission_target_module_name.startswith("trellis.instruments._agent.")
+    ):
         raise PromotionAdmissionError(
             "QUA-867: admission target is not under trellis.instruments._agent: "
             f"{admission_target_module_name}"
         )
-
-    resolved_repo_root = Path(repo_root) if repo_root is not None else _REPO_ROOT
-    admission_target_file_path = Path(
-        str(data.get("admission_target_file_path") or "").strip()
-    ) if str(data.get("admission_target_file_path") or "").strip() else (
-        _recommended_file_path(admission_target_module_name)
-    )
-    if not admission_target_file_path.is_absolute():
-        admission_target_file_path = resolved_repo_root / admission_target_file_path
-    admission_target_file_path = admission_target_file_path.resolve()
-    try:
-        admission_target_file_path.relative_to(resolved_repo_root.resolve())
-    except ValueError:
+    # `trellis.instruments._agent._fresh.*` is the scratch isolation namespace
+    # used by the deterministic-route fresh-build fallback.  It is NOT the
+    # admitted surface; refusing it here prevents a tampered or mis-generated
+    # candidate from "promoting" code into the scratch tree under the guise
+    # of admitted code.  (PR #590 Copilot review.)
+    if admission_target_module_name == "trellis.instruments._agent._fresh" or (
+        admission_target_module_name.startswith("trellis.instruments._agent._fresh.")
+    ):
         raise PromotionAdmissionError(
-            "QUA-867: admission target resolves outside repo_root: "
-            f"{admission_target_file_path}"
+            "QUA-867: admission target cannot be under the "
+            "trellis.instruments._agent._fresh isolation namespace: "
+            f"{admission_target_module_name}"
         )
 
-    admission_timestamp = datetime.now()
+    resolved_repo_root = (
+        Path(repo_root) if repo_root is not None else _REPO_ROOT
+    ).resolve()
+    admitted_agent_root = (
+        resolved_repo_root / "trellis" / "instruments" / "_agent"
+    ).resolve()
+
+    # Always derive the admission target file path from the validated
+    # `admission_target_module_name`.  Any caller-supplied
+    # `admission_target_file_path` is consulted only as a sanity check; if it
+    # disagrees with the module-derived path, the module-derived path wins.
+    # This stops a tampered candidate from overwriting arbitrary repository
+    # files even when the module name passes the prefix check above.
+    # (PR #590 Copilot/Codex P1 review.)
+    derived_target_file_path = _recommended_file_path(admission_target_module_name)
+    if not derived_target_file_path.is_absolute():
+        derived_target_file_path = resolved_repo_root / derived_target_file_path
+    derived_target_file_path = derived_target_file_path.resolve()
+    try:
+        derived_target_file_path.relative_to(admitted_agent_root)
+    except ValueError:
+        raise PromotionAdmissionError(
+            "QUA-867: admission target resolves outside trellis/instruments/_agent: "
+            f"{derived_target_file_path}"
+        )
+
+    yaml_admission_target_file_path_text = str(
+        data.get("admission_target_file_path") or ""
+    ).strip()
+    if yaml_admission_target_file_path_text:
+        yaml_target = Path(yaml_admission_target_file_path_text)
+        if not yaml_target.is_absolute():
+            yaml_target = resolved_repo_root / yaml_target
+        yaml_target = yaml_target.resolve()
+        if yaml_target != derived_target_file_path:
+            # Caller-supplied path disagrees with the module-derived path; do
+            # not honor the override.  Fail closed to make the divergence
+            # visible rather than silently writing somewhere unexpected.
+            raise PromotionAdmissionError(
+                "QUA-867: candidate `admission_target_file_path` "
+                f"({yaml_target}) disagrees with the module-derived target "
+                f"({derived_target_file_path}); refusing to honor the override"
+            )
+
+    admission_target_file_path = derived_target_file_path
+
+    # UTC keeps the admission log timestamp consistent with the runner's
+    # `run_started_at` / `run_completed_at` fields and with the
+    # `created_at` on the scorecard.  (PR #590 Copilot review.)
+    from datetime import timezone as _tz
+
+    admission_timestamp = datetime.now(_tz.utc)
     admission_payload: dict[str, object] = {
         "status": "would_promote" if dry_run else "promoted",
         "dry_run": bool(dry_run),
@@ -1828,6 +1884,11 @@ def review_promotion_candidate(
         benchmark_record_path = (
             Path(benchmark_record_path_str) if benchmark_record_path_str else None
         )
+        # Resolve repo-relative paths against the candidate file's parent so a
+        # CLI run from a different CWD still finds the record.  Mirrors the
+        # same behavior in `promote_benchmark_candidate`.  (PR #590 Copilot.)
+        if benchmark_record_path is not None and not benchmark_record_path.is_absolute():
+            benchmark_record_path = (path.parent / benchmark_record_path).resolve()
         benchmark_record: dict[str, object] = {}
         if benchmark_record_path is not None and benchmark_record_path.is_file():
             try:

@@ -66,19 +66,31 @@ def inspect_working_tree(
         # as "unknown" via the normal revisions path.
         return WorkingTreeStatus(clean=True, dirty_paths=())
     dirty_paths: list[str] = []
+    seen: set[str] = set()
     for raw_line in completed.stdout.splitlines():
         if len(raw_line) <= 3:
             continue
-        path = raw_line[3:].strip()
-        # Rename entries look like ``old -> new``; keep the destination.
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1].strip()
-        path = path.strip("\"").strip().replace("\\", "/")
-        if not path:
-            continue
-        if any(path.startswith(prefix) for prefix in prefixes):
-            continue
-        dirty_paths.append(path)
+        # Rename entries look like ``old -> new``.  Both sides matter:
+        # if the source path is outside the ignore list (e.g. a tracked
+        # source file moved into `task_runs/`), the rename is dirty even
+        # when the destination falls under an ignored prefix.
+        # (PR #590 Codex P2 review.)
+        raw_path = raw_line[3:].strip()
+        if " -> " in raw_path:
+            old, new = raw_path.split(" -> ", 1)
+            entries = [old.strip(), new.strip()]
+        else:
+            entries = [raw_path]
+        for candidate in entries:
+            normalized = candidate.strip("\"").strip().replace("\\", "/")
+            if not normalized:
+                continue
+            if any(normalized.startswith(prefix) for prefix in prefixes):
+                continue
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            dirty_paths.append(normalized)
     return WorkingTreeStatus(
         clean=not dirty_paths,
         dirty_paths=tuple(dirty_paths),

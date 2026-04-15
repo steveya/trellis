@@ -291,7 +291,12 @@ def _execute_single_benchmark_task(
         comparison_summary["boundary_violations"] = list(boundary_check.violations)
         status = "failed"
     if financepy_result and financepy_result.get("error"):
-        comparison_summary["status"] = "financepy_error"
+        # Preserve the boundary-violation status -- it is the more serious
+        # signal and downstream admission/scorecards branch on it.  The
+        # financepy error is still recorded in its own field so audits
+        # keep both pieces of evidence.  (PR #590 Copilot review.)
+        if comparison_summary.get("status") != "benchmark_boundary_violation":
+            comparison_summary["status"] = "financepy_error"
         comparison_summary["financepy_error"] = financepy_result["error"]
     if warm_result and warm_result.get("error"):
         comparison_summary.setdefault("warnings", []).append(f"warm_benchmark_error: {warm_result['error']}")
