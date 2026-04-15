@@ -3669,3 +3669,60 @@ def test_prepared_task_carries_compiled_request(monkeypatch):
     )
 
     assert prepared.compiled_request is mock_compiled
+
+
+def test_cross_validate_analytical_field_creates_two_target_harness():
+    """Documents the design discovered by QUA-877: setting
+    `cross_validate.analytical: <name>` instructs the comparison harness to
+    build TWO targets -- one general construct-method target (LLM-built) and
+    one named reference target (deterministic body when the executor has one
+    via `_deterministic_exact_binding_evaluate_body`).  The two builds are
+    then cross-validated against each other.
+
+    This is why F001 (the only pilot task with `cross_validate.analytical`)
+    spends ~16k extra tokens on the LLM codegen + reflection vs. F002/F009/
+    F012, which use a single-target harness with deterministic short-circuit.
+    The extra cost on F001 is the price of a self-test that proves the
+    LLM-built analytical path matches the deterministic Black-Scholes
+    reference.  Tasks that don't need the self-test should omit
+    `cross_validate.analytical`.
+    """
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    f001_task = {
+        "id": "F001",
+        "construct": "analytical",
+        "cross_validate": {
+            "external": ["financepy"],
+            "analytical": "black_scholes",
+        },
+    }
+    plan = build_comparison_harness_plan(f001_task)
+    target_ids = [t.target_id for t in plan.targets]
+    assert target_ids == ["analytical", "black_scholes"]
+    assert plan.reference_target == "black_scholes"
+    assert plan.targets[0].is_reference is False
+    assert plan.targets[1].is_reference is True
+
+
+def test_cross_validate_without_analytical_field_creates_single_target_harness():
+    """Tasks without `cross_validate.analytical` (F002/F003/F007/F009/F012 in
+    the pilot) get a single-target harness.  The construct-method target's
+    request metadata then carries no `comparison_target`, so the executor's
+    deterministic-exact-binding gate fires only when a route's helper-body
+    lookup matches (F002 fx, F009 barrier, F012 chooser) -- not when the
+    route happens to share kernel primitives with another route (F003 cap
+    on Black76 doesn't get the european-vanilla deterministic body).
+    """
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    f002_task = {
+        "id": "F002",
+        "construct": "analytical",
+        "cross_validate": {
+            "external": ["financepy"],
+        },
+    }
+    plan = build_comparison_harness_plan(f002_task)
+    assert [t.target_id for t in plan.targets] == ["analytical"]
+    assert plan.reference_target is None
