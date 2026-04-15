@@ -277,3 +277,107 @@ def test_promote_agent_adapter_cli_surfaces_failure_with_nonzero_exit(
     payload = json.loads(output)
     assert payload["status"] == "rejected"
     assert "hash" in payload["error"].lower()
+
+
+def test_record_benchmark_promotion_candidate_is_idempotent_for_same_code_hash(
+    tmp_path, monkeypatch
+):
+    from trellis.agent.knowledge.promotion import record_benchmark_promotion_candidate
+
+    candidate_path_first, record = _prepare_record_and_candidate(
+        tmp_path, monkeypatch, task_id="F009"
+    )
+    second_path = record_benchmark_promotion_candidate(benchmark_record=record)
+
+    assert Path(second_path).resolve() == Path(candidate_path_first).resolve(), (
+        "expected dedup to return the existing candidate path when the code "
+        "hash matches a prior emission"
+    )
+    candidate_dir = candidate_path_first.parent
+    matches = sorted(candidate_dir.glob("*_f009_financepy_benchmark.yaml"))
+    assert len(matches) == 1, (
+        "rerunning the benchmark with byte-identical generated code must not "
+        "produce a second candidate file"
+    )
+
+
+def test_promote_agent_adapter_cli_batch_dry_run_runs_all_candidates(
+    tmp_path, monkeypatch, capsys
+):
+    from scripts import promote_agent_adapter
+
+    f009_path, _ = _prepare_record_and_candidate(tmp_path, monkeypatch, task_id="F009")
+    f001_path, _ = _prepare_record_and_candidate(tmp_path, monkeypatch, task_id="F001")
+    candidate_root = f009_path.parent
+    assert f001_path.parent == candidate_root
+
+    exit_code = promote_agent_adapter.main(
+        [
+            "--candidate-glob",
+            "*.yaml",
+            "--candidate-root",
+            str(candidate_root),
+            "--repo-root",
+            str(tmp_path),
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "would_promote_all"
+    assert payload["dry_run"] is True
+    assert payload["candidate_count"] == 2
+    assert payload["processed_count"] == 2
+    statuses = {entry["status"] for entry in payload["results"]}
+    assert statuses == {"would_promote"}
+
+
+def test_promote_agent_adapter_cli_batch_apply_halts_on_first_rejection(
+    tmp_path, monkeypatch, capsys
+):
+    from scripts import promote_agent_adapter
+
+    f001_path, _ = _prepare_record_and_candidate(tmp_path, monkeypatch, task_id="F001")
+    f009_path, _ = _prepare_record_and_candidate(tmp_path, monkeypatch, task_id="F009")
+    candidate_root = f001_path.parent
+
+    # Corrupt the candidate that sorts first lexically so the batch hits a
+    # rejection before touching the second.
+    [first_path] = sorted(p for p in candidate_root.glob("*.yaml") if p.name.endswith("_f001_financepy_benchmark.yaml"))
+    candidate = yaml.safe_load(first_path.read_text())
+    candidate["code_hash"] = "badbadbadbad"
+    first_path.write_text(yaml.safe_dump(candidate, sort_keys=False))
+
+    exit_code = promote_agent_adapter.main(
+        [
+            "--candidate-glob",
+            "*.yaml",
+            "--candidate-root",
+            str(candidate_root),
+            "--repo-root",
+            str(tmp_path),
+        ]
+    )
+
+    assert exit_code == 2
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "rejected"
+    assert payload["candidate_count"] == 2
+    assert payload["processed_count"] == 1
+    assert payload["results"][0]["status"] == "rejected"
+
+    # The second candidate's admission target was not written because the
+    # batch halted on the first rejection.
+    f009_target = tmp_path / "trellis" / "instruments" / "_agent" / "barrieroption.py"
+    assert not f009_target.exists()
+
+
+def test_promote_agent_adapter_cli_requires_exactly_one_candidate_source(capsys):
+    from scripts import promote_agent_adapter
+
+    exit_code = promote_agent_adapter.main([])
+    assert exit_code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "error"
+    assert "candidate" in payload["error"].lower()

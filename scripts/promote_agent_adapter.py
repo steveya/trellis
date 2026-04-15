@@ -32,8 +32,22 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--candidate",
-        required=True,
-        help="Path to a promotion-candidate YAML emitted by the benchmark runner.",
+        help="Path to a single promotion-candidate YAML emitted by the benchmark runner.",
+    )
+    parser.add_argument(
+        "--candidate-glob",
+        help=(
+            "Glob pattern (relative to --candidate-root, default "
+            "trellis/agent/knowledge/traces/promotion_candidates/) for batch "
+            "admission across multiple candidates.  Mutually exclusive with --candidate."
+        ),
+    )
+    parser.add_argument(
+        "--candidate-root",
+        default=str(
+            ROOT / "trellis" / "agent" / "knowledge" / "traces" / "promotion_candidates"
+        ),
+        help="Directory used to resolve --candidate-glob.",
     )
     parser.add_argument(
         "--repo-root",
@@ -53,49 +67,125 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> int:
+def _promote_one(
+    candidate_path: Path,
+    *,
+    repo_root: Path,
+    dry_run: bool,
+    promoted_by: str,
+) -> tuple[int, dict]:
+    """Promote one candidate and return (exit_code, payload)."""
     from trellis.agent.knowledge.promotion import (
         PromotionAdmissionError,
         promote_benchmark_candidate,
     )
 
-    args = _parse_args(argv if argv is not None else sys.argv[1:])
-    candidate_path = Path(args.candidate).expanduser()
-    repo_root = Path(args.repo_root).expanduser()
-
     try:
         result = promote_benchmark_candidate(
             candidate_path,
             repo_root=repo_root,
-            dry_run=bool(args.dry_run),
-            promoted_by=args.promoted_by,
+            dry_run=dry_run,
+            promoted_by=promoted_by,
         )
     except PromotionAdmissionError as exc:
-        print(
-            json.dumps(
-                {
-                    "status": "rejected",
-                    "candidate_path": str(candidate_path),
-                    "error": str(exc),
-                },
-                indent=2,
-            )
-        )
-        return 2
+        return 2, {
+            "status": "rejected",
+            "candidate_path": str(candidate_path),
+            "error": str(exc),
+        }
     except Exception as exc:  # pragma: no cover - defensive catch-all
+        return 1, {
+            "status": "error",
+            "candidate_path": str(candidate_path),
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+    return 0, dict(result)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv if argv is not None else sys.argv[1:])
+
+    if bool(args.candidate) == bool(args.candidate_glob):
         print(
             json.dumps(
                 {
                     "status": "error",
-                    "candidate_path": str(candidate_path),
-                    "error": f"{type(exc).__name__}: {exc}",
+                    "error": "exactly one of --candidate or --candidate-glob is required",
                 },
                 indent=2,
             )
         )
         return 1
 
-    print(json.dumps(result, indent=2, default=str))
+    repo_root = Path(args.repo_root).expanduser()
+
+    if args.candidate:
+        exit_code, payload = _promote_one(
+            Path(args.candidate).expanduser(),
+            repo_root=repo_root,
+            dry_run=bool(args.dry_run),
+            promoted_by=args.promoted_by,
+        )
+        print(json.dumps(payload, indent=2, default=str))
+        return exit_code
+
+    candidate_root = Path(args.candidate_root).expanduser()
+    candidate_paths = sorted(candidate_root.glob(args.candidate_glob))
+    if not candidate_paths:
+        print(
+            json.dumps(
+                {
+                    "status": "no_match",
+                    "candidate_root": str(candidate_root),
+                    "candidate_glob": args.candidate_glob,
+                    "results": [],
+                },
+                indent=2,
+            )
+        )
+        return 1
+
+    results: list[dict] = []
+    rejection_seen = False
+    error_seen = False
+    for path in candidate_paths:
+        per_exit, per_payload = _promote_one(
+            path,
+            repo_root=repo_root,
+            dry_run=bool(args.dry_run),
+            promoted_by=args.promoted_by,
+        )
+        results.append(per_payload)
+        if per_exit == 2:
+            rejection_seen = True
+            # On apply (not dry-run) a single rejection halts the batch so
+            # downstream candidates do not get partially admitted under the
+            # assumption the earlier ones succeeded.
+            if not args.dry_run:
+                break
+        elif per_exit == 1:
+            error_seen = True
+            if not args.dry_run:
+                break
+
+    summary = {
+        "status": (
+            "errored" if error_seen
+            else "rejected" if rejection_seen
+            else ("would_promote_all" if args.dry_run else "promoted_all")
+        ),
+        "dry_run": bool(args.dry_run),
+        "candidate_root": str(candidate_root),
+        "candidate_glob": args.candidate_glob,
+        "candidate_count": len(candidate_paths),
+        "processed_count": len(results),
+        "results": results,
+    }
+    print(json.dumps(summary, indent=2, default=str))
+    if error_seen:
+        return 1
+    if rejection_seen:
+        return 2
     return 0
 
 

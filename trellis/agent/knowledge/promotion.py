@@ -1331,6 +1331,24 @@ def record_benchmark_promotion_candidate(
     candidate_dir = _TRACES_DIR / "promotion_candidates"
     candidate_dir.mkdir(parents=True, exist_ok=True)
     task_id = str(benchmark_record.get("task_id") or "unknown").strip() or "unknown"
+    code_hash = hashlib.sha256(source.strip().encode()).hexdigest()[:12]
+
+    # Dedup: if a previously emitted candidate for the same task already
+    # carries the same `code_hash`, the generated artifact is byte-identical
+    # to a prior accepted run.  Reuse the existing record instead of writing
+    # a second copy so repeated reruns of a stable pilot don't accumulate
+    # N x tasks YAML files.  This is QUA-875.
+    pattern = f"*_{task_id.lower()}_financepy_benchmark.yaml"
+    for existing_path in sorted(candidate_dir.glob(pattern)):
+        try:
+            existing_payload = yaml.safe_load(existing_path.read_text()) or {}
+        except Exception:
+            continue
+        if not isinstance(existing_payload, Mapping):
+            continue
+        if _hashes_equivalent(existing_payload.get("code_hash"), code_hash):
+            return str(existing_path)
+
     filename = (
         f"{timestamp.strftime('%Y%m%d_%H%M%S')}_{task_id.lower()}_financepy_benchmark.yaml"
     )
@@ -1373,7 +1391,7 @@ def record_benchmark_promotion_candidate(
             "comparison_summary": dict(benchmark_record.get("comparison_summary") or {}),
             "generated_artifact": generated_artifact,
         },
-        "code_hash": hashlib.sha256(source.strip().encode()).hexdigest()[:12],
+        "code_hash": code_hash,
         "code": source,
     }
     with open(path, "w") as f:
