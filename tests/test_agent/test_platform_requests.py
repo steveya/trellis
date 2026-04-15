@@ -37,6 +37,12 @@ def _expected_route_modules(compiled) -> tuple[str, ...]:
     )
 
 
+def _financepy_benchmark_task(task_id: str) -> dict:
+    from trellis.agent.financepy_benchmark import load_financepy_benchmark_tasks
+
+    return next(task for task in load_financepy_benchmark_tasks() if task["id"] == task_id)
+
+
 def _semantic_regression_snapshot(compiled):
     from trellis.agent.semantic_contracts import semantic_contract_summary
 
@@ -544,6 +550,50 @@ def test_compile_build_request_preserves_missing_route_state_for_range_accrual_s
         "missing_primitive_routes"
     )
     assert "route_binding_authority" not in compiled.request.metadata
+
+
+def test_compile_build_request_uses_exact_barrier_binding_for_financepy_pilot_task():
+    from trellis.agent.benchmark_contracts import benchmark_request_description
+    from trellis.agent.platform_requests import compile_build_request
+
+    task = _financepy_benchmark_task("F009")
+    compiled = compile_build_request(
+        benchmark_request_description(task),
+        instrument_type=task["instrument_type"],
+        preferred_method="analytical",
+    )
+
+    assert compiled.semantic_blueprint is None
+    assert compiled.product_ir is not None
+    assert set(compiled.product_ir.candidate_engine_families) >= {"analytical", "pde"}
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.primitive_plan is not None
+    assert compiled.generation_plan.primitive_plan.route == "equity_barrier_analytical"
+    assert "primitive_plan_not_available" not in compiled.generation_plan.uncertainty_flags
+    assert (
+        "trellis.models.analytical.barrier.barrier_option_price"
+        in compiled.generation_plan.backend_exact_target_refs
+    )
+
+
+def test_compile_build_request_preserves_exact_chooser_binding_for_financepy_pilot_task():
+    from trellis.agent.benchmark_contracts import benchmark_request_description
+    from trellis.agent.platform_requests import compile_build_request
+
+    task = _financepy_benchmark_task("F012")
+    compiled = compile_build_request(
+        benchmark_request_description(task),
+        instrument_type=task["instrument_type"],
+        preferred_method="analytical",
+    )
+
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.primitive_plan is not None
+    assert compiled.generation_plan.primitive_plan.route == "equity_chooser_analytical"
+    assert (
+        "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical"
+        in compiled.generation_plan.backend_exact_target_refs
+    )
 
 
 def test_compile_term_sheet_request_uses_quanto_semantic_contract():

@@ -2965,6 +2965,217 @@ def test_benchmark_existing_task_prefers_runtime_schema_over_stale_static_schema
     assert result["last_price"] == pytest.approx(1.0873716740767274, rel=5e-5)
 
 
+def test_build_result_payload_includes_generated_artifact_provenance(monkeypatch, tmp_path):
+    from trellis.agent.task_runtime import _build_result_payload
+
+    module_name = "tests.fake_fresh_generated_adapter"
+    module = ModuleType(module_name)
+    module_file = tmp_path / "fake_fresh_generated_adapter.py"
+    module_file.write_text("class DemoPayoff:\n    pass\n")
+    module.__file__ = str(module_file)
+    monkeypatch.setitem(sys.modules, module_name, module)
+
+    DemoPayoff = type("DemoPayoff", (), {"__module__": module_name})
+    result = SimpleNamespace(
+        success=True,
+        attempts=1,
+        gap_confidence=0.9,
+        knowledge_gaps=[],
+        payoff_cls=DemoPayoff,
+        failures=[],
+        agent_observations=[],
+        knowledge_summary={},
+        token_usage_summary={},
+        platform_trace_path=None,
+        platform_request_id=None,
+        analytical_trace_path=None,
+        analytical_trace_text_path=None,
+        audit_record_path=None,
+        blocker_details=None,
+        post_build_tracking={},
+        reflection={},
+        code="class DemoPayoff:\n    pass\n",
+    )
+
+    payload = _build_result_payload(result)
+
+    assert payload["generated_artifact"]["module_name"] == module_name
+    assert payload["generated_artifact"]["class_name"] == "DemoPayoff"
+    assert payload["generated_artifact"]["file_path"] == str(module_file)
+    assert payload["generated_artifact"]["code_hash"]
+    assert payload["generated_artifact"]["is_fresh_build"] is False
+
+
+def test_build_result_payload_marks_benchmark_generated_artifact_as_fresh(monkeypatch, tmp_path):
+    from trellis.agent.task_runtime import _build_result_payload
+
+    module_name = "trellis_benchmarks._fresh.f009.analytical.barrieroption"
+    module = ModuleType(module_name)
+    module_dir = tmp_path / "task_runs" / "financepy_benchmarks" / "generated" / "f009" / "analytical"
+    module_dir.mkdir(parents=True, exist_ok=True)
+    module_file = module_dir / "barrieroption.py"
+    module_file.write_text("class DemoPayoff:\n    pass\n")
+    module.__file__ = str(module_file)
+    monkeypatch.setitem(sys.modules, module_name, module)
+
+    DemoPayoff = type("DemoPayoff", (), {"__module__": module_name})
+    result = SimpleNamespace(
+        success=True,
+        attempts=1,
+        gap_confidence=0.9,
+        knowledge_gaps=[],
+        payoff_cls=DemoPayoff,
+        failures=[],
+        agent_observations=[],
+        knowledge_summary={},
+        token_usage_summary={},
+        platform_trace_path=None,
+        platform_request_id=None,
+        analytical_trace_path=None,
+        analytical_trace_text_path=None,
+        audit_record_path=None,
+        blocker_details=None,
+        post_build_tracking={},
+        reflection={},
+        code="class DemoPayoff:\n    pass\n",
+    )
+
+    payload = _build_result_payload(result)
+
+    assert payload["generated_artifact"]["module_name"] == module_name
+    assert payload["generated_artifact"]["is_fresh_build"] is True
+    assert "financepy_benchmarks/generated" in payload["generated_artifact"]["module_path"]
+
+
+def test_build_result_payload_carries_admission_target_metadata(monkeypatch, tmp_path):
+    from trellis.agent.task_runtime import _build_result_payload
+
+    module_name = "trellis_benchmarks._fresh.f009.analytical.barrieroption"
+    module = ModuleType(module_name)
+    module_dir = tmp_path / "task_runs" / "financepy_benchmarks" / "generated" / "f009" / "analytical"
+    module_dir.mkdir(parents=True, exist_ok=True)
+    module_file = module_dir / "barrieroption.py"
+    module_file.write_text("class DemoPayoff:\n    pass\n")
+    module.__file__ = str(module_file)
+    monkeypatch.setitem(sys.modules, module_name, module)
+
+    DemoPayoff = type("DemoPayoff", (), {"__module__": module_name})
+    result = SimpleNamespace(
+        success=True,
+        attempts=1,
+        gap_confidence=0.9,
+        knowledge_gaps=[],
+        payoff_cls=DemoPayoff,
+        failures=[],
+        agent_observations=[],
+        knowledge_summary={},
+        token_usage_summary={},
+        platform_trace_path=None,
+        platform_request_id=None,
+        analytical_trace_path=None,
+        analytical_trace_text_path=None,
+        audit_record_path=None,
+        blocker_details=None,
+        post_build_tracking={},
+        reflection={},
+        code="class DemoPayoff:\n    pass\n",
+        execution_module_name=module_name,
+        execution_module_path="task_runs/financepy_benchmarks/generated/f009/analytical/barrieroption.py",
+        execution_file_path=str(module_file),
+        admission_target_module_name="trellis.instruments._agent.barrieroption",
+        admission_target_module_path="instruments/_agent/barrieroption.py",
+        admission_target_file_path="/repo/trellis/instruments/_agent/barrieroption.py",
+    )
+
+    payload = _build_result_payload(result)
+
+    assert payload["generated_artifact"]["execution_module_name"] == module_name
+    assert payload["generated_artifact"]["admission_target_module_name"] == "trellis.instruments._agent.barrieroption"
+    assert payload["generated_artifact"]["admission_target_module_path"] == "instruments/_agent/barrieroption.py"
+
+
+def test_select_generated_artifact_prefers_successful_reference_target():
+    from trellis.agent.task_runtime import _select_generated_artifact
+
+    selected = _select_generated_artifact(
+        {
+            "analytical": {
+                "success": True,
+                "reference_target": True,
+                "generated_artifact": {
+                    "module_name": "trellis.instruments._agent._fresh.europeanoptionanalytical",
+                    "class_name": "EuropeanOptionAnalyticalPayoff",
+                },
+            },
+            "black_scholes": {
+                "success": True,
+                "reference_target": False,
+                "generated_artifact": {
+                    "module_name": "trellis.instruments._agent._fresh.europeanoptionbs",
+                    "class_name": "EuropeanOptionBlackScholesPayoff",
+                },
+            },
+        }
+    )
+
+    assert selected["module_name"] == "trellis.instruments._agent._fresh.europeanoptionanalytical"
+
+
+def test_benchmark_generated_artifact_uses_persisted_fresh_module(monkeypatch):
+    from trellis.agent.task_runtime import benchmark_generated_artifact
+
+    fake_market_state = SimpleNamespace(settlement=date(2024, 11, 15))
+    fake_schema = SimpleNamespace()
+    FakePayoff = type("FreshBarrierPayoff", (), {})
+
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime._load_generated_artifact_payoff",
+        lambda artifact: (FakePayoff, fake_schema),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime._make_test_payoff",
+        lambda payoff_cls, spec_schema, settle, **_kwargs: "fresh-payoff-instance",
+    )
+
+    observed: list[tuple[object, object]] = []
+    timer_values = iter([0.0, 0.04, 1.0, 1.2, 2.0, 2.3, 3.0, 3.35])
+
+    def fake_timer() -> float:
+        return next(timer_values)
+
+    def fake_price(payoff, market_state):
+        observed.append((payoff, market_state))
+        return 42.0
+
+    result = benchmark_generated_artifact(
+        {"id": "F009", "title": "Barrier parity"},
+        generated_artifact={
+            "module_name": "trellis.instruments._agent._fresh.barrieroption",
+            "module_path": "trellis/instruments/_agent/_fresh/barrieroption.py",
+            "file_path": "/tmp/barrieroption.py",
+            "code_hash": "abc123",
+            "is_fresh_build": True,
+        },
+        market_state=fake_market_state,
+        repeats=2,
+        warmups=1,
+        timer=fake_timer,
+        price_fn=fake_price,
+        spec_overrides={"notional": 1.0},
+    )
+
+    assert observed == [
+        ("fresh-payoff-instance", fake_market_state),
+        ("fresh-payoff-instance", fake_market_state),
+        ("fresh-payoff-instance", fake_market_state),
+    ]
+    assert result["payoff_class"] == "FreshBarrierPayoff"
+    assert result["execution_module_name"] == "trellis.instruments._agent._fresh.barrieroption"
+    assert result["execution_module_path"] == "trellis/instruments/_agent/_fresh/barrieroption.py"
+    assert result["execution_is_fresh_build"] is True
+    assert result["mean_seconds"] == pytest.approx(0.25)
+
+
 def test_make_test_payoff_uses_basket_specific_schedule_defaults(monkeypatch):
     """Basket smoke tests should get typed observation-date defaults."""
     from trellis.agent.task_runtime import _make_test_payoff

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 import yaml
@@ -71,6 +72,74 @@ def _write_candidate(
         "code": source,
     }, sort_keys=False))
     return candidate_path
+
+
+def _write_benchmark_record(
+    root: Path,
+    *,
+    task_id: str = "F009",
+    title: str = "FinancePy parity benchmark",
+    instrument_type: str = "barrier_option",
+    preferred_method: str = "analytical",
+    module_name: str = "trellis_benchmarks._fresh.f009.analytical.barrieroption",
+    admission_target_module_name: str = "trellis.instruments._agent.barrieroption",
+) -> dict[str, object]:
+    report_root = root.parents[2] / "task_runs" / "financepy_benchmarks"
+    generated_dir = report_root / "generated" / task_id.lower() / preferred_method
+    generated_dir.mkdir(parents=True, exist_ok=True)
+    generated_file = generated_dir / "barrieroption.py"
+    source = (
+        "from dataclasses import dataclass\n\n"
+        "@dataclass(frozen=True)\n"
+        "class BarrierOptionSpec:\n"
+        "    strike: float = 100.0\n\n"
+        "class BarrierOptionPayoff:\n"
+        "    def evaluate(self, market_state):\n"
+        "        return 1.0\n"
+    )
+    generated_file.write_text(source)
+    record = {
+        "task_id": task_id,
+        "title": title,
+        "instrument_type": instrument_type,
+        "preferred_method": preferred_method,
+        "benchmark_execution_policy": "fresh_generated",
+        "benchmark_campaign_id": "pilot",
+        "run_id": f"{task_id}_20260414T120000000000Z",
+        "status": "priced",
+        "git_sha": "deadbeef",
+        "knowledge_revision": "cafebabe",
+        "comparison_summary": {
+            "status": "passed",
+            "tolerance_pct": 2.0,
+            "compared_outputs": ("price",),
+            "output_deviation_pct": {"price": 0.1},
+        },
+        "generated_artifact": {
+            "module_name": module_name,
+            "class_name": "BarrierOptionPayoff",
+            "file_path": str(generated_file),
+            "module_path": "task_runs/financepy_benchmarks/generated/f009/analytical/barrieroption.py",
+            "code_hash": hashlib.sha256(source.strip().encode()).hexdigest(),
+            "is_fresh_build": True,
+            "admission_target_module_name": admission_target_module_name,
+            "admission_target_module_path": "instruments/_agent/barrieroption.py",
+            "admission_target_file_path": str(
+                root.parents[2] / "trellis" / "instruments" / "_agent" / "barrieroption.py"
+            ),
+        },
+    }
+    history_dir = report_root / "history" / task_id
+    latest_dir = report_root / "latest"
+    history_dir.mkdir(parents=True, exist_ok=True)
+    latest_dir.mkdir(parents=True, exist_ok=True)
+    history_path = history_dir / f"{record['run_id']}.json"
+    latest_path = latest_dir / f"{task_id}.json"
+    history_path.write_text(json.dumps(record, indent=2))
+    latest_path.write_text(json.dumps(record, indent=2))
+    record["history_path"] = str(history_path)
+    record["latest_path"] = str(latest_path)
+    return record
 
 
 def _write_adapter_pair(
@@ -145,6 +214,113 @@ def test_review_promotion_candidate_rejects_non_fresh_module_path(monkeypatch, t
     assert review["status"] == "rejected"
     failed = {check["name"] for check in review["checks"] if not check["passed"] and check["blocking"]}
     assert "fresh_module_path" in failed
+
+
+def test_record_benchmark_promotion_candidate_captures_run_and_artifact_provenance(monkeypatch, tmp_path):
+    from trellis.agent.knowledge.promotion import record_benchmark_promotion_candidate
+
+    knowledge_root = tmp_path / "trellis" / "agent" / "knowledge"
+    _patch_promotion_paths(monkeypatch, knowledge_root)
+    record = _write_benchmark_record(knowledge_root)
+
+    candidate_path = record_benchmark_promotion_candidate(benchmark_record=record)
+
+    payload = yaml.safe_load(Path(candidate_path).read_text())
+    assert payload["validation_source"] == "financepy_benchmark"
+    assert payload["benchmark_provenance"]["benchmark_run_id"] == record["run_id"]
+    assert payload["benchmark_provenance"]["benchmark_record_path"] == record["history_path"]
+    assert payload["generated_artifact"]["module_name"] == record["generated_artifact"]["module_name"]
+    assert payload["admission_target_module_name"] == "trellis.instruments._agent.barrieroption"
+
+
+def test_review_promotion_candidate_approves_financepy_benchmark_candidate(monkeypatch, tmp_path):
+    from trellis.agent.knowledge.promotion import (
+        record_benchmark_promotion_candidate,
+        review_promotion_candidate,
+    )
+
+    knowledge_root = tmp_path / "trellis" / "agent" / "knowledge"
+    _patch_promotion_paths(monkeypatch, knowledge_root)
+    record = _write_benchmark_record(knowledge_root)
+    candidate_path = record_benchmark_promotion_candidate(benchmark_record=record)
+
+    review = review_promotion_candidate(candidate_path)
+
+    assert review["status"] == "approved"
+    assert review["validation_source"] == "financepy_benchmark"
+    assert review["recommended_module_path"] == "trellis.instruments._agent.barrieroption"
+    assert all(check["passed"] for check in review["checks"] if check["blocking"])
+
+
+def test_review_promotion_candidate_rejects_benchmark_hash_mismatch(monkeypatch, tmp_path):
+    from trellis.agent.knowledge.promotion import (
+        record_benchmark_promotion_candidate,
+        review_promotion_candidate,
+    )
+
+    knowledge_root = tmp_path / "trellis" / "agent" / "knowledge"
+    _patch_promotion_paths(monkeypatch, knowledge_root)
+    record = _write_benchmark_record(knowledge_root)
+    candidate_path = Path(record_benchmark_promotion_candidate(benchmark_record=record))
+    candidate = yaml.safe_load(candidate_path.read_text())
+    candidate["code_hash"] = "badbadbadbad"
+    candidate_path.write_text(yaml.safe_dump(candidate, sort_keys=False))
+
+    review = review_promotion_candidate(candidate_path)
+
+    assert review["status"] == "rejected"
+    failed = {check["name"] for check in review["checks"] if not check["passed"] and check["blocking"]}
+    assert "benchmark_hash_matches_candidate" in failed
+
+
+def test_review_promotion_candidate_rejects_empty_benchmark_record_path(monkeypatch, tmp_path):
+    from trellis.agent.knowledge.promotion import (
+        record_benchmark_promotion_candidate,
+        review_promotion_candidate,
+    )
+
+    knowledge_root = tmp_path / "trellis" / "agent" / "knowledge"
+    _patch_promotion_paths(monkeypatch, knowledge_root)
+    record = _write_benchmark_record(knowledge_root)
+    candidate_path = Path(record_benchmark_promotion_candidate(benchmark_record=record))
+    candidate = yaml.safe_load(candidate_path.read_text())
+    candidate["benchmark_provenance"]["benchmark_record_path"] = "   "
+    candidate_path.write_text(yaml.safe_dump(candidate, sort_keys=False))
+
+    review = review_promotion_candidate(candidate_path)
+
+    assert review["status"] == "rejected"
+    failed = {
+        check["name"]
+        for check in review["checks"]
+        if not check["passed"] and check["blocking"]
+    }
+    assert "benchmark_record_exists" in failed
+
+
+def test_adopt_promotion_candidate_writes_financepy_benchmark_candidate_to_admission_target(
+    monkeypatch,
+    tmp_path,
+):
+    from trellis.agent.knowledge.promotion import (
+        adopt_promotion_candidate,
+        record_benchmark_promotion_candidate,
+        review_promotion_candidate,
+    )
+
+    knowledge_root = tmp_path / "trellis" / "agent" / "knowledge"
+    _patch_promotion_paths(monkeypatch, knowledge_root)
+    record = _write_benchmark_record(knowledge_root)
+    candidate_path = record_benchmark_promotion_candidate(benchmark_record=record)
+    review = review_promotion_candidate(candidate_path)
+    target_path = Path(review["recommended_file_path"])
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text("# old admitted adapter\n")
+
+    adoption = adopt_promotion_candidate(review["review_path"])
+
+    assert adoption["status"] == "adopted"
+    assert target_path.read_text() == (yaml.safe_load(Path(candidate_path).read_text())["code"]).rstrip() + "\n"
 
 
 def test_list_promotion_candidate_paths_returns_latest_first(monkeypatch, tmp_path):

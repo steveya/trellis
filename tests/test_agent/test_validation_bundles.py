@@ -93,6 +93,21 @@ def test_select_validation_bundle_skips_generic_vol_checks_for_explicit_swaption
     assert "check_vol_monotonicity" not in bundle.checks
 
 
+def test_select_validation_bundle_skips_vol_monotonicity_for_barrier_option():
+    from trellis.agent.validation_bundles import select_validation_bundle
+
+    bundle = select_validation_bundle(
+        instrument_type="barrier_option",
+        method="analytical",
+        product_ir=SimpleNamespace(instrument="barrier_option", payoff_traits=("barrier",)),
+    )
+
+    assert "check_non_negativity" in bundle.checks
+    assert "check_price_sanity" in bundle.checks
+    assert "check_vol_sensitivity" in bundle.checks
+    assert "check_vol_monotonicity" not in bundle.checks
+
+
 def test_execute_validation_bundle_respects_validation_level(monkeypatch):
     from trellis.agent.validation_bundles import ValidationBundle, execute_validation_bundle
 
@@ -165,6 +180,8 @@ def test_select_validation_bundle_for_cds_includes_credit_family_checks_first():
         "check_cds_spread_quote_normalization",
         "check_cds_credit_curve_sensitivity",
     )
+    assert "check_non_negativity" not in bundle.checks
+    assert "check_price_sanity" in bundle.checks
     assert "product_family" in bundle.categories
 
 
@@ -371,10 +388,6 @@ def test_execute_validation_bundle_runs_cds_checks_before_universal(monkeypatch)
         lambda *args, **kwargs: calls.append("check_cds_credit_curve_sensitivity") or [],
     )
     monkeypatch.setattr(
-        "trellis.agent.invariants.check_non_negativity",
-        lambda *args, **kwargs: calls.append("check_non_negativity") or [],
-    )
-    monkeypatch.setattr(
         "trellis.agent.invariants.check_price_sanity",
         lambda *args, **kwargs: calls.append("check_price_sanity") or [],
     )
@@ -386,7 +399,6 @@ def test_execute_validation_bundle_runs_cds_checks_before_universal(monkeypatch)
         checks=(
             "check_cds_spread_quote_normalization",
             "check_cds_credit_curve_sensitivity",
-            "check_non_negativity",
             "check_price_sanity",
         ),
         categories={
@@ -394,7 +406,7 @@ def test_execute_validation_bundle_runs_cds_checks_before_universal(monkeypatch)
                 "check_cds_spread_quote_normalization",
                 "check_cds_credit_curve_sensitivity",
             ),
-            "universal": ("check_non_negativity", "check_price_sanity"),
+            "universal": ("check_price_sanity",),
         },
     )
 
@@ -411,7 +423,6 @@ def test_execute_validation_bundle_runs_cds_checks_before_universal(monkeypatch)
     assert calls == [
         "check_cds_spread_quote_normalization",
         "check_cds_credit_curve_sensitivity",
-        "check_non_negativity",
         "check_price_sanity",
     ]
 

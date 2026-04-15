@@ -46,6 +46,66 @@ bindings:
         symbol: get_numpy
         role: array_backend
 
+  - route_id: equity_barrier_analytical
+    engine_family: analytical
+    route_family: barrier_option
+    primitives:
+      - module: trellis.models.analytical.barrier
+        symbol: barrier_option_price
+        role: route_helper
+
+  - route_id: equity_digital_analytical
+    engine_family: analytical
+    route_family: digital_option
+    primitives:
+      - module: trellis.models.analytical.equity_exotics
+        symbol: price_equity_digital_option_analytical
+        role: route_helper
+
+  - route_id: equity_lookback_analytical
+    engine_family: analytical
+    route_family: lookback_option
+    primitives:
+      - module: trellis.models.analytical.equity_exotics
+        symbol: price_equity_fixed_lookback_option_analytical
+        role: route_helper
+
+  - route_id: equity_chooser_analytical
+    engine_family: analytical
+    route_family: chooser_option
+    primitives:
+      - module: trellis.models.analytical.equity_exotics
+        symbol: price_equity_chooser_option_analytical
+        role: route_helper
+
+  - route_id: equity_compound_analytical
+    engine_family: analytical
+    route_family: compound_option
+    primitives:
+      - module: trellis.models.analytical.equity_exotics
+        symbol: price_equity_compound_option_analytical
+        role: route_helper
+
+  - route_id: equity_cliquet_analytical
+    engine_family: analytical
+    route_family: cliquet_option
+    primitives:
+      - module: trellis.models.analytical.equity_exotics
+        symbol: price_equity_cliquet_option_analytical
+        role: route_helper
+
+  - route_id: equity_variance_swap_analytical
+    engine_family: analytical
+    route_family: variance_swap
+    primitives:
+      - module: trellis.models.analytical.equity_exotics
+        symbol: price_equity_variance_swap_analytical
+        role: route_helper
+      - module: trellis.models.analytical.equity_exotics
+        symbol: equity_variance_swap_outputs_analytical
+        role: pricing_kernel
+        required: false
+
   - route_id: nth_to_default_analytical
     engine_family: analytical
     route_family: nth_to_default

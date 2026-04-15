@@ -8,6 +8,7 @@ import pytest
 from trellis.agent.financepy_benchmark import (
     build_financepy_benchmark_report,
     extract_trellis_benchmark_outputs,
+    financepy_benchmark_execution_policy,
     load_financepy_benchmark_tasks,
     persist_financepy_benchmark_record,
     select_financepy_benchmark_tasks,
@@ -195,8 +196,35 @@ def test_extract_trellis_benchmark_outputs_maps_reference_target_price_from_comp
     assert outputs["black_scholes"] == 10.45
 
 
+def test_financepy_benchmark_execution_policy_defaults_pilot_subset_to_fresh_generated():
+    assert financepy_benchmark_execution_policy({"id": "F001"}) == "fresh_generated"
+    assert financepy_benchmark_execution_policy({"id": "F009"}) == "fresh_generated"
+
+
+def test_financepy_benchmark_execution_policy_defaults_non_pilot_tasks_to_cached_existing():
+    assert financepy_benchmark_execution_policy({"id": "F010"}) == "cached_existing"
+
+
+def test_financepy_benchmark_execution_policy_honors_explicit_override():
+    assert (
+        financepy_benchmark_execution_policy(
+            {"id": "F001"},
+            requested_policy="cached_existing",
+        )
+        == "cached_existing"
+    )
+    assert (
+        financepy_benchmark_execution_policy(
+            {"id": "F010"},
+            requested_policy="fresh_generated",
+        )
+        == "fresh_generated"
+    )
+
+
 def test_financepy_benchmark_cli_defaults_to_non_mutating_cold_runs():
     from scripts import run_financepy_benchmark as runner
 
     assert runner._parse_args([]).force_rebuild is False
+    assert runner._parse_args([]).execution_policy == "auto"
     assert runner._parse_args(["--force-rebuild"]).force_rebuild is True

@@ -17,6 +17,7 @@ from trellis.agent.codegen_guardrails import (
 )
 from trellis.agent.platform_requests import compile_build_request
 from trellis.agent.quant import PricingPlan
+from trellis.agent.knowledge.schema import ProductIR
 
 
 VALID_SOURCE = """\
@@ -340,6 +341,77 @@ def test_generation_route_card_for_fx_exact_helper_stays_helper_only():
     assert "map_fx_spot_and_curves_to_garman_kohlhagen_inputs" not in text
 
 
+def test_requested_method_augmentation_adds_route_family_hints_for_stale_decompositions():
+    from trellis.agent.codegen_guardrails import _augment_product_ir_for_requested_method
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    product_ir = decompose_to_ir(
+        "European equity call option",
+        instrument_type="european_option",
+    )
+    assert "pde_solver" in product_ir.route_families
+    assert "analytical" not in product_ir.route_families
+
+    augmented = _augment_product_ir_for_requested_method(
+        product_ir,
+        preferred_method="analytical",
+    )
+
+    assert augmented is not None
+    assert "analytical" in augmented.route_families
+    assert "analytical" in augmented.candidate_engine_families
+    assert "pde_solver" in augmented.route_families
+
+
+def test_requested_method_augmentation_does_not_invent_route_family_when_ir_has_none():
+    from trellis.agent.codegen_guardrails import _augment_product_ir_for_requested_method
+    from trellis.agent.knowledge.schema import ProductIR
+
+    product_ir = ProductIR(
+        instrument="barrier_option",
+        payoff_family="barrier_option",
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+
+    augmented = _augment_product_ir_for_requested_method(
+        product_ir,
+        preferred_method="analytical",
+    )
+
+    assert augmented is not None
+    assert augmented.route_families == ()
+    assert "analytical" in augmented.candidate_engine_families
+
+
+def test_requested_method_augmentation_adds_exercise_family_for_non_european_mc_routes():
+    from trellis.agent.codegen_guardrails import _augment_product_ir_for_requested_method
+    from trellis.agent.knowledge.schema import ProductIR
+
+    product_ir = ProductIR(
+        instrument="barrier_option",
+        payoff_family="composite_option",
+        payoff_traits=("american", "asian", "barrier", "early_exercise"),
+        exercise_style="american",
+        state_dependence="path_dependent",
+        model_family="stochastic_volatility",
+        candidate_engine_families=("monte_carlo",),
+        route_families=("barrier_option",),
+        supported=False,
+    )
+
+    augmented = _augment_product_ir_for_requested_method(
+        product_ir,
+        preferred_method="monte_carlo",
+    )
+
+    assert augmented is not None
+    assert "exercise" in augmented.candidate_engine_families
+    assert "exercise" in augmented.route_families
+    assert "barrier_option" in augmented.route_families
+
+
 def test_generation_route_card_for_swaption_analytical_stays_helper_only():
     compiled = compile_build_request(
         "European swaption on fixed-for-float swap",
@@ -620,6 +692,39 @@ def test_barrier_option_route_card_mentions_grid_operator_and_rannacher():
     assert "rannacher_timesteps" in card
 
 
+def test_barrier_option_analytical_route_uses_exact_helper_binding():
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.analytical.barrier"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="barrier_option",
+        reasoning="test",
+    )
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="barrier_option",
+        inspected_modules=("trellis.models.analytical.barrier",),
+        product_ir=ProductIR(
+            instrument="barrier_option",
+            payoff_family="barrier_option",
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    card = render_generation_route_card(plan)
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "equity_barrier_analytical"
+    primitive_refs = {
+        f"{primitive.module}.{primitive.symbol}" for primitive in plan.primitive_plan.primitives
+    }
+    assert "trellis.models.analytical.barrier.barrier_option_price" in primitive_refs
+    assert "instantiating `ResolvedBarrierInputs` in generated adapters" in card
+    assert "barrier_option_price" in card
+
+
 def test_cds_monte_carlo_route_uses_single_name_credit_default_swap_assembly():
     from trellis.agent.knowledge.decompose import decompose_to_ir
 
@@ -693,6 +798,41 @@ def test_cds_analytical_route_card_surfaces_helper_signature_keywords():
     assert "survival_probability" not in card
     assert "Required adapters:" not in card
     assert "Do not reinterpret a single-name CDS" not in card
+
+
+def test_chooser_option_analytical_route_uses_exact_helper_binding():
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.analytical.equity_exotics"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="chooser_option",
+        reasoning="test",
+    )
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="chooser_option",
+        inspected_modules=("trellis.models.analytical.equity_exotics",),
+        product_ir=ProductIR(
+            instrument="chooser_option",
+            payoff_family="chooser_option",
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    card = render_generation_route_card(plan)
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "equity_chooser_analytical"
+    primitive_refs = {
+        f"{primitive.module}.{primitive.symbol}" for primitive in plan.primitive_plan.primitives
+    }
+    assert (
+        "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical"
+        in primitive_refs
+    )
+    assert "price_equity_chooser_option_analytical" in card
 
 
 def test_nth_to_default_monte_carlo_route_uses_copula_assembly():

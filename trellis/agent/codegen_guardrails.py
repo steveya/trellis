@@ -318,9 +318,13 @@ def build_generation_plan(
     approved.update(inspected_modules)
     normalized_instrument = (instrument_type or "").strip().lower().replace(" ", "_")
     approved.update(FAMILY_SUPPORT_MODULES.get(normalized_instrument, ()))
+    route_selection_ir = _augment_product_ir_for_requested_method(
+        product_ir,
+        preferred_method=method,
+    )
     primitive_plan = build_primitive_plan(
         pricing_plan=pricing_plan,
-        product_ir=product_ir,
+        product_ir=route_selection_ir,
     )
     symbol_map = get_symbol_map()
     package_map = get_package_map()
@@ -367,7 +371,7 @@ def build_generation_plan(
         preferred_method=method,
         required_market_data=tuple(sorted(getattr(pricing_plan, "required_market_data", ()) or ())),
         primitive_plan=primitive_plan,
-        product_ir=product_ir,
+        product_ir=route_selection_ir,
         instrument_type=instrument_type,
     )
     lane_plan_kind = str(getattr(lane_plan, "plan_kind", "") or "")
@@ -1494,6 +1498,11 @@ def rank_primitive_routes(
     if pricing_plan is None:
         return ()
 
+    product_ir = _augment_product_ir_for_requested_method(
+        product_ir,
+        preferred_method=getattr(pricing_plan, "method", None),
+    )
+
     from trellis.agent.route_registry import (
         load_route_registry,
         match_candidate_routes,
@@ -1591,6 +1600,85 @@ def rank_primitive_routes(
     return tuple(ranked)
 
 
+def _augment_product_ir_for_requested_method(
+    product_ir: ProductIR | None,
+    *,
+    preferred_method: str | None,
+) -> ProductIR | None:
+    """Augment route-selection IR with explicit method-family intent.
+
+    Static decompositions often predate newer promoted routes, so the raw IR can
+    understate the engine families implied by an explicit request such as
+    ``preferred_method="fft_pricing"``. Route matching should honor that
+    request-level method intent without mutating the base decomposition.
+    """
+    if product_ir is None:
+        return None
+    method = normalize_method(preferred_method) if preferred_method else ""
+    method_hints = {
+        "analytical": {
+            "engine_families": ("analytical",),
+            "route_families": ("analytical",),
+        },
+        "rate_tree": {
+            "engine_families": ("lattice",),
+            "route_families": ("rate_lattice",),
+        },
+        "monte_carlo": {
+            "engine_families": ("monte_carlo",),
+            "route_families": ("monte_carlo",),
+        },
+        "qmc": {
+            "engine_families": ("qmc",),
+            "route_families": ("qmc",),
+        },
+        "pde_solver": {
+            "engine_families": ("pde",),
+            "route_families": ("pde_solver",),
+        },
+        "fft_pricing": {
+            "engine_families": ("transforms",),
+            "route_families": ("fft_pricing",),
+        },
+        "copula": {
+            "engine_families": ("copula",),
+            "route_families": ("copula",),
+        },
+        "waterfall": {
+            "engine_families": ("cashflow",),
+            "route_families": ("waterfall",),
+        },
+    }.get(method)
+    if not method_hints:
+        return product_ir
+
+    candidate_engine_families = list(getattr(product_ir, "candidate_engine_families", ()) or ())
+    route_families = list(getattr(product_ir, "route_families", ()) or ())
+    exercise_style = str(getattr(product_ir, "exercise_style", "") or "").strip().lower()
+    if method in {"rate_tree", "monte_carlo", "qmc"} and exercise_style not in {"", "none", "european"}:
+        method_hints = {
+            "engine_families": tuple(dict.fromkeys((*method_hints["engine_families"], "exercise"))),
+            "route_families": ("exercise",),
+        }
+    changed = False
+    for family in method_hints["engine_families"]:
+        if family not in candidate_engine_families:
+            candidate_engine_families.append(family)
+            changed = True
+    if route_families:
+        for family in method_hints["route_families"]:
+            if family not in route_families:
+                route_families.append(family)
+                changed = True
+    if not changed:
+        return product_ir
+    return replace(
+        product_ir,
+        candidate_engine_families=tuple(candidate_engine_families),
+        route_families=tuple(route_families),
+    )
+
+
 
 
 def _verify_primitives(primitives: list[PrimitiveRef]) -> list[str]:
@@ -1643,12 +1731,29 @@ def _route_score(
             score += 0.75
         elif "low_discrepancy_sampler" in resolved_roles:
             score += 0.5
+        model_support_roles = {
+            "credit_copula": {"default_time_sampler", "loss_distribution"},
+        }.get(str(getattr(product_ir, "model_family", "") or "").strip(), set())
+        if resolved_roles.intersection(model_support_roles):
+            score += 1.0
 
         capability = evaluate_route_capability_match(spec, product_ir)
         if capability.ok:
             score += 1.0 + 0.25 * len(capability.matched_predicates)
         else:
             score -= 2.5 + 0.5 * len(capability.failures)
+
+        match_instruments = set(getattr(spec, "match_instruments", ()) or ())
+        if match_instruments and product_ir.instrument in match_instruments:
+            score += 1.25
+
+        match_payoff_family = set(getattr(spec, "match_payoff_family", ()) or ())
+        if match_payoff_family and product_ir.payoff_family in match_payoff_family:
+            score += 1.0
+
+        match_exercise = set(getattr(spec, "match_exercise", ()) or ())
+        if match_exercise and product_ir.exercise_style in match_exercise:
+            score += 0.5
 
         # --- YAML-driven hints ---
 

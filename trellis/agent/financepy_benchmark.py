@@ -14,6 +14,9 @@ from trellis.agent.task_manifests import load_task_manifest
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FINANCEPY_BENCHMARK_ROOT = ROOT / "task_runs" / "financepy_benchmarks"
+FRESH_GENERATED_FINANCEPY_PILOT_TASK_IDS = frozenset(
+    {"F001", "F002", "F003", "F007", "F009", "F012"}
+)
 
 
 @dataclass(frozen=True)
@@ -21,6 +24,23 @@ class FinancePyBenchmarkArtifacts:
     report: dict[str, Any]
     json_path: Path
     text_path: Path
+
+
+def financepy_benchmark_execution_policy(
+    task: Mapping[str, Any],
+    *,
+    requested_policy: str = "auto",
+) -> str:
+    """Resolve the benchmark execution policy for one task."""
+    policy = str(requested_policy or "auto").strip().lower()
+    if policy not in {"auto", "cached_existing", "fresh_generated"}:
+        raise ValueError(f"Unsupported FinancePy execution policy: {requested_policy}")
+    if policy != "auto":
+        return policy
+    task_id = str(task.get("id") or "").strip()
+    if task_id in FRESH_GENERATED_FINANCEPY_PILOT_TASK_IDS:
+        return "fresh_generated"
+    return "cached_existing"
 
 
 def load_financepy_benchmark_tasks(*, root: Path = ROOT) -> list[dict[str, Any]]:

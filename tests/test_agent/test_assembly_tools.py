@@ -76,7 +76,7 @@ def test_select_invariant_pack_for_cds_prioritizes_credit_specific_checks():
         "check_cds_spread_quote_normalization",
         "check_cds_credit_curve_sensitivity",
     )
-    assert "check_non_negativity" in pack.checks
+    assert "check_non_negativity" not in pack.checks
     assert "check_price_sanity" in pack.checks
 
 
@@ -175,6 +175,21 @@ def test_select_invariant_pack_skips_vol_checks_for_credit_loss_distribution():
     assert "check_non_negativity" in pack.checks
     assert "check_price_sanity" in pack.checks
     assert "check_vol_sensitivity" not in pack.checks
+    assert "check_vol_monotonicity" not in pack.checks
+
+
+def test_select_invariant_pack_keeps_vol_sensitivity_but_skips_monotonicity_for_barrier():
+    from trellis.agent.assembly_tools import select_invariant_pack
+
+    pack = select_invariant_pack(
+        instrument_type="barrier_option",
+        method="analytical",
+        product_ir=SimpleNamespace(payoff_traits=("barrier",)),
+    )
+
+    assert "check_non_negativity" in pack.checks
+    assert "check_price_sanity" in pack.checks
+    assert "check_vol_sensitivity" in pack.checks
     assert "check_vol_monotonicity" not in pack.checks
 
 

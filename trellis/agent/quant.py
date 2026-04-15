@@ -313,6 +313,12 @@ def select_pricing_method_for_product_ir(
     )
     if preferred_method:
         method = normalize_method(preferred_method)
+    elif _prefer_transform_route_for_requested_sensitivities(
+        product_ir,
+        candidate_methods=candidate_methods,
+        requested_measures=requested,
+    ):
+        method = "fft_pricing"
     else:
         method = _choose_method_from_candidates(
             candidate_methods,
@@ -407,6 +413,42 @@ def _choose_method_from_candidates(
         return ranked[0]
     ranked = sorted(candidate_methods, key=_method_priority)
     return ranked[0] if ranked else "analytical"
+
+
+def _prefer_transform_route_for_requested_sensitivities(
+    product_ir,
+    *,
+    candidate_methods: tuple[str, ...] | list[str],
+    requested_measures: tuple[str, ...] | list[str] | None = None,
+) -> bool:
+    """Prefer semi-analytical transform routes for European stochastic-vol Greeks.
+
+    This keeps Heston-like European sensitivity requests on the cheaper
+    characteristic-function path when both transform and PDE routes are
+    available and otherwise equally capable.
+    """
+    candidates = {normalize_method(method) for method in candidate_methods if method}
+    if "fft_pricing" not in candidates or "pde_solver" not in candidates:
+        return False
+    requested = set(normalize_requested_measures(requested_measures))
+    if not requested.intersection({"vega", "vanna", "volga", "vomma"}):
+        return False
+
+    instrument = str(getattr(product_ir, "instrument", "") or "").strip().lower()
+    exercise_style = str(getattr(product_ir, "exercise_style", "") or "").strip().lower()
+    payoff_traits = {
+        str(trait).strip().lower()
+        for trait in (getattr(product_ir, "payoff_traits", ()) or ())
+        if str(trait).strip()
+    }
+    state_dependence = str(getattr(product_ir, "state_dependence", "") or "").strip().lower()
+
+    stochastic_vol_context = instrument == "heston_option" or (
+        {"stochastic_vol", "heston"} & payoff_traits
+    )
+    european_context = not exercise_style or exercise_style == "european"
+    path_simple_context = state_dependence in {"", "terminal", "terminal_markov", "state_only"}
+    return stochastic_vol_context and european_context and path_simple_context
 
 
 def known_methods() -> tuple[str, ...]:

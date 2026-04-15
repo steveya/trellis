@@ -60,6 +60,27 @@ _CREDIT_INSTRUMENTS = {
     "cds",
 }
 
+_SIGNED_VALUE_INSTRUMENTS = {
+    "cds",
+    "credit_default_swap",
+    "forward",
+    "forward_contract",
+    "fx_forward",
+    "equity_forward",
+    "interest_rate_swap",
+    "swap",
+    "total_return_swap",
+    "variance_swap",
+}
+
+_VOL_MONOTONICITY_EXCLUDED_INSTRUMENTS = {
+    "barrier_option",
+}
+
+_VOL_MONOTONICITY_EXCLUDED_TRAITS = {
+    "barrier",
+}
+
 
 @dataclass(frozen=True)
 class PrimitiveLookupResult:
@@ -319,7 +340,9 @@ def select_invariant_pack(
             ]
         )
 
-    checks.extend(["check_non_negativity", "check_price_sanity"])
+    if normalized_instrument not in _SIGNED_VALUE_INSTRUMENTS:
+        checks.append("check_non_negativity")
+    checks.append("check_price_sanity")
 
     analytical_swaption_helper_regime = (
         normalized_method == "analytical" and normalized_instrument == "swaption"
@@ -334,7 +357,12 @@ def select_invariant_pack(
             or {"callable", "puttable", "bermudan", "american"} & payoff_traits
         )
     ):
-        checks.extend(["check_vol_sensitivity", "check_vol_monotonicity"])
+        checks.append("check_vol_sensitivity")
+        if (
+            normalized_instrument not in _VOL_MONOTONICITY_EXCLUDED_INSTRUMENTS
+            and not (payoff_traits & _VOL_MONOTONICITY_EXCLUDED_TRAITS)
+        ):
+            checks.append("check_vol_monotonicity")
 
     if normalized_method == "analytical" and normalized_instrument in {"european_option", "cap", "floor"}:
         checks.append("check_zero_vol_intrinsic")

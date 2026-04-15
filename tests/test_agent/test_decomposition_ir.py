@@ -57,6 +57,23 @@ class TestProductIR:
         assert "monte_carlo" in ir.candidate_engine_families
         assert ir.supported is True
 
+    def test_ir_for_barrier_option_includes_promoted_analytical_support(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "European down-and-out call barrier option on SPX with strike 100, barrier 90, expiry 2025-11-15",
+            instrument_type="barrier_option",
+        )
+
+        assert ir.instrument == "barrier_option"
+        assert ir.payoff_family == "barrier_option"
+        assert ir.exercise_style == "european"
+        assert ir.model_family == "equity_diffusion"
+        assert set(ir.candidate_engine_families) >= {"analytical", "monte_carlo", "pde"}
+        assert "barrier_option" in ir.route_families
+        assert "pde_solver" in ir.route_families
+        assert ir.supported is True
+
     def test_ir_for_callable_bond(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir
 
