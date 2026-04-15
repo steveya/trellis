@@ -1751,11 +1751,30 @@ def promote_benchmark_candidate(
 
     if not dry_run:
         admission_target_file_path.parent.mkdir(parents=True, exist_ok=True)
-        admission_target_file_path.write_text(source_text)
+        # Write the on-disk fresh-build artifact bytes directly when we have
+        # them -- those are exactly the bytes the benchmark hashed and ran,
+        # so a tampered candidate can't sneak divergent source past
+        # admission by keeping `code_hash` aligned with the on-disk file
+        # while mutating the YAML-embedded `code`.  When the artifact has
+        # been cleaned up after the run we fall back to writing the
+        # embedded source bytes -- and only after one more hash equality
+        # check so a divergent embedded source still fails closed.
+        # (PR #590 round-6 Copilot review.)
+        if on_disk_hash:
+            admitted_bytes = record_artifact_file_path.read_bytes()
+        else:
+            admitted_bytes = source_text.encode("utf-8")
+            admitted_hash = hashlib.sha256(admitted_bytes).hexdigest()
+            if not _hashes_equivalent(candidate_hash, admitted_hash):
+                raise PromotionAdmissionError(
+                    "QUA-867: refusing to admit divergent embedded source "
+                    f"(recorded={candidate_hash!r}, "
+                    f"would_admit={admitted_hash[:12]!r})"
+                )
+        admission_target_file_path.write_bytes(admitted_bytes)
         # Match the runner's `_generated_artifact_from_result` scheme
         # (`sha256(read_bytes())`) so the admission log's `code_hash` is
-        # directly comparable to the benchmark record's hash without the
-        # `.strip()` normalization mismatch.  (PR #590 Copilot review.)
+        # directly comparable to the benchmark record's hash.
         admission_payload["code_hash"] = hashlib.sha256(
             admission_target_file_path.read_bytes()
         ).hexdigest()

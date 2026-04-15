@@ -663,3 +663,65 @@ def test_promote_agent_adapter_cli_rejects_parent_traversal_glob(
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "error"
     assert ".." in payload["error"]
+
+
+def test_promote_benchmark_candidate_writes_on_disk_bytes_not_embedded_code(
+    tmp_path, monkeypatch
+):
+    """The admitted file must contain the on-disk artifact bytes, not the
+    YAML-embedded `code`.  A tampered candidate that keeps `code_hash`
+    aligned with the on-disk file but mutates `code` must not promote
+    divergent source.  (PR #590 round-6 Copilot review.)"""
+    from trellis.agent.knowledge.promotion import promote_benchmark_candidate
+
+    candidate_path, record = _prepare_record_and_candidate(
+        tmp_path, monkeypatch, task_id="F009"
+    )
+    artifact_path = Path(record["generated_artifact"]["file_path"])
+    on_disk_bytes = artifact_path.read_bytes()
+
+    # Mutate the embedded `code` field but leave the on-disk artifact
+    # (and therefore the recorded `code_hash`) untouched.
+    candidate = yaml.safe_load(candidate_path.read_text())
+    candidate["code"] = (
+        candidate["code"] + "\n# tampered embedded source -- must not be admitted\n"
+    )
+    candidate_path.write_text(yaml.safe_dump(candidate, sort_keys=False))
+
+    result = promote_benchmark_candidate(
+        candidate_path, repo_root=tmp_path, dry_run=False
+    )
+    assert result["status"] == "promoted"
+    promoted_path = Path(result["admission_target_file_path"])
+    assert promoted_path.read_bytes() == on_disk_bytes, (
+        "admission must write the on-disk artifact bytes, not the (tampered) "
+        "embedded source from the candidate YAML"
+    )
+
+
+def test_promote_benchmark_candidate_fallback_rejects_divergent_embedded_source(
+    tmp_path, monkeypatch
+):
+    """When the on-disk artifact is gone and the admission falls back to
+    the embedded source, a divergent embedded source (whose hash does not
+    match the recorded hash) must still fail admission closed."""
+    from trellis.agent.knowledge.promotion import (
+        PromotionAdmissionError,
+        promote_benchmark_candidate,
+    )
+
+    candidate_path, record = _prepare_record_and_candidate(
+        tmp_path, monkeypatch, task_id="F009"
+    )
+    # Delete the on-disk artifact so admission has no choice but the
+    # embedded source.
+    Path(record["generated_artifact"]["file_path"]).unlink()
+    candidate = yaml.safe_load(candidate_path.read_text())
+    candidate["code"] = candidate["code"] + "\n# divergent\n"
+    candidate_path.write_text(yaml.safe_dump(candidate, sort_keys=False))
+
+    with pytest.raises(PromotionAdmissionError) as exc_info:
+        promote_benchmark_candidate(
+            candidate_path, repo_root=tmp_path, dry_run=False
+        )
+    assert "divergent" in str(exc_info.value).lower() or "would_admit" in str(exc_info.value).lower() or "embedded" in str(exc_info.value).lower()
