@@ -22,15 +22,11 @@ from trellis.agent.benchmark_history import (
     _build_task_history_summary,
     _history_sort_key,
 )
-from trellis.agent.financepy_benchmark import (
-    DEFAULT_FINANCEPY_BENCHMARK_ROOT,
-    FRESH_GENERATED_FINANCEPY_PILOT_TASK_IDS,
-)
+from trellis.agent.benchmark_pilots import get_pilot_task_ids
+from trellis.agent.financepy_benchmark import DEFAULT_FINANCEPY_BENCHMARK_ROOT
 
 
-PILOT_SCORECARD_TASK_IDS: tuple[str, ...] = tuple(
-    sorted(FRESH_GENERATED_FINANCEPY_PILOT_TASK_IDS)
-)
+PILOT_SCORECARD_TASK_IDS: tuple[str, ...] = get_pilot_task_ids("financepy")
 
 
 @dataclass(frozen=True)

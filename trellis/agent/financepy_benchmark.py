@@ -9,14 +9,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from trellis.agent.benchmark_pilots import get_pilot, get_pilot_task_ids
 from trellis.agent.task_manifests import load_task_manifest
 
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_FINANCEPY_BENCHMARK_ROOT = ROOT / "task_runs" / "financepy_benchmarks"
-FRESH_GENERATED_FINANCEPY_PILOT_TASK_IDS = frozenset(
-    {"F001", "F002", "F003", "F007", "F009", "F012"}
-)
+FRESH_GENERATED_FINANCEPY_PILOT_TASK_IDS = frozenset(get_pilot_task_ids("financepy"))
 
 
 @dataclass(frozen=True)
@@ -38,8 +37,9 @@ def financepy_benchmark_execution_policy(
     if policy != "auto":
         return policy
     task_id = str(task.get("id") or "").strip()
-    if task_id in FRESH_GENERATED_FINANCEPY_PILOT_TASK_IDS:
-        return "fresh_generated"
+    pilot = get_pilot("financepy")
+    if task_id in pilot.task_ids:
+        return pilot.execution_policy
     return "cached_existing"
 
 
