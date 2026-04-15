@@ -74,7 +74,7 @@ def build_benchmark_history_scorecard(
     latest_pass_count = 0
     for task_id in sorted(grouped):
         runs = sorted(grouped[task_id], key=_history_sort_key)
-        summary = _build_task_history_summary(task_id, runs, benchmark_kind=benchmark_kind)
+        summary = build_task_history_summary(task_id, runs, benchmark_kind=benchmark_kind)
         if summary["transition"] == "improved":
             improved_count += 1
         elif summary["transition"] == "regressed":
@@ -149,14 +149,25 @@ def save_benchmark_history_scorecard(
     return BenchmarkHistoryArtifacts(report=payload, json_path=json_path, text_path=text_path)
 
 
-def _history_sort_key(record: Mapping[str, Any]) -> tuple[str, str]:
+def history_sort_key(record: Mapping[str, Any]) -> tuple[str, str]:
+    """Stable sort key for benchmark history records.
+
+    Public so per-corpus scorecard generators (`pilot_parity_scorecard` and
+    future siblings) can sort records without reaching into a private helper
+    in this module.  (PR #590 round-3 Copilot review.)
+    """
     return (
         str(record.get("run_started_at") or record.get("run_completed_at") or ""),
         str(record.get("run_id") or ""),
     )
 
 
-def _build_task_history_summary(
+# Underscored alias preserved for callers that already imported the private
+# helper; new code should use the public name above.
+_history_sort_key = history_sort_key
+
+
+def build_task_history_summary(
     task_id: str,
     runs: Sequence[Mapping[str, Any]],
     *,
@@ -188,6 +199,11 @@ def _build_task_history_summary(
         "first": first_snapshot,
         "latest": latest_snapshot,
     }
+
+
+# Underscored alias preserved for callers that already imported the private
+# helper; new code should use the public name above.
+_build_task_history_summary = build_task_history_summary
 
 
 def _task_run_snapshot(record: Mapping[str, Any], *, benchmark_kind: str) -> dict[str, Any]:

@@ -543,3 +543,40 @@ def test_promote_benchmark_candidate_accepts_full_hex_hash_without_strip(
         candidate_path, repo_root=tmp_path, dry_run=True
     )
     assert result["status"] == "would_promote"
+
+
+def test_record_benchmark_promotion_candidate_emits_module_name_field(
+    tmp_path, monkeypatch
+):
+    """Benchmark candidates should write `module_name` (the unambiguous
+    import-name field) in addition to legacy `module_path` so consumers
+    don't have to overload `module_path`'s meaning.  (PR #590 round-3.)"""
+    candidate_path, record = _prepare_record_and_candidate(
+        tmp_path, monkeypatch, task_id="F009"
+    )
+    candidate = yaml.safe_load(candidate_path.read_text())
+    assert "module_name" in candidate
+    assert candidate["module_name"] == record["generated_artifact"]["module_name"]
+    # `module_path` retained for backward compatibility.
+    assert candidate.get("module_path") == candidate["module_name"]
+
+
+def test_promote_benchmark_candidate_prefers_module_name_over_module_path(
+    tmp_path, monkeypatch
+):
+    """Admission reads `module_name` first; missing `module_path` is fine."""
+    from trellis.agent.knowledge.promotion import promote_benchmark_candidate
+
+    candidate_path, _record = _prepare_record_and_candidate(
+        tmp_path, monkeypatch, task_id="F009"
+    )
+    candidate = yaml.safe_load(candidate_path.read_text())
+    candidate.pop("module_path", None)
+    # module_name must remain present and unambiguous.
+    assert "module_name" in candidate
+    candidate_path.write_text(yaml.safe_dump(candidate, sort_keys=False))
+
+    result = promote_benchmark_candidate(
+        candidate_path, repo_root=tmp_path, dry_run=True
+    )
+    assert result["status"] == "would_promote"

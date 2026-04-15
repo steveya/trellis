@@ -52,7 +52,7 @@ def test_non_agent_path_resolves_unchanged_whether_or_not_fresh_build():
 
 def test_agent_path_with_fresh_build_redirects_to_fresh_namespace():
     file_path, module_path, module_name = _resolve(
-        "trellis/instruments/_agent/europeanoptionanalytical.py",
+        "instruments/_agent/europeanoptionanalytical.py",
         fresh_build=True,
     )
     # Resolver puts the fresh build under either the benchmark artifact root
@@ -69,7 +69,7 @@ def test_agent_path_with_fresh_build_and_benchmark_metadata_lands_outside_packag
     land under `task_runs/financepy_benchmarks/generated/...`, entirely off
     the package tree."""
     file_path, module_path, module_name = _resolve(
-        "trellis/instruments/_agent/europeanoptionanalytical.py",
+        "instruments/_agent/europeanoptionanalytical.py",
         fresh_build=True,
         metadata={
             "task_corpus": "benchmark_financepy",
@@ -84,7 +84,7 @@ def test_agent_path_with_fresh_build_and_benchmark_metadata_lands_outside_packag
 
 def test_agent_path_without_fresh_build_keeps_writing_to_admitted_tree():
     file_path, module_path, _ = _resolve(
-        "trellis/instruments/_agent/europeanoptionanalytical.py",
+        "instruments/_agent/europeanoptionanalytical.py",
         fresh_build=False,
     )
     assert "_agent/" in module_path.replace("\\", "/")
@@ -103,7 +103,7 @@ def test_fresh_build_refuses_when_redirect_returns_agent_path(monkeypatch):
 
     with pytest.raises(FreshGeneratedBoundaryError) as exc_info:
         _resolve(
-            "trellis/instruments/_agent/europeanoptionanalytical.py",
+            "instruments/_agent/europeanoptionanalytical.py",
             fresh_build=True,
         )
     assert "_agent" in str(exc_info.value)

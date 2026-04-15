@@ -1382,6 +1382,12 @@ def record_benchmark_promotion_candidate(
         "preferred_method": str(benchmark_record.get("preferred_method") or ""),
         "reference_target": True,
         "payoff_class": str(generated_artifact.get("class_name") or ""),
+        # `module_name` is the unambiguous import-name field for benchmark
+        # candidates; `module_path` is preserved for backward compatibility
+        # with older candidate readers (it carried the same value here, but
+        # in `record_promotion_candidate` it is a filesystem-style path).
+        # (PR #590 round-3 Copilot review.)
+        "module_name": execution_module_name,
         "module_path": execution_module_name,
         "admission_target_module_name": admission_target_module_name,
         "admission_target_file_path": admission_target_file_path,
@@ -1434,7 +1440,7 @@ def promote_benchmark_candidate(
     * deterministic review (:func:`review_promotion_candidate`) is ``approved``
     * the candidate's recorded benchmark history file still exists
     * ``run_id``, ``git_sha``, ``knowledge_revision``, module name, and
-      short code hash in the history record all match the candidate
+      recorded code hash in the history record all match the candidate
     * the candidate's embedded source hashes to the recorded hash
 
     On approval the fresh-build source is written to the admission target
@@ -1540,7 +1546,11 @@ def promote_benchmark_candidate(
     record_artifact = benchmark_record.get("generated_artifact") or {}
     if not isinstance(record_artifact, Mapping):
         record_artifact = {}
-    candidate_module_name = str(data.get("module_path") or "").strip()
+    # Prefer the explicit `module_name` field; fall back to the legacy
+    # `module_path` slot for older benchmark candidates.  (PR #590 round-3.)
+    candidate_module_name = str(
+        data.get("module_name") or data.get("module_path") or ""
+    ).strip()
     record_module_name = str(record_artifact.get("module_name") or "").strip()
     if candidate_module_name != record_module_name or not candidate_module_name:
         raise PromotionAdmissionError(
@@ -1839,7 +1849,12 @@ def review_promotion_candidate(
 
     comparison_target = str(data.get("comparison_target") or "").strip()
     payoff_class = str(data.get("payoff_class") or "").strip()
-    module_path = str(data.get("module_path") or "").strip()
+    # Benchmark candidates emit `module_name` as the unambiguous import-name
+    # field; older candidates only had `module_path`.  Prefer `module_name`
+    # when present, fall back to `module_path` for compat.  (PR #590 round-3.)
+    module_path = str(
+        data.get("module_name") or data.get("module_path") or ""
+    ).strip()
     validation_source = str(data.get("validation_source") or "").strip().lower()
     code = str(data.get("code") or "")
     cross_validation = data.get("cross_validation") or {}

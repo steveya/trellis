@@ -171,3 +171,20 @@ def test_build_benchmark_history_scorecard_tracks_regression():
     assert report["tasks"][0]["transition"] == "regressed"
     assert report["tasks"][0]["elapsed_seconds_delta"] == pytest.approx(2.0)
     assert report["tasks"][0]["token_total_delta"] == 40
+
+
+def test_benchmark_history_exposes_public_helpers():
+    """The history helpers used by per-corpus scorecards are now public.
+
+    PR #590 round-3 Copilot review: `pilot_parity_scorecard` was reaching
+    into private `_history_sort_key` / `_build_task_history_summary`.
+    Both names are now public; the underscored aliases stay for callers
+    that imported the private names.
+    """
+    from trellis.agent import benchmark_history as mod
+
+    assert hasattr(mod, "history_sort_key")
+    assert hasattr(mod, "build_task_history_summary")
+    # Aliases still point at the same callables so older callers don't break.
+    assert mod._history_sort_key is mod.history_sort_key
+    assert mod._build_task_history_summary is mod.build_task_history_summary

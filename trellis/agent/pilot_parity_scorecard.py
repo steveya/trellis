@@ -90,8 +90,8 @@ def _classify_deviation_outliers(
     return round(median, 6), outlier_count
 
 from trellis.agent.benchmark_history import (
-    _build_task_history_summary,
-    _history_sort_key,
+    build_task_history_summary,
+    history_sort_key,
 )
 from trellis.agent.benchmark_pilots import get_pilot_task_ids
 from trellis.agent.financepy_benchmark import DEFAULT_FINANCEPY_BENCHMARK_ROOT
@@ -139,7 +139,7 @@ def load_pilot_benchmark_records(
         ):
             continue
         records.append(dict(payload))
-    return sorted(records, key=_history_sort_key)
+    return sorted(records, key=history_sort_key)
 
 
 def build_pilot_parity_scorecard(
@@ -168,7 +168,7 @@ def build_pilot_parity_scorecard(
     latest_pass = 0
 
     for task_id in expected:
-        runs = sorted(grouped.get(task_id) or (), key=_history_sort_key)
+        runs = sorted(grouped.get(task_id) or (), key=history_sort_key)
         if not runs:
             missing += 1
             residual_misses.append(
@@ -183,7 +183,7 @@ def build_pilot_parity_scorecard(
                 }
             )
             continue
-        summary = _build_task_history_summary(
+        summary = build_task_history_summary(
             task_id, runs, benchmark_kind="financepy"
         )
         latest_record = dict(runs[-1])
