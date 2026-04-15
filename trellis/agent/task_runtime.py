@@ -1362,7 +1362,7 @@ def run_task(
             result_data["failures"] = _aggregate_failures(result_data)
         status = "OK" if result_data.get("success") else "FAIL"
         print(
-            f"  [{status}] {elapsed:.1f}s, attempts={result_data.get('attempts', 0)}, "
+            f"  [{status}] {elapsed:.1f}s, llm_generation_attempts={result_data.get('attempts', 0)}, "
             f"confidence={result_data.get('gap_confidence', 0):.0%}"
         )
     except TaskContractError as exc:
