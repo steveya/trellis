@@ -3996,7 +3996,14 @@ def _resolve_output_target(
     fresh_build: bool,
     request_metadata: Mapping[str, object] | None,
 ) -> tuple[Path, str, str]:
-    """Resolve the output file path, module path, and import name for one build."""
+    """Resolve the output file path, module path, and import name for one build.
+
+    When ``fresh_build=True`` the resolved target must never land under
+    ``trellis/instruments/_agent/``.  The redirect branches below handle the
+    normal case; the final guard defends against a regression in the redirect
+    so a pilot run fails loudly at resolve time instead of burning LLM tokens
+    and catching the leak post-build (QUA-872, layered under QUA-866).
+    """
     normalized_module_path = str(module_path or "").replace("\\", "/").strip()
     if fresh_build and _is_agent_module_path(normalized_module_path):
         benchmark_root = _benchmark_fresh_build_root(request_metadata)
@@ -4007,15 +4014,72 @@ def _resolve_output_target(
                 normalized_module_path,
                 request_metadata=request_metadata,
             )
+            _assert_fresh_build_target_is_not_admitted(
+                output_file_path=output_file_path,
+                output_module_path=output_module_path,
+                module_name=module_name,
+                source_module_path=normalized_module_path,
+            )
             return output_file_path, output_module_path, module_name
         output_module_path = _fresh_build_module_path(normalized_module_path)
         output_file_path = TRELLIS_PACKAGE_ROOT / output_module_path
         module_name = f"trellis.{output_module_path.replace('/', '.').replace('.py', '')}"
+        _assert_fresh_build_target_is_not_admitted(
+            output_file_path=output_file_path,
+            output_module_path=output_module_path,
+            module_name=module_name,
+            source_module_path=normalized_module_path,
+        )
         return output_file_path, output_module_path, module_name
 
     output_file_path = TRELLIS_PACKAGE_ROOT / normalized_module_path
     module_name = f"trellis.{normalized_module_path.replace('/', '.').replace('.py', '')}"
     return output_file_path, normalized_module_path, module_name
+
+
+_FRESH_ISOLATION_SEGMENT = "/_fresh/"
+_FRESH_ISOLATION_DOT_PREFIX = "trellis.instruments._agent._fresh."
+
+
+def _assert_fresh_build_target_is_not_admitted(
+    *,
+    output_file_path: Path,
+    output_module_path: str,
+    module_name: str,
+    source_module_path: str,
+) -> None:
+    """Layered defense: fail closed before any LLM call if the fresh-build target leaked to `_agent`.
+
+    ``_agent/_fresh/`` and ``trellis.instruments._agent._fresh.*`` are the
+    scratch isolation namespace used by the deterministic route fallback --
+    they are *not* the admitted surface and must still be allowed here.
+    """
+    from trellis.agent.fresh_generated_boundary import FreshGeneratedBoundaryError
+
+    normalized_path = str(output_module_path or "").replace("\\", "/")
+    file_path_text = str(output_file_path).replace("\\", "/")
+    module_text = str(module_name or "")
+
+    in_isolation_namespace = (
+        _FRESH_ISOLATION_SEGMENT in f"/{normalized_path}"
+        or _FRESH_ISOLATION_SEGMENT in file_path_text
+        or module_text.startswith(_FRESH_ISOLATION_DOT_PREFIX)
+    )
+    if in_isolation_namespace:
+        return
+
+    if (
+        _is_agent_module_path(normalized_path)
+        or "/trellis/instruments/_agent/" in file_path_text
+        or module_text.startswith("trellis.instruments._agent.")
+        or module_text == "trellis.instruments._agent"
+    ):
+        raise FreshGeneratedBoundaryError(
+            "QUA-872: fresh-build resolver produced an admitted `_agent` target "
+            f"for source `{source_module_path}` "
+            f"(module_name={module_name!r}, module_path={output_module_path!r}); "
+            "refusing to dispatch the LLM request."
+        )
 
 
 def _benchmark_fresh_build_root(
