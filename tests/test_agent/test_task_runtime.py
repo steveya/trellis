@@ -3669,3 +3669,42 @@ def test_prepared_task_carries_compiled_request(monkeypatch):
     )
 
     assert prepared.compiled_request is mock_compiled
+
+
+def test_cross_validate_analytical_field_creates_two_target_harness():
+    """`cross_validate.analytical: <name>` adds a named reference target on
+    top of the construct-method target, marking the named one with
+    `is_reference=True` and exposing it as `reference_target` on the plan."""
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    f001_task = {
+        "id": "F001",
+        "construct": "analytical",
+        "cross_validate": {
+            "external": ["financepy"],
+            "analytical": "black_scholes",
+        },
+    }
+    plan = build_comparison_harness_plan(f001_task)
+    target_ids = [t.target_id for t in plan.targets]
+    assert target_ids == ["analytical", "black_scholes"]
+    assert plan.reference_target == "black_scholes"
+    assert plan.targets[0].is_reference is False
+    assert plan.targets[1].is_reference is True
+
+
+def test_cross_validate_without_analytical_field_creates_single_target_harness():
+    """Without `cross_validate.analytical`, the harness emits a single
+    construct-method target and `reference_target` is `None`."""
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    f002_task = {
+        "id": "F002",
+        "construct": "analytical",
+        "cross_validate": {
+            "external": ["financepy"],
+        },
+    }
+    plan = build_comparison_harness_plan(f002_task)
+    assert [t.target_id for t in plan.targets] == ["analytical"]
+    assert plan.reference_target is None

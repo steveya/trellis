@@ -1098,6 +1098,18 @@ def run_task(
     print(f"  instrument_type={instrument_type}")
     if construct_methods:
         print(f"  construct_methods={construct_methods}")
+    if comparison_task:
+        # Surface the multi-target harness shape so the per-task token cost
+        # is interpretable in context: a 2-target harness builds twice (e.g.
+        # one LLM-built construct-method target plus one named reference
+        # target) and the costs aggregate.  See QUA-877 for the F001 case
+        # study where this caused legitimate self-test work to look like a
+        # short-circuit asymmetry.
+        target_summary = ", ".join(
+            f"{t.target_id}{'(ref)' if t.is_reference else ''}"
+            for t in comparison_targets
+        )
+        print(f"  harness_targets={len(comparison_targets)} [{target_summary}]")
     print(f"{'=' * 60}")
 
     t0 = timer()
