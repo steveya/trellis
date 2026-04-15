@@ -1323,8 +1323,19 @@ def record_benchmark_promotion_candidate(
     source_path = Path(generated_file_path)
     if not source_path.exists():
         return None
-    source = source_path.read_text()
-    if not source.strip():
+    # Read the source as raw bytes and decode without universal-newline
+    # translation.  `Path.read_text()` would normalize `\r\n` to `\n` on
+    # Windows, breaking the byte-faithful hash equality the admission flow
+    # depends on.  (PR #590 round-5 Copilot review.)
+    try:
+        source_bytes = source_path.read_bytes()
+    except OSError:
+        return None
+    if not source_bytes.strip():
+        return None
+    try:
+        source = source_bytes.decode("utf-8")
+    except UnicodeDecodeError:
         return None
 
     timestamp = datetime.now()
@@ -1335,16 +1346,12 @@ def record_benchmark_promotion_candidate(
     # exactly, otherwise admission's hash equality check rejects valid
     # candidates.  The record uses `sha256(read_bytes()).hexdigest()` (full
     # 64-char hex, no normalization).  Prefer that hash directly when present;
-    # fall back to a byte-faithful re-hash of the file we just read.
-    # (PR #590 Copilot review.)
+    # fall back to a byte-faithful re-hash of the bytes we just read.
     record_artifact_hash = str(generated_artifact.get("code_hash") or "").strip()
     if record_artifact_hash:
         code_hash = record_artifact_hash
     else:
-        try:
-            code_hash = hashlib.sha256(source_path.read_bytes()).hexdigest()
-        except OSError:
-            code_hash = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        code_hash = hashlib.sha256(source_bytes).hexdigest()
 
     # Dedup: if a previously emitted candidate for the same task already
     # carries the same `code_hash`, the generated artifact is byte-identical
@@ -1603,17 +1610,48 @@ def promote_benchmark_candidate(
         raise PromotionAdmissionError(
             "QUA-867: candidate snapshot has no embedded source"
         )
-    # Match `record_benchmark_promotion_candidate` and the benchmark record's
-    # `generated_artifact.code_hash` scheme: hash the raw bytes (no `.strip()`,
-    # no text-vs-bytes normalization mismatch).  `_hashes_equivalent` keeps
-    # legacy 12-char prefixes acceptable for older candidates emitted under
-    # the prior scheme.  (PR #590 Copilot review.)
-    computed_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
-    if not _hashes_equivalent(candidate_hash, computed_hash):
+    # Verify the recorded `code_hash` matches the actual artifact.  We
+    # already verified `candidate_hash == record_hash` above; here we make
+    # sure the on-disk fresh-build artifact (the bytes the benchmark run
+    # actually executed) still hashes the same way -- this is the
+    # authoritative check on Windows/POSIX alike because it never goes
+    # through text-mode universal-newline translation.  When the artifact
+    # has been cleaned up we fall back to hashing the embedded source's
+    # UTF-8 bytes; the latter can diverge from the record hash on Windows
+    # if the source was loaded via `read_text()` somewhere upstream, so
+    # `_hashes_equivalent` (which accepts legacy 12-char prefixes) is the
+    # right comparator there.  (PR #590 round-5 Copilot review.)
+    record_artifact_file_path_text = str(record_artifact.get("file_path") or "").strip()
+    record_artifact_file_path = (
+        Path(record_artifact_file_path_text) if record_artifact_file_path_text else None
+    )
+    on_disk_hash = ""
+    if (
+        record_artifact_file_path is not None
+        and record_artifact_file_path.is_file()
+    ):
+        try:
+            on_disk_hash = hashlib.sha256(
+                record_artifact_file_path.read_bytes()
+            ).hexdigest()
+        except OSError:
+            on_disk_hash = ""
+        if on_disk_hash and not _hashes_equivalent(candidate_hash, on_disk_hash):
+            raise PromotionAdmissionError(
+                "QUA-867: candidate code hash does not match the on-disk "
+                f"fresh-build artifact at {record_artifact_file_path} "
+                f"(recorded={candidate_hash!r}, on_disk={on_disk_hash[:12]!r})"
+            )
+    embedded_source_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+    if not on_disk_hash and not _hashes_equivalent(candidate_hash, embedded_source_hash):
         raise PromotionAdmissionError(
             "QUA-867: candidate code hash does not match embedded source "
-            f"(recorded={candidate_hash!r}, computed={computed_hash[:12]!r})"
+            f"(recorded={candidate_hash!r}, computed={embedded_source_hash[:12]!r})"
         )
+    # Prefer the on-disk hash (byte-faithful) when available; otherwise fall
+    # back to the embedded-source hash for the admission log's `code_hash`
+    # field so audits can trace exactly what was admitted.
+    computed_hash = on_disk_hash or embedded_source_hash
 
     admission_target_module_name = str(
         data.get("admission_target_module_name")

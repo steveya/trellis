@@ -516,33 +516,60 @@ def test_promotion_candidate_code_hash_matches_benchmark_record_artifact_hash(
     )
 
 
-def test_promote_benchmark_candidate_accepts_full_hex_hash_without_strip(
+def test_promote_benchmark_candidate_admission_hashes_on_disk_artifact_bytes(
     tmp_path, monkeypatch
 ):
-    """Admission's `computed_hash` must use the same byte-faithful scheme
-    as candidate emission so trailing whitespace cannot cause a hash
-    mismatch on a genuine candidate.  (PR #590 Copilot review.)"""
+    """Admission verifies the candidate's hash against the on-disk
+    fresh-build artifact bytes, not against the embedded source string.
+
+    The benchmark record's `code_hash` is `sha256(read_bytes())`; the
+    embedded source field can be normalized by YAML round-trips and
+    text-mode reads (notably Windows newline translation), so the
+    on-disk file is the single byte-faithful source of truth.
+    (PR #590 round-5 Copilot review.)"""
     from trellis.agent.knowledge.promotion import promote_benchmark_candidate
 
     candidate_path, _record = _prepare_record_and_candidate(
         tmp_path, monkeypatch, task_id="F009"
     )
     candidate = yaml.safe_load(candidate_path.read_text())
-    # Force a code body with trailing newline (the common case): the
-    # admission flow must still treat the candidate hash as equivalent.
-    code_with_trailing_newline = candidate["code"]
-    if not code_with_trailing_newline.endswith("\n"):
-        code_with_trailing_newline += "\n"
-    candidate["code"] = code_with_trailing_newline
-    candidate["code_hash"] = hashlib.sha256(
-        code_with_trailing_newline.encode("utf-8")
-    ).hexdigest()
+    # Mutate the embedded `code` field as YAML round-trips might (extra
+    # trailing whitespace).  The on-disk artifact is unchanged, so the
+    # candidate's hash still matches the on-disk bytes and admission
+    # succeeds.
+    candidate["code"] = candidate["code"] + "\n# trailing whitespace appended\n"
     candidate_path.write_text(yaml.safe_dump(candidate, sort_keys=False))
 
     result = promote_benchmark_candidate(
         candidate_path, repo_root=tmp_path, dry_run=True
     )
     assert result["status"] == "would_promote"
+
+
+def test_promote_benchmark_candidate_rejects_when_on_disk_artifact_bytes_changed(
+    tmp_path, monkeypatch
+):
+    """If the fresh-build artifact on disk is mutated after candidate
+    emission, admission must fail closed against the new bytes even when
+    the candidate's recorded hash still matches the benchmark record."""
+    from trellis.agent.knowledge.promotion import (
+        PromotionAdmissionError,
+        promote_benchmark_candidate,
+    )
+
+    candidate_path, record = _prepare_record_and_candidate(
+        tmp_path, monkeypatch, task_id="F009"
+    )
+    artifact_path = Path(record["generated_artifact"]["file_path"])
+    artifact_path.write_text(
+        artifact_path.read_text() + "\n# tampered after admission\n"
+    )
+
+    with pytest.raises(PromotionAdmissionError) as exc_info:
+        promote_benchmark_candidate(
+            candidate_path, repo_root=tmp_path, dry_run=True
+        )
+    assert "on-disk" in str(exc_info.value).lower() or "on_disk" in str(exc_info.value).lower()
 
 
 def test_record_benchmark_promotion_candidate_emits_module_name_field(
