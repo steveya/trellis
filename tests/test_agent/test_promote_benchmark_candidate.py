@@ -84,7 +84,10 @@ def _prepare_record_and_candidate(
                 f"task_runs/financepy_benchmarks/generated/{task_id.lower()}/analytical/"
                 "barrieroption.py"
             ),
-            "code_hash": hashlib.sha256(source.strip().encode()).hexdigest(),
+            # Mirror the live runner: `_generated_artifact_from_result` hashes
+            # `read_bytes()` (no `.strip()`).  The test fixture must use the
+            # same scheme so admission's hash check sees the same bytes.
+            "code_hash": hashlib.sha256(generated_file.read_bytes()).hexdigest(),
             "is_fresh_build": True,
             "admission_target_module_name": "trellis.instruments._agent.barrieroption",
         },
@@ -130,7 +133,7 @@ def test_promote_benchmark_candidate_writes_agent_adapter_with_admission_log(
     assert payload["admission_target_module_name"] == (
         "trellis.instruments._agent.barrieroption"
     )
-    assert payload["code_hash"] == hashlib.sha256(promoted_source.strip().encode()).hexdigest()
+    assert payload["code_hash"] == hashlib.sha256(target_path.read_bytes()).hexdigest()
 
 
 def test_promote_benchmark_candidate_dry_run_leaves_filesystem_untouched(
@@ -487,3 +490,56 @@ def test_promote_benchmark_candidate_admission_timestamp_is_utc(
     assert isinstance(timestamp, str)
     # UTC ISO format ends in `+00:00` or `Z`.
     assert timestamp.endswith("+00:00") or timestamp.endswith("Z")
+
+
+def test_promotion_candidate_code_hash_matches_benchmark_record_artifact_hash(
+    tmp_path, monkeypatch
+):
+    """Candidate's `code_hash` must match the benchmark record's
+    `generated_artifact.code_hash` exactly so admission's hash check accepts
+    the genuine candidate.  The benchmark record uses
+    `sha256(read_bytes()).hexdigest()`; the candidate emitter must use the
+    same scheme (preferring the record's hash directly when present).
+    (PR #590 Copilot review.)"""
+    from trellis.agent.knowledge.promotion import record_benchmark_promotion_candidate
+
+    candidate_path, record = _prepare_record_and_candidate(
+        tmp_path, monkeypatch, task_id="F009"
+    )
+    # _prepare_record_and_candidate populates the record with a full SHA-256
+    # over the source bytes, matching what `_generated_artifact_from_result`
+    # produces in the live runner.
+    record_hash = record["generated_artifact"]["code_hash"]
+    candidate = yaml.safe_load(candidate_path.read_text())
+    assert candidate["code_hash"] == record_hash, (
+        "candidate hash diverged from benchmark record hash; admission would reject"
+    )
+
+
+def test_promote_benchmark_candidate_accepts_full_hex_hash_without_strip(
+    tmp_path, monkeypatch
+):
+    """Admission's `computed_hash` must use the same byte-faithful scheme
+    as candidate emission so trailing whitespace cannot cause a hash
+    mismatch on a genuine candidate.  (PR #590 Copilot review.)"""
+    from trellis.agent.knowledge.promotion import promote_benchmark_candidate
+
+    candidate_path, _record = _prepare_record_and_candidate(
+        tmp_path, monkeypatch, task_id="F009"
+    )
+    candidate = yaml.safe_load(candidate_path.read_text())
+    # Force a code body with trailing newline (the common case): the
+    # admission flow must still treat the candidate hash as equivalent.
+    code_with_trailing_newline = candidate["code"]
+    if not code_with_trailing_newline.endswith("\n"):
+        code_with_trailing_newline += "\n"
+    candidate["code"] = code_with_trailing_newline
+    candidate["code_hash"] = hashlib.sha256(
+        code_with_trailing_newline.encode("utf-8")
+    ).hexdigest()
+    candidate_path.write_text(yaml.safe_dump(candidate, sort_keys=False))
+
+    result = promote_benchmark_candidate(
+        candidate_path, repo_root=tmp_path, dry_run=True
+    )
+    assert result["status"] == "would_promote"

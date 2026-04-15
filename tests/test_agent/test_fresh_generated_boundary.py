@@ -185,6 +185,41 @@ def test_pilot_task_enforcement_accepts_clean_fresh_artifact(task_id):
     assert check.task_id == task_id
 
 
+def test_enforce_fresh_generated_boundary_inspects_imports_only_once(monkeypatch):
+    """`_collect_imports` must be called once per enforce call (PR #590 Copilot)."""
+    from trellis.agent import fresh_generated_boundary as mod
+
+    call_count = {"n": 0}
+    real_collect = mod._collect_imports
+
+    def counting(generated_artifact, generated_source):
+        call_count["n"] += 1
+        return real_collect(generated_artifact, generated_source)
+
+    monkeypatch.setattr(mod, "_collect_imports", counting)
+
+    # Artifact-present, no violations -> single call.
+    enforce_fresh_generated_boundary(
+        {"id": "F001"},
+        _fresh_artifact(),
+        execution_policy="fresh_generated",
+        generated_source=CLEAN_GENERATED_SOURCE,
+    )
+    assert call_count["n"] == 1
+
+    # Artifact-missing, raise_on_violation=False -> still a single call.
+    call_count["n"] = 0
+    check = enforce_fresh_generated_boundary(
+        {"id": "F002"},
+        None,
+        execution_policy="fresh_generated",
+        generated_source=CLEAN_GENERATED_SOURCE,
+        raise_on_violation=False,
+    )
+    assert call_count["n"] == 1
+    assert check.status == "violated"
+
+
 @pytest.mark.parametrize("task_id", PILOT_TASK_IDS)
 def test_pilot_task_enforcement_rejects_agent_fallback(task_id):
     artifact = _fresh_artifact(

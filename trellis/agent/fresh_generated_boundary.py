@@ -175,7 +175,12 @@ def enforce_fresh_generated_boundary(
     violations: list[str] = []
     module_name = ""
     module_path = ""
-    inspected_imports: tuple[str, ...] = ()
+    # Compute imports once -- the helper safely accepts a missing artifact and
+    # parses the source by itself.  Calling it twice was wasted AST parse work.
+    # (PR #590 Copilot review.)
+    inspected_imports: tuple[str, ...] = _collect_imports(
+        generated_artifact, generated_source
+    )
 
     if not isinstance(generated_artifact, Mapping) or not generated_artifact:
         violations.append("missing generated artifact provenance for fresh-generated benchmark")
@@ -196,15 +201,12 @@ def enforce_fresh_generated_boundary(
                 f"fresh-generated artifact module path is under admitted _agent tree: {module_path}"
             )
 
-        inspected_imports = _collect_imports(generated_artifact, generated_source)
-        for imported_module in inspected_imports:
-            if _is_admitted_agent_module_name(imported_module):
-                violations.append(
-                    "generated critical path imports from admitted _agent tree: "
-                    f"{imported_module}"
-                )
-    if not inspected_imports:
-        inspected_imports = _collect_imports(generated_artifact, generated_source)
+    for imported_module in inspected_imports:
+        if _is_admitted_agent_module_name(imported_module):
+            violations.append(
+                "generated critical path imports from admitted _agent tree: "
+                f"{imported_module}"
+            )
 
     if violations:
         reason = "; ".join(violations)

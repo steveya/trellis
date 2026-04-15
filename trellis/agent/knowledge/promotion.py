@@ -1331,7 +1331,20 @@ def record_benchmark_promotion_candidate(
     candidate_dir = _TRACES_DIR / "promotion_candidates"
     candidate_dir.mkdir(parents=True, exist_ok=True)
     task_id = str(benchmark_record.get("task_id") or "unknown").strip() or "unknown"
-    code_hash = hashlib.sha256(source.strip().encode()).hexdigest()[:12]
+    # Hash scheme must match the benchmark record's `generated_artifact.code_hash`
+    # exactly, otherwise admission's hash equality check rejects valid
+    # candidates.  The record uses `sha256(read_bytes()).hexdigest()` (full
+    # 64-char hex, no normalization).  Prefer that hash directly when present;
+    # fall back to a byte-faithful re-hash of the file we just read.
+    # (PR #590 Copilot review.)
+    record_artifact_hash = str(generated_artifact.get("code_hash") or "").strip()
+    if record_artifact_hash:
+        code_hash = record_artifact_hash
+    else:
+        try:
+            code_hash = hashlib.sha256(source_path.read_bytes()).hexdigest()
+        except OSError:
+            code_hash = hashlib.sha256(source.encode("utf-8")).hexdigest()
 
     # Dedup: if a previously emitted candidate for the same task already
     # carries the same `code_hash`, the generated artifact is byte-identical
@@ -1568,7 +1581,12 @@ def promote_benchmark_candidate(
         raise PromotionAdmissionError(
             "QUA-867: candidate snapshot has no embedded source"
         )
-    computed_hash = hashlib.sha256(source_text.strip().encode()).hexdigest()
+    # Match `record_benchmark_promotion_candidate` and the benchmark record's
+    # `generated_artifact.code_hash` scheme: hash the raw bytes (no `.strip()`,
+    # no text-vs-bytes normalization mismatch).  `_hashes_equivalent` keeps
+    # legacy 12-char prefixes acceptable for older candidates emitted under
+    # the prior scheme.  (PR #590 Copilot review.)
+    computed_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
     if not _hashes_equivalent(candidate_hash, computed_hash):
         raise PromotionAdmissionError(
             "QUA-867: candidate code hash does not match embedded source "
@@ -1674,8 +1692,12 @@ def promote_benchmark_candidate(
     if not dry_run:
         admission_target_file_path.parent.mkdir(parents=True, exist_ok=True)
         admission_target_file_path.write_text(source_text)
+        # Match the runner's `_generated_artifact_from_result` scheme
+        # (`sha256(read_bytes())`) so the admission log's `code_hash` is
+        # directly comparable to the benchmark record's hash without the
+        # `.strip()` normalization mismatch.  (PR #590 Copilot review.)
         admission_payload["code_hash"] = hashlib.sha256(
-            admission_target_file_path.read_text().strip().encode()
+            admission_target_file_path.read_bytes()
         ).hexdigest()
 
     admissions_dir = _TRACES_DIR / "promotion_admissions"

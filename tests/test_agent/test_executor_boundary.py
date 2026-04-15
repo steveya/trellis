@@ -27,19 +27,26 @@ def _resolve(module_path: str, *, fresh_build: bool, metadata: dict | None = Non
 
 
 def test_non_agent_path_resolves_unchanged_whether_or_not_fresh_build():
+    # Step paths come from `PrimitivePlan.steps[*].module_path` and are
+    # relative to the `trellis/` package root (`instruments/_agent/...`,
+    # `models/black.py`, etc.).  Passing a `trellis/`-prefixed path would
+    # produce a double-prefixed import name like `trellis.trellis.models.black`,
+    # which is not how the resolver is actually called from `build_payoff`.
+    # (PR #590 Copilot review.)
     file_path, module_path, module_name = _resolve(
-        "trellis/models/black.py",
+        "models/black.py",
         fresh_build=False,
     )
-    assert module_path == "trellis/models/black.py"
-    assert module_name == "trellis.trellis.models.black"
+    assert module_path == "models/black.py"
+    assert module_name == "trellis.models.black"
     assert "_agent" not in str(file_path)
 
-    file_path_fresh, module_path_fresh, _ = _resolve(
-        "trellis/models/black.py",
+    file_path_fresh, module_path_fresh, module_name_fresh = _resolve(
+        "models/black.py",
         fresh_build=True,
     )
-    assert module_path_fresh == "trellis/models/black.py"
+    assert module_path_fresh == "models/black.py"
+    assert module_name_fresh == "trellis.models.black"
     assert "_agent" not in str(file_path_fresh)
 
 
