@@ -41,6 +41,10 @@ from trellis.agent.fresh_generated_boundary import (
     FreshGeneratedBoundaryError,
     enforce_fresh_generated_boundary,
 )
+from trellis.agent.runtime_cleanliness import (
+    DirtyWorkingTreeError,
+    enforce_clean_tree,
+)
 from trellis.agent.financepy_reference import price_financepy_reference
 from trellis.agent.knowledge.promotion import record_benchmark_promotion_candidate
 from trellis.agent.runtime_revisions import runtime_revision_metadata
@@ -76,6 +80,15 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--output-root")
     parser.add_argument("--report-name", default="financepy_parity")
     parser.add_argument("--campaign-id")
+    parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help=(
+            "Allow the run even if the working tree has uncommitted source "
+            "edits; records `working_tree.clean=False` and the dirty paths "
+            "so downstream admission can distinguish untrusted runs."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -163,6 +176,11 @@ def _compare_outputs(
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv or sys.argv[1:])
+    try:
+        working_tree_status = enforce_clean_tree(ROOT, allow_dirty=bool(args.allow_dirty))
+    except DirtyWorkingTreeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     tasks = select_financepy_benchmark_tasks(
         load_financepy_benchmark_tasks(root=ROOT),
         requested_ids=args.task_ids or None,
@@ -323,6 +341,7 @@ def main(argv: list[str] | None = None) -> int:
             "financepy_outputs_normalized": financepy_outputs_normalized,
             "generated_artifact": generated_artifact,
             "fresh_generated_boundary": boundary_check.as_record(),
+            "working_tree": working_tree_status.as_record(),
             "comparison_summary": comparison_summary,
         }
         record.update(persist_financepy_benchmark_record(record, root=output_root))
