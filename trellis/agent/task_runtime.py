@@ -1098,7 +1098,7 @@ def run_task(
     print(f"  instrument_type={instrument_type}")
     if construct_methods:
         print(f"  construct_methods={construct_methods}")
-    if len(comparison_targets) > 1:
+    if comparison_task:
         # Surface the multi-target harness shape so the per-task token cost
         # is interpretable in context: a 2-target harness builds twice (e.g.
         # one LLM-built construct-method target plus one named reference
