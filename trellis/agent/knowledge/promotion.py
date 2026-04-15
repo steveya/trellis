@@ -1495,11 +1495,23 @@ def promote_benchmark_candidate(
         )
     benchmark_record_path = Path(benchmark_record_path_text)
     if not benchmark_record_path.is_absolute():
-        # Candidates emitted via `persist_financepy_benchmark_record` may store
-        # repo-relative paths.  Resolve against the candidate file's parent so
-        # an admission run from a different CWD still finds the record.
-        # (PR #590 Copilot review.)
-        benchmark_record_path = (path.parent / benchmark_record_path).resolve()
+        # The runner stores repo-relative paths like
+        # `task_runs/financepy_benchmarks/history/F009/F009_*.json` in the
+        # benchmark record (and downstream candidates inherit it).  Resolve
+        # against the caller's `repo_root` first; fall back to the candidate
+        # file's parent for older candidate-relative snapshots.  (PR #590
+        # round-4 Copilot review.)
+        repo_root_for_record = (
+            Path(repo_root) if repo_root is not None else _REPO_ROOT
+        )
+        repo_relative = (repo_root_for_record / benchmark_record_path).resolve()
+        candidate_relative = (path.parent / benchmark_record_path).resolve()
+        if repo_relative.is_file():
+            benchmark_record_path = repo_relative
+        elif candidate_relative.is_file():
+            benchmark_record_path = candidate_relative
+        else:
+            benchmark_record_path = repo_relative  # report the repo-rooted path
     if not benchmark_record_path.is_file():
         raise PromotionAdmissionError(
             f"QUA-867: benchmark record is missing or unreadable: {benchmark_record_path}"
@@ -1921,11 +1933,20 @@ def review_promotion_candidate(
         benchmark_record_path = (
             Path(benchmark_record_path_str) if benchmark_record_path_str else None
         )
-        # Resolve repo-relative paths against the candidate file's parent so a
-        # CLI run from a different CWD still finds the record.  Mirrors the
-        # same behavior in `promote_benchmark_candidate`.  (PR #590 Copilot.)
+        # Resolve repo-relative paths against the repository root first
+        # (the runner stores `task_runs/...`-style paths), falling back to
+        # the candidate file's parent for older candidate-relative
+        # snapshots.  Mirrors `promote_benchmark_candidate`.  (PR #590
+        # round-4 Copilot review.)
         if benchmark_record_path is not None and not benchmark_record_path.is_absolute():
-            benchmark_record_path = (path.parent / benchmark_record_path).resolve()
+            repo_relative = (_REPO_ROOT / benchmark_record_path).resolve()
+            candidate_relative = (path.parent / benchmark_record_path).resolve()
+            if repo_relative.is_file():
+                benchmark_record_path = repo_relative
+            elif candidate_relative.is_file():
+                benchmark_record_path = candidate_relative
+            else:
+                benchmark_record_path = repo_relative
         benchmark_record: dict[str, object] = {}
         if benchmark_record_path is not None and benchmark_record_path.is_file():
             try:

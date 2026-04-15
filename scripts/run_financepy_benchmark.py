@@ -222,11 +222,20 @@ def _execute_single_benchmark_task(
     status = "failed"
     task_market_state, _ = build_market_state_for_task(task, market_state)
     generated_artifact = dict(cold_result.get("generated_artifact") or {})
+    # Only read the generated source when we actually need to inspect it for
+    # the boundary check.  Cached-existing runs skip the I/O entirely (the
+    # enforcer returns `not_applicable` early for non-`fresh_generated`
+    # policies).  (PR #590 round-4 Copilot review.)
+    generated_source = (
+        _read_generated_artifact_source(generated_artifact)
+        if fresh_generated
+        else None
+    )
     boundary_check = enforce_fresh_generated_boundary(
         task,
         generated_artifact if generated_artifact else None,
         execution_policy=execution_policy,
-        generated_source=_read_generated_artifact_source(generated_artifact),
+        generated_source=generated_source,
         raise_on_violation=False,
     )
 

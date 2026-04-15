@@ -130,7 +130,35 @@ def main(argv: list[str] | None = None) -> int:
         return exit_code
 
     candidate_root = Path(args.candidate_root).expanduser()
-    candidate_paths = sorted(candidate_root.glob(args.candidate_glob))
+    # Path.glob accepts `..` segments in the pattern and would happily match
+    # paths outside `candidate_root`.  Reject parent-traversal up front and
+    # filter any matches that resolve outside the resolved candidate root, so
+    # batch admission cannot accidentally operate on YAMLs anywhere else on
+    # disk.  (PR #590 round-4 Copilot review.)
+    if ".." in Path(args.candidate_glob).parts:
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "error": (
+                        "--candidate-glob must be relative to --candidate-root "
+                        "and must not contain '..' segments"
+                    ),
+                    "candidate_root": str(candidate_root),
+                    "candidate_glob": args.candidate_glob,
+                },
+                indent=2,
+            )
+        )
+        return 1
+    candidate_root_resolved = candidate_root.resolve()
+    candidate_paths: list[Path] = []
+    for match in sorted(candidate_root.glob(args.candidate_glob)):
+        try:
+            match.resolve().relative_to(candidate_root_resolved)
+        except ValueError:
+            continue
+        candidate_paths.append(match)
     if not candidate_paths:
         print(
             json.dumps(

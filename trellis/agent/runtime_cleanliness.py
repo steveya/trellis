@@ -105,8 +105,12 @@ def enforce_clean_tree(
 ) -> WorkingTreeStatus:
     """Inspect the working tree and raise ``DirtyWorkingTreeError`` if dirty.
 
-    ``allow_dirty=True`` returns the status without raising so the caller can
-    flag ``dirty_tree=true`` in its emitted records.
+    ``allow_dirty=True`` returns the ``WorkingTreeStatus`` without raising so
+    the caller can persist the recorded fields directly.  The benchmark
+    runner serializes the status as a ``working_tree`` block on each record
+    with ``working_tree.clean`` and ``working_tree.dirty_paths``; downstream
+    admission and scorecards look at ``working_tree.clean`` to distinguish
+    untrusted runs from clean ones.
     """
     status = inspect_working_tree(repo_root, ignore_prefixes=ignore_prefixes)
     if status.clean or allow_dirty:

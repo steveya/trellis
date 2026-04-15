@@ -580,3 +580,59 @@ def test_promote_benchmark_candidate_prefers_module_name_over_module_path(
         candidate_path, repo_root=tmp_path, dry_run=True
     )
     assert result["status"] == "would_promote"
+
+
+def test_promote_benchmark_candidate_resolves_repo_relative_record_path(
+    tmp_path, monkeypatch
+):
+    """Repo-relative `benchmark_record_path` resolves against repo_root.
+
+    PR #590 round-4: the runner stores `task_runs/...`-style paths in the
+    record (and downstream candidates inherit it).  My round-1 fix only
+    resolved against the candidate parent, which would mis-locate the
+    repo-relative case.  Repo-root resolution wins, candidate-relative
+    is the fallback.
+    """
+    from trellis.agent.knowledge.promotion import promote_benchmark_candidate
+
+    candidate_path, record = _prepare_record_and_candidate(tmp_path, monkeypatch)
+    history_path = Path(record["history_path"])
+    repo_relative = history_path.relative_to(tmp_path)
+    candidate = yaml.safe_load(candidate_path.read_text())
+    candidate["benchmark_provenance"]["benchmark_record_path"] = str(repo_relative)
+    candidate_path.write_text(yaml.safe_dump(candidate, sort_keys=False))
+
+    result = promote_benchmark_candidate(
+        candidate_path, repo_root=tmp_path, dry_run=True
+    )
+    assert result["status"] == "would_promote"
+
+
+def test_promote_agent_adapter_cli_rejects_parent_traversal_glob(
+    tmp_path, monkeypatch, capsys
+):
+    """`--candidate-glob` must not let `..` escape `--candidate-root`.
+
+    PR #590 round-4: `Path.glob` happily matches outside its anchor when the
+    pattern contains `..`.  Batch admission must refuse that up front."""
+    from scripts import promote_agent_adapter
+
+    f001_path, _ = _prepare_record_and_candidate(tmp_path, monkeypatch, task_id="F001")
+    candidate_root = f001_path.parent
+
+    exit_code = promote_agent_adapter.main(
+        [
+            "--candidate-glob",
+            "../*.yaml",
+            "--candidate-root",
+            str(candidate_root),
+            "--repo-root",
+            str(tmp_path),
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "error"
+    assert ".." in payload["error"]
