@@ -1303,6 +1303,10 @@ def record_promotion_candidate(
     return str(path)
 
 
+class PromotionAdmissionError(RuntimeError):
+    """Raised when a benchmark-validated candidate fails pre-admission provenance checks."""
+
+
 def record_benchmark_promotion_candidate(
     *,
     benchmark_record: Mapping[str, object],
@@ -1381,6 +1385,246 @@ def record_benchmark_promotion_candidate(
             allow_unicode=True,
         )
     return str(path)
+
+
+def promote_benchmark_candidate(
+    candidate_path: str | Path,
+    *,
+    repo_root: Path | None = None,
+    dry_run: bool = False,
+    promoted_by: str = "",
+) -> dict[str, object]:
+    """Admit a benchmark-validated fresh-build candidate into ``_agent``.
+
+    The caller selects a promotion-candidate YAML that was emitted by
+    :func:`record_benchmark_promotion_candidate`.  This function refuses
+    (``PromotionAdmissionError``) unless every provenance link is intact:
+
+    * deterministic review (:func:`review_promotion_candidate`) is ``approved``
+    * the candidate's recorded benchmark history file still exists
+    * ``run_id``, ``git_sha``, ``knowledge_revision``, module name, and
+      short code hash in the history record all match the candidate
+    * the candidate's embedded source hashes to the recorded hash
+
+    On approval the fresh-build source is written to the admission target
+    under ``trellis/instruments/_agent/`` and a structured admission log is
+    persisted next to the candidate under
+    ``trellis/agent/knowledge/traces/promotion_admissions/``.  ``dry_run``
+    performs the checks without touching the adapter tree.
+
+    Refs: QUA-867 (epic QUA-864).
+    """
+    path = Path(candidate_path)
+    if not path.is_file():
+        raise PromotionAdmissionError(
+            f"QUA-867: promotion candidate not found: {path}"
+        )
+    try:
+        data = yaml.safe_load(path.read_text()) or {}
+    except Exception as exc:  # pragma: no cover - surfaced via error path
+        raise PromotionAdmissionError(
+            f"QUA-867: candidate snapshot could not be parsed: {exc}"
+        ) from exc
+    if not isinstance(data, Mapping):
+        raise PromotionAdmissionError(
+            "QUA-867: candidate snapshot is not a mapping"
+        )
+
+    review = review_promotion_candidate(path, persist=False)
+    if str(review.get("status") or "").strip().lower() != "approved":
+        failed = sorted(
+            {
+                str(check.get("name") or "")
+                for check in review.get("checks") or ()
+                if isinstance(check, Mapping)
+                and not bool(check.get("passed"))
+                and bool(check.get("blocking", True))
+            }
+        )
+        raise PromotionAdmissionError(
+            "QUA-867: review rejected candidate; "
+            f"failing blocking checks: {', '.join(failed) or 'unknown'}"
+        )
+
+    benchmark_provenance = data.get("benchmark_provenance") or {}
+    if not isinstance(benchmark_provenance, Mapping):
+        benchmark_provenance = {}
+    benchmark_record_path_text = str(
+        benchmark_provenance.get("benchmark_record_path") or ""
+    ).strip()
+    if not benchmark_record_path_text:
+        raise PromotionAdmissionError(
+            "QUA-867: candidate does not reference a benchmark record path"
+        )
+    benchmark_record_path = Path(benchmark_record_path_text)
+    if not benchmark_record_path.is_file():
+        raise PromotionAdmissionError(
+            f"QUA-867: benchmark record is missing or unreadable: {benchmark_record_path}"
+        )
+    try:
+        benchmark_record = json.loads(benchmark_record_path.read_text())
+    except Exception as exc:
+        raise PromotionAdmissionError(
+            f"QUA-867: benchmark record could not be parsed: {exc}"
+        ) from exc
+    if not isinstance(benchmark_record, Mapping):
+        raise PromotionAdmissionError(
+            "QUA-867: benchmark record is not a mapping"
+        )
+
+    candidate_run_id = str(benchmark_provenance.get("benchmark_run_id") or "").strip()
+    record_run_id = str(benchmark_record.get("run_id") or "").strip()
+    if candidate_run_id != record_run_id or not candidate_run_id:
+        raise PromotionAdmissionError(
+            "QUA-867: benchmark run_id mismatch "
+            f"(candidate={candidate_run_id!r}, record={record_run_id!r})"
+        )
+
+    candidate_git_sha = str(benchmark_provenance.get("git_sha") or "").strip()
+    record_git_sha = str(benchmark_record.get("git_sha") or "").strip()
+    if candidate_git_sha != record_git_sha or not candidate_git_sha:
+        raise PromotionAdmissionError(
+            "QUA-867: benchmark git_sha mismatch "
+            f"(candidate={candidate_git_sha!r}, record={record_git_sha!r})"
+        )
+
+    candidate_knowledge_revision = str(
+        benchmark_provenance.get("knowledge_revision") or ""
+    ).strip()
+    record_knowledge_revision = str(
+        benchmark_record.get("knowledge_revision") or ""
+    ).strip()
+    if candidate_knowledge_revision != record_knowledge_revision or not candidate_knowledge_revision:
+        raise PromotionAdmissionError(
+            "QUA-867: benchmark knowledge_revision mismatch "
+            f"(candidate={candidate_knowledge_revision!r}, record={record_knowledge_revision!r})"
+        )
+
+    record_artifact = benchmark_record.get("generated_artifact") or {}
+    if not isinstance(record_artifact, Mapping):
+        record_artifact = {}
+    candidate_module_name = str(data.get("module_path") or "").strip()
+    record_module_name = str(record_artifact.get("module_name") or "").strip()
+    if candidate_module_name != record_module_name or not candidate_module_name:
+        raise PromotionAdmissionError(
+            "QUA-867: candidate module does not match benchmark generated_artifact "
+            f"(candidate={candidate_module_name!r}, record={record_module_name!r})"
+        )
+
+    candidate_hash = str(data.get("code_hash") or "").strip()
+    record_hash = str(record_artifact.get("code_hash") or "").strip()
+    if not _hashes_equivalent(candidate_hash, record_hash):
+        raise PromotionAdmissionError(
+            "QUA-867: candidate code hash does not match benchmark artifact hash "
+            f"(candidate={candidate_hash!r}, record={record_hash!r})"
+        )
+
+    candidate_record_summary = benchmark_provenance.get("comparison_summary") or {}
+    if not isinstance(candidate_record_summary, Mapping):
+        candidate_record_summary = {}
+    live_record_summary = benchmark_record.get("comparison_summary") or {}
+    if not isinstance(live_record_summary, Mapping):
+        live_record_summary = {}
+    live_status = str(live_record_summary.get("status") or "").strip().lower()
+    if live_status != "passed":
+        raise PromotionAdmissionError(
+            "QUA-867: live benchmark record status is not `passed` "
+            f"(status={live_status!r}); benchmark provenance and validated run record "
+            "do not match"
+        )
+    candidate_status = str(candidate_record_summary.get("status") or "").strip().lower()
+    if candidate_status and candidate_status != live_status:
+        raise PromotionAdmissionError(
+            "QUA-867: candidate comparison_summary status differs from live record "
+            f"(candidate={candidate_status!r}, record={live_status!r})"
+        )
+
+    source_text = str(data.get("code") or "")
+    if not source_text.strip():
+        raise PromotionAdmissionError(
+            "QUA-867: candidate snapshot has no embedded source"
+        )
+    computed_hash = hashlib.sha256(source_text.strip().encode()).hexdigest()
+    if not _hashes_equivalent(candidate_hash, computed_hash):
+        raise PromotionAdmissionError(
+            "QUA-867: candidate code hash does not match embedded source "
+            f"(recorded={candidate_hash!r}, computed={computed_hash[:12]!r})"
+        )
+
+    admission_target_module_name = str(
+        data.get("admission_target_module_name")
+        or _recommended_module_path(candidate_module_name)
+    ).strip()
+    if not admission_target_module_name.startswith("trellis.instruments._agent"):
+        raise PromotionAdmissionError(
+            "QUA-867: admission target is not under trellis.instruments._agent: "
+            f"{admission_target_module_name}"
+        )
+
+    resolved_repo_root = Path(repo_root) if repo_root is not None else _REPO_ROOT
+    admission_target_file_path = Path(
+        str(data.get("admission_target_file_path") or "").strip()
+    ) if str(data.get("admission_target_file_path") or "").strip() else (
+        _recommended_file_path(admission_target_module_name)
+    )
+    if not admission_target_file_path.is_absolute():
+        admission_target_file_path = resolved_repo_root / admission_target_file_path
+    admission_target_file_path = admission_target_file_path.resolve()
+    try:
+        admission_target_file_path.relative_to(resolved_repo_root.resolve())
+    except ValueError:
+        raise PromotionAdmissionError(
+            "QUA-867: admission target resolves outside repo_root: "
+            f"{admission_target_file_path}"
+        )
+
+    admission_timestamp = datetime.now()
+    admission_payload: dict[str, object] = {
+        "status": "would_promote" if dry_run else "promoted",
+        "dry_run": bool(dry_run),
+        "promoted_by": str(promoted_by or "").strip(),
+        "admission_timestamp": admission_timestamp.isoformat(),
+        "candidate_path": str(path),
+        "admission_target_module_name": admission_target_module_name,
+        "admission_target_file_path": str(admission_target_file_path),
+        "benchmark_run_id": candidate_run_id,
+        "benchmark_record_path": str(benchmark_record_path),
+        "git_sha": candidate_git_sha,
+        "knowledge_revision": candidate_knowledge_revision,
+        "candidate_code_hash": candidate_hash,
+        "code_hash": computed_hash,
+        "review_status": str(review.get("status") or ""),
+        "review_path": str(review.get("review_path") or ""),
+    }
+
+    if not dry_run:
+        admission_target_file_path.parent.mkdir(parents=True, exist_ok=True)
+        admission_target_file_path.write_text(source_text)
+        admission_payload["code_hash"] = hashlib.sha256(
+            admission_target_file_path.read_text().strip().encode()
+        ).hexdigest()
+
+    admissions_dir = _TRACES_DIR / "promotion_admissions"
+    admissions_dir.mkdir(parents=True, exist_ok=True)
+    task_id = _safe_filename_fragment(str(data.get("task_id") or "task"))
+    target_fragment = _safe_filename_fragment(
+        admission_target_module_name.rsplit(".", 1)[-1] or "adapter"
+    )
+    status_fragment = "dry_run" if dry_run else "admitted"
+    admission_log_path = admissions_dir / (
+        f"{admission_timestamp.strftime('%Y%m%d_%H%M%S')}_"
+        f"{task_id}_{target_fragment}_{status_fragment}.yaml"
+    )
+    with open(admission_log_path, "w") as handle:
+        yaml.safe_dump(
+            _yaml_safe_data(admission_payload),
+            handle,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True,
+        )
+    admission_payload["admission_log_path"] = str(admission_log_path)
+    return admission_payload
 
 
 def format_adapter_lifecycle_warnings(

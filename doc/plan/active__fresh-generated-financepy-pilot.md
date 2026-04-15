@@ -90,7 +90,7 @@ Last synced: 2026-04-15.
 |----------|---------------------------------------------------------------------------|----------|
 | QUA-865  | Pilot runner executes parity tasks from ephemeral generated adapters      | Done     |
 | QUA-866  | Block checked-in `_agent` adapters on the pilot benchmark critical path   | In review |
-| QUA-867  | Separate `_agent` promotion from FinancePy benchmark execution            | Backlog  |
+| QUA-867  | Separate `_agent` promotion from FinancePy benchmark execution            | In review |
 | QUA-868  | Validate fresh-generated pilot subset against FinancePy with scorecard    | Backlog  |
 
 Selection rule: pick the earliest ticket whose status is not `Done` and whose
