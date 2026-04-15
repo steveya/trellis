@@ -1560,9 +1560,14 @@ def review_promotion_candidate(
         ),
     ]
     if validation_source == "financepy_benchmark":
-        benchmark_record_path = Path(str(benchmark_provenance.get("benchmark_record_path") or ""))
+        benchmark_record_path_str = str(
+            benchmark_provenance.get("benchmark_record_path") or ""
+        ).strip()
+        benchmark_record_path = (
+            Path(benchmark_record_path_str) if benchmark_record_path_str else None
+        )
         benchmark_record: dict[str, object] = {}
-        if benchmark_record_path.exists():
+        if benchmark_record_path is not None and benchmark_record_path.is_file():
             try:
                 loaded = json.loads(benchmark_record_path.read_text())
                 if isinstance(loaded, dict):
@@ -1587,7 +1592,7 @@ def review_promotion_candidate(
             [
                 _review_check(
                     "benchmark_record_exists",
-                    benchmark_record_path.exists(),
+                    benchmark_record_path is not None and benchmark_record_path.is_file(),
                     "benchmark record path is readable",
                     failure_detail="benchmark record path is missing or unreadable",
                 ),

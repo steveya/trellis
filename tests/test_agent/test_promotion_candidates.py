@@ -273,6 +273,31 @@ def test_review_promotion_candidate_rejects_benchmark_hash_mismatch(monkeypatch,
     assert "benchmark_hash_matches_candidate" in failed
 
 
+def test_review_promotion_candidate_rejects_empty_benchmark_record_path(monkeypatch, tmp_path):
+    from trellis.agent.knowledge.promotion import (
+        record_benchmark_promotion_candidate,
+        review_promotion_candidate,
+    )
+
+    knowledge_root = tmp_path / "trellis" / "agent" / "knowledge"
+    _patch_promotion_paths(monkeypatch, knowledge_root)
+    record = _write_benchmark_record(knowledge_root)
+    candidate_path = Path(record_benchmark_promotion_candidate(benchmark_record=record))
+    candidate = yaml.safe_load(candidate_path.read_text())
+    candidate["benchmark_provenance"]["benchmark_record_path"] = "   "
+    candidate_path.write_text(yaml.safe_dump(candidate, sort_keys=False))
+
+    review = review_promotion_candidate(candidate_path)
+
+    assert review["status"] == "rejected"
+    failed = {
+        check["name"]
+        for check in review["checks"]
+        if not check["passed"] and check["blocking"]
+    }
+    assert "benchmark_record_exists" in failed
+
+
 def test_adopt_promotion_candidate_writes_financepy_benchmark_candidate_to_admission_target(
     monkeypatch,
     tmp_path,
