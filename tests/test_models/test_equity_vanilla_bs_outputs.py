@@ -138,23 +138,107 @@ def test_expired_option_returns_intrinsic_and_zero_greeks():
     assert out["theta"] == 0.0
 
 
-def test_zero_vol_returns_intrinsic_and_zero_greeks():
-    ms = _make_market(rate=0.05, vol=0.0)
-    spec = _VanillaSpec(
-        notional=1.0,
-        spot=100.0,
-        strike=120.0,
-        expiry_date=date(2025, 11, 15),
-        option_type="put",
+def test_zero_vol_nonzero_T_uses_discounted_forward_intrinsic():
+    """Zero-vol, T > 0 must match the Black-Scholes zero-vol limit.
+
+    The BS zero-vol limit for a call is ``df * max(F - K, 0)``, equivalently
+    ``max(S - K*df, 0)``.  Using spot-vs-strike intrinsic here would
+    silently make ``benchmark_outputs['price']`` diverge from ``evaluate()``
+    in non-zero-rate markets.  (PR #595 Codex P1 round 1.)
+    """
+    rate = 0.05
+    T = 1.0
+    df = float(np.exp(-rate * T))
+    ms = _make_market(rate=rate, vol=0.0)
+
+    call = equity_vanilla_bs_outputs(
+        ms,
+        _VanillaSpec(
+            notional=1.0,
+            spot=100.0,
+            strike=95.0,
+            expiry_date=date(2025, 11, 15),
+            option_type="call",
+        ),
     )
-    out = equity_vanilla_bs_outputs(ms, spec)
-    # Zero vol ⇒ deterministic payoff; helper reports intrinsic on the zero
-    # time branch so scorecards don't divide-by-zero in the d1 expression.
-    assert out["price"] == pytest.approx(20.0, abs=1e-9)
-    assert out["delta"] == 0.0
-    assert out["gamma"] == 0.0
-    assert out["vega"] == 0.0
-    assert out["theta"] == 0.0
+    # Call at zero vol: df * max(spot/df - strike, 0) = max(spot - strike*df, 0)
+    assert call["price"] == pytest.approx(max(100.0 - 95.0 * df, 0.0), abs=1e-9)
+    assert call["delta"] == 0.0
+    assert call["gamma"] == 0.0
+    assert call["vega"] == 0.0
+    assert call["theta"] == 0.0
+
+    put = equity_vanilla_bs_outputs(
+        ms,
+        _VanillaSpec(
+            notional=1.0,
+            spot=100.0,
+            strike=120.0,
+            expiry_date=date(2025, 11, 15),
+            option_type="put",
+        ),
+    )
+    # Put at zero vol: max(strike*df - spot, 0).  With r=5%, T=1, K=120:
+    # df = exp(-0.05) ≈ 0.9512; K*df ≈ 114.15; so payoff ≈ 14.15.
+    assert put["price"] == pytest.approx(max(120.0 * df - 100.0, 0.0), abs=1e-9)
+    assert put["delta"] == 0.0
+    assert put["gamma"] == 0.0
+    assert put["vega"] == 0.0
+    assert put["theta"] == 0.0
+
+
+def test_zero_vol_benchmark_outputs_price_agrees_with_evaluate():
+    """The native outputs helper and the deterministic evaluate path must agree.
+
+    This mirrors the test in ``test_executor`` that compiles+executes the
+    generated module; here we exercise only the helper for a sharper failure
+    mode if the zero-vol branch misprices.  (PR #595 Codex P1 round 1.)
+    """
+    from trellis.models.black import black76_call, black76_put
+
+    rate = 0.03
+    T = 1.5
+    df = float(np.exp(-rate * T))
+    ms = _make_market(rate=rate, vol=0.0)
+
+    for option_type in ("call", "put"):
+        spec = _VanillaSpec(
+            notional=1.0,
+            spot=105.0,
+            strike=100.0,
+            expiry_date=date(
+                2024 + int(T) + 1 if T != int(T) else 2024 + int(T),
+                5 if T != int(T) else 11,
+                15,
+            ),
+            option_type=option_type,
+        )
+        # Align T exactly to 1.5 years by setting expiry manually; our fixture
+        # approximates with a calendar date so reuse black76_* directly.
+        forward = spec.spot / df
+        undiscounted = (
+            black76_call(forward, spec.strike, 0.0, T)
+            if option_type == "call"
+            else black76_put(forward, spec.strike, 0.0, T)
+        )
+        evaluate_like_price = float(spec.notional) * df * float(undiscounted)
+        native = equity_vanilla_bs_outputs(
+            ms,
+            _VanillaSpec(
+                notional=spec.notional,
+                spot=spec.spot,
+                strike=spec.strike,
+                expiry_date=date(2026, 5, 15),  # ≈ 1.5 years from 2024-11-15
+                option_type=option_type,
+            ),
+        )
+        # Year fraction from 2024-11-15 → 2026-05-15 under ACT/365 isn't
+        # exactly 1.5, so only require agreement to within the date-grid
+        # rounding scale.
+        assert native["price"] == pytest.approx(
+            evaluate_like_price,
+            rel=5e-3,
+        ), option_type
 
 
 def test_raises_when_required_market_data_is_missing():

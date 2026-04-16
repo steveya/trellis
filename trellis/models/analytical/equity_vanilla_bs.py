@@ -46,6 +46,39 @@ def _zero_time_outputs(
     }
 
 
+def _zero_vol_outputs(
+    spot: float,
+    strike: float,
+    df: float,
+    option_type: str,
+    notional: float,
+) -> dict[str, float]:
+    """Return the zero-vol, T > 0 Black-Scholes limit.
+
+    The forward equals ``spot / df`` deterministically at σ == 0, so the
+    payoff reduces to ``df * max(F - K, 0)`` (call) / ``df * max(K - F, 0)``
+    (put), i.e. ``max(S - K*df, 0)`` / ``max(K*df - S, 0)``.  Using plain
+    ``max(S - K, 0)`` here would silently misprice parity in any non-zero
+    rate market and diverge from the deterministic ``evaluate`` body --
+    ``black76_call``/``black76_put`` also collapse to the discounted
+    forward intrinsic at σ == 0.  (PR #595 Codex P1 round 1.)
+    """
+    df_safe = max(df, 1e-12)
+    forward = spot / df_safe
+    forward_intrinsic = (
+        max(forward - strike, 0.0)
+        if option_type == "call"
+        else max(strike - forward, 0.0)
+    )
+    return {
+        "price": notional * df * forward_intrinsic,
+        "delta": 0.0,
+        "gamma": 0.0,
+        "vega": 0.0,
+        "theta": 0.0,
+    }
+
+
 def equity_vanilla_bs_outputs(
     market_state: MarketState,
     spec: Any,
@@ -76,7 +109,7 @@ def equity_vanilla_bs_outputs(
     sqrt_T = float(np.sqrt(T))
     sigma_sqrt_T = sigma * sqrt_T
     if sigma_sqrt_T <= 0.0:
-        return _zero_time_outputs(spot, strike, option_type, notional)
+        return _zero_vol_outputs(spot, strike, df, option_type, notional)
 
     df_safe = max(df, 1e-12)
     forward = spot / df_safe
