@@ -4134,11 +4134,11 @@ def _write_generated_module(
     ``REPO_ROOT`` and the package-tree path is guarded by
     ``write_module``'s own ``_validate_write_target``.  Refs: QUA-382.
     """
-    from trellis.agent.builder import _validate_write_target
+    from trellis.agent.builder import validate_write_target
 
     normalized_module_path = str(output_module_path or "").replace("\\", "/")
     if normalized_module_path.startswith("task_runs/"):
-        _validate_write_target(output_file_path, REPO_ROOT, "_write_generated_module")
+        validate_write_target(output_file_path, REPO_ROOT, "_write_generated_module")
         output_file_path.parent.mkdir(parents=True, exist_ok=True)
         output_file_path.write_text(code)
         return output_file_path

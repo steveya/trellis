@@ -14,21 +14,25 @@ import pytest
 from trellis.agent.builder import (
     TRELLIS_ROOT,
     WriteTargetEscapeError,
-    _validate_write_target,
+    validate_write_target,
     write_module,
 )
 
 
 def test_validate_write_target_accepts_path_inside_root(tmp_path):
     target = tmp_path / "subdir" / "module.py"
-    _validate_write_target(target, tmp_path, "test")
+    validate_write_target(target, tmp_path, "test")
 
 
 def test_validate_write_target_rejects_path_outside_root(tmp_path):
     target = tmp_path / ".." / "escape.py"
     with pytest.raises(WriteTargetEscapeError) as exc_info:
-        _validate_write_target(target, tmp_path, "test")
-    assert "outside" in str(exc_info.value).lower()
+        validate_write_target(target, tmp_path, "test")
+    message = str(exc_info.value)
+    assert "outside" in message.lower()
+    # Error message should show the resolved canonical path, not the raw
+    # `..`-containing input.  (PR #592 Copilot review.)
+    assert ".." not in message.split("): ")[-1]
 
 
 def test_write_module_rejects_repo_escape():
@@ -47,13 +51,12 @@ def test_write_module_accepts_normal_relative_path(tmp_path, monkeypatch):
         pytest.fail("write_module wrote outside the monkeypatched root")
 
 
-def test_write_generated_module_rejects_benchmark_artifact_repo_escape(monkeypatch):
+def test_write_generated_module_rejects_benchmark_artifact_repo_escape(tmp_path, monkeypatch):
     from trellis.agent import executor as executor_mod
 
-    fake_repo_root = Path("/tmp/fake_trellis_repo")
-    monkeypatch.setattr(executor_mod, "REPO_ROOT", fake_repo_root)
+    monkeypatch.setattr(executor_mod, "REPO_ROOT", tmp_path)
 
-    escape_path = fake_repo_root / "task_runs" / ".." / ".." / "etc" / "evil.py"
+    escape_path = tmp_path / "task_runs" / ".." / ".." / "etc" / "evil.py"
     with pytest.raises(WriteTargetEscapeError):
         executor_mod._write_generated_module(
             escape_path,
