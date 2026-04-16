@@ -49,6 +49,9 @@ from trellis.models.analytical.equity_exotics import (
     price_equity_fixed_lookback_option_analytical,
     price_equity_variance_swap_analytical,
 )
+from trellis.models.analytical.equity_vanilla_bs import (
+    equity_vanilla_bs_outputs,
+)
 __all__ = [
     "zcb_option_hw",
     "barrier_option_price",
@@ -62,6 +65,7 @@ __all__ = [
     "ResolvedBarrierInputs",
     "ResolvedEquityAnalyticalInputs",
     "equity_variance_swap_outputs_analytical",
+    "equity_vanilla_bs_outputs",
     "price_equity_cliquet_option_analytical",
     "vanilla_call_raw",
     "price_equity_chooser_option_analytical",

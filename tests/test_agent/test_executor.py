@@ -688,6 +688,134 @@ def test_deterministic_exact_binding_module_materializes_black_scholes_comparato
     assert "market_state.vol_surface.black_vol(max(T, 1e-6), strike)" in generated.code
     assert "terminal_vanilla_from_basis(" not in generated.code
     assert EVALUATE_SENTINEL not in generated.code
+    # QUA-862: the Black-Scholes deterministic route now also emits a native
+    # ``benchmark_outputs`` method backed by ``equity_vanilla_bs_outputs`` so
+    # scorecards can record price + Greeks without a post-hoc bump-and-reprice.
+    assert "def benchmark_outputs(self, market_state: MarketState) -> dict[str, float]:" in generated.code
+    assert "equity_vanilla_bs_outputs(market_state, self._spec)" in generated.code
+    assert (
+        "from trellis.models.analytical.equity_vanilla_bs import equity_vanilla_bs_outputs"
+        in generated.code
+    )
+
+
+def test_deterministic_exact_binding_module_non_black_scholes_route_omits_benchmark_outputs_method():
+    """Only the Black-Scholes comparison target injects the native-greeks method (QUA-862)."""
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.analytical.barrier.barrier_option_price",
+        ),
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="barrier_option",
+    )
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["barrier_option"],
+        "Barrier option analytical",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=None,
+    )
+    assert generated is not None
+    assert "def benchmark_outputs" not in generated.code
+    assert "equity_vanilla_bs_outputs" not in generated.code
+
+
+def test_deterministic_exact_binding_module_black_scholes_benchmark_outputs_runs_end_to_end():
+    """The injected method executes and returns the canonical Greek dict (QUA-862)."""
+    from datetime import date as _date
+
+    import numpy as _np
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+    from trellis.core.market_state import MarketState
+
+    class _FlatDiscount:
+        def __init__(self, rate: float):
+            self._rate = float(rate)
+
+        def zero_rate(self, t: float) -> float:
+            return self._rate
+
+        def discount(self, t: float) -> float:
+            return float(_np.exp(-self._rate * float(t)))
+
+    class _FlatBlackVol:
+        def __init__(self, vol: float):
+            self._vol = float(vol)
+
+        def black_vol(self, t: float, k: float) -> float:
+            return self._vol
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.black.black76_call",
+            "trellis.models.black.black76_put",
+        ),
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="european_option",
+    )
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "European option analytical comparator",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="black_scholes",
+    )
+    assert generated is not None
+
+    namespace: dict = {}
+    exec(compile(generated.code, "<qua_862>", "exec"), namespace)  # noqa: S102 -- test harness
+    payoff_cls = next(
+        obj
+        for name, obj in namespace.items()
+        if name.endswith("Payoff") and isinstance(obj, type)
+    )
+    spec_cls = next(
+        obj
+        for name, obj in namespace.items()
+        if name.endswith("Spec") and isinstance(obj, type)
+    )
+    payoff = payoff_cls(
+        spec_cls(
+            notional=1.0,
+            spot=100.0,
+            strike=100.0,
+            expiry_date=_date(2025, 11, 15),
+            option_type="call",
+        )
+    )
+    market = MarketState(
+        as_of=_date(2024, 11, 15),
+        settlement=_date(2024, 11, 15),
+        discount=_FlatDiscount(0.05),
+        vol_surface=_FlatBlackVol(0.25),
+    )
+
+    outputs = payoff.benchmark_outputs(market)
+    assert set(outputs) == {"price", "delta", "gamma", "vega", "theta"}
+    # evaluate() and benchmark_outputs() must agree on the price.
+    assert outputs["price"] == pytest.approx(float(payoff.evaluate(market)), rel=1e-10)
+    # ATM call spot-check against classical BS numerics at r=5%, σ=25%, T=1.
+    assert outputs["delta"] == pytest.approx(0.6274, abs=1e-3)
+    assert outputs["vega"] == pytest.approx(37.842, abs=1e-2)
 
 
 def test_deterministic_exact_binding_module_materializes_barrier_helper_with_time_import():
