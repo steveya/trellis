@@ -402,12 +402,39 @@ def test_pilot_parity_scorecard_cli_writes_artifacts(tmp_path, monkeypatch, caps
     )
 
 
-def _record_with_greek_coverage(task_id, *, trellis_greeks, financepy_greeks, greek_parity):
-    """Build a record whose comparison_summary reports QUA-861 Greek fields."""
+def _record_with_greek_coverage(
+    task_id,
+    *,
+    trellis_greeks,
+    financepy_greeks,
+    greek_parity,
+    declared_greeks=None,
+):
+    """Build a record whose comparison_summary reports QUA-861 Greek fields.
+
+    Matches the real comparison layer's semantics: `missing_trellis_outputs`
+    lists every declared overlap absent from the Trellis side (regardless of
+    whether FinancePy emitted it), and `missing_financepy_outputs` is the
+    symmetric set for the other side.  `declared_greeks` defaults to the
+    union of trellis+financepy Greeks; pass explicitly to simulate a binding
+    that declares a Greek neither side emitted.
+    """
     record = _fresh_record(task_id)
-    missing_trellis = [g for g in financepy_greeks if g not in trellis_greeks]
-    missing_financepy = [g for g in trellis_greeks if g not in financepy_greeks]
+    declared = (
+        list(declared_greeks)
+        if declared_greeks is not None
+        else sorted(set(trellis_greeks) | set(financepy_greeks))
+    )
+    missing_trellis = [g for g in declared if g not in trellis_greeks]
+    missing_financepy = [g for g in declared if g not in financepy_greeks]
     compared = [g for g in trellis_greeks if g in financepy_greeks]
+    # The runner also populates `financepy_outputs` in the comparison
+    # summary; the scorecard's `missing_greek_coverage` derivation reads
+    # those keys to determine which Greeks FinancePy actually emitted.
+    financepy_outputs_map = {g: 1.0 for g in financepy_greeks}
+    trellis_outputs_map = {g: 1.0 for g in trellis_greeks}
+    financepy_outputs_map["price"] = 10.0
+    trellis_outputs_map["price"] = 10.0
     record["comparison_summary"] = dict(record["comparison_summary"])
     record["comparison_summary"].update(
         {
@@ -420,9 +447,58 @@ def _record_with_greek_coverage(task_id, *, trellis_greeks, financepy_greeks, gr
             },
             "greek_parity": greek_parity,
             "greek_failures": [],
+            "trellis_outputs": trellis_outputs_map,
+            "financepy_outputs": financepy_outputs_map,
         }
     )
     return record
+
+
+def test_pilot_scorecard_missing_greek_coverage_excludes_greeks_financepy_did_not_emit(tmp_path):
+    """The scorecard's `missing_greek_coverage` reason must only list Greeks
+    FinancePy actually emitted.  If the binding declared a Greek that
+    *neither* side emitted, that's a binding-reference gap, not a
+    Trellis-coverage gap, and the reason text should not blame Trellis.
+    (PR #593 round 2 Copilot review.)"""
+    # Binding declares [delta, gamma, vega] but FinancePy only emits delta.
+    # Trellis emits nothing.  The Trellis-coverage gap is specifically
+    # `delta` (the one FinancePy did emit).  `gamma` and `vega` are
+    # binding-reference gaps and should not appear in the miss reason.
+    record = _record_with_greek_coverage(
+        "F001",
+        trellis_greeks=[],
+        financepy_greeks=["delta"],
+        greek_parity="not_applicable",
+        declared_greeks=["delta", "gamma", "vega"],
+    )
+    for task_id in sorted(PILOT_SCORECARD_TASK_IDS):
+        _write_history_record(
+            tmp_path,
+            record
+            if task_id == "F001"
+            else _record_with_greek_coverage(
+                task_id,
+                trellis_greeks=[],
+                financepy_greeks=[],
+                greek_parity="not_applicable",
+            ),
+        )
+    scorecard = build_pilot_parity_scorecard(
+        scorecard_name="financepy_pilot",
+        benchmark_runs=load_pilot_benchmark_records(benchmark_root=tmp_path),
+    )
+    misses = {
+        m["task_id"]: m
+        for m in scorecard["residual_misses"]
+        if m["category"] == "missing_greek_coverage"
+    }
+    assert "F001" in misses
+    reason = misses["F001"]["reason"]
+    # Only `delta` (the Greek FinancePy actually emitted) should appear;
+    # `gamma` and `vega` are binding-reference gaps.
+    assert "delta" in reason
+    assert "gamma" not in reason
+    assert "vega" not in reason
 
 
 def test_pilot_scorecard_aggregates_greek_coverage_across_tasks(tmp_path):

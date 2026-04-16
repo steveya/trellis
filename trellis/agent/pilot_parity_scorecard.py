@@ -323,17 +323,46 @@ def build_pilot_parity_scorecard(
         elif greek_parity == "failed":
             tasks_with_greek_parity_failed += 1
         # Missing-Greek residual miss: derive the expected-but-missing set
-        # from the intersection of "declared Greek overlap" (canonical Greek
-        # names in `missing_trellis_outputs`) and "FinancePy actually emitted
-        # Greeks".  Without the financepy-count guard we'd mis-attribute
-        # coverage gaps to Trellis when neither side emitted anything --
-        # that's a binding-reference gap, not a Trellis-coverage gap.
-        # (PR #593 round 1 Copilot review.)
+        # from the INTERSECTION of
+        #   (a) canonical Greek names (via `is_greek_output`)
+        #   (b) declared-but-Trellis-missing outputs (`missing_trellis_outputs`)
+        #   (c) Greeks FinancePy actually emitted for this task
+        # Without (c), the reason text would list Greeks that *neither* side
+        # emitted -- those are binding-reference gaps, not Trellis-coverage
+        # gaps.  The financepy-emitted set is read from the comparison
+        # summary's `financepy_outputs` dict plus any nested `greeks`.
+        # (PR #593 round 2 Copilot review.)
         task_id = summary.get("task_id") or ""
+        financepy_outputs = (
+            comparison_summary_for_miss := latest_records_by_task.get(task_id)
+            or {}
+        )
+        if isinstance(financepy_outputs, Mapping):
+            financepy_outputs = (
+                dict(financepy_outputs.get("comparison_summary") or {}).get(
+                    "financepy_outputs"
+                )
+                or {}
+            )
+        if not isinstance(financepy_outputs, Mapping):
+            financepy_outputs = {}
+        financepy_greek_keys: set[str] = set()
+        for key, value in financepy_outputs.items():
+            if value is None:
+                continue
+            if is_greek_output(str(key)):
+                financepy_greek_keys.add(str(key))
+        nested_greeks = financepy_outputs.get("greeks")
+        if isinstance(nested_greeks, Mapping):
+            for key, value in nested_greeks.items():
+                if value is None:
+                    continue
+                if is_greek_output(str(key)):
+                    financepy_greek_keys.add(str(key))
         expected_greeks = [
             name
             for name in summary.get("missing_trellis_outputs") or ()
-            if is_greek_output(name)
+            if is_greek_output(name) and name in financepy_greek_keys
         ]
         if (
             task_id
