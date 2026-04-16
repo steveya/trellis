@@ -12,9 +12,35 @@ from pathlib import Path
 TRELLIS_ROOT = Path(__file__).parent.parent
 
 
+class WriteTargetEscapeError(RuntimeError):
+    """Raised when a write target resolves outside the expected root."""
+
+
+def _validate_write_target(resolved_path: Path, root: Path, label: str) -> None:
+    """Fail closed if *resolved_path* would land outside *root*.
+
+    A relative path like ``../../etc/foo.py`` joined onto ``root`` then
+    ``.resolve()``-d would escape the package tree.  ``mkdir(parents=True)``
+    on the result would silently create the directory structure.  This guard
+    stops that before any I/O.  Refs: QUA-382.
+    """
+    try:
+        resolved_path.resolve().relative_to(root.resolve())
+    except ValueError:
+        raise WriteTargetEscapeError(
+            f"QUA-382: {label} write target resolves outside the expected "
+            f"root ({root}): {resolved_path}"
+        )
+
+
 def write_module(relative_path: str, content: str) -> Path:
-    """Write a module file into the trellis package."""
+    """Write a module file into the trellis package.
+
+    Fails closed if the resolved target would escape ``TRELLIS_ROOT``
+    (e.g. a relative path containing ``../``).  Refs: QUA-382.
+    """
     target = TRELLIS_ROOT / relative_path
+    _validate_write_target(target, TRELLIS_ROOT, "write_module")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content)
     return target
