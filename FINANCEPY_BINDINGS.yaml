@@ -14,6 +14,12 @@ bindings:
     comparison_modes:
     - price_parity
     - warm_runtime
+    # Fill any declared Greek the payoff did not emit natively via
+    # trellis.analytics.measures finite-difference bumping.  Binding-driven
+    # policy so adding a new Greek to overlapping_outputs above enables the
+    # fallback without touching task or runner code (QUA-863).
+    greek_fallback:
+      kind: bump_and_reprice
   financepy.fx.vanilla.garman_kohlhagen:
     instrument_family: fx_vanilla
     method_family: analytical
@@ -29,6 +35,8 @@ bindings:
       price:
         source: financepy
         scale_by_contract_field: notional
+    greek_fallback:
+      kind: bump_and_reprice
   financepy.rates.cap_floor.black:
     instrument_family: cap_floor
     method_family: analytical

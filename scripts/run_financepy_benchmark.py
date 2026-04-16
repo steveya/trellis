@@ -186,6 +186,17 @@ def _execute_single_benchmark_task(
         raise_on_violation=False,
     )
 
+    # Resolve the binding before the warm probe so we can drive the
+    # bump-and-reprice Greek fallback (QUA-863).  The binding is also used
+    # below for the FinancePy output comparison; computing it once keeps the
+    # runner deterministic.
+    binding = financepy_binding_for_task(task, root=ROOT)
+    # The cold agent's native outputs -- what the payoff produced without any
+    # warm-probe augmentation -- provide the "already emitted" set for the
+    # fallback.  Declared Greeks already present here are skipped; only the
+    # missing ones are filled by bump-and-reprice.
+    cold_native_outputs = extract_trellis_benchmark_outputs(cold_result, None)
+
     if cold_result.get("success"):
         status = "priced"
         try:
@@ -202,6 +213,8 @@ def _execute_single_benchmark_task(
                     repeats=args.repeats,
                     warmups=args.warmups,
                     spec_overrides=benchmark_spec_overrides(task),
+                    binding=binding,
+                    native_outputs=cold_native_outputs,
                 )
             else:
                 warm_result = benchmark_existing_task(
@@ -211,6 +224,8 @@ def _execute_single_benchmark_task(
                     warmups=args.warmups,
                     model=args.model,
                     spec_overrides=benchmark_spec_overrides(task),
+                    binding=binding,
+                    native_outputs=cold_native_outputs,
                 )
         except Exception as exc:
             warm_result = {"error": str(exc)}
@@ -220,7 +235,6 @@ def _execute_single_benchmark_task(
         except Exception as exc:
             financepy_result = {"error": str(exc)}
 
-    binding = financepy_binding_for_task(task, root=ROOT)
     trellis_outputs = extract_trellis_benchmark_outputs(cold_result, warm_result)
     trellis_outputs_normalized = normalize_benchmark_outputs(
         task,
