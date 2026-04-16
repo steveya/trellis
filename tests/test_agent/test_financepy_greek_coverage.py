@@ -14,7 +14,9 @@ reporting shape distinguishes:
 
 from __future__ import annotations
 
-from scripts.run_financepy_benchmark import _compare_outputs
+from trellis.agent.financepy_output_comparison import (
+    compare_benchmark_outputs as _compare_outputs,
+)
 
 
 def _task(tolerance_pct: float = 1.0):
@@ -125,3 +127,59 @@ def test_compare_outputs_treats_price_as_non_greek():
         "financepy_greek_count": 1,
         "compared_greek_count": 1,
     }
+
+
+def test_compare_outputs_does_not_count_payoff_specific_outputs_as_greeks():
+    """`fair_strike_variance` is a variance-swap payoff output, not a Greek.
+
+    The earlier heuristic `is_greek = output_name != "price"` mis-classified
+    it as a Greek and falsely inflated Greek coverage counts.  The explicit
+    allowlist in `GREEK_OUTPUT_NAMES` keeps accounting honest.
+    (PR #593 round 1 Codex review.)
+    """
+    summary = _compare_outputs(
+        task=_task(),
+        binding=_binding("price", "fair_strike_variance"),
+        trellis_outputs={"price": 12.3, "fair_strike_variance": 0.048},
+        financepy_outputs={"price": 12.31, "fair_strike_variance": 0.048},
+    )
+    assert set(summary["compared_outputs"]) == {"price", "fair_strike_variance"}
+    assert summary["greek_coverage"] == {
+        "trellis_greek_count": 0,
+        "financepy_greek_count": 0,
+        "compared_greek_count": 0,
+    }
+    assert summary["greek_parity"] == "not_applicable"
+
+
+def test_compare_outputs_insufficient_overlap_shape_includes_greek_failures_tuple():
+    """Shape consistency: `greek_failures` is present in every return path
+    so downstream consumers never branch on key presence.
+    (PR #593 round 1 Copilot review.)
+    """
+    summary = _compare_outputs(
+        task=_task(),
+        binding=_binding("price", "delta"),
+        trellis_outputs={},
+        financepy_outputs={},
+    )
+    assert summary["status"] == "insufficient_overlap"
+    assert "greek_failures" in summary
+    assert summary["greek_failures"] == ()
+
+
+def test_comparison_library_has_no_import_side_effects():
+    """Importing `trellis.agent.financepy_output_comparison` must not mutate
+    `sys.path`, invoke `load_env()`, or touch the environment.
+    (PR #593 round 1 Copilot review.)
+    """
+    import importlib
+    import sys
+
+    original_path = list(sys.path)
+    # Force a re-import to exercise the import-time codepath.
+    module_name = "trellis.agent.financepy_output_comparison"
+    if module_name in sys.modules:
+        del sys.modules[module_name]
+    importlib.import_module(module_name)
+    assert sys.path == original_path

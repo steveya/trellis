@@ -95,6 +95,7 @@ from trellis.agent.benchmark_history import (
 )
 from trellis.agent.benchmark_pilots import get_pilot_task_ids
 from trellis.agent.financepy_benchmark import DEFAULT_FINANCEPY_BENCHMARK_ROOT
+from trellis.agent.financepy_output_comparison import is_greek_output
 
 
 PILOT_SCORECARD_TASK_IDS: tuple[str, ...] = get_pilot_task_ids("financepy")
@@ -293,12 +294,15 @@ def build_pilot_parity_scorecard(
         )
 
     # Aggregate Greek coverage across the pilot.  A task is counted as
-    # having Trellis Greek coverage if its latest comparison reported at
-    # least one compared Greek.  Tasks whose binding declared Greek overlap
-    # but whose Trellis side emitted no Greek are flagged as a residual
-    # miss with category `missing_greek_coverage` -- price parity can pass
-    # while the Greek contract is silently uncovered, and the scorecard
-    # should say so.  (QUA-861 item #4/#5.)
+    # having Trellis Greek coverage when its latest comparison reports
+    # `trellis_greek_count > 0` (at least one Trellis-emitted Greek),
+    # regardless of whether the other side compared it.
+    # `tasks_with_greek_overlap` is the stricter bar: both sides emitted
+    # the same Greek.  Tasks whose binding declared Greek overlap AND
+    # whose FinancePy side emitted those Greeks AND whose Trellis side
+    # emitted none are flagged `missing_greek_coverage` -- price parity
+    # can pass while the Greek contract is silently uncovered.
+    # (QUA-861 items #4/#5; Copilot review on PR #593 round 1.)
     tasks_with_trellis_greeks = 0
     tasks_with_greek_overlap = 0
     tasks_with_greek_parity_passed = 0
@@ -307,6 +311,7 @@ def build_pilot_parity_scorecard(
     for summary in task_summaries:
         coverage = summary.get("greek_coverage") or {}
         trellis_greek_count = int(coverage.get("trellis_greek_count") or 0)
+        financepy_greek_count = int(coverage.get("financepy_greek_count") or 0)
         compared_greek_count = int(coverage.get("compared_greek_count") or 0)
         if trellis_greek_count > 0:
             tasks_with_trellis_greeks += 1
@@ -317,14 +322,19 @@ def build_pilot_parity_scorecard(
             tasks_with_greek_parity_passed += 1
         elif greek_parity == "failed":
             tasks_with_greek_parity_failed += 1
-        # Missing-Greek residual miss: declared overlap expected Greeks
-        # (the financepy side reported > 0 Greeks), but Trellis emitted
-        # none.  Avoid double-listing tasks already on the miss list.
+        # Missing-Greek residual miss: derive the expected-but-missing set
+        # from the intersection of "declared Greek overlap" (canonical Greek
+        # names in `missing_trellis_outputs`) and "FinancePy actually emitted
+        # Greeks".  Without the financepy-count guard we'd mis-attribute
+        # coverage gaps to Trellis when neither side emitted anything --
+        # that's a binding-reference gap, not a Trellis-coverage gap.
+        # (PR #593 round 1 Copilot review.)
         task_id = summary.get("task_id") or ""
         expected_greeks = [
-            name for name in summary.get("missing_trellis_outputs") or () if name != "price"
+            name
+            for name in summary.get("missing_trellis_outputs") or ()
+            if is_greek_output(name)
         ]
-        financepy_greek_count = int(coverage.get("financepy_greek_count") or 0)
         if (
             task_id
             and expected_greeks
