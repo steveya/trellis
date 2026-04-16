@@ -33,6 +33,7 @@ from trellis.agent.benchmark_contracts import (
     benchmark_spec_overrides as benchmark_contract_spec_overrides,
     canonical_benchmark_instrument_type,
 )
+from trellis.agent.benchmark_greek_fallback import compute_bump_and_reprice_greeks
 from trellis.agent.financepy_parity import align_market_state_for_financepy_parity
 from trellis.agent.instrument_identity import (
     InstrumentIdentityResolution,
@@ -2598,6 +2599,38 @@ def _capture_task_pricing_snapshot(
     }
 
 
+def _apply_benchmark_greek_fallback(
+    result: dict[str, Any],
+    *,
+    payoff: Any,
+    market_state: Any,
+    binding: Mapping[str, Any] | None,
+    native_outputs: Mapping[str, Any] | None,
+) -> None:
+    """Populate bump-and-reprice Greek fields on *result* when declared.
+
+    If ``binding`` carries a ``greek_fallback`` policy, invoke
+    :func:`compute_bump_and_reprice_greeks` and merge the resulting Greeks,
+    skipped reasons, and policy name onto ``result``.  A no-op when no
+    binding is supplied or the policy is absent/unrecognized so callers
+    outside the FinancePy parity benchmark remain unchanged (QUA-863).
+    """
+    if not isinstance(binding, Mapping):
+        return
+    report = compute_bump_and_reprice_greeks(
+        payoff,
+        market_state,
+        binding=binding,
+        already_emitted=native_outputs or {},
+    )
+    if report.policy and report.policy != "none":
+        result["benchmark_greek_policy"] = report.policy
+    if report.greeks:
+        result["benchmark_greeks"] = dict(report.greeks)
+    if report.skipped:
+        result["benchmark_greek_skipped"] = dict(report.skipped)
+
+
 def benchmark_existing_task(
     task: dict,
     *,
@@ -2608,8 +2641,17 @@ def benchmark_existing_task(
     timer: Callable[[], float] = perf_counter,
     price_fn: Callable[[Any, Any], float] | None = None,
     spec_overrides: Mapping[str, Any] | None = None,
+    binding: Mapping[str, Any] | None = None,
+    native_outputs: Mapping[str, Any] | None = None,
 ) -> dict:
-    """Benchmark pricing runtime for an existing generated payoff class."""
+    """Benchmark pricing runtime for an existing generated payoff class.
+
+    When ``binding`` is supplied and declares a
+    ``greek_fallback: bump_and_reprice`` policy, any declared Greek the
+    payoff did not emit natively (per ``native_outputs``) is computed via
+    the measures in :mod:`trellis.analytics.measures` and returned under
+    ``benchmark_greeks`` / ``benchmark_greek_skipped``.  (QUA-863.)
+    """
     from trellis.engine.payoff_pricer import price_payoff
 
     if repeats < 1:
@@ -2645,7 +2687,7 @@ def benchmark_existing_task(
         last_price = price_fn(payoff, market_state)
         durations.append(timer() - start)
 
-    return {
+    result = {
         "task_id": prepared.task_id,
         "title": prepared.title,
         "instrument_type": prepared.instrument_type,
@@ -2658,6 +2700,14 @@ def benchmark_existing_task(
         "max_seconds": round(max(durations), 6),
         "last_price": last_price,
     }
+    _apply_benchmark_greek_fallback(
+        result,
+        payoff=payoff,
+        market_state=market_state,
+        binding=binding,
+        native_outputs=native_outputs,
+    )
+    return result
 
 
 def benchmark_generated_artifact(
@@ -2670,8 +2720,16 @@ def benchmark_generated_artifact(
     timer: Callable[[], float] = perf_counter,
     price_fn: Callable[[Any, Any], float] | None = None,
     spec_overrides: Mapping[str, Any] | None = None,
+    binding: Mapping[str, Any] | None = None,
+    native_outputs: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Benchmark an already-built generated artifact without falling back to cached adapters."""
+    """Benchmark an already-built generated artifact without falling back to cached adapters.
+
+    Accepts the same ``binding`` / ``native_outputs`` kwargs as
+    :func:`benchmark_existing_task` so the FinancePy parity harness can feed
+    the bump-and-reprice Greek fallback (QUA-863) into fresh-generated
+    artifacts as well.
+    """
     from trellis.engine.payoff_pricer import price_payoff
 
     if repeats < 1:
@@ -2703,7 +2761,7 @@ def benchmark_generated_artifact(
         last_price = price_fn(payoff, market_state)
         durations.append(timer() - start)
 
-    return {
+    result: dict[str, Any] = {
         "task_id": str(task.get("id") or ""),
         "title": str(task.get("title") or ""),
         "instrument_type": canonical_benchmark_instrument_type(task) or str(task.get("instrument_type") or ""),
@@ -2721,6 +2779,14 @@ def benchmark_generated_artifact(
         "execution_code_hash": str(generated_artifact.get("code_hash") or ""),
         "execution_is_fresh_build": bool(generated_artifact.get("is_fresh_build")),
     }
+    _apply_benchmark_greek_fallback(
+        result,
+        payoff=payoff,
+        market_state=market_state,
+        binding=binding,
+        native_outputs=native_outputs,
+    )
+    return result
 
 
 def _load_fallback_cached_agent(

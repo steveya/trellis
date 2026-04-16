@@ -154,6 +154,31 @@ def test_extract_trellis_benchmark_outputs_merges_benchmark_outputs_payload():
     assert outputs["fair_strike_variance"] == 0.048
 
 
+def test_extract_trellis_benchmark_outputs_merges_benchmark_greeks_as_top_level_keys():
+    """QUA-863 bump-and-reprice greeks surface as comparable top-level outputs."""
+    outputs = extract_trellis_benchmark_outputs(
+        {"benchmark_outputs": {"price": 1.23}},
+        {
+            "benchmark_greeks": {"delta": 0.55, "vega": 0.40},
+            "benchmark_greek_policy": "bump_and_reprice",
+        },
+    )
+
+    assert outputs["price"] == 1.23
+    assert outputs["delta"] == 0.55
+    assert outputs["vega"] == 0.40
+
+
+def test_extract_trellis_benchmark_outputs_cold_native_greeks_win_over_warm_fallback():
+    """Cold-run native greeks must outrank the warm bump-and-reprice fill."""
+    outputs = extract_trellis_benchmark_outputs(
+        {"benchmark_outputs": {"price": 1.23, "delta": 0.52}},
+        {"benchmark_greeks": {"delta": 0.99}},
+    )
+
+    assert outputs["delta"] == 0.52
+
+
 def test_extract_trellis_benchmark_outputs_reads_nested_result_comparison_prices():
     outputs = extract_trellis_benchmark_outputs(
         {

@@ -128,6 +128,13 @@ def _merge_benchmark_output_candidate(
     for key, value in benchmark_outputs.items():
         outputs.setdefault(key, value)
 
+    # Bump-and-reprice Greeks from the warm probe (QUA-863).  They are merged
+    # top-level via ``setdefault`` so native cold-run emissions always win and
+    # the fallback only fills declared Greeks the payoff didn't produce.
+    benchmark_greeks = dict(payload.get("benchmark_greeks") or {})
+    for key, value in benchmark_greeks.items():
+        outputs.setdefault(key, value)
+
     greeks = dict(payload.get("greeks") or {})
     if greeks:
         outputs.setdefault("greeks", greeks)

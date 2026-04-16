@@ -2965,6 +2965,153 @@ def test_benchmark_existing_task_prefers_runtime_schema_over_stale_static_schema
     assert result["last_price"] == pytest.approx(1.0873716740767274, rel=5e-5)
 
 
+def _stub_benchmark_existing_prepared(monkeypatch):
+    """Shared stub for the QUA-863 benchmark-fallback wiring tests below."""
+    from trellis.agent.task_runtime import PreparedTask
+
+    FakePayoff = type("StubPayoff", (), {})
+    prepared = PreparedTask(
+        task_id="F001",
+        title="FinancePy parity: equity vanilla",
+        description="stubbed",
+        instrument_type="equity_vanilla",
+        requirements=set(),
+        payoff_cls=FakePayoff,
+        spec_schema=object(),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime.prepare_existing_task",
+        lambda task, model="gpt-5.4-mini": prepared,
+    )
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime._make_test_payoff",
+        lambda payoff_cls, spec_schema, settle, **_kwargs: "payoff-instance",
+    )
+    return FakePayoff
+
+
+def test_benchmark_existing_task_without_binding_does_not_invoke_greek_fallback(monkeypatch):
+    """No binding means no fallback call and no ``benchmark_greeks`` on the result."""
+    from trellis.agent.task_runtime import benchmark_existing_task
+
+    _stub_benchmark_existing_prepared(monkeypatch)
+
+    def exploding_compute(*_args, **_kwargs):
+        raise AssertionError(
+            "compute_bump_and_reprice_greeks must not be invoked when no binding is supplied"
+        )
+
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime.compute_bump_and_reprice_greeks",
+        exploding_compute,
+    )
+
+    result = benchmark_existing_task(
+        {"id": "F001", "title": "FinancePy parity: equity vanilla"},
+        market_state=object(),
+        repeats=1,
+        warmups=0,
+        price_fn=lambda payoff, ms: 1.23,
+    )
+
+    assert "benchmark_greeks" not in result
+    assert "benchmark_greek_skipped" not in result
+    assert "benchmark_greek_policy" not in result
+
+
+def test_benchmark_existing_task_records_fallback_greeks_when_binding_declares_policy(monkeypatch):
+    """A binding with ``greek_fallback`` fills ``benchmark_greeks`` / ``benchmark_greek_policy``."""
+    from trellis.agent.benchmark_greek_fallback import GreekFallbackReport
+    from trellis.agent.task_runtime import benchmark_existing_task
+
+    _stub_benchmark_existing_prepared(monkeypatch)
+
+    captured: dict = {}
+
+    def fake_compute(payoff, market_state, *, binding, already_emitted):
+        captured["payoff"] = payoff
+        captured["market_state"] = market_state
+        captured["binding"] = dict(binding)
+        captured["already_emitted"] = dict(already_emitted)
+        return GreekFallbackReport(
+            greeks={"delta": 0.55, "vega": 0.40},
+            skipped={"gamma": "RuntimeError: no spot binding"},
+            policy="bump_and_reprice",
+        )
+
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime.compute_bump_and_reprice_greeks",
+        fake_compute,
+    )
+
+    binding = {
+        "overlapping_outputs": ["price", "delta", "gamma", "vega"],
+        "greek_fallback": {"kind": "bump_and_reprice"},
+    }
+    result = benchmark_existing_task(
+        {"id": "F001", "title": "FinancePy parity: equity vanilla"},
+        market_state="stub-market",
+        repeats=1,
+        warmups=0,
+        price_fn=lambda payoff, ms: 1.23,
+        binding=binding,
+        native_outputs={"price": 1.23},
+    )
+
+    assert captured["payoff"] == "payoff-instance"
+    assert captured["market_state"] == "stub-market"
+    assert captured["binding"] == binding
+    assert captured["already_emitted"] == {"price": 1.23}
+    assert result["benchmark_greek_policy"] == "bump_and_reprice"
+    assert result["benchmark_greeks"] == {"delta": 0.55, "vega": 0.40}
+    assert result["benchmark_greek_skipped"] == {"gamma": "RuntimeError: no spot binding"}
+
+
+def test_benchmark_generated_artifact_applies_fallback(monkeypatch, tmp_path):
+    """``benchmark_generated_artifact`` must honor the same ``binding`` contract."""
+    from trellis.agent.benchmark_greek_fallback import GreekFallbackReport
+    from trellis.agent.task_runtime import benchmark_generated_artifact
+
+    class StubPayoff:
+        pass
+
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime._load_generated_artifact_payoff",
+        lambda artifact: (StubPayoff, object()),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime._make_test_payoff",
+        lambda payoff_cls, spec_schema, settle, **_kwargs: "payoff-instance",
+    )
+
+    def fake_compute(payoff, market_state, *, binding, already_emitted):
+        return GreekFallbackReport(
+            greeks={"delta": 0.11},
+            skipped={},
+            policy="bump_and_reprice",
+        )
+
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime.compute_bump_and_reprice_greeks",
+        fake_compute,
+    )
+
+    result = benchmark_generated_artifact(
+        {"id": "F001", "title": "FinancePy parity: equity vanilla"},
+        generated_artifact={"module_name": "m", "module_path": "p", "file_path": "f", "code_hash": "h", "is_fresh_build": True},
+        market_state="stub-market",
+        repeats=1,
+        warmups=0,
+        price_fn=lambda payoff, ms: 9.99,
+        binding={"overlapping_outputs": ["price", "delta"], "greek_fallback": {"kind": "bump_and_reprice"}},
+        native_outputs={"price": 9.99},
+    )
+
+    assert result["benchmark_greeks"] == {"delta": 0.11}
+    assert result["benchmark_greek_policy"] == "bump_and_reprice"
+    assert "benchmark_greek_skipped" not in result
+
+
 def test_build_result_payload_includes_generated_artifact_provenance(monkeypatch, tmp_path):
     from trellis.agent.task_runtime import _build_result_payload
 
