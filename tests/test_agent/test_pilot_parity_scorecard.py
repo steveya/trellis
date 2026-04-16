@@ -608,3 +608,23 @@ def test_pilot_scorecard_render_surfaces_greek_coverage_fields(tmp_path):
     # F001 is the only task with a compared Greek; its Greek parity should be
     # surfaced per-task.
     assert "Greek parity: `passed`" in text
+
+
+def test_pilot_scorecard_handles_corrupted_comparison_summary_gracefully(tmp_path):
+    """A history record with a non-mapping `comparison_summary` (e.g. a
+    list or a string slipped through a bad write) must not raise during
+    scorecard generation.  The scorecard treats the record as if it had
+    no Greek coverage information and keeps going.
+    (PR #593 round 4 Copilot review.)"""
+    for task_id in sorted(PILOT_SCORECARD_TASK_IDS):
+        rec = _fresh_record(task_id)
+        # Pathological shape: `comparison_summary` is a bare string.
+        rec["comparison_summary"] = "malformed"
+        _write_history_record(tmp_path, rec)
+    scorecard = build_pilot_parity_scorecard(
+        scorecard_name="financepy_pilot",
+        benchmark_runs=load_pilot_benchmark_records(benchmark_root=tmp_path),
+    )
+    # No raise, and the aggregator falls back to safe defaults.
+    assert scorecard["pilot_summary"]["tasks_with_trellis_greek_coverage"] == 0
+    assert scorecard["pilot_summary"]["tasks_with_greek_overlap"] == 0

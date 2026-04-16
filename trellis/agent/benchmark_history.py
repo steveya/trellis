@@ -221,19 +221,28 @@ def _task_run_snapshot(record: Mapping[str, Any], *, benchmark_kind: str) -> dic
     }
 
 
+def _comparison_summary_of(record: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Return the record's comparison_summary or an empty mapping.
+
+    Resilient to pathological history records whose `comparison_summary`
+    is a non-mapping (e.g. a string or list).  (QUA-861 / PR #593 round 4.)
+    """
+    raw = record.get("comparison_summary")
+    return raw if isinstance(raw, Mapping) else {}
+
+
 def _result_label(record: Mapping[str, Any], *, benchmark_kind: str) -> str:
     if benchmark_kind == "negative":
         if bool(record.get("passed_expectation")):
             return "passed_expectation"
         return str(record.get("observed_outcome") or record.get("status") or "").strip()
-    comparison = dict(record.get("comparison_summary") or {})
-    return str(comparison.get("status") or record.get("status") or "").strip()
+    return str(_comparison_summary_of(record).get("status") or record.get("status") or "").strip()
 
 
 def _record_passed(record: Mapping[str, Any], *, benchmark_kind: str) -> bool:
     if benchmark_kind == "negative":
         return bool(record.get("passed_expectation"))
-    return str(dict(record.get("comparison_summary") or {}).get("status") or "").strip() == "passed"
+    return str(_comparison_summary_of(record).get("status") or "").strip() == "passed"
 
 
 def _elapsed_seconds(record: Mapping[str, Any]) -> float:

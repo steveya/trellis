@@ -337,19 +337,22 @@ def build_pilot_parity_scorecard(
         # summary's `financepy_outputs` dict plus any nested `greeks`.
         # (PR #593 round 2 Copilot review.)
         task_id = summary.get("task_id") or ""
-        financepy_outputs = (
-            comparison_summary_for_miss := latest_records_by_task.get(task_id)
-            or {}
+        # Validate each hop: a corrupted history record could have a
+        # non-mapping at either `latest_record` or `comparison_summary`
+        # or `financepy_outputs`.  Guarding each level keeps the scorecard
+        # generator from raising on bad input.  (PR #593 round 4 Copilot.)
+        latest_record_for_miss = latest_records_by_task.get(task_id)
+        miss_comparison_summary: Mapping[str, Any] = {}
+        if isinstance(latest_record_for_miss, Mapping):
+            raw_comparison_summary = latest_record_for_miss.get("comparison_summary")
+            if isinstance(raw_comparison_summary, Mapping):
+                miss_comparison_summary = raw_comparison_summary
+        raw_financepy_outputs = miss_comparison_summary.get("financepy_outputs")
+        financepy_outputs: Mapping[str, Any] = (
+            raw_financepy_outputs
+            if isinstance(raw_financepy_outputs, Mapping)
+            else {}
         )
-        if isinstance(financepy_outputs, Mapping):
-            financepy_outputs = (
-                dict(financepy_outputs.get("comparison_summary") or {}).get(
-                    "financepy_outputs"
-                )
-                or {}
-            )
-        if not isinstance(financepy_outputs, Mapping):
-            financepy_outputs = {}
         financepy_greek_keys: set[str] = set()
         for key, value in financepy_outputs.items():
             if value is None:

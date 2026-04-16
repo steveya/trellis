@@ -18,6 +18,14 @@ from typing import Any
 # `is_greek = name != "price"` mis-labeled variance-swap outputs as Greeks.
 # Add to this set when a binding introduces a new canonical Greek name.
 # Refs: QUA-861 round-1 Codex review.
+#
+# Non-scalar Greek outputs (e.g. `key_rate_durations`, which in Trellis is a
+# tenor-to-sensitivity mapping rather than a float) are intentionally NOT in
+# this set.  `compare_benchmark_outputs` casts every compared value via
+# `float()`, so declaring a dict-valued Greek here would raise.  If we ever
+# want to compare a non-scalar Greek, the comparison layer needs dict-aware
+# handling and this allowlist can be extended at the same time.  (PR #593
+# round 4 Copilot review.)
 GREEK_OUTPUT_NAMES: frozenset[str] = frozenset(
     {
         "delta",
@@ -33,7 +41,6 @@ GREEK_OUTPUT_NAMES: frozenset[str] = frozenset(
         "dv01",
         "duration",
         "convexity",
-        "key_rate_durations",
     }
 )
 
