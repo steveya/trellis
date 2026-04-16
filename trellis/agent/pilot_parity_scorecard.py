@@ -204,17 +204,21 @@ def build_pilot_parity_scorecard(
         )
         summary["fresh_generated_module"] = str(boundary.get("generated_module") or "")
         latest_snapshot = summary.get("latest") or {}
+        # Validate the comparison_summary shape once, then reuse the
+        # validated mapping everywhere below.  Building `dict(... or {})`
+        # against a non-mapping (e.g. a list or None that slipped through
+        # a bad record write) would raise.  (PR #593 round 3 Copilot review.)
+        comparison_summary = latest_record.get("comparison_summary")
+        if not isinstance(comparison_summary, Mapping):
+            comparison_summary = {}
         summary["latest_comparison_status"] = str(
-            dict(latest_record.get("comparison_summary") or {}).get("status") or ""
+            comparison_summary.get("status") or ""
         )
         summary["latest_run_id"] = str(latest_snapshot.get("run_id") or "")
         # Surface Greek coverage honestly -- the comparison summary carries
         # `missing_trellis_outputs`, `greek_parity`, and `greek_coverage` under
         # QUA-861, but the pilot scorecard used to hide all of it behind the
         # aggregate price-parity status.
-        comparison_summary = latest_record.get("comparison_summary") or {}
-        if not isinstance(comparison_summary, Mapping):
-            comparison_summary = {}
         summary["missing_trellis_outputs"] = list(
             comparison_summary.get("missing_trellis_outputs") or ()
         )

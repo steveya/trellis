@@ -38,10 +38,7 @@ from trellis.agent.financepy_benchmark import (
     select_financepy_benchmark_tasks,
 )
 from trellis.agent.benchmark_runner_dispatch import dispatch_benchmark_tasks
-from trellis.agent.financepy_output_comparison import (
-    compare_benchmark_outputs,
-    output_value as _output_value,
-)
+from trellis.agent.financepy_output_comparison import compare_benchmark_outputs
 from trellis.agent.fresh_generated_boundary import (
     FreshGeneratedBoundaryError,
     enforce_fresh_generated_boundary,

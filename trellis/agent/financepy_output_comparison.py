@@ -69,7 +69,11 @@ def compare_benchmark_outputs(
     per-side Greek coverage + Greek-only parity so scorecards can surface
     the gap.
     """
-    tolerance_pct = float(((task.get("cross_validate") or {}).get("tolerance_pct") or 5.0))
+    cross_validate = task.get("cross_validate") or {}
+    raw_tolerance_pct = cross_validate.get("tolerance_pct")
+    # Preserve `0.0` as an explicit strict-parity tolerance.  `... or 5.0`
+    # would silently overwrite it.  (PR #593 round 3 Copilot review.)
+    tolerance_pct = 5.0 if raw_tolerance_pct is None else float(raw_tolerance_pct)
     trellis_outputs = dict(trellis_outputs or {})
     financepy_outputs = dict(financepy_outputs or {})
     overlapping_outputs = tuple(

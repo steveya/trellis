@@ -183,3 +183,19 @@ def test_comparison_library_has_no_import_side_effects():
         del sys.modules[module_name]
     importlib.import_module(module_name)
     assert sys.path == original_path
+
+
+def test_compare_outputs_preserves_explicit_zero_tolerance():
+    """An explicit `tolerance_pct: 0.0` on the task is strict-parity, not
+    "fall back to the 5% default".  The `... or 5.0` idiom would silently
+    upgrade 0 to 5.  (PR #593 round 3 Copilot review.)"""
+    task = {"cross_validate": {"tolerance_pct": 0.0}}
+    summary = _compare_outputs(
+        task=task,
+        binding=_binding("price"),
+        trellis_outputs={"price": 10.0},
+        financepy_outputs={"price": 10.01},
+    )
+    assert summary["tolerance_pct"] == 0.0
+    # 0.1% deviation exceeds a 0% tolerance, so the comparison fails.
+    assert summary["status"] == "failed"
