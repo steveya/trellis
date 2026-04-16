@@ -3447,6 +3447,32 @@ def _deterministic_exact_binding_evaluate_body(
     return None
 
 
+def _deterministic_exact_binding_benchmark_outputs_block(
+    generation_plan,
+    *,
+    comparison_target: str | None = None,
+) -> str | None:
+    """Return a complete ``benchmark_outputs`` method for supported routes.
+
+    Returned text is un-indented; the caller must indent it to class scope
+    (four spaces) before appending.  Returns ``None`` when the deterministic
+    route does not have a native Greek helper available (QUA-862).
+    """
+    refs = set(_exact_binding_refs(generation_plan))
+    if (
+        comparison_target == "black_scholes"
+        and "trellis.models.black.black76_call" in refs
+        and "trellis.models.black.black76_put" in refs
+    ):
+        return textwrap.dedent(
+            """\
+            def benchmark_outputs(self, market_state: MarketState) -> dict[str, float]:
+                return dict(equity_vanilla_bs_outputs(market_state, self._spec))
+            """
+        )
+    return None
+
+
 def _materialize_deterministic_exact_binding_module(
     skeleton: str,
     generation_plan,
@@ -3462,14 +3488,29 @@ def _materialize_deterministic_exact_binding_module(
     )
     if body is None:
         return None
-    skeleton = _inject_top_level_imports(
-        skeleton,
-        list(_deterministic_exact_binding_import_lines(body)),
+    benchmark_outputs_block = _deterministic_exact_binding_benchmark_outputs_block(
+        generation_plan,
+        comparison_target=comparison_target,
     )
+    import_lines = list(_deterministic_exact_binding_import_lines(body))
+    if benchmark_outputs_block is not None:
+        import_lines.extend(
+            _deterministic_exact_binding_benchmark_outputs_import_lines(
+                benchmark_outputs_block
+            )
+        )
+    skeleton = _inject_top_level_imports(skeleton, import_lines)
     rendered = skeleton.replace(
         EVALUATE_SENTINEL,
         textwrap.indent(body, "        "),
     )
+    if benchmark_outputs_block is not None:
+        rendered = (
+            rendered.rstrip("\n")
+            + "\n\n"
+            + textwrap.indent(benchmark_outputs_block, "    ")
+            + "\n"
+        )
     source_report = sanitize_generated_source(rendered)
     return GeneratedModuleResult(
         raw_code=rendered,
@@ -3490,6 +3531,16 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     imports: list[str] = []
     if "year_fraction(" in body:
         imports.append("from trellis.core.date_utils import year_fraction")
+    return tuple(imports)
+
+
+def _deterministic_exact_binding_benchmark_outputs_import_lines(block: str) -> tuple[str, ...]:
+    """Return imports required by the injected ``benchmark_outputs`` block (QUA-862)."""
+    imports: list[str] = []
+    if "equity_vanilla_bs_outputs(" in block:
+        imports.append(
+            "from trellis.models.analytical.equity_vanilla_bs import equity_vanilla_bs_outputs"
+        )
     return tuple(imports)
 
 
