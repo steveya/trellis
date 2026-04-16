@@ -152,6 +152,54 @@ def test_fallback_rejects_invalid_override_shape_without_blowing_up():
     assert "measure constructor rejected" in report.skipped["vega"]
 
 
+def test_fallback_treats_nested_native_greeks_as_already_emitted():
+    """Native Greeks preserved under ``greeks[...]`` must skip the warm bump.
+
+    ``extract_trellis_benchmark_outputs`` carries cold-run native Greeks
+    inside a nested ``greeks`` mapping for sources that report them that
+    way (``summary.greeks``, ``comparison.greeks``, ``result.greeks``).
+    Treating those as missing would let the bump fallback overwrite
+    native values when its output gets merged as a top-level key.  (PR
+    #594 Codex P2 round 1.)
+    """
+    report = compute_bump_and_reprice_greeks(
+        payoff=object(),
+        market_state=object(),
+        binding=_binding("price", "delta", "vega"),
+        already_emitted={
+            "price": 10.45,
+            "greeks": {"delta": 0.60, "vega": 0.41},
+        },
+        measure_factories={
+            "delta": _StubDelta,
+            "vega": _StubVega,
+        },
+    )
+    assert report.greeks == {}
+    assert report.skipped == {}
+
+
+def test_fallback_nested_mapping_with_non_mapping_greeks_is_robust():
+    """A non-Mapping value under ``greeks`` must not blow up the fallback.
+
+    Defensive shape check so a malformed cold-run payload degrades to
+    "top-level keys only" detection rather than raising, keeping the
+    fallback available for any other correctly-typed declared Greeks.
+    """
+    report = compute_bump_and_reprice_greeks(
+        payoff=object(),
+        market_state=object(),
+        binding=_binding("price", "delta"),
+        already_emitted={
+            "price": 10.45,
+            "greeks": "not-a-mapping",
+        },
+        measure_factories={"delta": _StubDelta},
+    )
+    assert report.greeks == {"delta": 0.55}
+    assert report.skipped == {}
+
+
 def test_fallback_report_serializes_to_record():
     report = GreekFallbackReport(
         greeks={"delta": 0.55, "vega": 0.4},

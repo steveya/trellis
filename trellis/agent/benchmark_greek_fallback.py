@@ -70,6 +70,38 @@ def _binding_fallback_policy(binding: Mapping[str, Any]) -> dict[str, Any]:
     return dict(raw)
 
 
+def _already_emitted_names(already_emitted: Mapping[str, Any] | None) -> set[str]:
+    """Collect native output names from top-level keys AND nested ``greeks``.
+
+    ``extract_trellis_benchmark_outputs`` preserves cold-run native Greeks
+    either at the top level (when the payoff's ``benchmark_outputs``
+    returns ``{"delta": ..., "gamma": ...}``) or under a ``greeks`` key
+    (when they come from ``summary.greeks`` / ``comparison.greeks`` /
+    ``result.greeks``).  We treat both shapes as authoritative so the
+    warm bump-and-reprice never silently overrides a native Greek just
+    because it happened to live in the nested dict.  (PR #594 Codex P2
+    round 1.)
+    """
+    if not already_emitted:
+        return set()
+    names: set[str] = set()
+    for key, value in already_emitted.items():
+        name = str(key).strip()
+        if not name:
+            continue
+        if name == "greeks":
+            if isinstance(value, Mapping):
+                for nested_key in value.keys():
+                    nested_name = str(nested_key).strip()
+                    if nested_name:
+                        names.add(nested_name)
+            # Non-mapping ``greeks`` is treated as a malformed payload:
+            # ignore silently and keep only the other top-level keys.
+            continue
+        names.add(name)
+    return names
+
+
 def _requested_greeks(
     binding: Mapping[str, Any],
     already_emitted: set[str],
@@ -127,7 +159,7 @@ def compute_bump_and_reprice_greeks(
         return GreekFallbackReport(greeks={}, skipped={}, policy=policy_kind or "none")
 
     factories = dict(measure_factories or _default_measure_factories())
-    already = {str(k).strip() for k in (already_emitted or {}) if str(k).strip()}
+    already = _already_emitted_names(already_emitted)
     requested = _requested_greeks(binding, already)
 
     policy_overrides = policy.get("measures") or {}
