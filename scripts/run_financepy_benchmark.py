@@ -144,6 +144,15 @@ def _compare_outputs(
     trellis_outputs: dict[str, Any],
     financepy_outputs: dict[str, Any] | None,
 ) -> dict[str, Any]:
+    """Compare Trellis vs FinancePy outputs, reporting Greek coverage honestly.
+
+    Refs: QUA-861.  The older shape silently skipped declared outputs that
+    one side didn't emit, so a task could "pass" on `price` alone while
+    quietly missing every Greek.  This version records
+    ``missing_trellis_outputs`` / ``missing_financepy_outputs`` and
+    per-side Greek coverage + Greek-only parity so scorecards can surface
+    the gap.
+    """
     tolerance_pct = float(((task.get("cross_validate") or {}).get("tolerance_pct") or 5.0))
     financepy_outputs = financepy_outputs or {}
     overlapping_outputs = tuple(
@@ -154,23 +163,61 @@ def _compare_outputs(
     compared_outputs: list[str] = []
     output_deltas: dict[str, float] = {}
     failures: list[str] = []
+    missing_trellis: list[str] = []
+    missing_financepy: list[str] = []
+    greek_failures: list[str] = []
+    trellis_greek_count = 0
+    financepy_greek_count = 0
+    compared_greek_count = 0
+    compared_greeks = False
     for output_name in overlapping_outputs:
+        is_greek = output_name != "price"
         trellis_value = _output_value(trellis_outputs, output_name)
         financepy_value = _output_value(financepy_outputs, output_name)
+        if trellis_value is not None and is_greek:
+            trellis_greek_count += 1
+        if financepy_value is not None and is_greek:
+            financepy_greek_count += 1
+        if trellis_value is None:
+            missing_trellis.append(output_name)
+        if financepy_value is None:
+            missing_financepy.append(output_name)
         if trellis_value is None or financepy_value is None:
             continue
         compared_outputs.append(output_name)
+        if is_greek:
+            compared_greek_count += 1
+            compared_greeks = True
         denominator = max(abs(float(financepy_value)), 1e-12)
         deviation_pct = abs(float(trellis_value) - float(financepy_value)) / denominator * 100.0
         output_deltas[output_name] = round(deviation_pct, 6)
         if deviation_pct > tolerance_pct:
             failures.append(output_name)
+            if is_greek:
+                greek_failures.append(output_name)
+
+    greek_coverage = {
+        "trellis_greek_count": trellis_greek_count,
+        "financepy_greek_count": financepy_greek_count,
+        "compared_greek_count": compared_greek_count,
+    }
+    if not compared_greeks:
+        greek_parity = "not_applicable"
+    elif greek_failures:
+        greek_parity = "failed"
+    else:
+        greek_parity = "passed"
+
     if not compared_outputs:
         return {
             "status": "insufficient_overlap",
             "tolerance_pct": tolerance_pct,
             "compared_outputs": (),
             "expected_overlapping_outputs": overlapping_outputs,
+            "missing_trellis_outputs": tuple(missing_trellis),
+            "missing_financepy_outputs": tuple(missing_financepy),
+            "greek_coverage": greek_coverage,
+            "greek_parity": greek_parity,
             "trellis_outputs": trellis_outputs,
             "financepy_outputs": financepy_outputs,
         }
@@ -180,6 +227,11 @@ def _compare_outputs(
         "compared_outputs": tuple(compared_outputs),
         "expected_overlapping_outputs": overlapping_outputs,
         "output_deviation_pct": output_deltas,
+        "missing_trellis_outputs": tuple(missing_trellis),
+        "missing_financepy_outputs": tuple(missing_financepy),
+        "greek_coverage": greek_coverage,
+        "greek_parity": greek_parity,
+        "greek_failures": tuple(greek_failures),
         "trellis_outputs": trellis_outputs,
         "financepy_outputs": financepy_outputs,
     }

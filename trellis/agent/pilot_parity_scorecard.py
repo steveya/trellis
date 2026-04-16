@@ -207,6 +207,27 @@ def build_pilot_parity_scorecard(
             dict(latest_record.get("comparison_summary") or {}).get("status") or ""
         )
         summary["latest_run_id"] = str(latest_snapshot.get("run_id") or "")
+        # Surface Greek coverage honestly -- the comparison summary carries
+        # `missing_trellis_outputs`, `greek_parity`, and `greek_coverage` under
+        # QUA-861, but the pilot scorecard used to hide all of it behind the
+        # aggregate price-parity status.
+        comparison_summary = latest_record.get("comparison_summary") or {}
+        if not isinstance(comparison_summary, Mapping):
+            comparison_summary = {}
+        summary["missing_trellis_outputs"] = list(
+            comparison_summary.get("missing_trellis_outputs") or ()
+        )
+        summary["missing_financepy_outputs"] = list(
+            comparison_summary.get("missing_financepy_outputs") or ()
+        )
+        greek_coverage = comparison_summary.get("greek_coverage") or {}
+        if not isinstance(greek_coverage, Mapping):
+            greek_coverage = {}
+        summary["greek_coverage"] = dict(greek_coverage)
+        summary["greek_parity"] = str(
+            comparison_summary.get("greek_parity") or "not_applicable"
+        )
+        summary["greek_failures"] = list(comparison_summary.get("greek_failures") or ())
         if latest_snapshot.get("passed"):
             latest_pass += 1
         else:
@@ -271,6 +292,65 @@ def build_pilot_parity_scorecard(
             }
         )
 
+    # Aggregate Greek coverage across the pilot.  A task is counted as
+    # having Trellis Greek coverage if its latest comparison reported at
+    # least one compared Greek.  Tasks whose binding declared Greek overlap
+    # but whose Trellis side emitted no Greek are flagged as a residual
+    # miss with category `missing_greek_coverage` -- price parity can pass
+    # while the Greek contract is silently uncovered, and the scorecard
+    # should say so.  (QUA-861 item #4/#5.)
+    tasks_with_trellis_greeks = 0
+    tasks_with_greek_overlap = 0
+    tasks_with_greek_parity_passed = 0
+    tasks_with_greek_parity_failed = 0
+    already_missed_ids = {miss["task_id"] for miss in residual_misses}
+    for summary in task_summaries:
+        coverage = summary.get("greek_coverage") or {}
+        trellis_greek_count = int(coverage.get("trellis_greek_count") or 0)
+        compared_greek_count = int(coverage.get("compared_greek_count") or 0)
+        if trellis_greek_count > 0:
+            tasks_with_trellis_greeks += 1
+        if compared_greek_count > 0:
+            tasks_with_greek_overlap += 1
+        greek_parity = str(summary.get("greek_parity") or "not_applicable")
+        if greek_parity == "passed":
+            tasks_with_greek_parity_passed += 1
+        elif greek_parity == "failed":
+            tasks_with_greek_parity_failed += 1
+        # Missing-Greek residual miss: declared overlap expected Greeks
+        # (the financepy side reported > 0 Greeks), but Trellis emitted
+        # none.  Avoid double-listing tasks already on the miss list.
+        task_id = summary.get("task_id") or ""
+        expected_greeks = [
+            name for name in summary.get("missing_trellis_outputs") or () if name != "price"
+        ]
+        financepy_greek_count = int(coverage.get("financepy_greek_count") or 0)
+        if (
+            task_id
+            and expected_greeks
+            and financepy_greek_count > 0
+            and trellis_greek_count == 0
+            and task_id not in already_missed_ids
+        ):
+            latest_snapshot = summary.get("latest") or {}
+            residual_misses.append(
+                {
+                    "task_id": task_id,
+                    "category": "missing_greek_coverage",
+                    "reason": (
+                        f"Trellis emits no Greek outputs; binding expected "
+                        f"{expected_greeks}"
+                    ),
+                    "run_id": str(latest_snapshot.get("run_id") or ""),
+                    "run_started_at": str(latest_snapshot.get("run_started_at") or ""),
+                    "git_sha": str(latest_snapshot.get("git_sha") or ""),
+                    "knowledge_revision": str(
+                        latest_snapshot.get("knowledge_revision") or ""
+                    ),
+                }
+            )
+            already_missed_ids.add(task_id)
+
     pilot_summary = {
         "fresh_generated_enforced_count": enforced,
         "boundary_violation_count": violations,
@@ -278,6 +358,10 @@ def build_pilot_parity_scorecard(
         "latest_pass_count": latest_pass,
         "deviation_median_pct": median_deviation_pct,
         "deviation_outlier_count": outlier_count,
+        "tasks_with_trellis_greek_coverage": tasks_with_trellis_greeks,
+        "tasks_with_greek_overlap": tasks_with_greek_overlap,
+        "greek_parity_passed_count": tasks_with_greek_parity_passed,
+        "greek_parity_failed_count": tasks_with_greek_parity_failed,
     }
     return {
         "scorecard_name": scorecard_name,
@@ -312,6 +396,10 @@ def render_pilot_parity_scorecard(scorecard: Mapping[str, Any]) -> str:
         f"- Latest pass count: `{summary.get('latest_pass_count', 0)}`",
         f"- Deviation median: `{summary.get('deviation_median_pct', 0.0)}%`",
         f"- Deviation outliers: `{summary.get('deviation_outlier_count', 0)}`",
+        f"- Tasks with Trellis Greek coverage: `{summary.get('tasks_with_trellis_greek_coverage', 0)}`",
+        f"- Tasks with Greek overlap (both sides): `{summary.get('tasks_with_greek_overlap', 0)}`",
+        f"- Greek parity passed: `{summary.get('greek_parity_passed_count', 0)}`",
+        f"- Greek parity failed: `{summary.get('greek_parity_failed_count', 0)}`",
     ]
     if scorecard.get("notes"):
         lines.extend(["", "## Notes"])
@@ -369,8 +457,22 @@ def render_pilot_parity_scorecard(scorecard: Mapping[str, Any]) -> str:
                 f"- Max output deviation: `{task.get('max_output_deviation_pct')}%`",
                 f"- Vs pilot median: `{task.get('deviation_vs_pilot_median')}x`",
                 f"- Outlier: `{task.get('outlier_flag', False)}`",
+                f"- Greek parity: `{task.get('greek_parity', 'not_applicable')}`",
             ]
         )
+        coverage = task.get("greek_coverage") or {}
+        if coverage:
+            lines.append(
+                f"- Greek coverage: trellis=`{coverage.get('trellis_greek_count', 0)}` "
+                f"financepy=`{coverage.get('financepy_greek_count', 0)}` "
+                f"compared=`{coverage.get('compared_greek_count', 0)}`"
+            )
+        missing_trellis = task.get("missing_trellis_outputs") or ()
+        if missing_trellis:
+            lines.append(f"- Missing Trellis outputs: `{', '.join(missing_trellis)}`")
+        greek_failures = task.get("greek_failures") or ()
+        if greek_failures:
+            lines.append(f"- Greek failures: `{', '.join(greek_failures)}`")
         if task.get("fresh_generated_boundary_status") == "violated":
             reason = task.get("fresh_generated_boundary_reason") or "boundary violation"
             lines.append(f"- Boundary reason: `{reason}`")

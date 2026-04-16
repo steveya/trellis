@@ -400,3 +400,135 @@ def test_pilot_parity_scorecard_cli_writes_artifacts(tmp_path, monkeypatch, caps
     assert payload["pilot_summary"]["fresh_generated_enforced_count"] == len(
         PILOT_SCORECARD_TASK_IDS
     )
+
+
+def _record_with_greek_coverage(task_id, *, trellis_greeks, financepy_greeks, greek_parity):
+    """Build a record whose comparison_summary reports QUA-861 Greek fields."""
+    record = _fresh_record(task_id)
+    missing_trellis = [g for g in financepy_greeks if g not in trellis_greeks]
+    missing_financepy = [g for g in trellis_greeks if g not in financepy_greeks]
+    compared = [g for g in trellis_greeks if g in financepy_greeks]
+    record["comparison_summary"] = dict(record["comparison_summary"])
+    record["comparison_summary"].update(
+        {
+            "missing_trellis_outputs": missing_trellis,
+            "missing_financepy_outputs": missing_financepy,
+            "greek_coverage": {
+                "trellis_greek_count": len(trellis_greeks),
+                "financepy_greek_count": len(financepy_greeks),
+                "compared_greek_count": len(compared),
+            },
+            "greek_parity": greek_parity,
+            "greek_failures": [],
+        }
+    )
+    return record
+
+
+def test_pilot_scorecard_aggregates_greek_coverage_across_tasks(tmp_path):
+    # Two tasks expose Trellis Greeks, four do not; five have financepy Greeks.
+    records = {
+        "F001": _record_with_greek_coverage(
+            "F001",
+            trellis_greeks=["delta", "vega"],
+            financepy_greeks=["delta", "vega", "gamma"],
+            greek_parity="passed",
+        ),
+        "F002": _record_with_greek_coverage(
+            "F002",
+            trellis_greeks=["delta"],
+            financepy_greeks=["delta"],
+            greek_parity="passed",
+        ),
+        "F003": _record_with_greek_coverage(
+            "F003",
+            trellis_greeks=[],
+            financepy_greeks=["delta"],
+            greek_parity="not_applicable",
+        ),
+        "F007": _record_with_greek_coverage(
+            "F007",
+            trellis_greeks=[],
+            financepy_greeks=[],
+            greek_parity="not_applicable",
+        ),
+        "F009": _record_with_greek_coverage(
+            "F009",
+            trellis_greeks=[],
+            financepy_greeks=["delta", "gamma"],
+            greek_parity="not_applicable",
+        ),
+        "F012": _record_with_greek_coverage(
+            "F012",
+            trellis_greeks=[],
+            financepy_greeks=[],
+            greek_parity="not_applicable",
+        ),
+    }
+    for rec in records.values():
+        _write_history_record(tmp_path, rec)
+
+    scorecard = build_pilot_parity_scorecard(
+        scorecard_name="financepy_pilot",
+        benchmark_runs=load_pilot_benchmark_records(benchmark_root=tmp_path),
+    )
+    summary = scorecard["pilot_summary"]
+    assert summary["tasks_with_trellis_greek_coverage"] == 2
+    assert summary["tasks_with_greek_overlap"] == 2
+    assert summary["greek_parity_passed_count"] == 2
+    assert summary["greek_parity_failed_count"] == 0
+
+    # Tasks where financepy declared Greeks but Trellis emitted none become
+    # residual misses with category `missing_greek_coverage`.
+    missing_coverage_misses = {
+        miss["task_id"]: miss
+        for miss in scorecard["residual_misses"]
+        if miss["category"] == "missing_greek_coverage"
+    }
+    assert set(missing_coverage_misses) == {"F003", "F009"}
+
+
+def test_pilot_scorecard_does_not_flag_missing_greeks_when_binding_has_no_greek_overlap(tmp_path):
+    for task_id in sorted(PILOT_SCORECARD_TASK_IDS):
+        _write_history_record(
+            tmp_path,
+            _record_with_greek_coverage(
+                task_id,
+                trellis_greeks=[],
+                financepy_greeks=[],
+                greek_parity="not_applicable",
+            ),
+        )
+    scorecard = build_pilot_parity_scorecard(
+        scorecard_name="financepy_pilot",
+        benchmark_runs=load_pilot_benchmark_records(benchmark_root=tmp_path),
+    )
+    assert scorecard["pilot_summary"]["tasks_with_trellis_greek_coverage"] == 0
+    assert [
+        miss for miss in scorecard["residual_misses"]
+        if miss["category"] == "missing_greek_coverage"
+    ] == []
+
+
+def test_pilot_scorecard_render_surfaces_greek_coverage_fields(tmp_path):
+    for task_id in sorted(PILOT_SCORECARD_TASK_IDS):
+        record = _record_with_greek_coverage(
+            task_id,
+            trellis_greeks=["delta"] if task_id == "F001" else [],
+            financepy_greeks=["delta", "gamma"] if task_id == "F001" else [],
+            greek_parity="passed" if task_id == "F001" else "not_applicable",
+        )
+        _write_history_record(tmp_path, record)
+
+    scorecard = build_pilot_parity_scorecard(
+        scorecard_name="financepy_pilot",
+        benchmark_runs=load_pilot_benchmark_records(benchmark_root=tmp_path),
+    )
+    text = render_pilot_parity_scorecard(scorecard)
+    assert "Tasks with Trellis Greek coverage" in text
+    assert "Tasks with Greek overlap" in text
+    assert "Greek parity passed" in text
+    assert "Greek coverage: trellis=" in text
+    # F001 is the only task with a compared Greek; its Greek parity should be
+    # surfaced per-task.
+    assert "Greek parity: `passed`" in text
