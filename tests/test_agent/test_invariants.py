@@ -677,6 +677,89 @@ class TestVolMonotonicity:
         assert failures
         assert all(failure.context["expected_direction"] == "increasing" for failure in failures)
 
+    def test_vol_monotonicity_skips_digital_option_payoff(self):
+        """QUA-879: digital payoffs have non-monotonic vol sensitivity by design.
+
+        Cash-or-nothing and asset-or-nothing digitals have a price-vs-vol curve
+        that rises then falls (or vice versa) depending on moneyness and time
+        to expiry -- enforcing monotonicity blocks the benchmark path (F010)
+        despite the helper producing FinancePy-parity prices.  The gate
+        follows the ``_payoff_is_signed_linear`` pattern QUA-851 introduced.
+        """
+        class DigitalOptionPayoff:
+            def __init__(self):
+                self._spec = type(
+                    "DigitalOptionSpec",
+                    (),
+                    {
+                        "notional": 1.0,
+                        "spot": 100.0,
+                        "strike": 95.0,
+                        "cash_payoff": 1.0,
+                        "option_type": "call",
+                    },
+                )()
+
+            @property
+            def spec(self):
+                return self._spec
+
+            @property
+            def requirements(self):
+                return {"discount_curve", "black_vol_surface"}
+
+            def evaluate(self, market_state):
+                # Deliberately non-monotonic: peaks at σ ≈ 0.2, falls both sides.
+                vol = float(market_state.vol_surface.black_vol(1.0, 95.0))
+                return float(7.9 - 60.0 * (vol - 0.20) ** 2)
+
+        failures = check_vol_monotonicity(
+            lambda: DigitalOptionPayoff(),
+            _ms_factory,
+            return_diagnostics=True,
+        )
+        assert failures == []
+
+    def test_vol_monotonicity_still_surfaces_pricing_exceptions_for_digital_payoffs(self):
+        """A broken digital (raises on evaluate) must still produce a failure.
+
+        Mirrors the QUA-851 PR #596 P1 fix: skip only the monotonicity
+        assertion, not pricing-exception detection.
+        """
+        class BrokenDigitalPayoff:
+            def __init__(self):
+                self._spec = type(
+                    "DigitalOptionSpec",
+                    (),
+                    {
+                        "notional": 1.0,
+                        "spot": 100.0,
+                        "strike": 95.0,
+                        "cash_payoff": 1.0,
+                        "option_type": "call",
+                    },
+                )()
+
+            @property
+            def spec(self):
+                return self._spec
+
+            @property
+            def requirements(self):
+                return {"discount_curve", "black_vol_surface"}
+
+            def evaluate(self, market_state):
+                raise RuntimeError("digital helper misconfigured")
+
+        failures = check_vol_monotonicity(
+            lambda: BrokenDigitalPayoff(),
+            _ms_factory,
+            return_diagnostics=True,
+        )
+        assert len(failures) == 1
+        assert failures[0].check == "check_vol_monotonicity"
+        assert "Pricing failed" in failures[0].message
+
 
 class TestZeroVolIntrinsic:
 
