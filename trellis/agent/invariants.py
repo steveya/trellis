@@ -318,6 +318,38 @@ def _payoff_is_signed_linear(payoff: Payoff) -> bool:
     return _is_cds_like(payoff, spec)
 
 
+def _payoff_has_nonmonotonic_vol(payoff: Payoff) -> bool:
+    """Return whether the payoff's price-vs-vol curve is allowed to be non-monotonic.
+
+    Cash-or-nothing and asset-or-nothing digital options have a price-vs-σ
+    profile that peaks and falls depending on moneyness and time to expiry
+    -- the ``check_vol_monotonicity`` contract (``price(σ_i+1) > price(σ_i)``
+    for all adjacent σ samples) is mathematically wrong for them.  We
+    still want to catch pricing exceptions and broken builds, so the
+    monotonicity assertion is skipped rather than the whole check.
+
+    Kept as a dedicated helper (parallel to ``_payoff_is_signed_linear``)
+    so future non-monotonic-vol families (lookback-on-extreme, geometric
+    Asian, certain basket configurations) can be added here without
+    touching ``check_vol_monotonicity`` directly.  (QUA-879.)
+    """
+    spec = _extract_spec(payoff)
+    cls_name = type(payoff).__name__.lower()
+    spec_name = type(spec).__name__.lower() if spec is not None else ""
+    if "digital" in cls_name or "digital" in spec_name:
+        return True
+    # Spec carrying a ``cash_payoff`` attribute is the canonical digital
+    # marker used by ``price_equity_digital_option_analytical``.  We also
+    # check for ``payoff_style`` because some adapters surface digital
+    # variants via that field.
+    if spec is not None and hasattr(spec, "cash_payoff"):
+        return True
+    payoff_style = str(getattr(spec, "payoff_style", "") or "").strip().lower()
+    if payoff_style in {"cash_or_nothing", "asset_or_nothing"}:
+        return True
+    return False
+
+
 def check_non_negativity(
     payoff: Payoff,
     market_state: MarketState,
@@ -418,8 +450,33 @@ def check_vol_monotonicity(
     *,
     return_diagnostics: bool = False,
 ) -> list[InvariantFailure] | list[str]:
-    """Price should move monotonically with vol in the expected direction."""
+    """Price should move monotonically with vol in the expected direction.
+
+    Payoff families with non-monotonic price-vs-vol curves (see
+    :func:`_payoff_has_nonmonotonic_vol` -- currently digital
+    cash-or-nothing / asset-or-nothing options) are exempt from the
+    monotonicity assertion.  We still invoke ``price_payoff`` at each
+    σ sample so broken builds still produce an ``InvariantFailure``,
+    just not on the monotonicity ordering itself.  (QUA-879.)
+    """
     failures: list[InvariantFailure] = []
+    # Classify once from a freshly-built payoff; subsequent prices
+    # re-build the payoff per σ sample so the classifier can't drift.
+    try:
+        sample_payoff = payoff_factory()
+    except Exception as e:
+        failures.append(
+            InvariantFailure(
+                check="check_vol_monotonicity",
+                message=f"Pricing failed at vol=<initial>: {e}",
+                exception_type=type(e).__name__,
+                exception_message=str(e),
+                context={"expected_direction": expected_direction},
+            )
+        )
+        return _emit_failures(failures, return_diagnostics=return_diagnostics)
+    is_nonmonotonic = _payoff_has_nonmonotonic_vol(sample_payoff)
+
     prices = []
     for vol in vol_range:
         try:
@@ -440,6 +497,11 @@ def check_vol_monotonicity(
                 )
             )
             return _emit_failures(failures, return_diagnostics=return_diagnostics)
+
+    if is_nonmonotonic:
+        # Pricing succeeded at every σ sample; do not enforce the
+        # monotonicity ordering for this payoff family.
+        return _emit_failures(failures, return_diagnostics=return_diagnostics)
 
     for i in range(len(prices) - 1):
         v1, p1 = prices[i]
