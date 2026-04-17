@@ -184,3 +184,35 @@ def test_transform_lane_plan_emits_terminal_characteristic_contract():
     assert "quote_semantics:equity_black_vol_surface" in plan.control_obligations
     assert any("terminal-only transform contract" in step for step in plan.construction_steps)
     assert any("helper_backed" in step for step in plan.construction_steps)
+
+
+def test_waterfall_lane_plan_emits_cashflow_engine_construction_steps():
+    """QUA-816 slice 1 round-1 Codex P1: removing the route-card adapter for
+    ``waterfall_cashflows`` must not leave the lane with empty construction
+    steps.  The lane-obligation surface now carries the "map collateral
+    cashflows onto the tranche structure" guidance that used to live as an
+    adapter on the route card.
+    """
+    lowering = SemanticDslLowering(
+        route_id="waterfall_cashflows",
+        route_family="waterfall",
+        family_ir=None,
+        expr=None,
+        normalized_expr=None,
+    )
+
+    plan = compile_lane_construction_plan(
+        preferred_method="waterfall",
+        required_market_data=("discount_curve",),
+        dsl_lowering=lowering,
+    )
+
+    assert plan is not None
+    assert plan.lane_family == "waterfall"
+    assert plan.construction_steps, (
+        "waterfall lane plan must emit construction steps even without a "
+        "specialized family IR; otherwise removing route-card adapters "
+        "leaves build-time guidance empty."
+    )
+    assert any("cashflow_engine" in step for step in plan.construction_steps)
+    assert any("tranche" in step.lower() for step in plan.construction_steps)
