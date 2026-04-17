@@ -518,23 +518,13 @@ routes:
         symbol: stochastic_mesh
         role: exercise_control
         required: false
-    adapters:
-      - derive_exercise_dates_from_schedule_or_time_grid
-      - build_spot_to_exercise_payoff_callback
-      - select_continuation_estimator_or_basis
-    notes:
-      - "Use an approved early-exercise control primitive instead of inventing new engine modes."
-      - "The implemented primitive is `longstaff_schwartz`; do not rename it to `lsm_mc` or a `method=\"lsm\"` engine mode."
-      - "Regression basis choice is a continuation-estimator detail, not a required route primitive."
-    # NOTE: early_exercise_policy summaries are dynamic; render at runtime from
-    # trellis.agent.early_exercise_policy if needed in prompt.
-    dynamic_notes:
-      - source: trellis.agent.early_exercise_policy
-        function: render_early_exercise_policy_summary
-        template: "Approved policy classes: {result}."
-      - source: trellis.agent.early_exercise_policy
-        function: render_implemented_early_exercise_policy_summary
-        template: "Implemented today: {result}."
+    # QUA-880: adapters, static notes, and dynamic_notes retired onto the
+    # lane-obligation surface.  `lane_obligations._control_obligations_for`
+    # now emits `approved_exercise_policies` / `implemented_exercise_policies`
+    # summaries and the LSM naming invariant as typed obligations, and
+    # `_construction_steps_for` emits the three exercise-MC construction
+    # steps (date derivation, payoff callback, continuation estimator
+    # selection) when the control style is `holder_max` or `issuer_min`.
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -1279,14 +1269,9 @@ routes:
           - module: trellis.models.pde.theta_method
             symbol: theta_method_1d
             role: time_stepping
-        adapters:
-          - define_operator_boundary_terminal_conditions
-        notes:
-          - "Construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray before calling `theta_method_1d(grid, operator, terminal_condition, theta=...)`."
-          - "Use `BlackScholesOperator(sigma_fn, r_fn)` with callable inputs; do not invent `log_grid_pde` or `uniform_grid_pde` helper names."
-          - "For American puts, pass `exercise_values` and `exercise_fn=max` instead of a bare `AMERICAN` constant or a `psor_pde` alias."
-          - "For barrier or digital payoffs, keep `lower_bc_fn` / `upper_bc_fn` callables explicit and use `rannacher_timesteps` to smooth the first backward steps."
-          - "Do not pass a callable terminal payoff into `theta_method_1d`; the solver expects an ndarray and will copy it internally."
+        # QUA-880: default-branch adapters / notes retired onto
+        # `lane_obligations._construction_steps_for` (EventAwarePDEIR
+        # branch now emits the pricing-kernel contract steps).
     primitives:
       - module: trellis.models.pde.grid
         symbol: Grid
@@ -1297,14 +1282,13 @@ routes:
       - module: trellis.models.pde.theta_method
         symbol: theta_method_1d
         role: time_stepping
-    adapters:
-      - define_operator_boundary_terminal_conditions
-    notes:
-      - "Construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray before calling `theta_method_1d(grid, operator, terminal_condition, theta=...)`."
-      - "Use `BlackScholesOperator(sigma_fn, r_fn)` with callable inputs; do not invent `log_grid_pde` or `uniform_grid_pde` helper names."
-      - "For American puts, pass `exercise_values` and `exercise_fn=max` instead of a bare `AMERICAN` constant or a `psor_pde` alias."
-      - "For barrier or digital payoffs, keep `lower_bc_fn` / `upper_bc_fn` callables explicit and use `rannacher_timesteps` to smooth the first backward steps."
-      - "Do not pass a callable terminal payoff into `theta_method_1d`; the solver expects an ndarray and will copy it internally."
+    # QUA-880: base-route adapters / notes retired.  The five kernel-
+    # contract invariants (Grid signature, BlackScholesOperator callables,
+    # American exercise_fn=max, barrier lower/upper_bc_fn + rannacher
+    # smoothing, ndarray terminal not callable) now emit as construction
+    # steps prefixed "Pricing-kernel contract:" from
+    # `lane_obligations._construction_steps_for` under the
+    # `EventAwarePDEIR` branch.
     market_data_access:
       required:
         discount_curve: [market_state.discount]

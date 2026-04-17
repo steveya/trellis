@@ -216,3 +216,177 @@ def test_waterfall_lane_plan_emits_cashflow_engine_construction_steps():
     )
     assert any("cashflow_engine" in step for step in plan.construction_steps)
     assert any("tranche" in step.lower() for step in plan.construction_steps)
+
+
+def test_exercise_monte_carlo_lane_plan_emits_policy_summaries_and_build_steps():
+    """QUA-880: early-exercise MC lanes migrate dynamic policy summaries +
+    3 construction adapters onto the typed lane-obligation surface.
+
+    ``exercise_monte_carlo`` used to carry three adapters (exercise-date
+    derivation, payoff callback, continuation estimator selection), three
+    static notes (LSM naming invariant), and two dynamic notes that called
+    ``render_early_exercise_policy_summary()`` at render time.  All of that
+    now flows through ``compile_lane_construction_plan`` when the control
+    spec indicates ``holder_max`` / ``issuer_min``.
+    """
+    family_ir = EventAwareMonteCarloIR(
+        route_id="exercise_monte_carlo",
+        route_family="exercise",
+        product_instrument="american_option",
+        payoff_family="vanilla_option",
+        state_spec=MCStateSpec(
+            state_variable="spot",
+            state_tags=("terminal_markov", "schedule_state"),
+        ),
+        process_spec=MCProcessSpec(
+            process_family="gbm_1d",
+            simulation_scheme="exact_gbm",
+        ),
+        event_program=EventProgramIR(
+            timeline=(
+                SemanticEventTimeSpec(
+                    event_date="2027-06-15",
+                    schedule_roles=("exercise_dates",),
+                    phase_sequence=("decision",),
+                    events=(
+                        SemanticEventSpec(
+                            event_name="exercise",
+                            event_kind="decision",
+                            schedule_role="exercise_dates",
+                            phase="decision",
+                            value_semantics="spot_minus_strike_positive_part",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        control_program=ControlProgramIR(
+            control_style="holder_max",
+            controller_role="holder",
+            decision_phase="decision",
+        ),
+        path_requirement_spec=MCPathRequirementSpec(
+            requirement_kind="full_path",
+        ),
+        payoff_reducer_spec=MCPayoffReducerSpec(
+            reducer_kind="exercise_policy",
+        ),
+        control_spec=MCControlSpec(
+            control_style="holder_max",
+            controller_role="holder",
+        ),
+        measure_spec=MCMeasureSpec(
+            measure_family="risk_neutral",
+            numeraire_binding="money_market_account",
+        ),
+        event_timeline=(
+            MCEventTimeSpec(
+                event_date="2027-06-15",
+                schedule_roles=("exercise_dates",),
+                phase_sequence=("decision",),
+                events=(
+                    MCEventSpec(
+                        event_name="exercise",
+                        event_kind="decision",
+                        schedule_role="exercise_dates",
+                        phase="decision",
+                        value_semantics="spot_minus_strike_positive_part",
+                    ),
+                ),
+            ),
+        ),
+        event_specs=(
+            MCEventSpec(
+                event_name="exercise",
+                event_kind="decision",
+                schedule_role="exercise_dates",
+                phase="decision",
+                value_semantics="spot_minus_strike_positive_part",
+            ),
+        ),
+    )
+    lowering = SemanticDslLowering(
+        route_id="exercise_monte_carlo",
+        route_family="exercise",
+        family_ir=family_ir,
+        expr=None,
+        normalized_expr=None,
+    )
+
+    plan = compile_lane_construction_plan(
+        preferred_method="monte_carlo",
+        required_market_data=("discount_curve", "black_vol_surface"),
+        dsl_lowering=lowering,
+    )
+
+    assert plan is not None
+    assert plan.lane_family == "monte_carlo"
+
+    # Control obligations carry the approved / implemented policy
+    # summaries + the LSM naming invariant.
+    control_text = " ".join(plan.control_obligations)
+    assert "approved_exercise_policies:" in control_text
+    assert "implemented_exercise_policies:" in control_text
+    assert "longstaff_schwartz" in control_text
+
+    # Construction steps carry the three adapter equivalents.
+    steps_text = " ".join(plan.construction_steps)
+    assert "exercise-date grid" in steps_text
+    assert "spot-to-exercise payoff callback" in steps_text
+    assert "continuation estimator" in steps_text.lower() or (
+        "regression basis" in steps_text.lower()
+    )
+
+
+def test_pde_theta_1d_lane_plan_emits_kernel_contract_construction_steps():
+    """QUA-880: PDE theta-method lane migrates its 5 pricing-kernel notes
+    onto the lane-obligation surface as ``Pricing-kernel contract:`` steps.
+    """
+    from trellis.agent.family_lowering_ir import (
+        EventAwarePDEIR,
+        PDEBoundarySpec,
+        PDEControlSpec,
+        PDEOperatorSpec,
+        PDEStateSpec,
+    )
+
+    family_ir = EventAwarePDEIR(
+        route_id="pde_theta_1d",
+        route_family="pde_solver",
+        product_instrument="american_option",
+        payoff_family="vanilla_option",
+        state_spec=PDEStateSpec(state_variable="spot"),
+        operator_spec=PDEOperatorSpec(operator_family="black_scholes_1d"),
+        boundary_spec=PDEBoundarySpec(terminal_condition_kind="vanilla_payoff"),
+        control_spec=PDEControlSpec(control_style="holder_max"),
+    )
+    lowering = SemanticDslLowering(
+        route_id="pde_theta_1d",
+        route_family="pde_solver",
+        family_ir=family_ir,
+        expr=None,
+        normalized_expr=None,
+    )
+
+    plan = compile_lane_construction_plan(
+        preferred_method="pde_solver",
+        required_market_data=("discount_curve", "black_vol_surface"),
+        dsl_lowering=lowering,
+    )
+
+    assert plan is not None
+    assert plan.lane_family == "pde_solver"
+    # Five kernel-contract invariants from the route-card notes now flow
+    # through the lane plan as `Pricing-kernel contract:` construction
+    # steps.  Each corresponds to one of the retired notes.
+    kernel_steps = [
+        step for step in plan.construction_steps
+        if step.startswith("Pricing-kernel contract:")
+    ]
+    assert len(kernel_steps) >= 5
+    joined = " ".join(kernel_steps)
+    assert "theta_method_1d" in joined
+    assert "BlackScholesOperator" in joined
+    assert "exercise_fn=max" in joined
+    assert "rannacher_timesteps" in joined
+    assert "ndarray" in joined

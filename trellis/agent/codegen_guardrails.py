@@ -519,9 +519,15 @@ def _render_lane_obligation_lines(plan: GenerationPlan, *, compact: bool) -> lis
         lines.append(f"  - State obligations: {states}")
     if plan.lane_construction_steps:
         lines.append("  - Construction steps:")
+        # QUA-880: PDE lanes emit 3 base + up to 5 kernel-contract steps
+        # (previously route-card notes).  Raise both caps so rendered
+        # cards keep the kernel-contract invariants visible:
+        # - compact (used by ``render_generation_route_card``) -> 8 so
+        #   PDE base + 5 kernel contracts fit in the short card
+        # - non-compact -> 10 for extended variants
         lines.extend(
             f"    - {step}"
-            for step in plan.lane_construction_steps[: (3 if compact else 6)]
+            for step in plan.lane_construction_steps[: (8 if compact else 10)]
         )
     if plan.lane_reusable_primitives:
         label = "Exact backend bindings" if plan.lane_exact_binding_refs else "Reusable primitives"

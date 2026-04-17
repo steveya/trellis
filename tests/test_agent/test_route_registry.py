@@ -683,18 +683,28 @@ class TestMonteCarloPathsRoutes:
         assert resolve_route_notes(spec, self.GENERIC_IR) == ()
 
     def test_fallback_lanes_have_no_route_card_adapters_or_notes(self, registry):
-        """QUA-816: route-card constructive adapters/notes retired for these lanes.
+        """QUA-816 / QUA-880: route-card constructive adapters / notes retired
+        for all five originally-targeted fallback lanes.
 
         The thinned lanes rely on the typed binding primitives (``state_process``,
         ``path_simulation``, ``pricing_kernel``, ``low_discrepancy_sampler``,
-        ``cashflow_engine``) plus ``lane_obligations._construction_steps_for``
-        for constructive guidance.  Reintroducing prose on these cards would
-        resurrect the dual-authority problem QUA-816 closed.
+        ``cashflow_engine``, ``grid``, ``spatial_operator``, ``time_stepping``,
+        ``exercise_control``) plus ``lane_obligations`` construction steps
+        and control obligations for constructive guidance.  Reintroducing
+        prose on these cards resurrects the dual-authority problem.
+
+        QUA-880 slice 2 also retires the ``dynamic_notes`` on
+        ``exercise_monte_carlo`` -- the early-exercise policy summaries
+        now flow through ``_control_obligations_for``.
         """
         thinned_lane_ids = {
+            # QUA-816 slice 1
             "local_vol_monte_carlo",
             "qmc_sobol_paths",
             "waterfall_cashflows",
+            # QUA-880 slice 2
+            "exercise_monte_carlo",
+            "pde_theta_1d",
         }
         for spec in registry.routes:
             if spec.id not in thinned_lane_ids:
@@ -705,10 +715,16 @@ class TestMonteCarloPathsRoutes:
             assert spec.notes == (), (
                 f"route {spec.id} unexpectedly carries notes: {spec.notes}"
             )
+            assert spec.dynamic_notes == (), (
+                f"route {spec.id} unexpectedly carries dynamic_notes: {spec.dynamic_notes}"
+            )
             # The typed binding primitives are the new source of truth; keep
             # the test honest by asserting at least one primitive exists.
+            # For conditionally-bound routes (pde_theta_1d) the typed
+            # primitives live at the route level plus on conditional
+            # branches; both should exist.
             assert spec.primitives, (
-                f"route {spec.id} must keep typed primitives after QUA-816 cleanup"
+                f"route {spec.id} must keep typed primitives after QUA-816/880 cleanup"
             )
 
     def test_admissibility_hydrates_process_and_path_contracts(self, registry):
