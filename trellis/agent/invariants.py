@@ -327,17 +327,20 @@ def check_non_negativity(
     """Price must be non-negative for option-like payoffs.
 
     Signed linear products (see :func:`_payoff_is_signed_linear`) are
-    exempt: their PV is legitimately negative from at least one side of
-    the trade.  Running the guard on them would kill benchmark parity for
-    protection-buyer CDS and other signed linear products.  (QUA-851.)
+    exempt from the ``pv >= 0`` assertion: their PV is legitimately
+    negative from at least one side of the trade.  We still invoke
+    ``price_payoff`` for those products so pricing-time exceptions (e.g.
+    a broken CDS implementation missing the credit curve) are surfaced --
+    in ``run_invariant_suite`` with ``is_option=False`` this is often the
+    only always-run check, so it must stay capable of catching a broken
+    build.  (QUA-851; PR #596 Codex P1 round 1.)
     """
     failures: list[InvariantFailure] = []
-    if _payoff_is_signed_linear(payoff):
-        return _emit_failures(failures, return_diagnostics=return_diagnostics)
+    is_signed = _payoff_is_signed_linear(payoff)
     try:
         pv = price_payoff(payoff, market_state)
         spread_hint, spread_context = _cds_spread_unit_hint(payoff)
-        if pv < -1e-6:
+        if not is_signed and pv < -1e-6:
             failures.append(
                 InvariantFailure(
                     check="check_non_negativity",

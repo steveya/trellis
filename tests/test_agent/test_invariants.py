@@ -137,6 +137,53 @@ class TestNonNegativity:
         assert failures[0].check == "check_non_negativity"
         assert failures[0].actual == pytest.approx(-1.23)
 
+    def test_non_negativity_still_surfaces_pricing_exceptions_for_signed_products(self):
+        """Signed-product exemption must NOT also skip pricing-exception detection.
+
+        ``check_non_negativity`` is the only always-run check in the
+        ``is_option=False`` branch of ``run_invariant_suite``.  If the
+        signed-linear gate short-circuits *before* invoking pricing, a CDS
+        whose ``evaluate`` raises (e.g. missing credit curve) would pass the
+        invariant suite silently instead of being rejected at build gate.
+        (PR #596 Codex P1 round 1.)
+        """
+        class BrokenCdsPayoff:
+            def __init__(self):
+                self._spec = type(
+                    "CDSSpec",
+                    (),
+                    {
+                        "spread": 0.015,
+                        "recovery": 0.4,
+                        "start_date": SETTLE,
+                        "end_date": date(2029, 11, 15),
+                    },
+                )()
+
+            @property
+            def requirements(self):
+                return {"discount_curve", "credit_curve"}
+
+            def evaluate(self, market_state):
+                raise RuntimeError("credit_curve missing from market_state")
+
+        failures = check_non_negativity(
+            BrokenCdsPayoff(),
+            MarketState(
+                as_of=SETTLE,
+                settlement=SETTLE,
+                discount=YieldCurve.flat(0.05),
+                credit_curve=CreditCurve.flat(0.02),
+            ),
+            return_diagnostics=True,
+        )
+        assert len(failures) == 1
+        failure = failures[0]
+        assert failure.check == "check_non_negativity"
+        assert "Pricing failed" in failure.message
+        assert failure.exception_type == "RuntimeError"
+        assert failure.exception_message == "credit_curve missing from market_state"
+
     def test_run_invariant_suite_allows_signed_cds_payoff_through_build_gate(self):
         """Integration: ``run_invariant_suite`` must not reject a signed CDS payoff.
 
