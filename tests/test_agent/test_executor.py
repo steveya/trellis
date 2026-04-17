@@ -818,6 +818,72 @@ def test_deterministic_exact_binding_module_black_scholes_benchmark_outputs_runs
     assert outputs["vega"] == pytest.approx(37.842, abs=1e-2)
 
 
+def test_deterministic_exact_binding_module_fx_vanilla_gk_injects_benchmark_outputs():
+    """QUA-878: GK deterministic route injects a native ``benchmark_outputs`` method.
+
+    Mirrors the Black-Scholes test above but for the Garman-Kohlhagen FX
+    vanilla route.  Verifies the rendered module imports the GK helper and
+    emits the delegating method.
+    """
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+
+    # Build a minimal inline spec schema rather than depending on
+    # STATIC/SPECIALIZED registrations for FX (the FX schema isn't a static
+    # spec; it comes from planner inference).  The executor path only needs
+    # the skeleton surface + the generation plan.
+    from trellis.agent.planner import FieldDef, SpecSchema
+
+    fx_spec_schema = SpecSchema(
+        class_name="FXVanillaPayoff",
+        spec_name="FXVanillaSpec",
+        requirements=["discount_curve", "black_vol_surface"],
+        fields=[
+            FieldDef("notional", "float", "Notional"),
+            FieldDef("strike", "float", "Strike"),
+            FieldDef("expiry_date", "date", "Expiry date"),
+            FieldDef("fx_pair", "str", "FX pair"),
+            FieldDef("foreign_discount_key", "str", "Foreign discount key"),
+            FieldDef("option_type", "str", "call or put", "'call'"),
+            FieldDef(
+                "day_count",
+                "DayCountConvention",
+                "Day count convention",
+                "DayCountConvention.ACT_365",
+            ),
+        ],
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.fx_vanilla.price_fx_vanilla_analytical",
+        ),
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="fx_vanilla",
+    )
+    skeleton = _generate_skeleton(
+        fx_spec_schema,
+        "FX vanilla Garman-Kohlhagen analytical",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="black_scholes",
+    )
+    assert generated is not None
+    assert "def benchmark_outputs(self, market_state: MarketState) -> dict[str, float]:" in generated.code
+    assert "fx_vanilla_gk_outputs(market_state, self._spec)" in generated.code
+    assert (
+        "from trellis.models.analytical.fx_vanilla_gk import fx_vanilla_gk_outputs"
+        in generated.code
+    )
+    # Black-Scholes helper must NOT leak into the FX route.
+    assert "equity_vanilla_bs_outputs" not in generated.code
+
+
 def test_deterministic_exact_binding_module_materializes_barrier_helper_with_time_import():
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
