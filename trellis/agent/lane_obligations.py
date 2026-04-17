@@ -506,22 +506,26 @@ def _construction_steps_for(*, lane_family: str, family_ir) -> tuple[str, ...]:
             f"Apply `{terminal_kind}` at maturity and schedule the typed event transforms: {', '.join(family_ir.event_transform_kinds) or 'none'}.",
             f"Enforce `{control_style}` control semantics during backward stepping before reading out the price.",
         ]
-        # QUA-880: migrate the `pde_theta_1d` default-branch route-card
-        # notes onto the lane-obligation surface as pricing-kernel contract
-        # invariants.  Without these, the generated adapter may invent
-        # `log_grid_pde` / `psor_pde` aliases or pass a callable terminal
-        # payoff to `theta_method_1d` (which the solver copies assuming an
-        # ndarray).  Keeping them here as construction steps preserves the
-        # guidance without a dual-authority route card.
-        steps.extend(
-            (
-                "Pricing-kernel contract: construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray before calling `theta_method_1d(grid, operator, terminal_condition, theta=...)`.",
-                "Pricing-kernel contract: use `BlackScholesOperator(sigma_fn, r_fn)` with callable inputs; do not invent `log_grid_pde` or `uniform_grid_pde` helper names.",
-                "Pricing-kernel contract: for American-style exercise, pass `exercise_values` and `exercise_fn=max` instead of a bare `AMERICAN` constant or a `psor_pde` alias.",
-                "Pricing-kernel contract: for barrier or digital payoffs, keep `lower_bc_fn` / `upper_bc_fn` callables explicit and use `rannacher_timesteps` to smooth the first backward steps.",
-                "Pricing-kernel contract: Do not pass a callable terminal payoff into `theta_method_1d`; the solver expects an ndarray and will copy it internally.",
+        # QUA-880 round-1 Codex P1: the kernel-contract invariants apply
+        # only to the default-branch (non-helper) PDE path.  Helper-backed
+        # routes like ``price_event_aware_equity_option_pde`` or
+        # ``price_callable_bond_pde`` wrap the Grid / BlackScholesOperator /
+        # theta_method_1d assembly themselves; emitting the kernel
+        # contracts alongside a helper ref would tell the adapter to
+        # manually reassemble the kernel -- directly conflicting with the
+        # exact-helper-only contract.  Gate the kernel contracts on the
+        # absence of a ``helper_symbol`` on the IR.
+        helper_symbol = str(getattr(family_ir, "helper_symbol", "") or "").strip()
+        if not helper_symbol:
+            steps.extend(
+                (
+                    "Pricing-kernel contract: construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray before calling `theta_method_1d(grid, operator, terminal_condition, theta=...)`.",
+                    "Pricing-kernel contract: use `BlackScholesOperator(sigma_fn, r_fn)` with callable inputs; do not invent `log_grid_pde` or `uniform_grid_pde` helper names.",
+                    "Pricing-kernel contract: for American-style exercise, pass `exercise_values` and `exercise_fn=max` instead of a bare `AMERICAN` constant or a `psor_pde` alias.",
+                    "Pricing-kernel contract: for barrier or digital payoffs, keep `lower_bc_fn` / `upper_bc_fn` callables explicit and use `rannacher_timesteps` to smooth the first backward steps.",
+                    "Pricing-kernel contract: Do not pass a callable terminal payoff into `theta_method_1d`; the solver expects an ndarray and will copy it internally.",
+                )
             )
-        )
         return tuple(steps)
     if isinstance(family_ir, TransformPricingIR):
         characteristic_family = (
@@ -732,15 +736,40 @@ def _fallback_construction_steps(
         # the generated adapter prompt retains the guidance that used to
         # live in `routes.yaml` (`rannacher_timesteps` smoothing, the
         # ndarray-vs-callable terminal-payoff contract, etc.).
-        return (
+        steps = [
             "Resolve the pricing state, terminal-condition payoff array, and boundary conditions before calling the theta-method solver.",
             "Keep discounting and volatility semantics on the market-state side; the theta-method PDE expects callable `sigma_fn` / `r_fn` inputs, not scalars.",
-            "Pricing-kernel contract: construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray before calling `theta_method_1d(grid, operator, terminal_condition, theta=...)`.",
-            "Pricing-kernel contract: use `BlackScholesOperator(sigma_fn, r_fn)` with callable inputs; do not invent `log_grid_pde` or `uniform_grid_pde` helper names.",
-            "Pricing-kernel contract: for American-style exercise, pass `exercise_values` and `exercise_fn=max` instead of a bare `AMERICAN` constant or a `psor_pde` alias.",
-            "Pricing-kernel contract: for barrier or digital payoffs, keep `lower_bc_fn` / `upper_bc_fn` callables explicit and use `rannacher_timesteps` to smooth the first backward steps.",
-            "Pricing-kernel contract: Do not pass a callable terminal payoff into `theta_method_1d`; the solver expects an ndarray and will copy it internally.",
+        ]
+        # QUA-880 round-1 Codex P1: omit the kernel-contract invariants
+        # when the primitive plan resolves to a helper-backed PDE route
+        # (``price_event_aware_equity_option_pde``,
+        # ``price_callable_bond_pde``, ``price_vanilla_equity_option_pde``).
+        # Those helpers wrap the Grid / BlackScholesOperator assembly
+        # themselves, so adapters should stay thin and call the helper
+        # rather than reassemble the kernel manually.
+        helper_symbols = {
+            str(primitive.symbol)
+            for primitive in (getattr(primitive_plan, "primitives", ()) or ())
+            if bool(getattr(primitive, "required", True))
+            and str(getattr(primitive, "role", "") or "").strip() == "route_helper"
+        }
+        pde_helper_wrappers = {
+            "price_event_aware_equity_option_pde",
+            "price_callable_bond_pde",
+            "price_vanilla_equity_option_pde",
+        }
+        if helper_symbols & pde_helper_wrappers:
+            return tuple(steps)
+        steps.extend(
+            (
+                "Pricing-kernel contract: construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray before calling `theta_method_1d(grid, operator, terminal_condition, theta=...)`.",
+                "Pricing-kernel contract: use `BlackScholesOperator(sigma_fn, r_fn)` with callable inputs; do not invent `log_grid_pde` or `uniform_grid_pde` helper names.",
+                "Pricing-kernel contract: for American-style exercise, pass `exercise_values` and `exercise_fn=max` instead of a bare `AMERICAN` constant or a `psor_pde` alias.",
+                "Pricing-kernel contract: for barrier or digital payoffs, keep `lower_bc_fn` / `upper_bc_fn` callables explicit and use `rannacher_timesteps` to smooth the first backward steps.",
+                "Pricing-kernel contract: Do not pass a callable terminal payoff into `theta_method_1d`; the solver expects an ndarray and will copy it internally.",
+            )
         )
+        return tuple(steps)
     return ()
 
 
