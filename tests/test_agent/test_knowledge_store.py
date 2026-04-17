@@ -654,11 +654,11 @@ class TestKnowledgeStore:
         from trellis.agent.knowledge import get_store
         store = get_store()
 
-        for instrument in (
-            "digital_option",
-            "lookback_option",
-            "chooser_option",
-            "compound_option",
+        for instrument, helper_symbol in (
+            ("digital_option", "price_equity_digital_option_analytical"),
+            ("lookback_option", "price_equity_fixed_lookback_option_analytical"),
+            ("chooser_option", "price_equity_chooser_option_analytical"),
+            ("compound_option", "price_equity_compound_option_analytical"),
         ):
             decomp = store._decompositions.get(instrument)
             assert decomp is not None, f"missing analytical decomposition for {instrument}"
@@ -671,6 +671,15 @@ class TestKnowledgeStore:
             )
             assert "discount_curve" in decomp.required_market_data
             assert "black_vol_surface" in decomp.required_market_data
+            # QUA-852 PR #597 Codex P1: the modeling-requirement string MUST
+            # keep the helper identifier contiguous (no whitespace inside the
+            # symbol), otherwise folded YAML produces ``foo_ analytical(...)``
+            # and generated adapters reference a non-existent symbol.
+            joined_requirements = " ".join(decomp.modeling_requirements)
+            assert f"{helper_symbol}(market_state, spec)" in joined_requirements, (
+                f"{instrument} modeling requirement must contain the "
+                f"contiguous helper call {helper_symbol}(market_state, spec)"
+            )
 
     def test_retrieve_for_task_uses_runtime_cache(self):
         from trellis.agent.knowledge.schema import RetrievalSpec

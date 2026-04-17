@@ -404,10 +404,7 @@
     - trellis.models.analytical.equity_exotics
   required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
-    - >-
-      USE THE EXACT HELPER: Call ``price_equity_digital_option_analytical
-      (market_state, spec)`` directly; do not restate the Black digital payoff
-      assembly inline.
+    - "USE THE EXACT HELPER: Call `price_equity_digital_option_analytical(market_state, spec)` directly; do not restate the Black digital payoff assembly inline."
   reasoning: "Digital cash-or-nothing and asset-or-nothing payoffs have closed-form BS expressions via the shared analytical helper."
   learned: false
 
@@ -418,10 +415,7 @@
     - trellis.models.analytical.equity_exotics
   required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
-    - >-
-      USE THE EXACT HELPER: Call ``price_equity_fixed_lookback_option_
-      analytical(market_state, spec)`` directly; do not restate the
-      running-extreme formula inside the generated payoff.
+    - "USE THE EXACT HELPER: Call `price_equity_fixed_lookback_option_analytical(market_state, spec)` directly; do not restate the running-extreme formula inside the generated payoff."
   reasoning: "Fixed-strike lookback options have a Conze-Viswanathan closed form; use the shared analytical helper."
   learned: false
 
@@ -432,10 +426,7 @@
     - trellis.models.analytical.equity_exotics
   required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
-    - >-
-      USE THE EXACT HELPER: Call ``price_equity_chooser_option_analytical
-      (market_state, spec)`` directly; keep the critical-spot solve inside
-      the shared analytical module.
+    - "USE THE EXACT HELPER: Call `price_equity_chooser_option_analytical(market_state, spec)` directly; keep the critical-spot solve inside the shared analytical module."
   reasoning: "Simple chooser options decompose into a call plus a put on a common underlier at the choice date — closed form via the shared helper."
   learned: false
 
@@ -446,9 +437,6 @@
     - trellis.models.analytical.equity_exotics
   required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
-    - >-
-      USE THE EXACT HELPER: Call ``price_equity_compound_option_analytical
-      (market_state, spec)`` directly; keep the critical-spot solve inside
-      the shared analytical module.
+    - "USE THE EXACT HELPER: Call `price_equity_compound_option_analytical(market_state, spec)` directly; keep the critical-spot solve inside the shared analytical module."
   reasoning: "Call-on-call, call-on-put, put-on-call, put-on-put compound options have a bivariate-normal closed form (Geske) via the shared helper."
   learned: false
