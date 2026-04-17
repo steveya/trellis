@@ -508,8 +508,19 @@ def _render_lane_obligation_lines(plan: GenerationPlan, *, compact: bool) -> lis
         )
         lines.append(f"  - Market bindings: {reqs}")
     if plan.lane_control_obligations:
+        # QUA-880 Codex P1 round 1: exercise-MC routes append 3
+        # exercise-policy obligations (approved / implemented / name
+        # invariant) after the usual Monte Carlo control fields (which
+        # already include base control/role/measure/numeraire + semantic
+        # mirrors + possibly-many event_kinds + calibration fields).  The
+        # baseline total can be 10+ obligations, so caps of 3 / 6 clipped
+        # the exercise-policy guidance off the end.  Raise caps to 20
+        # (both compact and non-compact) so migrated obligations stay
+        # visible; obligations are short tagged strings so the cost is
+        # negligible compared to dropping guidance.
+        cap = 20
         controls = ", ".join(
-            f"`{item}`" for item in plan.lane_control_obligations[: (3 if compact else 6)]
+            f"`{item}`" for item in plan.lane_control_obligations[:cap]
         )
         lines.append(f"  - Control semantics: {controls}")
     if plan.lane_state_obligations:

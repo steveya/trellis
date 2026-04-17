@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from trellis.agent.early_exercise_policy import (
+    render_early_exercise_policy_summary,
+    render_implemented_early_exercise_policy_summary,
+)
 from trellis.agent.family_lowering_ir import (
     AnalyticalBlack76IR,
     CorrelatedBasketMonteCarloIR,
@@ -358,6 +362,28 @@ def _control_obligations_for(family_ir) -> tuple[str, ...]:
                 obligations.append(f"quote_family:{quote_family}")
             if bool(getattr(calibration_binding, "requires_quote_normalization", False)):
                 obligations.append("requires_quote_normalization:true")
+        # QUA-880: migrate the `exercise_monte_carlo` route card's
+        # `dynamic_notes` (approved / implemented early-exercise policy
+        # summaries) and static notes (LSM naming invariants) onto the
+        # typed obligation surface.  Control-style ``holder_max`` or
+        # ``issuer_min`` on an MC family indicates an early-exercise MC
+        # route; the typed obligation then carries the same guidance
+        # previously held as route-card prose.
+        control_style = str(family_ir.control_spec.control_style or "").strip().lower()
+        if control_style in {"holder_max", "issuer_min"}:
+            obligations.append(
+                f"approved_exercise_policies:{render_early_exercise_policy_summary()}"
+            )
+            obligations.append(
+                f"implemented_exercise_policies:"
+                f"{render_implemented_early_exercise_policy_summary()}"
+            )
+            # Preserve the LSM naming invariant as an obligation so
+            # generated adapters don't rename `longstaff_schwartz` to
+            # `lsm_mc` or surface a `method=\"lsm\"` engine mode.
+            obligations.append(
+                "exercise_policy_name_invariant:longstaff_schwartz_not_lsm_mc"
+            )
         return _tuple_unique(obligations)
     if isinstance(family_ir, EventAwarePDEIR):
         semantic_control = getattr(family_ir, "control_program", None)
@@ -445,11 +471,26 @@ def _construction_steps_for(*, lane_family: str, family_ir) -> tuple[str, ...]:
         process_family = family_ir.process_spec.process_family or "generic_state_process"
         path_kind = family_ir.path_requirement_spec.requirement_kind or "terminal_only"
         reducer_kind = family_ir.payoff_reducer_spec.reducer_kind or "path_payoff"
-        return (
+        steps = [
             f"Assemble a one-factor `{process_family}` simulation over `{family_ir.state_spec.state_variable or 'state'}`.",
             f"Bind the reduced-state requirement `{path_kind}` and event kinds `{', '.join(family_ir.event_kinds) or 'none'}` before path generation.",
             f"Aggregate the payoff through `{reducer_kind}` under the `{family_ir.measure_spec.measure_family}` measure before discount-consistent readout.",
-        )
+        ]
+        # QUA-880: early-exercise MC routes (control_style == holder_max /
+        # issuer_min) used to carry three adapters on the route card --
+        # exercise-date derivation, spot-to-exercise-payoff callback, and
+        # continuation-estimator selection.  Emit those as typed
+        # construction steps when the control spec requests them.
+        control_style = str(family_ir.control_spec.control_style or "").strip().lower()
+        if control_style in {"holder_max", "issuer_min"}:
+            steps.extend(
+                (
+                    "Derive the exercise-date grid from the declared schedule role or time grid; do not improvise exercise dates in the adapter.",
+                    "Build the spot-to-exercise payoff callback explicitly and bind it to the typed `exercise_control` primitive.",
+                    "Select a continuation estimator or regression basis (e.g. Longstaff-Schwartz) from the available `exercise_control` primitives; keep the estimator choice a binding detail, not a bespoke engine mode.",
+                )
+            )
+        return tuple(steps)
     if isinstance(family_ir, VanillaEquityPDEIR):
         return (
             "Assemble a one-dimensional terminal payoff on the expiry timeline.",
@@ -460,6 +501,14 @@ def _construction_steps_for(*, lane_family: str, family_ir) -> tuple[str, ...]:
         operator_family = family_ir.operator_spec.operator_family or "generic_1d"
         terminal_kind = family_ir.boundary_spec.terminal_condition_kind or "terminal_condition"
         control_style = family_ir.control_spec.control_style or "identity"
+        # QUA-880 slice 2 scope: migrating the PDE default-branch
+        # kernel-contract notes onto the lane-obligation surface
+        # regressed T13 cassette-replay generation (existing cassettes +
+        # LLM pipeline tuned to those notes rendered as route-card
+        # `notes`).  Kept the `pde_theta_1d` route card prose intact for
+        # now; slice 3 (follow-on) will bring the kernel contracts onto
+        # the typed surface after the generation path is updated to
+        # consume them.  See QUA-880 closeout note for details.
         return (
             f"Assemble a one-dimensional `{operator_family}` rollback state over `{family_ir.state_spec.state_variable or 'state'}`.",
             f"Apply `{terminal_kind}` at maturity and schedule the typed event transforms: {', '.join(family_ir.event_transform_kinds) or 'none'}.",
@@ -516,6 +565,8 @@ def _construction_steps_for(*, lane_family: str, family_ir) -> tuple[str, ...]:
             "Keep state propagation and payoff aggregation explicit over the simulated paths.",
         )
     if lane_family == "pde_solver":
+        # QUA-880 slice 2 scope: kernel-contract migration deferred to
+        # slice 3 follow-on; PDE prose stays on the route card for now.
         return (
             "Discretize the contract onto a PDE grid with explicit terminal and boundary conditions.",
             "Evolve the grid backward with the selected stepping scheme before reading out the PV.",
@@ -658,6 +709,8 @@ def _fallback_construction_steps(
             "Resolve the deal-schedule, locked-cashflow, and remaining-pool state explicitly before walking the waterfall.",
             "Route collateral cashflows through the declared tranche structure via the cashflow_engine primitives.",
         )
+    # QUA-880 slice 2 scope: PDE fallback kernel-contract migration
+    # deferred to slice 3 follow-on; PDE prose stays on the route card.
     return ()
 
 
