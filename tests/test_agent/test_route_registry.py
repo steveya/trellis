@@ -682,6 +682,35 @@ class TestMonteCarloPathsRoutes:
         assert resolve_route_adapters(spec, self.GENERIC_IR) == ()
         assert resolve_route_notes(spec, self.GENERIC_IR) == ()
 
+    def test_fallback_lanes_have_no_route_card_adapters_or_notes(self, registry):
+        """QUA-816: route-card constructive adapters/notes retired for these lanes.
+
+        The thinned lanes rely on the typed binding primitives (``state_process``,
+        ``path_simulation``, ``pricing_kernel``, ``low_discrepancy_sampler``,
+        ``cashflow_engine``) plus ``lane_obligations._construction_steps_for``
+        for constructive guidance.  Reintroducing prose on these cards would
+        resurrect the dual-authority problem QUA-816 closed.
+        """
+        thinned_lane_ids = {
+            "local_vol_monte_carlo",
+            "qmc_sobol_paths",
+            "waterfall_cashflows",
+        }
+        for spec in registry.routes:
+            if spec.id not in thinned_lane_ids:
+                continue
+            assert spec.adapters == (), (
+                f"route {spec.id} unexpectedly carries adapters: {spec.adapters}"
+            )
+            assert spec.notes == (), (
+                f"route {spec.id} unexpectedly carries notes: {spec.notes}"
+            )
+            # The typed binding primitives are the new source of truth; keep
+            # the test honest by asserting at least one primitive exists.
+            assert spec.primitives, (
+                f"route {spec.id} must keep typed primitives after QUA-816 cleanup"
+            )
+
     def test_admissibility_hydrates_process_and_path_contracts(self, registry):
         generic = find_route_by_id("monte_carlo_paths", registry)
         local_vol = find_route_by_id("local_vol_monte_carlo", registry)

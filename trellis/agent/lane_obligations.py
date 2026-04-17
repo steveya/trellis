@@ -520,6 +520,15 @@ def _construction_steps_for(*, lane_family: str, family_ir) -> tuple[str, ...]:
             "Discretize the contract onto a PDE grid with explicit terminal and boundary conditions.",
             "Evolve the grid backward with the selected stepping scheme before reading out the PV.",
         )
+    if lane_family == "waterfall":
+        # QUA-816 round-1 Codex P1: the `waterfall_cashflows` route card used
+        # to carry `map_collateral_cashflows_into_structure` as an adapter.
+        # Emit the equivalent constructive guidance here so removing the
+        # route-card prose does not leave the lane with empty steps.
+        return (
+            "Map collateral cashflows onto the declared tranche structure via the cashflow_engine primitives.",
+            "Keep deal-schedule, locked-cashflow, and remaining-pool state explicit across the waterfall rollup.",
+        )
     return ()
 
 
@@ -641,6 +650,13 @@ def _fallback_construction_steps(
         return (
             "Resolve scalar market inputs and contract terms before applying the closed-form kernel.",
             "Keep discounting and market-binding semantics explicit instead of hiding them behind invented helpers.",
+        )
+    if lane_family == "waterfall":
+        # QUA-816 round-1 Codex P1: keep waterfall guidance non-empty even
+        # on the fallback (non-semantic) path.
+        return (
+            "Resolve the deal-schedule, locked-cashflow, and remaining-pool state explicitly before walking the waterfall.",
+            "Route collateral cashflows through the declared tranche structure via the cashflow_engine primitives.",
         )
     return ()
 

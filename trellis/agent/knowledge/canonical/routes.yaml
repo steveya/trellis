@@ -684,11 +684,10 @@ routes:
       - module: trellis.models.monte_carlo.local_vol
         symbol: local_vol_european_vanilla_price
         role: pricing_kernel
-    adapters:
-      - map_market_state_local_vol_surface_spot_and_discount_into_local_vol_mc_inputs
-      - derive_option_type_strike_and_expiry_for_vanilla_equity_option
-    notes:
-      - "For vanilla equity local-vol requests, prefer the reusable local-vol Monte Carlo helper over bespoke path loops."
+    # QUA-816: adapters and notes retired to the lane-obligation surface
+    # (`lane_obligations._construction_steps_for`, keyed by `EventAwareMonteCarloIR`
+    # for this lane).  The typed `state_process` / `path_simulation` /
+    # `pricing_kernel` bindings above are the source of truth.
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -723,10 +722,9 @@ routes:
       - module: trellis.models.processes.gbm
         symbol: GBM
         role: state_process
-    adapters:
-      - assemble_mc_style_estimator_on_sobol_paths
-    notes:
-      - "QMC in Trellis accelerates MC-style estimators rather than replacing them."
+    # QUA-816: adapters and notes retired to the lane-obligation surface.
+    # The typed `low_discrepancy_sampler` / `path_construction` / `state_process`
+    # bindings above are the source of truth for the QMC estimator scaffold.
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -1375,9 +1373,10 @@ routes:
       - module: trellis.models.cashflow_engine.waterfall
         symbol: Tranche
         role: cashflow_engine
-    adapters:
-      - map_collateral_cashflows_into_structure
-    notes: []
+    # QUA-816: adapter retired to the lane-obligation surface.  The two
+    # `cashflow_engine` bindings above are the typed primitives; the
+    # constructive "map collateral cashflows into the structure" guidance
+    # flows through `lane_obligations` for the waterfall lane family.
     market_data_access:
       required:
         discount_curve: [market_state.discount]
