@@ -27,19 +27,36 @@ def test_binding_catalog_loads_core_route_backed_bindings():
 def test_binding_catalog_covers_retired_fallback_routes():
     """QUA-794: bindings for these lanes must remain in the canonical catalog.
 
-    `family_lowering_ir` retired its
+    ``family_lowering_ir`` retired its
     ``route_id == X and binding_spec is None`` fallbacks for these routes on
     the basis that the catalog always resolves a binding_spec.  If a binding
     disappears from the catalog, this test fires before the missing-binding
     path exercises production builds.
+
+    Slice 1 (PR #600): ``analytical_black76``, ``transform_fft``,
+    ``monte_carlo_paths``, ``local_vol_monte_carlo``.
+
+    Slice 2 (this PR): ``vanilla_equity_theta_pde``, ``pde_theta_1d``,
+    ``exercise_lattice``, ``correlated_basket_monte_carlo``,
+    ``credit_default_swap_analytical``, ``credit_default_swap_monte_carlo``,
+    ``nth_to_default_monte_carlo``.
     """
     catalog = load_backend_binding_catalog()
     route_ids = {binding.route_id for binding in catalog.bindings}
     assert {
+        # slice 1
         "analytical_black76",
         "transform_fft",
         "monte_carlo_paths",
         "local_vol_monte_carlo",
+        # slice 2
+        "vanilla_equity_theta_pde",
+        "pde_theta_1d",
+        "exercise_lattice",
+        "correlated_basket_monte_carlo",
+        "credit_default_swap_analytical",
+        "credit_default_swap_monte_carlo",
+        "nth_to_default_monte_carlo",
     } <= route_ids
 
 
