@@ -74,14 +74,24 @@ class TestNonNegativity:
         assert failure.actual == pytest.approx(-2.5)
         assert "available_capabilities" in failure.context
 
-    def test_non_negativity_surfaces_cds_spread_unit_hint(self):
+    def test_non_negativity_skips_cds_like_payoff_with_negative_pv(self):
+        """CDS-like payoffs are signed linear products; non-negativity must NOT fail them.
+
+        Protection-buyer CDS clean PV is legitimately negative when spreads
+        have tightened from issuance; the build loop's invariant suite
+        previously rejected those payoffs at build gate, which blocked the
+        FinancePy CDS parity task (F007).  Signed-linear products are
+        validated by the dedicated ``check_cds_spread_quote_normalization``
+        and ``check_cds_credit_curve_sensitivity`` invariants instead.
+        (QUA-851.)
+        """
         class CdsLikePayoff:
             def __init__(self):
                 self._spec = type(
                     "CDSSpec",
                     (),
                     {
-                        "spread": 150.0,
+                        "spread": 0.015,  # decimal quote, as the model expects
                         "recovery": 0.4,
                         "start_date": SETTLE,
                         "end_date": date(2029, 11, 15),
@@ -106,11 +116,80 @@ class TestNonNegativity:
             return_diagnostics=True,
         )
 
+        assert failures == []
+
+    def test_non_negativity_still_fails_option_like_payoffs(self):
+        """Regression: gating signed products must not weaken the option-like contract."""
+        class OptionLikePayoff:
+            @property
+            def requirements(self):
+                return {"discount_curve"}
+
+            def evaluate(self, market_state):
+                return -1.23
+
+        failures = check_non_negativity(
+            OptionLikePayoff(),
+            _ms_factory(),
+            return_diagnostics=True,
+        )
         assert len(failures) == 1
-        failure = failures[0]
-        assert "150 bp -> 0.015" in failure.message
-        assert failure.context["cds_spread_hint"] == "basis_points_to_decimal"
-        assert failure.context["reported_spread"] == pytest.approx(150.0)
+        assert failures[0].check == "check_non_negativity"
+        assert failures[0].actual == pytest.approx(-1.23)
+
+    def test_run_invariant_suite_allows_signed_cds_payoff_through_build_gate(self):
+        """Integration: ``run_invariant_suite`` must not reject a signed CDS payoff.
+
+        ``run_invariant_suite`` is the path ``arbiter.validate_payoff_with_critic``
+        invokes inside the build loop.  Before QUA-851, it unconditionally
+        called ``check_non_negativity`` and the protection-buyer CDS benchmark
+        (F007) died at the gate.  This integration test guards against a
+        regression where a parallel validation path slips past the new
+        signed-linear gate.
+        """
+        class CdsPayoff:
+            def __init__(self):
+                self._spec = type(
+                    "CDSSpec",
+                    (),
+                    {
+                        "notional": 1_000_000.0,
+                        "spread": 0.015,
+                        "recovery": 0.4,
+                        "start_date": SETTLE,
+                        "end_date": date(2029, 11, 15),
+                    },
+                )()
+
+            @property
+            def spec(self):
+                return self._spec
+
+            @property
+            def requirements(self):
+                return {"discount_curve", "credit_curve"}
+
+            def evaluate(self, market_state):
+                return -65_000.0
+
+        def payoff_factory():
+            return CdsPayoff()
+
+        def market_state_factory(**_kwargs):
+            return MarketState(
+                as_of=SETTLE,
+                settlement=SETTLE,
+                discount=YieldCurve.flat(0.05),
+                credit_curve=CreditCurve.flat(0.02),
+            )
+
+        passed, failures = run_invariant_suite(
+            payoff_factory=payoff_factory,
+            market_state_factory=market_state_factory,
+            is_option=False,
+        )
+        assert passed, f"signed CDS payoff should pass invariant suite; got: {failures}"
+        assert failures == []
 
 
 class TestPriceSanity:
