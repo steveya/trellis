@@ -109,12 +109,7 @@ def test_builds_pde_plan_for_barrier_option_uses_grid_and_operator():
         "trellis.models.pde.operator",
         "trellis.models.pde.theta_method",
     } <= primitive_modules
-    # QUA-880: the `rannacher_timesteps` + barrier BC note migrated from
-    # route-card `notes:` onto `lane_obligations._construction_steps_for`
-    # as a kernel-contract construction step.  Plan-level `notes` are
-    # now empty; the guidance flows through the lane plan's
-    # construction_steps instead.
-    assert plan.primitive_plan.notes == ()
+    assert any("rannacher_timesteps" in note for note in plan.primitive_plan.notes)
 
 
 def test_builds_pde_plan_for_european_option_uses_helper_route():

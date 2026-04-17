@@ -684,18 +684,24 @@ class TestMonteCarloPathsRoutes:
 
     def test_fallback_lanes_have_no_route_card_adapters_or_notes(self, registry):
         """QUA-816 / QUA-880: route-card constructive adapters / notes retired
-        for all five originally-targeted fallback lanes.
+        for these fallback lanes.
 
         The thinned lanes rely on the typed binding primitives (``state_process``,
         ``path_simulation``, ``pricing_kernel``, ``low_discrepancy_sampler``,
-        ``cashflow_engine``, ``grid``, ``spatial_operator``, ``time_stepping``,
-        ``exercise_control``) plus ``lane_obligations`` construction steps
-        and control obligations for constructive guidance.  Reintroducing
-        prose on these cards resurrects the dual-authority problem.
+        ``cashflow_engine``, ``exercise_control``) plus ``lane_obligations``
+        construction steps and control obligations for constructive guidance.
+        Reintroducing prose on these cards resurrects the dual-authority
+        problem.
 
         QUA-880 slice 2 also retires the ``dynamic_notes`` on
         ``exercise_monte_carlo`` -- the early-exercise policy summaries
         now flow through ``_control_obligations_for``.
+
+        ``pde_theta_1d`` is intentionally NOT in the thinned set (slice
+        3 follow-on): migrating its kernel-contract notes regressed T13
+        cassette-replay generation, so the PDE route-card prose stays
+        on the card until the generation path is updated to consume
+        them from the typed surface.
         """
         thinned_lane_ids = {
             # QUA-816 slice 1
@@ -704,7 +710,6 @@ class TestMonteCarloPathsRoutes:
             "waterfall_cashflows",
             # QUA-880 slice 2
             "exercise_monte_carlo",
-            "pde_theta_1d",
         }
         for spec in registry.routes:
             if spec.id not in thinned_lane_ids:
@@ -718,11 +723,6 @@ class TestMonteCarloPathsRoutes:
             assert spec.dynamic_notes == (), (
                 f"route {spec.id} unexpectedly carries dynamic_notes: {spec.dynamic_notes}"
             )
-            # The typed binding primitives are the new source of truth; keep
-            # the test honest by asserting at least one primitive exists.
-            # For conditionally-bound routes (pde_theta_1d) the typed
-            # primitives live at the route level plus on conditional
-            # branches; both should exist.
             assert spec.primitives, (
                 f"route {spec.id} must keep typed primitives after QUA-816/880 cleanup"
             )

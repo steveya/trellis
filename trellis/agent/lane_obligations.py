@@ -501,32 +501,19 @@ def _construction_steps_for(*, lane_family: str, family_ir) -> tuple[str, ...]:
         operator_family = family_ir.operator_spec.operator_family or "generic_1d"
         terminal_kind = family_ir.boundary_spec.terminal_condition_kind or "terminal_condition"
         control_style = family_ir.control_spec.control_style or "identity"
-        steps = [
+        # QUA-880 slice 2 scope: migrating the PDE default-branch
+        # kernel-contract notes onto the lane-obligation surface
+        # regressed T13 cassette-replay generation (existing cassettes +
+        # LLM pipeline tuned to those notes rendered as route-card
+        # `notes`).  Kept the `pde_theta_1d` route card prose intact for
+        # now; slice 3 (follow-on) will bring the kernel contracts onto
+        # the typed surface after the generation path is updated to
+        # consume them.  See QUA-880 closeout note for details.
+        return (
             f"Assemble a one-dimensional `{operator_family}` rollback state over `{family_ir.state_spec.state_variable or 'state'}`.",
             f"Apply `{terminal_kind}` at maturity and schedule the typed event transforms: {', '.join(family_ir.event_transform_kinds) or 'none'}.",
             f"Enforce `{control_style}` control semantics during backward stepping before reading out the price.",
-        ]
-        # QUA-880 round-1 Codex P1: the kernel-contract invariants apply
-        # only to the default-branch (non-helper) PDE path.  Helper-backed
-        # routes like ``price_event_aware_equity_option_pde`` or
-        # ``price_callable_bond_pde`` wrap the Grid / BlackScholesOperator /
-        # theta_method_1d assembly themselves; emitting the kernel
-        # contracts alongside a helper ref would tell the adapter to
-        # manually reassemble the kernel -- directly conflicting with the
-        # exact-helper-only contract.  Gate the kernel contracts on the
-        # absence of a ``helper_symbol`` on the IR.
-        helper_symbol = str(getattr(family_ir, "helper_symbol", "") or "").strip()
-        if not helper_symbol:
-            steps.extend(
-                (
-                    "Pricing-kernel contract: construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray before calling `theta_method_1d(grid, operator, terminal_condition, theta=...)`.",
-                    "Pricing-kernel contract: use `BlackScholesOperator(sigma_fn, r_fn)` with callable inputs; do not invent `log_grid_pde` or `uniform_grid_pde` helper names.",
-                    "Pricing-kernel contract: for American-style exercise, pass `exercise_values` and `exercise_fn=max` instead of a bare `AMERICAN` constant or a `psor_pde` alias.",
-                    "Pricing-kernel contract: for barrier or digital payoffs, keep `lower_bc_fn` / `upper_bc_fn` callables explicit and use `rannacher_timesteps` to smooth the first backward steps.",
-                    "Pricing-kernel contract: Do not pass a callable terminal payoff into `theta_method_1d`; the solver expects an ndarray and will copy it internally.",
-                )
-            )
-        return tuple(steps)
+        )
     if isinstance(family_ir, TransformPricingIR):
         characteristic_family = (
             family_ir.characteristic_spec.characteristic_family or "generic_transform_characteristic"
@@ -578,18 +565,11 @@ def _construction_steps_for(*, lane_family: str, family_ir) -> tuple[str, ...]:
             "Keep state propagation and payoff aggregation explicit over the simulated paths.",
         )
     if lane_family == "pde_solver":
-        # QUA-880: include the theta-method kernel-contract invariants on
-        # the generic PDE lane fallback as well, so plans that don't
-        # classify as ``EventAwarePDEIR`` still surface the guidance the
-        # retired route-card notes used to provide.
+        # QUA-880 slice 2 scope: kernel-contract migration deferred to
+        # slice 3 follow-on; PDE prose stays on the route card for now.
         return (
             "Discretize the contract onto a PDE grid with explicit terminal and boundary conditions.",
             "Evolve the grid backward with the selected stepping scheme before reading out the PV.",
-            "Pricing-kernel contract: construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray before calling `theta_method_1d(grid, operator, terminal_condition, theta=...)`.",
-            "Pricing-kernel contract: use `BlackScholesOperator(sigma_fn, r_fn)` with callable inputs; do not invent `log_grid_pde` or `uniform_grid_pde` helper names.",
-            "Pricing-kernel contract: for American-style exercise, pass `exercise_values` and `exercise_fn=max` instead of a bare `AMERICAN` constant or a `psor_pde` alias.",
-            "Pricing-kernel contract: for barrier or digital payoffs, keep `lower_bc_fn` / `upper_bc_fn` callables explicit and use `rannacher_timesteps` to smooth the first backward steps.",
-            "Pricing-kernel contract: Do not pass a callable terminal payoff into `theta_method_1d`; the solver expects an ndarray and will copy it internally.",
         )
     if lane_family == "waterfall":
         # QUA-816 round-1 Codex P1: the `waterfall_cashflows` route card used
@@ -729,47 +709,8 @@ def _fallback_construction_steps(
             "Resolve the deal-schedule, locked-cashflow, and remaining-pool state explicitly before walking the waterfall.",
             "Route collateral cashflows through the declared tranche structure via the cashflow_engine primitives.",
         )
-    if lane_family == "pde_solver":
-        # QUA-880: the `pde_theta_1d` route card's five kernel-contract
-        # notes now flow through the lane-obligation surface.  Even on
-        # fallback (non-semantic) PDE plans, surface those invariants so
-        # the generated adapter prompt retains the guidance that used to
-        # live in `routes.yaml` (`rannacher_timesteps` smoothing, the
-        # ndarray-vs-callable terminal-payoff contract, etc.).
-        steps = [
-            "Resolve the pricing state, terminal-condition payoff array, and boundary conditions before calling the theta-method solver.",
-            "Keep discounting and volatility semantics on the market-state side; the theta-method PDE expects callable `sigma_fn` / `r_fn` inputs, not scalars.",
-        ]
-        # QUA-880 round-1 Codex P1: omit the kernel-contract invariants
-        # when the primitive plan resolves to a helper-backed PDE route
-        # (``price_event_aware_equity_option_pde``,
-        # ``price_callable_bond_pde``, ``price_vanilla_equity_option_pde``).
-        # Those helpers wrap the Grid / BlackScholesOperator assembly
-        # themselves, so adapters should stay thin and call the helper
-        # rather than reassemble the kernel manually.
-        helper_symbols = {
-            str(primitive.symbol)
-            for primitive in (getattr(primitive_plan, "primitives", ()) or ())
-            if bool(getattr(primitive, "required", True))
-            and str(getattr(primitive, "role", "") or "").strip() == "route_helper"
-        }
-        pde_helper_wrappers = {
-            "price_event_aware_equity_option_pde",
-            "price_callable_bond_pde",
-            "price_vanilla_equity_option_pde",
-        }
-        if helper_symbols & pde_helper_wrappers:
-            return tuple(steps)
-        steps.extend(
-            (
-                "Pricing-kernel contract: construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray before calling `theta_method_1d(grid, operator, terminal_condition, theta=...)`.",
-                "Pricing-kernel contract: use `BlackScholesOperator(sigma_fn, r_fn)` with callable inputs; do not invent `log_grid_pde` or `uniform_grid_pde` helper names.",
-                "Pricing-kernel contract: for American-style exercise, pass `exercise_values` and `exercise_fn=max` instead of a bare `AMERICAN` constant or a `psor_pde` alias.",
-                "Pricing-kernel contract: for barrier or digital payoffs, keep `lower_bc_fn` / `upper_bc_fn` callables explicit and use `rannacher_timesteps` to smooth the first backward steps.",
-                "Pricing-kernel contract: Do not pass a callable terminal payoff into `theta_method_1d`; the solver expects an ndarray and will copy it internally.",
-            )
-        )
-        return tuple(steps)
+    # QUA-880 slice 2 scope: PDE fallback kernel-contract migration
+    # deferred to slice 3 follow-on; PDE prose stays on the route card.
     return ()
 
 

@@ -1269,9 +1269,14 @@ routes:
           - module: trellis.models.pde.theta_method
             symbol: theta_method_1d
             role: time_stepping
-        # QUA-880: default-branch adapters / notes retired onto
-        # `lane_obligations._construction_steps_for` (EventAwarePDEIR
-        # branch now emits the pricing-kernel contract steps).
+        adapters:
+          - define_operator_boundary_terminal_conditions
+        notes:
+          - "Construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray before calling `theta_method_1d(grid, operator, terminal_condition, theta=...)`."
+          - "Use `BlackScholesOperator(sigma_fn, r_fn)` with callable inputs; do not invent `log_grid_pde` or `uniform_grid_pde` helper names."
+          - "For American puts, pass `exercise_values` and `exercise_fn=max` instead of a bare `AMERICAN` constant or a `psor_pde` alias."
+          - "For barrier or digital payoffs, keep `lower_bc_fn` / `upper_bc_fn` callables explicit and use `rannacher_timesteps` to smooth the first backward steps."
+          - "Do not pass a callable terminal payoff into `theta_method_1d`; the solver expects an ndarray and will copy it internally."
     primitives:
       - module: trellis.models.pde.grid
         symbol: Grid
@@ -1282,13 +1287,14 @@ routes:
       - module: trellis.models.pde.theta_method
         symbol: theta_method_1d
         role: time_stepping
-    # QUA-880: base-route adapters / notes retired.  The five kernel-
-    # contract invariants (Grid signature, BlackScholesOperator callables,
-    # American exercise_fn=max, barrier lower/upper_bc_fn + rannacher
-    # smoothing, ndarray terminal not callable) now emit as construction
-    # steps prefixed "Pricing-kernel contract:" from
-    # `lane_obligations._construction_steps_for` under the
-    # `EventAwarePDEIR` branch.
+    adapters:
+      - define_operator_boundary_terminal_conditions
+    notes:
+      - "Construct `Grid(x_min, x_max, n_x, T, n_t, log_spacing=...)` and a terminal-condition ndarray before calling `theta_method_1d(grid, operator, terminal_condition, theta=...)`."
+      - "Use `BlackScholesOperator(sigma_fn, r_fn)` with callable inputs; do not invent `log_grid_pde` or `uniform_grid_pde` helper names."
+      - "For American puts, pass `exercise_values` and `exercise_fn=max` instead of a bare `AMERICAN` constant or a `psor_pde` alias."
+      - "For barrier or digital payoffs, keep `lower_bc_fn` / `upper_bc_fn` callables explicit and use `rannacher_timesteps` to smooth the first backward steps."
+      - "Do not pass a callable terminal payoff into `theta_method_1d`; the solver expects an ndarray and will copy it internally."
     market_data_access:
       required:
         discount_curve: [market_state.discount]
