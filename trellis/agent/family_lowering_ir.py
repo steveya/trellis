@@ -842,7 +842,17 @@ def _binding_supports_black76_analytical(
     *,
     route_id: str,
 ) -> bool:
-    """Return whether the binding surface fits the Black76 analytical lane."""
+    """Return whether the binding surface fits the Black76 analytical lane.
+
+    QUA-794: the `analytical_black76` binding is guaranteed to be in the
+    canonical catalog (`tests/test_agent/test_backend_bindings.py::
+    test_binding_catalog_loads_core_route_backed_bindings`), so the
+    historical `route_id == "analytical_black76" and binding_spec is None`
+    fallback is now dead code and has been retired.  If a future lane reaches
+    this function with `binding_spec is None`, that is a real binding-
+    resolution failure that must be surfaced, not silently rescued.
+    """
+    del route_id  # retained for backwards-compatible call signature
     if _binding_has_all_symbols(binding_spec, "pricing_kernel", "black76_call", "black76_put"):
         return True
     if _binding_has_any_symbol(
@@ -851,7 +861,7 @@ def _binding_supports_black76_analytical(
         "price_rate_cap_floor_strip_analytical",
     ):
         return True
-    return route_id == "analytical_black76" and binding_spec is None
+    return False
 
 
 def _binding_has_all_symbols(
@@ -869,7 +879,13 @@ def _binding_supports_transform_pricing(
     *,
     route_id: str,
 ) -> bool:
-    """Return whether the binding surface fits the transform-pricing lane."""
+    """Return whether the binding surface fits the transform-pricing lane.
+
+    QUA-794: the `transform_fft` binding is in the canonical catalog; the
+    historical `route_id == "transform_fft" and binding_spec is None`
+    fallback has been retired.
+    """
+    del route_id
     if _binding_has_role(binding_spec, "transform_pricer"):
         return True
     if _binding_has_any_symbol(
@@ -879,7 +895,7 @@ def _binding_supports_transform_pricing(
         "price_basket_option_transform_proxy",
     ):
         return True
-    return route_id == "transform_fft" and binding_spec is None
+    return False
 
 
 def _binding_supports_vanilla_equity_pde(
@@ -919,7 +935,14 @@ def _binding_supports_event_aware_monte_carlo(
     *,
     route_id: str,
 ) -> bool:
-    """Return whether the binding surface fits the bounded event-aware MC lane."""
+    """Return whether the binding surface fits the bounded event-aware MC lane.
+
+    QUA-794: `monte_carlo_paths` and `local_vol_monte_carlo` bindings are in
+    the canonical catalog; the historical
+    `route_id in {"monte_carlo_paths", "local_vol_monte_carlo"} and
+    binding_spec is None` fallback has been retired.
+    """
+    del route_id
     if _binding_has_role(binding_spec, "path_simulation") and _binding_has_role(binding_spec, "state_process"):
         return True
     if _binding_has_any_symbol(
@@ -931,7 +954,7 @@ def _binding_supports_event_aware_monte_carlo(
         "price_swaption_monte_carlo",
     ):
         return True
-    return route_id in {"monte_carlo_paths", "local_vol_monte_carlo"} and binding_spec is None
+    return False
 
 
 def _binding_supports_exercise_lattice(
