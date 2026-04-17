@@ -299,18 +299,48 @@ def check_price_sanity(
     return _emit_failures(failures, return_diagnostics=return_diagnostics)
 
 
+def _payoff_is_signed_linear(payoff: Payoff) -> bool:
+    """Return whether the payoff is a signed linear product, not a non-negative option.
+
+    Signed linear products (currently: single-name CDS clean PV from either
+    protection side) do NOT satisfy the non-negativity contract -- the PV is
+    allowed to be negative.  They are validated through their own
+    family-specific invariants (``check_cds_spread_quote_normalization``,
+    ``check_cds_credit_curve_sensitivity``) rather than the generic
+    non-negativity guard.  Callers should skip ``check_non_negativity`` when
+    this returns ``True``.
+
+    Kept as a dedicated helper so future signed products (e.g. fee-only
+    swap legs) can be added here without touching ``check_non_negativity``
+    directly.  (QUA-851.)
+    """
+    spec = _extract_spec(payoff)
+    return _is_cds_like(payoff, spec)
+
+
 def check_non_negativity(
     payoff: Payoff,
     market_state: MarketState,
     *,
     return_diagnostics: bool = False,
 ) -> list[InvariantFailure] | list[str]:
-    """Price must be non-negative for option-like payoffs."""
+    """Price must be non-negative for option-like payoffs.
+
+    Signed linear products (see :func:`_payoff_is_signed_linear`) are
+    exempt from the ``pv >= 0`` assertion: their PV is legitimately
+    negative from at least one side of the trade.  We still invoke
+    ``price_payoff`` for those products so pricing-time exceptions (e.g.
+    a broken CDS implementation missing the credit curve) are surfaced --
+    in ``run_invariant_suite`` with ``is_option=False`` this is often the
+    only always-run check, so it must stay capable of catching a broken
+    build.  (QUA-851; PR #596 Codex P1 round 1.)
+    """
     failures: list[InvariantFailure] = []
+    is_signed = _payoff_is_signed_linear(payoff)
     try:
         pv = price_payoff(payoff, market_state)
         spread_hint, spread_context = _cds_spread_unit_hint(payoff)
-        if pv < -1e-6:
+        if not is_signed and pv < -1e-6:
             failures.append(
                 InvariantFailure(
                     check="check_non_negativity",
