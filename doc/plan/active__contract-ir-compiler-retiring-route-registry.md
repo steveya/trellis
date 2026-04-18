@@ -1,8 +1,10 @@
-# Contract IR Compiler — Retiring the Route Registry
+# Contract IR Compiler — Structural Dispatch Execution Mirror
 
 ## Status
 
-Draft. Pre-queue design document. Not yet the live execution mirror.
+Active. Live execution mirror for `QUA-887`.
+
+Status mirror last synced: `2026-04-18`
 
 ## Linked Linear
 
@@ -10,16 +12,23 @@ Draft. Pre-queue design document. Not yet the live execution mirror.
 - QUA-792 — Binding-first exotic assembly (active successor epic; this plan
   completes its dispatch-replacement slice)
 - QUA-727 / QUA-778–791 — Route-registry minimization (Done; groundwork)
+- QUA-898 — Semantic dispatch: CDS analytical route matches by payoff family
+- QUA-899 — Semantic dispatch: CDS Monte Carlo route matches by payoff family
+- QUA-900 — Semantic dispatch: rate and exotic analytical routes stop matching
+  by instrument
+- QUA-901 — Semantic dispatch: residual instrument-keyed MC and PDE routes stop
+  matching by instrument
 
 ## Purpose
 
-This plan expands the four phases originally sketched in QUA-887 into a
-reviewable architecture proposal. The goal is to retire `routes.yaml` as the
-instrument-dispatch key and replace it with a pattern-based compiler that
-matches incoming Contract IRs against kernel declarations.
+This plan is the live execution mirror for staged retirement of
+instrument-keyed route matching under `QUA-887`. The goal is to retire
+`ProductIR.instrument -> route_id` as the primary dispatch key and replace it
+with structural / pattern-based dispatch that composes with the existing
+semantic compiler, family IRs, and backend-binding surfaces.
 
-The document is written to be read in isolation by a reviewer who has not
-followed the prior discussion.
+`QUA-886` is already landed. Additional substrate hardening now proceeds under
+`QUA-897` in parallel; this document tracks the compiler-dispatch workstream.
 
 ## Framing
 
@@ -50,9 +59,50 @@ What is already in the code (so the plan is not starting from zero):
   already emits dual views: legacy route/module hints and a conservative
   `dsl_lowering` companion. This is the natural splice point for a Contract
   IR dispatch.
-- `routes.yaml` has 30 routes, of which 21 are instrument-dispatch
+- `routes.yaml` has 30 routes, of which 16 are instrument-dispatch
   (`match.instruments: [X]`) and 6 use `conditional_primitives` — a
   pattern-style when-clause dispatch that already works.
+
+## Execution Decisions
+
+The reviewer-stage open questions are resolved for execution as follows:
+
+1. Phase 1 and Phase 2 do not overlap. Phase 1 stays on `ProductIR`
+   structural fields and existing matcher capabilities; additive Contract IR
+   work starts only after the structural-dispatch proof slices are landed.
+2. The first bounded proof slice is `credit_default_swap_analytical` because
+   it already has route-registry fixture coverage and an external parity task
+   (`F007`).
+3. Phase 2, when started, is scoped no larger than vanilla + variance as the
+   initial AST proof surface.
+4. Kernel normalization remains decorator-oriented in Phase 3, but there is
+   no need to decide that before the Phase 1 route-declaration rewrites land.
+5. Dual-path parity tolerance is strategy-dependent:
+
+```text
+deterministic routes:
+  |V_old - V_new| <= 1e-12 + 1e-10 * max(1, |V_old|)
+
+stochastic routes:
+  compare under the existing benchmark / seeded-MC tolerance policy
+```
+
+## Ordered Execution Queue
+
+| Ticket | Status | Scope |
+| --- | --- | --- |
+| `QUA-898` | In Progress | convert `credit_default_swap_analytical` to payoff-family matching and prove `F007` parity |
+| `QUA-899` | Backlog | convert `credit_default_swap_monte_carlo` to payoff-family matching |
+| `QUA-900` | Backlog | migrate the remaining low-complexity analytical instrument-keyed routes |
+| `QUA-901` | Backlog | migrate the residual MC / PDE / credit routes that still dispatch by instrument |
+
+Pickup rule:
+
+- start with the first non-`Done` ticket in the queue
+- do not begin additive Contract IR AST work until `QUA-898` to `QUA-901`
+  are structurally landed or deliberately split further
+- keep each PR parity-gated and reviewable; do not mix multiple queue rows into
+  one PR unless the write scope is trivially shared
 
 ## Why Prior Attempts Stalled
 
@@ -115,16 +165,16 @@ Four principles baked into every phase:
 
 ### Why
 
-The file can shrink dramatically without introducing a new IR. 21 routes
+The file can shrink dramatically without introducing a new IR. 16 routes
 use `match.instruments: [X]`, but 6 already use `conditional_primitives`
 (when-clause dispatch on `payoff_family` + `exercise_style` +
-`model_family` → primitives). Extending that pattern to the remaining 21
+`model_family` → primitives). Extending that pattern to the remaining 16
 retires instrument-name dispatch as the matching key while keeping
 `routes.yaml` as the storage.
 
 ### What we do
 
-- For each of the 21 instrument-keyed routes, rewrite its match clause
+- For each of the 16 instrument-keyed routes, rewrite its match clause
   from `instruments: [X]` to a pattern declaration on `(payoff_family,
   exercise_style, model_family, payoff_traits)`. Example:
   `equity_variance_swap_analytical` changes from `match.instruments:
@@ -139,12 +189,12 @@ retires instrument-name dispatch as the matching key while keeping
 
 ### Deliverables
 
-- 21 route rewrites. Each is its own Linear ticket.
+- 16 route rewrites, grouped into the queued child tickets above.
 - Per-rewrite parity test: `rank_primitive_routes` returns the same
   `PrimitivePlan.route` and `PrimitivePlan.primitives` under the new
   pattern declaration as under the old `instruments:` declaration, for
   every `ProductIR` fixture that hits the route.
-- A handful of collapsed routes (projection: 21 narrow routes → ~7
+- A handful of collapsed routes (projection: 16 narrow routes → ~6
   pattern families).
 
 ### Done criteria per rewrite
@@ -446,44 +496,12 @@ attempts stalled.
    include the parity test output (old vs. new path for all affected
    fixtures and benchmarks) in the PR description.
 
-## Open Questions For The Reviewer
-
-These are the places where the author is least certain and where
-outside judgment would help most.
-
-1. Should Phase 1 and Phase 2 overlap? Phase 1 uses pattern-keyed
-   `conditional_primitives` inside `routes.yaml`. Phase 2 introduces a
-   proper Contract IR. Is there a path where Phase 1's patterns are
-   Contract IR patterns from the start, rather than two separate layers?
-   This could collapse Phases 1 and 2 but might overconstrain Phase 1.
-2. What is the smallest possible Phase 2? The current pick is vanilla +
-   variance + digital + asian (four). Could it be two (vanilla +
-   variance)? The fewer the scope, the more likely the phase lands, but
-   below some threshold the Contract IR does not prove its generality.
-3. Kernel normalization — decorator vs. subtyping. The proposal uses
-   `@solves_pattern(ir, adapter_fn)`. Alternative: kernels implement a
-   `Pricer[IR]` protocol with an `apply(ir, market_state) -> float`
-   method. Protocol-based is more discoverable; decorator-based is more
-   additive. Which does the codebase's conventions prefer?
-4. Relationship to QUA-792. This plan assumes Contract IR completes
-   what QUA-792 started. Is that the right framing, or should the
-   Contract IR compiler be a parallel epic that feeds into QUA-792
-   epic 5 (exotic composition proof)? The reviewer may see this
-   differently.
-5. Parity tolerance ε. FinancePy parity runs use 1–3% tolerance today.
-   For dual-path parity (old vs. new Trellis paths) ε should probably be
-   much lower — around 1e-10 relative, since both paths should produce
-   bit-identical outputs when the math is equivalent. Kernels with Monte
-   Carlo components have RNG state, so ε has to be strategy-dependent.
-   Worth deciding up front.
-
 ## Next Steps
 
-- Land this document as a draft plan doc for review.
-- Collect reviewer feedback on the five open questions.
-- Promote to `active__contract-ir-compiler-retiring-route-registry.md`
-  once the framing is endorsed and the first implementation ticket is
-  queued.
-- The first implementation ticket is the smallest Phase 1 slice: one
-  instrument-keyed route converted to a pattern declaration, with its
-  parity test.
+- Implement `QUA-898` first and keep the PR narrowly scoped to the CDS
+  analytical route plus its parity tests.
+- Continue through `QUA-899` to `QUA-901` in queue order.
+- Use `QUA-897` in parallel to harden the already-landed simulation substrate
+  before downstream collateral/netting/xVA consumers build on it.
+- Do not start Phase 2 additive Contract IR work until Phase 1 structural
+  rewrites are parity-clean and the queue above is materially complete.

@@ -450,6 +450,17 @@ class TestCreditRoutes:
         new = _new_routes(registry, "analytical", self.CDS_IR)
         assert new == ("credit_default_swap_analytical",)
 
+    def test_cds_analytical_does_not_require_instrument_key(self, registry):
+        structural_only_ir = ProductIR(
+            instrument="synthetic_credit_wrapper",
+            payoff_family="credit_default_swap",
+            route_families=("credit_default_swap",),
+        )
+
+        new = _new_routes(registry, "analytical", structural_only_ir)
+
+        assert new == ("credit_default_swap_analytical",)
+
     def test_cds_monte_carlo(self, registry):
         new = _new_routes(registry, "monte_carlo", self.CDS_IR)
         assert new == ("credit_default_swap_monte_carlo",)

@@ -81,7 +81,7 @@ routes:
     confidence: 1.0
     match:
       methods: [analytical]
-      instruments: [cds]
+      payoff_family: [credit_default_swap]
     admissibility:
       control_styles: [identity]
       event_support: automatic
