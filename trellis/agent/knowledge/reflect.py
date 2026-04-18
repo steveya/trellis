@@ -284,9 +284,17 @@ def _attribute_route_success(decomposition: ProductDecomposition) -> int:
                 instrument=decomposition.instrument,
             ),
         )
-        # Only boost discovered routes (not canonical)
+        # Only boost discovered routes (not canonical).  Like
+        # ``gap_check._check_route_gap``, this path operates off a
+        # ``ProductDecomposition`` without a synthesized pricing plan, so
+        # skip market-data-shape filters; dispatch reduces to
+        # method + instrument + payoff-family matching.
         all_matches = match_candidate_routes(
-            registry, decomposition.method, minimal_ir, promoted_only=False,
+            registry,
+            decomposition.method,
+            minimal_ir,
+            promoted_only=False,
+            skip_market_data_filters=True,
         )
         count = 0
         for route in all_matches:

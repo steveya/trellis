@@ -932,30 +932,62 @@ routes:
       non_european_penalty: -4.0
     match:
       methods: [analytical]
-      # QUA-882: every instrument listed here has its own instrument-specific
-      # analytical route (`equity_digital_analytical`, `equity_variance_swap_analytical`,
-      # etc.) and ``analytical_black76`` lacks a matching conditional-primitive
-      # ``when`` clause for them.  Without the exclusion, the broad
-      # ``methods: [analytical]`` matcher on Black76 competes with the
-      # instrument-specific matcher and can be selected instead, forcing the
-      # assembly guard to demand the ``when: default`` Black76 kernels that
-      # the instrument's helper does not use (the F015 variance-swap failure
-      # mode).  ``basket_option`` is **deliberately not excluded** because
-      # Black76 has a legitimate ``when: payoff_family: basket_option +
-      # european + equity_diffusion`` clause that delegates to
-      # ``price_basket_option_analytical``.
-      exclude_instruments:
-        - quanto_option
-        - cds
-        - nth_to_default
-        - zcb_option
-        - variance_swap
-        - digital_option
-        - lookback_option
-        - chooser_option
-        - compound_option
-        - cliquet_option
-        - barrier_option
+      # QUA-909 (Phase 1 of QUA-887): positive filters on
+      # ``required_market_data``, ``payoff_family``, and ``exercise`` replace
+      # the earlier 12-entry ``exclude_instruments`` list. Dispatch is now
+      # restricted to the three payoff families Black76 has concrete
+      # ``when`` clauses for (vanilla European options, European baskets
+      # delegating to ``price_basket_option_analytical``, and European /
+      # Bermudan swaptions delegating to ``price_swaption_black76`` or
+      # ``price_bermudan_swaption_black76_lower_bound``) and to requests
+      # whose pricing plan carries a Black vol surface. Several instrument-
+      # specific analytical routes (``equity_digital_analytical``,
+      # ``equity_variance_swap_analytical``, ``zcb_option_analytical``,
+      # ``equity_barrier_analytical``, ``equity_lookback_analytical``,
+      # ``equity_chooser_analytical``, ``equity_compound_analytical``,
+      # ``equity_cliquet_analytical``, ``credit_default_swap_analytical``,
+      # ``basket_credit_nth_to_default_analytical``) carry payoff families
+      # outside the positive set (``digital_option``, ``variance_swap``,
+      # ``zcb_option``, ``barrier_option``, ``lookback_option``,
+      # ``chooser_option``, ``compound_option``, ``cliquet_option``,
+      # ``event_triggered_two_legged_contract``, ``credit_basket``) so the
+      # new filter leaves them uncontested. Phase 1.4 will extend this
+      # positive filter when it absorbs the instrument-specific exotic
+      # routes into Black76 via conditional ``when`` clauses.
+      #
+      # The ``exercise: [european, bermudan]`` positive filter is the
+      # principled discriminant against American exercise vanilla options.
+      # ``vanilla_option`` is a shared payoff family across European and
+      # American styles; without this filter Black76's broad positive
+      # payoff-family match would admit American requests, which would then
+      # propagate ``analytical`` into the request's
+      # ``candidate_engine_families`` via
+      # ``_augment_ir_with_promoted_route_support`` and drive the product-
+      # IR pricing-method selector to pick ``analytical`` over the true
+      # Monte-Carlo / rate-tree / PDE solvers. Black76's ``when`` clauses
+      # only handle ``european`` (vanilla, basket, swaption) and
+      # ``bermudan`` (swaption via the lower-bound helper), so restricting
+      # the match clause to those two exercise styles matches the concrete
+      # capability surface.
+      #
+      # The ``exclude_required_market_data: [fx_rates]`` clause is retained
+      # as a market-data-shape discriminant (not instrument-name dispatch)
+      # against quanto and FX-vanilla requests. Those contracts currently
+      # declare ``payoff_family="vanilla_option"`` in
+      # ``trellis/agent/semantic_contracts.py`` and therefore still reach
+      # this route under the positive ``payoff_family`` filter; their
+      # pricing plans, however, emit ``fx_rates`` to drive
+      # ``quanto_adjustment_analytical`` and ``analytical_garman_kohlhagen``
+      # respectively. Black76 does not model FX coupling, so excluding
+      # plans that require ``fx_rates`` is the principled market-data-shape
+      # discriminant here (the Phase 1 pattern we are moving toward, vs.
+      # the instrument-name ``exclude_instruments`` pattern we are
+      # retiring). Once the decomposer emits a more specific
+      # ``payoff_family`` for quanto / FX-vanilla (Phase 2+ work), this
+      # exclusion becomes redundant and can be dropped.
+      required_market_data: [black_vol_surface]
+      payoff_family: [vanilla_option, basket_option, swaption]
+      exercise: [european, bermudan]
       exclude_required_market_data: [fx_rates]
     admissibility:
       control_styles: [identity, holder_max]

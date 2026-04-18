@@ -9,10 +9,13 @@ from trellis.agent.knowledge.schema import InstructionRecord, ProductIR
 
 
 def _analytical_pricing_plan() -> SimpleNamespace:
+    # QUA-909: Black76 now requires ``black_vol_surface`` in
+    # ``required_market_data``; declare it so the route lifecycle test
+    # actually dispatches to ``analytical_black76`` as intended.
     return SimpleNamespace(
         method="analytical",
         method_modules=("trellis.models.black",),
-        required_market_data=(),
+        required_market_data=("discount_curve", "black_vol_surface"),
         model_to_build="swaption",
         reasoning="route lifecycle test",
         modeling_requirements=(),
@@ -20,9 +23,16 @@ def _analytical_pricing_plan() -> SimpleNamespace:
 
 
 def _swaption_product_ir() -> ProductIR:
+    # QUA-909: Black76's positive payoff-family filter uses the canonical
+    # ``swaption`` label (what ``make_rate_style_swaption_contract`` emits
+    # in ``trellis/agent/semantic_contracts.py``). Use that here so the
+    # lifecycle fixture matches production dispatch shape instead of the
+    # internal ``rate_style_swaption`` subfamily used before QUA-909.
     return ProductIR(
         instrument="swaption",
-        payoff_family="rate_style_swaption",
+        payoff_family="swaption",
+        exercise_style="european",
+        model_family="interest_rate",
         schedule_dependence=True,
     )
 
@@ -208,6 +218,16 @@ def test_generation_plan_materializes_resolved_instructions():
 
     assert plan.resolved_instructions is not None
     assert plan.resolved_instructions.route == "analytical_black76"
-    assert plan.resolved_instructions.effective_instructions[0].id == "analytical_black76:schedule-builder"
-    assert plan.resolved_instructions.effective_instructions[1].id == "analytical_black76:schedule-body"
+    # QUA-909: with a canonical ``payoff_family="swaption"`` +
+    # ``exercise_style="european"`` ProductIR the specific swaption when
+    # clause activates, routing through
+    # ``price_swaption_black76`` as a ``route_helper``. The route-helper
+    # instruction lands first because the specific-helper clause preempts
+    # the shared schedule-builder primitive that only appears on the
+    # ``when: default`` fallback clause.
+    instruction_ids = [
+        instruction.id
+        for instruction in plan.resolved_instructions.effective_instructions
+    ]
+    assert instruction_ids[0] == "analytical_black76:route-helper"
     assert plan.resolved_instructions.conflicts == ()

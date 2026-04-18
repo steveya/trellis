@@ -759,11 +759,22 @@ def match_candidate_routes(
     *,
     pricing_plan=None,
     promoted_only: bool = True,
+    skip_market_data_filters: bool = False,
 ) -> tuple[RouteSpec, ...]:
     """Filter routes by match conditions.
 
     When ``promoted_only`` is True (default for live builds), only routes with
     ``status == "promoted"`` are returned.  Set to False for gap analysis.
+
+    When ``skip_market_data_filters`` is True, the route's
+    ``match_required_market_data`` and ``exclude_required_market_data``
+    clauses are bypassed.  This is the pre-flight-audit mode used by
+    ``gap_check._check_route_gap`` and the discovery-route booster in
+    ``reflect.py``: those call sites only have a ``ProductDecomposition`` +
+    minimal ``ProductIR`` and have not yet synthesized a pricing plan, so
+    the market-data-shape filters cannot be evaluated meaningfully.  Live
+    build and scoring callers must leave this flag at its default so that
+    the market-data filters remain enforced.
     """
     method = normalize_method(method) if method else ""
     instrument = getattr(product_ir, "instrument", None) if product_ir is not None else None
@@ -831,13 +842,17 @@ def match_candidate_routes(
         if route.exclude_exercise and exercise in route.exclude_exercise:
             continue
 
-        # Required market data match
-        if route.match_required_market_data is not None:
-            if not all(md in required_market_data for md in route.match_required_market_data):
-                continue
-        if route.exclude_required_market_data is not None:
-            if any(md in required_market_data for md in route.exclude_required_market_data):
-                continue
+        # Required market data match.  Skipped in gap-audit mode because
+        # those callers do not yet have a pricing plan and applying the
+        # positive AND-filter against an empty set would reject every
+        # route that declares ``required_market_data``.
+        if not skip_market_data_filters:
+            if route.match_required_market_data is not None:
+                if not all(md in required_market_data for md in route.match_required_market_data):
+                    continue
+            if route.exclude_required_market_data is not None:
+                if any(md in required_market_data for md in route.exclude_required_market_data):
+                    continue
 
         matches.append(route)
 

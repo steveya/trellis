@@ -1074,9 +1074,21 @@ class TestAnalyticalRoutes:
     )
     VANILLA_IR = ProductIR(instrument="european_option", payoff_family="vanilla_option", exercise_style="european")
     ZCB_IR = ProductIR(instrument="zcb_option", payoff_family="zcb_option", exercise_style="european")
+    # QUA-909: ``analytical_black76`` now requires ``black_vol_surface`` in the
+    # pricing-plan required market data (positive filter replacing the old
+    # ``exclude_required_market_data: [fx_rates]`` clause). Tests that exercise
+    # the Black76 match clause must pass a plan carrying that data; the bare
+    # no-plan form stays exercised below to defend the ``pricing_plan is None``
+    # branch in ``match_candidate_routes``.
+    BLACK76_PLAN = _make_plan(
+        "analytical",
+        market_data={"discount_curve", "black_vol_surface"},
+    )
 
     def test_swaption_candidate(self, registry):
-        new = _new_routes(registry, "analytical", self.SWAPTION_IR)
+        new = _new_routes(
+            registry, "analytical", self.SWAPTION_IR, pricing_plan=self.BLACK76_PLAN,
+        )
         assert new == ("analytical_black76",)
 
     def test_zcb_candidate(self, registry):
@@ -1920,3 +1932,154 @@ class TestRouteMatchParityHarness:
                 },
                 fixtures,
             )
+
+
+# ---------------------------------------------------------------------------
+# QUA-909: analytical_black76 positive-filter rewrite parity
+# ---------------------------------------------------------------------------
+
+class TestBlack76PositiveFilterParity:
+    """Parity gate for the QUA-909 rewrite of ``analytical_black76``.
+
+    Phase 1 of QUA-887 retires instrument-keyed dispatch. The ``analytical_black76``
+    match clause previously carried a 12-entry ``exclude_instruments`` list plus
+    ``exclude_required_market_data: [fx_rates]`` so that the broad
+    ``methods: [analytical]`` matcher did not accidentally swallow exotic
+    instrument-specific analytical routes. QUA-909 replaces those exclusions
+    with positive filters:
+
+        required_market_data: [black_vol_surface]
+        payoff_family: [vanilla_option, basket_option, swaption]
+
+    Every ``(ProductIR, PricingPlan)`` fixture that dispatched to
+    ``analytical_black76`` before the rewrite must still dispatch there after
+    the rewrite with an identical ``PrimitivePlan`` tuple (route id, primitives,
+    adapters, blockers). The fixtures below cover the concrete Black76 use cases:
+
+      - European vanilla call on equity (``vanilla_option`` positive match)
+      - European vanilla put on equity (``vanilla_option`` positive match)
+      - European basket option (``basket_option`` positive match, exercises the
+        ``when: payoff_family: basket_option`` conditional)
+      - European swaption on interest rates (``swaption`` positive match)
+      - Bermudan swaption on interest rates (``swaption`` positive match, drives
+        the lower-bound helper conditional)
+
+    Every fixture carries ``black_vol_surface`` in its pricing-plan required
+    market data because the new positive filter is AND-semantics on that field;
+    a fixture lacking it would drop from Black76 under the new clause. Tests
+    elsewhere in the file still exercise the legacy no-``PricingPlan`` path on
+    the Black76 route to keep backward compatibility for internal callers that
+    rely on ``match_required_market_data`` being a no-op when ``pricing_plan``
+    is ``None``.
+    """
+
+    _ANALYTICAL_PLAN_MARKET_DATA = {"discount_curve", "black_vol_surface"}
+
+    @classmethod
+    def _analytical_plan(cls) -> PricingPlan:
+        return _make_plan(
+            "analytical",
+            market_data=set(cls._ANALYTICAL_PLAN_MARKET_DATA),
+        )
+
+    @classmethod
+    def _european_call_fixture(cls) -> tuple[ProductIR, PricingPlan]:
+        product_ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            model_family="equity_diffusion",
+        )
+        return product_ir, cls._analytical_plan()
+
+    @classmethod
+    def _european_put_fixture(cls) -> tuple[ProductIR, PricingPlan]:
+        product_ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            model_family="equity_diffusion",
+            payoff_traits=("put",),
+        )
+        return product_ir, cls._analytical_plan()
+
+    @classmethod
+    def _european_basket_fixture(cls) -> tuple[ProductIR, PricingPlan]:
+        product_ir = ProductIR(
+            instrument="basket_option",
+            payoff_family="basket_option",
+            exercise_style="european",
+            model_family="equity_diffusion",
+        )
+        return product_ir, cls._analytical_plan()
+
+    @classmethod
+    def _european_swaption_fixture(cls) -> tuple[ProductIR, PricingPlan]:
+        product_ir = ProductIR(
+            instrument="swaption",
+            payoff_family="swaption",
+            exercise_style="european",
+            model_family="interest_rate",
+        )
+        return product_ir, cls._analytical_plan()
+
+    @classmethod
+    def _bermudan_swaption_fixture(cls) -> tuple[ProductIR, PricingPlan]:
+        product_ir = ProductIR(
+            instrument="bermudan_swaption",
+            payoff_family="swaption",
+            exercise_style="bermudan",
+            model_family="interest_rate",
+        )
+        return product_ir, cls._analytical_plan()
+
+    @classmethod
+    def _all_fixtures(cls) -> list[tuple[ProductIR, PricingPlan]]:
+        return [
+            cls._european_call_fixture(),
+            cls._european_put_fixture(),
+            cls._european_basket_fixture(),
+            cls._european_swaption_fixture(),
+            cls._bermudan_swaption_fixture(),
+        ]
+
+    def test_fixtures_reach_black76_under_current_registry(self, registry):
+        """Precondition: every fixture must dispatch to ``analytical_black76``
+        under the current registry. Without this precondition the parity
+        harness would run on fixtures that never exercised the rewritten
+        match clause and pass trivially.
+        """
+        for idx, (product_ir, pricing_plan) in enumerate(self._all_fixtures()):
+            routes = _new_routes(
+                registry, "analytical", product_ir, pricing_plan=pricing_plan,
+            )
+            assert "analytical_black76" in routes, (
+                f"fixture[{idx}] ({product_ir.instrument!r}, "
+                f"payoff_family={product_ir.payoff_family!r}) did not dispatch "
+                f"to analytical_black76 under the current registry; "
+                f"candidate routes={routes}"
+            )
+
+    def test_positive_filter_rewrite_preserves_dispatch(self):
+        """Rewriting ``analytical_black76.match`` from an exclude-heavy clause
+        to positive filters on ``required_market_data`` + ``payoff_family``
+        must preserve the ranked ``PrimitivePlan`` tuple on every fixture.
+        """
+        from tests.test_agent.route_parity import assert_route_match_parity
+
+        new_match_clause = {
+            "methods": ("analytical",),
+            "required_market_data": ("black_vol_surface",),
+            "payoff_family": (
+                "vanilla_option",
+                "basket_option",
+                "swaption",
+            ),
+            "exercise": ("european", "bermudan"),
+            "exclude_required_market_data": ("fx_rates",),
+        }
+        assert_route_match_parity(
+            route_id="analytical_black76",
+            new_match_clause=new_match_clause,
+            fixtures=self._all_fixtures(),
+        )
