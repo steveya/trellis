@@ -932,7 +932,30 @@ routes:
       non_european_penalty: -4.0
     match:
       methods: [analytical]
-      exclude_instruments: [quanto_option, cds, nth_to_default, zcb_option]
+      # QUA-882: every instrument listed here has its own instrument-specific
+      # analytical route (`equity_digital_analytical`, `equity_variance_swap_analytical`,
+      # etc.) and ``analytical_black76`` lacks a matching conditional-primitive
+      # ``when`` clause for them.  Without the exclusion, the broad
+      # ``methods: [analytical]`` matcher on Black76 competes with the
+      # instrument-specific matcher and can be selected instead, forcing the
+      # assembly guard to demand the ``when: default`` Black76 kernels that
+      # the instrument's helper does not use (the F015 variance-swap failure
+      # mode).  ``basket_option`` is **deliberately not excluded** because
+      # Black76 has a legitimate ``when: payoff_family: basket_option +
+      # european + equity_diffusion`` clause that delegates to
+      # ``price_basket_option_analytical``.
+      exclude_instruments:
+        - quanto_option
+        - cds
+        - nth_to_default
+        - zcb_option
+        - variance_swap
+        - digital_option
+        - lookback_option
+        - chooser_option
+        - compound_option
+        - cliquet_option
+        - barrier_option
       exclude_required_market_data: [fx_rates]
     admissibility:
       control_styles: [identity, holder_max]
