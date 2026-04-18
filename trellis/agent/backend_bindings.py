@@ -667,12 +667,21 @@ def _matches_condition(
         str(item).strip().lower()
         for item in getattr(product_ir, "payoff_traits", ()) or ()
     }
+    instrument = str(getattr(product_ir, "instrument", "") or "").strip().lower()
     for key, expected in when.items():
         if key == "payoff_family":
             if isinstance(expected, list):
                 if not any(candidate in payoff_families for candidate in expected):
                     return False
             elif expected not in payoff_families:
+                return False
+        elif key == "instrument":
+            expected_instruments = (
+                {str(item).strip().lower() for item in expected}
+                if isinstance(expected, list)
+                else {str(expected).strip().lower()}
+            )
+            if instrument not in expected_instruments:
                 return False
         elif key == "payoff_traits":
             expected_traits = (

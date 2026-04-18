@@ -4,7 +4,7 @@ These tests lock in the two-form ``when``-clause dispatch contract that the
 route registry exposes after QUA-919:
 
 1. **Legacy string-tag filter form** — a mapping of trait keys (``payoff_family``,
-   ``exercise_style``, ``model_family``, ``schedule_dependence``) to literal or
+   ``instrument``, ``exercise_style``, ``model_family``, ``schedule_dependence``) to literal or
    list expectations.  Dispatch goes through ``_matches_condition`` exactly as
    before QUA-919; every existing ``routes.yaml`` clause keeps this shape.
 2. **DSL ``contract_pattern`` form** — a mapping with a single

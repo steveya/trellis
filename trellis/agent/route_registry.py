@@ -1890,12 +1890,21 @@ def _matches_condition(
 ) -> bool:
     """Check whether a ProductIR matches a legacy string-tag 'when' clause."""
     payoff_families = _expanded_payoff_families(payoff_family, product_ir)
+    instrument = str(getattr(product_ir, "instrument", "") or "").strip().lower()
     for key, expected in when.items():
         if key == "payoff_family":
             if isinstance(expected, list):
                 if not any(candidate in payoff_families for candidate in expected):
                     return False
             elif expected not in payoff_families:
+                return False
+        elif key == "instrument":
+            expected_instruments = (
+                {str(item).strip().lower() for item in expected}
+                if isinstance(expected, list)
+                else {str(expected).strip().lower()}
+            )
+            if instrument not in expected_instruments:
                 return False
         elif key == "exercise_style":
             if isinstance(expected, list):

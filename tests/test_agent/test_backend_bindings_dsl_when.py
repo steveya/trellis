@@ -5,7 +5,7 @@ These tests lock in the two-form ``when``-clause dispatch contract that the
 backend-binding catalog exposes after QUA-921:
 
 1. **Legacy string-tag filter form** — a mapping of trait keys
-   (``payoff_family``, ``payoff_traits``, ``exercise_style``,
+   (``payoff_family``, ``payoff_traits``, ``instrument``, ``exercise_style``,
    ``model_family``, ``schedule_dependence``) to literal or list expectations.
    Dispatch goes through
    :func:`trellis.agent.backend_bindings._matches_condition` exactly as before

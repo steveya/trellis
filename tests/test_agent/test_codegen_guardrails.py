@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from trellis.agent.codegen_guardrails import (
     PrimitiveRef,
     build_generation_plan,
@@ -848,21 +850,38 @@ def test_cds_analytical_route_card_surfaces_helper_signature_keywords():
     assert "Do not reinterpret a single-name CDS" not in card
 
 
-def test_chooser_option_analytical_route_uses_exact_helper_binding():
+@pytest.mark.parametrize(
+    "instrument_type,expected_helper_ref",
+    [
+        (
+            "chooser_option",
+            "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical",
+        ),
+        (
+            "compound_option",
+            "trellis.models.analytical.equity_exotics.price_equity_compound_option_analytical",
+        ),
+    ],
+)
+def test_absorbed_black76_nested_composite_route_uses_exact_helper_binding(
+    instrument_type,
+    expected_helper_ref,
+):
     pricing_plan = PricingPlan(
         method="analytical",
         method_modules=["trellis.models.analytical.equity_exotics"],
         required_market_data={"discount_curve", "black_vol_surface"},
-        model_to_build="chooser_option",
+        model_to_build=instrument_type,
         reasoning="test",
     )
     plan = build_generation_plan(
         pricing_plan=pricing_plan,
-        instrument_type="chooser_option",
+        instrument_type=instrument_type,
         inspected_modules=("trellis.models.analytical.equity_exotics",),
         product_ir=ProductIR(
-            instrument="chooser_option",
-            payoff_family="chooser_option",
+            instrument=instrument_type,
+            payoff_family="composite_option",
+            payoff_traits=("discounting", "terminal_markov", "vol_surface_dependence"),
             exercise_style="european",
             state_dependence="terminal_markov",
             model_family="equity_diffusion",
@@ -872,15 +891,12 @@ def test_chooser_option_analytical_route_uses_exact_helper_binding():
     card = render_generation_route_card(plan)
 
     assert plan.primitive_plan is not None
-    assert plan.primitive_plan.route == "equity_chooser_analytical"
+    assert plan.primitive_plan.route == "analytical_black76"
     primitive_refs = {
         f"{primitive.module}.{primitive.symbol}" for primitive in plan.primitive_plan.primitives
     }
-    assert (
-        "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical"
-        in primitive_refs
-    )
-    assert "price_equity_chooser_option_analytical" in card
+    assert expected_helper_ref in primitive_refs
+    assert expected_helper_ref.rsplit(".", 1)[-1] in card
 
 
 def test_nth_to_default_monte_carlo_route_uses_copula_assembly():
