@@ -71,6 +71,23 @@ For explicit path checks, repeat `--path`:
   full-task replays plus the slower proof/reference suites and the
   drift/freshness checks.
 
+## CI Layout
+
+GitHub Actions now fans the PR gate out into independent jobs instead of one
+large serial pytest invocation:
+
+- `repo-checks`: build, whitespace diff check, and stale-marker hygiene
+- `pr-gate-shard-1` through `pr-gate-shard-4`: deterministic slices of the
+  core PR test surface produced by `scripts/pr_gate_shard.py`
+- `pr-gate-tier2-contracts`: the retained tier-2 contract tranche
+- `build-and-test`: branch-protection aggregator that goes green only after
+  the PR shard jobs succeed
+- `typecheck`: the existing non-blocking mypy pass
+
+Local `make gate-pr` stays serial and unchanged so developers still have a
+single command for full PR-ready validation. The shard helper only changes the
+remote PR workflow shape.
+
 The release gate's drift step uses `scripts/run_canary.py --check-drift`, so
 it compares against the latest available decision checkpoint for the replayed
 task. If no latest checkpoint exists yet, the runner reports that the drift
