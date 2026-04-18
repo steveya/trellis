@@ -244,6 +244,116 @@ class MCMeasureSpec:
 
 
 @dataclass(frozen=True)
+class SimulationFactorSpec:
+    """One named latent factor inside the broader simulation substrate."""
+
+    factor_name: str = ""
+    factor_role: str = ""
+    units: str = ""
+
+
+@dataclass(frozen=True)
+class SimulationStateSpec:
+    """Typed factor-state contract for the reusable simulation substrate."""
+
+    dimension: int = 1
+    state_layout: str = "scalar"
+    state_tags: tuple[str, ...] = ()
+    coordinate_chart: str = "physical"
+    factors: tuple[SimulationFactorSpec, ...] = ()
+
+
+@dataclass(frozen=True)
+class SimulationProcessBundleSpec:
+    """Typed process/calibration bundle for one simulation substrate instance."""
+
+    process_family: str = ""
+    factor_dimension: int = 1
+    simulation_method: str = ""
+    calibration_symbol: str = ""
+    process_tags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class SimulatedMarketProjectionSpec:
+    """Typed `Phi_t` contract from factor state onto valuation-facing views."""
+
+    projection_family: str = ""
+    output_kind: str = ""
+    target_market: str = ""
+    state_fields: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class StateTransitionSpec:
+    """One observable-driven contract-state transition on the observation grid."""
+
+    transition_kind: str = ""
+    observable_id: str = ""
+    state_binding: str = ""
+    phase: str = ""
+
+
+@dataclass(frozen=True)
+class ObservationProgramSpec:
+    """Typed observable / reducer program projected onto factor-state simulation."""
+
+    observable_ids: tuple[str, ...] = ()
+    observable_kinds: tuple[str, ...] = ()
+    state_transitions: tuple[StateTransitionSpec, ...] = ()
+    phase_sequence: tuple[str, ...] = ()
+    terminal_value_symbol: str = ""
+
+
+@dataclass(frozen=True)
+class ConditionalValuationSpec:
+    """Typed conditional-valuation contract for intermediate-date value maps."""
+
+    valuation_style: str = ""
+    model_family: str = ""
+    basis_family: str = ""
+    supports_exact: bool = False
+    requires_train_eval_split: bool = False
+
+
+@dataclass(frozen=True)
+class FactorStateSimulationIR(BaseFamilyLoweringIR):
+    """Typed lowering payload for the reusable factor-state simulation substrate."""
+
+    product_instrument: str = "simulation_program"
+    payoff_family: str = "conditional_valuation"
+    engine_family: str = "simulation"
+    state_spec: SimulationStateSpec = field(default_factory=SimulationStateSpec)
+    process_spec: SimulationProcessBundleSpec = field(
+        default_factory=SimulationProcessBundleSpec
+    )
+    projection_spec: SimulatedMarketProjectionSpec = field(
+        default_factory=SimulatedMarketProjectionSpec
+    )
+    observation_program: ObservationProgramSpec = field(
+        default_factory=ObservationProgramSpec
+    )
+    conditional_valuation: ConditionalValuationSpec = field(
+        default_factory=ConditionalValuationSpec
+    )
+    event_program: EventProgramIR = field(default_factory=EventProgramIR)
+    control_program: ControlProgramIR = field(default_factory=ControlProgramIR)
+    measure_spec: MCMeasureSpec = field(default_factory=MCMeasureSpec)
+    helper_symbol: str = ""
+    market_mapping: str = ""
+
+    @property
+    def factor_names(self) -> tuple[str, ...]:
+        """Return the stable ordered factor names carried by the state spec."""
+        names = [
+            factor.factor_name
+            for factor in self.state_spec.factors
+            if str(factor.factor_name or "").strip()
+        ]
+        return tuple(names)
+
+
+@dataclass(frozen=True)
 class MCCalibrationBindingSpec:
     """Typed quote/calibration prerequisites for one Monte Carlo route."""
 

@@ -3,7 +3,7 @@
 from trellis.instruments.bond import Bond, ParBond
 from trellis.curves.yield_curve import YieldCurve
 from trellis.engine.pricer import price_instrument as price
-from trellis.book import Book, BookResult, ScenarioResultCube
+from trellis.book import Book, BookResult, FutureValueCube, FutureValueCubeMetadata, ScenarioResultCube
 from trellis.session import Session
 from trellis.pipeline import Pipeline
 from trellis.samples import sample_bond_10y, sample_book, sample_curve
@@ -75,7 +75,7 @@ def quickstart() -> Session:
 __all__ = [
     "Bond", "ParBond", "YieldCurve",
     "price", "ask",
-    "Book", "BookResult", "ScenarioResultCube", "Session", "Pipeline",
+    "Book", "BookResult", "FutureValueCube", "FutureValueCubeMetadata", "ScenarioResultCube", "Session", "Pipeline",
     "quickstart", "sample_bond_10y", "sample_book", "sample_curve",
     "MarketState", "MissingCapabilityError",
     "Payoff", "DeterministicCashflowPayoff",

@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from copy import deepcopy
+from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
 from trellis.analytics.result import RiskMeasureOutput
+from trellis.core.differentiable import get_numpy
 from trellis.core.types import Instrument, PricingResult
+
+np = get_numpy()
 
 
 class Book:
@@ -532,4 +536,274 @@ class ScenarioResultCube(Mapping[str, BookResult]):
             "deltas": deepcopy(deltas),
             "scenario_specs": self.scenario_specs,
             "scenario_provenance": self.scenario_provenance,
+        }
+
+
+@dataclass(frozen=True)
+class FutureValueCubeMetadata:
+    """Explicit semantic metadata for one trade/date/path future-value cube."""
+
+    measure: str = "risk_neutral"
+    numeraire: str = "discount_curve"
+    value_semantics: str = "clean_future_value"
+    phase_semantics: str = "post_event"
+    state_names: tuple[str, ...] = ()
+    process_family: str = ""
+    compute_plan: dict[str, Any] | None = None
+    position_provenance: dict[str, dict[str, Any]] | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "measure", str(self.measure or "risk_neutral"))
+        object.__setattr__(self, "numeraire", str(self.numeraire or "discount_curve"))
+        object.__setattr__(
+            self,
+            "value_semantics",
+            str(self.value_semantics or "clean_future_value"),
+        )
+        object.__setattr__(
+            self,
+            "phase_semantics",
+            str(self.phase_semantics or "post_event"),
+        )
+        object.__setattr__(
+            self,
+            "state_names",
+            tuple(str(name) for name in (self.state_names or ())),
+        )
+        object.__setattr__(self, "process_family", str(self.process_family or ""))
+        object.__setattr__(self, "compute_plan", deepcopy(self.compute_plan or {}))
+        object.__setattr__(
+            self,
+            "position_provenance",
+            {
+                str(name): deepcopy(payload)
+                for name, payload in (self.position_provenance or {}).items()
+            },
+        )
+
+    @classmethod
+    def from_value(
+        cls,
+        metadata: "FutureValueCubeMetadata | Mapping[str, Any] | None",
+    ) -> "FutureValueCubeMetadata":
+        """Coerce one metadata payload into the frozen metadata value type."""
+        if metadata is None:
+            return cls()
+        if isinstance(metadata, cls):
+            return metadata
+        payload = dict(metadata)
+        return cls(
+            measure=payload.get("measure", "risk_neutral"),
+            numeraire=payload.get("numeraire", "discount_curve"),
+            value_semantics=payload.get("value_semantics", "clean_future_value"),
+            phase_semantics=payload.get("phase_semantics", "post_event"),
+            state_names=tuple(payload.get("state_names", ())),
+            process_family=payload.get("process_family", ""),
+            compute_plan=payload.get("compute_plan"),
+            position_provenance=payload.get("position_provenance"),
+        )
+
+
+class FutureValueCube:
+    """Trade/date/path valuation tensor with explicit future-value semantics."""
+
+    def __init__(
+        self,
+        values,
+        *,
+        position_names: tuple[str, ...] | list[str],
+        observation_times: tuple[float, ...] | list[float],
+        observation_dates: tuple[date, ...] | list[date] | None = None,
+        metadata: FutureValueCubeMetadata | Mapping[str, Any] | None = None,
+    ):
+        cube = np.asarray(values, dtype=float)
+        if cube.ndim != 3:
+            raise ValueError(
+                "FutureValueCube values must have shape (position, observation_time, path)"
+            )
+        names = tuple(str(name) for name in position_names)
+        if cube.shape[0] != len(names):
+            raise ValueError(
+                "FutureValueCube position_names must match the trade axis of values"
+            )
+        times = tuple(float(time) for time in observation_times)
+        if cube.shape[1] != len(times):
+            raise ValueError(
+                "FutureValueCube observation_times must match the date axis of values"
+            )
+        if any(later < earlier for earlier, later in zip(times, times[1:])):
+            raise ValueError("FutureValueCube observation_times must be sorted ascending")
+        dates = tuple(observation_dates or ())
+        if dates and len(dates) != len(times):
+            raise ValueError(
+                "FutureValueCube observation_dates must match the observation axis of values"
+            )
+
+        self._values = cube.copy()
+        self._position_names = names
+        self._position_index = {name: index for index, name in enumerate(names)}
+        if len(self._position_index) != len(names):
+            raise ValueError("FutureValueCube position_names must be unique")
+        self._observation_times = times
+        self._time_index = {time: index for index, time in enumerate(times)}
+        self._observation_dates = dates
+        self._date_index = {obs_date: index for index, obs_date in enumerate(dates)}
+        self._metadata = FutureValueCubeMetadata.from_value(metadata)
+
+    def __repr__(self) -> str:
+        return (
+            "FutureValueCube("
+            f"positions={list(self._position_names)}, "
+            f"observation_times={list(self._observation_times)}, "
+            f"n_paths={self.n_paths}"
+            ")"
+        )
+
+    @property
+    def values(self):
+        """Return a defensive copy of the raw tensor."""
+        return np.asarray(self._values, dtype=float).copy()
+
+    @property
+    def metadata(self) -> FutureValueCubeMetadata:
+        """Return the frozen cube metadata."""
+        return self._metadata
+
+    @property
+    def position_names(self) -> tuple[str, ...]:
+        return self._position_names
+
+    @property
+    def observation_times(self) -> tuple[float, ...]:
+        return self._observation_times
+
+    @property
+    def observation_dates(self) -> tuple[date, ...]:
+        return self._observation_dates
+
+    @property
+    def measure(self) -> str:
+        return self._metadata.measure
+
+    @property
+    def numeraire(self) -> str:
+        return self._metadata.numeraire
+
+    @property
+    def value_semantics(self) -> str:
+        return self._metadata.value_semantics
+
+    @property
+    def phase_semantics(self) -> str:
+        return self._metadata.phase_semantics
+
+    @property
+    def state_names(self) -> tuple[str, ...]:
+        return self._metadata.state_names
+
+    @property
+    def process_family(self) -> str:
+        return self._metadata.process_family
+
+    @property
+    def compute_plan(self) -> dict[str, Any]:
+        return deepcopy(self._metadata.compute_plan or {})
+
+    @property
+    def position_provenance(self) -> dict[str, dict[str, Any]]:
+        return deepcopy(self._metadata.position_provenance or {})
+
+    @property
+    def n_positions(self) -> int:
+        return int(self._values.shape[0])
+
+    @property
+    def n_observation_times(self) -> int:
+        return int(self._values.shape[1])
+
+    @property
+    def n_paths(self) -> int:
+        return int(self._values.shape[2])
+
+    def position_index(self, name: str) -> int:
+        try:
+            return self._position_index[str(name)]
+        except KeyError as exc:
+            raise KeyError(f"Unknown FutureValueCube position {name!r}") from exc
+
+    def time_index(self, observation_time: float) -> int:
+        resolved = float(observation_time)
+        try:
+            return self._time_index[resolved]
+        except KeyError as exc:
+            raise KeyError(
+                f"Unknown FutureValueCube observation_time {observation_time!r}"
+            ) from exc
+
+    def date_index(self, observation_date: date) -> int:
+        if not self._observation_dates:
+            raise KeyError("FutureValueCube has no observation_dates")
+        try:
+            return self._date_index[observation_date]
+        except KeyError as exc:
+            raise KeyError(
+                f"Unknown FutureValueCube observation_date {observation_date!r}"
+            ) from exc
+
+    def values_for_position(self, name: str):
+        """Return the date/path matrix for one named position."""
+        return np.asarray(self._values[self.position_index(name)], dtype=float).copy()
+
+    def portfolio_values(self):
+        """Return the aggregated portfolio date/path matrix."""
+        return np.sum(np.asarray(self._values, dtype=float), axis=0)
+
+    def positive_values(self):
+        """Return the positive part of each trade/date/path value."""
+        return np.maximum(np.asarray(self._values, dtype=float), 0.0)
+
+    def positive_portfolio_values(self):
+        """Return the positive part of the aggregated portfolio date/path matrix."""
+        return np.maximum(self.portfolio_values(), 0.0)
+
+    def expected_positive_exposure(self):
+        """Return `EE(t_i) = N^{-1} sum_n max(sum_a C_{a,i,n}, 0)`."""
+        return np.mean(self.positive_portfolio_values(), axis=1)
+
+    def potential_future_exposure(self, alpha: float):
+        """Return `PFE_alpha(t_i)` from the positive portfolio distribution."""
+        level = float(alpha)
+        if not 0.0 <= level <= 1.0:
+            raise ValueError("FutureValueCube alpha must satisfy 0 <= alpha <= 1")
+        return np.quantile(self.positive_portfolio_values(), level, axis=1)
+
+    def path_slice(self, path_index: int) -> dict[str, Any]:
+        """Return one pathwise date-ladder per position."""
+        resolved = int(path_index)
+        if resolved < 0 or resolved >= self.n_paths:
+            raise IndexError(
+                f"FutureValueCube path_index {path_index} is out of bounds for {self.n_paths} paths"
+            )
+        return {
+            name: np.asarray(self._values[index, :, resolved], dtype=float).copy()
+            for name, index in self._position_index.items()
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-friendly serialization."""
+        return {
+            "position_names": list(self.position_names),
+            "observation_times": list(self.observation_times),
+            "observation_dates": [obs.isoformat() for obs in self.observation_dates],
+            "values": np.asarray(self._values, dtype=float).tolist(),
+            "metadata": {
+                "measure": self.measure,
+                "numeraire": self.numeraire,
+                "value_semantics": self.value_semantics,
+                "phase_semantics": self.phase_semantics,
+                "state_names": list(self.state_names),
+                "process_family": self.process_family,
+                "compute_plan": self.compute_plan,
+                "position_provenance": self.position_provenance,
+            },
         }

@@ -93,3 +93,13 @@ from trellis.models.monte_carlo.profiling import (
     MonteCarloPathKernelBenchmark,
     benchmark_path_kernel,
 )
+from trellis.models.monte_carlo.simulation_substrate import (
+    FactorStateSimulationResult,
+    HullWhiteRateProjection,
+    HullWhiteSwapFutureValueModel,
+    SwapFloatResetProgram,
+    build_future_value_cube,
+    evaluate_conditional_valuation_paths,
+    price_interest_rate_swap_future_value_cube,
+    simulate_factor_state_observations,
+)

@@ -8,11 +8,13 @@ from trellis.agent.backend_bindings import ResolvedBackendBindingSpec
 from trellis.agent.codegen_guardrails import PrimitiveRef
 from trellis.agent.family_lowering_ir import (
     AnalyticalBlack76IR,
+    ConditionalValuationSpec,
     CorrelatedBasketMonteCarloIR,
     CreditDefaultSwapIR,
     EventAwarePDEIR,
     EventAwareMonteCarloIR,
     ExerciseLatticeIR,
+    FactorStateSimulationIR,
     MCCalibrationBindingSpec,
     MCControlSpec,
     MCEventSpec,
@@ -23,6 +25,12 @@ from trellis.agent.family_lowering_ir import (
     MCProcessSpec,
     MCStateSpec,
     NthToDefaultIR,
+    ObservationProgramSpec,
+    SimulatedMarketProjectionSpec,
+    SimulationFactorSpec,
+    SimulationProcessBundleSpec,
+    SimulationStateSpec,
+    StateTransitionSpec,
     TransformPricingIR,
     VanillaEquityPDEIR,
 )
@@ -1154,3 +1162,77 @@ def test_nth_to_default_dispatches_from_binding_surface_not_route_id(monkeypatch
     assert family_ir.route_family == "nth_to_default"
     assert family_ir.helper_symbol == "price_nth_to_default_basket"
     assert family_ir.copula_symbol == "GaussianCopula"
+
+
+def test_factor_state_simulation_ir_preserves_projection_and_valuation_contracts():
+    family_ir = FactorStateSimulationIR(
+        route_id="simulation_substrate",
+        engine_family="simulation",
+        route_family="simulation",
+        state_spec=SimulationStateSpec(
+            dimension=2,
+            state_layout="vector",
+            state_tags=("markov", "factor_state"),
+            coordinate_chart="physical",
+            factors=(
+                SimulationFactorSpec(
+                    factor_name="spot",
+                    factor_role="underlier",
+                    units="price",
+                ),
+                SimulationFactorSpec(
+                    factor_name="variance",
+                    factor_role="volatility_state",
+                    units="variance",
+                ),
+            ),
+        ),
+        process_spec=SimulationProcessBundleSpec(
+            process_family="heston",
+            factor_dimension=2,
+            simulation_method="euler",
+            calibration_symbol="resolve_heston_runtime_binding",
+        ),
+        projection_spec=SimulatedMarketProjectionSpec(
+            projection_family="heston_market_view",
+            output_kind="simulated_market_view",
+            target_market="equity_volatility_surface",
+            state_fields=("spot", "variance"),
+        ),
+        observation_program=ObservationProgramSpec(
+            observable_ids=("spot_fixing", "variance_fixing"),
+            observable_kinds=("state_projection", "state_projection"),
+            state_transitions=(
+                StateTransitionSpec(
+                    transition_kind="record_observation",
+                    observable_id="spot_fixing",
+                    state_binding="underlier_spot",
+                    phase="observation",
+                ),
+            ),
+            phase_sequence=("observation", "valuation"),
+            terminal_value_symbol="conditional_value",
+        ),
+        conditional_valuation=ConditionalValuationSpec(
+            valuation_style="exact",
+            model_family="pathwise_projection",
+            supports_exact=True,
+        ),
+        measure_spec=MCMeasureSpec(
+            measure_family="risk_neutral",
+            numeraire_binding="discount_curve",
+        ),
+        helper_symbol="price_interest_rate_swap_future_value_cube",
+        market_mapping="factor_state_to_projected_market_view",
+    )
+
+    assert family_ir.state_spec.dimension == 2
+    assert family_ir.state_spec.state_layout == "vector"
+    assert family_ir.factor_names == ("spot", "variance")
+    assert family_ir.projection_spec.state_fields == ("spot", "variance")
+    assert family_ir.observation_program.observable_ids == (
+        "spot_fixing",
+        "variance_fixing",
+    )
+    assert family_ir.conditional_valuation.supports_exact is True
+    assert family_ir.measure_spec.numeraire_binding == "discount_curve"

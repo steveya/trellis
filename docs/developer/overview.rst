@@ -214,6 +214,23 @@ also now publishes ``book_pnl`` and ``position_pnl`` as delta surfaces in
 ``values`` while retaining the underlying scenario levels in
 ``metadata["levels"]``.
 
+The runtime layer now also exposes the first reusable factor-state simulation
+surface for future-value workflows. ``trellis.agent.family_lowering_ir``
+contains the typed ``FactorStateSimulationIR`` boundary, and
+``trellis.models.monte_carlo.simulation_substrate`` provides the current
+runtime companions:
+
+- ``simulate_factor_state_observations(...)`` for the observed factor grid
+- explicit market projection ``M_t = Phi_t(X_t)``
+- ``evaluate_conditional_valuation_paths(...)`` for intermediate-date value
+  maps
+- ``FutureValueCube`` for trade/date/path outputs
+
+The first landed consumer is intentionally narrow: a vanilla interest-rate
+swap future-value workflow under one-factor Hull-White. That substrate should
+be treated as the new reusable base for later portfolio, netting, collateral,
+and xVA work, not as evidence that those downstream analytics already exist.
+
 Pod-risk throughput now has a checked benchmark surface as well.
 ``trellis.analytics.benchmarking`` measures the supported scenario-cube,
 rebuild-based rates-risk, bucketed-vega, and spot-risk workflows through the
