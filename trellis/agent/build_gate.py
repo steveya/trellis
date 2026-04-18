@@ -140,6 +140,24 @@ def _lane_obligation_gate_decision(
         generation_plan,
         semantic_blueprint=semantic_blueprint,
     )
+    # QUA-882: when the lane plan surfaces unresolved primitives from the
+    # product IR (e.g. path-dependent early exercise under stochastic vol),
+    # block even if the primitive planner or constructive lane would
+    # otherwise let generation proceed.  The IR has already declared the
+    # product unsupported; generation would just guess a helper.
+    lane_unresolved = tuple(
+        getattr(generation_plan, "lane_unresolved_primitives", ()) or ()
+    )
+    if lane_unresolved and primitive_plan is None:
+        return BuildGateDecision(
+            decision="block",
+            reason=(
+                "Product IR declares unresolved primitives with no matching "
+                f"primitive route: {', '.join(lane_unresolved)}."
+            ),
+            gap_confidence=gap_confidence,
+            gate_source=gate_source,
+        )
     if primitive_plan is not None:
         return None
     if exact_refs or steps:

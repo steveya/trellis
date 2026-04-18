@@ -180,7 +180,20 @@ def compile_fallback_lane_construction_plan(
         required_market_data=required_market,
         primitive_plan=primitive_plan,
     )
-    unresolved_primitives = tuple(getattr(primitive_plan, "blockers", ()) or ())
+    # QUA-882: fall back to ``product_ir.unresolved_primitives`` when no
+    # primitive plan was produced.  When the IR itself declares the product
+    # unsupported (e.g. path-dependent early exercise under stochastic vol),
+    # the route registry may legitimately match no analytical helper and
+    # ``primitive_plan`` will be ``None``.  Carrying the IR's blocker forward
+    # here lets the pre-generation gate surface the blocker instead of
+    # silently proceeding to code generation.
+    blockers_from_plan = tuple(getattr(primitive_plan, "blockers", ()) or ())
+    blockers_from_ir = tuple(
+        getattr(product_ir, "unresolved_primitives", ()) or ()
+    )
+    unresolved_primitives = _tuple_unique(
+        list(blockers_from_plan) + list(blockers_from_ir)
+    )
     plan_kind = (
         "exact_target_binding"
         if exact_target_refs

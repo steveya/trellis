@@ -77,6 +77,7 @@ class _StubGenerationPlan:
     lane_plan_kind: str = ""
     lane_exact_binding_refs: tuple = ()
     lane_construction_steps: tuple = ()
+    lane_unresolved_primitives: tuple = ()
 
 
 def _generation_plan_for_semantic_blueprint(semantic_blueprint):
@@ -283,6 +284,24 @@ class TestPreGenerationGate:
         )
         decision = evaluate_pre_generation_gate(gap, plan)
         assert decision.decision == "proceed"
+
+    def test_block_when_lane_unresolved_primitives_and_no_primitive_plan(self):
+        """QUA-882: when no primitive route matches but the ProductIR declared
+        unresolved primitives, the fallback lane plan must surface them and
+        the gate must block rather than proceed to code generation."""
+        gap = _StubGapReport(confidence=0.8)
+        plan = _StubGenerationPlan(
+            primitive_plan=None,
+            lane_family="analytical",
+            lane_plan_kind="constructive_synthesis",
+            lane_construction_steps=("Bind analytical inputs.",),
+            lane_unresolved_primitives=(
+                "path_dependent_early_exercise_under_stochastic_vol",
+            ),
+        )
+        decision = evaluate_pre_generation_gate(gap, plan)
+        assert decision.decision == "block"
+        assert "path_dependent_early_exercise_under_stochastic_vol" in decision.reason
 
     def test_none_gap_report_proceeds_when_clean(self):
         plan = _StubGenerationPlan(
