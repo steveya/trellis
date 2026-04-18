@@ -841,23 +841,20 @@ def test_cds_analytical_route_card_surfaces_helper_signature_keywords():
 
 
 @pytest.mark.parametrize(
-    "instrument_type,expected_route,expected_helper_ref",
+    "instrument_type,expected_helper_ref",
     [
         (
             "chooser_option",
-            "equity_chooser_analytical",
             "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical",
         ),
         (
             "compound_option",
-            "equity_compound_analytical",
             "trellis.models.analytical.equity_exotics.price_equity_compound_option_analytical",
         ),
     ],
 )
-def test_nested_composite_route_uses_exact_helper_binding(
+def test_absorbed_black76_nested_composite_route_uses_exact_helper_binding(
     instrument_type,
-    expected_route,
     expected_helper_ref,
 ):
     pricing_plan = PricingPlan(
@@ -884,7 +881,7 @@ def test_nested_composite_route_uses_exact_helper_binding(
     card = render_generation_route_card(plan)
 
     assert plan.primitive_plan is not None
-    assert plan.primitive_plan.route == expected_route
+    assert plan.primitive_plan.route == "analytical_black76"
     primitive_refs = {
         f"{primitive.module}.{primitive.symbol}" for primitive in plan.primitive_plan.primitives
     }

@@ -574,6 +574,16 @@ def test_compile_build_request_preserves_missing_route_state_for_range_accrual_s
             "trellis.models.analytical.equity_exotics.price_equity_fixed_lookback_option_analytical",
         ),
         (
+            "F012",
+            "analytical",
+            "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical",
+        ),
+        (
+            "F013",
+            "analytical",
+            "trellis.models.analytical.equity_exotics.price_equity_compound_option_analytical",
+        ),
+        (
             "F014",
             "analytical",
             "trellis.models.analytical.equity_exotics.price_equity_cliquet_option_analytical",
@@ -611,26 +621,6 @@ def test_compile_build_request_preserves_exact_absorbed_black76_binding_for_fina
 
     if task_id == "F009":
         assert set(compiled.product_ir.candidate_engine_families) >= {"analytical", "pde"}
-
-
-def test_compile_build_request_preserves_exact_chooser_binding_for_financepy_pilot_task():
-    from trellis.agent.benchmark_contracts import benchmark_request_description
-    from trellis.agent.platform_requests import compile_build_request
-
-    task = _financepy_benchmark_task("F012")
-    compiled = compile_build_request(
-        benchmark_request_description(task),
-        instrument_type=task["instrument_type"],
-        preferred_method="analytical",
-    )
-
-    assert compiled.generation_plan is not None
-    assert compiled.generation_plan.primitive_plan is not None
-    assert compiled.generation_plan.primitive_plan.route == "equity_chooser_analytical"
-    assert (
-        "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical"
-        in compiled.generation_plan.backend_exact_target_refs
-    )
 
 
 def test_compile_term_sheet_request_uses_quanto_semantic_contract():
