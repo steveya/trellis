@@ -50,7 +50,7 @@ def test_run_binding_first_exotic_proof_writes_report_and_summary(tmp_path, monk
                 {
                     "binding_id": binding_id,
                     "binding_family": "analytical",
-                    "route_id": "quanto_adjustment_analytical",
+                    "route_id": "equity_quanto",
                     "route_family": "analytical",
                 }
             )

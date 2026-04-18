@@ -93,7 +93,7 @@
 - Failure bucket: `success`
 - Comparison status: `passed`
 - Binding ids: `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state, trellis.models.quanto_option.price_quanto_option_monte_carlo_from_market_state`
-- Route ids: `quanto_adjustment_analytical, correlated_gbm_monte_carlo`
+- Route ids: `equity_quanto, equity_quanto`
 - First pass: `True`
 - Attempts to success: `0`
 - Retry taxonomy: `none`

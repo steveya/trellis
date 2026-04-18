@@ -1,5 +1,5 @@
 bindings:
-  - route_id: quanto_adjustment_analytical
+  - route_id: equity_quanto
     engine_family: analytical
     route_family: analytical
     compatibility_alias_policy: internal_only
@@ -7,14 +7,24 @@ bindings:
       - module: trellis.models.quanto_option
         symbol: price_quanto_option_analytical_from_market_state
         role: route_helper
-
-  - route_id: correlated_gbm_monte_carlo
-    engine_family: monte_carlo
-    route_family: monte_carlo
-    primitives:
-      - module: trellis.models.quanto_option
-        symbol: price_quanto_option_monte_carlo_from_market_state
-        role: route_helper
+    conditional_primitives:
+      - when:
+          methods: [monte_carlo, qmc]
+        primitives:
+          - module: trellis.models.quanto_option
+            symbol: price_quanto_option_monte_carlo_from_market_state
+            role: route_helper
+      - when: default
+        primitives:
+          - module: trellis.models.quanto_option
+            symbol: price_quanto_option_analytical_from_market_state
+            role: route_helper
+    conditional_route_family:
+      - when:
+          methods: [monte_carlo, qmc]
+        route_family: monte_carlo
+      - when: default
+        route_family: analytical
 
   - route_id: credit_default_swap_analytical
     engine_family: analytical

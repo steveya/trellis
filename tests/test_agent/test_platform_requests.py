@@ -98,7 +98,7 @@ def test_compile_build_request_uses_quanto_semantic_contract_blueprint():
     assert compiled.semantic_blueprint is not None
     assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "quanto_option"
     assert compiled.request.metadata["semantic_contract"]["semantic_concept"]["semantic_id"] == "quanto_option"
-    assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == "quanto_adjustment_analytical"
+    assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == "equity_quanto"
     assert "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state" in (
         compiled.request.metadata["semantic_blueprint"]["dsl_helper_refs"]
     )
@@ -122,7 +122,7 @@ def test_compile_build_request_uses_quanto_semantic_contract_blueprint():
     assert compiled.generation_plan.lane_family == "analytical"
     assert compiled.generation_plan.lane_plan_kind == "exact_target_binding"
     assert compiled.generation_plan.primitive_plan is not None
-    assert compiled.generation_plan.primitive_plan.route == "quanto_adjustment_analytical"
+    assert compiled.generation_plan.primitive_plan.route == "equity_quanto"
     assert compiled.semantic_blueprint.selection_reason == compiled.pricing_plan.selection_reason
     assert compiled.semantic_blueprint.route_modules == _expected_route_modules(compiled)
 
@@ -144,7 +144,7 @@ def test_compile_build_request_attaches_route_binding_authority_packet():
     assert compiled.generation_plan.backend_engine_family == backend_binding["engine_family"]
     assert compiled.generation_plan.backend_route_family == authority["route_family"]
     assert compiled.generation_plan.backend_compatibility_alias_policy == authority["compatibility_alias_policy"]
-    assert authority["route_id"] == "quanto_adjustment_analytical"
+    assert authority["route_id"] == "equity_quanto"
     assert authority["route_family"] == "analytical"
     assert authority["authority_kind"] == "exact_backend_fit"
     assert authority["compatibility_alias_policy"] == "internal_only"
@@ -213,7 +213,7 @@ def test_compile_build_request_records_generated_skill_artifacts_in_shared_bundl
 
     assert "## Generated Skills" in compiled.knowledge_text
     assert "## Routing Skills" in compiled.routing_knowledge_text
-    assert "route_hint:quanto_adjustment_analytical:route-helper" in (
+    assert "route_hint:equity_quanto:route-helper" in (
         compiled.knowledge_summary["selected_artifact_ids"]
     )
     assert "builder" in compiled.knowledge_summary["selected_artifacts_by_audience"]
@@ -343,7 +343,7 @@ def test_compile_build_request_respects_quanto_preferred_monte_carlo_route():
     assert compiled.generation_plan is not None
     assert "trellis.models.resolution.quanto" in compiled.generation_plan.approved_modules
     assert compiled.generation_plan.primitive_plan is not None
-    assert compiled.generation_plan.primitive_plan.route == "correlated_gbm_monte_carlo"
+    assert compiled.generation_plan.primitive_plan.route == "equity_quanto"
     assert compiled.execution_plan.route_method == "monte_carlo"
     assert compiled.semantic_blueprint.selection_reason == compiled.pricing_plan.selection_reason
 
@@ -1211,7 +1211,7 @@ def test_compile_build_request_uses_exact_callable_bond_pde_binding_for_bootstra
             "vanilla_option",
             "trellis.models.black",
             "trellis.models.resolution.quanto",
-            "quanto_adjustment_analytical",
+            "equity_quanto",
         ),
         (
             "Callable bond with annual coupons and issuer call dates 2026-01-15, 2027-01-15",

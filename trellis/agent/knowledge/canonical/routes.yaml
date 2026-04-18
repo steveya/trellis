@@ -11,16 +11,25 @@ routes:
   # Quanto routes (instrument-specific overrides, highest precedence)
   # -----------------------------------------------------------------------
 
-  - id: quanto_adjustment_analytical
+  - id: equity_quanto
     engine_family: analytical
     route_family: analytical
     status: promoted
     confidence: 1.0
     compatibility_alias_policy: internal_only
-    reuse_module_paths: [instruments/_agent/quantooptionanalytical.py]
+    reuse_module_paths:
+      - instruments/_agent/quantooptionanalytical.py
+      - instruments/_agent/quantooptionmontecarlo.py
     match:
-      methods: [analytical]
-      instruments: [quanto_option]
+      methods: [analytical, monte_carlo, qmc]
+      required_market_data: [fx_rates]
+      payoff_traits: [fx_translation]
+    conditional_route_family:
+      - when:
+          methods: [monte_carlo, qmc]
+        route_family: monte_carlo
+      - when: default
+        route_family: analytical
     admissibility:
       control_styles: [identity, holder_max]
       event_support: none
@@ -34,41 +43,29 @@ routes:
       - module: trellis.models.quanto_option
         symbol: price_quanto_option_analytical_from_market_state
         role: route_helper
+    conditional_primitives:
+      - when:
+          methods: [monte_carlo, qmc]
+        primitives:
+          - module: trellis.models.quanto_option
+            symbol: price_quanto_option_monte_carlo_from_market_state
+            role: route_helper
+        adapters: []
+        notes: []
+      - when: default
+        primitives:
+          - module: trellis.models.quanto_option
+            symbol: price_quanto_option_analytical_from_market_state
+            role: route_helper
+        adapters: []
+        notes: []
     adapters: []
     notes: []
     market_data_access:
       required:
         discount_curve: [market_state.discount]
         black_vol_surface: [market_state.vol_surface]
-
-  - id: correlated_gbm_monte_carlo
-    engine_family: monte_carlo
-    route_family: monte_carlo
-    status: promoted
-    confidence: 1.0
-    reuse_module_paths: [instruments/_agent/quantooptionmontecarlo.py]
-    match:
-      methods: [monte_carlo, qmc]
-      instruments: [quanto_option]
-    admissibility:
-      control_styles: [identity, holder_max]
-      event_support: none
-      phase_sensitivity: default_phase_order_only
-      multicurrency_support: native_payout_with_fx
-      supported_outputs: [price, scenario_pnl]
-      supports_sensitivity_outputs: true
-      supported_state_tags: [terminal_markov, recombining_safe]
-      supports_calibration: false
-    primitives:
-      - module: trellis.models.quanto_option
-        symbol: price_quanto_option_monte_carlo_from_market_state
-        role: route_helper
-    adapters: []
-    notes: []
-    market_data_access:
-      required:
-        discount_curve: [market_state.discount]
-        black_vol_surface: [market_state.vol_surface]
+        fx_rates: [market_state.fx_rates]
 
   # -----------------------------------------------------------------------
   # Credit routes (instrument-specific overrides)

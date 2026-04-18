@@ -272,7 +272,7 @@ def _build_semantic_family_registry() -> MappingProxyType:
                         "trellis.models.resolution.quanto",
                         "trellis.models.analytical.quanto",
                     ),
-                    primitive_families=("quanto_adjustment_analytical",),
+                    primitive_families=("equity_quanto",),
                     adapter_obligations=(
                         "resolve_underlier_spot",
                         "resolve_fx_rate",
@@ -287,7 +287,7 @@ def _build_semantic_family_registry() -> MappingProxyType:
                         "trellis.models.resolution.quanto",
                         "trellis.models.monte_carlo.quanto",
                     ),
-                    primitive_families=("correlated_gbm_monte_carlo",),
+                    primitive_families=("equity_quanto",),
                     adapter_obligations=(
                         "resolve_underlier_spot",
                         "resolve_fx_rate",

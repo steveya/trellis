@@ -386,11 +386,20 @@ def _augment_product_ir_with_contract_route_hints(product_ir, contract):
     registry = load_route_registry()
     route_families = list(getattr(product_ir, "route_families", ()) or ())
     engine_families = list(getattr(product_ir, "candidate_engine_families", ()) or ())
+    preferred_method = str(getattr(getattr(contract, "methods", None), "preferred_method", "") or "").strip() or None
     for route_id in primitive_routes:
         spec = find_route_by_id(route_id, registry)
         if spec is None:
             continue
-        resolved_family = str(resolve_route_family(spec, product_ir) or spec.route_family or "").strip()
+        resolved_family = str(
+            resolve_route_family(
+                spec,
+                product_ir,
+                method=preferred_method,
+            )
+            or spec.route_family
+            or ""
+        ).strip()
         if resolved_family and resolved_family not in route_families:
             route_families.append(resolved_family)
         engine_family = str(getattr(spec, "engine_family", "") or "").strip()

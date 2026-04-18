@@ -650,7 +650,7 @@ def test_contract_requires_correlation_for_multi_asset_mc():
             "cross_currency_single_underlier",
             "cash_settle_at_expiry_after_fx_conversion",
             "analytical",
-            "quanto_adjustment_analytical",
+            "equity_quanto",
             "trellis.models.resolution.quanto",
         ),
         (

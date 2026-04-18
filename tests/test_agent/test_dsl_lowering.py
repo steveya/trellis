@@ -128,12 +128,12 @@ def test_quanto_lowering_prefers_binding_spec_targets_when_route_primitives_are_
     monkeypatch.setattr(
         dsl_lowering_module,
         "resolve_route_primitives",
-        lambda route, product_ir: (),
+        lambda route, product_ir, binding_spec=None, method=None: (),
     )
     monkeypatch.setattr(
         backend_bindings_module,
         "resolve_backend_binding_by_route_id",
-        lambda route_id, product_ir=None, primitive_plan=None, catalog=None: SimpleNamespace(
+        lambda route_id, product_ir=None, primitive_plan=None, catalog=None, method=None: SimpleNamespace(
             primitives=(
                 PrimitiveRef(
                     "trellis.models.quanto_option",

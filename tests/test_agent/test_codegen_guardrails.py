@@ -143,14 +143,14 @@ def test_rank_primitive_routes_prefers_binding_spec_primitives_when_route_card_i
     monkeypatch.setattr(
         route_registry_module,
         "resolve_route_primitives",
-        lambda spec, product_ir, binding_spec=None: (stale_helper,),
+        lambda spec, product_ir, binding_spec=None, method=None: (stale_helper,),
     )
-    monkeypatch.setattr(route_registry_module, "resolve_route_adapters", lambda spec, product_ir: ())
-    monkeypatch.setattr(route_registry_module, "resolve_route_notes", lambda spec, product_ir: ())
+    monkeypatch.setattr(route_registry_module, "resolve_route_adapters", lambda spec, product_ir, method=None: ())
+    monkeypatch.setattr(route_registry_module, "resolve_route_notes", lambda spec, product_ir, method=None: ())
     monkeypatch.setattr(
         route_registry_module,
         "resolve_route_family",
-        lambda spec, product_ir, binding_spec=None: "analytical",
+        lambda spec, product_ir, binding_spec=None, method=None: "analytical",
     )
     monkeypatch.setattr(
         backend_bindings_module,
@@ -160,7 +160,7 @@ def test_rank_primitive_routes_prefers_binding_spec_primitives_when_route_card_i
     monkeypatch.setattr(
         backend_bindings_module,
         "resolve_backend_binding_by_route_id",
-        lambda route_id, product_ir=None, primitive_plan=None, catalog=None: SimpleNamespace(
+        lambda route_id, product_ir=None, primitive_plan=None, catalog=None, method=None: SimpleNamespace(
             primitives=(fresh_helper,),
             binding_id="trellis.models.synthetic.fresh_helper",
             aliases=(),
@@ -337,7 +337,7 @@ def test_generation_plan_renders_compiled_semantic_and_validation_boundary():
     assert "- Lane obligations:" in text
     assert "Plan kind: `exact_target_binding`" in text
     assert "- Lowering boundary:" in text
-    assert "route_alias=`quanto_adjustment_analytical`" not in text
+    assert "route_alias=`equity_quanto`" not in text
     assert "expr=`ContractAtom`" in text
     assert "price_quanto_option_analytical_from_market_state" in text
     assert "- Validation contract:" in text

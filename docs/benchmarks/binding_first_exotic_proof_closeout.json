@@ -552,8 +552,8 @@
         "monte_carlo"
       ],
       "route_ids": [
-        "quanto_adjustment_analytical",
-        "correlated_gbm_monte_carlo"
+        "equity_quanto",
+        "equity_quanto"
       ],
       "task_run_latest_path": "T105.json",
       "task_run_history_path": "20260413T155752822536.json",

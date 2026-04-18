@@ -165,23 +165,31 @@ def lower_semantic_blueprint(
             )
             continue
 
+        method = str(getattr(pricing_plan, "method", "") or "").strip() or None
         binding_spec = _resolve_backend_binding_for_route(
             route_id,
             product_ir=product_ir,
+            method=method,
         )
         binding_id = str(getattr(binding_spec, "binding_id", "") or "").strip()
         bindings = _target_bindings_for_route(
             route,
             product_ir=product_ir,
             binding_spec=binding_spec,
+            method=method,
         )
 
         route_family = str(
             getattr(binding_spec, "route_family", "")
-            or resolve_route_family(route, product_ir, binding_spec=binding_spec)
+            or resolve_route_family(
+                route,
+                product_ir,
+                binding_spec=binding_spec,
+                method=method,
+            )
         )
-        adapters = resolve_route_adapters(route, product_ir)
-        notes = resolve_route_notes(route, product_ir)
+        adapters = resolve_route_adapters(route, product_ir, method=method)
+        notes = resolve_route_notes(route, product_ir, method=method)
         try:
             family_ir = build_family_lowering_ir(
                 contract,
@@ -300,12 +308,17 @@ def _resolve_backend_binding_for_route(
     route_id: str,
     *,
     product_ir,
+    method: str | None = None,
 ):
     """Resolve the canonical backend binding for one route when available."""
     try:
         from trellis.agent.backend_bindings import resolve_backend_binding_by_route_id
 
-        return resolve_backend_binding_by_route_id(route_id, product_ir=product_ir)
+        return resolve_backend_binding_by_route_id(
+            route_id,
+            product_ir=product_ir,
+            method=method,
+        )
     except Exception:
         return None
 
@@ -315,11 +328,17 @@ def _target_bindings_for_route(
     *,
     product_ir,
     binding_spec,
+    method: str | None = None,
 ) -> tuple[DslTargetBinding, ...]:
     """Resolve DSL bindings from the binding catalog before falling back to route cards."""
     primitives = tuple(
         getattr(binding_spec, "primitives", ())
-        or resolve_route_primitives(route, product_ir, binding_spec=binding_spec)
+        or resolve_route_primitives(
+            route,
+            product_ir,
+            binding_spec=binding_spec,
+            method=method,
+        )
     )
     return tuple(
         DslTargetBinding(

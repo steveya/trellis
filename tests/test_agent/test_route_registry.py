@@ -107,7 +107,7 @@ class TestRegistryValidation:
             "analytical_black76",
             "exercise_lattice",
             "correlated_basket_monte_carlo",
-            "correlated_gbm_monte_carlo",
+            "equity_quanto",
             "credit_default_swap_analytical",
             "credit_default_swap_monte_carlo",
             "pde_theta_1d",
@@ -274,7 +274,7 @@ class TestRegistryValidation:
         monkeypatch.setattr(
             backend_bindings_module,
             "resolve_backend_binding_by_route_id",
-            lambda route_id, product_ir=None: SimpleNamespace(
+            lambda route_id, product_ir=None, method=None: SimpleNamespace(
                 primitives=(
                     PrimitiveRef("trellis.models.synthetic", "fresh_helper", "route_helper"),
                 ),
@@ -350,17 +350,17 @@ class TestRegistryValidation:
     def test_reuse_module_paths_hydrate_for_checked_in_deterministic_routes(self, registry):
         analytical_fx = find_route_by_id("analytical_garman_kohlhagen", registry)
         monte_carlo_fx = find_route_by_id("monte_carlo_fx_vanilla", registry)
-        analytical_quanto = find_route_by_id("quanto_adjustment_analytical", registry)
-        monte_carlo_quanto = find_route_by_id("correlated_gbm_monte_carlo", registry)
+        quanto = find_route_by_id("equity_quanto", registry)
 
         assert analytical_fx is not None
         assert analytical_fx.reuse_module_paths == ("instruments/_agent/fxvanillaanalytical.py",)
         assert monte_carlo_fx is not None
         assert monte_carlo_fx.reuse_module_paths == ("instruments/_agent/fxvanillamontecarlo.py",)
-        assert analytical_quanto is not None
-        assert analytical_quanto.reuse_module_paths == ("instruments/_agent/quantooptionanalytical.py",)
-        assert monte_carlo_quanto is not None
-        assert monte_carlo_quanto.reuse_module_paths == ("instruments/_agent/quantooptionmontecarlo.py",)
+        assert quanto is not None
+        assert quanto.reuse_module_paths == (
+            "instruments/_agent/quantooptionanalytical.py",
+            "instruments/_agent/quantooptionmontecarlo.py",
+        )
 
     def test_compile_route_binding_authority_accepts_plan_carried_binding_identity_without_route(self):
         authority = compile_route_binding_authority(
@@ -405,23 +405,44 @@ class TestRegistryValidation:
 # ---------------------------------------------------------------------------
 
 class TestQuantoRoutes:
-    IR = ProductIR(instrument="quanto_option", payoff_family="vanilla_option", exercise_style="european")
+    IR = ProductIR(
+        instrument="quanto_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("fx_translation",),
+        exercise_style="european",
+    )
+    PLAN_MARKET_DATA = {"discount_curve", "black_vol_surface", "fx_rates"}
 
     def test_analytical_candidate(self, registry):
-        new = _new_routes(registry, "analytical", self.IR)
-        assert new == ("quanto_adjustment_analytical",)
+        new = _new_routes(
+            registry,
+            "analytical",
+            self.IR,
+            pricing_plan=_make_plan("analytical", market_data=self.PLAN_MARKET_DATA),
+        )
+        assert new == ("equity_quanto",)
 
     def test_monte_carlo_candidate(self, registry):
-        new = _new_routes(registry, "monte_carlo", self.IR)
-        assert new == ("correlated_gbm_monte_carlo",)
+        new = _new_routes(
+            registry,
+            "monte_carlo",
+            self.IR,
+            pricing_plan=_make_plan("monte_carlo", market_data=self.PLAN_MARKET_DATA),
+        )
+        assert new == ("equity_quanto",)
 
     def test_qmc_candidate(self, registry):
-        new = _new_routes(registry, "qmc", self.IR)
-        assert new == ("correlated_gbm_monte_carlo",)
+        new = _new_routes(
+            registry,
+            "qmc",
+            self.IR,
+            pricing_plan=_make_plan("qmc", market_data=self.PLAN_MARKET_DATA),
+        )
+        assert new == ("equity_quanto",)
 
     def test_analytical_primitives(self, registry):
-        spec = [r for r in registry.routes if r.id == "quanto_adjustment_analytical"][0]
-        new_prims = resolve_route_primitives(spec, self.IR)
+        spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
+        new_prims = resolve_route_primitives(spec, self.IR, method="analytical")
         expected_prims = {
             (
                 "trellis.models.quanto_option",
@@ -430,10 +451,23 @@ class TestQuantoRoutes:
             ),
         }
         assert _prim_set(new_prims) == expected_prims
-        assert resolve_route_adapters(spec, self.IR) == ()
+        assert resolve_route_adapters(spec, self.IR, method="analytical") == ()
+
+    def test_monte_carlo_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
+        new_prims = resolve_route_primitives(spec, self.IR, method="monte_carlo")
+        expected_prims = {
+            (
+                "trellis.models.quanto_option",
+                "price_quanto_option_monte_carlo_from_market_state",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+        assert resolve_route_family(spec, self.IR, method="monte_carlo") == "monte_carlo"
 
     def test_engine_family(self, registry):
-        spec = [r for r in registry.routes if r.id == "quanto_adjustment_analytical"][0]
+        spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
         assert spec.engine_family == "analytical"
         assert spec.compatibility_alias_policy == "internal_only"
 
@@ -1904,8 +1938,7 @@ class TestFallbackRoutes:
 
 class TestEngineFamilyCoverage:
     EXPECTED = {
-        "quanto_adjustment_analytical": "analytical",
-        "correlated_gbm_monte_carlo": "monte_carlo",
+        "equity_quanto": "analytical",
         "credit_default_swap_analytical": "analytical",
         "credit_default_swap_monte_carlo": "monte_carlo",
         "nth_to_default_analytical": "analytical",

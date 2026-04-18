@@ -569,7 +569,7 @@ def _default_admissibility_for_route(route_id: str, engine_family: str) -> Route
         ),
     }
     spec = defaults.get(engine_family, RouteAdmissibilitySpec())
-    if route_id in {"quanto_adjustment_analytical", "correlated_gbm_monte_carlo", "analytical_garman_kohlhagen"}:
+    if route_id in {"equity_quanto", "analytical_garman_kohlhagen"}:
         return RouteAdmissibilitySpec(
             supported_control_styles=spec.supported_control_styles,
             event_support=spec.event_support,
@@ -804,7 +804,7 @@ def match_candidate_routes(
         if route.match_methods and method not in route.match_methods:
             continue
 
-        capability = evaluate_route_capability_match(route, product_ir)
+        capability = evaluate_route_capability_match(route, product_ir, method=method)
         if not capability.ok:
             continue
 
@@ -862,6 +862,8 @@ def match_candidate_routes(
 def evaluate_route_capability_match(
     spec: RouteSpec,
     product_ir: ProductIR | None,
+    *,
+    method: str | None = None,
 ) -> RouteCapabilityDecision:
     """Evaluate family-first capability predicates before route-local clauses."""
     if product_ir is None:
@@ -880,7 +882,7 @@ def evaluate_route_capability_match(
         for family in (getattr(product_ir, "route_families", ()) or ())
         if str(family).strip()
     }
-    resolved_route_family = resolve_route_family(spec, product_ir)
+    resolved_route_family = resolve_route_family(spec, product_ir, method=method)
     if ir_route_families:
         if _family_name_matches(resolved_route_family, ir_route_families):
             matched.append("route_family")
@@ -969,13 +971,18 @@ def resolve_route_primitives(
     product_ir: ProductIR | None,
     *,
     binding_spec=None,
+    method: str | None = None,
 ) -> tuple[PrimitiveRef, ...]:
     """Return resolved primitives from the binding catalog, falling back to the route shell."""
     try:
         if binding_spec is None:
             from trellis.agent.backend_bindings import resolve_backend_binding_by_route_id
 
-            binding_spec = resolve_backend_binding_by_route_id(spec.id, product_ir=product_ir)
+            binding_spec = resolve_backend_binding_by_route_id(
+                spec.id,
+                product_ir=product_ir,
+                method=method,
+            )
         if binding_spec is not None and binding_spec.primitives:
             return tuple(binding_spec.primitives)
     except Exception:
@@ -992,7 +999,14 @@ def resolve_route_primitives(
         if isinstance(cond.when, str) and cond.when == "default":
             # Default branch — use if no prior branch matched
             return cond.primitives if cond.primitives else spec.primitives
-        if _conditional_primitive_matches(cond, payoff_family, exercise, model_family, product_ir):
+        if _conditional_primitive_matches(
+            cond,
+            payoff_family,
+            exercise,
+            model_family,
+            product_ir,
+            method=method,
+        ):
             return cond.primitives if cond.primitives else spec.primitives
 
     # No conditional matched — use base primitives
@@ -1002,6 +1016,8 @@ def resolve_route_primitives(
 def resolve_route_adapters(
     spec: RouteSpec,
     product_ir: ProductIR | None,
+    *,
+    method: str | None = None,
 ) -> tuple[str, ...]:
     """Resolve adapters from conditional_primitives, falling back to base."""
     if not spec.conditional_primitives:
@@ -1018,7 +1034,14 @@ def resolve_route_adapters(
             if not cond.primitives and not cond.adapters:
                 return spec.adapters
             return cond.adapters
-        if _conditional_primitive_matches(cond, payoff_family, exercise, model_family, product_ir):
+        if _conditional_primitive_matches(
+            cond,
+            payoff_family,
+            exercise,
+            model_family,
+            product_ir,
+            method=method,
+        ):
             if cond.adapters is None:
                 return spec.adapters
             if not cond.primitives and not cond.adapters:
@@ -1031,6 +1054,8 @@ def resolve_route_adapters(
 def resolve_route_notes(
     spec: RouteSpec,
     product_ir: ProductIR | None,
+    *,
+    method: str | None = None,
 ) -> tuple[str, ...]:
     """Resolve notes from conditional_primitives + dynamic notes."""
     base_notes = list(spec.notes)
@@ -1046,7 +1071,12 @@ def resolve_route_notes(
                 matched = True
             else:
                 matched = _conditional_primitive_matches(
-                    cond, payoff_family, exercise, model_family, product_ir
+                    cond,
+                    payoff_family,
+                    exercise,
+                    model_family,
+                    product_ir,
+                    method=method,
                 )
             if matched:
                 if cond.notes is None:
@@ -1076,13 +1106,18 @@ def resolve_route_family(
     product_ir: ProductIR | None,
     *,
     binding_spec=None,
+    method: str | None = None,
 ) -> str:
     """Resolve the route family from the binding catalog, falling back to the route shell."""
     try:
         if binding_spec is None:
             from trellis.agent.backend_bindings import resolve_backend_binding_by_route_id
 
-            binding_spec = resolve_backend_binding_by_route_id(spec.id, product_ir=product_ir)
+            binding_spec = resolve_backend_binding_by_route_id(
+                spec.id,
+                product_ir=product_ir,
+                method=method,
+            )
         resolved_family = str(getattr(binding_spec, "route_family", "") or "").strip()
         if resolved_family:
             return resolved_family
@@ -1102,7 +1137,14 @@ def resolve_route_family(
         if isinstance(crf.when, str) and crf.when == "default":
             explicit_default = crf.route_family
             continue
-        if isinstance(crf.when, dict) and _matches_condition(crf.when, payoff_family, exercise, model_family, product_ir):
+        if isinstance(crf.when, dict) and _matches_condition(
+            crf.when,
+            payoff_family,
+            exercise,
+            model_family,
+            product_ir,
+            method=method,
+        ):
             return crf.route_family
 
     return explicit_default if explicit_default is not None else default_family
@@ -1856,6 +1898,8 @@ def _conditional_primitive_matches(
     exercise_style: str,
     model_family: str,
     product_ir: ProductIR | None,
+    *,
+    method: str | None = None,
 ) -> bool:
     """Dispatch a single :class:`ConditionalPrimitive` against a ProductIR.
 
@@ -1876,7 +1920,12 @@ def _conditional_primitive_matches(
 
     if isinstance(cond.when, dict):
         return _matches_condition(
-            cond.when, payoff_family, exercise_style, model_family, product_ir
+            cond.when,
+            payoff_family,
+            exercise_style,
+            model_family,
+            product_ir,
+            method=method,
         )
     return False
 
@@ -1887,9 +1936,15 @@ def _matches_condition(
     exercise_style: str,
     model_family: str,
     product_ir: ProductIR | None,
+    *,
+    method: str | None = None,
 ) -> bool:
     """Check whether a ProductIR matches a legacy string-tag 'when' clause."""
     payoff_families = _expanded_payoff_families(payoff_family, product_ir)
+    payoff_traits = {
+        str(item).strip().lower()
+        for item in getattr(product_ir, "payoff_traits", ()) or ()
+    }
     instrument = str(getattr(product_ir, "instrument", "") or "").strip().lower()
     for key, expected in when.items():
         if key == "payoff_family":
@@ -1905,6 +1960,14 @@ def _matches_condition(
                 else {str(expected).strip().lower()}
             )
             if instrument not in expected_instruments:
+                return False
+        elif key == "payoff_traits":
+            expected_traits = (
+                {str(item).strip().lower() for item in expected}
+                if isinstance(expected, list)
+                else {str(expected).strip().lower()}
+            )
+            if not expected_traits.issubset(payoff_traits):
                 return False
         elif key == "exercise_style":
             if isinstance(expected, list):
@@ -1922,6 +1985,15 @@ def _matches_condition(
             if product_ir is not None:
                 if product_ir.schedule_dependence != expected:
                     return False
+        elif key == "methods":
+            if method is None:
+                return False
+            normalized_method = str(method).strip()
+            if isinstance(expected, list):
+                if normalized_method not in expected:
+                    return False
+            elif normalized_method != expected:
+                return False
         else:
             # Unknown condition key — conservative: don't match
             return False

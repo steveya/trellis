@@ -516,7 +516,7 @@ def _has_terminal_basis_assembly(plan: GenerationPlan) -> bool:
     if primitive_plan is None:
         return False
     route = primitive_plan.route
-    return route in {"analytical_black76", "analytical_garman_kohlhagen", "quanto_adjustment_analytical"}
+    return route in {"analytical_black76", "analytical_garman_kohlhagen", "equity_quanto"}
 
 
 def _route_helper_name(primitive_plan: PrimitivePlan | None) -> str | None:

@@ -283,7 +283,7 @@ def test_builds_quanto_analytical_plan_with_shared_resolution_and_black76():
     )
 
     assert plan.primitive_plan is not None
-    assert plan.primitive_plan.route == "quanto_adjustment_analytical"
+    assert plan.primitive_plan.route == "equity_quanto"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert primitive_symbols == {"price_quanto_option_analytical_from_market_state"}
     assert plan.primitive_plan.adapters == ()

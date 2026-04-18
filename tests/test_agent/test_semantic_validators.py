@@ -158,13 +158,13 @@ def evaluate(self, market_state):
         assert any(f.category == "engine_family_mismatch" for f in findings)
 
     def test_flags_missing_route_helper(self, registry):
-        spec = [r for r in registry.routes if r.id == "quanto_adjustment_analytical"][0]
+        spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
         source = '''
 def evaluate(self, market_state):
     return black76_call(F, K, T, vol, df)
 '''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("quanto_adjustment_analytical"), spec)
+        findings = validator.validate(source, _make_plan("equity_quanto"), spec)
         assert any(f.category == "route_helper_not_called" for f in findings)
 
     def test_flags_missing_callable_bond_route_helper(self, registry):
@@ -185,7 +185,7 @@ def evaluate(self, market_state):
         assert any(f.category == "route_helper_not_called" for f in findings)
 
     def test_importing_route_helper_without_calling_it_still_fails(self, registry):
-        spec = [r for r in registry.routes if r.id == "quanto_adjustment_analytical"][0]
+        spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
         source = '''
 from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
 
@@ -193,7 +193,7 @@ def evaluate(self, market_state):
     return black76_call(F, K, T, vol, df)
 '''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("quanto_adjustment_analytical"), spec)
+        findings = validator.validate(source, _make_plan("equity_quanto"), spec)
         assert any(f.category == "route_helper_not_called" for f in findings)
 
     def test_prefers_plan_primitives_over_route_card_for_route_helper_checks(self, registry):
@@ -391,7 +391,7 @@ def evaluate(self, market_state):
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_flags_quanto_exact_helper_signature_mismatch(self, registry):
-        spec = [r for r in registry.routes if r.id == "quanto_adjustment_analytical"][0]
+        spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
         source = '''
 from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
 
@@ -402,7 +402,7 @@ def evaluate(self, market_state):
     )
 '''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("quanto_adjustment_analytical"), spec)
+        findings = validator.validate(source, _make_plan("equity_quanto"), spec)
         assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_flags_callable_bond_tree_helper_signature_mismatch(self, registry):
@@ -823,9 +823,9 @@ class TestIntegratedValidation:
         assert report.ok  # warnings never block
 
     def test_blocking_mode_can_fail(self, registry):
-        spec = [r for r in registry.routes if r.id == "quanto_adjustment_analytical"][0]
+        spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
         source = "def evaluate(self, market_state): return 42.0"
-        plan = _make_plan("quanto_adjustment_analytical")
+        plan = _make_plan("equity_quanto")
         report = validate_generated_semantics(source, plan, route_spec=spec, mode="blocking")
         # Should have errors (missing route helper, missing market data, etc.)
         assert len(report.findings) > 0

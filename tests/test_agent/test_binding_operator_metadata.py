@@ -10,7 +10,7 @@ def test_resolve_binding_operator_metadata_returns_canonical_entry_for_known_bin
         binding_id="trellis.models.quanto_option.price_quanto_option_analytical_from_market_state",
         engine_family="analytical",
         route_family="analytical",
-        route_id="quanto_adjustment_analytical",
+        route_id="equity_quanto",
     )
 
     assert metadata is not None

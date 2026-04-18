@@ -106,7 +106,7 @@ def test_summarize_binding_first_exotic_proof_captures_binding_ids_and_honest_bl
                         {
                             "binding_id": "trellis.models.fx_vanilla.price_quanto_option_analytical_from_market_state",
                             "binding_family": "analytical",
-                            "route_id": "quanto_adjustment_analytical",
+                            "route_id": "equity_quanto",
                             "route_family": "analytical",
                         }
                     ]
@@ -203,7 +203,7 @@ def test_summarize_binding_first_exotic_program_closeout_aggregates_cohorts():
                             "failure_bucket": "success",
                             "comparison_status": "passed",
                             "binding_ids": ["binding.quanto"],
-                            "route_ids": ["quanto_adjustment_analytical"],
+                            "route_ids": ["equity_quanto"],
                             "first_pass": True,
                             "attempts_to_success": 1,
                             "retry_taxonomy": [],
