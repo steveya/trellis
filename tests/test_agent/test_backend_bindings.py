@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from types import SimpleNamespace
 
 from trellis.agent.backend_bindings import (
@@ -217,25 +219,119 @@ def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
     )
 
 
-def test_resolve_backend_binding_spec_uses_equity_barrier_exact_helper():
+@pytest.mark.parametrize(
+    "product_ir,expected_route_family,expected_helper_refs,expected_kernel_refs",
+    [
+        pytest.param(
+            ProductIR(
+                instrument="barrier_option",
+                payoff_family="barrier_option",
+                exercise_style="european",
+                state_dependence="terminal_markov",
+                model_family="equity_diffusion",
+            ),
+            "analytical",
+            ("trellis.models.analytical.barrier.barrier_option_price",),
+            (),
+            id="barrier",
+        ),
+        pytest.param(
+            ProductIR(
+                instrument="digital_option",
+                payoff_family="composite_option",
+                payoff_traits=(
+                    "discounting",
+                    "terminal_markov",
+                    "vol_surface_dependence",
+                ),
+                exercise_style="european",
+                state_dependence="terminal_markov",
+                model_family="equity_diffusion",
+            ),
+            "analytical",
+            (
+                "trellis.models.analytical.equity_exotics.price_equity_digital_option_analytical",
+            ),
+            (),
+            id="digital",
+        ),
+        pytest.param(
+            ProductIR(
+                instrument="lookback_option",
+                payoff_family="composite_option",
+                payoff_traits=(
+                    "discounting",
+                    "path_dependent",
+                    "vol_surface_dependence",
+                ),
+                exercise_style="european",
+                state_dependence="path_dependent",
+                model_family="equity_diffusion",
+            ),
+            "analytical",
+            (
+                "trellis.models.analytical.equity_exotics.price_equity_fixed_lookback_option_analytical",
+            ),
+            (),
+            id="lookback",
+        ),
+        pytest.param(
+            ProductIR(
+                instrument="cliquet_option",
+                payoff_family="composite_option",
+                payoff_traits=("vanilla_option",),
+                exercise_style="european",
+                state_dependence="terminal_markov",
+                model_family="equity_diffusion",
+            ),
+            "analytical",
+            (
+                "trellis.models.analytical.equity_exotics.price_equity_cliquet_option_analytical",
+            ),
+            (),
+            id="cliquet",
+        ),
+        pytest.param(
+            ProductIR(
+                instrument="variance_swap",
+                payoff_family="variance_swap",
+                payoff_traits=(
+                    "discounting",
+                    "path_dependent",
+                    "vol_surface_dependence",
+                ),
+                exercise_style="none",
+                state_dependence="path_dependent",
+                schedule_dependence=False,
+                model_family="generic",
+            ),
+            "analytical",
+            (
+                "trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical",
+            ),
+            (
+                "trellis.models.analytical.equity_exotics.equity_variance_swap_outputs_analytical",
+            ),
+            id="variance-swap",
+        ),
+    ],
+)
+def test_resolve_backend_binding_spec_uses_exact_helpers_for_absorbed_black76_equity_exotics(
+    product_ir,
+    expected_route_family,
+    expected_helper_refs,
+    expected_kernel_refs,
+):
     catalog = load_backend_binding_catalog()
-    barrier = find_backend_binding_by_route_id("equity_barrier_analytical", catalog)
+    analytical = find_backend_binding_by_route_id("analytical_black76", catalog)
 
-    product_ir = ProductIR(
-        instrument="barrier_option",
-        payoff_family="barrier_option",
-        exercise_style="european",
-        state_dependence="terminal_markov",
-        model_family="equity_diffusion",
-    )
+    assert analytical is not None
 
-    assert barrier is not None
+    resolved = resolve_backend_binding_spec(analytical, product_ir=product_ir)
 
-    resolved = resolve_backend_binding_spec(barrier, product_ir=product_ir)
-
-    assert resolved.helper_refs == (
-        "trellis.models.analytical.barrier.barrier_option_price",
-    )
+    assert resolved.route_family == expected_route_family
+    assert resolved.helper_refs == expected_helper_refs
+    assert resolved.pricing_kernel_refs == expected_kernel_refs
 
 
 def test_resolve_backend_binding_spec_uses_equity_chooser_exact_helper():

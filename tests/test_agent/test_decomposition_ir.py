@@ -70,7 +70,7 @@ class TestProductIR:
         assert ir.exercise_style == "european"
         assert ir.model_family == "equity_diffusion"
         assert set(ir.candidate_engine_families) >= {"analytical", "monte_carlo", "pde"}
-        assert "barrier_option" in ir.route_families
+        assert "analytical" in ir.route_families
         assert "pde_solver" in ir.route_families
         assert ir.supported is True
 

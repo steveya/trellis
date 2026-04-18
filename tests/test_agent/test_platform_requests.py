@@ -552,11 +552,45 @@ def test_compile_build_request_preserves_missing_route_state_for_range_accrual_s
     assert "route_binding_authority" not in compiled.request.metadata
 
 
-def test_compile_build_request_uses_exact_barrier_binding_for_financepy_pilot_task():
+@pytest.mark.parametrize(
+    "task_id,expected_route_family,expected_backend_ref",
+    [
+        (
+            "F009",
+            "analytical",
+            "trellis.models.analytical.barrier.barrier_option_price",
+        ),
+        (
+            "F010",
+            "analytical",
+            "trellis.models.analytical.equity_exotics.price_equity_digital_option_analytical",
+        ),
+        (
+            "F011",
+            "analytical",
+            "trellis.models.analytical.equity_exotics.price_equity_fixed_lookback_option_analytical",
+        ),
+        (
+            "F014",
+            "analytical",
+            "trellis.models.analytical.equity_exotics.price_equity_cliquet_option_analytical",
+        ),
+        (
+            "F015",
+            "analytical",
+            "trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical",
+        ),
+    ],
+)
+def test_compile_build_request_preserves_exact_absorbed_black76_binding_for_financepy_tasks(
+    task_id,
+    expected_route_family,
+    expected_backend_ref,
+):
     from trellis.agent.benchmark_contracts import benchmark_request_description
     from trellis.agent.platform_requests import compile_build_request
 
-    task = _financepy_benchmark_task("F009")
+    task = _financepy_benchmark_task(task_id)
     compiled = compile_build_request(
         benchmark_request_description(task),
         instrument_type=task["instrument_type"],
@@ -565,15 +599,15 @@ def test_compile_build_request_uses_exact_barrier_binding_for_financepy_pilot_ta
 
     assert compiled.semantic_blueprint is None
     assert compiled.product_ir is not None
-    assert set(compiled.product_ir.candidate_engine_families) >= {"analytical", "pde"}
     assert compiled.generation_plan is not None
     assert compiled.generation_plan.primitive_plan is not None
-    assert compiled.generation_plan.primitive_plan.route == "equity_barrier_analytical"
+    assert compiled.generation_plan.primitive_plan.route == "analytical_black76"
+    assert compiled.generation_plan.primitive_plan.route_family == expected_route_family
     assert "primitive_plan_not_available" not in compiled.generation_plan.uncertainty_flags
-    assert (
-        "trellis.models.analytical.barrier.barrier_option_price"
-        in compiled.generation_plan.backend_exact_target_refs
-    )
+    assert expected_backend_ref in compiled.generation_plan.backend_exact_target_refs
+
+    if task_id == "F009":
+        assert set(compiled.product_ir.candidate_engine_families) >= {"analytical", "pde"}
 
 
 def test_compile_build_request_preserves_exact_chooser_binding_for_financepy_pilot_task():

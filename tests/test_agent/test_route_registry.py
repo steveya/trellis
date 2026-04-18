@@ -1073,6 +1073,62 @@ class TestAnalyticalRoutes:
         model_family="interest_rate",
     )
     VANILLA_IR = ProductIR(instrument="european_option", payoff_family="vanilla_option", exercise_style="european")
+    BARRIER_IR = ProductIR(
+        instrument="barrier_option",
+        payoff_family="barrier_option",
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+    DIGITAL_IR = ProductIR(
+        instrument="digital_option",
+        payoff_family="composite_option",
+        payoff_traits=("discounting", "terminal_markov", "vol_surface_dependence"),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+    LOOKBACK_IR = ProductIR(
+        instrument="lookback_option",
+        payoff_family="composite_option",
+        payoff_traits=("discounting", "path_dependent", "vol_surface_dependence"),
+        exercise_style="european",
+        state_dependence="path_dependent",
+        model_family="equity_diffusion",
+    )
+    CHOOSER_IR = ProductIR(
+        instrument="chooser_option",
+        payoff_family="composite_option",
+        payoff_traits=("discounting", "terminal_markov", "vol_surface_dependence"),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+    COMPOUND_IR = ProductIR(
+        instrument="compound_option",
+        payoff_family="composite_option",
+        payoff_traits=("discounting", "terminal_markov", "vol_surface_dependence"),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+    CLIQUET_IR = ProductIR(
+        instrument="cliquet_option",
+        payoff_family="composite_option",
+        payoff_traits=("vanilla_option",),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+    VARIANCE_SWAP_IR = ProductIR(
+        instrument="variance_swap",
+        payoff_family="variance_swap",
+        payoff_traits=("discounting", "path_dependent", "vol_surface_dependence"),
+        exercise_style="none",
+        state_dependence="path_dependent",
+        schedule_dependence=False,
+        model_family="generic",
+    )
     ZCB_IR = ProductIR(instrument="zcb_option", payoff_family="zcb_option", exercise_style="european")
     # QUA-909: ``analytical_black76`` now requires ``black_vol_surface`` in the
     # pricing-plan required market data (positive filter replacing the old
@@ -1090,6 +1146,48 @@ class TestAnalyticalRoutes:
             registry, "analytical", self.SWAPTION_IR, pricing_plan=self.BLACK76_PLAN,
         )
         assert new == ("analytical_black76",)
+
+    def test_barrier_candidate(self, registry):
+        new = _new_routes(
+            registry, "analytical", self.BARRIER_IR, pricing_plan=self.BLACK76_PLAN,
+        )
+        assert new == ("analytical_black76",)
+
+    def test_digital_candidate(self, registry):
+        new = _new_routes(
+            registry, "analytical", self.DIGITAL_IR, pricing_plan=self.BLACK76_PLAN,
+        )
+        assert new == ("analytical_black76",)
+
+    def test_lookback_candidate(self, registry):
+        new = _new_routes(
+            registry, "analytical", self.LOOKBACK_IR, pricing_plan=self.BLACK76_PLAN,
+        )
+        assert new == ("analytical_black76",)
+
+    def test_cliquet_candidate(self, registry):
+        new = _new_routes(
+            registry, "analytical", self.CLIQUET_IR, pricing_plan=self.BLACK76_PLAN,
+        )
+        assert new == ("analytical_black76",)
+
+    def test_variance_swap_candidate(self, registry):
+        new = _new_routes(
+            registry, "analytical", self.VARIANCE_SWAP_IR, pricing_plan=self.BLACK76_PLAN,
+        )
+        assert new == ("analytical_black76",)
+
+    def test_chooser_candidate_stays_dedicated_until_qua_911(self, registry):
+        new = _new_routes(
+            registry, "analytical", self.CHOOSER_IR, pricing_plan=self.BLACK76_PLAN,
+        )
+        assert new == ("equity_chooser_analytical",)
+
+    def test_compound_candidate_stays_dedicated_until_qua_911(self, registry):
+        new = _new_routes(
+            registry, "analytical", self.COMPOUND_IR, pricing_plan=self.BLACK76_PLAN,
+        )
+        assert new == ("equity_compound_analytical",)
 
     def test_zcb_candidate(self, registry):
         new = _new_routes(registry, "analytical", self.ZCB_IR)
@@ -1134,6 +1232,67 @@ class TestAnalyticalRoutes:
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         assert resolve_route_notes(spec, self.BERMUDAN_SWAPTION_IR) == ()
         assert resolve_route_adapters(spec, self.BERMUDAN_SWAPTION_IR) == ()
+
+    def test_barrier_primitives_use_exact_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        new_prims = resolve_route_primitives(spec, self.BARRIER_IR)
+        assert resolve_route_family(spec, self.BARRIER_IR) == "analytical"
+        assert _prim_set(new_prims) == {
+            ("trellis.models.analytical.barrier", "barrier_option_price", "route_helper"),
+        }
+
+    def test_digital_primitives_use_exact_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        new_prims = resolve_route_primitives(spec, self.DIGITAL_IR)
+        assert resolve_route_family(spec, self.DIGITAL_IR) == "analytical"
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.analytical.equity_exotics",
+                "price_equity_digital_option_analytical",
+                "route_helper",
+            ),
+        }
+
+    def test_lookback_primitives_use_exact_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        new_prims = resolve_route_primitives(spec, self.LOOKBACK_IR)
+        assert resolve_route_family(spec, self.LOOKBACK_IR) == "analytical"
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.analytical.equity_exotics",
+                "price_equity_fixed_lookback_option_analytical",
+                "route_helper",
+            ),
+        }
+
+    def test_cliquet_primitives_use_exact_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        new_prims = resolve_route_primitives(spec, self.CLIQUET_IR)
+        assert resolve_route_family(spec, self.CLIQUET_IR) == "analytical"
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.analytical.equity_exotics",
+                "price_equity_cliquet_option_analytical",
+                "route_helper",
+            ),
+        }
+
+    def test_variance_swap_primitives_use_exact_helper_and_output_kernel(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        new_prims = resolve_route_primitives(spec, self.VARIANCE_SWAP_IR)
+        assert resolve_route_family(spec, self.VARIANCE_SWAP_IR) == "analytical"
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.analytical.equity_exotics",
+                "price_equity_variance_swap_analytical",
+                "route_helper",
+            ),
+            (
+                "trellis.models.analytical.equity_exotics",
+                "equity_variance_swap_outputs_analytical",
+                "pricing_kernel",
+            ),
+        }
 
     def test_rate_cap_floor_strip_analytical_admissibility_accepts_structural_schedule_contract(self, registry):
         from dataclasses import replace
@@ -1739,13 +1898,8 @@ class TestEngineFamilyCoverage:
         "analytical_black76": "analytical",
         "zcb_option_analytical": "analytical",
         "analytical_garman_kohlhagen": "analytical",
-        "equity_barrier_analytical": "analytical",
-        "equity_digital_analytical": "analytical",
-        "equity_lookback_analytical": "analytical",
         "equity_chooser_analytical": "analytical",
         "equity_compound_analytical": "analytical",
-        "equity_cliquet_analytical": "analytical",
-        "equity_variance_swap_analytical": "analytical",
         "transform_fft": "fft_pricing",
         "vanilla_equity_theta_pde": "pde_solver",
         "pde_theta_1d": "pde_solver",

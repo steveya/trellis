@@ -737,7 +737,7 @@ def test_barrier_option_route_card_mentions_grid_operator_and_rannacher():
     assert "rannacher_timesteps" in card
 
 
-def test_barrier_option_analytical_route_uses_exact_helper_binding():
+def test_barrier_option_analytical_route_uses_absorbed_black76_helper_binding():
     pricing_plan = PricingPlan(
         method="analytical",
         method_modules=["trellis.models.analytical.barrier"],
@@ -761,7 +761,8 @@ def test_barrier_option_analytical_route_uses_exact_helper_binding():
     card = render_generation_route_card(plan)
 
     assert plan.primitive_plan is not None
-    assert plan.primitive_plan.route == "equity_barrier_analytical"
+    assert plan.primitive_plan.route == "analytical_black76"
+    assert plan.primitive_plan.route_family == "analytical"
     primitive_refs = {
         f"{primitive.module}.{primitive.symbol}" for primitive in plan.primitive_plan.primitives
     }

@@ -144,94 +144,6 @@ routes:
         discount_curve: [market_state.discount]
         credit_curve: [market_state.credit_curve]
 
-  - id: equity_barrier_analytical
-    engine_family: analytical
-    route_family: barrier_option
-    status: promoted
-    confidence: 1.0
-    match:
-      methods: [analytical]
-      instruments: [barrier_option]
-    admissibility:
-      control_styles: [identity]
-      event_support: none
-      phase_sensitivity: default_phase_order_only
-      multicurrency_support: single_currency_only
-      supported_outputs: [price, scenario_pnl]
-      supports_sensitivity_outputs: true
-      supported_state_tags: [terminal_markov]
-      supports_calibration: false
-    primitives:
-      - module: trellis.models.analytical.barrier
-        symbol: barrier_option_price
-        role: route_helper
-    adapters: []
-    notes:
-      - "Use `barrier_option_price` directly with scalar spot/strike/barrier/rate/sigma/T inputs instead of instantiating `ResolvedBarrierInputs` in generated adapters."
-      - "When the contract carries discrete monitoring or non-zero dividend carry, pass `observations_per_year` and `q` through explicitly."
-    market_data_access:
-      required:
-        discount_curve: [market_state.discount]
-        black_vol_surface: [market_state.vol_surface]
-
-  - id: equity_digital_analytical
-    engine_family: analytical
-    route_family: digital_option
-    status: promoted
-    confidence: 1.0
-    match:
-      methods: [analytical]
-      instruments: [digital_option]
-    admissibility:
-      control_styles: [identity]
-      event_support: none
-      phase_sensitivity: default_phase_order_only
-      multicurrency_support: single_currency_only
-      supported_outputs: [price, scenario_pnl]
-      supports_sensitivity_outputs: true
-      supported_state_tags: [terminal_markov]
-      supports_calibration: false
-    primitives:
-      - module: trellis.models.analytical.equity_exotics
-        symbol: price_equity_digital_option_analytical
-        role: route_helper
-    adapters: []
-    notes:
-      - "Use the exact digital helper with `market_state` and `spec`; do not rebuild the Black digital payoff inline."
-    market_data_access:
-      required:
-        discount_curve: [market_state.discount]
-        black_vol_surface: [market_state.vol_surface]
-
-  - id: equity_lookback_analytical
-    engine_family: analytical
-    route_family: lookback_option
-    status: promoted
-    confidence: 1.0
-    match:
-      methods: [analytical]
-      instruments: [lookback_option]
-    admissibility:
-      control_styles: [identity]
-      event_support: none
-      phase_sensitivity: default_phase_order_only
-      multicurrency_support: single_currency_only
-      supported_outputs: [price, scenario_pnl]
-      supports_sensitivity_outputs: true
-      supported_state_tags: [path_dependent]
-      supports_calibration: false
-    primitives:
-      - module: trellis.models.analytical.equity_exotics
-        symbol: price_equity_fixed_lookback_option_analytical
-        role: route_helper
-    adapters: []
-    notes:
-      - "Use the dedicated lookback helper with `market_state` and `spec`; do not restate the running-extreme formula inside the generated payoff."
-    market_data_access:
-      required:
-        discount_curve: [market_state.discount]
-        black_vol_surface: [market_state.vol_surface]
-
   - id: equity_chooser_analytical
     engine_family: analytical
     route_family: chooser_option
@@ -285,68 +197,6 @@ routes:
     adapters: []
     notes:
       - "Use the compound-option helper with `market_state` and `spec`; keep the critical-spot solve inside the shared helper."
-    market_data_access:
-      required:
-        discount_curve: [market_state.discount]
-        black_vol_surface: [market_state.vol_surface]
-
-  - id: equity_cliquet_analytical
-    engine_family: analytical
-    route_family: cliquet_option
-    status: promoted
-    confidence: 1.0
-    match:
-      methods: [analytical]
-      instruments: [cliquet_option]
-    admissibility:
-      control_styles: [identity]
-      event_support: none
-      phase_sensitivity: default_phase_order_only
-      multicurrency_support: single_currency_only
-      supported_outputs: [price, scenario_pnl]
-      supports_sensitivity_outputs: true
-      supported_state_tags: [schedule_state]
-      supports_calibration: false
-    primitives:
-      - module: trellis.models.analytical.equity_exotics
-        symbol: price_equity_cliquet_option_analytical
-        role: route_helper
-    adapters: []
-    notes:
-      - "Use the cliquet helper with `market_state` and `spec`; keep observation-date resets and carry handling in the shared helper."
-    market_data_access:
-      required:
-        discount_curve: [market_state.discount]
-        black_vol_surface: [market_state.vol_surface]
-
-  - id: equity_variance_swap_analytical
-    engine_family: analytical
-    route_family: variance_swap
-    status: promoted
-    confidence: 1.0
-    match:
-      methods: [analytical]
-      instruments: [variance_swap]
-    admissibility:
-      control_styles: [identity]
-      event_support: none
-      phase_sensitivity: default_phase_order_only
-      multicurrency_support: single_currency_only
-      supported_outputs: [price, scenario_pnl]
-      supports_sensitivity_outputs: true
-      supported_state_tags: [terminal_markov]
-      supports_calibration: false
-    primitives:
-      - module: trellis.models.analytical.equity_exotics
-        symbol: price_equity_variance_swap_analytical
-        role: route_helper
-      - module: trellis.models.analytical.equity_exotics
-        symbol: equity_variance_swap_outputs_analytical
-        role: pricing_kernel
-        required: false
-    adapters: []
-    notes:
-      - "Use the variance-swap helper with `market_state` and `spec`; keep fair-strike and price output assembly in the shared analytical module."
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -932,30 +782,19 @@ routes:
       non_european_penalty: -4.0
     match:
       methods: [analytical]
-      # QUA-909 (Phase 1 of QUA-887): positive filters on
-      # ``required_market_data``, ``payoff_family``, and ``exercise`` replace
-      # the earlier 12-entry ``exclude_instruments`` list. Dispatch is now
-      # restricted to the three payoff families Black76 has concrete
-      # ``when`` clauses for (vanilla European options, European baskets
-      # delegating to ``price_basket_option_analytical``, and European /
-      # Bermudan swaptions delegating to ``price_swaption_black76`` or
-      # ``price_bermudan_swaption_black76_lower_bound``) and to requests
-      # whose pricing plan carries a Black vol surface. Several instrument-
-      # specific analytical routes (``equity_digital_analytical``,
-      # ``equity_variance_swap_analytical``, ``zcb_option_analytical``,
-      # ``equity_barrier_analytical``, ``equity_lookback_analytical``,
-      # ``equity_chooser_analytical``, ``equity_compound_analytical``,
-      # ``equity_cliquet_analytical``, ``credit_default_swap_analytical``,
-      # ``basket_credit_nth_to_default_analytical``) carry payoff families
-      # outside the positive set (``digital_option``, ``variance_swap``,
-      # ``zcb_option``, ``barrier_option``, ``lookback_option``,
-      # ``chooser_option``, ``compound_option``, ``cliquet_option``,
-      # ``event_triggered_two_legged_contract``, ``credit_basket``) so the
-      # new filter leaves them uncontested. Phase 1.4 will extend this
-      # positive filter when it absorbs the instrument-specific exotic
-      # routes into Black76 via conditional ``when`` clauses.
+      # QUA-909 / QUA-910: Black76 now hosts the helper-backed closed-form
+      # equity exotics that still live on the same vol-surface-driven
+      # analytical lane. ``barrier_option`` and ``variance_swap`` already
+      # surface route-local payoff families, while ``digital_option``,
+      # ``lookback_option``, and ``cliquet_option`` still decompose to
+      # ``payoff_family="composite_option"`` today. Admit those three via an
+      # explicit instrument-positive list until the semantic layer emits more
+      # specific payoff-family tags; barrier / variance are also listed so
+      # ``_augment_ir_with_promoted_route_support`` can project the promoted
+      # analytical family into their benchmark IRs. Chooser / compound stay out
+      # by omission so QUA-911 can absorb them separately.
       #
-      # The ``exercise: [european, bermudan]`` positive filter is the
+      # The ``exercise: [european, bermudan, none]`` positive filter is the
       # principled discriminant against American exercise vanilla options.
       # ``vanilla_option`` is a shared payoff family across European and
       # American styles; without this filter Black76's broad positive
@@ -965,10 +804,10 @@ routes:
       # ``_augment_ir_with_promoted_route_support`` and drive the product-
       # IR pricing-method selector to pick ``analytical`` over the true
       # Monte-Carlo / rate-tree / PDE solvers. Black76's ``when`` clauses
-      # only handle ``european`` (vanilla, basket, swaption) and
-      # ``bermudan`` (swaption via the lower-bound helper), so restricting
-      # the match clause to those two exercise styles matches the concrete
-      # capability surface.
+      # only handle ``european`` (vanilla, basket, absorbed exotics, swaption),
+      # ``bermudan`` (swaption via the lower-bound helper), and ``none``
+      # (variance swaps), so restricting the match clause to those exercise
+      # styles matches the concrete capability surface.
       #
       # The ``exclude_required_market_data: [fx_rates]`` clause is retained
       # as a market-data-shape discriminant (not instrument-name dispatch)
@@ -985,9 +824,10 @@ routes:
       # retiring). Once the decomposer emits a more specific
       # ``payoff_family`` for quanto / FX-vanilla (Phase 2+ work), this
       # exclusion becomes redundant and can be dropped.
+      instruments: [barrier_option, digital_option, lookback_option, cliquet_option, variance_swap]
       required_market_data: [black_vol_surface]
-      payoff_family: [vanilla_option, basket_option, swaption]
-      exercise: [european, bermudan]
+      payoff_family: [vanilla_option, basket_option, swaption, barrier_option, variance_swap]
+      exercise: [european, bermudan, none]
       exclude_required_market_data: [fx_rates]
     admissibility:
       control_styles: [identity, holder_max]
@@ -996,18 +836,14 @@ routes:
       multicurrency_support: single_currency_only
       supported_outputs: [price, scenario_pnl]
       supports_sensitivity_outputs: true
-      supported_state_tags: [terminal_markov, recombining_safe, schedule_state]
+      supported_state_tags: [terminal_markov, recombining_safe, schedule_state, path_dependent]
       supports_calibration: false
-    # QUA-920 / Phase 1.5.D: the four structural when-clauses below use the
-    # DSL ``contract_pattern`` form landed in QUA-917/918/919. Parity with the
-    # pre-migration string-tag form is locked by
-    # ``tests/test_agent/test_route_registry_black76_dsl_parity.py``. The
-    # instrument-level payoff tags (``vanilla_payoff``, ``basket_payoff``,
-    # ``swaption_payoff``) map through
-    # ``trellis.agent.contract_pattern_eval._INSTRUMENT_TAG_TO_PAYOFF_FAMILIES``
-    # to the same ProductIR.payoff_family values the legacy filter used. The
-    # final ``when: default`` clause intentionally stays in legacy sentinel
-    # form: it is a fall-through marker, not a structural pattern match.
+    # QUA-920 / QUA-910: the first four structural when-clauses below stay in
+    # DSL form, while the absorbed equity-exotic helper clauses stay in legacy
+    # trait-filter form. The current ProductIR does not yet expose distinct
+    # payoff-family tags for digital / lookback / cliquet, so legacy
+    # ``payoff_traits`` filters remain the narrowest non-overmatching contract
+    # until the semantic layer is refined.
     conditional_primitives:
       - when:
           contract_pattern:
@@ -1087,6 +923,66 @@ routes:
             role: route_helper
         adapters: []
         notes: []
+      - when:
+          payoff_family: barrier_option
+          exercise_style: [european]
+          model_family: [equity_diffusion]
+        primitives:
+          - module: trellis.models.analytical.barrier
+            symbol: barrier_option_price
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use `barrier_option_price` directly with scalar spot/strike/barrier/rate/sigma/T inputs instead of instantiating `ResolvedBarrierInputs` in generated adapters."
+          - "When the contract carries discrete monitoring or non-zero dividend carry, pass `observations_per_year` and `q` through explicitly."
+      - when:
+          payoff_family: variance_swap
+        primitives:
+          - module: trellis.models.analytical.equity_exotics
+            symbol: price_equity_variance_swap_analytical
+            role: route_helper
+          - module: trellis.models.analytical.equity_exotics
+            symbol: equity_variance_swap_outputs_analytical
+            role: pricing_kernel
+            required: false
+        adapters: []
+        notes:
+          - "Use the variance-swap helper with `market_state` and `spec`; keep fair-strike and price output assembly in the shared analytical module."
+      - when:
+          payoff_family: composite_option
+          payoff_traits: [path_dependent]
+          exercise_style: [european]
+          model_family: [equity_diffusion]
+        primitives:
+          - module: trellis.models.analytical.equity_exotics
+            symbol: price_equity_fixed_lookback_option_analytical
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use the dedicated lookback helper with `market_state` and `spec`; do not restate the running-extreme formula inside the generated payoff."
+      - when:
+          payoff_family: composite_option
+          payoff_traits: [vanilla_option]
+          exercise_style: [european]
+          model_family: [equity_diffusion]
+        primitives:
+          - module: trellis.models.analytical.equity_exotics
+            symbol: price_equity_cliquet_option_analytical
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use the cliquet helper with `market_state` and `spec`; keep observation-date resets and carry handling in the shared helper."
+      - when:
+          payoff_family: composite_option
+          exercise_style: [european]
+          model_family: [equity_diffusion]
+        primitives:
+          - module: trellis.models.analytical.equity_exotics
+            symbol: price_equity_digital_option_analytical
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use the exact digital helper with `market_state` and `spec`; do not rebuild the Black digital payoff inline."
       # The ``default`` sentinel intentionally stays in legacy form: it is
       # dispatched by ``resolve_route_primitives`` as the explicit fall-through
       # catch-all, not as a structural ContractPattern match. QUA-920 does not
