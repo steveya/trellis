@@ -50,9 +50,10 @@ What is already in the code (so the plan is not starting from zero):
   already emits dual views: legacy route/module hints and a conservative
   `dsl_lowering` companion. This is the natural splice point for a Contract
   IR dispatch.
-- `routes.yaml` has 30 routes, of which 21 are instrument-dispatch
-  (`match.instruments: [X]`) and 6 use `conditional_primitives` — a
-  pattern-style when-clause dispatch that already works.
+- `routes.yaml` has 30 routes, of which 16 are instrument-dispatch
+  (`match.instruments: [X]`), 14 use `match.methods` only, and 6 use
+  `conditional_primitives` — a pattern-style when-clause dispatch that
+  already works.
 
 ## Why Prior Attempts Stalled
 
@@ -115,16 +116,16 @@ Four principles baked into every phase:
 
 ### Why
 
-The file can shrink dramatically without introducing a new IR. 21 routes
+The file can shrink dramatically without introducing a new IR. 16 routes
 use `match.instruments: [X]`, but 6 already use `conditional_primitives`
 (when-clause dispatch on `payoff_family` + `exercise_style` +
-`model_family` → primitives). Extending that pattern to the remaining 21
+`model_family` → primitives). Extending that pattern to the remaining 16
 retires instrument-name dispatch as the matching key while keeping
 `routes.yaml` as the storage.
 
 ### What we do
 
-- For each of the 21 instrument-keyed routes, rewrite its match clause
+- For each of the 16 instrument-keyed routes, rewrite its match clause
   from `instruments: [X]` to a pattern declaration on `(payoff_family,
   exercise_style, model_family, payoff_traits)`. Example:
   `equity_variance_swap_analytical` changes from `match.instruments:
@@ -139,12 +140,12 @@ retires instrument-name dispatch as the matching key while keeping
 
 ### Deliverables
 
-- 21 route rewrites. Each is its own Linear ticket.
+- 16 route rewrites. Each is its own Linear ticket.
 - Per-rewrite parity test: `rank_primitive_routes` returns the same
   `PrimitivePlan.route` and `PrimitivePlan.primitives` under the new
   pattern declaration as under the old `instruments:` declaration, for
   every `ProductIR` fixture that hits the route.
-- A handful of collapsed routes (projection: 21 narrow routes → ~7
+- A handful of collapsed routes (projection: 16 narrow routes → ~7
   pattern families).
 
 ### Done criteria per rewrite
