@@ -7,7 +7,7 @@ Trellis is an AI-augmented quantitative finance library for derivative pricing. 
 **Language:** Python 3.10+
 **Dependencies:** numpy, autograd, scipy (core); openai/anthropic (agent); pytest (test)
 **Python:** `/Users/steveyang/miniforge3/bin/python3`
-**Tests:** `pytest tests/ -x -q -m "not integration"` (~980 tests)
+**Tests:** `make gate-pr` for PR-ready validation; `make gate-release` for the broader proof/reference gate
 
 Always run Python through the conda interpreter above. Do not rely on the
 system `python3` on `PATH` for tests, replays, or task execution.
@@ -26,7 +26,7 @@ the miniforge interpreter.
 - Use `from trellis.core.differentiable import get_numpy` instead of `import numpy` for autograd compatibility
 - All value types should be frozen dataclasses
 - All market interfaces should be protocols (not base classes)
-- Run `pytest tests/ -x -q -m "not integration"` after every change
+- Run targeted tests for the touched subsystem after every change; use `make gate-pr` before merge-ready handoff, and `make gate-release` when touching cross-validation, verification, task-challenge, or cassette-freshness surfaces
 - Do NOT modify `trellis/agent/knowledge/` files — that's the Knowledge Agent's domain
 
 ### Role: Knowledge Agent

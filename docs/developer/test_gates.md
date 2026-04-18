@@ -19,14 +19,18 @@ the supported interpreter even if your shell `python3` resolves elsewhere.
 
 ## Gate Selection
 
-- `make gate-pr`: default PR-ready gate. Runs stale-test hygiene, the full
-  non-integration suite, and the explicit tier-2 contract-test tranche.
+- `make gate-pr`: default PR-ready gate. Runs stale-test hygiene, the core
+  non-integration suite, and the tier-2 contract tranche, but skips the
+  cross-validation, verification, task-challenge, and cassette-freshness proof
+  layers so ordinary merges are not blocked on the slowest numerical evidence
+  slices.
 - `make gate-canary`: focused core canary gate for agent/runtime/pricing-core
   changes. This calls `scripts/should_run_canary.py` first so the current path
   diff is visible before the live canary subset runs.
 - `make gate-release`: broader release-facing gate. Runs `gate-pr`, then the
-  cassette freshness contract and replay-backed canary drift checks for the
-  committed full-task cassettes.
+  cross-validation, verification, task-challenge, and cassette-freshness proof
+  layers, followed by the replay-backed canary drift checks for the committed
+  full-task cassettes.
 
 ## Canary Trigger Helper
 
@@ -59,11 +63,13 @@ For explicit path checks, repeat `--path`:
 ## Cost Notes
 
 - `gate-pr` is the normal correctness gate and does not require live model
-  tokens.
+  tokens. It intentionally avoids the slower proof/reference strata so the
+  merge path stays closer to the core runtime contract.
 - `gate-canary` is live by default and intentionally narrower than the full
   canary surface.
 - `gate-release` stays deterministic and zero-token by using committed
-  full-task replays plus drift/freshness checks.
+  full-task replays plus the slower proof/reference suites and the
+  drift/freshness checks.
 
 The release gate's drift step uses `scripts/run_canary.py --check-drift`, so
 it compares against the latest available decision checkpoint for the replayed

@@ -5,14 +5,16 @@ from datetime import date
 import numpy as raw_np
 import pytest
 
-pytest.importorskip("QuantLib")
-
 # --- Trellis ---
 from trellis.curves.yield_curve import YieldCurve
 from trellis.curves.forward_curve import ForwardCurve
 
 SETTLE = date(2024, 11, 15)
 RATE = 0.05
+
+
+def _require_quantlib():
+    pytest.importorskip("QuantLib")
 
 
 def trellis_discount(rate, t):
@@ -25,6 +27,7 @@ def trellis_forward(rate, t1, t2):
 
 
 def quantlib_discount(rate, t):
+    _require_quantlib()
     import QuantLib as ql
     today = ql.Date(15, 11, 2024)
     ql.Settings.instance().evaluationDate = today
@@ -33,6 +36,7 @@ def quantlib_discount(rate, t):
 
 
 def quantlib_forward(rate, t1, t2):
+    _require_quantlib()
     import QuantLib as ql
     today = ql.Date(15, 11, 2024)
     ql.Settings.instance().evaluationDate = today

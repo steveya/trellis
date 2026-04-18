@@ -12,10 +12,12 @@ from trellis.models.analytical import price_equity_cliquet_option_analytical
 from trellis.models.vol_surface import FlatVol
 
 
-pytest.importorskip("financepy")
+def _require_financepy() -> None:
+    pytest.importorskip("financepy")
 
 
 def test_cliquet_analytical_matches_financepy_reset_schedule_reference():
+    _require_financepy()
     from financepy.market.curves.discount_curve_flat import DiscountCurveFlat
     from financepy.models.black_scholes import BlackScholes
     from financepy.products.equity.equity_cliquet_option import EquityCliquetOption

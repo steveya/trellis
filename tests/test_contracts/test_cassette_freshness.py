@@ -15,6 +15,7 @@ from tests.test_contracts.conftest import (
 )
 
 
+@pytest.mark.freshness
 @pytest.mark.tier2
 def test_cassettes_are_fresh():
     """All committed cassettes should be less than CASSETTE_MAX_AGE_DAYS old."""
@@ -40,6 +41,7 @@ def test_cassettes_are_fresh():
         pytest.fail(msg)
 
 
+@pytest.mark.freshness
 @pytest.mark.tier2
 def test_cassette_files_are_valid_yaml():
     """All cassette files must be parseable YAML with meta and calls sections."""
