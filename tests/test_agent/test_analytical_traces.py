@@ -4,13 +4,36 @@ from types import SimpleNamespace
 
 
 def _black76_pricing_plan():
+    # QUA-909: the Black76 match clause now requires ``black_vol_surface``
+    # in the pricing plan's required market data and restricts dispatch to
+    # ``european`` / ``bermudan`` exercise styles. The trace fixtures below
+    # must therefore declare both, matching what a real analytical pricing
+    # plan would carry; otherwise Black76 is filtered out and the
+    # generation plan lands on the empty-route fallback.
     return SimpleNamespace(
         method="analytical",
         method_modules=("trellis.models.black",),
-        required_market_data=(),
+        required_market_data=("discount_curve", "black_vol_surface"),
         model_to_build="vanilla_option",
         reasoning="trace black76 analytical assembly",
         modeling_requirements=(),
+    )
+
+
+def _black76_product_ir():
+    # QUA-909: the Black76 match clause now filters on both ``payoff_family``
+    # and ``exercise``. A bare ``product_ir=None`` argument leaves both at
+    # their default values (empty string / "none"), so the positive filters
+    # reject Black76 and the generation plan falls back to no route. Supply
+    # a minimal European vanilla ``ProductIR`` so these trace fixtures
+    # actually exercise the Black76 dispatch path they claim to test.
+    from trellis.agent.knowledge.schema import ProductIR
+
+    return ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        exercise_style="european",
+        model_family="equity_diffusion",
     )
 
 
@@ -26,7 +49,7 @@ def test_analytical_trace_round_trip_and_render(tmp_path):
         pricing_plan=_black76_pricing_plan(),
         instrument_type="vanilla_option",
         inspected_modules=("trellis.models.black",),
-        product_ir=None,
+        product_ir=_black76_product_ir(),
     )
 
     artifact = emit_analytical_trace_from_generation_plan(
@@ -80,7 +103,7 @@ def test_route_health_snapshot_reports_instruction_counts():
         pricing_plan=_black76_pricing_plan(),
         instrument_type="vanilla_option",
         inspected_modules=("trellis.models.black",),
-        product_ir=None,
+        product_ir=_black76_product_ir(),
     )
 
     trace = build_analytical_trace_from_generation_plan(
@@ -96,7 +119,16 @@ def test_route_health_snapshot_reports_instruction_counts():
     assert snapshot["effective_instruction_count"] >= 1
     assert snapshot["hard_constraint_count"] == 0
     assert snapshot["conflict_count"] == 0
-    assert "analytical_black76:schedule-builder" in snapshot["effective_instruction_ids"]
+    # QUA-909: the canonical European vanilla ``ProductIR`` now dispatches
+    # through Black76's ``when: vanilla_option`` clause, which emits the
+    # three call/put/digital guidance notes instead of the shared
+    # ``build_payment_timeline`` schedule-builder primitive reserved for
+    # the ``when: default`` fallback. At least one note must be present on
+    # the resulting route-health snapshot.
+    assert any(
+        iid.startswith("analytical_black76:note:")
+        for iid in snapshot["effective_instruction_ids"]
+    )
 
 
 def test_analytical_trace_route_from_dict_preserves_blank_route_name():

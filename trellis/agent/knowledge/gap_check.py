@@ -188,9 +188,19 @@ def _check_route_gap(decomposition: ProductDecomposition) -> RouteGap | None:
         )
         registry = load_route_registry()
 
-        # Check for promoted routes
+        # Check for promoted routes.  ``_check_route_gap`` is a pre-flight
+        # audit — it runs before the pricing plan is synthesized, so it
+        # cannot test market-data-shape filters (``required_market_data`` /
+        # ``exclude_required_market_data``).  ``skip_market_data_filters=True``
+        # restricts the gap check to method + instrument + payoff-family +
+        # exercise-style dispatch, which is the right admissibility scope
+        # for the "is there any route for this product?" question.
         promoted = match_candidate_routes(
-            registry, decomposition.method, minimal_ir, promoted_only=True,
+            registry,
+            decomposition.method,
+            minimal_ir,
+            promoted_only=True,
+            skip_market_data_filters=True,
         )
         if promoted:
             return None
@@ -198,7 +208,11 @@ def _check_route_gap(decomposition: ProductDecomposition) -> RouteGap | None:
         # Check for candidate/validated routes
         analysis_registry = load_route_registry(include_discovered=True)
         all_matches = match_candidate_routes(
-            analysis_registry, decomposition.method, minimal_ir, promoted_only=False,
+            analysis_registry,
+            decomposition.method,
+            minimal_ir,
+            promoted_only=False,
+            skip_market_data_filters=True,
         )
         candidates = [r for r in all_matches if r.status in ("candidate", "validated")]
         if candidates:

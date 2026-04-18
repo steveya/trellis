@@ -833,12 +833,29 @@ def _augment_ir_with_promoted_route_support(ir: ProductIR) -> ProductIR:
 
     route_families = list(ir.route_families)
     candidate_engine_families = list(ir.candidate_engine_families)
+    exercise_style = str(getattr(ir, "exercise_style", "") or "").strip().lower()
 
     for route in load_route_registry().routes:
         if route.status != "promoted":
             continue
         if not _route_matches_product_ir(route, ir):
             continue
+        # QUA-909: a route whose scorer declares ``non_european_penalty`` is
+        # signaling that it is a lower-bound / fallback approximation for
+        # non-European exercise styles and must not be advertised as a
+        # first-class candidate engine family against rate-tree / PDE /
+        # Monte-Carlo routes that are the true method for those products
+        # (e.g. Bermudan swaption selects rate_tree, not the Black76
+        # lower-bound helper). Skip the augmentation contribution for such
+        # routes; their direct ``match_candidate_routes`` dispatch via the
+        # scorer still works.
+        if exercise_style and exercise_style != "european":
+            score_hints = getattr(route, "score_hints", None) or {}
+            non_european_penalty = float(
+                score_hints.get("non_european_penalty", 0.0) or 0.0
+            )
+            if non_european_penalty < 0:
+                continue
 
         route_family = str(getattr(route, "route_family", "") or "").strip()
         if (
