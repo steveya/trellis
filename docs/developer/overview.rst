@@ -226,10 +226,11 @@ runtime companions:
   maps
 - ``FutureValueCube`` for trade/date/path outputs
 
-The first landed consumer is intentionally narrow: a vanilla interest-rate
-swap future-value workflow under one-factor Hull-White. That substrate should
-be treated as the new reusable base for later portfolio, netting, collateral,
-and xVA work, not as evidence that those downstream analytics already exist.
+The first landed consumers are intentionally narrow: vanilla interest-rate
+swap positions and shared-path swap portfolios under one-factor Hull-White.
+That substrate should be treated as the new reusable base for later netting,
+collateral, and xVA work, not as evidence that those downstream analytics
+already exist.
 
 Pod-risk throughput now has a checked benchmark surface as well.
 ``trellis.analytics.benchmarking`` measures the supported scenario-cube,

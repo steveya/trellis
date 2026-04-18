@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Protocol, runtime_checkable
 
-from trellis.book import FutureValueCube, FutureValueCubeMetadata
+from trellis.book import Book, FutureValueCube, FutureValueCubeMetadata
 from trellis.core.date_utils import build_payment_timeline, year_fraction
 from trellis.core.differentiable import get_numpy
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.instruments.swap import SwapSpec
+from trellis.instruments.swap import SwapPayoff, SwapSpec
 from trellis.models.monte_carlo.engine import MonteCarloEngine
 from trellis.models.monte_carlo.event_aware import (
     build_event_aware_monte_carlo_process,
@@ -140,6 +141,17 @@ class _ResolvedSwapPeriod:
     t_start: float
     t_end: float
     t_payment: float
+
+
+@dataclass(frozen=True)
+class _ResolvedSwapPortfolioPosition:
+    """One normalized swap position with a shared-cube multiplier."""
+
+    name: str
+    spec: SwapSpec
+    fixed_periods: tuple[_ResolvedSwapPeriod, ...]
+    float_periods: tuple[_ResolvedSwapPeriod, ...]
+    position_multiplier: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -565,10 +577,9 @@ def build_future_value_cube(
     )
 
 
-def price_interest_rate_swap_future_value_cube(
+def price_interest_rate_swap_portfolio_future_value_cube(
     *,
-    name: str,
-    spec: SwapSpec,
+    positions: Mapping[str, SwapSpec | SwapPayoff] | Book,
     market_state,
     n_paths: int = 10_000,
     n_steps: int = 120,
@@ -576,34 +587,25 @@ def price_interest_rate_swap_future_value_cube(
     mean_reversion: float | None = None,
     sigma: float | None = None,
 ) -> FutureValueCube:
-    """Price one vanilla IRS future-value cube on the reusable simulation substrate."""
+    """Price a shared-path swap portfolio future-value cube on the reusable substrate."""
     if getattr(market_state, "discount", None) is None:
         raise ValueError("Swap future-value cube requires market_state.discount")
 
-    fixed_periods = _resolve_swap_periods(
-        spec.start_date,
-        spec.end_date,
-        spec.fixed_frequency,
-        leg_day_count=spec.fixed_day_count,
-        time_origin=market_state.settlement,
+    resolved_positions = _resolve_swap_portfolio_positions(
+        positions,
+        settlement=market_state.settlement,
     )
-    float_periods = _resolve_swap_periods(
-        spec.start_date,
-        spec.end_date,
-        spec.float_frequency,
-        leg_day_count=spec.float_day_count,
-        time_origin=market_state.settlement,
-    )
-    observation_dates, observation_times = _swap_observation_grid(
-        float_periods,
+    observation_dates, observation_times = _swap_portfolio_observation_grid(
+        resolved_positions,
         settlement=market_state.settlement,
     )
     horizon = max(float(observation_times[-1]), 1e-12)
+    reference_fixed_rate = _portfolio_reference_fixed_rate(resolved_positions)
 
     process_spec, initial_short_rate = resolve_hull_white_monte_carlo_process_inputs(
         market_state,
         option_horizon=horizon,
-        strike=float(spec.fixed_rate),
+        strike=reference_fixed_rate,
         mean_reversion=mean_reversion,
         sigma=sigma,
     )
@@ -625,26 +627,42 @@ def price_interest_rate_swap_future_value_cube(
         process_family="hull_white_1f",
     )
 
-    projection = HullWhiteRateProjection(
-        discount_curve=market_state.discount,
-        forward_curve=market_state.forecast_forward_curve(spec.rate_index),
-        mean_reversion=float(process_spec.mean_reversion or 0.0),
-    )
-    observation_program = SwapFloatResetProgram(float_periods=float_periods)
-    valuation_model = HullWhiteSwapFutureValueModel(
-        spec=spec,
-        fixed_periods=fixed_periods,
-        float_periods=float_periods,
-    )
-    values = evaluate_conditional_valuation_paths(
-        simulation,
-        projection=projection,
-        valuation_model=valuation_model,
-        observation_program=observation_program,
-    )
+    position_values: dict[str, Any] = {}
+    position_provenance: dict[str, dict[str, Any]] = {}
+    for position in resolved_positions:
+        projection = HullWhiteRateProjection(
+            discount_curve=market_state.discount,
+            forward_curve=market_state.forecast_forward_curve(position.spec.rate_index),
+            mean_reversion=float(process_spec.mean_reversion or 0.0),
+        )
+        observation_program = SwapFloatResetProgram(float_periods=position.float_periods)
+        valuation_model = HullWhiteSwapFutureValueModel(
+            spec=position.spec,
+            fixed_periods=position.fixed_periods,
+            float_periods=position.float_periods,
+        )
+        values = evaluate_conditional_valuation_paths(
+            simulation,
+            projection=projection,
+            valuation_model=valuation_model,
+            observation_program=observation_program,
+        )
+        if abs(position.position_multiplier - 1.0) > 0.0:
+            values = np.asarray(values, dtype=float) * float(position.position_multiplier)
+        position_values[position.name] = values
+
+        provenance = {
+            "instrument_type": "interest_rate_swap",
+            "rate_index": position.spec.rate_index,
+            "is_payer": bool(position.spec.is_payer),
+            "contract_notional": float(position.spec.notional),
+        }
+        if abs(position.position_multiplier - 1.0) > 0.0:
+            provenance["book_notional_multiplier"] = float(position.position_multiplier)
+        position_provenance[position.name] = provenance
 
     return build_future_value_cube(
-        position_values={str(name): values},
+        position_values=position_values,
         simulation=simulation,
         metadata=FutureValueCubeMetadata(
             measure=simulation.measure,
@@ -659,18 +677,42 @@ def price_interest_rate_swap_future_value_cube(
                 "projection_family": "hull_white_1f_rate_projection",
                 "conditional_valuation_family": "pathwise_clean_swap_value",
                 "observation_program": "swap_float_reset_state",
-                "observation_grid": "float_boundary_dates",
+                "observation_grid": (
+                    "portfolio_float_boundary_union"
+                    if len(resolved_positions) > 1
+                    else "float_boundary_dates"
+                ),
+                "portfolio_size": len(resolved_positions),
+                "position_input_type": "book" if isinstance(positions, Book) else "mapping",
+                "reference_fixed_rate": float(reference_fixed_rate),
                 "n_paths": int(n_paths),
                 "n_steps": int(n_steps),
             },
-            position_provenance={
-                str(name): {
-                    "instrument_type": "interest_rate_swap",
-                    "rate_index": spec.rate_index,
-                    "is_payer": bool(spec.is_payer),
-                }
-            },
+            position_provenance=position_provenance,
         ),
+    )
+
+
+def price_interest_rate_swap_future_value_cube(
+    *,
+    name: str,
+    spec: SwapSpec,
+    market_state,
+    n_paths: int = 10_000,
+    n_steps: int = 120,
+    seed: int | None = None,
+    mean_reversion: float | None = None,
+    sigma: float | None = None,
+) -> FutureValueCube:
+    """Price one vanilla IRS future-value cube through the portfolio substrate."""
+    return price_interest_rate_swap_portfolio_future_value_cube(
+        positions={str(name): spec},
+        market_state=market_state,
+        n_paths=n_paths,
+        n_steps=n_steps,
+        seed=seed,
+        mean_reversion=mean_reversion,
+        sigma=sigma,
     )
 
 
@@ -740,6 +782,23 @@ def _swap_observation_grid(
     return ordered_dates, ordered_times
 
 
+def _swap_portfolio_observation_grid(
+    positions: tuple[_ResolvedSwapPortfolioPosition, ...],
+    *,
+    settlement: date,
+) -> tuple[tuple[date, ...], tuple[float, ...]]:
+    date_to_time: dict[date, float] = {settlement: 0.0}
+    for position in positions:
+        for period in position.float_periods:
+            if period.start_date >= settlement:
+                date_to_time.setdefault(period.start_date, float(period.t_start))
+            if period.end_date >= settlement:
+                date_to_time.setdefault(period.end_date, float(period.t_end))
+    ordered_dates = tuple(sorted(date_to_time))
+    ordered_times = tuple(float(date_to_time[observation_date]) for observation_date in ordered_dates)
+    return ordered_dates, ordered_times
+
+
 def _step_index(time: float, *, maturity: float, n_steps: int) -> int:
     if maturity <= 0.0 or n_steps <= 0:
         return 0
@@ -765,6 +824,76 @@ def _period_by_dates(
         if period.start_date == start_date and period.end_date == end_date:
             return period
     return None
+
+
+def _resolve_swap_portfolio_positions(
+    positions: Mapping[str, SwapSpec | SwapPayoff] | Book,
+    *,
+    settlement: date,
+) -> tuple[_ResolvedSwapPortfolioPosition, ...]:
+    if isinstance(positions, Book):
+        position_items = tuple((name, positions[name], positions.notional(name)) for name in positions)
+    elif isinstance(positions, Mapping):
+        position_items = tuple((str(name), instrument, 1.0) for name, instrument in positions.items())
+    else:
+        raise TypeError("Swap portfolio positions must be provided as a mapping or Book")
+
+    resolved_positions: list[_ResolvedSwapPortfolioPosition] = []
+    for name, instrument, position_multiplier in position_items:
+        spec = _coerce_swap_spec(instrument)
+        fixed_periods = _resolve_swap_periods(
+            spec.start_date,
+            spec.end_date,
+            spec.fixed_frequency,
+            leg_day_count=spec.fixed_day_count,
+            time_origin=settlement,
+        )
+        float_periods = _resolve_swap_periods(
+            spec.start_date,
+            spec.end_date,
+            spec.float_frequency,
+            leg_day_count=spec.float_day_count,
+            time_origin=settlement,
+        )
+        resolved_positions.append(
+            _ResolvedSwapPortfolioPosition(
+                name=str(name),
+                spec=spec,
+                fixed_periods=fixed_periods,
+                float_periods=float_periods,
+                position_multiplier=float(position_multiplier),
+            )
+        )
+
+    if not resolved_positions:
+        raise ValueError("Swap portfolio future-value cube requires at least one position")
+    return tuple(resolved_positions)
+
+
+def _coerce_swap_spec(instrument: SwapSpec | SwapPayoff) -> SwapSpec:
+    if isinstance(instrument, SwapSpec):
+        return instrument
+    if isinstance(instrument, SwapPayoff):
+        return instrument.spec
+    raise TypeError(
+        "Swap portfolio positions must be SwapSpec or SwapPayoff instances"
+    )
+
+
+def _portfolio_reference_fixed_rate(
+    positions: tuple[_ResolvedSwapPortfolioPosition, ...],
+) -> float:
+    weighted_rate_sum = 0.0
+    weight_sum = 0.0
+    for position in positions:
+        weight = abs(float(position.spec.notional) * float(position.position_multiplier))
+        if weight <= 0.0:
+            continue
+        weighted_rate_sum += weight * float(position.spec.fixed_rate)
+        weight_sum += weight
+    if weight_sum > 0.0:
+        return weighted_rate_sum / weight_sum
+    return float(np.mean([float(position.spec.fixed_rate) for position in positions]))
 
 
 def _coerce_path_vector(values, *, n_paths: int):
