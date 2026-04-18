@@ -5,13 +5,15 @@ from datetime import date
 import numpy as raw_np
 import pytest
 
-pytest.importorskip("QuantLib")
-
 # --- Trellis ---
 from trellis.curves.credit_curve import CreditCurve
 from trellis.curves.yield_curve import YieldCurve
 
 SETTLE = date(2024, 11, 15)
+
+
+def _require_quantlib():
+    pytest.importorskip("QuantLib")
 
 
 def trellis_survival(hazard_rate, t):
@@ -20,6 +22,7 @@ def trellis_survival(hazard_rate, t):
 
 
 def quantlib_survival(hazard_rate, t):
+    _require_quantlib()
     import QuantLib as ql
     today = ql.Date(15, 11, 2024)
     ql.Settings.instance().evaluationDate = today

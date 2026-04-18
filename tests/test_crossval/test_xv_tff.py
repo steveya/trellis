@@ -14,12 +14,6 @@ import pytest
 # Set protobuf workaround before any TFF import
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
-try:
-    import tf_quant_finance as tff
-    HAS_TFF = True
-except (ImportError, TypeError):
-    HAS_TFF = False
-
 # --- Trellis ---
 from trellis.models.calibration.implied_vol import _bs_price
 from trellis.models.black import black76_call
@@ -31,13 +25,16 @@ from trellis.models.transforms.fft_pricer import fft_price
 
 S0, K, r, sigma, T = 100.0, 100.0, 0.05, 0.20, 1.0
 
-pytestmark = pytest.mark.skipif(not HAS_TFF, reason="tf-quant-finance not installed")
+
+def _tff():
+    return pytest.importorskip("tf_quant_finance", reason="tf-quant-finance not installed")
 
 
 class TestBSCrossValTFF:
 
     def test_european_call(self):
         """Trellis BS call matches TFF."""
+        tff = _tff()
         trellis_call = _bs_price(S0, K, T, r, sigma, "call")
 
         tff_call = float(tff.black_scholes.option_price(
@@ -54,6 +51,7 @@ class TestBSCrossValTFF:
         )
 
     def test_european_put(self):
+        tff = _tff()
         trellis_put = _bs_price(S0, K, T, r, sigma, "put")
 
         tff_put = float(tff.black_scholes.option_price(
@@ -68,6 +66,7 @@ class TestBSCrossValTFF:
         assert trellis_put == pytest.approx(tff_put, rel=1e-4)
 
     def test_otm_call(self):
+        tff = _tff()
         K_otm = 120.0
         trellis_call = _bs_price(S0, K_otm, T, r, sigma, "call")
 
@@ -84,6 +83,7 @@ class TestBSCrossValTFF:
 
     def test_multiple_strikes(self):
         """Vectorized: multiple strikes at once."""
+        tff = _tff()
         strikes = [80.0, 90.0, 100.0, 110.0, 120.0]
         tff_prices = tff.black_scholes.option_price(
             volatilities=raw_np.array([sigma] * len(strikes)),
@@ -104,6 +104,7 @@ class TestHestonCrossValTFF:
 
     def test_heston_call(self):
         """Trellis Heston FFT matches TFF Heston."""
+        tff = _tff()
         from trellis.models.processes.heston import Heston
 
         # Heston parameters
@@ -143,6 +144,7 @@ class TestAmericanCrossValTFF:
 
     def test_american_put_tree_vs_tff(self):
         """Trellis CRR tree American put vs TFF approximation."""
+        tff = _tff()
         # Trellis tree
         tree = BinomialTree.crr(S0, T, 500, r, sigma)
         def put_payoff(step, node):

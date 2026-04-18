@@ -18,7 +18,9 @@ from trellis.agent.financepy_reference import price_financepy_reference
 
 ROOT = Path(__file__).resolve().parents[2]
 
-pytest.importorskip("financepy")
+
+def _require_financepy() -> None:
+    pytest.importorskip("financepy")
 
 
 def test_select_financepy_benchmark_tasks_filters_requested_ids():
@@ -45,6 +47,7 @@ def test_persist_financepy_benchmark_record_writes_history_and_latest(tmp_path):
 
 
 def test_price_financepy_reference_supports_equity_vanilla_and_fx():
+    _require_financepy()
     tasks = {task["id"]: task for task in load_financepy_benchmark_tasks(root=ROOT)}
     equity = price_financepy_reference(tasks["F001"], root=ROOT)
     fx = price_financepy_reference(tasks["F002"], root=ROOT)
@@ -72,6 +75,7 @@ def test_financepy_benchmark_manifest_includes_tranche_two_families():
     ],
 )
 def test_price_financepy_reference_supports_tranche_two_families(task_id, expected_outputs):
+    _require_financepy()
     tasks = {task["id"]: task for task in load_financepy_benchmark_tasks(root=ROOT)}
     result = price_financepy_reference(tasks[task_id], root=ROOT)
 

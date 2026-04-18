@@ -32,8 +32,12 @@ strata:
 
 - ``crossval`` for independent-library cross-checks
 - ``verification`` for numerical or analytical reference tests
+- ``task_challenge`` for proof-style task challenge regressions under
+  ``tests/test_tasks/``
 - ``global_workflow`` for user-facing workflow tests that span modules
 - ``legacy_compat`` for deprecated or compatibility-only behavior
+- ``freshness`` for release-gate freshness contracts such as cassette age
+  validation
 
 The stale-test hygiene layer now sits alongside those strata rather than
 replacing them. Use ``scripts/test_hygiene.py`` to inventory `skip`, `xfail`,
@@ -70,6 +74,12 @@ The repo root ``Makefile`` now exposes the explicit gate entrypoints:
 - ``make gate-pr`` for PR-ready validation
 - ``make gate-canary`` for the focused live canary subset
 - ``make gate-release`` for the broader replay/drift/freshness release gate
+
+``make gate-pr`` now skips the slow proof/reference layers
+(``tests/test_crossval/``, ``tests/test_verification/``, ``tests/test_tasks/``,
+and cassette freshness) and keeps those in ``make gate-release`` instead. The
+intent is to keep ordinary merge validation centered on core correctness while
+still preserving the broader numerical/reference evidence before releases.
 
 Use ``scripts/should_run_canary.py`` before paying for the live canary subset.
 The helper reads local changed files from git status by default and recommends
@@ -538,6 +548,7 @@ Useful commands:
    /Users/steveyang/miniforge3/bin/python3 scripts/remediate.py --analyze-only
    /Users/steveyang/miniforge3/bin/python3 -m pytest tests -x -q -m "crossval and not integration"
    /Users/steveyang/miniforge3/bin/python3 -m pytest tests -x -q -m "verification and not integration"
+   /Users/steveyang/miniforge3/bin/python3 -m pytest tests -x -q -m "task_challenge and not integration"
    /Users/steveyang/miniforge3/bin/python3 -m pytest tests -x -q -m "global_workflow and not integration"
 
 Related Reading

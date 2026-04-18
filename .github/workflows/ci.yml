@@ -52,8 +52,13 @@ jobs:
             git diff --check "${base_sha}" "${head_sha}" --
           fi
 
-      - name: Run non-integration test suite
-        run: python -m pytest tests/ -x -q -m "not integration"
+      - name: Run PR gate
+        if: github.event_name == 'pull_request'
+        run: make gate-pr PYTHON=python
+
+      - name: Run release gate
+        if: github.event_name == 'push'
+        run: make gate-release PYTHON=python
 
   typecheck:
     name: typecheck

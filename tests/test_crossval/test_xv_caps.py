@@ -5,8 +5,6 @@ from datetime import date
 import numpy as raw_np
 import pytest
 
-pytest.importorskip("QuantLib")
-
 # --- Trellis ---
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
@@ -16,6 +14,10 @@ from trellis.instruments.cap import CapFloorSpec, CapPayoff, FloorPayoff
 from trellis.models.vol_surface import FlatVol
 
 SETTLE = date(2024, 11, 15)
+
+
+def _require_quantlib():
+    pytest.importorskip("QuantLib")
 
 
 def trellis_cap_price(rate=0.05, vol=0.20, strike=0.05, years=5):
@@ -31,6 +33,7 @@ def trellis_cap_price(rate=0.05, vol=0.20, strike=0.05, years=5):
 
 
 def quantlib_cap_price(rate=0.05, vol=0.20, strike=0.05, years=5):
+    _require_quantlib()
     import QuantLib as ql
 
     today = ql.Date(15, 11, 2024)

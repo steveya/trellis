@@ -38,8 +38,10 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "integration: Full integration tests requiring live LLM")
     config.addinivalue_line("markers", "crossval: Cross-validation tests against independent libraries or engines")
     config.addinivalue_line("markers", "verification: Numerical or analytical verification tests against trusted references")
+    config.addinivalue_line("markers", "task_challenge: Proof-style task challenge tests that defend benchmark/task workflows")
     config.addinivalue_line("markers", "global_workflow: End-to-end or user-facing workflow tests spanning multiple modules")
     config.addinivalue_line("markers", "legacy_compat: Compatibility tests that defend deprecated or legacy-only behavior")
+    config.addinivalue_line("markers", "freshness: Release-gate tests that validate cassette freshness or similar age-based contracts")
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -54,6 +56,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(pytest.mark.crossval)
         if rel_path.startswith("tests/test_verification/"):
             item.add_marker(pytest.mark.verification)
+        if rel_path.startswith("tests/test_tasks/"):
+            item.add_marker(pytest.mark.task_challenge)
         if rel_path in _GLOBAL_WORKFLOW_TEST_PATHS:
             item.add_marker(pytest.mark.global_workflow)
 

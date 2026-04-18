@@ -8,9 +8,6 @@ from datetime import date
 import numpy as np
 import pytest
 
-pytest.importorskip("QuantLib")
-pytest.importorskip("financepy")
-
 # --- Trellis ---
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import DeterministicCashflowPayoff
@@ -27,6 +24,14 @@ FACE = 100.0
 RATE = 0.05
 
 
+def _require_quantlib():
+    pytest.importorskip("QuantLib")
+
+
+def _require_financepy():
+    pytest.importorskip("financepy")
+
+
 def trellis_bond_price(rate=RATE, settle=SETTLE):
     bond = Bond(face=FACE, coupon=COUPON, maturity_date=MATURITY,
                 maturity=10, frequency=2)
@@ -39,6 +44,7 @@ def trellis_bond_price(rate=RATE, settle=SETTLE):
 # ---------------------------------------------------------------------------
 
 def quantlib_bond_price(rate=RATE, settle=SETTLE):
+    _require_quantlib()
     import QuantLib as ql
 
     settle_ql = ql.Date(settle.day, settle.month, settle.year)
@@ -71,6 +77,7 @@ def quantlib_bond_price(rate=RATE, settle=SETTLE):
 # ---------------------------------------------------------------------------
 
 def financepy_bond_price(rate=RATE):
+    _require_financepy()
     from financepy.products.bonds.bond import Bond as FPBond
     from financepy.utils.date import Date as FPDate
     from financepy.utils.frequency import FrequencyTypes

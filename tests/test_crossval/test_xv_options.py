@@ -5,9 +5,6 @@ from datetime import date
 import numpy as raw_np
 import pytest
 
-pytest.importorskip("QuantLib")
-pytest.importorskip("financepy")
-
 # --- Trellis ---
 from trellis.models.black import black76_call, black76_put
 from trellis.models.trees.binomial import BinomialTree
@@ -17,11 +14,20 @@ from trellis.models.calibration.implied_vol import implied_vol, _bs_price
 S0, K, r, sigma, T = 100.0, 100.0, 0.05, 0.20, 1.0
 
 
+def _require_quantlib():
+    pytest.importorskip("QuantLib")
+
+
+def _require_financepy():
+    pytest.importorskip("financepy")
+
+
 # ---------------------------------------------------------------------------
 # QuantLib references
 # ---------------------------------------------------------------------------
 
 def ql_european_call():
+    _require_quantlib()
     import QuantLib as ql
     today = ql.Date(15, 11, 2024)
     ql.Settings.instance().evaluationDate = today
@@ -47,6 +53,7 @@ def ql_european_call():
 
 
 def ql_american_put():
+    _require_quantlib()
     import QuantLib as ql
     today = ql.Date(15, 11, 2024)
     ql.Settings.instance().evaluationDate = today
@@ -76,6 +83,7 @@ def ql_american_put():
 # ---------------------------------------------------------------------------
 
 def fp_european_call():
+    _require_financepy()
     from financepy.products.equity.equity_vanilla_option import EquityVanillaOption
     from financepy.utils.date import Date as FPDate
     from financepy.utils.global_types import OptionTypes

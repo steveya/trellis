@@ -16,14 +16,17 @@ non-integration strata used during review:
 
 - `crossval`
 - `verification`
+- `task_challenge`
 - `global_workflow`
 - `legacy_compat`
+- `freshness`
 
 Useful selector examples:
 
 ```bash
 /Users/steveyang/miniforge3/bin/python3 -m pytest tests -x -q -m "legacy_compat and not integration"
 /Users/steveyang/miniforge3/bin/python3 -m pytest tests -x -q -m "global_workflow and not integration"
+/Users/steveyang/miniforge3/bin/python3 -m pytest tests -x -q -m "task_challenge and not integration"
 ```
 
 ## Legacy-Only Set
