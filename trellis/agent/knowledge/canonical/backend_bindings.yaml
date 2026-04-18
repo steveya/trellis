@@ -64,6 +64,22 @@ bindings:
             symbol: price_cds_analytical
             role: route_helper
 
+  - route_id: equity_chooser_analytical
+    engine_family: analytical
+    route_family: chooser_option
+    primitives:
+      - module: trellis.models.analytical.equity_exotics
+        symbol: price_equity_chooser_option_analytical
+        role: route_helper
+
+  - route_id: equity_compound_analytical
+    engine_family: analytical
+    route_family: compound_option
+    primitives:
+      - module: trellis.models.analytical.equity_exotics
+        symbol: price_equity_compound_option_analytical
+        role: route_helper
+
   - route_id: credit_basket_nth_to_default
     engine_family: analytical
     route_family: nth_to_default
@@ -489,22 +505,6 @@ bindings:
         primitives:
           - module: trellis.models.analytical.equity_exotics
             symbol: price_equity_fixed_lookback_option_analytical
-            role: route_helper
-      - when:
-          instrument: chooser_option
-          exercise_style: [european]
-          model_family: [equity_diffusion]
-        primitives:
-          - module: trellis.models.analytical.equity_exotics
-            symbol: price_equity_chooser_option_analytical
-            role: route_helper
-      - when:
-          instrument: compound_option
-          exercise_style: [european]
-          model_family: [equity_diffusion]
-        primitives:
-          - module: trellis.models.analytical.equity_exotics
-            symbol: price_equity_compound_option_analytical
             role: route_helper
       - when:
           payoff_family: composite_option

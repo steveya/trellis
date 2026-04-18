@@ -134,6 +134,64 @@ routes:
         discount_curve: [market_state.discount]
         credit_curve: [market_state.credit_curve]
 
+  - id: equity_chooser_analytical
+    engine_family: analytical
+    route_family: chooser_option
+    status: promoted
+    confidence: 1.0
+    match:
+      methods: [analytical]
+      instruments: [chooser_option]
+    admissibility:
+      control_styles: [identity]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [terminal_markov]
+      supports_calibration: false
+    primitives:
+      - module: trellis.models.analytical.equity_exotics
+        symbol: price_equity_chooser_option_analytical
+        role: route_helper
+    adapters: []
+    notes:
+      - "Use the chooser helper with `market_state` and `spec`; keep the critical-spot solve inside the shared helper."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        black_vol_surface: [market_state.vol_surface]
+
+  - id: equity_compound_analytical
+    engine_family: analytical
+    route_family: compound_option
+    status: promoted
+    confidence: 1.0
+    match:
+      methods: [analytical]
+      instruments: [compound_option]
+    admissibility:
+      control_styles: [identity]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [terminal_markov]
+      supports_calibration: false
+    primitives:
+      - module: trellis.models.analytical.equity_exotics
+        symbol: price_equity_compound_option_analytical
+        role: route_helper
+    adapters: []
+    notes:
+      - "Use the compound-option helper with `market_state` and `spec`; keep the critical-spot solve inside the shared helper."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        black_vol_surface: [market_state.vol_surface]
+
   - id: credit_basket_nth_to_default
     engine_family: analytical
     route_family: nth_to_default
@@ -718,7 +776,7 @@ routes:
       # retiring). Once the decomposer emits a more specific
       # ``payoff_family`` for quanto / FX-vanilla (Phase 2+ work), this
       # exclusion becomes redundant and can be dropped.
-      instruments: [barrier_option, digital_option, lookback_option, chooser_option, compound_option, cliquet_option, variance_swap]
+      instruments: [barrier_option, digital_option, lookback_option, cliquet_option, variance_swap]
       required_market_data: [black_vol_surface]
       payoff_family: [vanilla_option, basket_option, swaption, barrier_option, variance_swap]
       exercise: [european, bermudan, none]
@@ -732,14 +790,12 @@ routes:
       supports_sensitivity_outputs: true
       supported_state_tags: [terminal_markov, recombining_safe, schedule_state, path_dependent]
       supports_calibration: false
-    # QUA-920 / QUA-910 / QUA-911: the first four structural when-clauses
-    # below stay in DSL form, while the absorbed equity-exotic helper clauses
-    # stay in legacy tag-filter form. The current ProductIR does not yet
-    # expose distinct payoff-family tags for digital / lookback / chooser /
-    # compound / cliquet; chooser and compound also share the same
-    # ``payoff_traits`` tuple as digital. Their helper selection therefore
-    # stays instrument-keyed until the semantic layer grows a narrower
-    # discriminant than ``composite_option``.
+    # QUA-920 / QUA-910: the first four structural when-clauses below stay in
+    # DSL form, while the absorbed equity-exotic helper clauses stay in legacy
+    # trait-filter form. The current ProductIR does not yet expose distinct
+    # payoff-family tags for digital / lookback / cliquet, so legacy
+    # ``payoff_traits`` filters remain the narrowest non-overmatching contract
+    # until the semantic layer is refined.
     conditional_primitives:
       - when:
           contract_pattern:
@@ -857,27 +913,6 @@ routes:
         notes:
           - "Use the dedicated lookback helper with `market_state` and `spec`; do not restate the running-extreme formula inside the generated payoff."
       - when:
-          instrument: chooser_option
-          exercise_style: [european]
-          model_family: [equity_diffusion]
-        primitives:
-          - module: trellis.models.analytical.equity_exotics
-            symbol: price_equity_chooser_option_analytical
-            role: route_helper
-        adapters: []
-        notes:
-          - "Use the chooser helper with `market_state` and `spec`; keep the critical-spot solve inside the shared helper."
-      - when:
-          instrument: compound_option
-          exercise_style: [european]
-          model_family: [equity_diffusion]
-        primitives:
-          - module: trellis.models.analytical.equity_exotics
-            symbol: price_equity_compound_option_analytical
-            role: route_helper
-        adapters: []
-        notes:
-          - "Use the compound-option helper with `market_state` and `spec`; keep the critical-spot solve inside the shared helper."
       - when:
           payoff_family: composite_option
           payoff_traits: [vanilla_option]
