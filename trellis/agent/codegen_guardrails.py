@@ -37,6 +37,10 @@ from trellis.agent.knowledge.import_registry import (
     suggest_tests_for_symbol,
 )
 from trellis.agent.knowledge.methods import normalize_method
+from trellis.agent.semantic_tokens import (
+    prompt_display_payoff_family,
+    prompt_display_route_family,
+)
 
 
 COMMON_APPROVED_MODULES = (
@@ -588,8 +592,12 @@ def _render_backend_binding_lines(plan: GenerationPlan, *, compact: bool) -> lis
     lines = ["- Backend binding:"]
     lines.append(f"  - Route: `{plan.primitive_plan.route}`")
     lines.append(f"  - Engine family: `{plan.primitive_plan.engine_family}`")
-    if plan.primitive_plan.route_family:
-        lines.append(f"  - Route family: `{plan.primitive_plan.route_family}`")
+    display_route_family = prompt_display_route_family(
+        instrument=plan.instrument_type,
+        route_family=plan.primitive_plan.route_family,
+    )
+    if display_route_family:
+        lines.append(f"  - Route family: `{display_route_family}`")
     if not compact:
         lines.append(f"  - Route score: `{plan.primitive_plan.score:.2f}`")
     if plan.primitive_plan.primitives:
@@ -961,8 +969,12 @@ def render_semantic_repair_card(plan: GenerationPlan) -> str:
     if plan.primitive_plan is not None:
         lines.append(f"- Route: `{plan.primitive_plan.route}`")
         lines.append(f"- Engine family: `{plan.primitive_plan.engine_family}`")
-        if plan.primitive_plan.route_family:
-            lines.append(f"- Route family: `{plan.primitive_plan.route_family}`")
+        display_route_family = prompt_display_route_family(
+            instrument=plan.instrument_type,
+            route_family=plan.primitive_plan.route_family,
+        )
+        if display_route_family:
+            lines.append(f"- Route family: `{display_route_family}`")
         if plan.primitive_plan.primitives:
             lines.append("- Required primitives:")
             lines.extend(
@@ -1186,7 +1198,14 @@ def _render_compiled_boundary_lines(plan: GenerationPlan, *, compact: bool) -> l
         if plan.semantic_instrument_class:
             semantic_bits.append(f"instrument=`{plan.semantic_instrument_class}`")
         if plan.semantic_payoff_family:
-            semantic_bits.append(f"payoff=`{plan.semantic_payoff_family}`")
+            semantic_bits.append(
+                "payoff=`"
+                + prompt_display_payoff_family(
+                    instrument=plan.instrument_type,
+                    payoff_family=plan.semantic_payoff_family,
+                )
+                + "`"
+            )
         if plan.semantic_underlier_structure:
             semantic_bits.append(f"structure=`{plan.semantic_underlier_structure}`")
         lines.append(f"- Semantic contract: {', '.join(semantic_bits)}")

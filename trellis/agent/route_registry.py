@@ -1458,7 +1458,8 @@ def _route_canary_task_ids(
     aliases = {
         "callable_bond": "callable",
         "puttable_bond": "puttable",
-        "credit_default_swap": "credit_default_swap",
+        "credit_default_swap": "event_triggered_two_legged_contract",
+        "event_triggered_two_legged_contract": "event_triggered_two_legged_contract",
         "quanto_option": "quanto_option",
         "swaption": "swaption",
         "basket_option": "basket_option",

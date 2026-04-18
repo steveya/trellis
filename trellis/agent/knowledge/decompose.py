@@ -14,6 +14,9 @@ from typing import TYPE_CHECKING
 
 from trellis.agent.knowledge.methods import normalize_method
 from trellis.agent.knowledge.schema import ProductDecomposition, ProductIR, RetrievalSpec
+from trellis.agent.semantic_tokens import (
+    EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY,
+)
 from trellis.core.capabilities import normalize_market_data_requirements
 
 if TYPE_CHECKING:
@@ -659,6 +662,8 @@ def _payoff_family_for(
         return "composite_option"
     if instrument in {"swaption", "bermudan_swaption"}:
         return "swaption"
+    if instrument == "cds":
+        return EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY
     if instrument == "zcb_option":
         return "zcb_option"
     if instrument == "callable_bond":
@@ -941,6 +946,8 @@ def _route_families_for(
 ) -> tuple[str, ...]:
     """Return the exact route-family labels that remain semantically valid."""
     families: list[str] = []
+    if payoff_family == EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY:
+        families.append(EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY)
     if instrument == "nth_to_default":
         families.append("nth_to_default")
     if (

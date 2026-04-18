@@ -139,7 +139,7 @@ class TestRegistryValidation:
         spec = RouteSpec(
             id="synthetic_credit_mc",
             engine_family="monte_carlo",
-            route_family="credit_default_swap",
+            route_family="event_triggered_two_legged_contract",
             status="promoted",
             confidence=1.0,
             match_methods=("monte_carlo",),
@@ -163,11 +163,11 @@ class TestRegistryValidation:
         )
         ir = ProductIR(
             instrument="cds",
-            payoff_family="credit_default_swap",
+            payoff_family="event_triggered_two_legged_contract",
             schedule_dependence=True,
             state_dependence="pathwise_only",
             candidate_engine_families=("monte_carlo",),
-            route_families=("credit_default_swap",),
+            route_families=("event_triggered_two_legged_contract",),
         )
 
         decision = evaluate_route_capability_match(spec, ir)
@@ -207,7 +207,7 @@ class TestRegistryValidation:
                 RouteSpec(
                     id="family_mc",
                     engine_family="monte_carlo",
-                    route_family="credit_default_swap",
+                    route_family="event_triggered_two_legged_contract",
                     status="promoted",
                     confidence=1.0,
                     match_methods=("monte_carlo",),
@@ -234,11 +234,11 @@ class TestRegistryValidation:
         )
         ir = ProductIR(
             instrument="cds",
-            payoff_family="credit_default_swap",
+            payoff_family="event_triggered_two_legged_contract",
             schedule_dependence=True,
             state_dependence="pathwise_only",
             candidate_engine_families=("monte_carlo",),
-            route_families=("credit_default_swap",),
+            route_families=("event_triggered_two_legged_contract",),
         )
 
         matches = match_candidate_routes(registry, "monte_carlo", ir)
@@ -443,7 +443,11 @@ class TestQuantoRoutes:
 # ---------------------------------------------------------------------------
 
 class TestCreditRoutes:
-    CDS_IR = ProductIR(instrument="cds", payoff_family="credit_default_swap")
+    CDS_IR = ProductIR(
+        instrument="cds",
+        payoff_family="event_triggered_two_legged_contract",
+        route_families=("event_triggered_two_legged_contract",),
+    )
     NTD_IR = ProductIR(instrument="nth_to_default", payoff_family="nth_to_default")
 
     def test_cds_analytical(self, registry):
@@ -465,7 +469,20 @@ class TestCreditRoutes:
     def test_route_family(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap_analytical"][0]
         new = resolve_route_family(spec, self.CDS_IR)
-        assert new == "credit_default_swap"
+        assert new == "event_triggered_two_legged_contract"
+
+    def test_cds_analytical_does_not_require_instrument_key(self, registry):
+        structural_only_ir = ProductIR(
+            instrument="synthetic_event_wrapper",
+            payoff_family="event_triggered_two_legged_contract",
+            route_families=("event_triggered_two_legged_contract",),
+            schedule_dependence=True,
+            state_dependence="schedule_state",
+        )
+
+        new = _new_routes(registry, "analytical", structural_only_ir)
+
+        assert new == ("credit_default_swap_analytical",)
 
     def test_cds_analytical_admissibility_uses_credit_family_state_tags(self, registry):
         from trellis.agent.semantic_contract_compiler import compile_semantic_contract

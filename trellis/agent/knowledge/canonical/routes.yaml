@@ -76,12 +76,12 @@ routes:
 
   - id: credit_default_swap_analytical
     engine_family: analytical
-    route_family: credit_default_swap
+    route_family: event_triggered_two_legged_contract
     status: promoted
     confidence: 1.0
     match:
       methods: [analytical]
-      instruments: [cds]
+      payoff_family: [event_triggered_two_legged_contract]
     admissibility:
       control_styles: [identity]
       event_support: automatic
@@ -108,12 +108,12 @@ routes:
 
   - id: credit_default_swap_monte_carlo
     engine_family: monte_carlo
-    route_family: credit_default_swap
+    route_family: event_triggered_two_legged_contract
     status: promoted
     confidence: 1.0
     match:
       methods: [monte_carlo, qmc]
-      instruments: [cds]
+      payoff_family: [event_triggered_two_legged_contract]
     admissibility:
       control_styles: [identity]
       event_support: automatic

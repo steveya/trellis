@@ -304,7 +304,7 @@ def test_platform_trace_persists_dsl_family_ir_summary(tmp_path):
     )
     raw = Path(trace_path).read_text()
 
-    assert "dsl_family_ir_type: CreditDefaultSwapIR" in raw
+    assert "dsl_family_ir_type: EventTriggeredTwoLeggedContractIR" in raw
     assert "schedule_builder_symbol: build_cds_schedule" in raw
 
 

@@ -6,6 +6,9 @@ from dataclasses import dataclass, field
 import re
 from typing import TYPE_CHECKING
 
+from trellis.agent.semantic_tokens import (
+    EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY,
+)
 from trellis.core.types import TimelineRole
 
 if TYPE_CHECKING:
@@ -611,20 +614,24 @@ class CorrelatedBasketMonteCarloIR(BaseFamilyLoweringIR):
 
 
 @dataclass(frozen=True)
-class CreditDefaultSwapIR(BaseFamilyLoweringIR):
-    """Typed lowering payload for single-name CDS helper-backed routes."""
+class EventTriggeredTwoLeggedContractIR(BaseFamilyLoweringIR):
+    """Typed lowering payload for helper-backed event-triggered two-legged routes."""
 
     pricing_mode: str = "analytical"
     schedule_builder_symbol: str = "build_cds_schedule"
     helper_symbol: str = "price_cds_analytical"
     market_mapping: str = "discount_curve_credit_curve_to_cds_legs"
     schedule_role: str = "payment_dates"
-    leg_semantics: tuple[str, ...] = ("premium_leg", "protection_leg")
+    leg_semantics: tuple[str, ...] = ("scheduled_leg", "trigger_leg")
     payment_dates: tuple[str, ...] = ()
     observable_ids: tuple[str, ...] = ()
     observable_types: tuple[str, ...] = ()
     state_field_names: tuple[str, ...] = ()
     state_tags: tuple[str, ...] = ()
+
+
+# Compatibility alias while the semantic surface migrates away from the product name.
+CreditDefaultSwapIR = EventTriggeredTwoLeggedContractIR
 
 
 @dataclass(frozen=True)
@@ -652,7 +659,7 @@ FamilyLoweringIR = (
     | VanillaEquityPDEIR
     | ExerciseLatticeIR
     | CorrelatedBasketMonteCarloIR
-    | CreditDefaultSwapIR
+    | EventTriggeredTwoLeggedContractIR
     | NthToDefaultIR
 )
 
@@ -708,9 +715,9 @@ _FAMILY_IR_MATCH_PROFILES = {
     "credit_default_swap": FamilyIRMatchProfile(
         semantic_id="credit_default_swap",
         allowed_instruments=("cds",),
-        allowed_payoff_families=("credit_default_swap",),
+        allowed_payoff_families=(EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY,),
         allowed_product_instruments=("cds",),
-        allowed_product_payoff_families=("credit_default_swap",),
+        allowed_product_payoff_families=(EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY,),
     ),
     "nth_to_default": FamilyIRMatchProfile(
         semantic_id="nth_to_default",
@@ -2436,8 +2443,8 @@ def _build_credit_default_swap_ir(
     timeline_roles: frozenset[TimelineRole],
     requested_outputs: tuple[str, ...],
     reporting_currency: str,
-) -> CreditDefaultSwapIR | None:
-    """Build the typed CDS family IR for helper-backed analytical and MC routes."""
+) -> EventTriggeredTwoLeggedContractIR | None:
+    """Build the structural two-legged event-contract IR for CDS helper-backed routes."""
     if not _is_credit_default_swap_contract(contract, product_ir):
         return None
 
@@ -2466,7 +2473,7 @@ def _build_credit_default_swap_ir(
         else ("terminal_markov", "schedule_state")
     )
 
-    return CreditDefaultSwapIR(
+    return EventTriggeredTwoLeggedContractIR(
         route_id=route_id,
         route_family=route_family,
         product_instrument=product_instrument,

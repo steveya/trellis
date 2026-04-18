@@ -257,7 +257,9 @@ Shipped family IRs:
   theta-method PDE route
 - ``ExerciseLatticeIR``
 - ``CorrelatedBasketMonteCarloIR``
-- ``CreditDefaultSwapIR``
+- ``EventTriggeredTwoLeggedContractIR`` as the structural helper-backed family
+  surface for event-triggered two-legged contracts, currently proven on
+  single-name CDS
 - ``NthToDefaultIR``
 
 For transform routes, the compiler now also carries an explicit bounded family
@@ -382,7 +384,9 @@ The typed semantic boundary is proven end-to-end for:
   equity exercise and issuer-min Hull-White callable bonds
 - ``exercise_lattice`` on callable bonds and Bermudan swaptions
 - ``correlated_basket_monte_carlo`` on ranked-observation baskets
-- ``credit_default_swap_analytical`` and ``credit_default_swap_monte_carlo`` on single-name CDS
+- ``credit_default_swap_analytical`` and ``credit_default_swap_monte_carlo`` on
+  single-name CDS, both routed through the structural
+  ``event_triggered_two_legged_contract`` family
 - ``nth_to_default_monte_carlo`` on nth-to-default basket credit
 
 These routes preserve the existing helper-backed pricing math. The work in this

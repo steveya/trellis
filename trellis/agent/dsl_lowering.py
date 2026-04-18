@@ -28,7 +28,7 @@ from trellis.agent.dsl_algebra import (
 from trellis.agent.family_lowering_ir import (
     AnalyticalBlack76IR,
     CorrelatedBasketMonteCarloIR,
-    CreditDefaultSwapIR,
+    EventTriggeredTwoLeggedContractIR,
     EventAwareMonteCarloIR,
     EventAwarePDEIR,
     ExerciseLatticeIR,
@@ -382,8 +382,8 @@ def _build_expr_for_family_ir(
             family_ir=family_ir,
             bindings=bindings,
         )
-    if isinstance(family_ir, CreditDefaultSwapIR):
-        return _build_credit_default_swap_expr_from_family_ir(
+    if isinstance(family_ir, EventTriggeredTwoLeggedContractIR):
+        return _build_event_triggered_two_legged_expr_from_family_ir(
             route_id=route_id,
             binding_id=binding_id,
             family_ir=family_ir,
@@ -1080,14 +1080,14 @@ def _build_correlated_basket_mc_expr_from_family_ir(
     return ThenExpr(terms=(binding_atom, helper_atom)), ()
 
 
-def _build_credit_default_swap_expr_from_family_ir(
+def _build_event_triggered_two_legged_expr_from_family_ir(
     *,
     route_id: str,
     binding_id: str,
-    family_ir: CreditDefaultSwapIR,
+    family_ir: EventTriggeredTwoLeggedContractIR,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
-    """Build a typed CDS schedule-builder and helper lowering."""
+    """Build a typed event-triggered two-legged schedule-builder and helper lowering."""
     schedule_builder = next(
         (
             binding

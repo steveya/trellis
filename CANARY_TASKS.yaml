@@ -27,12 +27,11 @@ canary_set:
     complexity: complex
     core: true
     estimated_cost_usd: 0.15
-    record_cassette: true
-    rationale: Legacy replay-backed credit canary retained for the CDS survival-curve path.
+    record_cassette: false
+    rationale: Credit canary retained for the CDS survival-curve path, but cassette replay is disabled while the route surface is being retired.
     covers:
       - credit
       - cds
-      - replay
 
   - id: F001
     engine_family: analytical

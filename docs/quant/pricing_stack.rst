@@ -103,7 +103,9 @@ The shipped family IRs are:
 - ``VanillaEquityPDEIR``
 - ``ExerciseLatticeIR``
 - ``CorrelatedBasketMonteCarloIR``
-- ``CreditDefaultSwapIR``
+- ``EventTriggeredTwoLeggedContractIR`` as the structural helper-backed family
+  surface for event-triggered two-legged contracts, currently proven on
+  single-name CDS
 - ``NthToDefaultIR``
 
 This is intentionally not a flat universal IR. The current stack uses
@@ -278,7 +280,9 @@ The end-to-end typed boundary is currently proven for:
 - ``bermudan_swaption_tree_v1`` on the first supported Bermudan swaption desk slice
 - ``correlated_basket_monte_carlo`` on ranked-observation baskets
 - ``range_accrual_discounted_cashflow_v1`` on the first single-index range-accrual note slice
-- ``credit_default_swap_analytical`` and ``credit_default_swap_monte_carlo`` on single-name CDS
+- ``credit_default_swap_analytical`` and ``credit_default_swap_monte_carlo`` on
+  single-name CDS, both routed through the structural
+  ``event_triggered_two_legged_contract`` family
 - ``nth_to_default_monte_carlo`` on nth-to-default basket credit
 - ``copula_loss_distribution`` on tranche-style basket-credit comparison tasks
   through the semantic-facing basket-credit helper surface

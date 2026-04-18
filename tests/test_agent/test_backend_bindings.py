@@ -126,7 +126,7 @@ def test_resolve_backend_binding_spec_captures_helper_schedule_and_cashflow_role
         cds,
         product_ir=ProductIR(
             instrument="cds",
-            payoff_family="credit_default_swap",
+            payoff_family="event_triggered_two_legged_contract",
             schedule_dependence=True,
             state_dependence="pathwise_only",
         ),

@@ -9,7 +9,7 @@ from trellis.agent.dsl_algebra import ChoiceExpr, ContractAtom, ThenExpr, Contro
 from trellis.agent.family_lowering_ir import (
     AnalyticalBlack76IR,
     CorrelatedBasketMonteCarloIR,
-    CreditDefaultSwapIR,
+    EventTriggeredTwoLeggedContractIR,
     EventAwareMonteCarloIR,
     EventAwarePDEIR,
     ExerciseLatticeIR,
@@ -544,10 +544,10 @@ def test_credit_default_swap_analytical_lowers_to_schedule_then_helper():
     lowering = blueprint.dsl_lowering
     assert lowering is not None
     assert lowering.route_id == "credit_default_swap_analytical"
-    assert lowering.route_family == "credit_default_swap"
+    assert lowering.route_family == "event_triggered_two_legged_contract"
     assert lowering.admissibility_errors == ()
     assert lowering.binding_id == "trellis.models.credit_default_swap.price_cds_analytical"
-    assert isinstance(lowering.family_ir, CreditDefaultSwapIR)
+    assert isinstance(lowering.family_ir, EventTriggeredTwoLeggedContractIR)
     assert lowering.family_ir.pricing_mode == "analytical"
     assert isinstance(lowering.normalized_expr, ThenExpr)
     schedule_builder, helper = lowering.normalized_expr.terms
@@ -577,10 +577,10 @@ def test_credit_default_swap_monte_carlo_lowers_to_schedule_then_helper():
     lowering = blueprint.dsl_lowering
     assert lowering is not None
     assert lowering.route_id == "credit_default_swap_monte_carlo"
-    assert lowering.route_family == "credit_default_swap"
+    assert lowering.route_family == "event_triggered_two_legged_contract"
     assert lowering.admissibility_errors == ()
     assert lowering.binding_id == "trellis.models.credit_default_swap.price_cds_monte_carlo"
-    assert isinstance(lowering.family_ir, CreditDefaultSwapIR)
+    assert isinstance(lowering.family_ir, EventTriggeredTwoLeggedContractIR)
     assert lowering.family_ir.pricing_mode == "monte_carlo"
     assert isinstance(lowering.normalized_expr, ThenExpr)
     schedule_builder, helper = lowering.normalized_expr.terms
@@ -598,7 +598,7 @@ def test_credit_default_swap_missing_schedule_builder_reports_binding_first_erro
         return backend_bindings_module.ResolvedBackendBindingSpec(
             route_id="credit_default_swap_analytical",
             engine_family="analytical",
-            route_family="credit_default_swap",
+            route_family="event_triggered_two_legged_contract",
             binding_id="trellis.models.credit_default_swap.price_cds_analytical",
             primitives=(
                 PrimitiveRef(

@@ -67,8 +67,7 @@ def test_route_hint_projection_includes_instruction_lifecycle_records():
     route_skills = query_skill_records(
         kind="route_hint",
         method_family="monte_carlo",
-        instrument_type="cds",
-        route_family="credit_default_swap",
+        route_family="event_triggered_two_legged_contract",
     )
     skill_ids = {record.skill_id for record in route_skills}
     summaries = [record.summary for record in route_skills]

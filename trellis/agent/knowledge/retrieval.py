@@ -17,6 +17,10 @@ from trellis.agent.knowledge.schema import (
     ProductIR,
     SimilarProductMatch,
 )
+from trellis.agent.semantic_tokens import (
+    prompt_display_payoff_family,
+    prompt_display_route_families,
+)
 from trellis.agent.knowledge.promotion import (
     detect_adapter_lifecycle_records,
     format_adapter_lifecycle_warnings,
@@ -208,10 +212,12 @@ def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = Fa
     # 3b. Product semantics from ProductIR
     product_ir: ProductIR | None = knowledge.get("product_ir")
     if product_ir is not None:
+        display_payoff_family = _prompt_display_payoff_family(product_ir)
+        display_route_families = _prompt_display_route_families(product_ir)
         lines = [
             "## Product Semantics\n",
             f"- Instrument: `{product_ir.instrument}`",
-            f"- Payoff family: `{product_ir.payoff_family}`",
+            f"- Payoff family: `{display_payoff_family}`",
             f"- Exercise style: `{product_ir.exercise_style}`",
             f"- State dependence: `{product_ir.state_dependence}`",
             f"- Schedule dependence: `{product_ir.schedule_dependence}`",
@@ -227,10 +233,10 @@ def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = Fa
                 "- Candidate engine families: "
                 + ", ".join(f"`{family}`" for family in product_ir.candidate_engine_families)
             )
-        if getattr(product_ir, "route_families", ()):
+        if display_route_families:
             lines.append(
                 "- Exact route families: "
-                + ", ".join(f"`{family}`" for family in product_ir.route_families)
+                + ", ".join(f"`{family}`" for family in display_route_families)
             )
         sections.append("\n".join(lines))
 
@@ -668,12 +674,18 @@ def format_distilled_knowledge_for_prompt(
         limits = _DISTILLED_LIMITS["builder"]
         lines = []
         api_map = format_api_map_for_prompt(compact=True)
+        instrument_label = (
+            str(getattr(product_ir, "instrument", "") or "").strip().lower()
+            if product_ir is not None
+            else ""
+        )
         if api_map:
             lines.append(api_map)
         lines.append("## Distilled Build Memory\n")
         if product_ir is not None:
+            display_payoff_family = _prompt_display_payoff_family(product_ir)
             lines.append(
-                f"- Product: `{product_ir.instrument}` / `{product_ir.payoff_family}` / "
+                f"- Product: `{product_ir.instrument}` / `{display_payoff_family}` / "
                 f"`{product_ir.exercise_style}`"
             )
         if cookbook is not None:
@@ -693,7 +705,7 @@ def format_distilled_knowledge_for_prompt(
             lines.append("- Repeated fixes to reuse:")
             for lesson in _take_limited(lessons, limits["lessons"]):
                 lines.append(f"  - `{lesson.title}` -> {lesson.fix.strip()}")
-        if similar_products:
+        if similar_products and instrument_label not in {"cds", "credit_default_swap"}:
             lines.append("- Nearest known products:")
             for match in _take_limited(similar_products, 2):
                 lines.append(f"  - `{match.instrument}` ({match.score:.0%})")
@@ -752,15 +764,16 @@ def format_distilled_knowledge_for_prompt(
             lines.append(api_map)
         lines.append("## Distilled Routing Memory\n")
         if product_ir is not None:
+            display_route_families = _prompt_display_route_families(product_ir)
             lines.append(
                 "- Route cues: "
                 f"`{product_ir.instrument}`, `{product_ir.model_family}`, "
                 + ", ".join(f"`{family}`" for family in product_ir.candidate_engine_families[:4])
             )
-            if getattr(product_ir, "route_families", ()):
+            if display_route_families:
                 lines.append(
                     "- Exact route families: "
-                    + ", ".join(f"`{family}`" for family in product_ir.route_families[:4])
+                    + ", ".join(f"`{family}`" for family in display_route_families[:4])
                 )
         if principles:
             lines.append("- Routing principles:")
@@ -1015,6 +1028,22 @@ def _omission_notice(label: str, total: int, shown: int) -> str:
     if omitted <= 0:
         return ""
     return f"- [omitted {omitted} additional {label}]"
+
+
+def _prompt_display_payoff_family(product_ir: ProductIR) -> str:
+    """Return the stable payoff-family label used in LLM-facing prompt views."""
+    return prompt_display_payoff_family(
+        instrument=getattr(product_ir, "instrument", ""),
+        payoff_family=getattr(product_ir, "payoff_family", ""),
+    )
+
+
+def _prompt_display_route_families(product_ir: ProductIR) -> tuple[str, ...]:
+    """Return stable route-family labels used in LLM-facing prompt views."""
+    return prompt_display_route_families(
+        instrument=getattr(product_ir, "instrument", ""),
+        route_families=tuple(getattr(product_ir, "route_families", ()) or ()),
+    )
 
 
 def _truncate_text(text: str, max_chars: int, *, label: str) -> str:

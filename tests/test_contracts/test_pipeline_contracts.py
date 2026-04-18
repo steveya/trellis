@@ -15,6 +15,7 @@ from tests.test_contracts.conftest import (
     CANARY_META,
     TASK_ENTRIES,
     cassette_available,
+    cassette_skip_reason,
     cassette_path_for,
 )
 
@@ -37,7 +38,7 @@ def _pipeline_test(task_id: str, instrument_type: str | None = None):
     @pytest.mark.tier2
     @pytest.mark.skipif(
         not cassette_available(task_id),
-        reason=f"Cassette not recorded for {task_id}. Run: python scripts/record_cassettes.py --task {task_id}",
+        reason=cassette_skip_reason(task_id),
     )
     class _PipelineTest:
         @pytest.mark.parametrize("llm_cassette", [task_id], indirect=True)

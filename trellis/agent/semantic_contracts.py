@@ -16,6 +16,13 @@ from trellis.agent.semantic_concepts import (
     get_semantic_concept_definition,
     semantic_concept_summary,
 )
+from trellis.agent.semantic_tokens import (
+    EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY,
+    SCHEDULED_LEG_OBLIGATION_ID,
+    SCHEDULED_LEG_PLUS_TRIGGER_LEG_RULE,
+    SCHEDULED_PAYMENTS_AND_TRIGGER_SETTLEMENT_RULE,
+    TRIGGER_LEG_OBLIGATION_ID,
+)
 from trellis.core.capabilities import normalize_capability_name
 
 
@@ -464,9 +471,9 @@ def _build_semantic_family_registry() -> MappingProxyType:
                     target_modules=("trellis.models.credit_default_swap",),
                     primitive_families=("credit_default_swap_analytical",),
                     adapter_obligations=(
-                        "resolve_credit_curve_and_discount_curve",
-                        "build_cds_payment_schedule",
-                        "delegate_cds_leg_pricing_to_checked_helpers",
+                        "resolve_event_trigger_and_discount_inputs",
+                        "build_scheduled_leg_payment_schedule",
+                        "delegate_two_legged_event_contract_to_checked_helpers",
                     ),
                     spec_schema_hints=("credit_default_swap",),
                 ),
@@ -475,9 +482,9 @@ def _build_semantic_family_registry() -> MappingProxyType:
                     target_modules=("trellis.models.credit_default_swap",),
                     primitive_families=("credit_default_swap_monte_carlo",),
                     adapter_obligations=(
-                        "resolve_credit_curve_and_discount_curve",
-                        "build_cds_payment_schedule",
-                        "delegate_cds_leg_pricing_to_checked_helpers",
+                        "resolve_event_trigger_and_discount_inputs",
+                        "build_scheduled_leg_payment_schedule",
+                        "delegate_two_legged_event_contract_to_checked_helpers",
                     ),
                     spec_schema_hints=("credit_default_swap",),
                 ),
@@ -2845,29 +2852,34 @@ def make_credit_default_swap_contract(
         semantic_version="c2.1",
         instrument_class="cds",
         instrument_aliases=("cds", "credit_default_swap", "single_name_cds"),
-        payoff_family="credit_default_swap",
+        payoff_family=EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY,
         timeline=_default_semantic_timeline(
             schedule,
             settlement_dates=schedule,
             state_update_dates=schedule,
         ),
         underlier_structure="single_reference_entity",
-        payoff_rule="single_name_cds_legs",
-        settlement_rule="premium_schedule_and_default_settlement",
-        payoff_traits=("credit_spread_dependence", "default_contingent", "premium_leg"),
+        payoff_rule=SCHEDULED_LEG_PLUS_TRIGGER_LEG_RULE,
+        settlement_rule=SCHEDULED_PAYMENTS_AND_TRIGGER_SETTLEMENT_RULE,
+        payoff_traits=(
+            "credit_spread_dependence",
+            "default_contingent",
+            "scheduled_leg",
+            "trigger_leg",
+        ),
         observables=(
             ObservableSpec(
-                observable_id="reference_entity_survival",
+                observable_id="event_trigger_process",
                 observable_type="credit_curve",
-                description="Survival term structure for the single reference entity.",
+                description="Event-trigger term structure for the single reference entity.",
                 source="credit_curve",
                 schedule_role="observation_dates",
                 availability_phase="observation",
             ),
             ObservableSpec(
-                observable_id="premium_payment_schedule",
+                observable_id="scheduled_leg_payment_schedule",
                 observable_type="cashflow_schedule",
-                description="Premium-leg payment schedule used for accrual and settlement.",
+                description="Scheduled-leg payment schedule used for accrual and settlement.",
                 source="contract_terms",
                 schedule_role="observation_dates",
                 availability_phase="determination",
@@ -2875,42 +2887,46 @@ def make_credit_default_swap_contract(
         ),
         state_fields=(
             StateField(
-                field_name="survival_state",
+                field_name="event_trigger_state",
                 kind="event_state",
-                description="Reference-entity survival state used to price CDS premium and protection legs.",
-                source_observables=("reference_entity_survival",),
+                description=(
+                    "Event-trigger state used to price the scheduled and trigger legs."
+                ),
+                source_observables=("event_trigger_process",),
                 tags=("terminal_markov", "schedule_state"),
             ),
             StateField(
-                field_name="premium_leg_schedule",
+                field_name="scheduled_leg_schedule",
                 kind="contract_memory",
-                description="Premium payment schedule shared by analytical and Monte Carlo CDS routes.",
-                source_observables=("premium_payment_schedule",),
+                description=(
+                    "Scheduled payment schedule shared by analytical and Monte Carlo routes."
+                ),
+                source_observables=("scheduled_leg_payment_schedule",),
                 tags=("schedule_state", "recombining_safe"),
             ),
             StateField(
-                field_name="default_indicator",
+                field_name="trigger_indicator",
                 kind="contract_memory",
-                description="Pathwise default state used by Monte Carlo CDS routes.",
-                source_observables=("reference_entity_survival",),
+                description="Pathwise event indicator used by Monte Carlo trigger sampling.",
+                source_observables=("event_trigger_process",),
                 tags=("pathwise_only", "schedule_state"),
             ),
         ),
         obligations=(
             ObligationSpec(
-                obligation_id="premium_leg_cashflow",
-                settle_date_rule="premium_schedule_and_default_settlement",
-                amount_expression="running_spread_coupon_leg",
+                obligation_id=SCHEDULED_LEG_OBLIGATION_ID,
+                settle_date_rule=SCHEDULED_PAYMENTS_AND_TRIGGER_SETTLEMENT_RULE,
+                amount_expression="scheduled_leg_coupon_stream",
                 settlement_kind="cash",
                 trigger="survive_to_payment",
                 provenance="semantic_contract",
             ),
             ObligationSpec(
-                obligation_id="protection_leg_cashflow",
-                settle_date_rule="premium_schedule_and_default_settlement",
-                amount_expression="loss_given_default_payment",
+                obligation_id=TRIGGER_LEG_OBLIGATION_ID,
+                settle_date_rule=SCHEDULED_PAYMENTS_AND_TRIGGER_SETTLEMENT_RULE,
+                amount_expression="trigger_leg_loss_payment",
                 settlement_kind="cash",
-                trigger="default_before_maturity",
+                trigger="event_before_maturity",
                 provenance="semantic_contract",
             ),
         ),
@@ -2940,13 +2956,24 @@ def make_credit_default_swap_contract(
         selection_count=0,
         lock_rule="",
         aggregation_rule="",
-        maturity_settlement_rule="premium_schedule_and_default_settlement",
+        maturity_settlement_rule=SCHEDULED_PAYMENTS_AND_TRIGGER_SETTLEMENT_RULE,
         constituents=reference_names,
-        state_variables=("survival_state", "premium_leg_schedule", "default_indicator"),
-        event_transitions=("observe_credit_state", "accrue_premium_leg", "settle_on_default_or_maturity"),
+        state_variables=("event_trigger_state", "scheduled_leg_schedule", "trigger_indicator"),
+        event_transitions=(
+            "observe_trigger_state",
+            "accrue_scheduled_leg",
+            "settle_on_trigger_or_maturity",
+        ),
         event_machine=_derive_event_machine(
-            ("observe_credit_state", "accrue_premium_leg", "settle_on_default_or_maturity"),
+            ("observe_trigger_state", "accrue_scheduled_leg", "settle_on_trigger_or_maturity"),
             state_dependence="schedule_dependent",
+        ),
+        term_fields=MappingProxyType(
+            {
+                "trigger_kind": "credit_event",
+                "event_contract_shape": EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY,
+                "event_measure": "single_reference_entity_default",
+            }
         ),
     )
 
@@ -2978,11 +3005,11 @@ def make_credit_default_swap_contract(
         universal_checks=(
             "single_reference_entity_present",
             "premium_or_maturity_schedule_present",
-            "premium_and_protection_legs_present",
+            "scheduled_and_trigger_legs_present",
         ),
         semantic_checks=(
-            "premium_leg_accrues_on_schedule",
-            "protection_leg_triggers_on_default",
+            "scheduled_leg_accrues_on_schedule",
+            "trigger_leg_settles_on_event",
         ),
         comparison_targets=(normalized_method,),
         reduction_cases=("single_name_credit_default_swap",),
