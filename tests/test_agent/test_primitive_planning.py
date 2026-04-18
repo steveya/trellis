@@ -313,7 +313,12 @@ def test_builds_local_vol_monte_carlo_plan_for_local_vol_context():
     assert plan.primitive_plan.route == "local_vol_monte_carlo"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert {"LocalVol", "MonteCarloEngine", "local_vol_european_vanilla_price"} <= primitive_symbols
-    assert "map_market_state_local_vol_surface_spot_and_discount_into_local_vol_mc_inputs" in plan.primitive_plan.adapters
+    # QUA-816: route-card `adapters` retired from `local_vol_monte_carlo`;
+    # constructive guidance flows through `lane_obligations._construction_steps_for`
+    # for `EventAwareMonteCarloIR` with `process_family=local_vol_1d` instead.
+    # The typed `state_process` / `path_simulation` / `pricing_kernel`
+    # primitives above are the source of truth.
+    assert plan.primitive_plan.adapters == ()
     assert plan.primitive_plan.blockers == ()
 
 

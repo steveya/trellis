@@ -74,14 +74,24 @@ class TestNonNegativity:
         assert failure.actual == pytest.approx(-2.5)
         assert "available_capabilities" in failure.context
 
-    def test_non_negativity_surfaces_cds_spread_unit_hint(self):
+    def test_non_negativity_skips_cds_like_payoff_with_negative_pv(self):
+        """CDS-like payoffs are signed linear products; non-negativity must NOT fail them.
+
+        Protection-buyer CDS clean PV is legitimately negative when spreads
+        have tightened from issuance; the build loop's invariant suite
+        previously rejected those payoffs at build gate, which blocked the
+        FinancePy CDS parity task (F007).  Signed-linear products are
+        validated by the dedicated ``check_cds_spread_quote_normalization``
+        and ``check_cds_credit_curve_sensitivity`` invariants instead.
+        (QUA-851.)
+        """
         class CdsLikePayoff:
             def __init__(self):
                 self._spec = type(
                     "CDSSpec",
                     (),
                     {
-                        "spread": 150.0,
+                        "spread": 0.015,  # decimal quote, as the model expects
                         "recovery": 0.4,
                         "start_date": SETTLE,
                         "end_date": date(2029, 11, 15),
@@ -106,11 +116,127 @@ class TestNonNegativity:
             return_diagnostics=True,
         )
 
+        assert failures == []
+
+    def test_non_negativity_still_fails_option_like_payoffs(self):
+        """Regression: gating signed products must not weaken the option-like contract."""
+        class OptionLikePayoff:
+            @property
+            def requirements(self):
+                return {"discount_curve"}
+
+            def evaluate(self, market_state):
+                return -1.23
+
+        failures = check_non_negativity(
+            OptionLikePayoff(),
+            _ms_factory(),
+            return_diagnostics=True,
+        )
+        assert len(failures) == 1
+        assert failures[0].check == "check_non_negativity"
+        assert failures[0].actual == pytest.approx(-1.23)
+
+    def test_non_negativity_still_surfaces_pricing_exceptions_for_signed_products(self):
+        """Signed-product exemption must NOT also skip pricing-exception detection.
+
+        ``check_non_negativity`` is the only always-run check in the
+        ``is_option=False`` branch of ``run_invariant_suite``.  If the
+        signed-linear gate short-circuits *before* invoking pricing, a CDS
+        whose ``evaluate`` raises (e.g. missing credit curve) would pass the
+        invariant suite silently instead of being rejected at build gate.
+        (PR #596 Codex P1 round 1.)
+        """
+        class BrokenCdsPayoff:
+            def __init__(self):
+                self._spec = type(
+                    "CDSSpec",
+                    (),
+                    {
+                        "spread": 0.015,
+                        "recovery": 0.4,
+                        "start_date": SETTLE,
+                        "end_date": date(2029, 11, 15),
+                    },
+                )()
+
+            @property
+            def requirements(self):
+                return {"discount_curve", "credit_curve"}
+
+            def evaluate(self, market_state):
+                raise RuntimeError("credit_curve missing from market_state")
+
+        failures = check_non_negativity(
+            BrokenCdsPayoff(),
+            MarketState(
+                as_of=SETTLE,
+                settlement=SETTLE,
+                discount=YieldCurve.flat(0.05),
+                credit_curve=CreditCurve.flat(0.02),
+            ),
+            return_diagnostics=True,
+        )
         assert len(failures) == 1
         failure = failures[0]
-        assert "150 bp -> 0.015" in failure.message
-        assert failure.context["cds_spread_hint"] == "basis_points_to_decimal"
-        assert failure.context["reported_spread"] == pytest.approx(150.0)
+        assert failure.check == "check_non_negativity"
+        assert "Pricing failed" in failure.message
+        assert failure.exception_type == "RuntimeError"
+        assert failure.exception_message == "credit_curve missing from market_state"
+
+    def test_run_invariant_suite_allows_signed_cds_payoff_through_build_gate(self):
+        """Integration: ``run_invariant_suite`` must not reject a signed CDS payoff.
+
+        ``run_invariant_suite`` is the path ``arbiter.validate_payoff_with_critic``
+        invokes inside the build loop.  Before QUA-851, it unconditionally
+        called ``check_non_negativity`` and the protection-buyer CDS benchmark
+        (F007) died at the gate.  This integration test guards against a
+        regression where a parallel validation path slips past the new
+        signed-linear gate.
+        """
+        class CdsPayoff:
+            def __init__(self):
+                self._spec = type(
+                    "CDSSpec",
+                    (),
+                    {
+                        "notional": 1_000_000.0,
+                        "spread": 0.015,
+                        "recovery": 0.4,
+                        "start_date": SETTLE,
+                        "end_date": date(2029, 11, 15),
+                    },
+                )()
+
+            @property
+            def spec(self):
+                return self._spec
+
+            @property
+            def requirements(self):
+                return {"discount_curve", "credit_curve"}
+
+            def evaluate(self, market_state):
+                return -65_000.0
+
+        def payoff_factory():
+            return CdsPayoff()
+
+        def market_state_factory(**_kwargs):
+            return MarketState(
+                as_of=SETTLE,
+                settlement=SETTLE,
+                discount=YieldCurve.flat(0.05),
+                credit_curve=CreditCurve.flat(0.02),
+            )
+
+        passed, failures = run_invariant_suite(
+            payoff_factory=payoff_factory,
+            market_state_factory=market_state_factory,
+            is_option=False,
+        )
+        assert passed, f"signed CDS payoff should pass invariant suite; got: {failures}"
+        assert failures == []
 
 
 class TestPriceSanity:
@@ -550,6 +676,89 @@ class TestVolMonotonicity:
 
         assert failures
         assert all(failure.context["expected_direction"] == "increasing" for failure in failures)
+
+    def test_vol_monotonicity_skips_digital_option_payoff(self):
+        """QUA-879: digital payoffs have non-monotonic vol sensitivity by design.
+
+        Cash-or-nothing and asset-or-nothing digitals have a price-vs-vol curve
+        that rises then falls (or vice versa) depending on moneyness and time
+        to expiry -- enforcing monotonicity blocks the benchmark path (F010)
+        despite the helper producing FinancePy-parity prices.  The gate
+        follows the ``_payoff_is_signed_linear`` pattern QUA-851 introduced.
+        """
+        class DigitalOptionPayoff:
+            def __init__(self):
+                self._spec = type(
+                    "DigitalOptionSpec",
+                    (),
+                    {
+                        "notional": 1.0,
+                        "spot": 100.0,
+                        "strike": 95.0,
+                        "cash_payoff": 1.0,
+                        "option_type": "call",
+                    },
+                )()
+
+            @property
+            def spec(self):
+                return self._spec
+
+            @property
+            def requirements(self):
+                return {"discount_curve", "black_vol_surface"}
+
+            def evaluate(self, market_state):
+                # Deliberately non-monotonic: peaks at σ ≈ 0.2, falls both sides.
+                vol = float(market_state.vol_surface.black_vol(1.0, 95.0))
+                return float(7.9 - 60.0 * (vol - 0.20) ** 2)
+
+        failures = check_vol_monotonicity(
+            lambda: DigitalOptionPayoff(),
+            _ms_factory,
+            return_diagnostics=True,
+        )
+        assert failures == []
+
+    def test_vol_monotonicity_still_surfaces_pricing_exceptions_for_digital_payoffs(self):
+        """A broken digital (raises on evaluate) must still produce a failure.
+
+        Mirrors the QUA-851 PR #596 P1 fix: skip only the monotonicity
+        assertion, not pricing-exception detection.
+        """
+        class BrokenDigitalPayoff:
+            def __init__(self):
+                self._spec = type(
+                    "DigitalOptionSpec",
+                    (),
+                    {
+                        "notional": 1.0,
+                        "spot": 100.0,
+                        "strike": 95.0,
+                        "cash_payoff": 1.0,
+                        "option_type": "call",
+                    },
+                )()
+
+            @property
+            def spec(self):
+                return self._spec
+
+            @property
+            def requirements(self):
+                return {"discount_curve", "black_vol_surface"}
+
+            def evaluate(self, market_state):
+                raise RuntimeError("digital helper misconfigured")
+
+        failures = check_vol_monotonicity(
+            lambda: BrokenDigitalPayoff(),
+            _ms_factory,
+            return_diagnostics=True,
+        )
+        assert len(failures) == 1
+        assert failures[0].check == "check_vol_monotonicity"
+        assert "Pricing failed" in failures[0].message
 
 
 class TestZeroVolIntrinsic:

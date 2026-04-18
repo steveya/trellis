@@ -518,23 +518,13 @@ routes:
         symbol: stochastic_mesh
         role: exercise_control
         required: false
-    adapters:
-      - derive_exercise_dates_from_schedule_or_time_grid
-      - build_spot_to_exercise_payoff_callback
-      - select_continuation_estimator_or_basis
-    notes:
-      - "Use an approved early-exercise control primitive instead of inventing new engine modes."
-      - "The implemented primitive is `longstaff_schwartz`; do not rename it to `lsm_mc` or a `method=\"lsm\"` engine mode."
-      - "Regression basis choice is a continuation-estimator detail, not a required route primitive."
-    # NOTE: early_exercise_policy summaries are dynamic; render at runtime from
-    # trellis.agent.early_exercise_policy if needed in prompt.
-    dynamic_notes:
-      - source: trellis.agent.early_exercise_policy
-        function: render_early_exercise_policy_summary
-        template: "Approved policy classes: {result}."
-      - source: trellis.agent.early_exercise_policy
-        function: render_implemented_early_exercise_policy_summary
-        template: "Implemented today: {result}."
+    # QUA-880: adapters, static notes, and dynamic_notes retired onto the
+    # lane-obligation surface.  `lane_obligations._control_obligations_for`
+    # now emits `approved_exercise_policies` / `implemented_exercise_policies`
+    # summaries and the LSM naming invariant as typed obligations, and
+    # `_construction_steps_for` emits the three exercise-MC construction
+    # steps (date derivation, payoff callback, continuation estimator
+    # selection) when the control style is `holder_max` or `issuer_min`.
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -684,11 +674,10 @@ routes:
       - module: trellis.models.monte_carlo.local_vol
         symbol: local_vol_european_vanilla_price
         role: pricing_kernel
-    adapters:
-      - map_market_state_local_vol_surface_spot_and_discount_into_local_vol_mc_inputs
-      - derive_option_type_strike_and_expiry_for_vanilla_equity_option
-    notes:
-      - "For vanilla equity local-vol requests, prefer the reusable local-vol Monte Carlo helper over bespoke path loops."
+    # QUA-816: adapters and notes retired to the lane-obligation surface
+    # (`lane_obligations._construction_steps_for`, keyed by `EventAwareMonteCarloIR`
+    # for this lane).  The typed `state_process` / `path_simulation` /
+    # `pricing_kernel` bindings above are the source of truth.
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -723,10 +712,9 @@ routes:
       - module: trellis.models.processes.gbm
         symbol: GBM
         role: state_process
-    adapters:
-      - assemble_mc_style_estimator_on_sobol_paths
-    notes:
-      - "QMC in Trellis accelerates MC-style estimators rather than replacing them."
+    # QUA-816: adapters and notes retired to the lane-obligation surface.
+    # The typed `low_discrepancy_sampler` / `path_construction` / `state_process`
+    # bindings above are the source of truth for the QMC estimator scaffold.
     market_data_access:
       required:
         discount_curve: [market_state.discount]
@@ -944,7 +932,30 @@ routes:
       non_european_penalty: -4.0
     match:
       methods: [analytical]
-      exclude_instruments: [quanto_option, cds, nth_to_default, zcb_option]
+      # QUA-882: every instrument listed here has its own instrument-specific
+      # analytical route (`equity_digital_analytical`, `equity_variance_swap_analytical`,
+      # etc.) and ``analytical_black76`` lacks a matching conditional-primitive
+      # ``when`` clause for them.  Without the exclusion, the broad
+      # ``methods: [analytical]`` matcher on Black76 competes with the
+      # instrument-specific matcher and can be selected instead, forcing the
+      # assembly guard to demand the ``when: default`` Black76 kernels that
+      # the instrument's helper does not use (the F015 variance-swap failure
+      # mode).  ``basket_option`` is **deliberately not excluded** because
+      # Black76 has a legitimate ``when: payoff_family: basket_option +
+      # european + equity_diffusion`` clause that delegates to
+      # ``price_basket_option_analytical``.
+      exclude_instruments:
+        - quanto_option
+        - cds
+        - nth_to_default
+        - zcb_option
+        - variance_swap
+        - digital_option
+        - lookback_option
+        - chooser_option
+        - compound_option
+        - cliquet_option
+        - barrier_option
       exclude_required_market_data: [fx_rates]
     admissibility:
       control_styles: [identity, holder_max]
@@ -1375,9 +1386,10 @@ routes:
       - module: trellis.models.cashflow_engine.waterfall
         symbol: Tranche
         role: cashflow_engine
-    adapters:
-      - map_collateral_cashflows_into_structure
-    notes: []
+    # QUA-816: adapter retired to the lane-obligation surface.  The two
+    # `cashflow_engine` bindings above are the typed primitives; the
+    # constructive "map collateral cashflows into the structure" guidance
+    # flows through `lane_obligations` for the waterfall lane family.
     market_data_access:
       required:
         discount_curve: [market_state.discount]

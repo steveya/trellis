@@ -3470,6 +3470,17 @@ def _deterministic_exact_binding_benchmark_outputs_block(
                 return dict(equity_vanilla_bs_outputs(market_state, self._spec))
             """
         )
+    # QUA-878: FX vanilla Garman-Kohlhagen analytical route emits native
+    # price + delta (and gamma/vega/theta) via the shared helper, so parity
+    # scorecards no longer rely on the bump-and-reprice fallback (QUA-863)
+    # for F002-style FX vanilla tasks.
+    if "trellis.models.fx_vanilla.price_fx_vanilla_analytical" in refs:
+        return textwrap.dedent(
+            """\
+            def benchmark_outputs(self, market_state: MarketState) -> dict[str, float]:
+                return dict(fx_vanilla_gk_outputs(market_state, self._spec))
+            """
+        )
     return None
 
 
@@ -3535,11 +3546,19 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
 
 
 def _deterministic_exact_binding_benchmark_outputs_import_lines(block: str) -> tuple[str, ...]:
-    """Return imports required by the injected ``benchmark_outputs`` block (QUA-862)."""
+    """Return imports required by the injected ``benchmark_outputs`` block.
+
+    Covers both the Black-Scholes equity vanilla helper (QUA-862) and the
+    Garman-Kohlhagen FX vanilla helper (QUA-878).
+    """
     imports: list[str] = []
     if "equity_vanilla_bs_outputs(" in block:
         imports.append(
             "from trellis.models.analytical.equity_vanilla_bs import equity_vanilla_bs_outputs"
+        )
+    if "fx_vanilla_gk_outputs(" in block:
+        imports.append(
+            "from trellis.models.analytical.fx_vanilla_gk import fx_vanilla_gk_outputs"
         )
     return tuple(imports)
 
