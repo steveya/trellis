@@ -63,7 +63,7 @@ Rules for coding agents:
   - only then update the corresponding row in this file
 - Update this table only after the ticket is closed in Linear.
 
-Status mirror last synced: `2026-04-05`
+Status mirror last synced: `2026-04-18`
 
 ### Ordered Epic Queue
 
@@ -164,7 +164,7 @@ Status mirror last synced: `2026-04-05`
 | Ticket | Status |
 | --- | --- |
 | `QUA-620` Semantic contract: collateral and netting set representation | Backlog |
-| `QUA-638` Counterparty exposure: swap portfolio future value cube | In Review |
+| `QUA-638` Counterparty exposure: swap portfolio future value cube | Done |
 | `QUA-639` Collateral workflow: margin period and collateral state projection | Backlog |
 | `QUA-640` Netting workflow: netting-set aggregation and closeout exposure inputs | Backlog |
 | `QUA-641` Counterparty exposure: EE EPE PFE aggregation outputs | Backlog |
