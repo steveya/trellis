@@ -843,7 +843,7 @@ def test_nth_to_default_compiles_to_family_ir():
 
     family_ir = blueprint.dsl_lowering.family_ir
     assert isinstance(family_ir, NthToDefaultIR)
-    assert family_ir.route_id == "nth_to_default_monte_carlo"
+    assert family_ir.route_id == "credit_basket_nth_to_default"
     assert family_ir.route_family == "nth_to_default"
     assert family_ir.product_instrument == "nth_to_default"
     assert family_ir.payoff_family == "nth_to_default"

@@ -984,7 +984,7 @@ def test_compile_build_request_treats_generic_basket_wrapper_as_nth_to_default_w
     assert compiled.pricing_plan.method == "monte_carlo"
     assert compiled.generation_plan is not None
     assert compiled.generation_plan.primitive_plan is not None
-    assert compiled.generation_plan.primitive_plan.route == "nth_to_default_monte_carlo"
+    assert compiled.generation_plan.primitive_plan.route == "credit_basket_nth_to_default"
 
 
 @pytest.mark.parametrize(
@@ -1400,8 +1400,8 @@ def test_compile_build_request_uses_nth_to_default_semantic_contract_blueprint()
     assert compiled.pricing_plan is not None
     assert compiled.pricing_plan.method == "copula"
     assert compiled.semantic_blueprint.route_modules == _expected_route_modules(compiled)
-    assert compiled.semantic_blueprint.primitive_routes == ("nth_to_default_monte_carlo",)
-    assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == "nth_to_default_monte_carlo"
+    assert compiled.semantic_blueprint.primitive_routes == ("credit_basket_nth_to_default",)
+    assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == "credit_basket_nth_to_default"
     assert compiled.request.metadata["semantic_blueprint"]["dsl_family_ir_type"] == "NthToDefaultIR"
     assert compiled.request.metadata["semantic_blueprint"]["dsl_expr_kind"] == "ContractAtom"
     assert (

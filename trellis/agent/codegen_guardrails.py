@@ -1778,9 +1778,13 @@ def _route_score(
     if not route_family:
         route_family = spec.route_family if spec is not None else ""
 
+    scoring_method = normalize_method(getattr(pricing_plan, "method", None) or "") or None
+
     score = 0.0
     if product_ir is not None and spec is not None:
-        resolved_primitives = tuple(resolve_route_primitives(spec, product_ir))
+        resolved_primitives = tuple(
+            resolve_route_primitives(spec, product_ir, method=scoring_method)
+        )
         resolved_roles = {primitive.role for primitive in resolved_primitives}
         exact_surface_roles = {"route_helper", "pricing_kernel", "cashflow_engine"}
         if engine_family in product_ir.candidate_engine_families:

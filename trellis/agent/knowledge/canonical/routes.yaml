@@ -134,7 +134,7 @@ routes:
         discount_curve: [market_state.discount]
         credit_curve: [market_state.credit_curve]
 
-  - id: nth_to_default_analytical
+  - id: credit_basket_nth_to_default
     engine_family: analytical
     route_family: nth_to_default
     status: promoted
@@ -142,41 +142,44 @@ routes:
     score_hints:
       payoff_family_bonus: {nth_to_default: 2.0}
     match:
-      methods: [analytical, copula]
+      methods: [analytical, monte_carlo, qmc, copula]
       instruments: [nth_to_default]
-    admissibility:
-      control_styles: [identity]
-      event_support: automatic
-      phase_sensitivity: default_phase_order_only
-      multicurrency_support: single_currency_only
-      supported_outputs: [price, scenario_pnl]
-      supports_sensitivity_outputs: true
-      supported_state_tags: [remaining_pool, schedule_state]
-      supports_calibration: false
-    primitives:
-      - module: trellis.core.date_utils
-        symbol: year_fraction
-        role: time_measure
-      - module: trellis.instruments.nth_to_default
-        symbol: price_nth_to_default_basket
-        role: route_helper
-    adapters: []
-    notes: []
-    market_data_access:
-      required:
-        discount_curve: [market_state.discount]
-        credit_curve: [market_state.credit_curve]
-
-  - id: nth_to_default_monte_carlo
-    engine_family: monte_carlo
-    route_family: nth_to_default
-    status: promoted
-    confidence: 1.0
-    score_hints:
-      payoff_family_bonus: {nth_to_default: 2.0}
-    match:
-      methods: [monte_carlo, qmc, copula]
-      instruments: [nth_to_default]
+      required_market_data: [credit_curve]
+      payoff_family: [nth_to_default]
+    conditional_primitives:
+      - when:
+          methods: [analytical]
+        primitives:
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: time_measure
+          - module: trellis.instruments.nth_to_default
+            symbol: price_nth_to_default_basket
+            role: route_helper
+        adapters: []
+        notes: []
+      - when:
+          methods: [monte_carlo, qmc, copula]
+        primitives:
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: time_measure
+          - module: trellis.core.differentiable
+            symbol: get_numpy
+            role: array_backend
+          - module: trellis.models.copulas.gaussian
+            symbol: GaussianCopula
+            role: default_time_sampler
+          - module: trellis.instruments.nth_to_default
+            symbol: price_nth_to_default_basket
+            role: route_helper
+          - module: trellis.models.monte_carlo.engine
+            symbol: MonteCarloEngine
+            role: path_simulation
+            required: false
+            excluded: true
+        adapters: []
+        notes: []
     admissibility:
       control_styles: [identity]
       event_support: automatic
@@ -190,20 +193,9 @@ routes:
       - module: trellis.core.date_utils
         symbol: year_fraction
         role: time_measure
-      - module: trellis.core.differentiable
-        symbol: get_numpy
-        role: array_backend
-      - module: trellis.models.copulas.gaussian
-        symbol: GaussianCopula
-        role: default_time_sampler
       - module: trellis.instruments.nth_to_default
         symbol: price_nth_to_default_basket
         role: route_helper
-      - module: trellis.models.monte_carlo.engine
-        symbol: MonteCarloEngine
-        role: path_simulation
-        required: false
-        excluded: true
     adapters: []
     notes: []
     market_data_access:

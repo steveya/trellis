@@ -21,6 +21,7 @@ def test_binding_catalog_loads_core_route_backed_bindings():
         "zcb_option_rate_tree",
         "analytical_black76",
         "credit_default_swap",
+        "credit_basket_nth_to_default",
         "analytical_garman_kohlhagen",
         "waterfall_cashflows",
     } <= route_ids
@@ -41,7 +42,7 @@ def test_binding_catalog_covers_retired_fallback_routes():
     Slice 2 (this PR): ``vanilla_equity_theta_pde``, ``pde_theta_1d``,
     ``exercise_lattice``, ``correlated_basket_monte_carlo``,
     ``credit_default_swap``,
-    ``nth_to_default_monte_carlo``.
+    ``credit_basket_nth_to_default``.
     """
     catalog = load_backend_binding_catalog()
     route_ids = {binding.route_id for binding in catalog.bindings}
@@ -57,7 +58,7 @@ def test_binding_catalog_covers_retired_fallback_routes():
         "exercise_lattice",
         "correlated_basket_monte_carlo",
         "credit_default_swap",
-        "nth_to_default_monte_carlo",
+        "credit_basket_nth_to_default",
     } <= route_ids
 
 
@@ -446,11 +447,14 @@ def test_nth_to_default_bindings_have_no_schedule_builder_surface():
         state_dependence="schedule_state",
     )
 
-    for route_id in ("nth_to_default_analytical", "nth_to_default_monte_carlo"):
-        binding = find_backend_binding_by_route_id(route_id, catalog)
-        assert binding is not None
-
-        resolved = resolve_backend_binding_spec(binding, product_ir=product_ir)
+    binding = find_backend_binding_by_route_id("credit_basket_nth_to_default", catalog)
+    assert binding is not None
+    for method in ("analytical", "monte_carlo"):
+        resolved = resolve_backend_binding_spec(
+            binding,
+            product_ir=product_ir,
+            method=method,
+        )
 
         assert resolved.binding_id == "trellis.instruments.nth_to_default.price_nth_to_default_basket"
         assert resolved.helper_refs == ("trellis.instruments.nth_to_default.price_nth_to_default_basket",)

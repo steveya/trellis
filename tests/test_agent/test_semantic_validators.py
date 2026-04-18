@@ -691,7 +691,7 @@ def evaluate(self, market_state):
         assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_flags_nth_to_default_helper_signature_mismatch(self, registry):
-        spec = [r for r in registry.routes if r.id == "nth_to_default_monte_carlo"][0]
+        spec = [r for r in registry.routes if r.id == "credit_basket_nth_to_default"][0]
         source = '''
 from trellis.instruments.nth_to_default import price_nth_to_default_basket
 
@@ -708,11 +708,11 @@ def evaluate(self, market_state):
     )
 '''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("nth_to_default_monte_carlo", "monte_carlo"), spec)
+        findings = validator.validate(source, _make_plan("credit_basket_nth_to_default", "monte_carlo"), spec)
         assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_accepts_nth_to_default_helper_surface(self, registry):
-        spec = [r for r in registry.routes if r.id == "nth_to_default_monte_carlo"][0]
+        spec = [r for r in registry.routes if r.id == "credit_basket_nth_to_default"][0]
         source = '''
 from trellis.instruments.nth_to_default import price_nth_to_default_basket
 
@@ -729,11 +729,11 @@ def evaluate(self, market_state):
     )
 '''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("nth_to_default_monte_carlo", "monte_carlo"), spec)
+        findings = validator.validate(source, _make_plan("credit_basket_nth_to_default", "monte_carlo"), spec)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_rejects_nth_to_default_positional_calls(self, registry):
-        spec = [r for r in registry.routes if r.id == "nth_to_default_monte_carlo"][0]
+        spec = [r for r in registry.routes if r.id == "credit_basket_nth_to_default"][0]
         source = '''
 from trellis.instruments.nth_to_default import price_nth_to_default_basket
 
@@ -750,7 +750,7 @@ def evaluate(self, market_state):
     )
 '''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("nth_to_default_monte_carlo", "monte_carlo"), spec)
+        findings = validator.validate(source, _make_plan("credit_basket_nth_to_default", "monte_carlo"), spec)
         assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_flags_credit_basket_tranche_helper_signature_mismatch(self, registry):

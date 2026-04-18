@@ -499,7 +499,10 @@ def _build_semantic_family_registry() -> MappingProxyType:
                 _method_surface_definition(
                     "copula",
                     target_modules=("trellis.instruments.nth_to_default",),
-                    primitive_families=("nth_to_default_monte_carlo",),
+                    # QUA-914: NtD analytical + monte_carlo routes collapsed
+                    # into ``credit_basket_nth_to_default``.  The copula
+                    # method surface binds that single pattern-keyed route.
+                    primitive_families=("credit_basket_nth_to_default",),
                     adapter_obligations=(
                         "resolve_basket_credit_curve_and_discount_curve",
                         "preserve_reference_entities_and_trigger_rank",

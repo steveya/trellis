@@ -64,38 +64,39 @@ bindings:
             symbol: price_cds_analytical
             role: route_helper
 
-  - route_id: nth_to_default_analytical
+  - route_id: credit_basket_nth_to_default
     engine_family: analytical
     route_family: nth_to_default
-    primitives:
-      - module: trellis.core.date_utils
-        symbol: year_fraction
-        role: time_measure
-      - module: trellis.instruments.nth_to_default
-        symbol: price_nth_to_default_basket
-        role: route_helper
-
-  - route_id: nth_to_default_monte_carlo
-    engine_family: monte_carlo
-    route_family: nth_to_default
-    primitives:
-      - module: trellis.core.date_utils
-        symbol: year_fraction
-        role: time_measure
-      - module: trellis.core.differentiable
-        symbol: get_numpy
-        role: array_backend
-      - module: trellis.models.copulas.gaussian
-        symbol: GaussianCopula
-        role: default_time_sampler
-      - module: trellis.instruments.nth_to_default
-        symbol: price_nth_to_default_basket
-        role: route_helper
-      - module: trellis.models.monte_carlo.engine
-        symbol: MonteCarloEngine
-        role: path_simulation
-        required: false
-        excluded: true
+    conditional_primitives:
+      - when:
+          methods: [analytical]
+        primitives:
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: time_measure
+          - module: trellis.instruments.nth_to_default
+            symbol: price_nth_to_default_basket
+            role: route_helper
+      - when:
+          methods: [monte_carlo, qmc, copula]
+        primitives:
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: time_measure
+          - module: trellis.core.differentiable
+            symbol: get_numpy
+            role: array_backend
+          - module: trellis.models.copulas.gaussian
+            symbol: GaussianCopula
+            role: default_time_sampler
+          - module: trellis.instruments.nth_to_default
+            symbol: price_nth_to_default_basket
+            role: route_helper
+          - module: trellis.models.monte_carlo.engine
+            symbol: MonteCarloEngine
+            role: path_simulation
+            required: false
+            excluded: true
 
   - route_id: correlated_basket_monte_carlo
     engine_family: monte_carlo

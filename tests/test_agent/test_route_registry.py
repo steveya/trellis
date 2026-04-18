@@ -502,12 +502,56 @@ class TestCreditRoutes:
         assert new == ("credit_default_swap",)
 
     def test_nth_to_default_analytical(self, registry):
-        new = _new_routes(registry, "analytical", self.NTD_IR)
-        assert new == ("nth_to_default_analytical",)
+        plan = _make_plan("analytical", market_data={"discount_curve", "credit_curve"})
+        new = _new_routes(registry, "analytical", self.NTD_IR, pricing_plan=plan)
+        assert new == ("credit_basket_nth_to_default",)
 
     def test_nth_to_default_monte_carlo(self, registry):
-        new = _new_routes(registry, "monte_carlo", self.NTD_IR)
-        assert new == ("nth_to_default_monte_carlo",)
+        plan = _make_plan("monte_carlo", market_data={"discount_curve", "credit_curve"})
+        new = _new_routes(registry, "monte_carlo", self.NTD_IR, pricing_plan=plan)
+        assert new == ("credit_basket_nth_to_default",)
+
+    _PRE_COLLAPSE_ANALYTICAL_PRIMITIVES = frozenset({
+        ("trellis.core.date_utils", "year_fraction", "time_measure"),
+        ("trellis.instruments.nth_to_default", "price_nth_to_default_basket", "route_helper"),
+    })
+
+    _PRE_COLLAPSE_MC_PRIMITIVES = frozenset({
+        ("trellis.core.date_utils", "year_fraction", "time_measure"),
+        ("trellis.core.differentiable", "get_numpy", "array_backend"),
+        ("trellis.models.copulas.gaussian", "GaussianCopula", "default_time_sampler"),
+        ("trellis.instruments.nth_to_default", "price_nth_to_default_basket", "route_helper"),
+        ("trellis.models.monte_carlo.engine", "MonteCarloEngine", "path_simulation"),
+    })
+
+    def test_nth_to_default_collapsed_route_preserves_analytical_primitive_surface(self, registry):
+        spec = find_route_by_id("credit_basket_nth_to_default", registry)
+        assert spec is not None
+        primitives = resolve_route_primitives(spec, self.NTD_IR, method="analytical")
+        assert _prim_set(primitives) == self._PRE_COLLAPSE_ANALYTICAL_PRIMITIVES
+
+    def test_nth_to_default_collapsed_route_preserves_mc_primitive_surface(self, registry):
+        spec = find_route_by_id("credit_basket_nth_to_default", registry)
+        assert spec is not None
+        primitives = resolve_route_primitives(spec, self.NTD_IR, method="monte_carlo")
+        assert _prim_set(primitives) == self._PRE_COLLAPSE_MC_PRIMITIVES
+
+    def test_nth_to_default_collapsed_route_qmc_copula_methods_share_mc_surface(self, registry):
+        spec = find_route_by_id("credit_basket_nth_to_default", registry)
+        assert spec is not None
+        mc = _prim_set(resolve_route_primitives(spec, self.NTD_IR, method="monte_carlo"))
+        qmc = _prim_set(resolve_route_primitives(spec, self.NTD_IR, method="qmc"))
+        copula = _prim_set(resolve_route_primitives(spec, self.NTD_IR, method="copula"))
+        assert mc == qmc == copula == self._PRE_COLLAPSE_MC_PRIMITIVES
+
+    def test_nth_to_default_collapsed_route_admissibility_envelope_is_union(self, registry):
+        spec = find_route_by_id("credit_basket_nth_to_default", registry)
+        assert spec is not None
+        tags = set(spec.admissibility.supported_state_tags)
+        assert {"pathwise_only", "remaining_pool", "schedule_state"}.issubset(tags)
+        assert spec.admissibility.supported_control_styles == ("identity",)
+        assert spec.admissibility.event_support == "automatic"
+        assert spec.admissibility.supports_sensitivity_outputs is True
 
     def test_route_family(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
@@ -1922,8 +1966,7 @@ class TestFallbackRoutes:
     def test_credit_and_copula_routes_are_thin_backend_bindings(self, registry):
         for route_id in (
             "credit_default_swap",
-            "nth_to_default_analytical",
-            "nth_to_default_monte_carlo",
+            "credit_basket_nth_to_default",
             "copula_loss_distribution",
         ):
             spec = find_route_by_id(route_id, registry)
@@ -1953,8 +1996,7 @@ class TestEngineFamilyCoverage:
     EXPECTED = {
         "equity_quanto": "analytical",
         "credit_default_swap": "analytical",
-        "nth_to_default_analytical": "analytical",
-        "nth_to_default_monte_carlo": "monte_carlo",
+        "credit_basket_nth_to_default": "analytical",
         "correlated_basket_monte_carlo": "monte_carlo",
         "exercise_monte_carlo": "exercise",
         "monte_carlo_paths": "monte_carlo",
