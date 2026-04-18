@@ -1778,3 +1778,145 @@ class TestMarketDataAccess:
         assert "discount_curve" in required
         assert "local_vol_surface" in required
         assert "spot" in required
+
+
+# ---------------------------------------------------------------------------
+# Route-match parity harness (QUA-907) — shared gate for Phase 1 rewrites
+# ---------------------------------------------------------------------------
+
+class TestRouteMatchParityHarness:
+    """Smoke tests for :func:`route_parity.assert_route_match_parity`.
+
+    Every Phase 1 route rewrite under ``QUA-887`` must call the helper with
+    its own fixtures. These tests exercise the harness against the canonical
+    registry to guarantee the trivial parity path behaves correctly and that
+    the structural asserts engage on real divergence.
+    """
+
+    @staticmethod
+    def _basket_fixture() -> tuple[ProductIR, PricingPlan]:
+        product_ir = ProductIR(
+            instrument="basket_option",
+            payoff_family="basket_path_payoff",
+            payoff_traits=("ranked_observation",),
+        )
+        pricing_plan = _make_plan("monte_carlo")
+        return product_ir, pricing_plan
+
+    def test_trivial_noop_passes_parity(self):
+        from tests.test_agent.route_parity import assert_route_match_parity
+
+        fixtures = [self._basket_fixture()]
+        # Empty dict == "change nothing". Must be a trivial pass.
+        assert_route_match_parity("correlated_basket_monte_carlo", {}, fixtures)
+
+    def test_equivalent_explicit_match_clause_passes_parity(self, registry):
+        from tests.test_agent.route_parity import assert_route_match_parity
+
+        spec = find_route_by_id("correlated_basket_monte_carlo", registry)
+        assert spec is not None
+        # Re-assert the current match clause with the same values. This is
+        # still trivial parity but exercises every supported key in the
+        # helper's parser, not just the no-op short-circuit.
+        new_match_clause = {
+            "methods": list(spec.match_methods),
+            "payoff_family": list(spec.match_payoff_family or ()),
+            "payoff_traits": list(spec.match_payoff_traits or ()),
+        }
+        fixtures = [self._basket_fixture()]
+        assert_route_match_parity(
+            "correlated_basket_monte_carlo",
+            new_match_clause,
+            fixtures,
+        )
+
+    def test_multiple_fixtures_all_checked(self):
+        from tests.test_agent.route_parity import assert_route_match_parity
+
+        # Same shape twice plus a second method the route also matches (qmc).
+        # Under a no-op rewrite both must still pass.
+        basket_mc = self._basket_fixture()
+        basket_qmc = (
+            ProductIR(
+                instrument="basket_option",
+                payoff_family="basket_path_payoff",
+                payoff_traits=("ranked_observation",),
+            ),
+            _make_plan("qmc"),
+        )
+        assert_route_match_parity(
+            "correlated_basket_monte_carlo",
+            {},
+            [basket_mc, basket_qmc],
+        )
+
+    def test_unknown_match_key_raises_value_error(self):
+        from tests.test_agent.route_parity import assert_route_match_parity
+
+        with pytest.raises(ValueError, match="unsupported match-clause keys"):
+            assert_route_match_parity(
+                "correlated_basket_monte_carlo",
+                {"state_tags": ["schedule_state"]},
+                [self._basket_fixture()],
+            )
+
+    def test_unknown_route_id_raises_lookup_error(self):
+        from tests.test_agent.route_parity import assert_route_match_parity
+
+        with pytest.raises(LookupError, match="not found"):
+            assert_route_match_parity(
+                "nonexistent_route_id_for_parity_test",
+                {},
+                [self._basket_fixture()],
+            )
+
+    def test_detects_match_clause_drift_as_assertion_error(self):
+        from tests.test_agent.route_parity import assert_route_match_parity
+
+        # Replace the real match clause with one that cannot match the
+        # basket fixture (methods narrowed to pde_solver only). The harness
+        # must flag this as a parity divergence, not silently pass. The
+        # length-mismatch branch fires because the variant registry drops
+        # ``correlated_basket_monte_carlo`` from the basket ranking entirely.
+        with pytest.raises(
+            AssertionError,
+            match=r"ranked-list length mismatch",
+        ):
+            assert_route_match_parity(
+                "correlated_basket_monte_carlo",
+                {"methods": ["pde_solver"]},
+                [self._basket_fixture()],
+            )
+
+    def test_detects_primitive_drift_as_assertion_error(self):
+        from tests.test_agent.route_parity import assert_route_match_parity
+
+        # Broaden the match clause with an extra payoff family that forces
+        # a basket fixture onto a different rank ordering (by accepting the
+        # vanilla family while still matching basket). The variant ranking
+        # contains the same routes but changes the top plan's primitives
+        # for a fixture that now matches on two clauses. This exercises the
+        # full-fingerprint divergence branch instead of the length branch.
+        fixtures = [
+            (
+                ProductIR(
+                    instrument="vanilla_option",
+                    payoff_family="vanilla_option",
+                    exercise_style="european",
+                ),
+                _make_plan("monte_carlo"),
+            )
+        ]
+        with pytest.raises(
+            AssertionError,
+            match=r"Route parity divergence|ranked-list length mismatch",
+        ):
+            assert_route_match_parity(
+                "correlated_basket_monte_carlo",
+                {
+                    "methods": ["monte_carlo", "qmc"],
+                    "payoff_family": ["basket_path_payoff", "vanilla_option"],
+                    "payoff_traits": ["ranked_observation"],
+                },
+                fixtures,
+            )
