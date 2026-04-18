@@ -759,22 +759,11 @@ def match_candidate_routes(
     *,
     pricing_plan=None,
     promoted_only: bool = True,
-    skip_market_data_filters: bool = False,
 ) -> tuple[RouteSpec, ...]:
     """Filter routes by match conditions.
 
     When ``promoted_only`` is True (default for live builds), only routes with
     ``status == "promoted"`` are returned.  Set to False for gap analysis.
-
-    When ``skip_market_data_filters`` is True, the route's
-    ``match_required_market_data`` and ``exclude_required_market_data``
-    clauses are bypassed.  This is the pre-flight-audit mode used by
-    ``gap_check._check_route_gap`` and the discovery-route booster in
-    ``reflect.py``: those call sites only have a ``ProductDecomposition`` +
-    minimal ``ProductIR`` and have not yet synthesized a pricing plan, so
-    the market-data-shape filters cannot be evaluated meaningfully.  Live
-    build and scoring callers must leave this flag at its default so that
-    the market-data filters remain enforced.
     """
     method = normalize_method(method) if method else ""
     instrument = getattr(product_ir, "instrument", None) if product_ir is not None else None
@@ -842,17 +831,13 @@ def match_candidate_routes(
         if route.exclude_exercise and exercise in route.exclude_exercise:
             continue
 
-        # Required market data match.  Skipped in gap-audit mode because
-        # those callers do not yet have a pricing plan and applying the
-        # positive AND-filter against an empty set would reject every
-        # route that declares ``required_market_data``.
-        if not skip_market_data_filters:
-            if route.match_required_market_data is not None:
-                if not all(md in required_market_data for md in route.match_required_market_data):
-                    continue
-            if route.exclude_required_market_data is not None:
-                if any(md in required_market_data for md in route.exclude_required_market_data):
-                    continue
+        # Required market data match
+        if route.match_required_market_data is not None:
+            if not all(md in required_market_data for md in route.match_required_market_data):
+                continue
+        if route.exclude_required_market_data is not None:
+            if any(md in required_market_data for md in route.exclude_required_market_data):
+                continue
 
         matches.append(route)
 
@@ -973,7 +958,14 @@ def resolve_route_primitives(
     binding_spec=None,
     method: str | None = None,
 ) -> tuple[PrimitiveRef, ...]:
-    """Return resolved primitives from the binding catalog, falling back to the route shell."""
+    """Return resolved primitives from the binding catalog, falling back to the route shell.
+
+    ``method`` (QUA-915) threads the requested pricing-plan method so
+    ``conditional_primitives.when`` clauses keyed on ``methods: [...]``
+    can dispatch to the correct kernel in collapsed pattern-keyed routes.
+    Callers without a method (e.g. introspection, admissibility checks)
+    leave it as ``None`` and fall through to the default branch.
+    """
     try:
         if binding_spec is None:
             from trellis.agent.backend_bindings import resolve_backend_binding_by_route_id
@@ -1019,7 +1011,12 @@ def resolve_route_adapters(
     *,
     method: str | None = None,
 ) -> tuple[str, ...]:
-    """Resolve adapters from conditional_primitives, falling back to base."""
+    """Resolve adapters from conditional_primitives, falling back to base.
+
+    ``method`` (QUA-915) mirrors :func:`resolve_route_primitives` so
+    adapter resolution stays consistent with the primitive block picked
+    for method-keyed clauses.
+    """
     if not spec.conditional_primitives:
         return spec.adapters
 
@@ -1057,7 +1054,12 @@ def resolve_route_notes(
     *,
     method: str | None = None,
 ) -> tuple[str, ...]:
-    """Resolve notes from conditional_primitives + dynamic notes."""
+    """Resolve notes from conditional_primitives + dynamic notes.
+
+    ``method`` (QUA-915) mirrors :func:`resolve_route_primitives` so note
+    resolution stays consistent with the primitive block picked for
+    method-keyed clauses.
+    """
     base_notes = list(spec.notes)
 
     if spec.conditional_primitives:
@@ -1108,7 +1110,12 @@ def resolve_route_family(
     binding_spec=None,
     method: str | None = None,
 ) -> str:
-    """Resolve the route family from the binding catalog, falling back to the route shell."""
+    """Resolve the route family from the binding catalog, falling back to the route shell.
+
+    ``method`` (QUA-915) threads the requested pricing-plan method so
+    ``conditional_route_family.when`` clauses can dispatch on
+    ``methods: [...]`` the same way primitive resolution does.
+    """
     try:
         if binding_spec is None:
             from trellis.agent.backend_bindings import resolve_backend_binding_by_route_id
@@ -1909,6 +1916,10 @@ def _conditional_primitive_matches(
     is handled by the callers (since they need to distinguish catch-all
     fall-through from a conditional match miss) and never reaches this
     helper.
+
+    ``method`` (QUA-915) threads the requested pricing-plan method so
+    legacy when-clauses can dispatch on ``methods: [...]`` — used by
+    collapsed pattern-keyed routes such as ``short_rate_bond_option``.
     """
     if cond.contract_pattern is not None:
         # DSL path: only meaningful when we actually have a ProductIR.  The
@@ -1939,7 +1950,14 @@ def _matches_condition(
     *,
     method: str | None = None,
 ) -> bool:
-    """Check whether a ProductIR matches a legacy string-tag 'when' clause."""
+    """Check whether a ProductIR matches a legacy string-tag 'when' clause.
+
+    The ``methods`` key (QUA-915) dispatches on the pricing plan's
+    requested method.  When callers do not thread a method through
+    (``method is None``), a ``methods`` key evaluates to a non-match so
+    that method-agnostic resolve paths (e.g. admissibility introspection)
+    do not accidentally commit to a method-specific primitive block.
+    """
     payoff_families = _expanded_payoff_families(payoff_family, product_ir)
     payoff_traits = {
         str(item).strip().lower()

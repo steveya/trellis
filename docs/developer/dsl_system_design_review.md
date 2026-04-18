@@ -206,14 +206,16 @@ projection are no longer carried as route-card instructions once the checked
 helpers already own that surface.
 
 The rate-tree cohort now follows the same discipline. ``exercise_lattice``,
-``rate_tree_backward_induction``, ``zcb_option_rate_tree``, and
-``zcb_option_analytical`` still expose the backend binding and the validation
-surface, but they no longer supply prompt-level lattice or short-rate
-construction guidance when the checked helper already owns that assembly. The
-semantic drafting boundary is also stricter here: an explicit ``instrument_type``
-such as ``zcb_option`` now blocks fallback drafting into a generic
-``vanilla_option`` contract when the prose only happens to contain generic
-``option`` language.
+``rate_tree_backward_induction``, and the QUA-915 collapsed
+``short_rate_bond_option`` (which replaces the instrument-keyed
+``zcb_option_rate_tree`` / ``zcb_option_analytical`` pair) still expose
+the backend binding and the validation surface, but they no longer
+supply prompt-level lattice or short-rate construction guidance when the
+checked helper already owns that assembly. The semantic drafting
+boundary is also stricter here: an explicit ``instrument_type`` such as
+``zcb_option`` now blocks fallback drafting into a generic
+``vanilla_option`` contract when the prose only happens to contain
+generic ``option`` language.
 
 The analytical / PDE / FFT helper cohort now behaves the same way.
 Helper-backed Black76 swaption routes, vanilla-equity PDE / event-aware PDE

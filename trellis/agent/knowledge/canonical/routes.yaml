@@ -661,36 +661,6 @@ routes:
         discount_curve: [market_state.discount]
         black_vol_surface: [market_state.vol_surface]
 
-  - id: zcb_option_rate_tree
-    engine_family: lattice
-    route_family: rate_lattice
-    status: promoted
-    confidence: 1.0
-    score_hints:
-      payoff_family_bonus: {zcb_option: 2.0}
-    match:
-      methods: [rate_tree]
-      instruments: [zcb_option]
-    admissibility:
-      control_styles: [identity]
-      event_support: none
-      phase_sensitivity: default_phase_order_only
-      multicurrency_support: single_currency_only
-      supported_outputs: [price, scenario_pnl]
-      supports_sensitivity_outputs: true
-      supported_state_tags: [terminal_markov, recombining_safe, schedule_state]
-      supports_calibration: true
-    primitives:
-      - module: trellis.models.zcb_option_tree
-        symbol: price_zcb_option_tree
-        role: route_helper
-    adapters: []
-    notes: []
-    market_data_access:
-      required:
-        discount_curve: [market_state.discount]
-        black_vol_surface: [market_state.vol_surface]
-
   # -----------------------------------------------------------------------
   # Analytical routes (fallback)
   # -----------------------------------------------------------------------
@@ -981,16 +951,34 @@ routes:
         discount_curve: [market_state.discount]
         black_vol_surface: [market_state.vol_surface]
 
-  - id: zcb_option_analytical
+  # QUA-915 / Contract IR Phase 1.9: collapsed ZCB-option family.
+  # Replaces the instrument-keyed ``zcb_option_analytical`` (Jamshidian's
+  # trick closed form) and ``zcb_option_rate_tree`` (Hull-White lattice)
+  # pair with one pattern-keyed route. Both methods price a European
+  # option on a zero-coupon bond under a mean-reverting short-rate model
+  # and share the discount_curve + black_vol_surface market-data shape;
+  # ``conditional_primitives`` dispatch picks the kernel per requested
+  # pricing method. Admissibility is the intersection of the two legacy
+  # routes (see QUA-887 failure-mode note below in the admissibility
+  # block). Per-method admissibility widening is tracked as follow-on
+  # work once the registry supports method-conditional admissibility.
+  - id: short_rate_bond_option
     engine_family: analytical
-    route_family: analytical
+    route_family: zcb_option
     status: promoted
     confidence: 1.0
     score_hints:
       payoff_family_bonus: {zcb_option: 2.0}
     match:
-      methods: [analytical]
-      instruments: [zcb_option]
+      methods: [analytical, rate_tree]
+      required_market_data: [discount_curve, black_vol_surface]
+      payoff_family: [zcb_option]
+    conditional_route_family:
+      - when:
+          methods: [rate_tree]
+        route_family: rate_lattice
+      - when: default
+        route_family: analytical
     admissibility:
       control_styles: [identity]
       event_support: none
@@ -998,14 +986,35 @@ routes:
       multicurrency_support: single_currency_only
       supported_outputs: [price, scenario_pnl]
       supports_sensitivity_outputs: true
+      # Intersection of the two legacy routes (per QUA-887 "Failure modes
+      # to watch": admissibility envelopes must be the intersection, not
+      # the union, when collapsing so a collapsed route does not silently
+      # widen what the family accepts).
+      #   analytical (Jamshidian): [terminal_markov, schedule_state]
+      #   rate_tree (Hull-White):  [terminal_markov, recombining_safe, schedule_state]
+      #   intersection            : [terminal_markov, schedule_state]
       supported_state_tags: [terminal_markov, schedule_state]
+      # analytical: False; rate_tree: True -> intersection keeps the
+      # stricter False so the collapsed route does not admit calibration
+      # steps the analytical Jamshidian branch cannot honour.
       supports_calibration: false
-    primitives:
-      - module: trellis.models.zcb_option
-        symbol: price_zcb_option_jamshidian
-        role: route_helper
-    adapters: []
-    notes: []
+    conditional_primitives:
+      - when:
+          methods: [analytical]
+        primitives:
+          - module: trellis.models.zcb_option
+            symbol: price_zcb_option_jamshidian
+            role: route_helper
+        adapters: []
+        notes: []
+      - when:
+          methods: [rate_tree]
+        primitives:
+          - module: trellis.models.zcb_option_tree
+            symbol: price_zcb_option_tree
+            role: route_helper
+        adapters: []
+        notes: []
     market_data_access:
       required:
         discount_curve: [market_state.discount]
