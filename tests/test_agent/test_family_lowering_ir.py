@@ -10,7 +10,7 @@ from trellis.agent.family_lowering_ir import (
     AnalyticalBlack76IR,
     ConditionalValuationSpec,
     CorrelatedBasketMonteCarloIR,
-    CreditDefaultSwapIR,
+    EventTriggeredTwoLeggedContractIR,
     EventAwarePDEIR,
     EventAwareMonteCarloIR,
     ExerciseLatticeIR,
@@ -792,11 +792,11 @@ def test_credit_default_swap_compiles_to_analytical_family_ir():
     blueprint = compile_semantic_contract(contract, requested_outputs=["price", "scenario_pnl"])
 
     family_ir = blueprint.dsl_lowering.family_ir
-    assert isinstance(family_ir, CreditDefaultSwapIR)
+    assert isinstance(family_ir, EventTriggeredTwoLeggedContractIR)
     assert family_ir.route_id == "credit_default_swap_analytical"
-    assert family_ir.route_family == "credit_default_swap"
+    assert family_ir.route_family == "event_triggered_two_legged_contract"
     assert family_ir.product_instrument == "cds"
-    assert family_ir.payoff_family == "credit_default_swap"
+    assert family_ir.payoff_family == "event_triggered_two_legged_contract"
     assert family_ir.pricing_mode == "analytical"
     assert family_ir.schedule_builder_symbol == "build_cds_schedule"
     assert family_ir.helper_symbol == "price_cds_analytical"
@@ -822,7 +822,7 @@ def test_credit_default_swap_compiles_to_monte_carlo_family_ir():
     )
 
     family_ir = blueprint.dsl_lowering.family_ir
-    assert isinstance(family_ir, CreditDefaultSwapIR)
+    assert isinstance(family_ir, EventTriggeredTwoLeggedContractIR)
     assert family_ir.route_id == "credit_default_swap_monte_carlo"
     assert family_ir.pricing_mode == "monte_carlo"
     assert family_ir.helper_symbol == "price_cds_monte_carlo"
@@ -1084,7 +1084,7 @@ def test_credit_default_swap_dispatches_from_binding_surface_not_route_id(monkey
                 "array_backend",
             ),
             route_id=synthetic_route_id,
-            route_family="credit_default_swap",
+            route_family="event_triggered_two_legged_contract",
             engine_family="monte_carlo",
         ),
     )
@@ -1096,9 +1096,9 @@ def test_credit_default_swap_dispatches_from_binding_surface_not_route_id(monkey
         product_ir=blueprint.product_ir,
     )
 
-    assert isinstance(family_ir, CreditDefaultSwapIR)
+    assert isinstance(family_ir, EventTriggeredTwoLeggedContractIR)
     assert family_ir.route_id == synthetic_route_id
-    assert family_ir.route_family == "credit_default_swap"
+    assert family_ir.route_family == "event_triggered_two_legged_contract"
     assert family_ir.pricing_mode == "monte_carlo"
     assert family_ir.helper_symbol == "price_cds_monte_carlo"
 

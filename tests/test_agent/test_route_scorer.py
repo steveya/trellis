@@ -100,11 +100,11 @@ class TestFeatureExtraction:
         )
         ir = ProductIR(
             instrument="cds",
-            payoff_family="credit_default_swap",
+            payoff_family="event_triggered_two_legged_contract",
             schedule_dependence=True,
             state_dependence="pathwise_only",
             candidate_engine_families=("monte_carlo",),
-            route_families=("credit_default_swap",),
+            route_families=("event_triggered_two_legged_contract",),
         )
         ctx = ScoringContext(
             product_ir=ir,
@@ -224,7 +224,7 @@ class TestScoring:
         matching = RouteSpec(
             id="family_mc",
             engine_family="monte_carlo",
-            route_family="credit_default_swap",
+            route_family="event_triggered_two_legged_contract",
             status="promoted",
             confidence=1.0,
             match_methods=("monte_carlo",),
@@ -271,11 +271,11 @@ class TestScoring:
         )
         ir = ProductIR(
             instrument="cds",
-            payoff_family="credit_default_swap",
+            payoff_family="event_triggered_two_legged_contract",
             schedule_dependence=True,
             state_dependence="pathwise_only",
             candidate_engine_families=("monte_carlo",),
-            route_families=("credit_default_swap",),
+            route_families=("event_triggered_two_legged_contract",),
         )
 
         matching_score = scorer.score_route(

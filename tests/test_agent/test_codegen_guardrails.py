@@ -772,7 +772,7 @@ def test_cds_monte_carlo_route_uses_single_name_credit_default_swap_assembly():
 
     assert plan.primitive_plan is not None
     assert plan.primitive_plan.route == "credit_default_swap_monte_carlo"
-    assert plan.primitive_plan.route_family == "credit_default_swap"
+    assert plan.primitive_plan.route_family == "event_triggered_two_legged_contract"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert {
         "build_cds_schedule",
@@ -786,6 +786,8 @@ def test_cds_monte_carlo_route_uses_single_name_credit_default_swap_assembly():
     assert "price_cds_monte_carlo" in card
     assert "spread_quote" in card
     assert "n_paths" in card
+    assert "Route family: `credit_default_swap`" in card
+    assert "Route family: `event_triggered_two_legged_contract`" not in card
     assert "survival_probability" not in card
     assert "Required adapters:" not in card
     assert "use_credit_curve_hazard_rate_or_survival_probability" not in card

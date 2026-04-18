@@ -1,16 +1,19 @@
 """Tier 2 contract test fixtures (QUA-427).
 
 Provides cassette-aware fixtures and helpers for canary contract tests.
-All contract tests run with cassette replay (zero tokens) by default.
+Replay-backed contract tests run with cassette replay (zero tokens) by
+default, while tasks marked ``record_cassette=false`` opt out of replay.
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+import yaml
 
 from trellis.agent.task_manifests import load_canary_manifest, load_pricing_tasks
 
@@ -63,9 +66,27 @@ def cassette_path_for(task_id: str) -> Path:
     return CASSETTES_DIR / f"{task_id}.yaml"
 
 
+def cassette_recording_supported(task_id: str) -> bool:
+    """Return whether *task_id* currently participates in cassette replay."""
+    canary = CANARY_META.get(task_id)
+    return canary is None or canary.get("record_cassette", True)
+
+
+def cassette_skip_reason(task_id: str) -> str:
+    """Explain why a cassette-backed contract test should skip for *task_id*."""
+    if not cassette_recording_supported(task_id):
+        return (
+            f"Cassette replay disabled for {task_id}; the route surface is being refactored."
+        )
+    return (
+        f"Cassette not recorded for {task_id}. "
+        "Run with TRELLIS_CASSETTE_RECORD=1 to record."
+    )
+
+
 def cassette_available(task_id: str) -> bool:
     """Check whether a cassette file exists for *task_id*."""
-    return cassette_path_for(task_id).exists()
+    return cassette_recording_supported(task_id) and cassette_path_for(task_id).exists()
 
 
 def full_task_cassette_path_for(task_id: str) -> Path:
@@ -73,16 +94,32 @@ def full_task_cassette_path_for(task_id: str) -> Path:
     return FULL_TASK_CASSETTES_DIR / f"{task_id}.yaml"
 
 
+def full_task_cassette_skip_reason(task_id: str) -> str:
+    """Explain why a full-task replay contract test should skip for *task_id*."""
+    if not cassette_recording_supported(task_id):
+        return (
+            f"Full-task cassette replay disabled for {task_id}; "
+            "the route surface is being refactored."
+        )
+    return (
+        f"Full-task cassette not recorded for {task_id}. "
+        f"Run: PYTHONHASHSEED=0 {sys.executable} scripts/record_cassettes.py --task {task_id}"
+    )
+
+
 def full_task_cassette_available(task_id: str) -> bool:
     """Check whether a full-task cassette exists for *task_id*."""
-    return full_task_cassette_path_for(task_id).exists()
+    return (
+        cassette_recording_supported(task_id)
+        and full_task_cassette_path_for(task_id).exists()
+    )
 
 
 def requires_cassette(task_id: str):
     """Pytest skip decorator for tests that require a recorded cassette."""
     return pytest.mark.skipif(
         not cassette_available(task_id),
-        reason=f"Cassette not recorded for {task_id}. Run with TRELLIS_CASSETTE_RECORD=1 to record.",
+        reason=cassette_skip_reason(task_id),
     )
 
 

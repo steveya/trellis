@@ -76,6 +76,16 @@ class TestKnowledgeStore:
         assert "callable" in matches[0].shared_features
         assert matches[0].promoted_routes
 
+    def test_promoted_routes_for_cds_uses_structural_payoff_family(self):
+        from trellis.agent.knowledge.store import KnowledgeStore
+
+        promoted = KnowledgeStore._promoted_routes_for(
+            instrument="cds",
+            method="analytical",
+        )
+
+        assert "credit_default_swap_analytical" in promoted
+
     def test_retrieve_callable_bond(self):
         from trellis.agent.knowledge import retrieve_for_task
         k = retrieve_for_task(

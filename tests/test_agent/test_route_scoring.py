@@ -143,7 +143,7 @@ def test_cds_ranks_credit_default_swap_route_above_generic_analytical():
 
     assert ranked
     assert ranked[0].route == "credit_default_swap_analytical"
-    assert ranked[0].route_family == "credit_default_swap"
+    assert ranked[0].route_family == "event_triggered_two_legged_contract"
     assert ranked[0].score > 0.0
 
 

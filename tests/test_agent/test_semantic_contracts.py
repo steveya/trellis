@@ -1256,7 +1256,7 @@ class TestCreditConceptResolution:
 
         cds = get_semantic_concept_definition("credit_default_swap")
         ntd = get_semantic_concept_definition("nth_to_default")
-        assert cds.route_family == "credit_default_swap"
+        assert cds.route_family == "event_triggered_two_legged_contract"
         assert ntd.route_family == "nth_to_default"
 
 
@@ -1397,7 +1397,7 @@ def test_credit_default_swap_contract_validates_and_compiles():
     assert compiled.semantic_id == "credit_default_swap"
     assert compiled.product_ir is not None
     assert compiled.product_ir.instrument == "cds"
-    assert compiled.product_ir.payoff_family == "credit_default_swap"
+    assert compiled.product_ir.payoff_family == "event_triggered_two_legged_contract"
     assert compiled.product_ir.schedule_dependence is True
     assert compiled.pricing_plan.method == "analytical"
     assert compiled.target_modules == ("trellis.models.credit_default_swap",)
@@ -1419,7 +1419,7 @@ def test_credit_default_swap_summary_is_stable_and_route_specific():
     assert summary == semantic_contract_summary(contract)
     assert summary["semantic_id"] == "credit_default_swap"
     assert summary["product"]["instrument_class"] == "cds"
-    assert summary["product"]["payoff_family"] == "credit_default_swap"
+    assert summary["product"]["payoff_family"] == "event_triggered_two_legged_contract"
     assert summary["typed_semantics"]["controller_protocol"]["controller_style"] == "identity"
     assert summary["market_data"]["required_inputs"] == ["discount_curve", "credit_curve"]
     assert summary["blueprint"]["primitive_families"] == ["credit_default_swap_analytical"]

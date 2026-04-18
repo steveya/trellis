@@ -7,6 +7,10 @@ from functools import lru_cache
 import re
 from typing import Any
 
+from trellis.agent.semantic_tokens import (
+    EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY,
+)
+
 
 @dataclass(frozen=True)
 class SemanticConceptDefinition:
@@ -748,9 +752,9 @@ SEMANTIC_CONCEPT_REGISTRY: tuple[SemanticConceptDefinition, ...] = (
         semantic_version="c1.0",
         scope="single-name CDS: protection buyer/seller on one reference entity",
         description=(
-            "Credit default swap on a single reference entity. Priced via "
-            "survival-probability discounting (analytical) or hazard-rate "
-            "simulation (Monte Carlo)."
+            "Single-name CDS as a single-reference-entity specialization of an "
+            "event-triggered two-legged contract. Priced via survival-probability "
+            "discounting (analytical) or hazard-rate simulation (Monte Carlo)."
         ),
         concept_role="product_contract",
         aliases=(
@@ -772,7 +776,7 @@ SEMANTIC_CONCEPT_REGISTRY: tuple[SemanticConceptDefinition, ...] = (
             "discount_curve",
             "credit_curve",
         ),
-        route_family="credit_default_swap",
+        route_family=EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY,
         example_requests=(
             "Price a 5-year CDS on Company X",
             "CDS pricing: hazard rate MC vs survival prob analytical",

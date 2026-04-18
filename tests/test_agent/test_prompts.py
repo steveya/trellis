@@ -1165,11 +1165,35 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "explicit payment/default schedule" in prompt
     assert "build_cds_schedule" in prompt
     assert "price_cds_analytical" in prompt
+    assert "Route family: `credit_default_swap`" in prompt
+    assert "Route family: `event_triggered_two_legged_contract`" not in prompt
     assert "market_state.discount.discount(t)" in prompt
     assert "spec.start_date` as the time origin" in prompt
     assert "accrued-on-default premium adjustment" in prompt
     assert "Do not average adjacent discount factors" in prompt
     assert "price_cds_analytical" in prompt
+
+
+def test_distilled_builder_memory_keeps_legacy_cds_labels_and_omits_nearest_products():
+    from trellis.agent.knowledge.retrieval import format_distilled_knowledge_for_prompt
+    from trellis.agent.knowledge.schema import ProductIR, SimilarProductMatch
+
+    text = format_distilled_knowledge_for_prompt(
+        {
+            "product_ir": ProductIR(
+                instrument="cds",
+                payoff_family="event_triggered_two_legged_contract",
+            ),
+            "similar_products": [
+                SimilarProductMatch(instrument="bond", method="analytical", score=0.6),
+                SimilarProductMatch(instrument="autocallable", method="monte_carlo", score=0.53),
+            ],
+        },
+        audience="builder",
+    )
+
+    assert "- Product: `cds` / `cds` / `none`" in text
+    assert "Nearest known products" not in text
 
 
 def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule_loop():

@@ -410,6 +410,56 @@ class TestRunCanaries:
         output = capsys.readouterr().out
         assert "CANARY RESULTS: 1/1 passed, 1 skipped" in output
 
+    def test_run_canaries_skips_replay_unsupported_tasks_even_when_cassette_exists(
+        self, monkeypatch, tmp_path
+    ):
+        seen: dict[str, int] = {"run_task_calls": 0}
+
+        def fake_build_market_state():
+            return object()
+
+        def fake_load_tasks(*, status="pending", path=None):
+            return [{"id": "T38", "title": "CDS pricing canary"}]
+
+        def fake_run_task(task, market_state, **kwargs):
+            seen["run_task_calls"] += 1
+            return {"task_id": task["id"], "success": True}
+
+        (tmp_path / "T38.yaml").write_text("meta: {}\ncalls: []\n", encoding="utf-8")
+
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.build_market_state",
+            fake_build_market_state,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.load_tasks",
+            fake_load_tasks,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.run_task",
+            fake_run_task,
+        )
+
+        results = run_canaries(
+            [
+                {
+                    "id": "T38",
+                    "engine_family": "credit",
+                    "complexity": "complex",
+                    "record_cassette": False,
+                }
+            ],
+            {"total_budget_usd": 1.0},
+            replay=True,
+            cassette_dir=tmp_path,
+        )
+
+        assert seen["run_task_calls"] == 0
+        assert results[0]["canary_id"] == "T38"
+        assert results[0]["success"] is False
+        assert results[0]["skipped"] is True
+        assert results[0]["reason"] == "replay_unsupported"
+
     def test_run_canaries_replay_mode_uses_full_task_cassette(self, monkeypatch, tmp_path):
         from trellis.agent.cassette import _prompt_hash
 
@@ -631,7 +681,7 @@ class TestCanaryFileValidity:
         for c in canaries:
             assert c["id"] in task_lookup, f"Canary {c['id']} not found in active task manifests"
 
-    def test_real_canary_file_keeps_replay_backed_legacy_tasks(self):
+    def test_real_canary_file_marks_t38_as_live_only_during_route_refactor(self):
         real_path = ROOT / "CANARY_TASKS.yaml"
         if not real_path.exists():
             pytest.skip("CANARY_TASKS.yaml not found in repo root")
@@ -642,11 +692,13 @@ class TestCanaryFileValidity:
         assert expected_ids <= set(canary_lookup)
 
         assert canary_lookup["T13"]["canary_kind"] == "legacy_replay"
-        assert canary_lookup["T38"]["canary_kind"] == "legacy_replay"
+        assert canary_lookup["T13"].get("record_cassette", True) is True
+        assert canary_lookup["T38"].get("record_cassette", True) is False
         assert canary_lookup["F001"]["canary_kind"] == "parity"
         assert canary_lookup["P003"]["canary_kind"] == "extension"
         assert canary_lookup["N001"]["canary_kind"] == "negative"
         assert "financepy_parity" in canary_lookup["F002"]["covers"]
+        assert "replay" not in canary_lookup["T38"]["covers"]
 
 
 # ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ bindings:
 
   - route_id: credit_default_swap_analytical
     engine_family: analytical
-    route_family: credit_default_swap
+    route_family: event_triggered_two_legged_contract
     primitives:
       - module: trellis.models.credit_default_swap
         symbol: build_cds_schedule
@@ -30,7 +30,7 @@ bindings:
 
   - route_id: credit_default_swap_monte_carlo
     engine_family: monte_carlo
-    route_family: credit_default_swap
+    route_family: event_triggered_two_legged_contract
     primitives:
       - module: trellis.models.credit_default_swap
         symbol: build_cds_schedule

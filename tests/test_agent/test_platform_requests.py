@@ -1337,13 +1337,16 @@ def test_compile_build_request_uses_credit_default_swap_semantic_contract_bluepr
     assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "credit_default_swap"
     assert compiled.product_ir is not None
     assert compiled.product_ir.instrument == "cds"
-    assert compiled.product_ir.payoff_family == "credit_default_swap"
+    assert compiled.product_ir.payoff_family == "event_triggered_two_legged_contract"
     assert compiled.pricing_plan is not None
     assert compiled.pricing_plan.method == preferred_method
     assert compiled.semantic_blueprint.route_modules == _expected_route_modules(compiled)
     assert compiled.semantic_blueprint.primitive_routes == (expected_route,)
     assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == expected_route
-    assert compiled.request.metadata["semantic_blueprint"]["dsl_family_ir_type"] == "CreditDefaultSwapIR"
+    assert (
+        compiled.request.metadata["semantic_blueprint"]["dsl_family_ir_type"]
+        == "EventTriggeredTwoLeggedContractIR"
+    )
     assert compiled.request.metadata["semantic_blueprint"]["dsl_expr_kind"] == expected_expr_kind
     assert (
         compiled.request.metadata["semantic_blueprint"]["dsl_family_ir"]["schedule_builder_symbol"]

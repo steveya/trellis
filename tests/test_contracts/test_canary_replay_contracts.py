@@ -20,6 +20,7 @@ from tests.test_contracts.conftest import (
     CANARY_META,
     FULL_TASK_CASSETTES_DIR,
     full_task_cassette_available,
+    full_task_cassette_skip_reason,
 )
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -30,10 +31,7 @@ def _full_task_replay_test(task_id: str):
     @pytest.mark.tier2
     @pytest.mark.skipif(
         not full_task_cassette_available(task_id),
-        reason=(
-            f"Full-task cassette not recorded for {task_id}. "
-            f"Run: PYTHONHASHSEED=0 {sys.executable} scripts/record_cassettes.py --task {task_id}"
-        ),
+        reason=full_task_cassette_skip_reason(task_id),
     )
     class _ReplayTest:
         def test_canary_replay_runs_zero_token_with_diagnosis_artifacts(self, tmp_path):

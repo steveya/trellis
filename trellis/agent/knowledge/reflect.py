@@ -275,11 +275,14 @@ def _attribute_route_success(decomposition: ProductDecomposition) -> int:
             match_candidate_routes,
         )
         from trellis.agent.knowledge.schema import ProductIR
+        from trellis.agent.semantic_tokens import internal_payoff_family_for_surface
 
         registry = load_route_registry(include_discovered=True)
         minimal_ir = ProductIR(
             instrument=decomposition.instrument,
-            payoff_family=decomposition.instrument,
+            payoff_family=internal_payoff_family_for_surface(
+                instrument=decomposition.instrument,
+            ),
         )
         # Only boost discovered routes (not canonical)
         all_matches = match_candidate_routes(

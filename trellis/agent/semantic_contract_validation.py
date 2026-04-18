@@ -20,6 +20,13 @@ from trellis.agent.semantic_contracts import (
     SemanticContract,
     parse_semantic_contract,
 )
+from trellis.agent.semantic_tokens import (
+    EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY,
+    SCHEDULED_LEG_OBLIGATION_ID,
+    SCHEDULED_LEG_PLUS_TRIGGER_LEG_RULE,
+    SCHEDULED_PAYMENTS_AND_TRIGGER_SETTLEMENT_RULE,
+    TRIGGER_LEG_OBLIGATION_ID,
+)
 
 
 _KNOWN_CAPABILITIES = frozenset(cap.name for cap in capability_registry.MARKET_DATA)
@@ -2037,10 +2044,10 @@ def _validate_credit_default_swap_shape(
         contract,
         errors,
         expected_instrument_class="cds",
-        expected_payoff_family="credit_default_swap",
+        expected_payoff_family=EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY,
         expected_underlier_structure="single_reference_entity",
-        expected_payoff_rule="single_name_cds_legs",
-        expected_settlement_rule="premium_schedule_and_default_settlement",
+        expected_payoff_rule=SCHEDULED_LEG_PLUS_TRIGGER_LEG_RULE,
+        expected_settlement_rule=SCHEDULED_PAYMENTS_AND_TRIGGER_SETTLEMENT_RULE,
         expected_exercise_style="none",
         expected_multi_asset=False,
         require_schedule=True,
@@ -2061,10 +2068,10 @@ def _validate_credit_default_swap_shape(
     if "cashflow_schedule" not in observable_types:
         errors.append("Credit-default-swap semantics require a typed cashflow_schedule observable.")
     obligation_ids = {item.obligation_id for item in product.obligations}
-    if "premium_leg_cashflow" not in obligation_ids:
-        errors.append("Credit-default-swap semantics require a typed premium-leg obligation.")
-    if "protection_leg_cashflow" not in obligation_ids:
-        errors.append("Credit-default-swap semantics require a typed protection-leg obligation.")
+    if SCHEDULED_LEG_OBLIGATION_ID not in obligation_ids:
+        errors.append("Credit-default-swap semantics require a typed scheduled-leg obligation.")
+    if TRIGGER_LEG_OBLIGATION_ID not in obligation_ids:
+        errors.append("Credit-default-swap semantics require a typed trigger-leg obligation.")
     if product.controller_protocol.controller_style != "identity":
         errors.append("Credit-default-swap semantics cannot declare a strategic controller.")
     if not contract.blueprint.primitive_families:
