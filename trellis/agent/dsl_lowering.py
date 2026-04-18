@@ -196,6 +196,7 @@ def lower_semantic_blueprint(
                 route_id=route_id,
                 route_family=route_family,
                 product_ir=product_ir,
+                method=method,
                 valuation_context=valuation_context,
                 market_binding_spec=market_binding_spec,
             )

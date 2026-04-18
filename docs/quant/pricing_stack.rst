@@ -280,8 +280,8 @@ The end-to-end typed boundary is currently proven for:
 - ``bermudan_swaption_tree_v1`` on the first supported Bermudan swaption desk slice
 - ``correlated_basket_monte_carlo`` on ranked-observation baskets
 - ``range_accrual_discounted_cashflow_v1`` on the first single-index range-accrual note slice
-- ``credit_default_swap_analytical`` and ``credit_default_swap_monte_carlo`` on
-  single-name CDS, both routed through the structural
+- ``credit_default_swap`` on single-name CDS across analytical and Monte Carlo
+  bindings, routed through the structural
   ``event_triggered_two_legged_contract`` family
 - ``nth_to_default_monte_carlo`` on nth-to-default basket credit
 - ``copula_loss_distribution`` on tranche-style basket-credit comparison tasks

@@ -89,7 +89,7 @@ def _patch_binding(monkeypatch, binding_spec: ResolvedBackendBindingSpec) -> Non
     monkeypatch.setattr(
         family_lowering_ir,
         "_resolve_family_lowering_binding",
-        lambda route_id, *, product_ir=None: (
+        lambda route_id, *, product_ir=None, method=None: (
             binding_spec if route_id == binding_spec.route_id else None
         ),
     )
@@ -793,7 +793,7 @@ def test_credit_default_swap_compiles_to_analytical_family_ir():
 
     family_ir = blueprint.dsl_lowering.family_ir
     assert isinstance(family_ir, EventTriggeredTwoLeggedContractIR)
-    assert family_ir.route_id == "credit_default_swap_analytical"
+    assert family_ir.route_id == "credit_default_swap"
     assert family_ir.route_family == "event_triggered_two_legged_contract"
     assert family_ir.product_instrument == "cds"
     assert family_ir.payoff_family == "event_triggered_two_legged_contract"
@@ -823,7 +823,7 @@ def test_credit_default_swap_compiles_to_monte_carlo_family_ir():
 
     family_ir = blueprint.dsl_lowering.family_ir
     assert isinstance(family_ir, EventTriggeredTwoLeggedContractIR)
-    assert family_ir.route_id == "credit_default_swap_monte_carlo"
+    assert family_ir.route_id == "credit_default_swap"
     assert family_ir.pricing_mode == "monte_carlo"
     assert family_ir.helper_symbol == "price_cds_monte_carlo"
     assert family_ir.payment_dates[-1] == "2027-06-20"

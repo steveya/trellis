@@ -1262,7 +1262,7 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "market_state.discount.discount(t)" in prompt
 
 
-def test_executor_credit_default_swap_analytical_retry_pins_discount_and_time_origin():
+def test_executor_credit_default_swap_retry_pins_discount_and_time_origin():
     from types import SimpleNamespace
 
     from trellis.agent.executor import KnowledgeRetrievalRequest, _route_specific_retry_lines

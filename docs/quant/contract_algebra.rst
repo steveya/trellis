@@ -384,8 +384,8 @@ The typed semantic boundary is proven end-to-end for:
   equity exercise and issuer-min Hull-White callable bonds
 - ``exercise_lattice`` on callable bonds and Bermudan swaptions
 - ``correlated_basket_monte_carlo`` on ranked-observation baskets
-- ``credit_default_swap_analytical`` and ``credit_default_swap_monte_carlo`` on
-  single-name CDS, both routed through the structural
+- ``credit_default_swap`` on single-name CDS across analytical and Monte Carlo
+  bindings, routed through the structural
   ``event_triggered_two_legged_contract`` family
 - ``nth_to_default_monte_carlo`` on nth-to-default basket credit
 

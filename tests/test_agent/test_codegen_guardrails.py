@@ -796,7 +796,7 @@ def test_cds_monte_carlo_route_uses_single_name_credit_default_swap_assembly():
     card = render_generation_route_card(plan)
 
     assert plan.primitive_plan is not None
-    assert plan.primitive_plan.route == "credit_default_swap_monte_carlo"
+    assert plan.primitive_plan.route == "credit_default_swap"
     assert plan.primitive_plan.route_family == "event_triggered_two_legged_contract"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert {

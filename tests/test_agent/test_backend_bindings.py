@@ -20,7 +20,7 @@ def test_binding_catalog_loads_core_route_backed_bindings():
     assert {
         "zcb_option_rate_tree",
         "analytical_black76",
-        "credit_default_swap_analytical",
+        "credit_default_swap",
         "analytical_garman_kohlhagen",
         "waterfall_cashflows",
     } <= route_ids
@@ -40,7 +40,7 @@ def test_binding_catalog_covers_retired_fallback_routes():
 
     Slice 2 (this PR): ``vanilla_equity_theta_pde``, ``pde_theta_1d``,
     ``exercise_lattice``, ``correlated_basket_monte_carlo``,
-    ``credit_default_swap_analytical``, ``credit_default_swap_monte_carlo``,
+    ``credit_default_swap``,
     ``nth_to_default_monte_carlo``.
     """
     catalog = load_backend_binding_catalog()
@@ -56,8 +56,7 @@ def test_binding_catalog_covers_retired_fallback_routes():
         "pde_theta_1d",
         "exercise_lattice",
         "correlated_basket_monte_carlo",
-        "credit_default_swap_analytical",
-        "credit_default_swap_monte_carlo",
+        "credit_default_swap",
         "nth_to_default_monte_carlo",
     } <= route_ids
 
@@ -118,7 +117,7 @@ def test_binding_catalog_skips_malformed_primitive_rows(monkeypatch):
 def test_resolve_backend_binding_spec_captures_helper_schedule_and_cashflow_roles():
     catalog = load_backend_binding_catalog()
 
-    cds = find_backend_binding_by_route_id("credit_default_swap_monte_carlo", catalog)
+    cds = find_backend_binding_by_route_id("credit_default_swap", catalog)
     waterfall = find_backend_binding_by_route_id("waterfall_cashflows", catalog)
 
     assert cds is not None
@@ -132,6 +131,7 @@ def test_resolve_backend_binding_spec_captures_helper_schedule_and_cashflow_role
             schedule_dependence=True,
             state_dependence="pathwise_only",
         ),
+        method="monte_carlo",
     )
     waterfall_resolved = resolve_backend_binding_spec(
         waterfall,

@@ -543,7 +543,7 @@ def test_credit_default_swap_analytical_lowers_to_schedule_then_helper():
 
     lowering = blueprint.dsl_lowering
     assert lowering is not None
-    assert lowering.route_id == "credit_default_swap_analytical"
+    assert lowering.route_id == "credit_default_swap"
     assert lowering.route_family == "event_triggered_two_legged_contract"
     assert lowering.admissibility_errors == ()
     assert lowering.binding_id == "trellis.models.credit_default_swap.price_cds_analytical"
@@ -576,7 +576,7 @@ def test_credit_default_swap_monte_carlo_lowers_to_schedule_then_helper():
 
     lowering = blueprint.dsl_lowering
     assert lowering is not None
-    assert lowering.route_id == "credit_default_swap_monte_carlo"
+    assert lowering.route_id == "credit_default_swap"
     assert lowering.route_family == "event_triggered_two_legged_contract"
     assert lowering.admissibility_errors == ()
     assert lowering.binding_id == "trellis.models.credit_default_swap.price_cds_monte_carlo"
@@ -596,7 +596,7 @@ def test_credit_default_swap_missing_schedule_builder_reports_binding_first_erro
     def _binding_without_schedule_builder(*args, **kwargs):
         del args, kwargs
         return backend_bindings_module.ResolvedBackendBindingSpec(
-            route_id="credit_default_swap_analytical",
+            route_id="credit_default_swap",
             engine_family="analytical",
             route_family="event_triggered_two_legged_contract",
             binding_id="trellis.models.credit_default_swap.price_cds_analytical",

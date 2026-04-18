@@ -469,7 +469,7 @@ def _build_semantic_family_registry() -> MappingProxyType:
                 _method_surface_definition(
                     "analytical",
                     target_modules=("trellis.models.credit_default_swap",),
-                    primitive_families=("credit_default_swap_analytical",),
+                    primitive_families=("credit_default_swap",),
                     adapter_obligations=(
                         "resolve_event_trigger_and_discount_inputs",
                         "build_scheduled_leg_payment_schedule",
@@ -480,7 +480,7 @@ def _build_semantic_family_registry() -> MappingProxyType:
                 _method_surface_definition(
                     "monte_carlo",
                     target_modules=("trellis.models.credit_default_swap",),
-                    primitive_families=("credit_default_swap_monte_carlo",),
+                    primitive_families=("credit_default_swap",),
                     adapter_obligations=(
                         "resolve_event_trigger_and_discount_inputs",
                         "build_scheduled_leg_payment_schedule",

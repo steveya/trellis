@@ -72,9 +72,9 @@ def test_route_hint_projection_includes_instruction_lifecycle_records():
     skill_ids = {record.skill_id for record in route_skills}
     summaries = [record.summary for record in route_skills]
 
-    assert "route_hint:credit_default_swap_monte_carlo:route-helper" in skill_ids
-    assert "route_hint:credit_default_swap_monte_carlo:schedule-builder" in skill_ids
-    assert "route_hint:credit_default_swap_monte_carlo:schedule-body" in skill_ids
+    assert "route_hint:credit_default_swap:route-helper" in skill_ids
+    assert "route_hint:credit_default_swap:schedule-builder" in skill_ids
+    assert "route_hint:credit_default_swap:schedule-body" in skill_ids
     assert not any("default-time" in summary.lower() or "default time" in summary.lower() for summary in summaries)
 
 

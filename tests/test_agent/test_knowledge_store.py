@@ -84,7 +84,7 @@ class TestKnowledgeStore:
             method="analytical",
         )
 
-        assert "credit_default_swap_analytical" in promoted
+        assert "credit_default_swap" in promoted
 
     def test_retrieve_callable_bond(self):
         from trellis.agent.knowledge import retrieve_for_task

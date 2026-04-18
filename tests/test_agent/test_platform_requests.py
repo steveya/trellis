@@ -1327,13 +1327,13 @@ def test_request_missing_schedule_returns_semantic_error():
     [
         (
             "analytical",
-            "credit_default_swap_analytical",
+            "credit_default_swap",
             "ThenExpr",
             "trellis.models.credit_default_swap.price_cds_analytical",
         ),
         (
             "monte_carlo",
-            "credit_default_swap_monte_carlo",
+            "credit_default_swap",
             "ThenExpr",
             "trellis.models.credit_default_swap.price_cds_monte_carlo",
         ),

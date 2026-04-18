@@ -239,7 +239,7 @@ def test_route_less_semantic_request_keeps_validation_contract_truthful():
             ),
             "credit_default_swap",
             "credit_default_swap",
-            "credit_default_swap_analytical",
+            "credit_default_swap",
             "analytical:credit_default_swap",
             {"discount_curve", "credit_curve"},
             (),
@@ -338,7 +338,7 @@ def test_platform_trace_persists_validation_contract_summary(tmp_path):
 
     assert "validation_contract:" in raw
     assert len(traces) == 1
-    assert traces[0].validation_contract["route_id"] == "credit_default_swap_analytical"
+    assert traces[0].validation_contract["route_id"] == "credit_default_swap"
     assert traces[0].validation_contract["bundle_id"] == "analytical:credit_default_swap"
     assert (
         traces[0].validation_contract["backend_binding_id"]

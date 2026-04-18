@@ -108,8 +108,7 @@ class TestRegistryValidation:
             "exercise_lattice",
             "correlated_basket_monte_carlo",
             "equity_quanto",
-            "credit_default_swap_analytical",
-            "credit_default_swap_monte_carlo",
+            "credit_default_swap",
             "pde_theta_1d",
             "qmc_sobol_paths",
             "transform_fft",
@@ -485,12 +484,22 @@ class TestCreditRoutes:
     NTD_IR = ProductIR(instrument="nth_to_default", payoff_family="nth_to_default")
 
     def test_cds_analytical(self, registry):
-        new = _new_routes(registry, "analytical", self.CDS_IR)
-        assert new == ("credit_default_swap_analytical",)
+        new = _new_routes(
+            registry,
+            "analytical",
+            self.CDS_IR,
+            pricing_plan=_make_plan("analytical", market_data={"credit_curve"}),
+        )
+        assert new == ("credit_default_swap",)
 
     def test_cds_monte_carlo(self, registry):
-        new = _new_routes(registry, "monte_carlo", self.CDS_IR)
-        assert new == ("credit_default_swap_monte_carlo",)
+        new = _new_routes(
+            registry,
+            "monte_carlo",
+            self.CDS_IR,
+            pricing_plan=_make_plan("monte_carlo", market_data={"credit_curve"}),
+        )
+        assert new == ("credit_default_swap",)
 
     def test_nth_to_default_analytical(self, registry):
         new = _new_routes(registry, "analytical", self.NTD_IR)
@@ -501,7 +510,7 @@ class TestCreditRoutes:
         assert new == ("nth_to_default_monte_carlo",)
 
     def test_route_family(self, registry):
-        spec = [r for r in registry.routes if r.id == "credit_default_swap_analytical"][0]
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         new = resolve_route_family(spec, self.CDS_IR)
         assert new == "event_triggered_two_legged_contract"
 
@@ -514,9 +523,14 @@ class TestCreditRoutes:
             state_dependence="schedule_state",
         )
 
-        new = _new_routes(registry, "analytical", structural_only_ir)
+        new = _new_routes(
+            registry,
+            "analytical",
+            structural_only_ir,
+            pricing_plan=_make_plan("analytical", market_data={"credit_curve"}),
+        )
 
-        assert new == ("credit_default_swap_analytical",)
+        assert new == ("credit_default_swap",)
 
     def test_cds_analytical_admissibility_uses_credit_family_state_tags(self, registry):
         from trellis.agent.semantic_contract_compiler import compile_semantic_contract
@@ -527,7 +541,7 @@ class TestCreditRoutes:
             observation_schedule=("2026-06-20", "2026-09-20", "2026-12-20", "2027-03-20"),
         )
         blueprint = compile_semantic_contract(contract)
-        spec = find_route_by_id("credit_default_swap_analytical", registry)
+        spec = find_route_by_id("credit_default_swap", registry)
 
         decision = evaluate_route_admissibility(spec, semantic_blueprint=blueprint)
 
@@ -544,7 +558,7 @@ class TestCreditRoutes:
             preferred_method="monte_carlo",
         )
         blueprint = compile_semantic_contract(contract, preferred_method="monte_carlo")
-        spec = find_route_by_id("credit_default_swap_monte_carlo", registry)
+        spec = find_route_by_id("credit_default_swap", registry)
 
         decision = evaluate_route_admissibility(spec, semantic_blueprint=blueprint)
 
@@ -1907,8 +1921,7 @@ class TestFallbackRoutes:
 
     def test_credit_and_copula_routes_are_thin_backend_bindings(self, registry):
         for route_id in (
-            "credit_default_swap_analytical",
-            "credit_default_swap_monte_carlo",
+            "credit_default_swap",
             "nth_to_default_analytical",
             "nth_to_default_monte_carlo",
             "copula_loss_distribution",
@@ -1939,8 +1952,7 @@ class TestFallbackRoutes:
 class TestEngineFamilyCoverage:
     EXPECTED = {
         "equity_quanto": "analytical",
-        "credit_default_swap_analytical": "analytical",
-        "credit_default_swap_monte_carlo": "monte_carlo",
+        "credit_default_swap": "analytical",
         "nth_to_default_analytical": "analytical",
         "nth_to_default_monte_carlo": "monte_carlo",
         "correlated_basket_monte_carlo": "monte_carlo",
