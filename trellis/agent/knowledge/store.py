@@ -37,6 +37,7 @@ from trellis.agent.knowledge.schema import (
     Severity,
     SimilarProductMatch,
 )
+from trellis.agent.semantic_tokens import internal_payoff_family_for_surface
 
 
 _KNOWLEDGE_DIR = Path(__file__).parent
@@ -627,7 +628,12 @@ class KnowledgeStore:
             promoted = match_candidate_routes(
                 registry,
                 method,
-                ProductIR(instrument=instrument, payoff_family=instrument),
+                ProductIR(
+                    instrument=instrument,
+                    payoff_family=internal_payoff_family_for_surface(
+                        instrument=instrument,
+                    ),
+                ),
                 promoted_only=True,
             )
             return tuple(route.id for route in promoted)

@@ -178,10 +178,13 @@ def _check_route_gap(decomposition: ProductDecomposition) -> RouteGap | None:
             load_route_registry,
             match_candidate_routes,
         )
+        from trellis.agent.semantic_tokens import internal_payoff_family_for_surface
 
         minimal_ir = ProductIR(
             instrument=decomposition.instrument,
-            payoff_family=decomposition.instrument,
+            payoff_family=internal_payoff_family_for_surface(
+                instrument=decomposition.instrument,
+            ),
         )
         registry = load_route_registry()
 
