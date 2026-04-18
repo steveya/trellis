@@ -838,6 +838,13 @@ semantics on the shared floating-boundary observation grid. It is useful for
 checked future-value workflows and validation projections, but it is not yet a
 netting, collateral, or xVA engine.
 
+For multiple swaps on one shared simulation, use
+``price_interest_rate_swap_portfolio_future_value_cube(...)`` and provide a
+name-to-``SwapSpec`` mapping or a ``Book`` of ``SwapPayoff`` positions. The
+result is the same ``FutureValueCube`` contract, now populated on the union of
+the portfolio's floating-boundary dates so later aggregation semantics remain
+well-defined.
+
 The runtime analytics surface now also exposes spot ``delta`` and ``gamma``
 plus roll-down ``theta`` through ``Session.analyze(...)``. Delta and gamma use
 finite-difference repricing on one selected spot binding, while theta rolls the

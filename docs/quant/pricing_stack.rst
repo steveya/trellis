@@ -441,16 +441,18 @@ companions ``simulate_factor_state_observations(...)``,
 ``evaluate_conditional_valuation_paths(...)``, and the emitted
 ``FutureValueCube`` / ``FutureValueCubeMetadata`` surface.
 
-The first checked proof path is intentionally narrow: a vanilla interest-rate
-swap under one-factor Hull-White. That workflow now emits
+The first checked proof path is intentionally narrow: vanilla interest-rate
+swap positions and shared-path swap portfolios under one-factor Hull-White.
+Those workflows now emit
 
 .. math::
 
    C_{a,i,n} = V_a^{clean}(t_i^+, X_{t_i}^{(n)})
 
-on the shared floating-boundary observation grid with explicit ``post_event``
-phase semantics. The cube remains upstream of institutional counterparty
-analytics: supported values are pre-netting, pre-collateral, and
+on either the per-trade floating-boundary grid or the shared portfolio union
+of floating-boundary dates, always with explicit ``post_event`` phase
+semantics. The cube remains upstream of institutional counterparty analytics:
+supported values are pre-netting, pre-collateral, and
 pre-``CVA``/``DVA``/``FVA``.
 
 Those pod-risk workflows now also have a checked throughput baseline.

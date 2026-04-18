@@ -7,6 +7,7 @@ from datetime import date
 import numpy as np
 import pytest
 
+from trellis.book import Book
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.curves.yield_curve import YieldCurve
 from trellis.instruments.swap import SwapPayoff, SwapSpec
@@ -135,3 +136,164 @@ def test_single_swap_future_value_cube_matches_today_pv_and_zeroes_after_maturit
         rtol=1e-10,
     )
     assert cube.expected_positive_exposure()[0] == pytest.approx(max(direct_pv, 0.0))
+
+
+def test_swap_portfolio_future_value_cube_matches_position_pvs_on_shared_grid():
+    from trellis.core.market_state import MarketState
+    from trellis.models.monte_carlo.simulation_substrate import (
+        price_interest_rate_swap_portfolio_future_value_cube,
+    )
+
+    settle = date(2024, 11, 15)
+    market_state = MarketState(
+        as_of=settle,
+        settlement=settle,
+        discount=YieldCurve.flat(0.042, max_tenor=10.0),
+        forecast_curves={"USD-SOFR-3M": YieldCurve.flat(0.046, max_tenor=10.0)},
+        vol_surface=FlatVol(0.20),
+        selected_curve_names={"discount_curve": "usd_ois", "forecast_curve": "USD-SOFR-3M"},
+    )
+    long_swap = SwapSpec(
+        notional=1_000_000.0,
+        fixed_rate=0.045,
+        start_date=settle,
+        end_date=date(2027, 11, 15),
+        fixed_frequency=Frequency.SEMI_ANNUAL,
+        float_frequency=Frequency.QUARTERLY,
+        fixed_day_count=DayCountConvention.THIRTY_360,
+        float_day_count=DayCountConvention.ACT_360,
+        rate_index="USD-SOFR-3M",
+        is_payer=True,
+    )
+    short_swap = SwapSpec(
+        notional=2_000_000.0,
+        fixed_rate=0.041,
+        start_date=settle,
+        end_date=date(2026, 11, 15),
+        fixed_frequency=Frequency.SEMI_ANNUAL,
+        float_frequency=Frequency.QUARTERLY,
+        fixed_day_count=DayCountConvention.THIRTY_360,
+        float_day_count=DayCountConvention.ACT_360,
+        rate_index="USD-SOFR-3M",
+        is_payer=False,
+    )
+
+    cube = price_interest_rate_swap_portfolio_future_value_cube(
+        positions={"long_swap": long_swap, "short_swap": short_swap},
+        market_state=market_state,
+        n_paths=512,
+        n_steps=96,
+        seed=23,
+    )
+
+    long_pv = SwapPayoff(long_swap).evaluate(market_state)
+    short_pv = SwapPayoff(short_swap).evaluate(market_state)
+
+    assert cube.position_names == ("long_swap", "short_swap")
+    assert cube.compute_plan["engine_family"] == "simulation_substrate"
+    assert cube.compute_plan["observation_grid"] == "portfolio_float_boundary_union"
+    assert cube.compute_plan["portfolio_size"] == 2
+    assert cube.observation_dates[0] == settle
+    assert cube.observation_dates[-1] == long_swap.end_date
+    np.testing.assert_allclose(
+        cube.values_for_position("long_swap")[0],
+        np.full(cube.n_paths, long_pv, dtype=float),
+        atol=1e-10,
+        rtol=1e-10,
+    )
+    np.testing.assert_allclose(
+        cube.values_for_position("short_swap")[0],
+        np.full(cube.n_paths, short_pv, dtype=float),
+        atol=1e-10,
+        rtol=1e-10,
+    )
+    np.testing.assert_allclose(
+        cube.portfolio_values()[0],
+        np.full(cube.n_paths, long_pv + short_pv, dtype=float),
+        atol=1e-10,
+        rtol=1e-10,
+    )
+    np.testing.assert_allclose(
+        cube.values_for_position("short_swap")[cube.date_index(short_swap.end_date)],
+        np.zeros(cube.n_paths, dtype=float),
+        atol=1e-10,
+        rtol=1e-10,
+    )
+    np.testing.assert_allclose(
+        cube.values_for_position("short_swap")[-1],
+        np.zeros(cube.n_paths, dtype=float),
+        atol=1e-10,
+        rtol=1e-10,
+    )
+    np.testing.assert_allclose(
+        cube.values_for_position("long_swap")[-1],
+        np.zeros(cube.n_paths, dtype=float),
+        atol=1e-10,
+        rtol=1e-10,
+    )
+    assert cube.expected_positive_exposure()[0] == pytest.approx(max(long_pv + short_pv, 0.0))
+
+
+def test_swap_portfolio_future_value_cube_accepts_book_inputs_and_scales_positions():
+    from trellis.core.market_state import MarketState
+    from trellis.models.monte_carlo.simulation_substrate import (
+        price_interest_rate_swap_portfolio_future_value_cube,
+    )
+
+    settle = date(2024, 11, 15)
+    market_state = MarketState(
+        as_of=settle,
+        settlement=settle,
+        discount=YieldCurve.flat(0.039, max_tenor=10.0),
+        forecast_curves={"USD-SOFR-3M": YieldCurve.flat(0.043, max_tenor=10.0)},
+        vol_surface=FlatVol(0.18),
+        selected_curve_names={"discount_curve": "usd_ois", "forecast_curve": "USD-SOFR-3M"},
+    )
+    payer = SwapSpec(
+        notional=1_000_000.0,
+        fixed_rate=0.044,
+        start_date=settle,
+        end_date=date(2027, 11, 15),
+        rate_index="USD-SOFR-3M",
+        is_payer=True,
+    )
+    receiver = SwapSpec(
+        notional=1_500_000.0,
+        fixed_rate=0.040,
+        start_date=settle,
+        end_date=date(2026, 11, 15),
+        rate_index="USD-SOFR-3M",
+        is_payer=False,
+    )
+    book = Book(
+        {
+            "payer": SwapPayoff(payer),
+            "receiver": SwapPayoff(receiver),
+        },
+        notionals={"payer": 1.0, "receiver": 0.5},
+    )
+
+    cube = price_interest_rate_swap_portfolio_future_value_cube(
+        positions=book,
+        market_state=market_state,
+        n_paths=384,
+        n_steps=80,
+        seed=29,
+    )
+
+    payer_pv = SwapPayoff(payer).evaluate(market_state)
+    receiver_pv = 0.5 * SwapPayoff(receiver).evaluate(market_state)
+
+    np.testing.assert_allclose(
+        cube.values_for_position("payer")[0],
+        np.full(cube.n_paths, payer_pv, dtype=float),
+        atol=1e-10,
+        rtol=1e-10,
+    )
+    np.testing.assert_allclose(
+        cube.values_for_position("receiver")[0],
+        np.full(cube.n_paths, receiver_pv, dtype=float),
+        atol=1e-10,
+        rtol=1e-10,
+    )
+    assert cube.position_provenance["receiver"]["book_notional_multiplier"] == pytest.approx(0.5)

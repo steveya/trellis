@@ -164,7 +164,7 @@ Status mirror last synced: `2026-04-05`
 | Ticket | Status |
 | --- | --- |
 | `QUA-620` Semantic contract: collateral and netting set representation | Backlog |
-| `QUA-638` Counterparty exposure: swap portfolio future value cube | Backlog |
+| `QUA-638` Counterparty exposure: swap portfolio future value cube | In Review |
 | `QUA-639` Collateral workflow: margin period and collateral state projection | Backlog |
 | `QUA-640` Netting workflow: netting-set aggregation and closeout exposure inputs | Backlog |
 | `QUA-641` Counterparty exposure: EE EPE PFE aggregation outputs | Backlog |
@@ -211,7 +211,10 @@ Use the queue order above, but also respect these concrete handoff rules:
   landed.
 - Do not start `QUA-636` until `QUA-635` is landed.
 - Do not start `QUA-618` until `QUA-615`, `QUA-616`, and `QUA-617` are landed.
-- Do not start `QUA-638` until `QUA-620` is landed.
+- `QUA-638` now narrows directly onto the reusable simulation substrate and no
+  longer requires `QUA-620`; keep `QUA-620` as the prerequisite for the later
+  collateral, netting, and xVA consumers that need explicit netting-set
+  semantics.
 - Do not start `QUA-639` until `QUA-620` and `QUA-638` are landed.
 - Do not start `QUA-640` until `QUA-620`, `QUA-638`, and `QUA-639` are
   landed.
