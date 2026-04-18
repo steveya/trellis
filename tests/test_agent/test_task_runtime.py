@@ -220,6 +220,40 @@ def test_run_task_records_benchmark_outputs_from_payoff_snapshot():
     assert result["benchmark_outputs"]["fair_strike_variance"] == pytest.approx(0.048411342420965765)
 
 
+def test_run_task_records_native_fx_vanilla_gk_outputs_from_checked_in_adapter():
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import build_market_state, run_task
+    from trellis.instruments._agent.fxvanillaanalytical import FXVanillaAnalyticalPayoff
+
+    class FakeResult:
+        success = True
+        attempts = 1
+        gap_confidence = 1.0
+        knowledge_gaps = []
+        payoff_cls = FXVanillaAnalyticalPayoff
+        failures = []
+        reflection = {}
+
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_BENCHMARK_FINANCEPY.yaml")
+    }
+
+    result = run_task(
+        tasks["F002"],
+        market_state=build_market_state(),
+        build_fn=lambda **_kwargs: FakeResult(),
+        model="test-model",
+    )
+
+    assert result["price"] == pytest.approx(62146.380285788415, rel=1e-10)
+    assert set(result["benchmark_outputs"]) >= {"price", "delta", "gamma", "vega", "theta"}
+    assert result["benchmark_outputs"]["delta"] == pytest.approx(
+        0.5750997663426305,
+        abs=1e-6,
+    )
+
+
 def test_run_task_uses_an_explicit_simulation_seed_when_one_is_provided():
     from trellis.agent.task_runtime import run_task
 

@@ -7,6 +7,7 @@ from datetime import date
 
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
+from trellis.models.analytical.fx_vanilla_gk import fx_vanilla_gk_outputs
 from trellis.models.fx_vanilla import price_fx_vanilla_analytical, resolve_fx_vanilla_inputs
 
 
@@ -44,3 +45,7 @@ class FXVanillaAnalyticalPayoff:
 
     def evaluate(self, market_state: MarketState) -> float:
         return float(price_fx_vanilla_analytical(market_state, self._spec))
+
+    def benchmark_outputs(self, market_state: MarketState) -> dict[str, float]:
+        """Return native GK parity outputs for the FinancePy benchmark harness."""
+        return dict(fx_vanilla_gk_outputs(market_state, self._spec))
