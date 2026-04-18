@@ -29,6 +29,12 @@ from trellis.agent.binding_operator_metadata import (
     resolve_binding_operator_metadata,
 )
 from trellis.agent.codegen_guardrails import PrimitiveRef
+from trellis.agent.contract_pattern import (
+    ContractPattern,
+    ContractPatternParseError,
+    parse_contract_pattern,
+)
+from trellis.agent.contract_pattern_eval import evaluate_pattern
 from trellis.agent.family_lowering_ir import (
     AnalyticalBlack76IR,
     EventAwareMonteCarloIR,
@@ -76,12 +82,47 @@ class ConditionalRouteFamily:
 
 @dataclass(frozen=True)
 class ConditionalPrimitive:
-    """A conditional block of primitives/adapters/notes applied when traits match."""
+    """A conditional block of primitives/adapters/notes applied when a clause matches.
 
-    when: dict[str, Any] | str  # dict of trait conditions, or "default"
+    A clause is expressed in exactly one of two forms:
+
+    * **Legacy string-tag filter** (``when`` is either a trait mapping or the
+      string sentinel ``"default"``).  Dispatch goes through
+      :func:`_matches_condition`.
+    * **DSL contract pattern** (``contract_pattern`` is non-``None``).
+      Dispatch goes through
+      :func:`trellis.agent.contract_pattern_eval.evaluate_pattern`.  The
+      accompanying ``when`` field is an empty dict so legacy tag-key lookups
+      still work without special-casing.
+
+    Declaring both a non-empty ``when`` mapping and a non-``None``
+    ``contract_pattern`` is disallowed — the YAML parser and this
+    ``__post_init__`` both reject it so the dispatch fork stays unambiguous.
+    """
+
+    when: dict[str, Any] | str  # trait mapping, "default" sentinel, or empty dict when DSL form
     primitives: tuple[PrimitiveRef, ...] = ()
     adapters: tuple[str, ...] | None = None
     notes: tuple[str, ...] | None = None
+    contract_pattern: ContractPattern | None = None
+
+    def __post_init__(self) -> None:
+        if self.contract_pattern is None:
+            return
+        # DSL form must have an empty-dict ``when`` placeholder so the
+        # legacy dispatch short-circuits and the evaluator takes over.
+        if isinstance(self.when, str):
+            raise ValueError(
+                "ConditionalPrimitive cannot combine a string 'when' sentinel "
+                f"({self.when!r}) with a contract_pattern; DSL clauses must "
+                "use an empty-dict 'when' placeholder."
+            )
+        if isinstance(self.when, dict) and self.when:
+            raise ValueError(
+                "ConditionalPrimitive cannot populate both 'when' trait keys "
+                f"({sorted(self.when.keys())}) and a 'contract_pattern'; "
+                "choose one form."
+            )
 
 
 @dataclass(frozen=True)
@@ -289,21 +330,84 @@ def _parse_conditional_route_family(raw: list | None) -> tuple[ConditionalRouteF
 
 
 def _parse_conditional_primitives(raw: list | None) -> tuple[ConditionalPrimitive, ...]:
+    """Parse a ``conditional_primitives`` list into structured dataclass entries.
+
+    Each entry's ``when:`` block is inspected up-front to decide which form it
+    uses:
+
+    * A mapping containing the ``contract_pattern`` key is DSL form; the
+      accompanying payload is parsed via
+      :func:`trellis.agent.contract_pattern.parse_contract_pattern` and stored
+      on :attr:`ConditionalPrimitive.contract_pattern`.  The dispatch-time
+      ``when`` field is left as an empty dict so legacy trait-key scans treat
+      the clause as "no legacy conditions" and hand off to the evaluator.
+    * Any other mapping is legacy trait-filter form and stored verbatim on
+      ``when``.
+    * The string sentinel ``"default"`` is preserved as-is for the catch-all
+      branch.
+
+    Mixing ``contract_pattern`` with legacy trait keys in the same ``when:``
+    block is rejected to keep the dispatch fork unambiguous.
+    """
     if not raw:
         return ()
     result = []
     for entry in raw:
-        when = entry.get("when", "default")
+        raw_when = entry.get("when", "default")
         primitives = tuple(_parse_primitive(p) for p in entry.get("primitives", ()))
         adapters = None if "adapters" not in entry else tuple(entry.get("adapters", ()))
         notes = None if "notes" not in entry else tuple(entry.get("notes", ()))
+
+        when_value, contract_pattern = _parse_when_clause(raw_when)
         result.append(ConditionalPrimitive(
-            when=when,
+            when=when_value,
             primitives=primitives,
             adapters=adapters,
             notes=notes,
+            contract_pattern=contract_pattern,
         ))
     return tuple(result)
+
+
+def _parse_when_clause(
+    raw_when: Any,
+) -> tuple[dict[str, Any] | str, ContractPattern | None]:
+    """Classify a raw ``when`` payload as legacy trait-filter or DSL form.
+
+    Returns ``(when_value, contract_pattern)``.  For legacy form
+    ``contract_pattern`` is ``None`` and ``when_value`` is the original
+    mapping / sentinel string.  For DSL form ``contract_pattern`` is a
+    parsed :class:`ContractPattern` and ``when_value`` is an empty dict.
+    """
+    if isinstance(raw_when, str):
+        # ``"default"`` sentinel or any other raw string is legacy form.
+        return raw_when, None
+    if not isinstance(raw_when, dict):
+        # Preserve historical tolerance: anything non-dict, non-string falls
+        # through to the legacy path unchanged so downstream dispatch decides.
+        return raw_when, None
+
+    if "contract_pattern" not in raw_when:
+        return raw_when, None
+
+    # DSL form.  Reject mixed clauses before delegating to the pattern parser
+    # so the diagnostic points at the schema mismatch, not at an AST failure.
+    extra_keys = sorted(key for key in raw_when.keys() if key != "contract_pattern")
+    if extra_keys:
+        raise ValueError(
+            "when-clause cannot mix 'contract_pattern' with legacy trait keys "
+            f"{extra_keys}; use either a contract_pattern or legacy tag filters "
+            "in a single clause, not both."
+        )
+
+    try:
+        pattern = parse_contract_pattern(raw_when["contract_pattern"])
+    except ContractPatternParseError as exc:
+        raise ValueError(
+            f"invalid contract_pattern in when-clause: {exc}"
+        ) from exc
+
+    return {}, pattern
 
 
 def _parse_dynamic_notes(raw: list | None) -> tuple[DynamicNote, ...]:
@@ -873,9 +977,8 @@ def resolve_route_primitives(
         if isinstance(cond.when, str) and cond.when == "default":
             # Default branch — use if no prior branch matched
             return cond.primitives if cond.primitives else spec.primitives
-        if isinstance(cond.when, dict):
-            if _matches_condition(cond.when, payoff_family, exercise, model_family, product_ir):
-                return cond.primitives if cond.primitives else spec.primitives
+        if _conditional_primitive_matches(cond, payoff_family, exercise, model_family, product_ir):
+            return cond.primitives if cond.primitives else spec.primitives
 
     # No conditional matched — use base primitives
     return spec.primitives
@@ -900,13 +1003,12 @@ def resolve_route_adapters(
             if not cond.primitives and not cond.adapters:
                 return spec.adapters
             return cond.adapters
-        if isinstance(cond.when, dict):
-            if _matches_condition(cond.when, payoff_family, exercise, model_family, product_ir):
-                if cond.adapters is None:
-                    return spec.adapters
-                if not cond.primitives and not cond.adapters:
-                    return spec.adapters
-                return cond.adapters
+        if _conditional_primitive_matches(cond, payoff_family, exercise, model_family, product_ir):
+            if cond.adapters is None:
+                return spec.adapters
+            if not cond.primitives and not cond.adapters:
+                return spec.adapters
+            return cond.adapters
 
     return spec.adapters
 
@@ -927,8 +1029,10 @@ def resolve_route_notes(
             matched = False
             if isinstance(cond.when, str) and cond.when == "default":
                 matched = True
-            elif isinstance(cond.when, dict):
-                matched = _matches_condition(cond.when, payoff_family, exercise, model_family, product_ir)
+            else:
+                matched = _conditional_primitive_matches(
+                    cond, payoff_family, exercise, model_family, product_ir
+                )
             if matched:
                 if cond.notes is None:
                     base_notes = list(spec.notes)
@@ -1727,8 +1831,40 @@ def _requires_reporting_currency_conversion(product, market_binding_spec, valuat
 
 
 # ---------------------------------------------------------------------------
-# Condition matching helper
+# Condition matching helpers
 # ---------------------------------------------------------------------------
+
+
+def _conditional_primitive_matches(
+    cond: ConditionalPrimitive,
+    payoff_family: str,
+    exercise_style: str,
+    model_family: str,
+    product_ir: ProductIR | None,
+) -> bool:
+    """Dispatch a single :class:`ConditionalPrimitive` against a ProductIR.
+
+    Routes the decision through the DSL pattern evaluator when the clause
+    carries a :class:`ContractPattern`, or through the legacy string-tag
+    filter :func:`_matches_condition` otherwise.  The ``"default"`` sentinel
+    is handled by the callers (since they need to distinguish catch-all
+    fall-through from a conditional match miss) and never reaches this
+    helper.
+    """
+    if cond.contract_pattern is not None:
+        # DSL path: only meaningful when we actually have a ProductIR.  The
+        # legacy path is also a no-match on ``None`` product_ir via its own
+        # defaults, so the two forms stay symmetric.
+        if product_ir is None:
+            return False
+        return evaluate_pattern(cond.contract_pattern, product_ir).ok
+
+    if isinstance(cond.when, dict):
+        return _matches_condition(
+            cond.when, payoff_family, exercise_style, model_family, product_ir
+        )
+    return False
+
 
 def _matches_condition(
     when: dict[str, Any],
@@ -1737,7 +1873,7 @@ def _matches_condition(
     model_family: str,
     product_ir: ProductIR | None,
 ) -> bool:
-    """Check whether a ProductIR matches a conditional 'when' clause."""
+    """Check whether a ProductIR matches a legacy string-tag 'when' clause."""
     payoff_families = _expanded_payoff_families(payoff_family, product_ir)
     for key, expected in when.items():
         if key == "payoff_family":
