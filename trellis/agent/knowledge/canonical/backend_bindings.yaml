@@ -385,6 +385,42 @@ bindings:
     engine_family: analytical
     route_family: analytical
     compatibility_alias_policy: internal_only
+    # QUA-921 / Phase 1.5.E: the two DSL-expressible structural when-clauses
+    # below (swaption-bermudan and swaption-european) use the
+    # ``contract_pattern`` form landed in QUA-917/918/919 and wired into the
+    # binding catalog's parser and dispatcher by this ticket.  Parity with
+    # the pre-migration string-tag form is locked by
+    # ``tests/test_agent/test_backend_bindings_black76_dsl_parity.py`` — that
+    # suite exercises production dispatch through the binding cache (no
+    # monkeypatching), which is the load-bearing evidence that DSL dispatch
+    # is now live inside ``backend_bindings._resolve_binding_primitives`` and
+    # not only inside ``route_registry._conditional_primitive_matches``.
+    #
+    # The ``vanilla_option``, ``rate_cap_floor_strip``, and ``basket_option``
+    # clauses intentionally stay in legacy string-tag form.  Specifically:
+    #
+    # * ``vanilla_option`` stays legacy because the DSL ``vanilla_payoff``
+    #   tag matches trait-level ``vanilla_option`` entries via
+    #   ``_INSTRUMENT_TAG_TO_PAYOFF_FAMILIES`` — it would over-match on
+    #   two-asset baskets that carry ``vanilla_option`` as a leg-style trait
+    #   and silently shadow the downstream basket clause.  The legacy
+    #   ``payoff_family: vanilla_option`` filter checks only the
+    #   expanded-family set, which is strict enough to preserve the
+    #   user-visible basket-helper dispatch locked by
+    #   ``test_resolve_backend_binding_spec_uses_basket_option_exact_helpers``.
+    # * ``rate_cap_floor_strip`` follows the same discipline as QUA-920's
+    #   routes.yaml migration: it is not one of the four structural clauses
+    #   the DSL rollout is migrating.
+    # * ``basket_option`` stays legacy because the binding catalog relies on
+    #   the ``payoff_traits: [two_asset_terminal_basket]`` filter, which the
+    #   current ``ContractPattern`` AST cannot express.
+    #
+    # Extending the DSL with a payoff-trait predicate (and tightening the
+    # ``vanilla_payoff`` tag semantics) would unlock the remaining clauses;
+    # those are tracked as separate follow-ons rather than scope creep here.
+    #
+    # The final ``when: default`` clause intentionally stays in legacy sentinel
+    # form: it is a fall-through marker, not a structural pattern match.
     conditional_primitives:
       - when:
           payoff_family: vanilla_option
@@ -434,15 +470,21 @@ bindings:
             symbol: price_basket_option_analytical
             role: route_helper
       - when:
-          payoff_family: swaption
-          exercise_style: [bermudan]
+          contract_pattern:
+            payoff:
+              kind: swaption_payoff
+            exercise:
+              style: bermudan
         primitives:
           - module: trellis.models.rate_style_swaption
             symbol: price_bermudan_swaption_black76_lower_bound
             role: route_helper
       - when:
-          payoff_family: swaption
-          exercise_style: [european]
+          contract_pattern:
+            payoff:
+              kind: swaption_payoff
+            exercise:
+              style: european
         primitives:
           - module: trellis.models.rate_style_swaption
             symbol: price_swaption_black76

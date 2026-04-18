@@ -17,16 +17,59 @@ from typing import Any
 import yaml
 
 from trellis.agent.codegen_guardrails import PrimitiveRef
+from trellis.agent.contract_pattern import (
+    ContractPattern,
+    ContractPatternParseError,
+    parse_contract_pattern,
+)
+from trellis.agent.contract_pattern_eval import evaluate_pattern
 from trellis.agent.knowledge.import_registry import get_repo_revision
 from trellis.agent.knowledge.schema import ProductIR
 
 
 @dataclass(frozen=True)
 class ConditionalBindingPrimitives:
-    """Conditional primitive override carried by a backend-binding spec."""
+    """Conditional primitive override carried by a backend-binding spec.
+
+    Mirrors :class:`trellis.agent.route_registry.ConditionalPrimitive`'s two-
+    form dispatch contract (QUA-919 / QUA-921):
+
+    * **Legacy string-tag filter** (``when`` is either a trait mapping or the
+      string sentinel ``"default"``).  Dispatch goes through
+      :func:`_matches_condition`.
+    * **DSL contract pattern** (``contract_pattern`` is non-``None``).
+      Dispatch goes through
+      :func:`trellis.agent.contract_pattern_eval.evaluate_pattern`.  The
+      accompanying ``when`` field is an empty dict so the legacy tag-key
+      scan treats the clause as "no legacy conditions" and the evaluator
+      takes over.
+
+    Declaring both a non-empty ``when`` mapping and a non-``None``
+    ``contract_pattern`` is disallowed — the YAML parser and this
+    ``__post_init__`` both reject it so the dispatch fork stays unambiguous.
+    The ``"default"`` sentinel is always legacy form and must not carry a
+    ``contract_pattern`` (fall-through markers are not structural matches).
+    """
 
     when: dict[str, Any] | str
     primitives: tuple[PrimitiveRef, ...] = ()
+    contract_pattern: ContractPattern | None = None
+
+    def __post_init__(self) -> None:
+        if self.contract_pattern is None:
+            return
+        if isinstance(self.when, str):
+            raise ValueError(
+                "ConditionalBindingPrimitives cannot combine a string 'when' "
+                f"sentinel ({self.when!r}) with a contract_pattern; DSL clauses "
+                "must use an empty-dict 'when' placeholder."
+            )
+        if isinstance(self.when, dict) and self.when:
+            raise ValueError(
+                "ConditionalBindingPrimitives cannot populate both 'when' "
+                f"trait keys ({sorted(self.when.keys())}) and a "
+                "'contract_pattern'; choose one form."
+            )
 
 
 @dataclass(frozen=True)
@@ -153,10 +196,17 @@ def resolve_backend_binding_spec(
     *,
     product_ir: ProductIR | None = None,
     primitive_plan=None,
+    method: str | None = None,
 ) -> ResolvedBackendBindingSpec:
-    """Resolve one binding spec for the current product traits."""
-    route_family = _resolve_binding_route_family(binding, product_ir)
-    primitives = _resolve_binding_primitives(binding, product_ir)
+    """Resolve one binding spec for the current product traits.
+
+    The optional ``method`` keyword lets conditional-primitive dispatch
+    discriminate by the pricing method (e.g. ``analytical`` vs
+    ``monte_carlo``) when ProductIR traits alone cannot separate two
+    branches — the quanto family collapse in QUA-912 is the first use.
+    """
+    route_family = _resolve_binding_route_family(binding, product_ir, method=method)
+    primitives = _resolve_binding_primitives(binding, product_ir, method=method)
     primitive_refs = tuple(
         dict.fromkeys(
             f"{primitive.module}.{primitive.symbol}"
@@ -202,6 +252,7 @@ def resolve_backend_binding_by_route_id(
     product_ir: ProductIR | None = None,
     primitive_plan=None,
     catalog: BackendBindingCatalog | None = None,
+    method: str | None = None,
 ) -> ResolvedBackendBindingSpec | None:
     """Resolve one binding surface by route id or alias."""
     binding = find_backend_binding_by_route_id(route_id, catalog)
@@ -211,6 +262,7 @@ def resolve_backend_binding_by_route_id(
         binding,
         product_ir=product_ir,
         primitive_plan=primitive_plan,
+        method=method,
     )
 
 
@@ -268,6 +320,10 @@ def _binding_from_route(route) -> BackendBindingSpec:
             ConditionalBindingPrimitives(
                 when=getattr(block, "when", "default"),
                 primitives=tuple(getattr(block, "primitives", ()) or ()),
+                # Preserve DSL contract_pattern when the upstream
+                # route-registry block was already DSL form (QUA-919 +
+                # QUA-921 share the same two-form contract across registries).
+                contract_pattern=getattr(block, "contract_pattern", None),
             )
             for block in (getattr(route, "conditional_primitives", ()) or ())
         ),
@@ -320,19 +376,87 @@ def _parse_primitive(raw: dict[str, Any]) -> PrimitiveRef:
 
 
 def _parse_conditional_primitives(raw: Any) -> tuple[ConditionalBindingPrimitives, ...]:
+    """Parse a ``conditional_primitives`` list into structured dataclass entries.
+
+    Each entry's ``when:`` block is inspected up-front to decide which form it
+    uses:
+
+    * A mapping containing the ``contract_pattern`` key is DSL form; the
+      accompanying payload is parsed via
+      :func:`trellis.agent.contract_pattern.parse_contract_pattern` and stored
+      on :attr:`ConditionalBindingPrimitives.contract_pattern`.  The
+      dispatch-time ``when`` field is left as an empty dict so legacy
+      trait-key scans treat the clause as "no legacy conditions" and hand off
+      to the evaluator.
+    * Any other mapping is legacy trait-filter form and stored verbatim on
+      ``when``.
+    * The string sentinel ``"default"`` is preserved as-is for the catch-all
+      branch.
+
+    Mixing ``contract_pattern`` with legacy trait keys in the same ``when:``
+    block is rejected (mirrors the route registry parser) to keep the
+    dispatch fork unambiguous.
+    """
     if not raw:
         return ()
     rows: list[ConditionalBindingPrimitives] = []
     for entry in raw:
         if not isinstance(entry, dict) or "when" not in entry:
             continue
+        raw_when = entry.get("when", "default")
+        when_value, contract_pattern = _parse_binding_when_clause(raw_when)
         rows.append(
             ConditionalBindingPrimitives(
-                when=entry.get("when", "default"),
+                when=when_value,
                 primitives=_parse_primitives(entry.get("primitives")),
+                contract_pattern=contract_pattern,
             )
         )
     return tuple(rows)
+
+
+def _parse_binding_when_clause(
+    raw_when: Any,
+) -> tuple[dict[str, Any] | str, ContractPattern | None]:
+    """Classify a raw ``when`` payload as legacy trait-filter or DSL form.
+
+    Returns ``(when_value, contract_pattern)``.  For legacy form
+    ``contract_pattern`` is ``None`` and ``when_value`` is the original mapping
+    or sentinel string.  For DSL form ``contract_pattern`` is a parsed
+    :class:`ContractPattern` and ``when_value`` is an empty dict so the
+    legacy-dispatch short-circuit in :func:`_resolve_binding_primitives`
+    naturally hands off to the evaluator.
+
+    Mirrors :func:`trellis.agent.route_registry._parse_when_clause` so
+    ``routes.yaml`` and ``backend_bindings.yaml`` share a common contract.
+    """
+    if isinstance(raw_when, str):
+        # ``"default"`` sentinel or any other raw string is legacy form.
+        return raw_when, None
+    if not isinstance(raw_when, dict):
+        # Preserve historical tolerance: anything non-dict, non-string falls
+        # through to the legacy path unchanged so downstream dispatch decides.
+        return raw_when, None
+
+    if "contract_pattern" not in raw_when:
+        return raw_when, None
+
+    extra_keys = sorted(key for key in raw_when.keys() if key != "contract_pattern")
+    if extra_keys:
+        raise ValueError(
+            "when-clause cannot mix 'contract_pattern' with legacy trait keys "
+            f"{extra_keys}; use either a contract_pattern or legacy tag filters "
+            "in a single clause, not both."
+        )
+
+    try:
+        pattern = parse_contract_pattern(raw_when["contract_pattern"])
+    except ContractPatternParseError as exc:
+        raise ValueError(
+            f"invalid contract_pattern in when-clause: {exc}"
+        ) from exc
+
+    return {}, pattern
 
 
 def _parse_conditional_route_family(raw: Any) -> tuple[ConditionalBindingFamily, ...]:
@@ -354,6 +478,8 @@ def _parse_conditional_route_family(raw: Any) -> tuple[ConditionalBindingFamily,
 def _resolve_binding_primitives(
     binding: BackendBindingSpec,
     product_ir: ProductIR | None,
+    *,
+    method: str | None = None,
 ) -> tuple[PrimitiveRef, ...]:
     if not binding.conditional_primitives:
         return binding.primitives
@@ -367,20 +493,65 @@ def _resolve_binding_primitives(
         if isinstance(cond.when, str) and cond.when == "default":
             explicit_default = cond.primitives if cond.primitives else binding.primitives
             continue
-        if isinstance(cond.when, dict) and _matches_condition(
-            cond.when,
+        if _conditional_binding_primitive_matches(
+            cond,
             payoff_family,
             exercise,
             model_family,
             product_ir,
+            method=method,
         ):
             return cond.primitives if cond.primitives else binding.primitives
     return explicit_default if explicit_default is not None else binding.primitives
 
 
+def _conditional_binding_primitive_matches(
+    cond: ConditionalBindingPrimitives,
+    payoff_family: str,
+    exercise_style: str,
+    model_family: str,
+    product_ir: ProductIR | None,
+    *,
+    method: str | None = None,
+) -> bool:
+    """Dispatch a single :class:`ConditionalBindingPrimitives` against a ProductIR.
+
+    Routes the decision through the DSL pattern evaluator when the clause
+    carries a :class:`ContractPattern`, or through the legacy string-tag
+    filter :func:`_matches_condition` otherwise.  Mirrors
+    :func:`trellis.agent.route_registry._conditional_primitive_matches` so the
+    binding catalog and route registry dispatch forks stay structurally in
+    step.
+
+    The ``"default"`` sentinel is handled by the caller (it needs to
+    distinguish catch-all fall-through from a conditional match miss) and
+    never reaches this helper.
+    """
+    if cond.contract_pattern is not None:
+        # DSL path: ``None`` product_ir cannot satisfy a structural pattern,
+        # matching the route-registry symmetry.  The legacy path also fails
+        # every specific clause on ``None`` via its stringy default fallbacks.
+        if product_ir is None:
+            return False
+        return evaluate_pattern(cond.contract_pattern, product_ir).ok
+
+    if isinstance(cond.when, dict):
+        return _matches_condition(
+            cond.when,
+            payoff_family,
+            exercise_style,
+            model_family,
+            product_ir,
+            method=method,
+        )
+    return False
+
+
 def _resolve_binding_route_family(
     binding: BackendBindingSpec,
     product_ir: ProductIR | None,
+    *,
+    method: str | None = None,
 ) -> str:
     if not binding.conditional_route_family:
         return binding.route_family
@@ -400,6 +571,7 @@ def _resolve_binding_route_family(
             exercise,
             model_family,
             product_ir,
+            method=method,
         ):
             return cond.route_family
     return explicit_default if explicit_default is not None else binding.route_family
@@ -487,6 +659,8 @@ def _matches_condition(
     exercise_style: str,
     model_family: str,
     product_ir: ProductIR | None,
+    *,
+    method: str | None = None,
 ) -> bool:
     payoff_families = _expanded_payoff_families(payoff_family, product_ir)
     payoff_traits = {
@@ -522,6 +696,21 @@ def _matches_condition(
                 return False
         elif key == "schedule_dependence":
             if product_ir is not None and product_ir.schedule_dependence != expected:
+                return False
+        elif key == "methods":
+            # Method-keyed dispatch for routes that collapse an analytical /
+            # monte_carlo pair whose payoff / exercise / model-family tuple is
+            # otherwise identical.  Mirror the route-registry semantics from
+            # ``route_registry._matches_condition``: unknown method fails
+            # closed so the ``when: default`` branch wins when no method was
+            # threaded through.
+            if method is None:
+                return False
+            normalized = str(method).strip()
+            if isinstance(expected, list):
+                if normalized not in expected:
+                    return False
+            elif normalized != expected:
                 return False
         else:
             return False
