@@ -483,24 +483,102 @@ class TestDSLWhenClauseErrors:
 
 
 # ---------------------------------------------------------------------------
-# 5. Legacy regression — the on-disk canonical registry keeps parsing cleanly
+# 5. Canonical registry well-formedness — every clause must be exactly one of
+# the two supported forms (legacy string-tag or DSL contract_pattern).
 # ---------------------------------------------------------------------------
 
 
 class TestLegacyRegistryRegression:
-    """Every existing ``routes.yaml`` clause is legacy form; the new parser
-    must preserve that exactly."""
+    """The on-disk ``routes.yaml`` parses into the two-form contract cleanly.
 
-    def test_every_existing_clause_is_legacy_form(self):
+    Phase 1.5.D (QUA-920) migrates ``analytical_black76``'s four structural
+    when-clauses from legacy form to DSL form; future Phase 1 tickets
+    (QUA-910/911 and beyond) will add more DSL-form clauses to other routes.
+    Rather than gate-keep specific routes, this test assert the shape
+    invariant that must hold for EVERY route: each clause is exactly one
+    recognised form, never mixed, and the two forms stay mutually
+    exclusive.
+    """
+
+    def test_every_existing_clause_is_exactly_one_recognised_form(self):
+        """Allowlist-gate: each clause is EITHER legacy form OR DSL form.
+
+        Legacy form: ``cp.contract_pattern is None`` and ``cp.when`` is a
+        string sentinel (``"default"``) or a legacy trait-filter dict.
+
+        DSL form: ``cp.contract_pattern`` is a parsed ``ContractPattern`` and
+        ``cp.when`` is an empty dict placeholder.
+
+        Any other combination is a schema violation that would break
+        dispatch in ``_conditional_primitive_matches``.
+        """
         registry = load_route_registry()
         for route in registry.routes:
-            for cp in route.conditional_primitives:
-                # Legacy form: contract_pattern must be None, and the
-                # `when` must be either a string sentinel or a trait dict.
-                assert cp.contract_pattern is None, (
-                    f"Route {route.id!r} has an unexpected DSL-form clause; "
-                    "routes.yaml still owns only legacy form before QUA-920."
-                )
-                assert isinstance(cp.when, (dict, str)), (
-                    f"Route {route.id!r} has a malformed when-clause: {cp.when!r}"
-                )
+            for idx, cp in enumerate(route.conditional_primitives):
+                is_dsl_form = cp.contract_pattern is not None
+                is_legacy_form = cp.contract_pattern is None
+
+                if is_dsl_form:
+                    # DSL form: contract_pattern populated, when is empty dict.
+                    assert isinstance(cp.contract_pattern, ContractPattern), (
+                        f"Route {route.id!r} clause[{idx}] has a non-ContractPattern "
+                        f"contract_pattern: {cp.contract_pattern!r}"
+                    )
+                    assert cp.when == {}, (
+                        f"Route {route.id!r} clause[{idx}] is DSL form but "
+                        f"`when` is not the empty-dict placeholder: {cp.when!r}"
+                    )
+                else:
+                    assert is_legacy_form  # mutual exclusion
+                    # Legacy form: contract_pattern is None, when is string
+                    # sentinel or trait-filter dict.
+                    assert isinstance(cp.when, (dict, str)), (
+                        f"Route {route.id!r} clause[{idx}] has a malformed "
+                        f"when-clause: {cp.when!r}"
+                    )
+
+    def test_analytical_black76_uses_dsl_form_after_qua_920(self):
+        """QUA-920 migration lock: the four structural ``analytical_black76``
+        clauses must be DSL form, and only the ``default`` sentinel stays
+        legacy.
+
+        This regression lock prevents an accidental revert of the migration
+        (``routes.yaml`` edited back to string-tag form) from silently
+        shipping: the YAML-level forms are observable, reviewable, and
+        covered by the parity test in
+        ``tests/test_agent/test_route_registry_black76_dsl_parity.py``.
+        """
+        registry = load_route_registry()
+        black76 = next(
+            (r for r in registry.routes if r.id == "analytical_black76"), None
+        )
+        assert black76 is not None, "analytical_black76 missing from registry"
+
+        # Exactly 5 conditional_primitives: four DSL clauses + one default.
+        assert len(black76.conditional_primitives) == 5, (
+            f"analytical_black76 should have 5 conditional_primitives "
+            f"(4 DSL + 1 default); got {len(black76.conditional_primitives)}"
+        )
+
+        # Clauses 0..3 must be DSL form.
+        for idx in range(4):
+            cp = black76.conditional_primitives[idx]
+            assert isinstance(cp.contract_pattern, ContractPattern), (
+                f"analytical_black76.conditional_primitives[{idx}] should be "
+                f"DSL form after QUA-920; got contract_pattern={cp.contract_pattern!r}"
+            )
+            assert cp.when == {}, (
+                f"analytical_black76.conditional_primitives[{idx}] is DSL form; "
+                f"`when` should be empty-dict placeholder, got {cp.when!r}"
+            )
+
+        # Final clause is the legacy ``default`` sentinel.
+        default_cp = black76.conditional_primitives[4]
+        assert default_cp.contract_pattern is None, (
+            "analytical_black76 default clause should stay legacy sentinel; "
+            f"got contract_pattern={default_cp.contract_pattern!r}"
+        )
+        assert default_cp.when == "default", (
+            f"analytical_black76 default clause should use 'default' sentinel; "
+            f"got when={default_cp.when!r}"
+        )

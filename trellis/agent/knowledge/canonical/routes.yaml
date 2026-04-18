@@ -966,9 +966,21 @@ routes:
       supports_sensitivity_outputs: true
       supported_state_tags: [terminal_markov, recombining_safe, schedule_state]
       supports_calibration: false
+    # QUA-920 / Phase 1.5.D: the four structural when-clauses below use the
+    # DSL ``contract_pattern`` form landed in QUA-917/918/919. Parity with the
+    # pre-migration string-tag form is locked by
+    # ``tests/test_agent/test_route_registry_black76_dsl_parity.py``. The
+    # instrument-level payoff tags (``vanilla_payoff``, ``basket_payoff``,
+    # ``swaption_payoff``) map through
+    # ``trellis.agent.contract_pattern_eval._INSTRUMENT_TAG_TO_PAYOFF_FAMILIES``
+    # to the same ProductIR.payoff_family values the legacy filter used. The
+    # final ``when: default`` clause intentionally stays in legacy sentinel
+    # form: it is a fall-through marker, not a structural pattern match.
     conditional_primitives:
       - when:
-          payoff_family: vanilla_option
+          contract_pattern:
+            payoff:
+              kind: vanilla_payoff
         primitives:
           - module: trellis.models.black
             symbol: black76_call
@@ -1006,9 +1018,13 @@ routes:
           - "For plain European call/put comparators, prefer direct `black76_call` / `black76_put` on the forward. Only assemble from asset-or-nothing and cash-or-nothing basis claims when the request explicitly needs the decomposition."
           - "For cash-or-nothing digital options, use the Black76 digital helpers directly instead of a vanilla call/put approximation."
       - when:
-          payoff_family: basket_option
-          exercise_style: [european]
-          model_family: [equity_diffusion]
+          contract_pattern:
+            payoff:
+              kind: basket_payoff
+            exercise:
+              style: european
+            underlying:
+              kind: equity_diffusion
         primitives:
           - module: trellis.models.basket_option
             symbol: price_basket_option_analytical
@@ -1016,8 +1032,11 @@ routes:
         adapters: []
         notes: []
       - when:
-          payoff_family: swaption
-          exercise_style: [bermudan]
+          contract_pattern:
+            payoff:
+              kind: swaption_payoff
+            exercise:
+              style: bermudan
         primitives:
           - module: trellis.models.rate_style_swaption
             symbol: price_bermudan_swaption_black76_lower_bound
@@ -1025,14 +1044,21 @@ routes:
         adapters: []
         notes: []
       - when:
-          payoff_family: swaption
-          exercise_style: [european]
+          contract_pattern:
+            payoff:
+              kind: swaption_payoff
+            exercise:
+              style: european
         primitives:
           - module: trellis.models.rate_style_swaption
             symbol: price_swaption_black76
             role: route_helper
         adapters: []
         notes: []
+      # The ``default`` sentinel intentionally stays in legacy form: it is
+      # dispatched by ``resolve_route_primitives`` as the explicit fall-through
+      # catch-all, not as a structural ContractPattern match. QUA-920 does not
+      # migrate this marker.
       - when: default
         primitives:
           - module: trellis.models.black
