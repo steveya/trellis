@@ -303,6 +303,32 @@ class TestPreGenerationGate:
         assert decision.decision == "block"
         assert "path_dependent_early_exercise_under_stochastic_vol" in decision.reason
 
+    def test_block_reason_truncates_many_unresolved_primitives(self):
+        """QUA-882: when the IR declares many unresolved primitives, the gate
+        reason previews the first two and appends a `+N more` suffix so the
+        log entry stays bounded (matches the pattern used by other gate
+        decisions)."""
+        gap = _StubGapReport(confidence=0.8)
+        plan = _StubGenerationPlan(
+            primitive_plan=None,
+            lane_family="analytical",
+            lane_plan_kind="constructive_synthesis",
+            lane_construction_steps=("Bind analytical inputs.",),
+            lane_unresolved_primitives=(
+                "primitive_one",
+                "primitive_two",
+                "primitive_three",
+                "primitive_four",
+                "primitive_five",
+            ),
+        )
+        decision = evaluate_pre_generation_gate(gap, plan)
+        assert decision.decision == "block"
+        assert "primitive_one" in decision.reason
+        assert "primitive_two" in decision.reason
+        assert "primitive_three" not in decision.reason
+        assert "+3 more" in decision.reason
+
     def test_none_gap_report_proceeds_when_clean(self):
         plan = _StubGenerationPlan(
             primitive_plan=_StubPrimitivePlan(),

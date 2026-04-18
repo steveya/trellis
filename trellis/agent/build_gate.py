@@ -149,11 +149,14 @@ def _lane_obligation_gate_decision(
         getattr(generation_plan, "lane_unresolved_primitives", ()) or ()
     )
     if lane_unresolved and primitive_plan is None:
+        preview = ", ".join(lane_unresolved[:2])
+        if len(lane_unresolved) > 2:
+            preview += f", +{len(lane_unresolved) - 2} more"
         return BuildGateDecision(
             decision="block",
             reason=(
                 "Product IR declares unresolved primitives with no matching "
-                f"primitive route: {', '.join(lane_unresolved)}."
+                f"primitive route: {preview}."
             ),
             gap_confidence=gap_confidence,
             gate_source=gate_source,
