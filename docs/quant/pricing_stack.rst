@@ -432,6 +432,27 @@ book-level explain layer on top of those ladders by ranking top position
 contributors per scenario without losing which concrete shift template,
 scenario pack, or pipeline settings produced each scenario result.
 
+The Monte Carlo side now also has the first broader factor-state future-value
+substrate. ``trellis.agent.family_lowering_ir.FactorStateSimulationIR`` names
+the typed contract for latent state, projected market views, observation
+programs, and conditional valuation, while
+``trellis.models.monte_carlo.simulation_substrate`` provides the runtime
+companions ``simulate_factor_state_observations(...)``,
+``evaluate_conditional_valuation_paths(...)``, and the emitted
+``FutureValueCube`` / ``FutureValueCubeMetadata`` surface.
+
+The first checked proof path is intentionally narrow: a vanilla interest-rate
+swap under one-factor Hull-White. That workflow now emits
+
+.. math::
+
+   C_{a,i,n} = V_a^{clean}(t_i^+, X_{t_i}^{(n)})
+
+on the shared floating-boundary observation grid with explicit ``post_event``
+phase semantics. The cube remains upstream of institutional counterparty
+analytics: supported values are pre-netting, pre-collateral, and
+pre-``CVA``/``DVA``/``FVA``.
+
 Those pod-risk workflows now also have a checked throughput baseline.
 ``trellis.analytics.benchmarking`` records scenario-cube execution,
 rebuild-based rates sensitivities/scenarios, bucketed vega, and spot-risk

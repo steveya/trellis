@@ -809,6 +809,35 @@ The published ``book_pnl`` and ``position_pnl`` payloads now put actual P&L
 deltas in ``values`` and keep the underlying scenario levels under
 ``metadata["levels"]``.
 
+For the first supported future-value workflow, Trellis now also exposes a
+trade/date/path cube for vanilla interest-rate swaps through
+``trellis.models.monte_carlo.simulation_substrate``:
+
+.. code-block:: python
+
+   from trellis.models.monte_carlo.simulation_substrate import (
+       price_interest_rate_swap_future_value_cube,
+   )
+
+   cube = price_interest_rate_swap_future_value_cube(
+       name="payer_swap",
+       spec=swap_spec,
+       market_state=market_state,
+       n_paths=4000,
+       n_steps=120,
+       seed=7,
+   )
+
+   cube.position_names
+   cube.observation_dates
+   cube.values_for_position("payer_swap")
+   cube.expected_positive_exposure()
+
+This ``FutureValueCube`` is a clean-value surface with explicit ``post_event``
+semantics on the shared floating-boundary observation grid. It is useful for
+checked future-value workflows and validation projections, but it is not yet a
+netting, collateral, or xVA engine.
+
 The runtime analytics surface now also exposes spot ``delta`` and ``gamma``
 plus roll-down ``theta`` through ``Session.analyze(...)``. Delta and gamma use
 finite-difference repricing on one selected spot binding, while theta rolls the

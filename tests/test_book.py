@@ -6,7 +6,7 @@ from datetime import date
 
 import pytest
 
-from trellis.book import Book, BookResult, ScenarioResultCube
+from trellis.book import Book, BookResult, FutureValueCube, ScenarioResultCube
 from trellis.core.types import PricingResult
 from trellis.curves.yield_curve import YieldCurve
 from trellis.engine.pricer import price_instrument
@@ -299,3 +299,66 @@ class TestScenarioResultCube:
         assert attribution["scenario_attribution"]["up100"]["total_pnl"] < 0.0
         assert attribution["scenario_attribution"]["up100"]["top_contributors"][0]["position_name"] == "A"
         assert abs(attribution["net_position_pnl"]["A"]) > abs(attribution["net_position_pnl"]["B"])
+
+
+class TestFutureValueCube:
+    """Trade/date/path future-value cube helpers."""
+
+    def _make_cube(self) -> FutureValueCube:
+        return FutureValueCube(
+            values=[
+                [
+                    [1.0, -2.0, 3.0],
+                    [0.5, -1.0, 1.5],
+                ],
+                [
+                    [2.0, 1.0, -4.0],
+                    [1.0, 0.0, -2.0],
+                ],
+            ],
+            position_names=("swap_a", "swap_b"),
+            observation_times=(0.0, 1.0),
+            observation_dates=(date(2024, 11, 15), date(2025, 11, 15)),
+            metadata={
+                "measure": "risk_neutral",
+                "numeraire": "discount_curve",
+                "value_semantics": "clean_future_value",
+                "phase_semantics": "post_event",
+                "state_names": ("short_rate",),
+                "process_family": "hull_white_1f",
+                "compute_plan": {"engine_family": "simulation_substrate"},
+            },
+        )
+
+    def test_position_and_portfolio_slices_preserve_trade_date_path_axes(self):
+        cube = self._make_cube()
+
+        assert cube.position_names == ("swap_a", "swap_b")
+        assert cube.observation_times == (0.0, 1.0)
+        assert cube.n_positions == 2
+        assert cube.n_observation_times == 2
+        assert cube.n_paths == 3
+        assert cube.position_index("swap_b") == 1
+        assert cube.date_index(date(2025, 11, 15)) == 1
+        assert cube.time_index(1.0) == 1
+        assert cube.path_slice(2)["swap_a"][0] == pytest.approx(3.0)
+        assert cube.path_slice(2)["swap_b"][1] == pytest.approx(-2.0)
+        assert cube.portfolio_values()[0, 0] == pytest.approx(3.0)
+        assert cube.portfolio_values()[1, 2] == pytest.approx(-0.5)
+
+    def test_exposure_projections_are_explicit_and_non_netting(self):
+        cube = self._make_cube()
+
+        trade_positive = cube.positive_values()
+        portfolio_positive = cube.positive_portfolio_values()
+        ee = cube.expected_positive_exposure()
+        pfe_95 = cube.potential_future_exposure(0.95)
+
+        assert trade_positive.shape == (2, 2, 3)
+        assert portfolio_positive.shape == (2, 3)
+        assert portfolio_positive[0, 1] == pytest.approx(0.0)
+        assert portfolio_positive[1, 2] == pytest.approx(0.0)
+        assert ee[0] == pytest.approx((3.0 + 0.0 + 0.0) / 3.0)
+        assert ee[1] == pytest.approx((1.5 + 0.0 + 0.0) / 3.0)
+        assert pfe_95[0] == pytest.approx(2.7)
+        assert pfe_95[1] == pytest.approx(1.35)
