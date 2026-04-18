@@ -57,19 +57,19 @@ Status mirror last synced: `2026-04-18`
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-886` Semantic simulation substrate: factor-state valuation, market projection, and future-value cube | Backlog |
+| `QUA-886` Semantic simulation substrate: factor-state valuation, market projection, and future-value cube | Done |
 
 ### Child Ticket Queue
 
 | Ticket | Status | Ordered role | Hard prerequisites |
 | --- | --- | --- | --- |
-| `QUA-889` Semantic simulation substrate: factor-state family IR and runtime contract | Backlog | first checked factor-state family boundary | none |
-| `QUA-890` Semantic simulation substrate: event and observable lowering onto factor-state programs | Backlog | universal event/control lowering onto simulation | `QUA-889` |
-| `QUA-891` Semantic simulation substrate: factor-state projection onto valuation-facing market views | Backlog | explicit `Phi_t` market projection | `QUA-889` |
-| `QUA-892` Conditional valuation: reusable intermediate-date regression and continuation contract | Backlog | reusable `V_a(t_i, x)` service | `QUA-890`, `QUA-891` |
-| `QUA-893` Future-value cube: trade-date-path valuation tensor and projections | Backlog | stable `FutureValueCube` output contract | `QUA-892` |
-| `QUA-894` Simulation proof: interest-rate swap future-value runtime through `T52` | Backlog | first proving path through task-runtime / benchmark surfaces | `QUA-893` |
-| `QUA-895` Simulation substrate: docs, benchmark surfaces, and limitation truth | Backlog | epic closeout, docs, and validation truth | `QUA-894` |
+| `QUA-889` Semantic simulation substrate: factor-state family IR and runtime contract | Done | first checked factor-state family boundary | none |
+| `QUA-890` Semantic simulation substrate: event and observable lowering onto factor-state programs | Done | universal event/control lowering onto simulation | `QUA-889` |
+| `QUA-891` Semantic simulation substrate: factor-state projection onto valuation-facing market views | Done | explicit `Phi_t` market projection | `QUA-889` |
+| `QUA-892` Conditional valuation: reusable intermediate-date regression and continuation contract | Done | reusable `V_a(t_i, x)` service | `QUA-890`, `QUA-891` |
+| `QUA-893` Future-value cube: trade-date-path valuation tensor and projections | Done | stable `FutureValueCube` output contract | `QUA-892` |
+| `QUA-894` Simulation proof: interest-rate swap future-value runtime through `T52` | Done | first proving path through task-runtime / benchmark surfaces | `QUA-893` |
+| `QUA-895` Simulation substrate: docs, benchmark surfaces, and limitation truth | Done | epic closeout, docs, and validation truth | `QUA-894` |
 
 ### Adjacent Ticket Context
 
