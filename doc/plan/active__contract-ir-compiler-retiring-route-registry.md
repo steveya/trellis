@@ -13,7 +13,7 @@ Status mirror last synced: `2026-04-18`
   completes its dispatch-replacement slice)
 - QUA-727 / QUA-778–791 — Route-registry minimization (Done; groundwork)
 - QUA-902 — Semantic dispatch: normalize CDS onto event-triggered two-legged
-  contract family
+  contract family (Done)
 - QUA-900 — Semantic dispatch: rate and exotic analytical routes stop matching
   by instrument
 - QUA-901 — Semantic dispatch: residual instrument-keyed MC and PDE routes stop
@@ -27,10 +27,11 @@ instrument-keyed route matching under `QUA-887`. The goal is to retire
 with structural / pattern-based dispatch that composes with the existing
 semantic compiler, family IRs, and backend-binding surfaces.
 
-`QUA-902` is the current front-of-queue normalization slice. It freezes one
-foundational execution decision before broader route migration: single-name CDS
-must compile and route as an `event_triggered_two_legged_contract`, not as a
-product-shaped `credit_default_swap` computational family.
+`QUA-902` landed the foundational normalization slice. It froze one execution
+decision before broader route migration: single-name CDS now compiles and
+routes as an `event_triggered_two_legged_contract`, not as a product-shaped
+`credit_default_swap` computational family. The next front-of-queue slice is
+`QUA-900`.
 
 ## Framing
 
@@ -68,8 +69,8 @@ What is already in the code (so the plan is not starting from zero):
 
 ## Execution Decisions
 
-1. The first live structural-dispatch slice is not just "match CDS by payoff
-   family." It is `QUA-902`: normalize CDS onto a reusable
+1. The first live structural-dispatch slice was not just "match CDS by payoff
+   family." It was `QUA-902`: normalize CDS onto a reusable
    `event_triggered_two_legged_contract` family and route both analytical and
    Monte Carlo helper-backed paths through that structural surface.
 2. `credit_default_swap` remains a semantic concept / wrapper surface. The
@@ -83,7 +84,7 @@ What is already in the code (so the plan is not starting from zero):
 
 | Ticket | Status | Scope |
 | --- | --- | --- |
-| `QUA-902` | In Progress | normalize CDS semantic/routing/lowering surfaces onto `event_triggered_two_legged_contract` and migrate both CDS helper-backed routes off product-shaped family matching |
+| `QUA-902` | Done | normalize CDS semantic/routing/lowering surfaces onto `event_triggered_two_legged_contract` and migrate both CDS helper-backed routes off product-shaped family matching |
 | `QUA-900` | Backlog | migrate the remaining low-complexity analytical instrument-keyed routes |
 | `QUA-901` | Backlog | migrate the residual MC / PDE / credit routes that still dispatch by instrument |
 
