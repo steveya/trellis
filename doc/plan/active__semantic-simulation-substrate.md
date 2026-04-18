@@ -79,7 +79,7 @@ Status mirror last synced: `2026-04-18`
 | `QUA-734` | Done | landed the universal `EventProgramIR` / `ControlProgramIR` boundary that this plan must extend rather than duplicate |
 | `QUA-635` | Done | landed `ScenarioResultCube`, which is adjacent to but not the same as a future-value cube |
 | `QUA-594` | Backlog | later institutional consumer umbrella, not the right parent abstraction |
-| `QUA-638` | In Review | first swap-portfolio future-value consumer that should narrow onto this substrate instead of redefining it |
+| `QUA-638` | Done | first swap-portfolio future-value consumer that should narrow onto this substrate instead of redefining it |
 | `QUA-639` | Backlog | collateral-state consumer of the future-value substrate |
 | `QUA-640` | Backlog | netting-set consumer of the future-value substrate |
 | `QUA-641` | Backlog | exposure-statistics consumer of the future-value substrate |
