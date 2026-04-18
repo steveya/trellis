@@ -81,6 +81,10 @@ and cassette freshness) and keeps those in ``make gate-release`` instead. The
 intent is to keep ordinary merge validation centered on core correctness while
 still preserving the broader numerical/reference evidence before releases.
 
+GitHub Actions now runs that same PR surface as deterministic shards generated
+by ``scripts/pr_gate_shard.py`` plus a separate tier-2 contract job, so PR wall
+clock is no longer pinned to one serial pytest command.
+
 Use ``scripts/should_run_canary.py`` before paying for the live canary subset.
 The helper reads local changed files from git status by default and recommends
 the focused ``core`` canary subset when runtime, pricing, task-manifest, or
