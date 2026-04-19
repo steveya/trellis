@@ -14,6 +14,13 @@ Phase 2.
 - QUA-905 — Phase 3 (Backlog; consumes Phase 2's IR)
 - QUA-906 — Phase 4 (Backlog; retires ProductIR.instrument after Phase 3)
 
+## Companion Drafts
+
+- `doc/plan/draft__contract-ir-phase-3-solver-compiler.md`
+- `doc/plan/draft__contract-ir-phase-4-route-retirement.md`
+- `doc/plan/draft__leg-based-contract-ir-foundation.md`
+- `doc/plan/draft__contract-ir-compiler-retiring-route-registry.md`
+
 ## Purpose
 
 Specify Contract IR — a compositional algebraic AST for derivative
@@ -62,10 +69,11 @@ Phase 2 does NOT:
   is a new field on `SemanticImplementationBlueprint` alongside
   existing ones. No consumers read it yet.
 - Extend coverage beyond four payoff families: European terminal
-  linear, variance replication, digital (cash/asset-or-nothing),
+  linear, variance-settled payoff, digital (cash/asset-or-nothing),
   arithmetic Asian. Barrier, lookback, chooser, compound, cliquet,
-  credit, rates, path-dependent exercise — all explicit Phase 2
-  follow-on tickets.
+  credit, rates, path-dependent exercise, quoted-observable spreads,
+  and leg-based cashflow products — all explicit Phase 2 follow-on
+  tickets.
 - Delete or rename `ProductIR`. `ContractIR` and `ProductIR` coexist.
 - Touch kernel signatures. Phase 3 annotates kernels; Phase 2 does
   not.
@@ -99,16 +107,12 @@ Each field is independent and must be well-formed on its own. The AST
 is implemented as frozen dataclasses with `__post_init__` invariant
 checks.
 
-For composite contracts that combine structurally distinct payoffs (e.g.
-a straddle as sum of call and put), an additional constructor:
-
-```
-ContractIR.Composite(parts: tuple[ContractIR, ...])
-```
-
-Composite is AND-composition of ContractIRs over the same time domain.
-It is used sparingly; single-payoff contracts remain the primary shape
-and are the target of the four Phase 2 families.
+Top-level composite contracts are intentionally OUT of Phase 2. If a
+multi-leg structure can be represented under one shared exercise,
+observation, and underlying surface, encode it inside `PayoffExpr`
+using `Add`, `Mul`, `Scaled`, or `LinearBasket`. Heterogeneous
+multi-leg structures that need multiple root-level surfaces are a
+follow-on after Phase 2.
 
 #### Sub-types
 
@@ -116,12 +120,13 @@ and are the target of the four Phase 2 families.
 PayoffExpr = 
     | Constant(value: float)
     | Spot(underlier_id: str)
-    | Forward(underlier_id: str, schedule_ref: str)   # forward price at a future time
-    | SwapRate(underlier_id: str, schedule_ref: str)  # par swap rate
+    | Forward(underlier_id: str, schedule: Schedule)  # forward price over a concrete delivery / accrual schedule
+    | SwapRate(underlier_id: str, schedule: FiniteSchedule) # par swap rate for a concrete underlying swap schedule
+    | Annuity(underlier_id: str, schedule: FiniteSchedule)  # positive swap annuity for the same schedule
     | Strike(value: float)
-    | LinearBasket(terms: tuple[tuple[float, PayoffExpr], ...])
-    | ArithmeticMean(expr: PayoffExpr, schedule: Schedule)
-    | VarianceReplication(underlier_id: str, interval: Schedule)
+    | LinearBasket(terms: tuple[tuple[float, PayoffExpr], ...])  # k >= 1
+    | ArithmeticMean(expr: PayoffExpr, schedule: FiniteSchedule)
+    | VarianceObservable(underlier_id: str, interval: ContinuousInterval)
     | Max(args: tuple[PayoffExpr, ...])       # k-ary, k >= 1
     | Min(args: tuple[PayoffExpr, ...])       # k-ary, k >= 1
     | Add(args: tuple[PayoffExpr, ...])       # k-ary, k >= 2
@@ -167,7 +172,7 @@ UnderlyingSpec =
     | EquitySpot(name: str, dynamics: str)        # e.g. name="AAPL", dynamics="gbm"
     | RateCurve(name: str, dynamics: str)         # e.g. Hull-White 1F
     | ForwardRate(name: str, dynamics: str)       # lognormal forward
-    | CompositeUnderlying(parts: tuple[UnderlyingSpec, ...])   # for baskets
+    | CompositeUnderlying(parts: tuple[UnderlyingSpec, ...])   # for baskets; leaf names must be unique
 ```
 
 ```
@@ -177,24 +182,66 @@ Schedule =
     | ContinuousInterval(t_start: Date, t_end: Date)
 ```
 
+#### Naming Discipline
+
+Contract node names should describe contractual semantics or observed
+market quantities, not a pricing method, numerical scheme, or lowering
+strategy.
+
+Permanent documentation for this naming rule lives in
+`docs/quant/contract_algebra.rst` under "Observable Naming Discipline".
+
+Naming audit for the current Phase 2 surface:
+
+- `VarianceReplication` was renamed to `VarianceObservable` because
+  option replication is one admissible lowering strategy, not part of
+  the contract-level meaning.
+- The remaining `PayoffExpr` names (`Spot`, `Forward`, `SwapRate`,
+  `Annuity`, `ArithmeticMean`, `LinearBasket`, `Strike`) are retained
+  because they denote semantic observables or algebraic constructors,
+  not pricing methods.
+- No other current `PayoffExpr`, `Predicate`, `Schedule`, or candidate
+  leg-track node names in this draft were found to be method-leaky.
+
 #### Well-formedness
 
 A `ContractIR c` is well-formed when all of the following hold:
 
-1. Every `underlier_id` appearing in `c.payoff` (via `Spot`, `Forward`,
-   `SwapRate`, `LinearBasket` leaves, etc.) resolves to a named entry in
-   `c.underlying.spec`.
-2. Every `schedule_ref` string appearing in `c.payoff` resolves to
-   either `c.exercise.schedule` or `c.observation.schedule` (or a
-   sub-schedule of them).
-3. `c.exercise.schedule` is non-empty if `c.exercise.style ≠ european`.
-4. `c.observation.kind = terminal` iff `c.observation.schedule` is a
+1. The leaf `name` values inside `c.underlying.spec` are unique. They
+   define the admissible namespace for all payoff-level `underlier_id`
+   references.
+2. Every `underlier_id` appearing in `c.payoff` (via `Spot`, `Forward`,
+   `SwapRate`, `Annuity`, `LinearBasket` leaves, etc.) resolves to a
+   named entry in `c.underlying.spec`.
+3. Every schedule embedded in `c.payoff` (via `Forward`, `SwapRate`,
+   `Annuity`, `ArithmeticMean`, `VarianceObservable`) is a concrete
+   `Schedule` value. Phase 2 has no symbolic `schedule_ref` lookup.
+   When a payoff schedule is intended to line up with exercise or
+   observation, that alignment is by structural schedule equality, not
+   by name indirection.
+4. `FiniteSchedule` dates are strictly increasing, duplicate-free, and
+   non-empty;
+   `ContinuousInterval` requires `t_start <= t_end`.
+5. Node-local schedule discipline is respected:
+   `SwapRate` / `Annuity` use non-empty `FiniteSchedule`s;
+   `ArithmeticMean` uses a non-empty `FiniteSchedule`;
+   `VarianceObservable` uses a `ContinuousInterval`.
+6. `c.exercise.style = european` iff `c.exercise.schedule` is a
+   `Singleton`. For future typed-admissible surfaces, `bermudan`
+   requires a non-empty `FiniteSchedule` and `american` requires a
+   `ContinuousInterval`.
+7. `c.observation.kind = terminal` iff `c.observation.schedule` is a
    `Singleton`.
-5. `PayoffExpr` subtree arities match their constructor declarations
+   `Observation(kind=schedule, …)` requires a non-empty
+   `FiniteSchedule`. `Observation(kind=path_dependent, …)` is reserved
+   for follow-ons and may carry a `FiniteSchedule` or
+   `ContinuousInterval`.
+8. `PayoffExpr` subtree arities match their constructor declarations
    (e.g. `Max` has `k ≥ 1` args; `Sub` has exactly 2).
-6. In `LinearBasket`, the sum of weights may be any real (no
-   normalization required); each `PayoffExpr` in the tuple must
-   well-form against the same underlying spec.
+9. In `LinearBasket`, the tuple of terms is non-empty, the sum of
+   weights may be any real (no normalization required), and each
+   `PayoffExpr` in the tuple must well-form against the same underlying
+   spec.
 
 Well-formedness is enforced in the constructor (`__post_init__`) for
 each dataclass and at the top-level `ContractIR` dataclass.
@@ -203,17 +250,20 @@ each dataclass and at the top-level `ContractIR` dataclass.
 
 #### Denotational semantics
 
-Let `(Ω, F, F_t, P)` be a filtered probability space and `M_t : Ω →
-MarketState` the market process adapted to `F_t`. Each `PayoffExpr e`
-denotes a measurable function:
+Let `(Ω, F, F_t, P)` be a filtered probability space and let
+`M|_D = (M_t)_{t \in D}` be the market path restricted to the
+observation domain `D` induced by the expression. Here `D` may be a
+singleton date, a finite schedule, or a continuous interval. Each
+`PayoffExpr e` denotes a measurable function:
 
-$$\llbracket e \rrbracket : \text{MarketState}_{\mathcal{T}} \to \mathbb{R}$$
+$$\llbracket e \rrbracket : \text{PathState}_{D} \to \mathbb{R}$$
 
-where `MarketState_T` is the market state sampled on a finite set `T` of
-times. For terminal payoffs, `T` is a singleton. For
-schedule-dependent payoffs, `T` is the observation schedule.
+where `PathState_D` is a time-indexed market-path restriction on `D`.
+For terminal leaves, `D = {t}` and we abbreviate the input by `m_t`.
+For schedule-dependent leaves, the input is the restricted path on the
+relevant schedule or interval.
 
-Denotation rules (omitting the trivial `T = {t}` case for brevity):
+Denotation rules (omitting the trivial `D = {t}` case for brevity):
 
 $$\llbracket \texttt{Constant}(c) \rrbracket(m) = c$$
 
@@ -223,17 +273,24 @@ $$\llbracket \texttt{Forward}(u, s) \rrbracket(m_t) = m_t.\text{forward}(u, s)$$
 
 $$\llbracket \texttt{SwapRate}(u, s) \rrbracket(m_t) = m_t.\text{swap\_rate}(u, s)$$
 
+$$\llbracket \texttt{Annuity}(u, s) \rrbracket(m_t) = m_t.\text{annuity}(u, s)$$
+
 $$\llbracket \texttt{Strike}(K) \rrbracket(m) = K$$
 
 $$\llbracket \texttt{LinearBasket}([(w_i, e_i)]) \rrbracket(m) = \sum_i w_i \cdot \llbracket e_i \rrbracket(m)$$
 
-$$\llbracket \texttt{ArithmeticMean}(e, s) \rrbracket(m_S) = \frac{1}{|s|} \sum_{t \in s} \llbracket e \rrbracket(m_t)$$
+For `s = (t_1, \ldots, t_n)` with `n \ge 1`:
 
-$$\llbracket \texttt{VarianceReplication}(u, [t_1, t_2]) \rrbracket(m) = \int_{t_1}^{t_2} \sigma^2_{\text{implied}}(u, s) \, ds$$
+$$\llbracket \texttt{ArithmeticMean}(e, s) \rrbracket(m_s) = \frac{1}{n} \sum_{i=1}^{n} \llbracket e \rrbracket(m_{t_i})$$
 
-In practice, `VarianceReplication` is implemented via log-contract
-replication: `2 × ∫ C(K)/K² dK + ...`, matching FinancePy's variance-swap
-convention.
+$$\llbracket \texttt{VarianceObservable}(u, I) \rrbracket(m_I) = \operatorname{VarObs}(u, I; m_I)$$
+
+`VarObs(u, I; m_I)` is the annualized variance observable attached to
+underlier `u` and interval `I`. At the Contract IR layer this remains an
+abstract scalar observable; the AST does NOT hard-code a particular
+pricing identity. Analytical lowerings may later price its expectation
+through static log-contract replication / Black vol-surface inputs,
+matching the current Trellis / FinancePy-facing variance-swap route.
 
 $$\llbracket \texttt{Max}(e_1, \ldots, e_k) \rrbracket(m) = \max_i \llbracket e_i \rrbracket(m)$$
 
@@ -258,7 +315,7 @@ and so on for the other comparators.
 Two `PayoffExpr` `e` and `e'` are semantically equivalent (written
 `e ≡ e'`) iff:
 
-$$\forall m \in \text{MarketState}_{\mathcal{T}} \; : \; \llbracket e \rrbracket(m) = \llbracket e' \rrbracket(m)$$
+$$\forall m \in \text{PathState}_{D} \; : \; \llbracket e \rrbracket(m) = \llbracket e' \rrbracket(m)$$
 
 This is the rewriting system's target invariant. Every simplification
 rewrite must preserve `≡`.
@@ -272,6 +329,11 @@ semantics-preserving; `e → e'` implies `e ≡ e'`.
 Rules are listed in groups. Where needed, side conditions are explicit.
 
 #### Algebraic (commutative monoid laws)
+
+The sort / flatten / singleton rules below apply to each commutative
+k-ary constructor (`Max`, `Min`, `Add`, `Mul`) unless stated otherwise.
+Idempotence is specific to `Max` and `Min`; it does NOT apply to `Add`
+or `Mul`.
 
 ```
 Max(args_1, ..., args_k) → Max(sort(args_1, ..., args_k))
@@ -297,8 +359,6 @@ Min(a, a) → a
 ```
 Idempotence.
 
-Analogous rules apply to `Min`, `Add`, `Mul`.
-
 #### Identity and absorbing elements
 
 ```
@@ -309,6 +369,8 @@ Mul(a, Constant(1)) → a
 Mul(a, Constant(0)) → Constant(0)
 Scaled(Constant(1), a) → a
 Scaled(Constant(0), a) → Constant(0)
+Scaled(Constant(c_1), Scaled(Constant(c_2), a)) → Scaled(Constant(c_1 * c_2), a)
+Scaled(Constant(c), Constant(d)) → Constant(c * d)
 ```
 
 #### Distribution
@@ -327,6 +389,17 @@ non-positive scalar) the distribution swaps: `Scaled(c, Max(a, b)) =
 Min(Scaled(c, a), Scaled(c, b))`. This is deliberately omitted from
 auto-rewrites; callers canonicalize the sign manually.
 
+The side condition `c ≥ 0` is syntactic, not symbolic. P2.2 only fires
+the distribution rules when non-negativity is certified from node form
+without solving inequalities globally, e.g. `Constant(c)` with `c ≥ 0`
+or `Annuity(...)`. If the scalar's sign is not locally provable, leave
+`Scaled(c, …)` in place.
+
+```
+Add(args) with Constant terms → fuse constants
+```
+E.g. `Add(a, Constant(2), Constant(3)) → Add(a, Constant(5))`.
+
 ```
 Mul(args) with Constant factors → fuse constants
 ```
@@ -334,24 +407,29 @@ E.g. `Mul(a, Constant(2), Constant(3)) → Mul(a, Constant(6))`.
 
 #### Shape canonicalization
 
-The canonical ramp form is `Max(Sub(X, Strike(K)), Constant(0))`:
+The canonical ramp forms are:
 
 ```
-Max(Sub(a, b), Constant(0))
+Max(Sub(X, Strike(K)), Constant(0))   # call orientation
+Max(Sub(Strike(K), X), Constant(0))   # put orientation
 ```
 
 When a rewrite produces `Max(Constant(0), Sub(a, b))`, the sort rule
 above puts the `Sub` term first (under a lexicographic `Max` ordering
-that ranks `Sub` before `Constant`). This makes every ramp match a
-single canonical template, which is what Phase 3's `@solves_pattern`
-will match on.
+that ranks `Sub` before `Constant`). This makes every ramp match one of
+the two canonical templates above.
+
+Negative outer scaling is NOT an orientation rewrite. For example,
+`Scaled(Constant(-1), Max(Sub(X, Strike(K)), Constant(0)))` remains a
+short-call expression; it does not canonicalize to the put template.
 
 #### LinearBasket normalization
 
 ```
-LinearBasket([(w, Spot(u))]) → Scaled(Constant(w), Spot(u))   [single term]
-LinearBasket([(0, e), ...]) → LinearBasket([...])              [drop zero-weight terms]
-LinearBasket([(w_1, e_1), (w_1, e_2), ...]) is not simplified  [no automatic weight fusion]
+LinearBasket([(w, e)]) → Scaled(Constant(w), e)               [single term]
+LinearBasket([(0, e_1), ..., (0, e_n)]) → Constant(0)         [all-zero basket]
+LinearBasket([(0, e), ...]) → LinearBasket([...])             [drop zero-weight terms if terms remain]
+LinearBasket([(w_1, e), (w_2, e), ...]) is not simplified     [no automatic fusion of duplicate expressions]
 ```
 
 #### Confluence requirement
@@ -380,46 +458,39 @@ template (up to underlying identity and schedule details).
 
 ### Family 1 — European terminal linear payoff
 
-The family of payoffs whose form at a single terminal time is:
+The family of payoffs whose form at a single terminal time is a
+non-negative scalar times a single ramp:
 
-$$\max(c \cdot (X - K), 0)$$
+$$A \cdot \max(L - R, 0)$$
 
-where `X` is a linear functional of market state (spot, forward, swap
-rate, or linear combination of those), `K` is a strike, and
-`c ∈ {+1, -1}` is call/put sign.
+where `A` is a non-negative scalar payoff expression (`Constant(1)` for
+plain calls / puts, `Annuity(...)` for swaptions), and `L` / `R` are
+linear functionals of market state. Call / put orientation is encoded in
+the ordering of `Sub`:
+
+- call: `L = X`, `R = K`
+- put: `L = K`, `R = X`
 
 Canonical IR template:
 
 ```
 ContractIR(
-    payoff = Payoff(
-        Scaled(c_expr,                                    # c = Constant(+1) for call, Constant(-1) for put
-               Max(Sub(X, Strike(K)), Constant(0))
-        )
-    ),
+    payoff = Scaled(weight_expr, Max(Sub(lhs, rhs), Constant(0))),
     exercise = Exercise(style=european, schedule=Singleton(T)),
     observation = Observation(kind=terminal, schedule=Singleton(T)),
     underlying = Underlying(spec = …)
 )
 ```
 
-For `c = +1` the `Scaled` collapses to `Max(Sub(X, K), 0)`; for `c = -1`
-the `Scaled` does not distribute over `Max` (side condition fails), so
-the put form is canonically `Scaled(Constant(-1), Max(Sub(X, K), 0))`,
-which is then equivalent to `Max(Sub(K, X), 0)` via the identity
+For unscaled calls / puts, `weight_expr = Constant(1)` and the identity
+rule collapses `Scaled(Constant(1), …)` away. For scaled families such as
+swaptions, the positive outer factor stays explicit.
 
-$$-\max(a - b, 0) = -\!\max(a - b, 0)$$
-
-which in Contract IR lives as an explicit rewrite:
-
-```
-Scaled(Constant(-1), Max(Sub(a, b), Constant(0))) → -1 × (a - b)⁺
-but we keep the canonical put form as:
-Max(Sub(b, a), Constant(0))
-```
-
-i.e. put = call with swapped `Sub` operands. The rewriter normalizes
-to that form.
+Important distinction: a put is NOT a negatively scaled call. The
+canonical put form is `Max(Sub(Strike(K), X), Constant(0))`. By
+contrast, `Scaled(Constant(-1), Max(Sub(X, Strike(K)), Constant(0)))`
+denotes a short call, not a put, and the rewriter must preserve that
+distinction.
 
 #### Members
 
@@ -430,7 +501,7 @@ $$\text{payoff}_T = \max(S_T - K, 0)$$
 Contract IR:
 ```
 payoff = Max(Sub(Spot("AAPL"), Strike(150)), Constant(0))
-underlying = Underlying(EquitySpot("AAPL", "gbm"))
+underlying = Underlying(spec=EquitySpot("AAPL", "gbm"))
 ```
 
 **European payer swaption on forward swap rate.**
@@ -441,16 +512,15 @@ where `A(T)` is the annuity of the forward swap at expiry and `s_T` is
 the par swap rate. Contract IR:
 
 ```
-payoff = Scaled(Annuity("USD-IRS-5Y"), 
-                Max(Sub(SwapRate("USD-IRS-5Y", "2025-11-15"), Strike(0.05)),
+payoff = Scaled(Annuity("USD-IRS-5Y", FiniteSchedule((...,))),
+                Max(Sub(SwapRate("USD-IRS-5Y", FiniteSchedule((...,))), Strike(0.05)),
                     Constant(0)))
-underlying = Underlying(ForwardRate("USD-IRS-5Y", "lognormal_forward"))
+underlying = Underlying(spec=ForwardRate("USD-IRS-5Y", "lognormal_forward"))
 ```
 
-The `Annuity` term is part of `PayoffExpr` — see Open Question 1 for
-whether it's a dedicated constructor or a derived expression. Current
-proposal: `Annuity` is a `PayoffExpr` variant that denotes the
-numeraire annuity of a forward swap schedule.
+`Annuity` is a dedicated `PayoffExpr` constructor in Phase 2. It denotes
+the positive swap annuity associated with the same underlying swap
+schedule used by `SwapRate`.
 
 **European basket option.**
 
@@ -463,53 +533,59 @@ payoff = Max(
         Strike(4500)),
     Constant(0)
 )
-underlying = Underlying(CompositeUnderlying((EquitySpot("SPX", "gbm"),
-                                             EquitySpot("NDX", "gbm"))))
+underlying = Underlying(spec=CompositeUnderlying((EquitySpot("SPX", "gbm"),
+                                                  EquitySpot("NDX", "gbm"))))
 ```
 
 #### Unification observation
 
-All three products have the same outer `Max(Sub(_, Strike(_)), Constant(0))`
-shape. They differ only in the `Sub` argument `X` and the
-`Underlying` specification. Under Phase 3's `@solves_pattern`, three
+All three products share the same positive-weighted single-ramp core:
+an optional non-negative outer scale multiplying
+`Max(Sub(_, Strike(_)), Constant(0))`. They differ only in the linear
+observable `X`, the optional positive weight, and the `Underlying`
+specification. Under Phase 3's `@solves_pattern`, three
 kernels (`black76_call`, `price_swaption_black76`,
 `price_basket_option_analytical`) declare the same outer pattern and
 differentiate via their `Underlying` constraint. This is the
 operational payoff of unifying `vanilla_option`, `swaption`, and
 `basket_option` into one Contract IR family.
 
-### Family 2 — Variance replication
+### Family 2 — Variance-settled payoff
 
-Payoffs whose terminal value is a linear function of integrated
-implied variance over an interval:
+Payoffs whose terminal value is a linear function of a variance
+observable over an interval:
 
-$$\text{payoff}_T = N \cdot (V_{[0, T]} - K_{\text{var}})$$
+$$\text{payoff}_T = N \cdot (V^{\mathrm{obs}}_{[t_0, T]} - K_{\text{var}})$$
 
-where `V_{[0,T]}` is the realized variance over `[0, T]` and
-`K_var` is the variance strike.
+where `V^{\mathrm{obs}}_{[t_0,T]}` is the annualized variance observable
+named by the contract and `K_var` is the variance strike. For
+realized-variance-settled contracts, pricing later identifies the fair
+value of that observable under the chosen model / quote convention.
+Phase 2 does not encode the discrete sampling, annualization, or
+pricing method inside the AST.
 
 Canonical IR template:
 
 ```
 ContractIR(
-    payoff = Payoff(
-        Scaled(Constant(notional),
-               Sub(VarianceReplication(u, ContinuousInterval(t_0, T)),
-                   Strike(K_var))
-        )
-    ),
+    payoff = Scaled(Constant(notional),
+                    Sub(VarianceObservable(u, ContinuousInterval(t_0, T)),
+                        Strike(K_var))),
     exercise = Exercise(style=european, schedule=Singleton(T)),
     observation = Observation(kind=terminal, schedule=Singleton(T)),
-    underlying = Underlying(EquitySpot(u, dynamics))
+    underlying = Underlying(spec=EquitySpot(u, dynamics))
 )
 ```
 
-Implementation note: `VarianceReplication(u, I)` denotes the integrated
-variance under the replication formula
-`2 × ∫_K C(K) / K² dK + ...`; the Trellis helper
+Implementation note: `VarianceObservable(u, I)` denotes the variance
+observable that the lowering will price. One admissible lowering is
+static option replication. The current Trellis helper
 `price_equity_variance_swap_analytical` implements this using the Black
-vol surface. Phase 3's `@solves_pattern` on that helper will match this
-template.
+vol surface and a FinancePy-compatible fair-strike approximation. That
+pricing identity lives below the IR boundary; the Contract IR node is
+kept at the observable level so later phases can swap lowerings without
+changing the AST contract. Phase 3's `@solves_pattern` on that helper
+will match this template.
 
 #### Members
 
@@ -529,10 +605,8 @@ Canonical IR template:
 
 ```
 ContractIR(
-    payoff = Payoff(
-        Mul(Q_expr,                                       # Q_expr: Constant for cash-or-nothing; Spot for asset-or-nothing
-            Indicator(Gt(X, Strike(K))))
-    ),
+    payoff = Mul(Q_expr,                                 # Q_expr: Constant for cash-or-nothing; Spot for asset-or-nothing
+                 Indicator(Gt(X, Strike(K)))),
     exercise = Exercise(style=european, schedule=Singleton(T)),
     observation = Observation(kind=terminal, schedule=Singleton(T)),
     underlying = Underlying(spec = …)
@@ -551,9 +625,13 @@ $$\text{payoff}_T = c \cdot \mathbb{1}_{S_T > K}$$
 
 $$\text{payoff}_T = S_T \cdot \mathbb{1}_{S_T > K}$$
 
-Put variants swap the predicate to `Lt` and/or negate `Q`. The
+Put variants swap the predicate to `Lt`. Positive cash-or-nothing and
+asset-or-nothing puts remain positive payouts; a negative outer scale
+still denotes a short position rather than put orientation. The
 rewriter normalizes put digitals to a canonical `Lt` form; details in
-P2.2.
+P2.2. Phase 2 treats strict comparators (`Gt` / `Lt`) as canonical.
+Inclusive boundaries (`Ge` / `Le`) remain available in the AST but are
+not canonicalized into or out of the strict digital family.
 
 #### Non-Phase-2 future members
 
@@ -572,11 +650,9 @@ Canonical IR template:
 
 ```
 ContractIR(
-    payoff = Payoff(
-        Max(Sub(ArithmeticMean(X_expr, s_avg),
-                Strike(K)),
-            Constant(0))
-    ),
+    payoff = Max(Sub(ArithmeticMean(X_expr, s_avg),
+                     Strike(K)),
+                 Constant(0)),
     exercise = Exercise(style=european, schedule=Singleton(T)),
     observation = Observation(kind=schedule, schedule=s_avg),
     underlying = Underlying(spec = …)
@@ -594,6 +670,62 @@ Geometric Asian (different aggregation operator), floating-strike
 Asian (`Max(Sub(X_T, ArithmeticMean(Spot, s)), 0)`), Asian swaption,
 multi-asset Asian baskets — all structurally related but outside
 Phase 2 scope.
+
+## Follow-On Boundary: Quoted Observables vs Leg-Based Products
+
+Phase 2 keeps `VarianceObservable` as a dedicated observable leaf. It
+should NOT be widened into a generic "market surface query" node. That
+would blur two different future tracks that need different semantics.
+
+### Track A — Quoted-observable products
+
+These are contracts whose payoff is a function of one or more quoted
+market observables at one observation surface. The contract can still
+fit naturally inside the current `PayoffExpr` algebra if later phases
+add explicit quote-observable leaves with quote conventions carried in
+the node.
+
+Representative examples:
+
+- a vol-skew product settling on `σ(T, K_1) - σ(T, K_2)` or another
+  explicit function of two implied-vol surface points
+- a terminal curve-spread product settling on `S_{10Y}(T) - S_{2Y}(T)`
+  where both coordinates are quoted par rates observed at one time
+
+The key property is snapshot semantics: the payoff depends on quoted
+points, not on a schedule of coupon accrual and payment obligations.
+
+### Track B — Leg-based cashflow products
+
+These are contracts whose economic meaning is a schedule of dated
+contingent cashflows assembled from legs, accrual rules, fixing rules,
+payment rules, and notional exchanges. They do not fit cleanly into the
+Phase 2 payoff-only AST without either hiding cashflow logic inside
+opaque leaf nodes or rebuilding a mini cashflow engine inside
+`PayoffExpr`.
+
+Representative examples:
+
+- SOFR-FF basis swaps
+- vanilla fixed-float and float-float swaps
+- coupon-bearing notes and bonds
+- callable / putable coupon products once exercise is reintroduced
+
+The key property is leg semantics: the product is defined by contractual
+cashflow assembly, not by one terminal quoted-observable formula.
+
+### Boundary rule
+
+Classify by contract semantics, not by desk label. A trade described as
+"10Y-2Y basis" may land in either track:
+
+- if it settles once on a terminal quote spread, it is a
+  quoted-observable product
+- if it exchanges scheduled coupons or floating legs, it is a
+  leg-based cashflow product
+
+The leg-based future track is recorded in
+`doc/plan/draft__leg-based-contract-ir-foundation.md`.
 
 ## Relationship to ProductIR
 
@@ -633,6 +765,9 @@ with `__post_init__` well-formedness checks.
 **Scope.**
 
 - New module `trellis/agent/contract_ir.py` with the ADT types above.
+- Top-level `ContractIR.Composite` is explicitly OUT of Phase 2; any
+  multi-leg example in this phase must fit inside one root contract via
+  `PayoffExpr` composition.
 - No consumer-side changes. No evaluator extension (that's P2.5).
 - Tests in `tests/test_agent/test_contract_ir_types.py`: construction,
   well-formedness rejection (each invariant independently), structural
@@ -648,7 +783,7 @@ with `__post_init__` well-formedness checks.
 - Every constructor listed in the "Sub-types" block above exists as a
   frozen dataclass with matching field names and types.
 - `__post_init__` raises `ContractIRWellFormednessError` (new exception
-  class) when any of well-formedness rules 1–6 is violated. One
+  class) when any of well-formedness rules 1–9 is violated. One
   targeted test per rule.
 - Dataclass equality: structurally equal IRs compare equal; the test
   suite includes a fixture for each of the four Phase 2 families'
@@ -663,11 +798,14 @@ with `__post_init__` well-formedness checks.
 
 **Dependencies.** None.
 
-**Forward-compat.** Use the same head-tag naming (`"max"`, `"sub"`,
-`"spot"`, `"strike"`, `"constant"`, `"scaled"`, `"indicator"`, etc.) that
-Phase 1.5.A's `ContractPattern` parser already recognizes. P2.5's
-evaluator extension relies on head-tag correspondence to match
-patterns against IRs.
+**Forward-compat.** Reuse the existing ContractPattern head-tag names
+where the vocabularies already overlap (`"max"`, `"sub"`, `"scaled"`,
+`"indicator"`, `"spot"`, `"strike"`, `"constant"`). New IR-only heads
+introduced in Phase 2 (`"forward"`, `"swap_rate"`, `"annuity"`,
+`"linear_basket"`, `"arithmetic_mean"`, `"variance_observable"`) are
+part of the Contract IR surface immediately, but ContractPattern parser
+support for them lands in P2.5. P2.5's evaluator extension relies on
+that eventual head-tag correspondence to match patterns against IRs.
 
 ---
 
@@ -686,6 +824,11 @@ confluence via property-based tests.
   above: commutative-monoid normalization (sort + flatten + singleton
   + idempotence), identity/absorbing, distribution (with side
   conditions), shape canonicalization, LinearBasket normalization.
+- Add an explicit anti-regression fixture for the semantic distinction
+  between a put and a short call:
+  `Max(Sub(Strike(K), X), Constant(0))` must never canonicalize to
+  `Scaled(Constant(-1), Max(Sub(X, Strike(K)), Constant(0)))`, and vice
+  versa.
 - Property-based tests using Hypothesis:
   - **Idempotence**: `canonicalize(canonicalize(e)) = canonicalize(e)`
     for any randomly generated `e`.
@@ -693,10 +836,12 @@ confluence via property-based tests.
     (e.g. `Max(a, b)` and `Max(b, a)`), their canonicalizations are
     identical.
   - **Semantic preservation**: evaluate both `e` and
-    `canonicalize(e)` against a small random MarketState and assert
-    numerical equality within `1e-12`. (Requires a simple evaluator —
-    not the full pattern evaluator, just a direct `PayoffExpr → float`
-    numerical evaluator under fixed market state.)
+    `canonicalize(e)` against a synthetic leaf-valuation environment
+    and assert numerical equality within `1e-12`. (Requires a simple
+    evaluator — not the full pattern evaluator, just a direct
+    `PayoffExpr → float` interpreter under fixed numeric assignments for
+    leaves such as `Spot`, `SwapRate`, `Annuity`, and
+    `VarianceObservable`.)
   - **Fixture tests**: each of the four family templates canonicalizes
     to the shape listed above.
 
@@ -709,12 +854,15 @@ confluence via property-based tests.
 
 - `canonicalize` is a total function (no exceptions for well-formed
   input).
+- Family-1 call / put orientation is preserved: operand order inside
+  `Sub` carries the option side; negative outer scaling is preserved as
+  short exposure and is not rewritten into a put.
 - Hypothesis idempotence property passes on 1000+ randomly generated
   trees.
 - Hypothesis confluence property passes on 500+ random equivalent
   pairs.
 - Numerical semantic-preservation property passes within `1e-12` on
-  500+ random (tree, market) pairs.
+  500+ random (tree, environment) pairs.
 - Canonical form for each of the four Phase 2 family templates matches
   the spec in the "Four Phase 2 Payoff Families" section above.
 
@@ -746,6 +894,9 @@ reading `ProductIR` unchanged.
   families.
 - Returns a well-formed `ContractIR` for 20+ canonical fixtures
   spanning the four families (see "Fixtures" below).
+- Produces `ContractIR` from the semantic description and parsed product
+  semantics only; it must not consult `route_id`, `route_family`,
+  backend-binding ids, or other route-selected metadata.
 
 **Fixtures (canonical descriptions → expected Contract IR).**
 
@@ -756,10 +907,10 @@ reading `ProductIR` unchanged.
 | European payer swaption on 5Y USD IRS strike 5% expiring 2025-11-15 | 1 | `Scaled(Annuity(…), Max(Sub(SwapRate(…), Strike(0.05)), Constant(0)))` |
 | European receiver swaption on 5Y USD IRS strike 5% expiring 2025-11-15 | 1 | `Scaled(Annuity(…), Max(Sub(Strike(0.05), SwapRate(…)), Constant(0)))` |
 | European basket call on {SPX 50%, NDX 50%} strike 4500 | 1 | `Max(Sub(LinearBasket([(0.5, Spot("SPX")), (0.5, Spot("NDX"))]), Strike(4500)), Constant(0))` |
-| Equity variance swap on SPX, variance strike 0.04, notional 10000, expiry 2025-11-15 | 2 | `Scaled(Constant(10000), Sub(VarianceReplication("SPX", [0, T]), Strike(0.04)))` |
+| Equity variance swap on SPX, variance strike 0.04, notional 10000, expiry 2025-11-15 | 2 | `Scaled(Constant(10000), Sub(VarianceObservable("SPX", ContinuousInterval(t_0, T)), Strike(0.04)))` |
 | Cash-or-nothing digital call on AAPL paying $1 if spot > 150 at expiry | 3 | `Mul(Constant(1), Indicator(Gt(Spot("AAPL"), Strike(150))))` |
 | Asset-or-nothing digital put on AAPL if spot < 150 at expiry | 3 | `Mul(Spot("AAPL"), Indicator(Lt(Spot("AAPL"), Strike(150))))` |
-| Arithmetic Asian call on SPX monthly average over 2025 strike 4500 | 4 | `Max(Sub(ArithmeticMean(Spot("SPX"), FiniteSchedule([…monthly dates…])), Strike(4500)), Constant(0))` |
+| Arithmetic Asian call on SPX monthly average over 2025 strike 4500 | 4 | `Max(Sub(ArithmeticMean(Spot("SPX"), FiniteSchedule((…monthly dates…))), Strike(4500)), Constant(0))` |
 | Arithmetic Asian put on SPX weekly average strike 4500 | 4 | analogous, put orientation |
 
 Plus 10 more varying underlier, schedule, strike shape, and boundary
@@ -791,6 +942,8 @@ off-by-one and parsing edge cases.
   the decomposer's output unchanged).
 - `decompose_to_ir` return type stays backward-compatible (existing
   callers reading `ProductIR` still work).
+- The IR result is route-independent: masking or omitting legacy route
+  metadata does not change the emitted `ContractIR`.
 - Full agent suite green.
 
 **Validation.**
@@ -824,6 +977,9 @@ populated on every blueprint.
   attach `None`; do NOT fail the build (additive discipline).
 - Failure-mode handling: if decomposition succeeds with `None` (out of
   Phase 2 family), attach `None` silently.
+- Preserve route independence: `contract_ir` must be attached before any
+  downstream route-specific codegen hinting, and its contents must not
+  depend on which route was later selected.
 
 **Files.**
 
@@ -840,6 +996,9 @@ populated on every blueprint.
 - For every out-of-family description, `contract_ir` is `None`.
 - Decomposer exceptions produce `None` + warning log; build does not
   fail.
+- A regression test masks route metadata on the compiled request /
+  blueprint path and confirms the same `contract_ir` still attaches for
+  in-family fixtures.
 - Full agent suite green.
 
 **Validation.**
@@ -865,6 +1024,10 @@ target type.
 
 **Scope.**
 
+- Extend `trellis/agent/contract_pattern.py` parser / dumper allowlists
+  with the IR-only payoff heads required by Phase 2 pattern matching:
+  `forward`, `swap_rate`, `annuity`, `linear_basket`,
+  `arithmetic_mean`, and `variance_observable`.
 - Extend `trellis/agent/contract_pattern_eval.py::evaluate_pattern`
   to dispatch on `target` type.
 - When `target` is a `ContractIR`:
@@ -887,12 +1050,15 @@ target type.
 
 **Files.**
 
+- `trellis/agent/contract_pattern.py` (extension for parser vocabulary)
 - `trellis/agent/contract_pattern_eval.py` (extension, ~200 new lines)
 - `tests/test_agent/test_contract_pattern_eval_contract_ir.py` (new,
   ~400 lines)
 
 **Acceptance criteria.**
 
+- Structured ContractPattern parse / dump round-trips succeed for the
+  newly admitted IR-only head tags above.
 - `evaluate_pattern(pattern, target: ContractIR)` works for every
   pattern kind.
 - For every (pattern, IR) pair derived from Phase 1.5.B's canonical
@@ -902,6 +1068,8 @@ target type.
 - Named wildcards bind correctly against IR sub-trees (e.g. a pattern
   `Max(Sub(Spot(_u), Strike(_k)), Constant(0))` matching an IR
   populates bindings `{_u: "AAPL", _k: 150.0}`).
+- ContractIR matching is self-sufficient: the evaluator reads only the
+  IR tree and pattern, not legacy route ids / route families.
 - Full agent suite green.
 
 **Validation.**
@@ -989,6 +1157,37 @@ reopen the traps that killed prior registry-retirement attempts (see
 5. **Canonical-form correspondence.** The decomposer emits canonical
    IRs directly (or `canonicalize`-output-identical IRs). P2.5's
    pattern evaluator assumes canonical form.
+6. **Route-free fresh build is the target surface.** Contract IR is not
+   permitted to become a documentation-only sidecar. Every Phase 2
+   artifact must be shaped so that Phase 3 can select kernels from
+   `(contract_ir, pattern matches, lowering obligations)` without
+   consulting `route_id`, `route_family`, backend-binding ids, or
+   hard-coded per-instrument route switches. Legacy route data may
+   coexist as observability-only metadata until Phase 4, but it is not
+   allowed to be a required compiler input for fresh builds.
+7. **Pattern-vocabulary parity before Phase 3.** If a Phase 2 family
+   cannot be expressed in the ContractPattern surface, that is a Phase 2
+   bug, not a Phase 3 TODO. P2.5 closes this gap by extending parser and
+   evaluator vocabulary to cover every Phase 2 payoff head.
+8. **Shadow-mode retirement proof.** Before QUA-904 closes, the plan
+   must identify at least one Phase 3 shadow-mode harness that masks
+   route hints and proves kernel selection can be reconstructed from
+   `ContractIR` for the four Phase 2 families. Phase 4 then promotes
+   that proof from shadow mode to the live fresh-build path.
+
+## Locked Decisions For This Draft
+
+The following ambiguities are resolved in this draft so P2.1 can be
+filed without conflicting AST guidance:
+
+1. `Annuity` is a dedicated `PayoffExpr` variant in Phase 2.
+2. Payoff nodes embed concrete `Schedule` values directly; Phase 2 has
+   no symbolic `schedule_ref` lookup environment.
+3. `ContractIR.payoff` is a raw `PayoffExpr`; there is no extra
+   `Payoff(...)` wrapper node.
+4. Top-level `ContractIR.Composite` is out of Phase 2. Shared-surface
+   multi-leg examples use `Add(...)` or other `PayoffExpr`
+   composition instead.
 
 ## Open Questions
 
@@ -996,17 +1195,7 @@ These are places where the author is least certain and outside judgment
 would help most. Answer before P2.1 lands; the answer shapes the
 dataclass design.
 
-1. **`Annuity` — dedicated `PayoffExpr` variant or derived expression?**
-   Swaption payoff needs `A(T) × max(s_T − K, 0)`. `Annuity(u, s)` as a
-   dedicated `PayoffExpr` denoting the swap annuity is one option;
-   expressing it as `LinearBasket` over discount factors is another.
-   Dedicated is more readable; `LinearBasket` is more compositional.
-   Weak preference: dedicated constructor, because the annuity is a
-   specific numeraire and patterns want to match it structurally. If
-   the reviewer prefers compositional, the pattern matcher needs to
-   normalize equivalent forms.
-
-2. **Measure convention.** The denotational semantics above is agnostic
+1. **Measure convention.** The denotational semantics above is agnostic
    about measure. Does `ContractIR` carry a measure annotation, or is
    it always "price under the numeraire implied by `Underlying`"? For
    Phase 2, "always under numeraire implied by Underlying" is fine
@@ -1015,35 +1204,28 @@ dataclass design.
    assumptions (e.g. Black76 assumes forward martingale under
    `T`-forward measure).
 
-3. **Schedule date representation.** `Schedule` uses `Date` — is that
+2. **Schedule date representation.** `Schedule` uses `Date` — is that
    `datetime.date`, `numpy.datetime64`, a custom `Date` newtype? Phase 2
    should pick one and stick with it. Weak preference: `datetime.date`
    (standard library, matches existing `trellis.core.date_utils`).
 
-4. **`UnderlyingSpec` dynamics strings.** `EquitySpot("AAPL", "gbm")` —
+3. **`UnderlyingSpec` dynamics strings.** `EquitySpot("AAPL", "gbm")` —
    where does the list of valid dynamics strings live? Options:
    (a) free-form strings validated against a registry;
    (b) `enum DynamicsKind`. Weak preference: (a) with a registry in
    `trellis/agent/knowledge/canonical/dynamics.yaml` (not in Phase 2
    scope to create; just use free-form strings for now).
 
-5. **Predicate scope.** `Indicator(Gt(...))` is in scope. Do we also
+4. **Predicate scope.** `Indicator(Gt(...))` is in scope. Do we also
    need compound predicates — e.g. `And`, `Or`, `Not` — for barrier
    payoffs in future families? They're included in the grammar above
    for compositional completeness but no Phase 2 fixture exercises
    them. Implement the dataclasses; skip the evaluator branch (P2.5)
    until a Phase 2-follow-on family uses them.
 
-6. **Composite top-level contracts.** `ContractIR.Composite` in the
-   grammar — is it Phase 2? Straddle = call + put, which could be
-   expressed as `Composite(call_ir, put_ir)` or as a single
-   `Add(call_payoff, put_payoff)` inside one ContractIR. The latter is
-   simpler and works for Phase 2. Recommend: don't implement
-   `Composite` in Phase 2; revisit when multi-leg structures appear.
-
 ## Next Steps
 
-1. Collect reviewer feedback on the six open questions.
+1. Collect reviewer feedback on the four remaining open questions.
 2. Promote this file from `draft__contract-ir-phase-2-ast-foundation.md`
    to `active__contract-ir-phase-2-ast-foundation.md` when QUA-904 is
    moved to In Progress.
@@ -1051,8 +1233,19 @@ dataclass design.
    dependencies.
 4. Open follow-on sub-tickets (P2.2–P2.6) in order; each links back to
    its corresponding section in this document.
+5. Before Phase 3 coding starts, open a shadow-mode compiler ticket that
+   runs kernel selection from `contract_ir` with route metadata masked
+   and compares the result against the current route-driven path for the
+   four Phase 2 families.
+6. Review the dedicated Phase 3 and Phase 4 companion drafts together
+   with this file; they now carry the structural selection semantics and
+   route-retirement invariants that this Phase 2 document only points
+   toward.
 
 Once P2.1–P2.6 all land and QUA-904 marks Done, Phase 3 (QUA-905)
 starts. Phase 3's first sub-ticket consumes `blueprint.contract_ir` in
 a compiler that matches kernel `@solves_pattern` declarations against
-it.
+it. The Phase 3 success bar is not just "IR exists"; it is "a fresh
+build can select and lower the kernel from IR without a hard-coded
+route." Phase 4 (QUA-906) then removes the remaining legacy route /
+instrument dependencies from that fresh-build path.

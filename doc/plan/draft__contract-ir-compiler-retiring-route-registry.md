@@ -21,6 +21,11 @@ matches incoming Contract IRs against kernel declarations.
 The document is written to be read in isolation by a reviewer who has not
 followed the prior discussion.
 
+Dedicated companion drafts now exist for the two consuming phases:
+
+- `doc/plan/draft__contract-ir-phase-3-solver-compiler.md`
+- `doc/plan/draft__contract-ir-phase-4-route-retirement.md`
+
 ## Framing
 
 This plan is a continuation of work already in flight, not a green-field
@@ -269,6 +274,11 @@ phase introduces that AST without touching dispatch yet.
 
 ## Phase 3 — Kernels declare the patterns they solve
 
+See the dedicated companion draft
+`doc/plan/draft__contract-ir-phase-3-solver-compiler.md` for the
+current mathematical contract, first-wave family scope, and the explicit
+Asian blocker treatment.
+
 ### Why
 
 This is where Contract IR actually dispatches. After Phase 2 we have an
@@ -363,6 +373,11 @@ kernel.
   accumulates special cases.
 
 ## Phase 4 — Delete migrated routes and eventually retire `ProductIR.instrument`
+
+See the dedicated companion draft
+`doc/plan/draft__contract-ir-phase-4-route-retirement.md` for the
+fresh-build invariance contract, deletion order, and provenance / replay
+separation.
 
 ### Why
 
