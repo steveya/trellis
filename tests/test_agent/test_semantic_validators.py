@@ -501,13 +501,18 @@ def evaluate(self, market_state):
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_flags_zcb_option_tree_helper_signature_mismatch(self, registry):
-        spec = [r for r in registry.routes if r.id == "zcb_option_rate_tree"][0]
+        # QUA-915: ZCB-option family collapsed into ``short_rate_bond_option``.
+        # The rate-tree branch still routes to ``price_zcb_option_tree``.
+        spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
         zcb_ir = ProductIR(
             instrument="zcb_option",
             payoff_family="zcb_option",
             exercise_style="european",
         )
-        spec = replace(spec, primitives=resolve_route_primitives(spec, zcb_ir))
+        spec = replace(
+            spec,
+            primitives=resolve_route_primitives(spec, zcb_ir, method="rate_tree"),
+        )
         source = '''
 from trellis.models.zcb_option_tree import price_zcb_option_tree
 
@@ -515,17 +520,20 @@ def evaluate(self, market_state):
     return price_zcb_option_tree(self._spec, market_state, steps=100)
 '''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("zcb_option_rate_tree", "lattice"), spec)
+        findings = validator.validate(source, _make_plan("short_rate_bond_option", "lattice"), spec)
         assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_accepts_zcb_option_tree_helper_surface(self, registry):
-        spec = [r for r in registry.routes if r.id == "zcb_option_rate_tree"][0]
+        spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
         zcb_ir = ProductIR(
             instrument="zcb_option",
             payoff_family="zcb_option",
             exercise_style="european",
         )
-        spec = replace(spec, primitives=resolve_route_primitives(spec, zcb_ir))
+        spec = replace(
+            spec,
+            primitives=resolve_route_primitives(spec, zcb_ir, method="rate_tree"),
+        )
         source = '''
 from trellis.models.zcb_option_tree import price_zcb_option_tree
 
@@ -533,11 +541,23 @@ def evaluate(self, market_state):
     return price_zcb_option_tree(market_state, self._spec, model="ho_lee", n_steps=200)
 '''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("zcb_option_rate_tree", "lattice"), spec)
+        findings = validator.validate(source, _make_plan("short_rate_bond_option", "lattice"), spec)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_flags_zcb_option_jamshidian_helper_signature_mismatch(self, registry):
-        spec = [r for r in registry.routes if r.id == "zcb_option_analytical"][0]
+        # QUA-915: the analytical branch of the collapsed route still
+        # routes to ``price_zcb_option_jamshidian`` and must keep the
+        # same helper-signature enforcement it had pre-collapse.
+        spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
+        zcb_ir = ProductIR(
+            instrument="zcb_option",
+            payoff_family="zcb_option",
+            exercise_style="european",
+        )
+        spec = replace(
+            spec,
+            primitives=resolve_route_primitives(spec, zcb_ir, method="analytical"),
+        )
         source = '''
 from trellis.models.zcb_option import price_zcb_option_jamshidian
 
@@ -545,11 +565,20 @@ def evaluate(self, market_state):
     return price_zcb_option_jamshidian(self._spec, market_state, strike=0.63)
 '''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("zcb_option_analytical"), spec)
+        findings = validator.validate(source, _make_plan("short_rate_bond_option"), spec)
         assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_accepts_zcb_option_jamshidian_helper_surface(self, registry):
-        spec = [r for r in registry.routes if r.id == "zcb_option_analytical"][0]
+        spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
+        zcb_ir = ProductIR(
+            instrument="zcb_option",
+            payoff_family="zcb_option",
+            exercise_style="european",
+        )
+        spec = replace(
+            spec,
+            primitives=resolve_route_primitives(spec, zcb_ir, method="analytical"),
+        )
         source = '''
 from trellis.models.zcb_option import price_zcb_option_jamshidian
 
@@ -557,11 +586,20 @@ def evaluate(self, market_state):
     return price_zcb_option_jamshidian(market_state, self._spec, mean_reversion=0.1)
 '''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("zcb_option_analytical"), spec)
+        findings = validator.validate(source, _make_plan("short_rate_bond_option"), spec)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_rejects_zcb_option_jamshidian_positional_optional_argument(self, registry):
-        spec = [r for r in registry.routes if r.id == "zcb_option_analytical"][0]
+        spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
+        zcb_ir = ProductIR(
+            instrument="zcb_option",
+            payoff_family="zcb_option",
+            exercise_style="european",
+        )
+        spec = replace(
+            spec,
+            primitives=resolve_route_primitives(spec, zcb_ir, method="analytical"),
+        )
         source = '''
 from trellis.models.zcb_option import price_zcb_option_jamshidian
 
@@ -569,7 +607,7 @@ def evaluate(self, market_state):
     return price_zcb_option_jamshidian(market_state, self._spec, 0.1)
 '''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("zcb_option_analytical"), spec)
+        findings = validator.validate(source, _make_plan("short_rate_bond_option"), spec)
         assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_flags_credit_default_swap_analytical_helper_signature_mismatch(self, registry):

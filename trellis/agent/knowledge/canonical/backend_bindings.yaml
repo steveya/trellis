@@ -332,13 +332,28 @@ bindings:
             symbol: lattice_backward_induction
             role: backward_induction
 
-  - route_id: zcb_option_rate_tree
-    engine_family: lattice
-    route_family: rate_lattice
-    primitives:
-      - module: trellis.models.zcb_option_tree
-        symbol: price_zcb_option_tree
-        role: route_helper
+  - route_id: short_rate_bond_option
+    engine_family: analytical
+    route_family: analytical
+    conditional_route_family:
+      - when:
+          methods: [rate_tree]
+        route_family: rate_lattice
+      - when: default
+        route_family: analytical
+    conditional_primitives:
+      - when:
+          methods: [analytical]
+        primitives:
+          - module: trellis.models.zcb_option
+            symbol: price_zcb_option_jamshidian
+            role: route_helper
+      - when:
+          methods: [rate_tree]
+        primitives:
+          - module: trellis.models.zcb_option_tree
+            symbol: price_zcb_option_tree
+            role: route_helper
 
   - route_id: analytical_black76
     engine_family: analytical
@@ -542,14 +557,6 @@ bindings:
           - module: trellis.core.date_utils
             symbol: year_fraction
             role: time_measure
-
-  - route_id: zcb_option_analytical
-    engine_family: analytical
-    route_family: analytical
-    primitives:
-      - module: trellis.models.zcb_option
-        symbol: price_zcb_option_jamshidian
-        role: route_helper
 
   - route_id: analytical_garman_kohlhagen
     engine_family: analytical

@@ -344,8 +344,11 @@ def test_builds_zcb_option_analytical_plan():
         ),
     )
 
+    # QUA-915: ZCB-option family collapsed. The analytical branch of
+    # ``short_rate_bond_option`` resolves to the Jamshidian helper and
+    # the adapter block stays empty.
     assert plan.primitive_plan is not None
-    assert plan.primitive_plan.route == "zcb_option_analytical"
+    assert plan.primitive_plan.route == "short_rate_bond_option"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert primitive_symbols == {"price_zcb_option_jamshidian"}
     assert plan.primitive_plan.adapters == ()
@@ -373,8 +376,10 @@ def test_builds_zcb_option_rate_tree_plan():
         ),
     )
 
+    # QUA-915: the rate-tree branch of the collapsed route resolves to
+    # the Hull-White lattice helper.
     assert plan.primitive_plan is not None
-    assert plan.primitive_plan.route == "zcb_option_rate_tree"
+    assert plan.primitive_plan.route == "short_rate_bond_option"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert primitive_symbols == {"price_zcb_option_tree"}
     assert plan.primitive_plan.adapters == ()

@@ -254,7 +254,12 @@ def resolve_backend_binding_by_route_id(
     catalog: BackendBindingCatalog | None = None,
     method: str | None = None,
 ) -> ResolvedBackendBindingSpec | None:
-    """Resolve one binding surface by route id or alias."""
+    """Resolve one binding surface by route id or alias.
+
+    ``method`` (QUA-915) threads the pricing-plan method through to the
+    binding overlay so method-keyed ``conditional_primitives`` clauses
+    dispatch consistently.
+    """
     binding = find_backend_binding_by_route_id(route_id, catalog)
     if binding is None:
         return None

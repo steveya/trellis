@@ -168,8 +168,11 @@ def test_zcb_option_ranks_jamshidian_route_above_generic_analytical():
         product_ir=product_ir,
     )
 
+    # QUA-915: the ZCB-option analytical helper is now reached through
+    # the collapsed ``short_rate_bond_option`` route. Its payoff-family
+    # bonus keeps it above the broad ``analytical_black76`` fallback.
     assert ranked
-    assert ranked[0].route == "zcb_option_analytical"
+    assert ranked[0].route == "short_rate_bond_option"
     assert ranked[0].score > 0.0
 
 

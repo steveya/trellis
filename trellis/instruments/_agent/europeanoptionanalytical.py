@@ -1,33 +1,17 @@
-"""Agent-generated payoff: Build a pricer for: Heston smile: FFT vs COS vs MC implied vol surface
+"""Agent-generated payoff: Build a pricer for: European call: theta-method convergence order measurement
 
-Extract the implied volatility smile surface under the Heston
-stochastic volatility model for SPX.
-Use the market snapshot (as_of 2024-11-15) which provides:
-  - SPX spot (S=5890)
-  - Heston parameters: kappa=2.0, theta=0.04, xi=0.48, rho=-0.68, v0=0.04
-  - USD OIS discount curve
-  - A reference implied vol smile surface (6 expiries x 7 strikes)
-Price European calls across strikes K=[5400, 5600, 5800, 5900, 6000,
-6200, 6400] and maturities T=[0.25, 0.5, 1.0, 2.0] years.
-Method 1: Heston FFT (Carr-Madan with the Heston characteristic function).
-Method 2: Heston COS method.
-Method 3: Heston MC (QE scheme, 200k paths).
-From each set of prices, extract the implied vol surface by inverting
-Black-Scholes.  All three surfaces should agree within 0.5 vol points.
-The resulting smile should show negative skew (lower strikes have
-higher IV) consistent with rho=-0.68.
-
-Construct methods: fft_pricing, monte_carlo
-Comparison targets: heston_fft (fft_pricing), heston_cos (fft_pricing), heston_mc (monte_carlo)
+Construct methods: pde_solver
+Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes (analytical)
 Cross-validation harness:
-  internal targets: heston_fft, heston_cos, heston_mc
+  internal targets: theta_0.5, theta_1.0
+  analytical benchmark: black_scholes
   external targets: quantlib
-New component: implied_vol_surface_extraction
+New component: convergence_order_diagnostic
 
-Implementation target: heston_cos
-Preferred method family: fft_pricing
+Implementation target: black_scholes
+Preferred method family: analytical
 
-Implementation target: heston_cos."""
+Implementation target: black_scholes."""
 
 from __future__ import annotations
 
@@ -36,81 +20,51 @@ from datetime import date
 
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
-from trellis.models.equity_option_transforms import price_vanilla_equity_option_transform
+from trellis.core.date_utils import year_fraction
+from trellis.models.black import black76_call, black76_put, black76_asset_or_nothing_call, black76_asset_or_nothing_put, black76_cash_or_nothing_call, black76_cash_or_nothing_put
+from trellis.models.analytical.equity_vanilla_bs import equity_vanilla_bs_outputs
 
 
 
 @dataclass(frozen=True)
 class EuropeanOptionSpec:
-    """Specification for Build a pricer for: Heston smile: FFT vs COS vs MC implied vol surface
+    """Specification for Build a pricer for: European call: theta-method convergence order measurement
 
-Extract the implied volatility smile surface under the Heston
-stochastic volatility model for SPX.
-Use the market snapshot (as_of 2024-11-15) which provides:
-  - SPX spot (S=5890)
-  - Heston parameters: kappa=2.0, theta=0.04, xi=0.48, rho=-0.68, v0=0.04
-  - USD OIS discount curve
-  - A reference implied vol smile surface (6 expiries x 7 strikes)
-Price European calls across strikes K=[5400, 5600, 5800, 5900, 6000,
-6200, 6400] and maturities T=[0.25, 0.5, 1.0, 2.0] years.
-Method 1: Heston FFT (Carr-Madan with the Heston characteristic function).
-Method 2: Heston COS method.
-Method 3: Heston MC (QE scheme, 200k paths).
-From each set of prices, extract the implied vol surface by inverting
-Black-Scholes.  All three surfaces should agree within 0.5 vol points.
-The resulting smile should show negative skew (lower strikes have
-higher IV) consistent with rho=-0.68.
-
-Construct methods: fft_pricing, monte_carlo
-Comparison targets: heston_fft (fft_pricing), heston_cos (fft_pricing), heston_mc (monte_carlo)
+Construct methods: pde_solver
+Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes (analytical)
 Cross-validation harness:
-  internal targets: heston_fft, heston_cos, heston_mc
+  internal targets: theta_0.5, theta_1.0
+  analytical benchmark: black_scholes
   external targets: quantlib
-New component: implied_vol_surface_extraction
+New component: convergence_order_diagnostic
 
-Implementation target: heston_cos
-Preferred method family: fft_pricing
+Implementation target: black_scholes
+Preferred method family: analytical
 
-Implementation target: heston_cos."""
+Implementation target: black_scholes."""
     notional: float
     spot: float
     strike: float
     expiry_date: date
-    option_type: str = "'call'"
+    option_type: str = 'call'
     day_count: DayCountConvention = DayCountConvention.ACT_365
 
 
 class EuropeanOptionAnalyticalPayoff:
-    """Build a pricer for: Heston smile: FFT vs COS vs MC implied vol surface
+    """Build a pricer for: European call: theta-method convergence order measurement
 
-Extract the implied volatility smile surface under the Heston
-stochastic volatility model for SPX.
-Use the market snapshot (as_of 2024-11-15) which provides:
-  - SPX spot (S=5890)
-  - Heston parameters: kappa=2.0, theta=0.04, xi=0.48, rho=-0.68, v0=0.04
-  - USD OIS discount curve
-  - A reference implied vol smile surface (6 expiries x 7 strikes)
-Price European calls across strikes K=[5400, 5600, 5800, 5900, 6000,
-6200, 6400] and maturities T=[0.25, 0.5, 1.0, 2.0] years.
-Method 1: Heston FFT (Carr-Madan with the Heston characteristic function).
-Method 2: Heston COS method.
-Method 3: Heston MC (QE scheme, 200k paths).
-From each set of prices, extract the implied vol surface by inverting
-Black-Scholes.  All three surfaces should agree within 0.5 vol points.
-The resulting smile should show negative skew (lower strikes have
-higher IV) consistent with rho=-0.68.
-
-Construct methods: fft_pricing, monte_carlo
-Comparison targets: heston_fft (fft_pricing), heston_cos (fft_pricing), heston_mc (monte_carlo)
+Construct methods: pde_solver
+Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes (analytical)
 Cross-validation harness:
-  internal targets: heston_fft, heston_cos, heston_mc
+  internal targets: theta_0.5, theta_1.0
+  analytical benchmark: black_scholes
   external targets: quantlib
-New component: implied_vol_surface_extraction
+New component: convergence_order_diagnostic
 
-Implementation target: heston_cos
-Preferred method family: fft_pricing
+Implementation target: black_scholes
+Preferred method family: analytical
 
-Implementation target: heston_cos."""
+Implementation target: black_scholes."""
 
     def __init__(self, spec: EuropeanOptionSpec):
         self._spec = spec
@@ -125,4 +79,28 @@ Implementation target: heston_cos."""
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        return float(price_vanilla_equity_option_transform(market_state, spec))
+        spec = self._spec
+        if market_state.discount is None:
+            raise ValueError("market_state.discount is required for Black-Scholes comparison")
+        if market_state.vol_surface is None:
+            raise ValueError("market_state.vol_surface is required for Black-Scholes comparison")
+        T = max(float(year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)), 0.0)
+        spot = float(spec.spot)
+        strike = float(spec.strike)
+        option_type = str(spec.option_type or "call").strip().lower()
+        if T <= 0.0:
+            intrinsic = max(spot - strike, 0.0) if option_type == "call" else max(strike - spot, 0.0)
+            return float(spec.notional) * intrinsic
+        df = float(market_state.discount.discount(T))
+        sigma = float(market_state.vol_surface.black_vol(max(T, 1e-6), strike))
+        forward = spot / max(df, 1e-12)
+        if option_type == "call":
+            undiscounted = black76_call(forward, strike, sigma, T)
+        elif option_type == "put":
+            undiscounted = black76_put(forward, strike, sigma, T)
+        else:
+            raise ValueError(f"Unsupported option_type {spec.option_type!r}")
+        return float(spec.notional) * df * float(undiscounted)
+
+    def benchmark_outputs(self, market_state: MarketState) -> dict[str, float]:
+        return dict(equity_vanilla_bs_outputs(market_state, self._spec))

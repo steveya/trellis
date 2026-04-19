@@ -112,8 +112,7 @@ class TestRegistryValidation:
             "pde_theta_1d",
             "qmc_sobol_paths",
             "transform_fft",
-            "zcb_option_analytical",
-            "zcb_option_rate_tree",
+            "short_rate_bond_option",
         } <= route_ids
 
     def test_all_routes_promoted(self, registry):
@@ -1282,8 +1281,16 @@ class TestAnalyticalRoutes:
         assert new == ("analytical_black76",)
 
     def test_zcb_candidate(self, registry):
-        new = _new_routes(registry, "analytical", self.ZCB_IR)
-        assert new == ("zcb_option_analytical",)
+        # QUA-915: ZCB option family collapsed into short_rate_bond_option.
+        # The new route carries required_market_data: [discount_curve,
+        # black_vol_surface]; provide a matching plan so the route is
+        # visible in the ranked list alongside analytical_black76.
+        plan = _make_plan(
+            "analytical",
+            market_data={"discount_curve", "black_vol_surface"},
+        )
+        new = _new_routes(registry, "analytical", self.ZCB_IR, pricing_plan=plan)
+        assert "short_rate_bond_option" in new
 
     def test_vanilla_primitives_with_product_ir(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
@@ -1439,7 +1446,12 @@ class TestAnalyticalRoutes:
         assert not raw_decision.ok
         assert "unsupported_event_support:automatic_triggers" in raw_decision.failures
 
-        zcb_spec = find_route_by_id("zcb_option_analytical", registry)
+        # QUA-915: the ZCB-option family has collapsed into the
+        # pattern-keyed ``short_rate_bond_option`` route. The
+        # admissibility contract for a rate-cap-floor-strip contract is
+        # still rejected (wrong product), but the failure is not an
+        # automatic-event gate — matching the pre-collapse assertion.
+        zcb_spec = find_route_by_id("short_rate_bond_option", registry)
         assert zcb_spec is not None
         zcb_decision = evaluate_route_admissibility(zcb_spec, semantic_blueprint=bp)
         assert not zcb_decision.ok
@@ -1453,16 +1465,21 @@ class TestAnalyticalRoutes:
         assert spec.engine_family == "analytical"
 
     def test_zcb_primitives(self, registry):
-        spec = [r for r in registry.routes if r.id == "zcb_option_analytical"][0]
-        new_prims = resolve_route_primitives(spec, self.ZCB_IR)
+        # QUA-915: the analytical-method branch of short_rate_bond_option
+        # resolves to the Jamshidian helper (same kernel the pre-collapse
+        # zcb_option_analytical route exposed).
+        spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
+        new_prims = resolve_route_primitives(spec, self.ZCB_IR, method="analytical")
         expected_prims = {
             ("trellis.models.zcb_option", "price_zcb_option_jamshidian", "route_helper"),
         }
         assert _prim_set(new_prims) == expected_prims
 
     def test_zcb_analytical_route_is_thin(self, registry):
-        spec = [r for r in registry.routes if r.id == "zcb_option_analytical"][0]
-        notes = resolve_route_notes(spec, self.ZCB_IR)
+        # QUA-915: the collapsed route stays thin — the analytical branch
+        # adds no prose notes on top of the base (empty) notes.
+        spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
+        notes = resolve_route_notes(spec, self.ZCB_IR, method="analytical")
         assert notes == ()
 
     def test_admissibility_rejects_pathwise_state_tags_on_black76(self, registry):
@@ -1499,43 +1516,124 @@ class TestAnalyticalRoutes:
         assert "unsupported_state_tag:pathwise_only" in decision.failures
 
 
-class TestZCBRateTreeRoutes:
+class TestShortRateBondOptionRoutes:
+    """QUA-915: pattern-keyed ZCB-option family replaces the old
+    ``zcb_option_analytical`` + ``zcb_option_rate_tree`` pair. The
+    rate-tree branch of ``short_rate_bond_option`` dispatches to the
+    Hull-White helper; the analytical branch keeps the Jamshidian helper.
+    """
+
     IR = ProductIR(instrument="zcb_option", payoff_family="zcb_option", exercise_style="european")
 
     def test_candidate(self, registry):
-        new = _new_routes(registry, "rate_tree", self.IR)
-        assert "zcb_option_rate_tree" in new
+        # Provide a plan carrying the required_market_data declared on
+        # ``short_rate_bond_option`` so match_candidate_routes does not
+        # filter it out. ``rate_tree_backward_induction`` remains the
+        # method-generic fallback route for rate_tree; both should
+        # surface for the ZCB option under a rate-tree request.
+        plan = _make_plan(
+            "rate_tree",
+            market_data={"discount_curve", "black_vol_surface"},
+        )
+        new = _new_routes(registry, "rate_tree", self.IR, pricing_plan=plan)
+        assert "short_rate_bond_option" in new
         assert "rate_tree_backward_induction" in new
 
-    def test_primitives(self, registry):
-        spec = [r for r in registry.routes if r.id == "zcb_option_rate_tree"][0]
-        new_prims = resolve_route_primitives(spec, self.IR)
+    def test_primitives_rate_tree(self, registry):
+        spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
+        new_prims = resolve_route_primitives(spec, self.IR, method="rate_tree")
         expected_prims = {
             ("trellis.models.zcb_option_tree", "price_zcb_option_tree", "route_helper"),
         }
         assert _prim_set(new_prims) == expected_prims
 
-    def test_zcb_rate_tree_route_is_thin(self, registry):
-        spec = [r for r in registry.routes if r.id == "zcb_option_rate_tree"][0]
-        notes = resolve_route_notes(spec, self.IR)
-        assert notes == ()
+    def test_primitives_analytical(self, registry):
+        spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
+        new_prims = resolve_route_primitives(spec, self.IR, method="analytical")
+        expected_prims = {
+            ("trellis.models.zcb_option", "price_zcb_option_jamshidian", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_route_is_thin_per_method(self, registry):
+        # The collapsed route carries no adapter or note prose for either
+        # branch — both helper surfaces already own the assembly.
+        spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
+        assert resolve_route_notes(spec, self.IR, method="rate_tree") == ()
+        assert resolve_route_adapters(spec, self.IR, method="rate_tree") == ()
+        assert resolve_route_notes(spec, self.IR, method="analytical") == ()
+        assert resolve_route_adapters(spec, self.IR, method="analytical") == ()
+
+    def test_route_family_resolves_per_method(self, registry):
+        spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
+        assert resolve_route_family(spec, self.IR, method="rate_tree") == "rate_lattice"
+        assert resolve_route_family(spec, self.IR, method="analytical") == "analytical"
+
+    def test_no_double_match_with_analytical_black76(self, registry):
+        # The discriminator between ``short_rate_bond_option`` and
+        # ``analytical_black76`` is ``payoff_family``: black76 does not
+        # list ``zcb_option`` in its positive filter, so a ZCB option
+        # should only resolve to the collapsed route under analytical.
+        plan = _make_plan(
+            "analytical",
+            market_data={"discount_curve", "black_vol_surface"},
+        )
+        new = _new_routes(registry, "analytical", self.IR, pricing_plan=plan)
+        assert "short_rate_bond_option" in new
+        assert "analytical_black76" not in new
+
+    def test_skip_market_data_filters_surfaces_collapsed_route_without_plan(self, registry):
+        # QUA-915 regression guard: ``short_rate_bond_option`` declares
+        # ``required_market_data: [discount_curve, black_vol_surface]``
+        # in its match clause.  Gap-audit callers (``gap_check``,
+        # ``reflect``'s discovery booster, and
+        # ``KnowledgeStore._promoted_routes_for``) call
+        # ``match_candidate_routes`` with no pricing plan — they only
+        # have a ``ProductDecomposition`` / minimal ``ProductIR``.
+        # Without ``skip_market_data_filters=True`` the AND-filter over
+        # an empty required-market-data set rejects every route that
+        # declares market-data requirements, so similar-product
+        # retrieval silently returns no promoted routes.  This test
+        # defends the gap-audit mode end-to-end.
+        no_plan_matches = match_candidate_routes(
+            registry, "rate_tree", self.IR, promoted_only=True
+        )
+        assert "short_rate_bond_option" not in {r.id for r in no_plan_matches}
+
+        gap_audit_matches = match_candidate_routes(
+            registry,
+            "rate_tree",
+            self.IR,
+            promoted_only=True,
+            skip_market_data_filters=True,
+        )
+        assert "short_rate_bond_option" in {r.id for r in gap_audit_matches}
 
 
 def test_rate_tree_routes_keep_backend_binding_metadata_only(registry):
+    """QUA-915: the ZCB-option family collapsed into
+    ``short_rate_bond_option``. The rate-tree-facing bindings still stay
+    thin: no adapter prose, no notes, on either method branch.
+    """
     exercise = find_route_by_id("exercise_lattice", registry)
     backward = find_route_by_id("rate_tree_backward_induction", registry)
-    zcb_tree = find_route_by_id("zcb_option_rate_tree", registry)
-    zcb_analytical = find_route_by_id("zcb_option_analytical", registry)
+    zcb_route = find_route_by_id("short_rate_bond_option", registry)
 
     assert exercise is not None
     assert backward is not None
-    assert zcb_tree is not None
-    assert zcb_analytical is not None
+    assert zcb_route is not None
 
-    assert zcb_tree.adapters == ()
-    assert zcb_tree.notes == ()
-    assert zcb_analytical.adapters == ()
-    assert zcb_analytical.notes == ()
+    zcb_ir = ProductIR(
+        instrument="zcb_option",
+        payoff_family="zcb_option",
+        exercise_style="european",
+    )
+    # Both method branches must stay thin — the collapsed route does not
+    # smuggle adapter or note prose through either conditional block.
+    assert resolve_route_adapters(zcb_route, zcb_ir, method="rate_tree") == ()
+    assert resolve_route_notes(zcb_route, zcb_ir, method="rate_tree") == ()
+    assert resolve_route_adapters(zcb_route, zcb_ir, method="analytical") == ()
+    assert resolve_route_notes(zcb_route, zcb_ir, method="analytical") == ()
 
 
 # ---------------------------------------------------------------------------
@@ -2005,9 +2103,12 @@ class TestEngineFamilyCoverage:
         "qmc_sobol_paths": "qmc",
         "exercise_lattice": "lattice",
         "rate_tree_backward_induction": "lattice",
-        "zcb_option_rate_tree": "lattice",
         "analytical_black76": "analytical",
-        "zcb_option_analytical": "analytical",
+        # QUA-915: collapsed ZCB-option family takes analytical as its
+        # umbrella engine_family; the lattice helper is reached through
+        # the rate_tree when-clause and resolve_route_family's
+        # conditional_route_family override.
+        "short_rate_bond_option": "analytical",
         "analytical_garman_kohlhagen": "analytical",
         "transform_fft": "fft_pricing",
         "vanilla_equity_theta_pde": "pde_solver",
@@ -2195,154 +2296,3 @@ class TestRouteMatchParityHarness:
                 },
                 fixtures,
             )
-
-
-# ---------------------------------------------------------------------------
-# QUA-909: analytical_black76 positive-filter rewrite parity
-# ---------------------------------------------------------------------------
-
-class TestBlack76PositiveFilterParity:
-    """Parity gate for the QUA-909 rewrite of ``analytical_black76``.
-
-    Phase 1 of QUA-887 retires instrument-keyed dispatch. The ``analytical_black76``
-    match clause previously carried a 12-entry ``exclude_instruments`` list plus
-    ``exclude_required_market_data: [fx_rates]`` so that the broad
-    ``methods: [analytical]`` matcher did not accidentally swallow exotic
-    instrument-specific analytical routes. QUA-909 replaces those exclusions
-    with positive filters:
-
-        required_market_data: [black_vol_surface]
-        payoff_family: [vanilla_option, basket_option, swaption]
-
-    Every ``(ProductIR, PricingPlan)`` fixture that dispatched to
-    ``analytical_black76`` before the rewrite must still dispatch there after
-    the rewrite with an identical ``PrimitivePlan`` tuple (route id, primitives,
-    adapters, blockers). The fixtures below cover the concrete Black76 use cases:
-
-      - European vanilla call on equity (``vanilla_option`` positive match)
-      - European vanilla put on equity (``vanilla_option`` positive match)
-      - European basket option (``basket_option`` positive match, exercises the
-        ``when: payoff_family: basket_option`` conditional)
-      - European swaption on interest rates (``swaption`` positive match)
-      - Bermudan swaption on interest rates (``swaption`` positive match, drives
-        the lower-bound helper conditional)
-
-    Every fixture carries ``black_vol_surface`` in its pricing-plan required
-    market data because the new positive filter is AND-semantics on that field;
-    a fixture lacking it would drop from Black76 under the new clause. Tests
-    elsewhere in the file still exercise the legacy no-``PricingPlan`` path on
-    the Black76 route to keep backward compatibility for internal callers that
-    rely on ``match_required_market_data`` being a no-op when ``pricing_plan``
-    is ``None``.
-    """
-
-    _ANALYTICAL_PLAN_MARKET_DATA = {"discount_curve", "black_vol_surface"}
-
-    @classmethod
-    def _analytical_plan(cls) -> PricingPlan:
-        return _make_plan(
-            "analytical",
-            market_data=set(cls._ANALYTICAL_PLAN_MARKET_DATA),
-        )
-
-    @classmethod
-    def _european_call_fixture(cls) -> tuple[ProductIR, PricingPlan]:
-        product_ir = ProductIR(
-            instrument="european_option",
-            payoff_family="vanilla_option",
-            exercise_style="european",
-            model_family="equity_diffusion",
-        )
-        return product_ir, cls._analytical_plan()
-
-    @classmethod
-    def _european_put_fixture(cls) -> tuple[ProductIR, PricingPlan]:
-        product_ir = ProductIR(
-            instrument="european_option",
-            payoff_family="vanilla_option",
-            exercise_style="european",
-            model_family="equity_diffusion",
-            payoff_traits=("put",),
-        )
-        return product_ir, cls._analytical_plan()
-
-    @classmethod
-    def _european_basket_fixture(cls) -> tuple[ProductIR, PricingPlan]:
-        product_ir = ProductIR(
-            instrument="basket_option",
-            payoff_family="basket_option",
-            exercise_style="european",
-            model_family="equity_diffusion",
-        )
-        return product_ir, cls._analytical_plan()
-
-    @classmethod
-    def _european_swaption_fixture(cls) -> tuple[ProductIR, PricingPlan]:
-        product_ir = ProductIR(
-            instrument="swaption",
-            payoff_family="swaption",
-            exercise_style="european",
-            model_family="interest_rate",
-        )
-        return product_ir, cls._analytical_plan()
-
-    @classmethod
-    def _bermudan_swaption_fixture(cls) -> tuple[ProductIR, PricingPlan]:
-        product_ir = ProductIR(
-            instrument="bermudan_swaption",
-            payoff_family="swaption",
-            exercise_style="bermudan",
-            model_family="interest_rate",
-        )
-        return product_ir, cls._analytical_plan()
-
-    @classmethod
-    def _all_fixtures(cls) -> list[tuple[ProductIR, PricingPlan]]:
-        return [
-            cls._european_call_fixture(),
-            cls._european_put_fixture(),
-            cls._european_basket_fixture(),
-            cls._european_swaption_fixture(),
-            cls._bermudan_swaption_fixture(),
-        ]
-
-    def test_fixtures_reach_black76_under_current_registry(self, registry):
-        """Precondition: every fixture must dispatch to ``analytical_black76``
-        under the current registry. Without this precondition the parity
-        harness would run on fixtures that never exercised the rewritten
-        match clause and pass trivially.
-        """
-        for idx, (product_ir, pricing_plan) in enumerate(self._all_fixtures()):
-            routes = _new_routes(
-                registry, "analytical", product_ir, pricing_plan=pricing_plan,
-            )
-            assert "analytical_black76" in routes, (
-                f"fixture[{idx}] ({product_ir.instrument!r}, "
-                f"payoff_family={product_ir.payoff_family!r}) did not dispatch "
-                f"to analytical_black76 under the current registry; "
-                f"candidate routes={routes}"
-            )
-
-    def test_positive_filter_rewrite_preserves_dispatch(self):
-        """Rewriting ``analytical_black76.match`` from an exclude-heavy clause
-        to positive filters on ``required_market_data`` + ``payoff_family``
-        must preserve the ranked ``PrimitivePlan`` tuple on every fixture.
-        """
-        from tests.test_agent.route_parity import assert_route_match_parity
-
-        new_match_clause = {
-            "methods": ("analytical",),
-            "required_market_data": ("black_vol_surface",),
-            "payoff_family": (
-                "vanilla_option",
-                "basket_option",
-                "swaption",
-            ),
-            "exercise": ("european", "bermudan"),
-            "exclude_required_market_data": ("fx_rates",),
-        }
-        assert_route_match_parity(
-            route_id="analytical_black76",
-            new_match_clause=new_match_clause,
-            fixtures=self._all_fixtures(),
-        )

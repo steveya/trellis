@@ -306,7 +306,10 @@ def test_compile_build_request_keeps_explicit_zcb_option_off_generic_vanilla_sem
     assert compiled.product_ir.instrument == "zcb_option"
     assert compiled.generation_plan is not None
     assert compiled.generation_plan.primitive_plan is not None
-    assert compiled.generation_plan.primitive_plan.route == "zcb_option_rate_tree"
+    # QUA-915: the ZCB-option family collapsed into the pattern-keyed
+    # ``short_rate_bond_option`` route; the rate-tree branch is still
+    # the destination for a ``preferred_method="rate_tree"`` request.
+    assert compiled.generation_plan.primitive_plan.route == "short_rate_bond_option"
 
 
 def test_compile_build_request_emits_fallback_lane_plan_for_fx_monte_carlo_route():

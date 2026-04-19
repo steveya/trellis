@@ -150,6 +150,7 @@ def lower_semantic_blueprint(
             ),
         )
 
+    method = str(getattr(pricing_plan, "method", "") or "").strip() or None
     errors: list[DslLoweringError] = []
     fallback_result: SemanticDslLowering | None = None
     for route_id in primitive_routes:

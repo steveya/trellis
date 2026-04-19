@@ -54,10 +54,6 @@ from trellis.models.trees.control import (
 
 
 def _analytical_plan():
-    # QUA-909: Black76's positive match clause now filters on
-    # ``payoff_family`` and ``exercise``; provide a minimal swaption
-    # ``ProductIR`` so the generation-plan fixture still reaches
-    # ``analytical_black76`` under the new match-clause discipline.
     from trellis.agent.knowledge.schema import ProductIR
 
     pricing_plan = PricingPlan(
@@ -604,16 +600,10 @@ def test_schedule_dependent_route_card_mentions_shared_schedule_builder():
     plan = _analytical_plan()
     card = render_generation_route_card(plan)
 
-    # QUA-909: under the positive-filter Black76 match clause a canonical
-    # European swaption ``ProductIR`` dispatches to the ``when: swaption +
-    # exercise_style: [european]`` conditional which wires in
-    # ``trellis.models.rate_style_swaption.price_swaption_black76`` as a
-    # full ``route_helper``.  The helper handles schedule construction
-    # internally, so the card surfaces the helper binding rather than the
-    # shared ``build_payment_timeline`` schedule-builder primitive that is
-    # only exposed through the ``when: default`` fallback clause. The card
-    # still carries the instruction-precedence language the builder relies
-    # on, which is what this test actually defends.
+    # Under the current positive-filter Black76 match clause a canonical
+    # European swaption dispatches to the swaption-specific helper, which
+    # owns its schedule construction internally rather than surfacing the
+    # generic ``build_payment_timeline`` fallback primitive.
     assert "price_swaption_black76" in card
     assert "Instruction precedence: follow the lane obligations in this card first." in card
 

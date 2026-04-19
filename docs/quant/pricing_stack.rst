@@ -315,11 +315,12 @@ analytics directly off that tree boundary: effective ``oas_duration`` plus a
 callable-specific scenario ladder that compares callable price, straight-bond
 reference price, and embedded call option value under parallel rate shocks.
 The same route-thinning rule now also applies to the short-rate ZCB-option
-cohort. ``zcb_option_rate_tree`` and ``zcb_option_analytical`` remain as
-backend-binding identities for the checked Hull-White tree and Jamshidian
-helpers, but the route cards no longer carry lattice-construction or
-short-rate-input assembly instructions once the helper surface already owns
-that work.
+cohort. QUA-915 collapsed the Jamshidian analytical and Hull-White tree
+routes into a single pattern-keyed route ``short_rate_bond_option`` whose
+``conditional_primitives`` dispatch on method selects the Jamshidian or
+lattice helper. The route card still carries no lattice-construction or
+short-rate-input assembly instructions because the checked helper surface
+already owns that work.
 
 The analytical / PDE / FFT helper cohort now follows the same rule. The
 helper-backed Black76 swaption routes, the vanilla-equity PDE helper, the

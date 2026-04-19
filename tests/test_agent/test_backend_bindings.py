@@ -18,7 +18,9 @@ def test_binding_catalog_loads_core_route_backed_bindings():
 
     route_ids = {binding.route_id for binding in catalog.bindings}
     assert {
-        "zcb_option_rate_tree",
+        # QUA-915: ZCB-option family collapsed; the tree helper is now
+        # reached through the ``short_rate_bond_option`` binding entry.
+        "short_rate_bond_option",
         "analytical_black76",
         "credit_default_swap",
         "credit_basket_nth_to_default",
