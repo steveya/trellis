@@ -112,6 +112,8 @@ The important current rules are:
 - drop additive and multiplicative identities
 - normalize ``LinearBasket`` zero-weight and singleton cases
 - keep option side in ``Sub`` operand order
+- preserve factorized positive outer scales instead of distributing them
+  across ramps when the factor is already shared structurally
 
 The last rule matters:
 
@@ -130,6 +132,12 @@ common across a ramp, the canonical form keeps:
 
 instead of eagerly expanding the weight across the ``Max`` arguments. This is
 the structural form that downstream pattern matching consumes.
+
+That normalization contract is defended by property-based tests covering:
+
+- idempotence of ``canonicalize``
+- ordering confluence for commutative nodes
+- numerical semantic preservation under synthetic payoff environments
 
 Phase 2 Families
 ----------------
@@ -189,6 +197,14 @@ Pattern Matching
 
 Phase 2 also extends ``ContractPattern`` evaluation so patterns can match
 directly against ``ContractIR`` trees.
+
+Regular ``FiniteSchedule`` cadences can now participate in
+``schedule.frequency`` matching for the common discrete cases
+(``weekly``, ``monthly``, ``quarterly``, ``semiannual``, ``annual``).
+Concrete cadence matches fail closed for irregular or cadence-free
+schedules instead of guessing. Frequency wildcards remain unconstrained:
+an anonymous wildcard matches without inference, and a named wildcard
+binds the inferred cadence when one exists or ``None`` otherwise.
 
 That matters for the next phase:
 

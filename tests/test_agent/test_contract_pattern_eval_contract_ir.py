@@ -147,6 +147,37 @@ def _asian_contract_ir() -> ContractIR:
     )
 
 
+def _bermudan_quarterly_contract_ir() -> ContractIR:
+    exercise_schedule = _finite_schedule(
+        "2025-03-31",
+        "2025-06-30",
+        "2025-09-30",
+        "2025-12-31",
+    )
+    expiry = _singleton("2025-12-31")
+    return ContractIR(
+        payoff=Max((Sub(Spot("AAPL"), Strike(150.0)), Constant(0.0))),
+        exercise=Exercise(style="bermudan", schedule=exercise_schedule),
+        observation=Observation(kind="terminal", schedule=expiry),
+        underlying=Underlying(spec=EquitySpot("AAPL", "gbm")),
+    )
+
+
+def _bermudan_irregular_contract_ir() -> ContractIR:
+    exercise_schedule = _finite_schedule(
+        "2025-01-31",
+        "2025-03-17",
+        "2025-07-01",
+    )
+    expiry = _singleton("2025-07-01")
+    return ContractIR(
+        payoff=Max((Sub(Spot("AAPL"), Strike(150.0)), Constant(0.0))),
+        exercise=Exercise(style="bermudan", schedule=exercise_schedule),
+        observation=Observation(kind="terminal", schedule=expiry),
+        underlying=Underlying(spec=EquitySpot("AAPL", "gbm")),
+    )
+
+
 class TestContractPatternEvalContractIR:
     def test_new_ir_heads_round_trip_through_parser(self):
         payload = {
@@ -232,24 +263,93 @@ class TestContractPatternEvalContractIR:
         assert isinstance(result.bindings["schedule"], FiniteSchedule)
         assert result.bindings["K"] == 0.05
 
-    def test_concrete_schedule_frequency_reports_contract_ir_gap_clearly(self):
+    def test_concrete_schedule_frequency_matches_regular_contract_ir_schedule(self):
         pattern = parse_contract_pattern(
             {
                 "exercise": {
-                    "style": "european",
-                    "schedule": {"frequency": "monthly"},
+                    "style": "bermudan",
+                    "schedule": {"frequency": "quarterly"},
                 }
             }
         )
 
-        result = evaluate_pattern(pattern, _asian_contract_ir())
+        result = evaluate_pattern(pattern, _bermudan_quarterly_contract_ir())
+
+        assert result.ok is True
+
+    def test_named_schedule_frequency_wildcard_binds_inferred_cadence(self):
+        pattern = parse_contract_pattern(
+            {
+                "exercise": {
+                    "style": "bermudan",
+                    "schedule": {"frequency": "_freq"},
+                }
+            }
+        )
+
+        result = evaluate_pattern(pattern, _bermudan_quarterly_contract_ir())
+
+        assert result.ok is True
+        assert result.bindings["freq"] == "quarterly"
+
+    def test_unnamed_schedule_frequency_wildcard_matches_irregular_schedule(self):
+        pattern = parse_contract_pattern(
+            {
+                "exercise": {
+                    "style": "bermudan",
+                    "schedule": {"frequency": "_"},
+                }
+            }
+        )
+
+        result = evaluate_pattern(pattern, _bermudan_irregular_contract_ir())
+
+        assert result.ok is True
+
+    def test_named_schedule_frequency_wildcard_binds_none_when_cadence_missing(self):
+        pattern = parse_contract_pattern(
+            {
+                "exercise": {
+                    "style": "bermudan",
+                    "schedule": {"frequency": "_freq"},
+                }
+            }
+        )
+
+        result = evaluate_pattern(pattern, _bermudan_irregular_contract_ir())
+
+        assert result.ok is True
+        assert result.bindings["freq"] is None
+
+    def test_unnamed_schedule_frequency_wildcard_matches_singleton_schedule(self):
+        pattern = parse_contract_pattern(
+            {
+                "exercise": {
+                    "style": "european",
+                    "schedule": {"frequency": "_"},
+                }
+            }
+        )
+
+        result = evaluate_pattern(pattern, _vanilla_call_contract_ir())
+
+        assert result.ok is True
+
+    def test_irregular_schedule_frequency_fails_closed(self):
+        pattern = parse_contract_pattern(
+            {
+                "exercise": {
+                    "style": "bermudan",
+                    "schedule": {"frequency": "quarterly"},
+                }
+            }
+        )
+
+        result = evaluate_pattern(pattern, _bermudan_irregular_contract_ir())
 
         assert result.ok is False
         assert result.mismatch_reason is not None
-        assert (
-            "schedule.frequency matching against a concrete value is not yet implemented"
-            in result.mismatch_reason
-        )
+        assert "could not infer a regular frequency" in result.mismatch_reason
 
     def test_zero_arity_family_tags_match_phase_two_contract_ir_fixtures(self):
         fixtures = {
