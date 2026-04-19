@@ -1268,17 +1268,17 @@ class TestAnalyticalRoutes:
         )
         assert new == ("analytical_black76",)
 
-    def test_chooser_candidate_stays_dedicated_until_qua_911(self, registry):
+    def test_chooser_candidate(self, registry):
         new = _new_routes(
             registry, "analytical", self.CHOOSER_IR, pricing_plan=self.BLACK76_PLAN,
         )
-        assert new == ("equity_chooser_analytical",)
+        assert new == ("analytical_black76",)
 
-    def test_compound_candidate_stays_dedicated_until_qua_911(self, registry):
+    def test_compound_candidate(self, registry):
         new = _new_routes(
             registry, "analytical", self.COMPOUND_IR, pricing_plan=self.BLACK76_PLAN,
         )
-        assert new == ("equity_compound_analytical",)
+        assert new == ("analytical_black76",)
 
     def test_zcb_candidate(self, registry):
         # QUA-915: ZCB option family collapsed into short_rate_bond_option.
@@ -1360,6 +1360,30 @@ class TestAnalyticalRoutes:
             (
                 "trellis.models.analytical.equity_exotics",
                 "price_equity_fixed_lookback_option_analytical",
+                "route_helper",
+            ),
+        }
+
+    def test_chooser_primitives_use_exact_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        new_prims = resolve_route_primitives(spec, self.CHOOSER_IR)
+        assert resolve_route_family(spec, self.CHOOSER_IR) == "analytical"
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.analytical.equity_exotics",
+                "price_equity_chooser_option_analytical",
+                "route_helper",
+            ),
+        }
+
+    def test_compound_primitives_use_exact_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        new_prims = resolve_route_primitives(spec, self.COMPOUND_IR)
+        assert resolve_route_family(spec, self.COMPOUND_IR) == "analytical"
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.analytical.equity_exotics",
+                "price_equity_compound_option_analytical",
                 "route_helper",
             ),
         }
@@ -2086,8 +2110,6 @@ class TestEngineFamilyCoverage:
         # conditional_route_family override.
         "short_rate_bond_option": "analytical",
         "analytical_garman_kohlhagen": "analytical",
-        "equity_chooser_analytical": "analytical",
-        "equity_compound_analytical": "analytical",
         "transform_fft": "fft_pricing",
         "vanilla_equity_theta_pde": "pde_solver",
         "pde_theta_1d": "pde_solver",
