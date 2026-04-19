@@ -221,7 +221,7 @@ def test_nth_to_default_uses_dedicated_credit_basket_route():
     )
 
     assert ranked
-    assert ranked[0].route == "nth_to_default_monte_carlo"
+    assert ranked[0].route == "credit_basket_nth_to_default"
     assert ranked[0].route_family == "nth_to_default"
     assert ranked[0].score > 0.0
 
@@ -248,7 +248,7 @@ def test_nth_to_default_copula_prefers_default_time_sampler_route():
     )
 
     assert ranked
-    assert ranked[0].route == "nth_to_default_monte_carlo"
+    assert ranked[0].route == "credit_basket_nth_to_default"
     assert ranked[0].score > ranked[1].score
 
 

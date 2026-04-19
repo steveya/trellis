@@ -248,7 +248,7 @@ def test_route_less_semantic_request_keeps_validation_contract_truthful():
             "First-to-default basket on ACME, BRAVO, CHARLIE, DELTA, ECHO maturing 2029-11-15",
             "nth_to_default",
             "nth_to_default",
-            "nth_to_default_monte_carlo",
+            "credit_basket_nth_to_default",
             "copula:nth_to_default",
             {"discount_curve", "credit_curve"},
             (),

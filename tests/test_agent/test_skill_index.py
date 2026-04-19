@@ -103,7 +103,11 @@ def test_skill_lineage_query_surfaces_children_and_same_source_records():
 
 
 def test_nth_to_default_no_longer_projects_schedule_builder_route_hint():
+    # QUA-914: ``nth_to_default_monte_carlo`` and ``nth_to_default_analytical``
+    # collapsed into ``credit_basket_nth_to_default``. Neither legacy id
+    # nor the collapsed id should emit the schedule-builder route hint.
     assert get_skill_record("route_hint:nth_to_default_monte_carlo:schedule-builder") is None
+    assert get_skill_record("route_hint:credit_basket_nth_to_default:schedule-builder") is None
 
 
 def test_route_notes_are_not_projected_as_live_route_hints():

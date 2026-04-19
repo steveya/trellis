@@ -138,7 +138,8 @@ def extract_scoring_features(ctx: ScoringContext) -> dict[str, float]:
         "route_confidence": spec.confidence,
         "successful_builds": float(min(spec.successful_builds, 20)),
     }
-    resolved_primitives = tuple(resolve_route_primitives(spec, ir))
+    scoring_method = str(getattr(ctx.pricing_plan, "method", "") or "").strip() or None
+    resolved_primitives = tuple(resolve_route_primitives(spec, ir, method=scoring_method))
     resolved_roles = {primitive.role for primitive in resolved_primitives}
     exact_surface_roles = {"route_helper", "pricing_kernel", "cashflow_engine"}
 

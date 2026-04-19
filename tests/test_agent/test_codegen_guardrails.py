@@ -922,7 +922,7 @@ def test_nth_to_default_monte_carlo_route_uses_copula_assembly():
     card = render_generation_route_card(plan)
 
     assert plan.primitive_plan is not None
-    assert plan.primitive_plan.route == "nth_to_default_monte_carlo"
+    assert plan.primitive_plan.route == "credit_basket_nth_to_default"
     assert plan.primitive_plan.route_family == "nth_to_default"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert "GaussianCopula" in primitive_symbols

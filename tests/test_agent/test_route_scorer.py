@@ -120,7 +120,14 @@ class TestFeatureExtraction:
         assert features["capability_failure:schedule_dependence_unsupported"] == 1.0
 
     def test_credit_copula_features_record_default_time_sampler_support(self, registry):
-        spec = [r for r in registry.routes if r.id == "nth_to_default_monte_carlo"][0]
+        # QUA-914: the collapsed ``credit_basket_nth_to_default`` route
+        # dispatches its copula kernel surface via method-keyed
+        # ``conditional_primitives``. Thread a ``monte_carlo`` pricing plan
+        # so the scorer resolves the MC leg (which declares
+        # ``GaussianCopula`` as the default_time_sampler).
+        from trellis.agent.quant import PricingPlan
+
+        spec = [r for r in registry.routes if r.id == "credit_basket_nth_to_default"][0]
         ir = ProductIR(
             instrument="nth_to_default",
             payoff_family="credit_basket",
@@ -129,10 +136,17 @@ class TestFeatureExtraction:
             candidate_engine_families=("copula", "monte_carlo"),
             route_families=("nth_to_default",),
         )
+        pricing_plan = PricingPlan(
+            method="monte_carlo",
+            method_modules=["trellis.models.copulas.gaussian"],
+            required_market_data={"discount_curve", "credit_curve"},
+            model_to_build="nth_to_default",
+            reasoning="test",
+        )
         ctx = ScoringContext(
             product_ir=ir,
             route_spec=spec,
-            pricing_plan=None,
+            pricing_plan=pricing_plan,
             blockers=[],
         )
 

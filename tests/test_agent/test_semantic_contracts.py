@@ -1450,9 +1450,9 @@ def test_nth_to_default_contract_validates_and_compiles():
     assert compiled.pricing_plan.method == "copula"
     assert compiled.target_modules == ("trellis.instruments.nth_to_default",)
     assert compiled.route_modules == _expected_route_modules(compiled)
-    assert compiled.primitive_routes == ("nth_to_default_monte_carlo",)
+    assert compiled.primitive_routes == ("credit_basket_nth_to_default",)
     assert compiled.dsl_lowering is not None
-    assert compiled.dsl_lowering.route_id == "nth_to_default_monte_carlo"
+    assert compiled.dsl_lowering.route_id == "credit_basket_nth_to_default"
 
 
 def test_nth_to_default_summary_is_stable_and_route_specific():
@@ -1472,7 +1472,7 @@ def test_nth_to_default_summary_is_stable_and_route_specific():
     assert summary["product"]["payoff_family"] == "nth_to_default"
     assert summary["typed_semantics"]["controller_protocol"]["controller_style"] == "identity"
     assert summary["market_data"]["required_inputs"] == ["discount_curve", "credit_curve"]
-    assert summary["blueprint"]["primitive_families"] == ["nth_to_default_monte_carlo"]
+    assert summary["blueprint"]["primitive_families"] == ["credit_basket_nth_to_default"]
 
 
 def test_cdo_tranche_contract_validates_and_compiles():

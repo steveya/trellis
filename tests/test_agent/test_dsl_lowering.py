@@ -649,7 +649,7 @@ def test_nth_to_default_lowers_to_helper_backed_credit_basket_route():
 
     lowering = blueprint.dsl_lowering
     assert lowering is not None
-    assert lowering.route_id == "nth_to_default_monte_carlo"
+    assert lowering.route_id == "credit_basket_nth_to_default"
     assert lowering.route_family == "nth_to_default"
     assert lowering.admissibility_errors == ()
     assert isinstance(lowering.family_ir, NthToDefaultIR)

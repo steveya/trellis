@@ -1171,10 +1171,9 @@ def _binding_supports_nth_to_default(
 ) -> bool:
     """Return whether the binding surface fits the nth-to-default copula lane.
 
-    QUA-794 slice 2: ``nth_to_default_monte_carlo`` binding is in the
-    canonical catalog; the historical ``route_id ==
-    "nth_to_default_monte_carlo" and binding_spec is None`` fallback is
-    dead code and has been retired.
+    QUA-794 slice 2: the collapsed ``credit_basket_nth_to_default`` binding
+    is in the canonical catalog; the historical ``nth_to_default_monte_carlo``
+    missing-binding fallback is dead code and has been retired.
     """
     del route_id
     if _binding_has_symbol(binding_spec, "default_time_sampler", "GaussianCopula"):
