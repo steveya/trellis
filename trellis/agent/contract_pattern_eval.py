@@ -328,6 +328,27 @@ def _match_contract_ir_schedule(
 ) -> MatchResult:
     if pattern.frequency is None:
         return MatchResult(ok=True, bindings=bindings)
+    if isinstance(pattern.frequency, Wildcard):
+        if pattern.frequency.name is None:
+            return MatchResult(ok=True, bindings=bindings)
+        inferred_frequency = _infer_contract_ir_schedule_frequency(observed)
+        primary_value = None if inferred_frequency is None else inferred_frequency[1]
+        new_bindings = _bind(
+            bindings,
+            pattern.frequency.name,
+            primary_value,
+            field_label=f"{field_label}.frequency",
+        )
+        if new_bindings is None:
+            return MatchResult(
+                ok=False,
+                bindings=bindings,
+                mismatch_reason=(
+                    f"binding conflict on '{pattern.frequency.name}' "
+                    f"while matching {field_label}.frequency"
+                ),
+            )
+        return MatchResult(ok=True, bindings=new_bindings)
     inferred_frequency = _infer_contract_ir_schedule_frequency(observed)
     if inferred_frequency is None:
         return MatchResult(

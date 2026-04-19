@@ -292,6 +292,49 @@ class TestContractPatternEvalContractIR:
         assert result.ok is True
         assert result.bindings["freq"] == "quarterly"
 
+    def test_unnamed_schedule_frequency_wildcard_matches_irregular_schedule(self):
+        pattern = parse_contract_pattern(
+            {
+                "exercise": {
+                    "style": "bermudan",
+                    "schedule": {"frequency": "_"},
+                }
+            }
+        )
+
+        result = evaluate_pattern(pattern, _bermudan_irregular_contract_ir())
+
+        assert result.ok is True
+
+    def test_named_schedule_frequency_wildcard_binds_none_when_cadence_missing(self):
+        pattern = parse_contract_pattern(
+            {
+                "exercise": {
+                    "style": "bermudan",
+                    "schedule": {"frequency": "_freq"},
+                }
+            }
+        )
+
+        result = evaluate_pattern(pattern, _bermudan_irregular_contract_ir())
+
+        assert result.ok is True
+        assert result.bindings["freq"] is None
+
+    def test_unnamed_schedule_frequency_wildcard_matches_singleton_schedule(self):
+        pattern = parse_contract_pattern(
+            {
+                "exercise": {
+                    "style": "european",
+                    "schedule": {"frequency": "_"},
+                }
+            }
+        )
+
+        result = evaluate_pattern(pattern, _vanilla_call_contract_ir())
+
+        assert result.ok is True
+
     def test_irregular_schedule_frequency_fails_closed(self):
         pattern = parse_contract_pattern(
             {

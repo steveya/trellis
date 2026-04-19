@@ -201,7 +201,10 @@ directly against ``ContractIR`` trees.
 Regular ``FiniteSchedule`` cadences can now participate in
 ``schedule.frequency`` matching for the common discrete cases
 (``weekly``, ``monthly``, ``quarterly``, ``semiannual``, ``annual``).
-Irregular or cadence-free schedules fail closed instead of guessing.
+Concrete cadence matches fail closed for irregular or cadence-free
+schedules instead of guessing. Frequency wildcards remain unconstrained:
+an anonymous wildcard matches without inference, and a named wildcard
+binds the inferred cadence when one exists or ``None`` otherwise.
 
 That matters for the next phase:
 
