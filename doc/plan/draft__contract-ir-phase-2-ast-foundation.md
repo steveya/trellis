@@ -16,9 +16,13 @@ Phase 2.
 
 ## Companion Drafts
 
+- `doc/plan/draft__external-prior-art-adoption-map.md`
+- `doc/plan/draft__semantic-contract-closure-program.md`
 - `doc/plan/draft__contract-ir-phase-3-solver-compiler.md`
 - `doc/plan/draft__contract-ir-phase-4-route-retirement.md`
+- `doc/plan/draft__quoted-observable-contract-ir-foundation.md`
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
+- `doc/plan/draft__contract-ir-normalization-and-rewrite-discipline.md`
 - `doc/plan/draft__contract-ir-compiler-retiring-route-registry.md`
 
 ## Purpose
@@ -84,6 +88,27 @@ registry-retirement attempts (see
 "Why prior attempts stalled"): boil-the-ocean scope, dual-track drift,
 unclear per-instrument "done" signal. Phase 2 is scope-bounded
 specifically to avoid those traps.
+
+### Closure role of Phase 2
+
+The semantic-contract program has three distinct closure questions:
+representation, decomposition, and lowering. The cross-phase definition
+lives in `doc/plan/draft__semantic-contract-closure-program.md`.
+
+Phase 2 owns:
+
+- representation closure for the bounded payoff-expression cohort in
+  this document
+- bounded decomposition closure from supported request surfaces into the
+  same canonical `ContractIR`
+
+Phase 2 does **not** own lowering closure. That is Phase 3 work.
+
+This boundary matters. If a family cannot be represented honestly inside
+the payoff-expression AST without opaque product nodes or route-local
+blobs, the right action is not to contort the Phase 2 AST until the
+helper happens to fit. The right action is to move that family onto the
+quoted-observable or leg-based follow-on tracks.
 
 ## Mathematical Substrate
 
@@ -202,6 +227,36 @@ Naming audit for the current Phase 2 surface:
   not pricing methods.
 - No other current `PayoffExpr`, `Predicate`, `Schedule`, or candidate
   leg-track node names in this draft were found to be method-leaky.
+
+#### Constructor budget discipline
+
+The Phase 2 AST should stay deliberately small. The payoff-expression
+track is closer in spirit to the small combinator traditions behind
+Peyton Jones' contract algebra than to a product-name catalog.
+
+Practical admission rule for new Phase 2 constructors:
+
+- add a new node when it denotes a semantic observable or algebraic
+  constructor that cannot be expressed honestly from the existing node
+  set
+- do not add a node only because a desk or route currently has a named
+  product bucket
+- do not add a node whose primary meaning is a pricing method, helper
+  convention, or route-local decomposition shortcut
+
+This is why the current surface prefers:
+
+- `VarianceObservable` over a method-leaky replication node
+- `SwapRate` and `Annuity` as semantic observables
+- algebraic composition (`Add`, `Scaled`, `Max`, `LinearBasket`) over
+  instrument-named payoff nodes
+
+If a proposed new node fails this constructor-budget test, it probably
+belongs in:
+
+- a later quoted-observable extension
+- a leg-based extension
+- or a lowering adapter, not the Phase 2 AST
 
 #### Well-formedness
 
@@ -449,6 +504,24 @@ Confluence is non-trivial when distribution rules interact with
 ordering rules. The canonical-form specification above is designed to
 be confluent; if the property tests surface counter-examples, the
 spec gets adjusted (not the tests weakened).
+
+#### Strategy discipline
+
+The rewrite layer should follow an explicit strategy contract rather
+than a pile of ad hoc recursive simplifiers. The cross-cutting guidance
+lives in `doc/plan/draft__contract-ir-normalization-and-rewrite-discipline.md`
+and is inspired by the useful parts of SymPy's strategy vocabulary.
+
+For Phase 2 the intended shape is:
+
+1. local node rewrites with explicit side conditions
+2. deliberate traversal order, typically bottom-up for algebraic
+   simplification
+3. first-success or chained rule groups where order matters
+4. exhaustive fixed-point normalization until no rule changes the tree
+
+That strategy boundary matters because Phase 3 declaration matching will
+rely on canonical forms remaining stable across refactors.
 
 ## The Four Phase 2 Payoff Families
 
@@ -726,6 +799,8 @@ Classify by contract semantics, not by desk label. A trade described as
 
 The leg-based future track is recorded in
 `doc/plan/draft__leg-based-contract-ir-foundation.md`.
+The quoted-observable future track is recorded in
+`doc/plan/draft__quoted-observable-contract-ir-foundation.md`.
 
 ## Relationship to ProductIR
 
@@ -1174,6 +1249,12 @@ reopen the traps that killed prior registry-retirement attempts (see
    route hints and proves kernel selection can be reconstructed from
    `ContractIR` for the four Phase 2 families. Phase 4 then promotes
    that proof from shadow mode to the live fresh-build path.
+9. **Representation before lowering.** A Phase 2 family is only
+   considered ready for Phase 3 if it has both representation closure
+   (an honest canonical IR shape) and bounded decomposition closure
+   (fixture-driven route-independent emission of that shape). Lowering
+   closure remains a Phase 3 obligation and must not be faked by
+   backporting product-specific helper payloads into the Phase 2 IR.
 
 ## Locked Decisions For This Draft
 

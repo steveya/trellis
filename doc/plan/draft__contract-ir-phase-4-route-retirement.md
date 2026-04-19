@@ -14,8 +14,14 @@ Phase 4.
 
 ## Companion Docs
 
+- `doc/plan/draft__external-prior-art-adoption-map.md`
+- `doc/plan/draft__semantic-contract-closure-program.md`
 - `doc/plan/draft__contract-ir-phase-2-ast-foundation.md`
 - `doc/plan/draft__contract-ir-phase-3-solver-compiler.md`
+- `doc/plan/draft__market-coordinate-overlay-and-shock-model.md`
+- `doc/plan/draft__semantic-contract-target-and-trade-envelope.md`
+- `doc/plan/draft__valuation-result-identity-and-provenance.md`
+- `doc/plan/draft__quoted-observable-contract-ir-foundation.md`
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
 - `doc/plan/draft__contract-ir-compiler-retiring-route-registry.md`
 - `docs/quant/contract_ir.rst`
@@ -47,6 +53,8 @@ by:
 - `contract_ir`
 - requested method / valuation policy
 - market capability surface
+- valuation market identity, including overlay / scenario identity when
+  applicable
 - explicit structural declaration precedence
 
 and NOT by:
@@ -56,6 +64,11 @@ and NOT by:
 - route families
 - compatibility aliases
 - hand-written per-instrument branch ladders
+
+By the same logic, it also must not be determined by opaque trade-wrapper
+labels once Trellis introduces a thinner contract-target envelope.
+Trade date, desk tags, booking metadata, or package wrappers may exist,
+but they are not allowed to become replacement route ids.
 
 This is the success criterion that motivated the whole Contract IR
 program.
@@ -74,6 +87,36 @@ It is valid to retain:
 
 as long as those artifacts are no longer selection authority for
 migrated fresh-build surface.
+
+### Closure role of Phase 4
+
+The semantic-contract closure model is defined in
+`doc/plan/draft__semantic-contract-closure-program.md`.
+
+Phase 4 does not create representation closure, decomposition closure,
+or lowering closure. It consumes them.
+
+Its job is narrower and stricter:
+
+- once a family is already semantically closed
+- and parity / provenance evidence exists
+- remove route-local fresh-build authority for that family
+
+If Phase 4 discovers that a family still depends on a hidden
+product-specific payload, missing semantic domain, or ad hoc route-local
+normalization, that family is not ready for migration into
+`\mathcal{D}_{\text{mig}}`.
+
+Phase 4 also must preserve route-free valuation identity. Removing route
+authority must not collapse operator meaning onto a thinner,
+less-auditable surface. The deletion phase should preserve stable
+identity for:
+
+- the structural declaration
+- the valuation snapshot / market identity
+- any overlay / scenario identity
+- requested output identity
+- exact helper / kernel provenance
 
 ### Replay and provenance are separate from dispatch
 
@@ -117,14 +160,34 @@ $$\operatorname{Select}_{\text{fresh}}(c, v, m, h_1)
 This invariant is the formal phase-exit condition for "route-free fresh
 build."
 
+The same masking rule should extend to non-semantic trade-envelope
+fields described in
+`doc/plan/draft__semantic-contract-target-and-trade-envelope.md`.
+Changing external ids, booking tags, or similar wrapper metadata must
+not change migrated fresh-build selection unless that data has been
+explicitly promoted into semantic contract or valuation-policy
+authority.
+
+The corresponding non-invariant is also required:
+
+- changing the actual valuation market or scenario overlay may change
+  the result
+- changing route aliases or instrument strings must not
+
+So route retirement removes route-local authority while retaining
+correct sensitivity to valuation identity.
+
 ### Migration domain
 
 Let `\mathcal{D}_{\text{mig}}` be the subset of Contract IR space whose
 families have:
 
-1. a shipped solver declaration set
-2. shadow-mode parity evidence
-3. migrated observability surfaces
+1. documented representation closure on an admitted semantic IR domain
+2. documented decomposition closure from supported request surfaces into
+   that semantic domain
+3. a shipped lowering / declaration set for the relevant method cohort
+4. shadow-mode parity evidence
+5. migrated observability and provenance surfaces
 
 Phase 4 only deletes authority for `c \in \mathcal{D}_{\text{mig}}`.
 Everything else keeps the old fallback until it joins that set.
@@ -153,6 +216,11 @@ still identify:
 
 - the selected structural declaration id
 - the exact helper / kernel refs used
+- the valuation identity for the market snapshot
+- overlay / scenario identity when present
+- requested output identity
+- resolved market-coordinate references when the lowering can express
+  them faithfully
 - the validation bundle covering that declaration
 - compatibility alias policy for historical lookups
 
@@ -209,6 +277,8 @@ So traces, scorecards, and replay summaries should move from
 
 - structural declaration id
 - Contract IR family / pattern identity
+- valuation identity key
+- market / overlay / scenario identity
 - exact helper / kernel provenance
 
 Only after that migration is stable should route ids be removed from the
@@ -289,6 +359,7 @@ toward structural declaration + binding provenance.
 
 - trace payload updates
 - scorecard / replay identity updates
+- stable valuation-identity / provenance-key surface
 - documentation of the new primary identity
 
 ### P4.5 — Fresh-build hard guardrails
@@ -314,14 +385,18 @@ still describe route ids as the primary fresh-build authority.
 
 ## Acceptance Criteria
 
+- Every family admitted into `\mathcal{D}_{\text{mig}}` has an explicit
+  closure record: representation closure, decomposition closure,
+  lowering closure, parity evidence, and provenance-readiness.
 - For every migrated family, masking `ProductIR.instrument`,
   `route_id`, and `route_family` does not change fresh-build solver
   selection.
 - The primary fresh-build path for migrated families goes through the
   structural compiler.
 - Redundant route authority is deleted for migrated families.
-- Operator-facing traces still identify the selected solver and its
-  provenance without depending on deleted route ids.
+- Operator-facing traces still identify the selected solver, valuation
+  snapshot, and any overlay/scenario identity without depending on
+  deleted route ids.
 - Remaining legacy route authority is clearly limited to unmigrated or
   replay-only surface.
 
@@ -370,6 +445,8 @@ already-migrated payoff-expression families.
 2. Keep the deletion sequence tied to the Phase 3 parity ledger; no
    family enters Phase 4 deletion without evidence.
 3. Audit `ProductIR.instrument` consumers before Phase 4 coding starts.
-4. Treat the Phase 4 exit criterion as a hard product rule:
+4. Keep a per-family closure ledger so route retirement is gated on
+   semantic closure, not on intuition or branch-local confidence.
+5. Treat the Phase 4 exit criterion as a hard product rule:
    for migrated families, even the simplest fresh rebuild must go
    through the IR -> structural selection -> lowering path.

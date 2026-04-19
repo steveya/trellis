@@ -11,9 +11,12 @@ yet tied to a filed Linear child issue.
 - QUA-904 — Phase 2 umbrella for payoff-expression Contract IR
 - QUA-905 — Phase 3 structural solver compiler
 - QUA-906 — Phase 4 route retirement / dispatch phaseout
+- `doc/plan/draft__external-prior-art-adoption-map.md`
+- `doc/plan/draft__semantic-contract-closure-program.md`
 - `doc/plan/draft__contract-ir-phase-2-ast-foundation.md`
 - `doc/plan/draft__contract-ir-phase-3-solver-compiler.md`
 - `doc/plan/draft__contract-ir-phase-4-route-retirement.md`
+- `doc/plan/draft__quoted-observable-contract-ir-foundation.md`
 - `docs/unified_pricing_engine_model_grammar.md`
 - Existing implementation surfaces:
   - `trellis/models/cashflow_engine/*`
@@ -69,6 +72,59 @@ structural contract representation that is:
 - honest about what is contractual semantics versus what is pricing
   convention or market-quote transform
 
+## Closure Requirements
+
+This track must satisfy the same three closures defined in
+`doc/plan/draft__semantic-contract-closure-program.md`.
+
+### Representation closure
+
+Leg products are representationally closed only when the IR can express
+coupon, fixing, payment, notional, and settlement structure directly,
+without hiding those semantics in product-keyed leaf nodes.
+
+### Decomposition closure
+
+Leg products are decomposition-closed only when Trellis can classify and
+emit the leg IR route-independently from supported request surfaces,
+especially for requests whose desk labels overlap with quoted-observable
+language such as "basis" or "spread."
+
+### Lowering closure
+
+Leg products are lowering-closed only when structural declarations or
+checked assembly paths can price the emitted leg IR from:
+
+- the leg IR itself
+- generic normalized contract terms where needed
+- valuation context
+- market capabilities
+
+without falling back to instrument strings or route-local product blobs.
+
+## Prior-Art Guidance
+
+ACTUS is the strongest external reference for this future track, but the
+right lesson is structural, not taxonomic.
+
+Useful lessons to adopt:
+
+- distinguish contract terms, generated events, and evolving state
+- make party role and contract direction explicit
+- treat schedules and event ordering as first-class semantics
+
+Useful lessons to reject:
+
+- do not mirror ACTUS contract-type names directly into Trellis node
+  names
+- do not force every later Trellis leg product into one external
+  taxonomy if Trellis decomposition boundaries differ
+
+Marlowe is also useful here as a reminder that explicit event and
+continuation semantics scale better than hidden helper-local operational
+logic. If the leg-based track needs event coupling, the event phases
+should be explicit and reviewable.
+
 ## Non-Goals For The First Slice
 
 - Do not solve callable / putable / cancelable structures in the first
@@ -103,6 +159,32 @@ explicit:
 If any of those are hidden in one opaque leaf node, the IR will not be
 good enough to support route-free fresh builds.
 
+## ACTUS-Informed Term / Event / State Split
+
+The first leg-based design should not stop at "coupon periods plus
+fixing rules." It should also reserve a cleaner semantic split between:
+
+1. **Terms**
+   Static or slowly changing contractual inputs such as schedule rules,
+   day count, index references, lag conventions, notional schedules, and
+   settlement conventions.
+2. **Events**
+   Generated dated actions such as fixing, accrual boundary, payment,
+   redemption, exercise, settlement, and termination events.
+3. **State**
+   Evolving quantities such as outstanding notional, accrued coupon,
+   current rate, exercised flag, or termination status.
+
+That split matters because many apparently different products differ
+less in their event/state machinery than in their surface labels.
+
+Trellis does not need to replicate ACTUS wholesale. It does need to
+avoid a leg IR where:
+
+- terms are implicit in helper code
+- event generation is product-specific branching
+- state evolution is undocumented
+
 ## Candidate Surface
 
 This document does not lock the final ADT, but the minimal useful shape
@@ -114,6 +196,9 @@ Pseudo-ADT sketch:
 ```text
 LegContractIR =
     { legs: tuple[SignedLeg, ...]
+    ; term_set: ContractTermSet | None
+    ; event_plan: EventPlan | None
+    ; state_schema: StateSchema | None
     ; settlement: SettlementRule
     ; exercise: Exercise | None
     ; observation: ObservationContext | None
@@ -150,11 +235,30 @@ RateIndex =
     | TermRateIndex(name: str, tenor: str)
     | OvernightIndex(name: str)
     | CmsQuote(name: str, tenor: str)
+
+ContractTermSet =
+    { economic_terms: dict
+    ; schedule_terms: dict
+    ; convention_terms: dict
+    }
+
+EventPlan =
+    { generated_events: tuple[ScheduledEvent, ...]
+    ; event_ordering: tuple[str, ...]
+    }
+
+StateSchema =
+    { state_fields: tuple[StateField, ...]
+    }
 ```
 
 The important architectural point is not the exact field list. It is
 that coupon assembly, fixing conventions, and signed legs are explicit
 IR structure, not buried in route-local adapter logic.
+
+The extra `term_set` / `event_plan` / `state_schema` sketches are
+deliberately optional at first. They are there to keep the design honest
+about where ACTUS-style semantics would eventually have to land.
 
 ## Examples
 
@@ -281,10 +385,14 @@ Examples:
 
 1. Keep this document as the parking-lot spec for the leg-based track
    while Phase 2 and Phase 3 land.
-2. When the quoted-observable follow-on is scoped, explicitly confirm
-   the boundary between that track and this one with real fixtures.
+2. Use the quoted-observable companion draft to keep the boundary
+   between snapshot quote products and scheduled cashflow products
+   explicit with real fixtures.
 3. File a future Linear child issue under QUA-887 for the first active
    leg-based slice.
-4. Before implementation, audit reuse opportunities in the existing
+4. Split the first active leg-based slice into explicit representation,
+   decomposition, and lowering sub-workstreams instead of treating
+   "leg-based IR" as one undifferentiated ticket.
+5. Before implementation, audit reuse opportunities in the existing
    cashflow engine and contingent-cashflow modules so the new IR does
    not duplicate already-correct schedule machinery.

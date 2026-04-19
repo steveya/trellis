@@ -16,9 +16,16 @@ Phase 3.
 
 ## Companion Docs
 
+- `doc/plan/draft__external-prior-art-adoption-map.md`
+- `doc/plan/draft__semantic-contract-closure-program.md`
 - `doc/plan/draft__contract-ir-phase-2-ast-foundation.md`
 - `doc/plan/draft__contract-ir-phase-4-route-retirement.md`
+- `doc/plan/draft__market-coordinate-overlay-and-shock-model.md`
+- `doc/plan/draft__valuation-result-identity-and-provenance.md`
+- `doc/plan/draft__semantic-contract-target-and-trade-envelope.md`
+- `doc/plan/draft__quoted-observable-contract-ir-foundation.md`
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
+- `doc/plan/draft__contract-ir-normalization-and-rewrite-discipline.md`
 - `doc/plan/draft__contract-ir-compiler-retiring-route-registry.md`
 - `docs/quant/contract_ir.rst`
 - `docs/quant/contract_algebra.rst`
@@ -38,8 +45,8 @@ routes.
 The target is not "IR exists." The target is:
 
 - a fresh build for a migrated family can choose a checked solver from
-  `(contract_ir, preferred method, valuation context, market
-  capabilities)`
+  `(contract_ir, normalized contract terms, preferred method, valuation
+  context, market capabilities)`
 - masking `ProductIR.instrument`, `route_id`, and `route_family` does
   not change the selected solver for that migrated family
 - the output remains parity-equivalent to the current route-based path
@@ -102,6 +109,40 @@ surface exists.
 That distinction matters. "IR can represent it" is not the same as
 "Phase 3 can migrate it safely."
 
+### Closure role of Phase 3
+
+The semantic-contract closure model is defined in
+`doc/plan/draft__semantic-contract-closure-program.md`.
+
+Phase 3 owns lowering closure for the migrated payoff-expression
+families. It consumes:
+
+- representation closure from the upstream semantic IR track
+- decomposition closure from the upstream decomposition path
+
+and turns those into checked structural declarations, admissibility
+rules, and bound solver calls.
+
+Phase 3 must not paper over missing representation work by inventing
+product-shaped payloads or helper-specific pseudo-IR. If a family still
+needs that kind of escape hatch, the correct outcome is:
+
+- file a blocker
+- narrow the migrated family
+- or move the family onto the quoted-observable or leg-based follow-on
+  track
+
+Phase 3 should also preemptively reserve the market-side contracts that
+later route-free domains will need:
+
+- explicit market identity
+- explicit overlay / scenario identity
+- optional resolved market-coordinate provenance for adapter-bound
+  helper calls
+
+Those are not the same thing as route authority. They are part of the
+valuation and provenance boundary.
+
 ## Mathematical Contract
 
 ### Input surfaces
@@ -109,15 +150,62 @@ That distinction matters. "IR can represent it" is not the same as
 For Phase 3 the fresh-build selection problem is parameterized by:
 
 - `c`: a well-formed `ContractIR`
+- `e`: normalized non-structural contract terms
 - `v`: valuation context and requested method surface
 - `m`: resolved market state / market binding surface
 - `h`: optional legacy metadata (`ProductIR`, route aliases, old route
   ids) carried only for parity and observability during rollout
 
-The structural compiler must be a function of `(c, v, m)` for migrated
-surface. Legacy metadata `h` may be logged, compared, or replayed during
-shadow mode, but it is not allowed to change the chosen solver for a
-migrated contract.
+The structural compiler must be a function of `(c, e, v, m)` for
+migrated surface. Legacy metadata `h` may be logged, compared, or
+replayed during shadow mode, but it is not allowed to change the chosen
+solver for a migrated contract.
+
+This should also be read alongside the later contract-target boundary in
+`doc/plan/draft__semantic-contract-target-and-trade-envelope.md`.
+Trellis may eventually wrap the semantic contract in a trade or position
+envelope, but that wrapper is not permitted to become shadow route
+authority. The Strata-inspired lesson is useful here: separate the
+thing being priced from surrounding trade metadata, but do not let the
+wrapper choose the solver.
+
+### Normalized term environment
+
+Phase 3 may need a supplemental contract-term surface because some
+checked helpers require non-structural information that the Phase 2
+payoff tree intentionally does not encode: payment calendars, day-count
+conventions, fixing lags, settlement conventions, or named index / quote
+references.
+
+That surface must **not** reintroduce route families in disguise. In
+particular, Phase 3 must not define product-keyed variants such as
+`VanillaEconomicTerms`, `SwaptionEconomicTerms`, `BasketEconomicTerms`,
+or any equivalent union whose discriminator is effectively an instrument
+family.
+
+Those would only move the hard-coded product split from `route_id` into
+another payload type, which would fail the Phase 4 objective just as
+surely as keeping the old route registry.
+
+The allowed shape is a generic, composable environment of reusable term
+groups. Examples:
+
+- cash scaling / settlement terms
+- named schedule bindings
+- accrual and payment conventions
+- floating-rate index references
+- quote references and coordinate conventions
+
+Boundary rule:
+
+- if changing a field changes structural payoff family or pattern match,
+  it belongs in `ContractIR`
+- if changing a field typically preserves the structural family but
+  changes helper materialization, it may belong in `e`
+- if a helper needs data that is neither derivable from `ContractIR` nor
+  expressible through reusable generic term groups, that family is not
+  Phase-3-ready and should remain blocked rather than smuggling a
+  product-specific blob into the compiler
 
 ### Solver declaration
 
@@ -130,12 +218,46 @@ where:
 - `p` is a `ContractPattern`
 - `\mathcal{M}` is the admissible requested-method set
 - `\mathcal{Q}` is the required market capability set
-- `A` is an adapter from `(c, v, m, \theta)` to the callable's native
-  argument surface
+- `A` is an adapter from `(c, e, v, m, \theta)` to the callable's
+  native argument surface
 - `\kappa` is the checked callable or helper reference
 - `\pi` is an explicit integer precedence for overlapping declarations
 - `\rho` is provenance metadata: declaration id, helper refs,
   validation bundle ids, compatibility alias policy
+
+Declarations should depend on required structural bindings and required
+generic term groups, not on a product-family payload type. A declaration
+that only works because it receives a hidden "swaption blob" or
+"variance-swap blob" is not route-free in any meaningful sense.
+
+### Declaration surfaces should stay factored
+
+Borrowing the right lesson from Strata, each structural declaration
+should keep four concerns separate:
+
+1. **selection authority**
+   Structural pattern, required term groups, requested-method cohort,
+   and market capability predicates.
+2. **requested-output support**
+   Which measures or output families the declaration can actually
+   produce.
+3. **market requirements**
+   Which market observables, coordinates, histories, or curve/surface
+   capabilities must be present.
+4. **bound callable materialization**
+   How the selected semantic contract is adapted into one checked helper
+   or kernel call.
+
+Phase 3 should not collapse those into one opaque declaration blob.
+They serve different review questions:
+
+- selection correctness
+- output admissibility
+- market-data planning
+- helper-binding fidelity
+
+That separation is part of how Trellis avoids simply rebuilding the old
+route table under a new decorator spelling.
 
 The adapter output may be one of two forms:
 
@@ -151,6 +273,18 @@ analytical kernels (`black76_call`, `black76_put`,
 it can migrate real checked surfaces rather than force them through an
 artificial one-style-only abstraction.
 
+The bound-call contract should also admit optional market-reference
+metadata emitted by the adapter:
+
+- resolved market identity for the valuation snapshot
+- overlay / scenario identity if the market state is not a plain base
+  snapshot
+- optional resolved market coordinates or coordinate-like references
+  when the helper materialization actually reads specific quoted points
+
+That metadata is not a selector input. It is provenance for later
+quoted-observable and scenario-aware workflows.
+
 ### Structural match relation
 
 Let `canon(c.payoff)` denote Phase 2 canonicalization of the payoff
@@ -164,22 +298,22 @@ The denotation of a pattern is:
 
 $$\llbracket p \rrbracket = \{ c \mid \operatorname{Match}(p, c) \text{ succeeds} \}$$
 
-A solver declaration `d` is admissible for `(c, v, m)` when all of the
+A solver declaration `d` is admissible for `(c, e, v, m)` when all of the
 following hold:
 
 1. `c` is well-formed
 2. `\operatorname{Match}(p_d, c)` succeeds with bindings `\theta_d`
 3. `\text{method}(v) \in \mathcal{M}_d`
 4. `\mathcal{Q}_d \subseteq \text{Capabilities}(m)`
-5. `A_d(c, v, m, \theta_d)` is defined
+5. `A_d(c, e, v, m, \theta_d)` is defined
 
 The bound solver call is then:
 
-$$\operatorname{Call}_d(c, v, m) = \kappa_d\big(A_d(c, v, m, \theta_d)\big)$$
+$$\operatorname{Call}_d(c, e, v, m) = \kappa_d\big(A_d(c, e, v, m, \theta_d)\big)$$
 
 ### Selection semantics
 
-Let `D(c, v, m)` be the set of admissible declarations.
+Let `D(c, e, v, m)` be the set of admissible declarations.
 
 The ideal semantic order is set inclusion on pattern denotations:
 
@@ -200,7 +334,7 @@ with a review invariant:
 
 So the runtime selection is:
 
-$$d^\* = \arg\max_{d \in D(c,v,m)} (\pi_d, -\operatorname{registration\_index}(d))$$
+$$d^\* = \arg\max_{d \in D(c,e,v,m)} (\pi_d, -\operatorname{registration\_index}(d))$$
 
 and the compiler must fail closed on ambiguous equal-precedence overlaps.
 It must not silently "pick whichever registered first" for two intended
@@ -212,7 +346,7 @@ For any two legacy-metadata packets `h_1, h_2` that differ only in
 `ProductIR.instrument`, `route_id`, `route_family`, or compatibility
 alias fields, migrated fresh-build selection must satisfy:
 
-$$\operatorname{Select}(c, v, m, h_1) = \operatorname{Select}(c, v, m, h_2)$$
+$$\operatorname{Select}(c, e, v, m, h_1) = \operatorname{Select}(c, e, v, m, h_2)$$
 
 This is the Phase 3 contract that Phase 4 later promotes from shadow
 mode to primary authority.
@@ -392,8 +526,34 @@ The output should carry:
 - selected declaration id
 - primitive / helper refs
 - adapter output payload
+- the generic term groups consumed during normalization / adaptation
+- stable market identity for the valuation snapshot
+- overlay / scenario identity when present
+- optional resolved market-coordinate references when the adapter can
+  express them without inventing fake precision
 - provenance and validation bundle metadata
 - shadow-mode comparison fields when a legacy route decision also exists
+
+### Preemptive market / provenance boundary
+
+Even though the immediate Phase 3 objective is route retirement for the
+current payoff-expression cohort, the compiler output should already be
+shaped to survive two nearby follow-ons:
+
+1. quoted-observable contract nodes such as future `CurveQuote` /
+   `SurfaceQuote`
+2. scenario / overlay repricing where operators need to know which base
+   market and which overlay produced the value
+
+So the recommended compiler-decision surface should reserve space for:
+
+- `market_identity`
+- `market_overlay_identity`
+- `resolved_market_coordinates`
+- requested output identity / valuation identity linkage
+
+without making any of those fields part of route-local selector
+authority.
 
 ### Declaration placement
 
@@ -437,12 +597,15 @@ registration / overlap validation.
 
 ### P3.2 — Structural compiler and bound-call output
 
-**Objective.** Compile `(contract_ir, valuation_context, market_state)`
-into a deterministic bound solver call.
+**Objective.** Compile `(contract_ir, normalized contract terms,
+valuation_context, market_state)` into a deterministic bound solver
+call.
 
 **Artifacts.**
 
 - `compile_contract_ir_solver(...)`
+- generic term-environment validation / normalization
+- valuation/market identity attachment on the bound-call output
 - ambiguity failure contract
 - route-metadata masking tests
 
@@ -478,6 +641,8 @@ path and record the comparison.
 - shadow-mode hook in semantic / route selection path
 - scorecard output comparing structural vs legacy decisions
 - route-masked regression tests for migrated families
+- market-identity / overlay-identity comparison fields in the shadow
+  payload
 
 ### P3.6 — Family-by-family parity harness
 
@@ -488,6 +653,8 @@ path and record the comparison.
 - parity harness script
 - per-family benchmark cohorts
 - explicit tolerance policy per family
+- per-family closure checklist confirming upstream representation and
+  decomposition closure before Phase 4 promotion
 
 ### P3.7 — Asian blocker ticket and solver follow-on
 
@@ -515,9 +682,17 @@ mode.
 - The compiler can select a bound solver call from `contract_ir` for the
   first-wave families without reading `ProductIR.instrument`,
   `route_id`, or `route_family`.
+- Every family admitted into Phase 3 shadow mode has explicit upstream
+  representation and decomposition closure evidence; Phase 3 is not
+  compensating for missing semantic representation with product-local
+  adapter blobs.
 - Overlapping equal-precedence declarations fail closed.
 - Route-masked tests prove the same structural decision is recovered for
   migrated families.
+- Compiler decisions carry route-free valuation provenance sufficient to
+  identify the structural declaration, valuation snapshot, and any
+  overlay/scenario identity without promoting route ids back into the
+  authority path.
 - Shadow-mode parity is green on fixture and benchmark cohorts for the
   first-wave families.
 - Asian remains explicitly deferred until a real solver surface exists;
@@ -559,6 +734,8 @@ Phase 3 is successful only if it makes Phase 4 boring.
 
 That means Phase 3 must already produce:
 
+- upstream closure evidence showing the family is representationally and
+  decomposition-wise ready for lowering
 - deterministic structural decisions
 - explicit provenance
 - parity evidence
