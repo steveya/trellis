@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from calendar import monthrange
+from dataclasses import replace
 from datetime import date, timedelta
 
 import pytest
@@ -48,10 +49,7 @@ def _interval(start_day: str, end_day: str) -> ContinuousInterval:
 
 
 def _month_end_schedule(year: int) -> FiniteSchedule:
-    month_ends = tuple(
-        date(year, month, monthrange(year, month)[1])
-        for month in range(1, 13)
-    )
+    month_ends = tuple(date(year, month, monthrange(year, month)[1]) for month in range(1, 13))
     return FiniteSchedule(month_ends)
 
 
@@ -83,8 +81,12 @@ def _swap_schedule(expiry_day: str, tenor_years: int) -> FiniteSchedule:
 
 def _contracts():
     swap_schedule = _swap_schedule("2025-11-15", 5)
-    asian_monthly = _month_end_schedule(2025)
-    asian_weekly = _weekly_schedule("2025-01-03", "2025-01-31")
+    short_swap_schedule = _swap_schedule("2024-02-29", 2)
+    mid_swap_schedule = _swap_schedule("2025-06-30", 2)
+    asian_monthly_2024 = _month_end_schedule(2024)
+    asian_monthly_2025 = _month_end_schedule(2025)
+    asian_monthly_2026 = _month_end_schedule(2026)
+    asian_weekly_jan = _weekly_schedule("2025-01-03", "2025-01-31")
     return [
         (
             "European call on AAPL strike 150 expiring 2025-11-15",
@@ -117,6 +119,26 @@ def _contracts():
             ),
         ),
         (
+            "European put on AAPL strike 0 expiring 2025-11-15",
+            "european_option",
+            ContractIR(
+                payoff=Max((Sub(Strike(0.0), Spot("AAPL")), Constant(0.0))),
+                exercise=Exercise(style="european", schedule=_singleton("2025-11-15")),
+                observation=Observation(kind="terminal", schedule=_singleton("2025-11-15")),
+                underlying=Underlying(spec=EquitySpot("AAPL", "gbm")),
+            ),
+        ),
+        (
+            "European call on SPX strike -25 expiring 2025-11-15",
+            "european_option",
+            ContractIR(
+                payoff=Max((Sub(Spot("SPX"), Strike(-25.0)), Constant(0.0))),
+                exercise=Exercise(style="european", schedule=_singleton("2025-11-15")),
+                observation=Observation(kind="terminal", schedule=_singleton("2025-11-15")),
+                underlying=Underlying(spec=EquitySpot("SPX", "gbm")),
+            ),
+        ),
+        (
             "European payer swaption on 5Y USD IRS strike 5% expiring 2025-11-15",
             "swaption",
             ContractIR(
@@ -143,6 +165,32 @@ def _contracts():
             ),
         ),
         (
+            "European receiver swaption on 2Y USD IRS strike 3.5% expiring 2024-02-29",
+            "swaption",
+            ContractIR(
+                payoff=Scaled(
+                    Annuity("USD-IRS-2Y", short_swap_schedule),
+                    Max((Sub(Strike(0.035), SwapRate("USD-IRS-2Y", short_swap_schedule)), Constant(0.0))),
+                ),
+                exercise=Exercise(style="european", schedule=_singleton("2024-02-29")),
+                observation=Observation(kind="terminal", schedule=_singleton("2024-02-29")),
+                underlying=Underlying(spec=ForwardRate("USD-IRS-2Y", "lognormal_forward")),
+            ),
+        ),
+        (
+            "European payer swaption on USD-IRS-2Y strike 4% expiring 2025-06-30",
+            "swaption",
+            ContractIR(
+                payoff=Scaled(
+                    Annuity("USD-IRS-2Y", mid_swap_schedule),
+                    Max((Sub(SwapRate("USD-IRS-2Y", mid_swap_schedule), Strike(0.04)), Constant(0.0))),
+                ),
+                exercise=Exercise(style="european", schedule=_singleton("2025-06-30")),
+                observation=Observation(kind="terminal", schedule=_singleton("2025-06-30")),
+                underlying=Underlying(spec=ForwardRate("USD-IRS-2Y", "lognormal_forward")),
+            ),
+        ),
+        (
             "European basket call on {SPX 50%, NDX 50%} strike 4500 expiring 2025-11-15",
             "basket_option",
             ContractIR(
@@ -151,6 +199,46 @@ def _contracts():
                         Sub(
                             LinearBasket(((0.5, Spot("SPX")), (0.5, Spot("NDX")))),
                             Strike(4500.0),
+                        ),
+                        Constant(0.0),
+                    )
+                ),
+                exercise=Exercise(style="european", schedule=_singleton("2025-11-15")),
+                observation=Observation(kind="terminal", schedule=_singleton("2025-11-15")),
+                underlying=Underlying(
+                    spec=CompositeUnderlying((EquitySpot("SPX", "gbm"), EquitySpot("NDX", "gbm")))
+                ),
+            ),
+        ),
+        (
+            "European basket put on {SPX, NDX} strike 4300 expiring 2025-11-15",
+            "basket_option",
+            ContractIR(
+                payoff=Max(
+                    (
+                        Sub(
+                            Strike(4300.0),
+                            LinearBasket(((0.5, Spot("SPX")), (0.5, Spot("NDX")))),
+                        ),
+                        Constant(0.0),
+                    )
+                ),
+                exercise=Exercise(style="european", schedule=_singleton("2025-11-15")),
+                observation=Observation(kind="terminal", schedule=_singleton("2025-11-15")),
+                underlying=Underlying(
+                    spec=CompositeUnderlying((EquitySpot("SPX", "gbm"), EquitySpot("NDX", "gbm")))
+                ),
+            ),
+        ),
+        (
+            "European basket call on {SPX 25%, NDX 75%} strike -100 expiring 2025-11-15",
+            "basket_option",
+            ContractIR(
+                payoff=Max(
+                    (
+                        Sub(
+                            LinearBasket(((0.25, Spot("SPX")), (0.75, Spot("NDX")))),
+                            Strike(-100.0),
                         ),
                         Constant(0.0),
                     )
@@ -179,6 +267,38 @@ def _contracts():
             ),
         ),
         (
+            "Equity variance swap on NDX, variance strike 0, notional 2500, expiry 2026-06-30",
+            "variance_swap",
+            ContractIR(
+                payoff=Scaled(
+                    Constant(2500.0),
+                    Sub(
+                        VarianceObservable("NDX", _interval("2026-01-01", "2026-06-30")),
+                        Strike(0.0),
+                    ),
+                ),
+                exercise=Exercise(style="european", schedule=_singleton("2026-06-30")),
+                observation=Observation(kind="terminal", schedule=_singleton("2026-06-30")),
+                underlying=Underlying(spec=EquitySpot("NDX", "gbm")),
+            ),
+        ),
+        (
+            "Equity variance swap on SPX, variance strike -0.01, notional 5000, expiry 2025-12-31",
+            "variance_swap",
+            ContractIR(
+                payoff=Scaled(
+                    Constant(5000.0),
+                    Sub(
+                        VarianceObservable("SPX", _interval("2025-01-01", "2025-12-31")),
+                        Strike(-0.01),
+                    ),
+                ),
+                exercise=Exercise(style="european", schedule=_singleton("2025-12-31")),
+                observation=Observation(kind="terminal", schedule=_singleton("2025-12-31")),
+                underlying=Underlying(spec=EquitySpot("SPX", "gbm")),
+            ),
+        ),
+        (
             "Cash-or-nothing digital call on AAPL paying $2 if spot > 150 at expiry 2025-11-15",
             "digital_option",
             ContractIR(
@@ -186,6 +306,26 @@ def _contracts():
                 exercise=Exercise(style="european", schedule=_singleton("2025-11-15")),
                 observation=Observation(kind="terminal", schedule=_singleton("2025-11-15")),
                 underlying=Underlying(spec=EquitySpot("AAPL", "gbm")),
+            ),
+        ),
+        (
+            "Cash-or-nothing digital put on AAPL paying $1 if spot < 150 at expiry 2025-11-15",
+            "digital_option",
+            ContractIR(
+                payoff=Indicator(Lt(Spot("AAPL"), Strike(150.0))),
+                exercise=Exercise(style="european", schedule=_singleton("2025-11-15")),
+                observation=Observation(kind="terminal", schedule=_singleton("2025-11-15")),
+                underlying=Underlying(spec=EquitySpot("AAPL", "gbm")),
+            ),
+        ),
+        (
+            "Cash-or-nothing digital call on SPX if spot > 4500 at expiry 2025-11-15",
+            "digital_option",
+            ContractIR(
+                payoff=Indicator(Gt(Spot("SPX"), Strike(4500.0))),
+                exercise=Exercise(style="european", schedule=_singleton("2025-11-15")),
+                observation=Observation(kind="terminal", schedule=_singleton("2025-11-15")),
+                underlying=Underlying(spec=EquitySpot("SPX", "gbm")),
             ),
         ),
         (
@@ -199,17 +339,27 @@ def _contracts():
             ),
         ),
         (
+            "Asset-or-nothing digital call on SPX if spot > 4500 at expiry 2025-11-15",
+            "digital_option",
+            ContractIR(
+                payoff=Mul((Spot("SPX"), Indicator(Gt(Spot("SPX"), Strike(4500.0))))),
+                exercise=Exercise(style="european", schedule=_singleton("2025-11-15")),
+                observation=Observation(kind="terminal", schedule=_singleton("2025-11-15")),
+                underlying=Underlying(spec=EquitySpot("SPX", "gbm")),
+            ),
+        ),
+        (
             "Arithmetic Asian call on SPX monthly average over 2025 strike 4500",
             "asian_option",
             ContractIR(
                 payoff=Max(
                     (
-                        Sub(ArithmeticMean(Spot("SPX"), asian_monthly), Strike(4500.0)),
+                        Sub(ArithmeticMean(Spot("SPX"), asian_monthly_2025), Strike(4500.0)),
                         Constant(0.0),
                     )
                 ),
                 exercise=Exercise(style="european", schedule=Singleton(date(2025, 12, 31))),
-                observation=Observation(kind="schedule", schedule=asian_monthly),
+                observation=Observation(kind="schedule", schedule=asian_monthly_2025),
                 underlying=Underlying(spec=EquitySpot("SPX", "gbm")),
             ),
         ),
@@ -219,13 +369,58 @@ def _contracts():
             ContractIR(
                 payoff=Max(
                     (
-                        Sub(Strike(4500.0), ArithmeticMean(Spot("SPX"), asian_weekly)),
+                        Sub(Strike(4500.0), ArithmeticMean(Spot("SPX"), asian_weekly_jan)),
                         Constant(0.0),
                     )
                 ),
                 exercise=Exercise(style="european", schedule=Singleton(date(2025, 1, 31))),
-                observation=Observation(kind="schedule", schedule=asian_weekly),
+                observation=Observation(kind="schedule", schedule=asian_weekly_jan),
                 underlying=Underlying(spec=EquitySpot("SPX", "gbm")),
+            ),
+        ),
+        (
+            "Arithmetic Asian put on SPX monthly average over 2024 strike 0",
+            "asian_option",
+            ContractIR(
+                payoff=Max(
+                    (
+                        Sub(Strike(0.0), ArithmeticMean(Spot("SPX"), asian_monthly_2024)),
+                        Constant(0.0),
+                    )
+                ),
+                exercise=Exercise(style="european", schedule=Singleton(date(2024, 12, 31))),
+                observation=Observation(kind="schedule", schedule=asian_monthly_2024),
+                underlying=Underlying(spec=EquitySpot("SPX", "gbm")),
+            ),
+        ),
+        (
+            "Arithmetic Asian call on SPX weekly average from 2025-01-03 to 2025-01-31 strike -50",
+            "asian_option",
+            ContractIR(
+                payoff=Max(
+                    (
+                        Sub(ArithmeticMean(Spot("SPX"), asian_weekly_jan), Strike(-50.0)),
+                        Constant(0.0),
+                    )
+                ),
+                exercise=Exercise(style="european", schedule=Singleton(date(2025, 1, 31))),
+                observation=Observation(kind="schedule", schedule=asian_weekly_jan),
+                underlying=Underlying(spec=EquitySpot("SPX", "gbm")),
+            ),
+        ),
+        (
+            "Arithmetic Asian call on AAPL monthly average over 2026 strike 200",
+            "asian_option",
+            ContractIR(
+                payoff=Max(
+                    (
+                        Sub(ArithmeticMean(Spot("AAPL"), asian_monthly_2026), Strike(200.0)),
+                        Constant(0.0),
+                    )
+                ),
+                exercise=Exercise(style="european", schedule=Singleton(date(2026, 12, 31))),
+                observation=Observation(kind="schedule", schedule=asian_monthly_2026),
+                underlying=Underlying(spec=EquitySpot("AAPL", "gbm")),
             ),
         ),
     ]
@@ -251,6 +446,50 @@ class TestDecomposeContractIR:
         assert observed == expected
         assert observed is not None
         assert canonicalize(observed.payoff) == observed.payoff
+
+    @pytest.mark.parametrize(
+        "description,instrument_type,_expected",
+        _contracts(),
+    )
+    def test_supported_contract_ir_ignores_route_metadata(
+        self,
+        description: str,
+        instrument_type: str,
+        _expected: ContractIR,
+    ):
+        product_ir = decompose_to_ir(description, instrument_type=instrument_type)
+        stripped = replace(
+            product_ir,
+            route_families=(),
+            candidate_engine_families=(),
+            required_market_data=frozenset(),
+            reusable_primitives=(),
+            unresolved_primitives=(),
+        )
+        enriched = replace(
+            product_ir,
+            route_families=("synthetic_route",),
+            candidate_engine_families=("synthetic_engine",),
+            required_market_data=frozenset({"synthetic_capability"}),
+            reusable_primitives=("synthetic_primitive",),
+            unresolved_primitives=("synthetic_gap",),
+        )
+
+        baseline = decompose_to_contract_ir(
+            description,
+            instrument_type=instrument_type,
+            product_ir=product_ir,
+        )
+        assert baseline == decompose_to_contract_ir(
+            description,
+            instrument_type=instrument_type,
+            product_ir=stripped,
+        )
+        assert baseline == decompose_to_contract_ir(
+            description,
+            instrument_type=instrument_type,
+            product_ir=enriched,
+        )
 
     @pytest.mark.parametrize(
         "description,instrument_type",

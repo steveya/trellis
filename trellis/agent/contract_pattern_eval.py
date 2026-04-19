@@ -62,6 +62,7 @@ Follow-ups for downstream slices
 
 from __future__ import annotations
 
+from calendar import monthrange
 import trellis.agent.contract_ir as contract_ir_types
 from dataclasses import dataclass, field
 from typing import Any, Mapping
@@ -327,32 +328,88 @@ def _match_contract_ir_schedule(
 ) -> MatchResult:
     if pattern.frequency is None:
         return MatchResult(ok=True, bindings=bindings)
-    if isinstance(pattern.frequency, Wildcard):
-        new_bindings = bindings
-        if pattern.frequency.name is not None:
-            new_bindings = _bind(
-                bindings,
-                pattern.frequency.name,
-                None,
-                field_label=f"{field_label}.frequency",
-            )
-            if new_bindings is None:
-                return MatchResult(
-                    ok=False,
-                    bindings=bindings,
-                    mismatch_reason=(
-                        f"binding conflict on '{pattern.frequency.name}' "
-                        f"while matching {field_label}.frequency"
-                    ),
-                )
-        return MatchResult(ok=True, bindings=new_bindings)
-    return MatchResult(
-        ok=False,
+    inferred_frequency = _infer_contract_ir_schedule_frequency(observed)
+    if inferred_frequency is None:
+        return MatchResult(
+            ok=False,
+            bindings=bindings,
+            mismatch_reason=(
+                f"could not infer a regular frequency from {field_label}; "
+                "the schedule is irregular or has no cadence"
+            ),
+        )
+    candidate_values, primary_value = inferred_frequency
+    return _match_field_multivalued(
+        pattern.frequency,
+        candidate_values=candidate_values,
         bindings=bindings,
-        mismatch_reason=(
-            "schedule.frequency matching against a concrete value is not "
-            "yet implemented for ContractIR schedules"
-        ),
+        field_label=f"{field_label}.frequency",
+        primary_value=primary_value,
+    )
+
+
+_FREQUENCY_ALIASES: Mapping[str, tuple[str, ...]] = {
+    "weekly": ("weekly",),
+    "monthly": ("monthly",),
+    "quarterly": ("quarterly",),
+    "semiannual": ("semiannual", "semi_annual", "semi-annual"),
+    "annual": ("annual", "yearly"),
+}
+
+
+def _infer_contract_ir_schedule_frequency(
+    observed: object,
+) -> tuple[tuple[str, ...], str] | None:
+    if not isinstance(observed, contract_ir_types.FiniteSchedule):
+        return None
+    canonical = _infer_regular_frequency_label(observed)
+    if canonical is None:
+        return None
+    return _FREQUENCY_ALIASES[canonical], canonical
+
+
+def _infer_regular_frequency_label(
+    schedule: contract_ir_types.FiniteSchedule,
+) -> str | None:
+    if len(schedule.dates) < 2:
+        return None
+    day_deltas = tuple(
+        (right - left).days for left, right in zip(schedule.dates, schedule.dates[1:])
+    )
+    if day_deltas and all(delta == 7 for delta in day_deltas):
+        return "weekly"
+
+    month_steps = tuple(
+        (right.year - left.year) * 12 + (right.month - left.month)
+        for left, right in zip(schedule.dates, schedule.dates[1:])
+    )
+    if len(set(month_steps)) != 1:
+        return None
+    step = month_steps[0]
+    if step not in {1, 3, 6, 12}:
+        return None
+
+    if _all_same_day_of_month(schedule.dates) or _all_month_end(schedule.dates):
+        if step == 1:
+            return "monthly"
+        if step == 3:
+            return "quarterly"
+        if step == 6:
+            return "semiannual"
+        if step == 12:
+            return "annual"
+    return None
+
+
+def _all_same_day_of_month(dates: tuple[object, ...]) -> bool:
+    day_values = {getattr(item, "day", None) for item in dates}
+    return len(day_values) == 1
+
+
+def _all_month_end(dates: tuple[object, ...]) -> bool:
+    return all(
+        getattr(item, "day", None) == monthrange(item.year, item.month)[1]
+        for item in dates
     )
 
 

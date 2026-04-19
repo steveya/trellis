@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import date
-import random
+import math
+
+from hypothesis import HealthCheck, given, settings, strategies as st
 
 from trellis.agent.contract_ir import (
     Add,
@@ -14,6 +16,7 @@ from trellis.agent.contract_ir import (
     Indicator,
     LinearBasket,
     Max,
+    Min,
     Mul,
     PayoffEvalEnv,
     Scaled,
@@ -34,9 +37,7 @@ def _singleton(day: str) -> Singleton:
 
 
 def _finite_schedule(*days: str) -> FiniteSchedule:
-    return FiniteSchedule(
-        tuple(date(*map(int, day.split("-"))) for day in days)
-    )
+    return FiniteSchedule(tuple(date(*map(int, day.split("-"))) for day in days))
 
 
 def _interval(start_day: str, end_day: str) -> ContinuousInterval:
@@ -68,91 +69,87 @@ def _environment() -> PayoffEvalEnv:
     )
 
 
-def _random_leaf(rng: random.Random):
-    leaf_type = rng.choice(
-        (
-            "constant",
-            "spot",
-            "strike",
-            "swap_rate",
-            "annuity",
-            "variance",
-            "arithmetic_mean",
-        )
-    )
-    if leaf_type == "constant":
-        return Constant(rng.choice((-3.0, -1.0, 0.0, 1.0, 2.0, 5.0)))
-    if leaf_type == "spot":
-        return Spot(rng.choice(("AAPL", "SPX", "NDX")))
-    if leaf_type == "strike":
-        return Strike(rng.choice((0.0, 1.0, 2.0, 150.0, 4500.0)))
-    if leaf_type == "swap_rate":
-        return SwapRate(
-            "USD-IRS-5Y",
-            _finite_schedule("2026-11-15", "2027-11-15"),
-        )
-    if leaf_type == "annuity":
-        return Annuity(
-            "USD-IRS-5Y",
-            _finite_schedule("2026-11-15", "2027-11-15"),
-        )
-    if leaf_type == "variance":
-        return VarianceObservable(
-            "SPX",
-            _interval("2025-01-01", "2025-11-15"),
-        )
-    return ArithmeticMean(
-        Spot("SPX"),
-        _finite_schedule("2025-01-01", "2025-02-01", "2025-03-01", "2025-04-01"),
+_SWAP_SCHEDULE = _finite_schedule("2026-11-15", "2027-11-15")
+_ASIAN_SCHEDULE = _finite_schedule("2025-01-01", "2025-02-01", "2025-03-01", "2025-04-01")
+_VARIANCE_INTERVAL = _interval("2025-01-01", "2025-11-15")
+
+
+def _finite_float(min_value: float, max_value: float):
+    return st.floats(
+        min_value=min_value,
+        max_value=max_value,
+        allow_nan=False,
+        allow_infinity=False,
     )
 
 
-def _random_expr(rng: random.Random, depth: int):
-    if depth <= 0:
-        return _random_leaf(rng)
-
-    kind = rng.choice(
-        (
-            "leaf",
-            "add",
-            "max",
-            "mul",
-            "sub",
-            "scaled",
-            "indicator",
-            "basket",
-        )
+def _payoff_expr_strategy():
+    leaf = st.one_of(
+        _finite_float(-5.0, 5.0).map(Constant),
+        st.sampled_from(("AAPL", "SPX", "NDX")).map(Spot),
+        st.sampled_from((-10.0, 0.0, 1.0, 2.0, 150.0, 4500.0)).map(Strike),
+        st.just(SwapRate("USD-IRS-5Y", _SWAP_SCHEDULE)),
+        st.just(Annuity("USD-IRS-5Y", _SWAP_SCHEDULE)),
+        st.just(VarianceObservable("SPX", _VARIANCE_INTERVAL)),
+        st.just(ArithmeticMean(Spot("SPX"), _ASIAN_SCHEDULE)),
     )
-    if kind == "leaf":
-        return _random_leaf(rng)
-    if kind == "add":
-        return Add((_random_expr(rng, depth - 1), _random_expr(rng, depth - 1)))
-    if kind == "max":
-        return Max((_random_expr(rng, depth - 1), _random_expr(rng, depth - 1)))
-    if kind == "mul":
-        return Mul((_random_expr(rng, depth - 1), _random_expr(rng, depth - 1)))
-    if kind == "sub":
-        return Sub(_random_expr(rng, depth - 1), _random_expr(rng, depth - 1))
-    if kind == "scaled":
-        scalar = rng.choice(
+
+    scalar = st.one_of(
+        _finite_float(-2.0, 2.0).map(Constant),
+        st.just(Annuity("USD-IRS-5Y", _SWAP_SCHEDULE)),
+    )
+
+    return st.recursive(
+        leaf,
+        lambda children: st.one_of(
+            st.tuples(children, children).map(Add),
+            st.tuples(children, children).map(Mul),
+            st.tuples(children, children).map(lambda pair: Max(tuple(pair))),
+            st.tuples(children, children).map(lambda pair: Min(tuple(pair))),
+            st.tuples(children, children).map(lambda pair: Sub(pair[0], pair[1])),
+            st.tuples(scalar, children).map(lambda pair: Scaled(pair[0], pair[1])),
+            st.tuples(children, children).map(
+                lambda pair: Indicator(Gt(pair[0], pair[1]))
+            ),
+            st.just(LinearBasket(((0.5, Spot("SPX")), (0.5, Spot("NDX"))))),
+        ),
+        max_leaves=8,
+    )
+
+
+@st.composite
+def _environment_strategy(draw):
+    jan = date(2025, 1, 1)
+    feb = date(2025, 2, 1)
+    mar = date(2025, 3, 1)
+    apr = date(2025, 4, 1)
+    return PayoffEvalEnv(
+        values={
+            ("spot", "AAPL"): draw(_finite_float(50.0, 250.0)),
+            ("spot", "SPX"): draw(_finite_float(3000.0, 6000.0)),
+            ("spot", "NDX"): draw(_finite_float(10000.0, 25000.0)),
+            ("spot", "SPX", jan): draw(_finite_float(3000.0, 6000.0)),
+            ("spot", "SPX", feb): draw(_finite_float(3000.0, 6000.0)),
+            ("spot", "SPX", mar): draw(_finite_float(3000.0, 6000.0)),
+            ("spot", "SPX", apr): draw(_finite_float(3000.0, 6000.0)),
+            ("swap_rate", "USD-IRS-5Y", _SWAP_SCHEDULE.key()): draw(_finite_float(-0.05, 0.15)),
+            ("annuity", "USD-IRS-5Y", _SWAP_SCHEDULE.key()): draw(_finite_float(0.1, 10.0)),
             (
-                Constant(rng.choice((-2.0, -1.0, 0.0, 1.0, 2.0))),
-                Annuity(
-                    "USD-IRS-5Y",
-                    _finite_schedule("2026-11-15", "2027-11-15"),
-                ),
-            )
-        )
-        return Scaled(scalar, _random_expr(rng, depth - 1))
-    if kind == "indicator":
-        return Indicator(
-            Gt(_random_expr(rng, depth - 1), _random_expr(rng, depth - 1))
-        )
-    return LinearBasket(
-        (
-            (0.5, Spot("SPX")),
-            (0.5, Spot("NDX")),
-        )
+                "variance_observable",
+                "SPX",
+                date(2025, 1, 1),
+                date(2025, 11, 15),
+            ): draw(_finite_float(0.0, 0.5)),
+        }
+    )
+
+
+def _property_settings(*, max_examples: int):
+    return settings(
+        max_examples=max_examples,
+        deadline=None,
+        derandomize=True,
+        suppress_health_check=[HealthCheck.too_slow],
     )
 
 
@@ -187,7 +184,13 @@ class TestContractIRSimplify:
         )
         expr = Max(
             (
-                Scaled(annuity, Sub(SwapRate("USD-IRS-5Y", _finite_schedule("2026-11-15", "2027-11-15")), Strike(0.05))),
+                Scaled(
+                    annuity,
+                    Sub(
+                        SwapRate("USD-IRS-5Y", _finite_schedule("2026-11-15", "2027-11-15")),
+                        Strike(0.05),
+                    ),
+                ),
                 Constant(0.0),
             )
         )
@@ -202,6 +205,13 @@ class TestContractIRSimplify:
                     Constant(0.0),
                 )
             ),
+        )
+
+    def test_positive_scaled_sum_stays_factorized(self):
+        expr = Scaled(Constant(2.0), Add((Spot("AAPL"), Constant(1.0))))
+        assert canonicalize(expr) == Scaled(
+            Constant(2.0),
+            Add((Spot("AAPL"), Constant(1.0))),
         )
 
     def test_family_templates_canonicalize_to_expected_forms(self):
@@ -265,29 +275,37 @@ class TestContractIRSimplify:
             )
         )
 
-    def test_canonicalize_is_idempotent_on_deterministic_random_trees(self):
-        rng = random.Random(917)
-        for _ in range(200):
-            expr = _random_expr(rng, depth=3)
-            once = canonicalize(expr)
-            twice = canonicalize(once)
-            assert twice == once
+    @_property_settings(max_examples=1000)
+    @given(_payoff_expr_strategy())
+    def test_canonicalize_is_idempotent_property(self, expr):
+        once = canonicalize(expr)
+        twice = canonicalize(once)
+        assert twice == once
 
-    def test_canonicalize_agrees_on_equivalent_orderings(self):
-        rng = random.Random(918)
-        for _ in range(150):
-            a = _random_expr(rng, depth=2)
-            b = _random_expr(rng, depth=2)
-            c = _random_expr(rng, depth=2)
-            assert canonicalize(Max((a, b, c))) == canonicalize(Max((c, a, b)))
-            assert canonicalize(Add((a, b, c))) == canonicalize(Add((b, c, a)))
-            assert canonicalize(Mul((a, b, c))) == canonicalize(Mul((c, b, a)))
+    @_property_settings(max_examples=500)
+    @given(_payoff_expr_strategy(), _payoff_expr_strategy(), _payoff_expr_strategy())
+    def test_canonicalize_agrees_on_equivalent_orderings(self, a, b, c):
+        assert canonicalize(Max((a, b, c))) == canonicalize(Max((c, a, b)))
+        assert canonicalize(Add((a, b, c))) == canonicalize(Add((b, c, a)))
+        assert canonicalize(Mul((a, b, c))) == canonicalize(Mul((c, b, a)))
 
-    def test_canonicalize_preserves_numeric_semantics(self):
-        rng = random.Random(919)
-        env = _environment()
-        for _ in range(150):
-            expr = _random_expr(rng, depth=3)
-            before = evaluate_payoff_expr(expr, env)
-            after = evaluate_payoff_expr(canonicalize(expr), env)
-            assert abs(after - before) <= 5e-12
+    @_property_settings(max_examples=500)
+    @given(_payoff_expr_strategy(), _environment_strategy())
+    def test_canonicalize_preserves_numeric_semantics(self, expr, env):
+        before = evaluate_payoff_expr(expr, env)
+        after = evaluate_payoff_expr(canonicalize(expr), env)
+        assert math.isclose(after, before, rel_tol=1e-12, abs_tol=5e-12)
+
+    def test_canonicalize_preserves_numeric_semantics_on_reference_environment(self):
+        expr = Add(
+            (
+                Max((Sub(Spot("AAPL"), Strike(150.0)), Constant(0.0))),
+                Scaled(
+                    Constant(2.0),
+                    Mul((Constant(2.0), Indicator(Gt(Spot("AAPL"), Strike(150.0))))),
+                ),
+            )
+        )
+        before = evaluate_payoff_expr(expr, _environment())
+        after = evaluate_payoff_expr(canonicalize(expr), _environment())
+        assert math.isclose(after, before, rel_tol=1e-12, abs_tol=5e-12)

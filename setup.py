@@ -23,8 +23,8 @@ setuptools.setup(
         "scipy>=1.10",
     ],
     extras_require={
-        "test": ["pytest", "pytest-cov"],
-        "develop": ["wheel", "pytest", "pytest-cov"],
+        "test": ["hypothesis>=6.0", "pytest", "pytest-cov"],
+        "develop": ["hypothesis>=6.0", "wheel", "pytest", "pytest-cov"],
     },
     classifiers=[
         "Programming Language :: Python :: 3",

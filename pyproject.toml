@@ -33,7 +33,7 @@ bloomberg = ["blpapi>=3.19"]
 agent = ["anthropic>=0.40", "openai>=1.0"]
 pipeline = ["pandas>=1.5", "pyarrow>=10"]
 mcp = ["mcp>=1.27"]
-dev = ["build>=1.2", "mypy>=1.10", "pytest>=7.0", "pytest-cov", "mcp>=1.27"]
+dev = ["build>=1.2", "hypothesis>=6.0", "mypy>=1.10", "pytest>=7.0", "pytest-cov", "mcp>=1.27"]
 crossval = ["QuantLib>=1.30", "financepy>=1.0", "rateslib>=2.0"]
 tfq = ["tf-quant-finance", "tensorflow>=2.15", "tf-keras"]
 
