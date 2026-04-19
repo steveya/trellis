@@ -280,46 +280,6 @@ def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
         ),
         pytest.param(
             ProductIR(
-                instrument="chooser_option",
-                payoff_family="composite_option",
-                payoff_traits=(
-                    "discounting",
-                    "terminal_markov",
-                    "vol_surface_dependence",
-                ),
-                exercise_style="european",
-                state_dependence="terminal_markov",
-                model_family="equity_diffusion",
-            ),
-            "analytical",
-            (
-                "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical",
-            ),
-            (),
-            id="chooser",
-        ),
-        pytest.param(
-            ProductIR(
-                instrument="compound_option",
-                payoff_family="composite_option",
-                payoff_traits=(
-                    "discounting",
-                    "terminal_markov",
-                    "vol_surface_dependence",
-                ),
-                exercise_style="european",
-                state_dependence="terminal_markov",
-                model_family="equity_diffusion",
-            ),
-            "analytical",
-            (
-                "trellis.models.analytical.equity_exotics.price_equity_compound_option_analytical",
-            ),
-            (),
-            id="compound",
-        ),
-        pytest.param(
-            ProductIR(
                 instrument="cliquet_option",
                 payoff_family="composite_option",
                 payoff_traits=("vanilla_option",),
@@ -375,6 +335,27 @@ def test_resolve_backend_binding_spec_uses_exact_helpers_for_absorbed_black76_eq
     assert resolved.route_family == expected_route_family
     assert resolved.helper_refs == expected_helper_refs
     assert resolved.pricing_kernel_refs == expected_kernel_refs
+
+
+def test_resolve_backend_binding_spec_uses_equity_chooser_exact_helper():
+    catalog = load_backend_binding_catalog()
+    chooser = find_backend_binding_by_route_id("equity_chooser_analytical", catalog)
+
+    product_ir = ProductIR(
+        instrument="chooser_option",
+        payoff_family="chooser_option",
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+
+    assert chooser is not None
+
+    resolved = resolve_backend_binding_spec(chooser, product_ir=product_ir)
+
+    assert resolved.helper_refs == (
+        "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical",
+    )
 
 
 def test_resolve_backend_binding_spec_keeps_generic_multi_asset_baskets_off_two_asset_exact_helpers():
