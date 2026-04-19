@@ -1582,6 +1582,33 @@ class TestShortRateBondOptionRoutes:
         assert "short_rate_bond_option" in new
         assert "analytical_black76" not in new
 
+    def test_skip_market_data_filters_surfaces_collapsed_route_without_plan(self, registry):
+        # QUA-915 regression guard: ``short_rate_bond_option`` declares
+        # ``required_market_data: [discount_curve, black_vol_surface]``
+        # in its match clause.  Gap-audit callers (``gap_check``,
+        # ``reflect``'s discovery booster, and
+        # ``KnowledgeStore._promoted_routes_for``) call
+        # ``match_candidate_routes`` with no pricing plan — they only
+        # have a ``ProductDecomposition`` / minimal ``ProductIR``.
+        # Without ``skip_market_data_filters=True`` the AND-filter over
+        # an empty required-market-data set rejects every route that
+        # declares market-data requirements, so similar-product
+        # retrieval silently returns no promoted routes.  This test
+        # defends the gap-audit mode end-to-end.
+        no_plan_matches = match_candidate_routes(
+            registry, "rate_tree", self.IR, promoted_only=True
+        )
+        assert "short_rate_bond_option" not in {r.id for r in no_plan_matches}
+
+        gap_audit_matches = match_candidate_routes(
+            registry,
+            "rate_tree",
+            self.IR,
+            promoted_only=True,
+            skip_market_data_filters=True,
+        )
+        assert "short_rate_bond_option" in {r.id for r in gap_audit_matches}
+
 
 def test_rate_tree_routes_keep_backend_binding_metadata_only(registry):
     """QUA-915: the ZCB-option family collapsed into
