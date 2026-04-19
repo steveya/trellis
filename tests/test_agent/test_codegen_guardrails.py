@@ -54,6 +54,8 @@ from trellis.models.trees.control import (
 
 
 def _analytical_plan():
+    from trellis.agent.knowledge.schema import ProductIR
+
     pricing_plan = PricingPlan(
         method="analytical",
         method_modules=["trellis.models.black"],
@@ -61,10 +63,18 @@ def _analytical_plan():
         model_to_build="swaption",
         reasoning="test",
     )
+    product_ir = ProductIR(
+        instrument="swaption",
+        payoff_family="swaption",
+        exercise_style="european",
+        model_family="interest_rate",
+        schedule_dependence=True,
+    )
     return build_generation_plan(
         pricing_plan=pricing_plan,
         instrument_type="swaption",
         inspected_modules=("trellis.instruments.cap", "trellis.models.black"),
+        product_ir=product_ir,
     )
 
 
@@ -590,9 +600,11 @@ def test_schedule_dependent_route_card_mentions_shared_schedule_builder():
     plan = _analytical_plan()
     card = render_generation_route_card(plan)
 
-    assert "build_payment_timeline" in card
-    assert "Schedule construction:" in card
-    assert "Do not hard-code observation or payment grids inside the payoff body." in card
+    # Under the current positive-filter Black76 match clause a canonical
+    # European swaption dispatches to the swaption-specific helper, which
+    # owns its schedule construction internally rather than surfacing the
+    # generic ``build_payment_timeline`` fallback primitive.
+    assert "price_swaption_black76" in card
     assert "Instruction precedence: follow the lane obligations in this card first." in card
 
 

@@ -1221,9 +1221,21 @@ class TestAnalyticalRoutes:
         model_family="generic",
     )
     ZCB_IR = ProductIR(instrument="zcb_option", payoff_family="zcb_option", exercise_style="european")
+    # QUA-909: ``analytical_black76`` now requires ``black_vol_surface`` in the
+    # pricing-plan required market data (positive filter replacing the old
+    # ``exclude_required_market_data: [fx_rates]`` clause). Tests that exercise
+    # the Black76 match clause must pass a plan carrying that data; the bare
+    # no-plan form stays exercised below to defend the ``pricing_plan is None``
+    # branch in ``match_candidate_routes``.
+    BLACK76_PLAN = _make_plan(
+        "analytical",
+        market_data={"discount_curve", "black_vol_surface"},
+    )
 
     def test_swaption_candidate(self, registry):
-        new = _new_routes(registry, "analytical", self.SWAPTION_IR)
+        new = _new_routes(
+            registry, "analytical", self.SWAPTION_IR, pricing_plan=self.BLACK76_PLAN,
+        )
         assert new == ("analytical_black76",)
 
     def test_barrier_candidate(self, registry):
