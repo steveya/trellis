@@ -143,6 +143,15 @@ class TestContractIRTypes:
                 ),
             )
 
+    def test_composite_underlying_rejects_non_leaf_parts(self):
+        with pytest.raises(ContractIRWellFormednessError, match="UnderlyingSpecLeaf"):
+            CompositeUnderlying(
+                (
+                    EquitySpot("SPX", "gbm"),
+                    "not-a-leaf",  # type: ignore[arg-type]
+                )
+            )
+
     def test_rule_2_unknown_underlier_id_is_rejected(self):
         expiry = _singleton("2025-11-15")
         with pytest.raises(ContractIRWellFormednessError, match="underlier"):

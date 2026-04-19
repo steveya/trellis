@@ -232,6 +232,25 @@ class TestContractPatternEvalContractIR:
         assert isinstance(result.bindings["schedule"], FiniteSchedule)
         assert result.bindings["K"] == 0.05
 
+    def test_concrete_schedule_frequency_reports_contract_ir_gap_clearly(self):
+        pattern = parse_contract_pattern(
+            {
+                "exercise": {
+                    "style": "european",
+                    "schedule": {"frequency": "monthly"},
+                }
+            }
+        )
+
+        result = evaluate_pattern(pattern, _asian_contract_ir())
+
+        assert result.ok is False
+        assert result.mismatch_reason is not None
+        assert (
+            "schedule.frequency matching against a concrete value is not yet implemented"
+            in result.mismatch_reason
+        )
+
     def test_zero_arity_family_tags_match_phase_two_contract_ir_fixtures(self):
         fixtures = {
             "vanilla_payoff": _vanilla_call_contract_ir(),

@@ -327,11 +327,32 @@ def _match_contract_ir_schedule(
 ) -> MatchResult:
     if pattern.frequency is None:
         return MatchResult(ok=True, bindings=bindings)
-    return _match_field(
-        pattern.frequency,
-        observed,
-        bindings,
-        field_label=field_label,
+    if isinstance(pattern.frequency, Wildcard):
+        new_bindings = bindings
+        if pattern.frequency.name is not None:
+            new_bindings = _bind(
+                bindings,
+                pattern.frequency.name,
+                None,
+                field_label=f"{field_label}.frequency",
+            )
+            if new_bindings is None:
+                return MatchResult(
+                    ok=False,
+                    bindings=bindings,
+                    mismatch_reason=(
+                        f"binding conflict on '{pattern.frequency.name}' "
+                        f"while matching {field_label}.frequency"
+                    ),
+                )
+        return MatchResult(ok=True, bindings=new_bindings)
+    return MatchResult(
+        ok=False,
+        bindings=bindings,
+        mismatch_reason=(
+            "schedule.frequency matching against a concrete value is not "
+            "yet implemented for ContractIR schedules"
+        ),
     )
 
 

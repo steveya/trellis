@@ -149,6 +149,11 @@ class CompositeUnderlying:
             object.__setattr__(self, "parts", tuple(self.parts))
         if not self.parts:
             raise ContractIRWellFormednessError("CompositeUnderlying must be non-empty")
+        for part in self.parts:
+            if not isinstance(part, (EquitySpot, RateCurve, ForwardRate)):
+                raise ContractIRWellFormednessError(
+                    "CompositeUnderlying.parts must contain only UnderlyingSpecLeaf values"
+                )
         names = [part.name for part in self.parts]
         if len(set(names)) != len(names):
             raise ContractIRWellFormednessError(

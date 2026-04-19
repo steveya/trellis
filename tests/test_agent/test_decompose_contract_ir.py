@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from calendar import monthrange
 from datetime import date, timedelta
 
 import pytest
@@ -47,19 +48,9 @@ def _interval(start_day: str, end_day: str) -> ContinuousInterval:
 
 
 def _month_end_schedule(year: int) -> FiniteSchedule:
-    month_ends = (
-        date(year, 1, 31),
-        date(year, 2, 28),
-        date(year, 3, 31),
-        date(year, 4, 30),
-        date(year, 5, 31),
-        date(year, 6, 30),
-        date(year, 7, 31),
-        date(year, 8, 31),
-        date(year, 9, 30),
-        date(year, 10, 31),
-        date(year, 11, 30),
-        date(year, 12, 31),
+    month_ends = tuple(
+        date(year, month, monthrange(year, month)[1])
+        for month in range(1, 13)
     )
     return FiniteSchedule(month_ends)
 
@@ -79,7 +70,14 @@ def _weekly_schedule(start_day: str, end_day: str) -> FiniteSchedule:
 
 def _swap_schedule(expiry_day: str, tenor_years: int) -> FiniteSchedule:
     expiry = date(*map(int, expiry_day.split("-")))
-    dates = tuple(date(expiry.year + offset, expiry.month, expiry.day) for offset in range(1, tenor_years + 1))
+    dates = tuple(
+        date(
+            expiry.year + offset,
+            expiry.month,
+            min(expiry.day, monthrange(expiry.year + offset, expiry.month)[1]),
+        )
+        for offset in range(1, tenor_years + 1)
+    )
     return FiniteSchedule(dates)
 
 
@@ -280,3 +278,70 @@ class TestDecomposeContractIR:
             )
             is None
         )
+
+    def test_forwards_store_to_product_ir_decomposition_when_product_ir_is_absent(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        from importlib import import_module
+
+        decompose_module = import_module("trellis.agent.knowledge.decompose")
+
+        original = decompose_module.decompose_to_ir
+        seen: dict[str, object | None] = {}
+        sentinel_store = object()
+
+        def recording_decompose_to_ir(
+            description: str,
+            instrument_type: str | None = None,
+            *,
+            store: object | None = None,
+        ):
+            seen["store"] = store
+            return original(description, instrument_type=instrument_type)
+
+        monkeypatch.setattr(
+            decompose_module,
+            "decompose_to_ir",
+            recording_decompose_to_ir,
+        )
+
+        observed = decompose_to_contract_ir(
+            "European call on AAPL strike 150 expiring 2025-11-15",
+            instrument_type="european_option",
+            store=sentinel_store,  # type: ignore[arg-type]
+        )
+
+        assert observed is not None
+        assert seen["store"] is sentinel_store
+
+    def test_leap_year_monthly_asian_uses_true_month_ends(self):
+        observed = decompose_to_contract_ir(
+            "Arithmetic Asian call on SPX monthly average over 2024 strike 4500",
+            instrument_type="asian_option",
+        )
+
+        assert observed is not None
+        assert isinstance(observed.observation.schedule, FiniteSchedule)
+        assert observed.observation.schedule.dates[1] == date(2024, 2, 29)
+        assert observed.exercise.schedule == Singleton(date(2024, 12, 31))
+
+    def test_leap_day_swaption_expiry_clamps_non_leap_coupon_years(self):
+        observed = decompose_to_contract_ir(
+            "European payer swaption on 2Y USD IRS strike 5% expiring 2024-02-29",
+            instrument_type="swaption",
+        )
+
+        assert observed is not None
+        assert isinstance(observed.payoff, Scaled)
+        annuity = observed.payoff.scalar
+        assert isinstance(annuity, Annuity)
+        assert annuity.schedule == FiniteSchedule((date(2025, 2, 28), date(2026, 2, 28)))
+
+    def test_reversed_weekly_asian_window_returns_none(self):
+        observed = decompose_to_contract_ir(
+            "Arithmetic Asian put on SPX weekly average from 2025-02-01 to 2025-01-01 strike 4500",
+            instrument_type="asian_option",
+        )
+
+        assert observed is None

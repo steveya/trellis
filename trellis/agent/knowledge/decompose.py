@@ -8,6 +8,7 @@ uses LLM to decompose into known features from the taxonomy.
 from __future__ import annotations
 
 from dataclasses import replace
+from calendar import monthrange
 from datetime import date, timedelta
 import re
 from typing import Any
@@ -203,8 +204,11 @@ def decompose_to_contract_ir(
 
     Everything outside that surface returns ``None``.
     """
-    del store
-    product_ir = product_ir or decompose_to_ir(description, instrument_type=instrument_type)
+    product_ir = product_ir or decompose_to_ir(
+        description,
+        instrument_type=instrument_type,
+        store=store,
+    )
     instrument = _normalise(instrument_type or getattr(product_ir, "instrument", ""))
     lower = str(description or "").lower()
 
@@ -614,7 +618,10 @@ def _extract_swaption_underlier(description: str) -> tuple[str | None, int | Non
 
 def _annual_schedule_from_expiry(expiry: date, tenor_years: int) -> FiniteSchedule:
     return FiniteSchedule(
-        tuple(date(expiry.year + offset, expiry.month, expiry.day) for offset in range(1, tenor_years + 1))
+        tuple(
+            _clamp_to_valid_day(expiry.year + offset, expiry.month, expiry.day)
+            for offset in range(1, tenor_years + 1)
+        )
     )
 
 
@@ -651,24 +658,16 @@ def _extract_asian_schedule(description: str) -> FiniteSchedule | None:
 
 
 def _month_end_schedule(year: int) -> FiniteSchedule:
-    month_ends = (
-        date(year, 1, 31),
-        date(year, 2, 28),
-        date(year, 3, 31),
-        date(year, 4, 30),
-        date(year, 5, 31),
-        date(year, 6, 30),
-        date(year, 7, 31),
-        date(year, 8, 31),
-        date(year, 9, 30),
-        date(year, 10, 31),
-        date(year, 11, 30),
-        date(year, 12, 31),
+    month_ends = tuple(
+        date(year, month, monthrange(year, month)[1])
+        for month in range(1, 13)
     )
     return FiniteSchedule(month_ends)
 
 
-def _weekly_schedule(start: date, end: date) -> FiniteSchedule:
+def _weekly_schedule(start: date, end: date) -> FiniteSchedule | None:
+    if start > end:
+        return None
     dates = []
     current = start
     while current <= end:
@@ -677,6 +676,10 @@ def _weekly_schedule(start: date, end: date) -> FiniteSchedule:
     if dates[-1] != end:
         dates.append(end)
     return FiniteSchedule(tuple(dates))
+
+
+def _clamp_to_valid_day(year: int, month: int, day: int) -> date:
+    return date(year, month, min(day, monthrange(year, month)[1]))
 
 
 def retrieval_spec_from_ir(
