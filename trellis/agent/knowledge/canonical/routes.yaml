@@ -913,7 +913,6 @@ routes:
         notes:
           - "Use the dedicated lookback helper with `market_state` and `spec`; do not restate the running-extreme formula inside the generated payoff."
       - when:
-      - when:
           payoff_family: composite_option
           payoff_traits: [vanilla_option]
           exercise_style: [european]

@@ -139,6 +139,7 @@ def execute_validation_bundle(
     check_relations = check_relations or {}
     vol_direction = _vol_monotonicity_direction(bundle.instrument_type)
     swaption_comparison_kwargs = _swaption_comparison_kwargs_from_blueprint(semantic_blueprint)
+    explicit_replication_surface = _has_explicit_replication_vol_surface(test_payoff)
 
     for check in bundle.checks:
         if failures and check not in UNIVERSAL_CHECKS:
@@ -256,6 +257,12 @@ def execute_validation_bundle(
             if payoff_factory is None or market_state_factory is None:
                 skipped_checks.append(check)
                 continue
+            if (
+                check in {"check_vol_sensitivity", "check_vol_monotonicity"}
+                and explicit_replication_surface
+            ):
+                skipped_checks.append(check)
+                continue
             executed_checks.append(check)
             if check == "check_vol_sensitivity":
                 result = _run_check_with_diagnostics(
@@ -332,6 +339,15 @@ def _swaption_comparison_kwargs_from_blueprint(semantic_blueprint) -> dict[str, 
 def _has_explicit_swaption_comparison_regime(semantic_blueprint) -> bool:
     """Return whether the blueprint carries explicit fixed comparison parameters."""
     return bool(_swaption_comparison_kwargs_from_blueprint(semantic_blueprint))
+
+
+def _has_explicit_replication_vol_surface(test_payoff: Any | None) -> bool:
+    """Return whether the payoff is driven by an explicit contract vol grid."""
+    spec = getattr(test_payoff, "spec", None)
+    vol_grid = getattr(spec, "replication_volatilities", None)
+    if isinstance(vol_grid, str):
+        return bool(vol_grid.strip())
+    return bool(vol_grid)
 
 
 def _run_check_with_diagnostics(check_fn, check_name: str, *args, **kwargs) -> tuple[list[str], list[Any]]:
