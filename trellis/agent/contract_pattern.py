@@ -266,6 +266,12 @@ _PAYOFF_KINDS = {
     "mul",
     "scaled",
     "indicator",
+    "forward",
+    "swap_rate",
+    "annuity",
+    "linear_basket",
+    "arithmetic_mean",
+    "variance_observable",
     "constant",
     "spot",
     "strike",
@@ -681,10 +687,16 @@ _ARITY_TABLE: dict[str, int | None] = {
     "mul": 2,
     "scaled": 2,
     "indicator": 1,
+    "forward": 2,
+    "swap_rate": 2,
+    "annuity": 2,
+    "arithmetic_mean": 2,
+    "variance_observable": 2,
     # Variadic (>=1) head tags — we accept any non-zero arity.
     "max": None,
     "min": None,
     "sum": None,
+    "linear_basket": None,
     # Instrument-level payoff tags have no structural sub-args requirement.
     "swaption_payoff": 0,
     "basket_payoff": 0,
@@ -705,7 +717,7 @@ def _validate_arity(kind: str, args: tuple[Pattern, ...]) -> None:
     expected = _ARITY_TABLE.get(kind)
     if expected is None:
         # Variadic — require at least one child.
-        if kind in {"max", "min", "sum"} and len(args) < 1:
+        if kind in {"max", "min", "sum", "linear_basket"} and len(args) < 1:
             raise ContractPatternParseError(
                 f"payoff node {kind!r} requires at least one 'args' entry"
             )

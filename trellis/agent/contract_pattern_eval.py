@@ -1,19 +1,19 @@
-"""Contract pattern evaluator against ProductIR (QUA-918 / Phase 1.5.B).
+"""Contract pattern evaluator against ProductIR and ContractIR.
 
 This module makes the :class:`~trellis.agent.contract_pattern.ContractPattern`
 AST built in QUA-917 executable: given a pattern and a
-:class:`~trellis.agent.knowledge.schema.ProductIR`, :func:`evaluate_pattern`
-decides whether the pattern matches and returns any captured bindings for
-named wildcards.
+:class:`~trellis.agent.knowledge.schema.ProductIR` or
+:class:`~trellis.agent.contract_ir.ContractIR`, :func:`evaluate_pattern`
+decides whether the pattern matches and returns any captured bindings for named
+wildcards.
 
 Design notes
 ------------
 
-**Target surface.** The evaluator matches against ``ProductIR`` only.  Phase 2
-may extend to ``ContractIR`` (tracked separately); the AST is expressive
-enough that the walker does not need to change when a richer target is added,
-only the per-slot matchers (:func:`_match_exercise`, :func:`_match_underlying`,
-etc.) that bridge pattern fields onto concrete target fields.
+**Target surface.** The evaluator now matches against both ``ProductIR`` and
+``ContractIR``.  The AST stays stable across the two targets; only the
+per-slot matchers (:func:`_match_exercise`, :func:`_match_underlying`, etc.)
+that bridge pattern fields onto concrete target fields differ.
 
 **Bare strings vs :class:`AtomPattern`.** ``UnderlyingPattern.kind``,
 ``ExercisePattern.style``, and ``ObservationPattern.kind`` can carry either a
@@ -56,12 +56,13 @@ Follow-ups for downstream slices
   semantics.
 - Phase 3 ``@solves_pattern`` uses :func:`evaluate_pattern` to dispatch
   kernel implementations.
-- Phase 2 extends the walker to match against the richer ``ContractIR``;
-  the AST does not change.
+- Phase 3 ``@solves_pattern`` will read the richer ``ContractIR`` path during
+  kernel selection; the AST does not need to change again for that step.
 """
 
 from __future__ import annotations
 
+import trellis.agent.contract_ir as contract_ir_types
 from dataclasses import dataclass, field
 from typing import Any, Mapping
 
@@ -144,7 +145,10 @@ _INSTRUMENT_TAG_TO_PAYOFF_FAMILIES: Mapping[str, frozenset[str]] = {
 # ---------------------------------------------------------------------------
 
 
-def evaluate_pattern(pattern: ContractPattern, target: ProductIR) -> MatchResult:
+def evaluate_pattern(
+    pattern: ContractPattern,
+    target: ProductIR | contract_ir_types.ContractIR,
+) -> MatchResult:
     """Evaluate ``pattern`` against ``target`` and return a :class:`MatchResult`.
 
     A :class:`ContractPattern` matches a :class:`ProductIR` when every
@@ -160,11 +164,19 @@ def evaluate_pattern(pattern: ContractPattern, target: ProductIR) -> MatchResult
         raise TypeError(
             f"evaluate_pattern expects a ContractPattern, got {type(pattern).__name__}"
         )
-    if not isinstance(target, ProductIR):
-        raise TypeError(
-            f"evaluate_pattern expects a ProductIR target, got {type(target).__name__}"
-        )
+    if isinstance(target, ProductIR):
+        return _evaluate_pattern_product_ir(pattern, target)
+    if isinstance(target, contract_ir_types.ContractIR):
+        return _evaluate_pattern_contract_ir(pattern, target)
+    raise TypeError(
+        f"evaluate_pattern expects a ProductIR or ContractIR target, got {type(target).__name__}"
+    )
 
+
+def _evaluate_pattern_product_ir(
+    pattern: ContractPattern,
+    target: ProductIR,
+) -> MatchResult:
     bindings: dict[str, Any] = {}
 
     # Top-level fields compose with AND semantics: every non-None slot must
@@ -194,6 +206,583 @@ def evaluate_pattern(pattern: ContractPattern, target: ProductIR) -> MatchResult
         bindings = outcome.bindings
 
     return MatchResult(ok=True, bindings=bindings)
+
+
+def _evaluate_pattern_contract_ir(
+    pattern: ContractPattern,
+    target: contract_ir_types.ContractIR,
+) -> MatchResult:
+    bindings: dict[str, Any] = {}
+
+    if pattern.payoff is not None:
+        outcome = _match_contract_ir_payoff(
+            pattern.payoff,
+            target.payoff,
+            bindings,
+            contract=target,
+        )
+        if not outcome.ok:
+            return outcome
+        bindings = outcome.bindings
+
+    if pattern.exercise is not None:
+        outcome = _match_contract_ir_exercise(pattern.exercise, target, bindings)
+        if not outcome.ok:
+            return outcome
+        bindings = outcome.bindings
+
+    if pattern.observation is not None:
+        outcome = _match_contract_ir_observation(pattern.observation, target, bindings)
+        if not outcome.ok:
+            return outcome
+        bindings = outcome.bindings
+
+    if pattern.underlying is not None:
+        outcome = _match_contract_ir_underlying(pattern.underlying, target, bindings)
+        if not outcome.ok:
+            return outcome
+        bindings = outcome.bindings
+
+    return MatchResult(ok=True, bindings=bindings)
+
+
+# ---------------------------------------------------------------------------
+# ContractIR matchers
+# ---------------------------------------------------------------------------
+
+
+def _match_contract_ir_exercise(
+    pattern: ExercisePattern,
+    target: contract_ir_types.ContractIR,
+    bindings: dict[str, Any],
+) -> MatchResult:
+    style_outcome = _match_field(
+        pattern.style,
+        target.exercise.style,
+        bindings,
+        field_label="exercise_style",
+    )
+    if not style_outcome.ok:
+        return style_outcome
+    if pattern.schedule is None:
+        return style_outcome
+    return _match_contract_ir_schedule(
+        pattern.schedule,
+        target.exercise.schedule,
+        style_outcome.bindings,
+        field_label="exercise.schedule",
+    )
+
+
+def _match_contract_ir_observation(
+    pattern: ObservationPattern,
+    target: contract_ir_types.ContractIR,
+    bindings: dict[str, Any],
+) -> MatchResult:
+    return _match_field(
+        pattern.kind,
+        target.observation.kind,
+        bindings,
+        field_label="observation.kind",
+    )
+
+
+def _match_contract_ir_underlying(
+    pattern: UnderlyingPattern,
+    target: contract_ir_types.ContractIR,
+    bindings: dict[str, Any],
+) -> MatchResult:
+    kind_values, primary_kind = _contract_ir_underlying_kind_candidates(
+        target.underlying.spec
+    )
+    kind_outcome = _match_field_multivalued(
+        pattern.kind,
+        candidate_values=kind_values,
+        bindings=bindings,
+        field_label="underlying.kind",
+        primary_value=primary_kind,
+    )
+    if not kind_outcome.ok:
+        return kind_outcome
+    if pattern.dynamics is None:
+        return kind_outcome
+    dynamics_values, primary_dynamics = _contract_ir_underlying_dynamics_candidates(
+        target.underlying.spec
+    )
+    return _match_field_multivalued(
+        pattern.dynamics,
+        candidate_values=dynamics_values,
+        bindings=kind_outcome.bindings,
+        field_label="underlying.dynamics",
+        primary_value=primary_dynamics,
+    )
+
+
+def _match_contract_ir_schedule(
+    pattern: SchedulePattern,
+    observed: object,
+    bindings: dict[str, Any],
+    *,
+    field_label: str,
+) -> MatchResult:
+    if pattern.frequency is None:
+        return MatchResult(ok=True, bindings=bindings)
+    return _match_field(
+        pattern.frequency,
+        observed,
+        bindings,
+        field_label=field_label,
+    )
+
+
+def _match_contract_ir_payoff(
+    pattern: Any,
+    observed: object,
+    bindings: dict[str, Any],
+    *,
+    contract: contract_ir_types.ContractIR,
+) -> MatchResult:
+    if isinstance(pattern, AndPattern):
+        current = bindings
+        for child in pattern.patterns:
+            outcome = _match_contract_ir_payoff(
+                child,
+                observed,
+                current,
+                contract=contract,
+            )
+            if not outcome.ok:
+                return outcome
+            current = outcome.bindings
+        return MatchResult(ok=True, bindings=current)
+    if isinstance(pattern, OrPattern):
+        last_reason: str | None = None
+        for child in pattern.patterns:
+            outcome = _match_contract_ir_payoff(
+                child,
+                observed,
+                bindings,
+                contract=contract,
+            )
+            if outcome.ok:
+                return outcome
+            last_reason = outcome.mismatch_reason
+        return MatchResult(
+            ok=False,
+            bindings=bindings,
+            mismatch_reason=last_reason or "no OR branch matched",
+        )
+    if isinstance(pattern, NotPattern):
+        outcome = _match_contract_ir_payoff(
+            pattern.pattern,
+            observed,
+            bindings,
+            contract=contract,
+        )
+        if outcome.ok:
+            return MatchResult(
+                ok=False,
+                bindings=bindings,
+                mismatch_reason="NOT sub-pattern unexpectedly matched",
+            )
+        return MatchResult(ok=True, bindings=bindings)
+    if isinstance(pattern, Wildcard):
+        return _match_field(
+            pattern,
+            observed,
+            bindings,
+            field_label="payoff",
+        )
+    if isinstance(pattern, AtomPattern):
+        return _match_field(
+            pattern,
+            observed,
+            bindings,
+            field_label="payoff",
+        )
+    if isinstance(pattern, SpotPattern):
+        if not isinstance(observed, contract_ir_types.Spot):
+            return MatchResult(
+                ok=False,
+                bindings=bindings,
+                mismatch_reason=(
+                    f"expected Spot leaf, got {type(observed).__name__}"
+                ),
+            )
+        return _match_field(
+            pattern.underlier,
+            observed.underlier_id,
+            bindings,
+            field_label="spot.underlier",
+        )
+    if isinstance(pattern, StrikePattern):
+        if not isinstance(observed, contract_ir_types.Strike):
+            return MatchResult(
+                ok=False,
+                bindings=bindings,
+                mismatch_reason=(
+                    f"expected Strike leaf, got {type(observed).__name__}"
+                ),
+            )
+        return _match_field(
+            pattern.value,
+            observed.value,
+            bindings,
+            field_label="strike.value",
+        )
+    if isinstance(pattern, ConstantPattern):
+        if not isinstance(observed, contract_ir_types.Constant):
+            return MatchResult(
+                ok=False,
+                bindings=bindings,
+                mismatch_reason=(
+                    f"expected Constant leaf, got {type(observed).__name__}"
+                ),
+            )
+        return _match_field(
+            pattern.value,
+            observed.value,
+            bindings,
+            field_label="constant.value",
+        )
+    if isinstance(pattern, PayoffPattern):
+        return _match_contract_ir_payoff_head(pattern, observed, bindings, contract=contract)
+    return MatchResult(
+        ok=False,
+        bindings=bindings,
+        mismatch_reason=f"unsupported payoff pattern type {type(pattern).__name__}",
+    )
+
+
+def _match_contract_ir_payoff_head(
+    pattern: PayoffPattern,
+    observed: object,
+    bindings: dict[str, Any],
+    *,
+    contract: contract_ir_types.ContractIR,
+) -> MatchResult:
+    if pattern.kind in _INSTRUMENT_TAG_TO_PAYOFF_FAMILIES and not pattern.args:
+        return _match_contract_ir_instrument_tag(pattern.kind, contract, bindings)
+
+    if pattern.kind == "max":
+        return _match_contract_ir_variadic(pattern.args, observed, contract_ir_types.Max, bindings, contract=contract)
+    if pattern.kind == "min":
+        return _match_contract_ir_variadic(pattern.args, observed, contract_ir_types.Min, bindings, contract=contract)
+    if pattern.kind == "sum":
+        return _match_contract_ir_variadic(pattern.args, observed, contract_ir_types.Add, bindings, contract=contract)
+    if pattern.kind == "mul":
+        return _match_contract_ir_variadic(pattern.args, observed, contract_ir_types.Mul, bindings, contract=contract)
+    if pattern.kind == "sub":
+        if not isinstance(observed, contract_ir_types.Sub):
+            return _contract_ir_kind_mismatch("sub", observed, bindings)
+        return _match_contract_ir_children(
+            pattern.args,
+            (observed.lhs, observed.rhs),
+            bindings,
+            contract=contract,
+            kind_label="sub",
+        )
+    if pattern.kind == "scaled":
+        if not isinstance(observed, contract_ir_types.Scaled):
+            return _contract_ir_kind_mismatch("scaled", observed, bindings)
+        return _match_contract_ir_children(
+            pattern.args,
+            (observed.scalar, observed.body),
+            bindings,
+            contract=contract,
+            kind_label="scaled",
+        )
+    if pattern.kind == "indicator":
+        if not isinstance(observed, contract_ir_types.Indicator):
+            return _contract_ir_kind_mismatch("indicator", observed, bindings)
+        if len(pattern.args) != 1:
+            return MatchResult(
+                ok=False,
+                bindings=bindings,
+                mismatch_reason="indicator expects exactly one child pattern",
+            )
+        return _match_field(
+            pattern.args[0],
+            observed.predicate,
+            bindings,
+            field_label="indicator.predicate",
+        )
+    if pattern.kind == "forward":
+        if not isinstance(observed, contract_ir_types.Forward):
+            return _contract_ir_kind_mismatch("forward", observed, bindings)
+        return _match_contract_ir_value_args(
+            pattern.args,
+            (observed.underlier_id, observed.schedule),
+            bindings,
+            labels=("forward.underlier", "forward.schedule"),
+        )
+    if pattern.kind == "swap_rate":
+        if not isinstance(observed, contract_ir_types.SwapRate):
+            return _contract_ir_kind_mismatch("swap_rate", observed, bindings)
+        return _match_contract_ir_value_args(
+            pattern.args,
+            (observed.underlier_id, observed.schedule),
+            bindings,
+            labels=("swap_rate.underlier", "swap_rate.schedule"),
+        )
+    if pattern.kind == "annuity":
+        if not isinstance(observed, contract_ir_types.Annuity):
+            return _contract_ir_kind_mismatch("annuity", observed, bindings)
+        return _match_contract_ir_value_args(
+            pattern.args,
+            (observed.underlier_id, observed.schedule),
+            bindings,
+            labels=("annuity.underlier", "annuity.schedule"),
+        )
+    if pattern.kind == "arithmetic_mean":
+        if not isinstance(observed, contract_ir_types.ArithmeticMean):
+            return _contract_ir_kind_mismatch("arithmetic_mean", observed, bindings)
+        expr_outcome = _match_contract_ir_payoff(
+            pattern.args[0],
+            observed.expr,
+            bindings,
+            contract=contract,
+        )
+        if not expr_outcome.ok:
+            return expr_outcome
+        return _match_field(
+            pattern.args[1],
+            observed.schedule,
+            expr_outcome.bindings,
+            field_label="arithmetic_mean.schedule",
+        )
+    if pattern.kind == "variance_observable":
+        if not isinstance(observed, contract_ir_types.VarianceObservable):
+            return _contract_ir_kind_mismatch("variance_observable", observed, bindings)
+        return _match_contract_ir_value_args(
+            pattern.args,
+            (observed.underlier_id, observed.interval),
+            bindings,
+            labels=("variance_observable.underlier", "variance_observable.interval"),
+        )
+    if pattern.kind == "linear_basket":
+        if not isinstance(observed, contract_ir_types.LinearBasket):
+            return _contract_ir_kind_mismatch("linear_basket", observed, bindings)
+        converted_terms = tuple(
+            contract_ir_types.Scaled(contract_ir_types.Constant(weight), child)
+            for weight, child in observed.terms
+        )
+        return _match_contract_ir_children(
+            pattern.args,
+            converted_terms,
+            bindings,
+            contract=contract,
+            kind_label="linear_basket",
+        )
+    return MatchResult(
+        ok=False,
+        bindings=bindings,
+        mismatch_reason=f"unsupported ContractIR payoff head {pattern.kind!r}",
+    )
+
+
+def _match_contract_ir_variadic(
+    pattern_args: tuple[Any, ...],
+    observed: object,
+    expected_type,
+    bindings: dict[str, Any],
+    *,
+    contract: contract_ir_types.ContractIR,
+) -> MatchResult:
+    if not isinstance(observed, expected_type):
+        return _contract_ir_kind_mismatch(expected_type.__name__.lower(), observed, bindings)
+    return _match_contract_ir_children(
+        pattern_args,
+        observed.args,
+        bindings,
+        contract=contract,
+        kind_label=expected_type.__name__.lower(),
+    )
+
+
+def _match_contract_ir_children(
+    pattern_args: tuple[Any, ...],
+    observed_args: tuple[Any, ...],
+    bindings: dict[str, Any],
+    *,
+    contract: contract_ir_types.ContractIR,
+    kind_label: str,
+) -> MatchResult:
+    if len(pattern_args) != len(observed_args):
+        return MatchResult(
+            ok=False,
+            bindings=bindings,
+            mismatch_reason=(
+                f"{kind_label} expected {len(pattern_args)} child(ren), got {len(observed_args)}"
+            ),
+        )
+    current = bindings
+    for pattern_child, observed_child in zip(pattern_args, observed_args):
+        outcome = _match_contract_ir_payoff(
+            pattern_child,
+            observed_child,
+            current,
+            contract=contract,
+        )
+        if not outcome.ok:
+            return outcome
+        current = outcome.bindings
+    return MatchResult(ok=True, bindings=current)
+
+
+def _match_contract_ir_value_args(
+    pattern_args: tuple[Any, ...],
+    observed_values: tuple[Any, ...],
+    bindings: dict[str, Any],
+    *,
+    labels: tuple[str, ...],
+) -> MatchResult:
+    if len(pattern_args) != len(observed_values):
+        return MatchResult(
+            ok=False,
+            bindings=bindings,
+            mismatch_reason=(
+                f"expected {len(pattern_args)} value arg(s), got {len(observed_values)}"
+            ),
+        )
+    current = bindings
+    for pattern_child, observed_child, label in zip(pattern_args, observed_values, labels):
+        outcome = _match_field(
+            pattern_child,
+            observed_child,
+            current,
+            field_label=label,
+        )
+        if not outcome.ok:
+            return outcome
+        current = outcome.bindings
+    return MatchResult(ok=True, bindings=current)
+
+
+def _contract_ir_kind_mismatch(
+    expected_kind: str,
+    observed: object,
+    bindings: dict[str, Any],
+) -> MatchResult:
+    return MatchResult(
+        ok=False,
+        bindings=bindings,
+        mismatch_reason=(
+            f"expected ContractIR node {expected_kind!r}, got {type(observed).__name__}"
+        ),
+    )
+
+
+def _match_contract_ir_instrument_tag(
+    tag: str,
+    contract: contract_ir_types.ContractIR,
+    bindings: dict[str, Any],
+) -> MatchResult:
+    observed_tags = _contract_ir_family_tags(contract)
+    if tag in observed_tags:
+        return MatchResult(ok=True, bindings=bindings)
+    return MatchResult(
+        ok=False,
+        bindings=bindings,
+        mismatch_reason=(
+            f"payoff tag {tag!r} did not match ContractIR family tags {sorted(observed_tags)}"
+        ),
+    )
+
+
+def _contract_ir_family_tags(contract: contract_ir_types.ContractIR) -> set[str]:
+    tags: set[str] = set()
+    ramp = _extract_ramp_core(contract.payoff)
+    if ramp is not None:
+        _, lhs, rhs = ramp
+        if isinstance(lhs, contract_ir_types.LinearBasket) or isinstance(rhs, contract_ir_types.LinearBasket):
+            tags.add("basket_payoff")
+        elif (
+            isinstance(contract.payoff, contract_ir_types.Scaled)
+            and isinstance(contract.payoff.scalar, contract_ir_types.Annuity)
+            and (isinstance(lhs, contract_ir_types.SwapRate) or isinstance(rhs, contract_ir_types.SwapRate))
+        ):
+            tags.add("swaption_payoff")
+        elif isinstance(lhs, contract_ir_types.ArithmeticMean) or isinstance(rhs, contract_ir_types.ArithmeticMean):
+            tags.add("asian_payoff")
+        elif isinstance(lhs, contract_ir_types.Spot) or isinstance(rhs, contract_ir_types.Spot):
+            tags.add("vanilla_payoff")
+    if (
+        isinstance(contract.payoff, contract_ir_types.Scaled)
+        and isinstance(contract.payoff.body, contract_ir_types.Sub)
+        and isinstance(contract.payoff.body.lhs, contract_ir_types.VarianceObservable)
+        and isinstance(contract.payoff.body.rhs, contract_ir_types.Strike)
+    ):
+        tags.add("variance_payoff")
+    if _is_digital_contract_ir(contract.payoff):
+        tags.add("digital_payoff")
+    return tags
+
+
+def _extract_ramp_core(
+    payoff: object,
+) -> tuple[object | None, object, object] | None:
+    scale = None
+    body = payoff
+    if isinstance(payoff, contract_ir_types.Scaled):
+        scale = payoff.scalar
+        body = payoff.body
+    if not isinstance(body, contract_ir_types.Max) or len(body.args) != 2:
+        return None
+    if not isinstance(body.args[0], contract_ir_types.Sub):
+        return None
+    if not isinstance(body.args[1], contract_ir_types.Constant) or body.args[1].value != 0.0:
+        return None
+    return scale, body.args[0].lhs, body.args[0].rhs
+
+
+def _is_digital_contract_ir(payoff: object) -> bool:
+    if isinstance(payoff, contract_ir_types.Indicator):
+        return True
+    if isinstance(payoff, contract_ir_types.Mul):
+        return any(
+            isinstance(child, contract_ir_types.Indicator) for child in payoff.args
+        )
+    return False
+
+
+def _contract_ir_underlying_kind_candidates(
+    spec: object,
+) -> tuple[tuple[str, ...], str]:
+    if isinstance(spec, contract_ir_types.CompositeUnderlying):
+        all_equity = all(isinstance(part, contract_ir_types.EquitySpot) for part in spec.parts)
+        candidates = ["linear_basket", "composite_underlying"]
+        primary = "linear_basket"
+        if all_equity:
+            candidates.append("equity_diffusion")
+        return tuple(dict.fromkeys(candidates)), ("equity_diffusion" if all_equity else primary)
+    if isinstance(spec, contract_ir_types.EquitySpot):
+        return ("equity_diffusion", "equity_spot"), "equity_diffusion"
+    if isinstance(spec, contract_ir_types.ForwardRate):
+        return ("interest_rate", "forward_rate", "rate_style"), "interest_rate"
+    if isinstance(spec, contract_ir_types.RateCurve):
+        return ("interest_rate", "rate_curve"), "interest_rate"
+    return ("generic",), "generic"
+
+
+def _contract_ir_underlying_dynamics_candidates(
+    spec: object,
+) -> tuple[tuple[str, ...], str]:
+    if isinstance(spec, contract_ir_types.CompositeUnderlying):
+        dynamics = [part.dynamics for part in spec.parts]
+        primary = dynamics[0] if dynamics else "generic"
+        if all(isinstance(part, contract_ir_types.EquitySpot) for part in spec.parts):
+            dynamics.append("equity_diffusion")
+        return tuple(dict.fromkeys(dynamics)), primary
+    if isinstance(spec, (contract_ir_types.EquitySpot, contract_ir_types.ForwardRate, contract_ir_types.RateCurve)):
+        candidates = [spec.dynamics]
+        if isinstance(spec, contract_ir_types.EquitySpot):
+            candidates.append("equity_diffusion")
+        if isinstance(spec, (contract_ir_types.ForwardRate, contract_ir_types.RateCurve)):
+            candidates.append("interest_rate")
+        return tuple(dict.fromkeys(candidates)), spec.dynamics
+    return ("generic",), "generic"
+
 
 
 # ---------------------------------------------------------------------------
