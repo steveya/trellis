@@ -8,10 +8,40 @@ uses LLM to decompose into known features from the taxonomy.
 from __future__ import annotations
 
 from dataclasses import replace
+from calendar import monthrange
+from datetime import date, timedelta
 import re
 from typing import Any
 from typing import TYPE_CHECKING
 
+from trellis.agent.contract_ir import (
+    Annuity,
+    ArithmeticMean,
+    CompositeUnderlying,
+    Constant,
+    ContractIR,
+    ContinuousInterval,
+    EquitySpot,
+    Exercise,
+    FiniteSchedule,
+    ForwardRate,
+    Gt,
+    Indicator,
+    LinearBasket,
+    Lt,
+    Max,
+    Mul,
+    Observation,
+    Scaled,
+    Singleton,
+    Spot,
+    Strike,
+    Sub,
+    SwapRate,
+    Underlying,
+    VarianceObservable,
+    canonicalize,
+)
 from trellis.agent.knowledge.methods import normalize_method
 from trellis.agent.knowledge.schema import ProductDecomposition, ProductIR, RetrievalSpec
 from trellis.agent.semantic_tokens import (
@@ -156,6 +186,72 @@ def decompose_to_ir(
     return _infer_composite_ir(description, inferred_instrument, store)
 
 
+def decompose_to_contract_ir(
+    description: str,
+    instrument_type: str | None = None,
+    *,
+    product_ir: ProductIR | None = None,
+    store: KnowledgeStore | None = None,
+) -> ContractIR | None:
+    """Build a bounded Contract IR for the four Phase 2 payoff families.
+
+    This parser is deliberately fixture-driven and route-free. It handles:
+
+    - European terminal vanilla/basket/swaption ramps
+    - variance-settled contracts
+    - cash-or-nothing / asset-or-nothing digitals
+    - arithmetic Asians with bounded monthly/weekly schedule phrases
+
+    Everything outside that surface returns ``None``.
+    """
+    product_ir = product_ir or decompose_to_ir(
+        description,
+        instrument_type=instrument_type,
+        store=store,
+    )
+    instrument = _normalise(instrument_type or getattr(product_ir, "instrument", ""))
+    lower = str(description or "").lower()
+
+    if instrument in {
+        "american_option",
+        "american_put",
+        "bermudan_swaption",
+        "barrier_option",
+        "lookback_option",
+        "chooser_option",
+        "callable_bond",
+        "puttable_bond",
+        "cds",
+        "credit_default_swap",
+        "cap",
+        "floor",
+        "range_accrual",
+        "compound_option",
+        "cliquet_option",
+    }:
+        return None
+    if any(marker in lower for marker in ("american ", "bermudan ", "barrier ", "lookback", "chooser", "callable bond", " cds ", " caplet", " floorlet")):
+        return None
+
+    builders = (
+        _build_swaption_contract_ir,
+        _build_basket_contract_ir,
+        _build_variance_contract_ir,
+        _build_digital_contract_ir,
+        _build_asian_contract_ir,
+        _build_vanilla_contract_ir,
+    )
+    for builder in builders:
+        contract_ir = builder(
+            description,
+            instrument=instrument,
+            product_ir=product_ir,
+        )
+        if contract_ir is not None:
+            return contract_ir
+    return None
+
+
 def build_product_ir(
     *,
     description: str,
@@ -266,6 +362,324 @@ def build_product_ir(
         supported=len(resolved_unresolved_primitives) == 0 if supported is None else supported,
         event_machine=event_machine,
     ), description))
+
+
+def _build_vanilla_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> ContractIR | None:
+    lower = description.lower()
+    if instrument not in {"", "european_option", "vanilla_option"} and getattr(product_ir, "payoff_family", "") != "vanilla_option":
+        return None
+    if any(marker in lower for marker in ("basket", "digital", "asian", "variance", "swaption")):
+        return None
+    option_side = _extract_option_side(description)
+    underlier = _extract_single_underlier(description)
+    strike = _extract_numeric_after(description, labels=("strike",))
+    expiry = _extract_expiry_date(description)
+    if option_side not in {"call", "put"} or underlier is None or strike is None or expiry is None:
+        return None
+    core = Sub(Spot(underlier), Strike(strike)) if option_side == "call" else Sub(Strike(strike), Spot(underlier))
+    return ContractIR(
+        payoff=canonicalize(Max((core, Constant(0.0)))),
+        exercise=Exercise(style="european", schedule=Singleton(expiry)),
+        observation=Observation(kind="terminal", schedule=Singleton(expiry)),
+        underlying=Underlying(spec=EquitySpot(underlier, "gbm")),
+    )
+
+
+def _build_swaption_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> ContractIR | None:
+    if instrument not in {"", "swaption"} and getattr(product_ir, "payoff_family", "") != "swaption":
+        return None
+    lower = description.lower()
+    if "swaption" not in lower or "bermudan" in lower:
+        return None
+    expiry = _extract_expiry_date(description)
+    strike = _extract_numeric_after(description, labels=("strike",))
+    underlier_id, tenor_years = _extract_swaption_underlier(description)
+    direction = _extract_swaption_direction(description)
+    if expiry is None or strike is None or underlier_id is None or tenor_years is None or direction is None:
+        return None
+    schedule = _annual_schedule_from_expiry(expiry, tenor_years)
+    rate_expr = SwapRate(underlier_id, schedule)
+    ramp = Sub(rate_expr, Strike(strike)) if direction == "payer" else Sub(Strike(strike), rate_expr)
+    return ContractIR(
+        payoff=canonicalize(
+            Scaled(
+                Annuity(underlier_id, schedule),
+                Max((ramp, Constant(0.0))),
+            )
+        ),
+        exercise=Exercise(style="european", schedule=Singleton(expiry)),
+        observation=Observation(kind="terminal", schedule=Singleton(expiry)),
+        underlying=Underlying(spec=ForwardRate(underlier_id, "lognormal_forward")),
+    )
+
+
+def _build_basket_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> ContractIR | None:
+    if instrument not in {"", "basket_option"} and getattr(product_ir, "payoff_family", "") != "basket_option":
+        return None
+    lower = description.lower()
+    if "basket" not in lower:
+        return None
+    option_side = _extract_option_side(description)
+    strike = _extract_numeric_after(description, labels=("strike",))
+    expiry = _extract_expiry_date(description)
+    basket_terms = _extract_basket_terms(description)
+    if option_side not in {"call", "put"} or strike is None or expiry is None or basket_terms is None:
+        return None
+    basket_expr = LinearBasket(tuple((weight, Spot(name)) for name, weight in basket_terms))
+    core = Sub(basket_expr, Strike(strike)) if option_side == "call" else Sub(Strike(strike), basket_expr)
+    return ContractIR(
+        payoff=canonicalize(Max((core, Constant(0.0)))),
+        exercise=Exercise(style="european", schedule=Singleton(expiry)),
+        observation=Observation(kind="terminal", schedule=Singleton(expiry)),
+        underlying=Underlying(
+            spec=CompositeUnderlying(tuple(EquitySpot(name, "gbm") for name, _ in basket_terms))
+        ),
+    )
+
+
+def _build_variance_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> ContractIR | None:
+    if instrument not in {"", "variance_swap"} and getattr(product_ir, "instrument", "") != "variance_swap":
+        return None
+    lower = description.lower()
+    if "variance swap" not in lower:
+        return None
+    underlier = _extract_single_underlier(description)
+    strike = _extract_numeric_after(description, labels=("variance strike", "strike variance"))
+    notional = _extract_numeric_after(description, labels=("notional",))
+    expiry = _extract_expiry_date(description)
+    if underlier is None or strike is None or notional is None or expiry is None:
+        return None
+    interval = ContinuousInterval(date(expiry.year, 1, 1), expiry)
+    return ContractIR(
+        payoff=canonicalize(
+            Scaled(
+                Constant(notional),
+                Sub(VarianceObservable(underlier, interval), Strike(strike)),
+            )
+        ),
+        exercise=Exercise(style="european", schedule=Singleton(expiry)),
+        observation=Observation(kind="terminal", schedule=Singleton(expiry)),
+        underlying=Underlying(spec=EquitySpot(underlier, "gbm")),
+    )
+
+
+def _build_digital_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> ContractIR | None:
+    if instrument not in {"", "digital_option"} and getattr(product_ir, "instrument", "") != "digital_option":
+        return None
+    lower = description.lower()
+    if "digital" not in lower:
+        return None
+    underlier = _extract_single_underlier(description)
+    strike = _extract_numeric_after(description, labels=("strike",))
+    if strike is None:
+        strike = _extract_digital_threshold(description)
+    expiry = _extract_expiry_date(description)
+    option_side = _extract_option_side(description)
+    if underlier is None or strike is None or expiry is None or option_side not in {"call", "put"}:
+        return None
+    predicate = Gt(Spot(underlier), Strike(strike)) if option_side == "call" else Lt(Spot(underlier), Strike(strike))
+    if "asset-or-nothing" in lower or "asset or nothing" in lower:
+        payout_expr = Spot(underlier)
+    else:
+        payout = _extract_numeric_after(description, labels=("paying",)) or 1.0
+        payout_expr = Constant(payout)
+    payoff = canonicalize(Mul((payout_expr, Indicator(predicate))))
+    return ContractIR(
+        payoff=payoff,
+        exercise=Exercise(style="european", schedule=Singleton(expiry)),
+        observation=Observation(kind="terminal", schedule=Singleton(expiry)),
+        underlying=Underlying(spec=EquitySpot(underlier, "gbm")),
+    )
+
+
+def _build_asian_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> ContractIR | None:
+    if instrument not in {"", "asian_option"} and getattr(product_ir, "payoff_family", "") != "asian_option":
+        return None
+    lower = description.lower()
+    if "asian" not in lower or "arithmetic" not in lower:
+        return None
+    underlier = _extract_single_underlier(description)
+    strike = _extract_numeric_after(description, labels=("strike",))
+    option_side = _extract_option_side(description)
+    averaging_schedule = _extract_asian_schedule(description)
+    if underlier is None or strike is None or option_side not in {"call", "put"} or averaging_schedule is None:
+        return None
+    mean_expr = ArithmeticMean(Spot(underlier), averaging_schedule)
+    core = Sub(mean_expr, Strike(strike)) if option_side == "call" else Sub(Strike(strike), mean_expr)
+    expiry = averaging_schedule.dates[-1]
+    return ContractIR(
+        payoff=canonicalize(Max((core, Constant(0.0)))),
+        exercise=Exercise(style="european", schedule=Singleton(expiry)),
+        observation=Observation(kind="schedule", schedule=averaging_schedule),
+        underlying=Underlying(spec=EquitySpot(underlier, "gbm")),
+    )
+
+
+def _extract_expiry_date(description: str) -> date | None:
+    match = re.search(
+        r"\b(?:expiring|expiry|at expiry|maturity)\b[^0-9]*(\d{4}-\d{2}-\d{2})",
+        description,
+        flags=re.IGNORECASE,
+    )
+    if match is not None:
+        return date.fromisoformat(match.group(1))
+    iso_dates = re.findall(r"\b\d{4}-\d{2}-\d{2}\b", description)
+    return date.fromisoformat(iso_dates[-1]) if iso_dates else None
+
+
+def _extract_numeric_after(description: str, *, labels: tuple[str, ...]) -> float | None:
+    for label in labels:
+        pattern = rf"\b{re.escape(label)}\b[^0-9-]*\$?(-?\d+(?:\.\d+)?%?)"
+        match = re.search(pattern, description, flags=re.IGNORECASE)
+        if match is None:
+            continue
+        token = match.group(1).strip()
+        if token.endswith("%"):
+            return float(token[:-1]) / 100.0
+        return float(token)
+    return None
+
+
+def _extract_single_underlier(description: str) -> str | None:
+    match = re.search(r"\bon\s+([A-Z][A-Z0-9_.-]*)\b", description)
+    if match is not None:
+        return match.group(1)
+    tokens = re.findall(r"\b[A-Z][A-Z0-9_.-]{1,}\b", description)
+    return tokens[0] if tokens else None
+
+
+def _extract_digital_threshold(description: str) -> float | None:
+    match = re.search(r"\bspot\s*[<>]\s*(-?\d+(?:\.\d+)?)", description, flags=re.IGNORECASE)
+    if match is None:
+        return None
+    return float(match.group(1))
+
+
+def _extract_option_side(description: str) -> str | None:
+    lower = description.lower()
+    if re.search(r"\bcall\b", lower):
+        return "call"
+    if re.search(r"\bput\b", lower):
+        return "put"
+    return None
+
+
+def _extract_swaption_direction(description: str) -> str | None:
+    lower = description.lower()
+    if "payer swaption" in lower:
+        return "payer"
+    if "receiver swaption" in lower:
+        return "receiver"
+    return None
+
+
+def _extract_swaption_underlier(description: str) -> tuple[str | None, int | None]:
+    explicit = re.search(r"\b([A-Z]{3}-IRS-\d+Y)\b", description)
+    if explicit is not None:
+        tenor_match = re.search(r"-(\d+)Y$", explicit.group(1))
+        return explicit.group(1), int(tenor_match.group(1)) if tenor_match is not None else None
+    match = re.search(r"\b(\d+)Y\s+([A-Z]{3})\s+IRS\b", description, flags=re.IGNORECASE)
+    if match is None:
+        return None, None
+    tenor = int(match.group(1))
+    currency = match.group(2).upper()
+    return f"{currency}-IRS-{tenor}Y", tenor
+
+
+def _annual_schedule_from_expiry(expiry: date, tenor_years: int) -> FiniteSchedule:
+    return FiniteSchedule(
+        tuple(
+            _clamp_to_valid_day(expiry.year + offset, expiry.month, expiry.day)
+            for offset in range(1, tenor_years + 1)
+        )
+    )
+
+
+def _extract_basket_terms(description: str) -> tuple[tuple[str, float], ...] | None:
+    basket_match = re.search(r"\{([^}]+)\}", description)
+    if basket_match is None:
+        return None
+    inside = basket_match.group(1)
+    weighted = re.findall(r"([A-Z][A-Z0-9_.-]*)\s+(-?\d+(?:\.\d+)?)\s*%", inside)
+    if weighted:
+        return tuple((name, float(weight) / 100.0) for name, weight in weighted)
+    names = re.findall(r"[A-Z][A-Z0-9_.-]*", inside)
+    if len(names) < 2:
+        return None
+    equal_weight = 1.0 / len(names)
+    return tuple((name, equal_weight) for name in names)
+
+
+def _extract_asian_schedule(description: str) -> FiniteSchedule | None:
+    yearly = re.search(r"\bmonthly average over (\d{4})\b", description, flags=re.IGNORECASE)
+    if yearly is not None:
+        return _month_end_schedule(int(yearly.group(1)))
+    weekly = re.search(
+        r"\bweekly average from (\d{4}-\d{2}-\d{2}) to (\d{4}-\d{2}-\d{2})\b",
+        description,
+        flags=re.IGNORECASE,
+    )
+    if weekly is not None:
+        return _weekly_schedule(
+            date.fromisoformat(weekly.group(1)),
+            date.fromisoformat(weekly.group(2)),
+        )
+    return None
+
+
+def _month_end_schedule(year: int) -> FiniteSchedule:
+    month_ends = tuple(
+        date(year, month, monthrange(year, month)[1])
+        for month in range(1, 13)
+    )
+    return FiniteSchedule(month_ends)
+
+
+def _weekly_schedule(start: date, end: date) -> FiniteSchedule | None:
+    if start > end:
+        return None
+    dates = []
+    current = start
+    while current <= end:
+        dates.append(current)
+        current = current + timedelta(days=7)
+    if dates[-1] != end:
+        dates.append(end)
+    return FiniteSchedule(tuple(dates))
+
+
+def _clamp_to_valid_day(year: int, month: int, day: int) -> date:
+    return date(year, month, min(day, monthrange(year, month)[1]))
 
 
 def retrieval_spec_from_ir(

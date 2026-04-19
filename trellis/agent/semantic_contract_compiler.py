@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+import logging
 from types import MappingProxyType
 from typing import Mapping
 
 from trellis.agent.codegen_guardrails import rank_primitive_routes
-from trellis.agent.knowledge.decompose import build_product_ir
+from trellis.agent.contract_ir import ContractIR
+from trellis.agent.knowledge.decompose import build_product_ir, decompose_to_contract_ir
 from trellis.agent.knowledge.methods import normalize_method
 from trellis.agent.market_binding import (
     build_market_binding_spec,
@@ -24,6 +26,8 @@ from trellis.agent.sensitivity_support import (
     support_for_method,
 )
 from trellis.agent.valuation_context import normalize_valuation_context
+
+_LOG = logging.getLogger(__name__)
 
 
 def _freeze_mapping(mapping: Mapping[str, object] | None) -> Mapping[str, object]:
@@ -73,6 +77,7 @@ class SemanticImplementationBlueprint:
     calibration_step: object | None = None  # CalibrationContract when present
     dsl_lowering: object | None = None
     lane_plan: object | None = None
+    contract_ir: ContractIR | None = None
 
     def __post_init__(self):
         """Freeze mapping metadata for stable traces and tests."""
@@ -140,6 +145,22 @@ def compile_semantic_contract(
         event_machine=getattr(contract.product, "event_machine", None),
     )
     product_ir = _augment_product_ir_with_contract_route_hints(product_ir, contract)
+    contract_ir = None
+    try:
+        contract_ir = decompose_to_contract_ir(
+            contract.description or contract.semantic_id,
+            instrument_type=(
+                getattr(getattr(contract, "product", None), "instrument_class", None)
+                or getattr(product_ir, "instrument", None)
+            ),
+            product_ir=product_ir,
+        )
+    except Exception:
+        _LOG.warning(
+            "Contract IR decomposition failed for semantic contract %s",
+            getattr(contract, "semantic_id", "<unknown>"),
+            exc_info=True,
+        )
     pricing_plan = select_pricing_method_for_product_ir(
         product_ir,
         preferred_method=preferred_method,
@@ -244,6 +265,7 @@ def compile_semantic_contract(
         calibration_step=getattr(contract, "calibration", None),
         dsl_lowering=dsl_lowering,
         lane_plan=lane_plan,
+        contract_ir=contract_ir,
     )
 
 

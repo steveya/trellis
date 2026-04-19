@@ -565,6 +565,7 @@ def _semantic_blueprint_summary(semantic_blueprint) -> dict[str, object]:
     )
     return {
         "preferred_method": semantic_blueprint.preferred_method,
+        "contract_ir": _yaml_safe_value(getattr(semantic_blueprint, "contract_ir", None)),
         "primitive_routes": list(getattr(semantic_blueprint, "primitive_routes", ()) or ()),
         "route_modules": list(getattr(semantic_blueprint, "route_modules", ()) or ()),
         "dsl_route": getattr(lowering, "route_id", None),

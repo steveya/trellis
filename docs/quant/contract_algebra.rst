@@ -20,6 +20,9 @@ The canonical semantic object is still ``SemanticContract`` in
 ``trellis.agent.semantic_contracts``. It now carries typed sub-objects rather
 than relying only on flat semantic strings.
 
+For the additive structural payoff tree that now accompanies the semantic
+surface, see :doc:`contract_ir`.
+
 Semantic Contract
 -----------------
 
@@ -91,6 +94,55 @@ specialization authority when a contract needs to be rebuilt for a different
 preferred method. Request compilation, semantic compilation, and runtime
 metadata all consume the same family/method surface instead of each carrying
 its own family-local branching.
+
+Observable Naming Discipline
+----------------------------
+
+Observable and quote names are part of the semantic contract boundary, not
+just local implementation detail. Future contract and IR node names should
+follow these rules so semantics stay stable across compiler and lowering work.
+
+Use ``Observable`` for a node that denotes an economic or contractual quantity
+the payoff depends on.
+
+Use ``Quote`` for a narrower case: an observable that is read from a quoted
+market object together with an explicit quote convention and coordinate system.
+
+So the intended relationship is:
+
+- quote-specific observable ``⊂`` observable
+
+Practical naming rules:
+
+- name contract nodes after contractual meaning or observed market quantity
+- do not name contract nodes after pricing methods, numerical schemes, or
+  lowering strategies
+- if the node means "read this coordinate from a quote map", include
+  ``Quote`` in the name
+- if the node means "the contract-defined quantity associated with this
+  schedule / interval / underlier", use the semantic quantity name instead
+
+Examples:
+
+- prefer ``VarianceObservable`` over ``VarianceReplication``
+- a future terminal variance-family node may still lower through static option
+  replication, but replication is a pricing method, not the contract meaning
+- a future market-map node such as ``SurfaceQuote`` or ``CurveQuote`` should
+  carry explicit quote convention and coordinates because it denotes a quoted
+  market point rather than a generic economic quantity
+- ``SwapRate(schedule)`` and ``Annuity(schedule)`` are semantic observables
+  tied to a contract-defined schedule, not quote-map nodes
+
+Rule of thumb:
+
+- if the quantity is defined by the contract or by a financial identity,
+  prefer ``Observable``
+- if the quantity is defined by a named market quote map plus quoting
+  convention, prefer ``Quote``
+
+This naming discipline keeps the semantic layer honest: the contract says what
+quantity matters, and lowerings decide how that quantity is priced, simulated,
+approximated, or extracted from market data.
 
 Valuation Context
 -----------------
