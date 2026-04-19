@@ -165,7 +165,7 @@ _QUANTO_OPTION_TEMPLATE = FamilyContract(
             "trellis.models.analytical.quanto",
             "trellis.models.processes.correlated_gbm",
         ),
-        primitive_families=("quanto_adjustment_analytical", "correlated_gbm_monte_carlo"),
+        primitive_families=("equity_quanto",),
         adapter_obligations=(
             "bind_domestic_and_foreign_curves",
             "bind_underlier_and_fx_vols",

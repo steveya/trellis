@@ -551,7 +551,7 @@ def test_platform_trace_keeps_route_less_semantic_requests_truthful(tmp_path):
             "quanto_option",
             "quanto_option",
             "canonical_semantic",
-            "quanto_adjustment_analytical",
+            "equity_quanto",
             None,
             "trellis.models.resolution.quanto",
             "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state",
@@ -629,7 +629,7 @@ def test_platform_trace_persists_semantic_checkpoint_and_generation_boundary(
     assert boundary["generation_boundary"]["route_binding_authority"]["route_id"] == expected_route_id
     assert trace.generation_boundary["route_binding_authority"]["authority_kind"] == "exact_backend_fit"
     assert operator_metadata is not None
-    if expected_route_id == "quanto_adjustment_analytical":
+    if expected_route_id == "equity_quanto":
         assert operator_metadata["display_name"] == "Quanto option analytical binding"
     assert (
         trace.generation_boundary["primitive_plan"]["backend_binding_id"]

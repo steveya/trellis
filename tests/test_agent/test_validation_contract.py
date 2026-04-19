@@ -36,7 +36,7 @@ def test_compile_build_request_attaches_validation_contract_summary():
         contract.exact_bundle_id
         == "analytical:quanto_option@trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
     )
-    assert contract.route_id == "quanto_adjustment_analytical"
+    assert contract.route_id == "equity_quanto"
     assert contract.route_family == "analytical"
     assert {check.check_id for check in contract.deterministic_checks} >= {
         "check_non_negativity",
@@ -202,7 +202,7 @@ def test_route_less_semantic_request_keeps_validation_contract_truthful():
             "Quanto option on SAP in USD with EUR underlier currency expiring 2025-11-15",
             "quanto_option",
             "quanto_option",
-            "quanto_adjustment_analytical",
+            "equity_quanto",
             "analytical:quanto_option",
             {
                 "discount_curve",
@@ -239,7 +239,7 @@ def test_route_less_semantic_request_keeps_validation_contract_truthful():
             ),
             "credit_default_swap",
             "credit_default_swap",
-            "credit_default_swap_analytical",
+            "credit_default_swap",
             "analytical:credit_default_swap",
             {"discount_curve", "credit_curve"},
             (),
@@ -338,7 +338,7 @@ def test_platform_trace_persists_validation_contract_summary(tmp_path):
 
     assert "validation_contract:" in raw
     assert len(traces) == 1
-    assert traces[0].validation_contract["route_id"] == "credit_default_swap_analytical"
+    assert traces[0].validation_contract["route_id"] == "credit_default_swap"
     assert traces[0].validation_contract["bundle_id"] == "analytical:credit_default_swap"
     assert (
         traces[0].validation_contract["backend_binding_id"]
@@ -415,13 +415,13 @@ def test_validate_build_emits_validation_contract_summary_in_bundle_events(monke
     assert failures == []
     selected = next(details for event, details in events if event == "validation_bundle_selected")
     executed = next(details for event, details in events if event == "validation_bundle_executed")
-    assert selected["validation_contract"]["route_id"] == "quanto_adjustment_analytical"
+    assert selected["validation_contract"]["route_id"] == "equity_quanto"
     assert selected["validation_contract"]["bundle_id"] == "analytical:quanto_option"
     assert (
         selected["validation_contract"]["exact_bundle_id"]
         == "analytical:quanto_option@trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
     )
-    assert selected["route_binding_authority"]["route_id"] == "quanto_adjustment_analytical"
+    assert selected["route_binding_authority"]["route_id"] == "equity_quanto"
     assert isinstance(selected["route_binding_authority"]["canary_task_ids"], list)
     assert executed["validation_contract"]["bundle_id"] == "analytical:quanto_option"
     assert executed["route_binding_authority"]["validation_bundle_id"] == "analytical:quanto_option"

@@ -350,7 +350,7 @@ SEMANTIC_CONCEPT_REGISTRY: tuple[SemanticConceptDefinition, ...] = (
             "state_variables",
             "event_transitions",
         ),
-        required_primitives=("quanto_adjustment_analytical",),
+        required_primitives=("equity_quanto",),
         route_helpers=(
             "trellis.models.resolution.quanto",
             "trellis.models.analytical.quanto",

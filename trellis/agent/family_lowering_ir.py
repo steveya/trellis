@@ -902,13 +902,18 @@ def _resolve_family_lowering_binding(
     route_id: str,
     *,
     product_ir,
+    method: str | None = None,
 ) -> ResolvedBackendBindingSpec | None:
     """Resolve the typed binding surface used for family-lowering dispatch."""
     if not str(route_id or "").strip():
         return None
     from trellis.agent.backend_bindings import resolve_backend_binding_by_route_id
 
-    return resolve_backend_binding_by_route_id(route_id, product_ir=product_ir)
+    return resolve_backend_binding_by_route_id(
+        route_id,
+        product_ir=product_ir,
+        method=method,
+    )
 
 
 def _binding_symbols_for_role(
@@ -1146,8 +1151,8 @@ def _binding_supports_credit_default_swap(
 ) -> bool:
     """Return whether the binding surface fits the CDS lowering lane.
 
-    QUA-794 slice 2: ``credit_default_swap_analytical`` /
-    ``credit_default_swap_monte_carlo`` bindings are in the canonical
+    QUA-794 slice 2: the canonical CDS helper binding lives in the
+    canonical
     catalog; the historical ``route_id in {...} and binding_spec is None``
     fallback is dead code and has been retired.
     """
@@ -1193,11 +1198,16 @@ def build_family_lowering_ir(
     route_id: str,
     route_family: str,
     product_ir,
+    method: str | None = None,
     valuation_context=None,
     market_binding_spec=None,
 ) -> FamilyLoweringIR | None:
     """Build a typed family IR for migrated routes, else return ``None``."""
-    binding_spec = _resolve_family_lowering_binding(route_id, product_ir=product_ir)
+    binding_spec = _resolve_family_lowering_binding(
+        route_id,
+        product_ir=product_ir,
+        method=method,
+    )
     resolved_route_family = str(getattr(binding_spec, "route_family", "") or route_family)
     common_kwargs = _common_kwargs(
         contract,
@@ -2407,13 +2417,14 @@ def _credit_default_swap_pricing_mode(
     route_id: str,
 ) -> str:
     """Return the CDS pricing mode implied by the binding surface."""
+    del route_id
     if _binding_has_symbol(binding_spec, "event_probability", "interval_default_probability"):
         return "monte_carlo"
     if _binding_has_symbol(binding_spec, "route_helper", "price_cds_monte_carlo"):
         return "monte_carlo"
     if _binding_has_symbol(binding_spec, "route_helper", "price_cds_analytical"):
         return "analytical"
-    return "monte_carlo" if route_id == "credit_default_swap_monte_carlo" else "analytical"
+    return "analytical"
 
 
 def _credit_default_swap_helper_symbol(
@@ -2422,11 +2433,12 @@ def _credit_default_swap_helper_symbol(
     route_id: str,
 ) -> str:
     """Return the CDS helper symbol implied by the binding surface."""
+    del route_id
     if _binding_has_symbol(binding_spec, "route_helper", "price_cds_monte_carlo"):
         return "price_cds_monte_carlo"
     if _binding_has_symbol(binding_spec, "route_helper", "price_cds_analytical"):
         return "price_cds_analytical"
-    return "price_cds_monte_carlo" if route_id == "credit_default_swap_monte_carlo" else "price_cds_analytical"
+    return "price_cds_analytical"
 
 
 def _build_credit_default_swap_ir(

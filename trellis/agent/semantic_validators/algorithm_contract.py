@@ -13,7 +13,7 @@ import ast
 import re
 
 from trellis.agent.codegen_guardrails import GenerationPlan
-from trellis.agent.route_registry import RouteSpec
+from trellis.agent.route_registry import RouteSpec, resolve_route_primitives
 from trellis.agent.semantic_validators.base import SemanticFinding
 
 
@@ -731,7 +731,34 @@ def _exact_surface_primitives(
     plan_primitives = tuple(getattr(primitive_plan, "primitives", ()) or ())
     if plan_primitives:
         return plan_primitives
+    method = str(getattr(plan, "method", "") or "").strip() or None
+    if method and _route_conditionals_are_method_only(route_spec):
+        try:
+            resolved = tuple(resolve_route_primitives(route_spec, None, method=method))
+        except Exception:
+            resolved = ()
+        if resolved:
+            return resolved
     return tuple(getattr(route_spec, "primitives", ()) or ())
+
+
+def _route_conditionals_are_method_only(route_spec: RouteSpec) -> bool:
+    """Return whether every non-default conditional clause depends only on method."""
+    conditionals = tuple(getattr(route_spec, "conditional_primitives", ()) or ())
+    if not conditionals:
+        return False
+    saw_method_clause = False
+    for cond in conditionals:
+        when = getattr(cond, "when", None)
+        if when == "default":
+            continue
+        if not isinstance(when, dict):
+            return False
+        keys = {str(key).strip() for key in when.keys()}
+        if keys != {"methods"}:
+            return False
+        saw_method_clause = True
+    return saw_method_clause
 
 
 def _call_satisfies_required_surface(

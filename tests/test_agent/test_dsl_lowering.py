@@ -128,12 +128,12 @@ def test_quanto_lowering_prefers_binding_spec_targets_when_route_primitives_are_
     monkeypatch.setattr(
         dsl_lowering_module,
         "resolve_route_primitives",
-        lambda route, product_ir: (),
+        lambda route, product_ir, binding_spec=None, method=None: (),
     )
     monkeypatch.setattr(
         backend_bindings_module,
         "resolve_backend_binding_by_route_id",
-        lambda route_id, product_ir=None, primitive_plan=None, catalog=None: SimpleNamespace(
+        lambda route_id, product_ir=None, primitive_plan=None, catalog=None, method=None: SimpleNamespace(
             primitives=(
                 PrimitiveRef(
                     "trellis.models.quanto_option",
@@ -543,7 +543,7 @@ def test_credit_default_swap_analytical_lowers_to_schedule_then_helper():
 
     lowering = blueprint.dsl_lowering
     assert lowering is not None
-    assert lowering.route_id == "credit_default_swap_analytical"
+    assert lowering.route_id == "credit_default_swap"
     assert lowering.route_family == "event_triggered_two_legged_contract"
     assert lowering.admissibility_errors == ()
     assert lowering.binding_id == "trellis.models.credit_default_swap.price_cds_analytical"
@@ -576,7 +576,7 @@ def test_credit_default_swap_monte_carlo_lowers_to_schedule_then_helper():
 
     lowering = blueprint.dsl_lowering
     assert lowering is not None
-    assert lowering.route_id == "credit_default_swap_monte_carlo"
+    assert lowering.route_id == "credit_default_swap"
     assert lowering.route_family == "event_triggered_two_legged_contract"
     assert lowering.admissibility_errors == ()
     assert lowering.binding_id == "trellis.models.credit_default_swap.price_cds_monte_carlo"
@@ -596,7 +596,7 @@ def test_credit_default_swap_missing_schedule_builder_reports_binding_first_erro
     def _binding_without_schedule_builder(*args, **kwargs):
         del args, kwargs
         return backend_bindings_module.ResolvedBackendBindingSpec(
-            route_id="credit_default_swap_analytical",
+            route_id="credit_default_swap",
             engine_family="analytical",
             route_family="event_triggered_two_legged_contract",
             binding_id="trellis.models.credit_default_swap.price_cds_analytical",

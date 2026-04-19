@@ -650,7 +650,7 @@ def test_contract_requires_correlation_for_multi_asset_mc():
             "cross_currency_single_underlier",
             "cash_settle_at_expiry_after_fx_conversion",
             "analytical",
-            "quanto_adjustment_analytical",
+            "equity_quanto",
             "trellis.models.resolution.quanto",
         ),
         (
@@ -1402,9 +1402,9 @@ def test_credit_default_swap_contract_validates_and_compiles():
     assert compiled.pricing_plan.method == "analytical"
     assert compiled.target_modules == ("trellis.models.credit_default_swap",)
     assert compiled.route_modules == _expected_route_modules(compiled)
-    assert compiled.primitive_routes == ("credit_default_swap_analytical",)
+    assert compiled.primitive_routes == ("credit_default_swap",)
     assert compiled.dsl_lowering is not None
-    assert compiled.dsl_lowering.route_id == "credit_default_swap_analytical"
+    assert compiled.dsl_lowering.route_id == "credit_default_swap"
 
 
 def test_credit_default_swap_summary_is_stable_and_route_specific():
@@ -1422,7 +1422,7 @@ def test_credit_default_swap_summary_is_stable_and_route_specific():
     assert summary["product"]["payoff_family"] == "event_triggered_two_legged_contract"
     assert summary["typed_semantics"]["controller_protocol"]["controller_style"] == "identity"
     assert summary["market_data"]["required_inputs"] == ["discount_curve", "credit_curve"]
-    assert summary["blueprint"]["primitive_families"] == ["credit_default_swap_analytical"]
+    assert summary["blueprint"]["primitive_families"] == ["credit_default_swap"]
 
 
 def test_nth_to_default_contract_validates_and_compiles():

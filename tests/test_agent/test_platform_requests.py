@@ -98,7 +98,7 @@ def test_compile_build_request_uses_quanto_semantic_contract_blueprint():
     assert compiled.semantic_blueprint is not None
     assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "quanto_option"
     assert compiled.request.metadata["semantic_contract"]["semantic_concept"]["semantic_id"] == "quanto_option"
-    assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == "quanto_adjustment_analytical"
+    assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == "equity_quanto"
     assert "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state" in (
         compiled.request.metadata["semantic_blueprint"]["dsl_helper_refs"]
     )
@@ -122,7 +122,7 @@ def test_compile_build_request_uses_quanto_semantic_contract_blueprint():
     assert compiled.generation_plan.lane_family == "analytical"
     assert compiled.generation_plan.lane_plan_kind == "exact_target_binding"
     assert compiled.generation_plan.primitive_plan is not None
-    assert compiled.generation_plan.primitive_plan.route == "quanto_adjustment_analytical"
+    assert compiled.generation_plan.primitive_plan.route == "equity_quanto"
     assert compiled.semantic_blueprint.selection_reason == compiled.pricing_plan.selection_reason
     assert compiled.semantic_blueprint.route_modules == _expected_route_modules(compiled)
 
@@ -144,7 +144,7 @@ def test_compile_build_request_attaches_route_binding_authority_packet():
     assert compiled.generation_plan.backend_engine_family == backend_binding["engine_family"]
     assert compiled.generation_plan.backend_route_family == authority["route_family"]
     assert compiled.generation_plan.backend_compatibility_alias_policy == authority["compatibility_alias_policy"]
-    assert authority["route_id"] == "quanto_adjustment_analytical"
+    assert authority["route_id"] == "equity_quanto"
     assert authority["route_family"] == "analytical"
     assert authority["authority_kind"] == "exact_backend_fit"
     assert authority["compatibility_alias_policy"] == "internal_only"
@@ -213,7 +213,7 @@ def test_compile_build_request_records_generated_skill_artifacts_in_shared_bundl
 
     assert "## Generated Skills" in compiled.knowledge_text
     assert "## Routing Skills" in compiled.routing_knowledge_text
-    assert "route_hint:quanto_adjustment_analytical:route-helper" in (
+    assert "route_hint:equity_quanto:route-helper" in (
         compiled.knowledge_summary["selected_artifact_ids"]
     )
     assert "builder" in compiled.knowledge_summary["selected_artifacts_by_audience"]
@@ -343,7 +343,7 @@ def test_compile_build_request_respects_quanto_preferred_monte_carlo_route():
     assert compiled.generation_plan is not None
     assert "trellis.models.resolution.quanto" in compiled.generation_plan.approved_modules
     assert compiled.generation_plan.primitive_plan is not None
-    assert compiled.generation_plan.primitive_plan.route == "correlated_gbm_monte_carlo"
+    assert compiled.generation_plan.primitive_plan.route == "equity_quanto"
     assert compiled.execution_plan.route_method == "monte_carlo"
     assert compiled.semantic_blueprint.selection_reason == compiled.pricing_plan.selection_reason
 
@@ -552,11 +552,55 @@ def test_compile_build_request_preserves_missing_route_state_for_range_accrual_s
     assert "route_binding_authority" not in compiled.request.metadata
 
 
-def test_compile_build_request_uses_exact_barrier_binding_for_financepy_pilot_task():
+@pytest.mark.parametrize(
+    "task_id,expected_route_family,expected_backend_ref",
+    [
+        (
+            "F009",
+            "analytical",
+            "trellis.models.analytical.barrier.barrier_option_price",
+        ),
+        (
+            "F010",
+            "analytical",
+            "trellis.models.analytical.equity_exotics.price_equity_digital_option_analytical",
+        ),
+        (
+            "F011",
+            "analytical",
+            "trellis.models.analytical.equity_exotics.price_equity_fixed_lookback_option_analytical",
+        ),
+        (
+            "F012",
+            "analytical",
+            "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical",
+        ),
+        (
+            "F013",
+            "analytical",
+            "trellis.models.analytical.equity_exotics.price_equity_compound_option_analytical",
+        ),
+        (
+            "F014",
+            "analytical",
+            "trellis.models.analytical.equity_exotics.price_equity_cliquet_option_analytical",
+        ),
+        (
+            "F015",
+            "analytical",
+            "trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical",
+        ),
+    ],
+)
+def test_compile_build_request_preserves_exact_absorbed_black76_binding_for_financepy_tasks(
+    task_id,
+    expected_route_family,
+    expected_backend_ref,
+):
     from trellis.agent.benchmark_contracts import benchmark_request_description
     from trellis.agent.platform_requests import compile_build_request
 
-    task = _financepy_benchmark_task("F009")
+    task = _financepy_benchmark_task(task_id)
     compiled = compile_build_request(
         benchmark_request_description(task),
         instrument_type=task["instrument_type"],
@@ -565,35 +609,15 @@ def test_compile_build_request_uses_exact_barrier_binding_for_financepy_pilot_ta
 
     assert compiled.semantic_blueprint is None
     assert compiled.product_ir is not None
-    assert set(compiled.product_ir.candidate_engine_families) >= {"analytical", "pde"}
     assert compiled.generation_plan is not None
     assert compiled.generation_plan.primitive_plan is not None
-    assert compiled.generation_plan.primitive_plan.route == "equity_barrier_analytical"
+    assert compiled.generation_plan.primitive_plan.route == "analytical_black76"
+    assert compiled.generation_plan.primitive_plan.route_family == expected_route_family
     assert "primitive_plan_not_available" not in compiled.generation_plan.uncertainty_flags
-    assert (
-        "trellis.models.analytical.barrier.barrier_option_price"
-        in compiled.generation_plan.backend_exact_target_refs
-    )
+    assert expected_backend_ref in compiled.generation_plan.backend_exact_target_refs
 
-
-def test_compile_build_request_preserves_exact_chooser_binding_for_financepy_pilot_task():
-    from trellis.agent.benchmark_contracts import benchmark_request_description
-    from trellis.agent.platform_requests import compile_build_request
-
-    task = _financepy_benchmark_task("F012")
-    compiled = compile_build_request(
-        benchmark_request_description(task),
-        instrument_type=task["instrument_type"],
-        preferred_method="analytical",
-    )
-
-    assert compiled.generation_plan is not None
-    assert compiled.generation_plan.primitive_plan is not None
-    assert compiled.generation_plan.primitive_plan.route == "equity_chooser_analytical"
-    assert (
-        "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical"
-        in compiled.generation_plan.backend_exact_target_refs
-    )
+    if task_id == "F009":
+        assert set(compiled.product_ir.candidate_engine_families) >= {"analytical", "pde"}
 
 
 def test_compile_term_sheet_request_uses_quanto_semantic_contract():
@@ -1187,7 +1211,7 @@ def test_compile_build_request_uses_exact_callable_bond_pde_binding_for_bootstra
             "vanilla_option",
             "trellis.models.black",
             "trellis.models.resolution.quanto",
-            "quanto_adjustment_analytical",
+            "equity_quanto",
         ),
         (
             "Callable bond with annual coupons and issuer call dates 2026-01-15, 2027-01-15",
@@ -1303,13 +1327,13 @@ def test_request_missing_schedule_returns_semantic_error():
     [
         (
             "analytical",
-            "credit_default_swap_analytical",
+            "credit_default_swap",
             "ThenExpr",
             "trellis.models.credit_default_swap.price_cds_analytical",
         ),
         (
             "monte_carlo",
-            "credit_default_swap_monte_carlo",
+            "credit_default_swap",
             "ThenExpr",
             "trellis.models.credit_default_swap.price_cds_monte_carlo",
         ),

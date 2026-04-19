@@ -107,9 +107,8 @@ class TestRegistryValidation:
             "analytical_black76",
             "exercise_lattice",
             "correlated_basket_monte_carlo",
-            "correlated_gbm_monte_carlo",
-            "credit_default_swap_analytical",
-            "credit_default_swap_monte_carlo",
+            "equity_quanto",
+            "credit_default_swap",
             "pde_theta_1d",
             "qmc_sobol_paths",
             "transform_fft",
@@ -274,7 +273,7 @@ class TestRegistryValidation:
         monkeypatch.setattr(
             backend_bindings_module,
             "resolve_backend_binding_by_route_id",
-            lambda route_id, product_ir=None: SimpleNamespace(
+            lambda route_id, product_ir=None, method=None: SimpleNamespace(
                 primitives=(
                     PrimitiveRef("trellis.models.synthetic", "fresh_helper", "route_helper"),
                 ),
@@ -350,17 +349,17 @@ class TestRegistryValidation:
     def test_reuse_module_paths_hydrate_for_checked_in_deterministic_routes(self, registry):
         analytical_fx = find_route_by_id("analytical_garman_kohlhagen", registry)
         monte_carlo_fx = find_route_by_id("monte_carlo_fx_vanilla", registry)
-        analytical_quanto = find_route_by_id("quanto_adjustment_analytical", registry)
-        monte_carlo_quanto = find_route_by_id("correlated_gbm_monte_carlo", registry)
+        quanto = find_route_by_id("equity_quanto", registry)
 
         assert analytical_fx is not None
         assert analytical_fx.reuse_module_paths == ("instruments/_agent/fxvanillaanalytical.py",)
         assert monte_carlo_fx is not None
         assert monte_carlo_fx.reuse_module_paths == ("instruments/_agent/fxvanillamontecarlo.py",)
-        assert analytical_quanto is not None
-        assert analytical_quanto.reuse_module_paths == ("instruments/_agent/quantooptionanalytical.py",)
-        assert monte_carlo_quanto is not None
-        assert monte_carlo_quanto.reuse_module_paths == ("instruments/_agent/quantooptionmontecarlo.py",)
+        assert quanto is not None
+        assert quanto.reuse_module_paths == (
+            "instruments/_agent/quantooptionanalytical.py",
+            "instruments/_agent/quantooptionmontecarlo.py",
+        )
 
     def test_compile_route_binding_authority_accepts_plan_carried_binding_identity_without_route(self):
         authority = compile_route_binding_authority(
@@ -405,23 +404,44 @@ class TestRegistryValidation:
 # ---------------------------------------------------------------------------
 
 class TestQuantoRoutes:
-    IR = ProductIR(instrument="quanto_option", payoff_family="vanilla_option", exercise_style="european")
+    IR = ProductIR(
+        instrument="quanto_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("fx_translation",),
+        exercise_style="european",
+    )
+    PLAN_MARKET_DATA = {"discount_curve", "black_vol_surface", "fx_rates"}
 
     def test_analytical_candidate(self, registry):
-        new = _new_routes(registry, "analytical", self.IR)
-        assert new == ("quanto_adjustment_analytical",)
+        new = _new_routes(
+            registry,
+            "analytical",
+            self.IR,
+            pricing_plan=_make_plan("analytical", market_data=self.PLAN_MARKET_DATA),
+        )
+        assert new == ("equity_quanto",)
 
     def test_monte_carlo_candidate(self, registry):
-        new = _new_routes(registry, "monte_carlo", self.IR)
-        assert new == ("correlated_gbm_monte_carlo",)
+        new = _new_routes(
+            registry,
+            "monte_carlo",
+            self.IR,
+            pricing_plan=_make_plan("monte_carlo", market_data=self.PLAN_MARKET_DATA),
+        )
+        assert new == ("equity_quanto",)
 
     def test_qmc_candidate(self, registry):
-        new = _new_routes(registry, "qmc", self.IR)
-        assert new == ("correlated_gbm_monte_carlo",)
+        new = _new_routes(
+            registry,
+            "qmc",
+            self.IR,
+            pricing_plan=_make_plan("qmc", market_data=self.PLAN_MARKET_DATA),
+        )
+        assert new == ("equity_quanto",)
 
     def test_analytical_primitives(self, registry):
-        spec = [r for r in registry.routes if r.id == "quanto_adjustment_analytical"][0]
-        new_prims = resolve_route_primitives(spec, self.IR)
+        spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
+        new_prims = resolve_route_primitives(spec, self.IR, method="analytical")
         expected_prims = {
             (
                 "trellis.models.quanto_option",
@@ -430,10 +450,23 @@ class TestQuantoRoutes:
             ),
         }
         assert _prim_set(new_prims) == expected_prims
-        assert resolve_route_adapters(spec, self.IR) == ()
+        assert resolve_route_adapters(spec, self.IR, method="analytical") == ()
+
+    def test_monte_carlo_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
+        new_prims = resolve_route_primitives(spec, self.IR, method="monte_carlo")
+        expected_prims = {
+            (
+                "trellis.models.quanto_option",
+                "price_quanto_option_monte_carlo_from_market_state",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+        assert resolve_route_family(spec, self.IR, method="monte_carlo") == "monte_carlo"
 
     def test_engine_family(self, registry):
-        spec = [r for r in registry.routes if r.id == "quanto_adjustment_analytical"][0]
+        spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
         assert spec.engine_family == "analytical"
         assert spec.compatibility_alias_policy == "internal_only"
 
@@ -451,12 +484,22 @@ class TestCreditRoutes:
     NTD_IR = ProductIR(instrument="nth_to_default", payoff_family="nth_to_default")
 
     def test_cds_analytical(self, registry):
-        new = _new_routes(registry, "analytical", self.CDS_IR)
-        assert new == ("credit_default_swap_analytical",)
+        new = _new_routes(
+            registry,
+            "analytical",
+            self.CDS_IR,
+            pricing_plan=_make_plan("analytical", market_data={"credit_curve"}),
+        )
+        assert new == ("credit_default_swap",)
 
     def test_cds_monte_carlo(self, registry):
-        new = _new_routes(registry, "monte_carlo", self.CDS_IR)
-        assert new == ("credit_default_swap_monte_carlo",)
+        new = _new_routes(
+            registry,
+            "monte_carlo",
+            self.CDS_IR,
+            pricing_plan=_make_plan("monte_carlo", market_data={"credit_curve"}),
+        )
+        assert new == ("credit_default_swap",)
 
     def test_nth_to_default_analytical(self, registry):
         new = _new_routes(registry, "analytical", self.NTD_IR)
@@ -467,7 +510,7 @@ class TestCreditRoutes:
         assert new == ("nth_to_default_monte_carlo",)
 
     def test_route_family(self, registry):
-        spec = [r for r in registry.routes if r.id == "credit_default_swap_analytical"][0]
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         new = resolve_route_family(spec, self.CDS_IR)
         assert new == "event_triggered_two_legged_contract"
 
@@ -480,9 +523,14 @@ class TestCreditRoutes:
             state_dependence="schedule_state",
         )
 
-        new = _new_routes(registry, "analytical", structural_only_ir)
+        new = _new_routes(
+            registry,
+            "analytical",
+            structural_only_ir,
+            pricing_plan=_make_plan("analytical", market_data={"credit_curve"}),
+        )
 
-        assert new == ("credit_default_swap_analytical",)
+        assert new == ("credit_default_swap",)
 
     def test_cds_analytical_admissibility_uses_credit_family_state_tags(self, registry):
         from trellis.agent.semantic_contract_compiler import compile_semantic_contract
@@ -493,7 +541,7 @@ class TestCreditRoutes:
             observation_schedule=("2026-06-20", "2026-09-20", "2026-12-20", "2027-03-20"),
         )
         blueprint = compile_semantic_contract(contract)
-        spec = find_route_by_id("credit_default_swap_analytical", registry)
+        spec = find_route_by_id("credit_default_swap", registry)
 
         decision = evaluate_route_admissibility(spec, semantic_blueprint=blueprint)
 
@@ -510,7 +558,7 @@ class TestCreditRoutes:
             preferred_method="monte_carlo",
         )
         blueprint = compile_semantic_contract(contract, preferred_method="monte_carlo")
-        spec = find_route_by_id("credit_default_swap_monte_carlo", registry)
+        spec = find_route_by_id("credit_default_swap", registry)
 
         decision = evaluate_route_admissibility(spec, semantic_blueprint=blueprint)
 
@@ -1073,6 +1121,62 @@ class TestAnalyticalRoutes:
         model_family="interest_rate",
     )
     VANILLA_IR = ProductIR(instrument="european_option", payoff_family="vanilla_option", exercise_style="european")
+    BARRIER_IR = ProductIR(
+        instrument="barrier_option",
+        payoff_family="barrier_option",
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+    DIGITAL_IR = ProductIR(
+        instrument="digital_option",
+        payoff_family="composite_option",
+        payoff_traits=("discounting", "terminal_markov", "vol_surface_dependence"),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+    LOOKBACK_IR = ProductIR(
+        instrument="lookback_option",
+        payoff_family="composite_option",
+        payoff_traits=("discounting", "path_dependent", "vol_surface_dependence"),
+        exercise_style="european",
+        state_dependence="path_dependent",
+        model_family="equity_diffusion",
+    )
+    CHOOSER_IR = ProductIR(
+        instrument="chooser_option",
+        payoff_family="composite_option",
+        payoff_traits=("discounting", "terminal_markov", "vol_surface_dependence"),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+    COMPOUND_IR = ProductIR(
+        instrument="compound_option",
+        payoff_family="composite_option",
+        payoff_traits=("discounting", "terminal_markov", "vol_surface_dependence"),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+    CLIQUET_IR = ProductIR(
+        instrument="cliquet_option",
+        payoff_family="composite_option",
+        payoff_traits=("vanilla_option",),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+    VARIANCE_SWAP_IR = ProductIR(
+        instrument="variance_swap",
+        payoff_family="variance_swap",
+        payoff_traits=("discounting", "path_dependent", "vol_surface_dependence"),
+        exercise_style="none",
+        state_dependence="path_dependent",
+        schedule_dependence=False,
+        model_family="generic",
+    )
     ZCB_IR = ProductIR(instrument="zcb_option", payoff_family="zcb_option", exercise_style="european")
     # QUA-909: ``analytical_black76`` now requires ``black_vol_surface`` in the
     # pricing-plan required market data (positive filter replacing the old
@@ -1088,6 +1192,48 @@ class TestAnalyticalRoutes:
     def test_swaption_candidate(self, registry):
         new = _new_routes(
             registry, "analytical", self.SWAPTION_IR, pricing_plan=self.BLACK76_PLAN,
+        )
+        assert new == ("analytical_black76",)
+
+    def test_barrier_candidate(self, registry):
+        new = _new_routes(
+            registry, "analytical", self.BARRIER_IR, pricing_plan=self.BLACK76_PLAN,
+        )
+        assert new == ("analytical_black76",)
+
+    def test_digital_candidate(self, registry):
+        new = _new_routes(
+            registry, "analytical", self.DIGITAL_IR, pricing_plan=self.BLACK76_PLAN,
+        )
+        assert new == ("analytical_black76",)
+
+    def test_lookback_candidate(self, registry):
+        new = _new_routes(
+            registry, "analytical", self.LOOKBACK_IR, pricing_plan=self.BLACK76_PLAN,
+        )
+        assert new == ("analytical_black76",)
+
+    def test_cliquet_candidate(self, registry):
+        new = _new_routes(
+            registry, "analytical", self.CLIQUET_IR, pricing_plan=self.BLACK76_PLAN,
+        )
+        assert new == ("analytical_black76",)
+
+    def test_variance_swap_candidate(self, registry):
+        new = _new_routes(
+            registry, "analytical", self.VARIANCE_SWAP_IR, pricing_plan=self.BLACK76_PLAN,
+        )
+        assert new == ("analytical_black76",)
+
+    def test_chooser_candidate(self, registry):
+        new = _new_routes(
+            registry, "analytical", self.CHOOSER_IR, pricing_plan=self.BLACK76_PLAN,
+        )
+        assert new == ("analytical_black76",)
+
+    def test_compound_candidate(self, registry):
+        new = _new_routes(
+            registry, "analytical", self.COMPOUND_IR, pricing_plan=self.BLACK76_PLAN,
         )
         assert new == ("analytical_black76",)
 
@@ -1134,6 +1280,91 @@ class TestAnalyticalRoutes:
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         assert resolve_route_notes(spec, self.BERMUDAN_SWAPTION_IR) == ()
         assert resolve_route_adapters(spec, self.BERMUDAN_SWAPTION_IR) == ()
+
+    def test_barrier_primitives_use_exact_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        new_prims = resolve_route_primitives(spec, self.BARRIER_IR)
+        assert resolve_route_family(spec, self.BARRIER_IR) == "analytical"
+        assert _prim_set(new_prims) == {
+            ("trellis.models.analytical.barrier", "barrier_option_price", "route_helper"),
+        }
+
+    def test_digital_primitives_use_exact_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        new_prims = resolve_route_primitives(spec, self.DIGITAL_IR)
+        assert resolve_route_family(spec, self.DIGITAL_IR) == "analytical"
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.analytical.equity_exotics",
+                "price_equity_digital_option_analytical",
+                "route_helper",
+            ),
+        }
+
+    def test_lookback_primitives_use_exact_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        new_prims = resolve_route_primitives(spec, self.LOOKBACK_IR)
+        assert resolve_route_family(spec, self.LOOKBACK_IR) == "analytical"
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.analytical.equity_exotics",
+                "price_equity_fixed_lookback_option_analytical",
+                "route_helper",
+            ),
+        }
+
+    def test_chooser_primitives_use_exact_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        new_prims = resolve_route_primitives(spec, self.CHOOSER_IR)
+        assert resolve_route_family(spec, self.CHOOSER_IR) == "analytical"
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.analytical.equity_exotics",
+                "price_equity_chooser_option_analytical",
+                "route_helper",
+            ),
+        }
+
+    def test_compound_primitives_use_exact_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        new_prims = resolve_route_primitives(spec, self.COMPOUND_IR)
+        assert resolve_route_family(spec, self.COMPOUND_IR) == "analytical"
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.analytical.equity_exotics",
+                "price_equity_compound_option_analytical",
+                "route_helper",
+            ),
+        }
+
+    def test_cliquet_primitives_use_exact_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        new_prims = resolve_route_primitives(spec, self.CLIQUET_IR)
+        assert resolve_route_family(spec, self.CLIQUET_IR) == "analytical"
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.analytical.equity_exotics",
+                "price_equity_cliquet_option_analytical",
+                "route_helper",
+            ),
+        }
+
+    def test_variance_swap_primitives_use_exact_helper_and_output_kernel(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        new_prims = resolve_route_primitives(spec, self.VARIANCE_SWAP_IR)
+        assert resolve_route_family(spec, self.VARIANCE_SWAP_IR) == "analytical"
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.analytical.equity_exotics",
+                "price_equity_variance_swap_analytical",
+                "route_helper",
+            ),
+            (
+                "trellis.models.analytical.equity_exotics",
+                "equity_variance_swap_outputs_analytical",
+                "pricing_kernel",
+            ),
+        }
 
     def test_rate_cap_floor_strip_analytical_admissibility_accepts_structural_schedule_contract(self, registry):
         from dataclasses import replace
@@ -1690,8 +1921,7 @@ class TestFallbackRoutes:
 
     def test_credit_and_copula_routes_are_thin_backend_bindings(self, registry):
         for route_id in (
-            "credit_default_swap_analytical",
-            "credit_default_swap_monte_carlo",
+            "credit_default_swap",
             "nth_to_default_analytical",
             "nth_to_default_monte_carlo",
             "copula_loss_distribution",
@@ -1721,10 +1951,8 @@ class TestFallbackRoutes:
 
 class TestEngineFamilyCoverage:
     EXPECTED = {
-        "quanto_adjustment_analytical": "analytical",
-        "correlated_gbm_monte_carlo": "monte_carlo",
-        "credit_default_swap_analytical": "analytical",
-        "credit_default_swap_monte_carlo": "monte_carlo",
+        "equity_quanto": "analytical",
+        "credit_default_swap": "analytical",
         "nth_to_default_analytical": "analytical",
         "nth_to_default_monte_carlo": "monte_carlo",
         "correlated_basket_monte_carlo": "monte_carlo",
@@ -1739,13 +1967,6 @@ class TestEngineFamilyCoverage:
         "analytical_black76": "analytical",
         "zcb_option_analytical": "analytical",
         "analytical_garman_kohlhagen": "analytical",
-        "equity_barrier_analytical": "analytical",
-        "equity_digital_analytical": "analytical",
-        "equity_lookback_analytical": "analytical",
-        "equity_chooser_analytical": "analytical",
-        "equity_compound_analytical": "analytical",
-        "equity_cliquet_analytical": "analytical",
-        "equity_variance_swap_analytical": "analytical",
         "transform_fft": "fft_pricing",
         "vanilla_equity_theta_pde": "pde_solver",
         "pde_theta_1d": "pde_solver",

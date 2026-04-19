@@ -635,6 +635,7 @@ class KnowledgeStore:
                     ),
                 ),
                 promoted_only=True,
+                skip_market_data_filters=True,
             )
             return tuple(route.id for route in promoted)
         except Exception:

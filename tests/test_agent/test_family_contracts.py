@@ -57,8 +57,7 @@ def test_quanto_family_template_bridges_to_semantic_contract():
     assert "underlier_fx_correlation" in required_inputs
     assert "fx_vol" in required_inputs
     assert "trellis.models.processes.correlated_gbm" in contract.blueprint.target_modules
-    assert "quanto_adjustment_analytical" in contract.blueprint.primitive_families
-    assert "correlated_gbm_monte_carlo" in contract.blueprint.primitive_families
+    assert "equity_quanto" in contract.blueprint.primitive_families
     assert contract.validation.semantic_checks == (
         "check_quanto_required_inputs",
         "check_quanto_cross_currency_semantics",

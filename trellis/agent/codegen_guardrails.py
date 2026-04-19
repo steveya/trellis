@@ -1589,16 +1589,18 @@ def rank_primitive_routes(
             spec.id,
             product_ir=product_ir,
             catalog=binding_catalog,
+            method=method,
         )
         route_primitives = list(
             resolve_route_primitives(
                 spec,
                 product_ir,
                 binding_spec=binding_spec,
+                method=method,
             )
         )
-        adapters = resolve_route_adapters(spec, product_ir)
-        notes = resolve_route_notes(spec, product_ir)
+        adapters = resolve_route_adapters(spec, product_ir, method=method)
+        notes = resolve_route_notes(spec, product_ir, method=method)
         route = spec.id
         primitives = list(getattr(binding_spec, "primitives", ()) or route_primitives)
         blockers = list(product_ir.unresolved_primitives if product_ir is not None else ())
@@ -1610,6 +1612,7 @@ def rank_primitive_routes(
                 spec,
                 product_ir,
                 binding_spec=binding_spec,
+                method=method,
             )
         )
         if route == "exercise_lattice" and route_family == "equity_tree":

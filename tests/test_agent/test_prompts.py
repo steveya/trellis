@@ -1262,7 +1262,7 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "market_state.discount.discount(t)" in prompt
 
 
-def test_executor_credit_default_swap_analytical_retry_pins_discount_and_time_origin():
+def test_executor_credit_default_swap_retry_pins_discount_and_time_origin():
     from types import SimpleNamespace
 
     from trellis.agent.executor import KnowledgeRetrievalRequest, _route_specific_retry_lines
@@ -1966,7 +1966,7 @@ def test_evaluate_prompt_compact_surface_shows_semantic_valuation_and_validation
     assert "- Lane boundary:" in prompt
     assert "family=`analytical`" in prompt
     assert "- Lowering boundary:" in prompt
-    assert "route_alias=`quanto_adjustment_analytical`" not in prompt
+    assert "route_alias=`equity_quanto`" not in prompt
     assert "- Validation contract:" in prompt
     assert "bundle=`analytical:quanto_option`" in prompt
     assert "quanto_adjustment_applied" in prompt
@@ -1999,7 +1999,7 @@ def test_evaluate_prompt_quanto_analytical_surface_includes_resolution_guidance(
         ),
         proposed_tests=("tests/test_agent/test_build_loop.py",),
         primitive_plan=PrimitivePlan(
-            route="quanto_adjustment_analytical",
+            route="equity_quanto",
             engine_family="analytical",
             primitives=(
                 PrimitiveRef("trellis.models.black", "black76_call", "pricing_kernel"),
@@ -2083,7 +2083,7 @@ def test_evaluate_prompt_quanto_monte_carlo_surface_includes_joint_state_guidanc
         ),
         proposed_tests=("tests/test_agent/test_build_loop.py",),
         primitive_plan=PrimitivePlan(
-            route="correlated_gbm_monte_carlo",
+            route="equity_quanto",
             engine_family="monte_carlo",
             primitives=(
                 PrimitiveRef("trellis.models.processes.correlated_gbm", "CorrelatedGBM", "state_process"),

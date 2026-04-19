@@ -806,6 +806,33 @@ def _candidate_engine_families_for(
 
 def _augment_ir_with_contextual_support(ir: ProductIR, description: str) -> ProductIR:
     """Augment ProductIR with high-signal request context missing from static decompositions."""
+    if ir.instrument == "quanto_option":
+        candidate_engine_families = list(ir.candidate_engine_families)
+        for family in ("analytical", "monte_carlo"):
+            if family not in candidate_engine_families:
+                candidate_engine_families.append(family)
+
+        required_market_data = set(ir.required_market_data)
+        required_market_data.update(
+            {"discount_curve", "forward_curve", "spot", "black_vol_surface", "fx_rates", "model_parameters"}
+        )
+
+        payoff_traits = list(ir.payoff_traits)
+        for trait in ("discounting", "fx_translation", "vol_surface_dependence"):
+            if trait not in payoff_traits:
+                payoff_traits.append(trait)
+
+        return replace(
+            ir,
+            payoff_family="vanilla_option",
+            payoff_traits=tuple(payoff_traits),
+            model_family="fx_cross_currency",
+            candidate_engine_families=tuple(candidate_engine_families),
+            required_market_data=frozenset(
+                normalize_market_data_requirements(required_market_data)
+            ),
+        )
+
     if not _looks_like_fx_option_context(description, instrument_type=ir.instrument):
         return ir
 
