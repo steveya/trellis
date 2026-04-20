@@ -13,6 +13,7 @@ from trellis.agent.contract_ir import (
     Constant,
     ContractIR,
     ContinuousInterval,
+    CurveQuote,
     EquitySpot,
     Exercise,
     FiniteSchedule,
@@ -24,14 +25,19 @@ from trellis.agent.contract_ir import (
     Max,
     Mul,
     Observation,
+    ParRateTenor,
+    QuoteCurve,
+    QuoteSurface,
     Scaled,
     Singleton,
     Spot,
     Strike,
     Sub,
+    SurfaceQuote,
     SwapRate,
     Underlying,
     VarianceObservable,
+    VolPoint,
     canonicalize,
 )
 from trellis.agent.knowledge.decompose import decompose_to_contract_ir, decompose_to_ir
@@ -423,6 +429,38 @@ def _contracts():
                 underlying=Underlying(spec=EquitySpot("AAPL", "gbm")),
             ),
         ),
+        (
+            "Terminal curve-spread payoff on USD_SWAP par rate 10Y minus 2Y, notional 1000000, expiry 2026-06-30",
+            "quoted_observable",
+            ContractIR(
+                payoff=Scaled(
+                    Constant(1_000_000.0),
+                    Sub(
+                        CurveQuote("USD_SWAP", ParRateTenor("10Y"), "par_rate"),
+                        CurveQuote("USD_SWAP", ParRateTenor("2Y"), "par_rate"),
+                    ),
+                ),
+                exercise=Exercise(style="european", schedule=_singleton("2026-06-30")),
+                observation=Observation(kind="terminal", schedule=_singleton("2026-06-30")),
+                underlying=Underlying(spec=QuoteCurve("USD_SWAP")),
+            ),
+        ),
+        (
+            "Terminal vol-skew payoff on SPX_IV black vol 1Y 90% moneyness minus 1Y 110% moneyness, notional 100000, expiry 2026-06-30",
+            "quoted_observable",
+            ContractIR(
+                payoff=Scaled(
+                    Constant(100_000.0),
+                    Sub(
+                        SurfaceQuote("SPX_IV", VolPoint("1Y", 0.90, "moneyness"), "black_vol"),
+                        SurfaceQuote("SPX_IV", VolPoint("1Y", 1.10, "moneyness"), "black_vol"),
+                    ),
+                ),
+                exercise=Exercise(style="european", schedule=_singleton("2026-06-30")),
+                observation=Observation(kind="terminal", schedule=_singleton("2026-06-30")),
+                underlying=Underlying(spec=QuoteSurface("SPX_IV")),
+            ),
+        ),
     ]
 
 
@@ -501,6 +539,10 @@ class TestDecomposeContractIR:
             ("Callable bond with semiannual coupon and call schedule", "callable_bond"),
             ("CDS on Ford 5Y", "cds"),
             ("Caplet on SOFR strike 4% expiring 2025-11-15", "cap"),
+            (
+                "10Y-2Y basis swap on USD_SWAP with quarterly coupons and maturity 2031-06-30",
+                "swap",
+            ),
         ],
     )
     def test_out_of_family_descriptions_return_none(

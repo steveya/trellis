@@ -21,10 +21,12 @@ from trellis.agent.contract_ir import (
     Constant,
     ContractIR,
     ContinuousInterval,
+    CurveQuote,
     EquitySpot,
     Exercise,
     FiniteSchedule,
     ForwardRate,
+    ForwardRateInterval,
     Gt,
     Indicator,
     LinearBasket,
@@ -32,14 +34,21 @@ from trellis.agent.contract_ir import (
     Max,
     Mul,
     Observation,
+    ParRateTenor,
+    QuoteCurve,
+    QuoteSurface,
     Scaled,
     Singleton,
     Spot,
     Strike,
     Sub,
+    SurfaceQuote,
     SwapRate,
     Underlying,
     VarianceObservable,
+    VolDeltaPoint,
+    VolPoint,
+    ZeroRateTenor,
     canonicalize,
 )
 from trellis.agent.knowledge.methods import normalize_method
@@ -240,6 +249,8 @@ def decompose_to_contract_ir(
         return None
 
     builders = (
+        _build_curve_quote_contract_ir,
+        _build_surface_quote_contract_ir,
         _build_swaption_contract_ir,
         _build_basket_contract_ir,
         _build_variance_contract_ir,
@@ -636,6 +647,82 @@ def _build_asian_contract_ir(
     )
 
 
+def _build_curve_quote_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> ContractIR | None:
+    lower = description.lower()
+    if instrument not in {"", "quoted_observable", "curve_spread_payoff"}:
+        if getattr(product_ir, "instrument", "") not in {"quoted_observable", "curve_spread_payoff"}:
+            return None
+    if "curve-spread payoff" not in lower and "curve spread payoff" not in lower:
+        return None
+    if any(marker in lower for marker in (" option", " call ", " put ")):
+        return None
+    curve_id = _extract_single_underlier(description)
+    convention = _extract_curve_quote_convention(description)
+    coordinates = _extract_curve_quote_coordinates(description, convention=convention)
+    notional = _extract_numeric_after(description, labels=("notional",))
+    expiry = _extract_expiry_date(description)
+    if curve_id is None or convention is None or coordinates is None or notional is None or expiry is None:
+        return None
+    lhs, rhs = coordinates
+    return ContractIR(
+        payoff=canonicalize(
+            Scaled(
+                Constant(notional),
+                Sub(
+                    CurveQuote(curve_id, lhs, convention),
+                    CurveQuote(curve_id, rhs, convention),
+                ),
+            )
+        ),
+        exercise=Exercise(style="european", schedule=Singleton(expiry)),
+        observation=Observation(kind="terminal", schedule=Singleton(expiry)),
+        underlying=Underlying(spec=QuoteCurve(curve_id)),
+    )
+
+
+def _build_surface_quote_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> ContractIR | None:
+    lower = description.lower()
+    if instrument not in {"", "quoted_observable", "vol_skew_payoff"}:
+        if getattr(product_ir, "instrument", "") not in {"quoted_observable", "vol_skew_payoff"}:
+            return None
+    if "vol-skew payoff" not in lower and "vol skew payoff" not in lower:
+        return None
+    if any(marker in lower for marker in (" option", " call ", " put ")):
+        return None
+    surface_id = _extract_single_underlier(description)
+    convention = _extract_surface_quote_convention(description)
+    coordinates = _extract_surface_quote_coordinates(description)
+    notional = _extract_numeric_after(description, labels=("notional",))
+    expiry = _extract_expiry_date(description)
+    if surface_id is None or convention is None or coordinates is None or notional is None or expiry is None:
+        return None
+    lhs, rhs = coordinates
+    return ContractIR(
+        payoff=canonicalize(
+            Scaled(
+                Constant(notional),
+                Sub(
+                    SurfaceQuote(surface_id, lhs, convention),
+                    SurfaceQuote(surface_id, rhs, convention),
+                ),
+            )
+        ),
+        exercise=Exercise(style="european", schedule=Singleton(expiry)),
+        observation=Observation(kind="terminal", schedule=Singleton(expiry)),
+        underlying=Underlying(spec=QuoteSurface(surface_id)),
+    )
+
+
 def _extract_expiry_date(description: str) -> date | None:
     match = re.search(
         r"\b(?:expiring|expiry|at expiry|maturity)\b[^0-9]*(\d{4}-\d{2}-\d{2})",
@@ -667,6 +754,82 @@ def _extract_single_underlier(description: str) -> str | None:
         return match.group(1)
     tokens = re.findall(r"\b[A-Z][A-Z0-9_.-]{1,}\b", description)
     return tokens[0] if tokens else None
+
+
+def _extract_curve_quote_convention(description: str) -> str | None:
+    lower = description.lower()
+    if "par rate" in lower:
+        return "par_rate"
+    if "zero rate" in lower:
+        return "zero_rate"
+    if "forward rate" in lower:
+        return "forward_rate"
+    return None
+
+
+def _extract_curve_quote_coordinates(
+    description: str,
+    *,
+    convention: str | None,
+) -> tuple[ParRateTenor | ZeroRateTenor | ForwardRateInterval, ParRateTenor | ZeroRateTenor | ForwardRateInterval] | None:
+    if convention is None:
+        return None
+    if convention == "forward_rate":
+        intervals = re.findall(
+            r"\b(\d+[DWMY])\s+to\s+(\d+[DWMY])\b",
+            description,
+            flags=re.IGNORECASE,
+        )
+        if len(intervals) != 2:
+            return None
+        left = ForwardRateInterval(intervals[0][0].upper(), intervals[0][1].upper())
+        right = ForwardRateInterval(intervals[1][0].upper(), intervals[1][1].upper())
+        return left, right
+
+    match = re.search(
+        r"\b(\d+[DWMY])\s*(?:-|minus)\s*(\d+[DWMY])\b",
+        description,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    left_tenor = match.group(1).upper()
+    right_tenor = match.group(2).upper()
+    if convention == "par_rate":
+        return ParRateTenor(left_tenor), ParRateTenor(right_tenor)
+    if convention == "zero_rate":
+        return ZeroRateTenor(left_tenor), ZeroRateTenor(right_tenor)
+    return None
+
+
+def _extract_surface_quote_convention(description: str) -> str | None:
+    lower = description.lower()
+    if "black vol" in lower:
+        return "black_vol"
+    if "normal vol" in lower:
+        return "normal_vol"
+    return None
+
+
+def _extract_surface_quote_coordinates(
+    description: str,
+) -> tuple[VolPoint | VolDeltaPoint, VolPoint | VolDeltaPoint] | None:
+    matches = re.findall(
+        r"\b(\d+[DWMY])\s+(-?\d+(?:\.\d+)?)%\s+(moneyness|spot delta|forward delta|delta)\b",
+        description,
+        flags=re.IGNORECASE,
+    )
+    if len(matches) != 2:
+        return None
+    coordinates: list[VolPoint | VolDeltaPoint] = []
+    for option_tenor, raw_level, raw_style in matches:
+        level = float(raw_level) / 100.0
+        style = raw_style.strip().lower().replace(" ", "_")
+        if "delta" in style:
+            coordinates.append(VolDeltaPoint(option_tenor.upper(), level, style))
+        else:
+            coordinates.append(VolPoint(option_tenor.upper(), level, style))
+    return coordinates[0], coordinates[1]
 
 
 def _extract_digital_threshold(description: str) -> float | None:

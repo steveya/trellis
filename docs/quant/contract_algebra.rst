@@ -127,9 +127,9 @@ Examples:
 - prefer ``VarianceObservable`` over ``VarianceReplication``
 - a future terminal variance-family node may still lower through static option
   replication, but replication is a pricing method, not the contract meaning
-- a future market-map node such as ``SurfaceQuote`` or ``CurveQuote`` should
-  carry explicit quote convention and coordinates because it denotes a quoted
-  market point rather than a generic economic quantity
+- market-map nodes such as ``SurfaceQuote`` and ``CurveQuote`` should carry
+  explicit quote convention and coordinates because they denote quoted market
+  points rather than generic economic quantities
 - ``SwapRate(schedule)`` and ``Annuity(schedule)`` are semantic observables
   tied to a contract-defined schedule, not quote-map nodes
 

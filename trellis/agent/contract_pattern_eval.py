@@ -659,6 +659,24 @@ def _match_contract_ir_payoff_head(
             bindings,
             labels=("variance_observable.underlier", "variance_observable.interval"),
         )
+    if pattern.kind == "curve_quote":
+        if not isinstance(observed, contract_ir_types.CurveQuote):
+            return _contract_ir_kind_mismatch("curve_quote", observed, bindings)
+        return _match_contract_ir_value_args(
+            pattern.args,
+            (observed.curve_id, observed.coordinate, observed.convention),
+            bindings,
+            labels=("curve_quote.curve_id", "curve_quote.coordinate", "curve_quote.convention"),
+        )
+    if pattern.kind == "surface_quote":
+        if not isinstance(observed, contract_ir_types.SurfaceQuote):
+            return _contract_ir_kind_mismatch("surface_quote", observed, bindings)
+        return _match_contract_ir_value_args(
+            pattern.args,
+            (observed.surface_id, observed.coordinate, observed.convention),
+            bindings,
+            labels=("surface_quote.surface_id", "surface_quote.coordinate", "surface_quote.convention"),
+        )
     if pattern.kind == "linear_basket":
         if not isinstance(observed, contract_ir_types.LinearBasket):
             return _contract_ir_kind_mismatch("linear_basket", observed, bindings)
@@ -861,6 +879,10 @@ def _contract_ir_underlying_kind_candidates(
         return ("interest_rate", "forward_rate", "rate_style"), "interest_rate"
     if isinstance(spec, contract_ir_types.RateCurve):
         return ("interest_rate", "rate_curve"), "interest_rate"
+    if isinstance(spec, contract_ir_types.QuoteCurve):
+        return ("quoted_observable_curve", "quoted_observable"), "quoted_observable_curve"
+    if isinstance(spec, contract_ir_types.QuoteSurface):
+        return ("quoted_observable_surface", "quoted_observable"), "quoted_observable_surface"
     return ("generic",), "generic"
 
 
@@ -880,6 +902,8 @@ def _contract_ir_underlying_dynamics_candidates(
         if isinstance(spec, (contract_ir_types.ForwardRate, contract_ir_types.RateCurve)):
             candidates.append("interest_rate")
         return tuple(dict.fromkeys(candidates)), spec.dynamics
+    if isinstance(spec, (contract_ir_types.QuoteCurve, contract_ir_types.QuoteSurface)):
+        return ("quote_snapshot", "quoted_observable"), "quote_snapshot"
     return ("generic",), "generic"
 
 

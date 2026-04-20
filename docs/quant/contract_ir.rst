@@ -64,14 +64,22 @@ Underliers:
 - ``EquitySpot(name, dynamics)``
 - ``ForwardRate(name, dynamics)``
 - ``RateCurve(name, dynamics)``
+- ``QuoteCurve(name)``
+- ``QuoteSurface(name)``
 - ``CompositeUnderlying(parts=...)``
 
 Payoff nodes:
 
 - leaves: ``Constant``, ``Strike``, ``Spot``, ``Forward``, ``SwapRate``,
-  ``Annuity``, ``VarianceObservable``
+  ``Annuity``, ``VarianceObservable``, ``CurveQuote``, ``SurfaceQuote``
 - structural nodes: ``LinearBasket``, ``ArithmeticMean``, ``Max``, ``Min``,
   ``Add``, ``Sub``, ``Mul``, ``Scaled``, ``Indicator``
+
+Quoted-observable coordinates:
+
+- curve coordinates: ``ParRateTenor``, ``ZeroRateTenor``,
+  ``ForwardRateInterval``
+- surface coordinates: ``VolPoint``, ``VolDeltaPoint``
 
 Naming follows the semantic ``Observable`` versus quote-map ``Quote``
 discipline documented in :doc:`contract_algebra`: nodes are named after the
@@ -93,6 +101,8 @@ The constructors enforce the local Phase 2 invariants:
 - ``FiniteSchedule`` must be non-empty and strictly increasing
 - ``SwapRate`` and ``Annuity`` require ``FiniteSchedule``
 - ``VarianceObservable`` requires ``ContinuousInterval``
+- ``CurveQuote`` and ``SurfaceQuote`` require explicit coordinate objects and
+  explicit quote conventions
 - European exercise uses ``Singleton``
 - terminal observation uses ``Singleton``
 
@@ -150,6 +160,7 @@ The bounded family set implemented today is:
 2. variance-settled payoffs
 3. digital payoffs
 4. arithmetic Asians
+5. quoted-observable terminal linear spreads
 
 Examples:
 
@@ -176,16 +187,35 @@ Examples:
    # Arithmetic Asian
    Max((Sub(ArithmeticMean(Spot("SPX"), avg_schedule), Strike(4500.0)), Constant(0.0)))
 
+   # Terminal curve-spread payoff
+   Scaled(
+       Constant(1_000_000.0),
+       Sub(
+           CurveQuote("USD_SWAP", ParRateTenor("10Y"), "par_rate"),
+           CurveQuote("USD_SWAP", ParRateTenor("2Y"), "par_rate"),
+       ),
+   )
+
+   # Terminal vol-skew payoff
+   Scaled(
+       Constant(100_000.0),
+       Sub(
+           SurfaceQuote("SPX_IV", VolPoint("1Y", 0.90, "moneyness"), "black_vol"),
+           SurfaceQuote("SPX_IV", VolPoint("1Y", 1.10, "moneyness"), "black_vol"),
+       ),
+   )
+
 Decomposition And Compilation
 -----------------------------
 
 ``trellis.agent.knowledge.decompose.decompose_to_contract_ir(...)`` provides a
-bounded, fixture-driven natural-language bridge for the four Phase 2 families.
+bounded, fixture-driven natural-language bridge for the admitted payoff
+families.
 It returns:
 
 - a well-formed ``ContractIR`` for supported descriptions
 - ``None`` for out-of-scope families such as barriers, lookbacks, callable
-  bonds, Bermudan exercise, or leg-based products
+  bonds, Bermudan exercise, leg-based products, or dynamic quote-linked notes
 
 ``trellis.agent.semantic_contract_compiler.compile_semantic_contract(...)``
 threads that result onto ``SemanticImplementationBlueprint.contract_ir``.
@@ -219,6 +249,25 @@ That matters for the next phase:
 The target state is explicit: even a simple rebuilt vanilla option should be
 able to go through ``ContractIR -> pattern match -> lowering obligations``
 without needing a direct hard-coded route by instrument name.
+
+Quoted-Observable Admission
+---------------------------
+
+The first quoted-observable closure slice is intentionally selection-only.
+
+``trellis.agent.quoted_observable_admission.select_quoted_observable_lowering(...)``
+reuses the same declaration / registry substrate as the Phase 3 structural
+solver compiler, but only for bounded structural admission of:
+
+- terminal linear curve-spread payoffs on explicit ``CurveQuote`` leaves
+- terminal linear surface-spread / vol-skew payoffs on explicit
+  ``SurfaceQuote`` leaves
+
+That surface proves the route-free authority boundary for quoted-observable
+contracts without claiming an executable checked pricer that does not exist
+yet. Options on quoted spreads, path-dependent quote products, and
+quote-linked coupon structures remain outside the admitted lowering cohort in
+this slice.
 
 Phase 3 / Phase 4 Structural Solver Compiler
 --------------------------------------------

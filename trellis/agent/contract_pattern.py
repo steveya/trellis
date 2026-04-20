@@ -272,6 +272,8 @@ _PAYOFF_KINDS = {
     "linear_basket",
     "arithmetic_mean",
     "variance_observable",
+    "curve_quote",
+    "surface_quote",
     "constant",
     "spot",
     "strike",
@@ -692,6 +694,8 @@ _ARITY_TABLE: dict[str, int | None] = {
     "annuity": 2,
     "arithmetic_mean": 2,
     "variance_observable": 2,
+    "curve_quote": 3,
+    "surface_quote": 3,
     # Variadic (>=1) head tags — we accept any non-zero arity.
     "max": None,
     "min": None,

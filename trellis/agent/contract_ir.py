@@ -137,7 +137,31 @@ class ForwardRate:
         )
 
 
-UnderlyingSpecLeaf = EquitySpot | RateCurve | ForwardRate
+@dataclass(frozen=True)
+class QuoteCurve:
+    name: str
+
+    def __post_init__(self):
+        object.__setattr__(
+            self,
+            "name",
+            _require_non_empty_text(self.name, label="QuoteCurve.name"),
+        )
+
+
+@dataclass(frozen=True)
+class QuoteSurface:
+    name: str
+
+    def __post_init__(self):
+        object.__setattr__(
+            self,
+            "name",
+            _require_non_empty_text(self.name, label="QuoteSurface.name"),
+        )
+
+
+UnderlyingSpecLeaf = EquitySpot | RateCurve | ForwardRate | QuoteCurve | QuoteSurface
 
 
 @dataclass(frozen=True)
@@ -150,7 +174,7 @@ class CompositeUnderlying:
         if not self.parts:
             raise ContractIRWellFormednessError("CompositeUnderlying must be non-empty")
         for part in self.parts:
-            if not isinstance(part, (EquitySpot, RateCurve, ForwardRate)):
+            if not isinstance(part, (EquitySpot, RateCurve, ForwardRate, QuoteCurve, QuoteSurface)):
                 raise ContractIRWellFormednessError(
                     "CompositeUnderlying.parts must contain only UnderlyingSpecLeaf values"
                 )
@@ -161,7 +185,7 @@ class CompositeUnderlying:
             )
 
 
-UnderlyingSpec = EquitySpot | RateCurve | ForwardRate | CompositeUnderlying
+UnderlyingSpec = EquitySpot | RateCurve | ForwardRate | QuoteCurve | QuoteSurface | CompositeUnderlying
 
 
 @dataclass(frozen=True)
@@ -171,7 +195,7 @@ class Underlying:
     def __post_init__(self):
         if not isinstance(
             self.spec,
-            (EquitySpot, RateCurve, ForwardRate, CompositeUnderlying),
+            (EquitySpot, RateCurve, ForwardRate, QuoteCurve, QuoteSurface, CompositeUnderlying),
         ):
             raise ContractIRWellFormednessError(
                 "Underlying.spec must be an UnderlyingSpec"
@@ -308,6 +332,140 @@ class Strike:
 
     def __post_init__(self):
         object.__setattr__(self, "value", _as_float(self.value, label="Strike.value"))
+
+
+@dataclass(frozen=True)
+class ParRateTenor:
+    tenor: str
+
+    def __post_init__(self):
+        object.__setattr__(
+            self,
+            "tenor",
+            _require_non_empty_text(self.tenor, label="ParRateTenor.tenor"),
+        )
+
+
+@dataclass(frozen=True)
+class ZeroRateTenor:
+    tenor: str
+
+    def __post_init__(self):
+        object.__setattr__(
+            self,
+            "tenor",
+            _require_non_empty_text(self.tenor, label="ZeroRateTenor.tenor"),
+        )
+
+
+@dataclass(frozen=True)
+class ForwardRateInterval:
+    start_tenor: str
+    end_tenor: str
+
+    def __post_init__(self):
+        object.__setattr__(
+            self,
+            "start_tenor",
+            _require_non_empty_text(self.start_tenor, label="ForwardRateInterval.start_tenor"),
+        )
+        object.__setattr__(
+            self,
+            "end_tenor",
+            _require_non_empty_text(self.end_tenor, label="ForwardRateInterval.end_tenor"),
+        )
+
+
+CurveCoordinate = ParRateTenor | ZeroRateTenor | ForwardRateInterval
+
+
+@dataclass(frozen=True)
+class VolPoint:
+    option_tenor: str
+    strike: float
+    strike_style: str
+
+    def __post_init__(self):
+        object.__setattr__(
+            self,
+            "option_tenor",
+            _require_non_empty_text(self.option_tenor, label="VolPoint.option_tenor"),
+        )
+        object.__setattr__(self, "strike", _as_float(self.strike, label="VolPoint.strike"))
+        object.__setattr__(
+            self,
+            "strike_style",
+            _require_non_empty_text(self.strike_style, label="VolPoint.strike_style"),
+        )
+
+
+@dataclass(frozen=True)
+class VolDeltaPoint:
+    option_tenor: str
+    delta: float
+    delta_style: str
+
+    def __post_init__(self):
+        object.__setattr__(
+            self,
+            "option_tenor",
+            _require_non_empty_text(self.option_tenor, label="VolDeltaPoint.option_tenor"),
+        )
+        object.__setattr__(self, "delta", _as_float(self.delta, label="VolDeltaPoint.delta"))
+        object.__setattr__(
+            self,
+            "delta_style",
+            _require_non_empty_text(self.delta_style, label="VolDeltaPoint.delta_style"),
+        )
+
+
+SurfaceCoordinate = VolPoint | VolDeltaPoint
+
+
+@dataclass(frozen=True)
+class CurveQuote:
+    curve_id: str
+    coordinate: CurveCoordinate
+    convention: str
+
+    def __post_init__(self):
+        object.__setattr__(
+            self,
+            "curve_id",
+            _require_non_empty_text(self.curve_id, label="CurveQuote.curve_id"),
+        )
+        if not isinstance(self.coordinate, (ParRateTenor, ZeroRateTenor, ForwardRateInterval)):
+            raise ContractIRWellFormednessError(
+                "CurveQuote coordinate must be a CurveCoordinate"
+            )
+        object.__setattr__(
+            self,
+            "convention",
+            _require_non_empty_text(self.convention, label="CurveQuote.convention"),
+        )
+
+
+@dataclass(frozen=True)
+class SurfaceQuote:
+    surface_id: str
+    coordinate: SurfaceCoordinate
+    convention: str
+
+    def __post_init__(self):
+        object.__setattr__(
+            self,
+            "surface_id",
+            _require_non_empty_text(self.surface_id, label="SurfaceQuote.surface_id"),
+        )
+        if not isinstance(self.coordinate, (VolPoint, VolDeltaPoint)):
+            raise ContractIRWellFormednessError(
+                "SurfaceQuote coordinate must be a SurfaceCoordinate"
+            )
+        object.__setattr__(
+            self,
+            "convention",
+            _require_non_empty_text(self.convention, label="SurfaceQuote.convention"),
+        )
 
 
 PayoffExpr = Any
@@ -480,6 +638,8 @@ PayoffExpr = (
     | SwapRate
     | Annuity
     | Strike
+    | CurveQuote
+    | SurfaceQuote
     | LinearBasket
     | ArithmeticMean
     | VarianceObservable
@@ -549,6 +709,12 @@ def _validate_payoff_expr(expr: PayoffExpr, *, namespace: tuple[str, ...]) -> No
         return
     if isinstance(expr, (SwapRate, Annuity)):
         _validate_underlier_reference(expr.underlier_id, namespace=namespace)
+        return
+    if isinstance(expr, CurveQuote):
+        _validate_underlier_reference(expr.curve_id, namespace=namespace)
+        return
+    if isinstance(expr, SurfaceQuote):
+        _validate_underlier_reference(expr.surface_id, namespace=namespace)
         return
     if isinstance(expr, VarianceObservable):
         _validate_underlier_reference(expr.underlier_id, namespace=namespace)
@@ -658,6 +824,16 @@ def evaluate_payoff_expr(
                 fallback=("annuity", expr.underlier_id, schedule_key),
             )
         return _lookup_value(env, key=("annuity", expr.underlier_id, schedule_key))
+    if isinstance(expr, CurveQuote):
+        return _lookup_value(
+            env,
+            key=("curve_quote", expr.curve_id, expr.coordinate, expr.convention),
+        )
+    if isinstance(expr, SurfaceQuote):
+        return _lookup_value(
+            env,
+            key=("surface_quote", expr.surface_id, expr.coordinate, expr.convention),
+        )
     if isinstance(expr, VarianceObservable):
         return _lookup_value(
             env,
@@ -748,7 +924,20 @@ def evaluate_predicate(
 
 
 def canonicalize(expr: PayoffExpr) -> PayoffExpr:
-    if isinstance(expr, (Constant, Spot, Forward, SwapRate, Annuity, Strike, VarianceObservable)):
+    if isinstance(
+        expr,
+        (
+            Constant,
+            Spot,
+            Forward,
+            SwapRate,
+            Annuity,
+            Strike,
+            CurveQuote,
+            SurfaceQuote,
+            VarianceObservable,
+        ),
+    ):
         return expr
     if isinstance(expr, ArithmeticMean):
         return ArithmeticMean(canonicalize(expr.expr), expr.schedule)
@@ -981,32 +1170,50 @@ def _expr_sort_key(expr: PayoffExpr) -> tuple[object, ...]:
         return (3, expr.underlier_id, _schedule_key(expr.schedule))
     if isinstance(expr, Annuity):
         return (4, expr.underlier_id, _schedule_key(expr.schedule))
+    if isinstance(expr, CurveQuote):
+        return (5, expr.curve_id, _coordinate_sort_key(expr.coordinate), expr.convention)
+    if isinstance(expr, SurfaceQuote):
+        return (6, expr.surface_id, _coordinate_sort_key(expr.coordinate), expr.convention)
     if isinstance(expr, LinearBasket):
         return (
-            5,
+            7,
             tuple((weight, _expr_sort_key(child)) for weight, child in expr.terms),
         )
     if isinstance(expr, ArithmeticMean):
-        return (6, _expr_sort_key(expr.expr), _schedule_key(expr.schedule))
+        return (8, _expr_sort_key(expr.expr), _schedule_key(expr.schedule))
     if isinstance(expr, VarianceObservable):
-        return (7, expr.underlier_id, expr.interval.t_start, expr.interval.t_end)
+        return (9, expr.underlier_id, expr.interval.t_start, expr.interval.t_end)
     if isinstance(expr, Constant):
-        return (8, expr.value)
+        return (10, expr.value)
     if isinstance(expr, Indicator):
-        return (9, _predicate_sort_key(expr.predicate))
+        return (11, _predicate_sort_key(expr.predicate))
     if isinstance(expr, Scaled):
-        return (10, _expr_sort_key(expr.scalar), _expr_sort_key(expr.body))
+        return (12, _expr_sort_key(expr.scalar), _expr_sort_key(expr.body))
     if isinstance(expr, Add):
-        return (11, tuple(_expr_sort_key(child) for child in expr.args))
-    if isinstance(expr, Mul):
-        return (12, tuple(_expr_sort_key(child) for child in expr.args))
-    if isinstance(expr, Max):
         return (13, tuple(_expr_sort_key(child) for child in expr.args))
-    if isinstance(expr, Min):
+    if isinstance(expr, Mul):
         return (14, tuple(_expr_sort_key(child) for child in expr.args))
+    if isinstance(expr, Max):
+        return (15, tuple(_expr_sort_key(child) for child in expr.args))
+    if isinstance(expr, Min):
+        return (16, tuple(_expr_sort_key(child) for child in expr.args))
     if isinstance(expr, Strike):
-        return (15, expr.value)
+        return (17, expr.value)
     raise TypeError(f"unsupported payoff node {type(expr).__name__}")
+
+
+def _coordinate_sort_key(coordinate: CurveCoordinate | SurfaceCoordinate) -> tuple[object, ...]:
+    if isinstance(coordinate, ParRateTenor):
+        return (0, coordinate.tenor)
+    if isinstance(coordinate, ZeroRateTenor):
+        return (1, coordinate.tenor)
+    if isinstance(coordinate, ForwardRateInterval):
+        return (2, coordinate.start_tenor, coordinate.end_tenor)
+    if isinstance(coordinate, VolPoint):
+        return (3, coordinate.option_tenor, coordinate.strike, coordinate.strike_style)
+    if isinstance(coordinate, VolDeltaPoint):
+        return (4, coordinate.option_tenor, coordinate.delta, coordinate.delta_style)
+    raise TypeError(f"unsupported coordinate node {type(coordinate).__name__}")
 
 
 def _predicate_sort_key(predicate: Predicate) -> tuple[object, ...]:
@@ -1037,11 +1244,13 @@ __all__ = [
     "ContinuousInterval",
     "ContractIR",
     "ContractIRWellFormednessError",
+    "CurveQuote",
     "EquitySpot",
     "Exercise",
     "FiniteSchedule",
     "Forward",
     "ForwardRate",
+    "ForwardRateInterval",
     "Ge",
     "Gt",
     "Indicator",
@@ -1055,15 +1264,22 @@ __all__ = [
     "Observation",
     "Or",
     "PayoffEvalEnv",
+    "ParRateTenor",
+    "QuoteCurve",
+    "QuoteSurface",
     "RateCurve",
     "Scaled",
     "Singleton",
     "Spot",
     "Strike",
     "Sub",
+    "SurfaceQuote",
     "SwapRate",
     "Underlying",
     "VarianceObservable",
+    "VolDeltaPoint",
+    "VolPoint",
+    "ZeroRateTenor",
     "canonicalize",
     "evaluate_payoff_expr",
     "evaluate_predicate",
