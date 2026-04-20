@@ -594,6 +594,9 @@ def _semantic_blueprint_summary(semantic_blueprint) -> dict[str, object]:
             for item in getattr(lowering, "errors", ()) or ()
         ],
         "lane_plan": _yaml_safe_value(lane_plan),
+        "contract_ir_solver_shadow": _yaml_safe_value(
+            getattr(semantic_blueprint, "contract_ir_solver_shadow", None)
+        ),
         "requested_outputs": list(getattr(semantic_blueprint, "requested_outputs", ()) or ()),
         "valuation_context": valuation_context_summary(semantic_blueprint.valuation_context)
         if getattr(semantic_blueprint, "valuation_context", None) is not None

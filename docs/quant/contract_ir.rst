@@ -217,3 +217,127 @@ That matters for the next phase:
 The target state is explicit: even a simple rebuilt vanilla option should be
 able to go through ``ContractIR -> pattern match -> lowering obligations``
 without needing a direct hard-coded route by instrument name.
+
+Phase 3 Structural Solver Compiler
+----------------------------------
+
+Phase 3 introduces the first bounded structural compiler on top of
+``ContractIR``:
+
+- ``trellis.agent.contract_ir_solver_compiler.compile_contract_ir_solver(...)``
+- ``trellis.agent.contract_ir_solver_compiler.execute_contract_ir_solver_decision(...)``
+
+This compiler is still additive in the current shipped state. It does not
+replace the legacy route path yet. Instead it proves that a fresh build can
+bind a checked solver call directly from:
+
+- ``contract_ir``
+- a generic non-structural term environment
+- the requested method / output surface
+- a bound ``MarketState``
+
+and do so without consulting ``ProductIR.instrument`` or any route id during
+selection.
+
+Normalized Term Environment
+---------------------------
+
+Some checked helpers need reusable contract conventions that are intentionally
+not baked into the structural payoff tree. Phase 3 therefore uses a generic
+term environment rather than product-specific payloads.
+
+The current groups are:
+
+- ``CashSettlementTerms`` for notional, payout currency, and settlement kind
+- ``AccrualConventionTerms`` for day-count and payment-frequency conventions
+- ``FloatingRateReferenceTerms`` for index / curve-name references
+- ``QuoteGridTerms`` for bounded observable quote grids such as variance
+  replication strike-vol pairs
+
+The important boundary rule is unchanged:
+
+- if a field changes structural payoff family or pattern match, it belongs in
+  ``ContractIR``
+- if it preserves the structural family but changes helper materialization, it
+  may belong in the generic term environment
+
+Phase 3 Families
+----------------
+
+The current bounded structural-solver wave covers:
+
+1. European call / put terminal ramps through the Black76 basis kernels in
+   ``trellis.models.black``
+2. Cash-or-nothing and asset-or-nothing digitals through the same Black76
+   basis family
+3. European payer / receiver swaptions through
+   ``trellis.models.rate_style_swaption.price_swaption_black76``
+4. Two-asset analytical basket / spread call / put payoffs through
+   ``trellis.models.basket_option.price_basket_option_analytical``
+5. Equity variance swaps through
+   ``trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical``
+
+The equity vanilla / digital lane intentionally mirrors the current checked
+zero-carry parity contract:
+
+.. code-block:: python
+
+   forward = spot / discount_factor
+   price = discount_factor * black76_basis_kernel(forward, strike, sigma, T)
+
+That is the contract Phase 3 shadow-mode parity defends today. A future
+carry-aware lane will need an explicit market capability and a documented
+carry-source policy before it can replace this basis.
+
+Swaptions also keep the current checked helper conventions. When the semantic
+term surface does not provide a more specific payment frequency, the structural
+adapter defaults the fixed leg to semiannual rather than inheriting a coarse
+annualized decomposition schedule.
+
+Variance swaps reuse the existing bounded smile-based analytical helper. The
+``VarianceObservable`` node names the contractual observed quantity. Optional
+quote-grid inputs remain helper materialization detail carried through
+``QuoteGridTerms``.
+
+Shadow Mode And Provenance
+--------------------------
+
+When ``compile_semantic_contract(...)`` receives a bound ``MarketState`` and
+the structural compiler can bind one of the admitted families, the blueprint
+now also carries ``contract_ir_solver_shadow``.
+
+That compact record includes:
+
+- the structural declaration id
+- the checked callable ref
+- requested method
+- market identity and overlay identity
+- adapter-resolved market-coordinate provenance
+- the legacy route id / family / module cohort used only for comparison
+
+This is intentionally a shadow surface in Phase 3:
+
+- structural compilation is authoritative for the comparison record
+- legacy route metadata is carried only for observability
+- failure to bind the structural compiler does not perturb the live route path
+
+``compile_build_request(...)`` threads the same summary onto request metadata
+under ``request.metadata["semantic_blueprint"]["contract_ir_solver_shadow"]``.
+
+Explicit Phase 3 Non-goals
+--------------------------
+
+Arithmetic Asians remain representable in ``ContractIR`` but are still an
+explicit no-match for the structural solver. The current checked repository
+does not expose a dedicated analytical arithmetic-Asian helper that meets the
+Phase 3 migration contract, so those products remain on the legacy route path.
+
+That distinction is deliberate:
+
+- ``ContractIR`` representation coverage is broader than the current migrated
+  solver wave
+- "IR exists" must not be read as "the family is already route-free"
+
+Phase 4 is the retirement phase. Phase 3 only proves that the admitted
+families can already price through the structural compiler with parity and
+provenance recorded in shadow mode.

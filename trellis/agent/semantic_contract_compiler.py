@@ -78,6 +78,7 @@ class SemanticImplementationBlueprint:
     dsl_lowering: object | None = None
     lane_plan: object | None = None
     contract_ir: ContractIR | None = None
+    contract_ir_solver_shadow: object | None = None
 
     def __post_init__(self):
         """Freeze mapping metadata for stable traces and tests."""
@@ -233,6 +234,17 @@ def compile_semantic_contract(
             )
         )
     )
+    contract_ir_solver_shadow = _compile_contract_ir_solver_shadow(
+        contract=contract,
+        contract_ir=contract_ir,
+        preferred_method=preferred_method,
+        requested_outputs=normalized_outputs,
+        valuation_context=resolved_valuation_context,
+        market_snapshot=getattr(resolved_valuation_context, "market_snapshot", None),
+        primitive_routes=primitive_routes,
+        route_modules=route_modules,
+        dsl_lowering=dsl_lowering,
+    )
 
     return SemanticImplementationBlueprint(
         semantic_id=contract.semantic_id,
@@ -266,6 +278,7 @@ def compile_semantic_contract(
         dsl_lowering=dsl_lowering,
         lane_plan=lane_plan,
         contract_ir=contract_ir,
+        contract_ir_solver_shadow=contract_ir_solver_shadow,
     )
 
 
@@ -431,6 +444,76 @@ def _augment_product_ir_with_contract_route_hints(product_ir, contract):
         product_ir,
         route_families=tuple(route_families),
         candidate_engine_families=tuple(engine_families),
+    )
+
+
+def _compile_contract_ir_solver_shadow(
+    *,
+    contract,
+    contract_ir: ContractIR | None,
+    preferred_method: str,
+    requested_outputs: tuple[str, ...],
+    valuation_context,
+    market_snapshot,
+    primitive_routes: tuple[str, ...],
+    route_modules: tuple[str, ...],
+    dsl_lowering,
+):
+    """Compile the additive structural-shadow record when a bound market exists.
+
+    Shadow compilation is deliberately non-authoritative in Phase 3: failure to
+    match or bind the structural solver must not perturb the legacy route path.
+    """
+
+    if contract_ir is None:
+        return None
+
+    from trellis.agent.contract_ir_solver_compiler import (
+        ContractIRSolverCompileError,
+        build_contract_ir_term_environment,
+        compile_contract_ir_solver,
+        shadow_record_from_decision,
+    )
+    from trellis.core.market_state import MarketState
+
+    if not isinstance(market_snapshot, MarketState):
+        return None
+
+    try:
+        decision = compile_contract_ir_solver(
+            contract_ir,
+            term_environment=build_contract_ir_term_environment(contract),
+            valuation_context=valuation_context,
+            market_state=market_snapshot,
+            preferred_method=preferred_method,
+            requested_outputs=requested_outputs,
+        )
+    except ContractIRSolverCompileError:
+        _LOG.debug(
+            "Contract IR structural shadow compilation did not bind for semantic %s",
+            getattr(contract, "semantic_id", "<unknown>"),
+            exc_info=True,
+        )
+        return None
+
+    legacy_route_id = (
+        str(getattr(dsl_lowering, "route_id", None) or "").strip()
+        or (primitive_routes[0] if primitive_routes else "")
+    )
+    legacy_route_family = str(getattr(dsl_lowering, "route_family", None) or "").strip()
+    legacy_modules = tuple(
+        dict.fromkeys(
+            (
+                *tuple(getattr(dsl_lowering, "helper_modules", ()) or ()),
+                *tuple(route_modules or ()),
+            )
+        )
+    )
+    return shadow_record_from_decision(
+        decision,
+        legacy_route_id=legacy_route_id,
+        legacy_route_family=legacy_route_family,
+        legacy_route_modules=legacy_modules,
     )
 
 
