@@ -155,6 +155,38 @@ contract is:
 - benchmark or parity plans are attached at admission time
 - route-free executable pricing for those lanes remains future work
 
+Later-Family Route-Retirement Readiness
+---------------------------------------
+
+``trellis.agent.route_retirement_readiness`` now seeds the first
+machine-checkable readiness ledger for the dynamic cohorts:
+
+- ``automatic_event_state``
+- ``discrete_control``
+- ``continuous_singular_control``
+
+Each readiness row makes the current migration state explicit across the
+required later-family cutover gates:
+
+- representation closure
+- decomposition closure
+- lowering admission
+- parity or benchmark evidence
+- provenance readiness
+- masked-authority test readiness
+
+The current dynamic cohorts are intentionally **not** cutover-ready yet.
+Their remaining blockers are executable parity or benchmark completion and
+promotion of dynamic provenance onto the Phase 4 valuation-identity surface.
+
+The same module also ships a reusable masked-authority harness for
+later-family route-retirement tickets. The harness proves that changing
+legacy ``route_id`` / ``route_family`` labels, ``ProductIR.instrument``-style
+instrument tags, or non-semantic wrapper metadata does not change the
+authoritative selection snapshot for bounded dynamic probes. That gives later
+family-specific cutover tickets one shared invariance contract instead of
+duplicated family-local assertions.
+
 Classifier Boundary
 -------------------
 

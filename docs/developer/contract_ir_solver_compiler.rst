@@ -158,6 +158,31 @@ A family should not be treated as route-retirement-ready merely because it
 binds structurally; the ledger must also show sufficient comparison evidence
 and an explicit non-blocked status.
 
+Later-Family Readiness And Harness Reuse
+----------------------------------------
+
+Post-Phase-4 semantic families should not invent their own cutover checklist
+or their own authority-masking assertions.
+
+``trellis.agent.route_retirement_readiness`` is now the shared developer-facing
+support module for that follow-on work. It provides:
+
+- a seeded readiness ledger for the current dynamic cohorts
+- a generic masked-authority invariance harness
+- bounded dynamic probe capture that later-family tickets can extend before a
+  real executable cutover exists
+
+The operational rule is:
+
+1. a later-family ticket records its readiness state in the ledger vocabulary
+2. the ticket reuses the shared masking harness against its bounded selector or
+   cutover probe
+3. the family is still blocked from real route retirement until parity and
+   provenance gates flip from planned to ready
+
+That keeps later-family migrations aligned with the existing Phase 4 authority
+contract rather than recreating route-local review logic in each family wave.
+
 Extension Guidance
 ------------------
 

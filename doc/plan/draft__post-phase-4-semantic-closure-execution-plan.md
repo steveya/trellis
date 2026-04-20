@@ -9,8 +9,9 @@ The umbrella and `CLX.*` child tickets are now filed in Linear. This
 document remains the ordered repo-local mirror for that queue and should
 stay aligned with the live issue graph.
 
-`CLX.1` through `CLX.6` are now implemented and merged. The next
-concrete follow-on tickets are `QUA-936`, `QUA-937`, and `QUA-938`.
+`CLX.1` through `CLX.6` are now implemented and merged, and `QUA-936`
+has already landed the overlay-boundary fixtures under `CLX.7`. The
+current `CLX.8` implementation tranche is `QUA-937` and `QUA-938`.
 
 Status mirror last synced: `2026-04-20`
 
@@ -123,8 +124,6 @@ post-Phase-4 work risks stalling in familiar ways:
 
 Current next pickup:
 
-- `QUA-936` — overlay boundary fixtures for financial-control vs
-  policy-state overlays
 - `QUA-937` — readiness ledger for dynamic closure cohorts
 - `QUA-938` — reusable masked-authority harness for later-family
   cutovers
@@ -275,6 +274,15 @@ Filed follow-ons:
 - `QUA-937` — readiness ledger for dynamic closure cohorts
 - `QUA-938` — reusable masked-authority harness for later-family
   cutovers
+
+Implementation note for the current tranche:
+
+- the shared readiness ledger now lives in
+  `trellis.agent.route_retirement_readiness.dynamic_route_retirement_readiness_ledger`
+- the shared masking harness now lives in
+  `trellis.agent.route_retirement_readiness.require_masked_authority_invariant`
+- the seeded dynamic cohorts still remain blocked on parity /
+  provenance even after the masking harness lands
 
 ## Family-to-Queue Map
 
