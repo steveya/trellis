@@ -115,6 +115,33 @@ prove that Trellis can emit one dynamic semantic authority packet per lane
 without route-local product authority, not to claim broad free-form product
 coverage.
 
+Insurance Overlay Sibling
+-------------------------
+
+Insurance-style overlays now have a separate representational home in
+``trellis.agent.insurance_overlay_contract``. The bounded wrapper is:
+
+- ``InsuranceOverlayContractIR(core_contract, policy_state_schema, overlay_events, composition_rule)``
+- ``PolicyStateSchema`` over explicit policy-state fields such as
+  ``policy_status``
+- overlay events such as ``OverlayTransitionEvent`` and ``OverlayFeeEvent``
+- explicit ``OverlayParameterSet`` values for fee or hazard-style overlay terms
+
+``trellis.agent.knowledge.decompose.decompose_to_insurance_overlay_contract_ir(...)``
+is the bounded decomposition companion for this sibling surface. Today it only
+recognizes overlay-bearing GMWB-style requests where the same description would
+otherwise be blocked from the executable financial-control path because it
+mentions mortality, lapse, or fee overlays.
+
+The design rule stays sharp:
+
+- the inner ``DynamicContractIR`` core remains overlay-free and only carries the
+  financial-control state and withdrawal semantics
+- policy-state fields and overlay events live on the outer insurance wrapper
+- the executable dynamic-lane admission path still accepts only the overlay-free
+  ``DynamicContractIR`` core and continues to fail closed for overlay-bearing
+  requests
+
 Lane Admission
 --------------
 
@@ -210,11 +237,14 @@ This bounded dynamic slice still does not provide:
 - authoritative fresh-build pricing compiler integration for the admitted lanes
 - quoted-observable dynamic hybrids such as callable CMS-spread range-accrual
   structures
-- insurance overlays such as mortality, lapse, or fee behavior on top of the
-  financial-control core
+- executable insurance overlays such as mortality, lapse, or fee behavior on
+  top of the financial-control core
 
 The current financial-control slice is intentionally overlay-free. Bounded
-``gmwb`` decomposition now fails closed when the request introduces mortality,
-lapse, or fee-bearing insurance terms, and the dynamic-lane admission surface
-rejects policy-state-tagged fixtures with an explicit deferred-overlay blocker
-instead of silently reclassifying them as ordinary financial-control contracts.
+``gmwb`` decomposition still fails closed on the executable dynamic path when
+the request introduces mortality, lapse, or fee-bearing insurance terms, and
+the dynamic-lane admission surface rejects policy-state-tagged fixtures with an
+explicit deferred-overlay blocker instead of silently reclassifying them as
+ordinary financial-control contracts. The new overlay wrapper only gives those
+requests an honest semantic representation; it does not admit them into the
+current fresh-build compiler.

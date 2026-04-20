@@ -2,7 +2,9 @@
 
 ## Status
 
-`INS.1` / `QUA-936` is now active.
+`INS.1` / `QUA-936` is now done, and `INS.2` / `QUA-939` lands the first
+explicit policy-state overlay surface above the bounded financial-control
+core.
 
 The current bounded financial-control slice remains overlay-free, and
 this note records the first executable boundary between that core and
@@ -81,19 +83,19 @@ sprawl in one of two bad directions:
 
 ## Minimal Overlay Surface
 
-This note does not lock an ADT, but the later bounded overlay should be
-able to express:
+The bounded overlay surface is now explicit:
 
 ```text
-InsuranceOverlay =
-    { policy_state_schema: PolicyStateSchema
+InsuranceOverlayContractIR =
+    { core_contract: DynamicContractIR
+    ; policy_state_schema: PolicyStateSchema
     ; overlay_events: tuple[OverlayEvent, ...]
     ; overlay_parameters: OverlayParameterSet
     ; composition_rule: OverlayCompositionRule
     }
 ```
 
-with bounded examples such as:
+The bounded shipped event family is still intentionally small:
 
 - mortality transition events
 - lapse transition events
@@ -101,12 +103,19 @@ with bounded examples such as:
 - benefit-adjustment rules that act on top of the financial-control
   state
 
+The key invariant is now executable in code:
+
+- the inner ``DynamicContractIR`` core must remain overlay-free
+- policy-state fields such as ``policy_status`` live only in the overlay schema
+- overlay events may gate continuation or apply fee logic, but they do not widen
+  the current executable financial-control lane
+
 ## Ordered Follow-On Queue
 
 | Queue ID | Status | Scope | Hard prerequisites |
 | --- | --- | --- | --- |
-| `INS.1` | In Progress (`QUA-936`) | document the overlay boundary against the financial-control core | bounded financial-control lane exists |
-| `INS.2` | Backlog | define the minimal policy-state overlay surface | `INS.1` |
+| `INS.1` | Done (`QUA-936`) | document the overlay boundary against the financial-control core | bounded financial-control lane exists |
+| `INS.2` | Done (`QUA-939`) | define the minimal policy-state overlay surface | `INS.1` |
 | `INS.3` | Backlog | choose one bounded proving family if insurance overlays are actually in scope | `INS.2` |
 
 ## Admission Rule
@@ -131,9 +140,10 @@ first.
 
 ## Next Steps
 
-1. Finish `INS.1` / `QUA-936` by locking the boundary into fixtures,
-   admission blockers, and the closure execution mirror.
-2. Promote `INS.2` only if a real requested family needs policy-state
+1. Treat `INS.1` / `QUA-936` plus `INS.2` / `QUA-939` as the minimum honest
+   overlay foundation: fail-closed executable boundary plus explicit semantic
+   wrapper.
+2. Promote `INS.3` only if a real requested family needs policy-state
    semantics beyond the bounded financial-control core.
-3. Treat any later overlay work as a sibling bounded track above the
+3. Keep any later overlay work as a sibling bounded track above the
    financial-control core rather than reopening the core design.

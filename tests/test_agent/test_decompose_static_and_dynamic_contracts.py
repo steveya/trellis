@@ -3,8 +3,10 @@ from __future__ import annotations
 from datetime import date
 
 from trellis.agent.dynamic_contract_ir import DynamicContractIR
+from trellis.agent.insurance_overlay_contract import InsuranceOverlayContractIR
 from trellis.agent.knowledge.decompose import (
     decompose_to_dynamic_contract_ir,
+    decompose_to_insurance_overlay_contract_ir,
     decompose_to_ir,
     decompose_to_static_leg_contract_ir,
 )
@@ -169,6 +171,29 @@ class TestDecomposeStaticAndDynamicContracts:
                 instrument_type="gmwb",
             )
             is None
+        )
+
+    def test_gmwb_overlay_bearing_descriptions_decompose_to_overlay_wrapper(self):
+        overlay_description = (
+            "GMWB contract premium 100000 guarantee base 100000 account value 100000 "
+            "withdrawal dates 2026-01-15, 2027-01-15, 2028-01-15 mortality rider fee 1%"
+        )
+
+        observed = decompose_to_insurance_overlay_contract_ir(
+            overlay_description,
+            instrument_type="gmwb",
+        )
+
+        assert isinstance(observed, InsuranceOverlayContractIR)
+        assert observed.core_contract.semantic_family == "gmwb"
+        assert observed.policy_state_schema.field_names == ("policy_status",)
+        assert tuple(event.label for event in observed.overlay_events) == (
+            "mortality_transition",
+            "rider_fee",
+        )
+        assert observed.overlay_parameters.parameter_names == (
+            "mortality_hazard",
+            "rider_fee_rate",
         )
 
     def test_dynamic_decomposition_rejects_static_and_quote_only_descriptions(self):

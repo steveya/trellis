@@ -68,6 +68,15 @@ from trellis.agent.dynamic_contract_ir import (
     StateResetEvent,
     TerminationRule,
 )
+from trellis.agent.insurance_overlay_contract import (
+    InsuranceOverlayContractIR,
+    OverlayCompositionRule,
+    OverlayFeeEvent,
+    OverlayParameterSet,
+    OverlayParameterSpec,
+    OverlayTransitionEvent,
+    PolicyStateSchema,
+)
 from trellis.agent.knowledge.methods import normalize_method
 from trellis.agent.knowledge.schema import ProductDecomposition, ProductIR, RetrievalSpec
 from trellis.agent.static_leg_contract import (
@@ -381,6 +390,34 @@ def decompose_to_dynamic_contract_ir(
         _build_dynamic_swing_option_contract_ir,
         _build_dynamic_gmwb_contract_ir,
     )
+    for builder in builders:
+        contract = builder(
+            description,
+            instrument=instrument,
+            product_ir=product_ir,
+        )
+        if contract is not None:
+            return contract
+    return None
+
+
+def decompose_to_insurance_overlay_contract_ir(
+    description: str,
+    instrument_type: str | None = None,
+    *,
+    product_ir: ProductIR | None = None,
+    store: KnowledgeStore | None = None,
+) -> InsuranceOverlayContractIR | None:
+    """Build a bounded insurance-overlay wrapper above the financial-control core."""
+
+    product_ir = product_ir or decompose_to_ir(
+        description,
+        instrument_type=instrument_type,
+        store=store,
+    )
+    instrument = _normalise(instrument_type or getattr(product_ir, "instrument", ""))
+
+    builders = (_build_gmwb_insurance_overlay_contract_ir,)
     for builder in builders:
         contract = builder(
             description,
@@ -1005,13 +1042,28 @@ def _build_dynamic_gmwb_contract_ir(
     instrument: str,
     product_ir: ProductIR,
 ) -> DynamicContractIR | None:
+    return _build_gmwb_financial_control_core_contract_ir(
+        description,
+        instrument=instrument,
+        product_ir=product_ir,
+        allow_overlay_terms=False,
+    )
+
+
+def _build_gmwb_financial_control_core_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+    allow_overlay_terms: bool,
+) -> DynamicContractIR | None:
     lower = description.lower()
     product_instrument = getattr(product_ir, "instrument", "")
     if instrument not in {"", "gmwb"} and product_instrument not in {"gmwb"}:
         return None
     if "gmwb" not in lower and "guaranteed minimum withdrawal benefit" not in lower:
         return None
-    if re.search(
+    if not allow_overlay_terms and re.search(
         r"\b(mortality|lapse|fee|fees|death benefit|policy status|alive|dead|lapsed)\b",
         lower,
     ):
@@ -1088,6 +1140,122 @@ def _build_dynamic_gmwb_contract_ir(
             inventory_fields=("guarantee_base",),
         ),
         settlement=SettlementRule(payout_currency=currency),
+    )
+
+
+def _build_gmwb_insurance_overlay_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> InsuranceOverlayContractIR | None:
+    lower = description.lower()
+    if not re.search(
+        r"\b(mortality|lapse|fee|fees|death benefit|policy status|alive|dead|lapsed)\b",
+        lower,
+    ):
+        return None
+
+    core_contract = _build_gmwb_financial_control_core_contract_ir(
+        description,
+        instrument=instrument,
+        product_ir=product_ir,
+        allow_overlay_terms=True,
+    )
+    if core_contract is None:
+        return None
+
+    overlay_events: list[OverlayTransitionEvent | OverlayFeeEvent] = []
+    overlay_parameters: list[OverlayParameterSpec] = []
+
+    if re.search(r"\b(mortality|death benefit|dead)\b", lower):
+        overlay_events.append(
+            OverlayTransitionEvent(
+                label="mortality_transition",
+                schedule_role="overlay_monitoring",
+                trigger_expression="mortality_event_occurs",
+                state_updates=(StateUpdateSpec("policy_status", "dead"),),
+                cashflow_adjustment=(
+                    "death_benefit_adjustment"
+                    if "death benefit" in lower
+                    else ""
+                ),
+            )
+        )
+        overlay_parameters.append(
+            OverlayParameterSpec(
+                "mortality_hazard",
+                "hazard_rate",
+                "deferred",
+                notes=("future lane must bind an explicit mortality model",),
+            )
+        )
+
+    if re.search(r"\b(lapse|lapsed)\b", lower):
+        overlay_events.append(
+            OverlayTransitionEvent(
+                label="lapse_transition",
+                schedule_role="overlay_monitoring",
+                trigger_expression="lapse_event_occurs",
+                state_updates=(StateUpdateSpec("policy_status", "lapsed"),),
+            )
+        )
+        overlay_parameters.append(
+            OverlayParameterSpec(
+                "lapse_hazard",
+                "hazard_rate",
+                "deferred",
+                notes=("future lane must bind an explicit lapse model",),
+            )
+        )
+
+    fee_rate = _extract_numeric_after(description, labels=("rider fee", "fee", "fees"))
+    if fee_rate is not None or re.search(r"\b(fee|fees)\b", lower):
+        overlay_events.append(
+            OverlayFeeEvent(
+                label="rider_fee",
+                schedule_role="overlay_fee_dates",
+                fee_formula=(
+                    "rider_fee_rate * account_value"
+                    if fee_rate is not None
+                    else "overlay_fee_rate * account_value"
+                ),
+            )
+        )
+        overlay_parameters.append(
+            OverlayParameterSpec(
+                "rider_fee_rate",
+                "fee_rate",
+                fee_rate if fee_rate is not None else "deferred",
+                notes=("expressed as a proportion of account_value in the bounded scaffold",),
+            )
+        )
+
+    if not overlay_events:
+        return None
+
+    return InsuranceOverlayContractIR(
+        core_contract=core_contract,
+        semantic_family="gmwb",
+        policy_state_schema=PolicyStateSchema(
+            fields=(
+                StateFieldSpec(
+                    "policy_status",
+                    "enum",
+                    "alive",
+                    tags=("policy_state", "insurance_overlay"),
+                ),
+            ),
+        ),
+        overlay_events=tuple(overlay_events),
+        overlay_parameters=OverlayParameterSet(parameters=tuple(overlay_parameters)),
+        composition_rule=OverlayCompositionRule(
+            composition_style="policy_state_gates_financial_control",
+            policy_state_field="policy_status",
+            notes=(
+                "overlay wrapper is representational only and does not widen the executable continuous-control lane",
+            ),
+        ),
     )
 
 
