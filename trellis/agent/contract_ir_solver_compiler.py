@@ -8,8 +8,9 @@ else.
 
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from importlib import import_module
 from math import isclose
 from types import MappingProxyType
@@ -172,6 +173,17 @@ def _coerce_date_term(value: object | None) -> date | None:
         return None
 
 
+def _coerce_date_term_field(
+    raw_term_fields: Mapping[str, object],
+    *keys: str,
+) -> date | None:
+    for key in keys:
+        resolved = _coerce_date_term(raw_term_fields.get(key))
+        if resolved is not None:
+            return resolved
+    return None
+
+
 def _float_term_field(
     raw_term_fields: Mapping[str, object],
     key: str,
@@ -182,6 +194,20 @@ def _float_term_field(
     if value in {None, ""}:
         return float(default)
     return float(value)
+
+
+def _text_term_field(
+    raw_term_fields: Mapping[str, object],
+    *keys: str,
+) -> str:
+    for key in keys:
+        value = raw_term_fields.get(key)
+        if value in {None, ""}:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return ""
 
 
 def _market_identity(valuation_context: ValuationContext | None, market_state: MarketState) -> str:
@@ -258,6 +284,29 @@ def _rate_curve_frequency(schedule: FiniteSchedule | None) -> Frequency | None:
     return None
 
 
+def _frequency_month_step(frequency: Frequency | None) -> int | None:
+    if frequency == Frequency.MONTHLY:
+        return 1
+    if frequency == Frequency.QUARTERLY:
+        return 3
+    if frequency == Frequency.SEMI_ANNUAL:
+        return 6
+    if frequency == Frequency.ANNUAL:
+        return 12
+    return None
+
+
+def _is_month_end(value: date) -> bool:
+    return value.day == calendar.monthrange(value.year, value.month)[1]
+
+
+def _add_months_with_roll(dt: date, months: int, *, preserve_eom: bool) -> date:
+    shifted = add_months(dt, months)
+    if preserve_eom and _is_month_end(dt):
+        return shifted.replace(day=calendar.monthrange(shifted.year, shifted.month)[1])
+    return shifted
+
+
 def _infer_schedule_start_date(
     schedule: FiniteSchedule | None,
     *,
@@ -265,25 +314,20 @@ def _infer_schedule_start_date(
 ) -> date | None:
     if schedule is None or not schedule.dates:
         return None
+    if len(schedule.dates) < 2:
+        return None
     first_payment = schedule.dates[0]
+    preserve_eom = len(schedule.dates) >= 2 and _is_month_end(first_payment) and _is_month_end(schedule.dates[1])
     if len(schedule.dates) >= 2:
         second_payment = schedule.dates[1]
         month_step = (second_payment.year - first_payment.year) * 12 + (
             second_payment.month - first_payment.month
         )
         if month_step != 0:
-            return add_months(first_payment, -month_step)
-        day_step = (second_payment - first_payment).days
-        if day_step > 0:
-            return first_payment - timedelta(days=day_step)
-    if fallback_frequency == Frequency.MONTHLY:
-        return add_months(first_payment, -1)
-    if fallback_frequency == Frequency.QUARTERLY:
-        return add_months(first_payment, -3)
-    if fallback_frequency == Frequency.SEMI_ANNUAL:
-        return add_months(first_payment, -6)
-    if fallback_frequency == Frequency.ANNUAL:
-        return add_months(first_payment, -12)
+            return _add_months_with_roll(first_payment, -month_step, preserve_eom=preserve_eom)
+    fallback_months = _frequency_month_step(fallback_frequency)
+    if fallback_months is not None:
+        return _add_months_with_roll(first_payment, -fallback_months, preserve_eom=_is_month_end(first_payment))
     return None
 
 
@@ -377,7 +421,10 @@ def build_contract_ir_term_environment(contract=None) -> ContractIRTermEnvironme
         or getattr(conventions, "day_count_convention", None)
     )
     payment_frequency = _normalized_frequency(
-        raw_term_fields.get("payment_frequency") or raw_term_fields.get("swap_frequency"),
+        raw_term_fields.get("payment_frequency")
+        or raw_term_fields.get("swap_frequency")
+        or raw_term_fields.get("frequency")
+        or raw_term_fields.get("fixed_frequency"),
         default=None,
     )
     fixed_leg_day_count = _normalized_day_count(
@@ -792,12 +839,41 @@ def _swaption_helper_adapter(
         swap_frequency = inferred_frequency
     if swap_frequency is None:
         swap_frequency = Frequency.SEMI_ANNUAL
-    explicit_swap_start = _coerce_date_term(term_environment.raw_term_fields.get("swap_start"))
+    explicit_swap_start = _coerce_date_term_field(
+        term_environment.raw_term_fields,
+        "swap_start",
+        "start_date",
+        "effective_date",
+    )
+    explicit_swap_end = _coerce_date_term_field(
+        term_environment.raw_term_fields,
+        "swap_end",
+        "end_date",
+        "termination_date",
+        "maturity_date",
+    )
+    stub_type = _text_term_field(
+        term_environment.raw_term_fields,
+        "schedule_stub_type",
+        "stub_type",
+    ).lower()
     inferred_swap_start = _infer_schedule_start_date(
         schedule,
         fallback_frequency=inferred_frequency or swap_frequency,
     )
-    swap_start = explicit_swap_start or inferred_swap_start or expiry.t
+    if explicit_swap_start is not None:
+        swap_start = explicit_swap_start
+    else:
+        if stub_type:
+            raise ValueError("Swaption adapter requires explicit swap_start when stub metadata is present")
+        if inferred_swap_start is None:
+            raise ValueError(
+                "Swaption adapter requires explicit swap_start or a multi-date schedule for structural binding"
+            )
+        swap_start = inferred_swap_start
+    swap_end = explicit_swap_end or schedule.dates[-1]
+    if swap_end <= swap_start:
+        raise ValueError("Swaption adapter requires swap_end after swap_start")
     day_count = term_environment.accrual_conventions.fixed_leg_day_count
     rate_index = (
         term_environment.floating_rate_reference.rate_index
@@ -810,7 +886,7 @@ def _swaption_helper_adapter(
         strike=strike,
         expiry_date=expiry.t,
         swap_start=swap_start,
-        swap_end=schedule.dates[-1],
+        swap_end=swap_end,
         swap_frequency=swap_frequency,
         day_count=day_count,
         rate_index=rate_index,

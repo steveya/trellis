@@ -4436,8 +4436,39 @@ def _extract_swaption_term_fields(text: str, term_sheet) -> Mapping[str, object]
         or _extract_curve_name_from_text(text, role="forecast")
         or ""
     ).strip()
+    swap_start = (
+        parameters.get("swap_start")
+        or parameters.get("start_date")
+        or parameters.get("effective_date")
+    )
+    swap_end = (
+        parameters.get("swap_end")
+        or parameters.get("end_date")
+        or parameters.get("termination_date")
+        or parameters.get("maturity_date")
+    )
+    swap_frequency = (
+        parameters.get("swap_frequency")
+        or parameters.get("frequency")
+        or parameters.get("fixed_frequency")
+    )
+    schedule_stub_type = parameters.get("schedule_stub_type") or parameters.get("stub_type")
+    schedule_roll_convention = (
+        parameters.get("schedule_roll_convention")
+        or parameters.get("roll_convention")
+    )
 
     fields: dict[str, object] = {}
+    if swap_start not in {None, ""}:
+        fields["swap_start"] = swap_start
+    if swap_end not in {None, ""}:
+        fields["swap_end"] = swap_end
+    if swap_frequency not in {None, ""}:
+        fields["swap_frequency"] = swap_frequency
+    if schedule_stub_type not in {None, ""}:
+        fields["schedule_stub_type"] = schedule_stub_type
+    if schedule_roll_convention not in {None, ""}:
+        fields["schedule_roll_convention"] = schedule_roll_convention
     if fixed_leg_day_count:
         fields["fixed_leg_day_count"] = fixed_leg_day_count
     if float_leg_day_count:

@@ -189,6 +189,39 @@ def _forward_starting_swaption_contract_ir() -> ContractIR:
     )
 
 
+def _single_payment_swaption_contract_ir() -> ContractIR:
+    expiry = _singleton("2025-11-15")
+    schedule = _finite_schedule("2030-11-15")
+    return ContractIR(
+        payoff=Scaled(
+            Annuity("USD-IRS-5Y", schedule),
+            Max((Sub(SwapRate("USD-IRS-5Y", schedule), Strike(0.05)), Constant(0.0))),
+        ),
+        exercise=Exercise(style="european", schedule=expiry),
+        observation=Observation(kind="terminal", schedule=expiry),
+        underlying=Underlying(spec=ForwardRate("USD-IRS-5Y", "lognormal_forward")),
+    )
+
+
+def _forward_starting_eom_swaption_contract_ir() -> ContractIR:
+    expiry = _singleton("2025-11-15")
+    schedule = _finite_schedule(
+        "2027-04-30",
+        "2027-10-31",
+        "2028-04-30",
+        "2028-10-31",
+    )
+    return ContractIR(
+        payoff=Scaled(
+            Annuity("USD-IRS-3Y", schedule),
+            Max((Sub(SwapRate("USD-IRS-3Y", schedule), Strike(0.05)), Constant(0.0))),
+        ),
+        exercise=Exercise(style="european", schedule=expiry),
+        observation=Observation(kind="terminal", schedule=expiry),
+        underlying=Underlying(spec=ForwardRate("USD-IRS-3Y", "lognormal_forward")),
+    )
+
+
 def _basket_call_contract_ir() -> ContractIR:
     expiry = _singleton("2025-11-15")
     return ContractIR(
@@ -502,6 +535,33 @@ class TestContractIRSolverCompiler:
             abs=1e-12,
         )
 
+    def test_swaption_helper_accepts_start_date_alias_and_explicit_swap_end(self):
+        market_state = _swaption_market_state()
+        context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
+        semantic_contract = make_rate_style_swaption_contract(
+            description="European payer swaption with aliased schedule anchors",
+            observation_schedule=("2025-11-15",),
+            preferred_method="analytical",
+            term_fields={
+                "start_date": date(2026, 5, 15),
+                "end_date": date(2031, 5, 15),
+                "frequency": "semi_annual",
+            },
+        )
+
+        decision = compile_contract_ir_solver(
+            _swaption_contract_ir(),
+            term_environment=build_contract_ir_term_environment(semantic_contract),
+            valuation_context=context,
+            market_state=market_state,
+            preferred_method="analytical",
+        )
+
+        spec = decision.call_kwargs["spec"]
+        assert spec.swap_start == date(2026, 5, 15)
+        assert spec.swap_end == date(2031, 5, 15)
+        assert spec.swap_frequency == Frequency.SEMI_ANNUAL
+
     def test_swaption_helper_infers_forward_start_from_schedule_when_term_field_missing(self):
         market_state = _swaption_market_state()
         context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
@@ -520,6 +580,32 @@ class TestContractIRSolverCompiler:
             rel=1e-12,
             abs=1e-12,
         )
+
+    def test_swaption_helper_preserves_end_of_month_inferred_start(self):
+        market_state = _swaption_market_state()
+        context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
+
+        decision = compile_contract_ir_solver(
+            _forward_starting_eom_swaption_contract_ir(),
+            valuation_context=context,
+            market_state=market_state,
+            preferred_method="analytical",
+        )
+
+        spec = decision.call_kwargs["spec"]
+        assert spec.swap_start == date(2026, 10, 31)
+
+    def test_swaption_helper_fails_closed_without_authoritative_start_for_single_payment_schedule(self):
+        market_state = _swaption_market_state()
+        context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
+
+        with pytest.raises(ContractIRSolverNoMatchError):
+            compile_contract_ir_solver(
+                _single_payment_swaption_contract_ir(),
+                valuation_context=context,
+                market_state=market_state,
+                preferred_method="analytical",
+            )
 
     def test_swaption_helper_uses_forecast_curve_name_when_rate_index_missing(self):
         market_state = _swaption_market_state_with_named_forecast_curve()

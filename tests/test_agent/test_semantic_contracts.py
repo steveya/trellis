@@ -1379,6 +1379,29 @@ def test_extract_swaption_term_fields_captures_hull_white_comparison_regime():
     assert fields["comparison_quote_subject"] == "swaption"
 
 
+def test_extract_swaption_term_fields_captures_schedule_anchor_aliases():
+    from types import SimpleNamespace
+
+    from trellis.agent.semantic_contracts import _extract_swaption_term_fields
+
+    fields = _extract_swaption_term_fields(
+        "European payer swaption with explicit schedule anchors.",
+        SimpleNamespace(
+            parameters={
+                "start_date": "2026-01-31",
+                "maturity_date": "2031-01-31",
+                "frequency": "semi_annual",
+                "roll_convention": "eom",
+            }
+        ),
+    )
+
+    assert fields["swap_start"] == "2026-01-31"
+    assert fields["swap_end"] == "2031-01-31"
+    assert fields["swap_frequency"] == "semi_annual"
+    assert fields["schedule_roll_convention"] == "eom"
+
+
 def test_credit_default_swap_contract_validates_and_compiles():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_credit_default_swap_contract
