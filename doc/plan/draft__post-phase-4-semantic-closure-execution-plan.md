@@ -2,21 +2,32 @@
 
 ## Status
 
-Draft. Pre-queue execution plan for the semantic-closure work that
-should begin only after the current payoff-expression Phase 4 route-
-retirement slice is complete.
+Active execution mirror for the filed post-Phase-4 semantic-closure
+queue.
 
-This is not yet the live execution mirror for a filed post-Phase-4
-umbrella. It is the repo-local queue definition that should shape that
-umbrella once filed.
+The umbrella and `CLX.*` child tickets are now filed in Linear. This
+document remains the ordered repo-local mirror for that queue and should
+stay aligned with the live issue graph.
 
-Status mirror last synced: `2026-04-19`
+`CLX.1` through `CLX.3` are now implemented and merged. The next
+actionable queue item is `CLX.4` / `QUA-931`.
+
+Status mirror last synced: `2026-04-20`
 
 ## Linked Context
 
 - QUA-887 — Semantic contract: contract-IR compiler (root umbrella)
 - QUA-905 — Phase 3 structural solver compiler
 - QUA-906 — Phase 4 route retirement / dispatch phaseout
+- QUA-927 — Post-Phase-4 semantic closure umbrella
+- QUA-928 — `CLX.1` quoted-observable snapshot closure
+- QUA-929 — `CLX.2` static leg-based closure
+- QUA-930 — `CLX.3` event/state/control semantic foundation
+- QUA-931 — `CLX.4` automatic event/state lowering lane
+- QUA-932 — `CLX.5` discrete control lowering lane
+- QUA-933 — `CLX.6` continuous/singular control lowering lane
+- QUA-934 — `CLX.7` insurance-style overlays
+- QUA-935 — `CLX.8` later-family route retirement follow-ons
 - `doc/plan/draft__semantic-contract-closure-program.md`
 - `doc/plan/draft__quoted-observable-contract-ir-foundation.md`
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
@@ -86,16 +97,16 @@ post-Phase-4 work risks stalling in familiar ways:
 
 ### Queue Table
 
-| Queue ID | Status | Scope | Hard prerequisites |
-| --- | --- | --- | --- |
-| `CLX.1` | Backlog | quoted-observable snapshot closure | current payoff-expression Phase 4 closeout |
-| `CLX.2` | Backlog | static leg-based closure | current payoff-expression Phase 4 closeout |
-| `CLX.3` | Backlog | event/state/control semantic foundation | `CLX.1`, `CLX.2` representation boundaries defined |
-| `CLX.4` | Backlog | automatic event/state lowering lane | `CLX.3` |
-| `CLX.5` | Backlog | discrete control lowering lane | `CLX.3` |
-| `CLX.6` | Backlog | continuous/singular control lowering lane | `CLX.3` |
-| `CLX.7` | Backlog | insurance-style overlays on top of financial control | `CLX.6` |
-| `CLX.8` | Backlog | route-retirement follow-ons for migrated post-Phase-4 families | family-specific parity and provenance from the relevant earlier queue |
+| Queue ID | Linear | Status | Scope | Hard prerequisites |
+| --- | --- | --- | --- | --- |
+| `CLX.1` | `QUA-928` | Done | quoted-observable snapshot closure | current payoff-expression Phase 4 closeout |
+| `CLX.2` | `QUA-929` | Done | static leg-based closure | current payoff-expression Phase 4 closeout |
+| `CLX.3` | `QUA-930` | Done | event/state/control semantic foundation | `CLX.1`, `CLX.2` representation boundaries defined |
+| `CLX.4` | `QUA-931` | Backlog | automatic event/state lowering lane | `CLX.3` |
+| `CLX.5` | `QUA-932` | Backlog | discrete control lowering lane | `CLX.3` |
+| `CLX.6` | `QUA-933` | Backlog | continuous/singular control lowering lane | `CLX.3` |
+| `CLX.7` | `QUA-934` | Backlog | insurance-style overlays on top of financial control | `CLX.6` |
+| `CLX.8` | `QUA-935` | Backlog | route-retirement follow-ons for migrated post-Phase-4 families | family-specific parity and provenance from the relevant earlier queue |
 
 ### Pickup Rule
 
@@ -106,6 +117,10 @@ post-Phase-4 work risks stalling in familiar ways:
 - do not start `CLX.8` for any family until its earlier queue slice has
   a parity ledger and route-masked invariance story comparable to the
   current Phase 3 / Phase 4 program
+
+Current next pickup:
+
+- `CLX.4` / `QUA-931` — automatic event/state lowering lane
 
 ## Queue Details
 
@@ -283,9 +298,8 @@ depends on it:
 
 ## Next Steps
 
-1. Keep this document as the queue definition for the post-Phase-4
-   closure strand.
-2. File the actual post-Phase-4 umbrella only after the current
-   payoff-expression Phase 4 slice closes cleanly.
-3. When that umbrella is filed, convert the `CLX.*` rows into Linear
-   child tickets and keep this document as the live execution mirror.
+1. Keep this document as the live execution mirror for `QUA-927` and
+   its child queue.
+2. Pick `QUA-931` / `CLX.4` next unless the user explicitly redirects.
+3. Keep `QUA-932` through `QUA-935` in queue order unless a later ticket
+   is first narrowed into a bounded design or blocker note.
