@@ -21,6 +21,8 @@ Phase 4, quoted-observable, and leg-based planning strands.
 - `doc/plan/draft__contract-ir-phase-4-route-retirement.md`
 - `doc/plan/draft__quoted-observable-contract-ir-foundation.md`
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
+- `doc/plan/draft__event-state-control-contract-foundation.md`
+- `doc/plan/draft__post-phase-4-semantic-closure-execution-plan.md`
 - `doc/plan/draft__semantic-contract-target-and-trade-envelope.md`
 - `doc/plan/draft__contract-ir-normalization-and-rewrite-discipline.md`
 
@@ -73,14 +75,17 @@ High-conviction guidance:
 
 - **Strata:** preserve the separation between contract meaning,
   trade-envelope metadata, requested outputs, and market requirements
-- **ACTUS:** future leg-based semantics should distinguish terms,
-  events, and state instead of hiding them inside product labels
+- **ACTUS:** future leg-based and event/state/control semantics should
+  distinguish terms, events, and state instead of hiding them inside
+  product labels
 - **SymPy:** normalization needs explicit rewrite-strategy discipline,
   not a bag of local simplifiers
 - **gs-quant:** valuation identity, market identity, overlays, and
   path-aware result navigation deserve explicit surfaces
 - **Peyton Jones / Marlowe:** keep constructor budgets disciplined and
-  prefer small explicit semantic cores over product-name sprawl
+  prefer small explicit semantic cores over product-name sprawl, with
+  explicit continuations or control where the contract really has
+  stopping or decision semantics
 
 ## The Three Closures
 
@@ -98,6 +103,9 @@ Concretely, representation closure requires:
 - clear well-formedness and canonicalization rules
 - node names that describe contractual meaning or quoted market
   quantities, not pricing methods or route-local helper names
+- if the family has endogenous running state, event ordering, automatic
+  termination, or contractual holder/issuer choice, those surfaces are
+  explicit semantic structure rather than helper-local behavior
 - no hidden product discriminator such as `kind="swaption"` or
   `kind="sofr_ff_basis"` inside a supposedly generic node
 
@@ -120,6 +128,8 @@ Concretely, decomposition closure requires:
   where ambiguity is plausible, for example:
   - quoted-observable vs leg-based
   - payoff-expression vs event-coupled leg structures
+  - static leg schedules vs leg-plus-event/control structures
+  - automatic stopping programs vs holder/issuer control programs
 - proof that route ids or instrument strings are not required to emit
   the representation
 
@@ -143,6 +153,9 @@ Concretely, lowering closure requires:
   inputs
 - checked solver or assembly surfaces with family-appropriate parity or
   validation evidence
+- for state-bearing or controlled families, checked lowering of event
+  ordering, state updates, and controller semantics into the numerical
+  lane rather than helper-local branching
 - no product-shaped adapter blobs smuggled in as a substitute for
   missing representation work
 
@@ -203,6 +216,9 @@ Examples:
   coupon schedules, and settlement rules
 - future quoted-observable products stay inside payoff-expression
   algebra as functions of explicit quote points
+- future event/state/control semantics should provide composition
+  through ordered events, explicit state updates, and holder/issuer or
+  automatic stopping programs over a base semantic contract
 
 So "arbitrary decomposable derivative" means:
 
@@ -214,6 +230,39 @@ So "arbitrary decomposable derivative" means:
 
 If any of those fail, Trellis should block honestly rather than rescue
 the request with a hidden product route.
+
+## Stateful And Controlled Products
+
+Many important post-Phase-4 families are not static expressions or
+static leg schedules. They require endogenous state, event ordering, or
+explicit control.
+
+Representative examples include:
+
+- autocallables, phoenix notes, and snowballs with discrete observation
+  dates, coupon memory, barriers, and early redemption
+- TARN / TARF structures with running accumulated coupon or gain state
+  and target-triggered termination
+- PRDC-style and callable structured rate products with quote-linked
+  scheduled coupons and issuer call overlays
+- swing options with remaining-right inventory, refraction rules, and
+  multiple exercise decisions
+- GMWB / GMxB contracts with account-value state, guarantee-base state,
+  and withdrawal control
+
+For these families, "decomposable" must be interpreted more carefully.
+The right semantic target is often:
+
+- a base semantic contract from one of the static sibling domains
+  (payoff-expression, quoted-observable, or leg-based)
+- plus an explicit event/state/control program that says how
+  observations, payments, state updates, stopping rules, and controller
+  actions evolve through time
+
+This is a first-class semantic representation problem, not only a later
+lowering detail. A product that needs running target state or multiple
+exercise rights is not representationally closed if those semantics live
+only inside Monte Carlo code or route-local helper assembly.
 
 ## Program Responsibilities By Phase
 
@@ -248,6 +297,29 @@ It owns the decomposition boundary between:
 - schedule-of-cashflows products
 - one-shot quoted-observable spread products
 
+This track should own the **static** leg semantics that later stateful
+tracks can embed. It should not be forced to absorb every callable,
+interruptible, or target-accumulating product into one oversized leg
+schema.
+
+### Event/state/control follow-on — Representation extension for stateful and controlled contracts
+
+This track extends representation closure for contracts whose meaning
+depends on ordered events, running state, automatic stopping rules, or
+explicit holder/issuer control.
+
+It owns the decomposition boundary between:
+
+- static payoff-expression or static leg products
+- those same semantic bases wrapped in event/state/control programs
+- automatic termination logic and true contractual control
+- contractual control semantics and valuation-policy choices
+
+This track should be able to reuse payoff-expression, quoted-observable,
+and leg-based subcontracts as building blocks. Not every stateful exotic
+is naturally leg-based, and not every event-coupled product should be
+forced into a coupon-leg root.
+
 ### Phase 3 — Lowering closure for migrated families
 
 Phase 3 owns lowering closure for the currently represented payoff-
@@ -272,14 +344,25 @@ No family should be called "migrated" until it has all of the following:
 
 1. A semantic home.
    Example: payoff-expression `ContractIR`, quoted-observable
-   extension, or leg-based IR.
+   extension, static leg-based IR, or event/state/control foundation.
 2. A well-formedness and canonicalization contract.
-3. Fixture-driven decomposition evidence.
-4. Route-independence tests for decomposition.
-5. Checked lowering declarations or checked assembly surface.
-6. Admissibility / ambiguity policy for the lowering.
-7. Parity evidence on the agreed benchmark or fixture cohort.
-8. Provenance and route-masked selector evidence for fresh builds.
+3. A boundary-classification matrix against adjacent semantic homes.
+4. Fixture-driven decomposition evidence.
+5. Route-independence tests for decomposition.
+6. Checked lowering declarations or checked assembly surface.
+7. Admissibility / ambiguity policy for the lowering.
+8. Parity evidence on the agreed benchmark or fixture cohort.
+9. Provenance and route-masked selector evidence for fresh builds.
+
+If the family carries state or control, the semantic home must also make
+the following explicit:
+
+- state fields and their initial conditions
+- event ordering and observation/payment phases
+- stopping or termination rules
+- controller role and admissible decision set when control exists
+- the base semantic contract or subcontracts on which those dynamic
+  rules operate
 
 ## Bounded-Claim Discipline
 
@@ -298,6 +381,13 @@ across the others:
 
 - payoff-expression closure does not imply quoted-observable closure
 - quoted-observable closure does not imply leg-based closure
+- static leg-based closure does not imply event/state/control closure
+- quoted quote-node closure does not imply quote-linked scheduled coupon
+  closure
+- automatic stopping-program closure does not imply holder/issuer
+  control closure
+- discrete control closure does not imply continuous or singular control
+  closure
 - deterministic analytical lowering closure does not imply Monte Carlo
   lowering closure
 
@@ -306,7 +396,43 @@ across the others:
 1. Every phase document should state which closure(s) it owns.
 2. The quoted-observable track needs its own planning artifact rather
    than living only as a boundary note.
-3. Families entering Phase 3 shadow mode should already have documented
+3. The static leg-based and quoted-observable tracks should state
+   explicitly how they compose under the later event/state/control
+   foundation rather than orphaning quote-linked coupon products
+   between them.
+4. The event/state/control track needs its own planning artifact rather
+   than remaining only an optional note inside leg-based planning.
+5. Closure work after Phase 4 should include a fixture-backed semantic
+   classifier matrix for at least:
+   - terminal quote spreads vs basis swaps
+   - static coupon notes vs callable / interruptible coupon notes
+   - autocallables / phoenix / snowball structures
+   - TARN / TARF target-accumulation structures
+   - PRDC and related FX/rate coupon hybrids
+   - swing and other multiple-exercise contracts
+   - GMWB / GMxB and other control-heavy insurance-style contracts
+6. Families entering Phase 3 shadow mode should already have documented
    representation and decomposition closure evidence.
-4. Families entering Phase 4 route retirement should already have a
+7. Families entering Phase 4 route retirement should already have a
    closure record plus parity and provenance evidence.
+
+## Post-Phase-4 Closure Queue
+
+The most useful next queue after the current payoff-expression Phase 4
+slice is:
+
+1. quoted-observable snapshot closure
+2. static leg-based closure
+3. event/state/control foundation
+4. quote-linked scheduled coupon closure on top of static leg and
+   quoted-observable leaves
+5. discrete stopping/control closure for autocallable, target-
+   accumulation, callable coupon, and swing-style products
+6. continuous/singular control closure for GMWB / GMxB-style families
+
+This ordering keeps the semantic basis honest:
+
+- static quote and static leg semantics land first
+- dynamic wrappers then compose over them explicitly
+- Phase 4 for those later families can inherit one authority model
+  instead of re-inventing route retirement family by family

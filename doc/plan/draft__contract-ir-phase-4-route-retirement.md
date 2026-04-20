@@ -23,6 +23,7 @@ Phase 4.
 - `doc/plan/draft__valuation-result-identity-and-provenance.md`
 - `doc/plan/draft__quoted-observable-contract-ir-foundation.md`
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
+- `doc/plan/draft__event-state-control-contract-foundation.md`
 - `doc/plan/draft__contract-ir-compiler-retiring-route-registry.md`
 - `docs/quant/contract_ir.rst`
 - `docs/quant/contract_algebra.rst`
@@ -139,6 +140,12 @@ $$\pi : ContractIR \to ProductIR$$
 
 be the lossy summary projection already discussed in the Phase 2 plan.
 
+For the current migrated slice, `ContractIR` is the correct domain on
+the left-hand side. The broader semantic-contract closure program will
+later need the same invariant generalized from this bounded
+`ContractIR` cohort to a wider semantic root spanning quoted-
+observable, static leg, and event/state/control domains.
+
 Phase 4's contract is that, for migrated surface, dispatch is no longer
 a function of `\pi(c)`:
 
@@ -191,6 +198,11 @@ families have:
 
 Phase 4 only deletes authority for `c \in \mathcal{D}_{\text{mig}}`.
 Everything else keeps the old fallback until it joins that set.
+
+For the current payoff-expression migration tranche, that bounded
+definition is enough. Future post-Phase-4 closure tracks should inherit
+the same rule by replacing the left-hand domain with the broader
+semantic root once those sibling representations are admitted.
 
 ### Parity contract
 
@@ -434,6 +446,8 @@ families does NOT require:
   `SurfaceQuote` nodes
 - leg-based cashflow IR
 - callable / event-coupled leg products
+- the future event/state/control semantic track for autocallables,
+  target-redemption structures, swing-style control, or GMWB/GMxB
 
 Those tracks must fit the same eventual authority model, but they are
 not prerequisites for deleting fresh-build route authority from the

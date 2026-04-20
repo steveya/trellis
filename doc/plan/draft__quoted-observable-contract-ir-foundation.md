@@ -17,6 +17,7 @@ yet tied to a filed Linear child issue.
 - `doc/plan/draft__contract-ir-phase-4-route-retirement.md`
 - `doc/plan/draft__market-coordinate-overlay-and-shock-model.md`
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
+- `doc/plan/draft__event-state-control-contract-foundation.md`
 - `docs/quant/contract_algebra.rst`
 
 ## Purpose
@@ -54,10 +55,12 @@ Quoted-observable products need a different kind of leaf:
 - a direct reference to a quoted point on a market object
 - with explicit coordinates and explicit quote convention
 
-That is semantically distinct from both:
+That is semantically distinct from all of:
 
 - payoff-expression observables defined by financial identity
 - leg-based contracts defined by coupon / accrual / payment rules
+- event/state/control programs that wrap static semantic bases with
+  running state or stopping logic
 
 ## Design Objective
 
@@ -79,6 +82,9 @@ so Trellis can represent snapshot-style quote products in a way that is:
   replication formulas directly in quote nodes.
 - Do not collapse scheduled coupon products into this track just because
   their desk label contains words such as "basis" or "spread."
+- Do not treat quote-linked coupon notes as snapshot quote products when
+  the contract really has scheduled cashflows, interruption logic, or
+  callability.
 - Do not invent product-keyed nodes such as `VolSkewSwap` or
   `CurveSteepenerOption` when the payoff is structurally a function of
   quote points.
@@ -201,6 +207,25 @@ semantics.
 
 The desk nickname is not the semantic authority.
 
+### Example 4 — Boundary against quote-linked coupon notes
+
+A callable CMS-spread range-accrual note is also not a quoted-observable
+contract in this narrow sense.
+
+Even if the coupon references explicit quote points, the contract still
+contains:
+
+- a scheduled coupon program
+- possible in-range counting or interruption state
+- call dates and issuer choice
+
+So the quote coordinates belong here, but the full product belongs to a
+later combination of:
+
+- static leg semantics
+- quoted-observable leaves
+- the event/state/control wrapper
+
 ## Closure Requirements
 
 This track should explicitly satisfy all three semantic closures from
@@ -221,7 +246,7 @@ Quoted products are representationally closed only when:
 Quoted products are decomposition-closed only when:
 
 - the decomposer can classify snapshot quote products against the
-  leg-based track deterministically
+  leg-based and event/state/control tracks deterministically
 - semantically equivalent requests normalize to the same canonical quote
   nodes
 - route ids and instrument strings are not needed to emit those nodes
@@ -247,8 +272,8 @@ Concretely:
 - future quoted-observable declarations should be selected from
   structural IR plus valuation / market surfaces
 - fresh builds for migrated quoted-observable families should retire
-  route-local product authority in the same way as payoff-expression
-  and leg-based families
+  route-local product authority in the same way as payoff-expression,
+  leg-based, and future event/state/control families
 
 ## First Implementable Slice
 
@@ -265,9 +290,25 @@ Deferred from that first slice:
 
 - path-dependent quoted surfaces
 - multi-snapshot realized quote products
-- quote-coupled coupon products that naturally belong in the leg-based
-  track
+- quote-coupled coupon products that naturally belong in the combined
+  static-leg plus event/state/control track
 - generic "query any market object" escape hatches
+
+## Relationship To The Dynamic Track
+
+This quoted-observable note owns the semantic meaning of explicit quote
+points, not the whole dynamic contract whenever those quote points are
+used inside a scheduled coupon or event-driven structure.
+
+So a future dynamic family may legitimately reuse these nodes inside:
+
+- coupon formulas
+- trigger conditions
+- settlement expressions
+
+without changing the ownership boundary of this document. This track
+defines "what quote point is observed," while the dynamic track defines
+"how the contract evolves through time around that observation."
 
 ## Pricing Boundary
 
@@ -306,5 +347,7 @@ Examples:
    track while the payoff-expression Phase 3 / Phase 4 work lands.
 2. Use this document and the leg-based companion doc together when
    classifying future "spread" or "basis" products.
-3. File a future Linear child issue under QUA-887 for the first active
+3. Use the event/state/control companion doc when a quote-linked
+   product also has scheduled coupons, state, or callability.
+4. File a future Linear child issue under QUA-887 for the first active
    quoted-observable slice.
