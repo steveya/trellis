@@ -131,7 +131,8 @@ def test_critique_includes_compiled_route_contract(monkeypatch):
     assert "bridge=`thin_compatibility_wrapper`" in captured["prompt"]
     assert "family_ir=`AnalyticalBlack76IR`" in captured["prompt"]
     assert "route_alias=`analytical_black76`" not in captured["prompt"]
-    assert "- Route: `analytical_black76`" in captured["prompt"]
+    assert "- Route: `analytical_black76`" not in captured["prompt"]
+    assert "binding=`trellis.models.black.black76_call`" in captured["prompt"]
     assert "bundle=`analytical:european_option`" in captured["prompt"]
 
 

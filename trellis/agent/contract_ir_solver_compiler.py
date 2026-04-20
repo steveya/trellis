@@ -502,6 +502,42 @@ def build_contract_ir_term_environment(contract=None) -> ContractIRTermEnvironme
 
 
 @dataclass(frozen=True)
+class ContractIRSolverSelection:
+    """Deterministic structural selection emitted before market-side binding."""
+
+    declaration_id: str
+    requested_method: str
+    requested_outputs: tuple[str, ...]
+    callable_ref: str
+    call_style: str
+    match_bindings: Mapping[str, object] = field(default_factory=dict)
+    consumed_term_groups: tuple[str, ...] = ()
+    required_capabilities: tuple[str, ...] = ()
+    optional_capabilities: tuple[str, ...] = ()
+    required_coordinate_kinds: tuple[str, ...] = ()
+    validation_bundle_id: str = ""
+    helper_refs: tuple[str, ...] = ()
+    pricing_kernel_refs: tuple[str, ...] = ()
+    schedule_builder_refs: tuple[str, ...] = ()
+    cashflow_engine_refs: tuple[str, ...] = ()
+    market_binding_refs: tuple[str, ...] = ()
+    compatibility_alias_policy: str = "operator_visible"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "match_bindings", _freeze_mapping(self.match_bindings))
+        object.__setattr__(self, "requested_outputs", _string_tuple(self.requested_outputs))
+        object.__setattr__(self, "consumed_term_groups", _string_tuple(self.consumed_term_groups))
+        object.__setattr__(self, "required_capabilities", _string_tuple(self.required_capabilities))
+        object.__setattr__(self, "optional_capabilities", _string_tuple(self.optional_capabilities))
+        object.__setattr__(self, "required_coordinate_kinds", _string_tuple(self.required_coordinate_kinds))
+        object.__setattr__(self, "helper_refs", _string_tuple(self.helper_refs))
+        object.__setattr__(self, "pricing_kernel_refs", _string_tuple(self.pricing_kernel_refs))
+        object.__setattr__(self, "schedule_builder_refs", _string_tuple(self.schedule_builder_refs))
+        object.__setattr__(self, "cashflow_engine_refs", _string_tuple(self.cashflow_engine_refs))
+        object.__setattr__(self, "market_binding_refs", _string_tuple(self.market_binding_refs))
+
+
+@dataclass(frozen=True)
 class ContractIRCompilerDecision:
     """Deterministic structural solver decision emitted in Phase 3 shadow mode."""
 
@@ -578,6 +614,144 @@ def _normalize_requested_output_tuple(
         if implicit:
             return implicit
     return ("price",)
+
+
+def _selection_bindings_are_structurally_feasible(
+    declaration: ContractIRSolverDeclaration,
+    bindings: Mapping[str, object],
+) -> bool:
+    """Return whether pure structural bindings are compatible with this declaration.
+
+    The route-free selector runs before market-side binding. For the bounded
+    digital family we still need to respect the indicator orientation carried by
+    the matched predicate instead of letting precedence force put structures
+    into the call declaration.
+    """
+
+    declaration_id = str(declaration.provenance.declaration_id or "").strip()
+    if "_digital_" not in declaration_id:
+        return True
+
+    predicate = bindings.get("predicate")
+    if predicate is None:
+        return True
+
+    underlier = str(bindings.get("u") or "")
+    strike = 0.0
+    if isinstance(predicate, (Gt, Lt)) and isinstance(predicate.lhs, Spot) and isinstance(predicate.rhs, Strike):
+        underlier = underlier or predicate.lhs.underlier_id
+        strike = float(predicate.rhs.value)
+    try:
+        orientation = _extract_indicator_orientation(predicate, underlier, strike)
+    except ValueError:
+        return False
+
+    if declaration_id.endswith("_call"):
+        return orientation == "call"
+    if declaration_id.endswith("_put"):
+        return orientation == "put"
+    return True
+
+
+def _matched_solver_candidates(
+    contract_ir: ContractIR,
+    *,
+    term_environment: ContractIRTermEnvironment,
+    preferred_method: str | None,
+    requested_outputs: tuple[str, ...] | list[str] | None,
+    valuation_context: ValuationContext | None,
+    registry: ContractIRSolverRegistry | None,
+) -> tuple[
+    str,
+    tuple[str, ...],
+    tuple[tuple[int, ContractIRSolverDeclaration, Mapping[str, object]], ...],
+]:
+    """Return structurally matched declarations before market-side binding."""
+
+    selected_registry = registry or default_contract_ir_solver_registry()
+    method = _normalize_requested_method(preferred_method, valuation_context)
+    outputs = _normalize_requested_output_tuple(requested_outputs, valuation_context)
+    measures = normalize_requested_measures(outputs)
+    candidates: list[tuple[int, ContractIRSolverDeclaration, Mapping[str, object]]] = []
+
+    for registered in selected_registry.selection_order():
+        declaration = registered.declaration
+        match = evaluate_pattern(declaration.authority.contract_pattern, contract_ir)
+        if not match.ok:
+            continue
+        if declaration.authority.admissible_methods and method not in declaration.authority.admissible_methods:
+            continue
+        supported_outputs = set(declaration.outputs.supported_outputs or ("price",))
+        if any(output not in supported_outputs for output in outputs if output != "price" and output not in measures):
+            continue
+        supported_measures = set(declaration.outputs.supported_measures)
+        if any(str(measure) not in supported_measures for measure in measures):
+            continue
+        missing_groups = set(declaration.authority.required_term_groups) - set(term_environment.present_group_names())
+        if missing_groups:
+            continue
+        bindings = dict(match.bindings)
+        if not _selection_bindings_are_structurally_feasible(declaration, bindings):
+            continue
+        candidates.append((declaration.precedence, declaration, bindings))
+
+    return method, outputs, tuple(candidates)
+
+
+def select_contract_ir_solver(
+    contract_ir: ContractIR,
+    *,
+    term_environment: ContractIRTermEnvironment | None = None,
+    valuation_context: ValuationContext | None = None,
+    preferred_method: str | None = None,
+    requested_outputs: tuple[str, ...] | list[str] | None = None,
+    registry: ContractIRSolverRegistry | None = None,
+) -> ContractIRSolverSelection:
+    """Select one structural solver declaration without binding market inputs."""
+
+    normalized_terms = term_environment or ContractIRTermEnvironment()
+    method, outputs, candidates = _matched_solver_candidates(
+        contract_ir,
+        term_environment=normalized_terms,
+        preferred_method=preferred_method,
+        requested_outputs=requested_outputs,
+        valuation_context=valuation_context,
+        registry=registry,
+    )
+    if not candidates:
+        raise ContractIRSolverNoMatchError(
+            "No admissible structural ContractIR solver declaration was found for "
+            f"method {method!r} and outputs {outputs!r}."
+        )
+
+    top_precedence = max(item[0] for item in candidates)
+    top = [item for item in candidates if item[0] == top_precedence]
+    if len(top) > 1:
+        raise ContractIRSolverAmbiguityError(
+            "Multiple structural ContractIR solver declarations remained admissible "
+            f"at precedence {top_precedence}: {[item[1].provenance.declaration_id for item in top]}"
+        )
+
+    _precedence, declaration, bindings = top[0]
+    return ContractIRSolverSelection(
+        declaration_id=declaration.provenance.declaration_id,
+        requested_method=method,
+        requested_outputs=outputs,
+        callable_ref=declaration.materialization.callable_ref,
+        call_style=declaration.materialization.call_style,
+        match_bindings=dict(bindings),
+        consumed_term_groups=declaration.authority.required_term_groups,
+        required_capabilities=declaration.market_requirements.required_capabilities,
+        optional_capabilities=declaration.market_requirements.optional_capabilities,
+        required_coordinate_kinds=declaration.market_requirements.required_coordinate_kinds,
+        validation_bundle_id=declaration.provenance.validation_bundle_id,
+        helper_refs=declaration.provenance.helper_refs,
+        pricing_kernel_refs=declaration.provenance.pricing_kernel_refs,
+        schedule_builder_refs=declaration.provenance.schedule_builder_refs,
+        cashflow_engine_refs=declaration.provenance.cashflow_engine_refs,
+        market_binding_refs=declaration.provenance.market_binding_refs,
+        compatibility_alias_policy=declaration.provenance.compatibility_alias_policy,
+    )
 
 
 def compile_contract_ir_solver(

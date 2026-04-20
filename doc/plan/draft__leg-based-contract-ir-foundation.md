@@ -17,6 +17,7 @@ yet tied to a filed Linear child issue.
 - `doc/plan/draft__contract-ir-phase-3-solver-compiler.md`
 - `doc/plan/draft__contract-ir-phase-4-route-retirement.md`
 - `doc/plan/draft__quoted-observable-contract-ir-foundation.md`
+- `doc/plan/draft__event-state-control-contract-foundation.md`
 - `docs/unified_pricing_engine_model_grammar.md`
 - Existing implementation surfaces:
   - `trellis/models/cashflow_engine/*`
@@ -41,7 +42,7 @@ observable expression at observation time(s)." It is not the right fit
 for products whose economic meaning is "assemble and price these dated
 cashflow legs."
 
-Two future tracks need to stay distinct:
+Three future tracks need to stay distinct:
 
 - **Quoted-observable products.** These settle on one or more explicit
   quoted market observables at an observation surface. Examples:
@@ -51,7 +52,12 @@ Two future tracks need to stay distinct:
 - **Leg-based cashflow products.** These are defined by accrual,
   fixing, payment, notional, and settlement rules across one or more
   legs. Examples: vanilla interest-rate swaps, SOFR-FF basis swaps,
-  coupon bonds, CMS spread notes, callable coupon products.
+  coupon bonds, and other static schedule-of-cashflow products.
+- **Event/state/control products.** These wrap a static semantic base
+  with running state, stopping rules, or holder/issuer choice. Examples:
+  callable coupon products, range accruals with interruption, callable
+  CMS spread notes, target-redemption structures, and swing-like
+  products.
 
 Boundary rule: classify by contract semantics, not by desk nickname. A
 trade described as a "basis" trade is leg-based only if the contract is
@@ -65,6 +71,8 @@ The later-track IR should let Trellis compile leg-based products into a
 structural contract representation that is:
 
 - additive alongside the current Phase 2 payoff-expression `ContractIR`
+- composable as a static substrate beneath the future event/state/control
+  track
 - explicit about accrual, fixing, payment, and settlement conventions
 - independent of route ids, instrument strings, and backend-binding ids
 - suitable for multiple lowerings: discounted cashflow engines, trees,
@@ -153,8 +161,13 @@ explicit:
 6. **Payment rules.** Payment date, payment lag, currency, settlement
    adjustments.
 7. **Exchange rules.** Initial / final notional exchanges and fees.
-8. **Event coupling.** Optional future support for callability, barriers,
-   knockouts, accrual interruption, or default.
+8. **Coupon formula surface.** Static coupon formulas must be explicit
+   enough to represent fixed, floating, and quote-linked coupon
+   expressions without product-name leaf nodes.
+9. **Event coupling hand-off.** When callability, barriers, knockouts,
+   accrual interruption, or target-based termination are present, the
+   static leg IR must hand off cleanly to the future event/state/control
+   track rather than hiding those rules inside the leg node.
 
 If any of those are hidden in one opaque leaf node, the IR will not be
 good enough to support route-free fresh builds.
@@ -211,9 +224,14 @@ SignedLeg =
     }
 
 Leg =
-    | FixedCouponLeg(currency, notional_schedule, coupon_periods, fixed_rate)
-    | FloatingCouponLeg(currency, notional_schedule, coupon_periods, rate_index, spread, gearing)
+    | CouponLeg(currency, notional_schedule, coupon_periods, coupon_formula)
     | KnownCashflowLeg(currency, cashflows)
+
+CouponFormula =
+    | FixedCoupon(rate: float)
+    | FloatingCoupon(rate_index: RateIndex, spread: float, gearing: float)
+    | QuoteLinkedCoupon(observable_expr: CouponObservableExpr)
+    | ConditionalCoupon(condition: CouponCondition, in_range_coupon: CouponFormula, out_of_range_coupon: CouponFormula | None)
 
 CouponPeriod =
     { accrual_start: Date
@@ -236,6 +254,26 @@ RateIndex =
     | OvernightIndex(name: str)
     | CmsQuote(name: str, tenor: str)
 
+CouponObservableExpr =
+    | RateIndex
+    | QuotedObservableRef
+    | ArithmeticCouponExpr
+
+QuotedObservableRef =
+    | CurveQuoteRef(curve_id: str, coordinate: object, convention: str)
+    | SurfaceQuoteRef(surface_id: str, coordinate: object, convention: str)
+
+ArithmeticCouponExpr =
+    | CouponConstant(value: float)
+    | CouponAdd(lhs: CouponObservableExpr, rhs: CouponObservableExpr)
+    | CouponSub(lhs: CouponObservableExpr, rhs: CouponObservableExpr)
+    | CouponMul(lhs: CouponObservableExpr, rhs: CouponObservableExpr)
+    | CouponScaled(scale: float, expr: CouponObservableExpr)
+
+CouponCondition =
+    | Comparison(lhs: CouponObservableExpr, op: str, rhs: CouponObservableExpr | float)
+    | InRange(lhs: CouponObservableExpr, lower: CouponObservableExpr | float, upper: CouponObservableExpr | float)
+
 ContractTermSet =
     { economic_terms: dict
     ; schedule_terms: dict
@@ -257,8 +295,10 @@ that coupon assembly, fixing conventions, and signed legs are explicit
 IR structure, not buried in route-local adapter logic.
 
 The extra `term_set` / `event_plan` / `state_schema` sketches are
-deliberately optional at first. They are there to keep the design honest
-about where ACTUS-style semantics would eventually have to land.
+deliberately optional for the first static slice. They are not a signal
+that dynamic leg products can remain permanently under-specified. They
+are there to keep the design honest about where ACTUS-style semantics
+must land once the event/state/control companion track becomes active.
 
 ## Examples
 
@@ -289,18 +329,39 @@ This is **not** leg-based. It belongs to the future quoted-observable
 extension of the payoff-expression `ContractIR`, because the contract is
 still a one-shot function of observed quote points.
 
+### Example 4 — Callable CMS spread range-accrual note
+
+This is not a pure static leg product either.
+
+Its coupon schedule is leg-based, but the full contract also carries:
+
+- quote-linked contingent coupon formulas
+- accrual-interruption or in-range counting logic
+- issuer call events
+
+So the right long-run representation is:
+
+- static leg semantics here
+- quoted-observable leaves where the coupon formula references explicit
+  quote points
+- the future event/state/control wrapper for the callability and
+  interruption logic
+
 ## Relationship To The Current Phase 2 Contract IR
 
 The likely long-run shape is a broader semantic contract surface that
-admits at least two sibling representations:
+admits at least three related representations:
 
 - **Payoff-expression Contract IR** for terminal / schedule / path
   observable payoffs
-- **Leg-based Contract IR** for coupon schedules and dated obligations
+- **Leg-based Contract IR** for static coupon schedules and dated
+  obligations
+- **Event/state/control contract track** for dynamic wrappers over those
+  static bases
 
 They should coexist rather than force one representation to impersonate
-the other. A later unifying root may wrap both, but the first step is to
-let each domain have honest semantics.
+the other. A later unifying root may wrap all of them, but the first
+step is to let each domain have honest semantics.
 
 ## Dependency On Phases 3 And 4
 
@@ -337,6 +398,52 @@ Deferred from that first slice:
 - CMS coupons and CMS spread notes
 - range accruals, barriers, and event-coupled coupon interruption
 - credit default swaps and contingent default legs
+
+That deferral is a scope choice for the first static leg slice, not an
+ownership ambiguity. Those families should be picked up by the later
+combination of:
+
+- static leg semantics from this track
+- quoted-observable semantics where explicit quote points are part of
+  the coupon formula
+- event/state/control semantics where interruption, target state, or
+  control is contractual
+
+## Ordered Post-Phase-4 Queue
+
+### L1 — Static coupon-leg foundation
+
+Objective:
+
+Land the minimal static leg schema for vanilla IRS, basis swaps, and
+plain coupon bonds.
+
+### L2 — Rich static coupon formulas
+
+Objective:
+
+Extend coupon formulas so static legs can reference quote-linked or
+conditional coupon expressions without adding event/control yet.
+
+Candidate families:
+
+- CMS coupons
+- CMS spread notes without callability or interruption
+- bounded static contingent coupon structures
+
+### L3 — Dynamic leg wrappers
+
+Objective:
+
+Compose the static leg schema with the event/state/control foundation
+for callable, interruptible, or target-accumulating coupon products.
+
+Candidate families:
+
+- callable coupon notes
+- range accruals with interruption
+- callable CMS spread range-accruals
+- PRDC-style schedule-linked hybrids
 
 ## Pricing Boundary
 
@@ -376,9 +483,12 @@ Examples:
 3. Should coupon sign live on the leg (`receive` / `pay`) or as an outer
    scalar multiplier?
 4. When CMS-style coupons arrive, do they reference the quoted-
-   observable track directly, or do they define a coupon-local quoted
-   rate abstraction?
-5. Which live desk product is the best first proving ground:
+  observable track directly, or do they define a coupon-local quoted
+  rate abstraction?
+5. Which pieces of running state belong in the static leg schema versus
+   the event/state/control wrapper for range accruals, callable notes,
+   and target-redemption structures?
+6. Which live desk product is the best first proving ground:
    vanilla IRS or SOFR-FF basis swap?
 
 ## Next Steps

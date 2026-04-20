@@ -93,9 +93,10 @@ def test_compile_build_request_keeps_terminal_basket_request_off_vanilla_semanti
     )
     assert compiler["source"] == "request_decomposition"
     assert compiler["shadow_status"] == "bound"
+    assert compiler["contract_ir_solver_selection"]["declaration_id"] == "helper_basket_option_call"
     assert compiler["contract_ir_solver_shadow"]["declaration_id"] == "helper_basket_option_call"
     authority = compiled.request.metadata["route_binding_authority"]
-    assert authority["route_id"] == "analytical_black76"
+    assert authority["route_id"] is None
     assert authority["authority_kind"] == "exact_backend_fit"
     assert authority["backend_binding"]["exact_target_refs"] == [
         "trellis.models.basket_option.price_basket_option_analytical"
@@ -141,8 +142,10 @@ def test_contract_ir_solver_parity_report_flags_asian_blocker_and_candidate_fami
 
     families = {entry["family_id"]: entry for entry in report["families"]}
 
+    assert families["vanilla_option"]["exact_authority_closed"] is True
     assert families["basket_option"]["exact_authority_closed"] is True
     assert families["basket_option"]["phase4_candidate"] is True
+    assert all(case["route_free_authority"] is True for case in families["basket_option"]["cases"])
     assert families["vanilla_option"]["parity_closed"] is True
     assert families["digital_option"]["parity_closed"] is True
     assert families["rate_style_swaption"]["parity_closed"] is True

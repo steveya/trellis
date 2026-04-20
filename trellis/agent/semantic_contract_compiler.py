@@ -78,6 +78,7 @@ class SemanticImplementationBlueprint:
     dsl_lowering: object | None = None
     lane_plan: object | None = None
     contract_ir: ContractIR | None = None
+    contract_ir_solver_selection: object | None = None
     contract_ir_solver_shadow: object | None = None
 
     def __post_init__(self):
@@ -194,19 +195,36 @@ def compile_semantic_contract(
                     f"will attempt bump-and-reprice"
                 )
 
-    primitive_routes = _primitive_routes(
+    legacy_primitive_routes = _primitive_routes(
         contract,
         product_ir=product_ir,
         pricing_plan=pricing_plan,
     )
-    dsl_lowering = lower_semantic_blueprint(
+    legacy_dsl_lowering = lower_semantic_blueprint(
         contract,
         product_ir=product_ir,
         pricing_plan=pricing_plan,
-        primitive_routes=primitive_routes,
+        primitive_routes=legacy_primitive_routes,
         valuation_context=resolved_valuation_context,
         market_binding_spec=market_binding_spec,
     )
+    contract_ir_solver_selection = _compile_contract_ir_solver_selection(
+        contract=contract,
+        contract_ir=contract_ir,
+        preferred_method=preferred_method,
+        requested_outputs=normalized_outputs,
+        valuation_context=resolved_valuation_context,
+    )
+    if contract_ir_solver_selection is not None:
+        primitive_routes = ()
+        dsl_lowering = _route_free_lowering_from_contract_ir_selection(
+            contract_ir_solver_selection,
+            preferred_method=preferred_method,
+            fallback_lowering=legacy_dsl_lowering,
+        )
+    else:
+        primitive_routes = legacy_primitive_routes
+        dsl_lowering = legacy_dsl_lowering
     lane_plan = compile_lane_construction_plan(
         preferred_method=preferred_method,
         required_market_data=required_data_spec.required_input_ids,
@@ -221,7 +239,7 @@ def compile_semantic_contract(
         ),
     )
     route_method_modules = tuple(pricing_plan.method_modules)
-    if not primitive_routes:
+    if not primitive_routes and contract_ir_solver_selection is None:
         route_method_modules = ()
 
     route_modules = tuple(
@@ -241,9 +259,9 @@ def compile_semantic_contract(
         requested_outputs=normalized_outputs,
         valuation_context=resolved_valuation_context,
         market_snapshot=getattr(resolved_valuation_context, "market_snapshot", None),
-        primitive_routes=primitive_routes,
+        primitive_routes=legacy_primitive_routes,
         route_modules=route_modules,
-        dsl_lowering=dsl_lowering,
+        dsl_lowering=legacy_dsl_lowering,
     )
 
     return SemanticImplementationBlueprint(
@@ -278,6 +296,7 @@ def compile_semantic_contract(
         dsl_lowering=dsl_lowering,
         lane_plan=lane_plan,
         contract_ir=contract_ir,
+        contract_ir_solver_selection=contract_ir_solver_selection,
         contract_ir_solver_shadow=contract_ir_solver_shadow,
     )
 
@@ -444,6 +463,125 @@ def _augment_product_ir_with_contract_route_hints(product_ir, contract):
         product_ir,
         route_families=tuple(route_families),
         candidate_engine_families=tuple(engine_families),
+    )
+
+
+def _split_import_ref(ref: str) -> tuple[str, str]:
+    """Split one fully qualified import ref into module and symbol components."""
+    module_name, _, symbol = str(ref or "").rpartition(".")
+    return module_name.strip(), symbol.strip()
+
+
+def _compile_contract_ir_solver_selection(
+    *,
+    contract,
+    contract_ir: ContractIR | None,
+    preferred_method: str,
+    requested_outputs: tuple[str, ...],
+    valuation_context,
+):
+    """Return the authoritative structural selection when the family is admitted.
+
+    Phase 4 promotes structural selection onto the fresh-build authority path
+    only for declarations that the bounded ContractIR compiler can already
+    admit. Everything else keeps the legacy route-based lowering.
+    """
+
+    if contract_ir is None:
+        return None
+
+    from trellis.agent.contract_ir_solver_compiler import (
+        ContractIRSolverCompileError,
+        build_contract_ir_term_environment,
+        select_contract_ir_solver,
+    )
+
+    try:
+        return select_contract_ir_solver(
+            contract_ir,
+            term_environment=build_contract_ir_term_environment(contract),
+            valuation_context=valuation_context,
+            preferred_method=preferred_method,
+            requested_outputs=requested_outputs,
+        )
+    except ContractIRSolverCompileError:
+        _LOG.debug(
+            "Contract IR structural selection did not admit semantic %s",
+            getattr(contract, "semantic_id", "<unknown>"),
+            exc_info=True,
+        )
+        return None
+
+
+def _route_free_lowering_bindings_from_selection(selection) -> tuple[object, ...]:
+    """Project structural selection provenance onto lowering target bindings."""
+    from trellis.agent.dsl_lowering import DslTargetBinding
+
+    def _append(
+        bindings: list[DslTargetBinding],
+        seen: set[tuple[str, str, str]],
+        ref: str,
+        *,
+        role: str,
+    ) -> None:
+        module_name, symbol = _split_import_ref(ref)
+        if not module_name or not symbol:
+            return
+        key = (module_name, symbol, role)
+        if key in seen:
+            return
+        seen.add(key)
+        bindings.append(DslTargetBinding(module=module_name, symbol=symbol, role=role))
+
+    bindings: list[DslTargetBinding] = []
+    seen: set[tuple[str, str, str]] = set()
+    callable_role = "route_helper" if str(getattr(selection, "call_style", "") or "") == "helper_call" else "pricing_kernel"
+    _append(
+        bindings,
+        seen,
+        str(getattr(selection, "callable_ref", "") or ""),
+        role=callable_role,
+    )
+    for role, refs in (
+        ("route_helper", getattr(selection, "helper_refs", ())),
+        ("pricing_kernel", getattr(selection, "pricing_kernel_refs", ())),
+        ("schedule_builder", getattr(selection, "schedule_builder_refs", ())),
+        ("cashflow_engine", getattr(selection, "cashflow_engine_refs", ())),
+        ("market_binding", getattr(selection, "market_binding_refs", ())),
+    ):
+        for ref in refs or ():
+            _append(bindings, seen, str(ref or ""), role=role)
+    return tuple(bindings)
+
+
+def _route_free_lowering_from_contract_ir_selection(
+    selection,
+    *,
+    preferred_method: str,
+    fallback_lowering,
+):
+    """Build the authoritative route-free lowering from structural selection."""
+    from trellis.agent.dsl_lowering import SemanticDslLowering
+
+    route_family = (
+        str(getattr(fallback_lowering, "route_family", "") or "").strip()
+        or str(preferred_method or "").strip()
+        or None
+    )
+    legacy_notes = tuple(getattr(fallback_lowering, "notes", ()) or ())
+    selection_note = f"contract_ir_selection:{selection.declaration_id}"
+    notes = legacy_notes if selection_note in legacy_notes else (*legacy_notes, selection_note)
+    return SemanticDslLowering(
+        route_id=None,
+        route_family=route_family,
+        family_ir=getattr(fallback_lowering, "family_ir", None),
+        expr=getattr(fallback_lowering, "expr", None),
+        normalized_expr=getattr(fallback_lowering, "normalized_expr", None),
+        target_bindings=_route_free_lowering_bindings_from_selection(selection),
+        adapters=tuple(getattr(fallback_lowering, "adapters", ()) or ()),
+        notes=notes,
+        errors=(),
+        binding_id=str(getattr(selection, "callable_ref", "") or ""),
     )
 
 

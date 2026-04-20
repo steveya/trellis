@@ -1443,7 +1443,7 @@ def compile_route_binding_authority(
         route_id=route_id or str(getattr(primitive_plan, "route", "") or ""),
     )
     return RouteBindingAuthority(
-        route_id=route_id or str(getattr(primitive_plan, "route", "") or ""),
+        route_id=route_id or (str(getattr(primitive_plan, "route", "") or "").strip() or None),
         route_family=route_family,
         authority_kind=authority_kind,
         backend_binding=backend_binding,

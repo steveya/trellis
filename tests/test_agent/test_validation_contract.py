@@ -193,7 +193,7 @@ def test_route_less_semantic_request_keeps_validation_contract_truthful():
             "European call on AAPL with strike 120 and expiry 2025-11-15",
             "european_option",
             "vanilla_option",
-            "analytical_black76",
+            None,
             "analytical:european_option",
             {"discount_curve", "underlier_spot", "black_vol_surface"},
             (),

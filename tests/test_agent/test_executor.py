@@ -699,6 +699,98 @@ def test_deterministic_exact_binding_module_materializes_black_scholes_comparato
     )
 
 
+def test_deterministic_exact_binding_module_materializes_route_free_vanilla_black76_body():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.black.black76_call",
+            "trellis.models.black.black76_put",
+        ),
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "European option analytical exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=None,
+    )
+
+    assert generated is not None
+    assert "black76_call(forward, strike, sigma, T)" in generated.code
+    assert "black76_put(forward, strike, sigma, T)" in generated.code
+    assert "year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)" in generated.code
+    assert "return float(spec.notional) * df * float(undiscounted)" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("lane_exact_binding_refs", "expected_fragment"),
+    [
+        (
+            (
+                "trellis.models.black.black76_cash_or_nothing_call",
+                "trellis.models.black.black76_cash_or_nothing_put",
+            ),
+            "black76_cash_or_nothing_call(forward, strike, sigma, T)",
+        ),
+        (
+            (
+                "trellis.models.black.black76_asset_or_nothing_call",
+                "trellis.models.black.black76_asset_or_nothing_put",
+            ),
+            "black76_asset_or_nothing_call(forward, strike, sigma, T)",
+        ),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_route_free_digital_black76_body(
+    lane_exact_binding_refs,
+    expected_fragment,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=lane_exact_binding_refs,
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="digital_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["digital_option"],
+        "Digital option analytical exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=None,
+    )
+
+    assert generated is not None
+    assert expected_fragment in generated.code
+    assert "payout_type = str(getattr(spec, \"payout_type\", \"cash_or_nothing\")" in generated.code
+    assert "year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 def test_deterministic_exact_binding_module_non_black_scholes_route_omits_benchmark_outputs_method():
     """Only the Black-Scholes comparison target injects the native-greeks method (QUA-862)."""
     from trellis.agent.executor import (

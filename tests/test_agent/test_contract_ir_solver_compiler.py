@@ -38,6 +38,7 @@ from trellis.agent.contract_ir_solver_compiler import (
     build_contract_ir_term_environment,
     compile_contract_ir_solver,
     execute_contract_ir_solver_decision,
+    select_contract_ir_solver,
 )
 from trellis.agent.platform_requests import compile_build_request
 from trellis.agent.semantic_contract_compiler import compile_semantic_contract
@@ -754,6 +755,32 @@ class TestContractIRSolverCompiler:
         assert blueprint.contract_ir_solver_shadow.declaration_id == "black76_vanilla_call"
         assert blueprint.contract_ir_solver_shadow.legacy_route_id == "analytical_black76"
 
+    def test_semantic_blueprint_promotes_route_free_contract_ir_selection_for_vanilla(self):
+        market_state = _equity_market_state()
+        contract = make_vanilla_option_contract(
+            description="European call on AAPL strike 150 expiring 2025-11-15",
+            underliers=("AAPL",),
+            observation_schedule=("2025-11-15",),
+            preferred_method="analytical",
+        )
+
+        blueprint = compile_semantic_contract(
+            contract,
+            valuation_context=build_valuation_context(
+                market_snapshot=market_state,
+                requested_outputs=("price",),
+            ),
+            preferred_method="analytical",
+        )
+
+        assert blueprint.contract_ir_solver_selection is not None
+        assert blueprint.contract_ir_solver_selection.declaration_id == "black76_vanilla_call"
+        assert blueprint.primitive_routes == ()
+        assert blueprint.dsl_lowering is not None
+        assert blueprint.dsl_lowering.route_id is None
+        assert blueprint.dsl_lowering.binding_id == "trellis.models.black.black76_call"
+        assert "trellis.models.black.black76_call" in blueprint.dsl_lowering.helper_refs
+
     def test_compiled_request_metadata_surfaces_contract_ir_shadow(self):
         market_state = _equity_market_state()
         compiled = compile_build_request(
@@ -766,6 +793,48 @@ class TestContractIRSolverCompiler:
         shadow = compiled.request.metadata["semantic_blueprint"]["contract_ir_solver_shadow"]
         assert shadow["declaration_id"] == "black76_vanilla_call"
         assert shadow["legacy_route_id"] == "analytical_black76"
+
+    def test_compiled_request_promotes_route_free_structural_authority_for_vanilla(self):
+        market_state = _equity_market_state()
+        compiled = compile_build_request(
+            "European call on AAPL strike 150 expiring 2025-11-15",
+            instrument_type="european_option",
+            market_snapshot=market_state,
+            preferred_method="analytical",
+        )
+
+        selection = compiled.request.metadata["semantic_blueprint"]["contract_ir_solver_selection"]
+        authority = compiled.request.metadata["route_binding_authority"]
+
+        assert selection["declaration_id"] == "black76_vanilla_call"
+        assert compiled.semantic_blueprint.primitive_routes == ()
+        assert compiled.generation_plan is not None
+        assert compiled.generation_plan.primitive_plan is None
+        assert compiled.validation_contract is not None
+        assert compiled.validation_contract.route_id is None
+        assert authority["route_id"] is None
+        assert authority["backend_binding"]["binding_id"] == "trellis.models.black.black76_call"
+
+    def test_selection_only_compiler_is_route_free_for_vanilla(self):
+        selection = select_contract_ir_solver(
+            _vanilla_call_contract_ir(),
+            valuation_context=build_valuation_context(requested_outputs=("price",)),
+            preferred_method="analytical",
+        )
+
+        assert selection.declaration_id == "black76_vanilla_call"
+        assert selection.callable_ref == "trellis.models.black.black76_call"
+        assert selection.requested_method == "analytical"
+
+    def test_selection_only_compiler_chooses_digital_put_orientation(self):
+        selection = select_contract_ir_solver(
+            _digital_asset_put_contract_ir(),
+            valuation_context=build_valuation_context(requested_outputs=("price",)),
+            preferred_method="analytical",
+        )
+
+        assert selection.declaration_id == "black76_asset_digital_put"
+        assert selection.callable_ref == "trellis.models.black.black76_asset_or_nothing_put"
 
     def test_term_environment_reads_generic_term_groups_from_semantic_contract(self):
         contract = make_rate_style_swaption_contract(

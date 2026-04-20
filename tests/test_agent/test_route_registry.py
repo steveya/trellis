@@ -383,7 +383,7 @@ class TestRegistryValidation:
         )
 
         assert authority is not None
-        assert authority.route_id == ""
+        assert authority.route_id is None
         assert authority.route_family == "analytical"
         assert authority.authority_kind == "exact_backend_fit"
         assert authority.compatibility_alias_policy == "internal_only"

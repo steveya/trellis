@@ -28,11 +28,13 @@ name:
 The second still carries swaption-specific structure, but the shared ramp
 shape is now explicit and machine-readable.
 
-Phase 2 keeps the rollout additive:
+The rollout is still bounded rather than universal:
 
-- existing routing still reads ``ProductIR``
-- ``SemanticImplementationBlueprint`` now also carries ``contract_ir``
-- unsupported or out-of-scope products attach ``None`` instead of failing
+- ``SemanticImplementationBlueprint`` carries ``contract_ir`` whenever the
+  supported structural parser can admit the request
+- admitted Phase 4 fresh builds can now select exact helpers directly from
+  ``ContractIR`` without a route id on the authoritative path
+- unsupported or out-of-scope products attach ``None`` instead of guessing
 
 Current Surface
 ---------------
@@ -218,26 +220,35 @@ The target state is explicit: even a simple rebuilt vanilla option should be
 able to go through ``ContractIR -> pattern match -> lowering obligations``
 without needing a direct hard-coded route by instrument name.
 
-Phase 3 Structural Solver Compiler
-----------------------------------
+Phase 3 / Phase 4 Structural Solver Compiler
+--------------------------------------------
 
-Phase 3 introduces the first bounded structural compiler on top of
-``ContractIR``:
+The bounded structural compiler introduced in Phase 3 is now also used on the
+Phase 4 fresh-build path for admitted families:
 
 - ``trellis.agent.contract_ir_solver_compiler.compile_contract_ir_solver(...)``
+- ``trellis.agent.contract_ir_solver_compiler.select_contract_ir_solver(...)``
 - ``trellis.agent.contract_ir_solver_compiler.execute_contract_ir_solver_decision(...)``
 
-This compiler is still additive in the current shipped state. It does not
-replace the legacy route path yet. Instead it proves that a fresh build can
-bind a checked solver call directly from:
+When a request admits a real ``ContractIR`` match, the selector can now bind a
+checked backend directly from:
 
 - ``contract_ir``
 - a generic non-structural term environment
 - the requested method / output surface
-- a bound ``MarketState``
 
 and do so without consulting ``ProductIR.instrument`` or any route id during
-selection.
+selection. Market binding is still a separate step for execution-time
+materialization and parity comparison.
+
+The current cutover is intentionally bounded:
+
+- admitted exact fresh-build selection is route-free for the migrated structural
+  cohort that can already decompose into ``ContractIR``
+- unmigrated, under-specified, or structurally unsupported requests still fall
+  back to the compatibility route path
+- arithmetic Asians remain fail-closed on the structural compiler path because
+  there is still no checked exact helper surface for that family
 
 Normalized Term Environment
 ---------------------------

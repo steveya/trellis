@@ -541,7 +541,7 @@ def test_platform_trace_keeps_route_less_semantic_requests_truthful(tmp_path):
             "european_option",
             "vanilla_option",
             "thin_compatibility_wrapper",
-            "analytical_black76",
+            None,
             None,
             "trellis.models.black",
             None,
@@ -631,14 +631,18 @@ def test_platform_trace_persists_semantic_checkpoint_and_generation_boundary(
     assert operator_metadata is not None
     if expected_route_id == "equity_quanto":
         assert operator_metadata["display_name"] == "Quanto option analytical binding"
-    assert (
-        trace.generation_boundary["primitive_plan"]["backend_binding_id"]
-        == trace.generation_boundary["route_binding_authority"]["backend_binding"]["binding_id"]
-    )
-    assert (
-        boundary["generation_boundary"]["primitive_plan"]["backend_binding_id"]
-        == boundary["generation_boundary"]["route_binding_authority"]["backend_binding"]["binding_id"]
-    )
+    if expected_route_id is None:
+        assert trace.generation_boundary["primitive_plan"] == {}
+        assert boundary["generation_boundary"]["primitive_plan"] == {}
+    else:
+        assert (
+            trace.generation_boundary["primitive_plan"]["backend_binding_id"]
+            == trace.generation_boundary["route_binding_authority"]["backend_binding"]["binding_id"]
+        )
+        assert (
+            boundary["generation_boundary"]["primitive_plan"]["backend_binding_id"]
+            == boundary["generation_boundary"]["route_binding_authority"]["backend_binding"]["binding_id"]
+        )
     assert (
         trace.generation_boundary["route_binding_authority"]["backend_binding"]["engine_family"]
         in {"analytical", "monte_carlo"}
