@@ -196,6 +196,22 @@ class TestDecomposeStaticAndDynamicContracts:
             "rider_fee_rate",
         )
 
+    def test_gmwb_overlay_fee_fallback_formula_reuses_declared_parameter_name(self):
+        overlay_description = (
+            "GMWB contract premium 100000 guarantee base 100000 account value 100000 "
+            "withdrawal dates 2026-01-15, 2027-01-15, 2028-01-15 rider fee"
+        )
+
+        observed = decompose_to_insurance_overlay_contract_ir(
+            overlay_description,
+            instrument_type="gmwb",
+        )
+
+        assert isinstance(observed, InsuranceOverlayContractIR)
+        fee_event = next(event for event in observed.overlay_events if event.label == "rider_fee")
+        assert fee_event.fee_formula == "rider_fee_rate * account_value"
+        assert "rider_fee_rate" in observed.overlay_parameters.parameter_names
+
     def test_dynamic_decomposition_rejects_static_and_quote_only_descriptions(self):
         assert (
             decompose_to_dynamic_contract_ir(

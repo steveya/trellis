@@ -1218,7 +1218,7 @@ def _build_gmwb_insurance_overlay_contract_ir(
                 fee_formula=(
                     "rider_fee_rate * account_value"
                     if fee_rate is not None
-                    else "overlay_fee_rate * account_value"
+                    else "rider_fee_rate * account_value"
                 ),
             )
         )
