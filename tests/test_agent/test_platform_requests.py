@@ -1442,3 +1442,93 @@ def test_compile_build_request_uses_nth_to_default_semantic_contract_blueprint()
         == "price_nth_to_default_basket"
     )
     assert "trellis.instruments.nth_to_default" in compiled.semantic_blueprint.target_modules
+
+
+def test_request_contract_ir_compiler_summary_surfaces_binding_diagnostic(monkeypatch):
+    from types import SimpleNamespace
+
+    from trellis.agent.contract_ir_solver_compiler import (
+        ContractIRSolverBindingDiagnostic,
+        ContractIRSolverBindingError,
+    )
+    from trellis.agent.knowledge.schema import ProductIR
+    from trellis.agent.platform_requests import (
+        PlatformRequest,
+        _request_contract_ir_compiler_summary,
+    )
+    from trellis.agent.quant import PricingPlan
+    from trellis.core.market_state import MarketState
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.models.vol_surface import FlatVol
+
+    market_snapshot = MarketState(
+        as_of=date(2025, 1, 1),
+        settlement=date(2025, 1, 1),
+        discount=YieldCurve.flat(0.03),
+        vol_surface=FlatVol(0.20),
+    )
+    request = PlatformRequest(
+        request_id="test_build_001",
+        request_type="build",
+        entry_point="executor",
+        description="Synthetic swaption request for structural-shadow diagnostics",
+        instrument_type="swaption",
+        market_snapshot=market_snapshot,
+        requested_outputs=("price",),
+    )
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.rate_style_swaption"],
+        required_market_data={"discount_curve", "vol_surface"},
+        model_to_build=None,
+        reasoning="test",
+    )
+    product_ir = ProductIR(
+        instrument="swaption",
+        payoff_family="rate_style_swaption",
+        exercise_style="european",
+    )
+    generation_plan = SimpleNamespace(inspected_modules=("trellis.models.rate_style_swaption",))
+    diagnostic = ContractIRSolverBindingDiagnostic(
+        declaration_id="helper_swaption_payer_black76",
+        precedence=44,
+        error_type="ValueError",
+        message="Swaption adapter requires explicit swap_start or a multi-date schedule for structural binding",
+    )
+
+    monkeypatch.setattr(
+        "trellis.agent.platform_requests.decompose_to_contract_ir",
+        lambda *args, **kwargs: {"contract": "ir"},
+    )
+
+    def _raise_binding_error(*args, **kwargs):
+        raise ContractIRSolverBindingError(
+            method="analytical",
+            outputs=("price",),
+            diagnostics=(diagnostic,),
+        )
+
+    monkeypatch.setattr(
+        "trellis.agent.contract_ir_solver_compiler.compile_contract_ir_solver_shadow",
+        _raise_binding_error,
+    )
+
+    summary = _request_contract_ir_compiler_summary(
+        request,
+        request_metadata={"route_binding_authority": {"route_id": "analytical_black76"}},
+        product_ir=product_ir,
+        pricing_plan=pricing_plan,
+        generation_plan=generation_plan,
+    )
+
+    assert summary["source"] == "request_decomposition"
+    assert summary["shadow_status"] == "no_match"
+    assert summary["shadow_error"]["error_type"] == "ContractIRSolverBindingError"
+    assert summary["shadow_error"]["declaration_id"] == "helper_swaption_payer_black76"
+    assert summary["shadow_error"]["adapter_error_type"] == "ValueError"
+    assert (
+        summary["shadow_error"]["adapter_error_message"]
+        == "Swaption adapter requires explicit swap_start or a multi-date schedule for structural binding"
+    )
+    assert summary["shadow_error"]["binding_failure_count"] == 1
+    assert "requires explicit swap_start" in summary["shadow_error"]["message"]

@@ -629,6 +629,25 @@ def _contract_ir_compiler_summary(
     }
 
 
+def _contract_ir_shadow_error_payload(exc: Exception) -> dict[str, object]:
+    """Serialize structural compiler failures onto stable request metadata."""
+
+    payload: dict[str, object] = {
+        "error_type": type(exc).__name__,
+        "message": str(exc),
+    }
+    best_diagnostic = getattr(exc, "best_diagnostic", None)
+    if best_diagnostic is None:
+        return payload
+    payload["declaration_id"] = str(getattr(best_diagnostic, "declaration_id", "") or "")
+    payload["adapter_error_type"] = str(getattr(best_diagnostic, "error_type", "") or "")
+    payload["adapter_error_message"] = str(getattr(best_diagnostic, "message", "") or "")
+    diagnostics = tuple(getattr(exc, "diagnostics", ()) or ())
+    if diagnostics:
+        payload["binding_failure_count"] = int(len(diagnostics))
+    return payload
+
+
 def _request_contract_ir_compiler_summary(
     request: PlatformRequest,
     *,
@@ -705,10 +724,7 @@ def _request_contract_ir_compiler_summary(
             shadow_status = "bound"
         except ContractIRSolverCompileError as exc:
             shadow_status = "no_match"
-            shadow_error = {
-                "error_type": type(exc).__name__,
-                "message": str(exc),
-            }
+            shadow_error = _contract_ir_shadow_error_payload(exc)
 
     return _contract_ir_compiler_summary(
         source="request_decomposition",

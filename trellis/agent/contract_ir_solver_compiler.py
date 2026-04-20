@@ -339,6 +339,46 @@ class ContractIRSolverNoMatchError(ContractIRSolverCompileError):
     """Raised when no structural declaration is admissible."""
 
 
+@dataclass(frozen=True)
+class ContractIRSolverBindingDiagnostic:
+    """One matched declaration that failed adapter-side binding."""
+
+    declaration_id: str
+    precedence: int
+    error_type: str
+    message: str
+
+
+class ContractIRSolverBindingError(ContractIRSolverNoMatchError):
+    """Raised when declarations match structurally but cannot be bound safely."""
+
+    def __init__(
+        self,
+        *,
+        method: str,
+        outputs: tuple[str, ...],
+        diagnostics: tuple[ContractIRSolverBindingDiagnostic, ...],
+    ) -> None:
+        self.method = str(method)
+        self.outputs = tuple(outputs)
+        self.diagnostics = tuple(diagnostics)
+        indexed = list(enumerate(self.diagnostics))
+        self.best_diagnostic = max(indexed, key=lambda item: (item[1].precedence, item[0]))[1]
+        detail = (
+            f"Best matched declaration {self.best_diagnostic.declaration_id!r} failed adapter binding "
+            f"with {self.best_diagnostic.error_type}: {self.best_diagnostic.message}"
+        )
+        if len(self.diagnostics) > 1:
+            detail = (
+                f"{detail} ({len(self.diagnostics)} matched declarations failed binding before "
+                "selection could complete)"
+            )
+        super().__init__(
+            "Matched structural ContractIR declaration(s) were found but could not be bound for "
+            f"method {self.method!r} and outputs {self.outputs!r}. {detail}"
+        )
+
+
 class ContractIRSolverAmbiguityError(ContractIRSolverCompileError):
     """Raised when multiple admissible declarations survive selection."""
 
@@ -563,6 +603,7 @@ def compile_contract_ir_solver(
     outputs = _normalize_requested_output_tuple(requested_outputs, valuation_context)
     measures = normalize_requested_measures(outputs)
     candidates: list[tuple[int, ContractIRSolverDeclaration, Mapping[str, object], Mapping[str, object]]] = []
+    binding_failures: list[ContractIRSolverBindingDiagnostic] = []
 
     for registered in selected_registry.selection_order():
         declaration = registered.declaration
@@ -596,11 +637,25 @@ def compile_contract_ir_solver(
                 if adapter is not None
                 else {"call_kwargs": {}}
             )
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as exc:
+            binding_failures.append(
+                ContractIRSolverBindingDiagnostic(
+                    declaration_id=declaration.provenance.declaration_id,
+                    precedence=int(declaration.precedence),
+                    error_type=type(exc).__name__,
+                    message=str(exc),
+                )
+            )
             continue
         candidates.append((declaration.precedence, declaration, dict(match.bindings), dict(adapter_payload)))
 
     if not candidates:
+        if binding_failures:
+            raise ContractIRSolverBindingError(
+                method=method,
+                outputs=outputs,
+                diagnostics=tuple(binding_failures),
+            )
         raise ContractIRSolverNoMatchError(
             "No admissible structural ContractIR solver declaration was found for "
             f"method {method!r} and outputs {outputs!r}."
@@ -1512,6 +1567,8 @@ __all__ = [
     "ContractIRCompilerDecision",
     "ContractIRSolverAmbiguityError",
     "ContractIRSolverCompileError",
+    "ContractIRSolverBindingDiagnostic",
+    "ContractIRSolverBindingError",
     "ContractIRSolverNoMatchError",
     "ContractIRSolverShadowRecord",
     "ContractIRTermEnvironment",

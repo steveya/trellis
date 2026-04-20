@@ -33,6 +33,7 @@ from trellis.agent.contract_ir import (
     VarianceObservable,
 )
 from trellis.agent.contract_ir_solver_compiler import (
+    ContractIRSolverBindingError,
     ContractIRSolverNoMatchError,
     build_contract_ir_term_environment,
     compile_contract_ir_solver,
@@ -599,13 +600,19 @@ class TestContractIRSolverCompiler:
         market_state = _swaption_market_state()
         context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
 
-        with pytest.raises(ContractIRSolverNoMatchError):
+        with pytest.raises(
+            ContractIRSolverBindingError,
+            match="requires explicit swap_start or a multi-date schedule for structural binding",
+        ) as exc_info:
             compile_contract_ir_solver(
                 _single_payment_swaption_contract_ir(),
                 valuation_context=context,
                 market_state=market_state,
                 preferred_method="analytical",
             )
+
+        assert exc_info.value.best_diagnostic.declaration_id == "helper_swaption_payer_black76"
+        assert exc_info.value.best_diagnostic.error_type == "ValueError"
 
     def test_swaption_helper_uses_forecast_curve_name_when_rate_index_missing(self):
         market_state = _swaption_market_state_with_named_forecast_curve()
