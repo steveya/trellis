@@ -25,10 +25,9 @@ def _declaration(
     methods: tuple[str, ...] = ("analytical",),
     exercise_style: str | None = None,
     subordinates_to: tuple[str, ...] = (),
+    payload: dict[str, object] | None = None,
 ) -> ContractIRSolverDeclaration:
-    payload: dict[str, object] = {
-        "payoff": {"kind": payoff_kind},
-    }
+    payload = dict(payload or {"payoff": {"kind": payoff_kind}})
     if exercise_style is not None:
         payload["exercise"] = {"style": exercise_style}
     return ContractIRSolverDeclaration(
@@ -68,6 +67,32 @@ class TestContractIRSolverRegistry:
 
         with pytest.raises(ContractIRSolverOverlapError, match="left.*right|right.*left"):
             build_contract_ir_solver_registry((left, right))
+
+    def test_instrument_tag_and_structural_vanilla_overlap_fail_closed(self):
+        tag_decl = _declaration("tag", payoff_kind="vanilla_payoff", precedence=10)
+        structural_decl = _declaration(
+            "structural",
+            payoff_kind="unused",
+            precedence=10,
+            payload={
+                "payoff": {
+                    "kind": "max",
+                    "args": [
+                        {
+                            "kind": "sub",
+                            "args": [
+                                {"kind": "spot", "underlier": "_u"},
+                                {"kind": "strike", "value": "_k"},
+                            ],
+                        },
+                        {"kind": "constant", "value": 0.0},
+                    ],
+                }
+            },
+        )
+
+        with pytest.raises(ContractIRSolverOverlapError, match="tag.*structural|structural.*tag"):
+            build_contract_ir_solver_registry((tag_decl, structural_decl))
 
     def test_subordinate_overlap_is_allowed_when_precedence_is_lower(self):
         specific = _declaration("specific", payoff_kind="vanilla_payoff", precedence=20)

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from itertools import combinations
-from typing import Iterable
+from typing import AbstractSet, Iterable
 
 from trellis.agent.contract_pattern import (
     AtomPattern,
@@ -314,7 +314,11 @@ def _method_sets_intersect(left: tuple[str, ...], right: tuple[str, ...]) -> boo
 
 
 def _selectors_conflict(left: object | None, right: object | None) -> bool:
-    return left is not None and right is not None and left != right
+    if left is None or right is None:
+        return False
+    if isinstance(left, AbstractSet) and isinstance(right, AbstractSet):
+        return left.isdisjoint(right)
+    return left != right
 
 
 def _contract_pattern_overlap_signature(pattern: ContractPattern) -> dict[str, object | None]:
@@ -340,14 +344,70 @@ def _payoff_selector(node: object | None) -> object | None:
     if node is None:
         return None
     if isinstance(node, PayoffPattern):
-        return node.kind
+        inferred_tags = _payoff_family_tags(node)
+        if inferred_tags:
+            return inferred_tags
+        return frozenset({f"head:{node.kind}"})
     if isinstance(node, SpotPattern):
-        return "spot"
+        return frozenset({"head:spot"})
     if isinstance(node, StrikePattern):
-        return "strike"
+        return frozenset({"head:strike"})
     if isinstance(node, ConstantPattern):
-        return "constant"
+        return frozenset({"head:constant"})
     return None
+
+
+_INSTRUMENT_PAYOFF_TAGS = frozenset(
+    {
+        "swaption_payoff",
+        "basket_payoff",
+        "variance_payoff",
+        "digital_payoff",
+        "barrier_payoff",
+        "vanilla_payoff",
+        "rate_payoff",
+        "lookback_payoff",
+        "asian_payoff",
+        "cliquet_payoff",
+        "chooser_payoff",
+        "compound_payoff",
+    }
+)
+
+
+def _payoff_family_tags(node: PayoffPattern) -> frozenset[str]:
+    if node.kind in _INSTRUMENT_PAYOFF_TAGS and not node.args:
+        return frozenset({node.kind})
+    tags: set[str] = set()
+    if _is_vanilla_intrinsic_shape(node):
+        tags.add("vanilla_payoff")
+    return frozenset(tags)
+
+
+def _is_vanilla_intrinsic_shape(node: PayoffPattern) -> bool:
+    if node.kind != "max" or len(node.args) != 2:
+        return False
+    sub_node, zero_node = node.args
+    if not isinstance(sub_node, PayoffPattern) or sub_node.kind != "sub":
+        return False
+    if len(sub_node.args) != 2:
+        return False
+    lhs, rhs = sub_node.args
+    if not isinstance(lhs, SpotPattern):
+        return False
+    if not isinstance(rhs, StrikePattern):
+        return False
+    if not isinstance(zero_node, ConstantPattern):
+        return False
+    zero_value = zero_node.value
+    if isinstance(zero_value, Wildcard):
+        return True
+    if isinstance(zero_value, AtomPattern):
+        zero_value = zero_value.value
+    try:
+        return float(zero_value) == 0.0
+    except (TypeError, ValueError):
+        return False
 
 
 def _schedule_frequency_selector(node: SchedulePattern | None) -> object | None:
