@@ -471,29 +471,11 @@ def _compile_contract_ir_solver_shadow(
     from trellis.agent.contract_ir_solver_compiler import (
         ContractIRSolverCompileError,
         build_contract_ir_term_environment,
-        compile_contract_ir_solver,
-        shadow_record_from_decision,
+        compile_contract_ir_solver_shadow,
     )
     from trellis.core.market_state import MarketState
 
     if not isinstance(market_snapshot, MarketState):
-        return None
-
-    try:
-        decision = compile_contract_ir_solver(
-            contract_ir,
-            term_environment=build_contract_ir_term_environment(contract),
-            valuation_context=valuation_context,
-            market_state=market_snapshot,
-            preferred_method=preferred_method,
-            requested_outputs=requested_outputs,
-        )
-    except ContractIRSolverCompileError:
-        _LOG.debug(
-            "Contract IR structural shadow compilation did not bind for semantic %s",
-            getattr(contract, "semantic_id", "<unknown>"),
-            exc_info=True,
-        )
         return None
 
     legacy_route_id = (
@@ -509,12 +491,26 @@ def _compile_contract_ir_solver_shadow(
             )
         )
     )
-    return shadow_record_from_decision(
-        decision,
-        legacy_route_id=legacy_route_id,
-        legacy_route_family=legacy_route_family,
-        legacy_route_modules=legacy_modules,
-    )
+
+    try:
+        return compile_contract_ir_solver_shadow(
+            contract_ir,
+            term_environment=build_contract_ir_term_environment(contract),
+            valuation_context=valuation_context,
+            market_state=market_snapshot,
+            preferred_method=preferred_method,
+            requested_outputs=requested_outputs,
+            legacy_route_id=legacy_route_id,
+            legacy_route_family=legacy_route_family,
+            legacy_route_modules=legacy_modules,
+        )
+    except ContractIRSolverCompileError:
+        _LOG.debug(
+            "Contract IR structural shadow compilation did not bind for semantic %s",
+            getattr(contract, "semantic_id", "<unknown>"),
+            exc_info=True,
+        )
+        return None
 
 
 def _emit_event_skeleton(contract) -> str | None:

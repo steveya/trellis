@@ -114,6 +114,37 @@ Observability Surface
 that record into request metadata so runtime traces can compare route and
 structural authority during the Phase 3 rollout.
 
+Generic request paths now expose the same structural boundary through the
+top-level ``request.metadata["contract_ir_compiler"]`` packet. That packet is
+intentionally small and stable:
+
+- ``source`` identifies whether the structural surface came from a semantic
+  blueprint or direct request decomposition
+- ``contract_ir`` carries the YAML-safe structural tree
+- ``contract_ir_solver_shadow`` carries the compact bound shadow record when
+  selection succeeds
+- ``shadow_status`` distinguishes ``bound``, ``contract_ir_only``, and
+  ``no_match``
+- ``shadow_error`` makes fail-closed no-match outcomes explicit instead of
+  relying on absence as a signal
+
+This is important for Phase 3 governance because not every migrated payoff
+family currently has a dedicated semantic-contract wrapper. Structural shadow
+evidence therefore needs to remain observable on generic request paths too.
+
+Parity Evidence
+---------------
+
+The checked parity / closure artifacts for the current Phase 3 wave live in:
+
+- ``docs/benchmarks/contract_ir_solver_parity.json``
+- ``docs/benchmarks/contract_ir_solver_parity.md``
+
+Those artifacts are the promotion gate for Phase 4. A family should not be
+treated as route-retirement-ready merely because it binds structurally; the
+ledger must also show sufficient legacy-authority comparison evidence and an
+explicit non-blocked status.
+
 Extension Guidance
 ------------------
 

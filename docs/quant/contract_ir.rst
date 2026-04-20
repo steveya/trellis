@@ -324,6 +324,42 @@ This is intentionally a shadow surface in Phase 3:
 ``compile_build_request(...)`` threads the same summary onto request metadata
 under ``request.metadata["semantic_blueprint"]["contract_ir_solver_shadow"]``.
 
+For request paths that do not compile through a semantic blueprint but still
+decompose route-freely, ``compile_build_request(...)`` now also emits a
+top-level additive summary under ``request.metadata["contract_ir_compiler"]``.
+
+That packet records:
+
+- whether the structural view came from ``semantic_blueprint`` or direct
+  request decomposition
+- the YAML-safe ``contract_ir`` summary
+- the compact structural shadow record when binding succeeds
+- ``shadow_status``:
+
+  - ``bound`` when the structural compiler selected a declaration
+  - ``contract_ir_only`` when decomposition succeeded but no bound market was
+    available
+  - ``no_match`` when the family is representable but intentionally outside
+    the admitted Phase 3 solver wave
+
+- an explicit ``shadow_error`` payload for fail-closed no-match outcomes
+
+This makes the structural boundary visible even for generic free-form request
+paths such as digitals, terminal baskets, and variance swaps that are not all
+wrapped by dedicated semantic contracts yet.
+
+Parity Ledger
+-------------
+
+The checked Phase 3 parity / closure ledger lives in:
+
+- ``docs/benchmarks/contract_ir_solver_parity.json``
+- ``docs/benchmarks/contract_ir_solver_parity.md``
+
+That ledger is the current promotion gate for Phase 4. It distinguishes
+families that are merely representable from families that have enough
+selection, parity, and provenance evidence to be considered phase-4-ready.
+
 Explicit Phase 3 Non-goals
 --------------------------
 
@@ -337,6 +373,8 @@ That distinction is deliberate:
 - ``ContractIR`` representation coverage is broader than the current migrated
   solver wave
 - "IR exists" must not be read as "the family is already route-free"
+- explicit ``shadow_status = "no_match"`` is part of the governed blocker
+  surface, not an incidental omission
 
 Phase 4 is the retirement phase. Phase 3 only proves that the admitted
 families can already price through the structural compiler with parity and

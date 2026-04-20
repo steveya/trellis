@@ -659,6 +659,45 @@ def shadow_record_from_decision(
     )
 
 
+def compile_contract_ir_solver_shadow(
+    contract_ir: ContractIR,
+    *,
+    term_environment: ContractIRTermEnvironment | None = None,
+    valuation_context: ValuationContext | None = None,
+    market_state: MarketState | None = None,
+    preferred_method: str | None = None,
+    requested_outputs: tuple[str, ...] | list[str] | None = None,
+    registry: ContractIRSolverRegistry | None = None,
+    legacy_route_id: str = "",
+    legacy_route_family: str = "",
+    legacy_route_modules: tuple[str, ...] = (),
+) -> ContractIRSolverShadowRecord:
+    """Compile one additive structural-shadow summary from ``ContractIR``.
+
+    This helper preserves the Phase 3 boundary:
+
+    - structural selection is still driven only by ``contract_ir`` plus
+      generic terms, valuation context, and market state
+    - legacy route metadata is copied only onto the compact comparison record
+    """
+
+    decision = compile_contract_ir_solver(
+        contract_ir,
+        term_environment=term_environment,
+        valuation_context=valuation_context,
+        market_state=market_state,
+        preferred_method=preferred_method,
+        requested_outputs=requested_outputs,
+        registry=registry,
+    )
+    return shadow_record_from_decision(
+        decision,
+        legacy_route_id=legacy_route_id,
+        legacy_route_family=legacy_route_family,
+        legacy_route_modules=legacy_route_modules,
+    )
+
+
 def _zero_carry_black76_adapter(
     *,
     contract_ir: ContractIR,
@@ -1480,6 +1519,7 @@ __all__ = [
     "QuoteGridTerms",
     "build_contract_ir_term_environment",
     "compile_contract_ir_solver",
+    "compile_contract_ir_solver_shadow",
     "default_contract_ir_solver_registry",
     "execute_contract_ir_solver_decision",
     "shadow_record_from_decision",
