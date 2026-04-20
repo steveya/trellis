@@ -109,3 +109,50 @@ class TestDynamicContractIR:
                     )
                 ),
             )
+
+    def test_continuous_actions_require_quantity_semantics(self):
+        with pytest.raises(DynamicContractIRWellFormednessError):
+            ActionSpec(
+                "withdraw",
+                "withdraw",
+                action_domain="continuous",
+            )
+
+    def test_action_state_updates_must_reference_declared_fields(self):
+        exercise = ActionSpec(
+            "exercise",
+            "exercise",
+            state_updates=(StateUpdateSpec("missing_inventory", "missing_inventory - 1"),),
+        )
+
+        with pytest.raises(DynamicContractIRWellFormednessError):
+            DynamicContractIR(
+                base_contract=None,
+                state_schema=StateSchema(
+                    fields=(StateFieldSpec(name="remaining_rights", domain="int", initial_value=3),)
+                ),
+                event_program=EventProgram(
+                    buckets=(
+                        EventTimeBucket(
+                            event_date=date(2027, 1, 15),
+                            phase_sequence=("decision",),
+                            events=(
+                                DecisionEvent(
+                                    label="exercise_window",
+                                    schedule_role="exercise_date",
+                                    action_set=(exercise,),
+                                    controller_role="holder",
+                                ),
+                            ),
+                        ),
+                    )
+                ),
+                control_program=ControlProgram(
+                    controller_role="holder",
+                    decision_style="swing",
+                    decision_event_labels=("exercise_window",),
+                    admissible_actions=(exercise,),
+                    inventory_fields=("remaining_rights",),
+                ),
+                settlement=SettlementRule(payout_currency="USD"),
+            )
