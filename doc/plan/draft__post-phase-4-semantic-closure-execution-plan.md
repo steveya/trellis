@@ -9,10 +9,12 @@ The umbrella and `CLX.*` child tickets are now filed in Linear. This
 document remains the ordered repo-local mirror for that queue and should
 stay aligned with the live issue graph.
 
-`CLX.1` through `CLX.6` are now implemented and merged. `QUA-936`
-landed the overlay-boundary fixtures under `CLX.7`, and `QUA-937` plus
-`QUA-938` landed the first shared `CLX.8` readiness infrastructure. The
-next open queue pickup is `QUA-934`.
+`CLX.1` through `CLX.6` are now implemented and merged. Under `CLX.7`,
+`QUA-936` landed the overlay-boundary fixtures and `QUA-939` lands the
+minimal policy-state overlay surface. `QUA-937` plus `QUA-938` landed
+the first shared `CLX.8` readiness infrastructure. The next open queue
+pickup remains the `QUA-934` umbrella until a bounded proving family
+actually requires overlay execution.
 
 Status mirror last synced: `2026-04-20`
 
@@ -31,6 +33,7 @@ Status mirror last synced: `2026-04-20`
 - QUA-934 — `CLX.7` insurance-style overlays
 - QUA-935 — `CLX.8` later-family route retirement follow-ons
 - QUA-936 — overlay boundary fixtures for financial-control vs policy-state overlays
+- QUA-939 — minimal policy-state overlay surface
 - QUA-937 — readiness ledger for dynamic closure cohorts
 - QUA-938 — reusable masked-authority harness for later-family cutovers
 - `doc/plan/draft__semantic-contract-closure-program.md`
