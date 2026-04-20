@@ -116,7 +116,12 @@ def test_masked_authority_harness_reuses_phase4_route_free_build_surface():
                 description,
                 instrument_type="european_option",
                 preferred_method="analytical",
-                metadata=dict(variant.wrapper_metadata),
+                metadata={
+                    "route_id": variant.route_id,
+                    "route_family": variant.route_family,
+                    "product_instrument": variant.product_instrument,
+                    **dict(variant.wrapper_metadata),
+                },
             )
         ),
     )

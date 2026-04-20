@@ -253,9 +253,8 @@ def capture_compiled_request_authority_snapshot(compiled_request) -> AuthoritySe
         raise ValueError("compiled request does not carry route-free authority metadata")
 
     lane_family = (
-        str(authority.get("route_family") or "").strip()
-        or str(authority.get("engine_family") or "").strip()
-        or str(backend_binding.get("engine_family") or "").strip()
+        str(backend_binding.get("engine_family") or "").strip()
+        or str(selection.get("requested_method") or "").strip()
     )
     if not lane_family:
         raise ValueError("compiled request does not carry a lane family")
