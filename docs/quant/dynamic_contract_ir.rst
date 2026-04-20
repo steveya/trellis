@@ -180,3 +180,9 @@ This bounded dynamic slice still does not provide:
   structures
 - insurance overlays such as mortality, lapse, or fee behavior on top of the
   financial-control core
+
+The current financial-control slice is intentionally overlay-free. Bounded
+``gmwb`` decomposition now fails closed when the request introduces mortality,
+lapse, or fee-bearing insurance terms, and the dynamic-lane admission surface
+rejects policy-state-tagged fixtures with an explicit deferred-overlay blocker
+instead of silently reclassifying them as ordinary financial-control contracts.

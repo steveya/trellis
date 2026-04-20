@@ -157,6 +157,20 @@ class TestDecomposeStaticAndDynamicContracts:
         assert gmwb.control_program.admissible_actions[0].action_domain == "continuous"
         assert gmwb.control_program.admissible_actions[0].quantity_source == "withdrawal_amount"
 
+    def test_gmwb_overlay_bearing_descriptions_fail_closed_before_dynamic_decomposition(self):
+        overlay_description = (
+            "GMWB contract premium 100000 guarantee base 100000 account value 100000 "
+            "withdrawal dates 2026-01-15, 2027-01-15, 2028-01-15 mortality rider fee 1%"
+        )
+
+        assert (
+            decompose_to_dynamic_contract_ir(
+                overlay_description,
+                instrument_type="gmwb",
+            )
+            is None
+        )
+
     def test_dynamic_decomposition_rejects_static_and_quote_only_descriptions(self):
         assert (
             decompose_to_dynamic_contract_ir(

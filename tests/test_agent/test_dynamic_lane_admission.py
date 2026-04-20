@@ -169,6 +169,83 @@ def test_dynamic_lane_admission_fails_closed_for_deferred_hybrids():
         compile_dynamic_lane_admission(contract)
 
 
+def test_dynamic_lane_admission_fails_closed_for_deferred_insurance_overlays():
+    from trellis.agent.dynamic_lane_admission import (
+        compile_dynamic_lane_admission,
+    )
+
+    withdraw = ActionSpec(
+        "withdraw",
+        "withdraw",
+        action_domain="continuous",
+        quantity_source="withdrawal_amount",
+        bounds_expression="0 <= withdrawal_amount <= guarantee_base",
+        state_updates=(
+            StateUpdateSpec("account_value", "account_value - withdrawal_amount"),
+            StateUpdateSpec("guarantee_base", "guarantee_base - withdrawal_amount"),
+        ),
+    )
+    contract = DynamicContractIR(
+        base_contract=None,
+        semantic_family="gmwb",
+        base_track="payoff_expression",
+        state_schema=StateSchema(
+            fields=(
+                StateFieldSpec(
+                    "account_value",
+                    "float",
+                    100_000.0,
+                    tags=("financial_state", "continuous_control"),
+                ),
+                StateFieldSpec(
+                    "guarantee_base",
+                    "float",
+                    100_000.0,
+                    tags=("financial_state", "continuous_control"),
+                ),
+                StateFieldSpec(
+                    "policy_status",
+                    "enum",
+                    "alive",
+                    tags=("policy_state", "insurance_overlay"),
+                ),
+            ),
+        ),
+        event_program=EventProgram(
+            buckets=(
+                EventTimeBucket(
+                    event_date=date(2026, 1, 15),
+                    phase_sequence=("decision", "payment"),
+                    events=(
+                        DecisionEvent(
+                            label="withdraw_2026-01-15",
+                            schedule_role="withdrawal_dates",
+                            action_set=(withdraw,),
+                            controller_role="holder",
+                        ),
+                        PaymentEvent(
+                            label="withdrawal_cashflow_2026-01-15",
+                            schedule_role="payment_dates",
+                            cashflow_formula="withdrawal_amount",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        control_program=ControlProgram(
+            controller_role="holder",
+            decision_style="continuous_withdrawal",
+            decision_event_labels=("withdraw_2026-01-15",),
+            admissible_actions=(withdraw,),
+            inventory_fields=("guarantee_base",),
+        ),
+        settlement=SettlementRule(payout_currency="USD"),
+    )
+
+    with pytest.raises(DynamicLaneAdmissionError, match="insurance-style overlay"):
+        compile_dynamic_lane_admission(contract)
+
+
 @pytest.mark.parametrize(
     ("planner", "family", "match"),
     (
