@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from trellis.agent.dynamic_contract_ir import (
@@ -160,7 +161,10 @@ def _compile_discrete_control_lane(
     contract: DynamicContractIR,
 ) -> DiscreteControlLaneAdmission:
     control_program = contract.control_program
-    assert control_program is not None
+    if control_program is None:
+        raise DynamicLaneAdmissionError(
+            "_compile_discrete_control_lane requires a ControlProgram"
+        )
     semantic_family = _discrete_family(contract)
     candidate_lanes = _discrete_candidate_lanes(semantic_family)
     benchmark_plan = _discrete_benchmark_plan(semantic_family)
@@ -181,7 +185,10 @@ def _compile_continuous_control_lane(
     contract: DynamicContractIR,
 ) -> ContinuousControlLaneAdmission:
     control_program = contract.control_program
-    assert control_program is not None
+    if control_program is None:
+        raise DynamicLaneAdmissionError(
+            "_compile_continuous_control_lane requires a ControlProgram"
+        )
     semantic_family = _continuous_family(contract)
     magnitude_actions = tuple(
         action.action_name
@@ -305,15 +312,17 @@ def _automatic_benchmark_plan(semantic_family: str) -> DynamicBenchmarkPlan:
                 "compare event ordering, coupon memory, and early redemption semantics",
             ),
         )
-    return DynamicBenchmarkPlan(
-        cohort_id="target_redemption_note",
-        proving_family="event_aware_monte_carlo",
-        validation_mode="literature_benchmark",
-        reference_notes=(
-            "target-redemption running-state benchmark cohort",
-            "compare accumulated coupon or gain state and target-triggered stopping",
-        ),
-    )
+    if semantic_family == "tarn":
+        return DynamicBenchmarkPlan(
+            cohort_id="target_redemption_note",
+            proving_family="event_aware_monte_carlo",
+            validation_mode="literature_benchmark",
+            reference_notes=(
+                "target-redemption running-state benchmark cohort",
+                "compare accumulated coupon or gain state and target-triggered stopping",
+            ),
+        )
+    raise DynamicLaneAdmissionError(f"unsupported automatic-state cohort {semantic_family!r}")
 
 
 def _discrete_benchmark_plan(semantic_family: str) -> DynamicBenchmarkPlan:
@@ -327,15 +336,17 @@ def _discrete_benchmark_plan(semantic_family: str) -> DynamicBenchmarkPlan:
                 "preserve call timing and static coupon-leg semantics",
             ),
         )
-    return DynamicBenchmarkPlan(
-        cohort_id="swing_option",
-        proving_family="control_lsmc",
-        validation_mode="benchmark_plan",
-        reference_notes=(
-            "inventory-constrained holder-control benchmark cohort",
-            "preserve remaining-right semantics and decision timing",
-        ),
-    )
+    if semantic_family == "swing_option":
+        return DynamicBenchmarkPlan(
+            cohort_id="swing_option",
+            proving_family="control_lsmc",
+            validation_mode="benchmark_plan",
+            reference_notes=(
+                "inventory-constrained holder-control benchmark cohort",
+                "preserve remaining-right semantics and decision timing",
+            ),
+        )
+    raise DynamicLaneAdmissionError(f"unsupported discrete-control cohort {semantic_family!r}")
 
 
 def _continuous_benchmark_plan(semantic_family: str) -> DynamicBenchmarkPlan:
@@ -352,7 +363,7 @@ def _continuous_benchmark_plan(semantic_family: str) -> DynamicBenchmarkPlan:
     )
 
 
-def _unique(values) -> tuple[str, ...]:
+def _unique(values: Iterable[str]) -> tuple[str, ...]:
     result: list[str] = []
     for value in values:
         text = str(value or "").strip()

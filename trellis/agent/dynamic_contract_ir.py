@@ -507,7 +507,7 @@ class DynamicContractIR:
                     if update.field_name not in field_names:
                         raise DynamicContractIRWellFormednessError(
                             f"state update references unknown field {update.field_name!r}"
-                    )
+                        )
         if decision_events and self.control_program is None:
             raise DynamicContractIRWellFormednessError(
                 "DynamicContractIR requires a ControlProgram when DecisionEvent is present"

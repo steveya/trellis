@@ -13,7 +13,6 @@ from trellis.agent.dynamic_contract_ir import (
     EventTimeBucket,
     ObservationEvent,
     PaymentEvent,
-    SettlementRule,
     StateFieldSpec,
     StateSchema,
     StateUpdateSpec,
