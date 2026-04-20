@@ -240,3 +240,89 @@ class TestInsuranceOverlayContractIR:
                     policy_state_field="policy_status",
                 ),
             )
+
+    def test_composition_rule_policy_state_field_must_reference_declared_field(self):
+        from trellis.agent.insurance_overlay_contract import (
+            InsuranceOverlayContractIR,
+            InsuranceOverlayContractWellFormednessError,
+            OverlayCompositionRule,
+            OverlayTransitionEvent,
+            PolicyStateSchema,
+        )
+
+        with pytest.raises(
+            InsuranceOverlayContractWellFormednessError,
+            match="policy_state_field",
+        ):
+            InsuranceOverlayContractIR(
+                core_contract=_build_financial_control_core(),
+                semantic_family="gmwb",
+                policy_state_schema=PolicyStateSchema(
+                    fields=(
+                        StateFieldSpec(
+                            "policy_status",
+                            "enum",
+                            "alive",
+                            tags=("policy_state", "insurance_overlay"),
+                        ),
+                    ),
+                ),
+                overlay_events=(
+                    OverlayTransitionEvent(
+                        label="mortality_transition",
+                        schedule_role="overlay_monitoring",
+                        trigger_expression="mortality_event_occurs",
+                        state_updates=(StateUpdateSpec("policy_status", "dead"),),
+                    ),
+                ),
+                composition_rule=OverlayCompositionRule(
+                    composition_style="policy_state_gates_financial_control",
+                    policy_state_field="undeclared_field",
+                ),
+            )
+
+    def test_duplicate_overlay_event_labels_are_rejected(self):
+        from trellis.agent.insurance_overlay_contract import (
+            InsuranceOverlayContractIR,
+            InsuranceOverlayContractWellFormednessError,
+            OverlayCompositionRule,
+            OverlayTransitionEvent,
+            PolicyStateSchema,
+        )
+
+        with pytest.raises(
+            InsuranceOverlayContractWellFormednessError,
+            match="duplicate overlay event label",
+        ):
+            InsuranceOverlayContractIR(
+                core_contract=_build_financial_control_core(),
+                semantic_family="gmwb",
+                policy_state_schema=PolicyStateSchema(
+                    fields=(
+                        StateFieldSpec(
+                            "policy_status",
+                            "enum",
+                            "alive",
+                            tags=("policy_state", "insurance_overlay"),
+                        ),
+                    ),
+                ),
+                overlay_events=(
+                    OverlayTransitionEvent(
+                        label="mortality_transition",
+                        schedule_role="overlay_monitoring",
+                        trigger_expression="mortality_event_occurs",
+                        state_updates=(StateUpdateSpec("policy_status", "dead"),),
+                    ),
+                    OverlayTransitionEvent(
+                        label="mortality_transition",
+                        schedule_role="overlay_monitoring",
+                        trigger_expression="second_mortality_event",
+                        state_updates=(StateUpdateSpec("policy_status", "dead"),),
+                    ),
+                ),
+                composition_rule=OverlayCompositionRule(
+                    composition_style="policy_state_gates_financial_control",
+                    policy_state_field="policy_status",
+                ),
+            )
