@@ -9,9 +9,10 @@ The umbrella and `CLX.*` child tickets are now filed in Linear. This
 document remains the ordered repo-local mirror for that queue and should
 stay aligned with the live issue graph.
 
-`CLX.1` through `CLX.6` are now implemented and merged, and `QUA-936`
-has already landed the overlay-boundary fixtures under `CLX.7`. The
-current `CLX.8` implementation tranche is `QUA-937` and `QUA-938`.
+`CLX.1` through `CLX.6` are now implemented and merged. `QUA-936`
+landed the overlay-boundary fixtures under `CLX.7`, and `QUA-937` plus
+`QUA-938` landed the first shared `CLX.8` readiness infrastructure. The
+next open queue pickup is `QUA-934`.
 
 Status mirror last synced: `2026-04-20`
 
@@ -124,9 +125,7 @@ post-Phase-4 work risks stalling in familiar ways:
 
 Current next pickup:
 
-- `QUA-937` — readiness ledger for dynamic closure cohorts
-- `QUA-938` — reusable masked-authority harness for later-family
-  cutovers
+- `QUA-934` — insurance-style overlays on top of financial control
 
 ## Queue Details
 
@@ -326,7 +325,7 @@ depends on it:
 
 1. Keep this document as the live execution mirror for `QUA-927` and
    its child queue.
-2. Work `QUA-936` next as the first concrete child under `CLX.7`.
-3. Treat `QUA-937` and `QUA-938` as the first concrete `CLX.8`
-   follow-ons once the overlay boundary and readiness surfaces are in
-   place.
+2. Work `QUA-934` next as the open `CLX.7` umbrella slice.
+3. Treat `QUA-935` as the open `CLX.8` umbrella, with `QUA-937` and
+   `QUA-938` already landed as shared readiness infrastructure for later
+   family cutovers.
