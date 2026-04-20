@@ -1,4 +1,4 @@
-# Contract IR — Phase 4: Route Retirement And ProductIR Dispatch Phaseout
+# Contract IR — Phase 4: Route Retirement And Semantic Lowering Pipeline Cutover
 
 ## Status
 
@@ -24,22 +24,36 @@ Phase 4.
 - `doc/plan/draft__quoted-observable-contract-ir-foundation.md`
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
 - `doc/plan/draft__event-state-control-contract-foundation.md`
+- `doc/plan/draft__post-phase-4-semantic-closure-execution-plan.md`
 - `doc/plan/draft__contract-ir-compiler-retiring-route-registry.md`
 - `docs/quant/contract_ir.rst`
 - `docs/quant/contract_algebra.rst`
 
 ## Purpose
 
-Specify the deletion phase that turns the structural compiler from
-shadow-mode evidence into primary fresh-build authority.
+Specify the cutover phase that turns the structural compiler from
+shadow-mode evidence into the only fresh-build authority for supported
+surface.
+
+This document names the route-free fresh-build mechanism the
+**Semantic Lowering Pipeline**:
+
+1. semantic contract validation
+2. admitted semantic-IR emission
+3. structural solver selection
+4. lowering / adapter assembly
+5. exact helper or kernel binding
+6. provenance and validation attachment
 
 The core requirement is simple and strict:
 
-- for migrated payoff families, a fresh rebuild must no longer depend on
-  direct hard-coded route ids, route-family tables, or
-  `ProductIR.instrument`
-- the build must go through the Contract IR -> structural selection ->
-  lowering / helper-binding path
+- for supported fresh-build families, a rebuild must no longer depend on
+  direct hard-coded route ids, route-family tables,
+  `ProductIR.instrument`, or opaque trade-wrapper labels
+- the build must go through the Semantic Lowering Pipeline, which is
+  Contract-IR-backed for the current admitted cohort
+- Phase 4 is not complete while any supported fresh-build family still
+  depends on route-local selector authority
 
 Phase 4 is therefore not new pricing math. It is governed removal of
 redundant authority after Phase 3 has already proved parity.
@@ -77,17 +91,29 @@ program.
 ### What route-free does NOT mean
 
 Phase 4 does not require deleting every legacy artifact from the repo on
-day one.
+day one, and it does not require future not-yet-admitted semantic
+families to exist before the current supported surface can cut over.
 
 It is valid to retain:
 
 - replay-time route aliases
 - provenance ids for historical comparison
 - summary projections from `ContractIR` back onto `ProductIR`
-- fallback for unmigrated families
+- transitional fallback for families not yet admitted into the migration
+  set during rollout
 
 as long as those artifacts are no longer selection authority for
 migrated fresh-build surface.
+
+The Phase 4 exit condition is stricter than the rollout condition:
+
+- by Phase 4 close, supported fresh-build surface must no longer rely on
+  route fallback at all
+- any residual route ids must be replay-only, audit-only, or
+  compatibility-only
+- future families admitted after Phase 4 must plug directly into the
+  Semantic Lowering Pipeline instead of reintroducing temporary route
+  selectors
 
 ### Closure role of Phase 4
 
@@ -104,9 +130,14 @@ Its job is narrower and stricter:
 - remove route-local fresh-build authority for that family
 
 If Phase 4 discovers that a family still depends on a hidden
-product-specific payload, missing semantic domain, or ad hoc route-local
-normalization, that family is not ready for migration into
-`\mathcal{D}_{\text{mig}}`.
+product-specific payload, missing semantic domain, ad hoc route-local
+normalization, or trade-wrapper discriminators, that family is not ready
+for migration into `\mathcal{D}_{\text{mig}}`.
+
+That rollout rule does not weaken the phase-exit rule. Phase 4 is only
+done when the supported fresh-build universe has been fully moved onto
+the Semantic Lowering Pipeline and route authority has become non-
+authoritative everywhere on that surface.
 
 Phase 4 also must preserve route-free valuation identity. Removing route
 authority must not collapse operator meaning onto a thinner,
@@ -157,8 +188,9 @@ surface must be invariant under changes to legacy metadata.
 
 ### Metadata-masking invariance
 
-For any migrated contract `c` and any two legacy-metadata packets
-`h_1, h_2` that differ only in route-local fields,
+For any migrated contract `c` and any two metadata packets
+`h_1, h_2` that differ only in non-semantic selector-forbidden fields
+such as route-local metadata or trade-envelope wrappers,
 
 $$\operatorname{Select}_{\text{fresh}}(c, v, m, h_1)
 =
@@ -167,8 +199,7 @@ $$\operatorname{Select}_{\text{fresh}}(c, v, m, h_1)
 This invariant is the formal phase-exit condition for "route-free fresh
 build."
 
-The same masking rule should extend to non-semantic trade-envelope
-fields described in
+This includes the non-semantic trade-envelope fields described in
 `doc/plan/draft__semantic-contract-target-and-trade-envelope.md`.
 Changing external ids, booking tags, or similar wrapper metadata must
 not change migrated fresh-build selection unless that data has been
@@ -198,6 +229,16 @@ families have:
 
 Phase 4 only deletes authority for `c \in \mathcal{D}_{\text{mig}}`.
 Everything else keeps the old fallback until it joins that set.
+
+Let `\mathcal{U}_{\text{sup}}` be the supported fresh-build universe in
+scope for this Phase 4 program. Then the rollout and exit rules are:
+
+- during rollout, route authority may be deleted family-by-family for
+  `c \in \mathcal{D}_{\text{mig}}`
+- Phase 4 exits only when
+  `\mathcal{D}_{\text{mig}} = \mathcal{U}_{\text{sup}}`
+- after that equality holds, route ids may remain only on replay,
+  provenance, and compatibility surfaces, not on fresh-build selection
 
 For the current payoff-expression migration tranche, that bounded
 definition is enough. Future post-Phase-4 closure tracks should inherit
@@ -303,17 +344,27 @@ operator-facing primary identity.
 For migrated families the intended pipeline is:
 
 1. semantic contract validation
-2. bounded decomposition to `ProductIR` and `ContractIR`
-3. structural solver selection from `ContractIR`
+2. admitted semantic-IR emission for the family in scope
+3. structural solver selection from that admitted semantic IR
 4. adapter / lowering assembly
 5. exact helper / kernel binding
 6. provenance + validation metadata attachment
+
+For the current Phase 4 tranche, the admitted semantic IR is
+`ContractIR`. Future sibling semantic homes should plug into the same
+Semantic Lowering Pipeline without restoring route authority.
+
+`ProductIR` may still be emitted as a lossy compatibility or observability
+projection, but it is not a required authority-bearing stage on the
+fresh-build selector path.
 
 There is no direct branch of the form:
 
 - `if product_ir.instrument == ...`
 - `if route_family == ...`
 - `if route_id == ...`
+- `if trade_envelope.trade_type == ...`
+- `if desk_tag == ...`
 
 on this fresh-build path.
 
@@ -338,18 +389,20 @@ migrated families in fresh-build code paths.
 **Artifacts.**
 
 - selector integration in `trellis/agent/`
-- route-masked regression tests
+- route-masked and envelope-masked regression tests
 - feature flag / rollout guard if needed
 
 ### P4.2 — Family-by-family route-card retirement
 
 **Objective.** Delete redundant `routes.yaml` and binding-catalog
-authority for migrated families.
+authority for migrated families, and close the residual inventory until
+supported fresh-build surface has no selector dependence on route.
 
 **Artifacts.**
 
 - per-family deletion PRs
-- fallback retained only for unmigrated surface
+- shrinking residual inventory during rollout
+- no fresh-build route fallback remaining at phase exit
 
 ### P4.3 — `ProductIR.instrument` dispatch-read audit
 
@@ -377,12 +430,17 @@ toward structural declaration + binding provenance.
 ### P4.5 — Fresh-build hard guardrails
 
 **Objective.** Prevent regressions back to direct route-local selection.
+This includes regressions that try to move the same authority onto trade
+or booking wrapper metadata.
 
 **Artifacts.**
 
-- regression tests that mask route metadata and expect the same outcome
+- regression tests that mask route metadata and non-semantic trade
+  envelope metadata and expect the same outcome
 - guard tests that fail if migrated families reintroduce
   `ProductIR.instrument`-keyed branching
+- guard tests that fail if selector logic keys off non-semantic trade
+  envelope labels
 
 ### P4.6 — Knowledge, docs, and closeout
 
@@ -400,25 +458,36 @@ still describe route ids as the primary fresh-build authority.
 - Every family admitted into `\mathcal{D}_{\text{mig}}` has an explicit
   closure record: representation closure, decomposition closure,
   lowering closure, parity evidence, and provenance-readiness.
+- Phase 4 does not close until
+  `\mathcal{D}_{\text{mig}} = \mathcal{U}_{\text{sup}}` for the
+  supported fresh-build universe in scope.
 - For every migrated family, masking `ProductIR.instrument`,
-  `route_id`, and `route_family` does not change fresh-build solver
+  `route_id`, `route_family`, and non-semantic trade-envelope or
+  position-wrapper metadata does not change fresh-build solver
   selection.
 - The primary fresh-build path for migrated families goes through the
-  structural compiler.
-- Redundant route authority is deleted for migrated families.
+  Semantic Lowering Pipeline, with `ContractIR` as the admitted
+  semantic IR for the current tranche.
+- Redundant route authority is deleted for migrated families during
+  rollout and fully absent from supported fresh-build surface at phase
+  exit.
 - Operator-facing traces still identify the selected solver, valuation
   snapshot, and any overlay/scenario identity without depending on
   deleted route ids.
-- Remaining legacy route authority is clearly limited to unmigrated or
-  replay-only surface.
+- After Phase 4 close, remaining legacy route artifacts are clearly
+  limited to replay-only, audit-only, or compatibility-only surface.
 
 ## Validation
 
-- route-masked fresh-build integration tests
+- route-masked and trade-envelope-masked fresh-build integration tests
 - parity harness re-run after the primary selector flip
 - observability regression tests for traces / scorecards / replays
 - audit test that enumerates forbidden `ProductIR.instrument` selector
   reads on migrated fresh-build paths
+- audit test that enumerates forbidden selector reads of non-semantic
+  trade-envelope or position-wrapper metadata
+- residual-inventory audit proving no supported fresh-build family
+  remains behind route fallback at phase exit
 
 ## Failure Modes To Watch
 
@@ -434,10 +503,14 @@ still describe route ids as the primary fresh-build authority.
   before route-masked tests exist, regressions will slip in silently.
 - **Family over-claim.** Only families with actual Phase 3 parity
   evidence belong in `\mathcal{D}_{\text{mig}}`.
+- **False completion.** If route fallback survives anywhere on supported
+  fresh-build surface, the Semantic Lowering Pipeline is not yet the
+  authoritative mechanism and Phase 4 must stay open.
 
 ## Relationship To Future Tracks
 
-Phase 4 should not block on future semantic domains.
+Phase 4 should not block on future semantic domains that are not yet part
+of the supported fresh-build universe.
 
 Specifically, Phase 4 for the current migrated payoff-expression
 families does NOT require:
@@ -453,14 +526,24 @@ Those tracks must fit the same eventual authority model, but they are
 not prerequisites for deleting fresh-build route authority from the
 already-migrated payoff-expression families.
 
+The stronger rule after Phase 4 is:
+
+- no newly admitted family gets a temporary route-based fresh-build path
+- later quoted-observable, leg-based, or event/state/control families
+  must enter through the Semantic Lowering Pipeline from their first
+  supported admission
+- post-Phase-4 closure work is therefore an admission program into the
+  route-free mechanism, not a justification for keeping route alive
+
 ## Next Steps
 
 1. Land this document as the dedicated Phase 4 draft.
 2. Keep the deletion sequence tied to the Phase 3 parity ledger; no
    family enters Phase 4 deletion without evidence.
-3. Audit `ProductIR.instrument` consumers before Phase 4 coding starts.
+3. Audit `ProductIR.instrument` and non-semantic trade-envelope
+   consumers before Phase 4 coding starts.
 4. Keep a per-family closure ledger so route retirement is gated on
    semantic closure, not on intuition or branch-local confidence.
 5. Treat the Phase 4 exit criterion as a hard product rule:
-   for migrated families, even the simplest fresh rebuild must go
-   through the IR -> structural selection -> lowering path.
+   by phase close, every supported fresh rebuild must go through the
+   Semantic Lowering Pipeline, and route must be replay-only.
