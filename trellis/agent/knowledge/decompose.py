@@ -176,14 +176,20 @@ def decompose_to_ir(
         instrument = inferred_instrument or matched.instrument
         if instrument != matched.instrument and instrument in store._decompositions:
             matched = store._decompositions[instrument]
-        return _product_ir_from_decomposition(
-            instrument=instrument,
-            decomposition=matched,
-            description=description,
-            store=store,
+        return _augment_ir_with_contract_ir_support(
+            _product_ir_from_decomposition(
+                instrument=instrument,
+                decomposition=matched,
+                description=description,
+                store=store,
+            ),
+            description,
         )
 
-    return _infer_composite_ir(description, inferred_instrument, store)
+    return _augment_ir_with_contract_ir_support(
+        _infer_composite_ir(description, inferred_instrument, store),
+        description,
+    )
 
 
 def decompose_to_contract_ir(
@@ -250,6 +256,91 @@ def decompose_to_contract_ir(
         if contract_ir is not None:
             return contract_ir
     return None
+
+
+def _augment_ir_with_contract_ir_support(
+    ir: ProductIR,
+    description: str,
+) -> ProductIR:
+    """Upgrade sparse free-form basket IRs from the route-free ContractIR view.
+
+    The incumbent route authority for analytical basket helpers still relies on
+    ``ProductIR`` carrying the structural facts that the Phase 2 ContractIR
+    parser can already recover: European exercise, equity-diffusion underliers,
+    and the exact two-asset terminal-basket shape. Reusing that structure keeps
+    the build path route-free while allowing the legacy authority packet to bind
+    correctly for the same contracts the structural compiler already admits.
+    """
+    if getattr(ir, "instrument", "") != "basket_option":
+        return ir
+
+    contract_ir = decompose_to_contract_ir(
+        description,
+        instrument_type="basket_option",
+        product_ir=ir,
+    )
+    if not _is_two_asset_terminal_equity_basket_contract_ir(contract_ir):
+        return ir
+
+    payoff_traits = list(getattr(ir, "payoff_traits", ()) or ())
+    for trait in ("multi_asset", "two_asset_terminal_basket"):
+        if trait not in payoff_traits:
+            payoff_traits.append(trait)
+
+    enriched = replace(
+        ir,
+        payoff_traits=tuple(payoff_traits),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        schedule_dependence=False,
+        model_family="equity_diffusion",
+        required_market_data=frozenset(
+            normalize_market_data_requirements(
+                {
+                    *(getattr(ir, "required_market_data", ()) or ()),
+                    "discount_curve",
+                    "black_vol_surface",
+                    "spot",
+                    "model_parameters",
+                }
+            )
+        ),
+    )
+    return _augment_ir_with_promoted_route_support(enriched)
+
+
+def _is_two_asset_terminal_equity_basket_contract_ir(
+    contract_ir: ContractIR | None,
+) -> bool:
+    """Return whether a ContractIR is a two-asset terminal equity basket option."""
+    if contract_ir is None:
+        return False
+    if (
+        str(getattr(getattr(contract_ir, "exercise", None), "style", "") or "").strip()
+        != "european"
+    ):
+        return False
+    if (
+        str(getattr(getattr(contract_ir, "observation", None), "kind", "") or "").strip()
+        != "terminal"
+    ):
+        return False
+
+    spec = getattr(getattr(contract_ir, "underlying", None), "spec", None)
+    if not isinstance(spec, CompositeUnderlying) or len(spec.parts) != 2:
+        return False
+    if not all(isinstance(part, EquitySpot) for part in spec.parts):
+        return False
+
+    payoff = getattr(contract_ir, "payoff", None)
+    if not isinstance(payoff, Max) or len(payoff.args) != 2:
+        return False
+    if not isinstance(payoff.args[1], Constant) or payoff.args[1].value != 0.0:
+        return False
+    body = payoff.args[0]
+    if not isinstance(body, Sub):
+        return False
+    return isinstance(body.lhs, LinearBasket) or isinstance(body.rhs, LinearBasket)
 
 
 def build_product_ir(

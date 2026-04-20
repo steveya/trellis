@@ -598,7 +598,7 @@ def _render_family_route_guidance(
         lines.extend([
             "- For European rate-style swaptions, prefer `price_swaption_monte_carlo(market_state, self._spec, ...)` from `trellis.models.rate_style_swaption`.",
             "- Treat the generated route as a thin adapter over that family helper; do not rebuild Hull-White process resolution, event payload assembly, or event-aware Monte Carlo plumbing inline.",
-            "- The helper already preserves `day_count`, `swap_frequency`, `rate_index`, and the forward-starting European condition `swap_start == expiry_date`.",
+            "- The helper already preserves `day_count`, `swap_frequency`, `rate_index`, and any explicit European `swap_start` carried on `self._spec`.",
             "- Do not hardcode `sigma = 0.01` or fall back to a GBM equity path. The helper resolves the Hull-White process from `market_state` on the bounded calibration/model path.",
             "- If you need the lower-level assembly surface for debugging, the authoritative pieces remain `resolve_hull_white_monte_carlo_process_inputs(...)`, `build_discounted_swap_pv_payload(...)`, `build_short_rate_discount_reducer(...)`, and `price_event_aware_monte_carlo(...)` under `trellis.models.monte_carlo.event_aware`.",
         ])

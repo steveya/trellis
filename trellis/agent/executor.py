@@ -5407,7 +5407,7 @@ def _route_specific_retry_lines(
         return (
             "European rate-style swaption Monte Carlo routes should stay on the checked family helper instead of assembling the event-aware problem inline.",
             "Prefer `from trellis.models.rate_style_swaption import price_swaption_monte_carlo` and delegate to that helper from the adapter.",
-            "Keep the route thin: validate discount/vol access, preserve the contract conventions on `self._spec`, then call the helper and return `float(...)`.",
+            "Keep the route thin: validate discount/vol access, preserve the contract conventions on `self._spec` including any explicit `swap_start`, then call the helper and return `float(...)`.",
             "do not hardcode `sigma = 0.01` and do not synthesize a GBM equity path. The helper resolves the Hull-White process from `market_state` on the bounded calibration/model path.",
             "If you truly need the lower-level runtime for debugging, the authoritative pieces remain `resolve_hull_white_monte_carlo_process_inputs(...)`, `build_discounted_swap_pv_payload(...)`, `build_short_rate_discount_reducer(...)`, and `price_event_aware_monte_carlo(...)` in `trellis.models.monte_carlo.event_aware`.",
         )

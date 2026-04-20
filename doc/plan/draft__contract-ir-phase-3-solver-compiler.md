@@ -655,6 +655,8 @@ path and record the comparison.
 - explicit tolerance policy per family
 - per-family closure checklist confirming upstream representation and
   decomposition closure before Phase 4 promotion
+- checked ledger artifacts in
+  `docs/benchmarks/contract_ir_solver_parity.{json,md}`
 
 ### P3.7 — Asian blocker ticket and solver follow-on
 
@@ -666,6 +668,8 @@ pretending Asian migration is complete.
 - explicit blocker / follow-on issue
 - mirrored note in the plan table
 - no route retirement yet for Asian
+- checked follow-on note capturing the blocker contract and minimum solver
+  surface needed for admission
 
 ### P3.8 — Docs and compiler governance
 

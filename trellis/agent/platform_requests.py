@@ -26,7 +26,7 @@ from trellis.agent.knowledge import (
     build_shared_knowledge_payload,
     retrieve_for_product_ir,
 )
-from trellis.agent.knowledge.decompose import decompose_to_ir
+from trellis.agent.knowledge.decompose import decompose_to_contract_ir, decompose_to_ir
 from trellis.agent.knowledge.methods import normalize_method
 from trellis.agent.semantic_escalation import semantic_role_ownership_summary
 from trellis.agent.market_binding import (
@@ -594,6 +594,9 @@ def _semantic_blueprint_summary(semantic_blueprint) -> dict[str, object]:
             for item in getattr(lowering, "errors", ()) or ()
         ],
         "lane_plan": _yaml_safe_value(lane_plan),
+        "contract_ir_solver_shadow": _yaml_safe_value(
+            getattr(semantic_blueprint, "contract_ir_solver_shadow", None)
+        ),
         "requested_outputs": list(getattr(semantic_blueprint, "requested_outputs", ()) or ()),
         "valuation_context": valuation_context_summary(semantic_blueprint.valuation_context)
         if getattr(semantic_blueprint, "valuation_context", None) is not None
@@ -605,6 +608,131 @@ def _semantic_blueprint_summary(semantic_blueprint) -> dict[str, object]:
         if getattr(semantic_blueprint, "market_binding_spec", None) is not None
         else None,
     }
+
+
+def _contract_ir_compiler_summary(
+    *,
+    source: str,
+    shadow_status: str,
+    contract_ir,
+    contract_ir_solver_shadow,
+    shadow_error: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    """Return one YAML-safe summary of additive structural compiler state."""
+
+    return {
+        "source": str(source).strip() or "unknown",
+        "shadow_status": str(shadow_status).strip() or "not_applicable",
+        "contract_ir": _yaml_safe_value(contract_ir),
+        "contract_ir_solver_shadow": _yaml_safe_value(contract_ir_solver_shadow),
+        "shadow_error": _yaml_safe_value(shadow_error),
+    }
+
+
+def _contract_ir_shadow_error_payload(exc: Exception) -> dict[str, object]:
+    """Serialize structural compiler failures onto stable request metadata."""
+
+    payload: dict[str, object] = {
+        "error_type": type(exc).__name__,
+        "message": str(exc),
+    }
+    best_diagnostic = getattr(exc, "best_diagnostic", None)
+    if best_diagnostic is None:
+        return payload
+    payload["declaration_id"] = str(getattr(best_diagnostic, "declaration_id", "") or "")
+    payload["adapter_error_type"] = str(getattr(best_diagnostic, "error_type", "") or "")
+    payload["adapter_error_message"] = str(getattr(best_diagnostic, "message", "") or "")
+    diagnostics = tuple(getattr(exc, "diagnostics", ()) or ())
+    if diagnostics:
+        payload["binding_failure_count"] = int(len(diagnostics))
+    return payload
+
+
+def _request_contract_ir_compiler_summary(
+    request: PlatformRequest,
+    *,
+    request_metadata: Mapping[str, object],
+    product_ir=None,
+    pricing_plan=None,
+    generation_plan=None,
+    semantic_blueprint=None,
+):
+    """Build one additive request-level structural compiler summary.
+
+    Semantic requests already carry the richer blueprint-local view. This
+    summary makes the same structural compiler boundary visible on generic
+    request paths where we still have route-free decomposition but no semantic
+    contract wrapper.
+    """
+
+    if semantic_blueprint is not None:
+        contract_ir = getattr(semantic_blueprint, "contract_ir", None)
+        shadow = getattr(semantic_blueprint, "contract_ir_solver_shadow", None)
+        if contract_ir is None and shadow is None:
+            return None
+        return _contract_ir_compiler_summary(
+            source="semantic_blueprint",
+            shadow_status="bound" if shadow is not None else "contract_ir_only",
+            contract_ir=contract_ir,
+            contract_ir_solver_shadow=shadow,
+        )
+
+    description = str(getattr(request, "description", "") or "").strip()
+    if not description or product_ir is None:
+        return None
+
+    contract_ir = decompose_to_contract_ir(
+        description,
+        instrument_type=request.instrument_type,
+        product_ir=product_ir,
+    )
+    if contract_ir is None:
+        return None
+
+    shadow = None
+    shadow_status = "contract_ir_only"
+    shadow_error = None
+    legacy_authority = dict(request_metadata.get("route_binding_authority") or {})
+    legacy_modules = tuple(getattr(generation_plan, "inspected_modules", ()) or ())
+
+    from trellis.core.market_state import MarketState
+
+    market_snapshot = getattr(request, "market_snapshot", None)
+    if isinstance(market_snapshot, MarketState) and pricing_plan is not None:
+        from trellis.agent.contract_ir_solver_compiler import (
+            ContractIRSolverCompileError,
+            build_contract_ir_term_environment,
+            compile_contract_ir_solver_shadow,
+        )
+
+        valuation_context = _valuation_context_for_request(
+            request,
+            preferred_method=getattr(pricing_plan, "method", None),
+        )
+        try:
+            shadow = compile_contract_ir_solver_shadow(
+                contract_ir,
+                term_environment=build_contract_ir_term_environment(None),
+                valuation_context=valuation_context,
+                market_state=market_snapshot,
+                preferred_method=getattr(pricing_plan, "method", None),
+                requested_outputs=request.requested_outputs,
+                legacy_route_id=str(legacy_authority.get("route_id") or ""),
+                legacy_route_family=str(legacy_authority.get("route_family") or ""),
+                legacy_route_modules=legacy_modules,
+            )
+            shadow_status = "bound"
+        except ContractIRSolverCompileError as exc:
+            shadow_status = "no_match"
+            shadow_error = _contract_ir_shadow_error_payload(exc)
+
+    return _contract_ir_compiler_summary(
+        source="request_decomposition",
+        shadow_status=shadow_status,
+        contract_ir=contract_ir,
+        contract_ir_solver_shadow=shadow,
+        shadow_error=shadow_error,
+    )
 
 
 def _yaml_safe_value(value):
@@ -692,6 +820,8 @@ def _record_semantic_extension_artifact(
             semantic_gap=semantic_gap,
             semantic_extension=semantic_extension,
         )
+    if bool((request.metadata or {}).get("skip_semantic_extension_trace")):
+        return None
 
     try:
         return record_semantic_extension_trace(
@@ -789,6 +919,16 @@ def _finalize_compiled_request(
         )
         if authority_summary is not None:
             request_metadata["route_binding_authority"] = authority_summary
+    contract_ir_compiler = _request_contract_ir_compiler_summary(
+        request,
+        request_metadata=request_metadata,
+        product_ir=product_ir,
+        pricing_plan=pricing_plan,
+        generation_plan=generation_plan,
+        semantic_blueprint=semantic_blueprint,
+    )
+    if contract_ir_compiler is not None:
+        request_metadata["contract_ir_compiler"] = contract_ir_compiler
     if request_metadata != dict(request.metadata or {}):
         request = replace(request, metadata=request_metadata)
     return CompiledPlatformRequest(

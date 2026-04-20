@@ -1510,6 +1510,7 @@ def test_executor_swaption_monte_carlo_retry_pins_event_aware_route():
 
     assert "price_swaption_monte_carlo" in text
     assert "thin adapter" in text or "Keep the route thin" in text
+    assert "swap_start" in text
     assert "do not hardcode `sigma = 0.01`" in text
     assert "do not synthesize a GBM equity path" in text
 
