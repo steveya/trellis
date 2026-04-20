@@ -113,6 +113,54 @@ Representation closure answers:
 
 - "Can Trellis say what this contract *is* without naming a route?"
 
+#### Representation discipline for option shell, underlying structure, and payoff shape
+
+For option-shaped products, representation closure should keep three
+different concerns separate:
+
+- the contractual shell, including exercise style and settlement
+- the underlying structure, including whether the contract references a
+  single name, a composite underlying, or a quoted basket/index
+- the payoff-functional shape, including weighted baskets, spreads,
+  best-of / worst-of selection, and other ranked functionals
+
+This matters especially for multi-asset products. The current design
+direction should be:
+
+- keep exercise explicit in the admitted IR; do **not** introduce a
+  generic "option with undefined exercise type" into the admitted
+  semantic surface
+- if an upstream parse or draft stage wants to tolerate missing
+  exercise, that is a separate draft-layer concern, not a reason to
+  weaken the admitted IR contract
+- move away from ``basket_option`` as the deepest internal semantic
+  truth over time; it may survive as a wrapper label, compatibility
+  alias, or bounded product family, but not as the long-run canonical
+  representation root
+- strengthen underlying structure explicitly through surfaces such as
+  ``Underlying`` and ``CompositeUnderlying`` and through stronger
+  matching on underlying kind, rather than relying on wrapper family
+  names to encode "multi-asset"
+- keep weighted basket and spread structure in payoff nodes such as
+  ``LinearBasket`` rather than forcing them into a fake "basket
+  underlying" abstraction
+- keep best-of, worst-of, rank-based, and similar selection semantics as
+  payoff-functional nodes or event/state wrappers, not as disguised
+  underlier types
+
+In practical terms, the semantic stack should prefer:
+
+1. explicit exercise semantics
+2. explicit underlying taxonomy
+3. explicit payoff algebra
+
+over product-family labels that try to carry all three meanings at once.
+
+This rule is intended to keep later representation, decomposition, and
+lowering closure honest for basket, rainbow, spread, and other
+multi-asset exotics, and to avoid reintroducing route-shaped product
+buckets inside supposedly generic IR nodes.
+
 ### 2. Decomposition closure
 
 `Dec(F)` holds when supported request surfaces can be normalized into the
@@ -301,6 +349,28 @@ This track should own the **static** leg semantics that later stateful
 tracks can embed. It should not be forced to absorb every callable,
 interruptible, or target-accumulating product into one oversized leg
 schema.
+
+It should also own the normalization of schedule-driven rate-option-strip
+families onto more semantic leg-based names. Concretely:
+
+- the current ``rate_cap_floor_strip`` family is acceptable as a bounded
+  internal family while the payoff-expression / early lowering wave is
+  still proving the route-free path
+- once static leg representation is stronger, the semantic family should
+  promote toward a more generic scheduled rate-option-strip name such as
+  ``period_rate_option_strip``
+- ``rate_cap_floor_strip`` should then survive only as a compatibility
+  alias or thin specialization layered over the more generic static-leg
+  representation, rather than remaining the canonical long-run family
+  name
+
+This preserves the important current distinction between:
+
+- public instrument wrappers such as ``cap`` and ``floor``
+- the internal semantic family for a schedule of period rate options
+
+and avoids baking desk wrapper vocabulary into the long-run
+representation-closure contract.
 
 ### Event/state/control follow-on — Representation extension for stateful and controlled contracts
 
