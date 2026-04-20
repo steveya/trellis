@@ -51,12 +51,38 @@ from trellis.agent.contract_ir import (
     ZeroRateTenor,
     canonicalize,
 )
+from trellis.agent.dynamic_contract_ir import (
+    ActionSpec,
+    ControlProgram,
+    DecisionEvent,
+    DynamicContractIR,
+    EventProgram,
+    EventTimeBucket,
+    TerminationRule,
+)
 from trellis.agent.knowledge.methods import normalize_method
 from trellis.agent.knowledge.schema import ProductDecomposition, ProductIR, RetrievalSpec
+from trellis.agent.static_leg_contract import (
+    CouponLeg,
+    CouponPeriod,
+    FixedCouponFormula,
+    FloatingCouponFormula,
+    KnownCashflow,
+    KnownCashflowLeg,
+    NotionalSchedule,
+    NotionalStep,
+    OvernightRateIndex,
+    SettlementRule,
+    SignedLeg,
+    StaticLegContractIR,
+    TermRateIndex,
+)
 from trellis.agent.semantic_tokens import (
     EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY,
 )
 from trellis.core.capabilities import normalize_market_data_requirements
+from trellis.core.date_utils import generate_schedule
+from trellis.core.types import Frequency
 
 if TYPE_CHECKING:
     from trellis.agent.knowledge.store import KnowledgeStore
@@ -269,6 +295,89 @@ def decompose_to_contract_ir(
     return None
 
 
+def decompose_to_static_leg_contract_ir(
+    description: str,
+    instrument_type: str | None = None,
+    *,
+    product_ir: ProductIR | None = None,
+    store: KnowledgeStore | None = None,
+) -> StaticLegContractIR | None:
+    """Build a bounded static leg contract IR for the first post-Phase-4 leg slice."""
+
+    product_ir = product_ir or decompose_to_ir(
+        description,
+        instrument_type=instrument_type,
+        store=store,
+    )
+    instrument = _normalise(instrument_type or getattr(product_ir, "instrument", ""))
+    lower = str(description or "").lower()
+
+    if any(
+        marker in lower
+        for marker in (
+            "callable ",
+            "puttable ",
+            "autocall",
+            "phoenix",
+            "snowball",
+            "tarn",
+            "tarf",
+            "range accrual",
+            "swing option",
+            "gmwb",
+            "gmxb",
+            "curve-spread payoff",
+            "curve spread payoff",
+            "vol-skew payoff",
+            "vol skew payoff",
+        )
+    ):
+        return None
+
+    builders = (
+        _build_static_fixed_float_swap_contract_ir,
+        _build_static_basis_swap_contract_ir,
+        _build_static_fixed_coupon_bond_contract_ir,
+    )
+    for builder in builders:
+        contract = builder(
+            description,
+            instrument=instrument,
+            product_ir=product_ir,
+        )
+        if contract is not None:
+            return contract
+    return None
+
+
+def decompose_to_dynamic_contract_ir(
+    description: str,
+    instrument_type: str | None = None,
+    *,
+    product_ir: ProductIR | None = None,
+    store: KnowledgeStore | None = None,
+) -> DynamicContractIR | None:
+    """Build a bounded dynamic wrapper IR for the first event/state/control slice."""
+
+    product_ir = product_ir or decompose_to_ir(
+        description,
+        instrument_type=instrument_type,
+        store=store,
+    )
+    instrument = _normalise(instrument_type or getattr(product_ir, "instrument", ""))
+
+    builders = (_build_dynamic_callable_bond_contract_ir,)
+    for builder in builders:
+        contract = builder(
+            description,
+            instrument=instrument,
+            product_ir=product_ir,
+        )
+        if contract is not None:
+            return contract
+    return None
+
+
 def _augment_ir_with_contract_ir_support(
     ir: ProductIR,
     description: str,
@@ -320,6 +429,271 @@ def _augment_ir_with_contract_ir_support(
     return _augment_ir_with_promoted_route_support(enriched)
 
 
+def _build_static_fixed_float_swap_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> StaticLegContractIR | None:
+    lower = description.lower()
+    if instrument not in {"", "swap", "interest_rate_swap"} and getattr(product_ir, "instrument", "") not in {"swap"}:
+        return None
+    if "basis swap" in lower:
+        return None
+    if "irs" not in lower and "interest rate swap" not in lower:
+        return None
+
+    direction = _extract_fixed_leg_direction(description)
+    start = _extract_named_date(description, labels=("effective", "start"))
+    end = _extract_named_date(description, labels=("maturity", "end"))
+    currency = _extract_currency_code(description) or "USD"
+    notional = _extract_numeric_after(description, labels=("notional",))
+    fixed_rate = _extract_numeric_after(description, labels=("fixed rate",))
+    fixed_frequency = _extract_frequency_after_label(description, label="fixed") or "semiannual"
+    float_frequency = _extract_frequency_after_label(description, label="float") or "quarterly"
+    fixed_day_count = _extract_day_count(description, labels=("fixed day count",)) or "30/360"
+    float_day_count = _extract_day_count(description, labels=("float day count",)) or "ACT/360"
+    index_name = _extract_rate_index_after_label(description, label="index") or "SOFR"
+    if None in {direction, start, end, notional, fixed_rate} or start >= end:
+        return None
+
+    fixed_leg = CouponLeg(
+        currency=currency,
+        notional_schedule=_constant_notional_schedule(start, end, notional),
+        coupon_periods=_coupon_periods(start, end, fixed_frequency, fixing_at_start=False),
+        coupon_formula=FixedCouponFormula(fixed_rate),
+        day_count=fixed_day_count,
+        payment_frequency=fixed_frequency,
+        label="fixed_leg",
+    )
+    floating_leg = CouponLeg(
+        currency=currency,
+        notional_schedule=_constant_notional_schedule(start, end, notional),
+        coupon_periods=_coupon_periods(start, end, float_frequency, fixing_at_start=True),
+        coupon_formula=FloatingCouponFormula(_parse_rate_index(index_name)),
+        day_count=float_day_count,
+        payment_frequency=float_frequency,
+        label="floating_leg",
+    )
+    floating_direction = "receive" if direction == "pay" else "pay"
+    return StaticLegContractIR(
+        legs=(
+            SignedLeg(direction=direction, leg=fixed_leg),
+            SignedLeg(direction=floating_direction, leg=floating_leg),
+        ),
+        settlement=SettlementRule(payout_currency=currency),
+        metadata={"family": "fixed_float_swap"},
+    )
+
+
+def _build_static_basis_swap_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> StaticLegContractIR | None:
+    lower = description.lower()
+    if instrument not in {"", "swap", "basis_swap"} and getattr(product_ir, "instrument", "") not in {"swap"}:
+        return None
+    if "basis swap" not in lower:
+        return None
+
+    start = _extract_named_date(description, labels=("effective", "start"))
+    end = _extract_named_date(description, labels=("maturity", "end"))
+    notional = _extract_numeric_after(description, labels=("notional",))
+    pay_leg = _extract_floating_leg_terms(description, direction="pay")
+    receive_leg = _extract_floating_leg_terms(description, direction="receive")
+    currency = _extract_currency_code(description) or _currency_from_rate_indices(
+        pay_leg[0] if pay_leg is not None else "",
+        receive_leg[0] if receive_leg is not None else "",
+    ) or "USD"
+    if start is None or end is None or notional is None or pay_leg is None or receive_leg is None or start >= end:
+        return None
+
+    pay_index, pay_frequency, pay_spread = pay_leg
+    receive_index, receive_frequency, receive_spread = receive_leg
+    return StaticLegContractIR(
+        legs=(
+            SignedLeg(
+                direction="pay",
+                leg=CouponLeg(
+                    currency=currency,
+                    notional_schedule=_constant_notional_schedule(start, end, notional),
+                    coupon_periods=_coupon_periods(start, end, pay_frequency, fixing_at_start=True),
+                    coupon_formula=FloatingCouponFormula(
+                        _parse_rate_index(pay_index),
+                        spread=pay_spread,
+                    ),
+                    day_count="ACT/360",
+                    payment_frequency=pay_frequency,
+                    label="pay_leg",
+                ),
+            ),
+            SignedLeg(
+                direction="receive",
+                leg=CouponLeg(
+                    currency=currency,
+                    notional_schedule=_constant_notional_schedule(start, end, notional),
+                    coupon_periods=_coupon_periods(start, end, receive_frequency, fixing_at_start=True),
+                    coupon_formula=FloatingCouponFormula(
+                        _parse_rate_index(receive_index),
+                        spread=receive_spread,
+                    ),
+                    day_count="ACT/360",
+                    payment_frequency=receive_frequency,
+                    label="receive_leg",
+                ),
+            ),
+        ),
+        settlement=SettlementRule(payout_currency=currency),
+        metadata={"family": "basis_swap"},
+    )
+
+
+def _build_static_fixed_coupon_bond_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> StaticLegContractIR | None:
+    return _build_fixed_coupon_bond_static_leg_contract(
+        description,
+        instrument=instrument,
+        product_ir=product_ir,
+        allow_dynamic=False,
+    )
+
+
+def _build_fixed_coupon_bond_static_leg_contract(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+    allow_dynamic: bool,
+) -> StaticLegContractIR | None:
+    lower = description.lower()
+    if instrument not in {"", "bond", "callable_bond"} and getattr(product_ir, "instrument", "") not in {"bond", "callable_bond"}:
+        return None
+    if "bond" not in lower:
+        return None
+    if not allow_dynamic and any(marker in lower for marker in ("callable", "puttable")):
+        return None
+
+    currency = _extract_currency_code(description) or "USD"
+    face = _extract_numeric_after(description, labels=("face", "notional"))
+    coupon = _extract_numeric_after(description, labels=("coupon",))
+    issue = _extract_named_date(description, labels=("issue", "effective"))
+    maturity = _extract_named_date(description, labels=("maturity", "end"))
+    frequency = _extract_frequency_token(description) or "semiannual"
+    day_count = _extract_day_count(description, labels=("day count",)) or "ACT/ACT"
+    if None in {face, coupon, issue, maturity} or issue >= maturity:
+        return None
+
+    coupon_leg = CouponLeg(
+        currency=currency,
+        notional_schedule=_constant_notional_schedule(issue, maturity, face),
+        coupon_periods=_coupon_periods(issue, maturity, frequency, fixing_at_start=False),
+        coupon_formula=FixedCouponFormula(coupon),
+        day_count=day_count,
+        payment_frequency=frequency,
+        label="coupon_leg",
+    )
+    principal_leg = KnownCashflowLeg(
+        currency=currency,
+        cashflows=(
+            KnownCashflow(
+                payment_date=maturity,
+                amount=face,
+                currency=currency,
+                label="principal_redemption",
+            ),
+        ),
+        label="principal_leg",
+    )
+    return StaticLegContractIR(
+        legs=(
+            SignedLeg(direction="receive", leg=coupon_leg),
+            SignedLeg(direction="receive", leg=principal_leg),
+        ),
+        settlement=SettlementRule(payout_currency=currency),
+        metadata={"family": "fixed_coupon_bond"},
+    )
+
+
+def _build_dynamic_callable_bond_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> DynamicContractIR | None:
+    lower = description.lower()
+    if instrument not in {"", "callable_bond"} and getattr(product_ir, "instrument", "") not in {"callable_bond"}:
+        return None
+    if "callable" not in lower or "bond" not in lower:
+        return None
+
+    base_contract = _build_fixed_coupon_bond_static_leg_contract(
+        description,
+        instrument="callable_bond",
+        product_ir=product_ir,
+        allow_dynamic=True,
+    )
+    call_dates = _extract_date_list_after_label(description, label="call dates")
+    if base_contract is None or not call_dates:
+        return None
+
+    maturity = max(
+        cashflow.payment_date
+        for signed_leg in base_contract.legs
+        if isinstance(signed_leg.leg, KnownCashflowLeg)
+        for cashflow in signed_leg.leg.cashflows
+    )
+    call_dates = tuple(call_date for call_date in call_dates if call_date < maturity)
+    if not call_dates:
+        return None
+
+    redeem = ActionSpec("redeem", "terminate", "redeem at par")
+    continue_ = ActionSpec("continue", "continue", "continue outstanding")
+    buckets = tuple(
+        EventTimeBucket(
+            event_date=call_date,
+            phase_sequence=("decision", "termination"),
+            events=(
+                DecisionEvent(
+                    label=f"call_{call_date.isoformat()}",
+                    schedule_role="call_date",
+                    action_set=(redeem, continue_),
+                    controller_role="issuer",
+                ),
+            ),
+        )
+        for call_date in call_dates
+    )
+    termination_rules = tuple(
+        TerminationRule(
+            label=f"terminate_{call_date.isoformat()}",
+            trigger="action == redeem",
+            settlement_expression="par_redemption",
+            event_label=f"call_{call_date.isoformat()}",
+        )
+        for call_date in call_dates
+    )
+    return DynamicContractIR(
+        base_contract=base_contract,
+        event_program=EventProgram(
+            buckets=buckets,
+            termination_rules=termination_rules,
+        ),
+        control_program=ControlProgram(
+            controller_role="issuer",
+            decision_style="bermudan",
+            decision_event_labels=tuple(f"call_{call_date.isoformat()}" for call_date in call_dates),
+            admissible_actions=(redeem, continue_),
+        ),
+        settlement=base_contract.settlement,
+    )
+
+
 def _is_two_asset_terminal_equity_basket_contract_ir(
     contract_ir: ContractIR | None,
 ) -> bool:
@@ -352,6 +726,179 @@ def _is_two_asset_terminal_equity_basket_contract_ir(
     if not isinstance(body, Sub):
         return False
     return isinstance(body.lhs, LinearBasket) or isinstance(body.rhs, LinearBasket)
+
+
+def _extract_named_date(
+    description: str,
+    *,
+    labels: tuple[str, ...],
+) -> date | None:
+    for label in labels:
+        match = re.search(
+            rf"\b{re.escape(label)}\b[^0-9]*(\d{{4}}-\d{{2}}-\d{{2}})",
+            description,
+            flags=re.IGNORECASE,
+        )
+        if match is not None:
+            return date.fromisoformat(match.group(1))
+    return None
+
+
+def _extract_fixed_leg_direction(description: str) -> str | None:
+    lower = description.lower()
+    if "pay fixed" in lower:
+        return "pay"
+    if "receive fixed" in lower:
+        return "receive"
+    return None
+
+
+def _extract_currency_code(description: str) -> str | None:
+    match = re.search(
+        r"\b(USD|EUR|GBP|JPY|CHF|CAD|AUD|NZD)\b",
+        description,
+    )
+    return match.group(1) if match is not None else None
+
+
+def _extract_frequency_after_label(description: str, *, label: str) -> str | None:
+    match = re.search(
+        rf"\b{re.escape(label)}\b\s+(annual|semiannual|quarterly|monthly)\b",
+        description,
+        flags=re.IGNORECASE,
+    )
+    return match.group(1).lower() if match is not None else None
+
+
+def _extract_frequency_token(description: str) -> str | None:
+    match = re.search(
+        r"\b(annual|semiannual|quarterly|monthly)\b",
+        description,
+        flags=re.IGNORECASE,
+    )
+    return match.group(1).lower() if match is not None else None
+
+
+def _extract_day_count(
+    description: str,
+    *,
+    labels: tuple[str, ...],
+) -> str | None:
+    for label in labels:
+        match = re.search(
+            rf"\b{re.escape(label)}\b[^A-Z0-9]*(ACT/360|ACT/365|ACT/ACT|30/360)\b",
+            description,
+            flags=re.IGNORECASE,
+        )
+        if match is not None:
+            return match.group(1).upper()
+    return None
+
+
+def _extract_rate_index_after_label(description: str, *, label: str) -> str | None:
+    match = re.search(
+        rf"\b{re.escape(label)}\b\s+([A-Z][A-Z0-9_-]*(?:\s+\d+[DWMY])?)",
+        description,
+        flags=re.IGNORECASE,
+    )
+    return match.group(1).strip() if match is not None else None
+
+
+def _extract_floating_leg_terms(
+    description: str,
+    *,
+    direction: str,
+) -> tuple[str, str, float] | None:
+    match = re.search(
+        rf"\b{direction}\b\s+([A-Z][A-Z0-9_-]*)\s+(annual|semiannual|quarterly|monthly)(?:\s+plus\s+(-?\d+(?:\.\d+)?%?))?",
+        description,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    spread_token = match.group(3)
+    spread = 0.0
+    if spread_token:
+        spread = float(spread_token[:-1]) / 100.0 if spread_token.endswith("%") else float(spread_token)
+    return match.group(1).upper(), match.group(2).lower(), spread
+
+
+def _currency_from_rate_indices(*indices: str) -> str | None:
+    normalized = {index.upper() for index in indices if index}
+    if normalized and normalized.issubset({"SOFR", "FF", "FEDFUNDS"}):
+        return "USD"
+    return None
+
+
+def _constant_notional_schedule(
+    start: date,
+    end: date,
+    amount: float,
+) -> NotionalSchedule:
+    return NotionalSchedule(
+        (
+            NotionalStep(start_date=start, end_date=end, amount=amount),
+        )
+    )
+
+
+def _frequency_enum_from_text(token: str) -> Frequency:
+    mapping = {
+        "annual": Frequency.ANNUAL,
+        "semiannual": Frequency.SEMI_ANNUAL,
+        "quarterly": Frequency.QUARTERLY,
+        "monthly": Frequency.MONTHLY,
+    }
+    return mapping[token]
+
+
+def _coupon_periods(
+    start: date,
+    end: date,
+    frequency: str,
+    *,
+    fixing_at_start: bool,
+) -> tuple[CouponPeriod, ...]:
+    schedule = generate_schedule(start, end, _frequency_enum_from_text(frequency))
+    periods: list[CouponPeriod] = []
+    previous = start
+    for payment_date in schedule:
+        payment = payment_date if isinstance(payment_date, date) else date.fromisoformat(str(payment_date))
+        periods.append(
+            CouponPeriod(
+                accrual_start=previous,
+                accrual_end=payment,
+                payment_date=payment,
+                fixing_date=previous if fixing_at_start else None,
+            )
+        )
+        previous = payment
+    return tuple(periods)
+
+
+def _parse_rate_index(token: str) -> OvernightRateIndex | TermRateIndex:
+    normalized = str(token or "").strip().upper().replace(" ", "")
+    if normalized in {"SOFR", "FF", "FEDFUNDS"}:
+        return OvernightRateIndex("FEDFUNDS" if normalized == "FEDFUNDS" else normalized)
+    match = re.fullmatch(r"([A-Z][A-Z0-9_-]*)(\d+[DWMY])", normalized)
+    if match is not None:
+        return TermRateIndex(match.group(1), match.group(2))
+    return OvernightRateIndex(normalized)
+
+
+def _extract_date_list_after_label(
+    description: str,
+    *,
+    label: str,
+) -> tuple[date, ...]:
+    match = re.search(
+        rf"\b{re.escape(label)}\b(.+)$",
+        description,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return ()
+    return tuple(date.fromisoformat(token) for token in re.findall(r"\d{4}-\d{2}-\d{2}", match.group(1)))
 
 
 def build_product_ir(

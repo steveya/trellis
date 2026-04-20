@@ -22,6 +22,8 @@ Core Quant Topics
    pricing_stack
    contract_algebra
    contract_ir
+   static_leg_contract_ir
+   dynamic_contract_ir
    dsl_algebra
    lattice_algebra
    differentiable_pricing

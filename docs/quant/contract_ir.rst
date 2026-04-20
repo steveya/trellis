@@ -36,6 +36,11 @@ The rollout is still bounded rather than universal:
   ``ContractIR`` without a route id on the authoritative path
 - unsupported or out-of-scope products attach ``None`` instead of guessing
 
+Leg-based and dynamic contracts now have separate sibling semantic homes:
+
+- :doc:`static_leg_contract_ir` for static scheduled coupon/cashflow products
+- :doc:`dynamic_contract_ir` for event/state/control wrappers over static bases
+
 Current Surface
 ---------------
 
@@ -216,6 +221,15 @@ It returns:
 - a well-formed ``ContractIR`` for supported descriptions
 - ``None`` for out-of-scope families such as barriers, lookbacks, callable
   bonds, Bermudan exercise, leg-based products, or dynamic quote-linked notes
+
+Those out-of-scope families are no longer just "missing." Static leg products
+and dynamic wrappers now have separate bounded sibling decomposers:
+
+- ``decompose_to_static_leg_contract_ir(...)``
+- ``decompose_to_dynamic_contract_ir(...)``
+
+The important boundary is still the same: ``decompose_to_contract_ir(...)``
+remains the payoff-expression track only.
 
 ``trellis.agent.semantic_contract_compiler.compile_semantic_contract(...)``
 threads that result onto ``SemanticImplementationBlueprint.contract_ir``.
