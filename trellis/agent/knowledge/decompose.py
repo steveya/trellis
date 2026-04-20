@@ -53,11 +53,19 @@ from trellis.agent.contract_ir import (
 )
 from trellis.agent.dynamic_contract_ir import (
     ActionSpec,
+    AutomaticTerminationEvent,
     ControlProgram,
+    CouponEvent,
     DecisionEvent,
     DynamicContractIR,
     EventProgram,
     EventTimeBucket,
+    ObservationEvent,
+    PaymentEvent,
+    StateFieldSpec,
+    StateSchema,
+    StateUpdateSpec,
+    StateResetEvent,
     TerminationRule,
 )
 from trellis.agent.knowledge.methods import normalize_method
@@ -357,7 +365,7 @@ def decompose_to_dynamic_contract_ir(
     product_ir: ProductIR | None = None,
     store: KnowledgeStore | None = None,
 ) -> DynamicContractIR | None:
-    """Build a bounded dynamic wrapper IR for the first event/state/control slice."""
+    """Build a bounded dynamic wrapper IR for admitted post-Phase-4 lane fixtures."""
 
     product_ir = product_ir or decompose_to_ir(
         description,
@@ -366,7 +374,13 @@ def decompose_to_dynamic_contract_ir(
     )
     instrument = _normalise(instrument_type or getattr(product_ir, "instrument", ""))
 
-    builders = (_build_dynamic_callable_bond_contract_ir,)
+    builders = (
+        _build_dynamic_autocallable_contract_ir,
+        _build_dynamic_tarn_contract_ir,
+        _build_dynamic_callable_bond_contract_ir,
+        _build_dynamic_swing_option_contract_ir,
+        _build_dynamic_gmwb_contract_ir,
+    )
     for builder in builders:
         contract = builder(
             description,
@@ -620,6 +634,222 @@ def _build_fixed_coupon_bond_static_leg_contract(
     )
 
 
+def _build_dynamic_autocallable_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> DynamicContractIR | None:
+    lower = description.lower()
+    product_instrument = getattr(product_ir, "instrument", "")
+    if instrument not in {"", "autocallable"} and product_instrument not in {"autocallable"}:
+        return None
+    if not any(marker in lower for marker in ("autocall", "phoenix", "snowball")):
+        return None
+
+    observation_dates = _extract_date_list_after_labels(
+        description,
+        labels=("observation dates", "observation schedule", "fixing dates"),
+    )
+    maturity = _extract_named_date(description, labels=("maturity", "expiry", "end"))
+    if maturity is None and observation_dates:
+        maturity = observation_dates[-1]
+    if maturity is None or not observation_dates:
+        return None
+
+    barrier = _extract_numeric_after(description, labels=("autocall barrier", "barrier")) or 1.0
+    coupon_rate = _extract_numeric_after(description, labels=("coupon",)) or 0.0
+    currency = _extract_currency_code(description) or "USD"
+    state_schema = StateSchema(
+        fields=(
+            StateFieldSpec(
+                name="coupon_memory",
+                domain="float",
+                initial_value=0.0,
+                tags=("event_state", "coupon_memory"),
+            ),
+        ),
+    )
+
+    buckets: list[EventTimeBucket] = []
+    termination_rules: list[TerminationRule] = []
+    for event_date in observation_dates:
+        events = [
+            ObservationEvent(
+                label=f"observe_{event_date.isoformat()}",
+                schedule_role="observation_dates",
+                observed_terms=("underlier_spot",),
+            ),
+            CouponEvent(
+                label=f"coupon_{event_date.isoformat()}",
+                schedule_role="observation_dates",
+                coupon_formula="conditional_coupon",
+                state_updates=(
+                    StateUpdateSpec(
+                        "coupon_memory",
+                        f"0.0 if underlier_spot >= {barrier} else coupon_memory + {coupon_rate}",
+                    ),
+                ),
+            ),
+        ]
+        phase_sequence: tuple[str, ...]
+        if event_date < maturity:
+            termination_label = f"autocall_{event_date.isoformat()}"
+            events.append(
+                AutomaticTerminationEvent(
+                    label=termination_label,
+                    trigger=f"underlier_spot >= {barrier}",
+                    settlement_expression="par_plus_coupon",
+                )
+            )
+            termination_rules.append(
+                TerminationRule(
+                    label=f"terminate_{event_date.isoformat()}",
+                    trigger=f"underlier_spot >= {barrier}",
+                    settlement_expression="par_plus_coupon",
+                    event_label=termination_label,
+                )
+            )
+            phase_sequence = ("observation", "coupon", "termination")
+        else:
+            events.append(
+                PaymentEvent(
+                    label="maturity_redemption",
+                    schedule_role="payment_dates",
+                    cashflow_formula="terminal_redemption",
+                )
+            )
+            phase_sequence = ("observation", "coupon", "payment")
+        buckets.append(
+            EventTimeBucket(
+                event_date=event_date,
+                phase_sequence=phase_sequence,
+                events=tuple(events),
+            )
+        )
+
+    return DynamicContractIR(
+        base_contract=None,
+        semantic_family="autocallable",
+        base_track="payoff_expression",
+        state_schema=state_schema,
+        event_program=EventProgram(
+            buckets=tuple(buckets),
+            termination_rules=tuple(termination_rules),
+        ),
+        settlement=SettlementRule(payout_currency=currency),
+    )
+
+
+def _build_dynamic_tarn_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> DynamicContractIR | None:
+    lower = description.lower()
+    product_instrument = getattr(product_ir, "instrument", "")
+    if instrument not in {"", "tarn", "tarf"} and product_instrument not in {"tarn", "tarf"}:
+        return None
+    if not any(marker in lower for marker in ("tarn", "tarf", "target redemption")):
+        return None
+
+    fixing_dates = _extract_date_list_after_labels(
+        description,
+        labels=("fixing dates", "observation dates"),
+    )
+    maturity = _extract_named_date(description, labels=("maturity", "expiry", "end"))
+    if maturity is None and fixing_dates:
+        maturity = fixing_dates[-1]
+    if maturity is None or not fixing_dates:
+        return None
+
+    target_level = _extract_numeric_after(description, labels=("target", "target level")) or 0.0
+    coupon_rate = _extract_numeric_after(description, labels=("coupon", "coupon rate")) or 0.0
+    currency = _extract_currency_code(description) or "USD"
+    family = "tarf" if "tarf" in lower else "tarn"
+    state_field = "cumulative_gain" if family == "tarf" else "accrued_coupon"
+    state_schema = StateSchema(
+        fields=(
+            StateFieldSpec(
+                name=state_field,
+                domain="float",
+                initial_value=0.0,
+                tags=("event_state", "running_total"),
+            ),
+        ),
+    )
+
+    buckets: list[EventTimeBucket] = []
+    termination_rules: list[TerminationRule] = []
+    for event_date in fixing_dates:
+        termination_label = f"target_hit_{event_date.isoformat()}"
+        buckets.append(
+            EventTimeBucket(
+                event_date=event_date,
+                phase_sequence=("observation", "coupon", "termination"),
+                events=(
+                    ObservationEvent(
+                        label=f"observe_{event_date.isoformat()}",
+                        schedule_role="fixing_dates",
+                        observed_terms=("forward_fixing",),
+                    ),
+                    CouponEvent(
+                        label=f"accrue_{event_date.isoformat()}",
+                        schedule_role="fixing_dates",
+                        coupon_formula="running_target_coupon",
+                        state_updates=(
+                            StateUpdateSpec(
+                                state_field,
+                                f"{state_field} + {coupon_rate}",
+                            ),
+                        ),
+                    ),
+                    AutomaticTerminationEvent(
+                        label=termination_label,
+                        trigger=f"{state_field} >= {target_level}",
+                        settlement_expression="target_redemption_settlement",
+                    ),
+                ),
+            )
+        )
+        termination_rules.append(
+            TerminationRule(
+                label=f"terminate_{event_date.isoformat()}",
+                trigger=f"{state_field} >= {target_level}",
+                settlement_expression="target_redemption_settlement",
+                event_label=termination_label,
+            )
+        )
+
+    if fixing_dates[-1] != maturity:
+        buckets.append(
+            EventTimeBucket(
+                event_date=maturity,
+                phase_sequence=("payment",),
+                events=(
+                    PaymentEvent(
+                        label="maturity_settlement",
+                        schedule_role="payment_dates",
+                        cashflow_formula="final_target_redemption",
+                    ),
+                ),
+            )
+        )
+
+    return DynamicContractIR(
+        base_contract=None,
+        semantic_family=family,
+        base_track="payoff_expression",
+        state_schema=state_schema,
+        event_program=EventProgram(
+            buckets=tuple(buckets),
+            termination_rules=tuple(termination_rules),
+        ),
+        settlement=SettlementRule(payout_currency=currency),
+    )
+
+
 def _build_dynamic_callable_bond_contract_ir(
     description: str,
     *,
@@ -680,6 +910,8 @@ def _build_dynamic_callable_bond_contract_ir(
     )
     return DynamicContractIR(
         base_contract=base_contract,
+        semantic_family="callable_bond",
+        base_track="static_leg",
         event_program=EventProgram(
             buckets=buckets,
             termination_rules=termination_rules,
@@ -691,6 +923,166 @@ def _build_dynamic_callable_bond_contract_ir(
             admissible_actions=(redeem, continue_),
         ),
         settlement=base_contract.settlement,
+    )
+
+
+def _build_dynamic_swing_option_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> DynamicContractIR | None:
+    lower = description.lower()
+    product_instrument = getattr(product_ir, "instrument", "")
+    if instrument not in {"", "swing_option"} and product_instrument not in {"swing_option"}:
+        return None
+    if "swing option" not in lower:
+        return None
+
+    exercise_dates = _extract_date_list_after_labels(
+        description,
+        labels=("exercise dates", "decision dates", "observation dates"),
+    )
+    if not exercise_dates:
+        return None
+    rights = _extract_integer_after(description, labels=("rights", "max exercises")) or 1
+    currency = _extract_currency_code(description) or "USD"
+    exercise = ActionSpec(
+        "exercise",
+        "exercise",
+        state_updates=(StateUpdateSpec("remaining_rights", "remaining_rights - 1"),),
+    )
+    continue_ = ActionSpec("continue", "continue")
+    buckets = tuple(
+        EventTimeBucket(
+            event_date=event_date,
+            phase_sequence=("decision", "payment"),
+            events=(
+                DecisionEvent(
+                    label=f"exercise_{event_date.isoformat()}",
+                    schedule_role="exercise_dates",
+                    action_set=(exercise, continue_),
+                    controller_role="holder",
+                ),
+                PaymentEvent(
+                    label=f"exercise_cashflow_{event_date.isoformat()}",
+                    schedule_role="settlement_dates",
+                    cashflow_formula="swing_exercise_payoff_if_exercised",
+                ),
+            ),
+        )
+        for event_date in exercise_dates
+    )
+    return DynamicContractIR(
+        base_contract=None,
+        semantic_family="swing_option",
+        base_track="payoff_expression",
+        state_schema=StateSchema(
+            fields=(
+                StateFieldSpec(
+                    name="remaining_rights",
+                    domain="int",
+                    initial_value=rights,
+                    tags=("inventory_state", "discrete_control"),
+                ),
+            ),
+        ),
+        event_program=EventProgram(buckets=buckets),
+        control_program=ControlProgram(
+            controller_role="holder",
+            decision_style="swing",
+            decision_event_labels=tuple(f"exercise_{event_date.isoformat()}" for event_date in exercise_dates),
+            admissible_actions=(exercise, continue_),
+            inventory_fields=("remaining_rights",),
+        ),
+        settlement=SettlementRule(payout_currency=currency),
+    )
+
+
+def _build_dynamic_gmwb_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> DynamicContractIR | None:
+    lower = description.lower()
+    product_instrument = getattr(product_ir, "instrument", "")
+    if instrument not in {"", "gmwb"} and product_instrument not in {"gmwb"}:
+        return None
+    if "gmwb" not in lower and "guaranteed minimum withdrawal benefit" not in lower:
+        return None
+
+    withdrawal_dates = _extract_date_list_after_labels(
+        description,
+        labels=("withdrawal dates", "decision dates", "exercise dates"),
+    )
+    if not withdrawal_dates:
+        return None
+    account_value = _extract_numeric_after(description, labels=("account value", "premium")) or 0.0
+    guarantee_base = _extract_numeric_after(description, labels=("guarantee base", "benefit base")) or account_value
+    currency = _extract_currency_code(description) or "USD"
+    withdraw = ActionSpec(
+        "withdraw",
+        "withdraw",
+        action_domain="continuous",
+        quantity_source="withdrawal_amount",
+        bounds_expression="0 <= withdrawal_amount <= guarantee_base",
+        state_updates=(
+            StateUpdateSpec("account_value", "account_value - withdrawal_amount"),
+            StateUpdateSpec("guarantee_base", "guarantee_base - withdrawal_amount"),
+        ),
+    )
+    buckets = tuple(
+        EventTimeBucket(
+            event_date=event_date,
+            phase_sequence=("decision", "payment"),
+            events=(
+                DecisionEvent(
+                    label=f"withdraw_{event_date.isoformat()}",
+                    schedule_role="withdrawal_dates",
+                    action_set=(withdraw,),
+                    controller_role="holder",
+                ),
+                PaymentEvent(
+                    label=f"withdrawal_cashflow_{event_date.isoformat()}",
+                    schedule_role="payment_dates",
+                    cashflow_formula="withdrawal_amount",
+                ),
+            ),
+        )
+        for event_date in withdrawal_dates
+    )
+    return DynamicContractIR(
+        base_contract=None,
+        semantic_family="gmwb",
+        base_track="payoff_expression",
+        state_schema=StateSchema(
+            fields=(
+                StateFieldSpec(
+                    name="account_value",
+                    domain="float",
+                    initial_value=account_value,
+                    tags=("financial_state", "continuous_control"),
+                ),
+                StateFieldSpec(
+                    name="guarantee_base",
+                    domain="float",
+                    initial_value=guarantee_base,
+                    tags=("financial_state", "continuous_control"),
+                ),
+            ),
+        ),
+        event_program=EventProgram(buckets=buckets),
+        control_program=ControlProgram(
+            controller_role="holder",
+            decision_style="continuous_withdrawal",
+            decision_event_labels=tuple(
+                f"withdraw_{event_date.isoformat()}" for event_date in withdrawal_dates
+            ),
+            admissible_actions=(withdraw,),
+            inventory_fields=("guarantee_base",),
+        ),
+        settlement=SettlementRule(payout_currency=currency),
     )
 
 
@@ -898,7 +1290,24 @@ def _extract_date_list_after_label(
     )
     if match is None:
         return ()
-    return tuple(date.fromisoformat(token) for token in re.findall(r"\d{4}-\d{2}-\d{2}", match.group(1)))
+    observed: list[date] = []
+    for token in re.findall(r"\d{4}-\d{2}-\d{2}", match.group(1)):
+        parsed = date.fromisoformat(token)
+        if parsed not in observed:
+            observed.append(parsed)
+    return tuple(observed)
+
+
+def _extract_date_list_after_labels(
+    description: str,
+    *,
+    labels: tuple[str, ...],
+) -> tuple[date, ...]:
+    for label in labels:
+        observed = _extract_date_list_after_label(description, label=label)
+        if observed:
+            return observed
+    return ()
 
 
 def build_product_ir(
@@ -1293,6 +1702,11 @@ def _extract_numeric_after(description: str, *, labels: tuple[str, ...]) -> floa
             return float(token[:-1]) / 100.0
         return float(token)
     return None
+
+
+def _extract_integer_after(description: str, *, labels: tuple[str, ...]) -> int | None:
+    observed = _extract_numeric_after(description, labels=labels)
+    return int(observed) if observed is not None else None
 
 
 def _extract_single_underlier(description: str) -> str | None:

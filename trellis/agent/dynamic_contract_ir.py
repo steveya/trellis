@@ -94,6 +94,10 @@ class ActionSpec:
     action_name: str
     action_type: str
     description: str = ""
+    action_domain: str = "discrete"
+    quantity_source: str = ""
+    bounds_expression: str = ""
+    state_updates: tuple[StateUpdateSpec, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -107,6 +111,28 @@ class ActionSpec:
             _require_text(self.action_type, label="ActionSpec.action_type").lower(),
         )
         object.__setattr__(self, "description", str(self.description or "").strip())
+        object.__setattr__(
+            self,
+            "action_domain",
+            _require_text(self.action_domain, label="ActionSpec.action_domain").lower(),
+        )
+        object.__setattr__(self, "quantity_source", str(self.quantity_source or "").strip())
+        object.__setattr__(self, "bounds_expression", str(self.bounds_expression or "").strip())
+        if not isinstance(self.state_updates, tuple):
+            object.__setattr__(self, "state_updates", tuple(self.state_updates))
+        if self.action_domain not in {"discrete", "continuous", "singular"}:
+            raise DynamicContractIRWellFormednessError(
+                "ActionSpec.action_domain must be one of 'discrete', 'continuous', or 'singular'"
+            )
+        if self.action_domain != "discrete" and not self.quantity_source:
+            raise DynamicContractIRWellFormednessError(
+                "continuous or singular actions must declare ActionSpec.quantity_source"
+            )
+        for update in self.state_updates:
+            if not isinstance(update, StateUpdateSpec):
+                raise DynamicContractIRWellFormednessError(
+                    "ActionSpec.state_updates must contain StateUpdateSpec values"
+                )
 
 
 @dataclass(frozen=True)
@@ -386,6 +412,7 @@ class ControlProgram:
     decision_style: str
     decision_event_labels: tuple[str, ...]
     admissible_actions: tuple[ActionSpec, ...]
+    inventory_fields: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -415,6 +442,10 @@ class ControlProgram:
                 raise DynamicContractIRWellFormednessError(
                     "ControlProgram.admissible_actions must contain ActionSpec values"
                 )
+        if not isinstance(self.inventory_fields, tuple):
+            object.__setattr__(self, "inventory_fields", tuple(self.inventory_fields))
+        for field_name in self.inventory_fields:
+            _require_text(field_name, label="ControlProgram.inventory_fields")
 
 
 BaseContract = ContractIR | StaticLegContractIR
@@ -423,6 +454,8 @@ BaseContract = ContractIR | StaticLegContractIR
 @dataclass(frozen=True)
 class DynamicContractIR:
     base_contract: BaseContract | None
+    semantic_family: str = ""
+    base_track: str = ""
     state_schema: StateSchema = field(default_factory=StateSchema)
     event_program: EventProgram = field(default_factory=EventProgram)
     control_program: ControlProgram | None = None
@@ -448,6 +481,17 @@ class DynamicContractIR:
             raise DynamicContractIRWellFormednessError(
                 "DynamicContractIR.settlement must be a SettlementRule"
             )
+        object.__setattr__(self, "semantic_family", str(self.semantic_family or "").strip())
+        object.__setattr__(self, "base_track", str(self.base_track or "").strip())
+        if self.base_track and self.base_track not in {
+            "payoff_expression",
+            "quoted_observable",
+            "static_leg",
+        }:
+            raise DynamicContractIRWellFormednessError(
+                "DynamicContractIR.base_track must be one of 'payoff_expression', "
+                "'quoted_observable', or 'static_leg'"
+            )
         field_names = set(self.state_schema.field_names)
         decision_events: list[DecisionEvent] = []
         event_labels: set[str] = set()
@@ -469,6 +513,10 @@ class DynamicContractIR:
                 "DynamicContractIR requires a ControlProgram when DecisionEvent is present"
             )
         if self.control_program is not None:
+            if set(self.control_program.inventory_fields) - field_names:
+                raise DynamicContractIRWellFormednessError(
+                    "ControlProgram.inventory_fields must reference declared state fields"
+                )
             decision_labels = {event.label for event in decision_events}
             if set(self.control_program.decision_event_labels) - decision_labels:
                 raise DynamicContractIRWellFormednessError(
@@ -486,6 +534,12 @@ class DynamicContractIR:
                     raise DynamicContractIRWellFormednessError(
                         "DecisionEvent actions must be declared in ControlProgram.admissible_actions"
                     )
+                for action in event.action_set:
+                    for update in action.state_updates:
+                        if update.field_name not in field_names:
+                            raise DynamicContractIRWellFormednessError(
+                                f"action update references unknown field {update.field_name!r}"
+                            )
 
 
 __all__ = [

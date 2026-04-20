@@ -79,6 +79,8 @@ class TestDecomposeStaticAndDynamicContracts:
 
         assert isinstance(observed, DynamicContractIR)
         assert isinstance(observed.base_contract, StaticLegContractIR)
+        assert observed.semantic_family == "callable_bond"
+        assert observed.base_track == "static_leg"
         assert observed.control_program is not None
         assert observed.control_program.controller_role == "issuer"
         assert observed.control_program.decision_event_labels == (
@@ -87,6 +89,73 @@ class TestDecomposeStaticAndDynamicContracts:
             "call_2029-01-15",
         )
         assert observed.event_program.buckets[0].event_date == date(2027, 1, 15)
+
+    def test_automatic_dynamic_families_decompose_to_stateful_wrappers(self):
+        autocall_description = (
+            "Phoenix autocallable note on SPX notional 1000000 coupon 8% "
+            "autocall barrier 100% observation dates 2025-07-15, 2026-01-15, "
+            "2026-07-15, 2027-01-15 maturity 2027-01-15"
+        )
+        tarn_description = (
+            "TARN on EURUSD notional 1000000 coupon 2% target 10% "
+            "fixing dates 2025-03-31, 2025-06-30, 2025-09-30, 2025-12-31 "
+            "maturity 2025-12-31"
+        )
+
+        autocall = decompose_to_dynamic_contract_ir(
+            autocall_description,
+            instrument_type="autocallable",
+        )
+        tarn = decompose_to_dynamic_contract_ir(
+            tarn_description,
+            instrument_type="tarn",
+        )
+
+        assert isinstance(autocall, DynamicContractIR)
+        assert autocall.semantic_family == "autocallable"
+        assert autocall.base_track == "payoff_expression"
+        assert autocall.control_program is None
+        assert autocall.event_program.termination_rules
+        assert autocall.state_schema.field_names == ("coupon_memory",)
+
+        assert isinstance(tarn, DynamicContractIR)
+        assert tarn.semantic_family == "tarn"
+        assert tarn.base_track == "payoff_expression"
+        assert tarn.control_program is None
+        assert tarn.event_program.termination_rules
+        assert tarn.state_schema.field_names == ("accrued_coupon",)
+
+    def test_discrete_and_continuous_control_families_decompose_to_dynamic_wrappers(self):
+        swing_description = (
+            "Swing option on power notional 1000000 rights 3 exercise dates "
+            "2025-01-31, 2025-02-28, 2025-03-31, 2025-04-30 maturity 2025-04-30"
+        )
+        gmwb_description = (
+            "GMWB contract premium 100000 guarantee base 100000 account value 100000 "
+            "withdrawal dates 2026-01-15, 2027-01-15, 2028-01-15"
+        )
+
+        swing = decompose_to_dynamic_contract_ir(
+            swing_description,
+            instrument_type="swing_option",
+        )
+        gmwb = decompose_to_dynamic_contract_ir(
+            gmwb_description,
+            instrument_type="gmwb",
+        )
+
+        assert isinstance(swing, DynamicContractIR)
+        assert swing.semantic_family == "swing_option"
+        assert swing.base_track == "payoff_expression"
+        assert swing.control_program is not None
+        assert swing.control_program.inventory_fields == ("remaining_rights",)
+
+        assert isinstance(gmwb, DynamicContractIR)
+        assert gmwb.semantic_family == "gmwb"
+        assert gmwb.base_track == "payoff_expression"
+        assert gmwb.control_program is not None
+        assert gmwb.control_program.admissible_actions[0].action_domain == "continuous"
+        assert gmwb.control_program.admissible_actions[0].quantity_source == "withdrawal_amount"
 
     def test_dynamic_decomposition_rejects_static_and_quote_only_descriptions(self):
         assert (
