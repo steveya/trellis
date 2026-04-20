@@ -491,6 +491,8 @@ still describe route ids as the primary fresh-build authority.
   reads on migrated fresh-build paths
 - audit test that enumerates forbidden selector reads of non-semantic
   trade-envelope or position-wrapper metadata
+- shared masked-authority harness reuse for later-family cutover tickets
+  so the invariance contract is not redefined family by family
 - residual-inventory audit proving no supported fresh-build family
   remains behind route fallback at phase exit
 
@@ -549,6 +551,10 @@ The stronger rule after Phase 4 is:
    consumers before Phase 4 coding starts.
 4. Keep a per-family closure ledger so route retirement is gated on
    semantic closure, not on intuition or branch-local confidence.
-5. Treat the Phase 4 exit criterion as a hard product rule:
+5. Require post-Phase-4 family migrations to reuse one shared
+   masked-authority harness against `route_id`, `route_family`,
+   `ProductIR.instrument`, and non-semantic wrapper metadata before
+   claiming cutover readiness.
+6. Treat the Phase 4 exit criterion as a hard product rule:
    by phase close, every supported fresh rebuild must go through the
    Semantic Lowering Pipeline, and route must be replay-only.
