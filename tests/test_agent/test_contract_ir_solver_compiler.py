@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 import pytest
@@ -169,6 +170,25 @@ def _receiver_swaption_contract_ir() -> ContractIR:
     )
 
 
+def _forward_starting_swaption_contract_ir() -> ContractIR:
+    expiry = _singleton("2025-11-15")
+    schedule = _finite_schedule(
+        "2027-11-15",
+        "2028-11-15",
+        "2029-11-15",
+        "2030-11-15",
+    )
+    return ContractIR(
+        payoff=Scaled(
+            Annuity("USD-IRS-5Y", schedule),
+            Max((Sub(SwapRate("USD-IRS-5Y", schedule), Strike(0.05)), Constant(0.0))),
+        ),
+        exercise=Exercise(style="european", schedule=expiry),
+        observation=Observation(kind="terminal", schedule=expiry),
+        underlying=Underlying(spec=ForwardRate("USD-IRS-5Y", "lognormal_forward")),
+    )
+
+
 def _basket_call_contract_ir() -> ContractIR:
     expiry = _singleton("2025-11-15")
     return ContractIR(
@@ -266,6 +286,16 @@ def _swaption_market_state() -> MarketState:
         settlement=date(2025, 1, 1),
         discount=YieldCurve.flat(0.03),
         vol_surface=FlatVol(0.20),
+    )
+
+
+def _swaption_market_state_with_named_forecast_curve() -> MarketState:
+    return MarketState(
+        as_of=date(2025, 1, 1),
+        settlement=date(2025, 1, 1),
+        discount=YieldCurve.flat(0.03),
+        vol_surface=FlatVol(0.20),
+        forecast_curves={"USD-SOFR-3M": YieldCurve.flat(0.05)},
     )
 
 
@@ -443,6 +473,85 @@ class TestContractIRSolverCompiler:
             abs=1e-12,
         )
 
+    def test_swaption_helper_respects_explicit_swap_start_term_field(self):
+        market_state = _swaption_market_state()
+        context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
+        semantic_contract = make_rate_style_swaption_contract(
+            description="European payer swaption with explicit forward-start date",
+            observation_schedule=("2025-11-15",),
+            preferred_method="analytical",
+            term_fields={
+                "swap_start": date(2026, 5, 15),
+                "swap_frequency": "semi_annual",
+            },
+        )
+
+        decision = compile_contract_ir_solver(
+            _swaption_contract_ir(),
+            term_environment=build_contract_ir_term_environment(semantic_contract),
+            valuation_context=context,
+            market_state=market_state,
+            preferred_method="analytical",
+        )
+
+        spec = decision.call_kwargs["spec"]
+        assert spec.swap_start == date(2026, 5, 15)
+        assert execute_contract_ir_solver_decision(decision) == pytest.approx(
+            price_swaption_black76(market_state, spec),
+            rel=1e-12,
+            abs=1e-12,
+        )
+
+    def test_swaption_helper_infers_forward_start_from_schedule_when_term_field_missing(self):
+        market_state = _swaption_market_state()
+        context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
+
+        decision = compile_contract_ir_solver(
+            _forward_starting_swaption_contract_ir(),
+            valuation_context=context,
+            market_state=market_state,
+            preferred_method="analytical",
+        )
+
+        spec = decision.call_kwargs["spec"]
+        assert spec.swap_start == date(2026, 11, 15)
+        assert execute_contract_ir_solver_decision(decision) == pytest.approx(
+            price_swaption_black76(market_state, spec),
+            rel=1e-12,
+            abs=1e-12,
+        )
+
+    def test_swaption_helper_uses_forecast_curve_name_when_rate_index_missing(self):
+        market_state = _swaption_market_state_with_named_forecast_curve()
+        context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
+        semantic_contract = make_rate_style_swaption_contract(
+            description="European payer swaption with explicit forecast curve",
+            observation_schedule=("2025-11-15",),
+            preferred_method="analytical",
+            term_fields={"forecast_curve_name": "USD-SOFR-3M"},
+        )
+
+        decision = compile_contract_ir_solver(
+            _swaption_contract_ir(),
+            term_environment=build_contract_ir_term_environment(semantic_contract),
+            valuation_context=context,
+            market_state=market_state,
+            preferred_method="analytical",
+        )
+
+        spec = decision.call_kwargs["spec"]
+        selected_price = execute_contract_ir_solver_decision(decision)
+        fallback_price = price_swaption_black76(market_state, replace(spec, rate_index=None))
+
+        assert spec.rate_index == "USD-SOFR-3M"
+        assert "forecast_curve:USD-SOFR-3M" in decision.resolved_market_coordinates
+        assert selected_price == pytest.approx(
+            price_swaption_black76(market_state, spec),
+            rel=1e-12,
+            abs=1e-12,
+        )
+        assert selected_price != pytest.approx(fallback_price, rel=1e-9, abs=1e-9)
+
     def test_two_asset_basket_helper_binding_matches_exact_helper(self):
         contract = _basket_call_contract_ir()
         market_state = _basket_market_state()
@@ -586,3 +695,15 @@ class TestContractIRSolverCompiler:
         assert terms.floating_rate_reference.rate_index == "USD-SOFR-3M"
         assert terms.accrual_conventions.payment_frequency == Frequency.SEMI_ANNUAL
         assert terms.quote_grid.replication_strikes == pytest.approx((0.04, 0.05, 0.06))
+
+    def test_term_environment_preserves_zero_notional(self):
+        contract = make_rate_style_swaption_contract(
+            description="Zero-notional swaption fixture",
+            observation_schedule=("2025-11-15",),
+            preferred_method="analytical",
+            term_fields={"notional": 0.0},
+        )
+
+        terms = build_contract_ir_term_environment(contract)
+
+        assert terms.cash_settlement.notional == pytest.approx(0.0)

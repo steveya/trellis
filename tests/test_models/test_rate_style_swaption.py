@@ -55,6 +55,19 @@ class _EuropeanCurveSpec:
     is_payer = True
 
 
+class _ForwardStartEuropeanCurveSpec:
+    notional = 1_000_000.0
+    strike = 0.045
+    expiry_date = date(2025, 11, 15)
+    swap_start = date(2026, 11, 15)
+    swap_end = date(2030, 11, 15)
+    from trellis.core.types import DayCountConvention, Frequency
+    swap_frequency = Frequency.SEMI_ANNUAL
+    day_count = DayCountConvention.ACT_360
+    rate_index = "USD-SOFR-3M"
+    is_payer = True
+
+
 class _BermudanSpec:
     notional = 100.0
     strike = 0.05
@@ -98,6 +111,24 @@ def test_price_swaption_black76_raw_matches_public_wrapper():
     assert price_swaption_black76_raw(resolved) == pytest.approx(
         price_swaption_black76(market_state, _EuropeanSpec()),
         abs=1e-12,
+    )
+
+
+def test_resolve_swaption_black76_inputs_respects_explicit_swap_start():
+    market_state = _market_state()
+
+    spot_start = resolve_swaption_black76_inputs(market_state, _EuropeanCurveSpec())
+    forward_start = resolve_swaption_black76_inputs(
+        market_state,
+        _ForwardStartEuropeanCurveSpec(),
+    )
+
+    assert forward_start.payment_count < spot_start.payment_count
+    assert forward_start.annuity < spot_start.annuity
+    assert price_swaption_black76(market_state, _ForwardStartEuropeanCurveSpec()) != pytest.approx(
+        price_swaption_black76(market_state, _EuropeanCurveSpec()),
+        rel=1e-9,
+        abs=1e-9,
     )
 
 

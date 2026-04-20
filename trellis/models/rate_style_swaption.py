@@ -125,7 +125,7 @@ def resolve_swaption_black76_inputs(
         notional=float(spec.notional),
         strike=float(spec.strike),
         expiry_date=expiry,
-        swap_start=expiry,
+        swap_start=getattr(spec, "swap_start", None) or expiry,
         swap_end=spec.swap_end,
         swap_frequency=spec.swap_frequency,
         day_count=spec.day_count,

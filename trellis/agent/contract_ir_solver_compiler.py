@@ -9,7 +9,7 @@ else.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timedelta
 from importlib import import_module
 from math import isclose
 from types import MappingProxyType
@@ -61,7 +61,7 @@ from trellis.agent.sensitivity_support import (
     normalize_requested_outputs,
 )
 from trellis.agent.valuation_context import ValuationContext
-from trellis.core.date_utils import year_fraction
+from trellis.core.date_utils import add_months, year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
 
@@ -156,6 +156,34 @@ def _parse_float_grid(value: object | None) -> tuple[float, ...]:
     return tuple(float(item.strip()) for item in text.split(",") if item.strip())
 
 
+def _coerce_date_term(value: object | None) -> date | None:
+    if value in {None, ""}:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def _float_term_field(
+    raw_term_fields: Mapping[str, object],
+    key: str,
+    *,
+    default: float,
+) -> float:
+    value = raw_term_fields.get(key, None)
+    if value in {None, ""}:
+        return float(default)
+    return float(value)
+
+
 def _market_identity(valuation_context: ValuationContext | None, market_state: MarketState) -> str:
     if valuation_context is not None and valuation_context.market_snapshot_handle:
         return valuation_context.market_snapshot_handle
@@ -227,6 +255,35 @@ def _rate_curve_frequency(schedule: FiniteSchedule | None) -> Frequency | None:
         return Frequency.SEMI_ANNUAL
     if month_step == 12:
         return Frequency.ANNUAL
+    return None
+
+
+def _infer_schedule_start_date(
+    schedule: FiniteSchedule | None,
+    *,
+    fallback_frequency: Frequency | None = None,
+) -> date | None:
+    if schedule is None or not schedule.dates:
+        return None
+    first_payment = schedule.dates[0]
+    if len(schedule.dates) >= 2:
+        second_payment = schedule.dates[1]
+        month_step = (second_payment.year - first_payment.year) * 12 + (
+            second_payment.month - first_payment.month
+        )
+        if month_step != 0:
+            return add_months(first_payment, -month_step)
+        day_step = (second_payment - first_payment).days
+        if day_step > 0:
+            return first_payment - timedelta(days=day_step)
+    if fallback_frequency == Frequency.MONTHLY:
+        return add_months(first_payment, -1)
+    if fallback_frequency == Frequency.QUARTERLY:
+        return add_months(first_payment, -3)
+    if fallback_frequency == Frequency.SEMI_ANNUAL:
+        return add_months(first_payment, -6)
+    if fallback_frequency == Frequency.ANNUAL:
+        return add_months(first_payment, -12)
     return None
 
 
@@ -306,7 +363,7 @@ def build_contract_ir_term_environment(contract=None) -> ContractIRTermEnvironme
     product = getattr(contract, "product", None)
     conventions = getattr(product, "conventions", None)
     raw_term_fields = dict(getattr(product, "term_fields", {}) or {})
-    notional = float(raw_term_fields.get("notional") or 1.0)
+    notional = _float_term_field(raw_term_fields, "notional", default=1.0)
     payout_currency = str(
         getattr(conventions, "payment_currency", None)
         or getattr(conventions, "reporting_currency", None)
@@ -735,13 +792,24 @@ def _swaption_helper_adapter(
         swap_frequency = inferred_frequency
     if swap_frequency is None:
         swap_frequency = Frequency.SEMI_ANNUAL
+    explicit_swap_start = _coerce_date_term(term_environment.raw_term_fields.get("swap_start"))
+    inferred_swap_start = _infer_schedule_start_date(
+        schedule,
+        fallback_frequency=inferred_frequency or swap_frequency,
+    )
+    swap_start = explicit_swap_start or inferred_swap_start or expiry.t
     day_count = term_environment.accrual_conventions.fixed_leg_day_count
-    rate_index = term_environment.floating_rate_reference.rate_index or None
+    rate_index = (
+        term_environment.floating_rate_reference.rate_index
+        or term_environment.floating_rate_reference.forecast_curve_name
+        or None
+    )
+    discount_curve_name = term_environment.floating_rate_reference.discount_curve_name or None
     spec = _StructuralSwaptionSpec(
         notional=float(term_environment.cash_settlement.notional),
         strike=strike,
         expiry_date=expiry.t,
-        swap_start=expiry.t,
+        swap_start=swap_start,
         swap_end=schedule.dates[-1],
         swap_frequency=swap_frequency,
         day_count=day_count,
@@ -749,6 +817,8 @@ def _swaption_helper_adapter(
         is_payer=is_payer,
     )
     coordinates = ["discount_curve", "black_vol_surface", "forward_curve"]
+    if discount_curve_name:
+        coordinates.append(f"discount_curve:{discount_curve_name}")
     if rate_index:
         coordinates.append(f"forecast_curve:{rate_index}")
     return {
