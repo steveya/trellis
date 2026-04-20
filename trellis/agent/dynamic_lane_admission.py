@@ -163,7 +163,8 @@ def _compile_discrete_control_lane(
     control_program = contract.control_program
     if control_program is None:
         raise DynamicLaneAdmissionError(
-            "_compile_discrete_control_lane requires a ControlProgram"
+            f"discrete-control lane requires a ControlProgram "
+            f"(semantic_family={contract.semantic_family!r})"
         )
     semantic_family = _discrete_family(contract)
     candidate_lanes = _discrete_candidate_lanes(semantic_family)
@@ -187,7 +188,8 @@ def _compile_continuous_control_lane(
     control_program = contract.control_program
     if control_program is None:
         raise DynamicLaneAdmissionError(
-            "_compile_continuous_control_lane requires a ControlProgram"
+            f"continuous-control lane requires a ControlProgram "
+            f"(semantic_family={contract.semantic_family!r})"
         )
     semantic_family = _continuous_family(contract)
     magnitude_actions = tuple(
