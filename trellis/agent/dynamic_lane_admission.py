@@ -90,6 +90,17 @@ DynamicLaneAdmission = (
     | ContinuousControlLaneAdmission
 )
 
+_DEFERRED_INSURANCE_OVERLAY_TAGS = frozenset(
+    {
+        "insurance_overlay",
+        "policy_state",
+        "mortality",
+        "lapse",
+        "fee_overlay",
+        "policy_behavior",
+    }
+)
+
 
 def compile_dynamic_lane_admission(contract: DynamicContractIR | None) -> DynamicLaneAdmission:
     """Compile one bounded dynamic semantic contract onto an admitted lane."""
@@ -101,6 +112,12 @@ def compile_dynamic_lane_admission(contract: DynamicContractIR | None) -> Dynami
     if str(contract.base_track or "").strip().lower() == "quoted_observable":
         raise DynamicLaneAdmissionError(
             "quoted-observable dynamic hybrids remain deferred from the admitted dynamic lanes"
+        )
+    overlay_tags = _deferred_insurance_overlay_tags(contract)
+    if overlay_tags:
+        raise DynamicLaneAdmissionError(
+            "insurance-style overlay semantics remain deferred from the admitted dynamic lanes; "
+            f"overlay_tags={overlay_tags!r}"
         )
 
     if _is_continuous_control(contract):
@@ -215,6 +232,16 @@ def _compile_continuous_control_lane(
 
 def _normalized_base_track(contract: DynamicContractIR) -> str:
     return str(contract.base_track or "").strip() or "payoff_expression"
+
+
+def _deferred_insurance_overlay_tags(contract: DynamicContractIR) -> tuple[str, ...]:
+    tags: list[str] = []
+    for field_spec in contract.state_schema.fields:
+        for tag in field_spec.tags:
+            normalized = str(tag or "").strip().lower()
+            if normalized in _DEFERRED_INSURANCE_OVERLAY_TAGS and normalized not in tags:
+                tags.append(normalized)
+    return tuple(tags)
 
 
 def _schedule_roles(contract: DynamicContractIR) -> tuple[str, ...]:

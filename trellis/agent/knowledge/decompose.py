@@ -1011,6 +1011,11 @@ def _build_dynamic_gmwb_contract_ir(
         return None
     if "gmwb" not in lower and "guaranteed minimum withdrawal benefit" not in lower:
         return None
+    if re.search(
+        r"\b(mortality|lapse|fee|fees|death benefit|policy status|alive|dead|lapsed)\b",
+        lower,
+    ):
+        return None
 
     withdrawal_dates = _extract_date_list_after_labels(
         description,

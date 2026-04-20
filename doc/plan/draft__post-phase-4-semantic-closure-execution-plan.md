@@ -9,8 +9,8 @@ The umbrella and `CLX.*` child tickets are now filed in Linear. This
 document remains the ordered repo-local mirror for that queue and should
 stay aligned with the live issue graph.
 
-`CLX.1` through `CLX.3` are now implemented and merged. The next
-actionable queue item is `CLX.4` / `QUA-931`.
+`CLX.1` through `CLX.6` are now implemented and merged. The next
+concrete follow-on tickets are `QUA-936`, `QUA-937`, and `QUA-938`.
 
 Status mirror last synced: `2026-04-20`
 
@@ -28,6 +28,9 @@ Status mirror last synced: `2026-04-20`
 - QUA-933 — `CLX.6` continuous/singular control lowering lane
 - QUA-934 — `CLX.7` insurance-style overlays
 - QUA-935 — `CLX.8` later-family route retirement follow-ons
+- QUA-936 — overlay boundary fixtures for financial-control vs policy-state overlays
+- QUA-937 — readiness ledger for dynamic closure cohorts
+- QUA-938 — reusable masked-authority harness for later-family cutovers
 - `doc/plan/draft__semantic-contract-closure-program.md`
 - `doc/plan/draft__quoted-observable-contract-ir-foundation.md`
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
@@ -102,9 +105,9 @@ post-Phase-4 work risks stalling in familiar ways:
 | `CLX.1` | `QUA-928` | Done | quoted-observable snapshot closure | current payoff-expression Phase 4 closeout |
 | `CLX.2` | `QUA-929` | Done | static leg-based closure | current payoff-expression Phase 4 closeout |
 | `CLX.3` | `QUA-930` | Done | event/state/control semantic foundation | `CLX.1`, `CLX.2` representation boundaries defined |
-| `CLX.4` | `QUA-931` | Backlog | automatic event/state lowering lane | `CLX.3` |
-| `CLX.5` | `QUA-932` | Backlog | discrete control lowering lane | `CLX.3` |
-| `CLX.6` | `QUA-933` | Backlog | continuous/singular control lowering lane | `CLX.3` |
+| `CLX.4` | `QUA-931` | Done | automatic event/state lowering lane | `CLX.3` |
+| `CLX.5` | `QUA-932` | Done | discrete control lowering lane | `CLX.3` |
+| `CLX.6` | `QUA-933` | Done | continuous/singular control lowering lane | `CLX.3` |
 | `CLX.7` | `QUA-934` | Backlog | insurance-style overlays on top of financial control | `CLX.6` |
 | `CLX.8` | `QUA-935` | Backlog | route-retirement follow-ons for migrated post-Phase-4 families | family-specific parity and provenance from the relevant earlier queue |
 
@@ -120,7 +123,11 @@ post-Phase-4 work risks stalling in familiar ways:
 
 Current next pickup:
 
-- `CLX.4` / `QUA-931` — automatic event/state lowering lane
+- `QUA-936` — overlay boundary fixtures for financial-control vs
+  policy-state overlays
+- `QUA-937` — readiness ledger for dynamic closure cohorts
+- `QUA-938` — reusable masked-authority harness for later-family
+  cutovers
 
 ## Queue Details
 
@@ -244,6 +251,11 @@ Primary plan:
 
 - see `draft__insurance-contract-overlay-foundation.md`
 
+Filed follow-ons:
+
+- `QUA-936` — fixture-backed boundary between bounded financial control
+  and deferred policy-state overlays
+
 ### CLX.8 — Later-family route retirement
 
 Goal:
@@ -257,6 +269,12 @@ Required artifacts per migrated family:
 - family-specific parity ledger
 - provenance readiness
 - route-masked selector tests
+
+Filed follow-ons:
+
+- `QUA-937` — readiness ledger for dynamic closure cohorts
+- `QUA-938` — reusable masked-authority harness for later-family
+  cutovers
 
 ## Family-to-Queue Map
 
@@ -300,6 +318,7 @@ depends on it:
 
 1. Keep this document as the live execution mirror for `QUA-927` and
    its child queue.
-2. Pick `QUA-931` / `CLX.4` next unless the user explicitly redirects.
-3. Keep `QUA-932` through `QUA-935` in queue order unless a later ticket
-   is first narrowed into a bounded design or blocker note.
+2. Work `QUA-936` next as the first concrete child under `CLX.7`.
+3. Treat `QUA-937` and `QUA-938` as the first concrete `CLX.8`
+   follow-ons once the overlay boundary and readiness surfaces are in
+   place.

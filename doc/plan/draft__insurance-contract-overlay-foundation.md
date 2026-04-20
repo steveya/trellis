@@ -2,8 +2,11 @@
 
 ## Status
 
-Draft. Parking-lot follow-on note for insurance-style overlays that may
-sit above the financial-control semantic core.
+`INS.1` / `QUA-936` is now active.
+
+The current bounded financial-control slice remains overlay-free, and
+this note records the first executable boundary between that core and
+later insurance-style semantics.
 
 ## Linked Context
 
@@ -45,6 +48,27 @@ The insurance overlay should answer:
 
 Those are related layers, not the same layer.
 
+### Current Bounded Boundary
+
+| Semantic element | Current owner | Current bounded handling |
+| --- | --- | --- |
+| `account_value`, `guarantee_base` | financial-control core | admitted continuous/singular control state |
+| withdrawal / surrender action magnitude | financial-control core | admitted control action semantics |
+| withdrawal dates and withdrawal cashflows | financial-control core | admitted event-program semantics |
+| policy status such as alive / dead / lapsed | insurance overlay | deferred; current admission must fail closed |
+| mortality / lapse intensities or transition rules | insurance overlay | deferred; current decomposition must fail closed |
+| rider-fee accrual or policy-level benefit adjustments | insurance overlay | deferred; current decomposition must fail closed |
+
+The practical rule for the current slice is:
+
+- if a GMWB-style request can be described entirely in terms of
+  financial account state, guarantee state, withdrawal control, and the
+  resulting cashflows, it belongs to the bounded financial-control core
+- if the request adds policy-status state, mortality or lapse behavior,
+  or fee/benefit overlays, it belongs to the deferred insurance overlay
+  track and must not be silently reinterpreted as plain financial
+  control
+
 ## Why This Separation Matters
 
 Without a separate overlay note, the first bounded GMWB/GMxB plan may
@@ -81,7 +105,7 @@ with bounded examples such as:
 
 | Queue ID | Status | Scope | Hard prerequisites |
 | --- | --- | --- | --- |
-| `INS.1` | Backlog | document the overlay boundary against the financial-control core | bounded financial-control lane exists |
+| `INS.1` | In Progress (`QUA-936`) | document the overlay boundary against the financial-control core | bounded financial-control lane exists |
 | `INS.2` | Backlog | define the minimal policy-state overlay surface | `INS.1` |
 | `INS.3` | Backlog | choose one bounded proving family if insurance overlays are actually in scope | `INS.2` |
 
@@ -107,7 +131,9 @@ first.
 
 ## Next Steps
 
-1. Keep this note dormant unless the post-Phase-4 queue actually reaches
-   insurance-style overlays.
-2. If that happens, treat the overlay as a sibling bounded track above
-   the financial-control core rather than reopening the core design.
+1. Finish `INS.1` / `QUA-936` by locking the boundary into fixtures,
+   admission blockers, and the closure execution mirror.
+2. Promote `INS.2` only if a real requested family needs policy-state
+   semantics beyond the bounded financial-control core.
+3. Treat any later overlay work as a sibling bounded track above the
+   financial-control core rather than reopening the core design.
