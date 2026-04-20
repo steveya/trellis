@@ -638,7 +638,7 @@ def test_contract_requires_correlation_for_multi_asset_mc():
             "single_underlier",
             "cash_settle_at_expiry",
             "analytical",
-            "analytical_black76",
+            None,
             "trellis.models.black",
         ),
         (
@@ -732,7 +732,8 @@ def test_representative_derivative_contracts_validate_and_compile(
     assert compiled.dsl_lowering is not None
     assert compiled.dsl_lowering.route_id == expected_route
     assert compiled.route_modules == _expected_route_modules(compiled)
-    assert compiled.primitive_routes == (expected_route,)
+    expected_primitive_routes = () if expected_route is None else (expected_route,)
+    assert compiled.primitive_routes == expected_primitive_routes
     assert expected_target_module in compiled.target_modules
     assert all("himalaya" not in module.lower() for module in compiled.route_modules)
 

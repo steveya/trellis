@@ -1094,17 +1094,110 @@ def test_compile_build_request_emits_exact_authority_for_explicit_terminal_baske
         set(compiled.product_ir.required_market_data)
     )
     assert compiled.generation_plan is not None
-    assert compiled.generation_plan.primitive_plan is not None
-    assert compiled.generation_plan.primitive_plan.route == "analytical_black76"
+    assert compiled.generation_plan.primitive_plan is None
+    compiler_summary = compiled.request.metadata["contract_ir_compiler"]
+    assert compiler_summary["contract_ir_solver_selection"]["declaration_id"] == (
+        "helper_basket_option_call"
+    )
     assert compiled.generation_plan.backend_binding_id == (
         "trellis.models.basket_option.price_basket_option_analytical"
     )
     authority = compiled.request.metadata["route_binding_authority"]
-    assert authority["route_id"] == "analytical_black76"
+    assert authority["route_id"] is None
     assert authority["authority_kind"] == "exact_backend_fit"
     assert authority["backend_binding"]["exact_target_refs"] == [
         "trellis.models.basket_option.price_basket_option_analytical"
     ]
+
+
+def test_compile_build_request_ignores_non_semantic_wrapper_metadata_for_route_free_vanilla():
+    from trellis.agent.platform_requests import compile_build_request
+
+    description = "European call on AAPL strike 150 expiring 2025-11-15"
+    metadata_a = {
+        "external_id": "TRADE-001",
+        "booking_tags": ["desk-a", "eq-structured"],
+        "package_wrapper": {"package_id": "PKG-A", "position_id": "POS-A"},
+    }
+    metadata_b = {
+        "external_id": "TRADE-999",
+        "booking_tags": ["desk-z", "manual-rebook"],
+        "package_wrapper": {"package_id": "PKG-Z", "position_id": "POS-Z"},
+    }
+
+    compiled_a = compile_build_request(
+        description,
+        instrument_type="european_option",
+        preferred_method="analytical",
+        metadata=metadata_a,
+    )
+    compiled_b = compile_build_request(
+        description,
+        instrument_type="european_option",
+        preferred_method="analytical",
+        metadata=metadata_b,
+    )
+
+    assert compiled_a.request.metadata["semantic_blueprint"]["contract_ir_solver_selection"] == (
+        compiled_b.request.metadata["semantic_blueprint"]["contract_ir_solver_selection"]
+    )
+    assert compiled_a.request.metadata["route_binding_authority"]["route_id"] is None
+    assert compiled_b.request.metadata["route_binding_authority"]["route_id"] is None
+    assert compiled_a.request.metadata["route_binding_authority"]["backend_binding"] == (
+        compiled_b.request.metadata["route_binding_authority"]["backend_binding"]
+    )
+    assert compiled_a.generation_plan is not None
+    assert compiled_b.generation_plan is not None
+    assert compiled_a.generation_plan.primitive_plan is None
+    assert compiled_b.generation_plan.primitive_plan is None
+    assert compiled_a.generation_plan.backend_binding_id == compiled_b.generation_plan.backend_binding_id
+    assert compiled_a.validation_contract is not None
+    assert compiled_b.validation_contract is not None
+    assert compiled_a.validation_contract.route_id is None
+    assert compiled_b.validation_contract.route_id is None
+
+
+def test_compile_build_request_ignores_non_semantic_wrapper_metadata_for_route_free_basket():
+    from trellis.agent.platform_requests import compile_build_request
+
+    description = "European basket call on {SPX 50%, NDX 50%} strike 4500 expiring 2025-11-15"
+    metadata_a = {
+        "external_id": "BASKET-001",
+        "booking_tags": ["desk-a", "basket-book"],
+        "package_wrapper": {"package_id": "PKG-A", "position_id": "POS-A"},
+    }
+    metadata_b = {
+        "external_id": "BASKET-777",
+        "booking_tags": ["desk-z", "manual-rebook"],
+        "package_wrapper": {"package_id": "PKG-Z", "position_id": "POS-Z"},
+    }
+
+    compiled_a = compile_build_request(
+        description,
+        instrument_type="basket_option",
+        preferred_method="analytical",
+        metadata=metadata_a,
+    )
+    compiled_b = compile_build_request(
+        description,
+        instrument_type="basket_option",
+        preferred_method="analytical",
+        metadata=metadata_b,
+    )
+
+    assert compiled_a.request.metadata["contract_ir_compiler"]["contract_ir_solver_selection"] == (
+        compiled_b.request.metadata["contract_ir_compiler"]["contract_ir_solver_selection"]
+    )
+    assert compiled_a.request.metadata["route_binding_authority"]["route_id"] is None
+    assert compiled_b.request.metadata["route_binding_authority"]["route_id"] is None
+    assert compiled_a.request.metadata["route_binding_authority"]["backend_binding"] == (
+        compiled_b.request.metadata["route_binding_authority"]["backend_binding"]
+    )
+    assert compiled_a.generation_plan is not None
+    assert compiled_b.generation_plan is not None
+    assert compiled_a.generation_plan.primitive_plan is None
+    assert compiled_b.generation_plan.primitive_plan is None
+    assert compiled_a.generation_plan.backend_binding_id == compiled_b.generation_plan.backend_binding_id
 
 
 def test_novel_request_persists_semantic_extension_trace(monkeypatch, tmp_path):
@@ -1268,7 +1361,7 @@ def test_compile_build_request_uses_exact_callable_bond_pde_binding_for_bootstra
             "vanilla_option",
             "trellis.models.black",
             "trellis.models.black",
-            "analytical_black76",
+            None,
         ),
         (
             "European swaption on a fixed-for-floating swap with expiry 2026-01-15",
@@ -1328,7 +1421,8 @@ def test_representative_derivatives_use_generic_semantic_contracts(
     assert compiled.semantic_blueprint.selection_reason == compiled.pricing_plan.selection_reason
     assert compiled.semantic_blueprint.assumption_summary == compiled.pricing_plan.assumption_summary
     assert compiled.semantic_blueprint.route_modules == _expected_route_modules(compiled)
-    assert compiled.semantic_blueprint.primitive_routes == (expected_primitive_route,)
+    expected_primitive_routes = () if expected_primitive_route is None else (expected_primitive_route,)
+    assert compiled.semantic_blueprint.primitive_routes == expected_primitive_routes
     assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == expected_primitive_route
     assert expected_generation_module in compiled.semantic_blueprint.target_modules
     assert snapshot == snapshot_again
@@ -1340,6 +1434,8 @@ def test_representative_derivatives_use_generic_semantic_contracts(
     assert "himalaya_option" not in repr(snapshot).lower()
     if expected_generation_module is not None:
         assert expected_generation_module in compiled.generation_plan.approved_modules
+    if expected_primitive_route is None:
+        assert compiled.generation_plan.primitive_plan is None
     assert "trellis.models.resolution.basket_semantics" not in compiled.generation_plan.approved_modules
     assert "trellis.models.monte_carlo.semantic_basket" not in compiled.generation_plan.approved_modules
     assert "himalaya_option" not in repr(compiled).lower()

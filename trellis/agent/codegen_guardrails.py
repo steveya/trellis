@@ -142,6 +142,7 @@ INSTRUMENT_TEST_TARGETS = {
 _GENERATION_PLAN_CACHE: dict[tuple[object, ...], "GenerationPlan"] = {}
 _GENERATION_PLAN_CACHE_HITS = 0
 _GENERATION_PLAN_CACHE_MISSES = 0
+_PRIMITIVE_PLAN_OVERRIDE_UNSET = object()
 
 
 @dataclass(frozen=True)
@@ -299,24 +300,28 @@ def build_generation_plan(
     instrument_type: str | None,
     inspected_modules: tuple[str, ...],
     product_ir: ProductIR | None = None,
+    primitive_plan_override=_PRIMITIVE_PLAN_OVERRIDE_UNSET,
 ) -> GenerationPlan:
     """Build a deterministic generation plan from quant + reference context."""
     global _GENERATION_PLAN_CACHE_HITS, _GENERATION_PLAN_CACHE_MISSES
     repo_revision = get_repo_revision()
 
-    cache_key = _generation_plan_cache_key(
-        pricing_plan=pricing_plan,
-        instrument_type=instrument_type,
-        inspected_modules=inspected_modules,
-        product_ir=product_ir,
-        repo_revision=repo_revision,
-    )
-    cached = _GENERATION_PLAN_CACHE.get(cache_key)
-    if cached is not None:
-        _GENERATION_PLAN_CACHE_HITS += 1
-        return cached
+    use_cache = primitive_plan_override is _PRIMITIVE_PLAN_OVERRIDE_UNSET
+    cache_key = None
+    if use_cache:
+        cache_key = _generation_plan_cache_key(
+            pricing_plan=pricing_plan,
+            instrument_type=instrument_type,
+            inspected_modules=inspected_modules,
+            product_ir=product_ir,
+            repo_revision=repo_revision,
+        )
+        cached = _GENERATION_PLAN_CACHE.get(cache_key)
+        if cached is not None:
+            _GENERATION_PLAN_CACHE_HITS += 1
+            return cached
 
-    _GENERATION_PLAN_CACHE_MISSES += 1
+        _GENERATION_PLAN_CACHE_MISSES += 1
     method = normalize_method(pricing_plan.method) if pricing_plan else "analytical"
     approved = set(COMMON_APPROVED_MODULES)
     approved.update(inspected_modules)
@@ -326,10 +331,13 @@ def build_generation_plan(
         product_ir,
         preferred_method=method,
     )
-    primitive_plan = build_primitive_plan(
-        pricing_plan=pricing_plan,
-        product_ir=route_selection_ir,
-    )
+    if primitive_plan_override is _PRIMITIVE_PLAN_OVERRIDE_UNSET:
+        primitive_plan = build_primitive_plan(
+            pricing_plan=pricing_plan,
+            product_ir=route_selection_ir,
+        )
+    else:
+        primitive_plan = primitive_plan_override
     symbol_map = get_symbol_map()
     package_map = get_package_map()
     test_map = get_test_map()
@@ -443,7 +451,8 @@ def build_generation_plan(
         plan,
         resolved_instructions=_resolve_generation_instructions(plan),
     )
-    _GENERATION_PLAN_CACHE[cache_key] = plan
+    if use_cache and cache_key is not None:
+        _GENERATION_PLAN_CACHE[cache_key] = plan
     return plan
 
 

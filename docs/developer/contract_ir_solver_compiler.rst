@@ -1,29 +1,30 @@
 Contract IR Solver Compiler
 ===========================
 
-``trellis.agent.contract_ir_solver_compiler`` is the Phase 3 bridge between
-the additive ``ContractIR`` tree and a bounded checked-solver catalog.
+``trellis.agent.contract_ir_solver_compiler`` is the bounded bridge between the
+additive ``ContractIR`` tree and a checked solver catalog.
 
 It is deliberately narrower than ``ContractIR`` itself. The module exists to
 prove that Trellis can bind solver calls from structural contract semantics
-without using per-instrument route authority for the admitted families, while
-still keeping the current runtime route path intact during rollout.
+without using per-instrument route authority for the admitted families.
 
 Role In The Build Path
 ----------------------
 
-The current Phase 3 flow is:
+The current shipped flow is:
 
 1. semantic validation and normalization
 2. ``ContractIR`` decomposition
-3. legacy route / DSL lowering as before
-4. additive structural shadow compilation when a bound ``MarketState`` exists
+3. structural solver selection for the admitted exact cohort
+4. route-free exact binding / lowering when structural selection succeeds
+5. additive legacy comparison metadata when a bound ``MarketState`` exists
 
-The shadow compiler is therefore observational today:
+Legacy routing still exists, but only as compatibility fallback or comparison
+context for requests that do not admit a structural selection.
 
-- it may attach a structural decision to the semantic blueprint
-- it may attach structural provenance to request metadata
-- it must not change the legacy route selected for live execution
+The structural compiler is authoritative only when the request has a real
+``ContractIR`` match. Everything else fails closed and leaves the fallback path
+explicit.
 
 Selection Inputs
 ----------------
@@ -36,8 +37,8 @@ The compiler consumes:
 - ``market_state``: resolved capabilities and market observables
 
 It does not consume ``ProductIR.instrument``, route ids, or backend binding
-metadata during structural selection. Those values may be copied onto the
-result only as shadow comparison data.
+metadata during structural selection. Legacy route ids may still be copied onto
+comparison records for audit-only parity tracking.
 
 Declaration Shape
 -----------------
@@ -100,8 +101,15 @@ intentional overlap explicit.
 Observability Surface
 ---------------------
 
-``SemanticImplementationBlueprint`` now carries an additive
-``contract_ir_solver_shadow`` field. The compact shadow record stores:
+``SemanticImplementationBlueprint`` now carries two structural provenance
+surfaces:
+
+- ``contract_ir_solver_selection`` for the authoritative route-free declaration
+  selected from ``ContractIR``
+- ``contract_ir_solver_shadow`` for the compact legacy-comparison packet when a
+  bound ``MarketState`` exists
+
+The compact shadow record stores:
 
 - declaration id
 - callable ref
@@ -111,8 +119,11 @@ Observability Surface
 - legacy route id / family / module cohort for comparison only
 
 ``trellis.agent.platform_requests._semantic_blueprint_summary(...)`` projects
-that record into request metadata so runtime traces can compare route and
-structural authority during the Phase 3 rollout.
+both surfaces into request metadata so runtime traces can distinguish:
+
+- the authoritative structural selection
+- the route-free exact backend binding identity
+- any legacy comparison alias retained for replay or parity evidence
 
 Generic request paths now expose the same structural boundary through the
 top-level ``request.metadata["contract_ir_compiler"]`` packet. That packet is
@@ -121,16 +132,18 @@ intentionally small and stable:
 - ``source`` identifies whether the structural surface came from a semantic
   blueprint or direct request decomposition
 - ``contract_ir`` carries the YAML-safe structural tree
-- ``contract_ir_solver_shadow`` carries the compact bound shadow record when
-  selection succeeds
+- ``contract_ir_solver_selection`` carries the authoritative structural
+  declaration when one exists
+- ``contract_ir_solver_shadow`` carries the compact bound comparison record
+  when market-bound shadow execution succeeds
 - ``shadow_status`` distinguishes ``bound``, ``contract_ir_only``, and
   ``no_match``
 - ``shadow_error`` makes fail-closed no-match outcomes explicit instead of
   relying on absence as a signal
 
-This is important for Phase 3 governance because not every migrated payoff
-family currently has a dedicated semantic-contract wrapper. Structural shadow
-evidence therefore needs to remain observable on generic request paths too.
+This is important because not every migrated payoff family currently has a
+dedicated semantic-contract wrapper. Structural provenance therefore still
+needs to remain observable on generic request paths too.
 
 Parity Evidence
 ---------------
@@ -140,10 +153,10 @@ The checked parity / closure artifacts for the current Phase 3 wave live in:
 - ``docs/benchmarks/contract_ir_solver_parity.json``
 - ``docs/benchmarks/contract_ir_solver_parity.md``
 
-Those artifacts are the promotion gate for Phase 4. A family should not be
-treated as route-retirement-ready merely because it binds structurally; the
-ledger must also show sufficient legacy-authority comparison evidence and an
-explicit non-blocked status.
+Those artifacts remain the promotion gate for any additional Phase 4 cutover.
+A family should not be treated as route-retirement-ready merely because it
+binds structurally; the ledger must also show sufficient comparison evidence
+and an explicit non-blocked status.
 
 Extension Guidance
 ------------------

@@ -1,13 +1,13 @@
-"""Phase 3 parity and closure cohort for the ContractIR structural compiler.
+"""Phase 3/4 parity and closure cohort for the ContractIR structural compiler.
 
 The goal of this module is narrower than a general benchmark runner:
 
 - prove the admitted structural families bind deterministically
-- compare structural shadow authority against the current request compiler path
+- compare structural authority against the current request compiler path
 - leave an explicit blocked outcome for arithmetic Asians
 
-This is the checked evidence surface Phase 4 will consume before any selector
-flip or route-retirement deletion is allowed.
+This is the checked evidence surface that gates Phase 4 cutover for the bounded
+admitted cohort and tracks any residual route-fallback gaps.
 """
 
 from __future__ import annotations
@@ -317,6 +317,11 @@ def _run_case(case: ContractIRSolverParityCase) -> dict[str, object]:
     route_authority = dict(compiled.request.metadata.get("route_binding_authority") or {})
     backend_binding = dict(route_authority.get("backend_binding") or {})
     exact_target_refs = tuple(backend_binding.get("exact_target_refs") or ())
+    selection = dict(compiler_summary.get("contract_ir_solver_selection") or {})
+    route_id = route_authority.get("route_id")
+    route_id_text = str(route_id or "").strip()
+    selection_declaration_id = str(selection.get("declaration_id") or "").strip()
+    route_free_authority = bool(selection_declaration_id) and not route_id_text
 
     result: dict[str, object] = {
         "case_id": case.case_id,
@@ -330,10 +335,15 @@ def _run_case(case: ContractIRSolverParityCase) -> dict[str, object]:
         "source": compiler_summary.get("source"),
         "shadow_status": compiler_summary.get("shadow_status"),
         "shadow_error": compiler_summary.get("shadow_error"),
-        "legacy_route_id": route_authority.get("route_id", ""),
+        "legacy_route_id": route_id,
         "legacy_route_family": route_authority.get("route_family", ""),
         "legacy_exact_target_refs": list(exact_target_refs),
         "legacy_exact_target_contains_structural_callable": None,
+        "selection_declaration_id": selection_declaration_id,
+        "route_free_authority": route_free_authority,
+        "selection_matches_structural_declaration": None,
+        "authoritative_exact_binding": False,
+        "authority_kind": str(route_authority.get("authority_kind") or ""),
         "semantic_contract_present": compiled.semantic_contract is not None,
         "semantic_blueprint_present": compiled.semantic_blueprint is not None,
         "product_ir_instrument": getattr(compiled.product_ir, "instrument", ""),
@@ -371,6 +381,19 @@ def _run_case(case: ContractIRSolverParityCase) -> dict[str, object]:
         rel_diff = abs_diff / abs(reference_price)
 
     exact_contains = decision.callable_ref in exact_target_refs if exact_target_refs else None
+    selection_matches = (
+        selection_declaration_id == decision.declaration_id
+        if selection_declaration_id
+        else None
+    )
+    authoritative_exact_binding = bool(
+        str(route_authority.get("authority_kind") or "").strip() == "exact_backend_fit"
+        and exact_contains in {True, None}
+        and (
+            selection_matches is True
+            or (selection_matches is None and bool(route_id_text))
+        )
+    )
     result.update(
         {
             "structural_contract_ir": contract_ir,
@@ -381,6 +404,8 @@ def _run_case(case: ContractIRSolverParityCase) -> dict[str, object]:
             "abs_diff": abs_diff,
             "rel_diff": rel_diff,
             "legacy_exact_target_contains_structural_callable": exact_contains,
+            "selection_matches_structural_declaration": selection_matches,
+            "authoritative_exact_binding": authoritative_exact_binding,
             "passed": (
                 decision.declaration_id == case.expected_declaration_id
                 and (reference_price is None or abs_diff <= case.tolerance_abs or (rel_diff is not None and rel_diff <= case.tolerance_rel))
@@ -397,11 +422,12 @@ def _family_notes(case_results: list[dict[str, object]]) -> list[str]:
             "Arithmetic Asians remain an explicit Phase 3 blocker: ContractIR decomposition exists, but the structural solver returns an intentional no-match until a checked arithmetic-Asian solver surface is admitted."
         )
     if any(
-        result.get("shadow_status") == "bound" and not str(result.get("legacy_route_id") or "").strip()
+        result.get("shadow_status") == "bound"
+        and not bool(result.get("authoritative_exact_binding"))
         for result in case_results
     ):
         notes.append(
-            "The incumbent request path still does not emit a legacy route-authority packet for every passing case in this family, so Phase 4 promotion would be under-evidenced even though structural binding itself succeeds."
+            "The request compiler does not yet emit a stable authoritative exact binding for every passing case in this family, so Phase 4 promotion would still be premature."
         )
     if any(
         result.get("legacy_exact_target_contains_structural_callable") is False
@@ -414,7 +440,7 @@ def _family_notes(case_results: list[dict[str, object]]) -> list[str]:
 
 
 def build_contract_ir_solver_parity_report() -> dict[str, object]:
-    """Build the checked Phase 3 parity / closure report."""
+    """Build the checked structural parity / closure report."""
 
     cases = tuple(_parity_cases())
     case_results = [_run_case(case) for case in cases]
@@ -432,8 +458,7 @@ def build_contract_ir_solver_parity_report() -> dict[str, object]:
         parity_closed = bool(bound_results) and all(item.get("passed") for item in bound_results)
         provenance_closed = bool(bound_results) and all(item.get("source") for item in bound_results)
         exact_authority_closed = bool(bound_results) and all(
-            str(item.get("legacy_route_id") or "").strip()
-            and item.get("legacy_exact_target_contains_structural_callable") in {True, None}
+            item.get("authoritative_exact_binding") is True
             for item in bound_results
         )
         phase4_candidate = (
@@ -528,7 +553,7 @@ def render_contract_ir_solver_parity_report(report: Mapping[str, object]) -> str
                     source=case.get("source", ""),
                     shadow_status=case.get("shadow_status", ""),
                     declaration=case.get("declaration_id", "") or case.get("expected_declaration_id", ""),
-                    route=case.get("legacy_route_id", ""),
+                    route=case.get("legacy_route_id") or "",
                     contains=case.get("legacy_exact_target_contains_structural_callable", ""),
                     passed=case.get("passed", False),
                 )
@@ -557,7 +582,7 @@ def save_contract_ir_solver_parity_report(
 
 
 def default_parity_artifact_paths() -> tuple[Path, Path]:
-    """Return the checked-in artifact paths for the Phase 3 parity ledger."""
+    """Return the checked-in artifact paths for the structural parity ledger."""
 
     return (
         ROOT / "docs" / "benchmarks" / "contract_ir_solver_parity.json",

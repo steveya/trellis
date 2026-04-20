@@ -597,6 +597,9 @@ def _semantic_blueprint_summary(semantic_blueprint) -> dict[str, object]:
         "contract_ir_solver_shadow": _yaml_safe_value(
             getattr(semantic_blueprint, "contract_ir_solver_shadow", None)
         ),
+        "contract_ir_solver_selection": _yaml_safe_value(
+            getattr(semantic_blueprint, "contract_ir_solver_selection", None)
+        ),
         "requested_outputs": list(getattr(semantic_blueprint, "requested_outputs", ()) or ()),
         "valuation_context": valuation_context_summary(semantic_blueprint.valuation_context)
         if getattr(semantic_blueprint, "valuation_context", None) is not None
@@ -615,6 +618,7 @@ def _contract_ir_compiler_summary(
     source: str,
     shadow_status: str,
     contract_ir,
+    contract_ir_solver_selection=None,
     contract_ir_solver_shadow,
     shadow_error: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
@@ -625,6 +629,7 @@ def _contract_ir_compiler_summary(
         "shadow_status": str(shadow_status).strip() or "not_applicable",
         "contract_ir": _yaml_safe_value(contract_ir),
         "contract_ir_solver_shadow": _yaml_safe_value(contract_ir_solver_shadow),
+        "contract_ir_solver_selection": _yaml_safe_value(contract_ir_solver_selection),
         "shadow_error": _yaml_safe_value(shadow_error),
     }
 
@@ -667,13 +672,15 @@ def _request_contract_ir_compiler_summary(
 
     if semantic_blueprint is not None:
         contract_ir = getattr(semantic_blueprint, "contract_ir", None)
+        selection = getattr(semantic_blueprint, "contract_ir_solver_selection", None)
         shadow = getattr(semantic_blueprint, "contract_ir_solver_shadow", None)
-        if contract_ir is None and shadow is None:
+        if contract_ir is None and shadow is None and selection is None:
             return None
         return _contract_ir_compiler_summary(
             source="semantic_blueprint",
             shadow_status="bound" if shadow is not None else "contract_ir_only",
             contract_ir=contract_ir,
+            contract_ir_solver_selection=selection,
             contract_ir_solver_shadow=shadow,
         )
 
@@ -690,10 +697,35 @@ def _request_contract_ir_compiler_summary(
         return None
 
     shadow = None
+    selection = None
     shadow_status = "contract_ir_only"
     shadow_error = None
     legacy_authority = dict(request_metadata.get("route_binding_authority") or {})
     legacy_modules = tuple(getattr(generation_plan, "inspected_modules", ()) or ())
+
+    from trellis.agent.contract_ir import ContractIR as _ContractIR
+
+    if pricing_plan is not None and isinstance(contract_ir, _ContractIR):
+        from trellis.agent.contract_ir_solver_compiler import (
+            ContractIRSolverCompileError,
+            build_contract_ir_term_environment,
+            select_contract_ir_solver,
+        )
+
+        valuation_context = _valuation_context_for_request(
+            request,
+            preferred_method=getattr(pricing_plan, "method", None),
+        )
+        try:
+            selection = select_contract_ir_solver(
+                contract_ir,
+                term_environment=build_contract_ir_term_environment(None),
+                valuation_context=valuation_context,
+                preferred_method=getattr(pricing_plan, "method", None),
+                requested_outputs=request.requested_outputs,
+            )
+        except ContractIRSolverCompileError:
+            selection = None
 
     from trellis.core.market_state import MarketState
 
@@ -730,6 +762,7 @@ def _request_contract_ir_compiler_summary(
         source="request_decomposition",
         shadow_status=shadow_status,
         contract_ir=contract_ir,
+        contract_ir_solver_selection=selection,
         contract_ir_solver_shadow=shadow,
         shadow_error=shadow_error,
     )
@@ -835,6 +868,187 @@ def _record_semantic_extension_artifact(
         )
     except Exception:
         return None
+
+
+def _semantic_blueprint_has_route_free_exact_binding(semantic_blueprint) -> bool:
+    """Return whether the semantic blueprint already carries route-free exact authority."""
+    selection = getattr(semantic_blueprint, "contract_ir_solver_selection", None)
+    lowering = getattr(semantic_blueprint, "dsl_lowering", None)
+    lane_plan = getattr(semantic_blueprint, "lane_plan", None)
+    if selection is None or lowering is None or lane_plan is None:
+        return False
+    if str(getattr(lowering, "route_id", "") or "").strip():
+        return False
+    if str(getattr(lane_plan, "plan_kind", "") or "").strip() != "exact_target_binding":
+        return False
+    return not tuple(getattr(semantic_blueprint, "primitive_routes", ()) or ())
+
+
+def _route_free_generation_plan_from_semantic_blueprint(plan, semantic_blueprint):
+    """Project semantic exact-binding authority onto the generation plan.
+
+    This keeps the admitted structural Phase 4 cohort off the route-registry
+    selector path while preserving the same exact backend-binding provenance for
+    validation, prompts, and deterministic module materialization.
+    """
+    selection = getattr(semantic_blueprint, "contract_ir_solver_selection", None)
+    lowering = getattr(semantic_blueprint, "dsl_lowering", None)
+    lane_plan = getattr(semantic_blueprint, "lane_plan", None)
+    if selection is None or lowering is None or lane_plan is None:
+        return plan
+
+    uncertainty_flags = tuple(
+        flag
+        for flag in (getattr(plan, "uncertainty_flags", ()) or ())
+        if flag not in {"primitive_plan_not_available", "primitive_plan_has_blockers"}
+    )
+    reusable_refs = tuple(
+        str(getattr(binding, "primitive_ref", "") or "")
+        for binding in (getattr(lane_plan, "reusable_bindings", ()) or ())
+        if str(getattr(binding, "primitive_ref", "") or "").strip()
+    )
+    lane_exact_refs = tuple(getattr(lane_plan, "exact_target_refs", ()) or ())
+    backend_route_family = (
+        str(getattr(lowering, "route_family", "") or "").strip()
+        or str(getattr(lane_plan, "lane_family", "") or "").strip()
+        or str(getattr(semantic_blueprint, "preferred_method", "") or "").strip()
+    )
+    backend_engine_family = (
+        str(getattr(lane_plan, "lane_family", "") or "").strip()
+        or str(getattr(semantic_blueprint, "preferred_method", "") or "").strip()
+    )
+    return replace(
+        plan,
+        primitive_plan=None,
+        blocker_report=None,
+        new_primitive_workflow=None,
+        uncertainty_flags=uncertainty_flags,
+        lane_family=str(getattr(lane_plan, "lane_family", "") or ""),
+        lane_plan_kind=str(getattr(lane_plan, "plan_kind", "") or ""),
+        lane_timeline_roles=tuple(getattr(lane_plan, "timeline_roles", ()) or ()),
+        lane_market_requirements=tuple(getattr(lane_plan, "market_requirements", ()) or ()),
+        lane_state_obligations=tuple(getattr(lane_plan, "state_obligations", ()) or ()),
+        lane_control_obligations=tuple(getattr(lane_plan, "control_obligations", ()) or ()),
+        lane_construction_steps=tuple(getattr(lane_plan, "construction_steps", ()) or ()),
+        lane_reusable_primitives=reusable_refs,
+        lane_exact_binding_refs=lane_exact_refs,
+        lane_unresolved_primitives=tuple(getattr(lane_plan, "unresolved_primitives", ()) or ()),
+        backend_binding_id=str(getattr(selection, "callable_ref", "") or "")
+        or (str(lane_exact_refs[0]).strip() if lane_exact_refs else ""),
+        backend_binding_aliases=(),
+        backend_exact_target_refs=lane_exact_refs,
+        backend_helper_refs=tuple(getattr(selection, "helper_refs", ()) or ()),
+        backend_pricing_kernel_refs=tuple(getattr(selection, "pricing_kernel_refs", ()) or ()),
+        backend_schedule_builder_refs=tuple(getattr(selection, "schedule_builder_refs", ()) or ()),
+        backend_cashflow_engine_refs=tuple(getattr(selection, "cashflow_engine_refs", ()) or ()),
+        backend_market_binding_refs=tuple(getattr(selection, "market_binding_refs", ()) or ()),
+        backend_engine_family=backend_engine_family,
+        backend_route_family=backend_route_family,
+        backend_compatibility_alias_policy=str(
+            getattr(selection, "compatibility_alias_policy", None) or "operator_visible"
+        ),
+    )
+
+
+def _selection_exact_target_refs(selection) -> tuple[str, ...]:
+    """Return the exact backend refs implied directly by structural selection."""
+    refs: list[str] = []
+    for ref in (
+        str(getattr(selection, "callable_ref", "") or "").strip(),
+        *tuple(getattr(selection, "pricing_kernel_refs", ()) or ()),
+        *tuple(getattr(selection, "schedule_builder_refs", ()) or ()),
+    ):
+        normalized = str(ref or "").strip()
+        if normalized and normalized not in refs:
+            refs.append(normalized)
+    return tuple(refs)
+
+
+def _compile_request_contract_ir_selection(
+    *,
+    request: PlatformRequest,
+    product_ir,
+    pricing_plan,
+):
+    """Return route-free structural selection for generic request paths when admitted."""
+    from trellis.agent.contract_ir_solver_compiler import (
+        ContractIRSolverCompileError,
+        build_contract_ir_term_environment,
+        select_contract_ir_solver,
+    )
+
+    description = str(getattr(request, "description", "") or "").strip()
+    if not description or product_ir is None or pricing_plan is None:
+        return None, None
+
+    contract_ir = decompose_to_contract_ir(
+        description,
+        instrument_type=request.instrument_type,
+        product_ir=product_ir,
+    )
+    if contract_ir is None:
+        return None, None
+
+    valuation_context = _valuation_context_for_request(
+        request,
+        preferred_method=getattr(pricing_plan, "method", None),
+    )
+    try:
+        selection = select_contract_ir_solver(
+            contract_ir,
+            term_environment=build_contract_ir_term_environment(None),
+            valuation_context=valuation_context,
+            preferred_method=getattr(pricing_plan, "method", None),
+            requested_outputs=request.requested_outputs,
+        )
+    except ContractIRSolverCompileError:
+        return contract_ir, None
+    return contract_ir, selection
+
+
+def _route_free_generation_plan_from_contract_ir_selection(
+    plan,
+    *,
+    pricing_plan,
+    selection,
+):
+    """Project direct-request structural selection onto a route-free generation plan."""
+    exact_target_refs = _selection_exact_target_refs(selection)
+    uncertainty_flags = tuple(
+        flag
+        for flag in (getattr(plan, "uncertainty_flags", ()) or ())
+        if flag not in {"primitive_plan_not_available", "primitive_plan_has_blockers"}
+    )
+    lane_family = normalize_method(getattr(pricing_plan, "method", None) or "")
+    lane_market_requirements = tuple(
+        sorted(getattr(pricing_plan, "required_market_data", ()) or ())
+    )
+    return replace(
+        plan,
+        primitive_plan=None,
+        blocker_report=None,
+        new_primitive_workflow=None,
+        uncertainty_flags=uncertainty_flags,
+        lane_family=lane_family,
+        lane_plan_kind="exact_target_binding",
+        lane_market_requirements=lane_market_requirements,
+        lane_exact_binding_refs=exact_target_refs,
+        lane_reusable_primitives=exact_target_refs,
+        backend_binding_id=str(getattr(selection, "callable_ref", "") or "")
+        or (str(exact_target_refs[0]).strip() if exact_target_refs else ""),
+        backend_binding_aliases=(),
+        backend_exact_target_refs=exact_target_refs,
+        backend_helper_refs=tuple(getattr(selection, "helper_refs", ()) or ()),
+        backend_pricing_kernel_refs=tuple(getattr(selection, "pricing_kernel_refs", ()) or ()),
+        backend_schedule_builder_refs=tuple(getattr(selection, "schedule_builder_refs", ()) or ()),
+        backend_cashflow_engine_refs=tuple(getattr(selection, "cashflow_engine_refs", ()) or ()),
+        backend_market_binding_refs=tuple(getattr(selection, "market_binding_refs", ()) or ()),
+        backend_engine_family=lane_family,
+        backend_route_family=lane_family,
+        backend_compatibility_alias_policy=str(
+            getattr(selection, "compatibility_alias_policy", None) or "operator_visible"
+        ),
+    )
 
 
 def _finalize_compiled_request(
@@ -990,13 +1204,30 @@ def _compile_semantic_request(
         context_description=request.description,
     )
     inspected_modules = semantic_blueprint.route_modules
-    generation_plan = build_generation_plan(
-        pricing_plan=pricing_plan,
-        instrument_type=getattr(semantic_blueprint.product_ir, "instrument", None),
-        inspected_modules=inspected_modules,
-        product_ir=semantic_blueprint.product_ir,
+    route_free_exact_binding = _semantic_blueprint_has_route_free_exact_binding(
+        semantic_blueprint
     )
-    if not getattr(semantic_blueprint, "primitive_routes", ()):
+    if route_free_exact_binding:
+        generation_plan = build_generation_plan(
+            pricing_plan=pricing_plan,
+            instrument_type=getattr(semantic_blueprint.product_ir, "instrument", None),
+            inspected_modules=inspected_modules,
+            product_ir=semantic_blueprint.product_ir,
+            primitive_plan_override=None,
+        )
+    else:
+        generation_plan = build_generation_plan(
+            pricing_plan=pricing_plan,
+            instrument_type=getattr(semantic_blueprint.product_ir, "instrument", None),
+            inspected_modules=inspected_modules,
+            product_ir=semantic_blueprint.product_ir,
+        )
+    if route_free_exact_binding:
+        generation_plan = _route_free_generation_plan_from_semantic_blueprint(
+            generation_plan,
+            semantic_blueprint,
+        )
+    elif not getattr(semantic_blueprint, "primitive_routes", ()):
         uncertainty_flags = tuple(
             dict.fromkeys(
                 (
@@ -1294,12 +1525,31 @@ def compile_build_request(
         requested_measures=_normalize_measures(measures),
         context_description=description,
     )
-    generation_plan = build_generation_plan(
-        pricing_plan=pricing_plan,
-        instrument_type=instrument_type,
-        inspected_modules=tuple(pricing_plan.method_modules),
+    contract_ir, contract_ir_selection = _compile_request_contract_ir_selection(
+        request=request,
         product_ir=product_ir,
+        pricing_plan=pricing_plan,
     )
+    if contract_ir_selection is not None:
+        generation_plan = build_generation_plan(
+            pricing_plan=pricing_plan,
+            instrument_type=instrument_type,
+            inspected_modules=tuple(pricing_plan.method_modules),
+            product_ir=product_ir,
+            primitive_plan_override=None,
+        )
+        generation_plan = _route_free_generation_plan_from_contract_ir_selection(
+            generation_plan,
+            pricing_plan=pricing_plan,
+            selection=contract_ir_selection,
+        )
+    else:
+        generation_plan = build_generation_plan(
+            pricing_plan=pricing_plan,
+            instrument_type=instrument_type,
+            inspected_modules=tuple(pricing_plan.method_modules),
+            product_ir=product_ir,
+        )
     knowledge_bundle = _shared_knowledge_bundle(
         product_ir,
         preferred_method=pricing_plan.method,

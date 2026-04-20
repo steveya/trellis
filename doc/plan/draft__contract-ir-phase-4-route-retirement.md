@@ -2,8 +2,13 @@
 
 ## Status
 
-Draft. Pre-queue design document. Not yet the live execution mirror for
-Phase 4.
+Implemented for the current admitted payoff-expression cohort.
+
+The Phase 4 cutover now ships route-free fresh-build authority for the
+bounded families that decompose into checked `ContractIR` and admit a
+structural exact binding. Universal semantic closure remains governed by
+the companion closure program, and arithmetic Asians remain intentionally
+outside the admitted exact cohort.
 
 ## Linked Linear
 

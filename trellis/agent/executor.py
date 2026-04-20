@@ -3293,6 +3293,8 @@ def _deterministic_exact_binding_evaluate_body(
     zcb_option_tree_kwargs = _zcb_option_tree_helper_kwargs(comparison_target)
     credit_basket_tranche_kwargs = _credit_basket_tranche_helper_kwargs(comparison_target)
     basket_option_kwargs = _basket_option_helper_kwargs(comparison_target)
+    instrument_type = str(getattr(generation_plan, "instrument_type", "") or "").strip().lower()
+    route_free_exact_binding = getattr(generation_plan, "primitive_plan", None) is None
     if (
         comparison_target == "black_scholes"
         and "trellis.models.black.black76_call" in refs
@@ -3324,6 +3326,87 @@ def _deterministic_exact_binding_evaluate_body(
             return float(spec.notional) * df * float(undiscounted)
             """
         ).rstrip()
+    if (
+        comparison_target is None
+        and route_free_exact_binding
+        and instrument_type == "european_option"
+        and "trellis.models.black.black76_call" in refs
+        and "trellis.models.black.black76_put" in refs
+    ):
+        return textwrap.dedent(
+            """\
+            spec = self._spec
+            if market_state.discount is None:
+                raise ValueError("market_state.discount is required for exact Black-76 vanilla pricing")
+            if market_state.vol_surface is None:
+                raise ValueError("market_state.vol_surface is required for exact Black-76 vanilla pricing")
+            T = max(float(year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)), 0.0)
+            spot = float(spec.spot)
+            strike = float(spec.strike)
+            option_type = str(spec.option_type or "call").strip().lower()
+            if T <= 0.0:
+                intrinsic = max(spot - strike, 0.0) if option_type == "call" else max(strike - spot, 0.0)
+                return float(spec.notional) * intrinsic
+            df = float(market_state.discount.discount(T))
+            sigma = float(market_state.vol_surface.black_vol(max(T, 1e-6), strike))
+            forward = spot / max(df, 1e-12)
+            if option_type == "call":
+                undiscounted = black76_call(forward, strike, sigma, T)
+            elif option_type == "put":
+                undiscounted = black76_put(forward, strike, sigma, T)
+            else:
+                raise ValueError(f"Unsupported option_type {spec.option_type!r}")
+            return float(spec.notional) * df * float(undiscounted)
+            """
+        ).rstrip()
+    if comparison_target is None and route_free_exact_binding and instrument_type == "digital_option":
+        if (
+            "trellis.models.black.black76_cash_or_nothing_call" in refs
+            and "trellis.models.black.black76_cash_or_nothing_put" in refs
+        ) or (
+            "trellis.models.black.black76_asset_or_nothing_call" in refs
+            and "trellis.models.black.black76_asset_or_nothing_put" in refs
+        ):
+            return textwrap.dedent(
+                """\
+                spec = self._spec
+                if market_state.discount is None:
+                    raise ValueError("market_state.discount is required for exact Black-76 digital pricing")
+                if market_state.vol_surface is None:
+                    raise ValueError("market_state.vol_surface is required for exact Black-76 digital pricing")
+                T = max(float(year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)), 0.0)
+                spot = float(spec.spot)
+                strike = float(spec.strike)
+                option_type = str(spec.option_type or "call").strip().lower()
+                payout_type = str(getattr(spec, "payout_type", "cash_or_nothing") or "cash_or_nothing").strip().lower()
+                cash_payoff = float(getattr(spec, "cash_payoff", 1.0) or 1.0)
+                if option_type not in {"call", "put"}:
+                    raise ValueError(f"Unsupported option_type {spec.option_type!r}")
+                if T <= 0.0:
+                    in_the_money = spot > strike if option_type == "call" else spot < strike
+                    if payout_type == "cash_or_nothing":
+                        return float(spec.notional) * cash_payoff * (1.0 if in_the_money else 0.0)
+                    if payout_type == "asset_or_nothing":
+                        return float(spec.notional) * (spot if in_the_money else 0.0)
+                    raise ValueError(f"Unsupported payout_type {getattr(spec, 'payout_type', None)!r}")
+                df = float(market_state.discount.discount(T))
+                sigma = float(market_state.vol_surface.black_vol(max(T, 1e-6), strike))
+                forward = spot / max(df, 1e-12)
+                if payout_type == "cash_or_nothing":
+                    if option_type == "call":
+                        undiscounted = black76_cash_or_nothing_call(forward, strike, sigma, T)
+                    else:
+                        undiscounted = black76_cash_or_nothing_put(forward, strike, sigma, T)
+                    return float(spec.notional) * cash_payoff * df * float(undiscounted)
+                if payout_type == "asset_or_nothing":
+                    if option_type == "call":
+                        undiscounted = black76_asset_or_nothing_call(forward, strike, sigma, T)
+                    else:
+                        undiscounted = black76_asset_or_nothing_put(forward, strike, sigma, T)
+                    return float(spec.notional) * df * float(undiscounted)
+                raise ValueError(f"Unsupported payout_type {getattr(spec, 'payout_type', None)!r}")
+                """
+            ).rstrip()
     helper_bodies = {
         "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state": (
             "return float(price_quanto_option_analytical_from_market_state(market_state, spec))"
