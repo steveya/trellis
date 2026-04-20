@@ -18,6 +18,11 @@ from trellis.agent.dynamic_contract_ir import (
     StateUpdateSpec,
     TerminationRule,
 )
+from trellis.agent.dynamic_lane_admission import (
+    DynamicLaneAdmissionError,
+    _automatic_benchmark_plan,
+    _discrete_benchmark_plan,
+)
 from trellis.agent.knowledge.decompose import decompose_to_dynamic_contract_ir
 from trellis.agent.static_leg_contract import SettlementRule
 
@@ -102,7 +107,6 @@ def test_continuous_control_lane_requires_magnitude_semantics():
 
 def test_dynamic_lane_admission_fails_closed_for_deferred_hybrids():
     from trellis.agent.dynamic_lane_admission import (
-        DynamicLaneAdmissionError,
         compile_dynamic_lane_admission,
     )
 
@@ -163,3 +167,15 @@ def test_dynamic_lane_admission_fails_closed_for_deferred_hybrids():
 
     with pytest.raises(DynamicLaneAdmissionError, match="quoted-observable"):
         compile_dynamic_lane_admission(contract)
+
+
+@pytest.mark.parametrize(
+    ("planner", "family", "match"),
+    (
+        (_automatic_benchmark_plan, "unsupported", "automatic event/state cohort"),
+        (_discrete_benchmark_plan, "unsupported", "discrete-control cohort"),
+    ),
+)
+def test_benchmark_plans_fail_closed_for_unknown_families(planner, family, match):
+    with pytest.raises(DynamicLaneAdmissionError, match=match):
+        planner(family)

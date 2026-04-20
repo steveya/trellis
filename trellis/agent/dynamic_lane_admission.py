@@ -163,8 +163,8 @@ def _compile_discrete_control_lane(
     control_program = contract.control_program
     if control_program is None:
         raise DynamicLaneAdmissionError(
-            f"discrete-control lane requires a ControlProgram "
-            f"(semantic_family={contract.semantic_family!r})"
+            "discrete-control lane compilation requires a ControlProgram; "
+            f"semantic_family={contract.semantic_family!r}"
         )
     semantic_family = _discrete_family(contract)
     candidate_lanes = _discrete_candidate_lanes(semantic_family)
@@ -188,8 +188,8 @@ def _compile_continuous_control_lane(
     control_program = contract.control_program
     if control_program is None:
         raise DynamicLaneAdmissionError(
-            f"continuous-control lane requires a ControlProgram "
-            f"(semantic_family={contract.semantic_family!r})"
+            "continuous-control lane compilation requires a ControlProgram; "
+            f"semantic_family={contract.semantic_family!r}"
         )
     semantic_family = _continuous_family(contract)
     magnitude_actions = tuple(
@@ -266,7 +266,11 @@ def _discrete_family(contract: DynamicContractIR) -> str:
     if family in {"swing", "swing_option"}:
         return "swing_option"
     control_program = contract.control_program
-    assert control_program is not None
+    if control_program is None:
+        raise DynamicLaneAdmissionError(
+            "discrete-control family classification requires a ControlProgram; "
+            f"semantic_family={contract.semantic_family!r}"
+        )
     if control_program.controller_role == "issuer" and _normalized_base_track(contract) == "static_leg":
         return "callable_bond"
     if control_program.inventory_fields:
@@ -324,7 +328,7 @@ def _automatic_benchmark_plan(semantic_family: str) -> DynamicBenchmarkPlan:
                 "compare accumulated coupon or gain state and target-triggered stopping",
             ),
         )
-    raise DynamicLaneAdmissionError(f"unsupported automatic-state cohort {semantic_family!r}")
+    raise DynamicLaneAdmissionError(f"unsupported automatic event/state cohort {semantic_family!r}")
 
 
 def _discrete_benchmark_plan(semantic_family: str) -> DynamicBenchmarkPlan:
