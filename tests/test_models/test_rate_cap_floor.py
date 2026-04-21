@@ -14,7 +14,7 @@ from trellis.core.date_utils import build_payment_timeline, year_fraction
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.curves.date_aware_flat_curve import DateAwareFlatYieldCurve
 from trellis.curves.yield_curve import YieldCurve
-from trellis.instruments.cap import CapFloorSpec
+from trellis.instruments.cap import CapFloorSpec, CapPayoff
 from trellis.models.rate_cap_floor import (
     CapFloorPeriod,
     price_rate_cap_floor_strip_analytical,
@@ -131,6 +131,25 @@ def test_rate_cap_floor_strip_helpers_accept_keyword_contract_fields():
 
     assert analytical_from_kwargs == pytest.approx(analytical_from_spec)
     assert monte_carlo_from_kwargs == pytest.approx(monte_carlo_from_spec)
+
+
+def test_rate_cap_floor_strip_matches_legacy_cap_payoff_on_flat_curve():
+    market_state = _market_state(rate=0.05, vol=0.20)
+    spec = _cap_spec(
+        strike=0.05,
+        start_date=date(2025, 2, 15),
+        end_date=date(2027, 2, 15),
+        rate_index="USD-SOFR-3M",
+    )
+
+    helper_price = price_rate_cap_floor_strip_analytical(
+        market_state,
+        spec,
+        instrument_class="cap",
+    )
+    legacy_price = CapPayoff(spec).evaluate(market_state)
+
+    assert helper_price == pytest.approx(legacy_price)
 
 
 @pytest.mark.parametrize(
@@ -277,8 +296,8 @@ def test_rate_cap_floor_strip_includes_known_first_fixing_intrinsic():
         label="cap_floor_known_fixing",
     )
     first_period = timeline[0]
-    payment_years = year_fraction(SETTLE, first_period.payment_date, DayCountConvention.ACT_365)
-    end_years = year_fraction(SETTLE, first_period.end_date, DayCountConvention.ACT_365)
+    payment_years = float(first_period.t_payment or 0.0)
+    end_years = float(first_period.t_end or payment_years)
     expected_first_caplet = (
         today_start.notional
         * year_fraction(first_period.start_date, first_period.end_date, today_start.day_count)
