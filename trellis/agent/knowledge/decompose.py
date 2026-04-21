@@ -89,6 +89,8 @@ from trellis.agent.static_leg_contract import (
     NotionalSchedule,
     NotionalStep,
     OvernightRateIndex,
+    PeriodRateOptionPeriod,
+    PeriodRateOptionStripLeg,
     SettlementRule,
     SignedLeg,
     StaticLegContractIR,
@@ -332,6 +334,8 @@ def decompose_to_static_leg_contract_ir(
     if any(
         marker in lower
         for marker in (
+            "caplet",
+            "floorlet",
             "callable ",
             "puttable ",
             "autocall",
@@ -352,6 +356,7 @@ def decompose_to_static_leg_contract_ir(
         return None
 
     builders = (
+        _build_static_period_rate_option_strip_contract_ir,
         _build_static_fixed_float_swap_contract_ir,
         _build_static_basis_swap_contract_ir,
         _build_static_fixed_coupon_bond_contract_ir,
@@ -668,6 +673,79 @@ def _build_fixed_coupon_bond_static_leg_contract(
         ),
         settlement=SettlementRule(payout_currency=currency),
         metadata={"family": "fixed_coupon_bond"},
+    )
+
+
+def _build_static_period_rate_option_strip_contract_ir(
+    description: str,
+    *,
+    instrument: str,
+    product_ir: ProductIR,
+) -> StaticLegContractIR | None:
+    lower = description.lower()
+    product_instrument = getattr(product_ir, "instrument", "")
+    admitted_instruments = {
+        "",
+        "cap",
+        "floor",
+        "rate_cap_floor_strip",
+        "period_rate_option_strip",
+    }
+    if instrument not in admitted_instruments and product_instrument not in admitted_instruments:
+        return None
+    if "caplet" in lower or "floorlet" in lower:
+        return None
+
+    option_side = _extract_rate_option_strip_side(
+        description,
+        instrument=instrument,
+        product_instrument=product_instrument,
+    )
+    if option_side is None:
+        return None
+
+    start = _extract_named_date(description, labels=("start date", "start", "effective"))
+    end = _extract_named_date(description, labels=("end date", "end", "maturity"))
+    notional = _extract_numeric_after(description, labels=("notional",))
+    strike = _extract_numeric_after(description, labels=("strike",))
+    frequency = (
+        _extract_frequency_after_label(description, label="payment frequency")
+        or _extract_frequency_after_label(description, label="frequency")
+        or _extract_frequency_token(description)
+        or "quarterly"
+    )
+    day_count = _extract_day_count(description, labels=("day count",)) or "ACT/360"
+    rate_index = (
+        _extract_rate_index_after_label(description, label="rate index")
+        or _extract_rate_cap_floor_index(description)
+    )
+    currency = _extract_currency_code(description) or _currency_from_rate_indices(rate_index or "") or "USD"
+    if None in {start, end, notional, strike, rate_index} or start >= end:
+        return None
+
+    option_leg = PeriodRateOptionStripLeg(
+        currency=currency,
+        notional_schedule=_constant_notional_schedule(start, end, notional),
+        option_periods=_period_rate_option_periods(start, end, frequency),
+        rate_index=_parse_rate_index(rate_index),
+        strike=strike,
+        option_side=option_side,
+        day_count=day_count,
+        payment_frequency=frequency,
+        label="period_rate_option_strip_leg",
+        metadata={
+            "family": "period_rate_option_strip",
+            "instrument_class": _instrument_class_from_period_rate_option_side(option_side),
+            "semantic_family": "period_rate_option_strip",
+        },
+    )
+    return StaticLegContractIR(
+        legs=(SignedLeg(direction="receive", leg=option_leg),),
+        settlement=SettlementRule(payout_currency=currency),
+        metadata={
+            "family": "period_rate_option_strip",
+            "instrument_class": _instrument_class_from_period_rate_option_side(option_side),
+        },
     )
 
 
@@ -1445,10 +1523,95 @@ def _parse_rate_index(token: str) -> OvernightRateIndex | TermRateIndex:
     normalized = str(token or "").strip().upper().replace(" ", "")
     if normalized in {"SOFR", "FF", "FEDFUNDS"}:
         return OvernightRateIndex("FEDFUNDS" if normalized == "FEDFUNDS" else normalized)
-    match = re.fullmatch(r"([A-Z][A-Z0-9_-]*)(\d+[DWMY])", normalized)
+    match = re.fullmatch(r"([A-Z][A-Z0-9_-]*?)[-_]?(\d+[DWMY])", normalized)
     if match is not None:
         return TermRateIndex(match.group(1), match.group(2))
     return OvernightRateIndex(normalized)
+
+
+def _period_rate_option_periods(
+    start: date,
+    end: date,
+    frequency: str,
+) -> tuple[PeriodRateOptionPeriod, ...]:
+    schedule = generate_schedule(start, end, _frequency_enum_from_text(frequency))
+    periods: list[PeriodRateOptionPeriod] = []
+    previous = start
+    for payment_date in schedule:
+        payment = payment_date if isinstance(payment_date, date) else date.fromisoformat(str(payment_date))
+        periods.append(
+            PeriodRateOptionPeriod(
+                accrual_start=previous,
+                accrual_end=payment,
+                fixing_date=previous,
+                payment_date=payment,
+            )
+        )
+        previous = payment
+    return tuple(periods)
+
+
+def _extract_rate_cap_floor_index(description: str) -> str | None:
+    labeled = _extract_rate_index_after_label(description, label="index")
+    if labeled is not None:
+        return labeled
+    match = re.search(
+        r"\bon\s+([A-Z][A-Z0-9_-]*(?:-\d+[DWMY])?)\b",
+        description,
+        flags=re.IGNORECASE,
+    )
+    if match is not None:
+        return match.group(1).strip()
+    tokens = re.findall(r"\b[A-Z]{3}-[A-Z0-9_-]+(?:-\d+[DWMY])?\b", description)
+    if tokens:
+        return tokens[0]
+    fallback = re.search(
+        r"\b(SOFR|FF|FEDFUNDS|EURIBOR(?:\d+[DWMY])?|LIBOR(?:\d+[DWMY])?)\b",
+        description,
+        flags=re.IGNORECASE,
+    )
+    return fallback.group(1) if fallback is not None else None
+
+
+def _extract_rate_option_strip_side(
+    description: str,
+    *,
+    instrument: str,
+    product_instrument: str,
+) -> str | None:
+    for candidate in (instrument, product_instrument):
+        normalized = _normalise(candidate)
+        if normalized == "cap":
+            return "call"
+        if normalized == "floor":
+            return "put"
+
+    for label in ("instrument class", "instrument"):
+        match = re.search(
+            rf"\b{re.escape(label)}\b[^A-Z0-9]*(cap|floor)\b",
+            description,
+            flags=re.IGNORECASE,
+        )
+        if match is not None:
+            return "call" if match.group(1).lower() == "cap" else "put"
+
+    lower = description.lower()
+    saw_cap = bool(re.search(r"\bcap\b", lower))
+    saw_floor = bool(re.search(r"\bfloor\b", lower))
+    if saw_cap and not saw_floor:
+        return "call"
+    if saw_floor and not saw_cap:
+        return "put"
+    return None
+
+
+def _instrument_class_from_period_rate_option_side(option_side: str) -> str:
+    normalized = str(option_side or "").strip().lower()
+    if normalized == "call":
+        return "cap"
+    if normalized == "put":
+        return "floor"
+    raise ValueError(f"Unsupported period rate option side {option_side!r}")
 
 
 def _extract_date_list_after_label(

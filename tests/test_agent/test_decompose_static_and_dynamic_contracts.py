@@ -16,7 +16,9 @@ from trellis.agent.static_leg_contract import (
     FloatingCouponFormula,
     KnownCashflowLeg,
     OvernightRateIndex,
+    PeriodRateOptionStripLeg,
     StaticLegContractIR,
+    TermRateIndex,
 )
 
 
@@ -66,6 +68,54 @@ class TestDecomposeStaticAndDynamicContracts:
         assert isinstance(bond, StaticLegContractIR)
         assert any(isinstance(leg.leg, KnownCashflowLeg) for leg in bond.legs)
         assert quote is None
+
+    def test_cap_and_floor_requests_decompose_to_period_rate_option_strip_legs(self):
+        cap_description = (
+            "Price a cap strip under the declared benchmark rates surface. "
+            "Instrument class: cap. Strike: 0.04. Notional: 1000000.0. "
+            "Start date: 2024-11-15. End date: 2029-11-15. "
+            "Payment frequency: quarterly. Day count: ACT/360. "
+            "Rate index: USD-SOFR-3M."
+        )
+        floor_description = (
+            "Build a pricer for: USD SOFR floor priced as a scheduled strip. "
+            "Instrument: floor. Strike: 4%. Notional: 1000000. "
+            "Start date: 2025-02-15. End date: 2030-02-15. Frequency: quarterly. "
+            "Day count: Act/360. Rate index: USD-SOFR-3M."
+        )
+
+        cap_contract = decompose_to_static_leg_contract_ir(
+            cap_description,
+            instrument_type="rate_cap_floor_strip",
+        )
+        floor_contract = decompose_to_static_leg_contract_ir(
+            floor_description,
+            instrument_type="rate_cap_floor_strip",
+        )
+
+        assert isinstance(cap_contract, StaticLegContractIR)
+        assert isinstance(floor_contract, StaticLegContractIR)
+        cap_leg = cap_contract.legs[0].leg
+        floor_leg = floor_contract.legs[0].leg
+        assert isinstance(cap_leg, PeriodRateOptionStripLeg)
+        assert isinstance(floor_leg, PeriodRateOptionStripLeg)
+        assert cap_leg.option_side == "call"
+        assert floor_leg.option_side == "put"
+        assert cap_leg.metadata["semantic_family"] == "period_rate_option_strip"
+        assert floor_leg.metadata["instrument_class"] == "floor"
+        assert isinstance(cap_leg.rate_index, TermRateIndex)
+        assert cap_leg.rate_index.name == "USD-SOFR"
+        assert cap_leg.rate_index.tenor == "3M"
+
+    def test_caplet_request_fails_closed_for_static_leg_strip_decomposition(self):
+        description = "Caplet on SOFR strike 4% expiring 2025-11-15"
+
+        observed = decompose_to_static_leg_contract_ir(
+            description,
+            instrument_type="cap",
+        )
+
+        assert observed is None
 
     def test_callable_bond_decomposes_to_dynamic_wrapper_over_static_leg_base(self):
         description = (

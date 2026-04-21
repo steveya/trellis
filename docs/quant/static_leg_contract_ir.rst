@@ -77,11 +77,22 @@ cohort:
 1. vanilla fixed-float IRS
 2. SOFR/FF-style float-float basis swaps
 3. fixed coupon bonds
+4. scheduled cap/floor strips with explicit start/end dates, strike,
+   notional, frequency, day-count, and rate-index terms
 
-The new ``PeriodRateOptionStripLeg`` is a representation-only addition in
-this slice. It does **not** yet have a route-free decomposition builder or
-an executable lowering declaration. Those remain follow-on work so the
-support contract stays honest.
+For the scheduled cap/floor family, decomposition now emits a
+``PeriodRateOptionStripLeg`` as the canonical static-leg representation.
+Wrapper labels such as ``cap`` and ``floor`` remain compatibility inputs
+only; the emitted semantic object is the scheduled strip itself.
+
+This remains a decomposition-only expansion, not a full execution lane:
+
+- route-free decomposition is now present for the bounded admitted
+  request surface
+- executable static-leg lowering for that strip family is still a
+  follow-on
+- caplets/floorlets and other unsupported strip variants still fail
+  closed rather than pretending to be admitted static-leg contracts
 
 Representative descriptions:
 
@@ -113,7 +124,7 @@ The current declarations are:
 
 No executable declaration exists yet for ``PeriodRateOptionStripLeg``.
 That absence is deliberate: representation closure lands before
-decomposition and lowering closure for scheduled rate-option strips.
+lowering closure for scheduled rate-option strips.
 
 Two of those declarations can already materialize checked repository engines:
 
