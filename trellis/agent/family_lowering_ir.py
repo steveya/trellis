@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import re
 from typing import TYPE_CHECKING
 
+from trellis.agent.semantic_contracts import _normalize_semantic_family_alias
 from trellis.agent.semantic_tokens import (
     EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY,
 )
@@ -13,7 +14,6 @@ from trellis.core.types import TimelineRole
 
 if TYPE_CHECKING:
     from trellis.agent.backend_bindings import ResolvedBackendBindingSpec
-
 
 def _tuple_unique(values) -> tuple[str, ...]:
     """Return a deduplicated tuple of non-empty string values."""
@@ -23,6 +23,12 @@ def _tuple_unique(values) -> tuple[str, ...]:
         if text and text not in result:
             result.append(text)
     return tuple(result)
+
+
+def _canonical_semantic_family(value: str | None) -> str:
+    """Normalize one family alias onto its canonical semantic identifier."""
+    normalized = str(value or "").strip().lower()
+    return _normalize_semantic_family_alias(normalized)
 
 
 @dataclass(frozen=True)
@@ -700,11 +706,11 @@ _FAMILY_IR_MATCH_PROFILES = {
     ),
     "period_rate_option_strip": FamilyIRMatchProfile(
         semantic_id="period_rate_option_strip",
-        allowed_semantic_ids=("period_rate_option_strip", "rate_cap_floor_strip"),
+        allowed_semantic_ids=("period_rate_option_strip",),
         allowed_instruments=("cap", "floor"),
-        allowed_payoff_families=("period_rate_option_strip", "rate_cap_floor_strip"),
+        allowed_payoff_families=("period_rate_option_strip",),
         allowed_product_instruments=("cap", "floor"),
-        allowed_product_payoff_families=("period_rate_option_strip", "rate_cap_floor_strip"),
+        allowed_product_payoff_families=("period_rate_option_strip",),
     ),
     "ranked_observation_basket": FamilyIRMatchProfile(
         semantic_id="ranked_observation_basket",
@@ -791,7 +797,6 @@ _TRANSFORM_MARKET_MAPPINGS = {
 _MC_MARKET_MAPPINGS = {
     ("hull_white_1f", "swaption"): "discount_curve_forward_curve_black_vol_to_short_rate_mc",
     ("hull_white_1f", "period_rate_option_strip"): "discount_curve_forward_curve_black_vol_to_rate_option_strip_mc",
-    ("hull_white_1f", "rate_cap_floor_strip"): "discount_curve_forward_curve_black_vol_to_rate_option_strip_mc",
     ("local_vol_1d", ""): "equity_spot_discount_local_vol_to_mc",
     ("gbm_1d", ""): "equity_spot_discount_black_vol_to_mc",
 }
@@ -800,7 +805,6 @@ _MC_MARKET_MAPPINGS = {
 _MC_HELPER_BINDINGS = {
     ("gbm_1d", "vanilla_option", "european"): "price_vanilla_equity_option_monte_carlo",
     ("hull_white_1f", "period_rate_option_strip", ""): "price_rate_cap_floor_strip_monte_carlo",
-    ("hull_white_1f", "rate_cap_floor_strip", ""): "price_rate_cap_floor_strip_monte_carlo",
     ("hull_white_1f", "swaption", ""): "price_swaption_monte_carlo",
 }
 
@@ -808,7 +812,6 @@ _MC_HELPER_BINDINGS = {
 _MC_REDUCER_BINDINGS = {
     "swaption": ("discounted_swap_pv",),
     "period_rate_option_strip": ("period_option_cashflow_strip",),
-    "rate_cap_floor_strip": ("period_option_cashflow_strip",),
     "vanilla_option": ("terminal_payoff",),
 }
 
@@ -823,8 +826,7 @@ _MC_TERMINAL_ONLY_FAMILY_EXERCISE = frozenset(
 _MC_PAYOFF_REDUCER_OUTPUTS = {
     "swaption": ("swaption_exercise_payoff", "swaption_exercise_payoff"),
     "vanilla_option": ("terminal_payoff", "vanilla_option_payoff"),
-    "period_rate_option_strip": ("period_option_cashflow_strip", "rate_cap_floor_strip_payoff"),
-    "rate_cap_floor_strip": ("period_option_cashflow_strip", "rate_cap_floor_strip_payoff"),
+    "period_rate_option_strip": ("period_option_cashflow_strip", "period_rate_option_strip_payoff"),
 }
 
 
@@ -862,17 +864,20 @@ _PDE_HELPER_BINDINGS = {
 def _matches_family_ir_profile(contract, product_ir, profile: FamilyIRMatchProfile) -> bool:
     """Return whether one semantic contract fits a declarative lowering profile."""
     instrument = str(getattr(product_ir, "instrument", "") or "").strip().lower()
-    payoff_family = str(getattr(product_ir, "payoff_family", "") or "").strip().lower()
+    payoff_family = _canonical_semantic_family(getattr(product_ir, "payoff_family", ""))
     exercise_style = str(getattr(product_ir, "exercise_style", "") or "").strip().lower()
     product = getattr(contract, "product", None)
     product_instrument = str(getattr(product, "instrument_class", "") or "").strip().lower()
-    product_payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    product_payoff_family = _canonical_semantic_family(getattr(product, "payoff_family", ""))
     payoff_traits = {
         str(item).strip().lower()
         for item in getattr(product_ir, "payoff_traits", ()) or ()
     }
-    semantic_id = str(getattr(contract, "semantic_id", "") or "").strip()
-    allowed_semantic_ids = profile.allowed_semantic_ids or (profile.semantic_id,)
+    semantic_id = _canonical_semantic_family(getattr(contract, "semantic_id", ""))
+    allowed_semantic_ids = tuple(
+        _canonical_semantic_family(item)
+        for item in (profile.allowed_semantic_ids or (profile.semantic_id,))
+    )
     if semantic_id not in allowed_semantic_ids:
         return False
     if profile.allowed_instruments and instrument not in profile.allowed_instruments:
@@ -1319,7 +1324,7 @@ def _common_kwargs(
         route_id=route_id,
         route_family=route_family,
         product_instrument=str(getattr(product_ir, "instrument", "")),
-        payoff_family=str(getattr(product_ir, "payoff_family", "")),
+        payoff_family=_canonical_semantic_family(getattr(product_ir, "payoff_family", "")),
         required_input_ids=required_input_ids,
         market_data_requirements=frozenset(required_input_ids),
         timeline_roles=_timeline_roles_for_contract(contract),
@@ -1609,7 +1614,7 @@ def _transform_characteristic_spec_for_product(
 
 def _transform_terminal_payoff_kind_for_product(product) -> str:
     """Return the bounded terminal payoff kind for one transform family IR."""
-    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    payoff_family = _canonical_semantic_family(getattr(product, "payoff_family", ""))
     return _TRANSFORM_TERMINAL_PAYOFF_KIND_BY_FAMILY.get(
         payoff_family,
         "compiled_terminal_payoff",
@@ -1632,7 +1637,7 @@ def _transform_helper_symbol_for_product(
     characteristic_spec: TransformCharacteristicSpec,
 ) -> str:
     """Return the bounded helper symbol for transform routes when one exists."""
-    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    payoff_family = _canonical_semantic_family(getattr(product, "payoff_family", ""))
     return _lookup_by_composite_key(
         _TRANSFORM_HELPER_BINDINGS,
         payoff_family,
@@ -1645,7 +1650,7 @@ def _transform_market_mapping_for_product(
     characteristic_spec: TransformCharacteristicSpec,
 ) -> str:
     """Return a readable market-binding label for one transform family IR."""
-    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    payoff_family = _canonical_semantic_family(getattr(product, "payoff_family", ""))
     mapping = _lookup_by_composite_key(
         _TRANSFORM_MARKET_MAPPINGS,
         payoff_family,
@@ -1739,7 +1744,7 @@ def _build_event_aware_monte_carlo_ir(
 
 def _mc_uses_terminal_only_contract(product) -> bool:
     """Return whether the product should lower onto a terminal-only MC contract."""
-    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    payoff_family = _canonical_semantic_family(getattr(product, "payoff_family", ""))
     exercise_style = str(getattr(product, "exercise_style", "") or "").strip().lower()
     return (payoff_family, exercise_style) in _MC_TERMINAL_ONLY_FAMILY_EXERCISE
 
@@ -1824,7 +1829,7 @@ def _mc_process_spec_for_product(
 
 def _mc_market_mapping_for_product(product, process_spec: MCProcessSpec) -> str:
     """Return a readable market-binding label for the bounded MC family IR."""
-    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    payoff_family = _canonical_semantic_family(getattr(product, "payoff_family", ""))
     mapping = _lookup_by_composite_key(
         _MC_MARKET_MAPPINGS,
         process_spec.process_family,
@@ -1835,7 +1840,7 @@ def _mc_market_mapping_for_product(product, process_spec: MCProcessSpec) -> str:
 
 def _mc_helper_symbol_for_product(product, process_spec: MCProcessSpec) -> str:
     """Return a family-level helper symbol when one comprehensive kit exists."""
-    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    payoff_family = _canonical_semantic_family(getattr(product, "payoff_family", ""))
     exercise_style = str(getattr(product, "exercise_style", "") or "").strip().lower()
     return _lookup_by_composite_key(
         _MC_HELPER_BINDINGS,
@@ -2027,7 +2032,7 @@ def _mc_path_requirement_spec_for_product(
 
 def _mc_reducer_kinds_for_product(product) -> tuple[str, ...]:
     """Return bounded reduced-state helper names for one semantic product."""
-    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    payoff_family = _canonical_semantic_family(getattr(product, "payoff_family", ""))
     return _MC_REDUCER_BINDINGS.get(payoff_family, ())
 
 
@@ -2037,11 +2042,11 @@ def _mc_payoff_reducer_spec_for_product(
     event_timeline: tuple[MCEventTimeSpec, ...],
 ) -> MCPayoffReducerSpec:
     """Infer the payoff-reducer contract for one bounded MC family instance."""
-    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    payoff_family = _canonical_semantic_family(getattr(product, "payoff_family", ""))
     reducer_profile = _MC_PAYOFF_REDUCER_OUTPUTS.get(payoff_family)
     if reducer_profile is not None:
         reducer_kind, output_semantics = reducer_profile
-        if payoff_family in {"swaption", "rate_cap_floor_strip", "period_rate_option_strip"}:
+        if payoff_family in {"swaption", "period_rate_option_strip"}:
             dependencies = tuple(
                 event.event_name
                 for bucket in event_timeline
@@ -2064,7 +2069,7 @@ def _mc_payoff_reducer_spec_for_product(
 
 def _pde_boundary_spec_for_product(product) -> PDEBoundarySpec:
     """Infer the bounded terminal/boundary contract for one PDE family IR."""
-    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    payoff_family = _canonical_semantic_family(getattr(product, "payoff_family", ""))
     return _PDE_BOUNDARY_BINDINGS.get(
         payoff_family,
         PDEBoundarySpec(
@@ -2077,7 +2082,7 @@ def _pde_boundary_spec_for_product(product) -> PDEBoundarySpec:
 
 def _pde_market_mapping_for_product(product, operator_spec: PDEOperatorSpec) -> str:
     """Return a readable market-binding label for the bounded PDE family IR."""
-    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    payoff_family = _canonical_semantic_family(getattr(product, "payoff_family", ""))
     mapping = _lookup_by_composite_key(
         _PDE_MARKET_MAPPINGS,
         operator_spec.operator_family,
@@ -2092,7 +2097,7 @@ def _pde_helper_symbol_for_product(
     control_style: str,
 ) -> str:
     """Return a bounded helper symbol for migrated event-aware PDE proof slices."""
-    payoff_family = str(getattr(product, "payoff_family", "") or "").strip().lower()
+    payoff_family = _canonical_semantic_family(getattr(product, "payoff_family", ""))
     return _lookup_by_composite_key(
         _PDE_HELPER_BINDINGS,
         payoff_family,

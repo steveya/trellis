@@ -135,7 +135,7 @@ def canonical_benchmark_instrument_type(task: Mapping[str, Any]) -> str | None:
         cap_floor = str(contract.get("cap_floor") or "").strip().lower()
         if cap_floor in {"cap", "floor"}:
             return cap_floor
-        return "rate_cap_floor_strip"
+        return "period_rate_option_strip"
     return _BENCHMARK_PRODUCT_INSTRUMENT_TYPES.get(product)
 
 
