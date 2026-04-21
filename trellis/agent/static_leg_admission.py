@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib import import_module
 from typing import Callable
@@ -16,6 +17,7 @@ from trellis.agent.static_leg_contract import (
     FloatingCouponFormula,
     KnownCashflowLeg,
     OvernightRateIndex,
+    PeriodRateOptionStripLeg,
     SignedLeg,
     StaticLegContractIR,
     TermRateIndex,
@@ -40,6 +42,7 @@ class StaticLegLoweringDeclaration:
     required_capabilities: tuple[str, ...] = ()
     cashflow_engine_refs: tuple[str, ...] = ()
     helper_refs: tuple[str, ...] = ()
+    supported_methods: tuple[str, ...] = ()
     precedence: int = 0
 
 
@@ -52,6 +55,7 @@ class StaticLegLoweringSelection:
     required_capabilities: tuple[str, ...]
     cashflow_engine_refs: tuple[str, ...]
     helper_refs: tuple[str, ...]
+    method: str | None = None
 
 
 def _is_fixed_float_swap(contract: StaticLegContractIR) -> bool:
@@ -93,6 +97,17 @@ def _is_fixed_coupon_bond(contract: StaticLegContractIR) -> bool:
     return has_fixed_coupon_leg and has_redemption_leg
 
 
+def _is_period_rate_option_strip(contract: StaticLegContractIR) -> bool:
+    if len(contract.legs) != 1 or contract.legs[0].direction != "receive":
+        return False
+    leg = contract.legs[0].leg
+    return (
+        isinstance(leg, PeriodRateOptionStripLeg)
+        and len(leg.notional_schedule.steps) == 1
+        and isinstance(leg.rate_index, (OvernightRateIndex, TermRateIndex))
+    )
+
+
 def _unimplemented_static_leg_lowering(**kwargs):
     raise NotImplementedError(
         "Static-leg lowering is selection-only in the first closure slice."
@@ -105,6 +120,11 @@ def _resolve_ref(ref: str) -> object:
         raise ValueError(f"Invalid dotted ref: {ref!r}")
     module = import_module(module_name)
     return getattr(module, attr_name)
+
+
+def _normalize_method_name(method: str | None) -> str | None:
+    normalized = str(method or "").strip().lower().replace("-", "_").replace(" ", "_")
+    return normalized or None
 
 
 def _frequency_enum(token: str) -> Frequency:
@@ -139,7 +159,7 @@ def _day_count_enum(token: str) -> DayCountConvention:
         ) from exc
 
 
-def _constant_notional_amount(leg: CouponLeg) -> float:
+def _constant_notional_amount(leg: CouponLeg | PeriodRateOptionStripLeg) -> float:
     if len(leg.notional_schedule.steps) != 1:
         raise NotImplementedError(
             "Static-leg materialization only supports constant-notional legs in the first slice."
@@ -157,7 +177,22 @@ def _rate_index_name(index: object) -> str | None:
     return None
 
 
-def _fixed_float_swap_adapter(contract: StaticLegContractIR) -> dict[str, object]:
+def _rate_index_identifier(index: object) -> str | None:
+    if isinstance(index, OvernightRateIndex):
+        return index.name
+    if isinstance(index, TermRateIndex):
+        return f"{index.name}-{index.tenor}"
+    if isinstance(index, CmsRateIndex):
+        return f"{index.curve_id}-{index.tenor}"
+    return None
+
+
+def _fixed_float_swap_adapter(
+    contract: StaticLegContractIR,
+    *,
+    normalized_terms: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    del normalized_terms
     fixed_leg = next(
         signed_leg
         for signed_leg in contract.legs
@@ -198,7 +233,12 @@ def _fixed_float_swap_adapter(contract: StaticLegContractIR) -> dict[str, object
     }
 
 
-def _fixed_coupon_bond_adapter(contract: StaticLegContractIR) -> dict[str, object]:
+def _fixed_coupon_bond_adapter(
+    contract: StaticLegContractIR,
+    *,
+    normalized_terms: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    del normalized_terms
     coupon_leg = next(
         signed_leg.leg
         for signed_leg in contract.legs
@@ -227,7 +267,80 @@ def _fixed_coupon_bond_adapter(contract: StaticLegContractIR) -> dict[str, objec
     }
 
 
-def _unimplemented_static_leg_materialization(contract: StaticLegContractIR) -> dict[str, object]:
+def _period_rate_option_strip_call_kwargs(
+    contract: StaticLegContractIR,
+    *,
+    normalized_terms: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    strip_leg = contract.legs[0].leg
+    if not isinstance(strip_leg, PeriodRateOptionStripLeg):
+        raise TypeError("Expected PeriodRateOptionStripLeg for strip-lowering materialization")
+
+    call_kwargs: dict[str, object] = {
+        "instrument_class": "cap" if strip_leg.option_side == "call" else "floor",
+        "notional": _constant_notional_amount(strip_leg),
+        "strike": strip_leg.strike,
+        "start_date": strip_leg.option_periods[0].accrual_start,
+        "end_date": strip_leg.option_periods[-1].accrual_end,
+        "frequency": _frequency_enum(strip_leg.payment_frequency),
+        "day_count": _day_count_enum(strip_leg.day_count),
+        "rate_index": _rate_index_identifier(strip_leg.rate_index),
+    }
+
+    terms = dict(normalized_terms or {})
+    for key in ("calendar_name", "business_day_adjustment"):
+        if terms.get(key) is not None:
+            call_kwargs[key] = terms[key]
+    return call_kwargs
+
+
+def _period_rate_option_strip_analytical_adapter(
+    contract: StaticLegContractIR,
+    *,
+    normalized_terms: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    call_kwargs = _period_rate_option_strip_call_kwargs(
+        contract,
+        normalized_terms=normalized_terms,
+    )
+    terms = dict(normalized_terms or {})
+    for key in ("model", "shift", "sabr"):
+        if terms.get(key) is not None:
+            call_kwargs[key] = terms[key]
+    return {"call_kwargs": call_kwargs}
+
+
+def _period_rate_option_strip_monte_carlo_adapter(
+    contract: StaticLegContractIR,
+    *,
+    normalized_terms: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    call_kwargs = _period_rate_option_strip_call_kwargs(
+        contract,
+        normalized_terms=normalized_terms,
+    )
+    terms = dict(normalized_terms or {})
+    for key in (
+        "n_paths",
+        "seed",
+        "n_steps",
+        "mean_reversion",
+        "sigma",
+        "discount_curve",
+        "forward_curve",
+        "vol",
+    ):
+        if terms.get(key) is not None:
+            call_kwargs[key] = terms[key]
+    return {"call_kwargs": call_kwargs}
+
+
+def _unimplemented_static_leg_materialization(
+    contract: StaticLegContractIR,
+    *,
+    normalized_terms: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    del contract, normalized_terms
     raise NotImplementedError(
         "No checked executable lowering is landed yet for this static-leg family."
     )
@@ -243,6 +356,28 @@ _DECLARATIONS = (
         required_capabilities=("discount_curve", "forward_curve"),
         helper_refs=("trellis.instruments.swap.SwapPayoff", "trellis.instruments.swap.SwapSpec"),
         precedence=30,
+    ),
+    StaticLegLoweringDeclaration(
+        declaration_id="static_leg_period_rate_option_strip_analytical",
+        matcher=_is_period_rate_option_strip,
+        callable_ref="trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical",
+        adapter_ref="trellis.agent.static_leg_admission._period_rate_option_strip_analytical_adapter",
+        validation_bundle_id="static_leg_period_rate_option_strip_contract",
+        required_capabilities=("discount_curve", "forward_curve", "black_vol_surface"),
+        helper_refs=("trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical",),
+        supported_methods=("analytical",),
+        precedence=25,
+    ),
+    StaticLegLoweringDeclaration(
+        declaration_id="static_leg_period_rate_option_strip_monte_carlo",
+        matcher=_is_period_rate_option_strip,
+        callable_ref="trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo",
+        adapter_ref="trellis.agent.static_leg_admission._period_rate_option_strip_monte_carlo_adapter",
+        validation_bundle_id="static_leg_period_rate_option_strip_contract",
+        required_capabilities=("discount_curve", "forward_curve", "black_vol_surface"),
+        helper_refs=("trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo",),
+        supported_methods=("monte_carlo",),
+        precedence=24,
     ),
     StaticLegLoweringDeclaration(
         declaration_id="static_leg_basis_swap",
@@ -273,13 +408,21 @@ def default_static_leg_lowering_declarations() -> tuple[StaticLegLoweringDeclara
 
 def select_static_leg_lowering(
     contract_ir: StaticLegContractIR,
+    *,
+    requested_method: str | None = None,
 ) -> StaticLegLoweringSelection:
     """Select one bounded static-leg lowering declaration."""
 
+    normalized_method = _normalize_method_name(requested_method)
     matches = [
         declaration
         for declaration in default_static_leg_lowering_declarations()
         if declaration.matcher(contract_ir)
+        and (
+            normalized_method is None
+            or not declaration.supported_methods
+            or normalized_method in declaration.supported_methods
+        )
     ]
     if not matches:
         raise StaticLegLoweringNoMatchError(
@@ -300,6 +443,7 @@ def select_static_leg_lowering(
         required_capabilities=chosen.required_capabilities,
         cashflow_engine_refs=chosen.cashflow_engine_refs,
         helper_refs=chosen.helper_refs,
+        method=normalized_method or (chosen.supported_methods[0] if chosen.supported_methods else None),
     )
 
 
@@ -307,12 +451,17 @@ def materialize_static_leg_lowering(
     contract_ir: StaticLegContractIR,
     *,
     selection: StaticLegLoweringSelection | None = None,
+    requested_method: str | None = None,
+    normalized_terms: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Materialize the bounded lowering payload for a selected static-leg family."""
 
-    chosen = selection or select_static_leg_lowering(contract_ir)
+    chosen = selection or select_static_leg_lowering(
+        contract_ir,
+        requested_method=requested_method,
+    )
     adapter = _resolve_ref(chosen.adapter_ref)
-    payload = adapter(contract_ir)
+    payload = adapter(contract_ir, normalized_terms=normalized_terms)
     if not isinstance(payload, dict):
         raise TypeError("Static-leg materialization adapter must return a dict payload")
     return {

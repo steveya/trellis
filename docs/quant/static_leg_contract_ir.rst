@@ -85,12 +85,15 @@ For the scheduled cap/floor family, decomposition now emits a
 Wrapper labels such as ``cap`` and ``floor`` remain compatibility inputs
 only; the emitted semantic object is the scheduled strip itself.
 
-This remains a decomposition-only expansion, not a full execution lane:
+This remains a bounded expansion, not yet a full authoritative
+execution lane:
 
 - route-free decomposition is now present for the bounded admitted
   request surface
-- executable static-leg lowering for that strip family is still a
-  follow-on
+- executable static-leg lowering for that strip family now exists on
+  the checked analytical and Monte Carlo cap/floor helpers
+- fresh-build authority and parity repair for that family are still
+  follow-on work
 - caplets/floorlets and other unsupported strip variants still fail
   closed rather than pretending to be admitted static-leg contracts
 
@@ -119,17 +122,28 @@ surface for this track.
 The current declarations are:
 
 - ``static_leg_fixed_float_swap``
+- ``static_leg_period_rate_option_strip_analytical``
+- ``static_leg_period_rate_option_strip_monte_carlo``
 - ``static_leg_basis_swap``
 - ``static_leg_fixed_coupon_bond``
 
-No executable declaration exists yet for ``PeriodRateOptionStripLeg``.
-That absence is deliberate: representation closure lands before
-lowering closure for scheduled rate-option strips.
-
-Two of those declarations can already materialize checked repository engines:
+Four of those declarations can already materialize checked repository engines:
 
 - fixed-float IRS -> ``trellis.instruments.swap.SwapPayoff`` via ``SwapSpec``
+- scheduled rate-option strips -> ``trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical``
+- scheduled rate-option strips -> ``trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo``
 - fixed coupon bond -> ``trellis.instruments.bond.Bond`` kwargs
+
+For the scheduled strip family, the lowering boundary is:
+
+- structural core terms come from ``PeriodRateOptionStripLeg`` itself
+- option side maps structurally to ``cap`` or ``floor``
+- non-structural pricing knobs such as ``model`` / ``shift`` / ``sabr``
+  arrive through the generic normalized-term surface rather than a
+  wrapper route id
+- the current executable lane still assumes a single receive-side,
+  constant-notional strip and still leaves parity/fresh-build cutover to
+  follow-on work
 
 The basis-swap family is explicit but still non-executable in this slice:
 

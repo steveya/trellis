@@ -23,8 +23,11 @@ from trellis.agent.static_leg_contract import (
     PeriodRateOptionStripLeg,
     SignedLeg,
     StaticLegContractIR,
+    TermRateIndex,
 )
 from trellis.instruments.swap import SwapSpec
+from trellis.core.types import Frequency
+from trellis.conventions.day_count import DayCountConvention
 
 
 def _notional(start_day: str, end_day: str, amount: float) -> NotionalSchedule:
@@ -192,7 +195,7 @@ def _period_rate_option_strip() -> StaticLegContractIR:
                             payment_date=date(2025, 8, 15),
                         ),
                     ),
-                    rate_index=OvernightRateIndex("SOFR"),
+                    rate_index=TermRateIndex("USD-SOFR", "3M"),
                     strike=0.04,
                     option_side="call",
                     day_count="ACT/360",
@@ -255,6 +258,127 @@ class TestStaticLegAdmission:
         with pytest.raises(StaticLegLoweringNoMatchError):
             select_static_leg_lowering(contract)
 
-    def test_period_rate_option_strip_is_representable_but_not_yet_executable(self):
+    def test_period_rate_option_strip_defaults_to_checked_analytical_lowering(self):
+        contract = _period_rate_option_strip()
+
+        selection = select_static_leg_lowering(contract)
+        materialized = materialize_static_leg_lowering(contract, selection=selection)
+
+        assert selection.declaration_id == "static_leg_period_rate_option_strip_analytical"
+        assert (
+            materialized["callable_ref"]
+            == "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical"
+        )
+        assert materialized["call_kwargs"] == {
+            "instrument_class": "cap",
+            "notional": pytest.approx(1_000_000.0),
+            "strike": pytest.approx(0.04),
+            "start_date": date(2025, 2, 15),
+            "end_date": date(2025, 8, 15),
+            "frequency": Frequency.QUARTERLY,
+            "day_count": DayCountConvention.ACT_360,
+            "rate_index": "USD-SOFR-3M",
+        }
+
+    def test_period_rate_option_strip_materializes_model_terms_for_analytical_helper(self):
+        contract = _period_rate_option_strip()
+
+        selection = select_static_leg_lowering(contract, requested_method="analytical")
+        materialized = materialize_static_leg_lowering(
+            contract,
+            selection=selection,
+            normalized_terms={
+                "calendar_name": "weekend_only",
+                "business_day_adjustment": "following",
+                "model": "shifted_black",
+                "shift": 0.01,
+                "sabr": {
+                    "alpha": 0.025,
+                    "beta": 0.5,
+                    "rho": -0.2,
+                    "nu": 0.35,
+                },
+            },
+        )
+
+        assert selection.declaration_id == "static_leg_period_rate_option_strip_analytical"
+        assert materialized["call_kwargs"]["calendar_name"] == "weekend_only"
+        assert materialized["call_kwargs"]["business_day_adjustment"] == "following"
+        assert materialized["call_kwargs"]["model"] == "shifted_black"
+        assert materialized["call_kwargs"]["shift"] == pytest.approx(0.01)
+        assert materialized["call_kwargs"]["sabr"] == {
+            "alpha": 0.025,
+            "beta": 0.5,
+            "rho": -0.2,
+            "nu": 0.35,
+        }
+
+    def test_period_rate_option_strip_can_select_checked_monte_carlo_lowering(self):
+        contract = _period_rate_option_strip()
+
+        selection = select_static_leg_lowering(contract, requested_method="monte_carlo")
+        materialized = materialize_static_leg_lowering(
+            contract,
+            selection=selection,
+            normalized_terms={"n_paths": 2048, "seed": 17},
+        )
+
+        assert selection.declaration_id == "static_leg_period_rate_option_strip_monte_carlo"
+        assert (
+            materialized["callable_ref"]
+            == "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo"
+        )
+        assert materialized["call_kwargs"]["instrument_class"] == "cap"
+        assert materialized["call_kwargs"]["n_paths"] == 2048
+        assert materialized["call_kwargs"]["seed"] == 17
+        assert "model" not in materialized["call_kwargs"]
+        assert "shift" not in materialized["call_kwargs"]
+        assert "sabr" not in materialized["call_kwargs"]
+
+    def test_period_rate_option_strip_with_step_notional_fails_closed(self):
+        contract = StaticLegContractIR(
+            legs=(
+                SignedLeg(
+                    direction="receive",
+                    leg=PeriodRateOptionStripLeg(
+                        currency="USD",
+                        notional_schedule=NotionalSchedule(
+                            (
+                                NotionalStep(
+                                    start_date=date(2025, 2, 15),
+                                    end_date=date(2025, 5, 15),
+                                    amount=1_000_000.0,
+                                ),
+                                NotionalStep(
+                                    start_date=date(2025, 5, 15),
+                                    end_date=date(2025, 8, 15),
+                                    amount=900_000.0,
+                                ),
+                            )
+                        ),
+                        option_periods=(
+                            PeriodRateOptionPeriod(
+                                accrual_start=date(2025, 2, 15),
+                                accrual_end=date(2025, 5, 15),
+                                fixing_date=date(2025, 2, 15),
+                                payment_date=date(2025, 5, 15),
+                            ),
+                            PeriodRateOptionPeriod(
+                                accrual_start=date(2025, 5, 15),
+                                accrual_end=date(2025, 8, 15),
+                                fixing_date=date(2025, 5, 15),
+                                payment_date=date(2025, 8, 15),
+                            ),
+                        ),
+                        rate_index=TermRateIndex("USD-SOFR", "3M"),
+                        strike=0.04,
+                        option_side="call",
+                        day_count="ACT/360",
+                        payment_frequency="quarterly",
+                    ),
+                ),
+            )
+        )
+
         with pytest.raises(StaticLegLoweringNoMatchError):
-            select_static_leg_lowering(_period_rate_option_strip())
+            select_static_leg_lowering(contract)
