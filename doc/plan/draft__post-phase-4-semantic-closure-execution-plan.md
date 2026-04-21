@@ -26,6 +26,7 @@ Status mirror last synced: `2026-04-20`
 - QUA-927 — Post-Phase-4 semantic closure umbrella
 - QUA-928 — `CLX.1` quoted-observable snapshot closure
 - QUA-929 — `CLX.2` static leg-based closure
+- QUA-940 — `CLX.2` follow-on: normalize scheduled rate option strips onto the static-leg semantic track
 - QUA-930 — `CLX.3` event/state/control semantic foundation
 - QUA-931 — `CLX.4` automatic event/state lowering lane
 - QUA-932 — `CLX.5` discrete control lowering lane
@@ -130,6 +131,12 @@ Current next pickup:
 
 - `QUA-934` — insurance-style overlays on top of financial control
 
+Active out-of-order follow-on:
+
+- `QUA-940` — normalize the legacy `rate_cap_floor_strip` wrapper family
+  onto the canonical static-leg `period_rate_option_strip` semantic
+  home without changing the main post-Phase-4 queue order
+
 ## Queue Details
 
 ### CLX.1 — Quoted-observable snapshot closure
@@ -173,6 +180,13 @@ Required artifacts:
 - static coupon-formula surface
 - boundary fixtures against quoted snapshot contracts
 - first lowering declarations on existing checked cashflow engines
+
+Filed follow-on:
+
+- `QUA-940` — normalize scheduled cap/floor strips onto the canonical
+  `period_rate_option_strip` semantic family and treat
+  `rate_cap_floor_strip` as a compatibility alias before repairing the
+  deferred `F003`-`F005` analytical binding gap
 
 ### CLX.3 — Event/state/control semantic foundation
 

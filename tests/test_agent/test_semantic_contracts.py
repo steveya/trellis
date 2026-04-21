@@ -58,7 +58,7 @@ def test_semantic_draft_rule_registry_exposes_stable_order():
         "callable_bond",
         "vanilla_option",
         "rate_style_swaption",
-        "rate_cap_floor_strip",
+        "period_rate_option_strip",
         "credit_basket_tranche",
         "nth_to_default",
         "credit_default_swap",
@@ -72,15 +72,17 @@ def test_semantic_family_registry_exposes_supported_method_surfaces():
     )
 
     assert "vanilla_option" in registered_semantic_family_keys()
-    assert "rate_cap_floor_strip" in registered_semantic_family_keys()
+    assert "period_rate_option_strip" in registered_semantic_family_keys()
     surface = resolve_semantic_method_surface("vanilla_option", "fft_pricing")
-    cap_surface = resolve_semantic_method_surface("rate_cap_floor_strip", "monte_carlo")
+    cap_surface = resolve_semantic_method_surface("period_rate_option_strip", "monte_carlo")
+    legacy_cap_surface = resolve_semantic_method_surface("rate_cap_floor_strip", "monte_carlo")
 
     assert surface.method == "fft_pricing"
     assert surface.target_modules == ("trellis.models.equity_option_transforms",)
     assert surface.primitive_families == ("transform_fft",)
     assert cap_surface.primitive_families == ("monte_carlo_paths",)
     assert "trellis.instruments.cap" in cap_surface.target_modules
+    assert legacy_cap_surface == cap_surface
 
 
 def test_semantic_contract_summary_emits_registered_family_surface_metadata():
@@ -680,9 +682,9 @@ def test_contract_requires_correlation_for_multi_asset_mc():
         (
             "Build a pricer for: Cap/floor: Black caplet stack vs MC rate simulation",
             "cap",
-            "rate_cap_floor_strip",
+            "period_rate_option_strip",
             "cap",
-            "rate_cap_floor_strip",
+            "period_rate_option_strip",
             "single_curve_rate_style",
             "coupon_period_cash_settlement",
             "analytical",
@@ -745,8 +747,9 @@ def test_rate_cap_floor_strip_draft_uses_structural_schedule_placeholder_when_da
     )
 
     assert contract is not None
-    assert contract.semantic_id == "rate_cap_floor_strip"
+    assert contract.semantic_id == "period_rate_option_strip"
     assert contract.product.instrument_class == "cap"
+    assert contract.product.payoff_family == "period_rate_option_strip"
     assert contract.product.observation_schedule
     assert contract.product.term_fields["schedule_authority"] == "structural_placeholder"
     assert contract.product.term_fields["option_type"] == "call"
@@ -764,9 +767,35 @@ def test_rate_cap_floor_strip_contract_uses_registered_surface_schema_hints():
         observation_schedule=("2026-11-15", "2027-11-15", "2028-11-15", "2029-11-15"),
         preferred_method="monte_carlo",
     )
-    surface = resolve_semantic_method_surface("rate_cap_floor_strip", "monte_carlo")
+    surface = resolve_semantic_method_surface("period_rate_option_strip", "monte_carlo")
+    legacy_surface = resolve_semantic_method_surface("rate_cap_floor_strip", "monte_carlo")
 
     assert contract.blueprint.spec_schema_hints == surface.spec_schema_hints
+    assert legacy_surface == surface
+
+
+def test_legacy_rate_cap_floor_strip_contract_still_validates_after_canonical_rename():
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+    from trellis.agent.semantic_contracts import make_rate_cap_floor_strip_contract
+
+    contract = make_rate_cap_floor_strip_contract(
+        description="Legacy serialized cap/floor strip payload",
+        instrument_class="cap",
+        observation_schedule=("2026-11-15",),
+        preferred_method="analytical",
+    )
+    legacy_contract = replace(
+        contract,
+        product=replace(
+            contract.product,
+            semantic_id="rate_cap_floor_strip",
+            payoff_family="rate_cap_floor_strip",
+        ),
+    )
+
+    report = validate_semantic_contract(legacy_contract)
+
+    assert report.ok, report.errors
 
 
 def test_migrated_contract_allows_missing_settlement_rule_mirror_with_warning():
@@ -953,7 +982,7 @@ def test_semantic_concept_resolution_maps_cap_wrapper_to_rate_option_strip():
         instrument_type="cap",
     )
 
-    assert resolution.concept_id == "rate_cap_floor_strip"
+    assert resolution.concept_id == "period_rate_option_strip"
     assert resolution.resolution_kind == "thin_compatibility_wrapper"
     assert resolution.matched_wrapper == "cap"
 

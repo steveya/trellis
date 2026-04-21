@@ -859,10 +859,10 @@ def test_compile_build_request_routes_rate_cap_family_through_semantic_contract(
     assert compiled.execution_plan.reason == "semantic_contract_request"
     assert compiled.execution_plan.route_method == "analytical"
     assert compiled.semantic_contract is not None
-    assert compiled.semantic_contract.semantic_id == "rate_cap_floor_strip"
+    assert compiled.semantic_contract.semantic_id == "period_rate_option_strip"
     assert compiled.product_ir is not None
     assert compiled.product_ir.instrument == "cap"
-    assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "rate_cap_floor_strip"
+    assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "period_rate_option_strip"
     assert "semantic_gap" not in compiled.request.metadata
 
 
@@ -887,7 +887,7 @@ def test_compile_build_request_bootstraps_title_only_rate_cap_task_into_exact_mc
 
     assert compiled.execution_plan.reason == "semantic_contract_request"
     assert compiled.semantic_contract is not None
-    assert compiled.semantic_contract.semantic_id == "rate_cap_floor_strip"
+    assert compiled.semantic_contract.semantic_id == "period_rate_option_strip"
     assert "Start date: 2025-02-15." in description
     assert "End date: 2030-02-15." in description
     assert compiled.generation_plan is not None
