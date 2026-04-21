@@ -16,14 +16,16 @@ route-free decomposition for scheduled period-rate-option strips,
 lane on the checked cap/floor helpers, and `QUA-944` closes the
 selection-only basis-swap gap with a checked floating-vs-floating
 lowering lane. Under `CLX.7`, `QUA-936` landed the overlay-boundary
-fixtures and `QUA-939` lands the minimal policy-state overlay surface.
+fixtures and `QUA-939` landed the minimal policy-state overlay surface.
 `QUA-937` plus `QUA-938` landed the first shared `CLX.8` readiness
 infrastructure. `QUA-940` then normalized the scheduled-strip family
 onto the clean canonical `period_rate_option_strip` semantic surface,
 and `QUA-945` closed the `F003`-`F005` parity slice on the deterministic
-exact-binding build path. The main queue pickup now returns to the
-`QUA-934` umbrella until a bounded proving family actually requires
-overlay execution.
+exact-binding build path. The remaining `CLX.7` / `CLX.8` umbrellas are
+now conditional follow-on tracks rather than active code pickups:
+`CLX.7` should only resume if a real requested family needs
+policy-state overlays, and `CLX.8` should only resume family by family
+once closure, parity, and provenance gates are actually satisfied.
 
 Status mirror last synced: `2026-04-21`
 
@@ -123,8 +125,8 @@ post-Phase-4 work risks stalling in familiar ways:
 | `CLX.4` | `QUA-931` | Done | automatic event/state lowering lane | `CLX.3` |
 | `CLX.5` | `QUA-932` | Done | discrete control lowering lane | `CLX.3` |
 | `CLX.6` | `QUA-933` | Done | continuous/singular control lowering lane | `CLX.3` |
-| `CLX.7` | `QUA-934` | Backlog | insurance-style overlays on top of financial control | `CLX.6` |
-| `CLX.8` | `QUA-935` | Backlog | route-retirement follow-ons for migrated post-Phase-4 families | family-specific parity and provenance from the relevant earlier queue |
+| `CLX.7` | `QUA-934` | Backlog (conditional) | insurance-style overlays on top of financial control | `CLX.6` plus a real proving family that needs policy-state overlays |
+| `CLX.8` | `QUA-935` | Backlog (family-triggered) | route-retirement follow-ons for migrated post-Phase-4 families | family-specific parity and provenance from the relevant earlier queue |
 
 ### Pickup Rule
 
@@ -132,13 +134,17 @@ post-Phase-4 work risks stalling in familiar ways:
 - do not skip from static closure directly to continuous-control work
 - do not promote a later family into lowering until its representation
   and decomposition closure artifacts are explicit
+- do not reopen `CLX.7` after `QUA-936` / `QUA-939` unless a requested
+  family actually needs explicit policy-state overlays beyond the
+  bounded financial-control core
 - do not start `CLX.8` for any family until its earlier queue slice has
   a parity ledger and route-masked invariance story comparable to the
   current Phase 3 / Phase 4 program
 
 Current next pickup:
 
-- `QUA-934` — insurance-style overlays on top of financial control
+- none inside `QUA-927` until a real overlay-bearing or cutover-ready
+  family triggers the next bounded slice
 
 Active out-of-order follow-on:
 
@@ -284,10 +290,17 @@ Primary plan:
 
 - see `draft__insurance-contract-overlay-foundation.md`
 
-Filed follow-ons:
+Landed foundation slices:
 
 - `QUA-936` — fixture-backed boundary between bounded financial control
   and deferred policy-state overlays
+- `QUA-939` — minimal explicit policy-state overlay surface above the
+  bounded financial-control core
+
+Conditional remaining work:
+
+- choose one bounded proving family only if insurance overlays are
+  actually in active roadmap scope
 
 ### CLX.8 — Later-family route retirement
 
@@ -317,6 +330,8 @@ Implementation note for the current tranche:
   `trellis.agent.route_retirement_readiness.require_masked_authority_invariant`
 - the seeded dynamic cohorts still remain blocked on parity /
   provenance even after the masking harness lands
+- no family-specific `CLX.8` cutover ticket should start until the
+  relevant closure queue explicitly says that family is cutover-ready
 
 ## Family-to-Queue Map
 
@@ -360,7 +375,10 @@ depends on it:
 
 1. Keep this document as the live execution mirror for `QUA-927` and
    its child queue.
-2. Work `QUA-934` next as the open `CLX.7` umbrella slice.
-3. Treat `QUA-935` as the open `CLX.8` umbrella, with `QUA-937` and
-   `QUA-938` already landed as shared readiness infrastructure for later
-   family cutovers.
+2. Treat `QUA-934` as a conditional overlay umbrella whose bounded
+   foundation is done and whose next step is `INS.3` only if a real
+   policy-state family is requested.
+3. Treat `QUA-935` as a standing governance umbrella: `QUA-937` and
+   `QUA-938` provide the shared readiness infrastructure, and future
+   work should arrive as family-scoped cutover tickets rather than by
+   reopening the umbrella spec itself.
