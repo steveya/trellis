@@ -183,6 +183,17 @@ Required artifacts:
 
 Filed follow-on:
 
+- `QUA-941` — add the first-class static-leg representation for
+  scheduled `period_rate_option_strip` contracts so the canonical family
+  has a real leg-semantic home
+- `QUA-942` — emit that strip representation route-independently from
+  supported cap/floor request surfaces
+- `QUA-943` — lower admitted scheduled strip legs onto checked
+  analytical and Monte Carlo cap/floor helpers
+- `QUA-944` — close the residual basis-swap executable-lowering gap in
+  the bounded static-leg cohort
+- `QUA-945` — repair deferred `F003`-`F005` parity through the canonical
+  static-leg scheduled-strip path
 - `QUA-940` — normalize scheduled cap/floor strips onto the canonical
   `period_rate_option_strip` semantic family and treat
   `rate_cap_floor_strip` as a compatibility alias before repairing the

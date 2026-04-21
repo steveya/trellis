@@ -30,8 +30,14 @@ frozen dataclasses:
 - ``StaticLegContractIR(legs, settlement, metadata)``
 - ``SignedLeg(direction, leg)``
 - ``CouponLeg(currency, notional_schedule, coupon_periods, coupon_formula, ...)``
+- ``PeriodRateOptionStripLeg(currency, notional_schedule, option_periods, rate_index, strike, option_side, ...)``
 - ``KnownCashflowLeg(currency, cashflows, ...)``
 - ``NotionalSchedule`` / ``NotionalStep``
+- schedule nodes:
+
+  - ``CouponPeriod``
+  - ``PeriodRateOptionPeriod``
+
 - coupon formulas:
 
   - ``FixedCouponFormula``
@@ -50,6 +56,17 @@ The current bounded scope is intentionally static:
 - no running target state
 - no holder or issuer control
 
+The cap/floor-strip representation boundary is now also explicit at the
+leg level:
+
+- ``period_rate_option_strip`` is the canonical semantic family
+- ``cap`` / ``floor`` remain wrapper-level compatibility shells
+- legacy ``rate_cap_floor_strip`` remains an alias, not the long-run leg
+  representation name
+
+In other words, a schedule-driven cap or floor is represented here as a
+strip of period rate options rather than as a helper-shaped wrapper name.
+
 Route-Free Decomposition
 ------------------------
 
@@ -60,6 +77,11 @@ cohort:
 1. vanilla fixed-float IRS
 2. SOFR/FF-style float-float basis swaps
 3. fixed coupon bonds
+
+The new ``PeriodRateOptionStripLeg`` is a representation-only addition in
+this slice. It does **not** yet have a route-free decomposition builder or
+an executable lowering declaration. Those remain follow-on work so the
+support contract stays honest.
 
 Representative descriptions:
 
@@ -88,6 +110,10 @@ The current declarations are:
 - ``static_leg_fixed_float_swap``
 - ``static_leg_basis_swap``
 - ``static_leg_fixed_coupon_bond``
+
+No executable declaration exists yet for ``PeriodRateOptionStripLeg``.
+That absence is deliberate: representation closure lands before
+decomposition and lowering closure for scheduled rate-option strips.
 
 Two of those declarations can already materialize checked repository engines:
 

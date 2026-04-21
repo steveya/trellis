@@ -198,6 +198,40 @@ class CouponPeriod:
 
 
 @dataclass(frozen=True)
+class PeriodRateOptionPeriod:
+    accrual_start: date
+    accrual_end: date
+    fixing_date: date
+    payment_date: date
+
+    def __post_init__(self) -> None:
+        if not all(
+            isinstance(item, date)
+            for item in (
+                self.accrual_start,
+                self.accrual_end,
+                self.fixing_date,
+                self.payment_date,
+            )
+        ):
+            raise StaticLegIRWellFormednessError(
+                "PeriodRateOptionPeriod requires date boundaries"
+            )
+        if self.accrual_start >= self.accrual_end:
+            raise StaticLegIRWellFormednessError(
+                "PeriodRateOptionPeriod requires accrual_start < accrual_end"
+            )
+        if self.payment_date < self.accrual_end:
+            raise StaticLegIRWellFormednessError(
+                "PeriodRateOptionPeriod payment_date must be on or after accrual_end"
+            )
+        if self.fixing_date > self.payment_date:
+            raise StaticLegIRWellFormednessError(
+                "PeriodRateOptionPeriod fixing_date must be on or before payment_date"
+            )
+
+
+@dataclass(frozen=True)
 class CouponLeg:
     currency: str
     notional_schedule: NotionalSchedule
@@ -245,6 +279,84 @@ class CouponLeg:
 
 
 @dataclass(frozen=True)
+class PeriodRateOptionStripLeg:
+    currency: str
+    notional_schedule: NotionalSchedule
+    option_periods: tuple[PeriodRateOptionPeriod, ...]
+    rate_index: RateIndex
+    strike: float
+    option_side: str
+    day_count: str
+    payment_frequency: str
+    label: str = ""
+    metadata: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "currency",
+            _require_text(self.currency, label="PeriodRateOptionStripLeg.currency").upper(),
+        )
+        if not isinstance(self.notional_schedule, NotionalSchedule):
+            raise StaticLegIRWellFormednessError(
+                "PeriodRateOptionStripLeg.notional_schedule must be a NotionalSchedule"
+            )
+        if not isinstance(self.option_periods, tuple):
+            object.__setattr__(self, "option_periods", tuple(self.option_periods))
+        if not self.option_periods:
+            raise StaticLegIRWellFormednessError(
+                "PeriodRateOptionStripLeg.option_periods must be non-empty"
+            )
+        previous_end: date | None = None
+        for period in self.option_periods:
+            if not isinstance(period, PeriodRateOptionPeriod):
+                raise StaticLegIRWellFormednessError(
+                    "PeriodRateOptionStripLeg.option_periods must contain PeriodRateOptionPeriod values"
+                )
+            if previous_end is not None and period.accrual_start < previous_end:
+                raise StaticLegIRWellFormednessError(
+                    "PeriodRateOptionStripLeg periods must be ordered and non-overlapping"
+                )
+            previous_end = period.accrual_end
+        if not isinstance(
+            self.rate_index,
+            (TermRateIndex, OvernightRateIndex, CmsRateIndex),
+        ):
+            raise StaticLegIRWellFormednessError(
+                "PeriodRateOptionStripLeg.rate_index must be a RateIndex"
+            )
+        object.__setattr__(
+            self,
+            "strike",
+            _as_float(self.strike, label="PeriodRateOptionStripLeg.strike"),
+        )
+        normalized_side = _require_text(
+            self.option_side,
+            label="PeriodRateOptionStripLeg.option_side",
+        ).lower()
+        if normalized_side not in {"call", "put"}:
+            raise StaticLegIRWellFormednessError(
+                "PeriodRateOptionStripLeg.option_side must be 'call' or 'put'"
+            )
+        object.__setattr__(self, "option_side", normalized_side)
+        object.__setattr__(
+            self,
+            "day_count",
+            _require_text(self.day_count, label="PeriodRateOptionStripLeg.day_count"),
+        )
+        object.__setattr__(
+            self,
+            "payment_frequency",
+            _require_text(
+                self.payment_frequency,
+                label="PeriodRateOptionStripLeg.payment_frequency",
+            ).lower(),
+        )
+        object.__setattr__(self, "label", str(self.label or "").strip())
+        object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+
+
+@dataclass(frozen=True)
 class KnownCashflow:
     payment_date: date
     amount: float
@@ -287,7 +399,7 @@ class KnownCashflowLeg:
         object.__setattr__(self, "label", str(self.label or "").strip())
 
 
-Leg = CouponLeg | KnownCashflowLeg
+Leg = CouponLeg | PeriodRateOptionStripLeg | KnownCashflowLeg
 
 
 @dataclass(frozen=True)
@@ -302,9 +414,9 @@ class SignedLeg:
                 "SignedLeg.direction must be 'receive' or 'pay'"
             )
         object.__setattr__(self, "direction", normalized)
-        if not isinstance(self.leg, (CouponLeg, KnownCashflowLeg)):
+        if not isinstance(self.leg, (CouponLeg, PeriodRateOptionStripLeg, KnownCashflowLeg)):
             raise StaticLegIRWellFormednessError(
-                "SignedLeg.leg must be a CouponLeg or KnownCashflowLeg"
+                "SignedLeg.leg must be a CouponLeg, PeriodRateOptionStripLeg, or KnownCashflowLeg"
             )
 
 
@@ -375,6 +487,8 @@ __all__ = [
     "NotionalSchedule",
     "NotionalStep",
     "OvernightRateIndex",
+    "PeriodRateOptionPeriod",
+    "PeriodRateOptionStripLeg",
     "QuotedCouponFormula",
     "RateIndex",
     "SettlementRule",
