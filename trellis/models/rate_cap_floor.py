@@ -74,14 +74,14 @@ def _discount_factor_for_period(market_state: MarketState, payment_date, payment
     return float(discount_curve.discount(payment_years))
 
 
-def _forward_rate_for_period(forward_curve, start_date, payment_date, fixing_years: float, payment_years: float, day_count) -> float:
+def _forward_rate_for_period(forward_curve, start_date, end_date, fixing_years: float, end_years: float, day_count) -> float:
     forward_rate_dates = getattr(forward_curve, "forward_rate_dates", None)
     if callable(forward_rate_dates):
         try:
-            return float(forward_rate_dates(start_date, payment_date, day_count=day_count))
+            return float(forward_rate_dates(start_date, end_date, day_count=day_count))
         except AttributeError:
             pass
-    return float(forward_curve.forward_rate(fixing_years, payment_years))
+    return float(forward_curve.forward_rate(fixing_years, end_years))
 
 
 def _uses_date_aware_curve_conventions(market_state: MarketState, forward_curve) -> bool:
@@ -94,17 +94,6 @@ def _uses_date_aware_curve_conventions(market_state: MarketState, forward_curve)
     return callable(getattr(underlying_curve, "discount_date", None)) or callable(
         getattr(underlying_curve, "forward_rate_dates", None)
     )
-
-
-def _option_expiry_years_for_observation_date(
-    spec: CapFloorSpec,
-    observation_date: date,
-    *,
-    fixing_years: float,
-    use_date_aware: bool,
-) -> float:
-    del spec, observation_date, use_date_aware
-    return max(fixing_years, 0.0)
 
 
 def _cap_floor_model(spec: CapFloorSpec) -> str:
@@ -244,12 +233,7 @@ def _resolve_cap_floor_terms(
             payment_years,
         )
         intrinsic_only = fixing_years <= 0.0
-        option_expiry_years = _option_expiry_years_for_observation_date(
-            spec,
-            fixing_anchor,
-            fixing_years=fixing_years,
-            use_date_aware=use_date_aware,
-        )
+        option_expiry_years = max(fixing_years, 0.0)
         volatility = 0.0 if intrinsic_only else float(
             market_state.vol_surface.black_vol(max(option_expiry_years, 1e-6), spec.strike)
         )
