@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import re
 from typing import TYPE_CHECKING
 
+from trellis.agent.semantic_contracts import _normalize_semantic_family_alias
 from trellis.agent.semantic_tokens import (
     EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY,
 )
@@ -13,12 +14,6 @@ from trellis.core.types import TimelineRole
 
 if TYPE_CHECKING:
     from trellis.agent.backend_bindings import ResolvedBackendBindingSpec
-
-
-_SEMANTIC_FAMILY_ALIASES = {
-    "rate_cap_floor_strip": "period_rate_option_strip",
-}
-
 
 def _tuple_unique(values) -> tuple[str, ...]:
     """Return a deduplicated tuple of non-empty string values."""
@@ -33,7 +28,7 @@ def _tuple_unique(values) -> tuple[str, ...]:
 def _canonical_semantic_family(value: str | None) -> str:
     """Normalize one family alias onto its canonical semantic identifier."""
     normalized = str(value or "").strip().lower()
-    return str(_SEMANTIC_FAMILY_ALIASES.get(normalized, normalized))
+    return _normalize_semantic_family_alias(normalized)
 
 
 @dataclass(frozen=True)
