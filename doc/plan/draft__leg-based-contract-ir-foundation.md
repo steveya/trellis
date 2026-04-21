@@ -328,6 +328,22 @@ That normalization matters for later closure work because the deferred
 scheduled-strip abstraction rather than hardening the transitional
 wrapper family.
 
+Filed execution slices for that follow-on:
+
+- `QUA-941` — representation: add a first-class
+  `PeriodRateOptionStripLeg` to the static-leg IR
+- `QUA-942` — decomposition: emit that leg representation from supported
+  cap/floor requests route-independently
+- `QUA-943` — lowering: compile the admitted strip leg onto checked
+  analytical and Monte Carlo cap/floor helper surfaces
+- `QUA-945` — parity closeout: repair `F003`-`F005` on the canonical
+  static-leg scheduled-strip path instead of the legacy wrapper surface
+
+Related residual static-leg follow-on:
+
+- `QUA-944` — make the bounded basis-swap static-leg admission
+  executable so `CLX.2` is not left selection-only for that family
+
 ## Examples
 
 ### Example 1 — Vanilla fixed-float IRS

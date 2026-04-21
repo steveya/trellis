@@ -19,6 +19,8 @@ from trellis.agent.static_leg_contract import (
     NotionalSchedule,
     NotionalStep,
     OvernightRateIndex,
+    PeriodRateOptionPeriod,
+    PeriodRateOptionStripLeg,
     SignedLeg,
     StaticLegContractIR,
 )
@@ -166,6 +168,41 @@ def _fixed_coupon_bond() -> StaticLegContractIR:
     )
 
 
+def _period_rate_option_strip() -> StaticLegContractIR:
+    start = "2025-02-15"
+    end = "2026-02-15"
+    return StaticLegContractIR(
+        legs=(
+            SignedLeg(
+                direction="receive",
+                leg=PeriodRateOptionStripLeg(
+                    currency="USD",
+                    notional_schedule=_notional(start, end, 1_000_000.0),
+                    option_periods=(
+                        PeriodRateOptionPeriod(
+                            accrual_start=date(2025, 2, 15),
+                            accrual_end=date(2025, 5, 15),
+                            fixing_date=date(2025, 2, 15),
+                            payment_date=date(2025, 5, 15),
+                        ),
+                        PeriodRateOptionPeriod(
+                            accrual_start=date(2025, 5, 15),
+                            accrual_end=date(2025, 8, 15),
+                            fixing_date=date(2025, 5, 15),
+                            payment_date=date(2025, 8, 15),
+                        ),
+                    ),
+                    rate_index=OvernightRateIndex("SOFR"),
+                    strike=0.04,
+                    option_side="call",
+                    day_count="ACT/360",
+                    payment_frequency="quarterly",
+                ),
+            ),
+        )
+    )
+
+
 class TestStaticLegAdmission:
     def test_fixed_float_swap_selection_materializes_checked_swap_payoff(self):
         contract = _fixed_float_swap()
@@ -217,3 +254,7 @@ class TestStaticLegAdmission:
 
         with pytest.raises(StaticLegLoweringNoMatchError):
             select_static_leg_lowering(contract)
+
+    def test_period_rate_option_strip_is_representable_but_not_yet_executable(self):
+        with pytest.raises(StaticLegLoweringNoMatchError):
+            select_static_leg_lowering(_period_rate_option_strip())
