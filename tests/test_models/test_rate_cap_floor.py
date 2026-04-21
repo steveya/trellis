@@ -9,15 +9,17 @@ from trellis.agent.benchmark_contracts import benchmark_spec_overrides
 from trellis.agent.financepy_reference import price_financepy_reference
 from trellis.agent.task_manifests import load_task_manifest
 from trellis.core.market_state import MarketState
-from trellis.core.date_utils import build_payment_timeline
+from trellis.core.date_utils import build_payment_timeline, year_fraction
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.curves.date_aware_flat_curve import DateAwareFlatYieldCurve
 from trellis.curves.yield_curve import YieldCurve
 from trellis.instruments.cap import CapFloorSpec
 from trellis.models.rate_cap_floor import (
+    CapFloorPeriod,
     price_rate_cap_floor_strip_analytical,
     price_rate_cap_floor_strip_monte_carlo,
 )
+from trellis.models.black import black76_call
 from trellis.models.vol_surface import FlatVol
 
 
@@ -117,6 +119,64 @@ def test_rate_cap_floor_strip_helpers_accept_keyword_contract_fields():
     assert monte_carlo_from_kwargs == pytest.approx(monte_carlo_from_spec)
 
 
+def test_rate_cap_floor_strip_helpers_preserve_explicit_period_schedule():
+    market_state = _market_state(rate=0.05, vol=0.20)
+    periods = (
+        CapFloorPeriod(
+            start_date=date(2025, 2, 15),
+            end_date=date(2025, 4, 15),
+            payment_date=date(2025, 4, 17),
+            fixing_date=date(2025, 2, 14),
+        ),
+        CapFloorPeriod(
+            start_date=date(2025, 4, 15),
+            end_date=date(2025, 8, 15),
+            payment_date=date(2025, 8, 18),
+            fixing_date=date(2025, 4, 14),
+        ),
+    )
+
+    price = price_rate_cap_floor_strip_analytical(
+        market_state=market_state,
+        instrument_class="cap",
+        periods=periods,
+        notional=1_000_000.0,
+        strike=0.04,
+        start_date=date(2025, 2, 15),
+        end_date=date(2025, 8, 15),
+        frequency=Frequency.QUARTERLY,
+        day_count=DayCountConvention.ACT_360,
+        rate_index=None,
+    )
+
+    expected = 0.0
+    for period in periods:
+        fixing_years = max(
+            year_fraction(SETTLE, period.fixing_date, DayCountConvention.ACT_365),
+            0.0,
+        )
+        end_years = max(
+            year_fraction(SETTLE, period.end_date, DayCountConvention.ACT_365),
+            fixing_years + 1e-6,
+        )
+        payment_years = max(
+            year_fraction(SETTLE, period.payment_date, DayCountConvention.ACT_365),
+            fixing_years,
+        )
+        accrual = year_fraction(period.start_date, period.end_date, DayCountConvention.ACT_360)
+        forward = float(market_state.forward_curve.forward_rate(fixing_years, end_years))
+        discount_factor = float(market_state.discount.discount(payment_years))
+        volatility = float(market_state.vol_surface.black_vol(max(fixing_years, 1e-6), 0.04))
+        expected += (
+            1_000_000.0
+            * accrual
+            * discount_factor
+            * float(black76_call(forward, 0.04, volatility, fixing_years))
+        )
+
+    assert price == pytest.approx(expected)
+
+
 def test_rate_cap_floor_strip_includes_known_first_fixing_intrinsic():
     market_state = _market_state(rate=0.05, vol=0.20)
     today_start = _cap_spec(start_date=SETTLE, end_date=date(2025, 11, 15))
@@ -134,13 +194,14 @@ def test_rate_cap_floor_strip_includes_known_first_fixing_intrinsic():
         label="cap_floor_known_fixing",
     )
     first_period = timeline[0]
-    payment_years = float(first_period.t_payment or 0.0)
+    payment_years = year_fraction(SETTLE, first_period.payment_date, DayCountConvention.ACT_365)
+    end_years = year_fraction(SETTLE, first_period.end_date, DayCountConvention.ACT_365)
     expected_first_caplet = (
         today_start.notional
-        * float(first_period.accrual_fraction or 0.0)
+        * year_fraction(first_period.start_date, first_period.end_date, today_start.day_count)
         * float(market_state.discount.discount(payment_years))
         * max(
-            float(market_state.forward_curve.forward_rate(0.0, payment_years))
+            float(market_state.forward_curve.forward_rate(0.0, end_years))
             - today_start.strike,
             0.0,
         )

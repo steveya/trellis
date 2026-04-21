@@ -27,6 +27,7 @@ from trellis.agent.static_leg_contract import (
 )
 from trellis.instruments.swap import SwapSpec
 from trellis.models.rate_basis_swap import RateBasisSwapSpec
+from trellis.models.rate_cap_floor import CapFloorPeriod
 from trellis.core.types import Frequency
 from trellis.conventions.day_count import DayCountConvention
 
@@ -278,6 +279,20 @@ class TestStaticLegAdmission:
         )
         assert materialized["call_kwargs"] == {
             "instrument_class": "cap",
+            "periods": (
+                CapFloorPeriod(
+                    start_date=date(2025, 2, 15),
+                    end_date=date(2025, 5, 15),
+                    payment_date=date(2025, 5, 15),
+                    fixing_date=date(2025, 2, 15),
+                ),
+                CapFloorPeriod(
+                    start_date=date(2025, 5, 15),
+                    end_date=date(2025, 8, 15),
+                    payment_date=date(2025, 8, 15),
+                    fixing_date=date(2025, 5, 15),
+                ),
+            ),
             "notional": pytest.approx(1_000_000.0),
             "strike": pytest.approx(0.04),
             "start_date": date(2025, 2, 15),
@@ -375,6 +390,35 @@ class TestStaticLegAdmission:
                                 accrual_end=date(2025, 8, 15),
                                 fixing_date=date(2025, 5, 15),
                                 payment_date=date(2025, 8, 15),
+                            ),
+                        ),
+                        rate_index=TermRateIndex("USD-SOFR", "3M"),
+                        strike=0.04,
+                        option_side="call",
+                        day_count="ACT/360",
+                        payment_frequency="quarterly",
+                    ),
+                ),
+            )
+        )
+
+        with pytest.raises(StaticLegLoweringNoMatchError):
+            select_static_leg_lowering(contract)
+
+    def test_single_period_caplet_style_strip_fails_closed(self):
+        contract = StaticLegContractIR(
+            legs=(
+                SignedLeg(
+                    direction="receive",
+                    leg=PeriodRateOptionStripLeg(
+                        currency="USD",
+                        notional_schedule=_notional("2025-02-15", "2025-05-15", 1_000_000.0),
+                        option_periods=(
+                            PeriodRateOptionPeriod(
+                                accrual_start=date(2025, 2, 15),
+                                accrual_end=date(2025, 5, 15),
+                                fixing_date=date(2025, 2, 15),
+                                payment_date=date(2025, 5, 15),
                             ),
                         ),
                         rate_index=TermRateIndex("USD-SOFR", "3M"),

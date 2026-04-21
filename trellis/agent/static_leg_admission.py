@@ -112,6 +112,7 @@ def _is_period_rate_option_strip(contract: StaticLegContractIR) -> bool:
     leg = contract.legs[0].leg
     return (
         isinstance(leg, PeriodRateOptionStripLeg)
+        and len(leg.option_periods) > 1
         and len(leg.notional_schedule.steps) == 1
         and isinstance(leg.rate_index, (OvernightRateIndex, TermRateIndex))
     )
@@ -336,8 +337,18 @@ def _period_rate_option_strip_call_kwargs(
     if not isinstance(strip_leg, PeriodRateOptionStripLeg):
         raise TypeError("Expected PeriodRateOptionStripLeg for strip-lowering materialization")
 
+    cap_floor_period_cls = _resolve_ref("trellis.models.rate_cap_floor.CapFloorPeriod")
     call_kwargs: dict[str, object] = {
         "instrument_class": "cap" if strip_leg.option_side == "call" else "floor",
+        "periods": tuple(
+            cap_floor_period_cls(
+                start_date=period.accrual_start,
+                end_date=period.accrual_end,
+                payment_date=period.payment_date,
+                fixing_date=period.fixing_date,
+            )
+            for period in strip_leg.option_periods
+        ),
         "notional": _constant_notional_amount(strip_leg),
         "strike": strip_leg.strike,
         "start_date": strip_leg.option_periods[0].accrual_start,
