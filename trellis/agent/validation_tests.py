@@ -13,6 +13,21 @@ import numpy as raw_np
 from trellis.agent.validation_report import ValidationFinding
 
 
+def _uses_explicit_vol_model_parameters(payoff) -> bool:
+    """Return whether flat-surface vega checks are not the relevant contract.
+
+    Mirrors the deterministic invariant-layer rule for routes whose payoff spec
+    carries an explicit parametric vol model. In the bounded current cohort,
+    SABR-parameterized cap/floor strips derive caplet vols from ``spec.sabr``
+    and therefore should not be judged by a flat ``vol_surface`` bump.
+    """
+    spec = getattr(payoff, "spec", None) or getattr(payoff, "_spec", None)
+    if spec is None:
+        return False
+    model = str(getattr(spec, "model", "") or "").strip().lower()
+    return model == "sabr" and bool(getattr(spec, "sabr", None))
+
+
 def check_calibration(
     payoff,
     market_state,
@@ -80,7 +95,10 @@ def check_sensitivity_signs(
 
     # Vol sensitivity (instruments with embedded options)
     try:
-        p_low_vol = payoff_factory().evaluate(market_state_factory(rate=0.05, vol=0.05))
+        sample_payoff = payoff_factory()
+        if _uses_explicit_vol_model_parameters(sample_payoff):
+            return findings
+        p_low_vol = sample_payoff.evaluate(market_state_factory(rate=0.05, vol=0.05))
         p_high_vol = payoff_factory().evaluate(market_state_factory(rate=0.05, vol=0.40))
         vol_change = abs(p_high_vol - p_low_vol)
         base_price = max(abs(p_low_vol), abs(p_high_vol), 1.0)

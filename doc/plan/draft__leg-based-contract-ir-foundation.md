@@ -312,8 +312,8 @@ therefore treats:
 
 - ``period_rate_option_strip`` as the canonical semantic family name
 - public ``cap`` and ``floor`` wrappers as thin compatibility surfaces
-- legacy ``rate_cap_floor_strip`` as a compatibility alias rather than
-  the long-run canonical representation
+- no admitted semantic ``rate_cap_floor_strip`` alias on the canonical
+  surface
 
 This is not just naming cleanup. It clarifies the decomposition
 boundary:
@@ -338,6 +338,9 @@ Filed execution slices for that follow-on:
   analytical and Monte Carlo cap/floor helper surfaces
 - `QUA-945` — parity closeout: repair `F003`-`F005` on the canonical
   static-leg scheduled-strip path instead of the legacy wrapper surface
+- `QUA-940` — normalization: promote the family onto
+  ``period_rate_option_strip`` and remove the transitional semantic
+  aliasing
 
 Landed residual static-leg follow-on:
 

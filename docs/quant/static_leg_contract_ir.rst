@@ -92,8 +92,8 @@ execution lane:
   request surface
 - executable static-leg lowering for that strip family now exists on
   the checked analytical and Monte Carlo cap/floor helpers
-- fresh-build authority and parity repair for that family are still
-  follow-on work
+- fresh-build authority and the `F003`-`F005` parity repair now run on
+  the deterministic exact-binding build path for that family
 - caplets/floorlets and other unsupported strip variants still fail
   closed rather than pretending to be admitted static-leg contracts
 
@@ -143,8 +143,9 @@ For the scheduled strip family, the lowering boundary is:
   arrive through the generic normalized-term surface rather than a
   wrapper route id
 - the current executable lane still assumes a single receive-side,
-  constant-notional strip and still leaves parity/fresh-build cutover to
-  follow-on work
+  constant-notional strip, but that bounded family now does execute on
+  the fresh-build exact-binding path and has closed the `F003`-`F005`
+  parity slice
 
 The basis-swap family is now materially executable in the bounded slice:
 

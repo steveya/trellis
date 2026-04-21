@@ -99,6 +99,9 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("frequency", "Frequency", "Caplet frequency", "Frequency.QUARTERLY"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_360"),
             FieldDef("rate_index", "str | None", "Forecast curve key", "None"),
+            FieldDef("model", "str | None", "Cap/floor model override", "None"),
+            FieldDef("shift", "float | None", "Shift for shifted-Black pricing", "None"),
+            FieldDef("sabr", "dict[str, float] | None", "SABR parameter bundle", "None"),
         ],
     ),
     "floor": SpecSchema(
@@ -113,6 +116,9 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("frequency", "Frequency", "Floorlet frequency", "Frequency.QUARTERLY"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_360"),
             FieldDef("rate_index", "str | None", "Forecast curve key", "None"),
+            FieldDef("model", "str | None", "Cap/floor model override", "None"),
+            FieldDef("shift", "float | None", "Shift for shifted-Black pricing", "None"),
+            FieldDef("sabr", "dict[str, float] | None", "SABR parameter bundle", "None"),
         ],
     ),
     "callable_bond": SpecSchema(

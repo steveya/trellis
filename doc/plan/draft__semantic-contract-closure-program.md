@@ -353,16 +353,15 @@ schema.
 It should also own the normalization of schedule-driven rate-option-strip
 families onto more semantic leg-based names. Concretely:
 
-- the current ``rate_cap_floor_strip`` family is acceptable as a bounded
-  internal family while the payoff-expression / early lowering wave is
-  still proving the route-free path
-- once static leg representation is stronger, the semantic family should
-  promote toward a more generic scheduled rate-option-strip name such as
-  ``period_rate_option_strip``
-- ``rate_cap_floor_strip`` should then survive only as a compatibility
-  alias or thin specialization layered over the more generic static-leg
-  representation, rather than remaining the canonical long-run family
-  name
+- the canonical admitted semantic family should be the generic scheduled
+  rate-option-strip name ``period_rate_option_strip``
+- public wrappers such as ``cap`` and ``floor`` may remain as ingress
+  compatibility surfaces, but they should decompose onto that canonical
+  scheduled-strip representation
+- helper, backend, or benchmark names may still mention cap/floor strip
+  wording where the checked repository callable already uses it, but the
+  semantic family itself should not carry the older helper-shaped
+  ``rate_cap_floor_strip`` name
 
 This preserves the important current distinction between:
 
