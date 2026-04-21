@@ -26,6 +26,7 @@ from trellis.agent.static_leg_contract import (
     TermRateIndex,
 )
 from trellis.instruments.swap import SwapSpec
+from trellis.models.rate_basis_swap import RateBasisSwapSpec
 from trellis.core.types import Frequency
 from trellis.conventions.day_count import DayCountConvention
 
@@ -219,12 +220,18 @@ class TestStaticLegAdmission:
         assert materialized["call_kwargs"]["spec"].is_payer is True
         assert materialized["call_kwargs"]["spec"].fixed_rate == pytest.approx(0.04)
 
-    def test_basis_swap_selection_is_explicit_but_remains_non_executable(self):
-        selection = select_static_leg_lowering(_basis_swap())
+    def test_basis_swap_selection_materializes_checked_basis_swap_spec(self):
+        contract = _basis_swap()
+
+        selection = select_static_leg_lowering(contract)
+        materialized = materialize_static_leg_lowering(contract, selection=selection)
 
         assert selection.declaration_id == "static_leg_basis_swap"
-        with pytest.raises(NotImplementedError):
-            materialize_static_leg_lowering(_basis_swap(), selection=selection)
+        assert materialized["callable_ref"] == "trellis.models.rate_basis_swap.price_rate_basis_swap"
+        assert isinstance(materialized["call_kwargs"]["spec"], RateBasisSwapSpec)
+        assert materialized["call_kwargs"]["spec"].pay_leg.rate_index == "SOFR"
+        assert materialized["call_kwargs"]["spec"].receive_leg.rate_index == "FF"
+        assert materialized["call_kwargs"]["spec"].receive_leg.spread == pytest.approx(0.0025)
 
     def test_fixed_coupon_bond_selection_materializes_bond_kwargs(self):
         contract = _fixed_coupon_bond()

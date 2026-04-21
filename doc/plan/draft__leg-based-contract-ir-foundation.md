@@ -339,10 +339,10 @@ Filed execution slices for that follow-on:
 - `QUA-945` — parity closeout: repair `F003`-`F005` on the canonical
   static-leg scheduled-strip path instead of the legacy wrapper surface
 
-Related residual static-leg follow-on:
+Landed residual static-leg follow-on:
 
-- `QUA-944` — make the bounded basis-swap static-leg admission
-  executable so `CLX.2` is not left selection-only for that family
+- `QUA-944` — made the bounded basis-swap static-leg admission
+  executable so `CLX.2` is no longer selection-only for that family
 
 ## Examples
 

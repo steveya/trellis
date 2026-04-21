@@ -11,15 +11,17 @@ stay aligned with the live issue graph.
 
 `CLX.1` through `CLX.6` are now implemented and merged. Under `CLX.2`,
 `QUA-941` and `QUA-942` landed the bounded static-leg semantic home and
-route-free decomposition for scheduled period-rate-option strips, and
+route-free decomposition for scheduled period-rate-option strips,
 `QUA-943` adds the first executable analytical/Monte-Carlo lowering
-lane on the checked cap/floor helpers. Under `CLX.7`, `QUA-936` landed
-the overlay-boundary fixtures and `QUA-939` lands the minimal
-policy-state overlay surface. `QUA-937` plus `QUA-938` landed the first
-shared `CLX.8` readiness infrastructure. The next residual `CLX.2`
-gaps after that strip-lowering slice remain `QUA-944` and `QUA-945`,
-while the main queue pickup remains the `QUA-934` umbrella until a
-bounded proving family actually requires overlay execution.
+lane on the checked cap/floor helpers, and `QUA-944` closes the
+selection-only basis-swap gap with a checked floating-vs-floating
+lowering lane. Under `CLX.7`, `QUA-936` landed the overlay-boundary
+fixtures and `QUA-939` lands the minimal policy-state overlay surface.
+`QUA-937` plus `QUA-938` landed the first shared `CLX.8` readiness
+infrastructure. The next residual `CLX.2` gap after those static-leg
+execution slices is `QUA-945`, while the main queue pickup remains the
+`QUA-934` umbrella until a bounded proving family actually requires
+overlay execution.
 
 Status mirror last synced: `2026-04-20`
 

@@ -74,10 +74,19 @@ def _is_basis_swap(contract: StaticLegContractIR) -> bool:
         return False
     if not all(isinstance(signed_leg.leg, CouponLeg) for signed_leg in contract.legs):
         return False
-    return all(
+    if not all(
         isinstance(signed_leg.leg.coupon_formula, FloatingCouponFormula)
         for signed_leg in contract.legs
-    )
+    ):
+        return False
+    for signed_leg in contract.legs:
+        leg = signed_leg.leg
+        if len(leg.notional_schedule.steps) != 1:
+            return False
+        formula = leg.coupon_formula
+        if not isinstance(formula.rate_index, (OvernightRateIndex, TermRateIndex)):
+            return False
+    return True
 
 
 def _is_fixed_coupon_bond(contract: StaticLegContractIR) -> bool:
@@ -267,6 +276,57 @@ def _fixed_coupon_bond_adapter(
     }
 
 
+def _basis_swap_adapter(
+    contract: StaticLegContractIR,
+    *,
+    normalized_terms: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    del normalized_terms
+    pay_leg = next(signed_leg.leg for signed_leg in contract.legs if signed_leg.direction == "pay")
+    receive_leg = next(
+        signed_leg.leg for signed_leg in contract.legs if signed_leg.direction == "receive"
+    )
+    pay_formula = pay_leg.coupon_formula
+    receive_formula = receive_leg.coupon_formula
+    if not isinstance(pay_formula, FloatingCouponFormula) or not isinstance(
+        receive_formula, FloatingCouponFormula
+    ):
+        raise TypeError("Basis swap lowering requires floating coupon formulas on both legs")
+
+    basis_period_ref = "trellis.models.rate_basis_swap.BasisSwapFloatingLegPeriod"
+    basis_leg_ref = "trellis.models.rate_basis_swap.BasisSwapFloatingLegSpec"
+    basis_spec_ref = "trellis.models.rate_basis_swap.RateBasisSwapSpec"
+    basis_period_cls = _resolve_ref(basis_period_ref)
+    basis_leg_cls = _resolve_ref(basis_leg_ref)
+    basis_spec_cls = _resolve_ref(basis_spec_ref)
+
+    def _leg_spec(leg: CouponLeg, formula: FloatingCouponFormula):
+        return basis_leg_cls(
+            notional=_constant_notional_amount(leg),
+            periods=tuple(
+                basis_period_cls(
+                    accrual_start=period.accrual_start,
+                    accrual_end=period.accrual_end,
+                    payment_date=period.payment_date,
+                    fixing_date=period.fixing_date,
+                )
+                for period in leg.coupon_periods
+            ),
+            day_count=_day_count_enum(leg.day_count),
+            rate_index=_rate_index_identifier(formula.rate_index),
+            spread=formula.spread,
+        )
+
+    return {
+        "call_kwargs": {
+            "spec": basis_spec_cls(
+                pay_leg=_leg_spec(pay_leg, pay_formula),
+                receive_leg=_leg_spec(receive_leg, receive_formula),
+            )
+        }
+    }
+
+
 def _period_rate_option_strip_call_kwargs(
     contract: StaticLegContractIR,
     *,
@@ -382,11 +442,14 @@ _DECLARATIONS = (
     StaticLegLoweringDeclaration(
         declaration_id="static_leg_basis_swap",
         matcher=_is_basis_swap,
-        callable_ref="trellis.agent.static_leg_admission._unimplemented_static_leg_lowering",
-        adapter_ref="trellis.agent.static_leg_admission._unimplemented_static_leg_materialization",
+        callable_ref="trellis.models.rate_basis_swap.price_rate_basis_swap",
+        adapter_ref="trellis.agent.static_leg_admission._basis_swap_adapter",
         validation_bundle_id="static_leg_basis_swap_contract",
         required_capabilities=("discount_curve", "forward_curve"),
-        helper_refs=("trellis.models.contingent_cashflows.coupon_cashflow_pv",),
+        helper_refs=(
+            "trellis.models.rate_basis_swap.price_rate_basis_swap",
+            "trellis.models.contingent_cashflows.coupon_cashflow_pv",
+        ),
         precedence=20,
     ),
     StaticLegLoweringDeclaration(

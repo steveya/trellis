@@ -127,11 +127,12 @@ The current declarations are:
 - ``static_leg_basis_swap``
 - ``static_leg_fixed_coupon_bond``
 
-Four of those declarations can already materialize checked repository engines:
+All of those declarations can now materialize checked repository engines:
 
 - fixed-float IRS -> ``trellis.instruments.swap.SwapPayoff`` via ``SwapSpec``
 - scheduled rate-option strips -> ``trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical``
 - scheduled rate-option strips -> ``trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo``
+- float-float basis swaps -> ``trellis.models.rate_basis_swap.price_rate_basis_swap``
 - fixed coupon bond -> ``trellis.instruments.bond.Bond`` kwargs
 
 For the scheduled strip family, the lowering boundary is:
@@ -145,15 +146,21 @@ For the scheduled strip family, the lowering boundary is:
   constant-notional strip and still leaves parity/fresh-build cutover to
   follow-on work
 
-The basis-swap family is explicit but still non-executable in this slice:
+The basis-swap family is now materially executable in the bounded slice:
 
 - it selects route-free on semantic structure
-- its materialization fails closed with ``NotImplementedError`` because no
-  checked generic basis-swap executable lowering is landed yet
+- it materializes a checked floating-vs-floating swap helper with
+  explicit coupon periods, day-count conventions, rate-index references,
+  and spreads
+- the current executable lane is still bounded to two constant-notional
+  floating legs on term/overnight indices
+- it is still not the authoritative fresh-build path; it is a checked
+  bounded lowering lane inside the static-leg program
 
 That boundary is deliberate. Static-leg selection exists now so later compiler
 work can bind against semantic structure, but the support contract does not yet
-pretend that every admitted leg family has a checked end-to-end lane.
+pretend that the whole leg cohort has already cut over to route-free
+authoritative execution.
 
 Relationship To The Dynamic Track
 ---------------------------------
