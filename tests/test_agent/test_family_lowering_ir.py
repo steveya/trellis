@@ -231,7 +231,7 @@ def test_rate_cap_floor_strip_analytical_compiles_to_black76_family_ir():
     assert isinstance(family_ir, AnalyticalBlack76IR)
     assert family_ir.route_id == "analytical_black76"
     assert family_ir.product_instrument == "cap"
-    assert family_ir.payoff_family == "rate_cap_floor_strip"
+    assert family_ir.payoff_family == "period_rate_option_strip"
     assert family_ir.option_type == "call"
     assert family_ir.kernel_symbol == "black76_call"
     assert family_ir.market_mapping == "discount_curve_forward_curve_black_vol_to_caplet_strip"
@@ -303,7 +303,7 @@ def test_rate_cap_floor_strip_monte_carlo_compiles_to_event_aware_family_ir():
     assert isinstance(family_ir, EventAwareMonteCarloIR)
     assert family_ir.route_id == "monte_carlo_paths"
     assert family_ir.product_instrument == "floor"
-    assert family_ir.payoff_family == "rate_cap_floor_strip"
+    assert family_ir.payoff_family == "period_rate_option_strip"
     assert family_ir.state_spec.state_variable == "short_rate"
     assert family_ir.process_spec.process_family == "hull_white_1f"
     assert family_ir.helper_symbol == "price_rate_cap_floor_strip_monte_carlo"

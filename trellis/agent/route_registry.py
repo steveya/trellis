@@ -1886,7 +1886,10 @@ def _allows_structural_schedule_strip_on_non_event_route(
         return False
     return (
         isinstance(family_ir, AnalyticalBlack76IR)
-        and str(getattr(family_ir, "payoff_family", "") or "") == "rate_cap_floor_strip"
+        and str(getattr(family_ir, "payoff_family", "") or "") in {
+            "rate_cap_floor_strip",
+            "period_rate_option_strip",
+        }
     )
 
 
@@ -2051,6 +2054,8 @@ def _expanded_payoff_families(
     """
     families = {str(payoff_family or "")}
     instrument = str(getattr(product_ir, "instrument", "") or "").strip().lower()
+    if instrument in {"cap", "floor"} or payoff_family in {"period_rate_option_strip", "rate_cap_floor_strip"}:
+        families.update({"period_rate_option_strip", "rate_cap_floor_strip"})
 
     if instrument == "puttable_bond" or payoff_family == "puttable_fixed_income":
         families.update({"puttable_fixed_income", "callable_fixed_income", "callable_bond", "bond"})

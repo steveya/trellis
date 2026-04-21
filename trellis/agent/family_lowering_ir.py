@@ -697,12 +697,12 @@ _FAMILY_IR_MATCH_PROFILES = {
         allowed_product_instruments=("european_option",),
         allowed_exercise_styles=("european",),
     ),
-    "rate_cap_floor_strip": FamilyIRMatchProfile(
-        semantic_id="rate_cap_floor_strip",
+    "period_rate_option_strip": FamilyIRMatchProfile(
+        semantic_id="period_rate_option_strip",
         allowed_instruments=("cap", "floor"),
-        allowed_payoff_families=("rate_cap_floor_strip",),
+        allowed_payoff_families=("period_rate_option_strip", "rate_cap_floor_strip"),
         allowed_product_instruments=("cap", "floor"),
-        allowed_product_payoff_families=("rate_cap_floor_strip",),
+        allowed_product_payoff_families=("period_rate_option_strip", "rate_cap_floor_strip"),
     ),
     "ranked_observation_basket": FamilyIRMatchProfile(
         semantic_id="ranked_observation_basket",
@@ -788,6 +788,7 @@ _TRANSFORM_MARKET_MAPPINGS = {
 
 _MC_MARKET_MAPPINGS = {
     ("hull_white_1f", "swaption"): "discount_curve_forward_curve_black_vol_to_short_rate_mc",
+    ("hull_white_1f", "period_rate_option_strip"): "discount_curve_forward_curve_black_vol_to_rate_option_strip_mc",
     ("hull_white_1f", "rate_cap_floor_strip"): "discount_curve_forward_curve_black_vol_to_rate_option_strip_mc",
     ("local_vol_1d", ""): "equity_spot_discount_local_vol_to_mc",
     ("gbm_1d", ""): "equity_spot_discount_black_vol_to_mc",
@@ -796,6 +797,7 @@ _MC_MARKET_MAPPINGS = {
 
 _MC_HELPER_BINDINGS = {
     ("gbm_1d", "vanilla_option", "european"): "price_vanilla_equity_option_monte_carlo",
+    ("hull_white_1f", "period_rate_option_strip", ""): "price_rate_cap_floor_strip_monte_carlo",
     ("hull_white_1f", "rate_cap_floor_strip", ""): "price_rate_cap_floor_strip_monte_carlo",
     ("hull_white_1f", "swaption", ""): "price_swaption_monte_carlo",
 }
@@ -803,6 +805,7 @@ _MC_HELPER_BINDINGS = {
 
 _MC_REDUCER_BINDINGS = {
     "swaption": ("discounted_swap_pv",),
+    "period_rate_option_strip": ("period_option_cashflow_strip",),
     "rate_cap_floor_strip": ("period_option_cashflow_strip",),
     "vanilla_option": ("terminal_payoff",),
 }
@@ -818,6 +821,7 @@ _MC_TERMINAL_ONLY_FAMILY_EXERCISE = frozenset(
 _MC_PAYOFF_REDUCER_OUTPUTS = {
     "swaption": ("swaption_exercise_payoff", "swaption_exercise_payoff"),
     "vanilla_option": ("terminal_payoff", "vanilla_option_payoff"),
+    "period_rate_option_strip": ("period_option_cashflow_strip", "rate_cap_floor_strip_payoff"),
     "rate_cap_floor_strip": ("period_option_cashflow_strip", "rate_cap_floor_strip_payoff"),
 }
 
@@ -2033,7 +2037,7 @@ def _mc_payoff_reducer_spec_for_product(
     reducer_profile = _MC_PAYOFF_REDUCER_OUTPUTS.get(payoff_family)
     if reducer_profile is not None:
         reducer_kind, output_semantics = reducer_profile
-        if payoff_family in {"swaption", "rate_cap_floor_strip"}:
+        if payoff_family in {"swaption", "rate_cap_floor_strip", "period_rate_option_strip"}:
             dependencies = tuple(
                 event.event_name
                 for bucket in event_timeline
@@ -2596,7 +2600,7 @@ def _is_rate_cap_floor_strip_contract(contract, product_ir) -> bool:
     return _matches_family_ir_profile(
         contract,
         product_ir,
-        _FAMILY_IR_MATCH_PROFILES["rate_cap_floor_strip"],
+        _FAMILY_IR_MATCH_PROFILES["period_rate_option_strip"],
     )
 
 

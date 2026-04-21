@@ -488,7 +488,7 @@ SEMANTIC_CONCEPT_REGISTRY: tuple[SemanticConceptDefinition, ...] = (
         ),
     ),
     _concept(
-        semantic_id="rate_cap_floor_strip",
+        semantic_id="period_rate_option_strip",
         semantic_version="c2.1",
         scope="schedule-driven cap/floor strips assembled from caplets or floorlets",
         description=(
@@ -497,6 +497,7 @@ SEMANTIC_CONCEPT_REGISTRY: tuple[SemanticConceptDefinition, ...] = (
         ),
         concept_role="product_contract",
         aliases=(
+            "period_rate_option_strip",
             "rate_cap_floor_strip",
             "rate_option_strip",
             "cap_floor_strip",

@@ -1528,6 +1528,7 @@ def _validate_semantic_shape(
         "callable_bond": _validate_callable_bond_shape,
         "range_accrual": _validate_range_accrual_shape,
         "rate_style_swaption": _validate_rate_style_swaption_shape,
+        "period_rate_option_strip": _validate_rate_cap_floor_strip_shape,
         "rate_cap_floor_strip": _validate_rate_cap_floor_strip_shape,
         "credit_default_swap": _validate_credit_default_swap_shape,
         "nth_to_default": _validate_nth_to_default_shape,
@@ -1968,7 +1969,7 @@ def _validate_rate_cap_floor_strip_shape(
     errors: list[str],
     warnings: list[str],
 ) -> None:
-    """Validate a schedule-driven cap/floor strip semantic shape."""
+    """Validate a schedule-driven period rate-option strip semantic shape."""
     required_capabilities = _validate_market_capabilities(
         contract,
         errors,
@@ -1978,7 +1979,7 @@ def _validate_rate_cap_floor_strip_shape(
         contract,
         errors,
         expected_instrument_class=None,
-        expected_payoff_family="rate_cap_floor_strip",
+        expected_payoff_family="period_rate_option_strip",
         expected_underlier_structure="single_curve_rate_style",
         expected_payoff_rule="period_rate_option_strip_payoff",
         expected_settlement_rule="coupon_period_cash_settlement",

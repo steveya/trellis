@@ -300,6 +300,34 @@ that dynamic leg products can remain permanently under-specified. They
 are there to keep the design honest about where ACTUS-style semantics
 must land once the event/state/control companion track becomes active.
 
+## Scheduled Rate-Option-Strip Follow-On
+
+The static-leg track should own the semantic normalization of
+schedule-driven cap/floor products.
+
+Concretely, the canonical semantic home should be a scheduled
+rate-option-strip family, not the legacy wrapper-shaped
+``rate_cap_floor_strip`` name. The current bounded implementation slice
+therefore treats:
+
+- ``period_rate_option_strip`` as the canonical semantic family name
+- public ``cap`` and ``floor`` wrappers as thin compatibility surfaces
+- legacy ``rate_cap_floor_strip`` as a compatibility alias rather than
+  the long-run canonical representation
+
+This is not just naming cleanup. It clarifies the decomposition
+boundary:
+
+- a cap or floor is still a schedule of period rate options
+- the semantic core is the scheduled strip structure
+- the wrapper only decides whether each period option is call-like or
+  put-like
+
+That normalization matters for later closure work because the deferred
+`F003`-`F005` analytical binding repair should target the canonical
+scheduled-strip abstraction rather than hardening the transitional
+wrapper family.
+
 ## Examples
 
 ### Example 1 — Vanilla fixed-float IRS
