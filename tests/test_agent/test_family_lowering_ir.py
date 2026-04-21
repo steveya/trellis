@@ -335,7 +335,7 @@ def test_legacy_rate_cap_floor_strip_semantic_id_still_reaches_family_ir():
 
     family_ir = blueprint.dsl_lowering.family_ir
     assert isinstance(family_ir, AnalyticalBlack76IR)
-    assert family_ir.payoff_family in {"period_rate_option_strip", "rate_cap_floor_strip"}
+    assert family_ir.payoff_family == "period_rate_option_strip"
     assert family_ir.route_id == "analytical_black76"
     assert family_ir.kernel_symbol == "black76_call"
 

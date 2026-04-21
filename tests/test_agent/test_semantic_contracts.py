@@ -771,6 +771,9 @@ def test_rate_cap_floor_strip_contract_uses_registered_surface_schema_hints():
     legacy_surface = resolve_semantic_method_surface("rate_cap_floor_strip", "monte_carlo")
 
     assert contract.blueprint.spec_schema_hints == surface.spec_schema_hints
+    assert contract.blueprint.spec_schema_hints == ("period_rate_option_strip",)
+    assert contract.validation.bundle_hints == ("period_rate_option_strip_contract",)
+    assert "validate_period_rate_option_strip_contract" in contract.blueprint.proving_tasks
     assert legacy_surface == surface
 
 

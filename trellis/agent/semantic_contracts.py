@@ -454,7 +454,7 @@ def _build_semantic_family_registry() -> MappingProxyType:
                         "build_caplet_or_floorlet_schedule",
                         "map_period_option_strip_to_black_kernel",
                     ),
-                    spec_schema_hints=("period_rate_option_strip", "rate_cap_floor_strip"),
+                    spec_schema_hints=("period_rate_option_strip",),
                 ),
                 _method_surface_definition(
                     "monte_carlo",
@@ -469,7 +469,7 @@ def _build_semantic_family_registry() -> MappingProxyType:
                         "compile_period_option_strip_into_mc_timeline",
                         "reduce_period_option_strip_cashflows",
                     ),
-                    spec_schema_hints=("period_rate_option_strip", "rate_cap_floor_strip"),
+                    spec_schema_hints=("period_rate_option_strip",),
                 ),
             ),
         ),
@@ -2826,7 +2826,7 @@ def make_period_rate_option_strip_contract(
         required_inputs=required_inputs,
         candidate_methods=definition.candidate_methods,
         preferred_method=normalized_method,
-        bundle_hints=("rate_cap_floor_strip_contract",),
+        bundle_hints=("period_rate_option_strip_contract",),
         universal_checks=(
             "observation_schedule_present",
             "forward_curve_present",
@@ -2843,7 +2843,7 @@ def make_period_rate_option_strip_contract(
         adapter_obligations=surface.adapter_obligations,
         proving_tasks=(
             "compile_request_to_product_ir",
-            "validate_rate_cap_floor_strip_contract",
+            "validate_period_rate_option_strip_contract",
             "emit_bounded_semantic_blueprint",
         ),
         spec_schema_hints=surface.spec_schema_hints,
