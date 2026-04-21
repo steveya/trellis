@@ -924,11 +924,21 @@ def _definition_index() -> dict[str, SemanticConceptDefinition]:
     return {definition.semantic_id: definition for definition in SEMANTIC_CONCEPT_REGISTRY}
 
 
+_SEMANTIC_CONCEPT_ID_ALIASES = {
+    "rate_cap_floor_strip": "period_rate_option_strip",
+}
+
+
 def get_semantic_concept_definition(semantic_id: str | None) -> SemanticConceptDefinition | None:
     """Look up one semantic concept by id."""
     if not semantic_id:
         return None
-    return _definition_index().get(str(semantic_id).strip())
+    normalized_semantic_id = str(semantic_id).strip()
+    canonical_semantic_id = _SEMANTIC_CONCEPT_ID_ALIASES.get(
+        normalized_semantic_id,
+        normalized_semantic_id,
+    )
+    return _definition_index().get(canonical_semantic_id)
 
 
 def semantic_concept_summary(

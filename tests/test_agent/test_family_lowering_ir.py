@@ -312,6 +312,34 @@ def test_rate_cap_floor_strip_monte_carlo_compiles_to_event_aware_family_ir():
     assert family_ir.market_mapping == "discount_curve_forward_curve_black_vol_to_rate_option_strip_mc"
 
 
+def test_legacy_rate_cap_floor_strip_semantic_id_still_reaches_family_ir():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_rate_cap_floor_strip_contract
+
+    contract = make_rate_cap_floor_strip_contract(
+        description="Legacy cap strip semantic id under Black pricing",
+        instrument_class="cap",
+        observation_schedule=("cap_schedule_placeholder",),
+        preferred_method="analytical",
+    )
+    legacy_contract = replace(
+        contract,
+        product=replace(
+            contract.product,
+            semantic_id="rate_cap_floor_strip",
+            payoff_family="rate_cap_floor_strip",
+        ),
+    )
+
+    blueprint = compile_semantic_contract(legacy_contract, preferred_method="analytical")
+
+    family_ir = blueprint.dsl_lowering.family_ir
+    assert isinstance(family_ir, AnalyticalBlack76IR)
+    assert family_ir.payoff_family in {"period_rate_option_strip", "rate_cap_floor_strip"}
+    assert family_ir.route_id == "analytical_black76"
+    assert family_ir.kernel_symbol == "black76_call"
+
+
 def test_vanilla_option_monte_carlo_compiles_to_terminal_only_event_aware_family_ir():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_vanilla_option_contract

@@ -669,6 +669,7 @@ class FamilyIRMatchProfile:
     """Declarative family-IR match profile for one semantic slice."""
 
     semantic_id: str
+    allowed_semantic_ids: tuple[str, ...] = ()
     allowed_instruments: tuple[str, ...] = ()
     allowed_payoff_families: tuple[str, ...] = ()
     allowed_product_instruments: tuple[str, ...] = ()
@@ -699,6 +700,7 @@ _FAMILY_IR_MATCH_PROFILES = {
     ),
     "period_rate_option_strip": FamilyIRMatchProfile(
         semantic_id="period_rate_option_strip",
+        allowed_semantic_ids=("period_rate_option_strip", "rate_cap_floor_strip"),
         allowed_instruments=("cap", "floor"),
         allowed_payoff_families=("period_rate_option_strip", "rate_cap_floor_strip"),
         allowed_product_instruments=("cap", "floor"),
@@ -869,7 +871,9 @@ def _matches_family_ir_profile(contract, product_ir, profile: FamilyIRMatchProfi
         str(item).strip().lower()
         for item in getattr(product_ir, "payoff_traits", ()) or ()
     }
-    if str(getattr(contract, "semantic_id", "") or "").strip() != profile.semantic_id:
+    semantic_id = str(getattr(contract, "semantic_id", "") or "").strip()
+    allowed_semantic_ids = profile.allowed_semantic_ids or (profile.semantic_id,)
+    if semantic_id not in allowed_semantic_ids:
         return False
     if profile.allowed_instruments and instrument not in profile.allowed_instruments:
         return False

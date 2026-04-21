@@ -774,6 +774,30 @@ def test_rate_cap_floor_strip_contract_uses_registered_surface_schema_hints():
     assert legacy_surface == surface
 
 
+def test_legacy_rate_cap_floor_strip_contract_still_validates_after_canonical_rename():
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+    from trellis.agent.semantic_contracts import make_rate_cap_floor_strip_contract
+
+    contract = make_rate_cap_floor_strip_contract(
+        description="Legacy serialized cap/floor strip payload",
+        instrument_class="cap",
+        observation_schedule=("2026-11-15",),
+        preferred_method="analytical",
+    )
+    legacy_contract = replace(
+        contract,
+        product=replace(
+            contract.product,
+            semantic_id="rate_cap_floor_strip",
+            payoff_family="rate_cap_floor_strip",
+        ),
+    )
+
+    report = validate_semantic_contract(legacy_contract)
+
+    assert report.ok, report.errors
+
+
 def test_migrated_contract_allows_missing_settlement_rule_mirror_with_warning():
     from trellis.agent.semantic_contract_validation import validate_semantic_contract
 

@@ -1579,7 +1579,7 @@ def _validate_profile_fields(
     errors: list[str],
     *,
     expected_instrument_class: str | None,
-    expected_payoff_family: str,
+    expected_payoff_family: str | tuple[str, ...],
     expected_underlier_structure: str,
     expected_payoff_rule: str,
     expected_settlement_rule: str,
@@ -1596,13 +1596,23 @@ def _validate_profile_fields(
 ) -> None:
     """Validate a product profile's deterministic structural fields."""
     product = contract.product
+    expected_payoff_families = (
+        expected_payoff_family
+        if isinstance(expected_payoff_family, tuple)
+        else (expected_payoff_family,)
+    )
     if expected_instrument_class is not None and product.instrument_class != expected_instrument_class:
         errors.append(
             f"Semantic slice expects instrument_class `{expected_instrument_class}`, got `{product.instrument_class}`."
         )
-    if product.payoff_family != expected_payoff_family:
+    if product.payoff_family not in expected_payoff_families:
+        expected_display = (
+            expected_payoff_families[0]
+            if len(expected_payoff_families) == 1
+            else " or ".join(f"`{item}`" for item in expected_payoff_families)
+        )
         errors.append(
-            f"Semantic slice expects payoff_family `{expected_payoff_family}`, got `{product.payoff_family}`."
+            f"Semantic slice expects payoff_family {expected_display}, got `{product.payoff_family}`."
         )
     if product.underlier_structure != expected_underlier_structure:
         errors.append(
@@ -1979,7 +1989,7 @@ def _validate_rate_cap_floor_strip_shape(
         contract,
         errors,
         expected_instrument_class=None,
-        expected_payoff_family="period_rate_option_strip",
+        expected_payoff_family=("period_rate_option_strip", "rate_cap_floor_strip"),
         expected_underlier_structure="single_curve_rate_style",
         expected_payoff_rule="period_rate_option_strip_payoff",
         expected_settlement_rule="coupon_period_cash_settlement",
