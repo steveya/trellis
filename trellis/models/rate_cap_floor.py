@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from typing import Literal
 
 from trellis.conventions.calendar import BusinessDayAdjustment, Calendar, WEEKEND_ONLY
@@ -16,6 +17,16 @@ from trellis.models.processes.sabr import SABRProcess
 from trellis.core.date_utils import year_fraction
 
 np = get_numpy()
+
+
+@dataclass(frozen=True)
+class CapFloorPeriod:
+    """One explicit period in a cap/floor strip schedule."""
+
+    start_date: date
+    end_date: date
+    payment_date: date
+    fixing_date: date | None = None
 
 
 @dataclass(frozen=True)
@@ -84,10 +95,16 @@ def _uses_date_aware_curve_conventions(market_state: MarketState, forward_curve)
     )
 
 
-def _option_expiry_years_for_period(spec: CapFloorSpec, period, *, fixing_years: float, use_date_aware: bool) -> float:
+def _option_expiry_years_for_observation_date(
+    spec: CapFloorSpec,
+    observation_date: date,
+    *,
+    fixing_years: float,
+    use_date_aware: bool,
+) -> float:
     if not use_date_aware:
         return max(fixing_years, 0.0)
-    return max(year_fraction(spec.start_date, period.start_date, DayCountConvention.ACT_365), 0.0)
+    return max(year_fraction(spec.start_date, observation_date, DayCountConvention.ACT_365), 0.0)
 
 
 def _cap_floor_model(spec: CapFloorSpec) -> str:
@@ -146,38 +163,64 @@ def _business_day_adjustment_from_name(name: str | None) -> BusinessDayAdjustmen
 def _resolve_cap_floor_terms(
     market_state: MarketState,
     spec: CapFloorSpec,
+    *,
+    periods: tuple[CapFloorPeriod, ...] | None = None,
 ) -> tuple[_CapFloorTerm, ...]:
     if getattr(market_state, "discount", None) is None:
         raise ValueError("Cap/floor strip pricing requires market_state.discount")
     if getattr(market_state, "vol_surface", None) is None:
         raise ValueError("Cap/floor strip pricing requires market_state.vol_surface")
 
-    timeline = build_payment_timeline(
-        spec.start_date,
-        spec.end_date,
-        spec.frequency,
-        calendar=_calendar_from_name(getattr(spec, "calendar_name", None)),
-        bda=_business_day_adjustment_from_name(getattr(spec, "business_day_adjustment", None)),
-        day_count=spec.day_count,
-        time_origin=market_state.settlement,
-        label="rate_cap_floor_strip",
-    )
     forward_curve = _resolve_forward_curve(market_state, spec)
     use_date_aware = _uses_date_aware_curve_conventions(market_state, forward_curve)
 
+    if periods is None:
+        timeline = build_payment_timeline(
+            spec.start_date,
+            spec.end_date,
+            spec.frequency,
+            calendar=_calendar_from_name(getattr(spec, "calendar_name", None)),
+            bda=_business_day_adjustment_from_name(getattr(spec, "business_day_adjustment", None)),
+            day_count=spec.day_count,
+            time_origin=market_state.settlement,
+            label="rate_cap_floor_strip",
+        )
+        normalized_periods = tuple(
+            CapFloorPeriod(
+                start_date=period.start_date,
+                end_date=period.end_date,
+                payment_date=period.payment_date,
+                fixing_date=period.start_date,
+            )
+            for period in timeline
+        )
+    else:
+        normalized_periods = tuple(periods)
+
     terms: list[_CapFloorTerm] = []
-    for index, period in enumerate(timeline):
+    for index, period in enumerate(normalized_periods):
         if period.payment_date <= market_state.settlement:
             continue
-        fixing_years = float(period.t_start or 0.0)
-        payment_years = max(float(period.t_payment or fixing_years), fixing_years)
-        accrual_fraction = float(period.accrual_fraction or 0.0)
+        fixing_anchor = period.fixing_date or period.start_date
+        fixing_years = max(
+            year_fraction(market_state.settlement, fixing_anchor, DayCountConvention.ACT_365),
+            0.0,
+        )
+        accrual_fraction = float(year_fraction(period.start_date, period.end_date, spec.day_count))
+        payment_years = max(
+            year_fraction(market_state.settlement, period.payment_date, DayCountConvention.ACT_365),
+            fixing_years,
+        )
+        end_years = max(
+            year_fraction(market_state.settlement, period.end_date, DayCountConvention.ACT_365),
+            max(fixing_years, 1e-6),
+        )
         forward_rate = _forward_rate_for_period(
             forward_curve,
             period.start_date,
-            period.payment_date,
+            period.end_date,
             fixing_years,
-            payment_years,
+            end_years,
             spec.day_count,
         )
         discount_factor = _discount_factor_for_period(
@@ -186,9 +229,9 @@ def _resolve_cap_floor_terms(
             payment_years,
         )
         intrinsic_only = fixing_years <= 0.0
-        option_expiry_years = _option_expiry_years_for_period(
+        option_expiry_years = _option_expiry_years_for_observation_date(
             spec,
-            period,
+            fixing_anchor,
             fixing_years=fixing_years,
             use_date_aware=use_date_aware,
         )
@@ -266,6 +309,7 @@ def price_rate_cap_floor_strip_analytical(
     spec: CapFloorSpec | None = None,
     *,
     instrument_class: str = "cap",
+    periods: tuple[CapFloorPeriod, ...] | None = None,
     notional: float | None = None,
     strike: float | None = None,
     start_date=None,
@@ -296,7 +340,7 @@ def price_rate_cap_floor_strip_analytical(
         sabr=sabr,
     )
     kind = _normalize_instrument_class(instrument_class)
-    terms = _resolve_cap_floor_terms(market_state, spec)
+    terms = _resolve_cap_floor_terms(market_state, spec, periods=periods)
     if not terms:
         return 0.0
 
@@ -334,6 +378,7 @@ def price_rate_cap_floor_strip_monte_carlo(
     spec: CapFloorSpec | None = None,
     *,
     instrument_class: str = "cap",
+    periods: tuple[CapFloorPeriod, ...] | None = None,
     n_paths: int = 10_000,
     seed: int | None = None,
     n_steps: int = 0,
@@ -367,7 +412,7 @@ def price_rate_cap_floor_strip_monte_carlo(
         business_day_adjustment=business_day_adjustment,
     )
     kind = _normalize_instrument_class(instrument_class)
-    terms = _resolve_cap_floor_terms(market_state, spec)
+    terms = _resolve_cap_floor_terms(market_state, spec, periods=periods)
     if not terms:
         return 0.0
 
@@ -403,6 +448,7 @@ def price_rate_cap_floor_strip_monte_carlo(
 
 
 __all__ = [
+    "CapFloorPeriod",
     "CapFloorSpec",
     "price_rate_cap_floor_strip_analytical",
     "price_rate_cap_floor_strip_monte_carlo",
