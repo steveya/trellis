@@ -103,9 +103,8 @@ def _option_expiry_years_for_observation_date(
     fixing_years: float,
     use_date_aware: bool,
 ) -> float:
-    if not use_date_aware:
-        return max(fixing_years, 0.0)
-    return max(year_fraction(spec.start_date, observation_date, DayCountConvention.ACT_365), 0.0)
+    del spec, observation_date, use_date_aware
+    return max(fixing_years, 0.0)
 
 
 def _cap_floor_model(spec: CapFloorSpec) -> str:
@@ -175,6 +174,7 @@ def _resolve_cap_floor_terms(
     forward_curve = _resolve_forward_curve(market_state, spec)
     use_date_aware = _uses_date_aware_curve_conventions(market_state, forward_curve)
 
+    timeline = ()
     if periods is None:
         timeline = build_payment_timeline(
             spec.start_date,
@@ -203,19 +203,33 @@ def _resolve_cap_floor_terms(
         if period.payment_date <= market_state.settlement:
             continue
         fixing_anchor = period.fixing_date or period.start_date
-        fixing_years = max(
-            year_fraction(market_state.settlement, fixing_anchor, DayCountConvention.ACT_365),
-            0.0,
-        )
-        accrual_fraction = float(year_fraction(period.start_date, period.end_date, spec.day_count))
-        payment_years = max(
-            year_fraction(market_state.settlement, period.payment_date, DayCountConvention.ACT_365),
-            fixing_years,
-        )
-        end_years = max(
-            year_fraction(market_state.settlement, period.end_date, DayCountConvention.ACT_365),
-            max(fixing_years, 1e-6),
-        )
+        schedule_period = timeline[index] if timeline else None
+        if schedule_period is not None and not use_date_aware:
+            fixing_years = max(float(schedule_period.t_start or 0.0), 0.0)
+            accrual_fraction = float(
+                schedule_period.accrual_fraction
+                if schedule_period.accrual_fraction is not None
+                else year_fraction(period.start_date, period.end_date, spec.day_count)
+            )
+            payment_years = max(float(schedule_period.t_payment or fixing_years), fixing_years)
+            end_years = max(
+                float(schedule_period.t_end or payment_years),
+                max(fixing_years, 1e-6),
+            )
+        else:
+            fixing_years = max(
+                year_fraction(market_state.settlement, fixing_anchor, DayCountConvention.ACT_365),
+                0.0,
+            )
+            accrual_fraction = float(year_fraction(period.start_date, period.end_date, spec.day_count))
+            payment_years = max(
+                year_fraction(market_state.settlement, period.payment_date, DayCountConvention.ACT_365),
+                fixing_years,
+            )
+            end_years = max(
+                year_fraction(market_state.settlement, period.end_date, DayCountConvention.ACT_365),
+                max(fixing_years, 1e-6),
+            )
         forward_rate = _forward_rate_for_period(
             forward_curve,
             period.start_date,
