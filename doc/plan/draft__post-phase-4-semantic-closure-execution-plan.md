@@ -18,12 +18,14 @@ selection-only basis-swap gap with a checked floating-vs-floating
 lowering lane. Under `CLX.7`, `QUA-936` landed the overlay-boundary
 fixtures and `QUA-939` lands the minimal policy-state overlay surface.
 `QUA-937` plus `QUA-938` landed the first shared `CLX.8` readiness
-infrastructure. The next residual `CLX.2` gap after those static-leg
-execution slices is `QUA-945`, while the main queue pickup remains the
+infrastructure. `QUA-940` then normalized the scheduled-strip family
+onto the clean canonical `period_rate_option_strip` semantic surface,
+and `QUA-945` closed the `F003`-`F005` parity slice on the deterministic
+exact-binding build path. The main queue pickup now returns to the
 `QUA-934` umbrella until a bounded proving family actually requires
 overlay execution.
 
-Status mirror last synced: `2026-04-20`
+Status mirror last synced: `2026-04-21`
 
 ## Linked Context
 
@@ -140,9 +142,7 @@ Current next pickup:
 
 Active out-of-order follow-on:
 
-- `QUA-940` — normalize the legacy `rate_cap_floor_strip` wrapper family
-  onto the canonical static-leg `period_rate_option_strip` semantic
-  home without changing the main post-Phase-4 queue order
+- none currently
 
 ## Queue Details
 
@@ -188,7 +188,7 @@ Required artifacts:
 - boundary fixtures against quoted snapshot contracts
 - first lowering declarations on existing checked cashflow engines
 
-Filed follow-on:
+Landed follow-ons:
 
 - `QUA-941` — add the first-class static-leg representation for
   scheduled `period_rate_option_strip` contracts so the canonical family
@@ -202,9 +202,9 @@ Filed follow-on:
 - `QUA-945` — repair deferred `F003`-`F005` parity through the canonical
   static-leg scheduled-strip path
 - `QUA-940` — normalize scheduled cap/floor strips onto the canonical
-  `period_rate_option_strip` semantic family and treat
-  `rate_cap_floor_strip` as a compatibility alias before repairing the
-  deferred `F003`-`F005` analytical binding gap
+  `period_rate_option_strip` semantic family and remove the transitional
+  semantic alias before repairing the deferred `F003`-`F005`
+  analytical binding gap
 
 ### CLX.3 — Event/state/control semantic foundation
 

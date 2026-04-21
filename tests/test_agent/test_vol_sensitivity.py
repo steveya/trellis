@@ -55,3 +55,71 @@ class TestVolSensitivityInvariant:
 
         failures = check_vol_sensitivity(lambda: CapPayoff(spec), _ms)
         assert failures == []
+
+    def test_skips_flat_vol_bump_for_explicit_sabr_cap_strip(self):
+        """A SABR-parameterized strip should not be forced through flat-surface vega."""
+        from trellis.conventions.day_count import DayCountConvention
+        from trellis.core.types import Frequency
+        from trellis.curves.date_aware_flat_curve import DateAwareFlatYieldCurve
+        from trellis.instruments.cap import CapFloorSpec
+        from trellis.models.rate_cap_floor import price_rate_cap_floor_strip_analytical
+
+        class _SabrCapStripPayoff:
+            def __init__(self, spec):
+                self._spec = spec
+
+            @property
+            def spec(self):
+                return self._spec
+
+            @property
+            def requirements(self):
+                return {"discount_curve", "forward_curve", "black_vol_surface"}
+
+            def evaluate(self, market_state):
+                return price_rate_cap_floor_strip_analytical(
+                    market_state,
+                    self._spec,
+                    instrument_class="cap",
+                )
+
+        curve = DateAwareFlatYieldCurve(
+            value_date=SETTLE,
+            flat_rate=0.0425,
+            curve_day_count=DayCountConvention.ACT_ACT_ISDA,
+        )
+        spec = CapFloorSpec(
+            notional=1_000_000.0,
+            strike=0.04,
+            start_date=SETTLE,
+            end_date=date(2029, 11, 15),
+            frequency=Frequency.QUARTERLY,
+            day_count=DayCountConvention.ACT_360,
+            rate_index="USD-SOFR-3M",
+            model="sabr",
+            sabr={"alpha": 0.025, "beta": 0.5, "rho": -0.2, "nu": 0.35},
+        )
+
+        def _sabr_market_state(vol=0.20, rate=0.0425):
+            del vol, rate
+            return MarketState(
+                as_of=SETTLE,
+                settlement=SETTLE,
+                discount=curve,
+                forecast_curves={"USD-SOFR-3M": curve},
+                vol_surface=FlatVol(0.20),
+                model_parameters={
+                    "sabr": {
+                        "alpha": 0.025,
+                        "beta": 0.5,
+                        "rho": -0.2,
+                        "nu": 0.35,
+                    },
+                },
+            )
+
+        failures = check_vol_sensitivity(
+            lambda: _SabrCapStripPayoff(spec),
+            _sabr_market_state,
+        )
+        assert failures == []

@@ -350,6 +350,27 @@ def _payoff_has_nonmonotonic_vol(payoff: Payoff) -> bool:
     return False
 
 
+def _payoff_uses_explicit_vol_model_parameters(payoff: Payoff) -> bool:
+    """Return whether flat-surface bump checks are the wrong vol-sensitivity contract.
+
+    Some payoffs carry their own parametric vol model inputs on the bound spec.
+    For those routes, bumping ``market_state.vol_surface`` is not the economic
+    sensitivity being modeled, so a zero response to the flat-surface bump is
+    not a correctness bug.
+
+    The first bounded case is SABR-parameterized cap/floor strip pricing:
+    ``price_rate_cap_floor_strip_analytical(...)`` uses ``spec.sabr`` to derive
+    the caplet vol from the explicit SABR process instead of reading the flat
+    ``black_vol_surface``. Treating that route as "must move under flat-vol
+    bump" would reject the correct canonical static-leg benchmark for `F005`.
+    """
+    spec = _extract_spec(payoff)
+    if spec is None:
+        return False
+    model = str(getattr(spec, "model", "") or "").strip().lower()
+    return model == "sabr" and bool(getattr(spec, "sabr", None))
+
+
 def check_non_negativity(
     payoff: Payoff,
     market_state: MarketState,
@@ -641,7 +662,10 @@ def check_vol_sensitivity(
     """
     failures: list[InvariantFailure] = []
     try:
-        p_low = price_payoff(payoff_factory(), market_state_factory(vol=vol_low))
+        sample_payoff = payoff_factory()
+        if _payoff_uses_explicit_vol_model_parameters(sample_payoff):
+            return _emit_failures(failures, return_diagnostics=return_diagnostics)
+        p_low = price_payoff(sample_payoff, market_state_factory(vol=vol_low))
         p_high = price_payoff(payoff_factory(), market_state_factory(vol=vol_high))
         base = max(abs(p_low), abs(p_high), 1.0)
         change = abs(p_high - p_low) / base

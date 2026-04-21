@@ -2925,6 +2925,32 @@ def _description_spec_defaults(spec_schema, *, description: str) -> dict[str, ob
         if rate_index is not None:
             overrides["rate_index"] = rate_index.rstrip(".,;:")
 
+        model = _match(r"Pricing model:\s*([A-Za-z_]+)")
+        if model is not None:
+            overrides["model"] = model.rstrip(".,;:").lower()
+
+        shift = _parse_number(
+            _match(r"Shift:\s*([-+]?[0-9]+(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?)")
+        )
+        if shift is not None:
+            overrides["shift"] = shift
+
+        sabr_text = _match_sentence_value("SABR parameters")
+        if sabr_text is not None:
+            sabr_params: dict[str, float] = {}
+            for name in ("alpha", "beta", "nu", "rho"):
+                matched = re.search(
+                    rf"{name}\s*=\s*([-+]?[0-9]+(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?)",
+                    sabr_text,
+                    re.IGNORECASE,
+                )
+                if matched is None:
+                    sabr_params = {}
+                    break
+                sabr_params[name] = float(matched.group(1))
+            if sabr_params:
+                overrides["sabr"] = sabr_params
+
     if spec_name == "BasketOptionSpec":
         notional = _parse_number(_match_sentence_value("Notional"))
         if notional is not None:
@@ -3295,6 +3321,55 @@ def _deterministic_exact_binding_evaluate_body(
     basket_option_kwargs = _basket_option_helper_kwargs(comparison_target)
     instrument_type = str(getattr(generation_plan, "instrument_type", "") or "").strip().lower()
     route_free_exact_binding = getattr(generation_plan, "primitive_plan", None) is None
+    if (
+        comparison_target is None
+        and instrument_type in {"cap", "floor"}
+        and "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical" in refs
+    ):
+        return textwrap.dedent(
+            f"""\
+            spec = self._spec
+            return float(price_rate_cap_floor_strip_analytical(
+                market_state,
+                spec=spec,
+                instrument_class="{instrument_type}",
+                notional=spec.notional,
+                strike=spec.strike,
+                start_date=spec.start_date,
+                end_date=spec.end_date,
+                frequency=spec.frequency,
+                day_count=spec.day_count,
+                rate_index=spec.rate_index,
+                model=getattr(spec, "model", None),
+                shift=getattr(spec, "shift", None),
+                sabr=getattr(spec, "sabr", None),
+            ))
+            """
+        ).rstrip()
+    if (
+        comparison_target is None
+        and instrument_type in {"cap", "floor"}
+        and "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo" in refs
+    ):
+        return textwrap.dedent(
+            f"""\
+            spec = self._spec
+            return float(price_rate_cap_floor_strip_monte_carlo(
+                market_state,
+                spec=spec,
+                instrument_class="{instrument_type}",
+                notional=spec.notional,
+                strike=spec.strike,
+                start_date=spec.start_date,
+                end_date=spec.end_date,
+                frequency=spec.frequency,
+                day_count=spec.day_count,
+                rate_index=spec.rate_index,
+                n_paths=20000,
+                seed=42,
+            ))
+            """
+        ).rstrip()
     if (
         comparison_target == "black_scholes"
         and "trellis.models.black.black76_call" in refs

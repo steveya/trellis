@@ -495,6 +495,73 @@ def test_deterministic_exact_binding_module_materializes_swaption_helper_wrapper
     assert EVALUATE_SENTINEL not in generated.code
 
 
+def test_deterministic_exact_binding_module_materializes_cap_strip_helper_wrapper():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=("trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical",),
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="cap",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["cap"],
+        "USD SOFR cap strip analytical exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert "price_rate_cap_floor_strip_analytical(" in generated.code
+    assert 'instrument_class="cap"' in generated.code
+    assert 'model=getattr(spec, "model", None)' in generated.code
+    assert 'shift=getattr(spec, "shift", None)' in generated.code
+    assert 'sabr=getattr(spec, "sabr", None)' in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("description", "expected_defaults"),
+    [
+        (
+            "Price a cap strip. Pricing model: shifted_black. Shift: 0.01.",
+            {"model": "shifted_black", "shift": pytest.approx(0.01)},
+        ),
+        (
+            "Price a cap strip. Pricing model: sabr. "
+            "SABR parameters: alpha=0.025, beta=0.5, nu=0.35, rho=-0.2.",
+            {
+                "model": "sabr",
+                "sabr": {"alpha": 0.025, "beta": 0.5, "nu": 0.35, "rho": -0.2},
+            },
+        ),
+    ],
+)
+def test_description_spec_defaults_extract_cap_model_fields(
+    description,
+    expected_defaults,
+):
+    from trellis.agent.executor import _description_spec_defaults
+    from trellis.agent.planner import STATIC_SPECS
+
+    defaults = _description_spec_defaults(
+        STATIC_SPECS["cap"],
+        description=description,
+    )
+
+    for key, expected in expected_defaults.items():
+        assert defaults[key] == expected
+
+
 def test_deterministic_exact_binding_module_materializes_callable_bond_tree_wrapper():
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
