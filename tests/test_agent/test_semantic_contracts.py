@@ -75,14 +75,14 @@ def test_semantic_family_registry_exposes_supported_method_surfaces():
     assert "period_rate_option_strip" in registered_semantic_family_keys()
     surface = resolve_semantic_method_surface("vanilla_option", "fft_pricing")
     cap_surface = resolve_semantic_method_surface("period_rate_option_strip", "monte_carlo")
-    legacy_cap_surface = resolve_semantic_method_surface("rate_cap_floor_strip", "monte_carlo")
 
     assert surface.method == "fft_pricing"
     assert surface.target_modules == ("trellis.models.equity_option_transforms",)
     assert surface.primitive_families == ("transform_fft",)
     assert cap_surface.primitive_families == ("monte_carlo_paths",)
     assert "trellis.instruments.cap" in cap_surface.target_modules
-    assert legacy_cap_surface == cap_surface
+    with pytest.raises(ValueError, match="Semantic family `rate_cap_floor_strip` is not registered."):
+        resolve_semantic_method_surface("rate_cap_floor_strip", "monte_carlo")
 
 
 def test_semantic_contract_summary_emits_registered_family_surface_metadata():
@@ -757,31 +757,29 @@ def test_rate_cap_floor_strip_draft_uses_structural_schedule_placeholder_when_da
 
 def test_rate_cap_floor_strip_contract_uses_registered_surface_schema_hints():
     from trellis.agent.semantic_contracts import (
-        make_rate_cap_floor_strip_contract,
+        make_period_rate_option_strip_contract,
         resolve_semantic_method_surface,
     )
 
-    contract = make_rate_cap_floor_strip_contract(
+    contract = make_period_rate_option_strip_contract(
         description="SOFR cap strip with annual fixings through 2029-11-15",
         instrument_class="cap",
         observation_schedule=("2026-11-15", "2027-11-15", "2028-11-15", "2029-11-15"),
         preferred_method="monte_carlo",
     )
     surface = resolve_semantic_method_surface("period_rate_option_strip", "monte_carlo")
-    legacy_surface = resolve_semantic_method_surface("rate_cap_floor_strip", "monte_carlo")
 
     assert contract.blueprint.spec_schema_hints == surface.spec_schema_hints
     assert contract.blueprint.spec_schema_hints == ("period_rate_option_strip",)
     assert contract.validation.bundle_hints == ("period_rate_option_strip_contract",)
     assert "validate_period_rate_option_strip_contract" in contract.blueprint.proving_tasks
-    assert legacy_surface == surface
 
 
-def test_legacy_rate_cap_floor_strip_contract_still_validates_after_canonical_rename():
+def test_legacy_rate_cap_floor_strip_contract_is_rejected_after_alias_removal():
     from trellis.agent.semantic_contract_validation import validate_semantic_contract
-    from trellis.agent.semantic_contracts import make_rate_cap_floor_strip_contract
+    from trellis.agent.semantic_contracts import make_period_rate_option_strip_contract
 
-    contract = make_rate_cap_floor_strip_contract(
+    contract = make_period_rate_option_strip_contract(
         description="Legacy serialized cap/floor strip payload",
         instrument_class="cap",
         observation_schedule=("2026-11-15",),
@@ -798,7 +796,8 @@ def test_legacy_rate_cap_floor_strip_contract_still_validates_after_canonical_re
 
     report = validate_semantic_contract(legacy_contract)
 
-    assert report.ok, report.errors
+    assert not report.ok
+    assert any("Unsupported semantic_id `rate_cap_floor_strip`" in error for error in report.errors)
 
 
 def test_migrated_contract_allows_missing_settlement_rule_mirror_with_warning():

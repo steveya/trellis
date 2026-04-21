@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 import re
 from typing import TYPE_CHECKING
 
-from trellis.agent.semantic_contracts import _normalize_semantic_family_alias
 from trellis.agent.semantic_tokens import (
     EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY,
 )
@@ -27,8 +26,7 @@ def _tuple_unique(values) -> tuple[str, ...]:
 
 def _canonical_semantic_family(value: str | None) -> str:
     """Normalize one family alias onto its canonical semantic identifier."""
-    normalized = str(value or "").strip().lower()
-    return _normalize_semantic_family_alias(normalized)
+    return str(value or "").strip().lower()
 
 
 @dataclass(frozen=True)
@@ -1259,7 +1257,7 @@ def build_family_lowering_ir(
                 ),
                 **common_kwargs,
             )
-    if _is_rate_cap_floor_strip_contract(contract, product_ir) and _binding_supports_black76_analytical(
+    if _is_period_rate_option_strip_contract(contract, product_ir) and _binding_supports_black76_analytical(
         binding_spec,
         route_id=route_id,
     ):
@@ -2604,7 +2602,7 @@ def _is_vanilla_european_contract(contract, product_ir) -> bool:
     )
 
 
-def _is_rate_cap_floor_strip_contract(contract, product_ir) -> bool:
+def _is_period_rate_option_strip_contract(contract, product_ir) -> bool:
     """Whether the semantic contract fits the cap/floor strip family IR slice."""
     return _matches_family_ir_profile(
         contract,

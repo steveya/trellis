@@ -340,7 +340,7 @@ class TestMixedModeBindingDispatch:
         )
 
         legacy_clause = ConditionalBindingPrimitives(
-            when={"payoff_family": "rate_cap_floor_strip"},
+            when={"payoff_family": "period_rate_option_strip"},
             primitives=(legacy_prim,),
         )
         dsl_clause = ConditionalBindingPrimitives(
@@ -361,7 +361,7 @@ class TestMixedModeBindingDispatch:
         # Legacy path hits on a rate cap.
         cap_ir = ProductIR(
             instrument="cap",
-            payoff_family="rate_cap_floor_strip",
+            payoff_family="period_rate_option_strip",
             exercise_style="none",
             state_dependence="schedule_state",
             schedule_dependence=True,
@@ -493,7 +493,7 @@ class TestLegacyBindingCatalogRegression:
     def test_analytical_black76_uses_dsl_form_for_two_swaption_clauses(self):
         """QUA-921 migration lock: the two swaption-structural
         ``analytical_black76`` clauses in ``backend_bindings.yaml`` are DSL
-        form.  The other three clauses (vanilla, rate_cap_floor_strip,
+        form.  The other three clauses (vanilla, period_rate_option_strip,
         basket) and the ``default`` sentinel intentionally stay legacy
         (see the module docstring in
         ``test_backend_bindings_black76_dsl_parity.py`` for the per-clause

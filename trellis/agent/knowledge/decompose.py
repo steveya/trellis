@@ -688,7 +688,6 @@ def _build_static_period_rate_option_strip_contract_ir(
         "",
         "cap",
         "floor",
-        "rate_cap_floor_strip",
         "period_rate_option_strip",
     }
     if instrument not in admitted_instruments and product_instrument not in admitted_instruments:

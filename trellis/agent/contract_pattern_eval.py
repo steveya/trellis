@@ -129,7 +129,6 @@ _INSTRUMENT_TAG_TO_PAYOFF_FAMILIES: Mapping[str, frozenset[str]] = {
     "rate_payoff": frozenset(
         {
             "period_rate_option_strip",
-            "rate_cap_floor_strip",
             "range_accrual_coupon",
             "fixed_coupon",
         }

@@ -114,7 +114,6 @@ def _looks_static_leg(lower: str, instrument: str) -> bool:
         "interest_rate_swap",
         "cap",
         "floor",
-        "rate_cap_floor_strip",
         "period_rate_option_strip",
     }:
         return True

@@ -157,7 +157,7 @@ def test_masked_authority_harness_supports_static_leg_route_free_build_surface()
         lambda variant: capture_compiled_request_authority_snapshot(
             compile_build_request(
                 description,
-                instrument_type="rate_cap_floor_strip",
+                instrument_type="period_rate_option_strip",
                 preferred_method="analytical",
                 metadata={
                     "route_id": variant.route_id,

@@ -737,8 +737,8 @@ def _expanded_payoff_families(
 ) -> frozenset[str]:
     families = {str(payoff_family or "")}
     instrument = str(getattr(product_ir, "instrument", "") or "").strip().lower()
-    if instrument in {"cap", "floor"} or payoff_family in {"period_rate_option_strip", "rate_cap_floor_strip"}:
-        families.update({"period_rate_option_strip", "rate_cap_floor_strip"})
+    if instrument in {"cap", "floor"} or payoff_family == "period_rate_option_strip":
+        families.add("period_rate_option_strip")
     if instrument == "puttable_bond" or payoff_family == "puttable_fixed_income":
         families.update({"puttable_fixed_income", "callable_fixed_income", "callable_bond", "bond"})
     elif instrument == "callable_bond" or payoff_family == "callable_fixed_income":

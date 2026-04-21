@@ -1417,15 +1417,15 @@ class TestAnalyticalRoutes:
             ),
         }
 
-    def test_rate_cap_floor_strip_analytical_admissibility_accepts_structural_schedule_contract(self, registry):
+    def test_period_rate_option_strip_analytical_admissibility_accepts_structural_schedule_contract(self, registry):
         from dataclasses import replace
 
-        from trellis.agent.semantic_contracts import make_rate_cap_floor_strip_contract
+        from trellis.agent.semantic_contracts import make_period_rate_option_strip_contract
 
         black76_spec = find_route_by_id("analytical_black76", registry)
         assert black76_spec is not None
 
-        contract = make_rate_cap_floor_strip_contract(
+        contract = make_period_rate_option_strip_contract(
             description="5Y cap on SOFR with quarterly caplets under Black-76",
             instrument_class="cap",
             observation_schedule=("2026-03-20", "2026-06-20", "2026-09-20", "2026-12-20"),

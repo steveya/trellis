@@ -97,7 +97,7 @@ tasks:
 - id: P004
   title: 'Trellis extension: callable cap/floor collar with schedule tweaks'
   status: pending
-  instrument_type: rate_cap_floor_strip
+  instrument_type: period_rate_option_strip
   construct:
   - analytical
   - monte_carlo

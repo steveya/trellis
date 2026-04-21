@@ -61,10 +61,8 @@ leg level:
 
 - ``period_rate_option_strip`` is the canonical semantic family
 - ``cap`` / ``floor`` remain wrapper-level compatibility shells
-- legacy ``rate_cap_floor_strip`` remains an alias, not the long-run leg
-  representation name
-- emitted semantic metadata and lowering IR now normalize onto
-  ``period_rate_option_strip`` even when ingress used the legacy alias
+- emitted semantic metadata and lowering IR now stay on
+  ``period_rate_option_strip`` across task, semantic, and static-leg surfaces
 
 In other words, a schedule-driven cap or floor is represented here as a
 strip of period rate options rather than as a helper-shaped wrapper name.

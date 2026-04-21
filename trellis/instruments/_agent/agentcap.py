@@ -13,7 +13,7 @@ Rate index: USD-SOFR-3M.
 
 Preferred method family: analytical
 FinancePy binding: financepy.rates.cap_floor.black
-Benchmark product: rate_cap_floor_strip
+Benchmark product: period_rate_option_strip
 
 Construct methods: analytical
 Comparison targets: analytical (analytical)
@@ -51,7 +51,7 @@ Rate index: USD-SOFR-3M.
 
 Preferred method family: analytical
 FinancePy binding: financepy.rates.cap_floor.black
-Benchmark product: rate_cap_floor_strip
+Benchmark product: period_rate_option_strip
 
 Construct methods: analytical
 Comparison targets: analytical (analytical)
@@ -87,7 +87,7 @@ Rate index: USD-SOFR-3M.
 
 Preferred method family: analytical
 FinancePy binding: financepy.rates.cap_floor.black
-Benchmark product: rate_cap_floor_strip
+Benchmark product: period_rate_option_strip
 
 Construct methods: analytical
 Comparison targets: analytical (analytical)

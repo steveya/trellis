@@ -131,7 +131,7 @@ def canonical_benchmark_instrument_type(task: Mapping[str, Any]) -> str | None:
     """Return the canonical runtime instrument family for one benchmark-backed task."""
     contract = benchmark_contract(task)
     product = str(contract.get("product") or "").strip().lower()
-    if product == "rate_cap_floor_strip":
+    if product == "period_rate_option_strip":
         cap_floor = str(contract.get("cap_floor") or "").strip().lower()
         if cap_floor in {"cap", "floor"}:
             return cap_floor
@@ -263,7 +263,7 @@ def benchmark_spec_overrides(
                 valuation_date=valuation_date,
             )
         )
-    elif product == "rate_cap_floor_strip":
+    elif product == "period_rate_option_strip":
         overrides.update(
             _rate_cap_floor_overrides(
                 contract,
@@ -306,7 +306,7 @@ def _benchmark_summary_line(contract: Mapping[str, Any]) -> str:
             f"Price a {contract.get('option_type', 'call')} FX vanilla option on "
             f"{contract.get('currency_pair', 'EURUSD')} under the analytical benchmark surface."
         )
-    if product == "rate_cap_floor_strip":
+    if product == "period_rate_option_strip":
         kind = str(contract.get("cap_floor") or "cap").strip().lower()
         return f"Price a {kind} strip under the declared benchmark rates surface."
     if product == "swaption":
@@ -352,7 +352,7 @@ def _benchmark_detail_lines(
         if scenario_contract is not None and scenario_contract.foreign_curve_name:
             lines.append(f"Foreign discount key: {scenario_contract.foreign_curve_name}.")
         return lines
-    if product == "rate_cap_floor_strip":
+    if product == "period_rate_option_strip":
         start_date = _parse_date(contract.get("start_date"))
         end_date = _end_date_from_contract(contract, start_date=start_date)
         lines.extend(

@@ -62,7 +62,7 @@ tasks:
 - id: F003
   title: 'FinancePy parity: USD cap strip Black'
   status: pending
-  instrument_type: rate_cap_floor_strip
+  instrument_type: period_rate_option_strip
   construct: analytical
   description: Price a USD SOFR cap strip under the FinancePy Black cap/floor model
     using the shared rates smile scenario. Return price and the relevant risk measures.
@@ -75,7 +75,7 @@ tasks:
     - financepy
     tolerance_pct: 1.0
   benchmark_contract:
-    product: rate_cap_floor_strip
+    product: period_rate_option_strip
     cap_floor: cap
     strike: 0.04
     start_date: '2024-11-15'
@@ -87,7 +87,7 @@ tasks:
 - id: F004
   title: 'FinancePy parity: USD cap strip shifted Black'
   status: pending
-  instrument_type: rate_cap_floor_strip
+  instrument_type: period_rate_option_strip
   construct: analytical
   description: Price the same USD SOFR cap strip under shifted Black. Return price
     and the relevant risk measures.
@@ -100,7 +100,7 @@ tasks:
     - financepy
     tolerance_pct: 1.0
   benchmark_contract:
-    product: rate_cap_floor_strip
+    product: period_rate_option_strip
     cap_floor: cap
     strike: 0.04
     start_date: '2024-11-15'
@@ -113,7 +113,7 @@ tasks:
 - id: F005
   title: 'FinancePy parity: USD cap strip SABR'
   status: pending
-  instrument_type: rate_cap_floor_strip
+  instrument_type: period_rate_option_strip
   construct: analytical
   description: Price the same USD SOFR cap strip under SABR-implied caplet volatilities.
     Return price and the relevant risk measures.
@@ -126,7 +126,7 @@ tasks:
     - financepy
     tolerance_pct: 1.5
   benchmark_contract:
-    product: rate_cap_floor_strip
+    product: period_rate_option_strip
     cap_floor: cap
     strike: 0.04
     start_date: '2024-11-15'

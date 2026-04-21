@@ -22,10 +22,10 @@ class TestSemanticTrackClassifier:
         assert classification.track == "static_leg"
         assert classification.dynamic is False
 
-    def test_rate_cap_floor_strip_alias_classifies_as_static_leg(self):
+    def test_period_rate_option_strip_classifies_as_static_leg(self):
         classification = classify_semantic_track(
             "Price a cap strip under the declared benchmark rates surface. Instrument class: cap. Start date: 2024-11-15. End date: 2029-11-15.",
-            instrument_type="rate_cap_floor_strip",
+            instrument_type="period_rate_option_strip",
         )
 
         assert classification.track == "static_leg"

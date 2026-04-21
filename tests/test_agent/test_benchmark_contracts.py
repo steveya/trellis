@@ -40,10 +40,10 @@ def test_canonical_benchmark_instrument_type_maps_broad_runtime_families():
     assert canonical_benchmark_instrument_type(tasks["F015"]) == "variance_swap"
 
 
-def test_canonical_benchmark_instrument_type_normalizes_rate_option_strip_alias_fallback():
+def test_canonical_benchmark_instrument_type_supports_period_rate_option_strip_product():
     task = {
         "benchmark_contract": {
-            "product": "rate_cap_floor_strip",
+            "product": "period_rate_option_strip",
         }
     }
 

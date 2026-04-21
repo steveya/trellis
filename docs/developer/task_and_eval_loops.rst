@@ -361,8 +361,7 @@ explicitly allowed refinement of that family.
 The rate cap/floor stress lane now follows that same authority rule through a
 dedicated semantic family rather than a classifier exception. Cap and floor
 requests now draft into the canonical ``period_rate_option_strip`` semantic
-contract, with legacy ``rate_cap_floor_strip`` retained as a compatibility
-alias on ingress only. That semantic contract materializes the schedule-driven
+contract. That semantic contract materializes the schedule-driven
 rate-option-strip shape, required market inputs, and route surface before
 generic semantic-gap handling runs. That keeps compare-ready tasks such as
 ``E22`` on the actual pricing route without teaching the generic classifier

@@ -412,7 +412,7 @@ def test_resolve_backend_binding_spec_uses_rate_cap_floor_exact_helpers():
 
     product_ir = ProductIR(
         instrument="cap",
-        payoff_family="rate_cap_floor_strip",
+        payoff_family="period_rate_option_strip",
         exercise_style="none",
         schedule_dependence=True,
         state_dependence="schedule_dependent",

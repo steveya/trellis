@@ -86,11 +86,11 @@ class TestDecomposeStaticAndDynamicContracts:
 
         cap_contract = decompose_to_static_leg_contract_ir(
             cap_description,
-            instrument_type="rate_cap_floor_strip",
+            instrument_type="period_rate_option_strip",
         )
         floor_contract = decompose_to_static_leg_contract_ir(
             floor_description,
-            instrument_type="rate_cap_floor_strip",
+            instrument_type="period_rate_option_strip",
         )
 
         assert isinstance(cap_contract, StaticLegContractIR)

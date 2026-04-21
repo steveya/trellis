@@ -383,14 +383,14 @@ def _cap_default_fallthrough_ir() -> ProductIR:
     """ProductIR that hits none of the four clauses → default branch.
 
     A cap is a schedule-driven Black76 product: payoff_family is
-    ``rate_cap_floor_strip``, which is not covered by any of the four
+    ``period_rate_option_strip``, which is not covered by any of the four
     conditional clauses, so dispatch falls through to the ``default``
     catch-all.  This guarantees the default branch still resolves
     identically under both variants.
     """
     return ProductIR(
         instrument="cap",
-        payoff_family="rate_cap_floor_strip",
+        payoff_family="period_rate_option_strip",
         exercise_style="none",
         state_dependence="schedule_state",
         schedule_dependence=True,

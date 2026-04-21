@@ -168,7 +168,7 @@ bindings:
             symbol: price_vanilla_equity_option_monte_carlo
             role: route_helper
       - when:
-          payoff_family: rate_cap_floor_strip
+          payoff_family: period_rate_option_strip
           model_family: [interest_rate, short_rate]
         primitives:
           - module: trellis.models.rate_cap_floor
@@ -370,7 +370,7 @@ bindings:
     # is now live inside ``backend_bindings._resolve_binding_primitives`` and
     # not only inside ``route_registry._conditional_primitive_matches``.
     #
-    # The ``vanilla_option``, ``rate_cap_floor_strip``, and ``basket_option``
+    # The ``vanilla_option``, ``period_rate_option_strip``, and ``basket_option``
     # clauses intentionally stay in legacy string-tag form.  Specifically:
     #
     # * ``vanilla_option`` stays legacy because the DSL ``vanilla_payoff``
@@ -382,7 +382,7 @@ bindings:
     #   expanded-family set, which is strict enough to preserve the
     #   user-visible basket-helper dispatch locked by
     #   ``test_resolve_backend_binding_spec_uses_basket_option_exact_helpers``.
-    # * ``rate_cap_floor_strip`` follows the same discipline as QUA-920's
+    # * ``period_rate_option_strip`` follows the same discipline as QUA-920's
     #   routes.yaml migration: it is not one of the four structural clauses
     #   the DSL rollout is migrating.
     # * ``basket_option`` stays legacy because the binding catalog relies on
@@ -429,7 +429,7 @@ bindings:
             symbol: year_fraction
             role: time_measure
       - when:
-          payoff_family: rate_cap_floor_strip
+          payoff_family: period_rate_option_strip
         primitives:
           - module: trellis.models.rate_cap_floor
             symbol: price_rate_cap_floor_strip_analytical

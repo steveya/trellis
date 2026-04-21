@@ -66,25 +66,12 @@ def _yaml_safe_value(value):
 
 def _semantic_family_key(semantic_id: str, *, exercise_style: str | None = None) -> str:
     """Return the registered family key for a semantic family and optional variant."""
-    normalized_semantic_id = _normalize_semantic_family_alias(semantic_id)
+    normalized_semantic_id = str(semantic_id or "").strip()
     normalized_exercise = str(exercise_style or "").strip().lower()
     variant_keys = _SEMANTIC_FAMILY_VARIANT_KEYS.get(normalized_semantic_id)
     if variant_keys is not None and normalized_exercise in variant_keys:
         return variant_keys[normalized_exercise]
     return normalized_semantic_id
-
-
-_SEMANTIC_FAMILY_ALIASES = MappingProxyType(
-    {
-        "rate_cap_floor_strip": "period_rate_option_strip",
-    }
-)
-
-
-def _normalize_semantic_family_alias(semantic_id: str) -> str:
-    """Return the canonical semantic-family identifier for one registry lookup."""
-    normalized_semantic_id = str(semantic_id or "").strip()
-    return str(_SEMANTIC_FAMILY_ALIASES.get(normalized_semantic_id, normalized_semantic_id))
 
 
 _SEMANTIC_FAMILY_VARIANT_KEYS = MappingProxyType(
@@ -2685,8 +2672,6 @@ def make_period_rate_option_strip_contract(
         instrument_class=normalized_instrument,
         instrument_aliases=(
             "period_rate_option_strip",
-            "rate_cap_floor_strip",
-            "rate_option_strip",
             normalized_instrument,
         ),
         payoff_family="period_rate_option_strip",
@@ -2849,24 +2834,6 @@ def make_period_rate_option_strip_contract(
         spec_schema_hints=surface.spec_schema_hints,
         description=description,
     )
-
-
-def make_rate_cap_floor_strip_contract(
-    *,
-    description: str,
-    instrument_class: str,
-    observation_schedule: tuple[str, ...] | list[str],
-    preferred_method: str = "analytical",
-) -> SemanticContract:
-    """Compatibility wrapper for the canonical period rate-option strip builder."""
-    return make_period_rate_option_strip_contract(
-        description=description,
-        instrument_class=instrument_class,
-        observation_schedule=observation_schedule,
-        preferred_method=preferred_method,
-    )
-
-
 def make_credit_default_swap_contract(
     *,
     description: str,
@@ -3530,7 +3497,7 @@ def _rebuild_rate_style_swaption_contract(
     )
 
 
-def _rebuild_rate_cap_floor_strip_contract(
+def _rebuild_period_rate_option_strip_contract(
     contract: SemanticContract,
     normalized_method: str,
 ) -> SemanticContract:
@@ -3604,7 +3571,7 @@ _SEMANTIC_CONTRACT_REBUILDERS: Mapping[str, Callable[[SemanticContract, str], Se
         "callable_bond": _rebuild_callable_bond_contract,
         "range_accrual": _rebuild_range_accrual_contract,
         "rate_style_swaption": _rebuild_rate_style_swaption_contract,
-        "period_rate_option_strip": _rebuild_rate_cap_floor_strip_contract,
+        "period_rate_option_strip": _rebuild_period_rate_option_strip_contract,
         "credit_default_swap": _rebuild_credit_default_swap_contract,
         "nth_to_default": _rebuild_nth_to_default_contract,
         "credit_basket_tranche": _rebuild_credit_basket_tranche_contract,
@@ -3667,9 +3634,7 @@ def specialize_semantic_contract_for_method(
         return semantic_contract
     normalized_method = normalize_method(preferred_method)
     current_method = normalize_method(getattr(semantic_contract.methods, "preferred_method", "") or "")
-    semantic_id = _normalize_semantic_family_alias(
-        str(getattr(semantic_contract, "semantic_id", "") or "").strip()
-    )
+    semantic_id = str(getattr(semantic_contract, "semantic_id", "") or "").strip()
     rebuilder = _SEMANTIC_CONTRACT_REBUILDERS.get(semantic_id)
     if rebuilder is None:
         return semantic_contract
@@ -4910,9 +4875,7 @@ _SEMANTIC_DRAFT_MATCHER_PROFILES = MappingProxyType(
             instrument_aliases=(
                 "cap",
                 "floor",
-                "rate_cap_floor_strip",
                 "period_rate_option_strip",
-                "rate_option_strip",
             ),
             positive_cues=(
                 "interest rate cap",
@@ -5313,7 +5276,7 @@ def _draft_rate_style_swaption_contract(
     )
 
 
-def _draft_rate_cap_floor_strip_contract(
+def _draft_period_rate_option_strip_contract(
     text: str,
     description: str,
     instrument_type: str | None,
@@ -5326,7 +5289,7 @@ def _draft_rate_cap_floor_strip_contract(
         variants=_RATE_CAP_FLOOR_DRAFT_VARIANTS,
         default_variant="cap",
     )
-    return make_rate_cap_floor_strip_contract(
+    return make_period_rate_option_strip_contract(
         description=description,
         instrument_class=normalized_instrument,
         observation_schedule=_extract_rate_cap_floor_schedule(
@@ -5485,7 +5448,7 @@ def _build_semantic_draft_rules() -> tuple[SemanticDraftRule, ...]:
         SemanticDraftRule(
             name="period_rate_option_strip",
             matcher=_looks_like_rate_cap_floor_request,
-            builder=_draft_rate_cap_floor_strip_contract,
+            builder=_draft_period_rate_option_strip_contract,
         ),
         SemanticDraftRule(
             name="credit_basket_tranche",

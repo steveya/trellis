@@ -28,7 +28,7 @@ Two structural clauses migrate: ``swaption + bermudan`` and
   (pinned by
   ``test_resolve_backend_binding_spec_uses_basket_option_exact_helpers`` in
   ``tests/test_agent/test_backend_bindings.py``).
-* ``rate_cap_floor_strip`` follows the same discipline as QUA-920's
+* ``period_rate_option_strip`` follows the same discipline as QUA-920's
   routes.yaml migration.
 
 This file asserts that the on-disk ``analytical_black76`` binding catalog
@@ -202,7 +202,7 @@ def _make_binding(
 def _legacy_clauses() -> tuple[ConditionalBindingPrimitives, ...]:
     """Legacy string-tag form, verbatim from pre-QUA-921 backend_bindings.yaml.
 
-    The vanilla, rate_cap_floor_strip, and basket clauses stay legacy in both
+    The vanilla, period_rate_option_strip, and basket clauses stay legacy in both
     variants; only the two swaption clauses (bermudan, european) migrate to
     DSL.  See the module docstring for the per-clause rationale — in short,
     the DSL today cannot faithfully express the extra trait filter on the
@@ -215,7 +215,7 @@ def _legacy_clauses() -> tuple[ConditionalBindingPrimitives, ...]:
             primitives=_VANILLA_PRIMS,
         ),
         ConditionalBindingPrimitives(
-            when={"payoff_family": "rate_cap_floor_strip"},
+            when={"payoff_family": "period_rate_option_strip"},
             primitives=_RATE_CAP_FLOOR_PRIMS,
         ),
         ConditionalBindingPrimitives(
@@ -253,7 +253,7 @@ def _dsl_clauses() -> tuple[ConditionalBindingPrimitives, ...]:
 
     Only the two DSL-safe structural clauses (swaption-bermudan and
     swaption-european) migrate here.  ``vanilla_option``,
-    ``rate_cap_floor_strip``, ``basket_option``, and ``default`` stay in
+    ``period_rate_option_strip``, ``basket_option``, and ``default`` stay in
     legacy form for the reasons spelled out in the module docstring.
     """
     return (
@@ -262,7 +262,7 @@ def _dsl_clauses() -> tuple[ConditionalBindingPrimitives, ...]:
             primitives=_VANILLA_PRIMS,
         ),
         ConditionalBindingPrimitives(
-            when={"payoff_family": "rate_cap_floor_strip"},
+            when={"payoff_family": "period_rate_option_strip"},
             primitives=_RATE_CAP_FLOOR_PRIMS,
         ),
         ConditionalBindingPrimitives(
@@ -370,14 +370,14 @@ def _swaption_european_ir() -> ProductIR:
 
 
 def _cap_rate_cap_floor_ir() -> ProductIR:
-    """A cap: hits the (still-legacy) ``rate_cap_floor_strip`` clause.
+    """A cap: hits the (still-legacy) ``period_rate_option_strip`` clause.
 
     QUA-921 intentionally does not migrate this clause, so it should resolve
     to the rate-cap helper under both reference variants.
     """
     return ProductIR(
         instrument="cap",
-        payoff_family="rate_cap_floor_strip",
+        payoff_family="period_rate_option_strip",
         exercise_style="none",
         state_dependence="schedule_state",
         schedule_dependence=True,
