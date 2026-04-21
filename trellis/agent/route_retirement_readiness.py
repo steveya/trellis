@@ -245,6 +245,8 @@ def capture_compiled_request_authority_snapshot(compiled_request) -> AuthoritySe
     metadata = dict(getattr(request, "metadata", {}) or {})
     semantic_blueprint = dict(metadata.get("semantic_blueprint") or {})
     selection = dict(semantic_blueprint.get("contract_ir_solver_selection") or {})
+    if not selection:
+        selection = dict(semantic_blueprint.get("static_leg_lowering_selection") or {})
     authority = dict(metadata.get("route_binding_authority") or {})
     backend_binding = dict(authority.get("backend_binding") or {})
     authoritative_ref = str(selection.get("declaration_id") or "").strip()

@@ -55,7 +55,23 @@ def test_benchmark_request_description_makes_cap_request_explicit():
     assert description is not None
     assert "Instrument class: cap." in description
     assert "Rate index: USD-SOFR-3M." in description
+    assert "Pricing model: black." in description
     assert "cap/floor" not in description.lower()
+
+
+def test_benchmark_request_description_surfaces_cap_model_specific_terms():
+    tasks = _benchmark_tasks()
+
+    shifted_description = benchmark_request_description(tasks["F004"], root=ROOT)
+    sabr_description = benchmark_request_description(tasks["F005"], root=ROOT)
+
+    assert shifted_description is not None
+    assert "Pricing model: shifted_black." in shifted_description
+    assert "Shift: 0.01." in shifted_description
+
+    assert sabr_description is not None
+    assert "Pricing model: sabr." in sabr_description
+    assert "SABR parameters: alpha=0.025, beta=0.5, nu=0.35, rho=-0.2." in sabr_description
 
 
 def test_benchmark_spec_overrides_cover_fx_rates_cap_and_swaption_contracts():

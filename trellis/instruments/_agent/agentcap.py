@@ -131,5 +131,8 @@ Implementation target: analytical."""
                 frequency=spec.frequency,
                 day_count=spec.day_count,
                 rate_index=spec.rate_index,
+                model=spec.model,
+                shift=spec.shift,
+                sabr=spec.sabr,
             )
         )

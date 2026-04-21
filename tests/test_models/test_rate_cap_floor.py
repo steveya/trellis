@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
@@ -25,6 +26,19 @@ from trellis.models.vol_surface import FlatVol
 
 SETTLE = date(2024, 11, 15)
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@dataclass(frozen=True)
+class _GeneratedAgentCapSpec:
+    """Minimal fresh-generated cap spec shape without model-specific fields."""
+
+    notional: float
+    strike: float
+    start_date: date
+    end_date: date
+    frequency: Frequency = Frequency.QUARTERLY
+    day_count: DayCountConvention = DayCountConvention.ACT_360
+    rate_index: str | None = None
 
 
 def _market_state(rate=0.05, vol=0.20):
@@ -117,6 +131,75 @@ def test_rate_cap_floor_strip_helpers_accept_keyword_contract_fields():
 
     assert analytical_from_kwargs == pytest.approx(analytical_from_spec)
     assert monte_carlo_from_kwargs == pytest.approx(monte_carlo_from_spec)
+
+
+@pytest.mark.parametrize(
+    "model_overrides",
+    (
+        {"model": "shifted_black", "shift": 0.01},
+        {"model": "sabr", "sabr": {"alpha": 0.025, "beta": 0.5, "rho": -0.2, "nu": 0.35}},
+    ),
+)
+def test_rate_cap_floor_strip_explicit_model_kwargs_override_generic_spec(model_overrides):
+    curve = DateAwareFlatYieldCurve(
+        value_date=SETTLE,
+        flat_rate=0.0425,
+        curve_day_count=DayCountConvention.ACT_ACT_ISDA,
+    )
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=curve,
+        forecast_curves={"USD-SOFR-3M": curve},
+        vol_surface=FlatVol(0.20),
+        model_parameters={
+            "shifted_black_vol": 0.19,
+            "shift": 0.01,
+            "sabr": {
+                "alpha": 0.025,
+                "beta": 0.5,
+                "rho": -0.2,
+                "nu": 0.35,
+            },
+        },
+    )
+    generated_spec = _GeneratedAgentCapSpec(
+        notional=1_000_000,
+        strike=0.04,
+        start_date=SETTLE,
+        end_date=date(2029, 11, 15),
+        rate_index="USD-SOFR-3M",
+    )
+    canonical_spec = CapFloorSpec(
+        notional=generated_spec.notional,
+        strike=generated_spec.strike,
+        start_date=generated_spec.start_date,
+        end_date=generated_spec.end_date,
+        frequency=generated_spec.frequency,
+        day_count=generated_spec.day_count,
+        rate_index=generated_spec.rate_index,
+        **model_overrides,
+    )
+
+    black_price = price_rate_cap_floor_strip_analytical(
+        market_state,
+        generated_spec,
+        instrument_class="cap",
+    )
+    overridden_price = price_rate_cap_floor_strip_analytical(
+        market_state,
+        generated_spec,
+        instrument_class="cap",
+        **model_overrides,
+    )
+    canonical_price = price_rate_cap_floor_strip_analytical(
+        market_state,
+        canonical_spec,
+        instrument_class="cap",
+    )
+
+    assert overridden_price == pytest.approx(canonical_price)
+    assert abs(overridden_price - black_price) > 1.0
 
 
 def test_rate_cap_floor_strip_helpers_preserve_explicit_period_schedule():

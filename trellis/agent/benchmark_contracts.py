@@ -372,6 +372,18 @@ def _benchmark_detail_lines(
             lines.append(f"Day count: {contract['day_count']}.")
         if scenario_contract is not None and scenario_contract.forecast_curve_name:
             lines.append(f"Rate index: {scenario_contract.forecast_curve_name}.")
+        model = str(contract.get("model") or "").strip().lower()
+        if model:
+            lines.append(f"Pricing model: {model}.")
+        if contract.get("shift") not in {None, ""}:
+            lines.append(f"Shift: {contract.get('shift')}.")
+        sabr = dict(contract.get("sabr") or {})
+        if sabr:
+            lines.append(
+                "SABR parameters: "
+                + ", ".join(f"{key}={value}" for key, value in sorted(sabr.items()))
+                + "."
+            )
         return lines
     if product == "swaption":
         lines.extend(

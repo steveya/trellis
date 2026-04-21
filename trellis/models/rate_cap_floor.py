@@ -11,6 +11,7 @@ from trellis.core.date_utils import build_payment_timeline
 from trellis.conventions.day_count import DayCountConvention
 from trellis.core.differentiable import get_numpy
 from trellis.core.market_state import MarketState
+from trellis.core.types import Frequency
 from trellis.instruments.cap import CapFloorSpec
 from trellis.models.black import black76_call, black76_put
 from trellis.models.processes.sabr import SABRProcess
@@ -270,16 +271,40 @@ def _coerce_cap_floor_spec(
     shift: float | None = None,
     sabr: dict[str, float] | None = None,
 ) -> CapFloorSpec:
-    """Accept either a concrete spec object or expanded cap/floor keyword fields."""
-    if spec is not None:
-        return spec
+    """Accept either a concrete spec object or expanded cap/floor keyword fields.
+
+    Explicit keyword arguments always win. This matters for fresh-generated
+    adapters, which often pass a lightweight ``AgentCapSpec`` plus explicit
+    pricing-mode kwargs such as ``model="sabr"``.
+    """
+    resolved_notional = notional if notional is not None else getattr(spec, "notional", None)
+    resolved_strike = strike if strike is not None else getattr(spec, "strike", None)
+    resolved_start_date = start_date if start_date is not None else getattr(spec, "start_date", None)
+    resolved_end_date = end_date if end_date is not None else getattr(spec, "end_date", None)
+    resolved_frequency = frequency if frequency is not None else getattr(spec, "frequency", None)
+    resolved_day_count = day_count if day_count is not None else getattr(spec, "day_count", None)
+    resolved_rate_index = rate_index if rate_index is not None else getattr(spec, "rate_index", None)
+    resolved_calendar_name = (
+        calendar_name
+        if calendar_name is not None
+        else getattr(spec, "calendar_name", None)
+    )
+    resolved_business_day_adjustment = (
+        business_day_adjustment
+        if business_day_adjustment is not None
+        else getattr(spec, "business_day_adjustment", None)
+    )
+    resolved_model = model if model is not None else getattr(spec, "model", None)
+    resolved_shift = shift if shift is not None else getattr(spec, "shift", None)
+    resolved_sabr = sabr if sabr is not None else getattr(spec, "sabr", None)
+
     missing = [
         name
         for name, value in {
-            "notional": notional,
-            "strike": strike,
-            "start_date": start_date,
-            "end_date": end_date,
+            "notional": resolved_notional,
+            "strike": resolved_strike,
+            "start_date": resolved_start_date,
+            "end_date": resolved_end_date,
         }.items()
         if value is None
     ]
@@ -289,18 +314,18 @@ def _coerce_cap_floor_spec(
             f"fields for {', '.join(missing)}"
         )
     return CapFloorSpec(
-        notional=float(notional),
-        strike=float(strike),
-        start_date=start_date,
-        end_date=end_date,
-        frequency=frequency,
-        day_count=day_count,
-        rate_index=rate_index,
-        calendar_name=calendar_name,
-        business_day_adjustment=business_day_adjustment,
-        model=model,
-        shift=shift,
-        sabr=sabr,
+        notional=float(resolved_notional),
+        strike=float(resolved_strike),
+        start_date=resolved_start_date,
+        end_date=resolved_end_date,
+        frequency=resolved_frequency if resolved_frequency is not None else Frequency.QUARTERLY,
+        day_count=resolved_day_count if resolved_day_count is not None else DayCountConvention.ACT_360,
+        rate_index=resolved_rate_index,
+        calendar_name=resolved_calendar_name,
+        business_day_adjustment=resolved_business_day_adjustment,
+        model=resolved_model,
+        shift=resolved_shift,
+        sabr=dict(resolved_sabr) if resolved_sabr else None,
     )
 
 

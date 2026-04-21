@@ -566,6 +566,9 @@ def _semantic_blueprint_summary(semantic_blueprint) -> dict[str, object]:
     return {
         "preferred_method": semantic_blueprint.preferred_method,
         "contract_ir": _yaml_safe_value(getattr(semantic_blueprint, "contract_ir", None)),
+        "static_leg_contract_ir": _yaml_safe_value(
+            getattr(semantic_blueprint, "static_leg_contract_ir", None)
+        ),
         "primitive_routes": list(getattr(semantic_blueprint, "primitive_routes", ()) or ()),
         "route_modules": list(getattr(semantic_blueprint, "route_modules", ()) or ()),
         "dsl_route": getattr(lowering, "route_id", None),
@@ -600,6 +603,9 @@ def _semantic_blueprint_summary(semantic_blueprint) -> dict[str, object]:
         "contract_ir_solver_selection": _yaml_safe_value(
             getattr(semantic_blueprint, "contract_ir_solver_selection", None)
         ),
+        "static_leg_lowering_selection": _yaml_safe_value(
+            getattr(semantic_blueprint, "static_leg_lowering_selection", None)
+        ),
         "requested_outputs": list(getattr(semantic_blueprint, "requested_outputs", ()) or ()),
         "valuation_context": valuation_context_summary(semantic_blueprint.valuation_context)
         if getattr(semantic_blueprint, "valuation_context", None) is not None
@@ -611,6 +617,14 @@ def _semantic_blueprint_summary(semantic_blueprint) -> dict[str, object]:
         if getattr(semantic_blueprint, "market_binding_spec", None) is not None
         else None,
     }
+
+
+def _semantic_blueprint_structural_selection(semantic_blueprint):
+    """Return the first authoritative structural selection carried by the blueprint."""
+    selection = getattr(semantic_blueprint, "contract_ir_solver_selection", None)
+    if selection is not None:
+        return selection
+    return getattr(semantic_blueprint, "static_leg_lowering_selection", None)
 
 
 def _contract_ir_compiler_summary(
@@ -872,7 +886,7 @@ def _record_semantic_extension_artifact(
 
 def _semantic_blueprint_has_route_free_exact_binding(semantic_blueprint) -> bool:
     """Return whether the semantic blueprint already carries route-free exact authority."""
-    selection = getattr(semantic_blueprint, "contract_ir_solver_selection", None)
+    selection = _semantic_blueprint_structural_selection(semantic_blueprint)
     lowering = getattr(semantic_blueprint, "dsl_lowering", None)
     lane_plan = getattr(semantic_blueprint, "lane_plan", None)
     if selection is None or lowering is None or lane_plan is None:
@@ -891,7 +905,7 @@ def _route_free_generation_plan_from_semantic_blueprint(plan, semantic_blueprint
     selector path while preserving the same exact backend-binding provenance for
     validation, prompts, and deterministic module materialization.
     """
-    selection = getattr(semantic_blueprint, "contract_ir_solver_selection", None)
+    selection = _semantic_blueprint_structural_selection(semantic_blueprint)
     lowering = getattr(semantic_blueprint, "dsl_lowering", None)
     lane_plan = getattr(semantic_blueprint, "lane_plan", None)
     if selection is None or lowering is None or lane_plan is None:
@@ -1686,22 +1700,28 @@ def _compile_comparison_method_plan(
         inspected_modules=inspected_modules,
         product_ir=product_ir,
     )
-    if semantic_blueprint is not None and not getattr(semantic_blueprint, "primitive_routes", ()):
-        uncertainty_flags = tuple(
-            dict.fromkeys(
-                (
-                    *getattr(generation_plan, "uncertainty_flags", ()),
-                    "primitive_plan_not_available",
+    if semantic_blueprint is not None:
+        if _semantic_blueprint_has_route_free_exact_binding(semantic_blueprint):
+            generation_plan = _route_free_generation_plan_from_semantic_blueprint(
+                generation_plan,
+                semantic_blueprint,
+            )
+        elif not getattr(semantic_blueprint, "primitive_routes", ()):
+            uncertainty_flags = tuple(
+                dict.fromkeys(
+                    (
+                        *getattr(generation_plan, "uncertainty_flags", ()),
+                        "primitive_plan_not_available",
+                    )
                 )
             )
-        )
-        generation_plan = replace(
-            generation_plan,
-            primitive_plan=None,
-            blocker_report=None,
-            new_primitive_workflow=None,
-            uncertainty_flags=uncertainty_flags,
-        )
+            generation_plan = replace(
+                generation_plan,
+                primitive_plan=None,
+                blocker_report=None,
+                new_primitive_workflow=None,
+                uncertainty_flags=uncertainty_flags,
+            )
     knowledge_bundle = _shared_knowledge_bundle(
         product_ir,
         preferred_method=pricing_plan.method,

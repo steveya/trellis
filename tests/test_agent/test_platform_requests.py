@@ -896,6 +896,51 @@ def test_compile_build_request_bootstraps_title_only_rate_cap_task_into_exact_mc
     )
 
 
+@pytest.mark.parametrize("task_id", ["F003", "F004", "F005"])
+def test_compile_build_request_routes_cap_strip_benchmarks_through_route_free_static_leg_authority(
+    task_id: str,
+):
+    from trellis.agent.benchmark_contracts import benchmark_request_description
+    from trellis.agent.platform_requests import compile_build_request
+
+    task = _financepy_benchmark_task(task_id)
+    compiled = compile_build_request(
+        benchmark_request_description(task),
+        instrument_type=task["instrument_type"],
+        preferred_method="analytical",
+    )
+
+    assert compiled.execution_plan.reason == "semantic_contract_request"
+    assert compiled.semantic_contract is not None
+    assert compiled.semantic_contract.semantic_id == "period_rate_option_strip"
+    assert compiled.semantic_blueprint is not None
+    assert compiled.semantic_blueprint.static_leg_contract_ir is not None
+    assert compiled.semantic_blueprint.static_leg_lowering_selection is not None
+    assert (
+        compiled.semantic_blueprint.static_leg_lowering_selection.declaration_id
+        == "static_leg_period_rate_option_strip_analytical"
+    )
+    assert compiled.semantic_blueprint.primitive_routes == ()
+    assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] is None
+    assert (
+        compiled.request.metadata["semantic_blueprint"]["static_leg_lowering_selection"][
+            "declaration_id"
+        ]
+        == "static_leg_period_rate_option_strip_analytical"
+    )
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.primitive_plan is None
+    assert compiled.generation_plan.lane_plan_kind == "exact_target_binding"
+    assert compiled.generation_plan.backend_binding_id == (
+        "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical"
+    )
+    authority = compiled.request.metadata["route_binding_authority"]
+    assert authority["route_id"] is None
+    assert authority["backend_binding"]["binding_id"] == (
+        "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical"
+    )
+
+
 @pytest.mark.parametrize(
     ("description", "instrument_type", "expected_instrument"),
     [

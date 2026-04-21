@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from trellis.agent.knowledge.decompose import decompose_to_dynamic_contract_ir
@@ -130,3 +132,44 @@ def test_masked_authority_harness_reuses_phase4_route_free_build_surface():
     assert baseline.authoritative_ref == "black76_vanilla_call"
     assert baseline.lane_family == "analytical"
     assert baseline.binding_id == "trellis.models.black.black76_call"
+
+
+def test_masked_authority_harness_supports_static_leg_route_free_build_surface():
+    from trellis.agent.benchmark_contracts import benchmark_request_description
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.route_retirement_readiness import (
+        capture_compiled_request_authority_snapshot,
+        default_masked_authority_variants,
+        require_masked_authority_invariant,
+    )
+
+    root = Path(__file__).resolve().parents[2]
+    task = next(
+        item
+        for item in load_task_manifest("TASKS_BENCHMARK_FINANCEPY.yaml", root=root)
+        if item["id"] == "F003"
+    )
+    description = benchmark_request_description(task, root=root)
+
+    baseline = require_masked_authority_invariant(
+        default_masked_authority_variants(),
+        lambda variant: capture_compiled_request_authority_snapshot(
+            compile_build_request(
+                description,
+                instrument_type="rate_cap_floor_strip",
+                preferred_method="analytical",
+                metadata={
+                    "route_id": variant.route_id,
+                    "route_family": variant.route_family,
+                    "product_instrument": variant.product_instrument,
+                    **dict(variant.wrapper_metadata),
+                },
+            )
+        ),
+    )
+
+    assert baseline.selection_surface == "platform_request"
+    assert baseline.authoritative_ref == "static_leg_period_rate_option_strip_analytical"
+    assert baseline.lane_family == "analytical"
+    assert baseline.binding_id == "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical"

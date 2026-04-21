@@ -107,13 +107,28 @@ def _looks_quoted_observable(lower: str, instrument: str) -> bool:
 
 
 def _looks_static_leg(lower: str, instrument: str) -> bool:
-    if instrument in {"swap", "bond", "basis_swap", "interest_rate_swap"}:
+    if instrument in {
+        "swap",
+        "bond",
+        "basis_swap",
+        "interest_rate_swap",
+        "cap",
+        "floor",
+        "rate_cap_floor_strip",
+        "period_rate_option_strip",
+    }:
         return True
     cues = (
         "interest rate swap",
         "basis swap",
         "coupon bond",
         "fixed coupon bond",
+        "rate cap",
+        "rate floor",
+        "cap strip",
+        "floor strip",
+        "cap/floor",
+        "cap floor",
         "receive fixed",
         "pay fixed",
         "receive compounded sofr",

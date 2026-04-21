@@ -22,6 +22,15 @@ class TestSemanticTrackClassifier:
         assert classification.track == "static_leg"
         assert classification.dynamic is False
 
+    def test_rate_cap_floor_strip_alias_classifies_as_static_leg(self):
+        classification = classify_semantic_track(
+            "Price a cap strip under the declared benchmark rates surface. Instrument class: cap. Start date: 2024-11-15. End date: 2029-11-15.",
+            instrument_type="rate_cap_floor_strip",
+        )
+
+        assert classification.track == "static_leg"
+        assert classification.dynamic is False
+
     def test_callable_bond_classifies_as_dynamic_wrapper_over_static_leg(self):
         classification = classify_semantic_track(
             "Issuer callable fixed coupon bond USD face 1000000 coupon 5% issue 2025-01-15 maturity 2030-01-15 call dates 2027-01-15, 2028-01-15",

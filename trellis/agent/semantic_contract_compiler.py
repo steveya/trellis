@@ -9,7 +9,11 @@ from typing import Mapping
 
 from trellis.agent.codegen_guardrails import rank_primitive_routes
 from trellis.agent.contract_ir import ContractIR
-from trellis.agent.knowledge.decompose import build_product_ir, decompose_to_contract_ir
+from trellis.agent.knowledge.decompose import (
+    build_product_ir,
+    decompose_to_contract_ir,
+    decompose_to_static_leg_contract_ir,
+)
 from trellis.agent.knowledge.methods import normalize_method
 from trellis.agent.market_binding import (
     build_market_binding_spec,
@@ -80,6 +84,8 @@ class SemanticImplementationBlueprint:
     contract_ir: ContractIR | None = None
     contract_ir_solver_selection: object | None = None
     contract_ir_solver_shadow: object | None = None
+    static_leg_contract_ir: object | None = None
+    static_leg_lowering_selection: object | None = None
 
     def __post_init__(self):
         """Freeze mapping metadata for stable traces and tests."""
@@ -163,6 +169,22 @@ def compile_semantic_contract(
             getattr(contract, "semantic_id", "<unknown>"),
             exc_info=True,
         )
+    static_leg_contract_ir = None
+    try:
+        static_leg_contract_ir = decompose_to_static_leg_contract_ir(
+            contract.description or contract.semantic_id,
+            instrument_type=(
+                getattr(getattr(contract, "product", None), "instrument_class", None)
+                or getattr(product_ir, "instrument", None)
+            ),
+            product_ir=product_ir,
+        )
+    except Exception:
+        _LOG.warning(
+            "Static-leg Contract IR decomposition failed for semantic contract %s",
+            getattr(contract, "semantic_id", "<unknown>"),
+            exc_info=True,
+        )
     pricing_plan = select_pricing_method_for_product_ir(
         product_ir,
         preferred_method=preferred_method,
@@ -215,12 +237,25 @@ def compile_semantic_contract(
         requested_outputs=normalized_outputs,
         valuation_context=resolved_valuation_context,
     )
+    static_leg_lowering_selection = _compile_static_leg_lowering_selection(
+        static_leg_contract_ir=static_leg_contract_ir,
+        preferred_method=preferred_method,
+    )
     if contract_ir_solver_selection is not None:
         primitive_routes = ()
-        dsl_lowering = _route_free_lowering_from_contract_ir_selection(
+        dsl_lowering = _route_free_lowering_from_structural_selection(
             contract_ir_solver_selection,
             preferred_method=preferred_method,
             fallback_lowering=legacy_dsl_lowering,
+            selection_note_prefix="contract_ir_selection",
+        )
+    elif static_leg_lowering_selection is not None:
+        primitive_routes = ()
+        dsl_lowering = _route_free_lowering_from_structural_selection(
+            static_leg_lowering_selection,
+            preferred_method=preferred_method,
+            fallback_lowering=legacy_dsl_lowering,
+            selection_note_prefix="static_leg_selection",
         )
     else:
         primitive_routes = legacy_primitive_routes
@@ -239,7 +274,11 @@ def compile_semantic_contract(
         ),
     )
     route_method_modules = tuple(pricing_plan.method_modules)
-    if not primitive_routes and contract_ir_solver_selection is None:
+    if (
+        not primitive_routes
+        and contract_ir_solver_selection is None
+        and static_leg_lowering_selection is None
+    ):
         route_method_modules = ()
 
     route_modules = tuple(
@@ -298,6 +337,8 @@ def compile_semantic_contract(
         contract_ir=contract_ir,
         contract_ir_solver_selection=contract_ir_solver_selection,
         contract_ir_solver_shadow=contract_ir_solver_shadow,
+        static_leg_contract_ir=static_leg_contract_ir,
+        static_leg_lowering_selection=static_leg_lowering_selection,
     )
 
 
@@ -554,11 +595,12 @@ def _route_free_lowering_bindings_from_selection(selection) -> tuple[object, ...
     return tuple(bindings)
 
 
-def _route_free_lowering_from_contract_ir_selection(
+def _route_free_lowering_from_structural_selection(
     selection,
     *,
     preferred_method: str,
     fallback_lowering,
+    selection_note_prefix: str,
 ):
     """Build the authoritative route-free lowering from structural selection."""
     from trellis.agent.dsl_lowering import SemanticDslLowering
@@ -569,7 +611,7 @@ def _route_free_lowering_from_contract_ir_selection(
         or None
     )
     legacy_notes = tuple(getattr(fallback_lowering, "notes", ()) or ())
-    selection_note = f"contract_ir_selection:{selection.declaration_id}"
+    selection_note = f"{selection_note_prefix}:{selection.declaration_id}"
     notes = legacy_notes if selection_note in legacy_notes else (*legacy_notes, selection_note)
     return SemanticDslLowering(
         route_id=None,
@@ -583,6 +625,51 @@ def _route_free_lowering_from_contract_ir_selection(
         errors=(),
         binding_id=str(getattr(selection, "callable_ref", "") or ""),
     )
+
+
+def _route_free_lowering_from_contract_ir_selection(
+    selection,
+    *,
+    preferred_method: str,
+    fallback_lowering,
+):
+    """Backward-compatible wrapper for ContractIR structural selection."""
+    return _route_free_lowering_from_structural_selection(
+        selection,
+        preferred_method=preferred_method,
+        fallback_lowering=fallback_lowering,
+        selection_note_prefix="contract_ir_selection",
+    )
+
+
+def _compile_static_leg_lowering_selection(
+    *,
+    static_leg_contract_ir,
+    preferred_method: str,
+):
+    """Return the authoritative bounded static-leg lowering selection when admitted."""
+
+    if static_leg_contract_ir is None:
+        return None
+
+    from trellis.agent.static_leg_admission import (
+        StaticLegLoweringAmbiguityError,
+        StaticLegLoweringNoMatchError,
+        select_static_leg_lowering,
+    )
+
+    try:
+        return select_static_leg_lowering(
+            static_leg_contract_ir,
+            requested_method=preferred_method,
+        )
+    except (StaticLegLoweringNoMatchError, StaticLegLoweringAmbiguityError):
+        _LOG.debug(
+            "Static-leg lowering selection did not admit semantic %s",
+            getattr(getattr(static_leg_contract_ir, "metadata", None), "semantic_id", "<unknown>"),
+            exc_info=True,
+        )
+        return None
 
 
 def _compile_contract_ir_solver_shadow(

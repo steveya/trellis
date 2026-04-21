@@ -4907,12 +4907,24 @@ _SEMANTIC_DRAFT_MATCHER_PROFILES = MappingProxyType(
         ),
         "period_rate_option_strip": SemanticDraftMatcherProfile(
             rule_name="period_rate_option_strip",
-            instrument_aliases=("cap", "floor"),
+            instrument_aliases=(
+                "cap",
+                "floor",
+                "rate_cap_floor_strip",
+                "period_rate_option_strip",
+                "rate_option_strip",
+            ),
             positive_cues=(
                 "interest rate cap",
                 "interest rate floor",
+                "rate cap",
+                "rate floor",
                 "caplet",
                 "floorlet",
+                "cap strip",
+                "floor strip",
+                "caplet stack",
+                "floorlet stack",
                 "cap/floor",
                 "cap floor",
             ),
@@ -4996,12 +5008,12 @@ _RATE_CAP_FLOOR_DRAFT_VARIANTS = (
     SemanticDraftVariantProfile(
         variant_key="floor",
         instrument_aliases=("floor",),
-        selection_cues=("floorlet", "interest rate floor"),
+        selection_cues=("floorlet", "interest rate floor", "rate floor", "floor strip"),
     ),
     SemanticDraftVariantProfile(
         variant_key="cap",
         instrument_aliases=("cap",),
-        selection_cues=("caplet", "interest rate cap"),
+        selection_cues=("caplet", "interest rate cap", "rate cap", "cap strip"),
     ),
 )
 
