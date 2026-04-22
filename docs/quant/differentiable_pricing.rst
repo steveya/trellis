@@ -88,8 +88,9 @@ Implementation Rules
 - use ``autograd.numpy`` via ``trellis.core.differentiable.get_numpy()``
 - avoid ``float(...)`` or other scalarization inside traced pricing code
 - for Monte Carlo gradients, pass explicit shocks so the path is deterministic
-- keep public adapters float-returning and expose raw resolved-input kernels as
-  ``*_raw`` helpers when gradients matter
+- keep the public pricing adapter trace-safe and reserve ``float(...)`` for
+  explicit reporting or solver boundaries; expose raw resolved-input kernels as
+  ``*_raw`` helpers when they improve reuse
 - keep Numba kernels as forward engines, not gradient engines
 - preserve the full ``MarketState`` when cloning a traced pricing state
 - prefer autodiff when it replaces bump/reprice loops, parallel DV01s, or

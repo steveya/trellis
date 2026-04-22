@@ -35,7 +35,8 @@ def compute_oas(
     Parameters
     ----------
     payoff : Payoff
-        Must implement ``evaluate(market_state) -> float``.
+        Must implement ``evaluate(market_state)`` and return a present-value
+        scalar.
     market_price : float
         Observed market price (clean or dirty, depending on payoff convention).
     curve : YieldCurve
@@ -65,7 +66,7 @@ def compute_oas(
             vol_surface=vol_surface,
         )
         model_price = payoff.evaluate(ms)
-        return model_price - market_price
+        return float(model_price - market_price)
 
     oas = brentq(objective, spread_range[0], spread_range[1], xtol=tol)
     return oas

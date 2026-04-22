@@ -54,7 +54,7 @@ ground truth until revalidated.
 | # | Limitation | Impact | Files |
 |---|-----------|--------|-------|
 | L30 | **The AD layer is still a thin `autograd` wrapper** — there is no reverse-mode portfolio AAD stack, no dedicated Jacobian/VJP/JVP surface, and no industrial adjoint workflow | Sensitivity throughput will not scale to large books, calibration loops, or scenario grids | `trellis/core/differentiable.py` |
-| L31 | **Large parts of the numerical stack are intentionally forward-only** — smile surfaces, Numba kernels, reduced-storage MC accumulation, discontinuous payoffs, and many custom schemes sit outside the traced region | The library cannot rely on one consistent differentiable path across pricing and risk | `docs/quant/differentiable_pricing.rst` |
+| L31 | **Large parts of the numerical stack are still intentionally forward-only** — the public payoff contract now preserves traced scalars for smooth resolved-input routes, but smile surfaces, Numba kernels, reduced-storage MC accumulation, discontinuous payoffs, and many custom schemes still sit outside the traced region | Trellis can now differentiate through the public payoff boundary on supported smooth routes, but it still cannot rely on one consistent differentiable path across pricing and risk | `trellis/core/payoff.py`, `docs/quant/differentiable_pricing.rst` |
 | L32 | **Differentiable Monte Carlo is narrow and explicit-shock only** — deterministic pathwise gradients require explicit shocks, and supported differentiable schemes are limited | Autograd-based MC Greeks are useful for demos but too constrained for production risk | `trellis/models/monte_carlo/engine.py` |
 
 ### Portfolio, Scenario, And Counterparty Risk

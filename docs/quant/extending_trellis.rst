@@ -25,9 +25,10 @@ The core checklist is:
 1. Define the frozen spec/value object that describes the product.
 2. Implement a payoff class with explicit ``requirements`` and ``evaluate()`` semantics.
    If the payoff has a resolved-input pricing kernel, expose it as ``*_raw``
-   or ``evaluate_raw(...)`` and keep ``evaluate()`` as the float-returning
+   or ``evaluate_raw(...)`` and keep ``evaluate()`` as the public trace-safe
    adapter boundary.
-3. Return either ``Cashflows`` or ``PresentValue`` so ``price_payoff()`` can handle it consistently.
+3. Return the present-value scalar directly. Legacy ``Cashflows`` and
+   ``PresentValue`` wrappers remain for backward compatibility only.
 4. Add targeted pricing and capability tests.
 5. Export the surface from ``trellis.__init__`` only if it is intended to be public.
 
@@ -169,7 +170,8 @@ Prefer extending the deterministic library first, then teaching the agent about 
 - If the agent should route or build against it, add or update the matching knowledge assets.
 - If a change affects operational behavior, traces, or issue sync, continue in :doc:`../developer/index`.
 - If a numerical family has a natural raw kernel, prefer that kernel for AD and
-  keep the user-facing adapter float-returning.
+  keep the user-facing adapter trace-safe, with float conversion only at
+  explicit reporting or solver boundaries.
 
 Related Reading
 ---------------

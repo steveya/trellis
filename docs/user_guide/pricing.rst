@@ -735,12 +735,16 @@ Versioning constraints matter here:
 Return Types
 ~~~~~~~~~~~~
 
-``evaluate()`` returns either:
+``evaluate()`` returns the present-value scalar for the payoff.
 
-- **Cashflows** — undiscounted dated cashflows (bonds, caps, swaps)
-- **PresentValue** — already-discounted PV (tree, MC, PDE methods)
+- In ordinary pricing calls this is usually a Python ``float``.
+- In smooth autodiff-compatible workflows it may be a traced scalar from the
+  differentiable backend.
 
-``price_payoff()`` handles both automatically.
+Legacy ``Cashflows`` and ``PresentValue`` wrappers still exist for backward
+compatibility, but new payoff implementations should return the scalar PV
+directly and leave any ``float(...)`` coercion to explicit reporting or solver
+boundaries.
 
 Greeks
 ------

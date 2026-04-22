@@ -44,7 +44,7 @@ Layering
      - Deterministic pricing math used by hand-written and agent-built routes
      - ``trellis/models/``
    * - Market and payoff runtime
-     - ``MarketState``, ``Payoff``, ``PresentValue``
+     - ``MarketState``, ``Payoff``, present-value scalar contract
      - Immutable market inputs and common execution interfaces
      - ``trellis/core/market_state.py``, ``trellis/core/payoff.py``
 

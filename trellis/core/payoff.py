@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from datetime import date
-from typing import Generic, Protocol, TypeVar, runtime_checkable
+from typing import Any, Generic, Protocol, TypeAlias, TypeVar, runtime_checkable
 
 from trellis.core.date_utils import year_fraction
 from trellis.core.differentiable import get_numpy
@@ -25,13 +25,17 @@ np = get_numpy()
 
 SpecT = TypeVar("SpecT")
 ResolvedT = TypeVar("ResolvedT")
+PricingValue: TypeAlias = Any
 
 
 @runtime_checkable
 class Payoff(Protocol):
     """Protocol for anything that can be priced from a MarketState.
 
-    ``evaluate()`` returns the present value as a float.
+    ``evaluate()`` returns the present-value scalar. On ordinary pricing calls
+    this is typically a Python ``float``; on smooth autodiff-compatible routes
+    it may be a traced scalar from the active differentiable backend.
+
     Each payoff handles its own discounting internally.
     """
 
@@ -40,11 +44,12 @@ class Payoff(Protocol):
         """Capability names this payoff needs from MarketState."""
         ...
 
-    def evaluate(self, market_state: MarketState) -> float:
+    def evaluate(self, market_state: MarketState) -> PricingValue:
         """Compute the present value given market data.
 
-        The payoff is responsible for all discounting. The returned
-        float is the final PV — ``price_payoff()`` returns it directly.
+        The payoff is responsible for all discounting. ``price_payoff()``
+        returns this scalar directly and does not force it back to a Python
+        ``float``.
         """
         ...
 
@@ -79,10 +84,10 @@ class ResolvedInputPayoff(Generic[SpecT, ResolvedT], ABC):
         """Resolve and normalize market inputs before pricing."""
 
     @abstractmethod
-    def evaluate_from_resolved(self, resolved: ResolvedT) -> float:
+    def evaluate_from_resolved(self, resolved: ResolvedT) -> PricingValue:
         """Compute the present value from normalized resolved inputs."""
 
-    def evaluate_raw(self, resolved: ResolvedT) -> float:
+    def evaluate_raw(self, resolved: ResolvedT) -> PricingValue:
         """Compute the present value from resolved inputs (differentiation-safe).
 
         This method exists so that automatic differentiation (autograd) can
@@ -92,25 +97,45 @@ class ResolvedInputPayoff(Generic[SpecT, ResolvedT], ABC):
         """
         return self.evaluate_from_resolved(resolved)
 
-    def evaluate_at_expiry(self, resolved: ResolvedT) -> float:
+    def evaluate_at_expiry(self, resolved: ResolvedT) -> PricingValue:
         """Handle the deterministic expiry case for resolved inputs."""
-        return float(self.evaluate_raw(resolved))
+        return self.evaluate_raw(resolved)
 
-    def resolve_time_to_expiry(self, resolved: ResolvedT) -> float | None:
-        """Read time-to-expiry from common resolved-input field names."""
+    def resolve_time_to_expiry(self, resolved: ResolvedT) -> PricingValue | None:
+        """Read time-to-expiry from common resolved-input field names.
+
+        The value is returned without scalarization so callers can preserve a
+        traced scalar through the public pricing path. Any float-only
+        conversion belongs at an explicit solver or reporting boundary.
+        """
         for field_name in ("T", "time_to_expiry"):
             value = getattr(resolved, field_name, None)
             if value is not None:
-                return float(value)
+                return value
         return None
 
-    def evaluate(self, market_state: MarketState) -> float:
+    def should_evaluate_at_expiry(self, time_to_expiry: PricingValue | None) -> bool:
+        """Return whether the payoff should use its expiry shortcut path.
+
+        Expiry routing is a control-flow decision, not a differentiation
+        boundary. If the time-to-expiry object does not support a clean scalar
+        comparison we keep the live route instead of forcing a ``float(...)``
+        conversion.
+        """
+        if time_to_expiry is None:
+            return False
+        try:
+            return bool(time_to_expiry <= 0.0)
+        except (TypeError, ValueError):
+            return False
+
+    def evaluate(self, market_state: MarketState) -> PricingValue:
         """Resolve inputs once, route expiry cleanly, then delegate pricing."""
         resolved = self.resolve_inputs(market_state)
         time_to_expiry = self.resolve_time_to_expiry(resolved)
-        if time_to_expiry is not None and time_to_expiry <= 0.0:
-            return float(self.evaluate_at_expiry(resolved))
-        return float(self.evaluate_raw(resolved))
+        if self.should_evaluate_at_expiry(time_to_expiry):
+            return self.evaluate_at_expiry(resolved)
+        return self.evaluate_raw(resolved)
 
 
 class MonteCarloPathPayoff(ResolvedInputPayoff[SpecT, ResolvedT], ABC):
@@ -180,7 +205,7 @@ class MonteCarloPathPayoff(ResolvedInputPayoff[SpecT, ResolvedT], ABC):
         This adds a trailing dimension so all downstream code can assume
         shape (n_paths, n_steps, n_assets).
         """
-        normalized = np.asarray(paths, dtype=float)
+        normalized = np.asarray(paths)
         if normalized.ndim == 2:
             normalized = normalized[:, :, np.newaxis]
         if normalized.ndim != 3:
@@ -189,7 +214,7 @@ class MonteCarloPathPayoff(ResolvedInputPayoff[SpecT, ResolvedT], ABC):
             )
         return normalized
 
-    def discount_factor(self, resolved: ResolvedT) -> float:
+    def discount_factor(self, resolved: ResolvedT) -> PricingValue:
         """Look up the discount factor from resolved inputs.
 
         Checks several common field names (domestic_df, discount_factor, etc.).
@@ -202,37 +227,37 @@ class MonteCarloPathPayoff(ResolvedInputPayoff[SpecT, ResolvedT], ABC):
         ):
             value = getattr(resolved, field_name, None)
             if value is not None:
-                return float(value)
+                return value
         return 1.0
 
-    def payoff_scale(self, resolved: ResolvedT) -> float:
+    def payoff_scale(self, resolved: ResolvedT) -> PricingValue:
         """Return the notional amount used to scale payoff values.
 
         Reads from self.spec.notional; defaults to 1.0 if not set.
         """
-        return float(getattr(self.spec, "notional", 1.0))
+        return getattr(self.spec, "notional", 1.0)
 
-    def aggregate_pathwise_payoff(self, payoff_samples, resolved: ResolvedT) -> float:
+    def aggregate_pathwise_payoff(self, payoff_samples, resolved: ResolvedT) -> PricingValue:
         """Average per-path payoffs and apply discounting and notional scaling.
 
         Final price = notional * discount_factor * mean(payoff_samples).
         """
-        samples = np.asarray(payoff_samples, dtype=float)
         return (
             self.payoff_scale(resolved)
             * self.discount_factor(resolved)
-            * float(np.mean(samples))
+            * np.mean(payoff_samples)
         )
 
-    def evaluate_from_resolved(self, resolved: ResolvedT) -> float:
+    def evaluate_from_resolved(self, resolved: ResolvedT) -> PricingValue:
         """Simulate, normalize, aggregate, and discount pathwise payoffs."""
         process = self.build_process(resolved)
         engine = self.build_engine(process, resolved)
         paths = self.normalize_paths(
             engine.simulate(self.build_initial_state(resolved), self.time_horizon(resolved))
         )
-        return float(
-            self.aggregate_pathwise_payoff(self.pathwise_payoff(paths, resolved), resolved)
+        return self.aggregate_pathwise_payoff(
+            self.pathwise_payoff(paths, resolved),
+            resolved,
         )
 
 
@@ -269,7 +294,7 @@ class DeterministicCashflowPayoff:
         """Declare that deterministic cashflow pricing needs a discount curve."""
         return {"discount_curve"}
 
-    def evaluate(self, market_state: MarketState) -> float:
+    def evaluate(self, market_state: MarketState) -> PricingValue:
         """Discount each future cashflow date and sum the resulting PV."""
         schedule = self._instrument.cashflows(market_state.settlement)
         pv = 0.0

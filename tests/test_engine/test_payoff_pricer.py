@@ -101,7 +101,7 @@ class TestPayoffProtocol:
         adapter = DeterministicCashflowPayoff(_bond())
         assert adapter.requirements == {"discount_curve"}
 
-    def test_evaluate_returns_float(self):
+    def test_evaluate_returns_scalar_present_value(self):
         adapter = DeterministicCashflowPayoff(_bond())
         ms = _market_state()
         result = adapter.evaluate(ms)
@@ -229,8 +229,8 @@ class TestRoundTrip:
 
 class TestCustomPayoff:
 
-    def test_custom_payoff_returns_float(self):
-        """A hand-rolled Payoff returning a float works with price_payoff."""
+    def test_custom_payoff_returning_float_still_works(self):
+        """A hand-rolled Payoff returning a float still works with price_payoff."""
         from trellis.core.date_utils import year_fraction
 
         class SingleCashflowPayoff:
@@ -266,10 +266,10 @@ class TestCustomPayoff:
         assert "black_vol_surface" in exc_info.value.missing
 
 
-class TestEvaluateReturnsFloat:
+class TestEvaluateScalarContract:
 
     def test_float_passthrough(self):
-        """evaluate() returns float → price_payoff returns it directly."""
+        """Float-returning payoffs still pass through price_payoff unchanged."""
 
         class DirectPayoff:
             @property
