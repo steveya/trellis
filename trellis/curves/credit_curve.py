@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from trellis.core.differentiable import get_numpy
 from trellis.core.types import DiscountCurve
-from trellis.curves.interpolation import linear_interp
+from trellis.curves.interpolation import linear_interp, to_backend_array, validation_view
 
 np = get_numpy()
 
@@ -17,20 +17,27 @@ class CreditCurve:
 
     def __init__(self, tenors, hazard_rates):
         """Store tenor and hazard-rate grids for interpolation-based survival queries."""
-        self.tenors = np.asarray(tenors, dtype=float)
-        self.hazard_rates = np.asarray(hazard_rates, dtype=float)
-        if self.tenors.ndim != 1 or self.hazard_rates.ndim != 1:
+        self.tenors = to_backend_array(tenors)
+        self.hazard_rates = to_backend_array(hazard_rates)
+        tenors_view = validation_view(self.tenors)
+        hazard_view = validation_view(self.hazard_rates)
+        if tenors_view.ndim != 1 or hazard_view.ndim != 1:
             raise ValueError("CreditCurve tenors and hazard_rates must be one-dimensional")
-        if len(self.tenors) == 0:
+        if len(tenors_view) == 0:
             raise ValueError("CreditCurve requires at least one tenor/hazard-rate knot")
-        if len(self.tenors) != len(self.hazard_rates):
+        if len(tenors_view) != len(hazard_view):
             raise ValueError("CreditCurve tenors and hazard_rates must have the same length")
-        for index in range(len(self.tenors) - 1):
-            if float(self.tenors[index + 1]) <= float(self.tenors[index]):
+        for index in range(len(tenors_view) - 1):
+            if tenors_view[index + 1] <= tenors_view[index]:
                 raise ValueError("CreditCurve tenors must be strictly increasing")
 
     def hazard_rate(self, t: float) -> float:
-        """Interpolated hazard rate at time t."""
+        """Interpolated hazard rate at time t.
+
+        The interpolation is differentiable in the stored hazard-rate nodes
+        and only piecewise differentiable in the query location ``t`` away
+        from knot boundaries.
+        """
         return linear_interp(t, self.tenors, self.hazard_rates)
 
     def survival_probability(self, t: float) -> float:

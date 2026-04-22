@@ -57,6 +57,8 @@ Where Autograd Helps
   ``trellis.models.analytical.quanto.price_quanto_option_raw``, and
   ``trellis.models.analytical.barrier.down_and_out_call_raw`` /
   ``trellis.models.analytical.barrier.down_and_in_call_raw``
+- public ``YieldCurve`` / ``CreditCurve`` node-value sensitivities and
+  ``GridVolSurface`` node-value sensitivities
 - flat-vol Vega extraction in the analytics layer
 - SABR calibration through a gradient-assisted objective
 - simple binomial/trinomial tree rollback through ``backward_induction(..., differentiable=True)``
@@ -91,6 +93,9 @@ Implementation Rules
 - keep the public pricing adapter trace-safe and reserve ``float(...)`` for
   explicit reporting or solver boundaries; expose raw resolved-input kernels as
   ``*_raw`` helpers when they improve reuse
+- for piecewise-linear curves and surfaces, target node-value derivatives as
+  the supported contract and treat query-location derivatives as piecewise only
+  away from knot boundaries
 - keep Numba kernels as forward engines, not gradient engines
 - preserve the full ``MarketState`` when cloning a traced pricing state
 - prefer autodiff when it replaces bump/reprice loops, parallel DV01s, or
