@@ -8,7 +8,7 @@ calls:
 - seq: 0
   function: llm_generate
   stage: code_generation
-  prompt_hash: 5fa50ca87ea96ed8bb5e405b3b3fb4afbdca317b1f974aa2cae499ab7c2fb6aa
+  prompt_hash: fd1cb0f1627c23ef746e61731ab935d8b86dd70227503a008daf4708a9b19db9
   response_text: "from trellis.models.equity_option_pde import price_vanilla_equity_option_pde\n\
     \n        return float(price_vanilla_equity_option_pde(market_state, spec, theta=0.5))"
   prompt_text: "You are implementing the evaluate() method for `EuropeanOptionAnalyticalPayoff`\
@@ -345,7 +345,7 @@ calls:
 - seq: 1
   function: llm_generate_json
   stage: critic
-  prompt_hash: fe671a56ecc1364b3ebb176ba0dd8b5ac37ed6b3d0be4cb554d34debee8fcbba
+  prompt_hash: 6f4eb17def00ed87bf1c574ef64c9eebbf08277aadc318914d7cd145e258f711
   response_text: '{"check_id": "volatility_input_usage", "description": "PDE pricer
     may ignore required market volatility inputs because the route helper is called
     with only market_state and spec, with no explicit evidence that the spec/state
@@ -468,7 +468,7 @@ calls:
 - seq: 2
   function: llm_generate
   stage: code_generation
-  prompt_hash: 98aff0cb866b289bcf0d947921287c1dfd46034805385d86efd78ea7bdf3c87d
+  prompt_hash: 419b595dfb473ebb72c719338807a6744b8d43228a784ef69b6bcf75a9fa5456
   response_text: "spec = self._spec\n\n        if self._spec.option_type not in {\"\
     call\", \"put\"}:\n            raise ValueError(f\"Unsupported option_type: {spec.option_type!r}\"\
     )\n\n        if market_state.vol_surface is None:\n            raise ValueError(\"\
@@ -810,7 +810,7 @@ calls:
 - seq: 3
   function: llm_generate_json
   stage: critic
-  prompt_hash: 617b204bcb1afbc1172c835990216e0c0e84ca02513ecee63c6d3f8cf0df3ac7
+  prompt_hash: 697ed0854accac1e8905527d002146f6c550e3d7f9af3c23a68c6a2f8f79a05d
   response_text: '{"check_id": "volatility_input_usage", "description": "Volatility
     likely bypassed or flattened because the implementation hard-codes a route helper
     call without passing any explicit grid controls or validating expiry-vol input,
