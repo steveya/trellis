@@ -539,6 +539,58 @@ class TestMonteCarloEngine:
         fd_delta = (price_from_spot(S0 + eps) - price_from_spot(S0 - eps)) / (2 * eps)
         assert autodiff_delta == pytest.approx(fd_delta, rel=1e-5, abs=1e-5)
 
+    def test_explicit_shocks_terminal_only_state_payoff_is_differentiable(self):
+        """Terminal-only reduced-state payoffs should support pathwise differentiation."""
+        S0, K, r, sigma, T = 100.0, 100.0, 0.05, 0.20, 1.0
+        gbm = GBM(mu=r, sigma=sigma)
+        engine = MonteCarloEngine(gbm, n_paths=512, n_steps=16, seed=43, method="exact")
+        shocks = raw_np.random.default_rng(47).standard_normal((engine.n_paths, engine.n_steps))
+        payoff = terminal_value_payoff(lambda terminal: np.maximum(terminal - K, 0.0))
+
+        def price_from_spot(spot):
+            result = engine.price(
+                spot,
+                T,
+                payoff,
+                discount_rate=r,
+                shocks=shocks,
+                differentiable=True,
+                return_paths=False,
+            )
+            assert result["paths"] is None
+            assert result["path_state"] is not None
+            assert result["path_state"].full_paths is None
+            return result["price"]
+
+        autodiff_delta = gradient(price_from_spot)(S0)
+        eps = 1e-4
+        fd_delta = (price_from_spot(S0 + eps) - price_from_spot(S0 - eps)) / (2 * eps)
+        assert autodiff_delta == pytest.approx(fd_delta, rel=1e-5, abs=1e-5)
+
+    def test_differentiable_state_payoff_rejects_barrier_monitor_contracts(self):
+        """Barrier-monitor state contracts remain explicitly unsupported on the AD lane."""
+        S0, K, r, sigma, T = 100.0, 100.0, 0.05, 0.20, 1.0
+        gbm = GBM(mu=r, sigma=sigma)
+        engine = MonteCarloEngine(gbm, n_paths=64, n_steps=8, seed=53, method="exact")
+        shocks = raw_np.random.default_rng(59).standard_normal((engine.n_paths, engine.n_steps))
+        payoff = barrier_payoff(
+            barrier=95.0,
+            direction="down",
+            knock="out",
+            terminal_payoff_fn=lambda terminal: np.maximum(terminal - K, 0.0),
+        )
+
+        with pytest.raises(NotImplementedError, match="barrier-monitor"):
+            engine.price(
+                S0,
+                T,
+                payoff,
+                discount_rate=r,
+                shocks=shocks,
+                differentiable=True,
+                return_paths=False,
+            )
+
 
 class TestLocalVolMonteCarlo:
     def test_flat_local_vol_matches_black_scholes_reasonably_well(self):

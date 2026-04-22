@@ -16,6 +16,7 @@ from typing import Callable, Iterable, Mapping
 import numpy as raw_np
 
 from trellis.core.date_utils import build_payment_timeline, year_fraction
+from trellis.core.differentiable import get_numpy
 from trellis.core.types import SchedulePeriod
 from trellis.models.hull_white_parameters import resolve_hull_white_parameters
 from trellis.models.monte_carlo.engine import MonteCarloEngine
@@ -35,6 +36,16 @@ from trellis.models.monte_carlo.path_state import (
 from trellis.models.processes.gbm import GBM
 from trellis.models.processes.hull_white import HullWhite
 from trellis.models.processes.local_vol import LocalVol
+
+np = get_numpy()
+
+
+def _to_backend_array(values):
+    if isinstance(values, raw_np.ndarray):
+        return values
+    if hasattr(values, "_value"):
+        return values
+    return raw_np.asarray(values, dtype=float)
 
 
 def _normalize_payload(payload: Mapping[str, object] | None) -> Mapping[str, object]:
@@ -484,6 +495,8 @@ def price_event_aware_monte_carlo(
     n_paths: int = 10_000,
     seed: int | None = None,
     return_paths: bool = False,
+    shocks=None,
+    differentiable: bool = False,
 ) -> dict:
     """Price an event-aware Monte Carlo workload from a runtime or assembly surface.
 
@@ -529,6 +542,8 @@ def price_event_aware_monte_carlo(
             discount_rate=compiled_problem.discount_rate,
             storage_policy=compiled_problem.path_requirement,
             return_paths=return_paths,
+            shocks=shocks,
+            differentiable=differentiable,
         )
 
     if process is None:
@@ -539,8 +554,8 @@ def price_event_aware_monte_carlo(
     resolved_payoff = payoff if payoff is not None else payoff_fn
     if resolved_payoff is None and terminal_payoff is not None:
         def _terminal_only_path_payoff(paths):
-            terminal = raw_np.asarray(paths[:, -1], dtype=float)
-            return raw_np.asarray(terminal_payoff(terminal), dtype=float)
+            terminal = _to_backend_array(paths[:, -1])
+            return _to_backend_array(terminal_payoff(terminal))
 
         resolved_payoff = _terminal_only_path_payoff
     if resolved_payoff is None:
@@ -560,6 +575,8 @@ def price_event_aware_monte_carlo(
         discount_rate=float(discount_rate),
         storage_policy=storage_policy,
         return_paths=return_paths,
+        shocks=shocks,
+        differentiable=differentiable,
     )
 
 
@@ -664,11 +681,11 @@ def _build_payoff(
             event_timeline,
             path_requirement=path_requirement,
         )
-        return raw_np.asarray(evaluate_state(replayed), dtype=float)
+        return _to_backend_array(evaluate_state(replayed))
 
     def evaluate_state_from_reduced(state) -> raw_np.ndarray:
         replayed = _replay_from_state(state, spec.initial_state, event_timeline)
-        return raw_np.asarray(evaluate_state(replayed), dtype=float)
+        return _to_backend_array(evaluate_state(replayed))
 
     return StateAwarePayoff(
         path_requirement=path_requirement,
@@ -690,7 +707,7 @@ def _resolve_event_state_payoff(
 
     default_settlement = str(settlement_event or "").strip() or _default_settlement_event(event_timeline)
     if reducer_kind == "compiled_schedule_payoff" and default_settlement:
-        return lambda state: raw_np.asarray(state.settlement_value(default_settlement), dtype=float)
+        return lambda state: _to_backend_array(state.settlement_value(default_settlement))
 
     raise ValueError(
         f"{reducer_kind} reducer requires either state_payoff or a settlement event"
@@ -711,7 +728,7 @@ def _replay_from_paths(
     *,
     path_requirement: MonteCarloPathRequirement,
 ) -> PathEventState:
-    cross_sections = tuple(raw_np.asarray(paths[:, event.step], dtype=float) for event in event_timeline)
+    cross_sections = tuple(_to_backend_array(paths[:, event.step]) for event in event_timeline)
     return replay_path_event_timeline(
         cross_sections,
         initial_values=initial_state,
@@ -725,7 +742,7 @@ def _replay_from_state(
     initial_state,
     event_timeline: PathEventTimeline,
 ) -> PathEventState:
-    cross_sections = tuple(raw_np.asarray(state.snapshot(event.step), dtype=float) for event in event_timeline)
+    cross_sections = tuple(_to_backend_array(state.snapshot(event.step)) for event in event_timeline)
     return replay_path_event_timeline(
         cross_sections,
         initial_values=initial_state,
@@ -740,14 +757,14 @@ def _replay_reducer_values(
 ) -> dict[str, raw_np.ndarray]:
     if not path_requirement.reducers:
         return {}
-    initial = raw_np.asarray(paths[:, 0], dtype=float)
+    initial = _to_backend_array(paths[:, 0])
     total_steps = max(paths.shape[1] - 1, 1)
     reduced = {
         reducer.name: reducer.init(initial, total_steps)
         for reducer in path_requirement.reducers
     }
     for step in range(1, paths.shape[1]):
-        cross_section = raw_np.asarray(paths[:, step], dtype=float)
+        cross_section = _to_backend_array(paths[:, step])
         for reducer in path_requirement.reducers:
             reduced[reducer.name] = reducer.update(
                 reduced[reducer.name],
@@ -768,14 +785,12 @@ def build_short_rate_discount_reducer(
 
     def _init(initial_values: raw_np.ndarray, n_steps: int) -> raw_np.ndarray:
         total_steps_holder["n_steps"] = max(int(n_steps), 1)
-        return raw_np.ones(initial_values.shape[0], dtype=float)
+        return np.ones(initial_values.shape[0])
 
     def _update(accumulator: raw_np.ndarray, values: raw_np.ndarray, step: int) -> raw_np.ndarray:
         del step
         dt = horizon / max(int(total_steps_holder["n_steps"]), 1)
-        return raw_np.asarray(accumulator, dtype=float) * raw_np.exp(
-            -raw_np.asarray(values, dtype=float) * dt
-        )
+        return _to_backend_array(accumulator) * np.exp(-_to_backend_array(values) * dt)
 
     return PathReducer(
         name=str(name),

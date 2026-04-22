@@ -66,6 +66,9 @@ Where Autograd Helps
 - SABR calibration through a gradient-assisted objective
 - simple binomial/trinomial tree rollback through ``backward_induction(..., differentiable=True)``
 - pathwise Monte Carlo pricing through ``simulate_with_shocks(..., differentiable=True)``
+- smooth terminal-only and event-replay state-aware Monte Carlo payoffs through
+  ``MonteCarloEngine.price(..., shocks=..., differentiable=True)`` and
+  ``price_event_aware_monte_carlo(..., shocks=..., differentiable=True)``
 
 These paths now use autograd-friendly primitives and avoid scalarization inside
 the traced region.
@@ -73,7 +76,8 @@ the traced region.
 Where Trellis Still Stays Forward-Only
 --------------------------------------
 
-- generic lattice calibration and reduced-storage Monte Carlo path-state accumulation
+- generic lattice calibration and true streaming reduced-storage Monte Carlo
+  path-state accumulation
 - Numba-accelerated tree, Monte Carlo, and PDE kernels
 - discontinuous payoffs that would need smoothing or a custom adjoint
 - broader European barrier families beyond the T09 route, which remain
@@ -81,8 +85,9 @@ Where Trellis Still Stays Forward-Only
 - scalar vega on unsupported smile surfaces, which now reports an explicit
   representative-flat-vol fallback instead of silently pretending to be a
   surface-native Greek
-- reduced-storage state-aware Monte Carlo payoffs, which still coerce results
-  back to plain ``float`` arrays
+- state-aware Monte Carlo contracts with barrier monitors or other
+  discontinuous event semantics, which still stay off the traced lane even
+  when explicit shocks are supplied
 - custom discretization schemes that are not autograd-aware themselves
 
 That split is deliberate: the compiled engines stay fast for production pricing,
@@ -109,6 +114,9 @@ Implementation Rules
 - when a runtime measure falls back to bumps, record that derivative-method
   choice in the public result metadata instead of hiding it behind a plain
   scalar
+- for state-aware Monte Carlo gradients, keep terminal/snapshot adapters
+  trace-safe and reject non-smooth barrier or exercise state contracts
+  explicitly instead of silently scalarizing them
 
 Implementation References
 -------------------------
