@@ -6,6 +6,8 @@ Trellis promotes autograd only where it has a clear payoff:
 - closed-form pricing kernels that currently drive real Greeks and calibration
 - cap/floor strips and FX/quanto analytics built on top of those kernels
 - flat-vol Vega extraction in ``Session.analyze()``
+- curve bootstrap calibration, where the repricing Jacobian is now traced from
+  the public repricing map instead of approximated inside the solver
 - SABR calibration, where a gradient is more useful than repeated finite-difference sweeps
 - binomial/trinomial tree pricing for smooth payoffs when the tree state is built
   from autograd-aware inputs
@@ -62,8 +64,13 @@ Where Autograd Helps
 - runtime rate-risk extraction on public ``YieldCurve`` node grids, with
   ``resolved_derivative_method="autodiff_public_curve"`` recorded on the
   resulting analytics outputs
+- rates bootstrap calibration through an ``autodiff_vector_jacobian`` repricing
+  matrix
 - flat-vol Vega extraction in the analytics layer
-- SABR calibration through a gradient-assisted objective
+- SABR calibration through an ``autodiff_scalar_gradient`` objective
+- supported Heston smile calibration through an explicit bounded
+  ``finite_difference_vector_jacobian`` when the FFT/implied-vol stack itself
+  is not autograd-safe
 - simple binomial/trinomial tree rollback through ``backward_induction(..., differentiable=True)``
 - pathwise Monte Carlo pricing through ``simulate_with_shocks(..., differentiable=True)``
 - smooth terminal-only and event-replay state-aware Monte Carlo payoffs through
@@ -114,6 +121,10 @@ Implementation Rules
 - when a runtime measure falls back to bumps, record that derivative-method
   choice in the public result metadata instead of hiding it behind a plain
   scalar
+- for calibration workflows, record the derivative method that actually ran in
+  ``solve_result.metadata`` and ``solver_provenance.backend`` so audit/replay
+  consumers can distinguish autograd, explicit finite differences, and solver
+  fallbacks
 - for state-aware Monte Carlo gradients, keep terminal/snapshot adapters
   trace-safe and reject non-smooth barrier or exercise state contracts
   explicitly instead of silently scalarizing them

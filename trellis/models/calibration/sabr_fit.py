@@ -447,6 +447,7 @@ def fit_sabr_smile_surface(
                 "beta": float(surface.beta),
                 "surface_name": surface.surface_name,
                 "quote_map": surface.quote_map_spec.to_payload(),
+                "derivative_method": "autodiff_scalar_gradient",
             },
         ),
         bounds=SolveBounds(lower=(1e-6, -0.999, 1e-6), upper=(None, 0.999, None)),

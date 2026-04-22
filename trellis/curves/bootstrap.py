@@ -662,6 +662,7 @@ def build_bootstrap_solve_request(
                 "currency": bundle.currency,
                 "rate_index": bundle.rate_index,
                 "instrument_count": len(bundle.instruments),
+                "derivative_method": "autodiff_vector_jacobian",
             },
         ),
         solver_hint="trf",

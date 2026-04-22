@@ -304,12 +304,14 @@ surface.
 In practice that means downstream tools can inspect:
 
 - which solve backend ran
+- which derivative method the solve actually used
 - which explicit solver options were requested
 - whether the solve succeeded and why it terminated
 - the residual diagnostics associated with the solved point
 
 without knowing whether the underlying calibration came from a scalar rates
-root solve or a vector SABR least-squares fit.
+root solve, a vector bootstrap/Heston least-squares fit, or a scalar SABR
+least-squares fit.
 
 The supported Hull-White workflow uses that same governed surface, but its
 output is reusable by later tree helpers as well as inspectable by review
@@ -330,6 +332,12 @@ run ``fit_sabr_smile_surface(...)`` to inspect:
 The older ``calibrate_sabr(...)`` helper remains available as a compatibility
 wrapper, but it now routes through that same smile-surface assembly and
 diagnostic layer.
+
+The supported Heston smile workflow exposes the same derivative provenance.
+Because the FFT plus implied-vol inversion stack is not autograd-safe end to
+end, the checked workflow records
+``solver_provenance.backend["derivative_method"] == "finite_difference_vector_jacobian"``
+when it supplies the explicit residual Jacobian used by the ``trf`` solve.
 
 For new code, the supported entry point is
 ``calibrate_sabr_smile_workflow(...)``. It accepts the raw smile inputs and

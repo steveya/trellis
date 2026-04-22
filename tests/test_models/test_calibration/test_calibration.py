@@ -245,7 +245,9 @@ class TestSABRCalibration:
         assert result.surface.surface_name == "usd_rates_smile"
         assert result.solve_request.request_id == "sabr_smile_least_squares"
         assert result.solve_result.success is True
+        assert result.solve_result.metadata["derivative_method"] == "autodiff_scalar_gradient"
         assert result.solver_provenance.backend["backend_id"] == "scipy"
+        assert result.solver_provenance.backend["derivative_method"] == "autodiff_scalar_gradient"
         assert result.diagnostics.point_count == len(strikes)
         assert result.diagnostics.max_abs_vol_error < 0.005
         assert result.diagnostics.warning_count == 0
@@ -307,7 +309,13 @@ class TestSABRCalibration:
             f"strike_{float(strike):g}" for strike in strikes
         ]
         assert sabr_fit.calibration_provenance["solve_result"]["metadata"]["backend_id"] == "scipy"
+        assert sabr_fit.calibration_provenance["solve_result"]["metadata"]["derivative_method"] == (
+            "autodiff_scalar_gradient"
+        )
         assert sabr_fit.calibration_provenance["solver_provenance"]["backend"]["backend_id"] == "scipy"
+        assert sabr_fit.calibration_provenance["solver_provenance"]["backend"]["derivative_method"] == (
+            "autodiff_scalar_gradient"
+        )
         assert sabr_fit.calibration_provenance["solver_provenance"]["termination"]["success"] is True
         assert sabr_fit.calibration_provenance["solver_replay_artifact"]["request"]["request_id"] == (
             "sabr_smile_least_squares"
@@ -533,7 +541,9 @@ class TestHestonCalibration:
         assert result.surface.surface_name == "equity_1y_smile"
         assert result.solve_request.request_id == "heston_smile_least_squares"
         assert result.solve_result.success is True
+        assert result.solve_result.metadata["derivative_method"] == "finite_difference_vector_jacobian"
         assert result.solver_provenance.backend["backend_id"] == "scipy"
+        assert result.solver_provenance.backend["derivative_method"] == "finite_difference_vector_jacobian"
         assert result.runtime_binding.parameter_set_name == "heston_equity"
         assert result.runtime_binding.process.rho == pytest.approx(true_params["rho"], abs=0.05)
         assert result.diagnostics.point_count == len(strikes)
@@ -548,6 +558,12 @@ class TestHestonCalibration:
         assert result.provenance["fit_diagnostics"]["point_count"] == len(strikes)
         assert result.provenance["calibration_target"]["quote_map"]["quote_family"] == "implied_vol"
         assert result.provenance["calibration_target"]["quote_map"]["convention"] == "black"
+        assert result.provenance["solve_result"]["metadata"]["derivative_method"] == (
+            "finite_difference_vector_jacobian"
+        )
+        assert result.provenance["solver_provenance"]["backend"]["derivative_method"] == (
+            "finite_difference_vector_jacobian"
+        )
 
     def test_calibrate_heston_smile_workflow_returns_supported_result(self):
         spot = 100.0
