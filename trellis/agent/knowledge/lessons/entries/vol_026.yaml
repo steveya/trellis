@@ -5,7 +5,7 @@ status: promoted
 confidence: 1.0
 created: '2026-04-20T16:13:06.826577'
 version: ''
-source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260420_161309_cap_analytical.yaml
+source_trace: trellis/agent/knowledge/traces/20260420_161309_cap_analytical.yaml
 applies_when:
   method:
   - analytical

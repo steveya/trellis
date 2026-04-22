@@ -5,7 +5,7 @@ status: validated
 confidence: 0.6
 created: '2026-04-20T16:16:07.630391'
 version: ''
-source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260420_161610_basket_option_analytical.yaml
+source_trace: trellis/agent/knowledge/traces/20260420_161610_basket_option_analytical.yaml
 applies_when:
   method:
   - analytical
