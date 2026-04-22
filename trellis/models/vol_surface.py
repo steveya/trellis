@@ -37,6 +37,20 @@ class FlatVol:
         """Return the same volatility for every expiry/strike pair."""
         return self.vol
 
+    @property
+    def risk_derivative_support(self) -> dict[str, dict[str, str]]:
+        """Declared runtime-risk support for scalar and bucketed vega."""
+        return {
+            "scalar_vega": {
+                "method": "autodiff_flat_vol",
+                "parameterization": "scalar_flat_vol",
+            },
+            "bucketed_vega": {
+                "method": "flat_surface_expanded_bucket_bump",
+                "parameterization": "scalar_flat_vol",
+            },
+        }
+
 
 @dataclass(frozen=True)
 class GridVolSurface:
@@ -98,6 +112,20 @@ class GridVolSurface:
         lower = _lerp(v00, v01, w_strike)
         upper = _lerp(v10, v11, w_strike)
         return _lerp(lower, upper, w_expiry)
+
+    @property
+    def risk_derivative_support(self) -> dict[str, dict[str, str]]:
+        """Declared runtime-risk support for grid-surface vega workflows."""
+        return {
+            "scalar_vega": {
+                "method": "surface_parallel_bucket_bump",
+                "parameterization": "grid_node_vols",
+            },
+            "bucketed_vega": {
+                "method": "surface_bucket_bump",
+                "parameterization": "grid_node_vols",
+            },
+        }
 
 
 def _lerp(left: float, right: float, weight: float) -> float:
