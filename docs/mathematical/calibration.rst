@@ -298,6 +298,17 @@ packages that calibration as an explicit smile surface first:
 - ``calibrate_heston_smile_workflow(...)`` is the supported raw-input wrapper
   that returns the full ``HestonSmileCalibrationResult`` in one step
 
+The shipped Heston workflow now keeps the carry convention aligned across the
+entire priced-to-implied-vol path for this supported slice:
+
+- Black-style implied-vol inversion accepts either ``dividend_yield`` or an
+  explicit continuous carry rate
+- the Heston fit now passes the smile's ``dividend_yield`` through both FFT
+  pricing and implied-vol inversion instead of pricing with carry and inverting
+  without it
+- fit diagnostics now separate quote-convention mismatches from numerical
+  pricing or inversion failures so review tooling can distinguish the two
+
 The Heston workflow keeps the same audit contract as the rates and SABR paths:
 
 - typed ``solve_request`` and normalized ``solve_result``
@@ -353,6 +364,13 @@ The supported workflow wrapper now sits one step above that hardened substrate.
 ``LocalVolCalibrationResult`` but tags it as the supported workflow surface and
 lets callers apply the calibrated local-vol surface back onto ``MarketState``
 without rebuilding an ad hoc wrapper.
+
+Carry inputs are now recorded explicitly on the local-vol calibration target,
+summary, and provenance payloads. For this checked slice the local-vol workflow
+still treats those inputs as a continuous-yield carry convention and emits an
+explicit warning when such inputs are supplied. That is a bounded support
+contract, not yet a full discrete-dividend or repo-specific equity-surface
+calibration plant.
 
 Validation And Replay Expectations
 ----------------------------------
