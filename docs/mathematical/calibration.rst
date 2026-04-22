@@ -1,7 +1,97 @@
 Calibration Methods
 ===================
 
-Calibration maps market-observed prices to model parameters.
+Trellis treats calibration as a market-inference layer inside the pricing
+stack. It is not a separate library, and it is not only "fit model parameters
+to market quotes." For many liquid products, the authoritative calibrated
+result is a Trellis market object such as a curve, vol surface, credit curve,
+or correlation surface that downstream pricing should consume directly.
+Reduced-form model parameters are a later layer used when Trellis needs model
+compression for pricing, simulation, or risk.
+
+Calibration Architecture
+------------------------
+
+The calibration sleeve has three Trellis-native layers:
+
+- **Market reconstruction** reconstructs liquid market objects from quoted
+  elementary products.
+- **Model compression** fits tractable pricing models to those calibrated
+  market objects when Trellis needs reusable reduced-form parameter packs.
+- **Hybrid composition** combines already-calibrated single-asset objects into
+  higher-order or cross-asset systems.
+
+Simple liquid products often use the same pricing engine for both pricing and
+calibration: the engine is the translation machine between observed quotes and
+the runtime object being reconstructed or fitted. Trellis still treats that as
+typed calibration work because it needs explicit quote maps, fitting
+instruments, acceptance criteria, runtime materialization, and provenance.
+
+Trellis-Native Runtime Outputs
+------------------------------
+
+Calibration outputs land back on ``MarketState`` through
+``trellis.models.calibration.materialization`` and related runtime binding
+surfaces. That makes calibrated curves, surfaces, credit objects, and model
+parameter packs first-class Trellis runtime capabilities instead of route-local
+payloads.
+
+The practical split is:
+
+- market reconstruction outputs are often the authoritative runtime result
+- model-compression outputs are optional follow-on fits that consume those
+  market objects
+- hybrid workflows should consume already-materialized single-asset outputs
+  rather than bypassing them with one opaque direct fit
+
+Representative Product-Family Mapping
+-------------------------------------
+
+.. list-table::
+   :header-rows: 1
+
+   * - Product family
+     - Liquid inputs
+     - Primary calibrated output
+     - Optional reduced-model output
+   * - OIS / IRS / FX swap
+     - deposits, OIS, IRS, FX swaps, basis swaps
+     - discount and forecast curves, basis structures
+     - short-rate or curve-dynamics factors
+   * - Vanilla equity / FX options
+     - option prices or quoted vols
+     - implied-vol surface or cube
+     - local vol, Heston, stochastic-vol parameter packs
+   * - Caps/floors / swaptions
+     - option prices or quoted vols
+     - caplet strips, swaption cubes
+     - SABR, Hull-White, G2++, or LMM parameter packs
+   * - CDS
+     - running and upfront CDS quotes
+     - credit curve
+     - reduced-form factor model
+   * - Basket credit tranches
+     - tranche spreads
+     - base-correlation or correlation surface
+     - copula or factor correlation model
+   * - Hybrid liquid sets
+     - linked single-asset objects
+     - cross-asset binding and correlation objects
+     - hybrid state model
+
+Current Bounded Workflow Boundary
+---------------------------------
+
+This note documents the currently shipped bounded calibration workflows. It
+does not claim that the repo already has a full industrial curve, surface, or
+correlation plant for every asset class. Where the current support boundary is
+still single-smile, quote-local, or proving-grade, that boundary is stated
+explicitly below.
+
+For the latent-state and generator grammar inside the broader sleeve, see
+``docs/unified_pricing_engine_model_grammar.md``. For the Trellis implementation
+bridge that maps calibration contracts onto runtime bindings, see
+``docs/developer/composition_calibration_design.md``.
 
 Solve-Request Substrate
 -----------------------
@@ -138,6 +228,10 @@ Newton refinement. More robust than pure Newton for extreme strikes.
 SABR Calibration
 ----------------
 
+SABR fits live in the model-compression layer. The current shipped workflow is
+still bounded to one smile at a time rather than a full expiry-tenor surface or
+cube reconstruction plant.
+
 Given market implied vols :math:`\sigma_{\text{mkt}}(K_i)` at strikes
 :math:`K_i`, calibrate SABR parameters :math:`(\alpha, \rho, \nu)` with
 :math:`\beta` typically fixed:
@@ -189,6 +283,10 @@ The ATM vol provides a good initial guess for :math:`\alpha`:
 Heston Smile Calibration
 ------------------------
 
+The supported Heston path is also a model-compression workflow. It fits one
+single-expiry smile and then materializes a reusable parameter pack back onto
+``MarketState``; it is not yet a full equity-vol surface authority.
+
 The supported Heston workflow fits one single-expiry implied-vol smile onto
 the five runtime parameters :math:`(\kappa, \theta, \xi, \rho, v_0)`. Trellis
 packages that calibration as an explicit smile surface first:
@@ -214,6 +312,11 @@ replay, runtime reuse, and later performance benchmarking.
 
 Dupire Local Volatility
 ------------------------
+
+The local-vol path sits on the boundary between market reconstruction and model
+compression. In the current shipped workflow it remains a bounded local-vol
+extraction layer over a supplied implied-vol grid rather than a full
+arbitrage-repaired surface authority.
 
 Dupire's formula extracts the local volatility surface from the implied
 vol surface :math:`\sigma_{\text{impl}}(K, T)`:
@@ -294,6 +397,10 @@ synthetic market assumptions that task and proving workflows see at runtime.
 Curve Bootstrapping
 -------------------
 
+Curve bootstrapping is a market-reconstruction workflow. The calibrated curve
+is the authoritative runtime object; later short-rate or curve-dynamics fits
+are optional follow-on model-compression steps.
+
 Calibrate a zero-rate curve from market instruments (deposits, futures, swaps).
 
 The bootstrap input surface is now explicit:
@@ -335,6 +442,11 @@ thin compatibility wrappers over that richer result surface.
 
 Rates Option Calibration
 ------------------------
+
+The current shipped rates-vol slice is still primarily quote-local. It
+normalizes individual cap/floor or swaption quotes and preserves the selected
+curve roles, but it does not yet claim a full caplet-strip or swaption-cube
+reconstruction plant.
 
 Cap/floor and European swaption quotes are often calibrated as implied Black
 volatilities under a multi-curve environment. Trellis keeps the calibration
@@ -406,6 +518,10 @@ artifacts:
 Hull-White Strip Calibration
 ----------------------------
 
+The supported Hull-White strip fit is a model-compression workflow layered on
+top of rates curve and option calibration inputs. It materializes one reusable
+parameter pack, not a full time-dependent rates-model surface.
+
 The supported Hull-White workflow now calibrates one reusable
 ``(mean_reversion, sigma)`` parameter pair to a strip of swaption-style quotes
 instead of requiring helper routes to hard-code ``mean_reversion = 0.1``.
@@ -453,6 +569,11 @@ Reduced-Form Credit Calibration
 The supported credit slice is intentionally bounded to single-name reduced-form
 hazard calibration for CDS-style quotes. Trellis now exposes
 ``calibrate_single_name_credit_curve_workflow(...)`` as the typed entry point.
+
+This remains a proving-grade single-name curve workflow rather than the later
+schedule-aware CDS industrialization path. In particular, the current
+``Spread`` quote handling is still a bounded normalization layer rather than a
+full instrument-by-instrument CDS repricing plant.
 
 The workflow accepts tenor-labeled quotes in either of the shipped credit quote
 families:

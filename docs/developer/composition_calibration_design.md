@@ -277,14 +277,14 @@ otherwise uses flat `payoff_family` matching (existing behavior).
 ```python
 @dataclass(frozen=True)
 class CalibrationTarget:
-    """What parameter to calibrate."""
+    """What market object or parameter family to calibrate."""
     parameter: str        # "hw_mean_reversion", "sabr_alpha", "local_vol_surface"
-    output_capability: str  # MarketState capability name for the result
+    output_capability: str  # MarketState capability name for the authoritative runtime result
     quote_map: QuoteMapSpec | None = None  # "Price", "ImpliedVol(Black)", "Spread", ...
 
 @dataclass(frozen=True)
 class CalibrationContract:
-    """Typed calibration step executed before pricing."""
+    """Typed calibration step executed before pricing or before later calibration steps."""
 
     calibration_id: str
     target: CalibrationTarget
@@ -302,6 +302,26 @@ class CalibrationAcceptanceCriteria:
     stability_check: bool = True
     max_fitting_error_bps: float = 5.0
 ```
+
+### Trellis-native calibration layers
+
+The current Trellis calibration sleeve treats a `CalibrationContract` as one
+typed market-inference step inside a broader three-layer architecture:
+
+| Layer | Typical authoritative output | Trellis authority surface |
+| --- | --- | --- |
+| Market reconstruction | discount curves, forecast curves, vol surfaces, credit curves, correlation objects | `output_binding` plus `trellis.models.calibration.materialization` onto `MarketState` |
+| Model compression | reduced-form parameter packs such as Hull-White, SABR, Heston, or other model parameters | `output_binding` for reusable model-parameter capabilities on `MarketState` |
+| Hybrid composition | cross-asset state, connector, or correlation outputs built from earlier calibrated single-asset objects | later calibration steps that consume already-materialized `MarketState` capabilities |
+
+This is intentionally Trellis-native rather than a sidecar calibration DSL:
+
+- quote semantics flow through `trellis.models.calibration.quote_maps`
+- runtime outputs land back on `MarketState`
+- later calibration steps should consume already-materialized outputs rather
+  than reconstructing them route-locally
+- calibration chains belong in explicit `calibration_steps` or later
+  dependency-DAG surfaces rather than hidden helper control flow
 
 ### Quote maps as first-class calibration semantics
 
@@ -334,7 +354,8 @@ role, and the risky-discount contract that combines discounting with survival.
 
 ### Output binding as MarketState capabilities
 
-Calibrated parameters are materialized as `MarketState` capabilities:
+Calibrated market objects and parameter packs are materialized as
+`MarketState` capabilities:
 
 ```python
 # Before pricing:
@@ -348,7 +369,7 @@ hw_params = market_state.hw_short_rate_params
 ```
 
 This is consistent with how `market_state.discount`, `market_state.vol_surface`,
-etc. already work. No new infrastructure needed.
+and similar runtime lookups already work. No new infrastructure needed.
 
 For the migrated workflow surface, that handoff is now explicit in
 `trellis.models.calibration.materialization`. Those helpers still populate the
@@ -366,6 +387,15 @@ inspect:
 
 The supported lookup surface is
 `MarketState.materialized_calibrated_object(object_kind=..., object_name=...)`.
+
+That split matters architecturally:
+
+- market-reconstruction steps should materialize the calibrated runtime object
+  that later pricing consumes directly
+- model-compression steps should materialize reusable parameter packs without
+  pretending they replaced the underlying market object
+- hybrid steps should reuse those already-materialized objects instead of
+  rebuilding them implicitly
 
 ### Canonical model-grammar registry
 

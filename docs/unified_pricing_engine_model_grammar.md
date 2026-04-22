@@ -2,11 +2,35 @@
 
 ## Purpose
 
-This note turns the earlier mathematical synthesis into a concrete design document for a cross-asset computational engine.
+This note turns the earlier mathematical synthesis into a concrete design
+document for Trellis's latent-state and generator grammar.
 
-The design goal is to avoid building separate conceptual engines for short-rate models, volatility models, credit models, and hybrids. Instead, the engine should be built around a **single abstraction layer** that can represent all of them and then dispatch to the right numerical backend for pricing, Greeks, and calibration.
+It is the model-layer mathematical reference inside the broader Trellis
+calibration architecture described in
+`docs/mathematical/calibration.rst` and
+`docs/developer/composition_calibration_design.md`.
 
-> **Working thesis:**  
+The design goal here is not to replace the full Trellis calibration sleeve with
+one separate master engine. The broader sleeve still includes market
+reconstruction, runtime materialization onto `MarketState`, and later hybrid
+composition. This note focuses on the common model-layer abstraction Trellis
+uses when it needs a latent-state representation for model compression or
+hybrid composition.
+
+Within that model layer, the goal is to avoid building separate conceptual
+engines for short-rate models, volatility models, credit models, and hybrids.
+Instead, the model grammar should be built around a **single model-layer
+abstraction** that can represent all of them and then dispatch to the right
+numerical backend for pricing, Greeks, and calibration.
+
+> **Framing note:**
+> This document does not propose a separate calibration library outside
+> Trellis. It also does not claim that every calibration workflow should end in
+> one latent-state model. Curves, vol surfaces, credit curves, and correlation
+> objects can be authoritative calibrated outputs in their own right and may
+> later feed this model layer.
+
+> **Working thesis:**
 > The right unifier is not one master SDE for “short rate / variance / hazard rate.”  
 > The right unifier is a **dynamic arbitrage-free pricing operator**, represented computationally by a latent stochastic state, its generator, a contract compiler, and a quote/calibration layer.
 
