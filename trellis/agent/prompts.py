@@ -309,9 +309,8 @@ Reasoning: {pricing_plan.reasoning}
 ```
 
 ## Your task
-Write ONLY the body of the `evaluate()` method. The signature is already defined:
-
-    def evaluate(self, market_state: MarketState) -> float:
+Write ONLY the body of the `evaluate()` method. The signature is already
+defined in the skeleton.
 
 ## Spec fields available via self._spec
 {field_descs}
@@ -320,7 +319,11 @@ Write ONLY the body of the `evaluate()` method. The signature is already defined
 {assembly_context}
 {family_route_guidance}
 ## Conventions
-- evaluate() returns a FLOAT — the present value (PV) of the instrument
+- evaluate() returns the present-value scalar (PV) of the instrument
+- On smooth autodiff-compatible routes that scalar may be traced by the active differentiable backend
+- Do not wrap the final present value in `float(...)` solely because `evaluate()` is public
+- Prefer the raw-kernel-plus-wrapper pattern when the route has a reusable resolved-input kernel: keep market resolution in `evaluate()`, keep reusable math in the raw helper, and preserve the same traced PV through both surfaces
+- If a plain Python `float` is required, convert only at an explicit reporting or solver boundary, not at the payoff adapter boundary
 - You MUST handle all discounting internally — use `market_state.discount.discount(t)`
 - For forward rates: `market_state.forecast_forward_curve(self._spec.rate_index)`
 - For vol: `market_state.vol_surface.black_vol(T, strike)`

@@ -12,6 +12,7 @@ import pytest
 from trellis.agent.planner import FieldDef, SpecSchema
 from trellis.core.date_utils import year_fraction
 from trellis.core.market_state import MarketState
+from trellis.core.payoff import PricingValue
 from trellis.curves.yield_curve import YieldCurve
 from trellis.engine.payoff_pricer import price_payoff
 from trellis.instruments.fx import FXRate
@@ -31,6 +32,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from trellis.core.market_state import MarketState
+from trellis.core.payoff import PricingValue
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.models.rate_style_swaption import (
     price_swaption_black76_raw,
@@ -66,9 +68,9 @@ class SwaptionPayoff:
     def requirements(self) -> set[str]:
         return {"black_vol_surface", "discount_curve", "forward_curve"}
 
-    def evaluate(self, market_state: MarketState) -> float:
+    def evaluate(self, market_state: MarketState) -> PricingValue:
         resolved = resolve_swaption_black76_inputs(market_state, self._spec)
-        return float(price_swaption_black76_raw(resolved))
+        return price_swaption_black76_raw(resolved)
 '''
 
 BAD_IMPORT_MODULE_CODE = MOCK_MODULE_CODE.replace(
@@ -90,6 +92,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from trellis.core.market_state import MarketState
+from trellis.core.payoff import PricingValue
 from trellis.core.types import DayCountConvention
 from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
 
@@ -135,8 +138,8 @@ class QuantoOptionAnalyticalPayoff:
     def requirements(self) -> set[str]:
         return REQUIREMENTS
 
-    def evaluate(self, market_state: MarketState) -> float:
-        return float(price_quanto_option_analytical_from_market_state(market_state, self._spec))
+    def evaluate(self, market_state: MarketState) -> PricingValue:
+        return price_quanto_option_analytical_from_market_state(market_state, self._spec)
 '''
 
 UNAPPROVED_QUANTO_IMPORT_MODULE_CODE = GOOD_QUANTO_MODULE_CODE.replace(
@@ -404,7 +407,9 @@ def test_generate_quanto_monte_carlo_skeleton_uses_family_helper_surface():
     )
 
     assert "from trellis.models.quanto_option import price_quanto_option_monte_carlo_from_market_state" in skeleton
-    assert "return float(price_quanto_option_monte_carlo_from_market_state(market_state, spec))" in skeleton
+    assert "from trellis.core.payoff import PricingValue" in skeleton
+    assert "def evaluate(self, market_state: MarketState) -> PricingValue:" in skeleton
+    assert "return price_quanto_option_monte_carlo_from_market_state(market_state, spec)" in skeleton
 def test_generate_module_reports_syntax_error_context(monkeypatch):
     from types import SimpleNamespace
 

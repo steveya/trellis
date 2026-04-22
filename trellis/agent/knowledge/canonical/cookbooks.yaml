@@ -118,29 +118,32 @@ analytical:
   template: "## Cookbook: Analytical\nThis family contains distinct solution contracts.\
     \ Each is valid only under\nits stated assumptions. See the `solution_contracts`\
     \ block above for the\nassumption sets. Do not mix assumptions across contracts.\n\
-    \nevaluate() returns the PV (float) and discounts each period internally.\n\n\
+    \nevaluate() returns the present-value scalar and discounts each period internally.\n\
+    Do not wrap the final present value in `float(...)` solely because `evaluate()` is public.\n\
+    Use `float(...)` only at an explicit solver or reporting boundary.\n\
+    Prefer the raw-kernel-plus-wrapper pattern when a resolved-input helper exists.\n\n\
     ### Black-Scholes equity European (solution contract: black_scholes_equity)\n\
     Assumptions: lognormal spot (GBM), deterministic rates, European exercise.\n```python\n\
     def evaluate(self, market_state):\n    from trellis.core.date_utils import year_fraction\n\
     \    from trellis.models.black import black76_call, black76_put\n\n    spec =\
     \ self._spec\n    T = year_fraction(market_state.settlement, spec.expiry_date,\
-    \ spec.day_count)\n    if T <= 0:\n        return 0.0\n\n    df = float(market_state.discount.discount(T))\n\
-    \    sigma = float(market_state.vol_surface.black_vol(T, spec.strike))\n    forward\
+    \ spec.day_count)\n    if T <= 0:\n        return 0.0\n\n    df = market_state.discount.discount(T)\n\
+    \    sigma = market_state.vol_surface.black_vol(T, spec.strike)\n    forward\
     \ = spec.spot / max(df, 1e-12)\n\n    if spec.option_type == \"put\":\n      \
     \  undiscounted = black76_put(forward, spec.strike, sigma, T)\n    else:\n   \
     \     undiscounted = black76_call(forward, spec.strike, sigma, T)\n\n    return\
-    \ spec.notional * df * float(undiscounted)\n```\n\n### Black-Scholes cash-or-nothing\
+    \ spec.notional * df * undiscounted\n```\n\n### Black-Scholes cash-or-nothing\
     \ digital (solution contract: black_scholes_digital)\nAssumptions: lognormal spot\
     \ (GBM), deterministic rates, European exercise.\n```python\ndef evaluate(self,\
     \ market_state):\n    from trellis.core.date_utils import year_fraction\n    from\
     \ trellis.models.black import black76_cash_or_nothing_call, black76_cash_or_nothing_put\n\
     \n    spec = self._spec\n    T = year_fraction(market_state.settlement, spec.expiry_date,\
-    \ spec.day_count)\n    if T <= 0:\n        return 0.0\n\n    df = float(market_state.discount.discount(T))\n\
-    \    sigma = float(market_state.vol_surface.black_vol(T, spec.strike))\n    F\
+    \ spec.day_count)\n    if T <= 0:\n        return 0.0\n\n    df = market_state.discount.discount(T)\n\
+    \    sigma = market_state.vol_surface.black_vol(T, spec.strike)\n    F\
     \ = spec.spot / max(df, 1e-12)\n\n    if spec.option_type == \"put\":\n      \
     \  undiscounted = black76_cash_or_nothing_put(F, spec.strike, sigma, T)\n    else:\n\
     \        undiscounted = black76_cash_or_nothing_call(F, spec.strike, sigma, T)\n\
-    \n    pv = spec.notional * float(undiscounted) * df\n    return pv\n```\n\n###\
+    \n    pv = spec.notional * undiscounted * df\n    return pv\n```\n\n###\
     \ Garman-Kohlhagen FX European (helper-backed resolved-input route; solution contract:\
     \ garman_kohlhagen_fx)\nAssumptions: lognormal FX spot, deterministic domestic/foreign\
     \ rates,\ncovered interest parity.\n```python\ndef evaluate(self, market_state):\n\
@@ -149,13 +152,13 @@ analytical:
     \    )\n\n    spec = self._spec\n    T = year_fraction(market_state.settlement,\
     \ spec.expiry_date, spec.day_count)\n\n    fx_quote = market_state.fx_rates[spec.fx_pair]\n\
     \    foreign_curve = market_state.forecast_curves[spec.foreign_discount_key]\n\
-    \n    spot = float(fx_quote.spot)\n    df_domestic = float(market_state.discount.discount(T))\n\
-    \    df_foreign = float(foreign_curve.discount(T))\n    sigma = 0.0 if T <= 0\
-    \ else float(market_state.vol_surface.black_vol(T, spec.strike))\n    resolved\
+    \n    spot = float(fx_quote.spot)\n    df_domestic = market_state.discount.discount(T)\n\
+    \    df_foreign = foreign_curve.discount(T)\n    sigma = 0.0 if T <= 0\
+    \ else market_state.vol_surface.black_vol(T, spec.strike)\n    resolved\
     \ = ResolvedGarmanKohlhagenInputs(\n        spot=spot,\n        strike=spec.strike,\n\
     \        sigma=sigma,\n        T=T,\n        df_domestic=df_domestic,\n      \
-    \  df_foreign=df_foreign,\n    )\n\n    return spec.notional * float(garman_kohlhagen_price_raw(spec.option_type,\
-    \ resolved))\n```\n\nFor FX tasks, the selected foreign curve is usually bridged\
+    \  df_foreign=df_foreign,\n    )\n\n    return spec.notional * garman_kohlhagen_price_raw(spec.option_type,\
+    \ resolved)\n```\n\nFor FX tasks, the selected foreign curve is usually bridged\
     \ into\n`market_state.forward_curve` for routing and capability checks, while\
     \ the\nexplicit foreign discount factors still come from\n`market_state.forecast_curves[spec.foreign_discount_key]`.\n\
     \n### Black76 forward-rate (solution contract: black76_forward_rate)\nAssumptions:\
@@ -173,7 +176,7 @@ analytical:
     \n        # >>> INSTRUMENT-SPECIFIC: choose black76_call or black76_put <<<\n\
     \        undiscounted = spec.notional * tau * black76_call(F, spec.strike, sigma,\
     \ t_start)\n        df = market_state.discount.discount(t_end)\n        pv +=\
-    \ float(undiscounted) * float(df)\n\n    return pv\n```\n\nFor European rate-style\
+    \ undiscounted * df\n\n    return pv\n```\n\nFor European rate-style\
     \ swaptions, prefer the checked helper-backed path\nover rebuilding annuity, forward-swap-rate,\
     \ and expiry binding inline.\n\n### Rate-style swaption Black76 (helper-backed\
     \ resolved-input route; solution contract: black76_forward_rate)\nAssumptions:\
@@ -182,7 +185,7 @@ analytical:
     \ import (\n        ResolvedSwaptionBlack76Inputs,\n        price_swaption_black76_raw,\n\
     \        resolve_swaption_black76_inputs,\n    )\n\n    spec = self._spec\n  \
     \  resolved = resolve_swaption_black76_inputs(market_state, spec)\n    assert\
-    \ isinstance(resolved, ResolvedSwaptionBlack76Inputs)\n    return float(price_swaption_black76_raw(resolved))\n\
+    \ isinstance(resolved, ResolvedSwaptionBlack76Inputs)\n    return price_swaption_black76_raw(resolved)\n\
     ```\n\n### Jamshidian zero-coupon bond option (helper-backed resolved-input route;\
     \ solution contract: jamshidian_zcb_option)\nAssumptions: one-factor Hull-White\
     \ / Jamshidian closed form, European\nexercise, option on a zero-coupon bond.\n\
@@ -197,8 +200,8 @@ analytical:
     \ resolved.jamshidian.discount_factor_bond,\n                0.0,\n          \
     \  )\n        else:\n            intrinsic = max(\n                resolved.jamshidian.discount_factor_bond\
     \ - resolved.jamshidian.strike,\n                0.0,\n            )\n       \
-    \ return float(resolved.notional * intrinsic)\n\n    raw = zcb_option_hw_raw(resolved.jamshidian)\n\
-    \    return float(resolved.notional * raw[resolved.option_type])\n```\n\n### Credit\
+    \ return resolved.notional * intrinsic\n\n    raw = zcb_option_hw_raw(resolved.jamshidian)\n\
+    \    return resolved.notional * raw[resolved.option_type]\n```\n\n### Credit\
     \ default swap (single-name) (solution contract: credit_default_swap)\nAssumptions:\
     \ deterministic discounting, credit survival probabilities from\na credit curve,\
     \ one reference entity, premium leg on a schedule, protection\nleg triggered by\
@@ -426,9 +429,9 @@ monte_carlo:
     \ T)\n    dt = T / engine.n_steps\n    exercise_dates = list(range(1, engine.n_steps\
     \ + 1))\n    basis = LaguerreBasis()  # example continuation basis, not mandatory\n\
     \n    def exercise_payoff(spots):\n        return np.maximum(spec.strike - spots,\
-    \ 0.0)\n\n    return float(\n        longstaff_schwartz(\n            paths,\n\
+    \ 0.0)\n\n    return longstaff_schwartz(\n            paths,\n\
     \            exercise_dates,\n            exercise_payoff,\n            discount_rate=r,\n\
-    \            dt=dt,\n            basis_fn=basis,\n        )\n    )\n```\n"
+    \            dt=dt,\n            basis_fn=basis,\n        )\n```\n"
 qmc:
   description: Low-discrepancy Monte Carlo accelerators built on Sobol sampling and
     optional Brownian-bridge path construction
@@ -455,7 +458,7 @@ qmc:
     \    spots = spec.spot * np.exp(\n        np.concatenate([np.zeros((n_paths, 1)),\
     \ log_paths], axis=1)\n    )\n\n    # >>> INSTRUMENT-SPECIFIC: compute payoff\
     \ from full paths <<<\n    payoffs = np.maximum(spots[:, -1] - spec.strike, 0.0)\
-    \ * spec.notional\n    discounted = np.exp(-r * T) * payoffs\n    return float(np.mean(discounted))\n\
+    \ * spec.notional\n    discounted = np.exp(-r * T) * payoffs\n    return np.mean(discounted)\n\
     ```\n"
 copula:
   description: Correlated-default pricing for basket credit and tranche products
@@ -556,7 +559,7 @@ fft_pricing:
     \        return process.characteristic_function(u, T)\n\n    price = cos_price(\n\
     \        char_fn=char_fn,\n        S0=spec.spot,\n        K=spec.strike,\n   \
     \     T=T,\n        r=r,\n        option_type=\"call\",  # >>> INSTRUMENT-SPECIFIC:\
-    \ choose call or put <<<\n    )\n    return float(price) * spec.notional\n```\n"
+    \ choose call or put <<<\n    )\n    return price * spec.notional\n```\n"
 credit:
   template: "class CDSPricer:\n    def __init__(self, spec):\n        self._spec =\
     \ spec\n\n    @property\n    def requirements(self) -> set[str]:\n        return\

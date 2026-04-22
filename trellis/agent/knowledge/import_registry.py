@@ -492,6 +492,7 @@ If a module or symbol is not listed below, it does NOT exist.
 ### Core
 from trellis.core.date_utils import generate_schedule, year_fraction, add_months
 from trellis.core.market_state import MarketState
+from trellis.core.payoff import PricingValue
 from trellis.core.types import DayCountConvention, Frequency
 
 ### Curves

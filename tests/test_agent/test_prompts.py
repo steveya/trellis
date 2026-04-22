@@ -86,6 +86,32 @@ def test_evaluate_prompt_renders_selection_basis_and_assumptions():
     assert "closed_form_or_quasi_closed_form_route" in prompt
 
 
+def test_evaluate_prompt_teaches_trace_safe_public_value_contract():
+    from trellis.agent.prompts import evaluate_prompt
+    from trellis.agent.quant import PricingPlan
+
+    prompt = evaluate_prompt(
+        skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
+        spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
+        reference_sources={},
+        pricing_plan=PricingPlan(
+            method="analytical",
+            method_modules=["trellis.models.black"],
+            required_market_data={"discount_curve"},
+            model_to_build="european_option",
+            reasoning="Known vanilla route.",
+        ),
+        knowledge_context="",
+    )
+
+    assert "present-value scalar" in prompt
+    assert "Do not wrap the final present value in `float(...)`" in prompt
+    assert "raw-kernel-plus-wrapper pattern" in prompt
+    assert "explicit reporting or solver boundary" in prompt
+    assert "returns a FLOAT" not in prompt
+    assert "def evaluate(self, market_state: MarketState) -> float:" not in prompt
+
+
 def test_executor_knowledge_context_escalates_after_first_attempt(monkeypatch):
     from trellis.agent.executor import (
         _builder_knowledge_context_for_attempt,
