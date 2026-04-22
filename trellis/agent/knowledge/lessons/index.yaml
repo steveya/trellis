@@ -694,6 +694,20 @@ entries:
     - vol_surface_dependence
     instrument: []
     error_signature: null
+- id: cal_016
+  title: Use public cap-strip period APIs
+  severity: high
+  category: calibration
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
 - id: con_001
   title: Use exact trellis import paths — never guess module names
   severity: critical
@@ -1249,7 +1263,7 @@ entries:
   title: Missing payoff schedule contract
   severity: critical
   category: convention
-  status: validated
+  status: promoted
   supersedes: []
   applies_when:
     method:
@@ -1682,7 +1696,7 @@ entries:
   title: Undefined symbol in dataclass defaults
   severity: critical
   category: finite_differences
-  status: validated
+  status: promoted
   supersedes: []
   applies_when:
     method:
@@ -2814,7 +2828,7 @@ entries:
   title: Analytical Himalaya pricer must wrap required primitives explicitly
   severity: critical
   category: monte_carlo
-  status: validated
+  status: promoted
   supersedes: []
   applies_when:
     method:
@@ -3554,7 +3568,7 @@ entries:
   title: Require payoff shape contract
   severity: critical
   category: monte_carlo
-  status: candidate
+  status: validated
   supersedes: []
   applies_when:
     method:
@@ -8110,6 +8124,52 @@ entries:
     - analytical
     features:
     - discounting
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: vol_026
+  title: Missing Black76 Call Primitive
+  severity: critical
+  category: volatility
+  status: promoted
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
+    - vol_surface_dependence
+    - forward_rate
+    - discounting
+    instrument: []
+    error_signature: null
+- id: vol_028
+  title: Enforce non-zero vega
+  severity: critical
+  category: volatility
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - discounting
+    - multi_asset
+    - maturity_settlement
+    - vol_surface_dependence
+    instrument: []
+    error_signature: null
+- id: vol_029
+  title: Ignored SABR vol dependence
+  severity: high
+  category: volatility
+  status: validated
+  supersedes: []
+  applies_when:
+    method:
+    - analytical
+    features:
+    - floating_coupons
     - vol_surface_dependence
     instrument: []
     error_signature: null

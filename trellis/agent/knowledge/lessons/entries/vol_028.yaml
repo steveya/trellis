@@ -1,0 +1,30 @@
+category: volatility
+title: Enforce non-zero vega
+severity: critical
+status: validated
+confidence: 0.6
+created: '2026-04-20T16:16:07.630391'
+version: ''
+source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260420_161610_basket_option_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - discounting
+  - multi_asset
+  - maturity_settlement
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: Repricing the option with vol bumped from 5% to 40% produced no price change,
+  with vega measured as 0.0000.
+root_cause: The analytical payoff/pricer path was assembled without correctly wiring
+  volatility dependence into the pricing kernel. As a result, the output was effectively
+  insensitive to the supplied volatility surface or vol input fields.
+fix: Ensure the analytical routine consumes the model volatilities/correlation in
+  the final pricing formula and that the resolved market-data object exposes the expected
+  volatility attribute. Add a sanity check that embedded-option products show non-zero
+  price sensitivity to a volatility bump before approving the build.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: vol_028
