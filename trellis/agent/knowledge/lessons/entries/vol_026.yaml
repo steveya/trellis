@@ -1,0 +1,31 @@
+category: volatility
+title: Missing Black76 Call Primitive
+severity: critical
+status: promoted
+confidence: 1.0
+created: '2026-04-20T16:13:06.826577'
+version: ''
+source_trace: trellis/agent/knowledge/traces/20260420_161309_cap_analytical.yaml
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  - forward_rate
+  - discounting
+  instrument: []
+  error_signature: null
+symptom: Build gate fails before code generation with an unresolved primitive error
+  stating that pricing kernel primitive 'black76_call' is missing.
+root_cause: The analytical cap-strip route depends on a Black76 caplet/call pricing
+  kernel, but the binding only declared the higher-level cap_floor route without registering
+  the required primitive adapter. As a result, the compiler cannot assemble the product
+  IR into an executable pricing path.
+fix: Add or map the missing `black76_call` primitive in the analytical rates model
+  and ensure the cap-strip route resolves each caplet to that kernel. Verify the binding
+  exports the primitive under the exact symbol name expected by the route compiler
+  before generation.
+validation: Discovered during build (attempt 0)
+supersedes: []
+id: vol_026

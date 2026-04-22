@@ -2,8 +2,8 @@ id: mc_036
 title: Analytical Himalaya pricer must wrap required primitives explicitly
 severity: critical
 category: monte_carlo
-status: validated
-confidence: 0.7
+status: promoted
+confidence: 0.8
 created: '2026-03-28T15:16:49.135160'
 version: ''
 source_trace: /Users/steveyang/Projects/steveya/trellis/trellis/agent/knowledge/traces/20260328_151649_basket_option_analytical.yaml
@@ -31,3 +31,4 @@ fix: 'Structure the Himalaya evaluate() as a thin adapter: always call generate_
   period''s contribution, and aggregate results; do not import or call any substitute
   pricing functions.'
 validation: Discovered during build (attempt 3)
+supersedes: []

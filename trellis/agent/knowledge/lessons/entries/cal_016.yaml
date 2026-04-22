@@ -1,0 +1,35 @@
+category: calibration
+title: Use public cap-strip period APIs
+severity: high
+status: validated
+confidence: 0.6
+created: '2026-04-21T00:00:26.893715'
+version: ''
+source_trace: null
+applies_when:
+  method:
+  - analytical
+  features:
+  - floating_coupons
+  - vol_surface_dependence
+  instrument: []
+  error_signature: null
+symptom: The implementation assumed `CapFloorPeriod` was exported from `trellis.instruments.cap`,
+  causing the analytical pricer to fail during import and build.
+root_cause: 'This is an API boundary mistake: internal or non-exported types may exist
+  in the codebase but are not guaranteed to be available from the package interface.
+  The mental model failure is treating a private implementation detail as a stable
+  dependency.'
+fix: Import only documented/public symbols or construct the strip from exported leg/cashflow
+  interfaces, then keep the analytical logic isolated from internal types.
+validation: "Resolved during build of Build a pricer for: FinancePy parity: USD cap\
+  \ strip shifted Black\n\nPrice a cap strip under the declared benchmark rates surface.\n\
+  \nInstrument class: cap.\nStrike: 0.04.\nNotional: 1000000.0.\nStart date: 2024-11-15.\n\
+  End date: 2029-11-15.\nPayment frequency: quarterly.\nDay count: ACT/360.\nRate\
+  \ index: USD-SOFR-3M.\nPricing model: shifted_black.\nShift: 0.01.\n\nPreferred\
+  \ method family: analytical\nFinancePy binding: financepy.rates.cap_floor.shifted_black\n\
+  Benchmark product: rate_cap_floor_strip\n\nConstruct methods: analytical\nComparison\
+  \ targets: analytical (analytical)\nCross-validation harness:\n  external targets:\
+  \ financepy\n\nImplementation target: analytical"
+supersedes: []
+id: cal_016
