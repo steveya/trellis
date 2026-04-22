@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from trellis.core.market_state import MarketState
+from trellis.core.payoff import PricingValue
 from trellis.core.types import DayCountConvention
 from trellis.core.date_utils import year_fraction
 from trellis.models.black import black76_call, black76_put, black76_asset_or_nothing_call, black76_asset_or_nothing_put, black76_cash_or_nothing_call, black76_cash_or_nothing_put
@@ -77,7 +78,7 @@ Implementation target: black_scholes."""
     def requirements(self) -> set[str]:
         return {"black_vol_surface", "discount_curve"}
 
-    def evaluate(self, market_state: MarketState) -> float:
+    def evaluate(self, market_state: MarketState) -> PricingValue:
         spec = self._spec
         spec = self._spec
         if market_state.discount is None:
@@ -85,14 +86,14 @@ Implementation target: black_scholes."""
         if market_state.vol_surface is None:
             raise ValueError("market_state.vol_surface is required for Black-Scholes comparison")
         T = max(float(year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)), 0.0)
-        spot = float(spec.spot)
-        strike = float(spec.strike)
+        spot = spec.spot
+        strike = spec.strike
         option_type = str(spec.option_type or "call").strip().lower()
         if T <= 0.0:
             intrinsic = max(spot - strike, 0.0) if option_type == "call" else max(strike - spot, 0.0)
-            return float(spec.notional) * intrinsic
-        df = float(market_state.discount.discount(T))
-        sigma = float(market_state.vol_surface.black_vol(max(T, 1e-6), strike))
+            return spec.notional * intrinsic
+        df = market_state.discount.discount(T)
+        sigma = market_state.vol_surface.black_vol(max(T, 1e-6), strike)
         forward = spot / max(df, 1e-12)
         if option_type == "call":
             undiscounted = black76_call(forward, strike, sigma, T)
@@ -100,7 +101,7 @@ Implementation target: black_scholes."""
             undiscounted = black76_put(forward, strike, sigma, T)
         else:
             raise ValueError(f"Unsupported option_type {spec.option_type!r}")
-        return float(spec.notional) * df * float(undiscounted)
+        return spec.notional * df * undiscounted
 
     def benchmark_outputs(self, market_state: MarketState) -> dict[str, float]:
         return dict(equity_vanilla_bs_outputs(market_state, self._spec))
