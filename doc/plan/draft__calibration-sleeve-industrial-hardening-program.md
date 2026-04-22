@@ -67,7 +67,7 @@ Rules for coding agents:
 | Queue ID | Linear | Status | Scope | Hard prerequisites |
 | --- | --- | --- | --- | --- |
 | `CAL.0A` | `QUA-947` | Done | Trellis-native architecture and documentation alignment | none |
-| `CAL.0B` | `QUA-948` | Backlog | equity-vol carry consistency across pricing and implied-vol inversion | none |
+| `CAL.0B` | `QUA-948` | Done | equity-vol carry consistency across pricing and implied-vol inversion | none |
 | `CAL.0C` | `QUA-949` | Backlog | CDS-pricer-backed single-name credit objective and diagnostics | none |
 | `CAL.1` | `QUA-950` | Backlog | industrial equity-vol surface foundation and staged model fits | `CAL.0B` |
 | `CAL.2` | `QUA-951` | Backlog | dated-instrument multi-curve hardening and calibration dependency DAG | none; ordered after the Phase 0 slices |
@@ -373,25 +373,25 @@ What is actually shipped:
 
 - typed single-name reduced-form credit calibration inputs
 - spread and hazard quote maps
+- CDS-pricer-backed normalization onto running-spread fit space
+- repricing, survival-probability, and forward-hazard diagnostics
 - credit-curve materialization back onto `MarketState`
 
 What is not yet at desk standard:
 
-- the current spread workflow normalizes spread to hazard using
-  `hazard ~= spread / (1 - recovery)` rather than calibrating through a CDS PV
-  engine
-- the solve objective is effectively the identity map over the hazard vector,
-  so the solver reproduces transformed hazards instead of fitting priced CDS
-  quotes
-- no schedule-aware CDS bootstrap with accrual-on-default, upfront plus running
-  conventions, standard coupon handling, or recovery sensitivity was found
+- the current workflow is still bounded to one canonical quarterly `ACT/360`
+  tenor schedule built from `market_state.settlement`
+- no full standard-coupon plus upfront workflow, IMM-roll handling, holiday
+  calendars, curve bootstrap policy, or index-credit governance was found
 - no index credit, bond/CDS basis, structural credit, or hybrid credit-equity
   workflow was found
 
 Industrial implication:
 
-- this is a typed reduced-form placeholder surface with good provenance
-- it is not yet a production CDS calibration engine
+- this is now a typed CDS-pricer-backed single-name running-spread calibration
+  slice with good provenance and diagnostics
+- it is still not yet a production CDS bootstrap or broader credit calibration
+  engine
 
 ### 5. Basket credit and correlation
 

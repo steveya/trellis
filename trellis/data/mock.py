@@ -12,15 +12,18 @@ from datetime import date, timedelta
 import hashlib
 from types import MappingProxyType
 
+from trellis.core.date_utils import add_months
 from trellis.curves.credit_curve import CreditCurve
 from trellis.core.state_space import StateSpace
 from trellis.curves.yield_curve import YieldCurve
 from trellis.core.differentiable import get_numpy
+from trellis.core.types import DayCountConvention, Frequency
 from trellis.data.base import BaseDataProvider
 from trellis.data.schema import MarketSnapshot
 from trellis.instruments.fx import FXRate
 from trellis.models.calibration.implied_vol import implied_vol
 from trellis.models.calibration.local_vol import calibrate_local_vol_surface_workflow
+from trellis.models.credit_default_swap import build_cds_schedule, solve_cds_par_spread_analytical
 from trellis.models.processes.heston import Heston, build_heston_parameter_payload
 from trellis.models.processes.sabr import SABRProcess
 from trellis.models.transforms.fft_pricer import fft_price
@@ -934,9 +937,12 @@ def _build_model_parameter_sets(
 
 def _build_synthetic_quote_bundles(
     *,
+    settlement: date,
     rates_pack: SyntheticRatesModelPack,
     credit_pack: SyntheticCreditModelPack,
     volatility_pack: SyntheticVolatilityModelPack,
+    discount_curves: Mapping[str, YieldCurve],
+    credit_curves: Mapping[str, CreditCurve],
     rate_vol_surfaces: Mapping[str, object],
     equity_vol_surfaces: Mapping[str, object],
     local_vol_surfaces: Mapping[str, object],
@@ -961,8 +967,25 @@ def _build_synthetic_quote_bundles(
             "quote_families": credit_pack.quote_families,
             "spread_inputs_decimal": {
                 curve_name: {
-                    tenor_text: round(float(hazard_rate) * (1.0 - float(credit_pack.recovery)), 10)
-                    for tenor_text, hazard_rate in hazard_grid.items()
+                    tenor_text: round(
+                        solve_cds_par_spread_analytical(
+                            notional=1.0,
+                            recovery=float(credit_pack.recovery),
+                            schedule=build_cds_schedule(
+                                settlement,
+                                add_months(
+                                    settlement,
+                                    max(int(round(float(tenor_text) * 12.0)), 1),
+                                ),
+                                Frequency.QUARTERLY,
+                                DayCountConvention.ACT_360,
+                            ),
+                            credit_curve=credit_curves[curve_name],
+                            discount_curve=discount_curves["usd_ois"],
+                        ),
+                        10,
+                    )
+                    for tenor_text in hazard_grid.keys()
                 }
                 for curve_name, hazard_grid in credit_pack.hazard_rate_inputs.items()
             },
@@ -1257,9 +1280,12 @@ class MockDataProvider(BaseDataProvider):
             jump_parameter_sets = _build_jump_parameter_sets(volatility_pack)
             model_parameter_sets = _build_model_parameter_sets(volatility_pack, discount_curves["usd_ois"])
             quote_bundles = _build_synthetic_quote_bundles(
+                settlement=best,
                 rates_pack=rates_pack,
                 credit_pack=credit_pack,
                 volatility_pack=volatility_pack,
+                discount_curves=discount_curves,
+                credit_curves=credit_curves,
                 rate_vol_surfaces=rate_vol_surfaces,
                 equity_vol_surfaces=equity_vol_surfaces,
                 local_vol_surfaces=local_vol_surfaces,
