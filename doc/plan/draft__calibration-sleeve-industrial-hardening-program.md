@@ -66,7 +66,7 @@ Rules for coding agents:
 
 | Queue ID | Linear | Status | Scope | Hard prerequisites |
 | --- | --- | --- | --- | --- |
-| `CAL.0A` | `QUA-947` | In Review | Trellis-native architecture and documentation alignment | none |
+| `CAL.0A` | `QUA-947` | Done | Trellis-native architecture and documentation alignment | none |
 | `CAL.0B` | `QUA-948` | Backlog | equity-vol carry consistency across pricing and implied-vol inversion | none |
 | `CAL.0C` | `QUA-949` | Backlog | CDS-pricer-backed single-name credit objective and diagnostics | none |
 | `CAL.1` | `QUA-950` | Backlog | industrial equity-vol surface foundation and staged model fits | `CAL.0B` |

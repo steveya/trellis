@@ -90,6 +90,9 @@ class LocalVolCalibrationResult:
                 "surface_shape": [
                     int(value) for value in tuple(self.calibration_target.get("surface_shape", ()))
                 ],
+                "dividend_yield": float(self.summary.get("dividend_yield", 0.0)),
+                "carry_rate": float(self.summary.get("carry_rate", self.summary.get("rate", 0.0))),
+                "carry_convention": str(self.calibration_target.get("carry_convention", "")),
             },
         )
 
@@ -111,6 +114,9 @@ def _validate_local_vol_inputs(
     implied_vols: raw_np.ndarray,
     S0: float,
     r: float,
+    *,
+    dividend_yield: float,
+    carry_rate: float | None,
 ) -> None:
     """Reject malformed local-vol surface inputs with a clear error."""
     if strikes.ndim != 1 or expiries.ndim != 1:
@@ -135,6 +141,32 @@ def _validate_local_vol_inputs(
         raise ValueError("S0 must be finite and positive")
     if not raw_np.isfinite(r):
         raise ValueError("r must be finite")
+    if not raw_np.isfinite(dividend_yield):
+        raise ValueError("dividend_yield must be finite")
+    if carry_rate is not None and not raw_np.isfinite(carry_rate):
+        raise ValueError("carry_rate must be finite")
+    if carry_rate is not None and abs(float(dividend_yield)) > 1e-12:
+        raise ValueError("specify either dividend_yield or carry_rate, not both")
+
+
+def _resolve_carry_rate(
+    *,
+    r: float,
+    dividend_yield: float = 0.0,
+    carry_rate: float | None = None,
+) -> float:
+    """Return one continuous-yield carry rate for local-vol provenance."""
+    if not raw_np.isfinite(r):
+        raise ValueError("r must be finite")
+    if not raw_np.isfinite(dividend_yield):
+        raise ValueError("dividend_yield must be finite")
+    if carry_rate is not None and not raw_np.isfinite(carry_rate):
+        raise ValueError("carry_rate must be finite")
+    if carry_rate is not None and abs(float(dividend_yield)) > 1e-12:
+        raise ValueError("specify either dividend_yield or carry_rate, not both")
+    if carry_rate is None:
+        return float(r) - float(dividend_yield)
+    return float(carry_rate)
 
 
 def _local_vol_calibration_target(
@@ -142,6 +174,9 @@ def _local_vol_calibration_target(
     expiries: raw_np.ndarray,
     S0: float,
     r: float,
+    *,
+    dividend_yield: float,
+    carry_rate: float,
 ) -> dict[str, object]:
     """Return a compact description of the Dupire calibration target."""
     quote_map = _default_implied_vol_quote_map_spec()
@@ -149,6 +184,9 @@ def _local_vol_calibration_target(
         "source_kind": "option_surface",
         "spot": float(S0),
         "rate": float(r),
+        "dividend_yield": float(dividend_yield),
+        "carry_rate": float(carry_rate),
+        "carry_convention": "continuous_yield",
         "quote_map": quote_map.to_payload(),
         "strike_count": int(strikes.size),
         "expiry_count": int(expiries.size),
@@ -225,6 +263,8 @@ def dupire_local_vol_result(
     S0: float,
     r: float,
     *,
+    dividend_yield: float = 0.0,
+    carry_rate: float | None = None,
     surface_name: str = "local_vol",
     source_kind: str = "calibrated_surface",
     source_ref: str = "dupire_local_vol_result",
@@ -236,13 +276,37 @@ def dupire_local_vol_result(
     strikes = raw_np.asarray(strikes, dtype=float)
     expiries = raw_np.asarray(expiries, dtype=float)
     implied_vols = raw_np.asarray(implied_vols, dtype=float)
-    _validate_local_vol_inputs(strikes, expiries, implied_vols, S0, r)
-    calibration_target = _local_vol_calibration_target(strikes, expiries, S0, r)
+    _validate_local_vol_inputs(
+        strikes,
+        expiries,
+        implied_vols,
+        S0,
+        r,
+        dividend_yield=dividend_yield,
+        carry_rate=carry_rate,
+    )
+    resolved_carry_rate = _resolve_carry_rate(
+        r=r,
+        dividend_yield=dividend_yield,
+        carry_rate=carry_rate,
+    )
+    calibration_target = _local_vol_calibration_target(
+        strikes,
+        expiries,
+        S0,
+        r,
+        dividend_yield=dividend_yield,
+        carry_rate=resolved_carry_rate,
+    )
     calibration_target["surface_name"] = surface_name
     spline = RectBivariateSpline(expiries, strikes, implied_vols)
     diagnostics = _local_vol_diagnostics(spline, strikes=strikes, expiries=expiries, S0=S0, r=r)
 
     warnings: list[str] = []
+    if abs(float(dividend_yield)) > 1e-12 or carry_rate is not None:
+        warnings.append(
+            "Local-vol carry inputs are currently recorded under a continuous-yield carry convention; discrete dividends and richer repo-specific surface cleaning are not yet hardened."
+        )
     if diagnostics.unstable_point_count:
         warnings.append(
             "Unstable local-vol regions were detected on the calibration grid; Dupire fallback to implied vol will be used there."
@@ -265,6 +329,9 @@ def dupire_local_vol_result(
         "parameterization": {
             "spot": float(S0),
             "rate": float(r),
+            "dividend_yield": float(dividend_yield),
+            "carry_rate": float(resolved_carry_rate),
+            "carry_convention": "continuous_yield",
             "surface_shape": calibration_target["surface_shape"],
         },
         "fit_diagnostics": diagnostics.to_payload(),
@@ -280,6 +347,8 @@ def dupire_local_vol_result(
         "expiry_count": int(expiries.size),
         "spot": float(S0),
         "rate": float(r),
+        "dividend_yield": float(dividend_yield),
+        "carry_rate": float(resolved_carry_rate),
         "unstable_point_count": diagnostics.unstable_point_count,
     }
     return LocalVolCalibrationResult(
@@ -299,9 +368,20 @@ def dupire_local_vol(
     implied_vols: raw_np.ndarray,
     S0: float,
     r: float,
+    *,
+    dividend_yield: float = 0.0,
+    carry_rate: float | None = None,
 ) -> callable:
     """Construct Dupire local vol function from an implied vol surface."""
-    result = dupire_local_vol_result(strikes, expiries, implied_vols, S0, r)
+    result = dupire_local_vol_result(
+        strikes,
+        expiries,
+        implied_vols,
+        S0,
+        r,
+        dividend_yield=dividend_yield,
+        carry_rate=carry_rate,
+    )
     local_vol = result.local_vol_surface
     local_vol.calibration_provenance = dict(result.provenance)
     local_vol.calibration_target = dict(result.calibration_target)
@@ -318,6 +398,8 @@ def calibrate_local_vol_surface_workflow(
     S0: float,
     r: float,
     *,
+    dividend_yield: float = 0.0,
+    carry_rate: float | None = None,
     surface_name: str = "local_vol",
     metadata: dict[str, object] | None = None,
 ) -> LocalVolCalibrationResult:
@@ -328,6 +410,8 @@ def calibrate_local_vol_surface_workflow(
         implied_vols,
         S0,
         r,
+        dividend_yield=dividend_yield,
+        carry_rate=carry_rate,
         surface_name=surface_name,
         source_kind="calibrated_surface",
         source_ref="calibrate_local_vol_surface_workflow",

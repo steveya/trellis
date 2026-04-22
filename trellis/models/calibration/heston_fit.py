@@ -11,7 +11,7 @@ import numpy as raw_np
 
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
-from trellis.models.calibration.implied_vol import implied_vol
+from trellis.models.calibration.implied_vol import ImpliedVolError, implied_vol
 from trellis.models.calibration.materialization import materialize_model_parameter_set
 from trellis.models.calibration.quote_maps import (
     QuoteAxisSpec,
@@ -210,6 +210,8 @@ class HestonSmileFitDiagnostics:
     atm_abs_vol_error: float
     point_count: int
     warning_count: int = 0
+    quote_convention_mismatch_count: int = 0
+    numerical_failure_count: int = 0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "labels", tuple(self.labels))
@@ -222,6 +224,8 @@ class HestonSmileFitDiagnostics:
         object.__setattr__(self, "atm_abs_vol_error", float(self.atm_abs_vol_error))
         object.__setattr__(self, "point_count", int(self.point_count))
         object.__setattr__(self, "warning_count", int(self.warning_count))
+        object.__setattr__(self, "quote_convention_mismatch_count", int(self.quote_convention_mismatch_count))
+        object.__setattr__(self, "numerical_failure_count", int(self.numerical_failure_count))
 
     def to_payload(self) -> dict[str, object]:
         """Return a JSON-friendly diagnostics payload."""
@@ -236,6 +240,8 @@ class HestonSmileFitDiagnostics:
             "atm_abs_vol_error": float(self.atm_abs_vol_error),
             "point_count": int(self.point_count),
             "warning_count": int(self.warning_count),
+            "quote_convention_mismatch_count": int(self.quote_convention_mismatch_count),
+            "numerical_failure_count": int(self.numerical_failure_count),
         }
 
 
@@ -423,6 +429,7 @@ def _heston_model_vols(
     fft_points: int,
     fft_eta: float,
     fft_alpha: float,
+    diagnostics: dict[str, int] | None = None,
 ) -> raw_np.ndarray:
     """Return model vols for one Heston parameter vector."""
     kappa, theta, xi, rho, v0 = (float(value) for value in params)
@@ -438,6 +445,8 @@ def _heston_model_vols(
         v0=v0,
     )
     model_vols: list[float] = []
+    quote_convention_mismatch_count = 0
+    numerical_failure_count = 0
     for strike in surface.strikes:
         try:
             price = fft_price(
@@ -457,12 +466,24 @@ def _heston_model_vols(
                 surface.expiry_years,
                 surface.rate,
                 option_type="call",
+                dividend_yield=surface.dividend_yield,
             )
+        except ImpliedVolError as exc:
+            if exc.reason == "quote_convention_mismatch":
+                quote_convention_mismatch_count += 1
+            else:
+                numerical_failure_count += 1
+            model_vol = 10.0
         except Exception:
+            numerical_failure_count += 1
             model_vol = 10.0
         if not raw_np.isfinite(model_vol) or model_vol <= 0.0:
+            numerical_failure_count += 1
             model_vol = 10.0
         model_vols.append(float(model_vol))
+    if diagnostics is not None:
+        diagnostics["quote_convention_mismatch_count"] = int(quote_convention_mismatch_count)
+        diagnostics["numerical_failure_count"] = int(numerical_failure_count)
     return raw_np.asarray(model_vols, dtype=float)
 
 
@@ -471,6 +492,8 @@ def _fit_diagnostics(
     model_vols: raw_np.ndarray,
     *,
     warning_count: int,
+    quote_convention_mismatch_count: int = 0,
+    numerical_failure_count: int = 0,
 ) -> HestonSmileFitDiagnostics:
     """Return fit diagnostics for one solved Heston smile."""
     market_vols = raw_np.asarray(surface.market_vols, dtype=float)
@@ -488,6 +511,8 @@ def _fit_diagnostics(
         atm_abs_vol_error=float(abs(residuals[surface.atm_index])),
         point_count=len(surface.points),
         warning_count=warning_count,
+        quote_convention_mismatch_count=quote_convention_mismatch_count,
+        numerical_failure_count=numerical_failure_count,
     )
 
 
@@ -551,15 +576,31 @@ def fit_heston_smile_surface(
     solver_provenance = build_solve_provenance(request, solve_result)
     solver_replay_artifact = build_solve_replay_artifact(request, solve_result)
 
+    evaluation_diagnostics: dict[str, int] = {}
     model_vols = _heston_model_vols(
         surface,
         solve_result.solution,
         fft_points=fft_points,
         fft_eta=fft_eta,
         fft_alpha=fft_alpha,
+        diagnostics=evaluation_diagnostics,
     )
     warnings = list(surface.warnings)
-    diagnostics = _fit_diagnostics(surface, model_vols, warning_count=len(warnings))
+    if evaluation_diagnostics.get("quote_convention_mismatch_count", 0):
+        warnings.append(
+            "Some fitted Heston prices could not be inverted under the selected carry convention; inspect quote-convention diagnostics."
+        )
+    if evaluation_diagnostics.get("numerical_failure_count", 0):
+        warnings.append(
+            "Some fitted Heston smile points encountered numerical pricing or inversion failures; inspect fit diagnostics."
+        )
+    diagnostics = _fit_diagnostics(
+        surface,
+        model_vols,
+        warning_count=len(warnings),
+        quote_convention_mismatch_count=evaluation_diagnostics.get("quote_convention_mismatch_count", 0),
+        numerical_failure_count=evaluation_diagnostics.get("numerical_failure_count", 0),
+    )
 
     model_parameters = build_heston_parameter_payload(
         mu=surface.rate - surface.dividend_yield,
