@@ -39,7 +39,7 @@ Rules for coding agents:
 
 | Ticket | Status | Scope |
 | --- | --- | --- |
-| `QUA-947` | Backlog | Trellis-native architecture framing, market-object-first vocabulary, and calibration-doc alignment |
+| `QUA-947` | In Review | Trellis-native architecture framing, market-object-first vocabulary, and calibration-doc alignment |
 
 ## Purpose
 
