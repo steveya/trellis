@@ -162,6 +162,9 @@ def test_support_contract_docs_and_limitations_name_the_checked_lanes():
         "autodiff_scalar_gradient",
         "finite_difference_vector_jacobian",
         "fit_heston_surface",
+        "get_backend_capabilities",
+        "hessian_vector_product",
+        "portfolio_aad",
         "simulate_with_shocks",
         "price_event_aware_monte_carlo",
     }
@@ -176,6 +179,8 @@ def test_support_contract_docs_and_limitations_name_the_checked_lanes():
         "public payoff boundary",
         "public yield/credit/grid-vol market objects",
         "finite_difference_vector_jacobian",
+        "get_backend_capabilities",
+        "portfolio_aad",
         "runtime risk now records",
     }
     missing_limitation_terms = sorted(term for term in required_limitation_terms if term not in limitations)
@@ -186,5 +191,6 @@ def test_support_contract_docs_and_limitations_name_the_checked_lanes():
         "evaluate() returns a float PV",
         "YieldCurve is not trace-safe",
         "GridVolSurface.black_vol(...) returns float",
+        "AD layer is still a thin `autograd` wrapper",
     )
     assert not any(claim in limitations for claim in stale_claims)

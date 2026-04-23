@@ -80,6 +80,14 @@ The checked support contract is intentionally explicit:
        ``price_event_aware_monte_carlo(...)``
      - explicit shocks plus smooth terminal/snapshot/event-replay contracts
 
+The backend capability surface lives in ``trellis.core.differentiable``.
+``get_backend_capabilities()`` currently reports ``backend_id="autograd"`` and
+support for ``grad``, ``jacobian``, and ``hessian``.  Future AAD-oriented hooks
+such as ``jvp``, ``vjp``, ``hessian_vector_product``, and ``portfolio_aad`` are
+named in that capability payload but intentionally report unsupported until a
+backend can supply them.  Call sites should use ``require_capability(...)``
+rather than assuming those operators exist.
+
 - Black76 and Garman-Kohlhagen calls/puts
 - FX vanilla pricing can be assembled explicitly from Black76 terminal basis
   claims via ``terminal_vanilla_from_basis(...)`` after mapping spot FX and
@@ -140,6 +148,8 @@ Implementation Rules
 --------------------
 
 - use ``autograd.numpy`` via ``trellis.core.differentiable.get_numpy()``
+- query ``trellis.core.differentiable.get_backend_capabilities()`` before
+  relying on backend-specific derivative operators
 - avoid ``float(...)`` or other scalarization inside traced pricing code
 - for Monte Carlo gradients, pass explicit shocks so the path is deterministic
 - keep the public pricing adapter trace-safe and reserve ``float(...)`` for
@@ -169,6 +179,7 @@ Implementation References
 -------------------------
 
 .. autofunction:: trellis.models.black.black76_call
+.. autofunction:: trellis.core.differentiable.get_backend_capabilities
 .. autofunction:: trellis.models.black.garman_kohlhagen_call
 .. autofunction:: trellis.models.analytical.fx.garman_kohlhagen_price_raw
 .. autofunction:: trellis.models.analytical.terminal_vanilla_from_basis
