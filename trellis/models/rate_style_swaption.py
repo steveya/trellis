@@ -272,6 +272,19 @@ def _resolve_swaption_black76_vol(
         sigma=sigma,
     )
     if comparison_params is None:
+        tenor_aware = getattr(market_state.vol_surface, "swaption_black_vol", None)
+        if callable(tenor_aware):
+            tenor_years = max(
+                year_fraction(spec.swap_start, spec.swap_end, spec.day_count),
+                1e-8,
+            )
+            return float(
+                tenor_aware(
+                    max(float(expiry_years), 1e-8),
+                    max(abs(float(spec.strike)), 1e-8),
+                    float(tenor_years),
+                )
+            )
         return float(
             market_state.vol_surface.black_vol(
                 max(float(expiry_years), 1e-8),
