@@ -692,7 +692,26 @@ def _build_payoff(
         evaluate_paths_fn=evaluate_paths,
         evaluate_state_fn=evaluate_state_from_reduced,
         name=f"event_aware_{reducer_kind}",
+        derivative_metadata=_event_timeline_derivative_metadata(event_timeline),
     )
+
+
+def _event_timeline_derivative_metadata(event_timeline: PathEventTimeline | None) -> dict[str, object]:
+    if event_timeline is None:
+        return {}
+    features = []
+    for event in event_timeline:
+        if event.kind == "barrier":
+            features.append("barrier_event")
+        elif event.kind == "exercise":
+            features.append("exercise_event")
+    features = list(dict.fromkeys(features))
+    if not features:
+        return {}
+    return {
+        "discontinuous_features": tuple(features),
+        "unsupported_reason": f"{features[0]}_discontinuity",
+    }
 
 
 def _resolve_event_state_payoff(

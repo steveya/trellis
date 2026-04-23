@@ -320,6 +320,53 @@ class TestEventAwareMonteCarloAssembly:
         eps = 1e-4
         fd_delta = (price_from_spot(100.0 + eps) - price_from_spot(100.0 - eps)) / (2 * eps)
         assert autodiff_delta == pytest.approx(fd_delta, rel=1e-5, abs=1e-5)
+
+    def test_differentiable_event_replay_rejects_barrier_events_with_policy_metadata(self):
+        from trellis.models.monte_carlo.event_aware import (
+            EventAwareMonteCarloEvent,
+            EventAwareMonteCarloProblemSpec,
+            EventAwareMonteCarloProcessSpec,
+            price_event_aware_monte_carlo,
+        )
+
+        shocks = raw_np.random.default_rng(101).standard_normal((32, 4))
+
+        with pytest.raises(NotImplementedError, match="barrier_event_discontinuity"):
+            price_event_aware_monte_carlo(
+                EventAwareMonteCarloProblemSpec(
+                    process_spec=EventAwareMonteCarloProcessSpec(
+                        family="gbm_1d",
+                        risk_free_rate=0.03,
+                        sigma=0.20,
+                    ),
+                    initial_state=100.0,
+                    maturity=1.0,
+                    n_steps=4,
+                    path_requirement_kind="event_replay",
+                    reducer_kind="compiled_schedule_payoff",
+                    settlement_event="terminal_settlement",
+                    event_specs=(
+                        EventAwareMonteCarloEvent(
+                            time=0.5,
+                            name="down_barrier",
+                            kind="barrier",
+                            payload={"direction": "down", "level": 95.0},
+                        ),
+                        EventAwareMonteCarloEvent(
+                            time=1.0,
+                            name="terminal_settlement",
+                            kind="settlement",
+                            payload={"rule": "terminal_value"},
+                        ),
+                    ),
+                ),
+                n_paths=32,
+                seed=11,
+                return_paths=False,
+                shocks=shocks,
+                differentiable=True,
+            )
+
     def test_hull_white_swaption_problem_prices_from_reduced_event_state(self):
         from trellis.core.date_utils import build_payment_timeline
         from trellis.models.monte_carlo.event_aware import (

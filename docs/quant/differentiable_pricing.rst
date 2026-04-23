@@ -153,6 +153,9 @@ keeping today's ``autograd`` boundary honest.
 - smooth terminal-only and event-replay state-aware Monte Carlo payoffs through
   ``MonteCarloEngine.price(..., shocks=..., differentiable=True)`` and
   ``price_event_aware_monte_carlo(..., shocks=..., differentiable=True)``
+- barrier-monitor and event-aware Monte Carlo pricing now carries
+  ``derivative_metadata`` with the discontinuous derivative policy when a
+  traced pathwise Greek is unsupported
 
 These paths now use autograd-friendly primitives and avoid scalarization inside
 the traced region.
@@ -171,7 +174,12 @@ Where Trellis Still Stays Forward-Only
   surface-native Greek
 - state-aware Monte Carlo contracts with barrier monitors or other
   discontinuous event semantics, which still stay off the traced lane even
-  when explicit shocks are supplied
+  when explicit shocks are supplied; the bounded checked policy is
+  ``discontinuous_derivative_policy="fail_closed"`` with
+  ``resolved_derivative_method="unsupported_discontinuous_pathwise"`` on the
+  rejected AD lane, ``resolved_derivative_method="forward_price_only"`` on
+  ordinary forward pricing, and ``fallback_derivative_method="finite_difference_bump_reprice"``
+  as the declared derivative fallback rather than silent smoothing
 - custom discretization schemes that are not autograd-aware themselves
 
 That split is deliberate: the compiled engines stay fast for production pricing,
@@ -205,8 +213,11 @@ organized around five concrete follow-on slices:
        reported explicitly
    * - Discontinuous Greeks
      - define smoothing, custom-adjoint, finite-difference, or unsupported
-       policy for barriers, digitals, and exercise/event logic
-     - no silent smoothing of production prices
+       policy for barriers, digitals, and exercise/event logic; the first
+       checked slice covers Monte Carlo barrier monitors plus barrier/exercise
+       event replay as an explicit fail-closed pathwise AD policy
+     - no silent smoothing of production prices; finite-difference
+       bump/reprice is the declared fallback method for this bounded slice
    * - Gradient matrix
      - expand the support-contract tests into a product-family derivative
        matrix
@@ -250,7 +261,10 @@ Implementation Rules
   fallbacks
 - for state-aware Monte Carlo gradients, keep terminal/snapshot adapters
   trace-safe and reject non-smooth barrier or exercise state contracts
-  explicitly instead of silently scalarizing them
+  explicitly instead of silently scalarizing them; inspect
+  ``derivative_metadata`` or
+  ``describe_monte_carlo_derivative_policy(...)`` for the fail-closed policy,
+  discontinuous feature labels, and declared fallback method
 
 Implementation References
 -------------------------
