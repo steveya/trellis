@@ -2,9 +2,9 @@
 
 ## Status
 
-Draft execution mirror for the autograd end-state umbrella `QUA-957`.
+Completed execution mirror for the autograd end-state umbrella `QUA-957`.
 
-Status mirror last synced: `2026-04-22`
+Status mirror last synced: `2026-04-23`
 
 ## Linked Context
 
@@ -38,13 +38,13 @@ Rules for coding agents:
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-957` Autograd platform: public-contract and self-learning closure | Backlog |
+| `QUA-957` Autograd platform: public-contract and self-learning closure | Done |
 
 ### Delivery Slices
 
 | Ticket | Status | Scope |
 | --- | --- | --- |
-| `QUA-958` | Backlog | Public payoff contract and explicit float-only serialization boundary |
+| `QUA-958` | Done | Public payoff contract and explicit float-only serialization boundary |
 | `QUA-959` | Done | Trace-safe `YieldCurve` / `CreditCurve` / `GridVolSurface` and date-aware helpers |
 | `QUA-960` | Done | Capability-driven risk-method selection and sensitivity provenance |
 | `QUA-961` | Done | Reduced-state and event-aware Monte Carlo pathwise gradients |
@@ -52,6 +52,17 @@ Rules for coding agents:
 | `QUA-964` | Done | Builder prompts, cookbooks, and docs aligned to the autograd-native contract |
 | `QUA-963` | Done | Gradient regression cohort, support-contract audit, and limitation cleanup |
 | `QUA-965` | Done | Backend capability surface and future AAD hooks |
+
+### Closeout
+
+The umbrella landed through PR #648 at merge commit
+`175f1667803dd6bfb9688c28bf40b52f60332c34`.  The checked support contract is now
+defined by `docs/quant/differentiable_pricing.rst`, `LIMITATIONS.md`, and the
+verification cohort in `tests/test_verification/test_autograd_support_contract.py`.
+
+The program intentionally leaves production-scale portfolio AAD, discontinuous
+payoff smoothing/custom adjoints, and broader industrial curve/surface/cube
+plants as follow-on work rather than claiming universal differentiability.
 
 ## Purpose
 
