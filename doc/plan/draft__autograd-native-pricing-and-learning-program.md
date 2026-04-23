@@ -45,13 +45,13 @@ Rules for coding agents:
 | Ticket | Status | Scope |
 | --- | --- | --- |
 | `QUA-958` | Backlog | Public payoff contract and explicit float-only serialization boundary |
-| `QUA-959` | Backlog | Trace-safe `YieldCurve` / `CreditCurve` / `GridVolSurface` and date-aware helpers |
+| `QUA-959` | Done | Trace-safe `YieldCurve` / `CreditCurve` / `GridVolSurface` and date-aware helpers |
 | `QUA-960` | Done | Capability-driven risk-method selection and sensitivity provenance |
 | `QUA-961` | Done | Reduced-state and event-aware Monte Carlo pathwise gradients |
 | `QUA-962` | Done | Systemic calibration Jacobians and derivative-method provenance |
 | `QUA-964` | Done | Builder prompts, cookbooks, and docs aligned to the autograd-native contract |
 | `QUA-963` | Backlog | Gradient regression cohort, support-contract audit, and limitation cleanup |
-| `QUA-965` | Backlog | Backend capability surface and future AAD hooks |
+| `QUA-965` | Done | Backend capability surface and future AAD hooks |
 
 ## Purpose
 
