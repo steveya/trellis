@@ -91,6 +91,19 @@ def test_supported_calibration_workflows_preserve_replay_contracts_and_fit_toler
         abs=2e-6,
     )
 
+    quanto = scenarios["quanto_correlation"].cold_runner()
+    assert quanto.provenance["source_ref"] == "calibrate_quanto_correlation_workflow"
+    assert quanto.summary["support_boundary"] == "bounded_quanto_correlation"
+    assert quanto.summary["quote_count"] == 3
+    assert quanto.summary["correlation_keys"] == ["EURUSD_corr"]
+    assert quanto.solve_provenance.backend["resolved_derivative_method"] == (
+        "scipy_2point_residual_jacobian"
+    )
+    assert quanto.diagnostics.max_abs_price_residual < 5e-8
+    assert quanto.provenance["upstream_materializations"]["black_vol_surface"]["object_name"] == (
+        "quanto_flat_vol"
+    )
+
 
 def test_supported_calibration_workflows_are_replay_stable_within_tolerance():
     scenarios = _scenario_map()
@@ -162,6 +175,13 @@ def test_supported_calibration_workflows_are_replay_stable_within_tolerance():
     assert second_basket_credit.diagnostics.to_payload() == first_basket_credit.diagnostics.to_payload()
     assert second_basket_credit.surface.to_payload() == first_basket_credit.surface.to_payload()
 
+    first_quanto = scenarios["quanto_correlation"].cold_runner()
+    second_quanto = scenarios["quanto_correlation"].cold_runner()
+    assert second_quanto.solve_replay_artifact.request == first_quanto.solve_replay_artifact.request
+    assert second_quanto.provenance["calibration_target"] == first_quanto.provenance["calibration_target"]
+    assert second_quanto.diagnostics.to_payload() == first_quanto.diagnostics.to_payload()
+    assert second_quanto.correlation == pytest.approx(first_quanto.correlation, abs=1e-10)
+
 
 def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
     from trellis.models.calibration.benchmarking import build_supported_calibration_benchmark_report
@@ -169,11 +189,11 @@ def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
     report = build_supported_calibration_benchmark_report(repeats=1, warmups=0)
     cases = {case["workflow"]: case for case in report["cases"]}
 
-    assert report["summary"]["workflow_count"] == 10
-    assert report["summary"]["warm_start_workflow_count"] == 4
-    assert report["summary"]["desk_like_workflow_count"] == 1
-    assert report["summary"]["perturbation_diagnostic_count"] == 1
-    assert report["summary"]["latency_envelope_count"] == 1
+    assert report["summary"]["workflow_count"] == 11
+    assert report["summary"]["warm_start_workflow_count"] == 5
+    assert report["summary"]["desk_like_workflow_count"] == 2
+    assert report["summary"]["perturbation_diagnostic_count"] == 2
+    assert report["summary"]["latency_envelope_count"] == 2
     assert set(cases) == {
         "hull_white",
         "caplet_strip",
@@ -185,6 +205,7 @@ def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
         "local_vol",
         "credit",
         "basket_credit",
+        "quanto_correlation",
     }
     assert cases["caplet_strip"]["warm"] is None
     assert cases["equity_vol_surface"]["warm"] is None
@@ -192,6 +213,7 @@ def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
     assert cases["credit"]["warm"] is None
     assert cases["basket_credit"]["warm"] is None
     assert cases["swaption_cube"]["warm"] is None
+    assert cases["quanto_correlation"]["warm"] is not None
     assert cases["hull_white"]["warm"] is not None
     assert cases["sabr"]["warm"] is not None
     assert cases["heston"]["warm"] is not None
@@ -218,6 +240,11 @@ def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
     assert cases["basket_credit"]["metadata"]["linked_credit_curve"] == "benchmark_single_name_credit"
     assert cases["basket_credit"]["metadata"]["perturbation_diagnostic"]["threshold_breaches"] == {}
     assert cases["basket_credit"]["latency_envelope"]["status"] == "pass"
+    assert cases["quanto_correlation"]["metadata"]["fixture_style"] == "desk_like"
+    assert cases["quanto_correlation"]["metadata"]["support_boundary"] == "bounded_quanto_correlation"
+    assert cases["quanto_correlation"]["metadata"]["correlation_keys"] == ["EURUSD_corr"]
+    assert cases["quanto_correlation"]["metadata"]["perturbation_diagnostic"]["threshold_breaches"] == {}
+    assert cases["quanto_correlation"]["latency_envelope"]["status"] == "pass"
 
 
 def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
@@ -225,11 +252,11 @@ def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
     cases = {case["workflow"]: case for case in payload["cases"]}
 
     assert payload["benchmark_name"] == "supported_calibration_workflows"
-    assert payload["summary"]["workflow_count"] == 10
-    assert payload["summary"]["warm_start_workflow_count"] == 4
-    assert payload["summary"]["desk_like_workflow_count"] == 1
-    assert payload["summary"]["perturbation_diagnostic_count"] == 1
-    assert payload["summary"]["latency_envelope_count"] == 1
+    assert payload["summary"]["workflow_count"] == 11
+    assert payload["summary"]["warm_start_workflow_count"] == 5
+    assert payload["summary"]["desk_like_workflow_count"] == 2
+    assert payload["summary"]["perturbation_diagnostic_count"] == 2
+    assert payload["summary"]["latency_envelope_count"] == 2
     assert set(cases) == {
         "hull_white",
         "caplet_strip",
@@ -241,6 +268,7 @@ def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
         "local_vol",
         "credit",
         "basket_credit",
+        "quanto_correlation",
     }
     assert cases["caplet_strip"]["warm"] is None
     assert cases["equity_vol_surface"]["warm"] is None
@@ -248,7 +276,7 @@ def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
     assert cases["credit"]["warm"] is None
     assert cases["basket_credit"]["warm"] is None
     assert cases["swaption_cube"]["warm"] is None
-    for workflow in ("hull_white", "sabr", "heston", "heston_surface"):
+    for workflow in ("hull_white", "sabr", "heston", "heston_surface", "quanto_correlation"):
         assert cases[workflow]["warm"] is not None
         assert cases[workflow]["warm_speedup"] > 1.0
     roles = cases["hull_white"]["metadata"]["multi_curve_roles"]
@@ -273,3 +301,8 @@ def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
     assert cases["basket_credit"]["metadata"]["linked_credit_curve"] == "benchmark_single_name_credit"
     assert cases["basket_credit"]["metadata"]["perturbation_diagnostic"]["threshold_breaches"] == {}
     assert cases["basket_credit"]["latency_envelope"]["status"] == "pass"
+    assert cases["quanto_correlation"]["metadata"]["fixture_style"] == "desk_like"
+    assert cases["quanto_correlation"]["metadata"]["support_boundary"] == "bounded_quanto_correlation"
+    assert cases["quanto_correlation"]["metadata"]["correlation_keys"] == ["EURUSD_corr"]
+    assert cases["quanto_correlation"]["metadata"]["perturbation_diagnostic"]["threshold_breaches"] == {}
+    assert cases["quanto_correlation"]["latency_envelope"]["status"] == "pass"
