@@ -212,6 +212,165 @@ runtime reporting must not overstate.
      - ``unsupported_discontinuous_pathwise``
      - unsupported for pathwise AD; the governed fallback is
        ``finite_difference_bump_reprice`` with fail-closed policy metadata
+   * - ``portfolio_aad_vjp``
+     - bounded bond-book portfolio AAD route
+     - ``portfolio_aad_vjp``
+     - partial support: shared-curve bond books use a VJP-backed reverse-mode
+       aggregate, while unsupported positions are excluded and reported in
+       metadata
+
+Runtime Derivative-Method Taxonomy
+----------------------------------
+
+Runtime analytics, book-level risk, Monte Carlo derivative policy, and the
+checked matrix use the shared registry in
+``trellis.analytics.derivative_methods`` rather than route-local strings. The
+metadata keeps the historical ``resolved_derivative_method`` field and adds a
+normalized reporting envelope:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Field
+     - Meaning
+   * - ``resolved_derivative_method``
+     - canonical method id, such as ``autodiff_public_curve``,
+       ``portfolio_aad_vjp``, ``parallel_curve_bump``, or
+       ``unsupported_discontinuous_pathwise``
+   * - ``derivative_method_category``
+     - family-level category such as ``analytical_autograd``, ``autograd``,
+       ``portfolio_aad``, ``finite_difference_bump``, ``unsupported``,
+       ``forward``, ``unavailable``, ``not_applicable``, or ``provided``
+   * - ``derivative_method_support``
+     - runtime support status: ``supported``, ``partial``, ``fallback``,
+       ``unsupported``, or ``not_applicable``
+   * - ``backend_operator``
+     - executable backend hook when applicable, for example ``grad``,
+       ``jacobian``, ``vjp``, or ``hessian_vector_product``; unsupported
+       hooks such as ``jvp`` must not be advertised as executed methods
+   * - ``fallback_derivative_method``
+     - declared fallback lane when the requested derivative is unsupported or
+       intentionally bump-based, for example ``finite_difference_bump_reprice``
+   * - ``fallback_reason`` and ``warnings``
+     - structured reason payloads explaining why a fallback or unsupported lane
+       was selected
+   * - ``parameterization`` plus bump fields
+     - route-specific basis, node, bucket, or bump size metadata such as
+       ``parallel_zero_rate_shift``, ``curve_node_zero_rates``, ``bump_bps``,
+       or ``bump_vol_bps``
+
+The registry deliberately includes both AD-backed and non-AD lanes:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Method id
+     - Category
+     - Support
+     - Backend operator / boundary
+   * - ``autodiff_scalar_gradient``
+     - ``analytical_autograd``
+     - ``supported``
+     - ``grad`` for smooth scalar analytical or calibration objectives
+   * - ``autodiff_vector_jacobian``
+     - ``autograd``
+     - ``supported``
+     - ``jacobian`` for smooth vector repricing maps
+   * - ``finite_difference_vector_jacobian``
+     - ``finite_difference_bump``
+     - ``supported``
+     - explicit vector finite differences when the repricing stack is not
+       autograd-safe
+   * - ``autodiff_public_curve``
+     - ``autograd``
+     - ``supported``
+     - ``grad`` through public curve node values
+   * - ``autodiff_flat_vol``
+     - ``autograd``
+     - ``supported``
+     - ``grad`` through scalar flat-vol inputs
+   * - ``surface_bucket_bump``
+     - ``finite_difference_bump``
+     - ``supported``
+     - explicit expiry/strike bucket bump for grid-vol runtime risk
+   * - ``surface_parallel_bucket_bump``
+     - ``finite_difference_bump``
+     - ``supported``
+     - explicit parallel grid-node bump for scalar grid-vol vega
+   * - ``flat_surface_expanded_bucket_bump``
+     - ``finite_difference_bump``
+     - ``supported``
+     - bucketed vega expanded from one flat-vol value
+   * - ``representative_flat_vol_bump``
+     - ``finite_difference_bump``
+     - ``fallback``
+     - representative-flat-vol fallback for unsupported smile surfaces
+   * - ``parallel_curve_bump``
+     - ``finite_difference_bump``
+     - ``fallback``
+     - parallel curve bump/reprice when public curve AD is unavailable
+   * - ``curve_bucket_bump``
+     - ``finite_difference_bump``
+     - ``supported``
+     - explicit curve-tenor bucket bump for key-rate and scenario risk
+   * - ``bootstrap_quote_bump_rebuild``
+     - ``finite_difference_bump``
+     - ``supported``
+     - quote bump followed by curve rebuild
+   * - ``spot_central_bump``
+     - ``finite_difference_bump``
+     - ``supported``
+     - central spot bump/reprice for delta and gamma
+   * - ``calendar_roll_down_bump``
+     - ``finite_difference_bump``
+     - ``supported``
+     - calendar roll-down repricing for theta
+   * - ``portfolio_aad_vjp``
+     - ``portfolio_aad``
+     - ``partial``
+     - ``vjp`` for the bounded shared-curve bond-book lane
+   * - ``autodiff_pathwise``
+     - ``autograd``
+     - ``supported``
+     - ``grad`` through explicit-shock smooth Monte Carlo paths
+   * - ``forward_price_only``
+     - ``forward``
+     - ``unsupported``
+     - pricing executed without a derivative lane; declared fallback is
+       ``finite_difference_bump_reprice``
+   * - ``unsupported_discontinuous_pathwise``
+     - ``unsupported``
+     - ``unsupported``
+     - fail-closed pathwise AD lane for discontinuous Monte Carlo payoffs or
+       event logic
+   * - ``finite_difference_bump_reprice``
+     - ``finite_difference_bump``
+     - ``fallback``
+     - declared bump/reprice fallback for unsupported runtime derivatives
+   * - ``vol_surface_unavailable``
+     - ``unavailable``
+     - ``unsupported``
+     - no volatility surface is available for requested vol risk
+   * - ``not_applicable_root_scalar``
+     - ``not_applicable``
+     - ``not_applicable``
+     - scalar root solve with no derivative method
+   * - ``provided_scalar_gradient``
+     - ``provided``
+     - ``supported``
+     - caller-supplied scalar gradient
+   * - ``provided_vector_jacobian``
+     - ``provided``
+     - ``supported``
+     - caller-supplied vector residual Jacobian
+   * - ``scipy_internal_finite_difference_gradient``
+     - ``finite_difference_bump``
+     - ``fallback``
+     - SciPy internal finite-difference scalar gradient
+   * - ``scipy_2point_residual_jacobian``
+     - ``finite_difference_bump``
+     - ``fallback``
+     - SciPy two-point finite-difference residual Jacobian
 
 Where Trellis Still Stays Forward-Only
 --------------------------------------

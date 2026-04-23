@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+from trellis.analytics.derivative_methods import derivative_method_payload
 from trellis.analytics.result import RiskMeasureOutput
 from trellis.core.differentiable import get_backend_capabilities, get_numpy, vjp
 from trellis.core.types import Instrument, PricingResult
@@ -251,6 +252,13 @@ def _bond_position_support_report(book: Book) -> tuple[list[tuple[str, Bond]], l
     return supported, exclusions
 
 
+def _record_derivative_fallback_reason(metadata: dict[str, Any], reason: dict[str, Any]) -> None:
+    """Mirror a fallback reason into the normalized warnings envelope."""
+    reason_payload = dict(reason)
+    metadata["fallback_reason"] = reason_payload
+    metadata["warnings"] = [*metadata.get("warnings", []), reason_payload]
+
+
 def portfolio_aad_curve_risk(
     book: Book,
     curve: YieldCurve,
@@ -266,34 +274,36 @@ def portfolio_aad_curve_risk(
     capabilities = get_backend_capabilities()
     tenors = getattr(curve, "tenors", None)
     rates = getattr(curve, "rates", None)
-    base_metadata: dict[str, Any] = {
-        "resolved_derivative_method": "portfolio_aad_vjp",
-        "backend_id": capabilities.backend_id,
-        "backend_operator": "vjp",
-        "curve_type": type(curve).__name__,
-        "curve_tenors": [] if tenors is None else [float(tenor) for tenor in np.asarray(tenors, dtype=float)],
-        "supported_position_names": [name for name, _ in supported_positions],
-        "unsupported_positions": deepcopy(exclusions),
-        "supported_position_count": len(supported_positions),
-        "unsupported_position_count": len(exclusions),
-        "book_position_count": len(book),
-        "support_status": "supported" if supported_positions and not exclusions else (
-            "partial" if supported_positions else "unsupported"
-        ),
-    }
+    support_status = "supported" if supported_positions and not exclusions else (
+        "partial" if supported_positions else "unsupported"
+    )
+    base_metadata: dict[str, Any] = derivative_method_payload(
+        "portfolio_aad_vjp",
+        method_support=support_status,
+        backend_id=capabilities.backend_id,
+        parameterization="shared_curve_zero_rate_nodes",
+        curve_type=type(curve).__name__,
+        curve_tenors=[] if tenors is None else [float(tenor) for tenor in np.asarray(tenors, dtype=float)],
+        supported_position_names=[name for name, _ in supported_positions],
+        unsupported_positions=deepcopy(exclusions),
+        supported_position_count=len(supported_positions),
+        unsupported_position_count=len(exclusions),
+        book_position_count=len(book),
+        support_status=support_status,
+    )
 
     if tenors is None or rates is None:
-        base_metadata["fallback_reason"] = {
+        _record_derivative_fallback_reason(base_metadata, {
             "code": "portfolio_aad_curve_unavailable",
             "message": "The supplied curve does not expose tenors and rates for reverse-mode book differentiation.",
-        }
+        })
         return RiskMeasureOutput({}, metadata=base_metadata)
 
     if not supported_positions:
-        base_metadata["fallback_reason"] = {
+        _record_derivative_fallback_reason(base_metadata, {
             "code": "portfolio_aad_book_unavailable",
             "message": "No supported bond positions were found in the book.",
-        }
+        })
         return RiskMeasureOutput({}, metadata=base_metadata)
 
     curve_cls = type(curve)
@@ -311,12 +321,12 @@ def portfolio_aad_curve_risk(
         book_value, pullback = vjp(book_value_from_rates, rates_arr)
         gradient = np.asarray(pullback(1.0), dtype=float)
     except Exception as exc:
-        base_metadata["fallback_reason"] = {
+        _record_derivative_fallback_reason(base_metadata, {
             "code": "portfolio_aad_trace_failed",
             "message": "Reverse-mode differentiation of the aggregate book value failed.",
             "error_type": type(exc).__name__,
             "error": str(exc),
-        }
+        })
         return RiskMeasureOutput({}, metadata=base_metadata)
 
     book_value = float(book_value)

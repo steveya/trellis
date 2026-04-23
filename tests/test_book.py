@@ -195,7 +195,10 @@ class TestPortfolioAADCurveRisk:
         )
 
         assert result.metadata["resolved_derivative_method"] == "portfolio_aad_vjp"
+        assert result.metadata["derivative_method_category"] == "portfolio_aad"
+        assert result.metadata["derivative_method_support"] == "supported"
         assert result.metadata["backend_operator"] == "vjp"
+        assert result.metadata["parameterization"] == "shared_curve_zero_rate_nodes"
         assert result.metadata["support_status"] == "supported"
         assert result.metadata["unsupported_position_count"] == 0
         expected = {}
@@ -223,6 +226,16 @@ class TestPortfolioAADCurveRisk:
         assert result.metadata["unsupported_position_count"] == 1
         assert result.metadata["unsupported_positions"][0]["position_name"] == "unsupported"
         assert result.metadata["unsupported_positions"][0]["reason"] == "unsupported_instrument_type"
+
+    def test_portfolio_aad_fail_closed_metadata_mirrors_fallback_reason_into_warnings(self):
+        curve = YieldCurve.flat(0.045)
+        book = Book({"unsupported": object()})
+
+        result = portfolio_aad_curve_risk(book, curve, date(2024, 11, 15))
+
+        assert result.metadata["derivative_method_support"] == "unsupported"
+        assert result.metadata["fallback_reason"]["code"] == "portfolio_aad_book_unavailable"
+        assert result.metadata["warnings"][0]["code"] == "portfolio_aad_book_unavailable"
 
 
 class TestScenarioResultCube:

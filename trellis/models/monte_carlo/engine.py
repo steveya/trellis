@@ -11,6 +11,7 @@ import math
 
 import numpy as raw_np
 
+from trellis.analytics.derivative_methods import derivative_method_payload
 from trellis.core.differentiable import get_numpy
 import trellis.models.monte_carlo.discretization as mc_discretization
 from trellis.models.monte_carlo.discretization import (
@@ -197,25 +198,23 @@ def describe_monte_carlo_derivative_policy(
     """Return derivative-policy metadata for one Monte Carlo pricing request."""
     features = _discontinuous_features(requirement, payoff_metadata)
     if features:
-        return {
-            "resolved_derivative_method": (
-                "unsupported_discontinuous_pathwise"
-                if differentiable
-                else "forward_price_only"
-            ),
-            "pathwise_autodiff_supported": False,
-            "discontinuous_features": features,
-            "discontinuous_derivative_policy": _DISCONTINUOUS_DERIVATIVE_POLICY,
-            "fallback_derivative_method": _DISCONTINUOUS_DERIVATIVE_FALLBACK,
-            "unsupported_reason": _unsupported_reason(features, payoff_metadata),
-            "policy_version": _DISCONTINUOUS_DERIVATIVE_POLICY_VERSION,
-        }
-    return {
-        "resolved_derivative_method": "autodiff_pathwise" if differentiable else "forward_price_only",
-        "pathwise_autodiff_supported": bool(differentiable),
-        "discontinuous_features": (),
-        "policy_version": _DISCONTINUOUS_DERIVATIVE_POLICY_VERSION,
-    }
+        return derivative_method_payload(
+            "unsupported_discontinuous_pathwise" if differentiable else "forward_price_only",
+            parameterization="monte_carlo_discontinuous_pathwise_policy",
+            pathwise_autodiff_supported=False,
+            discontinuous_features=features,
+            discontinuous_derivative_policy=_DISCONTINUOUS_DERIVATIVE_POLICY,
+            fallback_derivative_method=_DISCONTINUOUS_DERIVATIVE_FALLBACK,
+            unsupported_reason=_unsupported_reason(features, payoff_metadata),
+            policy_version=_DISCONTINUOUS_DERIVATIVE_POLICY_VERSION,
+        )
+    return derivative_method_payload(
+        "autodiff_pathwise" if differentiable else "forward_price_only",
+        parameterization="monte_carlo_explicit_shock_pathwise",
+        pathwise_autodiff_supported=bool(differentiable),
+        discontinuous_features=(),
+        policy_version=_DISCONTINUOUS_DERIVATIVE_POLICY_VERSION,
+    )
 
 
 def _validate_differentiable_state_requirement(

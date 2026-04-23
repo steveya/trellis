@@ -9,6 +9,8 @@ from typing import Callable, Literal, Mapping, Sequence
 import numpy as raw_np
 from scipy.optimize import brentq, least_squares, minimize
 
+from trellis.analytics.derivative_methods import derivative_method_payload
+
 
 def _normalize_float_tuple(values: Sequence[float] | None) -> tuple[float, ...]:
     """Normalize numeric sequences onto an immutable float tuple."""
@@ -40,6 +42,13 @@ def _metadata_string(mapping: Mapping[str, object], key: str) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
+
+def _solver_derivative_metadata(method_id: str, **metadata: object) -> dict[str, object]:
+    """Return normalized solver derivative metadata with legacy key compatibility."""
+    payload = derivative_method_payload(method_id, **metadata)
+    payload["derivative_method"] = payload["resolved_derivative_method"]
+    return payload
 
 
 @dataclass(frozen=True)
@@ -460,10 +469,10 @@ def _execute_root_scalar(request: SolveRequest) -> SolveResult:
         success=True,
         method="brentq",
         iteration_count=None,
-        metadata={
-            "solver_family": "scipy",
-            "derivative_method": "not_applicable_root_scalar",
-        },
+        metadata=_solver_derivative_metadata(
+            "not_applicable_root_scalar",
+            solver_family="scipy",
+        ),
     )
 
 
@@ -571,11 +580,11 @@ def _execute_least_squares(request: SolveRequest) -> SolveResult:
             success=bool(result.success),
             method=method.lower(),
             iteration_count=getattr(result, "nfev", None),
-            metadata={
-                "solver_family": "scipy",
-                "derivative_method": derivative_method,
-                "message": str(result.message),
-            },
+            metadata=_solver_derivative_metadata(
+                derivative_method,
+                solver_family="scipy",
+                message=str(result.message),
+            ),
         )
 
     derivative_method = (
@@ -602,11 +611,11 @@ def _execute_least_squares(request: SolveRequest) -> SolveResult:
         success=bool(result.success),
         method=method,
         iteration_count=getattr(result, "nit", None),
-        metadata={
-            "solver_family": "scipy",
-            "derivative_method": derivative_method,
-            "message": str(result.message),
-        },
+        metadata=_solver_derivative_metadata(
+            derivative_method,
+            solver_family="scipy",
+            message=str(result.message),
+        ),
     )
 
 
@@ -649,6 +658,11 @@ def build_solve_provenance(request: SolveRequest, result: SolveResult) -> SolveP
         "fallback_from": result.metadata.get("fallback_from"),
         "solver_family": str(result.metadata.get("solver_family", "")).strip(),
         "derivative_method": str(result.metadata.get("derivative_method", "")).strip(),
+        "resolved_derivative_method": str(result.metadata.get("resolved_derivative_method", "")).strip(),
+        "derivative_method_category": str(result.metadata.get("derivative_method_category", "")).strip(),
+        "derivative_method_support": str(result.metadata.get("derivative_method_support", "")).strip(),
+        "backend_operator": result.metadata.get("backend_operator"),
+        "fallback_derivative_method": result.metadata.get("fallback_derivative_method"),
         "method": result.method,
     }
     termination = {
