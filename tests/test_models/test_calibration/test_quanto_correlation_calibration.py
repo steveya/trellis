@@ -87,6 +87,7 @@ def _quote_from_spec(
         domestic_currency=spec.domestic_currency,
         option_type=spec.option_type,
         day_count=spec.day_count,
+        quanto_correlation_key=spec.quanto_correlation_key,
         label=label,
         weight=weight,
     )
@@ -200,3 +201,40 @@ def test_missing_hybrid_input_fails_with_actionable_diagnostics():
 
     with pytest.raises(ValueError, match="foreign carry/discount curve"):
         calibrate_quanto_correlation_workflow((quote,), state)
+
+
+def test_calibration_updates_quote_specific_correlation_keys():
+    true_state = replace(
+        _market_state(correlation=None),
+        model_parameters={"EURUSD_corr": 0.35},
+    )
+    spec = _QuantoSpec(
+        notional=1_000_000.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        fx_pair="EURUSD",
+        quanto_correlation_key="EURUSD_corr",
+    )
+    quote = _quote_from_spec(true_state, spec, label="keyed")
+    calibration_state = replace(
+        true_state,
+        model_parameters={"EURUSD_corr": -0.20},
+        model_parameter_sets=None,
+    )
+
+    result = calibrate_quanto_correlation_workflow(
+        (quote,),
+        calibration_state,
+        parameter_set_name="quanto_rho_keyed",
+    )
+
+    assert result.correlation == pytest.approx(0.35, abs=5e-7)
+    assert result.summary["correlation_keys"] == ["EURUSD_corr"]
+
+    enriched = result.apply_to_market_state(calibration_state)
+    keyed_descriptor = enriched.model_parameter_sets["quanto_rho_keyed"]["EURUSD_corr"]
+    assert keyed_descriptor["value"] == pytest.approx(0.35, abs=5e-7)
+    assert price_quanto_option_analytical_from_market_state(enriched, spec) == pytest.approx(
+        quote.market_price,
+        abs=1e-2,
+    )

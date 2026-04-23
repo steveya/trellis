@@ -115,6 +115,15 @@ def test_dependency_node_payload_is_json_friendly_and_normalized():
     }
 
 
+def test_dependency_node_rejects_null_identifier():
+    with pytest.raises(ValueError, match="node_id"):
+        CalibrationDependencyNode(
+            node_id=None,  # type: ignore[arg-type]
+            object_kind="summary",
+            object_name="final check",
+        )
+
+
 def test_dependency_graph_rejects_missing_edge_nodes():
     with pytest.raises(MissingCalibrationDependencyNodeError, match="missing source 'missing_source'"):
         CalibrationDependencyGraph(

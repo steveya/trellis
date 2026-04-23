@@ -10,6 +10,8 @@ from typing import Mapping, Sequence
 
 def _normalize_str(value: object) -> str:
     """Return a stripped string representation."""
+    if value is None:
+        return ""
     return str(value).strip()
 
 

@@ -269,7 +269,10 @@ class QuantoCorrelationCalibrationResult:
             },
         }
         parameter_payload = dict(market_state.model_parameters or {})
+        correlation_keys = _active_correlation_keys(self.quotes)
         parameter_payload["quanto_correlation"] = descriptor
+        for key in correlation_keys:
+            parameter_payload[key] = descriptor
         selected_names = dict(market_state.selected_curve_names or {})
         selected_curve_roles = {
             "discount_curve": str(selected_names.get("discount_curve") or ""),
@@ -288,6 +291,7 @@ class QuantoCorrelationCalibrationResult:
                 "instrument_kind": "quanto_correlation",
                 "support_boundary": _SUPPORT_BOUNDARY,
                 "quote_count": len(self.quotes),
+                "correlation_keys": list(correlation_keys),
                 "quote_labels": [quote.resolved_label(index) for index, quote in enumerate(self.quotes)],
                 "max_abs_price_residual": float(self.diagnostics.max_abs_price_residual),
                 "diagnostics": self.diagnostics.to_payload(),
@@ -338,7 +342,12 @@ def calibrate_quanto_correlation_workflow(
         _finite_float(initial_correlation, field_name="initial_correlation"),
         bounds=bounds,
     )
-    trial_state = _state_with_quanto_correlation(market_state, initial)
+    correlation_keys = _active_correlation_keys(normalized_quotes)
+    trial_state = _state_with_quanto_correlation(
+        market_state,
+        initial,
+        correlation_keys=correlation_keys,
+    )
     _preflight_required_inputs(normalized_quotes, trial_state)
 
     labels = tuple(quote.resolved_label(index) for index, quote in enumerate(normalized_quotes))
@@ -354,7 +363,11 @@ def calibrate_quanto_correlation_workflow(
 
     def model_prices(parameters: object) -> tuple[float, ...]:
         rho = _parameter_value(parameters)
-        priced_state = _state_with_quanto_correlation(market_state, rho)
+        priced_state = _state_with_quanto_correlation(
+            market_state,
+            rho,
+            correlation_keys=correlation_keys,
+        )
         return tuple(_price_quote(priced_state, quote) for quote in normalized_quotes)
 
     objective = ObjectiveBundle(
@@ -384,7 +397,11 @@ def calibrate_quanto_correlation_workflow(
         message = str(solve_result.metadata.get("message") or "solver reported failure")
         raise ValueError(f"Quanto correlation calibration failed: {message}")
     correlation = float(solve_result.solution[0])
-    solved_state = _state_with_quanto_correlation(market_state, correlation)
+    solved_state = _state_with_quanto_correlation(
+        market_state,
+        correlation,
+        correlation_keys=correlation_keys,
+    )
     residuals = tuple(
         QuantoCorrelationQuoteResidual(
             label=label,
@@ -418,6 +435,7 @@ def calibrate_quanto_correlation_workflow(
         "calibration_target": {
             "instrument_family": "quanto_option",
             "parameter_name": "quanto_correlation",
+            "correlation_keys": list(correlation_keys),
             "quote_values": [quote.to_payload() for quote in normalized_quotes],
         },
         "solver": {
@@ -434,6 +452,7 @@ def calibrate_quanto_correlation_workflow(
         "quote_count": len(normalized_quotes),
         "correlation": float(correlation),
         "correlation_bounds": [float(bounds[0]), float(bounds[1])],
+        "correlation_keys": list(correlation_keys),
         "max_abs_price_residual": float(max_abs_residual),
         "upstream_materialization_kinds": sorted(upstream_materializations),
     }
@@ -468,10 +487,17 @@ def _parameter_value(parameters: object) -> float:
         raise ValueError("quanto correlation objective requires one scalar parameter") from exc
 
 
-def _state_with_quanto_correlation(market_state: MarketState, correlation: float) -> MarketState:
+def _state_with_quanto_correlation(
+    market_state: MarketState,
+    correlation: float,
+    *,
+    correlation_keys: Sequence[str] = (),
+) -> MarketState:
     """Return ``market_state`` with a trial quanto correlation injected."""
     params = dict(market_state.model_parameters or {})
     params["quanto_correlation"] = float(correlation)
+    for key in correlation_keys:
+        params[key] = float(correlation)
     return replace(market_state, model_parameters=params)
 
 
@@ -628,6 +654,19 @@ def _upstream_materializations(market_state: MarketState) -> dict[str, dict[str,
         if record is not None:
             records[kind] = record
     return records
+
+
+def _active_correlation_keys(
+    quotes: Sequence[QuantoCorrelationCalibrationQuote],
+) -> tuple[str, ...]:
+    """Return the distinct quote-level correlation keys that pricing will consult."""
+    keys = {
+        quote.quanto_correlation_key
+        for quote in quotes
+        if quote.quanto_correlation_key
+        and quote.quanto_correlation_key != "quanto_correlation"
+    }
+    return tuple(sorted(keys))
 
 
 __all__ = [
