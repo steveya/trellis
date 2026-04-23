@@ -4,14 +4,14 @@
     {
       "cold": {
         "label": "twist_cube",
-        "max_seconds": 0.036746,
-        "mean_seconds": 0.036345,
-        "median_seconds": 0.036345,
+        "max_seconds": 0.045087,
+        "mean_seconds": 0.044221,
+        "median_seconds": 0.044221,
         "metadata": {
           "position_count": 2,
           "scenario_count": 2
         },
-        "min_seconds": 0.035944,
+        "min_seconds": 0.043355,
         "mode": "cold",
         "notes": [
           "scenario_cube",
@@ -19,10 +19,10 @@
         ],
         "repeats": 2,
         "run_seconds": [
-          0.036746,
-          0.035944
+          0.045087,
+          0.043355
         ],
-        "runs_per_second": 27.514,
+        "runs_per_second": 22.614,
         "warmups": 1
       },
       "label": "twist_cube",
@@ -36,14 +36,14 @@
       ],
       "steady": {
         "label": "twist_cube",
-        "max_seconds": 0.034429,
-        "mean_seconds": 0.033873,
-        "median_seconds": 0.033873,
+        "max_seconds": 0.042119,
+        "mean_seconds": 0.042102,
+        "median_seconds": 0.042102,
         "metadata": {
           "position_count": 2,
           "scenario_count": 2
         },
-        "min_seconds": 0.033318,
+        "min_seconds": 0.042085,
         "mode": "steady_state",
         "notes": [
           "scenario_cube",
@@ -51,26 +51,26 @@
         ],
         "repeats": 2,
         "run_seconds": [
-          0.034429,
-          0.033318
+          0.042085,
+          0.042119
         ],
-        "runs_per_second": 29.522,
+        "runs_per_second": 23.752,
         "warmups": 1
       },
-      "steady_speedup": 1.073,
+      "steady_speedup": 1.05,
       "workflow": "pipeline_scenarios"
     },
     {
       "cold": {
         "label": "curve_rebuild_buckets",
-        "max_seconds": 1.604299,
-        "mean_seconds": 1.553535,
-        "median_seconds": 1.553535,
+        "max_seconds": 1.641834,
+        "mean_seconds": 1.62714,
+        "median_seconds": 1.62714,
         "metadata": {
           "bucket_count": 4,
           "methodology": "curve_rebuild"
         },
-        "min_seconds": 1.50277,
+        "min_seconds": 1.612445,
         "mode": "cold",
         "notes": [
           "curve_rebuild",
@@ -78,10 +78,10 @@
         ],
         "repeats": 2,
         "run_seconds": [
-          1.604299,
-          1.50277
+          1.612445,
+          1.641834
         ],
-        "runs_per_second": 0.644,
+        "runs_per_second": 0.615,
         "warmups": 1
       },
       "label": "curve_rebuild_buckets",
@@ -95,14 +95,14 @@
       ],
       "steady": {
         "label": "curve_rebuild_buckets",
-        "max_seconds": 1.350307,
-        "mean_seconds": 1.35,
-        "median_seconds": 1.35,
+        "max_seconds": 1.44564,
+        "mean_seconds": 1.434231,
+        "median_seconds": 1.434231,
         "metadata": {
           "bucket_count": 4,
           "methodology": "curve_rebuild"
         },
-        "min_seconds": 1.349694,
+        "min_seconds": 1.422822,
         "mode": "steady_state",
         "notes": [
           "curve_rebuild",
@@ -110,26 +110,91 @@
         ],
         "repeats": 2,
         "run_seconds": [
-          1.350307,
-          1.349694
+          1.44564,
+          1.422822
         ],
-        "runs_per_second": 0.741,
+        "runs_per_second": 0.697,
         "warmups": 1
       },
-      "steady_speedup": 1.151,
+      "steady_speedup": 1.135,
       "workflow": "key_rate_durations"
     },
     {
       "cold": {
+        "label": "bond_book_reverse_mode",
+        "max_seconds": 0.035902,
+        "mean_seconds": 0.035875,
+        "median_seconds": 0.035875,
+        "metadata": {
+          "curve_nodes": 5,
+          "position_count": 2,
+          "supported_route": "bond_only"
+        },
+        "min_seconds": 0.035848,
+        "mode": "cold",
+        "notes": [
+          "bond_book",
+          "reverse_mode",
+          "supported_curve"
+        ],
+        "repeats": 2,
+        "run_seconds": [
+          0.035902,
+          0.035848
+        ],
+        "runs_per_second": 27.875,
+        "warmups": 1
+      },
+      "label": "bond_book_reverse_mode",
+      "metadata": {
+        "curve_nodes": 5,
+        "position_count": 2,
+        "supported_route": "bond_only"
+      },
+      "notes": [
+        "bond_book",
+        "reverse_mode",
+        "supported_curve"
+      ],
+      "steady": {
+        "label": "bond_book_reverse_mode",
+        "max_seconds": 0.002515,
+        "mean_seconds": 0.002494,
+        "median_seconds": 0.002494,
+        "metadata": {
+          "curve_nodes": 5,
+          "position_count": 2,
+          "supported_route": "bond_only"
+        },
+        "min_seconds": 0.002473,
+        "mode": "steady_state",
+        "notes": [
+          "bond_book",
+          "reverse_mode",
+          "supported_curve"
+        ],
+        "repeats": 2,
+        "run_seconds": [
+          0.002473,
+          0.002515
+        ],
+        "runs_per_second": 400.946,
+        "warmups": 1
+      },
+      "steady_speedup": 14.384,
+      "workflow": "portfolio_aad"
+    },
+    {
+      "cold": {
         "label": "rebuild_pack",
-        "max_seconds": 0.862396,
-        "mean_seconds": 0.846134,
-        "median_seconds": 0.846134,
+        "max_seconds": 0.930823,
+        "mean_seconds": 0.912669,
+        "median_seconds": 0.912669,
         "metadata": {
           "methodology": "curve_rebuild",
           "scenario_count": 4
         },
-        "min_seconds": 0.829871,
+        "min_seconds": 0.894515,
         "mode": "cold",
         "notes": [
           "curve_rebuild",
@@ -137,10 +202,10 @@
         ],
         "repeats": 2,
         "run_seconds": [
-          0.862396,
-          0.829871
+          0.894515,
+          0.930823
         ],
-        "runs_per_second": 1.182,
+        "runs_per_second": 1.096,
         "warmups": 1
       },
       "label": "rebuild_pack",
@@ -154,14 +219,14 @@
       ],
       "steady": {
         "label": "rebuild_pack",
-        "max_seconds": 0.684988,
-        "mean_seconds": 0.675639,
-        "median_seconds": 0.675639,
+        "max_seconds": 0.743495,
+        "mean_seconds": 0.732731,
+        "median_seconds": 0.732731,
         "metadata": {
           "methodology": "curve_rebuild",
           "scenario_count": 4
         },
-        "min_seconds": 0.66629,
+        "min_seconds": 0.721966,
         "mode": "steady_state",
         "notes": [
           "curve_rebuild",
@@ -169,28 +234,28 @@
         ],
         "repeats": 2,
         "run_seconds": [
-          0.684988,
-          0.66629
+          0.721966,
+          0.743495
         ],
-        "runs_per_second": 1.48,
+        "runs_per_second": 1.365,
         "warmups": 1
       },
-      "steady_speedup": 1.252,
+      "steady_speedup": 1.246,
       "workflow": "scenario_pnl"
     },
     {
       "cold": {
         "label": "bucketed_surface",
-        "max_seconds": 0.018225,
-        "mean_seconds": 0.018114,
-        "median_seconds": 0.018114,
+        "max_seconds": 0.022764,
+        "mean_seconds": 0.022658,
+        "median_seconds": 0.022658,
         "metadata": {
           "grid_shape": [
             3,
             3
           ]
         },
-        "min_seconds": 0.018003,
+        "min_seconds": 0.022551,
         "mode": "cold",
         "notes": [
           "vol_surface",
@@ -198,10 +263,10 @@
         ],
         "repeats": 2,
         "run_seconds": [
-          0.018225,
-          0.018003
+          0.022764,
+          0.022551
         ],
-        "runs_per_second": 55.205,
+        "runs_per_second": 44.135,
         "warmups": 1
       },
       "label": "bucketed_surface",
@@ -217,16 +282,16 @@
       ],
       "steady": {
         "label": "bucketed_surface",
-        "max_seconds": 0.018091,
-        "mean_seconds": 0.017966,
-        "median_seconds": 0.017966,
+        "max_seconds": 0.023395,
+        "mean_seconds": 0.023035,
+        "median_seconds": 0.023035,
         "metadata": {
           "grid_shape": [
             3,
             3
           ]
         },
-        "min_seconds": 0.01784,
+        "min_seconds": 0.022676,
         "mode": "steady_state",
         "notes": [
           "vol_surface",
@@ -234,25 +299,25 @@
         ],
         "repeats": 2,
         "run_seconds": [
-          0.018091,
-          0.01784
+          0.023395,
+          0.022676
         ],
-        "runs_per_second": 55.662,
+        "runs_per_second": 43.412,
         "warmups": 1
       },
-      "steady_speedup": 1.008,
+      "steady_speedup": 0.984,
       "workflow": "vega"
     },
     {
       "cold": {
         "label": "delta_gamma_theta_bundle",
-        "max_seconds": 0.013554,
-        "mean_seconds": 0.013524,
-        "median_seconds": 0.013524,
+        "max_seconds": 0.018577,
+        "mean_seconds": 0.018363,
+        "median_seconds": 0.018363,
         "metadata": {
           "measure_count": 3
         },
-        "min_seconds": 0.013495,
+        "min_seconds": 0.01815,
         "mode": "cold",
         "notes": [
           "spot_risk",
@@ -260,10 +325,10 @@
         ],
         "repeats": 2,
         "run_seconds": [
-          0.013554,
-          0.013495
+          0.01815,
+          0.018577
         ],
-        "runs_per_second": 73.942,
+        "runs_per_second": 54.456,
         "warmups": 1
       },
       "label": "delta_gamma_theta_bundle",
@@ -276,13 +341,13 @@
       ],
       "steady": {
         "label": "delta_gamma_theta_bundle",
-        "max_seconds": 0.013885,
-        "mean_seconds": 0.013805,
-        "median_seconds": 0.013805,
+        "max_seconds": 0.018754,
+        "mean_seconds": 0.018316,
+        "median_seconds": 0.018316,
         "metadata": {
           "measure_count": 3
         },
-        "min_seconds": 0.013724,
+        "min_seconds": 0.017878,
         "mode": "steady_state",
         "notes": [
           "spot_risk",
@@ -290,17 +355,17 @@
         ],
         "repeats": 2,
         "run_seconds": [
-          0.013885,
-          0.013724
+          0.018754,
+          0.017878
         ],
-        "runs_per_second": 72.44,
+        "runs_per_second": 54.597,
         "warmups": 1
       },
-      "steady_speedup": 0.98,
+      "steady_speedup": 1.003,
       "workflow": "spot_greeks"
     }
   ],
-  "created_at": "2026-04-05T19:51:03Z",
+  "created_at": "2026-04-23T12:52:58Z",
   "environment": {
     "platform": "macOS-26.3.1-arm64-arm-64bit",
     "python_version": "3.10.6"
@@ -310,10 +375,10 @@
     "Coverage includes shared scenario-result cube execution plus supported rates, volatility, and spot-risk analytics."
   ],
   "summary": {
-    "average_steady_speedup": 1.093,
-    "cold_mean_seconds": 0.49353,
-    "steady_mean_seconds": 0.418257,
-    "steady_state_workflow_count": 5,
-    "workflow_count": 5
+    "average_steady_speedup": 3.3,
+    "cold_mean_seconds": 0.443488,
+    "steady_mean_seconds": 0.375485,
+    "steady_state_workflow_count": 6,
+    "workflow_count": 6
   }
 }
