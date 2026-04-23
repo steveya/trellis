@@ -32,7 +32,7 @@ from trellis.models.calibration.rates import (
     calibrate_swaption_black_vol,
     swaption_terms,
 )
-from trellis.models.calibration.implied_vol import implied_vol, implied_vol_jaeckel, _bs_price
+from trellis.models.calibration.implied_vol import ImpliedVolError, implied_vol, implied_vol_jaeckel, _bs_price
 from trellis.models.calibration.sabr_fit import (
     SABRSmileCalibrationResult,
     build_sabr_smile_surface,
@@ -95,6 +95,26 @@ class TestImpliedVol:
         recovered = implied_vol(price, S, K, T, r, option_type="call")
         assert recovered == pytest.approx(sigma, abs=1e-6)
 
+    def test_round_trip_call_with_dividend_yield(self):
+        S, K, T, r, sigma, dividend_yield = 100.0, 100.0, 1.0, 0.05, 0.20, 0.02
+        price = _bs_price(S, K, T, r, sigma, "call", dividend_yield=dividend_yield)
+        recovered = implied_vol(
+            price,
+            S,
+            K,
+            T,
+            r,
+            option_type="call",
+            dividend_yield=dividend_yield,
+        )
+        assert recovered == pytest.approx(sigma, abs=1e-6)
+
+    def test_rejects_prices_incompatible_with_selected_carry_convention(self):
+        S, K, T, r, sigma, dividend_yield = 100.0, 50.0, 1.0, 0.02, 0.15, 0.20
+        price = _bs_price(S, K, T, r, sigma, "call", dividend_yield=dividend_yield)
+        with pytest.raises(ImpliedVolError, match="carry convention"):
+            implied_vol(price, S, K, T, r, option_type="call")
+
 
 # ---------------------------------------------------------------------------
 # implied_vol_jaeckel round-trip
@@ -114,6 +134,13 @@ class TestImpliedVolJaeckel:
         price = _bs_price(S, K, T, r, sigma, "call")
         vol_brent = implied_vol(price, S, K, T, r, option_type="call")
         vol_jaeckel = implied_vol_jaeckel(price, S, K, T, r, option_type="call")
+        assert vol_jaeckel == pytest.approx(vol_brent, abs=1e-4)
+
+    def test_matches_brent_method_with_explicit_carry(self):
+        S, K, T, r, sigma, carry_rate = 100.0, 95.0, 1.25, 0.03, 0.28, 0.01
+        price = _bs_price(S, K, T, r, sigma, "call", carry_rate=carry_rate)
+        vol_brent = implied_vol(price, S, K, T, r, option_type="call", carry_rate=carry_rate)
+        vol_jaeckel = implied_vol_jaeckel(price, S, K, T, r, option_type="call", carry_rate=carry_rate)
         assert vol_jaeckel == pytest.approx(vol_brent, abs=1e-4)
 
 
@@ -444,6 +471,37 @@ class TestDupireLocalVol:
         assert local_vol_materialization["source_ref"] == "calibrate_local_vol_surface_workflow"
         assert local_vol_materialization["metadata"]["surface_shape"] == [15, 30]
 
+    def test_local_vol_result_records_continuous_carry_assumption(self):
+        sigma_flat = 0.20
+        strikes = raw_np.linspace(60, 150, 30)
+        expiries = raw_np.linspace(0.1, 3.0, 15)
+        implied_vols = raw_np.full((len(expiries), len(strikes)), sigma_flat)
+        market_state = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            spot=100.0,
+            discount=YieldCurve.flat(0.05),
+        )
+
+        result = dupire_local_vol_result(
+            strikes,
+            expiries,
+            implied_vols,
+            100.0,
+            0.05,
+            dividend_yield=0.02,
+        )
+        enriched_state = result.apply_to_market_state(market_state)
+        local_vol_materialization = enriched_state.materialized_calibrated_object(object_kind="local_vol_surface")
+
+        assert result.calibration_target["dividend_yield"] == pytest.approx(0.02)
+        assert result.calibration_target["carry_rate"] == pytest.approx(0.03)
+        assert result.summary["carry_rate"] == pytest.approx(0.03)
+        assert "continuous-yield carry convention" in result.warnings[0].lower()
+        assert local_vol_materialization is not None
+        assert local_vol_materialization["metadata"]["dividend_yield"] == pytest.approx(0.02)
+        assert local_vol_materialization["metadata"]["carry_rate"] == pytest.approx(0.03)
+
 
 class TestHestonCalibration:
     def test_build_heston_smile_surface_uses_forward_for_atm_diagnostics(self):
@@ -463,13 +521,13 @@ class TestHestonCalibration:
         assert "forward" in surface.warnings[0].lower()
 
     @staticmethod
-    def _market_vols_from_heston(*, spot, rate, expiry_years, strikes, params):
+    def _market_vols_from_heston(*, spot, rate, expiry_years, strikes, params, dividend_yield=0.0):
         from trellis.models.calibration.implied_vol import implied_vol
         from trellis.models.processes.heston import Heston
         from trellis.models.transforms.fft_pricer import fft_price
 
         process = Heston(
-            mu=rate,
+            mu=rate - dividend_yield,
             kappa=params["kappa"],
             theta=params["theta"],
             xi=params["xi"],
@@ -492,6 +550,7 @@ class TestHestonCalibration:
                 expiry_years,
                 rate,
                 option_type="call",
+                dividend_yield=dividend_yield,
             )
             for strike in strikes
         ]
@@ -604,6 +663,43 @@ class TestHestonCalibration:
         assert result.solve_request.warm_start is not None
         assert result.solve_request.warm_start.parameter_values == pytest.approx((1.2, 0.05, 0.25, -0.3, 0.04))
         assert result.runtime_binding.process.theta == pytest.approx(true_params["theta"], abs=0.02)
+
+    def test_heston_workflow_round_trips_non_zero_dividend_yield(self):
+        spot = 100.0
+        rate = 0.03
+        dividend_yield = 0.015
+        expiry_years = 1.5
+        strikes = [80.0, 90.0, 100.0, 110.0, 120.0]
+        true_params = {
+            "kappa": 1.6,
+            "theta": 0.05,
+            "xi": 0.30,
+            "rho": -0.45,
+            "v0": 0.045,
+        }
+        market_vols = self._market_vols_from_heston(
+            spot=spot,
+            rate=rate,
+            expiry_years=expiry_years,
+            strikes=strikes,
+            params=true_params,
+            dividend_yield=dividend_yield,
+        )
+
+        result = calibrate_heston_smile_workflow(
+            spot,
+            expiry_years,
+            strikes,
+            market_vols,
+            rate=rate,
+            dividend_yield=dividend_yield,
+            surface_name="equity_heston_with_dividend_yield",
+            warm_start=(1.4, 0.05, 0.28, -0.35, 0.04),
+        )
+
+        assert result.summary["dividend_yield"] == pytest.approx(dividend_yield)
+        assert result.diagnostics.max_abs_vol_error < 0.01
+        assert result.diagnostics.quote_convention_mismatch_count == 0
 
 
 # ---------------------------------------------------------------------------

@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import date
 from dataclasses import dataclass, field
 from typing import Literal, Sequence
 
 import numpy as raw_np
+from scipy.optimize import brentq
 
+from trellis.core.date_utils import add_months
 from trellis.core.market_state import MarketState
+from trellis.core.types import DayCountConvention, Frequency
 from trellis.curves.credit_curve import CreditCurve
 from trellis.models.calibration.materialization import materialize_credit_curve
 from trellis.models.calibration.quote_maps import (
@@ -17,7 +21,6 @@ from trellis.models.calibration.quote_maps import (
     QuoteSemanticsSpec,
     QuoteSettlementSpec,
     QuoteUnitSpec,
-    build_identity_quote_map,
 )
 from trellis.models.calibration.solve_request import (
     ObjectiveBundle,
@@ -31,7 +34,16 @@ from trellis.models.calibration.solve_request import (
     build_solve_replay_artifact,
     execute_solve_request,
 )
-from trellis.models.credit_default_swap import normalize_cds_running_spread
+from trellis.models.credit_default_swap import (
+    build_cds_schedule,
+    normalize_cds_running_spread,
+    price_cds_analytical,
+    solve_cds_par_spread_analytical,
+)
+
+_CDS_CALIBRATION_NOTIONAL = 1.0
+_CDS_CALIBRATION_FREQUENCY = Frequency.QUARTERLY
+_CDS_CALIBRATION_DAY_COUNT = DayCountConvention.ACT_360
 
 
 def _require_finite_positive(value: float, *, field_name: str) -> float:
@@ -40,6 +52,93 @@ def _require_finite_positive(value: float, *, field_name: str) -> float:
     if not raw_np.isfinite(normalized) or normalized <= 0.0:
         raise ValueError(f"{field_name} must be finite and positive")
     return normalized
+
+
+def _bounded_cds_schedule(
+    *,
+    settlement: date,
+    maturity_years: float,
+):
+    """Return the bounded canonical CDS schedule used by the credit workflow."""
+    months = max(int(round(float(maturity_years) * 12.0)), 1)
+    maturity_date = add_months(settlement, months)
+    schedule = build_cds_schedule(
+        settlement,
+        maturity_date,
+        _CDS_CALIBRATION_FREQUENCY,
+        _CDS_CALIBRATION_DAY_COUNT,
+    )
+    return schedule, maturity_date
+
+
+def _par_spread_from_curve(
+    *,
+    schedule,
+    credit_curve: CreditCurve,
+    discount_curve,
+    recovery: float,
+) -> float:
+    """Return the bounded canonical par spread implied by one credit curve."""
+    return solve_cds_par_spread_analytical(
+        notional=_CDS_CALIBRATION_NOTIONAL,
+        recovery=recovery,
+        schedule=schedule,
+        credit_curve=credit_curve,
+        discount_curve=discount_curve,
+    )
+
+
+def _flat_hazard_curve(
+    *,
+    maturity_years: float,
+    hazard_rate: float,
+) -> CreditCurve:
+    """Return a flat credit curve for bounded quote normalization."""
+    return CreditCurve.flat(float(hazard_rate), max_tenor=max(float(maturity_years), 30.0))
+
+
+def _hazard_from_par_spread(
+    *,
+    running_spread: float,
+    schedule,
+    maturity_years: float,
+    discount_curve,
+    recovery: float,
+    max_hazard: float,
+) -> float:
+    """Return the flat hazard consistent with one bounded CDS par spread."""
+    normalized_spread = normalize_cds_running_spread(float(running_spread))
+    tolerance = 1e-12
+
+    def objective(hazard: float) -> float:
+        return price_cds_analytical(
+            notional=_CDS_CALIBRATION_NOTIONAL,
+            spread_quote=normalized_spread,
+            recovery=recovery,
+            schedule=schedule,
+            credit_curve=_flat_hazard_curve(
+                maturity_years=maturity_years,
+                hazard_rate=float(hazard),
+            ),
+            discount_curve=discount_curve,
+        )
+
+    lower = 1e-8
+    upper = max(float(max_hazard), lower * 10.0)
+    lower_value = objective(lower)
+    if abs(lower_value) <= tolerance:
+        return float(lower)
+    if lower_value > 0.0:
+        raise ValueError(
+            "bounded CDS hazard normalization expected non-positive PV at near-zero hazard"
+        )
+    upper_value = objective(upper)
+    while upper_value < 0.0 and upper < 100.0:
+        upper *= 2.0
+        upper_value = objective(upper)
+    if upper_value < 0.0:
+        raise ValueError("bounded CDS hazard normalization could not bracket a zero PV hazard")
+    return float(brentq(objective, lower, upper, xtol=1e-10))
 
 
 def _credit_quote_assumptions(
@@ -53,6 +152,10 @@ def _credit_quote_assumptions(
         (
             "Reduced-form single-name calibration binds potential terms as "
             "risky_discount(t)=discount(t)*survival_probability(t)."
+        ),
+        (
+            "CDS repricing uses bounded quarterly ACT/360 schedules built from "
+            "market_state.settlement with tenor maturities rounded to calendar months."
         ),
         f"Recovery assumption: {float(recovery):.6f}.",
         f"Discount curve role: {selected.get('discount_curve') or '<unbound>'}.",
@@ -79,13 +182,14 @@ def _credit_potential_binding(
 
 def _spread_quote_map(
     *,
+    market_quote: float,
     recovery: float,
     source_ref: str,
     assumptions: tuple[str, ...],
     potential_binding: dict[str, object],
 ) -> CalibrationQuoteMap:
-    """Return the explicit spread-to-hazard quote map."""
-    scale = float(1.0 - recovery)
+    """Return the explicit spread-to-running-spread quote map."""
+    input_unit = "basis_points" if float(market_quote) > 1.0 else "decimal_running_spread"
     return CalibrationQuoteMap(
         spec=QuoteMapSpec(
             quote_family="spread",
@@ -104,27 +208,37 @@ def _spread_quote_map(
                 ),
             ),
         ),
-        quote_to_price_fn=lambda quote: normalize_cds_running_spread(float(quote)) / scale,
-        price_to_quote_fn=lambda hazard: float(hazard) * scale,
+        quote_to_price_fn=lambda quote: normalize_cds_running_spread(float(quote)),
+        price_to_quote_fn=(
+            (lambda running_spread: float(running_spread) * 1e4)
+            if float(market_quote) > 1.0
+            else (lambda running_spread: float(running_spread))
+        ),
         source_ref=source_ref,
         assumptions=assumptions,
         metadata={
             "quote_kind": "spread",
-            "quote_unit": "decimal_running_spread",
-            "hazard_formula": "spread / (1 - recovery)",
+            "quote_unit": input_unit,
+            "normalization_method": "running_spread_decimal",
             "potential_binding": dict(potential_binding),
+            "recovery": float(recovery),
         },
     )
 
 
 def _hazard_quote_map(
     *,
+    schedule,
+    maturity_years: float,
+    discount_curve,
+    recovery: float,
+    max_hazard: float,
     assumptions: tuple[str, ...],
     potential_binding: dict[str, object],
 ) -> CalibrationQuoteMap:
-    """Return the explicit hazard quote map."""
-    return build_identity_quote_map(
-        QuoteMapSpec(
+    """Return the explicit hazard-to-running-spread quote map."""
+    return CalibrationQuoteMap(
+        spec=QuoteMapSpec(
             quote_family="hazard",
             semantics=QuoteSemanticsSpec(
                 quote_family="hazard",
@@ -141,12 +255,32 @@ def _hazard_quote_map(
                 ),
             ),
         ),
+        quote_to_price_fn=lambda hazard: _par_spread_from_curve(
+            schedule=schedule,
+            credit_curve=_flat_hazard_curve(
+                maturity_years=maturity_years,
+                hazard_rate=float(hazard),
+            ),
+            discount_curve=discount_curve,
+            recovery=recovery,
+        ),
+        price_to_quote_fn=lambda running_spread: _hazard_from_par_spread(
+            running_spread=float(running_spread),
+            schedule=schedule,
+            maturity_years=maturity_years,
+            discount_curve=discount_curve,
+            recovery=recovery,
+            max_hazard=max_hazard,
+        ),
         source_ref="_hazard_quote_map",
         assumptions=assumptions,
         metadata={
             "quote_kind": "hazard",
             "quote_unit": "hazard_rate",
+            "normalization_method": "cds_pricer_flat_hazard",
+            "maturity_years": float(maturity_years),
             "potential_binding": dict(potential_binding),
+            "recovery": float(recovery),
         },
     )
 
@@ -203,12 +337,18 @@ class CreditHazardCalibrationResult:
     solver_provenance: SolveProvenance
     solver_replay_artifact: SolveReplayArtifact
     tenors: tuple[float, ...]
+    target_running_spreads: tuple[float, ...]
+    model_running_spreads: tuple[float, ...]
     target_hazards: tuple[float, ...]
     model_hazards: tuple[float, ...]
     target_quotes: tuple[float, ...]
     model_quotes: tuple[float, ...]
+    repricing_errors: tuple[float, ...]
+    survival_probabilities: tuple[float, ...]
+    forward_hazards: tuple[float, ...]
     hazard_residuals: tuple[float, ...]
     quote_residuals: tuple[float, ...]
+    max_abs_repricing_error: float
     max_abs_hazard_residual: float
     max_abs_quote_residual: float
     curve_name: str = "single_name_credit"
@@ -222,12 +362,22 @@ class CreditHazardCalibrationResult:
     def __post_init__(self) -> None:
         object.__setattr__(self, "quotes", tuple(self.quotes))
         object.__setattr__(self, "tenors", tuple(float(value) for value in self.tenors))
+        object.__setattr__(self, "target_running_spreads", tuple(float(value) for value in self.target_running_spreads))
+        object.__setattr__(self, "model_running_spreads", tuple(float(value) for value in self.model_running_spreads))
         object.__setattr__(self, "target_hazards", tuple(float(value) for value in self.target_hazards))
         object.__setattr__(self, "model_hazards", tuple(float(value) for value in self.model_hazards))
         object.__setattr__(self, "target_quotes", tuple(float(value) for value in self.target_quotes))
         object.__setattr__(self, "model_quotes", tuple(float(value) for value in self.model_quotes))
+        object.__setattr__(self, "repricing_errors", tuple(float(value) for value in self.repricing_errors))
+        object.__setattr__(
+            self,
+            "survival_probabilities",
+            tuple(float(value) for value in self.survival_probabilities),
+        )
+        object.__setattr__(self, "forward_hazards", tuple(float(value) for value in self.forward_hazards))
         object.__setattr__(self, "hazard_residuals", tuple(float(value) for value in self.hazard_residuals))
         object.__setattr__(self, "quote_residuals", tuple(float(value) for value in self.quote_residuals))
+        object.__setattr__(self, "max_abs_repricing_error", float(self.max_abs_repricing_error))
         object.__setattr__(self, "max_abs_hazard_residual", float(self.max_abs_hazard_residual))
         object.__setattr__(self, "max_abs_quote_residual", float(self.max_abs_quote_residual))
         object.__setattr__(self, "recovery", float(self.recovery))
@@ -254,6 +404,7 @@ class CreditHazardCalibrationResult:
                 "instrument_kind": "single_name_cds",
                 "curve_name": self.curve_name,
                 "potential_binding": dict(self.potential_binding),
+                "max_abs_repricing_error": float(self.max_abs_repricing_error),
             },
         )
 
@@ -270,12 +421,18 @@ class CreditHazardCalibrationResult:
             "solver_provenance": self.solver_provenance.to_payload(),
             "solver_replay_artifact": self.solver_replay_artifact.to_payload(),
             "tenors": list(self.tenors),
+            "target_running_spreads": list(self.target_running_spreads),
+            "model_running_spreads": list(self.model_running_spreads),
             "target_hazards": list(self.target_hazards),
             "model_hazards": list(self.model_hazards),
             "target_quotes": list(self.target_quotes),
             "model_quotes": list(self.model_quotes),
+            "repricing_errors": list(self.repricing_errors),
+            "survival_probabilities": list(self.survival_probabilities),
+            "forward_hazards": list(self.forward_hazards),
             "hazard_residuals": list(self.hazard_residuals),
             "quote_residuals": list(self.quote_residuals),
+            "max_abs_repricing_error": self.max_abs_repricing_error,
             "max_abs_hazard_residual": self.max_abs_hazard_residual,
             "max_abs_quote_residual": self.max_abs_quote_residual,
             "curve_name": self.curve_name,
@@ -308,6 +465,24 @@ def _normalize_quotes(
     return sorted_quotes
 
 
+def _survival_and_forward_hazards(
+    credit_curve: CreditCurve,
+    tenors: Sequence[float],
+) -> tuple[tuple[float, ...], tuple[float, ...]]:
+    """Return survival probabilities and implied forward hazards across the tenor grid."""
+    survival_probabilities = tuple(float(credit_curve.survival_probability(float(tenor))) for tenor in tenors)
+    forward_hazards: list[float] = []
+    previous_tenor = 0.0
+    previous_survival = 1.0
+    for tenor, survival in zip(tenors, survival_probabilities):
+        interval = max(float(tenor) - float(previous_tenor), 1e-12)
+        survival_ratio = max(float(survival) / max(float(previous_survival), 1e-12), 1e-12)
+        forward_hazards.append(float(-raw_np.log(survival_ratio) / interval))
+        previous_tenor = float(tenor)
+        previous_survival = float(survival)
+    return survival_probabilities, tuple(forward_hazards)
+
+
 def calibrate_single_name_credit_curve_workflow(
     quotes: Sequence[CreditHazardCalibrationQuote],
     market_state: MarketState,
@@ -319,6 +494,8 @@ def calibrate_single_name_credit_curve_workflow(
     """Calibrate one reduced-form single-name credit curve from spread/hazard quotes."""
     if market_state.discount is None:
         raise ValueError("single-name credit calibration requires market_state.discount")
+    if market_state.settlement is None:
+        raise ValueError("single-name credit calibration requires market_state.settlement")
     recovery = float(recovery)
     if not raw_np.isfinite(recovery) or recovery <= 0.0 or recovery >= 1.0:
         raise ValueError("recovery must be strictly between 0 and 1")
@@ -333,11 +510,20 @@ def calibrate_single_name_credit_curve_workflow(
         recovery=recovery,
     )
     assumptions = _credit_quote_assumptions(market_state, recovery=recovery)
+    schedules = []
+    maturity_dates = []
     quote_maps: list[CalibrationQuoteMap] = []
     for quote in normalized_quotes:
+        schedule, maturity_date = _bounded_cds_schedule(
+            settlement=market_state.settlement,
+            maturity_years=float(quote.maturity_years),
+        )
+        schedules.append(schedule)
+        maturity_dates.append(maturity_date)
         if quote.quote_kind == "spread":
             quote_maps.append(
                 _spread_quote_map(
+                    market_quote=float(quote.quote),
                     recovery=recovery,
                     source_ref="_spread_quote_map",
                     assumptions=assumptions,
@@ -347,49 +533,89 @@ def calibrate_single_name_credit_curve_workflow(
         else:
             quote_maps.append(
                 _hazard_quote_map(
+                    schedule=schedule,
+                    maturity_years=float(quote.maturity_years),
+                    discount_curve=market_state.discount,
+                    recovery=recovery,
+                    max_hazard=float(max_hazard),
                     assumptions=assumptions,
                     potential_binding=potential_binding,
                 )
             )
 
+    target_running_spreads_values: list[float] = []
     target_hazards_values: list[float] = []
-    target_quote_values: list[float] = []
     quote_transform_warnings: list[str] = []
-    for label, quote, quote_map in zip(labels, normalized_quotes, quote_maps):
+    target_quotes = tuple(float(quote.quote) for quote in normalized_quotes)
+    for label, quote, quote_map, schedule in zip(labels, normalized_quotes, quote_maps, schedules):
         target_transform = quote_map.target_price(float(quote.quote))
         if target_transform.failure is not None:
-            raise ValueError(f"credit quote_to_hazard failed for `{label}`: {target_transform.failure}")
+            raise ValueError(
+                f"credit quote_to_running_spread failed for `{label}`: {target_transform.failure}"
+            )
         for warning in target_transform.warnings:
             quote_transform_warnings.append(f"{label}: {warning}")
-        target_hazard = float(target_transform.value)
-        if target_hazard <= 0.0 or not raw_np.isfinite(target_hazard):
-            raise ValueError(f"credit quote `{label}` mapped to non-positive hazard `{target_hazard}`")
-        target_hazards_values.append(target_hazard)
-        target_quote_transform = quote_map.model_quote(target_hazard)
-        if target_quote_transform.failure is not None:
+        target_running_spread = float(target_transform.value)
+        if target_running_spread <= 0.0 or not raw_np.isfinite(target_running_spread):
             raise ValueError(
-                f"credit hazard_to_quote failed for `{label}` while normalizing targets: {target_quote_transform.failure}"
+                f"credit quote `{label}` mapped to non-positive running spread `{target_running_spread}`"
             )
-        target_quote_values.append(float(target_quote_transform.value))
+        target_running_spreads_values.append(target_running_spread)
+        try:
+            target_hazard = _hazard_from_par_spread(
+                running_spread=target_running_spread,
+                schedule=schedule,
+                maturity_years=float(quote.maturity_years),
+                discount_curve=market_state.discount,
+                recovery=recovery,
+                max_hazard=float(max_hazard),
+            )
+        except Exception as exc:
+            raise ValueError(
+                f"credit running_spread_to_hazard failed for `{label}` while normalizing targets: {exc}"
+            ) from exc
+        target_hazards_values.append(float(target_hazard))
+    target_running_spreads = tuple(target_running_spreads_values)
     target_hazards = tuple(target_hazards_values)
-    target_quotes = tuple(target_quote_values)
     weights = tuple(float(quote.weight) for quote in normalized_quotes)
     upper_bound = max(float(max_hazard), max(target_hazards) * 2.0, 1.0)
     parameter_names = tuple(f"hazard_{index + 1}" for index in range(len(normalized_quotes)))
+
+    def _model_running_spreads_for_params(params) -> raw_np.ndarray:
+        try:
+            curve = CreditCurve(tenors, tuple(float(value) for value in params))
+        except Exception:
+            return raw_np.full(len(tenors), 10.0, dtype=float)
+        model_spreads: list[float] = []
+        for schedule in schedules:
+            try:
+                model_spreads.append(
+                    _par_spread_from_curve(
+                        schedule=schedule,
+                        credit_curve=curve,
+                        discount_curve=market_state.discount,
+                        recovery=recovery,
+                    )
+                )
+            except Exception:
+                model_spreads.append(10.0)
+        return raw_np.asarray(model_spreads, dtype=float)
+
     solve_request = SolveRequest(
-        request_id="single_name_credit_hazard_least_squares",
+        request_id="single_name_credit_cds_par_spread_least_squares",
         problem_kind="least_squares",
         parameter_names=parameter_names,
         initial_guess=target_hazards,
         objective=ObjectiveBundle(
             objective_kind="least_squares",
             labels=labels,
-            target_values=target_hazards,
+            target_values=target_running_spreads,
             weights=weights,
-            vector_objective_fn=lambda params: raw_np.asarray(params, dtype=float),
+            vector_objective_fn=_model_running_spreads_for_params,
             metadata={
                 "model_family": "reduced_form_credit",
                 "curve_name": curve_name,
+                "fit_space": "cds_par_spread",
                 "quote_maps": [quote_map.to_payload() for quote_map in quote_maps],
                 "potential_binding": dict(potential_binding),
             },
@@ -403,6 +629,7 @@ def calibrate_single_name_credit_curve_workflow(
         metadata={
             "curve_name": curve_name,
             "model_family": "reduced_form_credit",
+            "fit_space": "cds_par_spread",
             "selected_curve_names": dict(market_state.selected_curve_names or {}),
             "potential_binding": dict(potential_binding),
         },
@@ -416,11 +643,12 @@ def calibrate_single_name_credit_curve_workflow(
         )
     model_hazards = tuple(float(value) for value in solve_result.solution)
     credit_curve = CreditCurve(tenors, model_hazards)
+    model_running_spreads = tuple(float(value) for value in _model_running_spreads_for_params(model_hazards))
 
     model_quotes_values: list[float] = []
     quote_inverse_failures: list[str] = []
-    for label, model_hazard, quote_map in zip(labels, model_hazards, quote_maps):
-        model_transform = quote_map.model_quote(float(model_hazard))
+    for label, model_running_spread, quote_map in zip(labels, model_running_spreads, quote_maps):
+        model_transform = quote_map.model_quote(float(model_running_spread))
         if model_transform.failure is not None:
             quote_inverse_failures.append(f"{label}: {model_transform.failure}")
             model_quotes_values.append(float("nan"))
@@ -429,6 +657,20 @@ def calibrate_single_name_credit_curve_workflow(
             quote_transform_warnings.append(f"{label}: {warning}")
         model_quotes_values.append(float(model_transform.value))
     model_quotes = tuple(model_quotes_values)
+    repricing_errors = tuple(
+        float(
+            price_cds_analytical(
+                notional=_CDS_CALIBRATION_NOTIONAL,
+                spread_quote=float(target_running_spread),
+                recovery=recovery,
+                schedule=schedule,
+                credit_curve=credit_curve,
+                discount_curve=market_state.discount,
+            )
+        )
+        for target_running_spread, schedule in zip(target_running_spreads, schedules)
+    )
+    survival_probabilities, forward_hazards = _survival_and_forward_hazards(credit_curve, tenors)
     hazard_residuals = tuple(
         float(model_hazard - target_hazard)
         for model_hazard, target_hazard in zip(model_hazards, target_hazards)
@@ -437,6 +679,7 @@ def calibrate_single_name_credit_curve_workflow(
         float(model_quote - target_quote)
         for model_quote, target_quote in zip(model_quotes, target_quotes)
     )
+    max_abs_repricing_error = max((abs(value) for value in repricing_errors), default=0.0)
     max_abs_hazard_residual = max((abs(value) for value in hazard_residuals), default=0.0)
     finite_quote_residuals = tuple(abs(value) for value in quote_residuals if value == value)
     max_abs_quote_residual = max(finite_quote_residuals, default=0.0)
@@ -452,6 +695,24 @@ def calibrate_single_name_credit_curve_workflow(
             "market_state.market_provenance did not include source_kind; "
             "calibration preserved selected curve names only."
         )
+    if any(forward_hazard < -1e-10 for forward_hazard in forward_hazards):
+        warnings.append("credit fit produced negative forward hazards on the bounded tenor grid.")
+    if any(
+        survival_probabilities[index + 1] > survival_probabilities[index] + 1e-10
+        for index in range(len(survival_probabilities) - 1)
+    ):
+        warnings.append("credit fit produced non-monotone survival probabilities on the bounded tenor grid.")
+
+    fit_diagnostics = {
+        "target_running_spreads": list(target_running_spreads),
+        "model_running_spreads": list(model_running_spreads),
+        "repricing_errors": list(repricing_errors),
+        "survival_probabilities": list(survival_probabilities),
+        "forward_hazards": list(forward_hazards),
+        "max_abs_repricing_error": float(max_abs_repricing_error),
+        "max_abs_hazard_residual": float(max_abs_hazard_residual),
+        "max_abs_quote_residual": float(max_abs_quote_residual),
+    }
 
     provenance = {
         "source_kind": "calibrated_surface",
@@ -462,10 +723,21 @@ def calibrate_single_name_credit_curve_workflow(
         "calibration_target": {
             "labels": list(labels),
             "tenors": list(tenors),
+            "target_running_spreads": list(target_running_spreads),
             "target_hazards": list(target_hazards),
             "target_quotes": list(target_quotes),
             "quote_kinds": [quote.quote_kind for quote in normalized_quotes],
             "quote_maps": [quote_map.to_payload() for quote_map in quote_maps],
+            "instrument_setup": [
+                {
+                    "label": label,
+                    "maturity_years": float(quote.maturity_years),
+                    "maturity_date": maturity_date.isoformat(),
+                    "frequency": _CDS_CALIBRATION_FREQUENCY.name,
+                    "day_count": _CDS_CALIBRATION_DAY_COUNT.name,
+                }
+                for label, quote, maturity_date in zip(labels, normalized_quotes, maturity_dates)
+            ],
             "quote_inverse_failures": list(quote_inverse_failures),
             "curve_name": curve_name,
             "recovery": recovery,
@@ -474,6 +746,7 @@ def calibrate_single_name_credit_curve_workflow(
         "solve_result": solve_result.to_payload(),
         "solver_provenance": solver_provenance.to_payload(),
         "solver_replay_artifact": solver_replay_artifact.to_payload(),
+        "fit_diagnostics": fit_diagnostics,
         "warnings": list(warnings),
         "assumptions": list(assumptions),
     }
@@ -481,6 +754,8 @@ def calibrate_single_name_credit_curve_workflow(
         "quote_count": len(normalized_quotes),
         "curve_name": curve_name,
         "recovery": recovery,
+        "quote_normalization_method": "cds_pricer",
+        "max_abs_repricing_error": float(max_abs_repricing_error),
         "max_abs_hazard_residual": float(max_abs_hazard_residual),
         "max_abs_quote_residual": float(max_abs_quote_residual),
         "quote_families": [quote_map.spec.quote_family for quote_map in quote_maps],
@@ -494,12 +769,18 @@ def calibrate_single_name_credit_curve_workflow(
         solver_provenance=solver_provenance,
         solver_replay_artifact=solver_replay_artifact,
         tenors=tenors,
+        target_running_spreads=target_running_spreads,
+        model_running_spreads=model_running_spreads,
         target_hazards=target_hazards,
         model_hazards=model_hazards,
         target_quotes=target_quotes,
         model_quotes=model_quotes,
+        repricing_errors=repricing_errors,
+        survival_probabilities=survival_probabilities,
+        forward_hazards=forward_hazards,
         hazard_residuals=hazard_residuals,
         quote_residuals=quote_residuals,
+        max_abs_repricing_error=max_abs_repricing_error,
         max_abs_hazard_residual=max_abs_hazard_residual,
         max_abs_quote_residual=max_abs_quote_residual,
         curve_name=curve_name,

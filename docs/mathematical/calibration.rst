@@ -285,11 +285,59 @@ Heston Smile Calibration
 
 The supported Heston path is also a model-compression workflow. It fits one
 single-expiry smile and then materializes a reusable parameter pack back onto
-``MarketState``; it is not yet a full equity-vol surface authority.
+``MarketState``; it is not itself the authoritative equity-vol market object.
 
-The supported Heston workflow fits one single-expiry implied-vol smile onto
-the five runtime parameters :math:`(\kappa, \theta, \xi, \rho, v_0)`. Trellis
-packages that calibration as an explicit smile surface first:
+Repaired Equity-Vol Surface Authority
+-------------------------------------
+
+The first bounded market-reconstruction lane for equity vol now sits one layer
+above the old single-smile Heston and raw Dupire workflows. Trellis exposes
+``calibrate_equity_vol_surface_workflow(...)`` as a repaired multi-expiry
+equity-vol surface authority.
+
+The current shipped authority is intentionally bounded:
+
+- raw observed quotes first pass through
+  ``clean_equity_vol_surface_quotes(...)``, which keeps raw-versus-cleaned
+  provenance explicit and applies a local outlier-governance pass on the
+  observed grid before model repair
+- each expiry smile is fit with a raw-SVI parameterization in total-variance
+  space
+- the fit uses explicit positive-residual penalties for smile-level
+  positivity, call-price monotonicity, and call-price convexity on a
+  diagnostic strike grid
+- the assembled surface applies a calendar-total-variance repair across
+  expiries before answering ``black_vol(expiry, strike)`` queries
+
+That gives Trellis a first market-object-first equity-vol surface that can be
+materialized back onto ``MarketState`` as a ``black_vol_surface`` instead of
+jumping directly to a reduced-model parameter pack.
+
+The workflow returns:
+
+- the raw multi-expiry input surface
+- the cleaned multi-expiry input surface plus node-level quote-cleaning
+  diagnostics and adjustments
+- one typed solve request and replay artifact per fitted SVI smile
+- smile-level no-arbitrage diagnostics before and after repair
+- surface-level calendar diagnostics before and after repair
+- the repaired implied-vol surface itself for downstream pricing or later
+  model-compression stages
+
+This remains a bounded first surface authority rather than a full production
+SPX plant. The checked implementation now has an explicit quote-governance
+stage, but it is still raw-SVI-based, not yet a full SSVI, bid/ask, liquidity,
+or exchange-convention governance stack.
+
+The supported Heston workflow now comes in two bounded forms:
+
+- ``calibrate_heston_smile_workflow(...)`` fits one single-expiry implied-vol
+  smile onto the five runtime parameters :math:`(\kappa, \theta, \xi, \rho, v_0)`
+- ``calibrate_heston_surface_from_equity_vol_surface_workflow(...)`` compresses
+  the repaired multi-expiry equity-vol authority into one reusable Heston
+  parameter pack across the full fitted grid
+
+Trellis packages that calibration as explicit smile or surface targets first:
 
 - ``build_heston_smile_surface(...)`` stores the spot, rate, dividend yield,
   ordered strike/vol points, optional weights, and warning flags
@@ -297,17 +345,50 @@ packages that calibration as an explicit smile surface first:
   ``SolveRequest`` substrate and runs a least-squares fit in implied-vol space
 - ``calibrate_heston_smile_workflow(...)`` is the supported raw-input wrapper
   that returns the full ``HestonSmileCalibrationResult`` in one step
+- ``build_heston_surface_input(...)`` stores the full ordered expiry/strike
+  grid for a multi-expiry fit
+- ``fit_heston_surface(...)`` lowers the full grid onto one typed
+  ``SolveRequest`` and calibrates one global Heston parameter pack across the
+  whole surface
+- ``calibrate_heston_surface_workflow(...)`` is the supported raw-input wrapper
+  for that full-grid fit
+- ``calibrate_heston_surface_from_equity_vol_surface_workflow(...)`` is the
+  staged model-compression wrapper that consumes the repaired surface
+  authority rather than raw quotes directly
+
+The shipped Heston workflow now keeps the carry convention aligned across the
+entire priced-to-implied-vol path for this supported slice:
+
+- Black-style implied-vol inversion accepts either ``dividend_yield`` or an
+  explicit continuous carry rate
+- the Heston fit now passes the smile's ``dividend_yield`` through both FFT
+  pricing and implied-vol inversion instead of pricing with carry and inverting
+  without it
+- fit diagnostics now separate quote-convention mismatches from numerical
+  pricing or inversion failures so review tooling can distinguish the two
 
 The Heston workflow keeps the same audit contract as the rates and SABR paths:
 
 - typed ``solve_request`` and normalized ``solve_result``
 - governed ``solver_provenance`` and ``solver_replay_artifact``
-- stable fit diagnostics including per-strike residuals, RMS errors, and ATM error
+- stable fit diagnostics including per-strike or per-expiry residuals, RMS
+  errors, and ATM error
 - a reusable ``model_parameters`` payload and ``runtime_binding`` that can be
   projected back onto ``MarketState`` for later pricing or simulation
 
-This remains a supported single-smile fit rather than a full term-structure or
-surface calibration plant, but the checked workflow is now explicit enough for
+Trellis now also exposes
+``compare_heston_to_equity_vol_surface_workflow(...)`` for one bounded staged
+comparison: the repaired equity-vol surface can be compared directly against a
+later Heston compression fit on a selected expiry slice so the market-object
+stage and the reduced-model stage are not conflated.
+
+Trellis also exposes
+``compare_heston_surface_to_equity_vol_surface_workflow(...)`` for the same
+stage separation on the full observed expiry/strike grid.
+
+This remains a bounded global-surface compression fit rather than a full
+time-dependent Heston term structure, stochastic-local-vol bridge, or broader
+stochastic-vol plant, but the checked workflow is now explicit enough for
 replay, runtime reuse, and later performance benchmarking.
 
 Dupire Local Volatility
@@ -354,6 +435,19 @@ The supported workflow wrapper now sits one step above that hardened substrate.
 lets callers apply the calibrated local-vol surface back onto ``MarketState``
 without rebuilding an ad hoc wrapper.
 
+The local-vol lane can now also consume the repaired equity-vol authority
+instead of raw implied-vol quotes directly.
+``calibrate_local_vol_surface_from_equity_vol_surface_workflow(...)`` samples
+the repaired surface on a chosen grid and then runs the same bounded Dupire
+workflow from that repaired implied-vol surface.
+
+Carry inputs are now recorded explicitly on the local-vol calibration target,
+summary, and provenance payloads. For this checked slice the local-vol workflow
+still treats those inputs as a continuous-yield carry convention and emits an
+explicit warning when such inputs are supplied. That is a bounded support
+contract, not yet a full discrete-dividend or repo-specific equity-surface
+calibration plant.
+
 Validation And Replay Expectations
 ----------------------------------
 
@@ -371,9 +465,9 @@ benchmark fixtures used for workflow validation:
   checked single-smile fixture
 - Local-vol replay keeps the workflow provenance contract stable and requires
   zero unstable calibration-grid points on the checked stable surface fixture
-- Single-name credit replay keeps the same typed hazard solve-request contract
-  and requires near-zero hazard/quote residuals on the checked spread-grid
-  fixture
+- Single-name credit replay keeps the same typed CDS-par-spread least-squares
+  contract and requires near-zero repricing and quote residuals on the checked
+  spread-grid fixture
 
 The benchmark baseline in ``docs/benchmarks/calibration_workflows.{json,md}``
 complements those fit-quality gates with cold-start versus warm-start timing
@@ -413,9 +507,21 @@ The bootstrap input surface is now explicit:
 - ``BootstrapInstrument`` carries the market quote together with tenor,
   optional start tenor, optional accrual override, and a stable instrument label
 
-The current implementation still works on year-fraction tenors rather than
-full dated schedules, so the convention bundle governs the implied accrual grid
-used by the bootstrap rather than a full calendar roll engine.
+The legacy bootstrap lane still works on year-fraction tenors. Trellis now
+also ships one first dated multi-curve lane:
+
+- ``DatedBootstrapInstrument`` carries explicit ``start_date`` and
+  ``end_date`` together with optional schedule overrides such as stub type,
+  roll convention, and business-day adjustment
+- ``DatedBootstrapCurveInputBundle`` groups those dated instruments, names the
+  curve role, and records hard dependencies such as a forecast curve depending
+  on a discount curve
+- ``MultiCurveBootstrapProgram`` packages the settlement date and the ordered
+  curve bundles into one explicit chained calibration program
+
+That dated path is still bounded rather than a full desk calendar engine, but
+it moves the first supported rates slice away from tenor-only abstractions and
+toward explicit dated instruments and dependency-aware curve reconstruction.
 
 The bootstrap now lowers onto the same typed solve-request substrate used by
 the other calibration helpers. ``build_bootstrap_solve_request(...)`` packages
@@ -439,6 +545,21 @@ typed ``solve_request``, normalized ``solve_result``, governed
 residual vector, Jacobian matrix, condition number, and Jacobian rank. The
 legacy ``bootstrap(...)`` and ``bootstrap_yield_curve(...)`` helpers remain as
 thin compatibility wrappers over that richer result surface.
+
+The dated path mirrors that contract:
+
+- ``bootstrap_dated_curve_result(...)`` solves one dated curve bundle and
+  returns the same diagnostics and replay surfaces as the tenor-only lane
+- ``bootstrap_multi_curve_program(...)`` executes the explicit dependency graph
+  in topological order, preserving the dependency order and dependency graph in
+  the returned ``MultiCurveBootstrapResult``
+- ``MultiCurveBootstrapResult.apply_to_market_state(...)`` materializes the
+  selected discount and forecast curves back onto ``MarketState`` so downstream
+  pricing and later rates-vol fits consume the calibrated runtime objects
+  directly
+
+This is still a first bounded OIS-plus-forecast chain rather than a full basis,
+cross-currency, smoothing, or exchange-grade futures plant.
 
 Rates Option Calibration
 ------------------------
@@ -570,21 +691,27 @@ The supported credit slice is intentionally bounded to single-name reduced-form
 hazard calibration for CDS-style quotes. Trellis now exposes
 ``calibrate_single_name_credit_curve_workflow(...)`` as the typed entry point.
 
-This remains a proving-grade single-name curve workflow rather than the later
-schedule-aware CDS industrialization path. In particular, the current
-``Spread`` quote handling is still a bounded normalization layer rather than a
-full instrument-by-instrument CDS repricing plant.
+This remains a bounded single-name running-CDS workflow rather than the later
+full industrial CDS bootstrap path. The current implementation now calibrates
+through a CDS pricing engine, but it still uses one canonical quarterly
+``ACT/360`` schedule built from ``market_state.settlement`` with tenor
+maturities rounded to calendar months. It does not yet cover the broader
+standard-coupon/upfront, IMM-roll, holiday-calendar, or recovery-governance
+surface that a production CDS curve plant would need.
 
 The workflow accepts tenor-labeled quotes in either of the shipped credit quote
 families:
 
-- ``Spread`` for running-spread quotes, normalized through
-  :math:`\lambda \approx s / (1 - R)`
-- ``Hazard`` for direct hazard-rate targets
+- ``Spread`` for running-spread quotes, normalized onto decimal running-spread
+  fit space
+- ``Hazard`` for direct hazard-rate targets, normalized through the same CDS
+  pricing stack on a bounded flat-hazard surrogate
 
-The pricing semantics are explicit in provenance. The credit workflow records a
-potential-binding payload that makes the reduced-form discount/default contract
-visible:
+The solve objective now fits model-implied CDS par spreads against those
+normalized target running spreads rather than solving the identity map in
+hazard space. The pricing semantics remain explicit in provenance. The credit
+workflow records a potential-binding payload that makes the reduced-form
+discount/default contract visible:
 
 .. math::
 
@@ -598,11 +725,15 @@ Like the other migrated calibration helpers, the credit workflow returns:
 - the typed ``solve_request`` and normalized ``solve_result``
 - governed ``solver_provenance`` and ``solver_replay_artifact``
 - quote-map metadata and any inverse-transform warnings
+- bounded repricing diagnostics, including target/model running spreads,
+  repricing errors, survival probabilities, and forward hazards on the tenor
+  grid
 - a reusable ``CreditCurve`` together with ``apply_to_market_state(...)`` for
   shared runtime materialization
 
-This slice does not yet widen into basket credit, structural-credit, or hybrid
-credit-equity calibration.
+This slice still does not widen into full schedule-aware CDS bootstrap,
+standard-coupon plus upfront calibration, basket credit, structural-credit, or
+hybrid credit-equity calibration.
 
 Implementation
 --------------
@@ -612,9 +743,20 @@ Implementation
 .. autofunction:: trellis.models.calibration.sabr_fit.calibrate_sabr_smile_workflow
 .. autofunction:: trellis.models.calibration.sabr_fit.build_sabr_smile_surface
 .. autofunction:: trellis.models.calibration.sabr_fit.fit_sabr_smile_surface
+.. autofunction:: trellis.models.calibration.equity_vol_surface.clean_equity_vol_surface_quotes
+.. autofunction:: trellis.models.calibration.equity_vol_surface.calibrate_equity_vol_surface_workflow
+.. autofunction:: trellis.models.calibration.equity_vol_surface.fit_equity_vol_surface
+.. autofunction:: trellis.models.calibration.equity_vol_surface.build_equity_vol_surface_input
+.. autofunction:: trellis.models.calibration.equity_vol_surface.calibrate_local_vol_surface_from_equity_vol_surface_workflow
+.. autofunction:: trellis.models.calibration.equity_vol_surface.compare_heston_to_equity_vol_surface_workflow
+.. autofunction:: trellis.models.calibration.equity_vol_surface.compare_heston_surface_to_equity_vol_surface_workflow
 .. autofunction:: trellis.models.calibration.heston_fit.calibrate_heston_smile_workflow
 .. autofunction:: trellis.models.calibration.heston_fit.build_heston_smile_surface
 .. autofunction:: trellis.models.calibration.heston_fit.fit_heston_smile_surface
+.. autofunction:: trellis.models.calibration.heston_fit.calibrate_heston_surface_workflow
+.. autofunction:: trellis.models.calibration.heston_fit.calibrate_heston_surface_from_equity_vol_surface_workflow
+.. autofunction:: trellis.models.calibration.heston_fit.build_heston_surface_input
+.. autofunction:: trellis.models.calibration.heston_fit.fit_heston_surface
 .. autofunction:: trellis.models.calibration.local_vol.calibrate_local_vol_surface_workflow
 .. autofunction:: trellis.models.calibration.local_vol.dupire_local_vol_result
 .. autofunction:: trellis.models.calibration.local_vol.dupire_local_vol
@@ -627,6 +769,34 @@ Implementation
 .. autoclass:: trellis.models.calibration.heston_fit.HestonSmileFitDiagnostics
    :members:
 .. autoclass:: trellis.models.calibration.heston_fit.HestonSmileCalibrationResult
+   :members:
+.. autoclass:: trellis.models.calibration.heston_fit.HestonSurfaceInput
+   :members:
+.. autoclass:: trellis.models.calibration.heston_fit.HestonSurfaceFitDiagnostics
+   :members:
+.. autoclass:: trellis.models.calibration.heston_fit.HestonSurfaceCalibrationResult
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.EquityVolSurfaceInput
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.EquityVolQuoteAdjustment
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.EquityVolQuoteCleaningDiagnostics
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.EquityVolQuoteCleaningResult
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.SVISmileParameters
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.SVISmileFitDiagnostics
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.SVISmileFitResult
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.EquityVolSurfaceFitDiagnostics
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.EquityVolSurfaceAuthorityResult
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.EquityVolStageComparisonResult
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.EquityVolSurfaceStageComparisonResult
    :members:
 .. autoclass:: trellis.models.calibration.sabr_fit.SABRSmileSurface
    :members:
@@ -648,8 +818,18 @@ Implementation
    :members:
 .. autoclass:: trellis.models.calibration.solve_request.SolveReplayArtifact
    :members:
+.. autofunction:: trellis.curves.bootstrap.bootstrap_dated_curve_result
+.. autofunction:: trellis.curves.bootstrap.bootstrap_multi_curve_program
 .. autofunction:: trellis.curves.bootstrap.bootstrap_yield_curve
    :no-index:
+.. autoclass:: trellis.curves.bootstrap.DatedBootstrapInstrument
+   :members:
+.. autoclass:: trellis.curves.bootstrap.DatedBootstrapCurveInputBundle
+   :members:
+.. autoclass:: trellis.curves.bootstrap.MultiCurveBootstrapProgram
+   :members:
+.. autoclass:: trellis.curves.bootstrap.MultiCurveBootstrapResult
+   :members:
 
 References
 ----------

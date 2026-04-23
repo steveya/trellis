@@ -340,7 +340,11 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
         CreditHazardCalibrationQuote,
         calibrate_single_name_credit_curve_workflow,
     )
-    from trellis.models.calibration.heston_fit import calibrate_heston_smile_workflow
+    from trellis.models.calibration.equity_vol_surface import calibrate_equity_vol_surface_workflow
+    from trellis.models.calibration.heston_fit import (
+        calibrate_heston_smile_workflow,
+        calibrate_heston_surface_from_equity_vol_surface_workflow,
+    )
     from trellis.models.calibration.local_vol import calibrate_local_vol_surface_workflow
     from trellis.models.calibration.rates import HullWhiteCalibrationInstrument, calibrate_hull_white
     from trellis.models.calibration.sabr_fit import calibrate_sabr_smile_workflow
@@ -445,6 +449,23 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
     heston_expiry = 1.0
     heston_strikes = list(heston_surface.strikes)
     heston_market_vols = [heston_surface.black_vol(heston_expiry, strike) for strike in heston_strikes]
+    heston_surface_expiries = tuple(float(expiry) for expiry in heston_surface.expiries)
+    heston_surface_strikes = tuple(float(strike) for strike in heston_surface.strikes)
+    heston_surface_market_vols = tuple(
+        tuple(float(vol) for vol in row)
+        for row in heston_surface.vols
+    )
+
+    def equity_surface_authority():
+        return calibrate_equity_vol_surface_workflow(
+            heston_spot,
+            heston_surface_expiries,
+            heston_surface_strikes,
+            heston_surface_market_vols,
+            rate=heston_rate,
+            surface_name="spx_surface_authority",
+        )
+    equity_surface_authority_result = equity_surface_authority()
 
     local_vol_sources = dict(volatility_quotes.get("local_vol_surface_sources") or {})
     local_vol_surface_name = str(next(iter(local_vol_sources or {"spx_local_vol": heston_surface_name})))
@@ -532,6 +553,18 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
             },
         ),
         CalibrationBenchmarkScenario(
+            workflow="equity_vol_surface",
+            label="repaired_surface_authority",
+            cold_runner=lambda: equity_surface_authority(),
+            notes=("svi_surface", "quote_governance", "synthetic_generation_contract_fixture"),
+            metadata={
+                "grid_shape": [len(heston_surface_expiries), len(heston_surface_strikes)],
+                "warm_start": False,
+                "surface_name": "spx_surface_authority",
+                "synthetic_generation_contract_version": str(synthetic_generation_contract.get("version", "")),
+            },
+        ),
+        CalibrationBenchmarkScenario(
             workflow="heston",
             label="single_smile",
             cold_runner=lambda: calibrate_heston_smile_workflow(
@@ -564,6 +597,32 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
                 "point_count": len(heston_strikes),
                 "warm_start": True,
                 "surface_name": heston_surface_name,
+                "synthetic_generation_contract_version": str(synthetic_generation_contract.get("version", "")),
+            },
+        ),
+        CalibrationBenchmarkScenario(
+            workflow="heston_surface",
+            label="surface_compression",
+            cold_runner=lambda: calibrate_heston_surface_from_equity_vol_surface_workflow(
+                equity_surface_authority_result,
+                parameter_set_name="heston_equity_surface",
+            ),
+            warm_runner=lambda: calibrate_heston_surface_from_equity_vol_surface_workflow(
+                equity_surface_authority_result,
+                parameter_set_name="heston_equity_surface",
+                warm_start=(
+                    float(heston_model.get("kappa", 1.8)),
+                    float(heston_model.get("theta", 0.04)),
+                    float(heston_model.get("xi", 0.35)),
+                    float(heston_model.get("rho", -0.6)),
+                    float(heston_model.get("v0", 0.05)),
+                ),
+            ),
+            notes=("least_squares", "fft_pricing", "surface_compression", "synthetic_generation_contract_fixture"),
+            metadata={
+                "grid_shape": [len(heston_surface_expiries), len(heston_surface_strikes)],
+                "warm_start": True,
+                "surface_name": "spx_surface_authority",
                 "synthetic_generation_contract_version": str(synthetic_generation_contract.get("version", "")),
             },
         ),

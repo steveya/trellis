@@ -5,6 +5,7 @@ from datetime import date
 import pytest
 
 from trellis.core.market_state import MarketState
+from trellis.core.date_utils import add_months
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.curves.credit_curve import CreditCurve
 from trellis.curves.yield_curve import YieldCurve
@@ -17,6 +18,7 @@ from trellis.models.credit_default_swap import (
     build_cds_schedule,
     normalize_cds_running_spread,
     price_cds_analytical,
+    solve_cds_par_spread_analytical,
 )
 
 
@@ -43,6 +45,15 @@ def _schedule():
     )
 
 
+def _bounded_schedule_for_tenor(maturity_years: float):
+    return build_cds_schedule(
+        SETTLE,
+        add_months(SETTLE, max(int(round(float(maturity_years) * 12.0)), 1)),
+        Frequency.QUARTERLY,
+        DayCountConvention.ACT_360,
+    )
+
+
 def test_calibrates_single_name_credit_curve_from_spreads_and_materializes_runtime_binding():
     market_state = _credit_market_state()
     quotes = (
@@ -56,18 +67,30 @@ def test_calibrates_single_name_credit_curve_from_spreads_and_materializes_runti
         recovery=0.4,
         curve_name="acme_credit",
     )
+    one_year_target_pv = price_cds_analytical(
+        notional=1.0,
+        spread_quote=120.0,
+        recovery=0.4,
+        schedule=_bounded_schedule_for_tenor(1.0),
+        credit_curve=CreditCurve.flat(result.target_hazards[0], max_tenor=5.0),
+        discount_curve=market_state.discount,
+    )
 
     assert isinstance(result, CreditHazardCalibrationResult)
-    assert result.target_hazards[0] == pytest.approx(normalize_cds_running_spread(120.0) / 0.6)
-    assert result.target_hazards[1] == pytest.approx(normalize_cds_running_spread(180.0) / 0.6)
+    assert one_year_target_pv == pytest.approx(0.0, abs=1e-10)
     assert result.provenance["potential_binding"]["discount_curve_name"] == "usd_ois"
     assert result.provenance["calibration_target"]["quote_maps"][0]["quote_family"] == "spread"
     assert result.provenance["calibration_target"]["quote_maps"][0]["quote_subject"] == "single_name_cds"
-    assert result.provenance["calibration_target"]["quote_maps"][0]["quote_unit"] == (
+    assert result.provenance["calibration_target"]["quote_maps"][0]["quote_semantics"]["quote_unit"] == (
         "decimal_running_spread"
     )
-    assert result.max_abs_hazard_residual == pytest.approx(0.0)
-    assert result.max_abs_quote_residual == pytest.approx(0.0)
+    assert result.provenance["calibration_target"]["quote_maps"][0]["quote_unit"] == "basis_points"
+    assert result.solve_request.request_id == "single_name_credit_cds_par_spread_least_squares"
+    assert result.summary["quote_normalization_method"] == "cds_pricer"
+    assert result.max_abs_repricing_error == pytest.approx(0.0, abs=1e-10)
+    assert result.max_abs_quote_residual == pytest.approx(0.0, abs=1e-8)
+    assert result.provenance["fit_diagnostics"]["survival_probabilities"][0] < 1.0
+    assert result.provenance["fit_diagnostics"]["forward_hazards"][0] > 0.0
 
     enriched = result.apply_to_market_state(market_state)
     assert enriched.credit_curve is not None
@@ -105,28 +128,23 @@ def test_credit_calibration_handoff_prices_cds_with_mixed_hazard_and_spread_quot
         credit_curve=calibrated_state.credit_curve,
         discount_curve=calibrated_state.discount,
     )
-    expected_curve = CreditCurve(
-        (1.0, 5.0),
-        (
-            0.02,
-            normalize_cds_running_spread(120.0) / 0.6,
-        ),
-    )
-    expected = price_cds_analytical(
-        notional=1_000_000.0,
-        spread_quote=120.0,
+    normalized_hazard_quote = solve_cds_par_spread_analytical(
+        notional=1.0,
         recovery=0.4,
-        schedule=schedule,
-        credit_curve=expected_curve,
+        schedule=_bounded_schedule_for_tenor(1.0),
+        credit_curve=CreditCurve.flat(0.02, max_tenor=5.0),
         discount_curve=market_state.discount,
     )
 
-    assert observed == pytest.approx(expected)
+    assert observed == pytest.approx(0.0, abs=1e-9)
     assert result.summary["quote_families"] == ["hazard", "spread"]
+    assert result.summary["quote_normalization_method"] == "cds_pricer"
+    assert result.target_running_spreads[0] == pytest.approx(normalized_hazard_quote, rel=1e-8)
     assert result.provenance["calibration_target"]["quote_maps"][0]["quote_family"] == "hazard"
     assert result.provenance["calibration_target"]["quote_maps"][1]["quote_family"] == "spread"
     assert result.provenance["calibration_target"]["quote_maps"][0]["quote_unit"] == "hazard_rate"
     assert result.provenance["calibration_target"]["quote_maps"][1]["quote_subject"] == "single_name_cds"
+    assert result.provenance["fit_diagnostics"]["max_abs_repricing_error"] == pytest.approx(0.0, abs=1e-10)
 
 
 def test_credit_calibration_rejects_missing_discount_curve_binding():

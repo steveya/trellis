@@ -9,7 +9,7 @@ The umbrella `QUA-946` and child tickets `QUA-947` through `QUA-956` are now
 filed in Linear. This document is the ordered repo-local mirror for that queue
 and should stay aligned with the live issue graph.
 
-Status mirror last synced: `2026-04-21`
+Status mirror last synced: `2026-04-22`
 
 ## Linked Context
 
@@ -66,11 +66,11 @@ Rules for coding agents:
 
 | Queue ID | Linear | Status | Scope | Hard prerequisites |
 | --- | --- | --- | --- | --- |
-| `CAL.0A` | `QUA-947` | In Review | Trellis-native architecture and documentation alignment | none |
-| `CAL.0B` | `QUA-948` | Backlog | equity-vol carry consistency across pricing and implied-vol inversion | none |
-| `CAL.0C` | `QUA-949` | Backlog | CDS-pricer-backed single-name credit objective and diagnostics | none |
-| `CAL.1` | `QUA-950` | Backlog | industrial equity-vol surface foundation and staged model fits | `CAL.0B` |
-| `CAL.2` | `QUA-951` | Backlog | dated-instrument multi-curve hardening and calibration dependency DAG | none; ordered after the Phase 0 slices |
+| `CAL.0A` | `QUA-947` | Done | Trellis-native architecture and documentation alignment | none |
+| `CAL.0B` | `QUA-948` | Done | equity-vol carry consistency across pricing and implied-vol inversion | none |
+| `CAL.0C` | `QUA-949` | In Review | CDS-pricer-backed single-name credit objective and diagnostics | none |
+| `CAL.1` | `QUA-950` | In Review | industrial equity-vol surface foundation and staged model fits | `CAL.0B` |
+| `CAL.2` | `QUA-951` | In Review | dated-instrument multi-curve hardening and calibration dependency DAG | none; ordered after the Phase 0 slices |
 | `CAL.3` | `QUA-952` | Backlog | caplet stripping, swaption cube assembly, and rates-vol model diagnostics | `CAL.2` |
 | `CAL.4` | `QUA-953` | Backlog | schedule-aware single-name credit curve calibration | `CAL.0C` |
 | `CAL.5` | `QUA-954` | Backlog | basket-credit base-correlation workflow and tranche-surface governance | `CAL.4` |
@@ -265,22 +265,33 @@ Current checked workflow surface:
 
 What is actually shipped:
 
+- explicit quote-governance on the observed equity-vol grid before model repair,
+  with raw-versus-cleaned provenance and node-level adjustment diagnostics
+- repaired multi-expiry equity-vol surface authority from per-expiry raw-SVI
+  smiles with smile-level and calendar-level no-arbitrage diagnostics
 - single-expiry Heston smile calibration
+- full-surface Heston compression from the repaired equity-vol authority
+- staged comparison helper between repaired-surface authority and one Heston
+  compression fit, plus full-surface stage comparison
 - Dupire local-vol extraction from an implied-vol grid
+- local-vol extraction from the repaired equity-vol authority
 - typed solve-request, provenance, replay, and materialization support
 
 What is not yet at desk standard:
 
-- Heston is calibrated smile-by-smile, not across a term structure or full
-  surface
-- the implied-vol inversion used by the Heston workflow is Black-Scholes in
-  `(S, K, T, r)` space and does not carry dividend or carry inputs
+- the new surface authority now includes a bounded quote-governance pass, but
+  it is still a raw-grid local-outlier cleaner rather than a full bid/ask,
+  liquidity, staleness, or exchange-convention governance stack
+- the surface authority is still a bounded raw-SVI lane rather than a full
+  desk SSVI or broader volatility-governance stack
+- Heston now compresses the repaired surface across the full grid, but only
+  through one global parameter pack rather than a time-dependent term
+  structure, richer loss surface, or stochastic-local-vol bridge
 - the Heston objective uses a large sentinel vol on pricing/inversion failure
   instead of a governed failure surface or robust loss
-- the local-vol workflow interpolates implied vol directly and falls back to
-  implied vol when Dupire is unstable; it does not build an arbitrage-repaired
-  price surface first
-- no evident SVI or SSVI-style surface parameterization is present
+- local-vol can now consume the repaired surface, but the checked path still
+  relies on bounded sampled-grid Dupire extraction rather than a full
+  arbitrage-repaired price-surface plant
 - no stochastic-local-vol bridge is present
 - no joint SPX plus variance or SPX plus VIX calibration workflow is present
 - equity variance swap pricing exists, but no variance-surface or VIX-style
@@ -288,8 +299,10 @@ What is not yet at desk standard:
 
 Industrial implication:
 
-- Trellis currently has a real single-underlier equity-vol proving slice
-- it does not yet have a production smile-surface plant
+- Trellis now has a bounded market-object-first equity-vol surface slice with
+  explicit quote governance, repaired-surface authority, and staged
+  model-compression comparison
+- it still does not yet have a production smile-surface plant
 
 ### 2. Yield curve and multi-curve rates
 
@@ -302,20 +315,25 @@ Current checked workflow surface:
 What is actually shipped:
 
 - typed bootstrap inputs for deposit, future, and swap quotes
+- dated bootstrap inputs for deposits, futures, and swaps with schedule-aware
+  accrual generation
+- explicit multi-curve bootstrap program support with dependency order and
+  dependency-graph payloads
 - explicit multi-curve role provenance through selected discount and forecast
   curve names
 - typed rates quote maps and materialization onto `MarketState`
 
 What is not yet at desk standard:
 
-- bootstrap still works on year-fraction tenors rather than fully dated
-  schedule construction
-- no evidence of production calendars, business-day rules, stubs, IMM logic,
-  or turn handling in the bootstrap itself
-- futures are handled as simplified contracts rather than with exchange-grade
-  convexity and date logic
-- there is no visible chained OIS then forecast then basis calibration DAG in
-  the bootstrap layer itself
+- the legacy bootstrap path still works on year-fraction tenors, and even the
+  new dated path is still bounded to one first dependency-aware program rather
+  than a universal dated bootstrap plant
+- the dated path now supports stub-aware schedules and optional business-day
+  handling, but it still does not cover IMM logic, turn handling, or a full
+  exchange-grade futures and calendar stack
+- futures are still handled without exchange-grade convexity adjustments
+- there is now a visible chained OIS-then-forecast calibration DAG, but not a
+  broader basis or cross-currency dependency plant
 - no explicit smoothing or regularized curve family is present beyond the
   current differentiable least-squares setup
 - no cross-currency or collateral-aware multi-curve calibration program was
@@ -323,9 +341,10 @@ What is not yet at desk standard:
 
 Industrial implication:
 
-- Trellis preserves multi-curve role metadata better than many toy libraries
-- the actual bootstrap engine remains materially simplified versus desk curve
-  construction
+- Trellis now has a first dated, dependency-aware multi-curve bootstrap lane
+  instead of only parallel tenor-only bundles
+- the actual bootstrap engine still remains materially simplified versus a
+  full desk curve-construction plant
 
 ### 3. Yield-vol models
 
@@ -373,25 +392,25 @@ What is actually shipped:
 
 - typed single-name reduced-form credit calibration inputs
 - spread and hazard quote maps
+- CDS-pricer-backed normalization onto running-spread fit space
+- repricing, survival-probability, and forward-hazard diagnostics
 - credit-curve materialization back onto `MarketState`
 
 What is not yet at desk standard:
 
-- the current spread workflow normalizes spread to hazard using
-  `hazard ~= spread / (1 - recovery)` rather than calibrating through a CDS PV
-  engine
-- the solve objective is effectively the identity map over the hazard vector,
-  so the solver reproduces transformed hazards instead of fitting priced CDS
-  quotes
-- no schedule-aware CDS bootstrap with accrual-on-default, upfront plus running
-  conventions, standard coupon handling, or recovery sensitivity was found
+- the current workflow is still bounded to one canonical quarterly `ACT/360`
+  tenor schedule built from `market_state.settlement`
+- no full standard-coupon plus upfront workflow, IMM-roll handling, holiday
+  calendars, curve bootstrap policy, or index-credit governance was found
 - no index credit, bond/CDS basis, structural credit, or hybrid credit-equity
   workflow was found
 
 Industrial implication:
 
-- this is a typed reduced-form placeholder surface with good provenance
-- it is not yet a production CDS calibration engine
+- this is now a typed CDS-pricer-backed single-name running-spread calibration
+  slice with good provenance and diagnostics
+- it is still not yet a production CDS bootstrap or broader credit calibration
+  engine
 
 ### 5. Basket credit and correlation
 
