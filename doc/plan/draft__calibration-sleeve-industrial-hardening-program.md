@@ -9,7 +9,7 @@ The umbrella `QUA-946` and child tickets `QUA-947` through `QUA-956` are now
 filed in Linear. This document is the ordered repo-local mirror for that queue
 and should stay aligned with the live issue graph.
 
-Status mirror last synced: `2026-04-21`
+Status mirror last synced: `2026-04-22`
 
 ## Linked Context
 
@@ -68,8 +68,8 @@ Rules for coding agents:
 | --- | --- | --- | --- | --- |
 | `CAL.0A` | `QUA-947` | Done | Trellis-native architecture and documentation alignment | none |
 | `CAL.0B` | `QUA-948` | Done | equity-vol carry consistency across pricing and implied-vol inversion | none |
-| `CAL.0C` | `QUA-949` | Backlog | CDS-pricer-backed single-name credit objective and diagnostics | none |
-| `CAL.1` | `QUA-950` | Backlog | industrial equity-vol surface foundation and staged model fits | `CAL.0B` |
+| `CAL.0C` | `QUA-949` | In Review | CDS-pricer-backed single-name credit objective and diagnostics | none |
+| `CAL.1` | `QUA-950` | In Review | industrial equity-vol surface foundation and staged model fits | `CAL.0B` |
 | `CAL.2` | `QUA-951` | Backlog | dated-instrument multi-curve hardening and calibration dependency DAG | none; ordered after the Phase 0 slices |
 | `CAL.3` | `QUA-952` | Backlog | caplet stripping, swaption cube assembly, and rates-vol model diagnostics | `CAL.2` |
 | `CAL.4` | `QUA-953` | Backlog | schedule-aware single-name credit curve calibration | `CAL.0C` |
@@ -265,22 +265,33 @@ Current checked workflow surface:
 
 What is actually shipped:
 
+- explicit quote-governance on the observed equity-vol grid before model repair,
+  with raw-versus-cleaned provenance and node-level adjustment diagnostics
+- repaired multi-expiry equity-vol surface authority from per-expiry raw-SVI
+  smiles with smile-level and calendar-level no-arbitrage diagnostics
 - single-expiry Heston smile calibration
+- full-surface Heston compression from the repaired equity-vol authority
+- staged comparison helper between repaired-surface authority and one Heston
+  compression fit, plus full-surface stage comparison
 - Dupire local-vol extraction from an implied-vol grid
+- local-vol extraction from the repaired equity-vol authority
 - typed solve-request, provenance, replay, and materialization support
 
 What is not yet at desk standard:
 
-- Heston is calibrated smile-by-smile, not across a term structure or full
-  surface
-- the implied-vol inversion used by the Heston workflow is Black-Scholes in
-  `(S, K, T, r)` space and does not carry dividend or carry inputs
+- the new surface authority now includes a bounded quote-governance pass, but
+  it is still a raw-grid local-outlier cleaner rather than a full bid/ask,
+  liquidity, staleness, or exchange-convention governance stack
+- the surface authority is still a bounded raw-SVI lane rather than a full
+  desk SSVI or broader volatility-governance stack
+- Heston now compresses the repaired surface across the full grid, but only
+  through one global parameter pack rather than a time-dependent term
+  structure, richer loss surface, or stochastic-local-vol bridge
 - the Heston objective uses a large sentinel vol on pricing/inversion failure
   instead of a governed failure surface or robust loss
-- the local-vol workflow interpolates implied vol directly and falls back to
-  implied vol when Dupire is unstable; it does not build an arbitrage-repaired
-  price surface first
-- no evident SVI or SSVI-style surface parameterization is present
+- local-vol can now consume the repaired surface, but the checked path still
+  relies on bounded sampled-grid Dupire extraction rather than a full
+  arbitrage-repaired price-surface plant
 - no stochastic-local-vol bridge is present
 - no joint SPX plus variance or SPX plus VIX calibration workflow is present
 - equity variance swap pricing exists, but no variance-surface or VIX-style
@@ -288,8 +299,10 @@ What is not yet at desk standard:
 
 Industrial implication:
 
-- Trellis currently has a real single-underlier equity-vol proving slice
-- it does not yet have a production smile-surface plant
+- Trellis now has a bounded market-object-first equity-vol surface slice with
+  explicit quote governance, repaired-surface authority, and staged
+  model-compression comparison
+- it still does not yet have a production smile-surface plant
 
 ### 2. Yield curve and multi-curve rates
 

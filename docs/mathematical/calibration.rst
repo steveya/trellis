@@ -285,11 +285,59 @@ Heston Smile Calibration
 
 The supported Heston path is also a model-compression workflow. It fits one
 single-expiry smile and then materializes a reusable parameter pack back onto
-``MarketState``; it is not yet a full equity-vol surface authority.
+``MarketState``; it is not itself the authoritative equity-vol market object.
 
-The supported Heston workflow fits one single-expiry implied-vol smile onto
-the five runtime parameters :math:`(\kappa, \theta, \xi, \rho, v_0)`. Trellis
-packages that calibration as an explicit smile surface first:
+Repaired Equity-Vol Surface Authority
+-------------------------------------
+
+The first bounded market-reconstruction lane for equity vol now sits one layer
+above the old single-smile Heston and raw Dupire workflows. Trellis exposes
+``calibrate_equity_vol_surface_workflow(...)`` as a repaired multi-expiry
+equity-vol surface authority.
+
+The current shipped authority is intentionally bounded:
+
+- raw observed quotes first pass through
+  ``clean_equity_vol_surface_quotes(...)``, which keeps raw-versus-cleaned
+  provenance explicit and applies a local outlier-governance pass on the
+  observed grid before model repair
+- each expiry smile is fit with a raw-SVI parameterization in total-variance
+  space
+- the fit uses explicit positive-residual penalties for smile-level
+  positivity, call-price monotonicity, and call-price convexity on a
+  diagnostic strike grid
+- the assembled surface applies a calendar-total-variance repair across
+  expiries before answering ``black_vol(expiry, strike)`` queries
+
+That gives Trellis a first market-object-first equity-vol surface that can be
+materialized back onto ``MarketState`` as a ``black_vol_surface`` instead of
+jumping directly to a reduced-model parameter pack.
+
+The workflow returns:
+
+- the raw multi-expiry input surface
+- the cleaned multi-expiry input surface plus node-level quote-cleaning
+  diagnostics and adjustments
+- one typed solve request and replay artifact per fitted SVI smile
+- smile-level no-arbitrage diagnostics before and after repair
+- surface-level calendar diagnostics before and after repair
+- the repaired implied-vol surface itself for downstream pricing or later
+  model-compression stages
+
+This remains a bounded first surface authority rather than a full production
+SPX plant. The checked implementation now has an explicit quote-governance
+stage, but it is still raw-SVI-based, not yet a full SSVI, bid/ask, liquidity,
+or exchange-convention governance stack.
+
+The supported Heston workflow now comes in two bounded forms:
+
+- ``calibrate_heston_smile_workflow(...)`` fits one single-expiry implied-vol
+  smile onto the five runtime parameters :math:`(\kappa, \theta, \xi, \rho, v_0)`
+- ``calibrate_heston_surface_from_equity_vol_surface_workflow(...)`` compresses
+  the repaired multi-expiry equity-vol authority into one reusable Heston
+  parameter pack across the full fitted grid
+
+Trellis packages that calibration as explicit smile or surface targets first:
 
 - ``build_heston_smile_surface(...)`` stores the spot, rate, dividend yield,
   ordered strike/vol points, optional weights, and warning flags
@@ -297,6 +345,16 @@ packages that calibration as an explicit smile surface first:
   ``SolveRequest`` substrate and runs a least-squares fit in implied-vol space
 - ``calibrate_heston_smile_workflow(...)`` is the supported raw-input wrapper
   that returns the full ``HestonSmileCalibrationResult`` in one step
+- ``build_heston_surface_input(...)`` stores the full ordered expiry/strike
+  grid for a multi-expiry fit
+- ``fit_heston_surface(...)`` lowers the full grid onto one typed
+  ``SolveRequest`` and calibrates one global Heston parameter pack across the
+  whole surface
+- ``calibrate_heston_surface_workflow(...)`` is the supported raw-input wrapper
+  for that full-grid fit
+- ``calibrate_heston_surface_from_equity_vol_surface_workflow(...)`` is the
+  staged model-compression wrapper that consumes the repaired surface
+  authority rather than raw quotes directly
 
 The shipped Heston workflow now keeps the carry convention aligned across the
 entire priced-to-implied-vol path for this supported slice:
@@ -313,12 +371,24 @@ The Heston workflow keeps the same audit contract as the rates and SABR paths:
 
 - typed ``solve_request`` and normalized ``solve_result``
 - governed ``solver_provenance`` and ``solver_replay_artifact``
-- stable fit diagnostics including per-strike residuals, RMS errors, and ATM error
+- stable fit diagnostics including per-strike or per-expiry residuals, RMS
+  errors, and ATM error
 - a reusable ``model_parameters`` payload and ``runtime_binding`` that can be
   projected back onto ``MarketState`` for later pricing or simulation
 
-This remains a supported single-smile fit rather than a full term-structure or
-surface calibration plant, but the checked workflow is now explicit enough for
+Trellis now also exposes
+``compare_heston_to_equity_vol_surface_workflow(...)`` for one bounded staged
+comparison: the repaired equity-vol surface can be compared directly against a
+later Heston compression fit on a selected expiry slice so the market-object
+stage and the reduced-model stage are not conflated.
+
+Trellis also exposes
+``compare_heston_surface_to_equity_vol_surface_workflow(...)`` for the same
+stage separation on the full observed expiry/strike grid.
+
+This remains a bounded global-surface compression fit rather than a full
+time-dependent Heston term structure, stochastic-local-vol bridge, or broader
+stochastic-vol plant, but the checked workflow is now explicit enough for
 replay, runtime reuse, and later performance benchmarking.
 
 Dupire Local Volatility
@@ -364,6 +434,12 @@ The supported workflow wrapper now sits one step above that hardened substrate.
 ``LocalVolCalibrationResult`` but tags it as the supported workflow surface and
 lets callers apply the calibrated local-vol surface back onto ``MarketState``
 without rebuilding an ad hoc wrapper.
+
+The local-vol lane can now also consume the repaired equity-vol authority
+instead of raw implied-vol quotes directly.
+``calibrate_local_vol_surface_from_equity_vol_surface_workflow(...)`` samples
+the repaired surface on a chosen grid and then runs the same bounded Dupire
+workflow from that repaired implied-vol surface.
 
 Carry inputs are now recorded explicitly on the local-vol calibration target,
 summary, and provenance payloads. For this checked slice the local-vol workflow
@@ -640,9 +716,20 @@ Implementation
 .. autofunction:: trellis.models.calibration.sabr_fit.calibrate_sabr_smile_workflow
 .. autofunction:: trellis.models.calibration.sabr_fit.build_sabr_smile_surface
 .. autofunction:: trellis.models.calibration.sabr_fit.fit_sabr_smile_surface
+.. autofunction:: trellis.models.calibration.equity_vol_surface.clean_equity_vol_surface_quotes
+.. autofunction:: trellis.models.calibration.equity_vol_surface.calibrate_equity_vol_surface_workflow
+.. autofunction:: trellis.models.calibration.equity_vol_surface.fit_equity_vol_surface
+.. autofunction:: trellis.models.calibration.equity_vol_surface.build_equity_vol_surface_input
+.. autofunction:: trellis.models.calibration.equity_vol_surface.calibrate_local_vol_surface_from_equity_vol_surface_workflow
+.. autofunction:: trellis.models.calibration.equity_vol_surface.compare_heston_to_equity_vol_surface_workflow
+.. autofunction:: trellis.models.calibration.equity_vol_surface.compare_heston_surface_to_equity_vol_surface_workflow
 .. autofunction:: trellis.models.calibration.heston_fit.calibrate_heston_smile_workflow
 .. autofunction:: trellis.models.calibration.heston_fit.build_heston_smile_surface
 .. autofunction:: trellis.models.calibration.heston_fit.fit_heston_smile_surface
+.. autofunction:: trellis.models.calibration.heston_fit.calibrate_heston_surface_workflow
+.. autofunction:: trellis.models.calibration.heston_fit.calibrate_heston_surface_from_equity_vol_surface_workflow
+.. autofunction:: trellis.models.calibration.heston_fit.build_heston_surface_input
+.. autofunction:: trellis.models.calibration.heston_fit.fit_heston_surface
 .. autofunction:: trellis.models.calibration.local_vol.calibrate_local_vol_surface_workflow
 .. autofunction:: trellis.models.calibration.local_vol.dupire_local_vol_result
 .. autofunction:: trellis.models.calibration.local_vol.dupire_local_vol
@@ -655,6 +742,34 @@ Implementation
 .. autoclass:: trellis.models.calibration.heston_fit.HestonSmileFitDiagnostics
    :members:
 .. autoclass:: trellis.models.calibration.heston_fit.HestonSmileCalibrationResult
+   :members:
+.. autoclass:: trellis.models.calibration.heston_fit.HestonSurfaceInput
+   :members:
+.. autoclass:: trellis.models.calibration.heston_fit.HestonSurfaceFitDiagnostics
+   :members:
+.. autoclass:: trellis.models.calibration.heston_fit.HestonSurfaceCalibrationResult
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.EquityVolSurfaceInput
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.EquityVolQuoteAdjustment
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.EquityVolQuoteCleaningDiagnostics
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.EquityVolQuoteCleaningResult
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.SVISmileParameters
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.SVISmileFitDiagnostics
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.SVISmileFitResult
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.EquityVolSurfaceFitDiagnostics
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.EquityVolSurfaceAuthorityResult
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.EquityVolStageComparisonResult
+   :members:
+.. autoclass:: trellis.models.calibration.equity_vol_surface.EquityVolSurfaceStageComparisonResult
    :members:
 .. autoclass:: trellis.models.calibration.sabr_fit.SABRSmileSurface
    :members:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as raw_np
 import pytest
 
 
@@ -35,6 +36,18 @@ def test_supported_calibration_workflows_preserve_replay_contracts_and_fit_toler
     assert heston.solver_replay_artifact.request["request_id"] == "heston_smile_least_squares"
     assert heston.diagnostics.max_abs_vol_error < 1e-4
     assert heston.runtime_binding.model_parameters["model_family"] == "heston"
+
+    equity_vol_surface = scenarios["equity_vol_surface"].cold_runner()
+    assert equity_vol_surface.provenance["source_ref"] == "calibrate_equity_vol_surface_workflow"
+    assert equity_vol_surface.quote_cleaning is not None
+    assert equity_vol_surface.summary["surface_model_family"] == "raw_svi_surface"
+
+    heston_surface = scenarios["heston_surface"].cold_runner()
+    assert heston_surface.solver_provenance.backend["backend_id"] == "scipy"
+    assert heston_surface.solver_replay_artifact.request["request_id"] == "heston_surface_least_squares"
+    assert heston_surface.diagnostics.max_abs_vol_error < 0.03
+    assert heston_surface.provenance["source_ref"] == "calibrate_heston_surface_from_equity_vol_surface_workflow"
+    assert heston_surface.runtime_binding.model_parameters["model_family"] == "heston"
 
     local_vol = scenarios["local_vol"].cold_runner()
     assert local_vol.provenance["source_ref"] == "calibrate_local_vol_surface_workflow"
@@ -78,6 +91,20 @@ def test_supported_calibration_workflows_are_replay_stable_within_tolerance():
     for key in ("kappa", "theta", "xi", "rho", "v0"):
         assert second_heston.model_parameters[key] == pytest.approx(first_heston.model_parameters[key], abs=1e-8)
 
+    first_equity_vol_surface = scenarios["equity_vol_surface"].cold_runner()
+    second_equity_vol_surface = scenarios["equity_vol_surface"].cold_runner()
+    assert second_equity_vol_surface.provenance["quote_cleaning"] == first_equity_vol_surface.provenance["quote_cleaning"]
+    assert raw_np.asarray(second_equity_vol_surface.repaired_vols, dtype=float) == pytest.approx(
+        raw_np.asarray(first_equity_vol_surface.repaired_vols, dtype=float),
+        abs=1e-10,
+    )
+
+    first_heston_surface = scenarios["heston_surface"].cold_runner()
+    second_heston_surface = scenarios["heston_surface"].cold_runner()
+    assert second_heston_surface.solver_replay_artifact.request == first_heston_surface.solver_replay_artifact.request
+    for key in ("kappa", "theta", "xi", "rho", "v0"):
+        assert second_heston_surface.model_parameters[key] == pytest.approx(first_heston_surface.model_parameters[key], abs=1e-8)
+
     first_local_vol = scenarios["local_vol"].cold_runner()
     second_local_vol = scenarios["local_vol"].cold_runner()
     assert second_local_vol.provenance["calibration_target"] == first_local_vol.provenance["calibration_target"]
@@ -97,22 +124,28 @@ def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
     report = build_supported_calibration_benchmark_report(repeats=1, warmups=0)
     cases = {case["workflow"]: case for case in report["cases"]}
 
-    assert report["summary"]["workflow_count"] == 5
-    assert report["summary"]["warm_start_workflow_count"] == 3
-    assert set(cases) == {"hull_white", "sabr", "heston", "local_vol", "credit"}
+    assert report["summary"]["workflow_count"] == 7
+    assert report["summary"]["warm_start_workflow_count"] == 4
+    assert set(cases) == {"hull_white", "sabr", "equity_vol_surface", "heston", "heston_surface", "local_vol", "credit"}
+    assert cases["equity_vol_surface"]["warm"] is None
     assert cases["local_vol"]["warm"] is None
     assert cases["credit"]["warm"] is None
     assert cases["hull_white"]["warm"] is not None
     assert cases["sabr"]["warm"] is not None
     assert cases["heston"]["warm"] is not None
+    assert cases["heston_surface"]["warm"] is not None
     roles = cases["hull_white"]["metadata"]["multi_curve_roles"]
     assert roles["discount_curve"] == "usd_ois"
     assert roles["forecast_curve"] == "USD-SOFR-3M"
     assert roles["rate_index"] == "USD-SOFR-3M"
     assert cases["sabr"]["metadata"]["surface_name"] == "usd_rates_smile"
     assert cases["sabr"]["metadata"]["synthetic_generation_contract_version"] == "v2"
+    assert cases["equity_vol_surface"]["metadata"]["surface_name"] == "spx_surface_authority"
+    assert cases["equity_vol_surface"]["metadata"]["synthetic_generation_contract_version"] == "v2"
     assert cases["heston"]["metadata"]["surface_name"] == "spx_heston_implied_vol"
     assert cases["heston"]["metadata"]["synthetic_generation_contract_version"] == "v2"
+    assert cases["heston_surface"]["metadata"]["surface_name"] == "spx_surface_authority"
+    assert cases["heston_surface"]["metadata"]["synthetic_generation_contract_version"] == "v2"
     assert cases["local_vol"]["metadata"]["source_surface_name"] == "spx_heston_implied_vol"
     assert cases["local_vol"]["metadata"]["surface_name"] == "spx_local_vol"
     assert cases["local_vol"]["metadata"]["synthetic_generation_contract_version"] == "v2"
@@ -123,12 +156,13 @@ def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
     cases = {case["workflow"]: case for case in payload["cases"]}
 
     assert payload["benchmark_name"] == "supported_calibration_workflows"
-    assert payload["summary"]["workflow_count"] == 5
-    assert payload["summary"]["warm_start_workflow_count"] == 3
-    assert set(cases) == {"hull_white", "sabr", "heston", "local_vol", "credit"}
+    assert payload["summary"]["workflow_count"] == 7
+    assert payload["summary"]["warm_start_workflow_count"] == 4
+    assert set(cases) == {"hull_white", "sabr", "equity_vol_surface", "heston", "heston_surface", "local_vol", "credit"}
+    assert cases["equity_vol_surface"]["warm"] is None
     assert cases["local_vol"]["warm"] is None
     assert cases["credit"]["warm"] is None
-    for workflow in ("hull_white", "sabr", "heston"):
+    for workflow in ("hull_white", "sabr", "heston", "heston_surface"):
         assert cases[workflow]["warm"] is not None
         assert cases[workflow]["warm_speedup"] > 1.0
     roles = cases["hull_white"]["metadata"]["multi_curve_roles"]
@@ -137,8 +171,12 @@ def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
     assert roles["rate_index"] == "USD-SOFR-3M"
     assert cases["sabr"]["metadata"]["surface_name"] == "usd_rates_smile"
     assert cases["sabr"]["metadata"]["synthetic_generation_contract_version"] == "v2"
+    assert cases["equity_vol_surface"]["metadata"]["surface_name"] == "spx_surface_authority"
+    assert cases["equity_vol_surface"]["metadata"]["synthetic_generation_contract_version"] == "v2"
     assert cases["heston"]["metadata"]["surface_name"] == "spx_heston_implied_vol"
     assert cases["heston"]["metadata"]["synthetic_generation_contract_version"] == "v2"
+    assert cases["heston_surface"]["metadata"]["surface_name"] == "spx_surface_authority"
+    assert cases["heston_surface"]["metadata"]["synthetic_generation_contract_version"] == "v2"
     assert cases["local_vol"]["metadata"]["source_surface_name"] == "spx_heston_implied_vol"
     assert cases["local_vol"]["metadata"]["surface_name"] == "spx_local_vol"
     assert cases["local_vol"]["metadata"]["synthetic_generation_contract_version"] == "v2"
