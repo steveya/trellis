@@ -71,7 +71,7 @@ Rules for coding agents:
 | `CAL.0C` | `QUA-949` | In Review | CDS-pricer-backed single-name credit objective and diagnostics | none |
 | `CAL.1` | `QUA-950` | In Review | industrial equity-vol surface foundation and staged model fits | `CAL.0B` |
 | `CAL.2` | `QUA-951` | In Review | dated-instrument multi-curve hardening and calibration dependency DAG | none; ordered after the Phase 0 slices |
-| `CAL.3` | `QUA-952` | Backlog | caplet stripping, swaption cube assembly, and rates-vol model diagnostics | `CAL.2` |
+| `CAL.3` | `QUA-952` | In Review | caplet stripping, swaption cube assembly, and rates-vol model diagnostics | `CAL.2` |
 | `CAL.4` | `QUA-953` | Backlog | schedule-aware single-name credit curve calibration | `CAL.0C` |
 | `CAL.5` | `QUA-954` | Backlog | basket-credit base-correlation workflow and tranche-surface governance | `CAL.4` |
 | `CAL.6` | `QUA-955` | Backlog | first cross-asset calibration slice on explicit dependency DAGs | set the concrete upstream blockers during implementation once the first supported slice is chosen |
@@ -351,34 +351,43 @@ Industrial implication:
 Current checked workflow surface:
 
 - `trellis/models/calibration/rates.py`
+- `trellis/models/calibration/rates_vol_surface.py`
 - `trellis/models/calibration/sabr_fit.py`
 
 What is actually shipped:
 
 - cap/floor flat Black-vol inversion
 - swaption flat Black-vol inversion
+- bounded caplet stripping into a reusable caplet-vol surface
+- bounded tenor-aware swaption cube assembly with runtime materialization onto
+  `MarketState.vol_surface`
+- staged SABR compression over expiry-tenor swaption-cube slices
 - SABR single-smile fit
 - one strip-level Hull-White fit for a constant `(mean_reversion, sigma)` pair
 
 What is not yet at desk standard:
 
-- cap/floor and swaption workflows are one-flat-vol-per-quote helpers, not a
-  caplet strip or swaption cube plant
-- SABR is a single-smile workflow rather than an expiry-tenor cube with smooth
-  arbitrage-aware interpolation
+- caplet stripping still assumes a one-step ladder of cap quotes and does not
+  yet cover the broader desk caplet-bootstrap and normal/shifted-vol surface
+  plant
+- the swaption cube is still bounded to a rectangular absolute-strike grid and
+  does not yet provide full desk-style relative-moneyness, arbitrage-repair,
+  or bid/ask governance
+- SABR is now cube-slice aware, but still fits each expiry-tenor slice
+  independently rather than through a smooth arbitrage-aware global cube
 - the supported Hull-White fit is constant-parameter across the strip, not a
   time-dependent short-rate calibration
 - no G2++, LMM, displaced-diffusion, or normal-vol calibration workflow was
   found as a first-class checked route
-- no evident co-calibration loop ties the rates vol surface to the lattice or
-  short-rate model used downstream
+- no evident co-calibration loop yet ties the rates-vol authority to a richer
+  short-rate or market-model family beyond the bounded Hull-White strip
 
 Industrial implication:
 
-- the rates-vol sleeve currently covers bounded inversion and one simple model
-  fit
-- it does not yet cover the cube, stripping, model-selection, or term-structure
-  problems that matter on a desk
+- the rates-vol sleeve now has a first market-object-first layer plus staged
+  SABR comparison diagnostics
+- it still does not yet cover the broader cube-governance, model-selection, or
+  term-structure problems that matter on a desk
 
 ### 4. Credit curve
 
