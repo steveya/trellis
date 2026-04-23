@@ -70,7 +70,7 @@ Rules for coding agents:
 | `CAL.0B` | `QUA-948` | Done | equity-vol carry consistency across pricing and implied-vol inversion | none |
 | `CAL.0C` | `QUA-949` | In Review | CDS-pricer-backed single-name credit objective and diagnostics | none |
 | `CAL.1` | `QUA-950` | In Review | industrial equity-vol surface foundation and staged model fits | `CAL.0B` |
-| `CAL.2` | `QUA-951` | In Progress | dated-instrument multi-curve hardening and calibration dependency DAG | none; ordered after the Phase 0 slices |
+| `CAL.2` | `QUA-951` | In Review | dated-instrument multi-curve hardening and calibration dependency DAG | none; ordered after the Phase 0 slices |
 | `CAL.3` | `QUA-952` | Backlog | caplet stripping, swaption cube assembly, and rates-vol model diagnostics | `CAL.2` |
 | `CAL.4` | `QUA-953` | Backlog | schedule-aware single-name credit curve calibration | `CAL.0C` |
 | `CAL.5` | `QUA-954` | Backlog | basket-credit base-correlation workflow and tranche-surface governance | `CAL.4` |
