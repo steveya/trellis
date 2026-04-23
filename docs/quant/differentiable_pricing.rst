@@ -160,6 +160,59 @@ keeping today's ``autograd`` boundary honest.
 These paths now use autograd-friendly primitives and avoid scalarization inside
 the traced region.
 
+Product-Family Gradient Matrix
+------------------------------
+
+``tests/test_verification/test_autograd_gradient_matrix.py`` is the checked
+product-family gradient matrix for the public support contract. It is
+representative, not exhaustive: each row pins one product family, derivative
+method, fallback boundary, or unsupported lane that future generated routes and
+runtime reporting must not overstate.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Family id
+     - Product family
+     - Checked derivative method
+     - Support status and boundary
+   * - ``analytical_black76``
+     - Black76 closed-form route
+     - ``autodiff_scalar_gradient``
+     - supported on smooth interior inputs; compared against finite
+       differences
+   * - ``public_curve_nodes``
+     - public ``YieldCurve`` and ``CreditCurve`` node routes
+     - ``autodiff_public_curve``
+     - supported for node-value sensitivities; query-location derivatives are
+       only piecewise away from knots
+   * - ``grid_vol_surface_bucketed``
+     - ``GridVolSurface`` node sensitivities and runtime bucketed vega
+     - ``surface_bucket_bump``
+     - partial support: node values are traceable, while runtime surface risk is
+       explicit bucket bumping rather than scalar surface-native AD
+   * - ``smooth_monte_carlo_pathwise``
+     - smooth Monte Carlo route through ``simulate_with_shocks(...)`` /
+       ``MonteCarloEngine.price(..., shocks=..., differentiable=True)``
+     - ``autodiff_pathwise``
+     - supported only for deterministic explicit-shock paths and smooth payoff
+       contracts
+   * - ``rates_bootstrap_calibration``
+     - rates bootstrap calibration route
+     - ``autodiff_vector_jacobian``
+     - supported through the repricing Jacobian recorded in
+       ``solver_provenance``
+   * - ``quanto_generated_helper``
+     - route-generated quanto analytical helper route
+     - ``autodiff_scalar_gradient``
+     - supported through the semantic helper-facing raw pricing path, not a
+       claim that every generated adapter preserves traced values
+   * - ``barrier_mc_discontinuous_policy``
+     - barrier Monte Carlo discontinuous policy route
+     - ``unsupported_discontinuous_pathwise``
+     - unsupported for pathwise AD; the governed fallback is
+       ``finite_difference_bump_reprice`` with fail-closed policy metadata
+
 Where Trellis Still Stays Forward-Only
 --------------------------------------
 
