@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from autograd.scipy.stats import norm
 
 from trellis.core.differentiable import (
     get_backend_capabilities,
@@ -54,31 +55,73 @@ def test_backend_capabilities_describe_current_and_future_surface():
     assert capabilities.supports("jacobian") is True
     assert capabilities.supports("hessian") is True
     assert capabilities.supports("jvp") is False
-    assert capabilities.supports("vjp") is False
-    assert capabilities.supports("hessian_vector_product") is False
+    assert capabilities.supports("vjp") is True
+    assert capabilities.supports("hessian_vector_product") is True
     assert capabilities.supports("portfolio_aad") is False
     assert capabilities.to_payload()["operators"]["grad"] is True
     assert "portfolio_aad" in capabilities.unsupported_operators
+    assert "vjp" in capabilities.supported_operators
+    assert "hessian_vector_product" in capabilities.supported_operators
 
 
 def test_require_capability_accepts_current_operators_and_rejects_future_hooks():
     require_capability("grad")
     require_capability("jacobian")
     require_capability("hessian")
+    require_capability("vjp")
+    require_capability("hessian_vector_product")
 
     assert supports_capability("grad") is True
-    assert supports_capability("vjp") is False
+    assert supports_capability("vjp") is True
+    assert supports_capability("portfolio_aad") is False
 
-    with pytest.raises(NotImplementedError, match="vjp"):
-        require_capability("vjp")
+    with pytest.raises(NotImplementedError, match="portfolio_aad"):
+        require_capability("portfolio_aad")
     with pytest.raises(ValueError, match="unknown differentiable backend capability"):
         supports_capability("custom_adjoint")
 
 
-def test_future_aad_hooks_fail_closed_with_capability_messages():
-    with pytest.raises(NotImplementedError, match="jvp"):
-        jvp(lambda x: x * x, 1.0, 1.0)
-    with pytest.raises(NotImplementedError, match="vjp"):
-        vjp(lambda x: x * x, 1.0)
-    with pytest.raises(NotImplementedError, match="hessian_vector_product"):
-        hessian_vector_product(lambda x: x * x, 1.0, 1.0)
+def test_vjp_returns_value_and_pullback_matching_dense_jacobian_transpose():
+    np_backend = get_numpy()
+
+    def vector_function(x):
+        return np_backend.array(
+            [
+                x[0] * x[1],
+                x[0] ** 2 + np_backend.sin(x[1]),
+                np_backend.exp(x[0] - 0.5 * x[1]),
+            ]
+        )
+
+    x = np_backend.array([1.2, -0.7])
+    cotangent = np_backend.array([0.25, -1.5, 0.75])
+
+    value, pullback = vjp(vector_function, x)
+    dense_jacobian = jacobian(vector_function)(x)
+
+    assert np.allclose(value, vector_function(x))
+    assert np.allclose(pullback(cotangent), np.asarray(dense_jacobian).T @ cotangent)
+
+
+def test_hessian_vector_product_matches_dense_hessian_vector_multiplication():
+    np_backend = get_numpy()
+
+    def scalar_objective(x):
+        return (
+            np_backend.sum(x**4)
+            + x[0] * np_backend.sin(x[1])
+            + 0.5 * x[2] * x[0] ** 2
+        )
+
+    x = np_backend.array([0.8, -0.3, 1.4])
+    vector = np_backend.array([0.25, -1.5, 0.75])
+
+    hvp = hessian_vector_product(scalar_objective, x, vector)
+    dense_hessian = hessian(scalar_objective)(x)
+
+    assert np.allclose(hvp, np.asarray(dense_hessian) @ vector)
+
+
+def test_jvp_fails_closed_with_stock_autograd_normal_cdf_gap_reason():
+    with pytest.raises(NotImplementedError, match="norm.cdf"):
+        jvp(lambda x: norm.cdf(x), 1.0, 0.25)
