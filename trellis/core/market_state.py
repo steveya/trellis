@@ -89,6 +89,11 @@ class MarketState:
         ``"forecast_curve"``.
     market_provenance : dict[str, object] or None
         Snapshot-level provenance for the resolved market inputs, when available.
+    correlation_surface : object or None
+        Default calibrated or resolved correlation surface for basket / joint
+        routes that can consume one first-class object.
+    correlation_surfaces : dict[str, object] or None
+        Named correlation surfaces keyed by calibration or market-data name.
     """
 
     as_of: date
@@ -111,6 +116,8 @@ class MarketState:
     model_parameter_sets: dict[str, dict[str, object]] | None = None
     selected_curve_names: dict[str, str] | None = None
     market_provenance: dict[str, object] | None = None
+    correlation_surface: object | None = None
+    correlation_surfaces: dict[str, object] | None = None
 
     def __post_init__(self):
         """Auto-fill single-valued defaults from their dict counterparts.
@@ -146,6 +153,13 @@ class MarketState:
                     self,
                     "model_parameters",
                     next(iter(self.model_parameter_sets.values())),
+                )
+        if self.correlation_surface is None and self.correlation_surfaces:
+            if len(self.correlation_surfaces) == 1:
+                object.__setattr__(
+                    self,
+                    "correlation_surface",
+                    next(iter(self.correlation_surfaces.values())),
                 )
 
     def forecast_forward_curve(self, rate_index: str | None = None):
@@ -233,6 +247,8 @@ class MarketState:
             caps.add("jump_parameters")
         if self.model_parameters is not None or self.model_parameter_sets:
             caps.add("model_parameters")
+        if self.correlation_surface is not None or self.correlation_surfaces:
+            caps.add("correlation_surface")
         return caps
 
     def summarize_for_audit(self) -> dict:

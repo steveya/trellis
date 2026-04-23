@@ -14,10 +14,17 @@ CalibratedObjectKind = Literal[
     "black_vol_surface",
     "local_vol_surface",
     "credit_curve",
+    "correlation_surface",
 ]
 
 _SUPPORTED_OBJECT_KINDS = frozenset(
-    {"model_parameter_set", "black_vol_surface", "local_vol_surface", "credit_curve"}
+    {
+        "model_parameter_set",
+        "black_vol_surface",
+        "local_vol_surface",
+        "credit_curve",
+        "correlation_surface",
+    }
 )
 
 
@@ -227,6 +234,38 @@ def materialize_credit_curve(
     )
 
 
+def materialize_correlation_surface(
+    market_state: MarketState,
+    *,
+    surface_name: str,
+    correlation_surface: object,
+    source_kind: str,
+    source_ref: str = "",
+    selected_curve_roles: Mapping[str, str] | None = None,
+    metadata: Mapping[str, object] | None = None,
+) -> MarketState:
+    """Materialize a calibrated correlation surface onto ``MarketState``."""
+    surface_map = dict(market_state.correlation_surfaces or {})
+    surface_map[surface_name] = correlation_surface
+    updated_state = replace(
+        market_state,
+        correlation_surface=correlation_surface,
+        correlation_surfaces=surface_map,
+    )
+    return _record_materialization(
+        updated_state,
+        CalibratedObjectMaterialization(
+            object_kind="correlation_surface",
+            object_name=surface_name,
+            target_fields=("correlation_surface", "correlation_surfaces"),
+            source_kind=source_kind,
+            source_ref=source_ref,
+            selected_curve_roles=selected_curve_roles or {},
+            metadata=metadata or {},
+        ),
+    )
+
+
 def resolve_materialized_object(
     market_state: MarketState,
     *,
@@ -256,5 +295,6 @@ __all__ = [
     "materialize_black_vol_surface",
     "materialize_local_vol_surface",
     "materialize_credit_curve",
+    "materialize_correlation_surface",
     "resolve_materialized_object",
 ]

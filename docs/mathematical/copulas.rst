@@ -95,6 +95,25 @@ In practice, the market quotes tranche spreads that imply different
 correlations :math:`\rho` for each tranche. The **base correlation** framework
 finds the :math:`\rho` that reprices each equity tranche :math:`[0, d_i]`.
 
+The checked calibration support is narrower than a production
+base-correlation bootstrap. ``trellis.models.calibration.basket_credit`` fits
+exact-node tranche-implied correlations for homogeneous basket fixtures that
+share one representative calibrated ``CreditCurve``. Inputs are normalized by
+maturity, attachment, detachment, quote family, quote style, and quote value.
+Supported quote families use the existing bounded calibration vocabulary:
+``Price`` for tranche PV or expected-loss-fraction targets and ``Spread`` for
+fair-spread-in-basis-points targets.
+
+The fitted ``BasketCreditCorrelationSurface`` records quote residuals, root
+failures for impossible quotes, simple tranche-bound warnings, and
+monotonicity/smoothness warnings. It can be materialized on ``MarketState`` as
+``correlation_surface`` so downstream basket-tranche helpers can consume it
+when a contract does not carry an explicit correlation.
+
+This does not yet support heterogeneous name-level credit curves, index-credit
+conventions, bid/ask tranche surfaces, interpolated base-correlation term
+structures, or arbitrage repair across a production tranche grid.
+
 Implementation
 --------------
 

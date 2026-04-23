@@ -562,10 +562,21 @@ The resolved source can be:
 - an explicit matrix or scalar
 - an empirical estimate from observed path data
 - an implied source tied to liquid market inputs
+- a calibrated ``correlation_surface`` materialized on ``MarketState``
 - a synthetic prior for mock, stress, or proving runs
 
 The trace keeps the source kind, sample size, estimator, seed, and any
 regularization that was needed before pricing.
+
+For basket-credit tranche workflows, the first calibrated source is the
+homogeneous tranche-implied correlation surface produced by
+``calibrate_homogeneous_basket_tranche_correlation_workflow(...)``. It consumes
+an already materialized representative single-name ``CreditCurve`` and writes a
+``correlation_surface`` calibrated object back to ``MarketState``. Downstream
+tranche pricing uses an explicit contract correlation when one is provided;
+otherwise it can resolve an exact maturity/attachment/detachment node from the
+selected calibrated surface. This remains a homogeneous representative-curve
+path, not heterogeneous name-level market data.
 
 Multi-Curve
 -----------
