@@ -306,3 +306,9 @@ def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
     assert cases["quanto_correlation"]["metadata"]["correlation_keys"] == ["EURUSD_corr"]
     assert cases["quanto_correlation"]["metadata"]["perturbation_diagnostic"]["threshold_breaches"] == {}
     assert cases["quanto_correlation"]["latency_envelope"]["status"] == "pass"
+    for case in cases.values():
+        assert case["cold"]["repeats"] == 3
+        assert case["cold"]["warmups"] == 1
+        if case["warm"] is not None:
+            assert case["warm"]["repeats"] == 3
+            assert case["warm"]["warmups"] == 1
