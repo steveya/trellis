@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from datetime import date
 from types import MappingProxyType
 from typing import Literal, Mapping, Sequence
 
 import numpy as raw_np
 
+from trellis.conventions.calendar import BusinessDayAdjustment, Calendar
 from trellis.conventions.day_count import DayCountConvention
+from trellis.conventions.schedule import RollConvention, StubType
+from trellis.core.date_utils import build_period_schedule, year_fraction
 from trellis.core.differentiable import get_numpy, jacobian
+from trellis.core.market_state import MarketState
 from trellis.core.types import Frequency
 from trellis.curves.interpolation import linear_interp
 from trellis.models.calibration.solve_request import (
@@ -27,6 +32,7 @@ from trellis.models.calibration.solve_request import (
 np = get_numpy()
 
 BootstrapInstrumentType = Literal["deposit", "future", "swap"]
+BootstrapCurveRole = Literal["discount_curve", "forecast_curve", "basis_curve"]
 
 
 def _freeze_mapping(mapping: Mapping[str, object] | None) -> Mapping[str, object]:
@@ -223,6 +229,244 @@ class BootstrapCurveInputBundle:
             "rate_index": self.rate_index,
             "conventions": self.conventions.to_payload(),
             "instruments": [inst.to_payload() for inst in self.sorted_instruments()],
+            "metadata": dict(self.metadata),
+        }
+
+
+@dataclass(frozen=True)
+class DatedBootstrapInstrument:
+    """One dated market calibration instrument quote for a bootstrap."""
+
+    start_date: date
+    end_date: date
+    quote: float
+    instrument_type: BootstrapInstrumentType = "deposit"
+    label: str = ""
+    day_count: DayCountConvention | None = None
+    fixed_frequency: Frequency | None = None
+    fixed_day_count: DayCountConvention | None = None
+    float_frequency: Frequency | None = None
+    float_day_count: DayCountConvention | None = None
+    stub_type: StubType = StubType.SHORT_LAST
+    roll_convention: RollConvention = RollConvention.NONE
+    calendar: Calendar | None = None
+    business_day_adjustment: BusinessDayAdjustment = BusinessDayAdjustment.UNADJUSTED
+    metadata: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        instrument_types = {"deposit", "future", "swap"}
+        if self.instrument_type not in instrument_types:
+            raise ValueError(
+                f"instrument_type must be one of {sorted(instrument_types)}, got {self.instrument_type!r}"
+            )
+        if self.end_date <= self.start_date:
+            raise ValueError("end_date must be after start_date")
+        object.__setattr__(self, "quote", float(self.quote))
+        object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+
+    def to_payload(self) -> dict[str, object]:
+        """Return a deterministic JSON-friendly payload."""
+        return {
+            "start_date": self.start_date.isoformat(),
+            "end_date": self.end_date.isoformat(),
+            "quote": float(self.quote),
+            "instrument_type": self.instrument_type,
+            "label": self.label,
+            "day_count": None if self.day_count is None else _enum_name(self.day_count),
+            "fixed_frequency": None if self.fixed_frequency is None else _enum_name(self.fixed_frequency),
+            "fixed_day_count": None if self.fixed_day_count is None else _enum_name(self.fixed_day_count),
+            "float_frequency": None if self.float_frequency is None else _enum_name(self.float_frequency),
+            "float_day_count": None if self.float_day_count is None else _enum_name(self.float_day_count),
+            "stub_type": _enum_name(self.stub_type),
+            "roll_convention": _enum_name(self.roll_convention),
+            "calendar": None if self.calendar is None else self.calendar.name,
+            "business_day_adjustment": _enum_name(self.business_day_adjustment),
+            "metadata": dict(self.metadata),
+        }
+
+
+@dataclass(frozen=True)
+class DatedBootstrapCurveInputBundle:
+    """Reusable dated market-instrument and convention bundle for one curve."""
+
+    instruments: tuple[DatedBootstrapInstrument, ...]
+    curve_name: str
+    currency: str = ""
+    rate_index: str | None = None
+    curve_role: BootstrapCurveRole = "discount_curve"
+    dependency_names: Mapping[str, str] = field(default_factory=dict)
+    conventions: BootstrapConventionBundle = field(default_factory=BootstrapConventionBundle)
+    metadata: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        instruments = tuple(self.instruments)
+        if not instruments:
+            raise ValueError("DatedBootstrapCurveInputBundle requires at least one instrument")
+        if not str(self.curve_name or "").strip():
+            raise ValueError("DatedBootstrapCurveInputBundle requires curve_name")
+        if self.curve_role not in {"discount_curve", "forecast_curve", "basis_curve"}:
+            raise ValueError("curve_role must be one of discount_curve, forecast_curve, basis_curve")
+        object.__setattr__(self, "instruments", instruments)
+        object.__setattr__(
+            self,
+            "dependency_names",
+            MappingProxyType(
+                {
+                    str(key).strip(): str(value).strip()
+                    for key, value in dict(self.dependency_names or {}).items()
+                    if str(key).strip() and str(value).strip()
+                }
+            ),
+        )
+        object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+
+    def sorted_instruments(self) -> tuple[DatedBootstrapInstrument, ...]:
+        """Return instruments in deterministic bootstrap order."""
+        return tuple(
+            sorted(
+                self.instruments,
+                key=lambda inst: (
+                    inst.end_date,
+                    inst.start_date,
+                    inst.instrument_type,
+                    float(inst.quote),
+                    inst.label,
+                ),
+            )
+        )
+
+    def with_curve_name(self, curve_name: str) -> DatedBootstrapCurveInputBundle:
+        """Return ``self`` with ``curve_name`` filled when currently blank."""
+        if not curve_name or self.curve_name == curve_name:
+            return self
+        return replace(self, curve_name=curve_name)
+
+    def to_payload(self) -> dict[str, object]:
+        """Return a deterministic JSON-friendly payload."""
+        return {
+            "curve_name": self.curve_name,
+            "currency": self.currency,
+            "rate_index": self.rate_index,
+            "curve_role": self.curve_role,
+            "dependency_names": dict(self.dependency_names),
+            "conventions": self.conventions.to_payload(),
+            "instruments": [inst.to_payload() for inst in self.sorted_instruments()],
+            "metadata": dict(self.metadata),
+        }
+
+
+@dataclass(frozen=True)
+class MultiCurveBootstrapProgram:
+    """Explicit dependency-aware program for chained multi-curve bootstraps."""
+
+    settlement_date: date
+    curve_inputs: tuple[DatedBootstrapCurveInputBundle, ...]
+    metadata: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        bundles = tuple(self.curve_inputs)
+        if not bundles:
+            raise ValueError("MultiCurveBootstrapProgram requires at least one curve bundle")
+        curve_names = [bundle.curve_name for bundle in bundles]
+        if len(set(curve_names)) != len(curve_names):
+            raise ValueError("MultiCurveBootstrapProgram curve names must be unique")
+        object.__setattr__(self, "curve_inputs", bundles)
+        object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+
+    def to_payload(self) -> dict[str, object]:
+        """Return a deterministic JSON-friendly payload."""
+        return {
+            "settlement_date": self.settlement_date.isoformat(),
+            "curve_inputs": [bundle.to_payload() for bundle in self.curve_inputs],
+            "metadata": dict(self.metadata),
+        }
+
+
+@dataclass(frozen=True)
+class MultiCurveBootstrapResult:
+    """Structured result for a chained multi-curve bootstrap program."""
+
+    program: MultiCurveBootstrapProgram
+    node_results: Mapping[str, BootstrapCalibrationResult]
+    dependency_order: tuple[str, ...]
+    dependency_graph: Mapping[str, Mapping[str, str]]
+    metadata: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "node_results", MappingProxyType(dict(self.node_results)))
+        object.__setattr__(self, "dependency_order", tuple(str(name) for name in self.dependency_order))
+        object.__setattr__(
+            self,
+            "dependency_graph",
+            MappingProxyType(
+                {
+                    str(name): MappingProxyType(
+                        {
+                            str(key): str(value)
+                            for key, value in dict(edges).items()
+                            if str(key).strip() and str(value).strip()
+                        }
+                    )
+                    for name, edges in dict(self.dependency_graph).items()
+                }
+            ),
+        )
+        object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+
+    def apply_to_market_state(
+        self,
+        market_state: MarketState,
+        *,
+        discount_curve_name: str,
+        forecast_curve_name: str | None = None,
+    ) -> MarketState:
+        """Return ``market_state`` enriched with the chained bootstrap outputs."""
+        if discount_curve_name not in self.node_results:
+            raise ValueError(f"Unknown discount_curve_name {discount_curve_name!r}")
+        discount_curve = self.node_results[discount_curve_name].curve
+        forecast_curves = dict(market_state.forecast_curves or {})
+        if forecast_curve_name is not None:
+            if forecast_curve_name not in self.node_results:
+                raise ValueError(f"Unknown forecast_curve_name {forecast_curve_name!r}")
+            forecast_curves[forecast_curve_name] = self.node_results[forecast_curve_name].curve
+        selected_curve_names = dict(market_state.selected_curve_names or {})
+        selected_curve_names["discount_curve"] = discount_curve_name
+        if forecast_curve_name is not None:
+            selected_curve_names["forecast_curve"] = forecast_curve_name
+        market_provenance = dict(market_state.market_provenance or {})
+        bootstrap_runs = dict(market_provenance.get("bootstrap_runs") or {})
+        bootstrap_runs.setdefault("multi_curve_program", {})
+        bootstrap_runs["multi_curve_program"] = {
+            name: result.to_payload()
+            for name, result in self.node_results.items()
+        }
+        market_provenance["bootstrap_runs"] = bootstrap_runs
+        market_provenance["bootstrap_dependency_order"] = list(self.dependency_order)
+        market_provenance["bootstrap_dependency_graph"] = {
+            name: dict(edges)
+            for name, edges in self.dependency_graph.items()
+        }
+        return replace(
+            market_state,
+            discount=discount_curve,
+            forecast_curves=forecast_curves or None,
+            selected_curve_names=selected_curve_names,
+            market_provenance=market_provenance,
+        )
+
+    def to_payload(self) -> dict[str, object]:
+        """Return a deterministic JSON-friendly payload."""
+        return {
+            "program": self.program.to_payload(),
+            "node_results": {
+                name: result.to_payload()
+                for name, result in self.node_results.items()
+            },
+            "dependency_order": list(self.dependency_order),
+            "dependency_graph": {
+                name: dict(edges)
+                for name, edges in self.dependency_graph.items()
+            },
             "metadata": dict(self.metadata),
         }
 
@@ -800,20 +1044,451 @@ def bootstrap_named_yield_curves(
     return {name: result.curve for name, result in results.items()}
 
 
+def _ordered_dated_bundle(bundle: DatedBootstrapCurveInputBundle) -> DatedBootstrapCurveInputBundle:
+    """Return one dated bundle with deterministic instrument order."""
+    return replace(bundle, instruments=bundle.sorted_instruments())
+
+
+def _dated_years(
+    settlement_date: date,
+    target_date: date,
+    day_count: DayCountConvention,
+) -> float:
+    """Return model time in years from settlement to a target date."""
+    return float(year_fraction(settlement_date, target_date, day_count))
+
+
+def _dated_bundle_tenors(
+    bundle: DatedBootstrapCurveInputBundle,
+    settlement_date: date,
+) -> tuple[float, ...]:
+    """Return the dated bootstrap knot grid implied by instrument end dates."""
+    default_day_count = bundle.conventions.future_day_count
+    return tuple(
+        _dated_years(
+            settlement_date,
+            inst.end_date,
+            inst.day_count or default_day_count,
+        )
+        for inst in bundle.instruments
+    )
+
+
+def _dated_initial_guess(bundle: DatedBootstrapCurveInputBundle) -> tuple[float, ...]:
+    """Return the initial zero-rate guess for a dated bootstrap solve."""
+    guesses = []
+    for inst in bundle.instruments:
+        if inst.instrument_type == "deposit":
+            guesses.append(float(inst.quote))
+        elif inst.instrument_type == "future":
+            if bundle.conventions.future_quote_style == "price":
+                guesses.append((100.0 - float(inst.quote)) / 100.0)
+            else:
+                guesses.append(float(inst.quote))
+        else:
+            guesses.append(0.05)
+    return tuple(guesses)
+
+
+def _dated_instrument_labels(bundle: DatedBootstrapCurveInputBundle) -> tuple[str, ...]:
+    """Return deterministic solve labels for the dated instrument set."""
+    labels: list[str] = []
+    for index, inst in enumerate(bundle.instruments):
+        if inst.label:
+            labels.append(inst.label)
+            continue
+        labels.append(f"{inst.instrument_type}_{index}_{inst.end_date.isoformat()}")
+    return tuple(labels)
+
+
+def _discount_value(
+    t: float,
+    rates: object,
+    tenors: object,
+    *,
+    external_discount_curve=None,
+) -> object:
+    """Return a discount factor either from the solved curve or an external dependency."""
+    if external_discount_curve is not None:
+        return external_discount_curve.discount(float(max(t, 0.0)))
+    return _discount_factor(float(max(t, 0.0)), rates, tenors)
+
+
+def _reprice_dated(
+    rates: object,
+    tenors: object,
+    bundle: DatedBootstrapCurveInputBundle,
+    *,
+    settlement_date: date,
+    external_discount_curve=None,
+) -> object:
+    """Reprice all dated calibration instruments given a zero-rate vector."""
+    model_values = []
+    conventions = bundle.conventions
+
+    for inst in bundle.instruments:
+        instrument_day_count = inst.day_count or conventions.future_day_count
+
+        if inst.instrument_type == "deposit":
+            start_years = _dated_years(settlement_date, inst.start_date, instrument_day_count)
+            end_years = _dated_years(settlement_date, inst.end_date, instrument_day_count)
+            accrual = float(year_fraction(inst.start_date, inst.end_date, instrument_day_count))
+            df_start = _discount_factor(start_years, rates, tenors)
+            df_end = _discount_factor(end_years, rates, tenors)
+            model_values.append((df_start / df_end - 1.0) / accrual)
+            continue
+
+        if inst.instrument_type == "future":
+            start_years = _dated_years(settlement_date, inst.start_date, instrument_day_count)
+            end_years = _dated_years(settlement_date, inst.end_date, instrument_day_count)
+            accrual = float(year_fraction(inst.start_date, inst.end_date, instrument_day_count))
+            df_start = _discount_factor(start_years, rates, tenors)
+            df_end = _discount_factor(end_years, rates, tenors)
+            fwd = (df_start / df_end - 1.0) / accrual
+            if conventions.future_quote_style == "price":
+                model_values.append(100.0 - fwd * 100.0)
+            else:
+                model_values.append(fwd)
+            continue
+
+        if inst.instrument_type == "swap":
+            fixed_frequency = inst.fixed_frequency or conventions.swap_fixed_frequency
+            fixed_day_count = inst.fixed_day_count or conventions.swap_fixed_day_count
+            float_frequency = inst.float_frequency or conventions.swap_float_frequency
+            float_day_count = inst.float_day_count or conventions.swap_float_day_count
+
+            fixed_schedule = build_period_schedule(
+                inst.start_date,
+                inst.end_date,
+                fixed_frequency,
+                calendar=inst.calendar,
+                bda=inst.business_day_adjustment,
+                stub=inst.stub_type,
+                roll_convention=inst.roll_convention,
+                day_count=fixed_day_count,
+                time_origin=settlement_date,
+            )
+            float_schedule = build_period_schedule(
+                inst.start_date,
+                inst.end_date,
+                float_frequency,
+                calendar=inst.calendar,
+                bda=inst.business_day_adjustment,
+                stub=inst.stub_type,
+                roll_convention=inst.roll_convention,
+                day_count=float_day_count,
+                time_origin=settlement_date,
+            )
+
+            float_pv = np.array(0.0)
+            for period in float_schedule.periods:
+                accrual = float(period.accrual_fraction or 0.0)
+                start_years = max(float(period.t_start or 0.0), 0.0)
+                end_years = float(period.t_end or 0.0)
+                df_start = _discount_factor(start_years, rates, tenors)
+                df_end = _discount_factor(end_years, rates, tenors)
+                fwd = (df_start / df_end - 1.0) / accrual
+                discount = _discount_value(
+                    float(period.t_payment or 0.0),
+                    rates,
+                    tenors,
+                    external_discount_curve=external_discount_curve,
+                )
+                float_pv = float_pv + fwd * accrual * discount
+
+            annuity = np.array(0.0)
+            for period in fixed_schedule.periods:
+                accrual = float(period.accrual_fraction or 0.0)
+                discount = _discount_value(
+                    float(period.t_payment or 0.0),
+                    rates,
+                    tenors,
+                    external_discount_curve=external_discount_curve,
+                )
+                annuity = annuity + accrual * discount
+
+            model_values.append(float_pv / annuity)
+            continue
+
+        raise ValueError(f"Unknown instrument type: {inst.instrument_type!r}")
+
+    return np.array(model_values)
+
+
+def build_dated_bootstrap_solve_request(
+    bundle: DatedBootstrapCurveInputBundle,
+    *,
+    settlement_date: date,
+    external_discount_curve=None,
+    max_iter: int = 50,
+    tol: float = 1e-12,
+) -> SolveRequest:
+    """Build the explicit solve request for one dated rates bootstrap lane."""
+    bundle = _ordered_dated_bundle(bundle)
+    tenors = raw_np.asarray(_dated_bundle_tenors(bundle, settlement_date), dtype=float)
+    quotes = raw_np.asarray(tuple(float(inst.quote) for inst in bundle.instruments), dtype=float)
+    initial_guess = _dated_initial_guess(bundle)
+
+    def vector_objective(params):
+        return _reprice_dated(
+            params,
+            tenors,
+            bundle,
+            settlement_date=settlement_date,
+            external_discount_curve=external_discount_curve,
+        )
+
+    def scalar_objective(params):
+        residual = vector_objective(params) - quotes
+        return np.sum(residual ** 2)
+
+    objective_jacobian = jacobian(vector_objective)
+    metadata = {
+        "curve_name": bundle.curve_name,
+        "currency": bundle.currency,
+        "rate_index": bundle.rate_index,
+        "curve_role": bundle.curve_role,
+        "dependency_names": dict(bundle.dependency_names),
+        "instrument_count": len(bundle.instruments),
+        "settlement_date": settlement_date.isoformat(),
+    }
+    if external_discount_curve is not None:
+        metadata["external_discount_curve"] = "provided"
+
+    return SolveRequest(
+        request_id="rates_dated_bootstrap_least_squares",
+        problem_kind="least_squares",
+        parameter_names=tuple(f"zero_rate_{tenor:g}y" for tenor in tenors),
+        initial_guess=initial_guess,
+        objective=ObjectiveBundle(
+            objective_kind="least_squares",
+            labels=_dated_instrument_labels(bundle),
+            target_values=tuple(float(quote) for quote in quotes),
+            vector_objective_fn=vector_objective,
+            scalar_objective_fn=scalar_objective,
+            jacobian_fn=objective_jacobian,
+            metadata=metadata,
+        ),
+        solver_hint="trf",
+        warm_start=WarmStart(parameter_values=initial_guess, source="dated_quote_seed"),
+        metadata={**metadata, "problem_family": "rates_dated_bootstrap", "solver_family": "scipy"},
+        options={"maxiter": int(max_iter), "ftol": float(tol), "xtol": float(tol), "gtol": float(tol)},
+    )
+
+
+def _dated_bootstrap_jacobian_diagnostics(
+    bundle: DatedBootstrapCurveInputBundle,
+    tenors: raw_np.ndarray,
+    zero_rates: raw_np.ndarray,
+    *,
+    settlement_date: date,
+    external_discount_curve=None,
+) -> tuple[tuple[tuple[float, ...], ...], float | None, int | None]:
+    """Return the repricing Jacobian matrix plus basic conditioning stats."""
+
+    def vector_objective(params):
+        return _reprice_dated(
+            params,
+            tenors,
+            bundle,
+            settlement_date=settlement_date,
+            external_discount_curve=external_discount_curve,
+        )
+
+    objective_jacobian = jacobian(vector_objective)
+    jacobian_matrix = raw_np.asarray(objective_jacobian(zero_rates), dtype=float)
+    condition_number: float | None
+    rank: int | None
+    try:
+        condition_number = float(raw_np.linalg.cond(jacobian_matrix))
+    except raw_np.linalg.LinAlgError:
+        condition_number = None
+    try:
+        rank = int(raw_np.linalg.matrix_rank(jacobian_matrix))
+    except raw_np.linalg.LinAlgError:
+        rank = None
+    return _normalize_matrix(jacobian_matrix), condition_number, rank
+
+
+def _dated_bootstrap_diagnostics(
+    bundle: DatedBootstrapCurveInputBundle,
+    tenors: raw_np.ndarray,
+    zero_rates: raw_np.ndarray,
+    solve_result: SolveResult,
+    *,
+    settlement_date: date,
+    external_discount_curve=None,
+) -> BootstrapCalibrationDiagnostics:
+    """Return residual and Jacobian diagnostics for one solved dated bootstrap lane."""
+    quotes = raw_np.asarray(tuple(float(inst.quote) for inst in bundle.instruments), dtype=float)
+    model_values = raw_np.asarray(
+        _reprice_dated(
+            zero_rates,
+            tenors,
+            bundle,
+            settlement_date=settlement_date,
+            external_discount_curve=external_discount_curve,
+        ),
+        dtype=float,
+    )
+    residuals = raw_np.asarray(solve_result.residual_vector, dtype=float)
+    jacobian_matrix, condition_number, rank = _dated_bootstrap_jacobian_diagnostics(
+        bundle,
+        tenors,
+        zero_rates,
+        settlement_date=settlement_date,
+        external_discount_curve=external_discount_curve,
+    )
+    return BootstrapCalibrationDiagnostics(
+        model_values=tuple(float(value) for value in model_values),
+        market_quotes=tuple(float(value) for value in quotes),
+        residual_vector=tuple(float(value) for value in residuals),
+        jacobian_matrix=jacobian_matrix,
+        max_abs_residual=float(raw_np.max(raw_np.abs(residuals))) if residuals.size else 0.0,
+        l2_norm=float(raw_np.linalg.norm(residuals)) if residuals.size else 0.0,
+        jacobian_condition_number=condition_number,
+        jacobian_rank=rank,
+        metadata={
+            "instrument_count": len(bundle.instruments),
+            "curve_role": bundle.curve_role,
+            "dependency_names": dict(bundle.dependency_names),
+        },
+    )
+
+
+def bootstrap_dated_curve_result(
+    bundle: DatedBootstrapCurveInputBundle,
+    *,
+    settlement_date: date,
+    external_discount_curve=None,
+    max_iter: int = 50,
+    tol: float = 1e-12,
+) -> BootstrapCalibrationResult:
+    """Solve one typed dated rates bootstrap and return full diagnostics."""
+    from trellis.curves.yield_curve import YieldCurve
+
+    bundle = _ordered_dated_bundle(bundle)
+    tenors = raw_np.asarray(_dated_bundle_tenors(bundle, settlement_date), dtype=float)
+    solve_request = build_dated_bootstrap_solve_request(
+        bundle,
+        settlement_date=settlement_date,
+        external_discount_curve=external_discount_curve,
+        max_iter=max_iter,
+        tol=tol,
+    )
+    solve_result = execute_solve_request(solve_request)
+    if not solve_result.success:
+        raise ValueError(
+            f"Rates dated bootstrap failed: {solve_result.metadata.get('message', 'unknown failure')}"
+        )
+
+    zero_rates = raw_np.asarray(solve_result.solution, dtype=float)
+    diagnostics = _dated_bootstrap_diagnostics(
+        bundle,
+        tenors,
+        zero_rates,
+        solve_result,
+        settlement_date=settlement_date,
+        external_discount_curve=external_discount_curve,
+    )
+    solver_provenance = build_solve_provenance(solve_request, solve_result)
+    solver_replay_artifact = build_solve_replay_artifact(solve_request, solve_result)
+    curve = YieldCurve(tenors, zero_rates)
+    return BootstrapCalibrationResult(
+        input_bundle=bundle,  # type: ignore[arg-type]
+        tenors=tuple(float(value) for value in tenors),
+        zero_rates=tuple(float(value) for value in zero_rates),
+        solve_request=solve_request,
+        solve_result=solve_result,
+        solver_provenance=solver_provenance,
+        solver_replay_artifact=solver_replay_artifact,
+        diagnostics=diagnostics,
+        curve=curve,
+    )
+
+
+def bootstrap_multi_curve_program(
+    program: MultiCurveBootstrapProgram,
+    *,
+    max_iter: int = 50,
+    tol: float = 1e-12,
+) -> MultiCurveBootstrapResult:
+    """Solve a dependency-aware multi-curve bootstrap program."""
+    pending = {
+        bundle.curve_name: _ordered_dated_bundle(bundle)
+        for bundle in program.curve_inputs
+    }
+    node_results: dict[str, BootstrapCalibrationResult] = {}
+    dependency_graph: dict[str, dict[str, str]] = {}
+    dependency_order: list[str] = []
+
+    while pending:
+        progress = False
+        for curve_name, bundle in tuple(pending.items()):
+            dependencies = dict(bundle.dependency_names)
+            unresolved = [
+                dependency_name
+                for dependency_name in dependencies.values()
+                if dependency_name not in node_results
+            ]
+            unknown = [dependency_name for dependency_name in unresolved if dependency_name not in pending]
+            if unknown:
+                raise ValueError(
+                    f"Unknown multi-curve dependency for {curve_name!r}: {sorted(unknown)}"
+                )
+            if unresolved:
+                continue
+
+            external_discount_curve = None
+            discount_dependency_name = dependencies.get("discount_curve")
+            if discount_dependency_name is not None:
+                external_discount_curve = node_results[discount_dependency_name].curve
+
+            node_results[curve_name] = bootstrap_dated_curve_result(
+                bundle,
+                settlement_date=program.settlement_date,
+                external_discount_curve=external_discount_curve,
+                max_iter=max_iter,
+                tol=tol,
+            )
+            dependency_graph[curve_name] = dependencies
+            dependency_order.append(curve_name)
+            del pending[curve_name]
+            progress = True
+        if not progress:
+            raise ValueError("Multi-curve bootstrap dependency graph contains a cycle")
+
+    return MultiCurveBootstrapResult(
+        program=program,
+        node_results=node_results,
+        dependency_order=tuple(dependency_order),
+        dependency_graph=dependency_graph,
+        metadata={"curve_count": len(node_results)},
+    )
+
+
 __all__ = [
     "BootstrapCalibrationDiagnostics",
     "BootstrapCalibrationResult",
     "BootstrapConventionBundle",
     "BootstrapCurveInputBundle",
     "BootstrapInstrument",
+    "BootstrapCurveRole",
     "BootstrapQuoteBucket",
+    "DatedBootstrapCurveInputBundle",
+    "DatedBootstrapInstrument",
+    "MultiCurveBootstrapProgram",
+    "MultiCurveBootstrapResult",
     "bootstrap",
+    "bootstrap_dated_curve_result",
     "bootstrap_curve_input_bundle_from_payload",
     "bootstrap_curve_result",
+    "bootstrap_multi_curve_program",
     "bootstrap_named_curve_results",
     "bootstrap_named_yield_curves",
     "bootstrap_yield_curve",
     "build_bootstrap_quote_buckets",
+    "build_dated_bootstrap_solve_request",
     "bump_bootstrap_quote_buckets",
     "build_bootstrap_solve_request",
 ]

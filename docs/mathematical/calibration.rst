@@ -507,9 +507,21 @@ The bootstrap input surface is now explicit:
 - ``BootstrapInstrument`` carries the market quote together with tenor,
   optional start tenor, optional accrual override, and a stable instrument label
 
-The current implementation still works on year-fraction tenors rather than
-full dated schedules, so the convention bundle governs the implied accrual grid
-used by the bootstrap rather than a full calendar roll engine.
+The legacy bootstrap lane still works on year-fraction tenors. Trellis now
+also ships one first dated multi-curve lane:
+
+- ``DatedBootstrapInstrument`` carries explicit ``start_date`` and
+  ``end_date`` together with optional schedule overrides such as stub type,
+  roll convention, and business-day adjustment
+- ``DatedBootstrapCurveInputBundle`` groups those dated instruments, names the
+  curve role, and records hard dependencies such as a forecast curve depending
+  on a discount curve
+- ``MultiCurveBootstrapProgram`` packages the settlement date and the ordered
+  curve bundles into one explicit chained calibration program
+
+That dated path is still bounded rather than a full desk calendar engine, but
+it moves the first supported rates slice away from tenor-only abstractions and
+toward explicit dated instruments and dependency-aware curve reconstruction.
 
 The bootstrap now lowers onto the same typed solve-request substrate used by
 the other calibration helpers. ``build_bootstrap_solve_request(...)`` packages
@@ -533,6 +545,21 @@ typed ``solve_request``, normalized ``solve_result``, governed
 residual vector, Jacobian matrix, condition number, and Jacobian rank. The
 legacy ``bootstrap(...)`` and ``bootstrap_yield_curve(...)`` helpers remain as
 thin compatibility wrappers over that richer result surface.
+
+The dated path mirrors that contract:
+
+- ``bootstrap_dated_curve_result(...)`` solves one dated curve bundle and
+  returns the same diagnostics and replay surfaces as the tenor-only lane
+- ``bootstrap_multi_curve_program(...)`` executes the explicit dependency graph
+  in topological order, preserving the dependency order and dependency graph in
+  the returned ``MultiCurveBootstrapResult``
+- ``MultiCurveBootstrapResult.apply_to_market_state(...)`` materializes the
+  selected discount and forecast curves back onto ``MarketState`` so downstream
+  pricing and later rates-vol fits consume the calibrated runtime objects
+  directly
+
+This is still a first bounded OIS-plus-forecast chain rather than a full basis,
+cross-currency, smoothing, or exchange-grade futures plant.
 
 Rates Option Calibration
 ------------------------
@@ -791,8 +818,18 @@ Implementation
    :members:
 .. autoclass:: trellis.models.calibration.solve_request.SolveReplayArtifact
    :members:
+.. autofunction:: trellis.curves.bootstrap.bootstrap_dated_curve_result
+.. autofunction:: trellis.curves.bootstrap.bootstrap_multi_curve_program
 .. autofunction:: trellis.curves.bootstrap.bootstrap_yield_curve
    :no-index:
+.. autoclass:: trellis.curves.bootstrap.DatedBootstrapInstrument
+   :members:
+.. autoclass:: trellis.curves.bootstrap.DatedBootstrapCurveInputBundle
+   :members:
+.. autoclass:: trellis.curves.bootstrap.MultiCurveBootstrapProgram
+   :members:
+.. autoclass:: trellis.curves.bootstrap.MultiCurveBootstrapResult
+   :members:
 
 References
 ----------

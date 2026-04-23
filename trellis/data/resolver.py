@@ -9,6 +9,9 @@ from trellis.core.differentiable import get_numpy
 from trellis.curves.bootstrap import (
     BootstrapCurveInputBundle,
     BootstrapInstrument,
+    DatedBootstrapCurveInputBundle,
+    MultiCurveBootstrapProgram,
+    bootstrap_multi_curve_program,
     bootstrap_named_curve_results,
 )
 from trellis.curves.yield_curve import YieldCurve
@@ -71,12 +74,12 @@ def _provider_for_source(source: str):
 
 
 def _bootstrap_input_summary(
-    curve_inputs: list[BootstrapInstrument] | BootstrapCurveInputBundle,
+    curve_inputs: list[BootstrapInstrument] | BootstrapCurveInputBundle | DatedBootstrapCurveInputBundle,
     *,
     curve_name: str,
 ) -> dict[str, object]:
     """Return a deterministic, JSON-friendly summary of bootstrap inputs."""
-    if isinstance(curve_inputs, BootstrapCurveInputBundle):
+    if isinstance(curve_inputs, (BootstrapCurveInputBundle, DatedBootstrapCurveInputBundle)):
         bundle = curve_inputs.with_curve_name(curve_name)
     else:
         bundle = BootstrapCurveInputBundle(
@@ -954,6 +957,7 @@ def resolve_market_snapshot(
     default_fixing_history: str | None = None,
     discount_curve_bootstraps: dict | None = None,
     forecast_curve_bootstraps: dict | None = None,
+    multi_curve_bootstrap_program: MultiCurveBootstrapProgram | None = None,
     credit_curve=None,
     fx_rates: dict | None = None,
     state_space=None,
@@ -995,6 +999,12 @@ def resolve_market_snapshot(
         raise ValueError("Pass either jump_parameters= or jump_parameter_sets=, not both")
     if model_parameters is not None and model_parameter_sets is not None:
         raise ValueError("Pass either model_parameters= or model_parameter_sets=, not both")
+    if multi_curve_bootstrap_program is not None and (
+        discount_curve_bootstraps is not None or forecast_curve_bootstraps is not None
+    ):
+        raise ValueError(
+            "Pass either multi_curve_bootstrap_program= or discount_curve_bootstraps=/forecast_curve_bootstraps=, not both"
+        )
     if model_parameter_sources is not None and (
         model_parameters is not None or model_parameter_sets is not None
     ):
@@ -1098,6 +1108,7 @@ def resolve_market_snapshot(
         for value in (
             forecast_curves,
             fixing_histories,
+            multi_curve_bootstrap_program,
             credit_curve,
             fx_rates,
             state_space,
@@ -1117,7 +1128,30 @@ def resolve_market_snapshot(
 
     if forecast_curves:
         resolved_forecast_curves.update(forecast_curves)
-    if discount_curve_bootstraps:
+    if multi_curve_bootstrap_program is not None:
+        multi_curve_result = bootstrap_multi_curve_program(multi_curve_bootstrap_program)
+        bootstrapped_discount_curves = {
+            name: result.curve
+            for name, result in multi_curve_result.node_results.items()
+            if getattr(result.input_bundle, "curve_role", "") == "discount_curve"
+        }
+        bootstrapped_forecast_curves = {
+            name: result.curve
+            for name, result in multi_curve_result.node_results.items()
+            if getattr(result.input_bundle, "curve_role", "") == "forecast_curve"
+        }
+        overlap_discount = set(bootstrapped_discount_curves) & set(base_snapshot.discount_curves)
+        if overlap_discount:
+            raise ValueError(f"Duplicate discount curve sources: {sorted(overlap_discount)}")
+        overlap_forecast = set(bootstrapped_forecast_curves) & set(resolved_forecast_curves)
+        if overlap_forecast:
+            raise ValueError(f"Duplicate forecast curve sources: {sorted(overlap_forecast)}")
+        resolved_discount_curves = dict(base_snapshot.discount_curves)
+        resolved_discount_curves.update(bootstrapped_discount_curves)
+        resolved_forecast_curves.update(bootstrapped_forecast_curves)
+        bootstrap_inputs["multi_curve_program"] = multi_curve_bootstrap_program.to_payload()
+        bootstrap_runs["multi_curve_program"] = multi_curve_result.to_payload()
+    elif discount_curve_bootstraps:
         discount_bootstrap_results = bootstrap_named_curve_results(discount_curve_bootstraps)
         bootstrapped_discount_curves = {
             name: result.curve
@@ -1141,7 +1175,9 @@ def resolve_market_snapshot(
     else:
         resolved_discount_curves = dict(base_snapshot.discount_curves)
 
-    if forecast_curve_bootstraps:
+    if multi_curve_bootstrap_program is not None:
+        pass
+    elif forecast_curve_bootstraps:
         forecast_bootstrap_results = bootstrap_named_curve_results(forecast_curve_bootstraps)
         bootstrapped_forecast_curves = {
             name: result.curve
