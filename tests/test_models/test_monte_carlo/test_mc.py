@@ -639,6 +639,37 @@ class TestMonteCarloEngine:
         assert metadata["unsupported_reason"] == "barrier_monitor_discontinuity"
         assert metadata["policy_version"] == "mc_discontinuous_derivative_policy_v1"
 
+    def test_derivative_policy_reports_executed_path_payoff_branch(self):
+        """Unused storage policies must not override the executed pricing branch metadata."""
+        S0, K, r, sigma, T = 100.0, 100.0, 0.05, 0.20, 1.0
+        gbm = GBM(mu=r, sigma=sigma)
+        engine = MonteCarloEngine(gbm, n_paths=64, n_steps=8, seed=67, method="exact")
+        shocks = raw_np.random.default_rng(71).standard_normal((engine.n_paths, engine.n_steps))
+        unused_barrier_requirement = MonteCarloPathRequirement(
+            barrier_monitors=(
+                mc_engine_module.BarrierMonitor(
+                    name="unused",
+                    level=95.0,
+                    direction="down",
+                ),
+            ),
+        )
+
+        result = engine.price(
+            S0,
+            T,
+            lambda paths: np.maximum(paths[:, -1] - K, 0.0),
+            discount_rate=r,
+            storage_policy=unused_barrier_requirement,
+            shocks=shocks,
+            differentiable=True,
+        )
+
+        metadata = result["derivative_metadata"]
+        assert metadata["resolved_derivative_method"] == "autodiff_pathwise"
+        assert metadata["pathwise_autodiff_supported"] is True
+        assert metadata["discontinuous_features"] == ()
+
 
 class TestLocalVolMonteCarlo:
     def test_flat_local_vol_matches_black_scholes_reasonably_well(self):

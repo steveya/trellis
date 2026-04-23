@@ -977,6 +977,7 @@ class MonteCarloEngine:
         """
         path_state = None
         paths = None
+        executed_requirement = None
 
         explicit_requirement = _coerce_path_requirement(storage_policy)
         declared_requirement = _payoff_path_requirement(payoff_fn)
@@ -1000,6 +1001,7 @@ class MonteCarloEngine:
                 )
                 payoffs = state_evaluator(path_state)
                 paths = simulated_paths if return_paths else None
+                executed_requirement = requirement
             else:
                 paths = self.simulate_with_shocks(x0, T, shocks, differentiable=differentiable)
                 payoffs = payoff_fn(paths)
@@ -1011,6 +1013,7 @@ class MonteCarloEngine:
             requirement = explicit_requirement or declared_requirement
             path_state = self.simulate_state(x0, T, requirement)
             payoffs = raw_np.asarray(state_evaluator(path_state), dtype=float)
+            executed_requirement = requirement
         else:
             if differentiable:
                 raise ValueError("differentiable=True requires explicit shocks for deterministic pathwise gradients")
@@ -1037,7 +1040,7 @@ class MonteCarloEngine:
             "paths": paths if return_paths else None,
             "path_state": path_state,
             "derivative_metadata": describe_monte_carlo_derivative_policy(
-                explicit_requirement or declared_requirement,
+                executed_requirement,
                 differentiable=differentiable,
                 payoff_metadata=payoff_metadata,
             ),
