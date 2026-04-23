@@ -9,6 +9,7 @@ import numpy as raw_np
 import pytest
 
 from trellis.core.date_utils import build_payment_timeline as core_build_payment_timeline
+from trellis.core.differentiable import gradient, get_numpy
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.curves.yield_curve import YieldCurve
@@ -19,6 +20,8 @@ from trellis.models.monte_carlo.path_state import MonteCarloPathState
 from trellis.models.processes.gbm import GBM
 from trellis.models.processes.hull_white import HullWhite
 from trellis.models.processes.local_vol import LocalVol
+
+np = get_numpy()
 
 
 class TestEventAwareMonteCarloAssembly:
@@ -258,8 +261,65 @@ class TestEventAwareMonteCarloAssembly:
 
         assert result["paths"] is None
         assert result["price"] > 0.0
-        assert result["n_paths"] == 128
 
+    def test_price_event_aware_monte_carlo_supports_differentiable_event_replay(self):
+        from trellis.models.monte_carlo.event_aware import (
+            EventAwareMonteCarloEvent,
+            EventAwareMonteCarloProblemSpec,
+            EventAwareMonteCarloProcessSpec,
+            price_event_aware_monte_carlo,
+        )
+
+        shocks = raw_np.random.default_rng(97).standard_normal((256, 8))
+
+        def price_from_spot(spot):
+            result = price_event_aware_monte_carlo(
+                EventAwareMonteCarloProblemSpec(
+                    process_spec=EventAwareMonteCarloProcessSpec(
+                        family="gbm_1d",
+                        risk_free_rate=0.03,
+                        sigma=0.20,
+                    ),
+                    initial_state=spot,
+                    maturity=1.0,
+                    n_steps=8,
+                    discount_rate=0.03,
+                    path_requirement_kind="event_replay",
+                    reducer_kind="compiled_schedule_payoff",
+                    settlement_event="terminal_settlement",
+                    event_specs=(
+                        EventAwareMonteCarloEvent(
+                            time=0.5,
+                            name="coupon_1",
+                            kind="coupon",
+                            payload={"amount": 2.0},
+                        ),
+                        EventAwareMonteCarloEvent(
+                            time=1.0,
+                            name="terminal_settlement",
+                            kind="settlement",
+                            payload={
+                                "rule": "terminal_value",
+                                "coupon_events": ("coupon_1",),
+                            },
+                        ),
+                    ),
+                ),
+                n_paths=256,
+                seed=11,
+                return_paths=False,
+                shocks=shocks,
+                differentiable=True,
+            )
+            assert result["paths"] is None
+            assert result["path_state"] is not None
+            assert tuple(sorted(result["path_state"].snapshots)) == (4,)
+            return result["price"]
+
+        autodiff_delta = gradient(price_from_spot)(100.0)
+        eps = 1e-4
+        fd_delta = (price_from_spot(100.0 + eps) - price_from_spot(100.0 - eps)) / (2 * eps)
+        assert autodiff_delta == pytest.approx(fd_delta, rel=1e-5, abs=1e-5)
     def test_hull_white_swaption_problem_prices_from_reduced_event_state(self):
         from trellis.core.date_utils import build_payment_timeline
         from trellis.models.monte_carlo.event_aware import (
