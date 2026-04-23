@@ -48,7 +48,7 @@ Rules for coding agents:
 | `AD2.2` | `QUA-968` | Done | book-level reverse-mode / portfolio AAD substrate | `QUA-967` |
 | `AD2.3` | `QUA-969` | Done | smoothing and custom-adjoint policy for discontinuous products | `QUA-957` |
 | `AD2.4` | `QUA-970` | Done | product-family gradient matrix and support-contract cohort expansion | `QUA-957`; consume `QUA-967` / `QUA-969` outcomes as they land |
-| `AD2.5` | `QUA-971` | Backlog | runtime derivative-method taxonomy and reporting integration | `QUA-967`, `QUA-970` |
+| `AD2.5` | `QUA-971` | Done | runtime derivative-method taxonomy and reporting integration | `QUA-967`, `QUA-970` |
 
 ## Purpose
 
