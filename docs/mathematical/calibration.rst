@@ -469,13 +469,29 @@ benchmark fixtures used for workflow validation:
 - Single-name credit replay keeps the same typed CDS-par-spread least-squares
   contract and requires near-zero repricing and quote residuals on the checked
   spread-grid fixture
+- Basket-credit replay consumes the materialized single-name credit curve,
+  fits the desk-like two-maturity tranche grid through the homogeneous
+  tranche-implied correlation workflow, and requires near-zero quote residuals
+  with no root failures
 
 The benchmark baseline in ``docs/benchmarks/calibration_workflows.{json,md}``
 complements those fit-quality gates with cold-start versus warm-start timing
-expectations for the supported workflows. The benchmark pack now covers five
-workflows (Hull-White, SABR, Heston, local vol, and single-name credit), with
-warm-start timing tracked on the three workflows that expose explicit warm
-seeds (Hull-White, SABR, Heston).
+expectations for the supported workflows. The benchmark pack now covers ten
+workflows: Hull-White, caplet stripping, SABR, swaption cube assembly,
+equity-vol surface authority, Heston single-smile fitting, Heston
+surface-compression fitting, local vol, single-name credit, and basket-credit
+tranche-implied correlation. Warm-start timing is tracked on the four
+workflows that expose explicit warm seeds (Hull-White, SABR, Heston
+single-smile, and Heston surface compression).
+
+The first validation tranche also carries one desk-like basket-credit fixture
+instead of only synthetic single-asset fixtures. That fixture links a
+materialized single-name credit curve to six tranche expected-loss quotes
+across two maturities and three attachment/detachment bands. Its benchmark
+payload records an explicit perturbation diagnostic for a parallel quote bump
+and a latency envelope for the cold-start solve, so quote-instability and
+performance drift are visible in the persisted artifact instead of being
+inferred from pass/fail replay alone.
 
 Those checked fixtures now read from the same bounded mock-snapshot contracts
 used by replay and proving paths instead of from a separate benchmark-only
@@ -485,6 +501,9 @@ Heston and local-vol canaries read the seeded ``spx_heston_implied_vol``
 surface and the derived ``spx_local_vol`` linkage from that same synthetic
 contract. The single-name credit canary continues to read spread/recovery
 inputs from the derived ``model_consistency_contract`` compatibility packet.
+The basket-credit canary layers its desk-like tranche surface on top of that
+single-name credit materialization to keep the representative-curve linkage
+explicit.
 
 This keeps the checked calibration boundary aligned with the same bounded
 synthetic market assumptions that task and proving workflows see at runtime.

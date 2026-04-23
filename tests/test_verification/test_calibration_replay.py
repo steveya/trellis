@@ -78,6 +78,19 @@ def test_supported_calibration_workflows_preserve_replay_contracts_and_fit_toler
     assert credit.provenance["calibration_target"]["quote_maps"][2]["quote_family"] == "spread"
     assert credit.provenance["calibration_target"]["quote_maps"][3]["quote_family"] == "spread"
 
+    basket_credit = scenarios["basket_credit"].cold_runner()
+    assert basket_credit.provenance["source_ref"] == "calibrate_homogeneous_basket_tranche_correlation_workflow"
+    assert basket_credit.summary["support_boundary"] == "homogeneous_representative_curve"
+    assert basket_credit.summary["quote_count"] == 6
+    assert basket_credit.summary["fitted_point_count"] == 6
+    assert basket_credit.summary["representative_credit_curve"]["object_name"] == "benchmark_single_name_credit"
+    assert basket_credit.diagnostics.root_failures == ()
+    assert basket_credit.diagnostics.max_abs_quote_residual < 1e-8
+    assert [point.correlation for point in basket_credit.surface.points] == pytest.approx(
+        [0.18, 0.24, 0.34, 0.39, 0.48, 0.54],
+        abs=2e-6,
+    )
+
 
 def test_supported_calibration_workflows_are_replay_stable_within_tolerance():
     scenarios = _scenario_map()
@@ -143,6 +156,12 @@ def test_supported_calibration_workflows_are_replay_stable_within_tolerance():
     assert second_credit.model_hazards == pytest.approx(first_credit.model_hazards, abs=1e-12)
     assert second_credit.provenance["potential_binding"] == first_credit.provenance["potential_binding"]
 
+    first_basket_credit = scenarios["basket_credit"].cold_runner()
+    second_basket_credit = scenarios["basket_credit"].cold_runner()
+    assert second_basket_credit.provenance["calibration_target"] == first_basket_credit.provenance["calibration_target"]
+    assert second_basket_credit.diagnostics.to_payload() == first_basket_credit.diagnostics.to_payload()
+    assert second_basket_credit.surface.to_payload() == first_basket_credit.surface.to_payload()
+
 
 def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
     from trellis.models.calibration.benchmarking import build_supported_calibration_benchmark_report
@@ -150,8 +169,11 @@ def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
     report = build_supported_calibration_benchmark_report(repeats=1, warmups=0)
     cases = {case["workflow"]: case for case in report["cases"]}
 
-    assert report["summary"]["workflow_count"] == 9
+    assert report["summary"]["workflow_count"] == 10
     assert report["summary"]["warm_start_workflow_count"] == 4
+    assert report["summary"]["desk_like_workflow_count"] == 1
+    assert report["summary"]["perturbation_diagnostic_count"] == 1
+    assert report["summary"]["latency_envelope_count"] == 1
     assert set(cases) == {
         "hull_white",
         "caplet_strip",
@@ -162,11 +184,13 @@ def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
         "heston_surface",
         "local_vol",
         "credit",
+        "basket_credit",
     }
     assert cases["caplet_strip"]["warm"] is None
     assert cases["equity_vol_surface"]["warm"] is None
     assert cases["local_vol"]["warm"] is None
     assert cases["credit"]["warm"] is None
+    assert cases["basket_credit"]["warm"] is None
     assert cases["swaption_cube"]["warm"] is None
     assert cases["hull_white"]["warm"] is not None
     assert cases["sabr"]["warm"] is not None
@@ -190,6 +214,10 @@ def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
     assert cases["local_vol"]["metadata"]["source_surface_name"] == "spx_heston_implied_vol"
     assert cases["local_vol"]["metadata"]["surface_name"] == "spx_local_vol"
     assert cases["local_vol"]["metadata"]["synthetic_generation_contract_version"] == "v2"
+    assert cases["basket_credit"]["metadata"]["fixture_style"] == "desk_like"
+    assert cases["basket_credit"]["metadata"]["linked_credit_curve"] == "benchmark_single_name_credit"
+    assert cases["basket_credit"]["metadata"]["perturbation_diagnostic"]["threshold_breaches"] == {}
+    assert cases["basket_credit"]["latency_envelope"]["status"] == "pass"
 
 
 def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
@@ -197,8 +225,11 @@ def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
     cases = {case["workflow"]: case for case in payload["cases"]}
 
     assert payload["benchmark_name"] == "supported_calibration_workflows"
-    assert payload["summary"]["workflow_count"] == 9
+    assert payload["summary"]["workflow_count"] == 10
     assert payload["summary"]["warm_start_workflow_count"] == 4
+    assert payload["summary"]["desk_like_workflow_count"] == 1
+    assert payload["summary"]["perturbation_diagnostic_count"] == 1
+    assert payload["summary"]["latency_envelope_count"] == 1
     assert set(cases) == {
         "hull_white",
         "caplet_strip",
@@ -209,11 +240,13 @@ def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
         "heston_surface",
         "local_vol",
         "credit",
+        "basket_credit",
     }
     assert cases["caplet_strip"]["warm"] is None
     assert cases["equity_vol_surface"]["warm"] is None
     assert cases["local_vol"]["warm"] is None
     assert cases["credit"]["warm"] is None
+    assert cases["basket_credit"]["warm"] is None
     assert cases["swaption_cube"]["warm"] is None
     for workflow in ("hull_white", "sabr", "heston", "heston_surface"):
         assert cases[workflow]["warm"] is not None
@@ -236,3 +269,7 @@ def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
     assert cases["local_vol"]["metadata"]["source_surface_name"] == "spx_heston_implied_vol"
     assert cases["local_vol"]["metadata"]["surface_name"] == "spx_local_vol"
     assert cases["local_vol"]["metadata"]["synthetic_generation_contract_version"] == "v2"
+    assert cases["basket_credit"]["metadata"]["fixture_style"] == "desk_like"
+    assert cases["basket_credit"]["metadata"]["linked_credit_curve"] == "benchmark_single_name_credit"
+    assert cases["basket_credit"]["metadata"]["perturbation_diagnostic"]["threshold_breaches"] == {}
+    assert cases["basket_credit"]["latency_envelope"]["status"] == "pass"
