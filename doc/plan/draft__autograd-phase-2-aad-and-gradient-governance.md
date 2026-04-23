@@ -45,7 +45,7 @@ Rules for coding agents:
 | Queue ID | Linear | Status | Scope | Hard prerequisites |
 | --- | --- | --- | --- | --- |
 | `AD2.1` | `QUA-967` | Done | JVP, VJP, HVP operator implementation or checked backend decision | `QUA-957`, `QUA-965` |
-| `AD2.2` | `QUA-968` | Backlog | book-level reverse-mode / portfolio AAD substrate | `QUA-967` |
+| `AD2.2` | `QUA-968` | Done | book-level reverse-mode / portfolio AAD substrate | `QUA-967` |
 | `AD2.3` | `QUA-969` | Backlog | smoothing and custom-adjoint policy for discontinuous products | `QUA-957` |
 | `AD2.4` | `QUA-970` | Backlog | product-family gradient matrix and support-contract cohort expansion | `QUA-957`; consume `QUA-967` / `QUA-969` outcomes as they land |
 | `AD2.5` | `QUA-971` | Backlog | runtime derivative-method taxonomy and reporting integration | `QUA-967`, `QUA-970` |
@@ -131,6 +131,12 @@ The desired first derivative is:
 The Phase 2 question is not only whether this derivative exists. It is how to
 compute it without scaling linearly through repeated bump/reprice loops across
 every trade and risk factor.
+
+`QUA-968` landed the first bounded answer: supported bond books on a shared
+public `YieldCurve` can compute reverse-mode curve risk through
+`trellis.book.portfolio_aad_curve_risk(...)`, with unsupported positions
+reported explicitly. This is not universal portfolio AAD; broader books,
+non-smooth routes, and richer risk vectors remain follow-on work.
 
 ### Discontinuities
 

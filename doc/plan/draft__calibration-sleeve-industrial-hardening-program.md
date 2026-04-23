@@ -101,7 +101,7 @@ Rules for coding agents:
 | Queue ID | Linear | Status | Scope | Hard prerequisites |
 | --- | --- | --- | --- | --- |
 | `AD2.1` | `QUA-967` | Done | JVP, VJP, HVP operator implementation or checked backend decision | `QUA-957`, `QUA-965` |
-| `AD2.2` | `QUA-968` | Backlog | book-level reverse-mode / portfolio AAD substrate | `AD2.1` |
+| `AD2.2` | `QUA-968` | Done | book-level reverse-mode / portfolio AAD substrate | `AD2.1` |
 | `AD2.3` | `QUA-969` | Backlog | smoothing and custom-adjoint policy for discontinuous products | `QUA-957` |
 | `AD2.4` | `QUA-970` | Backlog | product-family gradient matrix and support-contract cohort expansion | consume `AD2.1` / `AD2.3` outcomes as they land |
 | `AD2.5` | `QUA-971` | Backlog | runtime derivative-method taxonomy and reporting integration | `AD2.1`, `AD2.4` |
@@ -119,7 +119,7 @@ and runtime reporting that consume those objects.
 | `INT.1` | `QUA-954` | Calibration | Done | basket-credit base-correlation / tranche-correlation workflow consuming calibrated single-name curves | `CAL.4` / `QUA-953` |
 | `INT.2` | `QUA-967` | Autograd | Done | truthful JVP, VJP, and HVP backend operator support or a checked fail-closed backend decision | `QUA-957`, `QUA-965` |
 | `INT.3` | `QUA-956` | Validation | Backlog | first desk-like fixture, perturbation, and latency tranche for the newly supported calibration slices | none; run after `INT.1` or alongside active implementation slices |
-| `INT.4` | `QUA-968` | Autograd | Backlog | first bounded book-level reverse-mode / portfolio AAD substrate over supported smooth routes | `INT.2` |
+| `INT.4` | `QUA-968` | Autograd | Done | first bounded book-level reverse-mode / portfolio AAD substrate over supported smooth routes | `INT.2` |
 | `INT.5` | `QUA-969` | Autograd | Backlog | governed discontinuous-Greek policy for one bounded barrier, digital, or event/exercise family | `QUA-957`; coordinate with `INT.7` |
 | `INT.6` | `QUA-970` | Autograd | Backlog | product-family derivative matrix covering analytical, curve, surface, MC, and calibration representatives | `QUA-957`; consume `INT.2` / `INT.5` outcomes |
 | `INT.7` | `QUA-971` | Autograd | Backlog | unified runtime derivative-method reporting across analytical, AD, AAD, JVP/VJP/HVP, bump, smoothed/custom-adjoint, and unsupported lanes | `INT.2`, `INT.6`; coordinate with `INT.4` / `INT.5` |
@@ -766,16 +766,15 @@ The completed implementation order through `CAL.5` was:
 The remaining integrated implementation order is:
 
 1. `QUA-956` first validation tranche, run alongside the active slice
-2. `QUA-968` first bounded portfolio AAD substrate
-3. `QUA-969` governed discontinuous-Greek policy
-4. `QUA-970` product-family derivative matrix
-5. `QUA-971` unified runtime derivative reporting
-6. `QUA-955` one narrow cross-asset calibration slice once the concrete target
+2. `QUA-969` governed discontinuous-Greek policy
+3. `QUA-970` product-family derivative matrix
+4. `QUA-971` unified runtime derivative reporting
+5. `QUA-955` one narrow cross-asset calibration slice once the concrete target
    and blockers are explicit
-7. `QUA-946` umbrella closeout and documentation maintenance
+6. `QUA-946` umbrella closeout and documentation maintenance
 
-`QUA-967` landed early as `AD2.1` / `INT.2`, so `QUA-968` can consume checked
-VJP/HVP support rather than reopening backend operator work.
+`QUA-967` landed early as `AD2.1` / `INT.2`, and `QUA-968` consumed that
+checked VJP/HVP surface for the first bounded bond-book reverse-mode lane.
 
 Reason:
 
@@ -813,7 +812,7 @@ The next execution slice after the `CAL.5` / `QUA-954` closeout should be:
 1. `QUA-956`: start the validation tranche with fixtures and perturbation /
    latency envelopes for the new credit and basket-credit calibration surface.
 
-Alongside or after that validation slice, `QUA-968` through `QUA-971` should
-build the first portfolio-scale derivative lane and runtime reporting taxonomy,
-then `QUA-955` should choose and implement one concrete hybrid calibration
-slice on the same dependency and provenance model.
+Alongside or after that validation slice, `QUA-969` through `QUA-971` should
+finish the first derivative-governance and runtime reporting taxonomy, then
+`QUA-955` should choose and implement one concrete hybrid calibration slice on
+the same dependency and provenance model.
