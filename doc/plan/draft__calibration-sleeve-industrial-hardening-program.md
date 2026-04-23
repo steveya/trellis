@@ -103,7 +103,7 @@ Rules for coding agents:
 | `AD2.1` | `QUA-967` | Done | JVP, VJP, HVP operator implementation or checked backend decision | `QUA-957`, `QUA-965` |
 | `AD2.2` | `QUA-968` | Done | book-level reverse-mode / portfolio AAD substrate | `AD2.1` |
 | `AD2.3` | `QUA-969` | Done | smoothing and custom-adjoint policy for discontinuous products | `QUA-957` |
-| `AD2.4` | `QUA-970` | Backlog | product-family gradient matrix and support-contract cohort expansion | consume `AD2.1` / `AD2.3` outcomes as they land |
+| `AD2.4` | `QUA-970` | Done | product-family gradient matrix and support-contract cohort expansion | consume `AD2.1` / `AD2.3` outcomes as they land |
 | `AD2.5` | `QUA-971` | Backlog | runtime derivative-method taxonomy and reporting integration | `AD2.1`, `AD2.4` |
 
 ### Combined Implementation Queue
@@ -121,7 +121,7 @@ and runtime reporting that consume those objects.
 | `INT.3` | `QUA-956` | Validation | Done | first desk-like fixture, perturbation, and latency tranche for the newly supported calibration slices | none; run after `INT.1` or alongside active implementation slices |
 | `INT.4` | `QUA-968` | Autograd | Done | first bounded book-level reverse-mode / portfolio AAD substrate over supported smooth routes | `INT.2` |
 | `INT.5` | `QUA-969` | Autograd | Done | governed discontinuous-Greek policy for one bounded barrier, digital, or event/exercise family | `QUA-957`; coordinate with `INT.7` |
-| `INT.6` | `QUA-970` | Autograd | Backlog | product-family derivative matrix covering analytical, curve, surface, MC, and calibration representatives | `QUA-957`; consume `INT.2` / `INT.5` outcomes |
+| `INT.6` | `QUA-970` | Autograd | Done | product-family derivative matrix covering analytical, curve, surface, MC, and calibration representatives | `QUA-957`; consume `INT.2` / `INT.5` outcomes |
 | `INT.7` | `QUA-971` | Autograd | Backlog | unified runtime derivative-method reporting across analytical, AD, AAD, JVP/VJP/HVP, bump, smoothed/custom-adjoint, and unsupported lanes | `INT.2`, `INT.6`; coordinate with `INT.4` / `INT.5` |
 | `INT.8` | `QUA-955` | Calibration | Backlog | first cross-asset calibration slice on explicit dependency DAGs, using calibrated market objects and derivative provenance where useful | concrete hybrid target chosen; upstream blockers set during audit |
 | `INT.9` | `QUA-946` | Closeout | Backlog | umbrella cleanup, docs maintenance, plan reconciliation, and follow-on ticket split | `CAL.5`, `CAL.6`, `CAL.7`, and relevant AD2 integration gates closed or explicitly deferred |
@@ -768,11 +768,10 @@ validation and derivative-governance slices, was:
 
 The remaining integrated implementation order is:
 
-1. `QUA-970` product-family derivative matrix
-2. `QUA-971` unified runtime derivative reporting
-3. `QUA-955` one narrow cross-asset calibration slice once the concrete target
+1. `QUA-971` unified runtime derivative reporting
+2. `QUA-955` one narrow cross-asset calibration slice once the concrete target
    and blockers are explicit
-4. `QUA-946` umbrella closeout and documentation maintenance
+3. `QUA-946` umbrella closeout and documentation maintenance
 
 `QUA-967` landed early as `AD2.1` / `INT.2`, and `QUA-968` consumed that
 checked VJP/HVP surface for the first bounded bond-book reverse-mode lane.
@@ -780,7 +779,9 @@ checked VJP/HVP surface for the first bounded bond-book reverse-mode lane.
 perturbation diagnostics and latency-envelope metadata. `QUA-969` added the
 first bounded discontinuous Monte Carlo derivative policy, keeping barrier and
 event discontinuities fail-closed for pathwise AD while reporting the fallback
-method explicitly.
+method explicitly. `QUA-970` added the checked product-family derivative matrix
+covering representative analytical, curve, surface, Monte Carlo, calibration,
+route-generated, and unsupported discontinuous lanes.
 
 Reason:
 
@@ -813,16 +814,12 @@ they are actually desk-grade, then widen.
 
 ## Immediate Follow-On Execution Slice
 
-The next execution slices after the `CAL.7` / `QUA-956` and `AD2.3` /
-`QUA-969` closeouts should be:
+The next execution slice after the `AD2.4` / `QUA-970` closeout should be:
 
-1. `QUA-970`: expand the product-family derivative matrix so analytical,
-   curve, surface, Monte Carlo, calibration, AAD, bump, and unsupported lanes
-   are visibly test-backed.
-2. `QUA-971`: normalize runtime derivative-method reporting across analytical,
+1. `QUA-971`: normalize runtime derivative-method reporting across analytical,
    AD, AAD, JVP/VJP/HVP, bump, fail-closed, and future smoothed/custom-adjoint
    lanes.
 
-After that derivative-governance/reporting pair, `QUA-955` should choose and
+After that derivative-reporting slice, `QUA-955` should choose and
 implement one concrete hybrid calibration slice on the same dependency and
 provenance model.
