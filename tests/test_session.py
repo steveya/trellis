@@ -857,6 +857,7 @@ class TestRiskReport:
         assert "book_duration" in report
         assert "book_krd" in report
         assert "positions" in report
+        assert "portfolio_aad" in report
         assert "10Y" in report["positions"]
 
     def test_risk_report_uses_canonical_numeric_krd_keys(self):
@@ -867,6 +868,31 @@ class TestRiskReport:
         report = s.risk_report(book)
 
         assert set(report["book_krd"]) == {1.0, 2.0, 5.0, 10.0}
+
+    def test_risk_report_excludes_unsupported_positions_explicitly(self):
+        curve = YieldCurve([1.0, 2.0, 5.0, 10.0], [0.04, 0.042, 0.045, 0.047])
+        s = Session(curve=curve, settlement=SETTLE)
+        book = Book({"10Y": _bond(), "unsupported": object()})
+
+        report = s.risk_report(book)
+
+        assert "unsupported" not in report["positions"]
+        assert report["unsupported_positions"][0]["position_name"] == "unsupported"
+        assert report["unsupported_positions"][0]["reason"] == "unsupported_instrument_type"
+        assert report["portfolio_aad"]["metadata"]["support_status"] == "partial"
+        assert report["portfolio_aad"]["metadata"]["unsupported_position_count"] == 1
+
+    def test_risk_report_portfolio_aad_records_vjp_provenance(self):
+        curve = YieldCurve([1.0, 2.0, 5.0, 10.0], [0.04, 0.042, 0.045, 0.047])
+        s = Session(curve=curve, settlement=SETTLE)
+        book = Book({"10Y": _bond()})
+
+        report = s.risk_report(book)
+
+        assert report["portfolio_aad"]["metadata"]["resolved_derivative_method"] == "portfolio_aad_vjp"
+        assert report["portfolio_aad"]["metadata"]["backend_operator"] == "vjp"
+        assert report["portfolio_aad"]["metadata"]["unsupported_position_count"] == 0
+        assert set(report["portfolio_aad"]["values"]) == {1.0, 2.0, 5.0, 10.0}
 
 
 class TestSessionPricePayoff:

@@ -660,32 +660,55 @@ class Session:
         rate durations. It is intended as a lightweight portfolio summary for
         notebook or API use rather than a full reporting engine.
         """
-        br = self.price(book, greeks="all")
-        agg_krd: dict[float, float] = {}
-        tmv = br.total_mv
+        from trellis.book import _bond_position_support_report, portfolio_aad_curve_risk
+
+        supported_positions, unsupported_positions = _bond_position_support_report(book)
+        supported_book = Book(
+            {name: instrument for name, instrument in supported_positions},
+            notionals={name: book.notional(name) for name, _ in supported_positions},
+        )
+
+        supported_results = {
+            name: price_instrument(instrument, self._curve, self._settlement, greeks="all")
+            for name, instrument in supported_positions
+        }
         positions = {}
-        for name in br:
-            r = br[name]
+        for name, instrument in supported_positions:
+            r = supported_results[name]
             ntl = book.notional(name)
-            mv = r.dirty_price * ntl
             positions[name] = {
                 "dirty_price": r.dirty_price,
                 "clean_price": r.clean_price,
                 "notional": ntl,
-                "mv": mv,
+                "mv": r.dirty_price * ntl,
                 "dv01": r.greeks.get("dv01", 0.0),
                 "duration": r.greeks.get("duration", 0.0),
             }
+
+        br = BookResult(
+            supported_results,
+            supported_book,
+        )
+        agg_krd: dict[float, float] = {}
+        tmv = br.total_mv
+        for name in br:
+            r = br[name]
+            ntl = supported_book.notional(name)
+            mv = r.dirty_price * ntl
             krd = r.greeks.get("key_rate_durations", {})
             for k, v in krd.items():
                 weight = mv / tmv if tmv else 0.0
                 agg_krd[k] = agg_krd.get(k, 0.0) + v * weight
+
+        portfolio_aad = portfolio_aad_curve_risk(book, self._curve, self._settlement)
         return {
             "total_mv": br.total_mv,
             "book_dv01": br.book_dv01,
             "book_duration": br.book_duration,
             "book_krd": agg_krd,
             "positions": positions,
+            "unsupported_positions": unsupported_positions,
+            "portfolio_aad": portfolio_aad.to_payload(),
         }
 
     def to_platform_request(
