@@ -156,11 +156,12 @@ which workflow produced it, and which multi-curve roles were bound at runtime.
 
 Single-name CDS calibration now follows that same pattern. The supported entry
 point is ``calibrate_single_name_credit_curve_workflow(...)``, which accepts
-tenor quotes in spread or hazard form, records the discount-plus-default
-potential binding explicitly, and materializes the calibrated ``CreditCurve``
-through the shared runtime binding surface. The current slice is intentionally
-bounded to reduced-form single-name credit; basket credit and hybrid credit
-calibration remain out of scope.
+tenor quotes in running-spread, standard-coupon-plus-upfront, or hazard form,
+records explicit CDS schedule and discount-plus-default potential binding
+metadata, reports hazard-governance diagnostics, and materializes the
+calibrated ``CreditCurve`` through the shared runtime binding surface. The
+current slice is intentionally bounded to reduced-form single-name credit;
+basket credit, index credit, and hybrid credit calibration remain out of scope.
 
 Those supported calibration paths now also have a checked replay/tolerance
 pack. In practice that means the workflow-level solver provenance, replay

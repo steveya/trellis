@@ -17,6 +17,7 @@ from trellis.core.date_utils import build_period_schedule, year_fraction
 from trellis.core.differentiable import get_numpy
 from trellis.core.types import DayCountConvention, EventSchedule, Frequency, SchedulePeriod
 from trellis.conventions.calendar import BusinessDayAdjustment, Calendar, WEEKEND_ONLY
+from trellis.conventions.schedule import RollConvention, StubType
 from trellis.models.contingent_cashflows import (
     CouponAccrual,
     ProtectionPayment,
@@ -56,6 +57,18 @@ def normalize_cds_running_spread(spread_quote: float) -> float:
     if spread > 1.0:
         spread *= 1e-4
     return spread
+
+
+def normalize_cds_upfront_quote(upfront_quote: float) -> float:
+    """Normalize CDS upfront quotes to a decimal fraction of notional.
+
+    Values with absolute magnitude greater than ``1.0`` are treated as upfront
+    points. For example, ``5.25`` means ``5.25%`` of notional.
+    """
+    upfront = float(upfront_quote)
+    if abs(upfront) > 1.0:
+        upfront *= 1e-2
+    return upfront
 
 
 def _price_cds_with_decimal_running_spread(
@@ -128,6 +141,9 @@ def build_cds_schedule(
     time_origin: date | None = None,
     calendar: Calendar | None = None,
     business_day_adjustment: BusinessDayAdjustment | None = None,
+    roll_convention: RollConvention = RollConvention.NONE,
+    stub: StubType = StubType.SHORT_LAST,
+    payment_lag_days: int = 0,
 ) -> EventSchedule:
     """Build the canonical single-name CDS schedule.
 
@@ -143,6 +159,9 @@ def build_cds_schedule(
         time_origin=origin,
         calendar=calendar or WEEKEND_ONLY,
         bda=business_day_adjustment or BusinessDayAdjustment.FOLLOWING,
+        roll_convention=roll_convention,
+        stub=stub,
+        payment_lag_days=payment_lag_days,
     )
 
 

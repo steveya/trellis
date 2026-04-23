@@ -5,8 +5,10 @@ from datetime import date
 import pytest
 
 from trellis.core.market_state import MarketState
-from trellis.core.date_utils import add_months
+from trellis.core.date_utils import add_months, year_fraction
 from trellis.core.types import DayCountConvention, Frequency
+from trellis.conventions.calendar import BusinessDayAdjustment, US_SETTLEMENT
+from trellis.conventions.schedule import RollConvention, StubType
 from trellis.curves.credit_curve import CreditCurve
 from trellis.curves.yield_curve import YieldCurve
 from trellis.models.calibration.credit import (
@@ -145,6 +147,138 @@ def test_credit_calibration_handoff_prices_cds_with_mixed_hazard_and_spread_quot
     assert result.provenance["calibration_target"]["quote_maps"][0]["quote_unit"] == "hazard_rate"
     assert result.provenance["calibration_target"]["quote_maps"][1]["quote_subject"] == "single_name_cds"
     assert result.provenance["fit_diagnostics"]["max_abs_repricing_error"] == pytest.approx(0.0, abs=1e-10)
+
+
+def test_schedule_aware_credit_calibration_normalizes_upfront_quotes_and_materializes_governance():
+    market_state = _credit_market_state()
+    effective_date = date(2024, 9, 20)
+    synthetic_curve = CreditCurve(
+        (0.5, 1.0, 3.0, 5.0),
+        (0.018, 0.022, 0.031, 0.041),
+    )
+    quote_specs = (
+        (1.0, date(2025, 9, 22), 100.0),
+        (3.0, date(2027, 9, 20), 100.0),
+        (5.0, date(2029, 9, 20), 100.0),
+    )
+    quotes = []
+    for tenor, maturity_date, standard_coupon in quote_specs:
+        schedule = build_cds_schedule(
+            effective_date,
+            maturity_date,
+            Frequency.QUARTERLY,
+            DayCountConvention.ACT_360,
+            time_origin=SETTLE,
+            calendar=US_SETTLEMENT,
+            business_day_adjustment=BusinessDayAdjustment.MODIFIED_FOLLOWING,
+            roll_convention=RollConvention.IMM,
+            stub=StubType.SHORT_FIRST,
+            payment_lag_days=1,
+        )
+        upfront_quote = price_cds_analytical(
+            notional=1.0,
+            spread_quote=standard_coupon,
+            recovery=0.4,
+            schedule=schedule,
+            credit_curve=synthetic_curve,
+            discount_curve=market_state.discount,
+        )
+        quotes.append(
+            CreditHazardCalibrationQuote(
+                tenor,
+                upfront_quote,
+                "upfront",
+                label=f"upfront_{tenor:g}y",
+                start_date=effective_date,
+                maturity_date=maturity_date,
+                frequency=Frequency.QUARTERLY,
+                day_count=DayCountConvention.ACT_360,
+                calendar=US_SETTLEMENT,
+                business_day_adjustment=BusinessDayAdjustment.MODIFIED_FOLLOWING,
+                roll_convention=RollConvention.IMM,
+                stub=StubType.SHORT_FIRST,
+                payment_lag_days=1,
+                standard_running_spread=standard_coupon,
+            )
+        )
+
+    result = calibrate_single_name_credit_curve_workflow(
+        tuple(quotes),
+        market_state,
+        recovery=0.4,
+        curve_name="schedule_aware_credit",
+    )
+
+    assert result.summary["quote_families"] == ["upfront", "upfront", "upfront"]
+    assert result.summary["quote_normalization_method"] == "cds_pricer_schedule_aware"
+    assert result.summary["hazard_governance"]["survival_monotone"] is True
+    assert result.summary["hazard_governance"]["recovery"] == pytest.approx(0.4)
+    assert result.max_abs_repricing_error == pytest.approx(0.0, abs=1e-8)
+    assert result.provenance["calibration_target"]["quote_maps"][0]["quote_family"] == "upfront"
+    first_setup = result.provenance["calibration_target"]["instrument_setup"][0]
+    assert first_setup["start_date"] == effective_date.isoformat()
+    assert first_setup["maturity_date"] == "2025-09-22"
+    assert first_setup["calendar"] == "USSettlement"
+    assert first_setup["business_day_adjustment"] == "MODIFIED_FOLLOWING"
+    assert first_setup["roll_convention"] == "IMM"
+    assert first_setup["payment_lag_days"] == 1
+    assert result.provenance["fit_diagnostics"]["upfront_repricing_errors"] == pytest.approx(
+        [0.0, 0.0, 0.0],
+        abs=1e-8,
+    )
+
+    calibrated_state = result.apply_to_market_state(market_state)
+    record = calibrated_state.materialized_calibrated_object(object_kind="credit_curve")
+    assert record["metadata"]["recovery"] == pytest.approx(0.4)
+    assert record["metadata"]["hazard_governance"]["survival_monotone"] is True
+    assert record["metadata"]["quote_styles"] == ["upfront"]
+
+
+def test_schedule_aware_credit_calibration_derives_omitted_maturity_from_settlement_time_grid():
+    market_state = _credit_market_state()
+    effective_date = date(2024, 9, 20)
+    maturity_date = add_months(SETTLE, 12)
+    curve_tenor = year_fraction(SETTLE, maturity_date, DayCountConvention.ACT_365)
+
+    result = calibrate_single_name_credit_curve_workflow(
+        (
+            CreditHazardCalibrationQuote(
+                1.0,
+                120.0,
+                "spread",
+                label="forward_starting_1y",
+                start_date=effective_date,
+            ),
+        ),
+        market_state,
+        recovery=0.4,
+        curve_name="forward_starting_credit",
+    )
+
+    setup = result.provenance["calibration_target"]["instrument_setup"][0]
+    assert setup["start_date"] == effective_date.isoformat()
+    assert setup["maturity_date"] == maturity_date.isoformat()
+    assert setup["curve_tenor_years"] == pytest.approx(curve_tenor)
+    assert result.tenors[0] == pytest.approx(curve_tenor)
+
+
+def test_upfront_quote_normalization_rejects_no_non_negative_hazard_solution_clearly():
+    market_state = _credit_market_state()
+    quote = CreditHazardCalibrationQuote(
+        1.0,
+        -0.5,
+        "upfront",
+        label="impossible_upfront",
+        standard_running_spread=100.0,
+    )
+
+    with pytest.raises(ValueError, match="no non-negative hazard fits the upfront quote"):
+        calibrate_single_name_credit_curve_workflow(
+            (quote,),
+            market_state,
+            recovery=0.4,
+            curve_name="impossible_upfront_credit",
+        )
 
 
 def test_credit_calibration_rejects_missing_discount_curve_binding():

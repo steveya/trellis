@@ -12,6 +12,7 @@ _SUPPORTED_QUOTE_FAMILIES = (
     "implied_vol",
     "par_rate",
     "spread",
+    "upfront",
     "hazard",
 )
 
@@ -411,6 +412,7 @@ def supported_quote_map_surface() -> tuple[QuoteMapSpec, ...]:
         QuoteMapSpec(quote_family="implied_vol", convention="normal"),
         QuoteMapSpec(quote_family="par_rate"),
         QuoteMapSpec(quote_family="spread"),
+        QuoteMapSpec(quote_family="upfront"),
         QuoteMapSpec(quote_family="hazard"),
     )
 

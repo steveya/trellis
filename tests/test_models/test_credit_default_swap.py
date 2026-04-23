@@ -8,10 +8,13 @@ import numpy as np
 from trellis.curves.credit_curve import CreditCurve
 from trellis.curves.yield_curve import YieldCurve
 from trellis.core.market_state import MarketState
+from trellis.conventions.calendar import BusinessDayAdjustment, US_SETTLEMENT
+from trellis.conventions.schedule import RollConvention, StubType
 from trellis.models.credit_default_swap import (
     build_cds_schedule,
     interval_default_probability,
     normalize_cds_running_spread,
+    normalize_cds_upfront_quote,
     price_cds_analytical,
     price_cds_monte_carlo,
 )
@@ -57,9 +60,36 @@ class TestCreditDefaultSwapHelpers:
         assert schedule.periods[3].payment_date == date(2025, 9, 22)
         assert schedule.periods[4].payment_date == date(2025, 12, 22)
 
+    def test_build_cds_schedule_supports_imm_roll_with_holiday_calendar_and_payment_lag(self):
+        schedule = build_cds_schedule(
+            date(2024, 9, 20),
+            date(2025, 9, 22),
+            Frequency.QUARTERLY,
+            DayCountConvention.ACT_360,
+            time_origin=SETTLE,
+            calendar=US_SETTLEMENT,
+            business_day_adjustment=BusinessDayAdjustment.MODIFIED_FOLLOWING,
+            roll_convention=RollConvention.IMM,
+            stub=StubType.SHORT_FIRST,
+            payment_lag_days=1,
+        )
+
+        assert schedule.period_end_dates == (
+            date(2024, 12, 20),
+            date(2025, 3, 20),
+            date(2025, 6, 20),
+            date(2025, 9, 22),
+        )
+        assert schedule.payment_dates[-1] == date(2025, 9, 23)
+
     def test_normalize_cds_running_spread_accepts_bps_and_decimal(self):
         assert normalize_cds_running_spread(100.0) == pytest.approx(0.01)
         assert normalize_cds_running_spread(0.01) == pytest.approx(0.01)
+
+    def test_normalize_cds_upfront_quote_accepts_points_and_decimal(self):
+        assert normalize_cds_upfront_quote(5.25) == pytest.approx(0.0525)
+        assert normalize_cds_upfront_quote(0.0525) == pytest.approx(0.0525)
+        assert normalize_cds_upfront_quote(-2.0) == pytest.approx(-0.02)
 
     def test_interval_default_probability_uses_survival_ratio(self):
         credit_curve = CreditCurve.flat(0.02)
