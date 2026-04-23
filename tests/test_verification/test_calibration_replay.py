@@ -43,9 +43,12 @@ def test_supported_calibration_workflows_preserve_replay_contracts_and_fit_toler
 
     credit = scenarios["credit"].cold_runner()
     assert credit.solver_provenance.backend["backend_id"] == "scipy"
-    assert credit.solver_replay_artifact.request["request_id"] == "single_name_credit_hazard_least_squares"
-    assert credit.max_abs_hazard_residual < 1e-12
-    assert credit.max_abs_quote_residual < 1e-12
+    assert (
+        credit.solver_replay_artifact.request["request_id"]
+        == "single_name_credit_cds_par_spread_least_squares"
+    )
+    assert credit.max_abs_repricing_error < 5e-12
+    assert credit.max_abs_quote_residual < 1e-8
     assert credit.provenance["potential_binding"]["discount_curve_name"] == "usd_ois"
     assert credit.provenance["calibration_target"]["quote_maps"][0]["quote_family"] == "spread"
     assert credit.provenance["calibration_target"]["quote_maps"][1]["quote_family"] == "spread"

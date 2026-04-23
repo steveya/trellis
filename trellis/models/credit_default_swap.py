@@ -11,6 +11,8 @@ from datetime import date
 from math import ceil
 from typing import Protocol
 
+from scipy.optimize import brentq
+
 from trellis.core.date_utils import build_period_schedule, year_fraction
 from trellis.core.differentiable import get_numpy
 from trellis.core.types import DayCountConvention, EventSchedule, Frequency, SchedulePeriod
@@ -54,6 +56,67 @@ def normalize_cds_running_spread(spread_quote: float) -> float:
     if spread > 1.0:
         spread *= 1e-4
     return spread
+
+
+def _price_cds_with_decimal_running_spread(
+    *,
+    notional: float,
+    spread: float,
+    recovery: float,
+    schedule: EventSchedule,
+    credit_curve: CreditCurveLike,
+    discount_curve: DiscountCurveLike,
+) -> float:
+    """Price a single-name CDS from a decimal running spread."""
+    periods = _require_period_measurements(schedule)
+    if not periods or notional == 0.0:
+        return 0.0
+    valuation_origin = schedule.time_origin or schedule.start_date
+
+    premium_leg = 0.0
+    protection_leg = 0.0
+    accrued_to_valuation = 0.0
+    accrued_on_default = 0.0
+
+    for period in periods:
+        accrual = float(period.accrual_fraction)
+        t_start = _curve_time(valuation_origin, period.start_date)
+        t_end = _curve_time(valuation_origin, period.end_date)
+        t_pay = _curve_time(valuation_origin, period.payment_date)
+        if t_end <= 0.0:
+            continue
+        survival = float(credit_curve.survival_probability(t_end))
+        discount = float(discount_curve.discount(t_pay))
+
+        premium_leg += coupon_cashflow_pv(
+            CouponAccrual(
+                notional=notional,
+                rate=spread,
+                accrual=accrual,
+                discount_factor=discount,
+                weight=survival,
+            )
+        )
+        accrued_to_valuation += (
+            notional
+            * spread
+            * accrual
+            * _elapsed_coupon_fraction(period, valuation_origin=valuation_origin)
+        )
+        period_protection, period_accrued_default = _integrated_default_leg_terms(
+            notional=notional,
+            spread=spread,
+            recovery=recovery,
+            accrual_fraction=accrual,
+            period_start=t_start,
+            period_end=t_end,
+            credit_curve=credit_curve,
+            discount_curve=discount_curve,
+        )
+        protection_leg += period_protection
+        accrued_on_default += period_accrued_default
+
+    return float(protection_leg - premium_leg - accrued_on_default + accrued_to_valuation)
 
 
 def build_cds_schedule(
@@ -198,56 +261,60 @@ def price_cds_analytical(
     discount_curve: DiscountCurveLike,
 ) -> float:
     """Price a single-name CDS from deterministic survival probabilities."""
-    periods = _require_period_measurements(schedule)
     spread = normalize_cds_running_spread(spread_quote)
-    if not periods or notional == 0.0:
+    return _price_cds_with_decimal_running_spread(
+        notional=notional,
+        spread=spread,
+        recovery=recovery,
+        schedule=schedule,
+        credit_curve=credit_curve,
+        discount_curve=discount_curve,
+    )
+
+
+def solve_cds_par_spread_analytical(
+    *,
+    notional: float,
+    recovery: float,
+    schedule: EventSchedule,
+    credit_curve: CreditCurveLike,
+    discount_curve: DiscountCurveLike,
+    tol: float = 1e-10,
+    upper_spread: float = 5.0,
+) -> float:
+    """Return the decimal par running spread that zeros the analytical CDS PV."""
+    if notional == 0.0:
         return 0.0
-    valuation_origin = schedule.time_origin or schedule.start_date
+    if tol <= 0.0:
+        raise ValueError("tol must be positive")
+    if upper_spread <= 0.0:
+        raise ValueError("upper_spread must be positive")
 
-    premium_leg = 0.0
-    protection_leg = 0.0
-    accrued_to_valuation = 0.0
-    accrued_on_default = 0.0
-
-    for period in periods:
-        accrual = float(period.accrual_fraction)
-        t_start = _curve_time(valuation_origin, period.start_date)
-        t_end = _curve_time(valuation_origin, period.end_date)
-        t_pay = _curve_time(valuation_origin, period.payment_date)
-        if t_end <= 0.0:
-            continue
-        survival = float(credit_curve.survival_probability(t_end))
-        discount = float(discount_curve.discount(t_pay))
-
-        premium_leg += coupon_cashflow_pv(
-            CouponAccrual(
-                notional=notional,
-                rate=spread,
-                accrual=accrual,
-                discount_factor=discount,
-                weight=survival,
-            )
-        )
-        accrued_to_valuation += (
-            notional
-            * spread
-            * accrual
-            * _elapsed_coupon_fraction(period, valuation_origin=valuation_origin)
-        )
-        period_protection, period_accrued_default = _integrated_default_leg_terms(
+    def objective(spread: float) -> float:
+        return _price_cds_with_decimal_running_spread(
             notional=notional,
-            spread=spread,
+            spread=float(spread),
             recovery=recovery,
-            accrual_fraction=accrual,
-            period_start=t_start,
-            period_end=t_end,
+            schedule=schedule,
             credit_curve=credit_curve,
             discount_curve=discount_curve,
         )
-        protection_leg += period_protection
-        accrued_on_default += period_accrued_default
 
-    return float(protection_leg - premium_leg - accrued_on_default + accrued_to_valuation)
+    lower = 0.0
+    lower_value = objective(lower)
+    if abs(lower_value) <= tol:
+        return 0.0
+    if lower_value < 0.0:
+        raise ValueError("CDS par-spread solve expected non-negative PV at zero running spread")
+
+    upper = float(upper_spread)
+    upper_value = objective(upper)
+    while upper_value > 0.0 and upper < 100.0:
+        upper *= 2.0
+        upper_value = objective(upper)
+    if upper_value > 0.0:
+        raise ValueError("CDS par-spread solve could not bracket a zero PV spread")
+    return float(brentq(objective, lower, upper, xtol=tol))
 
 
 def price_cds_monte_carlo(

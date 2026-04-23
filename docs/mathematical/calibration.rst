@@ -389,9 +389,9 @@ benchmark fixtures used for workflow validation:
   checked single-smile fixture
 - Local-vol replay keeps the workflow provenance contract stable and requires
   zero unstable calibration-grid points on the checked stable surface fixture
-- Single-name credit replay keeps the same typed hazard solve-request contract
-  and requires near-zero hazard/quote residuals on the checked spread-grid
-  fixture
+- Single-name credit replay keeps the same typed CDS-par-spread least-squares
+  contract and requires near-zero repricing and quote residuals on the checked
+  spread-grid fixture
 
 The benchmark baseline in ``docs/benchmarks/calibration_workflows.{json,md}``
 complements those fit-quality gates with cold-start versus warm-start timing
@@ -588,21 +588,27 @@ The supported credit slice is intentionally bounded to single-name reduced-form
 hazard calibration for CDS-style quotes. Trellis now exposes
 ``calibrate_single_name_credit_curve_workflow(...)`` as the typed entry point.
 
-This remains a proving-grade single-name curve workflow rather than the later
-schedule-aware CDS industrialization path. In particular, the current
-``Spread`` quote handling is still a bounded normalization layer rather than a
-full instrument-by-instrument CDS repricing plant.
+This remains a bounded single-name running-CDS workflow rather than the later
+full industrial CDS bootstrap path. The current implementation now calibrates
+through a CDS pricing engine, but it still uses one canonical quarterly
+``ACT/360`` schedule built from ``market_state.settlement`` with tenor
+maturities rounded to calendar months. It does not yet cover the broader
+standard-coupon/upfront, IMM-roll, holiday-calendar, or recovery-governance
+surface that a production CDS curve plant would need.
 
 The workflow accepts tenor-labeled quotes in either of the shipped credit quote
 families:
 
-- ``Spread`` for running-spread quotes, normalized through
-  :math:`\lambda \approx s / (1 - R)`
-- ``Hazard`` for direct hazard-rate targets
+- ``Spread`` for running-spread quotes, normalized onto decimal running-spread
+  fit space
+- ``Hazard`` for direct hazard-rate targets, normalized through the same CDS
+  pricing stack on a bounded flat-hazard surrogate
 
-The pricing semantics are explicit in provenance. The credit workflow records a
-potential-binding payload that makes the reduced-form discount/default contract
-visible:
+The solve objective now fits model-implied CDS par spreads against those
+normalized target running spreads rather than solving the identity map in
+hazard space. The pricing semantics remain explicit in provenance. The credit
+workflow records a potential-binding payload that makes the reduced-form
+discount/default contract visible:
 
 .. math::
 
@@ -616,11 +622,15 @@ Like the other migrated calibration helpers, the credit workflow returns:
 - the typed ``solve_request`` and normalized ``solve_result``
 - governed ``solver_provenance`` and ``solver_replay_artifact``
 - quote-map metadata and any inverse-transform warnings
+- bounded repricing diagnostics, including target/model running spreads,
+  repricing errors, survival probabilities, and forward hazards on the tenor
+  grid
 - a reusable ``CreditCurve`` together with ``apply_to_market_state(...)`` for
   shared runtime materialization
 
-This slice does not yet widen into basket credit, structural-credit, or hybrid
-credit-equity calibration.
+This slice still does not widen into full schedule-aware CDS bootstrap,
+standard-coupon plus upfront calibration, basket credit, structural-credit, or
+hybrid credit-equity calibration.
 
 Implementation
 --------------

@@ -5,6 +5,7 @@ from datetime import date
 import numpy as raw_np
 import pytest
 
+from trellis.core.date_utils import add_months
 from trellis.models.calibration.heston_fit import calibrate_heston_smile_workflow
 from trellis.models.calibration.local_vol import calibrate_local_vol_surface_workflow
 from trellis.models.calibration.sabr_fit import calibrate_sabr_smile_workflow
@@ -12,13 +13,26 @@ from trellis.models.calibration.credit import (
     CreditHazardCalibrationQuote,
     calibrate_single_name_credit_curve_workflow,
 )
-from trellis.models.credit_default_swap import build_cds_schedule, price_cds_analytical
+from trellis.models.credit_default_swap import (
+    build_cds_schedule,
+    price_cds_analytical,
+    solve_cds_par_spread_analytical,
+)
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.data.mock import MockDataProvider, SNAPSHOTS, _TENOR_GRID
 from trellis.data.resolver import resolve_curve, resolve_market_snapshot
 
 
 class TestMockDataProvider:
+
+    @staticmethod
+    def _bounded_credit_schedule(maturity_years: float):
+        return build_cds_schedule(
+            date(2024, 11, 15),
+            add_months(date(2024, 11, 15), max(int(round(float(maturity_years) * 12.0)), 1)),
+            Frequency.QUARTERLY,
+            DayCountConvention.ACT_360,
+        )
 
     def test_fetch_yields_returns_dict(self):
         provider = MockDataProvider()
@@ -238,19 +252,33 @@ class TestMockDataProvider:
 
         for tenor_text, spread in spread_grid.items():
             tenor = float(tenor_text)
-            expected_hazard = float(spread) / (1.0 - recovery)
-            assert ig_curve.hazard_rate(tenor) == pytest.approx(expected_hazard)
+            expected_spread = solve_cds_par_spread_analytical(
+                notional=1.0,
+                recovery=float(recovery),
+                schedule=self._bounded_credit_schedule(tenor),
+                credit_curve=ig_curve,
+                discount_curve=snapshot.discount_curve("usd_ois"),
+            )
+            assert float(spread) == pytest.approx(expected_spread)
 
     def test_synthetic_credit_spreads_are_derived_from_hazard_inputs(self):
         provider = MockDataProvider()
         snapshot = provider.fetch_market_snapshot(date(2024, 11, 15))
         generation = snapshot.provenance["prior_parameters"]["synthetic_generation_contract"]
-        recovery = float(generation["model_packs"]["credit"]["recovery"])
-        hazard_grid = generation["model_packs"]["credit"]["hazard_rate_inputs"]["usd_ig"]
         spread_grid = generation["quote_bundles"]["credit"]["spread_inputs_decimal"]["usd_ig"]
+        credit_curve = snapshot.credit_curve("usd_ig")
+        discount_curve = snapshot.discount_curve("usd_ois")
+        recovery = float(generation["model_packs"]["credit"]["recovery"])
 
-        for tenor_text, hazard in hazard_grid.items():
-            assert spread_grid[tenor_text] == pytest.approx(float(hazard) * (1.0 - recovery))
+        for tenor_text, spread in spread_grid.items():
+            expected_spread = solve_cds_par_spread_analytical(
+                notional=1.0,
+                recovery=recovery,
+                schedule=self._bounded_credit_schedule(float(tenor_text)),
+                credit_curve=credit_curve,
+                discount_curve=discount_curve,
+            )
+            assert float(spread) == pytest.approx(expected_spread)
 
     def test_synthetic_equity_smile_round_trips_through_heston_workflow(self):
         provider = MockDataProvider()
@@ -338,7 +366,7 @@ class TestMockDataProvider:
         assert record is not None
         assert record["object_name"] == "synthetic_ig_credit"
         assert record["selected_curve_roles"]["discount_curve"] == "usd_ois"
-        assert result.max_abs_hazard_residual == pytest.approx(0.0)
+        assert result.max_abs_repricing_error == pytest.approx(0.0, abs=1e-10)
 
         schedule = build_cds_schedule(
             date(2024, 11, 15),
@@ -354,17 +382,17 @@ class TestMockDataProvider:
             credit_curve=calibrated_state.credit_curve,
             discount_curve=calibrated_state.discount,
         )
-
-        assert observed == pytest.approx(
-            price_cds_analytical(
-                notional=1_000_000.0,
-                spread_quote=contract["credit"]["spread_inputs_decimal"]["usd_ig"]["5.0"],
-                recovery=float(contract["credit"]["recovery"]),
-                schedule=schedule,
-                credit_curve=snapshot.credit_curve("usd_ig"),
-                discount_curve=snapshot.discount_curve("usd_ois"),
-            )
+        reference = price_cds_analytical(
+            notional=1_000_000.0,
+            spread_quote=contract["credit"]["spread_inputs_decimal"]["usd_ig"]["5.0"],
+            recovery=float(contract["credit"]["recovery"]),
+            schedule=schedule,
+            credit_curve=snapshot.credit_curve("usd_ig"),
+            discount_curve=snapshot.discount_curve("usd_ois"),
         )
+
+        assert observed == pytest.approx(0.0, abs=1e-6)
+        assert reference == pytest.approx(0.0, abs=1e-3)
 
     def test_user_supplied_snapshot_keeps_synthetic_generation_contract_absent(self):
         provider = MockDataProvider.from_dict({date(2025, 6, 1): {1.0: 0.04, 5.0: 0.042}})
