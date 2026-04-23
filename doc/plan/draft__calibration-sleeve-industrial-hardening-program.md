@@ -72,7 +72,7 @@ Rules for coding agents:
 | `CAL.1` | `QUA-950` | Done | industrial equity-vol surface foundation and staged model fits | `CAL.0B` |
 | `CAL.2` | `QUA-951` | Done | dated-instrument multi-curve hardening and calibration dependency DAG | none; ordered after the Phase 0 slices |
 | `CAL.3` | `QUA-952` | Done | caplet stripping, swaption cube assembly, and rates-vol model diagnostics | `CAL.2` |
-| `CAL.4` | `QUA-953` | Backlog | schedule-aware single-name credit curve calibration | `CAL.0C` |
+| `CAL.4` | `QUA-953` | Done | schedule-aware single-name credit curve calibration | `CAL.0C` |
 | `CAL.5` | `QUA-954` | Backlog | basket-credit base-correlation workflow and tranche-surface governance | `CAL.4` |
 | `CAL.6` | `QUA-955` | Backlog | first cross-asset calibration slice on explicit dependency DAGs | set the concrete upstream blockers during implementation once the first supported slice is chosen |
 | `CAL.7` | `QUA-956` | Backlog | desk-like fixtures, perturbation diagnostics, and latency envelopes | none; extend alongside the active implementation slices |
