@@ -3,11 +3,11 @@
   "cases": [
     {
       "cold": {
-        "calibrations_per_second": 0.374,
+        "calibrations_per_second": 0.368,
         "label": "swaption_strip",
-        "max_seconds": 2.687128,
-        "mean_seconds": 2.676626,
-        "median_seconds": 2.671967,
+        "max_seconds": 2.718538,
+        "mean_seconds": 2.718538,
+        "median_seconds": 2.718538,
         "metadata": {
           "instrument_count": 2,
           "multi_curve_roles": {
@@ -17,19 +17,17 @@
           },
           "warm_start": true
         },
-        "min_seconds": 2.670784,
+        "min_seconds": 2.718538,
         "mode": "cold",
         "notes": [
           "least_squares",
           "tree_pricing"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          2.671967,
-          2.670784,
-          2.687128
+          2.718538
         ],
-        "warmups": 1
+        "warmups": 0
       },
       "label": "swaption_strip",
       "metadata": {
@@ -46,11 +44,11 @@
         "tree_pricing"
       ],
       "warm": {
-        "calibrations_per_second": 3.432,
+        "calibrations_per_second": 3.415,
         "label": "swaption_strip",
-        "max_seconds": 0.292925,
-        "mean_seconds": 0.291412,
-        "median_seconds": 0.290843,
+        "max_seconds": 0.292813,
+        "mean_seconds": 0.292813,
+        "median_seconds": 0.292813,
         "metadata": {
           "instrument_count": 2,
           "multi_curve_roles": {
@@ -60,30 +58,28 @@
           },
           "warm_start": true
         },
-        "min_seconds": 0.290468,
+        "min_seconds": 0.292813,
         "mode": "warm",
         "notes": [
           "least_squares",
           "tree_pricing"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.290468,
-          0.290843,
-          0.292925
+          0.292813
         ],
-        "warmups": 1
+        "warmups": 0
       },
-      "warm_speedup": 9.185,
+      "warm_speedup": 9.284,
       "workflow": "hull_white"
     },
     {
       "cold": {
-        "calibrations_per_second": 60.055,
+        "calibrations_per_second": 56.386,
         "label": "price_bootstrap_surface",
-        "max_seconds": 0.016962,
-        "mean_seconds": 0.016651,
-        "median_seconds": 0.016693,
+        "max_seconds": 0.017735,
+        "mean_seconds": 0.017735,
+        "median_seconds": 0.017735,
         "metadata": {
           "grid_shape": [
             4,
@@ -93,20 +89,18 @@
           "surface_name": "usd_caplet_strip",
           "warm_start": false
         },
-        "min_seconds": 0.0163,
+        "min_seconds": 0.017735,
         "mode": "cold",
         "notes": [
           "bootstrap",
           "caplet_surface",
           "price_quotes"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.016962,
-          0.016693,
-          0.0163
+          0.017735
         ],
-        "warmups": 1
+        "warmups": 0
       },
       "label": "price_bootstrap_surface",
       "metadata": {
@@ -129,31 +123,29 @@
     },
     {
       "cold": {
-        "calibrations_per_second": 13.741,
+        "calibrations_per_second": 10.808,
         "label": "single_smile",
-        "max_seconds": 0.087049,
-        "mean_seconds": 0.072777,
-        "median_seconds": 0.066457,
+        "max_seconds": 0.092521,
+        "mean_seconds": 0.092521,
+        "median_seconds": 0.092521,
         "metadata": {
           "point_count": 7,
           "surface_name": "usd_rates_smile",
           "synthetic_generation_contract_version": "v2",
           "warm_start": true
         },
-        "min_seconds": 0.064826,
+        "min_seconds": 0.092521,
         "mode": "cold",
         "notes": [
           "least_squares",
           "implied_vol_fit",
           "synthetic_generation_contract_fixture"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.064826,
-          0.066457,
-          0.087049
+          0.092521
         ],
-        "warmups": 1
+        "warmups": 0
       },
       "label": "single_smile",
       "metadata": {
@@ -168,42 +160,40 @@
         "synthetic_generation_contract_fixture"
       ],
       "warm": {
-        "calibrations_per_second": 322.112,
+        "calibrations_per_second": 294.193,
         "label": "single_smile",
-        "max_seconds": 0.003176,
-        "mean_seconds": 0.003105,
-        "median_seconds": 0.003091,
+        "max_seconds": 0.003399,
+        "mean_seconds": 0.003399,
+        "median_seconds": 0.003399,
         "metadata": {
           "point_count": 7,
           "surface_name": "usd_rates_smile",
           "synthetic_generation_contract_version": "v2",
           "warm_start": true
         },
-        "min_seconds": 0.003047,
+        "min_seconds": 0.003399,
         "mode": "warm",
         "notes": [
           "least_squares",
           "implied_vol_fit",
           "synthetic_generation_contract_fixture"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.003091,
-          0.003047,
-          0.003176
+          0.003399
         ],
-        "warmups": 1
+        "warmups": 0
       },
-      "warm_speedup": 23.442,
+      "warm_speedup": 27.219,
       "workflow": "sabr"
     },
     {
       "cold": {
-        "calibrations_per_second": 20.092,
+        "calibrations_per_second": 19.081,
         "label": "price_normalized_cube",
-        "max_seconds": 0.051013,
-        "mean_seconds": 0.04977,
-        "median_seconds": 0.049316,
+        "max_seconds": 0.052409,
+        "mean_seconds": 0.052409,
+        "median_seconds": 0.052409,
         "metadata": {
           "grid_shape": [
             2,
@@ -215,7 +205,7 @@
           "synthetic_generation_contract_version": "v2",
           "warm_start": false
         },
-        "min_seconds": 0.048983,
+        "min_seconds": 0.052409,
         "mode": "cold",
         "notes": [
           "cube_assembly",
@@ -223,13 +213,11 @@
           "price_quotes",
           "synthetic_generation_contract_fixture"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.051013,
-          0.049316,
-          0.048983
+          0.052409
         ],
-        "warmups": 1
+        "warmups": 0
       },
       "label": "price_normalized_cube",
       "metadata": {
@@ -255,11 +243,11 @@
     },
     {
       "cold": {
-        "calibrations_per_second": 0.269,
+        "calibrations_per_second": 0.263,
         "label": "repaired_surface_authority",
-        "max_seconds": 3.726371,
-        "mean_seconds": 3.723247,
-        "median_seconds": 3.723792,
+        "max_seconds": 3.804943,
+        "mean_seconds": 3.804943,
+        "median_seconds": 3.804943,
         "metadata": {
           "grid_shape": [
             5,
@@ -269,20 +257,18 @@
           "synthetic_generation_contract_version": "v2",
           "warm_start": false
         },
-        "min_seconds": 3.719578,
+        "min_seconds": 3.804943,
         "mode": "cold",
         "notes": [
           "svi_surface",
           "quote_governance",
           "synthetic_generation_contract_fixture"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          3.723792,
-          3.719578,
-          3.726371
+          3.804943
         ],
-        "warmups": 1
+        "warmups": 0
       },
       "label": "repaired_surface_authority",
       "metadata": {
@@ -305,31 +291,29 @@
     },
     {
       "cold": {
-        "calibrations_per_second": 1.16,
+        "calibrations_per_second": 1.161,
         "label": "single_smile",
-        "max_seconds": 0.884012,
-        "mean_seconds": 0.862357,
-        "median_seconds": 0.852685,
+        "max_seconds": 0.861616,
+        "mean_seconds": 0.861616,
+        "median_seconds": 0.861616,
         "metadata": {
           "point_count": 5,
           "surface_name": "spx_heston_implied_vol",
           "synthetic_generation_contract_version": "v2",
           "warm_start": true
         },
-        "min_seconds": 0.850375,
+        "min_seconds": 0.861616,
         "mode": "cold",
         "notes": [
           "least_squares",
           "fft_pricing",
           "synthetic_generation_contract_fixture"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.884012,
-          0.852685,
-          0.850375
+          0.861616
         ],
-        "warmups": 1
+        "warmups": 0
       },
       "label": "single_smile",
       "metadata": {
@@ -344,42 +328,40 @@
         "synthetic_generation_contract_fixture"
       ],
       "warm": {
-        "calibrations_per_second": 14.663,
+        "calibrations_per_second": 14.65,
         "label": "single_smile",
-        "max_seconds": 0.06934,
-        "mean_seconds": 0.068199,
-        "median_seconds": 0.068101,
+        "max_seconds": 0.068261,
+        "mean_seconds": 0.068261,
+        "median_seconds": 0.068261,
         "metadata": {
           "point_count": 5,
           "surface_name": "spx_heston_implied_vol",
           "synthetic_generation_contract_version": "v2",
           "warm_start": true
         },
-        "min_seconds": 0.067155,
+        "min_seconds": 0.068261,
         "mode": "warm",
         "notes": [
           "least_squares",
           "fft_pricing",
           "synthetic_generation_contract_fixture"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.068101,
-          0.067155,
-          0.06934
+          0.068261
         ],
-        "warmups": 1
+        "warmups": 0
       },
-      "warm_speedup": 12.645,
+      "warm_speedup": 12.622,
       "workflow": "heston"
     },
     {
       "cold": {
-        "calibrations_per_second": 0.996,
+        "calibrations_per_second": 0.984,
         "label": "surface_compression",
-        "max_seconds": 1.009743,
-        "mean_seconds": 1.004092,
-        "median_seconds": 1.006166,
+        "max_seconds": 1.016551,
+        "mean_seconds": 1.016551,
+        "median_seconds": 1.016551,
         "metadata": {
           "grid_shape": [
             5,
@@ -389,7 +371,7 @@
           "synthetic_generation_contract_version": "v2",
           "warm_start": true
         },
-        "min_seconds": 0.996367,
+        "min_seconds": 1.016551,
         "mode": "cold",
         "notes": [
           "least_squares",
@@ -397,13 +379,11 @@
           "surface_compression",
           "synthetic_generation_contract_fixture"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          1.006166,
-          1.009743,
-          0.996367
+          1.016551
         ],
-        "warmups": 1
+        "warmups": 0
       },
       "label": "surface_compression",
       "metadata": {
@@ -422,11 +402,11 @@
         "synthetic_generation_contract_fixture"
       ],
       "warm": {
-        "calibrations_per_second": 2.815,
+        "calibrations_per_second": 2.753,
         "label": "surface_compression",
-        "max_seconds": 0.35637,
-        "mean_seconds": 0.355267,
-        "median_seconds": 0.354982,
+        "max_seconds": 0.363279,
+        "mean_seconds": 0.363279,
+        "median_seconds": 0.363279,
         "metadata": {
           "grid_shape": [
             5,
@@ -436,7 +416,7 @@
           "synthetic_generation_contract_version": "v2",
           "warm_start": true
         },
-        "min_seconds": 0.35445,
+        "min_seconds": 0.363279,
         "mode": "warm",
         "notes": [
           "least_squares",
@@ -444,24 +424,22 @@
           "surface_compression",
           "synthetic_generation_contract_fixture"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.354982,
-          0.35637,
-          0.35445
+          0.363279
         ],
-        "warmups": 1
+        "warmups": 0
       },
-      "warm_speedup": 2.826,
+      "warm_speedup": 2.798,
       "workflow": "heston_surface"
     },
     {
       "cold": {
-        "calibrations_per_second": 2933.747,
+        "calibrations_per_second": 2531.107,
         "label": "dupire_surface",
-        "max_seconds": 0.000347,
-        "mean_seconds": 0.000341,
-        "median_seconds": 0.000338,
+        "max_seconds": 0.000395,
+        "mean_seconds": 0.000395,
+        "median_seconds": 0.000395,
         "metadata": {
           "grid_shape": [
             5,
@@ -472,20 +450,18 @@
           "synthetic_generation_contract_version": "v2",
           "warm_start": false
         },
-        "min_seconds": 0.000337,
+        "min_seconds": 0.000395,
         "mode": "cold",
         "notes": [
           "dupire",
           "workflow_surface",
           "synthetic_generation_contract_fixture"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.000347,
-          0.000338,
-          0.000337
+          0.000395
         ],
-        "warmups": 1
+        "warmups": 0
       },
       "label": "dupire_surface",
       "metadata": {
@@ -509,11 +485,11 @@
     },
     {
       "cold": {
-        "calibrations_per_second": 1.437,
+        "calibrations_per_second": 1.407,
         "label": "single_name_curve",
-        "max_seconds": 0.70497,
-        "mean_seconds": 0.695911,
-        "median_seconds": 0.691424,
+        "max_seconds": 0.710894,
+        "mean_seconds": 0.710894,
+        "median_seconds": 0.710894,
         "metadata": {
           "curve_name": "usd_ig",
           "model_consistency_contract_version": "v1",
@@ -521,19 +497,17 @@
           "quote_family": "spread",
           "warm_start": false
         },
-        "min_seconds": 0.691339,
+        "min_seconds": 0.710894,
         "mode": "cold",
         "notes": [
           "least_squares",
           "model_consistency_contract_fixture"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          0.691424,
-          0.70497,
-          0.691339
+          0.710894
         ],
-        "warmups": 1
+        "warmups": 0
       },
       "label": "single_name_curve",
       "metadata": {
@@ -553,11 +527,11 @@
     },
     {
       "cold": {
-        "calibrations_per_second": 0.323,
+        "calibrations_per_second": 0.329,
         "label": "desk_tranche_surface",
-        "max_seconds": 3.160434,
-        "mean_seconds": 3.096537,
-        "median_seconds": 3.088733,
+        "max_seconds": 3.043611,
+        "mean_seconds": 3.043611,
+        "median_seconds": 3.043611,
         "metadata": {
           "fixture_style": "desk_like",
           "latency_envelope": {
@@ -618,7 +592,7 @@
           "tranche_count": 3,
           "warm_start": false
         },
-        "min_seconds": 3.040443,
+        "min_seconds": 3.043611,
         "mode": "cold",
         "notes": [
           "brentq_root_scan",
@@ -626,21 +600,19 @@
           "desk_like_fixture",
           "linked_single_name_credit_curve"
         ],
-        "repeats": 3,
+        "repeats": 1,
         "run_seconds": [
-          3.040443,
-          3.088733,
-          3.160434
+          3.043611
         ],
-        "warmups": 1
+        "warmups": 0
       },
       "label": "desk_tranche_surface",
       "latency_envelope": {
         "breaches": {},
         "cold_max_limit_seconds": 8.0,
-        "cold_max_seconds": 3.160434,
+        "cold_max_seconds": 3.043611,
         "cold_mean_limit_seconds": 6.0,
-        "cold_mean_seconds": 3.096537,
+        "cold_mean_seconds": 3.043611,
         "fixture_style": "desk_like",
         "instrument_count": null,
         "label": "desk_tranche_surface",
@@ -719,9 +691,213 @@
       "warm": null,
       "warm_speedup": null,
       "workflow": "basket_credit"
+    },
+    {
+      "cold": {
+        "calibrations_per_second": 103.952,
+        "label": "desk_quanto_correlation",
+        "max_seconds": 0.00962,
+        "mean_seconds": 0.00962,
+        "median_seconds": 0.00962,
+        "metadata": {
+          "correlation_keys": [
+            "EURUSD_corr"
+          ],
+          "fixture_style": "desk_like",
+          "fx_pair": "EURUSD",
+          "latency_envelope": {
+            "cold_max_limit_seconds": 2.0,
+            "cold_mean_limit_seconds": 1.5,
+            "fixture_style": "desk_like",
+            "instrument_count": null,
+            "label": "desk_quanto_correlation",
+            "quote_count": 3,
+            "warm_mean_limit_seconds": 0.5,
+            "workflow": "quanto_correlation"
+          },
+          "linked_curve_roles": {
+            "discount_curve": "usd_ois",
+            "forecast_curve": "EUR-DISC"
+          },
+          "linked_vol_surface": "quanto_flat_vol",
+          "parameter_set_name": "benchmark_quanto_rho",
+          "perturbation_diagnostic": {
+            "absolute_changes": {
+              "quanto_correlation": -0.00741841223079881
+            },
+            "baseline_metrics": {
+              "quanto_correlation": 0.3499999999999991
+            },
+            "label": "quanto_correlation_parallel_quote_up",
+            "max_abs_change": 0.00741841223079881,
+            "max_relative_change": 0.021195463516568085,
+            "perturbation_size": 0.0025,
+            "perturbed_metrics": {
+              "quanto_correlation": 0.3425815877692003
+            },
+            "relative_changes": {
+              "quanto_correlation": -0.021195463516568085
+            },
+            "status": "pass",
+            "threshold_breaches": {}
+          },
+          "quote_count": 3,
+          "support_boundary": "bounded_quanto_correlation",
+          "warm_start": true
+        },
+        "min_seconds": 0.00962,
+        "mode": "cold",
+        "notes": [
+          "least_squares",
+          "desk_like_fixture",
+          "bounded_quanto_correlation",
+          "linked_market_state_materialization"
+        ],
+        "repeats": 1,
+        "run_seconds": [
+          0.00962
+        ],
+        "warmups": 0
+      },
+      "label": "desk_quanto_correlation",
+      "latency_envelope": {
+        "breaches": {},
+        "cold_max_limit_seconds": 2.0,
+        "cold_max_seconds": 0.00962,
+        "cold_mean_limit_seconds": 1.5,
+        "cold_mean_seconds": 0.00962,
+        "fixture_style": "desk_like",
+        "instrument_count": null,
+        "label": "desk_quanto_correlation",
+        "quote_count": 3,
+        "status": "pass",
+        "warm_mean_limit_seconds": 0.5,
+        "warm_mean_seconds": 0.002744,
+        "workflow": "quanto_correlation"
+      },
+      "metadata": {
+        "correlation_keys": [
+          "EURUSD_corr"
+        ],
+        "fixture_style": "desk_like",
+        "fx_pair": "EURUSD",
+        "latency_envelope": {
+          "cold_max_limit_seconds": 2.0,
+          "cold_mean_limit_seconds": 1.5,
+          "fixture_style": "desk_like",
+          "instrument_count": null,
+          "label": "desk_quanto_correlation",
+          "quote_count": 3,
+          "warm_mean_limit_seconds": 0.5,
+          "workflow": "quanto_correlation"
+        },
+        "linked_curve_roles": {
+          "discount_curve": "usd_ois",
+          "forecast_curve": "EUR-DISC"
+        },
+        "linked_vol_surface": "quanto_flat_vol",
+        "parameter_set_name": "benchmark_quanto_rho",
+        "perturbation_diagnostic": {
+          "absolute_changes": {
+            "quanto_correlation": -0.00741841223079881
+          },
+          "baseline_metrics": {
+            "quanto_correlation": 0.3499999999999991
+          },
+          "label": "quanto_correlation_parallel_quote_up",
+          "max_abs_change": 0.00741841223079881,
+          "max_relative_change": 0.021195463516568085,
+          "perturbation_size": 0.0025,
+          "perturbed_metrics": {
+            "quanto_correlation": 0.3425815877692003
+          },
+          "relative_changes": {
+            "quanto_correlation": -0.021195463516568085
+          },
+          "status": "pass",
+          "threshold_breaches": {}
+        },
+        "quote_count": 3,
+        "support_boundary": "bounded_quanto_correlation",
+        "warm_start": true
+      },
+      "notes": [
+        "least_squares",
+        "desk_like_fixture",
+        "bounded_quanto_correlation",
+        "linked_market_state_materialization"
+      ],
+      "warm": {
+        "calibrations_per_second": 364.42,
+        "label": "desk_quanto_correlation",
+        "max_seconds": 0.002744,
+        "mean_seconds": 0.002744,
+        "median_seconds": 0.002744,
+        "metadata": {
+          "correlation_keys": [
+            "EURUSD_corr"
+          ],
+          "fixture_style": "desk_like",
+          "fx_pair": "EURUSD",
+          "latency_envelope": {
+            "cold_max_limit_seconds": 2.0,
+            "cold_mean_limit_seconds": 1.5,
+            "fixture_style": "desk_like",
+            "instrument_count": null,
+            "label": "desk_quanto_correlation",
+            "quote_count": 3,
+            "warm_mean_limit_seconds": 0.5,
+            "workflow": "quanto_correlation"
+          },
+          "linked_curve_roles": {
+            "discount_curve": "usd_ois",
+            "forecast_curve": "EUR-DISC"
+          },
+          "linked_vol_surface": "quanto_flat_vol",
+          "parameter_set_name": "benchmark_quanto_rho",
+          "perturbation_diagnostic": {
+            "absolute_changes": {
+              "quanto_correlation": -0.00741841223079881
+            },
+            "baseline_metrics": {
+              "quanto_correlation": 0.3499999999999991
+            },
+            "label": "quanto_correlation_parallel_quote_up",
+            "max_abs_change": 0.00741841223079881,
+            "max_relative_change": 0.021195463516568085,
+            "perturbation_size": 0.0025,
+            "perturbed_metrics": {
+              "quanto_correlation": 0.3425815877692003
+            },
+            "relative_changes": {
+              "quanto_correlation": -0.021195463516568085
+            },
+            "status": "pass",
+            "threshold_breaches": {}
+          },
+          "quote_count": 3,
+          "support_boundary": "bounded_quanto_correlation",
+          "warm_start": true
+        },
+        "min_seconds": 0.002744,
+        "mode": "warm",
+        "notes": [
+          "least_squares",
+          "desk_like_fixture",
+          "bounded_quanto_correlation",
+          "linked_market_state_materialization"
+        ],
+        "repeats": 1,
+        "run_seconds": [
+          0.002744
+        ],
+        "warmups": 0
+      },
+      "warm_speedup": 3.506,
+      "workflow": "quanto_correlation"
     }
   ],
-  "created_at": "2026-04-23T04:31:29Z",
+  "created_at": "2026-04-23T23:32:54Z",
   "environment": {
     "platform": "macOS-26.3.1-arm64-arm-64bit",
     "python_version": "3.10.6"
@@ -731,13 +907,13 @@
     "Warm-start baselines use workflow-native seed hooks where the workflow supports them."
   ],
   "summary": {
-    "average_warm_speedup": 12.025,
-    "cold_mean_seconds": 1.219831,
-    "desk_like_workflow_count": 1,
-    "latency_envelope_count": 1,
-    "perturbation_diagnostic_count": 1,
-    "warm_mean_seconds": 0.179496,
-    "warm_start_workflow_count": 4,
-    "workflow_count": 10
+    "average_warm_speedup": 11.086,
+    "cold_mean_seconds": 1.120803,
+    "desk_like_workflow_count": 2,
+    "latency_envelope_count": 2,
+    "perturbation_diagnostic_count": 2,
+    "warm_mean_seconds": 0.146099,
+    "warm_start_workflow_count": 5,
+    "workflow_count": 11
   }
 }

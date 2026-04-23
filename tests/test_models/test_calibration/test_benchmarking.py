@@ -97,6 +97,7 @@ def test_supported_calibration_benchmark_scenarios_cover_workflows():
         "local_vol",
         "credit",
         "basket_credit",
+        "quanto_correlation",
     }
     hull_white = scenario_map["hull_white"]
     assert hull_white.metadata["multi_curve_roles"]["discount_curve"] == "usd_ois"
@@ -134,6 +135,21 @@ def test_supported_calibration_benchmark_scenarios_cover_workflows():
     assert basket_credit.metadata["perturbation_diagnostic"]["threshold_breaches"] == {}
     assert basket_credit.metadata["latency_envelope"]["fixture_style"] == "desk_like"
     assert basket_credit.metadata["latency_envelope"]["cold_mean_limit_seconds"] >= 5.0
+    quanto = scenario_map["quanto_correlation"]
+    assert quanto.warm_runner is not None
+    assert quanto.metadata["fixture_style"] == "desk_like"
+    assert quanto.metadata["quote_count"] == 3
+    assert quanto.metadata["fx_pair"] == "EURUSD"
+    assert quanto.metadata["correlation_keys"] == ["EURUSD_corr"]
+    assert quanto.metadata["support_boundary"] == "bounded_quanto_correlation"
+    assert quanto.metadata["linked_vol_surface"] == "quanto_flat_vol"
+    assert quanto.metadata["linked_curve_roles"]["discount_curve"] == "usd_ois"
+    assert quanto.metadata["linked_curve_roles"]["forecast_curve"] == "EUR-DISC"
+    assert quanto.metadata["perturbation_diagnostic"]["label"] == "quanto_correlation_parallel_quote_up"
+    assert quanto.metadata["perturbation_diagnostic"]["max_abs_change"] > 0.0
+    assert quanto.metadata["perturbation_diagnostic"]["threshold_breaches"] == {}
+    assert quanto.metadata["latency_envelope"]["fixture_style"] == "desk_like"
+    assert quanto.metadata["latency_envelope"]["warm_mean_limit_seconds"] == pytest.approx(0.5)
 
 
 def test_perturbation_diagnostic_reports_metric_changes_and_breaches():
