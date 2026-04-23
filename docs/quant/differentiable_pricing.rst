@@ -67,6 +67,13 @@ The checked support contract is intentionally explicit:
        ``surface_bucket_bump``
      - node-value AD for the object, explicit bucket bumps for runtime surface
        risk
+   * - Book-level reverse mode
+     - reverse-mode curve risk for supported bond books through
+       ``trellis.book.portfolio_aad_curve_risk(...)`` and
+       ``Session.risk_report(...)``
+     - bounded to supported bond positions on a shared ``YieldCurve``;
+       unsupported positions are listed in metadata and excluded from the
+       reverse-mode aggregate
    * - Flat volatility risk
      - scalar vega through ``autodiff_flat_vol``
      - flat surfaces only
@@ -85,7 +92,11 @@ The backend capability surface lives in ``trellis.core.differentiable``.
 the executable operator truth table ``grad=True``, ``jacobian=True``,
 ``hessian=True``, ``vjp=True``, ``hessian_vector_product=True``,
 ``jvp=False``, and ``portfolio_aad=False``. The ``vjp`` wrapper returns the
-primal value plus a pullback closure for vector-valued smooth functions.
+primal value plus a pullback closure for vector-valued smooth functions, and
+the first bounded book-level reverse-mode lane now builds on that surface for
+supported curve-linked bond books. The capability flag stays
+``portfolio_aad=False`` because the supported contract is still book-specific
+rather than a claim of universal portfolio-AAD coverage.
 ``hessian_vector_product`` returns an exact reverse-over-reverse HVP for
 scalar-objective functions on smooth-interior regions. It is not a claim about
 branch singularities, discontinuous payoffs, or vector-valued objectives. For
@@ -127,6 +138,8 @@ keeping today's ``autograd`` boundary honest.
 - runtime rate-risk extraction on public ``YieldCurve`` node grids, with
   ``resolved_derivative_method="autodiff_public_curve"`` recorded on the
   resulting analytics outputs
+- bounded book-level reverse mode for supported bond books on a shared
+  ``YieldCurve``, with unsupported positions excluded explicitly in metadata
 - rates bootstrap calibration through an ``autodiff_vector_jacobian`` repricing
   matrix
 - flat-vol Vega extraction in the analytics layer

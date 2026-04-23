@@ -334,6 +334,7 @@ def supported_pod_risk_benchmark_scenarios() -> tuple[RiskBenchmarkScenario, ...
     """Return the checked pod-risk benchmark fixtures."""
     from trellis import Pipeline, Session
     from trellis.book import Book
+    from trellis.book import portfolio_aad_curve_risk
     from trellis.conventions.day_count import DayCountConvention
     from trellis.core.payoff import DeterministicCashflowPayoff
     from trellis.core.types import Frequency
@@ -394,6 +395,18 @@ def supported_pod_risk_benchmark_scenarios() -> tuple[RiskBenchmarkScenario, ...
             },
             notionals={"5Y": 1_000_000.0, "10Y": 750_000.0},
         )
+
+    def benchmark_book_krd(result, book: Book) -> dict[float, float]:
+        total_mv = result.total_mv
+        agg: dict[float, float] = {}
+        for name in result:
+            pricing_result = result[name]
+            mv = pricing_result.dirty_price * book.notional(name)
+            weight = mv / total_mv if total_mv else 0.0
+            for tenor, krd in pricing_result.greeks.get("key_rate_durations", {}).items():
+                tenor_key = float(tenor)
+                agg[tenor_key] = agg.get(tenor_key, 0.0) + float(krd) * weight
+        return agg
 
     def benchmark_snapshot() -> MarketSnapshot:
         return MarketSnapshot(
@@ -466,6 +479,12 @@ def supported_pod_risk_benchmark_scenarios() -> tuple[RiskBenchmarkScenario, ...
         settlement=BENCHMARK_SETTLE,
     )
     warm_bond_payoff = DeterministicCashflowPayoff(benchmark_bond())
+    warm_portfolio_aad_book = benchmark_book()
+    warm_portfolio_aad_curve = benchmark_curve()
+    warm_portfolio_aad_session = Session(
+        curve=warm_portfolio_aad_curve,
+        settlement=BENCHMARK_SETTLE,
+    )
     warm_vol_session = Session(
         market_snapshot=benchmark_snapshot(),
         settlement=BENCHMARK_SETTLE,
@@ -533,6 +552,28 @@ def supported_pod_risk_benchmark_scenarios() -> tuple[RiskBenchmarkScenario, ...
             ).key_rate_durations,
             notes=("curve_rebuild", "rates_risk"),
             metadata={"bucket_count": 4, "methodology": "curve_rebuild"},
+        ),
+        RiskBenchmarkScenario(
+            workflow="portfolio_aad",
+            label="bond_book_reverse_mode",
+            cold_runner=lambda: benchmark_book_krd(
+                warm_portfolio_aad_session.price(
+                    warm_portfolio_aad_book,
+                    greeks="all",
+                ),
+                warm_portfolio_aad_book,
+            ),
+            steady_runner=lambda: portfolio_aad_curve_risk(
+                warm_portfolio_aad_book,
+                warm_portfolio_aad_curve,
+                BENCHMARK_SETTLE,
+            ),
+            notes=("bond_book", "reverse_mode", "supported_curve"),
+            metadata={
+                "curve_nodes": 5,
+                "position_count": 2,
+                "supported_route": "bond_only",
+            },
         ),
         RiskBenchmarkScenario(
             workflow="scenario_pnl",

@@ -88,6 +88,7 @@ def test_supported_pod_risk_benchmark_scenarios_cover_workflows():
     assert workflows == {
         "pipeline_scenarios",
         "key_rate_durations",
+        "portfolio_aad",
         "scenario_pnl",
         "vega",
         "spot_greeks",

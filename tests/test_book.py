@@ -6,7 +6,13 @@ from datetime import date
 
 import pytest
 
-from trellis.book import Book, BookResult, FutureValueCube, ScenarioResultCube
+from trellis.book import (
+    Book,
+    BookResult,
+    FutureValueCube,
+    ScenarioResultCube,
+    portfolio_aad_curve_risk,
+)
 from trellis.core.types import PricingResult
 from trellis.curves.yield_curve import YieldCurve
 from trellis.engine.pricer import price_instrument
@@ -164,6 +170,59 @@ class TestBookResult:
         br = BookResult(results, book)
         assert br.total_mv == 0.0
         assert br.book_duration == 0.0
+
+
+class TestPortfolioAADCurveRisk:
+    """Book-level reverse-mode curve risk for supported bond books."""
+
+    def test_matches_book_krd_for_supported_bond_book(self):
+        curve = YieldCurve([1.0, 2.0, 5.0, 10.0], [0.04, 0.042, 0.045, 0.047])
+        book = Book(
+            {
+                "A": _make_bond(coupon=0.05),
+                "B": _make_bond(coupon=0.04, maturity_date=date(2030, 11, 15), maturity=6),
+            },
+            notionals={"A": 1_000_000, "B": 750_000},
+        )
+
+        result = portfolio_aad_curve_risk(book, curve, date(2024, 11, 15))
+        priced = BookResult(
+            {
+                name: price_instrument(book[name], curve, date(2024, 11, 15), greeks="all")
+                for name in book
+            },
+            book,
+        )
+
+        assert result.metadata["resolved_derivative_method"] == "portfolio_aad_vjp"
+        assert result.metadata["backend_operator"] == "vjp"
+        assert result.metadata["support_status"] == "supported"
+        assert result.metadata["unsupported_position_count"] == 0
+        expected = {}
+        tmv = sum(
+            priced[name].dirty_price * book.notional(name)
+            for name in priced
+        )
+        for name in priced:
+            mv = priced[name].dirty_price * book.notional(name)
+            weight = mv / tmv if tmv else 0.0
+            for tenor, krd in priced[name].greeks["key_rate_durations"].items():
+                expected[tenor] = expected.get(tenor, 0.0) + krd * weight
+        assert set(result) == set(expected)
+        for tenor, krd in expected.items():
+            assert result[tenor] == pytest.approx(krd, rel=1e-8, abs=1e-10)
+
+    def test_reports_unsupported_positions_without_tracing_them(self):
+        curve = YieldCurve.flat(0.045)
+        book = Book({"bond": _make_bond(), "unsupported": object()})
+
+        result = portfolio_aad_curve_risk(book, curve, date(2024, 11, 15))
+
+        assert result.metadata["support_status"] == "partial"
+        assert result.metadata["supported_position_count"] == 1
+        assert result.metadata["unsupported_position_count"] == 1
+        assert result.metadata["unsupported_positions"][0]["position_name"] == "unsupported"
+        assert result.metadata["unsupported_positions"][0]["reason"] == "unsupported_instrument_type"
 
 
 class TestScenarioResultCube:

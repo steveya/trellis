@@ -9,8 +9,10 @@ from datetime import date
 from typing import Any
 
 from trellis.analytics.result import RiskMeasureOutput
-from trellis.core.differentiable import get_numpy
+from trellis.core.differentiable import get_backend_capabilities, get_numpy, vjp
 from trellis.core.types import Instrument, PricingResult
+from trellis.instruments.bond import Bond
+from trellis.curves.yield_curve import YieldCurve
 
 np = get_numpy()
 
@@ -219,6 +221,123 @@ class BookResult:
                     rec[k] = v
             records.append(rec)
         return pd.DataFrame(records)
+
+
+def _bond_position_support_report(book: Book) -> tuple[list[tuple[str, Bond]], list[dict[str, Any]]]:
+    """Split a book into supported bond positions and explicit exclusions."""
+    supported: list[tuple[str, Bond]] = []
+    exclusions: list[dict[str, Any]] = []
+    for name in book:
+        instrument = book[name]
+        if not isinstance(instrument, Bond):
+            exclusions.append(
+                {
+                    "position_name": name,
+                    "instrument_type": type(instrument).__name__,
+                    "reason": "unsupported_instrument_type",
+                }
+            )
+            continue
+        if instrument.maturity_date is None:
+            exclusions.append(
+                {
+                    "position_name": name,
+                    "instrument_type": type(instrument).__name__,
+                    "reason": "bond_maturity_date_required",
+                }
+            )
+            continue
+        supported.append((name, instrument))
+    return supported, exclusions
+
+
+def portfolio_aad_curve_risk(
+    book: Book,
+    curve: YieldCurve,
+    settlement: date,
+) -> RiskMeasureOutput:
+    """Return a reverse-mode curve risk vector for supported bond book positions.
+
+    The returned values are key-rate durations computed from one aggregate book
+    value differentiated through the backend VJP surface. Unsupported positions
+    are excluded explicitly in the attached metadata.
+    """
+    supported_positions, exclusions = _bond_position_support_report(book)
+    capabilities = get_backend_capabilities()
+    tenors = getattr(curve, "tenors", None)
+    rates = getattr(curve, "rates", None)
+    base_metadata: dict[str, Any] = {
+        "resolved_derivative_method": "portfolio_aad_vjp",
+        "backend_id": capabilities.backend_id,
+        "backend_operator": "vjp",
+        "curve_type": type(curve).__name__,
+        "curve_tenors": [] if tenors is None else [float(tenor) for tenor in np.asarray(tenors, dtype=float)],
+        "supported_position_names": [name for name, _ in supported_positions],
+        "unsupported_positions": deepcopy(exclusions),
+        "supported_position_count": len(supported_positions),
+        "unsupported_position_count": len(exclusions),
+        "book_position_count": len(book),
+        "support_status": "supported" if supported_positions and not exclusions else (
+            "partial" if supported_positions else "unsupported"
+        ),
+    }
+
+    if tenors is None or rates is None:
+        base_metadata["fallback_reason"] = {
+            "code": "portfolio_aad_curve_unavailable",
+            "message": "The supplied curve does not expose tenors and rates for reverse-mode book differentiation.",
+        }
+        return RiskMeasureOutput({}, metadata=base_metadata)
+
+    if not supported_positions:
+        base_metadata["fallback_reason"] = {
+            "code": "portfolio_aad_book_unavailable",
+            "message": "No supported bond positions were found in the book.",
+        }
+        return RiskMeasureOutput({}, metadata=base_metadata)
+
+    curve_cls = type(curve)
+    tenors_arr = np.asarray(tenors, dtype=float)
+    rates_arr = np.asarray(rates, dtype=float)
+
+    def book_value_from_rates(rates_vec):
+        traced_curve = curve_cls(tenors_arr, rates_vec)
+        value = np.array(0.0)
+        for name, instrument in supported_positions:
+            value = value + book.notional(name) * instrument.price(traced_curve, settlement)
+        return value
+
+    try:
+        book_value, pullback = vjp(book_value_from_rates, rates_arr)
+        gradient = np.asarray(pullback(1.0), dtype=float)
+    except Exception as exc:
+        base_metadata["fallback_reason"] = {
+            "code": "portfolio_aad_trace_failed",
+            "message": "Reverse-mode differentiation of the aggregate book value failed.",
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+        }
+        return RiskMeasureOutput({}, metadata=base_metadata)
+
+    book_value = float(book_value)
+    gradient = np.asarray(gradient, dtype=float)
+    book_dv01 = -float(np.sum(gradient)) * 0.0001
+    book_duration = 0.0 if book_value == 0.0 else -float(np.sum(gradient)) / book_value
+    key_rate_durations: dict[float, float] = {}
+    for tenor, sensitivity in zip(tenors_arr, gradient):
+        tenor_key = float(tenor)
+        key_rate_durations[tenor_key] = 0.0 if book_value == 0.0 else -float(sensitivity) / book_value
+
+    metadata = {
+        **base_metadata,
+        "book_value": book_value,
+        "book_dv01": book_dv01,
+        "book_duration": book_duration,
+        "gradient": [float(value) for value in gradient],
+        "unsupported_positions": deepcopy(exclusions),
+        "supported_position_market_value": book_value,
+    }
+    return RiskMeasureOutput(key_rate_durations, metadata=metadata)
 
 
 class ScenarioResultCube(Mapping[str, BookResult]):
