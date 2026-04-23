@@ -171,6 +171,14 @@ def test_calibrates_quanto_correlation_and_materializes_runtime_parameter_set():
     assert result.solve_provenance.backend["resolved_derivative_method"] == (
         "scipy_2point_residual_jacobian"
     )
+    assert result.solve_provenance.backend["derivative_method_category"] == (
+        "finite_difference_bump"
+    )
+    assert result.solve_provenance.backend["derivative_method_support"] == "fallback"
+    assert result.solve_provenance.backend["backend_operator"] is None
+    assert result.solve_provenance.backend["fallback_derivative_method"] == (
+        "scipy_2point_residual_jacobian"
+    )
 
     enriched = result.apply_to_market_state(calibration_state)
     record = enriched.materialized_calibrated_object(object_kind="model_parameter_set")
