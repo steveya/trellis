@@ -65,6 +65,15 @@ class TestCookbooks:
         assert "return pv" in cb
         assert "spec.spot" in cb
         assert "black76_call" in cb
+        assert "PV (float)" not in cb
+        assert "return float(price_swaption_black76_raw(resolved))" not in cb
+        assert "return price_swaption_black76_raw(resolved)" in cb
+
+    def test_analytical_cookbook_teaches_trace_safe_public_contract(self):
+        cb = get_cookbook("analytical")
+        assert "present-value scalar" in cb
+        assert "Do not wrap the final present value in `float(...)` solely because `evaluate()` is public." in cb
+        assert "solver or reporting boundary" in cb
 
     def test_analytical_cookbook_includes_fx_garman_kohlhagen_pattern(self):
         cb = get_cookbook("analytical")

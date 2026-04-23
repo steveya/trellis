@@ -101,10 +101,10 @@ Here is a stripped-down template for a new analytical route:
         domestic_rate: float,
         carry_rate: float,
         T: float,
-    ) -> float:
+    ):
         """Price MyProduct. Public adapter — handles market inputs."""
         if T <= 0.0:
-            return float(terminal_intrinsic(option_type, spot=S, strike=K))
+            return terminal_intrinsic(option_type, spot=S, strike=K)
         resolved = ResolvedMyProductInputs(
             option_type=option_type,
             spot=S,
@@ -113,7 +113,7 @@ Here is a stripped-down template for a new analytical route:
             carry_rate=carry_rate,
             T=T,
         )
-        return float(my_product_raw(resolved))
+        return my_product_raw(resolved)
 
 
 Rules for Raw Kernels
@@ -128,8 +128,9 @@ Rules for Raw Kernels
    open-ended ``**kwargs`` plumbing.
 
 3. Keep the raw kernel trace-friendly. Do not wrap the final value in
-   ``float(...)`` inside the traced region; let the public adapter cast if it
-   needs a plain Python float.
+   ``float(...)`` inside the traced region, and do not cast the final
+   present value solely because the public adapter is public. Reserve
+   ``float(...)`` for explicit reporting or solver boundaries.
 
 4. Keep market resolution, date parsing, and hard route selection outside the
    raw kernel. Small semantic branches such as call vs put are fine; traced
@@ -220,6 +221,9 @@ Recent analytical routes in Trellis follow the same resolver-to-raw split:
 When a checked-in helper already owns market binding plus a raw kernel, agent
 generated adapters should delegate to that helper-backed surface instead of
 reconstructing annuity, forward, or strike-normalization logic inline.
+The public adapter should preserve the same present-value scalar as the raw
+kernel; the raw helper exists for reuse and verification, not because the
+public route must collapse the trace.
 
 
 Gradient Verification

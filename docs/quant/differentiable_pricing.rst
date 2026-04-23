@@ -93,6 +93,8 @@ Implementation Rules
 - keep the public pricing adapter trace-safe and reserve ``float(...)`` for
   explicit reporting or solver boundaries; expose raw resolved-input kernels as
   ``*_raw`` helpers when they improve reuse
+- keep generator prompts, cookbook templates, and payoff skeletons aligned to
+  that same public contract so learned routes preserve traced PVs by default
 - for piecewise-linear curves and surfaces, target node-value derivatives as
   the supported contract and treat query-location derivatives as piecewise only
   away from knot boundaries

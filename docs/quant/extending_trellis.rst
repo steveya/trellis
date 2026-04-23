@@ -26,7 +26,9 @@ The core checklist is:
 2. Implement a payoff class with explicit ``requirements`` and ``evaluate()`` semantics.
    If the payoff has a resolved-input pricing kernel, expose it as ``*_raw``
    or ``evaluate_raw(...)`` and keep ``evaluate()`` as the public trace-safe
-   adapter boundary.
+   adapter boundary. Generated payoff skeletons should annotate the public
+   return as ``PricingValue`` and preserve the final present-value scalar
+   through the adapter.
 3. Return the present-value scalar directly. Legacy ``Cashflows`` and
    ``PresentValue`` wrappers remain for backward compatibility only.
 4. Add targeted pricing and capability tests.
