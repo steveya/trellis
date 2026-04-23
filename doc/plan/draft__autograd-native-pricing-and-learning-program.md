@@ -45,7 +45,7 @@ Rules for coding agents:
 | Ticket | Status | Scope |
 | --- | --- | --- |
 | `QUA-958` | Backlog | Public payoff contract and explicit float-only serialization boundary |
-| `QUA-959` | Backlog | Trace-safe `YieldCurve` / `CreditCurve` / `GridVolSurface` and date-aware helpers |
+| `QUA-959` | Done | Trace-safe `YieldCurve` / `CreditCurve` / `GridVolSurface` and date-aware helpers |
 | `QUA-960` | Done | Capability-driven risk-method selection and sensitivity provenance |
 | `QUA-961` | Done | Reduced-state and event-aware Monte Carlo pathwise gradients |
 | `QUA-962` | Done | Systemic calibration Jacobians and derivative-method provenance |

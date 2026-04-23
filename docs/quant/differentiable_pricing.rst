@@ -45,6 +45,41 @@ pricing logic available to both value and sensitivity workflows.
 Where Autograd Helps
 --------------------
 
+The checked support contract is intentionally explicit:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Surface
+     - Supported derivative lane
+     - Boundary
+   * - Public payoff valuation
+     - ``PricingValue`` scalar preserved through ``evaluate(...)`` and
+       ``price_payoff(...)``
+     - smooth payoffs only; reporting/serialization may still coerce to
+       ``float``
+   * - Public curves
+     - ``YieldCurve`` and ``CreditCurve`` node sensitivities through
+       ``autodiff_public_curve``
+     - node-value AD; query-location AD is only piecewise away from knots
+   * - Public vol surfaces
+     - ``GridVolSurface`` node sensitivities and bucketed runtime vega through
+       ``surface_bucket_bump``
+     - node-value AD for the object, explicit bucket bumps for runtime surface
+       risk
+   * - Flat volatility risk
+     - scalar vega through ``autodiff_flat_vol``
+     - flat surfaces only
+   * - Calibration
+     - rates bootstrap ``autodiff_vector_jacobian``, SABR
+       ``autodiff_scalar_gradient``, and Heston smile / full-surface
+       ``finite_difference_vector_jacobian``
+     - solver provenance records the derivative method that actually ran
+   * - Monte Carlo
+     - pathwise gradients through ``simulate_with_shocks(...)`` and
+       ``price_event_aware_monte_carlo(...)``
+     - explicit shocks plus smooth terminal/snapshot/event-replay contracts
+
 - Black76 and Garman-Kohlhagen calls/puts
 - FX vanilla pricing can be assembled explicitly from Black76 terminal basis
   claims via ``terminal_vanilla_from_basis(...)`` after mapping spot FX and
@@ -68,9 +103,10 @@ Where Autograd Helps
   matrix
 - flat-vol Vega extraction in the analytics layer
 - SABR calibration through an ``autodiff_scalar_gradient`` objective
-- supported Heston smile calibration through an explicit bounded
-  ``finite_difference_vector_jacobian`` when the FFT/implied-vol stack itself
-  is not autograd-safe
+- supported Heston smile and full-surface calibration through an explicit
+  bounded ``finite_difference_vector_jacobian`` when the FFT/implied-vol stack
+  itself is not autograd-safe; the full-surface entrypoint is
+  ``fit_heston_surface``
 - simple binomial/trinomial tree rollback through ``backward_induction(..., differentiable=True)``
 - pathwise Monte Carlo pricing through ``simulate_with_shocks(..., differentiable=True)``
 - smooth terminal-only and event-replay state-aware Monte Carlo payoffs through
@@ -144,6 +180,7 @@ Implementation References
 .. automethod:: trellis.instruments.cap.CapPayoff.evaluate
 .. automethod:: trellis.analytics.measures.Vega.compute
 .. autofunction:: trellis.models.calibration.sabr_fit.calibrate_sabr
+.. autofunction:: trellis.models.calibration.heston_fit.fit_heston_surface
 .. autofunction:: trellis.models.trees.backward_induction.backward_induction
 .. automethod:: trellis.models.monte_carlo.engine.MonteCarloEngine.simulate_with_shocks
 .. automethod:: trellis.models.monte_carlo.engine.MonteCarloEngine.price
