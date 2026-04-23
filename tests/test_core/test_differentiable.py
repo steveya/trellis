@@ -103,6 +103,39 @@ def test_vjp_returns_value_and_pullback_matching_dense_jacobian_transpose():
     assert np.allclose(pullback(cotangent), np.asarray(dense_jacobian).T @ cotangent)
 
 
+def test_vjp_preserves_unary_tuple_primal_inputs():
+    np_backend = get_numpy()
+
+    def tuple_function(pair):
+        x, y = pair
+        return np_backend.array([x * y, x + y**2])
+
+    value, pullback = vjp(tuple_function, (2.0, 3.0))
+
+    assert np.allclose(value, np_backend.array([6.0, 11.0]))
+    assert pullback(np_backend.array([1.0, 2.0])) == (
+        pytest.approx(5.0),
+        pytest.approx(14.0),
+    )
+
+
+def test_vjp_supports_explicit_n_ary_primal_unpacking():
+    np_backend = get_numpy()
+
+    def two_arg_function(x, y):
+        return np_backend.array([x * y, x + y**2])
+
+    value, pullback = vjp(
+        two_arg_function,
+        (2.0, 3.0),
+        argnum=1,
+        unpack_primals=True,
+    )
+
+    assert np.allclose(value, np_backend.array([6.0, 11.0]))
+    assert pullback(np_backend.array([1.0, 2.0])) == pytest.approx(14.0)
+
+
 def test_hessian_vector_product_matches_dense_hessian_vector_multiplication():
     np_backend = get_numpy()
 
@@ -120,6 +153,31 @@ def test_hessian_vector_product_matches_dense_hessian_vector_multiplication():
     dense_hessian = hessian(scalar_objective)(x)
 
     assert np.allclose(hvp, np.asarray(dense_hessian) @ vector)
+
+
+def test_hessian_vector_product_preserves_unary_tuple_primal_inputs():
+    def tuple_objective(pair):
+        x, y = pair
+        return x**2 * y + y**3
+
+    hvp = hessian_vector_product(tuple_objective, (2.0, 3.0), (0.5, -0.25))
+
+    assert hvp == (pytest.approx(2.0), pytest.approx(-2.5))
+
+
+def test_hessian_vector_product_supports_explicit_n_ary_primal_unpacking():
+    def two_arg_objective(x, y):
+        return x * y + y**3
+
+    hvp = hessian_vector_product(
+        two_arg_objective,
+        (2.0, 3.0),
+        0.5,
+        argnum=1,
+        unpack_primals=True,
+    )
+
+    assert hvp == pytest.approx(9.0)
 
 
 def test_jvp_fails_closed_with_stock_autograd_normal_cdf_gap_reason():

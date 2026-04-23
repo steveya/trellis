@@ -142,11 +142,13 @@ def jacobian(fn, argnum: int = 0):
     return autograd.jacobian(fn, argnum)
 
 
-def _as_call_args(primals):
-    """Normalize unary versus n-ary primal arguments for eager operators."""
-    if isinstance(primals, tuple):
-        return primals
-    return (primals,)
+def _as_call_args(primals, *, unpack_primals: bool):
+    """Normalize AD call arguments without unpacking unary tuple inputs by default."""
+    if not unpack_primals:
+        return (primals,)
+    if not isinstance(primals, tuple):
+        raise TypeError("unpack_primals=True requires primals to be a tuple")
+    return primals
 
 
 def jvp(fn, primals, tangents):
@@ -168,20 +170,38 @@ def jvp(fn, primals, tangents):
     raise NotImplementedError("jvp is declared supported but no implementation is wired")
 
 
-def vjp(fn, primals, argnum: int = 0):
-    """Return ``(value, pullback)`` for the VJP of *fn* at *primals*."""
+def vjp(fn, primals, argnum: int = 0, *, unpack_primals: bool = False):
+    """Return ``(value, pullback)`` for the VJP of *fn* at *primals*.
+
+    Tuple-valued unary primals are preserved by default. Set
+    ``unpack_primals=True`` when *primals* is the complete positional argument
+    tuple for an n-ary callable.
+    """
     require_capability("vjp")
-    pullback, value = autograd.make_vjp(fn, argnum)(*_as_call_args(primals))
+    pullback, value = autograd.make_vjp(fn, argnum)(
+        *_as_call_args(primals, unpack_primals=unpack_primals)
+    )
     return value, pullback
 
 
-def hessian_vector_product(fn, primals, vector, argnum: int = 0):
+def hessian_vector_product(
+    fn,
+    primals,
+    vector,
+    argnum: int = 0,
+    *,
+    unpack_primals: bool = False,
+):
     """Return ``H @ vector`` for a scalar-objective Hessian at *primals*.
 
     This is a reverse-over-reverse ``autograd`` HVP wrapper. It is intended for
     scalar objectives on smooth interior regions; discontinuities, branch
     singularities, or vector-valued objectives should fail rather than imply a
-    broader second-order support contract.
+    broader second-order support contract. Tuple-valued unary primals are
+    preserved by default; set ``unpack_primals=True`` for n-ary callables.
     """
     require_capability("hessian_vector_product")
-    return autograd.hessian_vector_product(fn, argnum)(*_as_call_args(primals), vector)
+    return autograd.hessian_vector_product(fn, argnum)(
+        *_as_call_args(primals, unpack_primals=unpack_primals),
+        vector,
+    )

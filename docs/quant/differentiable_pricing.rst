@@ -88,7 +88,10 @@ the executable operator truth table ``grad=True``, ``jacobian=True``,
 primal value plus a pullback closure for vector-valued smooth functions.
 ``hessian_vector_product`` returns an exact reverse-over-reverse HVP for
 scalar-objective functions on smooth-interior regions. It is not a claim about
-branch singularities, discontinuous payoffs, or vector-valued objectives.
+branch singularities, discontinuous payoffs, or vector-valued objectives. For
+``vjp`` and ``hessian_vector_product``, tuple-valued unary primals are preserved
+by default; callers must opt into n-ary positional dispatch with
+``unpack_primals=True``.
 
 ``jvp`` stays fail-closed for now. Although stock ``autograd`` exposes
 ``make_jvp``, it does not define a JVP rule for pricing primitives Trellis
