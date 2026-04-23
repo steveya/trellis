@@ -153,6 +153,7 @@ class TestQuoteMaps:
         assert ("implied_vol", "normal") in variants
         assert ("par_rate", "") in variants
         assert ("spread", "") in variants
+        assert ("upfront", "") in variants
         assert ("hazard", "") in variants
 
     def test_identity_quote_map_round_trips_price_quotes(self):

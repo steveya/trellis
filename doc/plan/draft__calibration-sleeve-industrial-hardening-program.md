@@ -400,24 +400,25 @@ Current checked workflow surface:
 What is actually shipped:
 
 - typed single-name reduced-form credit calibration inputs
-- spread and hazard quote maps
-- CDS-pricer-backed normalization onto running-spread fit space
-- repricing, survival-probability, and forward-hazard diagnostics
+- spread, upfront, and hazard quote maps
+- CDS-pricer-backed schedule-aware normalization across running-spread and
+  standard-coupon-plus-upfront quote styles
+- repricing, survival-probability, forward-hazard, and hazard-governance
+  diagnostics
 - credit-curve materialization back onto `MarketState`
 
 What is not yet at desk standard:
 
-- the current workflow is still bounded to one canonical quarterly `ACT/360`
-  tenor schedule built from `market_state.settlement`
-- no full standard-coupon plus upfront workflow, IMM-roll handling, holiday
-  calendars, curve bootstrap policy, or index-credit governance was found
-- no index credit, bond/CDS basis, structural credit, or hybrid credit-equity
-  workflow was found
+- the current workflow is still a bounded single-name strip calibration rather
+  than a smoothed or regularized production CDS curve plant
+- no bid/ask governance, index-credit conventions, bond/CDS basis, or broader
+  curve-policy surface was found
+- no structural credit or hybrid credit-equity workflow was found
 
 Industrial implication:
 
-- this is now a typed CDS-pricer-backed single-name running-spread calibration
-  slice with good provenance and diagnostics
+- this is now a typed CDS-pricer-backed single-name CDS strip calibration slice
+  with quote-style handling, schedule provenance, and governed diagnostics
 - it is still not yet a production CDS bootstrap or broader credit calibration
   engine
 

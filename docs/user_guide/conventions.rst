@@ -20,7 +20,7 @@ Calendars
 
 .. code-block:: python
 
-   from trellis.conventions.calendar import US_SETTLEMENT, TARGET
+   from trellis.conventions.calendar import BusinessDayAdjustment, US_SETTLEMENT, TARGET
 
    US_SETTLEMENT.is_business_day(date(2024, 12, 25))  # False
    US_SETTLEMENT.adjust(date(2024, 11, 30),
@@ -46,10 +46,16 @@ Schedules
 
 .. code-block:: python
 
-   from trellis.conventions.schedule import generate_schedule, StubType
+   from trellis.conventions.schedule import generate_schedule, RollConvention, StubType
+   from trellis.conventions.calendar import BusinessDayAdjustment, US_SETTLEMENT
    from trellis.core.types import Frequency
 
    dates = generate_schedule(start, end, Frequency.QUARTERLY,
                               stub=StubType.SHORT_LAST,
                               calendar=US_SETTLEMENT,
                               bda=BusinessDayAdjustment.MODIFIED_FOLLOWING)
+
+   cds_dates = generate_schedule(cds_effective, cds_maturity, Frequency.QUARTERLY,
+                                 roll_convention=RollConvention.IMM,
+                                 calendar=US_SETTLEMENT,
+                                 bda=BusinessDayAdjustment.MODIFIED_FOLLOWING)

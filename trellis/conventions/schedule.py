@@ -47,6 +47,9 @@ class RollConvention(Enum):
     IMM = "imm"
 
 
+_IMM_MONTHS = (3, 6, 9, 12)
+
+
 def _is_eom(d: date) -> bool:
     """Return whether ``d`` falls on the last calendar day of its month."""
     import calendar as _cal
@@ -77,6 +80,15 @@ def generate_schedule(
     start_d, end_d = _to_date(start), _to_date(end)
     months_per_period = 12 // frequency.value
     use_eom = (roll_convention == RollConvention.EOM and _is_eom(start_d))
+
+    if roll_convention == RollConvention.IMM:
+        return _generate_imm_roll_schedule(
+            start_d,
+            end_d,
+            months_per_period,
+            calendar=calendar,
+            bda=bda,
+        )
 
     if stub in (StubType.SHORT_LAST, StubType.LONG_LAST):
         dates = _generate_forward(start_d, end_d, months_per_period, use_eom)
@@ -283,4 +295,50 @@ def _generate_backward(start: date, end: date, months: int, eom: bool) -> list[d
             break
         dates.insert(0, d)
         i += 1
+    return dates
+
+
+def _adjust_roll_date(
+    d: date,
+    *,
+    calendar: Calendar | None,
+    bda: BusinessDayAdjustment,
+) -> date:
+    """Return ``d`` after the optional business-day adjustment."""
+    if calendar is not None and bda != BusinessDayAdjustment.UNADJUSTED:
+        return calendar.adjust(d, bda)
+    return d
+
+
+def _next_imm_roll_after(start: date) -> date:
+    """Return the next CDS-style IMM roll date after ``start``."""
+    for month in _IMM_MONTHS:
+        candidate = date(start.year, month, 20)
+        if candidate > start:
+            return candidate
+    return date(start.year + 1, _IMM_MONTHS[0], 20)
+
+
+def _generate_imm_roll_schedule(
+    start: date,
+    end: date,
+    months: int,
+    *,
+    calendar: Calendar | None,
+    bda: BusinessDayAdjustment,
+) -> list[date]:
+    """Generate CDS-style IMM roll dates, using the 20th of IMM months."""
+    dates: list[date] = []
+    candidate = _next_imm_roll_after(start)
+    while True:
+        adjusted = _adjust_roll_date(candidate, calendar=calendar, bda=bda)
+        if adjusted >= end:
+            break
+        dates.append(adjusted)
+        candidate = _add_months(candidate, months)
+        candidate = candidate.replace(day=20)
+
+    final_end = _adjust_roll_date(end, calendar=calendar, bda=bda)
+    if not dates or dates[-1] != final_end:
+        dates.append(final_end)
     return dates
