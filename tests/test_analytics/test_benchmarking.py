@@ -94,3 +94,20 @@ def test_supported_pod_risk_benchmark_scenarios_cover_workflows():
         "spot_greeks",
     }
     assert all(scenario.steady_runner is not None for scenario in scenarios)
+
+
+def test_portfolio_aad_benchmark_uses_distinct_cold_and_reverse_mode_lanes():
+    from trellis.analytics.benchmarking import supported_pod_risk_benchmark_scenarios
+
+    scenario = next(
+        scenario
+        for scenario in supported_pod_risk_benchmark_scenarios()
+        if scenario.workflow == "portfolio_aad"
+    )
+
+    cold = scenario.cold_runner()
+    steady = scenario.steady_runner()
+
+    assert isinstance(cold, dict)
+    assert steady.metadata["resolved_derivative_method"] == "portfolio_aad_vjp"
+    assert steady.metadata["backend_operator"] == "vjp"

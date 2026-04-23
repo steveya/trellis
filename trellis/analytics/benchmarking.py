@@ -408,6 +408,17 @@ def supported_pod_risk_benchmark_scenarios() -> tuple[RiskBenchmarkScenario, ...
                 agg[tenor_key] = agg.get(tenor_key, 0.0) + float(krd) * weight
         return agg
 
+    def cold_portfolio_aad_fallback() -> dict[float, float]:
+        book = benchmark_book()
+        session = Session(
+            curve=benchmark_curve(),
+            settlement=BENCHMARK_SETTLE,
+        )
+        return benchmark_book_krd(
+            session.price(book, greeks="all"),
+            book,
+        )
+
     def benchmark_snapshot() -> MarketSnapshot:
         return MarketSnapshot(
             as_of=BENCHMARK_SETTLE,
@@ -556,13 +567,7 @@ def supported_pod_risk_benchmark_scenarios() -> tuple[RiskBenchmarkScenario, ...
         RiskBenchmarkScenario(
             workflow="portfolio_aad",
             label="bond_book_reverse_mode",
-            cold_runner=lambda: benchmark_book_krd(
-                warm_portfolio_aad_session.price(
-                    warm_portfolio_aad_book,
-                    greeks="all",
-                ),
-                warm_portfolio_aad_book,
-            ),
+            cold_runner=cold_portfolio_aad_fallback,
             steady_runner=lambda: portfolio_aad_curve_risk(
                 warm_portfolio_aad_book,
                 warm_portfolio_aad_curve,
