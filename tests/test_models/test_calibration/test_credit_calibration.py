@@ -5,7 +5,7 @@ from datetime import date
 import pytest
 
 from trellis.core.market_state import MarketState
-from trellis.core.date_utils import add_months
+from trellis.core.date_utils import add_months, year_fraction
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.conventions.calendar import BusinessDayAdjustment, US_SETTLEMENT
 from trellis.conventions.schedule import RollConvention, StubType
@@ -232,6 +232,53 @@ def test_schedule_aware_credit_calibration_normalizes_upfront_quotes_and_materia
     assert record["metadata"]["recovery"] == pytest.approx(0.4)
     assert record["metadata"]["hazard_governance"]["survival_monotone"] is True
     assert record["metadata"]["quote_styles"] == ["upfront"]
+
+
+def test_schedule_aware_credit_calibration_derives_omitted_maturity_from_settlement_time_grid():
+    market_state = _credit_market_state()
+    effective_date = date(2024, 9, 20)
+    maturity_date = add_months(SETTLE, 12)
+    curve_tenor = year_fraction(SETTLE, maturity_date, DayCountConvention.ACT_365)
+
+    result = calibrate_single_name_credit_curve_workflow(
+        (
+            CreditHazardCalibrationQuote(
+                1.0,
+                120.0,
+                "spread",
+                label="forward_starting_1y",
+                start_date=effective_date,
+            ),
+        ),
+        market_state,
+        recovery=0.4,
+        curve_name="forward_starting_credit",
+    )
+
+    setup = result.provenance["calibration_target"]["instrument_setup"][0]
+    assert setup["start_date"] == effective_date.isoformat()
+    assert setup["maturity_date"] == maturity_date.isoformat()
+    assert setup["curve_tenor_years"] == pytest.approx(curve_tenor)
+    assert result.tenors[0] == pytest.approx(curve_tenor)
+
+
+def test_upfront_quote_normalization_rejects_no_non_negative_hazard_solution_clearly():
+    market_state = _credit_market_state()
+    quote = CreditHazardCalibrationQuote(
+        1.0,
+        -0.5,
+        "upfront",
+        label="impossible_upfront",
+        standard_running_spread=100.0,
+    )
+
+    with pytest.raises(ValueError, match="no non-negative hazard fits the upfront quote"):
+        calibrate_single_name_credit_curve_workflow(
+            (quote,),
+            market_state,
+            recovery=0.4,
+            curve_name="impossible_upfront_credit",
+        )
 
 
 def test_credit_calibration_rejects_missing_discount_curve_binding():

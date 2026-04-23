@@ -67,6 +67,18 @@ class TestEOMRoll:
             assert d.day == calendar.monthrange(d.year, d.month)[1], f"{d} is not EOM"
 
 
+class TestIMMRoll:
+
+    def test_imm_roll_requires_explicit_short_first_stub(self):
+        with pytest.raises(ValueError, match="IMM roll schedules currently support only SHORT_FIRST"):
+            generate_schedule(
+                date(2024, 9, 20),
+                date(2025, 9, 22),
+                Frequency.QUARTERLY,
+                roll_convention=RollConvention.IMM,
+            )
+
+
 class TestCalendarAdjustment:
 
     def test_adjusted_dates(self):

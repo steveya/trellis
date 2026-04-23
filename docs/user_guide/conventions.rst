@@ -56,6 +56,7 @@ Schedules
                               bda=BusinessDayAdjustment.MODIFIED_FOLLOWING)
 
    cds_dates = generate_schedule(cds_effective, cds_maturity, Frequency.QUARTERLY,
+                                 stub=StubType.SHORT_FIRST,
                                  roll_convention=RollConvention.IMM,
                                  calendar=US_SETTLEMENT,
                                  bda=BusinessDayAdjustment.MODIFIED_FOLLOWING)

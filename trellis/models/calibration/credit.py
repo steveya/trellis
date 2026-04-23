@@ -11,7 +11,7 @@ from scipy.optimize import brentq
 
 from trellis.conventions.calendar import BusinessDayAdjustment, Calendar
 from trellis.conventions.schedule import RollConvention, StubType
-from trellis.core.date_utils import add_months
+from trellis.core.date_utils import add_months, year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.curves.credit_curve import CreditCurve
@@ -47,6 +47,7 @@ from trellis.models.credit_default_swap import (
 _CDS_CALIBRATION_NOTIONAL = 1.0
 _CDS_CALIBRATION_FREQUENCY = Frequency.QUARTERLY
 _CDS_CALIBRATION_DAY_COUNT = DayCountConvention.ACT_360
+_CDS_CURVE_DAY_COUNT = DayCountConvention.ACT_365
 
 
 def _require_finite(value: float, *, field_name: str) -> float:
@@ -105,11 +106,14 @@ def _build_quote_cds_schedule(
     start_date = quote.start_date or settlement
     if quote.maturity_date is None:
         months = max(int(round(float(quote.maturity_years) * 12.0)), 1)
-        maturity_date = add_months(start_date, months)
+        maturity_date = add_months(settlement, months)
     else:
         maturity_date = quote.maturity_date
     if maturity_date <= start_date:
         raise ValueError("credit calibration quote maturity_date must be after start_date")
+    curve_tenor_years = float(year_fraction(settlement, maturity_date, _CDS_CURVE_DAY_COUNT))
+    if curve_tenor_years <= 0.0:
+        raise ValueError("credit calibration quote maturity_date must be after settlement")
     schedule = build_cds_schedule(
         start_date,
         maturity_date,
@@ -133,6 +137,7 @@ def _build_quote_cds_schedule(
         "stub": quote.stub.name,
         "payment_lag_days": int(quote.payment_lag_days),
         "period_count": len(schedule.periods),
+        "curve_tenor_years": curve_tenor_years,
         "first_payment_date": schedule.payment_dates[0].isoformat() if schedule.periods else "",
         "last_payment_date": schedule.payment_dates[-1].isoformat() if schedule.periods else "",
     }
@@ -396,6 +401,11 @@ def _hazard_from_upfront_quote(
     lower_value = objective(lower)
     if abs(lower_value) <= tolerance:
         return float(lower)
+    if lower_value > 0.0:
+        raise ValueError(
+            "bounded CDS upfront normalization expected non-positive PV at "
+            "near-zero hazard; no non-negative hazard fits the upfront quote"
+        )
     upper_value = objective(upper)
     while lower_value * upper_value > 0.0 and upper < 100.0:
         upper *= 2.0
@@ -797,7 +807,6 @@ def calibrate_single_name_credit_curve_workflow(
         raise ValueError("max_hazard must be finite and positive")
     normalized_quotes = _normalize_quotes(quotes)
     labels = tuple(quote.resolved_label(index) for index, quote in enumerate(normalized_quotes))
-    tenors = tuple(float(quote.maturity_years) for quote in normalized_quotes)
     schedule_aware = any(_quote_schedule_aware(quote) for quote in normalized_quotes)
     quote_normalization_method = (
         "cds_pricer_schedule_aware"
@@ -861,6 +870,7 @@ def calibrate_single_name_credit_curve_workflow(
                 )
             )
 
+    tenors = tuple(float(setup["curve_tenor_years"]) for setup in instrument_setups)
     target_running_spreads_values: list[float] = []
     target_hazards_values: list[float] = []
     quote_transform_warnings: list[str] = []

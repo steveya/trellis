@@ -82,6 +82,8 @@ def generate_schedule(
     use_eom = (roll_convention == RollConvention.EOM and _is_eom(start_d))
 
     if roll_convention == RollConvention.IMM:
+        if stub != StubType.SHORT_FIRST:
+            raise ValueError("IMM roll schedules currently support only SHORT_FIRST stubs")
         return _generate_imm_roll_schedule(
             start_d,
             end_d,
