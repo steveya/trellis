@@ -46,6 +46,17 @@ class _VolPointPayoff:
         return float(market_state.vol_surface.black_vol(self.expiry, self.strike))
 
 
+class _TraceSafeVolPointPayoff:
+    requirements = {"black_vol_surface"}
+
+    def __init__(self, expiry: float, strike: float):
+        self.expiry = float(expiry)
+        self.strike = float(strike)
+
+    def evaluate(self, market_state):
+        return market_state.vol_surface.black_vol(self.expiry, self.strike)
+
+
 class _SpotQuadraticPayoff:
     requirements = {"spot"}
 
@@ -62,6 +73,32 @@ class _LinearTimeDecayPayoff:
 
     def evaluate(self, market_state):
         return float((self.expiry_date - market_state.settlement).days)
+
+
+class _ShiftableFlatCurve:
+    def __init__(self, rate: float):
+        self.rate = float(rate)
+
+    def zero_rate(self, t: float) -> float:
+        return self.rate
+
+    def discount(self, t: float) -> float:
+        return float(np.exp(-self.rate * float(t)))
+
+    def shift(self, bps: float):
+        return _ShiftableFlatCurve(self.rate + float(bps) / 10_000.0)
+
+    def bump(self, tenor_bumps: dict[float, float]):
+        parallel_bps = next(iter((tenor_bumps or {}).values()), 0.0)
+        return self.shift(parallel_bps)
+
+
+class _RepresentativeVolSurface:
+    def __init__(self, base_vol: float):
+        self.base_vol = float(base_vol)
+
+    def black_vol(self, expiry: float, strike: float) -> float:
+        return self.base_vol + 0.01 * float(expiry) + 0.0001 * float(strike)
 
 
 def _snapshot():
@@ -186,6 +223,7 @@ class TestSessionPricing:
 
         metadata = result.greeks["key_rate_durations"].metadata
         assert metadata["resolved_methodology"] == "zero_curve"
+        assert metadata["resolved_derivative_method"] == "autodiff_public_curve"
         assert metadata["bucket_convention"] == "curve_tenor"
         assert metadata["bucket_tenors"] == [1.0, 2.0, 5.0, 10.0]
 
@@ -201,7 +239,26 @@ class TestSessionPricing:
         assert result.price > 0
         assert result.dv01 > 0
         assert result.convexity > 0
+        assert result.dv01.metadata["resolved_derivative_method"] == "autodiff_public_curve"
+        assert result.duration.metadata["resolved_derivative_method"] == "autodiff_public_curve"
+        assert result.convexity.metadata["resolved_derivative_method"] == "autodiff_public_curve"
+        assert result.key_rate_durations.metadata["resolved_derivative_method"] == "autodiff_public_curve"
         assert sum(result.key_rate_durations.values()) == pytest.approx(result.duration, rel=0.05)
+
+    def test_analyze_rate_sensitivities_record_parallel_bump_fallback_provenance(self):
+        from trellis.core.payoff import DeterministicCashflowPayoff
+
+        s = Session(curve=_ShiftableFlatCurve(0.045), settlement=SETTLE)
+        result = s.analyze(
+            DeterministicCashflowPayoff(_bond()),
+            measures=["dv01", "duration", "convexity"],
+        )
+
+        assert result.dv01 > 0.0
+        assert result.dv01.metadata["resolved_derivative_method"] == "parallel_curve_bump"
+        assert result.duration.metadata["resolved_derivative_method"] == "parallel_curve_bump"
+        assert result.convexity.metadata["resolved_derivative_method"] == "parallel_curve_bump"
+        assert result.dv01.metadata["fallback_reason"]["code"] == "autodiff_public_curve_unavailable"
 
     def test_analyze_uses_interpolation_aware_krd_for_off_grid_buckets(self):
         from trellis.core.payoff import DeterministicCashflowPayoff
@@ -342,10 +399,38 @@ class TestSessionPricing:
         assert result.vega[1.0][90.0] == pytest.approx(0.0, abs=1e-12)
         metadata = result.vega.metadata
         assert metadata["bucket_convention"] == "expiry_strike"
+        assert metadata["resolved_derivative_method"] == "surface_bucket_bump"
         assert metadata["bucket_expiries"] == [1.0, 1.5, 2.0]
         assert metadata["bucket_strikes"] == [90.0, 100.0, 110.0]
         warnings = {warning["code"] for warning in metadata["warnings"]}
         assert "interpolated_surface_bucket" in warnings
+
+    def test_analyze_scalar_flat_vega_records_autodiff_provenance(self):
+        s = Session(curve=_curve(), settlement=SETTLE, vol_surface=FlatVol(0.20))
+        result = s.analyze(
+            _TraceSafeVolPointPayoff(1.0, 90.0),
+            measures=[{"vega": {"bump_pct": 1.0}}],
+        )
+
+        assert result.vega == pytest.approx(0.01, abs=1e-12)
+        assert result.vega.metadata["resolved_derivative_method"] == "autodiff_flat_vol"
+        assert result.vega.metadata["resolved_surface_type"] == "flat"
+
+    def test_analyze_scalar_vega_records_representative_surface_fallback_provenance(self):
+        s = Session(
+            curve=_curve(),
+            settlement=SETTLE,
+            vol_surface=_RepresentativeVolSurface(0.20),
+        )
+        result = s.analyze(
+            _TraceSafeVolPointPayoff(1.0, 90.0),
+            measures=[{"vega": {"bump_pct": 1.0}}],
+        )
+
+        assert result.vega.metadata["resolved_derivative_method"] == "representative_flat_vol_bump"
+        assert result.vega.metadata["fallback_reason"]["code"] == "representative_surface_reduction"
+        warnings = {warning["code"] for warning in result.vega.metadata["warnings"]}
+        assert "representative_surface_reduction" in warnings
 
     def test_analyze_bucketed_vega_records_flat_surface_expansion_warning(self):
         s = Session(curve=_curve(), settlement=SETTLE, vol_surface=FlatVol(0.20))
@@ -378,6 +463,9 @@ class TestSessionPricing:
 
         assert result.delta == pytest.approx(200.5, abs=1e-10)
         assert result.gamma == pytest.approx(2.0, abs=1e-10)
+        assert result.delta.metadata["resolved_derivative_method"] == "spot_central_bump"
+        assert result.gamma.metadata["resolved_derivative_method"] == "spot_central_bump"
+        assert result.delta.metadata["resolved_spot_binding"] == "spot"
 
     def test_analyze_theta_rolls_one_day_forward(self):
         s = Session(curve=_curve(), settlement=SETTLE)
@@ -387,6 +475,8 @@ class TestSessionPricing:
         )
 
         assert result.theta == pytest.approx(-1.0, abs=1e-12)
+        assert result.theta.metadata["resolved_derivative_method"] == "calendar_roll_down_bump"
+        assert result.theta.metadata["day_step"] == 1
 
     def test_analyze_delta_fails_when_no_spot_binding_is_available(self):
         from trellis.core.payoff import DeterministicCashflowPayoff

@@ -59,6 +59,9 @@ Where Autograd Helps
   ``trellis.models.analytical.barrier.down_and_in_call_raw``
 - public ``YieldCurve`` / ``CreditCurve`` node-value sensitivities and
   ``GridVolSurface`` node-value sensitivities
+- runtime rate-risk extraction on public ``YieldCurve`` node grids, with
+  ``resolved_derivative_method="autodiff_public_curve"`` recorded on the
+  resulting analytics outputs
 - flat-vol Vega extraction in the analytics layer
 - SABR calibration through a gradient-assisted objective
 - simple binomial/trinomial tree rollback through ``backward_induction(..., differentiable=True)``
@@ -75,8 +78,9 @@ Where Trellis Still Stays Forward-Only
 - discontinuous payoffs that would need smoothing or a custom adjoint
 - broader European barrier families beyond the T09 route, which remain
   forward-only until a second consumer justifies shared barrier support
-- smile surfaces that are not naturally parameterized as a single differentiable
-  volatility scalar
+- scalar vega on unsupported smile surfaces, which now reports an explicit
+  representative-flat-vol fallback instead of silently pretending to be a
+  surface-native Greek
 - reduced-storage state-aware Monte Carlo payoffs, which still coerce results
   back to plain ``float`` arrays
 - custom discretization schemes that are not autograd-aware themselves
@@ -102,6 +106,9 @@ Implementation Rules
 - preserve the full ``MarketState`` when cloning a traced pricing state
 - prefer autodiff when it replaces bump/reprice loops, parallel DV01s, or
   optimizer Jacobians
+- when a runtime measure falls back to bumps, record that derivative-method
+  choice in the public result metadata instead of hiding it behind a plain
+  scalar
 
 Implementation References
 -------------------------

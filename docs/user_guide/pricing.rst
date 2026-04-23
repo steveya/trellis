@@ -871,6 +871,12 @@ Delta and gamma require a usable spot binding. Trellis accepts either
 snapshot. If no unambiguous spot binding exists, the runtime now raises an
 explicit error instead of silently omitting the measure.
 
+Those scalar outputs are float-like objects with attached provenance. In
+practice that means ``result.delta.metadata["resolved_derivative_method"]``
+reports ``"spot_central_bump"``, ``result.delta.metadata["resolved_spot_binding"]``
+shows which spot binding was bumped, and ``result.theta.metadata["day_step"]``
+records the calendar roll that produced theta.
+
 When you request ``key_rate_durations`` through ``Session.price(...)``,
 ``Session.greeks(...)``, or ``Session.risk_report(...)``, Trellis now uses the
 same interpolation-aware bucket engine as ``Session.analyze(...)`` and returns
@@ -883,6 +889,12 @@ metadata. In practice that means you can inspect
 ``result.scenario_pnl.metadata`` to see whether Trellis used direct
 zero-curve bucket shocks or a rebuild-based quote-space workflow, which bucket
 grid it used, and whether any fallback occurred.
+
+For public ``YieldCurve`` inputs on the native tenor grid, the same metadata
+now also records ``resolved_derivative_method="autodiff_public_curve"``.
+Off-grid key-rate buckets still resolve through the interpolation-aware bucket
+shock substrate instead, so the metadata tells you whether you got a traced
+node-value sensitivity or a bucket-bump sensitivity.
 
 For interpolation-aware custom KRD buckets, use ``Session.analyze(...)`` with
 an explicit ``key_rate_durations`` measure configuration. The requested tenor
@@ -1001,16 +1013,21 @@ dict-like expiry/strike surface instead of one coarse scalar:
    assert vega_surface.metadata["bucket_convention"] == "expiry_strike"
 
 The attached ``.metadata`` payload records the configured bucket grid, the
-resolved surface type, and any warnings. Two warning codes are especially
-useful in practice:
+resolved derivative method, the resolved surface type, and any warnings. Two
+warning codes are especially useful in practice:
 
 - ``interpolated_surface_bucket`` means the requested bucket does not land on
   an observed surface node and was synthesized from the surrounding grid
 - ``flat_surface_expanded`` means the runtime started from ``FlatVol`` and had
   to expand it onto the requested bucket grid before shocking it
 
-When you omit ``expiries`` and ``strikes``, ``vega`` still returns the older
-coarse scalar sensitivity.
+When you omit ``expiries`` and ``strikes``, ``vega`` returns a float-like
+scalar result with the same metadata pattern. ``FlatVol`` resolves through
+``resolved_derivative_method="autodiff_flat_vol"``, ``GridVolSurface`` resolves
+through ``"surface_parallel_bucket_bump"``, and unsupported custom surfaces now
+record ``"representative_flat_vol_bump"`` plus a
+``representative_surface_reduction`` warning instead of silently hiding the
+surface reduction.
 
 The supported pod-risk workflows now also have a checked throughput baseline in
 ``docs/benchmarks/pod_risk_workflows.md``. That report covers the shared

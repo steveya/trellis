@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, Protocol
 
-from trellis.analytics.result import RiskMeasureOutput
+from trellis.analytics.result import RiskMeasureOutput, ScalarRiskMeasureOutput
 from trellis.core.differentiable import get_numpy, gradient
 from trellis.core.market_state import MarketState
 from trellis.curves.bootstrap import (
@@ -30,7 +30,6 @@ from trellis.curves.bootstrap import (
 )
 from trellis.curves.scenario_packs import build_rate_curve_scenario_pack
 from trellis.curves.shocks import build_curve_shock_surface
-from trellis.curves.interpolation import linear_interp
 from trellis.models.vol_surface import FlatVol, GridVolSurface
 from trellis.models.vol_surface_shocks import build_vol_surface_shock_surface
 
@@ -77,22 +76,6 @@ class Measure(Protocol):
         ...
 
 
-@dataclass(frozen=True)
-class _AutodiffDiscountCurve:
-    """Minimal differentiable discount curve used for sensitivity extraction."""
-
-    tenors: Any
-    rates: Any
-
-    def zero_rate(self, t: float) -> float:
-        """Return the interpolated zero rate at time *t*."""
-        return linear_interp(t, self.tenors, self.rates)
-
-    def discount(self, t: float) -> float:
-        """Return the discount factor implied by the traced rate vector."""
-        return np.exp(-self.zero_rate(t) * t)
-
-
 def _clone_market_state(ms: MarketState, **overrides) -> MarketState:
     """Clone a market state while preserving all optional market components."""
     data = {
@@ -121,6 +104,111 @@ def _clone_market_state(ms: MarketState, **overrides) -> MarketState:
     return MarketState(**data)
 
 
+def _warning_payload_from_parts(
+    code: str,
+    message: str,
+    **details,
+) -> dict[str, Any]:
+    payload = {
+        "code": str(code),
+        "message": str(message),
+    }
+    payload.update({key: value for key, value in details.items() if value is not None})
+    return payload
+
+
+def _declared_risk_support(component, capability: str) -> dict[str, Any] | None:
+    support = getattr(component, "risk_derivative_support", None)
+    if not isinstance(support, dict):
+        return None
+    resolved = support.get(capability)
+    if not isinstance(resolved, dict):
+        return None
+    return dict(resolved)
+
+
+def _parallel_rate_bundle_fallback_reason(discount) -> dict[str, Any]:
+    curve_type = None if discount is None else type(discount).__name__
+    support = _declared_risk_support(discount, "parallel_rate_bundle")
+    if discount is None:
+        return _warning_payload_from_parts(
+            "autodiff_public_curve_unavailable",
+            "No discount curve is available for autodiff rate sensitivities.",
+        )
+    if support is None:
+        return _warning_payload_from_parts(
+            "autodiff_public_curve_unavailable",
+            f"{curve_type} does not declare public autodiff support for rate sensitivities.",
+            curve_type=curve_type,
+        )
+    if str(support.get("method") or "") != "autodiff_public_curve":
+        return _warning_payload_from_parts(
+            "autodiff_public_curve_unavailable",
+            f"{curve_type} does not expose the autodiff_public_curve rate-derivative contract.",
+            curve_type=curve_type,
+            declared_method=support.get("method"),
+        )
+    if getattr(discount, "tenors", None) is None or getattr(discount, "rates", None) is None:
+        return _warning_payload_from_parts(
+            "autodiff_public_curve_unavailable",
+            f"{curve_type} declares autodiff_public_curve support but does not expose tenor/rate nodes.",
+            curve_type=curve_type,
+        )
+    return _warning_payload_from_parts(
+        "autodiff_public_curve_unavailable",
+        f"{curve_type} could not be reconstructed through the declared public autodiff curve contract.",
+        curve_type=curve_type,
+    )
+
+
+def _autodiff_rate_bundle_failure_reason(
+    ms: MarketState,
+    exc: Exception,
+) -> dict[str, Any]:
+    discount = ms.discount
+    support = _declared_risk_support(discount, "parallel_rate_bundle")
+    if (
+        discount is None
+        or support is None
+        or str(support.get("method") or "") != "autodiff_public_curve"
+        or getattr(discount, "tenors", None) is None
+        or getattr(discount, "rates", None) is None
+    ):
+        return _parallel_rate_bundle_fallback_reason(discount)
+    return _warning_payload_from_parts(
+        "autodiff_price_trace_failed",
+        "Autodiff rate sensitivities could not trace the pricing function through the declared public curve contract.",
+        curve_type=type(discount).__name__,
+        error_type=type(exc).__name__,
+    )
+
+
+def _rate_measure_metadata(
+    ms: MarketState,
+    *,
+    resolved_derivative_method: str,
+    parameterization: str | None = None,
+    bump_bps: float | None = None,
+    fallback_reason: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    metadata = {
+        "resolved_derivative_method": str(resolved_derivative_method),
+        "selected_curve_name": ms.selected_curve_name("discount_curve"),
+        "resolved_curve_type": None if ms.discount is None else type(ms.discount).__name__,
+        "warnings": [] if fallback_reason is None else [dict(fallback_reason)],
+        "fallback_reason": None if fallback_reason is None else dict(fallback_reason),
+    }
+    if parameterization is not None:
+        metadata["parameterization"] = str(parameterization)
+    if bump_bps is not None:
+        metadata["bump_bps"] = float(bump_bps)
+    return metadata
+
+
+def _scalar_risk_output(value, *, metadata: dict[str, Any]) -> ScalarRiskMeasureOutput:
+    return ScalarRiskMeasureOutput(value, metadata=metadata)
+
+
 def _autodiff_rate_bundle(
     payoff,
     ms: MarketState,
@@ -128,24 +216,29 @@ def _autodiff_rate_bundle(
 ) -> dict[str, Any]:
     """Compute all rate sensitivities in one autodiff pass (DV01, duration, convexity, KRDs).
 
-    Only works when the discount curve has ``tenors`` and ``rates`` attributes
-    (i.e. a YieldCurve). Raises TypeError otherwise, in which case callers
-    should fall back to finite-difference bumping.
+    Only works when the public discount curve declares the
+    ``autodiff_public_curve`` support contract and exposes tenor/rate nodes.
+    Raises ``TypeError`` otherwise, in which case callers should fall back
+    to finite-difference bumping.
     """
 
     discount = ms.discount
+    support = _declared_risk_support(discount, "parallel_rate_bundle")
+    if support is None or str(support.get("method") or "") != "autodiff_public_curve":
+        raise TypeError("Autodiff curve sensitivities require a declared public autodiff curve.")
     tenors = getattr(discount, "tenors", None)
     rates = getattr(discount, "rates", None)
     if tenors is None or rates is None:
-        raise TypeError("Autodiff curve sensitivities require a tenor/rate discount curve.")
+        raise TypeError("Autodiff curve sensitivities require exposed tenor/rate nodes.")
 
     tenors_arr = np.asarray(tenors, dtype=float)
     rates_arr = np.asarray(rates, dtype=float)
+    curve_cls = type(discount)
 
     def price_from_rates(rates_vec):
         traced_ms = _clone_market_state(
             ms,
-            discount=_AutodiffDiscountCurve(tenors_arr, rates_vec),
+            discount=curve_cls(tenors_arr, rates_vec),
             forward_curve=None,
         )
         return payoff.evaluate(traced_ms)
@@ -170,6 +263,12 @@ def _autodiff_rate_bundle(
         key_rate_durations[tenor] = 0.0 if price == 0.0 else -float(grad[idx]) / price
 
     duration = 0.0 if price == 0.0 else -float(np.sum(grad)) / price
+    metadata = _rate_measure_metadata(
+        ms,
+        resolved_derivative_method="autodiff_public_curve",
+        parameterization=support.get("parameterization"),
+        fallback_reason=None,
+    )
     return {
         "price": price,
         "gradient": grad,
@@ -177,6 +276,7 @@ def _autodiff_rate_bundle(
         "duration": duration,
         "convexity": 0.0 if price == 0.0 else d2p_dy2 / price,
         "key_rate_durations": key_rate_durations,
+        "metadata": metadata,
     }
 
 
@@ -187,9 +287,22 @@ def _cached_rate_bundle(payoff, ms: MarketState, ctx: dict[str, Any]) -> dict[st
         return cache["autodiff_rate_bundle"]
     try:
         cache["autodiff_rate_bundle"] = _autodiff_rate_bundle(payoff, ms, ctx)
-    except Exception:
+        cache["autodiff_rate_bundle_failure"] = None
+    except Exception as exc:
         cache["autodiff_rate_bundle"] = None
+        cache["autodiff_rate_bundle_failure"] = _autodiff_rate_bundle_failure_reason(ms, exc)
     return cache["autodiff_rate_bundle"]
+
+
+def _cached_rate_bundle_fallback_reason(
+    ctx: dict[str, Any],
+    ms: MarketState,
+) -> dict[str, Any]:
+    cache = ctx.setdefault("_cache", {})
+    cached_reason = cache.get("autodiff_rate_bundle_failure")
+    if cached_reason is not None:
+        return dict(cached_reason)
+    return _parallel_rate_bundle_fallback_reason(ms.discount)
 
 
 # ---------------------------------------------------------------------------
@@ -234,13 +347,23 @@ class DV01:
         """Compute DV01 with autodiff when available, otherwise bump."""
         bundle = _cached_rate_bundle(payoff, ms, ctx)
         if bundle is not None:
-            return bundle["dv01"]
+            metadata = dict(bundle.get("metadata", {}))
+            metadata["reporting_bump_bps"] = float(self.bump_bps)
+            return _scalar_risk_output(bundle["dv01"], metadata=metadata)
 
         key = f"_bump_{self.bump_bps}bp"
         if key not in ctx:
             ctx[key] = _parallel_bump(payoff, ms, self.bump_bps)
         v_up, v_down = ctx[key]
-        return -(v_up - v_down) / 2
+        return _scalar_risk_output(
+            -(v_up - v_down) / 2,
+            metadata=_rate_measure_metadata(
+                ms,
+                resolved_derivative_method="parallel_curve_bump",
+                bump_bps=float(self.bump_bps),
+                fallback_reason=_cached_rate_bundle_fallback_reason(ctx, ms),
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -258,13 +381,23 @@ class Duration:
         """Compute modified duration with autodiff when available."""
         bundle = _cached_rate_bundle(payoff, ms, ctx)
         if bundle is not None:
-            return bundle["duration"]
+            metadata = dict(bundle.get("metadata", {}))
+            metadata["reporting_bump_bps"] = float(self.bump_bps)
+            return _scalar_risk_output(bundle["duration"], metadata=metadata)
 
         if "base_price" not in ctx:
             ctx["base_price"] = payoff.evaluate(ms)
         base = ctx["base_price"]
         if base == 0:
-            return 0.0
+            return _scalar_risk_output(
+                0.0,
+                metadata=_rate_measure_metadata(
+                    ms,
+                    resolved_derivative_method="parallel_curve_bump",
+                    bump_bps=float(self.bump_bps),
+                    fallback_reason=_cached_rate_bundle_fallback_reason(ctx, ms),
+                ),
+            )
 
         key = f"_bump_{self.bump_bps}bp"
         if key not in ctx:
@@ -272,7 +405,15 @@ class Duration:
         v_up, v_down = ctx[key]
 
         dy = self.bump_bps / 10_000  # convert bps to decimal
-        return -(v_up - v_down) / (2 * dy * base)
+        return _scalar_risk_output(
+            -(v_up - v_down) / (2 * dy * base),
+            metadata=_rate_measure_metadata(
+                ms,
+                resolved_derivative_method="parallel_curve_bump",
+                bump_bps=float(self.bump_bps),
+                fallback_reason=_cached_rate_bundle_fallback_reason(ctx, ms),
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -289,13 +430,23 @@ class Convexity:
         """Compute convexity with autodiff when available."""
         bundle = _cached_rate_bundle(payoff, ms, ctx)
         if bundle is not None:
-            return bundle["convexity"]
+            metadata = dict(bundle.get("metadata", {}))
+            metadata["reporting_bump_bps"] = float(self.bump_bps)
+            return _scalar_risk_output(bundle["convexity"], metadata=metadata)
 
         if "base_price" not in ctx:
             ctx["base_price"] = payoff.evaluate(ms)
         base = ctx["base_price"]
         if base == 0:
-            return 0.0
+            return _scalar_risk_output(
+                0.0,
+                metadata=_rate_measure_metadata(
+                    ms,
+                    resolved_derivative_method="parallel_curve_bump",
+                    bump_bps=float(self.bump_bps),
+                    fallback_reason=_cached_rate_bundle_fallback_reason(ctx, ms),
+                ),
+            )
 
         key = f"_bump_{self.bump_bps}bp"
         if key not in ctx:
@@ -303,7 +454,15 @@ class Convexity:
         v_up, v_down = ctx[key]
 
         dy = self.bump_bps / 10_000
-        return (v_up - 2 * base + v_down) / (dy**2 * base)
+        return _scalar_risk_output(
+            (v_up - 2 * base + v_down) / (dy**2 * base),
+            metadata=_rate_measure_metadata(
+                ms,
+                resolved_derivative_method="parallel_curve_bump",
+                bump_bps=float(self.bump_bps),
+                fallback_reason=_cached_rate_bundle_fallback_reason(ctx, ms),
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -327,7 +486,17 @@ class Vega:
         if vol is None:
             requested_buckets = _requested_vega_bucket_axes(self.expiries, self.strikes)
             if requested_buckets is None:
-                return 0.0
+                return _scalar_risk_output(
+                    0.0,
+                    metadata={
+                        "resolved_derivative_method": "vol_surface_unavailable",
+                        "resolved_surface_type": None,
+                        "bump_pct": float(self.bump_pct),
+                        "bump_vol_bps": float(self.bump_pct) * 100.0,
+                        "warnings": [],
+                        "fallback_reason": None,
+                    },
+                )
             expiries, strikes = requested_buckets
             return _risk_output(
                 {
@@ -340,8 +509,10 @@ class Vega:
                     "bucket_strikes": [float(strike) for strike in strikes],
                     "bump_pct": float(self.bump_pct),
                     "bump_vol_bps": float(self.bump_pct) * 100.0,
+                    "resolved_derivative_method": "vol_surface_unavailable",
                     "resolved_surface_type": None,
                     "warnings": [],
+                    "fallback_reason": None,
                 },
             )
 
@@ -372,25 +543,65 @@ class Vega:
                 cache["base_price"] = float(price_from_vol(vol_value))
                 ctx["base_price"] = cache["base_price"]
 
-            return float(gradient(price_from_vol, 0)(vol_value) * bump)
+            support = _declared_risk_support(vol, "scalar_vega") or {}
+            return _scalar_risk_output(
+                float(gradient(price_from_vol, 0)(vol_value) * bump),
+                metadata={
+                    "resolved_derivative_method": str(support.get("method") or "autodiff_flat_vol"),
+                    "parameterization": str(support.get("parameterization") or "scalar_flat_vol"),
+                    "resolved_surface_type": _vol_surface_type_label(vol),
+                    "bump_pct": float(self.bump_pct),
+                    "bump_vol_bps": float(self.bump_pct) * 100.0,
+                    "warnings": [],
+                    "fallback_reason": None,
+                },
+            )
 
         if isinstance(vol, GridVolSurface):
-            return _parallel_surface_vega(
-                payoff,
-                ms,
-                expiries=tuple(float(expiry) for expiry in vol.expiries),
-                strikes=tuple(float(strike) for strike in vol.strikes),
-                bump_pct=float(self.bump_pct),
+            support = _declared_risk_support(vol, "scalar_vega") or {}
+            return _scalar_risk_output(
+                _parallel_surface_vega(
+                    payoff,
+                    ms,
+                    expiries=tuple(float(expiry) for expiry in vol.expiries),
+                    strikes=tuple(float(strike) for strike in vol.strikes),
+                    bump_pct=float(self.bump_pct),
+                ),
+                metadata={
+                    "resolved_derivative_method": str(support.get("method") or "surface_parallel_bucket_bump"),
+                    "parameterization": str(support.get("parameterization") or "grid_node_vols"),
+                    "resolved_surface_type": _vol_surface_type_label(vol),
+                    "bump_pct": float(self.bump_pct),
+                    "bump_vol_bps": float(self.bump_pct) * 100.0,
+                    "warnings": [],
+                    "fallback_reason": None,
+                },
             )
 
         # Bump vol surface up and down
-        base_vol = vol.black_vol(1.0, 0.05)  # representative vol level
+        base_vol = float(vol.black_vol(1.0, 0.05))  # representative vol level
+        fallback_reason = _warning_payload_from_parts(
+            "representative_surface_reduction",
+            "Scalar vega reduced the active surface to one representative flat volatility because no explicit surface derivative contract was available.",
+            resolved_surface_type=_vol_surface_type_label(vol),
+        )
 
         ms_up = _clone_market_state(ms, vol_surface=FlatVol(base_vol + bump))
         ms_down = _clone_market_state(ms, vol_surface=FlatVol(base_vol - bump))
         v_up = payoff.evaluate(ms_up)
         v_down = payoff.evaluate(ms_down)
-        return (v_up - v_down) / 2
+        return _scalar_risk_output(
+            (v_up - v_down) / 2,
+            metadata={
+                "resolved_derivative_method": "representative_flat_vol_bump",
+                "resolved_surface_type": _vol_surface_type_label(vol),
+                "representative_flat_vol": float(base_vol),
+                "bump_pct": float(self.bump_pct),
+                "bump_vol_bps": float(self.bump_pct) * 100.0,
+                "warnings": [dict(fallback_reason)],
+                "fallback_reason": dict(fallback_reason),
+            },
+        )
 
 
 @dataclass(frozen=True)
@@ -404,11 +615,22 @@ class Delta:
 
     def compute(self, payoff, ms, **ctx):
         """Compute delta on the selected runtime spot binding."""
-        base_spot, bind_spot = _resolve_spot_bump_binding(ms, underlier=self.underlier)
+        base_spot, bind_spot, resolved_binding = _resolve_spot_bump_binding(ms, underlier=self.underlier)
         bump_size = _spot_bump_size(base_spot, self.bump_pct)
         ms_up = bind_spot(base_spot + bump_size)
         ms_down = bind_spot(base_spot - bump_size)
-        return (float(payoff.evaluate(ms_up)) - float(payoff.evaluate(ms_down))) / (2.0 * bump_size)
+        return _scalar_risk_output(
+            (float(payoff.evaluate(ms_up)) - float(payoff.evaluate(ms_down))) / (2.0 * bump_size),
+            metadata={
+                "resolved_derivative_method": "spot_central_bump",
+                "resolved_spot_binding": resolved_binding,
+                "underlier": self.underlier,
+                "bump_pct": float(self.bump_pct),
+                "bump_size": float(bump_size),
+                "warnings": [],
+                "fallback_reason": None,
+            },
+        )
 
 
 @dataclass(frozen=True)
@@ -422,14 +644,25 @@ class Gamma:
 
     def compute(self, payoff, ms, **ctx):
         """Compute gamma on the selected runtime spot binding."""
-        base_spot, bind_spot = _resolve_spot_bump_binding(ms, underlier=self.underlier)
+        base_spot, bind_spot, resolved_binding = _resolve_spot_bump_binding(ms, underlier=self.underlier)
         bump_size = _spot_bump_size(base_spot, self.bump_pct)
         base = _base_price(payoff, ms, ctx)
         ms_up = bind_spot(base_spot + bump_size)
         ms_down = bind_spot(base_spot - bump_size)
         v_up = float(payoff.evaluate(ms_up))
         v_down = float(payoff.evaluate(ms_down))
-        return (v_up - 2.0 * base + v_down) / (bump_size**2)
+        return _scalar_risk_output(
+            (v_up - 2.0 * base + v_down) / (bump_size**2),
+            metadata={
+                "resolved_derivative_method": "spot_central_bump",
+                "resolved_spot_binding": resolved_binding,
+                "underlier": self.underlier,
+                "bump_pct": float(self.bump_pct),
+                "bump_size": float(bump_size),
+                "warnings": [],
+                "fallback_reason": None,
+            },
+        )
 
 
 @dataclass(frozen=True)
@@ -450,7 +683,15 @@ class Theta:
             as_of=ms.as_of + timedelta(days=int(self.day_step)),
             settlement=ms.settlement + timedelta(days=int(self.day_step)),
         )
-        return float(payoff.evaluate(rolled_ms)) - base
+        return _scalar_risk_output(
+            float(payoff.evaluate(rolled_ms)) - base,
+            metadata={
+                "resolved_derivative_method": "calendar_roll_down_bump",
+                "day_step": int(self.day_step),
+                "warnings": [],
+                "fallback_reason": None,
+            },
+        )
 
 
 @dataclass(frozen=True)
@@ -844,7 +1085,7 @@ def _resolve_spot_bump_binding(
                 underlier_spots=updated_underlier_spots,
             )
 
-        return base_spot, _bind
+        return base_spot, _bind, f"underlier_spots[{underlier}]"
 
     if ms.spot is not None:
         base_spot = float(ms.spot)
@@ -861,7 +1102,7 @@ def _resolve_spot_bump_binding(
                 underlier_spots=updated_underlier_spots,
             )
 
-        return base_spot, _bind
+        return base_spot, _bind, "spot"
 
     if len(underlier_spots) == 1:
         only_name, only_spot = next(iter(underlier_spots.items()))
@@ -875,7 +1116,7 @@ def _resolve_spot_bump_binding(
                 underlier_spots=updated_underlier_spots,
             )
 
-        return base_spot, _bind
+        return base_spot, _bind, f"underlier_spots[{only_name}]"
 
     raise ValueError(
         "Delta/gamma requires market_state.spot, one selected underlier spot, "
@@ -956,15 +1197,19 @@ def _bucketed_vega_surface(
             row[float(strike)] = (float(payoff.evaluate(ms_up)) - float(payoff.evaluate(ms_down))) / 2.0
         values[float(expiry)] = row
 
+    support = _declared_risk_support(ms.vol_surface, "bucketed_vega") or {}
     metadata = {
         "bucket_convention": "expiry_strike",
         "bucket_expiries": [float(expiry) for expiry in shock_surface.requested_expiries],
         "bucket_strikes": [float(strike) for strike in shock_surface.requested_strikes],
         "bump_pct": float(bump_pct),
         "bump_vol_bps": bump_vol_bps,
+        "resolved_derivative_method": str(support.get("method") or "surface_bucket_bump"),
+        "parameterization": support.get("parameterization"),
         "resolved_surface_type": _vol_surface_type_label(ms.vol_surface),
         "buckets": [_vol_surface_bucket_payload(bucket) for bucket in shock_surface.buckets],
         "warnings": _vol_surface_warning_payloads(shock_surface),
+        "fallback_reason": None,
     }
     return _risk_output(values, metadata=metadata)
 
@@ -1035,6 +1280,30 @@ def _zero_curve_key_rate_durations(
     ctx: dict[str, Any],
 ) -> RiskMeasureOutput:
     discount = getattr(ms, "discount", None)
+    bundle = _cached_rate_bundle(payoff, ms, ctx)
+    if bundle is not None:
+        bundle_result: dict[float, float] = {}
+        exact_bucket_match = True
+        for tenor in tenors:
+            resolved_value = None
+            for bundle_tenor, bundle_krd in bundle["key_rate_durations"].items():
+                if np.isclose(float(bundle_tenor), float(tenor)):
+                    resolved_value = float(bundle_krd)
+                    break
+            if resolved_value is None:
+                exact_bucket_match = False
+                break
+            bundle_result[float(tenor)] = resolved_value
+        if exact_bucket_match:
+            metadata = {
+                "resolved_methodology": "zero_curve",
+                "bucket_convention": "curve_tenor",
+                "bucket_tenors": [float(tenor) for tenor in tenors],
+                "bump_bps": float(bump_bps),
+                **dict(bundle.get("metadata", {})),
+            }
+            return _risk_output(bundle_result, metadata=metadata)
+
     if discount is not None and hasattr(discount, "tenors") and hasattr(discount, "rates"):
         return _interpolation_aware_key_rate_durations(
             payoff,
@@ -1044,23 +1313,7 @@ def _zero_curve_key_rate_durations(
             ctx,
         )
 
-    bundle = _cached_rate_bundle(payoff, ms, ctx)
-    if bundle is not None:
-        return _risk_output(
-            {
-                tenor: bundle["key_rate_durations"].get(float(tenor), 0.0)
-                for tenor in tenors
-            },
-            metadata={
-                "resolved_methodology": "zero_curve",
-                "bucket_convention": "curve_tenor",
-                "bucket_tenors": [float(tenor) for tenor in tenors],
-                "bump_bps": float(bump_bps),
-                "selected_curve_name": ms.selected_curve_name("discount_curve"),
-                "warnings": [],
-                "fallback_reason": None,
-            },
-        )
+    fallback_reason = _cached_rate_bundle_fallback_reason(ctx, ms)
 
     base = _base_price(payoff, ms, ctx)
     if base == 0.0:
@@ -1072,8 +1325,9 @@ def _zero_curve_key_rate_durations(
                 "bucket_tenors": [float(tenor) for tenor in tenors],
                 "bump_bps": float(bump_bps),
                 "selected_curve_name": ms.selected_curve_name("discount_curve"),
-                "warnings": [],
-                "fallback_reason": None,
+                "resolved_derivative_method": "curve_bucket_bump",
+                "warnings": [dict(fallback_reason)],
+                "fallback_reason": dict(fallback_reason),
             },
         )
 
@@ -1093,8 +1347,9 @@ def _zero_curve_key_rate_durations(
             "bucket_tenors": [float(tenor) for tenor in tenors],
             "bump_bps": float(bump_bps),
             "selected_curve_name": ms.selected_curve_name("discount_curve"),
-            "warnings": [],
-            "fallback_reason": None,
+            "resolved_derivative_method": "curve_bucket_bump",
+            "warnings": [dict(fallback_reason)],
+            "fallback_reason": dict(fallback_reason),
         },
     )
 
@@ -1200,6 +1455,7 @@ def _rebuild_quote_space_key_rate_durations(
         "resolved_methodology": "curve_rebuild",
         "bucket_convention": "bootstrap_quote",
         "selected_curve_name": selected_curve_name,
+        "resolved_derivative_method": "bootstrap_quote_bump_rebuild",
         "bucket_ids": [bucket.bucket_id for bucket in buckets],
         "bucket_tenors": [float(bucket.tenor) for bucket in buckets],
         "bucket_definitions": [bucket.to_payload() for bucket in buckets],
@@ -1395,10 +1651,12 @@ def _interpolation_aware_key_rate_durations(
 
     base = _base_price(payoff, ms, ctx)
     if base == 0.0:
+        fallback_reason = ctx.setdefault("_cache", {}).get("autodiff_rate_bundle_failure")
         metadata = {
             "resolved_methodology": "zero_curve",
             "bucket_convention": "curve_tenor",
             "selected_curve_name": ms.selected_curve_name("discount_curve"),
+            "resolved_derivative_method": "curve_bucket_bump",
             "bucket_tenors": [float(bucket.tenor) for bucket in surface.buckets],
             "bucket_definitions": [
                 {
@@ -1412,8 +1670,9 @@ def _interpolation_aware_key_rate_durations(
                 for bucket in surface.buckets
             ],
             "bump_bps": float(bump_bps),
-            "warnings": list(ctx["key_rate_duration_warnings"]),
-            "fallback_reason": None,
+            "warnings": list(ctx["key_rate_duration_warnings"])
+            + ([] if fallback_reason is None else [dict(fallback_reason)]),
+            "fallback_reason": None if fallback_reason is None else dict(fallback_reason),
         }
         cache[cache_key] = _risk_output(
             {float(bucket.tenor): 0.0 for bucket in surface.buckets},
@@ -1442,6 +1701,7 @@ def _interpolation_aware_key_rate_durations(
         "resolved_methodology": "zero_curve",
         "bucket_convention": "curve_tenor",
         "selected_curve_name": ms.selected_curve_name("discount_curve"),
+        "resolved_derivative_method": "curve_bucket_bump",
         "bucket_tenors": [float(bucket.tenor) for bucket in surface.buckets],
         "bucket_definitions": [
             {
@@ -1455,8 +1715,17 @@ def _interpolation_aware_key_rate_durations(
             for bucket in surface.buckets
         ],
         "bump_bps": float(bump_bps),
-        "warnings": list(ctx["key_rate_duration_warnings"]),
-        "fallback_reason": None,
+        "warnings": list(ctx["key_rate_duration_warnings"])
+        + (
+            []
+            if ctx.setdefault("_cache", {}).get("autodiff_rate_bundle_failure") is None
+            else [dict(ctx["_cache"]["autodiff_rate_bundle_failure"])]
+        ),
+        "fallback_reason": (
+            None
+            if ctx.setdefault("_cache", {}).get("autodiff_rate_bundle_failure") is None
+            else dict(ctx["_cache"]["autodiff_rate_bundle_failure"])
+        ),
     }
     cache[cache_key] = _risk_output(result, metadata=metadata)
     ctx["key_rate_durations_metadata"] = metadata

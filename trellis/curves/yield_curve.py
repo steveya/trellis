@@ -54,6 +54,16 @@ class YieldCurve:
         r = self.zero_rate(t)
         return np.exp(-r * t)
 
+    @property
+    def risk_derivative_support(self) -> dict[str, dict[str, str]]:
+        """Declared runtime-risk support for the public curve surface."""
+        return {
+            "parallel_rate_bundle": {
+                "method": "autodiff_public_curve",
+                "parameterization": "zero_rate_nodes",
+            }
+        }
+
     # ------------------------------------------------------------------
     # Constructors
     # ------------------------------------------------------------------
