@@ -3,19 +3,20 @@
 from __future__ import annotations
 
 from trellis.core.market_state import MarketState, MissingCapabilityError
-from trellis.core.payoff import Payoff
+from trellis.core.payoff import Payoff, PricingValue
 
 
 def price_payoff(
     payoff: Payoff,
     market_state: MarketState,
     **kwargs,
-) -> float:
+) -> PricingValue:
     """Price a payoff against a MarketState.
 
     Each payoff handles its own discounting — this function simply
-    checks market data requirements, calls ``evaluate()``, and returns
-    the result.
+    checks market data requirements, calls ``evaluate()``, and returns the
+    resulting present-value scalar directly. Float-only coercion belongs at
+    explicit reporting or solver boundaries, not here.
 
     Parameters
     ----------

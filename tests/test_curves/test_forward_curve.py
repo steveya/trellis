@@ -76,25 +76,15 @@ class TestForwardRate:
         assert F == pytest.approx(0.05, rel=0.01)
 
     def test_autograd_compatible(self):
-        """Gradient through forward_rate should not raise.
+        """Gradient through the public YieldCurve and ForwardCurve path should not raise."""
 
-        Note: YieldCurve constructor uses np.asarray which autograd can't
-        trace through, so we construct the curve outside the traced function
-        and differentiate through the forward rate computation only.
-        """
-        from trellis.curves.interpolation import linear_interp
-
-        tenors = np.array([1.0, 2.0, 5.0])
+        tenors = anp.array([1.0, 2.0, 5.0])
 
         def price_via_forward(rates):
-            # Replicate discount factor computation without YieldCurve constructor
-            r1 = linear_interp(1.0, tenors, rates)
-            r2 = linear_interp(2.0, tenors, rates)
-            df1 = anp.exp(-r1 * 1.0)
-            df2 = anp.exp(-r2 * 2.0)
-            return (df1 / df2 - 1.0)  # simple forward rate * tau=1
+            curve = YieldCurve(tenors, rates)
+            return ForwardCurve(curve).forward_rate(1.0, 2.0, compounding="simple")
 
-        rates = np.array([0.04, 0.045, 0.05])
+        rates = anp.array([0.04, 0.045, 0.05])
         grad_fn = gradient(price_via_forward, 0)
         grad = grad_fn(rates)
         assert grad is not None

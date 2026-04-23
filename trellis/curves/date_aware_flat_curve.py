@@ -31,16 +31,16 @@ class DateAwareFlatYieldCurve:
     def zero_rate(self, t: float) -> float:
         """Continuously compounded zero rate at time *t*."""
         del t
-        return float(self.flat_rate)
+        return self.flat_rate
 
     def discount(self, t: float) -> float:
         """Discount factor at time *t* using the supplied time directly."""
-        return float(np.exp(-float(self.flat_rate) * float(t)))
+        return np.exp(-self.flat_rate * t)
 
     def discount_date(self, target_date: date) -> float:
         """Discount factor to one concrete date using the curve day count."""
         t = year_fraction(self.value_date, target_date, self.curve_day_count)
-        return float(np.exp(-float(self.flat_rate) * float(t)))
+        return np.exp(-self.flat_rate * t)
 
     def forward_rate_dates(
         self,
@@ -57,7 +57,7 @@ class DateAwareFlatYieldCurve:
         df1 = self.discount_date(start_date)
         df2 = self.discount_date(end_date)
         if compounding == "simple":
-            return float((df1 / df2 - 1.0) / alpha)
+            return (df1 / df2 - 1.0) / alpha
         if compounding == "continuous":
-            return float(np.log(df1 / df2) / alpha)
+            return np.log(df1 / df2) / alpha
         raise ValueError(f"Unknown compounding: {compounding!r}")

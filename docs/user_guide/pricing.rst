@@ -305,12 +305,14 @@ surface.
 In practice that means downstream tools can inspect:
 
 - which solve backend ran
+- which derivative method the solve actually used
 - which explicit solver options were requested
 - whether the solve succeeded and why it terminated
 - the residual diagnostics associated with the solved point
 
 without knowing whether the underlying calibration came from a scalar rates
-root solve or a vector SABR least-squares fit.
+root solve, a vector bootstrap/Heston least-squares fit, or a scalar SABR
+least-squares fit.
 
 The supported Hull-White workflow uses that same governed surface, but its
 output is reusable by later tree helpers as well as inspectable by review
@@ -331,6 +333,12 @@ run ``fit_sabr_smile_surface(...)`` to inspect:
 The older ``calibrate_sabr(...)`` helper remains available as a compatibility
 wrapper, but it now routes through that same smile-surface assembly and
 diagnostic layer.
+
+The supported Heston smile workflow exposes the same derivative provenance.
+Because the FFT plus implied-vol inversion stack is not autograd-safe end to
+end, the checked workflow records
+``solver_provenance.backend["derivative_method"] == "finite_difference_vector_jacobian"``
+when it supplies the explicit residual Jacobian used by the ``trf`` solve.
 
 For new code, the supported entry point is
 ``calibrate_sabr_smile_workflow(...)``. It accepts the raw smile inputs and
@@ -736,12 +744,16 @@ Versioning constraints matter here:
 Return Types
 ~~~~~~~~~~~~
 
-``evaluate()`` returns either:
+``evaluate()`` returns the present-value scalar for the payoff.
 
-- **Cashflows** — undiscounted dated cashflows (bonds, caps, swaps)
-- **PresentValue** — already-discounted PV (tree, MC, PDE methods)
+- In ordinary pricing calls this is usually a Python ``float``.
+- In smooth autodiff-compatible workflows it may be a traced scalar from the
+  differentiable backend.
 
-``price_payoff()`` handles both automatically.
+Legacy ``Cashflows`` and ``PresentValue`` wrappers still exist for backward
+compatibility, but new payoff implementations should return the scalar PV
+directly and leave any ``float(...)`` coercion to explicit reporting or solver
+boundaries.
 
 Greeks
 ------
@@ -868,6 +880,12 @@ Delta and gamma require a usable spot binding. Trellis accepts either
 snapshot. If no unambiguous spot binding exists, the runtime now raises an
 explicit error instead of silently omitting the measure.
 
+Those scalar outputs are float-like objects with attached provenance. In
+practice that means ``result.delta.metadata["resolved_derivative_method"]``
+reports ``"spot_central_bump"``, ``result.delta.metadata["resolved_spot_binding"]``
+shows which spot binding was bumped, and ``result.theta.metadata["day_step"]``
+records the calendar roll that produced theta.
+
 When you request ``key_rate_durations`` through ``Session.price(...)``,
 ``Session.greeks(...)``, or ``Session.risk_report(...)``, Trellis now uses the
 same interpolation-aware bucket engine as ``Session.analyze(...)`` and returns
@@ -880,6 +898,12 @@ metadata. In practice that means you can inspect
 ``result.scenario_pnl.metadata`` to see whether Trellis used direct
 zero-curve bucket shocks or a rebuild-based quote-space workflow, which bucket
 grid it used, and whether any fallback occurred.
+
+For public ``YieldCurve`` inputs on the native tenor grid, the same metadata
+now also records ``resolved_derivative_method="autodiff_public_curve"``.
+Off-grid key-rate buckets still resolve through the interpolation-aware bucket
+shock substrate instead, so the metadata tells you whether you got a traced
+node-value sensitivity or a bucket-bump sensitivity.
 
 For interpolation-aware custom KRD buckets, use ``Session.analyze(...)`` with
 an explicit ``key_rate_durations`` measure configuration. The requested tenor
@@ -998,16 +1022,21 @@ dict-like expiry/strike surface instead of one coarse scalar:
    assert vega_surface.metadata["bucket_convention"] == "expiry_strike"
 
 The attached ``.metadata`` payload records the configured bucket grid, the
-resolved surface type, and any warnings. Two warning codes are especially
-useful in practice:
+resolved derivative method, the resolved surface type, and any warnings. Two
+warning codes are especially useful in practice:
 
 - ``interpolated_surface_bucket`` means the requested bucket does not land on
   an observed surface node and was synthesized from the surrounding grid
 - ``flat_surface_expanded`` means the runtime started from ``FlatVol`` and had
   to expand it onto the requested bucket grid before shocking it
 
-When you omit ``expiries`` and ``strikes``, ``vega`` still returns the older
-coarse scalar sensitivity.
+When you omit ``expiries`` and ``strikes``, ``vega`` returns a float-like
+scalar result with the same metadata pattern. ``FlatVol`` resolves through
+``resolved_derivative_method="autodiff_flat_vol"``, ``GridVolSurface`` resolves
+through ``"surface_parallel_bucket_bump"``, and unsupported custom surfaces now
+record ``"representative_flat_vol_bump"`` plus a
+``representative_surface_reduction`` warning instead of silently hiding the
+surface reduction.
 
 The supported pod-risk workflows now also have a checked throughput baseline in
 ``docs/benchmarks/pod_risk_workflows.md``. That report covers the shared

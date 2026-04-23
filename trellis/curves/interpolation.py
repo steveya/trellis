@@ -8,7 +8,7 @@ from trellis.core.differentiable import get_numpy
 np = get_numpy()
 
 
-def _to_array(a):
+def to_backend_array(a):
     """Convert to array without breaking autograd tracing.
 
     ``np.asarray(box, dtype=float)`` triggers a VJP lookup that autograd
@@ -20,6 +20,16 @@ def _to_array(a):
     if hasattr(a, '_value'):
         return a
     return _np.asarray(a, dtype=float)
+
+
+def validation_view(a):
+    """Return a non-traced view suitable for shape and monotonicity checks."""
+    return getattr(a, "_value", a)
+
+
+def _to_array(a):
+    """Backward-compatible alias for older internal call sites."""
+    return to_backend_array(a)
 
 
 def linear_interp(x: float, xs, ys):

@@ -34,6 +34,14 @@ def _freeze_mapping(mapping: Mapping[str, object] | None) -> Mapping[str, object
     return MappingProxyType(dict(mapping or {}))
 
 
+def _metadata_string(mapping: Mapping[str, object], key: str) -> str:
+    """Return a normalized metadata string field when present."""
+    value = mapping.get(key)
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
 @dataclass(frozen=True)
 class SolveBounds:
     """Serializable per-parameter lower/upper bounds."""
@@ -452,7 +460,10 @@ def _execute_root_scalar(request: SolveRequest) -> SolveResult:
         success=True,
         method="brentq",
         iteration_count=None,
-        metadata={"solver_family": "scipy"},
+        metadata={
+            "solver_family": "scipy",
+            "derivative_method": "not_applicable_root_scalar",
+        },
     )
 
 
@@ -462,6 +473,7 @@ def _execute_least_squares(request: SolveRequest) -> SolveResult:
     vector_objective_fn = request.objective.vector_objective_fn
     scalar_objective_fn = request.objective.scalar_objective_fn
     jacobian_fn = request.objective.jacobian_fn
+    declared_derivative_method = _metadata_string(request.objective.metadata, "derivative_method")
 
     target_values = raw_np.asarray(request.objective.target_values, dtype=float)
     weights = raw_np.asarray(request.objective.weights, dtype=float)
@@ -528,6 +540,13 @@ def _execute_least_squares(request: SolveRequest) -> SolveResult:
                 return matrix
 
     if vector_objective_fn is not None and method.lower() in vector_solver_methods:
+        derivative_method = (
+            declared_derivative_method
+            if jacobian_matrix_fn is not None and declared_derivative_method
+            else "provided_vector_jacobian"
+            if jacobian_matrix_fn is not None
+            else "scipy_2point_residual_jacobian"
+        )
         result = least_squares(
             weighted_residual_vector,
             x0=initial_guess,
@@ -554,10 +573,18 @@ def _execute_least_squares(request: SolveRequest) -> SolveResult:
             iteration_count=getattr(result, "nfev", None),
             metadata={
                 "solver_family": "scipy",
+                "derivative_method": derivative_method,
                 "message": str(result.message),
             },
         )
 
+    derivative_method = (
+        declared_derivative_method
+        if jacobian_fn is not None and declared_derivative_method
+        else "provided_scalar_gradient"
+        if jacobian_fn is not None
+        else "scipy_internal_finite_difference_gradient"
+    )
     result = minimize(
         scalar_objective,
         x0=initial_guess,
@@ -577,6 +604,7 @@ def _execute_least_squares(request: SolveRequest) -> SolveResult:
         iteration_count=getattr(result, "nit", None),
         metadata={
             "solver_family": "scipy",
+            "derivative_method": derivative_method,
             "message": str(result.message),
         },
     )
@@ -620,6 +648,7 @@ def build_solve_provenance(request: SolveRequest, result: SolveResult) -> SolveP
         "requested_backend": str(result.metadata.get("requested_backend", "")).strip(),
         "fallback_from": result.metadata.get("fallback_from"),
         "solver_family": str(result.metadata.get("solver_family", "")).strip(),
+        "derivative_method": str(result.metadata.get("derivative_method", "")).strip(),
         "method": result.method,
     }
     termination = {

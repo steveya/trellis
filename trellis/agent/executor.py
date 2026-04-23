@@ -3074,7 +3074,8 @@ def _generate_skeleton(
     fields_block = "\n".join(field_lines)
 
     requirements_str = ", ".join(f'"{r}"' for r in sorted(spec_schema.requirements))
-    import_lines = list(_skeleton_type_import_lines(spec_schema))
+    import_lines = ["from trellis.core.payoff import PricingValue"]
+    import_lines.extend(_skeleton_type_import_lines(spec_schema))
     import_lines.extend(_skeleton_exact_binding_import_lines(generation_plan))
     semantic_helper_imports, semantic_helper_lines = _skeleton_semantic_helper_hints(
         instrument_type,
@@ -3118,7 +3119,7 @@ class {spec_schema.class_name}:
     def requirements(self) -> set[str]:
         return {{{requirements_str}}}
 
-    def evaluate(self, market_state: MarketState) -> float:
+    def evaluate(self, market_state: MarketState) -> PricingValue:
 {evaluate_preamble}{EVALUATE_SENTINEL}
 '''
 
@@ -3144,11 +3145,11 @@ def _skeleton_semantic_helper_hints(
     helper_hints = {
         ("quanto_option", "analytical"): (
             ("from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state",),
-            ("        # return float(price_quanto_option_analytical_from_market_state(market_state, spec))",),
+            ("        # return price_quanto_option_analytical_from_market_state(market_state, spec)",),
         ),
         ("quanto_option", "monte_carlo"): (
             ("from trellis.models.quanto_option import price_quanto_option_monte_carlo_from_market_state",),
-            ("        # return float(price_quanto_option_monte_carlo_from_market_state(market_state, spec))",),
+            ("        # return price_quanto_option_monte_carlo_from_market_state(market_state, spec)",),
         ),
     }
     return helper_hints.get((instrument_type, method), ((), ()))
@@ -3329,7 +3330,7 @@ def _deterministic_exact_binding_evaluate_body(
         return textwrap.dedent(
             f"""\
             spec = self._spec
-            return float(price_rate_cap_floor_strip_analytical(
+            return price_rate_cap_floor_strip_analytical(
                 market_state,
                 spec=spec,
                 instrument_class="{instrument_type}",
@@ -3343,7 +3344,7 @@ def _deterministic_exact_binding_evaluate_body(
                 model=getattr(spec, "model", None),
                 shift=getattr(spec, "shift", None),
                 sabr=getattr(spec, "sabr", None),
-            ))
+            )
             """
         ).rstrip()
     if (
@@ -3354,7 +3355,7 @@ def _deterministic_exact_binding_evaluate_body(
         return textwrap.dedent(
             f"""\
             spec = self._spec
-            return float(price_rate_cap_floor_strip_monte_carlo(
+            return price_rate_cap_floor_strip_monte_carlo(
                 market_state,
                 spec=spec,
                 instrument_class="{instrument_type}",
@@ -3367,7 +3368,7 @@ def _deterministic_exact_binding_evaluate_body(
                 rate_index=spec.rate_index,
                 n_paths=20000,
                 seed=42,
-            ))
+            )
             """
         ).rstrip()
     if (
@@ -3383,14 +3384,14 @@ def _deterministic_exact_binding_evaluate_body(
             if market_state.vol_surface is None:
                 raise ValueError("market_state.vol_surface is required for Black-Scholes comparison")
             T = max(float(year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)), 0.0)
-            spot = float(spec.spot)
-            strike = float(spec.strike)
+            spot = spec.spot
+            strike = spec.strike
             option_type = str(spec.option_type or "call").strip().lower()
             if T <= 0.0:
                 intrinsic = max(spot - strike, 0.0) if option_type == "call" else max(strike - spot, 0.0)
-                return float(spec.notional) * intrinsic
-            df = float(market_state.discount.discount(T))
-            sigma = float(market_state.vol_surface.black_vol(max(T, 1e-6), strike))
+                return spec.notional * intrinsic
+            df = market_state.discount.discount(T)
+            sigma = market_state.vol_surface.black_vol(max(T, 1e-6), strike)
             forward = spot / max(df, 1e-12)
             if option_type == "call":
                 undiscounted = black76_call(forward, strike, sigma, T)
@@ -3398,7 +3399,7 @@ def _deterministic_exact_binding_evaluate_body(
                 undiscounted = black76_put(forward, strike, sigma, T)
             else:
                 raise ValueError(f"Unsupported option_type {spec.option_type!r}")
-            return float(spec.notional) * df * float(undiscounted)
+            return spec.notional * df * undiscounted
             """
         ).rstrip()
     if (
@@ -3416,14 +3417,14 @@ def _deterministic_exact_binding_evaluate_body(
             if market_state.vol_surface is None:
                 raise ValueError("market_state.vol_surface is required for exact Black-76 vanilla pricing")
             T = max(float(year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)), 0.0)
-            spot = float(spec.spot)
-            strike = float(spec.strike)
+            spot = spec.spot
+            strike = spec.strike
             option_type = str(spec.option_type or "call").strip().lower()
             if T <= 0.0:
                 intrinsic = max(spot - strike, 0.0) if option_type == "call" else max(strike - spot, 0.0)
-                return float(spec.notional) * intrinsic
-            df = float(market_state.discount.discount(T))
-            sigma = float(market_state.vol_surface.black_vol(max(T, 1e-6), strike))
+                return spec.notional * intrinsic
+            df = market_state.discount.discount(T)
+            sigma = market_state.vol_surface.black_vol(max(T, 1e-6), strike)
             forward = spot / max(df, 1e-12)
             if option_type == "call":
                 undiscounted = black76_call(forward, strike, sigma, T)
@@ -3431,7 +3432,7 @@ def _deterministic_exact_binding_evaluate_body(
                 undiscounted = black76_put(forward, strike, sigma, T)
             else:
                 raise ValueError(f"Unsupported option_type {spec.option_type!r}")
-            return float(spec.notional) * df * float(undiscounted)
+            return spec.notional * df * undiscounted
             """
         ).rstrip()
     if comparison_target is None and route_free_exact_binding and instrument_type == "digital_option":
@@ -3450,8 +3451,8 @@ def _deterministic_exact_binding_evaluate_body(
                 if market_state.vol_surface is None:
                     raise ValueError("market_state.vol_surface is required for exact Black-76 digital pricing")
                 T = max(float(year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)), 0.0)
-                spot = float(spec.spot)
-                strike = float(spec.strike)
+                spot = spec.spot
+                strike = spec.strike
                 option_type = str(spec.option_type or "call").strip().lower()
                 payout_type = str(getattr(spec, "payout_type", "cash_or_nothing") or "cash_or_nothing").strip().lower()
                 cash_payoff = float(getattr(spec, "cash_payoff", 1.0) or 1.0)
@@ -3460,114 +3461,114 @@ def _deterministic_exact_binding_evaluate_body(
                 if T <= 0.0:
                     in_the_money = spot > strike if option_type == "call" else spot < strike
                     if payout_type == "cash_or_nothing":
-                        return float(spec.notional) * cash_payoff * (1.0 if in_the_money else 0.0)
+                        return spec.notional * cash_payoff * (1.0 if in_the_money else 0.0)
                     if payout_type == "asset_or_nothing":
-                        return float(spec.notional) * (spot if in_the_money else 0.0)
+                        return spec.notional * (spot if in_the_money else 0.0)
                     raise ValueError(f"Unsupported payout_type {getattr(spec, 'payout_type', None)!r}")
-                df = float(market_state.discount.discount(T))
-                sigma = float(market_state.vol_surface.black_vol(max(T, 1e-6), strike))
+                df = market_state.discount.discount(T)
+                sigma = market_state.vol_surface.black_vol(max(T, 1e-6), strike)
                 forward = spot / max(df, 1e-12)
                 if payout_type == "cash_or_nothing":
                     if option_type == "call":
                         undiscounted = black76_cash_or_nothing_call(forward, strike, sigma, T)
                     else:
                         undiscounted = black76_cash_or_nothing_put(forward, strike, sigma, T)
-                    return float(spec.notional) * cash_payoff * df * float(undiscounted)
+                    return spec.notional * cash_payoff * df * undiscounted
                 if payout_type == "asset_or_nothing":
                     if option_type == "call":
                         undiscounted = black76_asset_or_nothing_call(forward, strike, sigma, T)
                     else:
                         undiscounted = black76_asset_or_nothing_put(forward, strike, sigma, T)
-                    return float(spec.notional) * df * float(undiscounted)
+                    return spec.notional * df * undiscounted
                 raise ValueError(f"Unsupported payout_type {getattr(spec, 'payout_type', None)!r}")
                 """
             ).rstrip()
     helper_bodies = {
         "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state": (
-            "return float(price_quanto_option_analytical_from_market_state(market_state, spec))"
+            "return price_quanto_option_analytical_from_market_state(market_state, spec)"
         ),
         "trellis.models.quanto_option.price_quanto_option_monte_carlo_from_market_state": (
-            "return float(price_quanto_option_monte_carlo_from_market_state(market_state, spec))"
+            "return price_quanto_option_monte_carlo_from_market_state(market_state, spec)"
         ),
         "trellis.models.fx_vanilla.price_fx_vanilla_analytical": (
-            "return float(price_fx_vanilla_analytical(market_state, spec))"
+            "return price_fx_vanilla_analytical(market_state, spec)"
         ),
         "trellis.models.callable_bond_pde.price_callable_bond_pde": (
-            "return float(price_callable_bond_pde(market_state, spec))"
+            "return price_callable_bond_pde(market_state, spec)"
         ),
         "trellis.models.callable_bond_tree.price_callable_bond_tree": (
-            'return float(price_callable_bond_tree(market_state, spec, model="hull_white"))'
+            'return price_callable_bond_tree(market_state, spec, model="hull_white")'
         ),
         "trellis.models.rate_style_swaption.price_swaption_black76": (
-            "return float(price_swaption_black76(market_state, spec"
-            f"{swaption_comparison_kwargs}))"
+            "return price_swaption_black76(market_state, spec"
+            f"{swaption_comparison_kwargs})"
         ),
         "trellis.models.rate_style_swaption_tree.price_swaption_tree": (
-            "return float(price_swaption_tree(market_state, spec"
-            f"{swaption_comparison_kwargs}))"
+            "return price_swaption_tree(market_state, spec"
+            f"{swaption_comparison_kwargs})"
         ),
         "trellis.models.rate_style_swaption.price_swaption_monte_carlo": (
-            "return float(price_swaption_monte_carlo("
+            "return price_swaption_monte_carlo("
             "market_state, spec, n_paths=20000, seed=42"
-            f"{swaption_comparison_kwargs}))"
+            f"{swaption_comparison_kwargs})"
         ),
         "trellis.models.equity_option_monte_carlo.price_vanilla_equity_option_monte_carlo": (
-            "return float(price_vanilla_equity_option_monte_carlo("
-            f"market_state, spec{vanilla_equity_mc_kwargs}))"
+            "return price_vanilla_equity_option_monte_carlo("
+            f"market_state, spec{vanilla_equity_mc_kwargs})"
         ),
         "trellis.models.equity_option_transforms.price_vanilla_equity_option_transform": (
-            "return float(price_vanilla_equity_option_transform("
-            f"market_state, spec{vanilla_equity_transform_kwargs}))"
+            "return price_vanilla_equity_option_transform("
+            f"market_state, spec{vanilla_equity_transform_kwargs})"
         ),
         "trellis.models.zcb_option_tree.price_zcb_option_tree": (
-            "return float(price_zcb_option_tree("
-            f"market_state, spec{zcb_option_tree_kwargs}))"
+            "return price_zcb_option_tree("
+            f"market_state, spec{zcb_option_tree_kwargs})"
         ),
         "trellis.models.credit_basket_copula.price_credit_basket_tranche": (
-            "return float(price_credit_basket_tranche("
-            f"market_state, spec{credit_basket_tranche_kwargs}))"
+            "return price_credit_basket_tranche("
+            f"market_state, spec{credit_basket_tranche_kwargs})"
         ),
         "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_recursive": (
-            "return float(price_credit_portfolio_loss_distribution_recursive("
-            'market_state, spec, copula_family="gaussian"))'
+            "return price_credit_portfolio_loss_distribution_recursive("
+            'market_state, spec, copula_family="gaussian")'
         ),
         "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_transform_proxy": (
-            "return float(price_credit_portfolio_loss_distribution_transform_proxy("
-            'market_state, spec, copula_family="gaussian"))'
+            "return price_credit_portfolio_loss_distribution_transform_proxy("
+            'market_state, spec, copula_family="gaussian")'
         ),
         "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_monte_carlo": (
-            "return float(price_credit_portfolio_loss_distribution_monte_carlo("
-            'market_state, spec, copula_family="gaussian", n_paths=40000, seed=42))'
+            "return price_credit_portfolio_loss_distribution_monte_carlo("
+            'market_state, spec, copula_family="gaussian", n_paths=40000, seed=42)'
         ),
         "trellis.models.basket_option.price_basket_option_analytical": (
-            "return float(price_basket_option_analytical("
-            f"market_state, spec{basket_option_kwargs}))"
+            "return price_basket_option_analytical("
+            f"market_state, spec{basket_option_kwargs})"
         ),
         "trellis.models.basket_option.price_basket_option_monte_carlo": (
-            "return float(price_basket_option_monte_carlo("
-            f"market_state, spec{basket_option_kwargs}, seed=42))"
+            "return price_basket_option_monte_carlo("
+            f"market_state, spec{basket_option_kwargs}, seed=42)"
         ),
         "trellis.models.basket_option.price_basket_option_transform_proxy": (
-            "return float(price_basket_option_transform_proxy("
-            f"market_state, spec{basket_option_kwargs}))"
+            "return price_basket_option_transform_proxy("
+            f"market_state, spec{basket_option_kwargs})"
         ),
         "trellis.models.analytical.equity_exotics.price_equity_digital_option_analytical": (
-            "return float(price_equity_digital_option_analytical(market_state, spec))"
+            "return price_equity_digital_option_analytical(market_state, spec)"
         ),
         "trellis.models.analytical.equity_exotics.price_equity_fixed_lookback_option_analytical": (
-            "return float(price_equity_fixed_lookback_option_analytical(market_state, spec))"
+            "return price_equity_fixed_lookback_option_analytical(market_state, spec)"
         ),
         "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical": (
-            "return float(price_equity_chooser_option_analytical(market_state, spec))"
+            "return price_equity_chooser_option_analytical(market_state, spec)"
         ),
         "trellis.models.analytical.equity_exotics.price_equity_compound_option_analytical": (
-            "return float(price_equity_compound_option_analytical(market_state, spec))"
+            "return price_equity_compound_option_analytical(market_state, spec)"
         ),
         "trellis.models.analytical.equity_exotics.price_equity_cliquet_option_analytical": (
-            "return float(price_equity_cliquet_option_analytical(market_state, spec))"
+            "return price_equity_cliquet_option_analytical(market_state, spec)"
         ),
         "trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical": (
-            "return float(price_equity_variance_swap_analytical(market_state, spec))"
+            "return price_equity_variance_swap_analytical(market_state, spec)"
         ),
         "trellis.models.analytical.barrier.barrier_option_price": (
             "if market_state.discount is None:\n"
@@ -3596,7 +3597,7 @@ def _deterministic_exact_binding_evaluate_body(
             "    q=carry_rate,\n"
             "    observations_per_year=getattr(spec, 'observations_per_year', None),\n"
             ")\n"
-            "return float(spec.notional) * float(price)"
+            "return spec.notional * price"
         ),
     }
     for ref, body in helper_bodies.items():

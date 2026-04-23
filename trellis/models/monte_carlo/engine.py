@@ -30,6 +30,14 @@ from trellis.models.monte_carlo.path_state import (
 np = get_numpy()
 
 
+def _to_backend_array(values):
+    if isinstance(values, raw_np.ndarray):
+        return values
+    if hasattr(values, "_value"):
+        return values
+    return raw_np.asarray(values, dtype=float)
+
+
 def _state_dim(process) -> int:
     """Number of variables tracked per path (e.g. 1 for GBM, 2 for Heston)."""
     return int(getattr(process, "state_dim", 1))
@@ -127,14 +135,47 @@ def _replay_reducers(paths: raw_np.ndarray, requirement: MonteCarloPathRequireme
         return {}
 
     reducer_values = {
-        reducer.name: reducer.init(raw_np.asarray(paths[:, 0]), paths.shape[1] - 1)
+        reducer.name: reducer.init(_to_backend_array(paths[:, 0]), paths.shape[1] - 1)
         for reducer in requirement.reducers
     }
     for step in range(1, paths.shape[1]):
-        values = raw_np.asarray(paths[:, step])
+        values = _to_backend_array(paths[:, step])
         for reducer in requirement.reducers:
             reducer_values[reducer.name] = reducer.update(reducer_values[reducer.name], values, step)
     return reducer_values
+
+
+def _validate_differentiable_state_requirement(requirement: MonteCarloPathRequirement) -> None:
+    if requirement.barrier_monitors:
+        raise NotImplementedError(
+            "differentiable Monte Carlo does not support barrier-monitor state contracts",
+        )
+
+
+def _differentiable_path_state_from_paths(
+    paths,
+    *,
+    initial_value,
+    requirement: MonteCarloPathRequirement,
+    n_steps: int,
+) -> MonteCarloPathState:
+    terminal_values = paths[:, -1]
+    snapshots = {
+        step: paths[:, step]
+        for step in requirement.snapshot_steps
+        if 0 < step < n_steps
+    }
+    full_paths = paths if requirement.full_path else None
+    state = MonteCarloPathState(
+        initial_value=initial_value,
+        n_steps=n_steps,
+        terminal_values=terminal_values,
+        full_paths=full_paths,
+        snapshots=snapshots,
+        barrier_hits={},
+        reducer_values=_replay_reducers(paths, requirement),
+    )
+    return state
 
 
 def _coerce_shock_tensor(shocks, n_paths: int, n_steps: int, factor_dim: int):
@@ -852,18 +893,26 @@ class MonteCarloEngine:
         declared_requirement = _payoff_path_requirement(payoff_fn)
         state_evaluator = getattr(payoff_fn, "evaluate_state", None)
 
-        if differentiable and (
-            explicit_requirement is not None
-            or declared_requirement is not None
-            or callable(state_evaluator)
-        ):
-            raise NotImplementedError(
-                "differentiable Monte Carlo currently requires a plain path payoff callable",
-            )
-
         if shocks is not None:
-            paths = self.simulate_with_shocks(x0, T, shocks, differentiable=differentiable)
-            payoffs = payoff_fn(paths)
+            if (
+                differentiable
+                and callable(state_evaluator)
+                and (explicit_requirement is not None or declared_requirement is not None)
+            ):
+                requirement = explicit_requirement or declared_requirement
+                _validate_differentiable_state_requirement(requirement)
+                simulated_paths = self.simulate_with_shocks(x0, T, shocks, differentiable=True)
+                path_state = _differentiable_path_state_from_paths(
+                    simulated_paths,
+                    initial_value=x0,
+                    requirement=requirement,
+                    n_steps=self.n_steps,
+                )
+                payoffs = state_evaluator(path_state)
+                paths = simulated_paths if return_paths else None
+            else:
+                paths = self.simulate_with_shocks(x0, T, shocks, differentiable=differentiable)
+                payoffs = payoff_fn(paths)
         elif (
             not return_paths
             and callable(state_evaluator)

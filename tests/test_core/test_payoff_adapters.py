@@ -6,8 +6,10 @@ from datetime import date
 
 import pytest
 
+from trellis.core.differentiable import gradient
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
+from trellis.engine.payoff_pricer import price_payoff
 from trellis.instruments.fx import FXRate
 from trellis.models.vol_surface import FlatVol
 
@@ -65,6 +67,54 @@ def test_resolved_input_payoff_routes_expired_and_live_cases():
     assert expired.evaluate(_market_state()) == pytest.approx(1.0)
 
 
+def test_resolved_input_payoff_evaluate_preserves_trace_for_live_and_expired_paths():
+    from trellis.core.payoff import ResolvedInputPayoff
+
+    @dataclass(frozen=True)
+    class DummyResolved:
+        T: float
+        value: object
+
+    class DummyPayoff(ResolvedInputPayoff[None, DummyResolved]):
+        def __init__(self, *, expired: bool):
+            super().__init__(None)
+            self._expired = expired
+
+        @property
+        def requirements(self) -> set[str]:
+            return {"spot"}
+
+        def resolve_inputs(self, market_state: MarketState) -> DummyResolved:
+            return DummyResolved(
+                T=0.0 if self._expired else 1.0,
+                value=market_state.spot,
+            )
+
+        def evaluate_from_resolved(self, resolved: DummyResolved) -> object:
+            return resolved.value * resolved.value + 1.0
+
+        def evaluate_at_expiry(self, resolved: DummyResolved) -> object:
+            return resolved.value * resolved.value - 1.0
+
+    def market_state_with_spot(spot):
+        return MarketState(as_of=SETTLE, settlement=SETTLE, spot=spot)
+
+    live_payoff = DummyPayoff(expired=False)
+    expired_payoff = DummyPayoff(expired=True)
+
+    live_grad = gradient(
+        lambda spot: price_payoff(live_payoff, market_state_with_spot(spot)),
+        0,
+    )
+    expired_grad = gradient(
+        lambda spot: price_payoff(expired_payoff, market_state_with_spot(spot)),
+        0,
+    )
+
+    assert live_grad(3.0) == pytest.approx(6.0)
+    assert expired_grad(3.0) == pytest.approx(6.0)
+
+
 def test_monte_carlo_path_payoff_normalizes_paths_and_discounts_mean():
     from trellis.core.payoff import MonteCarloPathPayoff
 
@@ -119,6 +169,54 @@ def test_monte_carlo_path_payoff_normalizes_paths_and_discounts_mean():
 
     assert fake_engine.calls == [(7.0, 1.5)]
     assert result == pytest.approx(10.0 * 0.9 * 4.5)
+
+
+def test_monte_carlo_path_payoff_aggregation_preserves_trace():
+    from trellis.core.payoff import MonteCarloPathPayoff
+
+    @dataclass(frozen=True)
+    class DummyResolved:
+        T: float
+        scale: object
+
+    class FakeEngine:
+        def simulate(self, x0, T):
+            return [
+                [1.0, 3.0],
+                [2.0, 5.0],
+            ]
+
+    class DummyMonteCarloPayoff(MonteCarloPathPayoff[None, DummyResolved]):
+        @property
+        def requirements(self) -> set[str]:
+            return {"spot"}
+
+        def resolve_inputs(self, market_state: MarketState) -> DummyResolved:
+            return DummyResolved(T=1.0, scale=market_state.spot)
+
+        def build_process(self, resolved: DummyResolved):
+            return object()
+
+        def build_initial_state(self, resolved: DummyResolved):
+            return 0.0
+
+        def build_engine(self, process, resolved: DummyResolved):
+            return FakeEngine()
+
+        def pathwise_payoff(self, paths, resolved: DummyResolved):
+            return resolved.scale * paths[:, -1, 0]
+
+    payoff = DummyMonteCarloPayoff(None)
+
+    grad = gradient(
+        lambda spot: price_payoff(
+            payoff,
+            MarketState(as_of=SETTLE, settlement=SETTLE, spot=spot),
+        ),
+        0,
+    )
+
+    assert grad(2.0) == pytest.approx(4.0)
 
 
 def test_quanto_adapters_still_price_consistently_after_scaffold_refactor():

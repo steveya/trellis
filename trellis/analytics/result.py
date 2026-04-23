@@ -5,6 +5,22 @@ from __future__ import annotations
 from typing import Any
 
 
+class ScalarRiskMeasureOutput(float):
+    """Float-like risk output with attached derivative-method metadata."""
+
+    def __new__(cls, value=0.0, *, metadata: dict[str, Any] | None = None):
+        obj = float.__new__(cls, float(value))
+        obj.metadata = dict(metadata or {})
+        return obj
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return a JSON-friendly payload with value and metadata."""
+        return {
+            "value": float(self),
+            "metadata": dict(self.metadata),
+        }
+
+
 class RiskMeasureOutput(dict):
     """Dictionary-like risk output with attached methodology metadata."""
 

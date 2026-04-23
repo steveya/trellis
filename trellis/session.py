@@ -637,7 +637,8 @@ class Session:
         Parameters
         ----------
         payoff : Payoff
-            Must implement ``evaluate(market_state) -> float``.
+            Must implement ``evaluate(market_state)`` and return a present-value
+            scalar.
         market_price : float
             Observed market price.
 

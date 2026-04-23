@@ -58,9 +58,9 @@ fallback backend, and the solve-result metadata records both the backend that
 ran and any fallback path that was taken.
 
 Calibration governance now projects that execution state into stable
-``SolveProvenance`` and ``SolveReplayArtifact`` payloads. Rates and SABR
-calibrations expose backend identity, solver options, termination summary, and
-residual diagnostics under consistent ``solver_provenance`` and
+``SolveProvenance`` and ``SolveReplayArtifact`` payloads. Rates, SABR, and
+Heston calibrations expose backend identity, derivative method, solver
+options, termination summary, and residual diagnostics under consistent ``solver_provenance`` and
 ``solver_replay_artifact`` keys so audit, replay, and validation consumers do
 not have to special-case each model family.
 

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from trellis.core.market_state import MarketState
+from trellis.core.payoff import PricingValue
 from trellis.core.types import DayCountConvention
 from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
 
@@ -51,5 +52,5 @@ class QuantoOptionAnalyticalPayoff:
     def requirements(self) -> set[str]:
         return REQUIREMENTS
 
-    def evaluate(self, market_state: MarketState) -> float:
-        return float(price_quanto_option_analytical_from_market_state(market_state, self._spec))
+    def evaluate(self, market_state: MarketState) -> PricingValue:
+        return price_quanto_option_analytical_from_market_state(market_state, self._spec)
