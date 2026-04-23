@@ -6,7 +6,7 @@ import json
 import platform
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 from types import MappingProxyType
@@ -335,6 +335,7 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
     from trellis.data.mock import MockDataProvider
     from trellis.data.schema import MarketSnapshot
     from trellis.instruments._agent.swaption import SwaptionSpec
+    from trellis.instruments.cap import CapFloorSpec, CapPayoff
     from trellis.models.bermudan_swaption_tree import BermudanSwaptionTreeSpec, price_bermudan_swaption_tree
     from trellis.models.calibration.credit import (
         CreditHazardCalibrationQuote,
@@ -346,8 +347,17 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
         calibrate_heston_surface_from_equity_vol_surface_workflow,
     )
     from trellis.models.calibration.local_vol import calibrate_local_vol_surface_workflow
-    from trellis.models.calibration.rates import HullWhiteCalibrationInstrument, calibrate_hull_white
+    from trellis.models.calibration.rates import HullWhiteCalibrationInstrument, calibrate_hull_white, swaption_terms
+    from trellis.models.calibration.rates_vol_surface import (
+        CapletStripQuote,
+        SwaptionCubeQuote,
+        calibrate_caplet_vol_strip_workflow,
+        calibrate_swaption_vol_cube_workflow,
+    )
     from trellis.models.calibration.sabr_fit import calibrate_sabr_smile_workflow
+    from trellis.models.processes.sabr import SABRProcess
+    from trellis.models.rate_style_swaption import price_swaption_black76
+    from trellis.models.vol_surface import FlatVol, GridVolSurface
 
     settle = date(2024, 11, 15)
 
@@ -417,6 +427,55 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
         for spec in hw_specs
     )
 
+    caplet_state = market_state()
+    caplet_surface = GridVolSurface(
+        expiries=(0.2493150684931507, 0.4986301369863014, 0.7506849315068493, 1.0),
+        strikes=(0.04, 0.05),
+        vols=(
+            (0.185, 0.195),
+            (0.188, 0.198),
+            (0.191, 0.201),
+            (0.194, 0.204),
+        ),
+    )
+    caplet_target_state = replace(caplet_state, vol_surface=caplet_surface)
+    caplet_start_date = date(2025, 2, 15)
+    caplet_end_dates = (
+        date(2025, 5, 15),
+        date(2025, 8, 15),
+        date(2025, 11, 15),
+        date(2026, 2, 15),
+    )
+    caplet_quotes = tuple(
+        CapletStripQuote(
+            spec=CapFloorSpec(
+                notional=1_000_000.0,
+                strike=float(strike),
+                start_date=caplet_start_date,
+                end_date=end_date,
+                frequency=Frequency.QUARTERLY,
+                day_count=DayCountConvention.ACT_360,
+                rate_index="USD-SOFR-3M",
+            ),
+            quote=CapPayoff(
+                CapFloorSpec(
+                    notional=1_000_000.0,
+                    strike=float(strike),
+                    start_date=caplet_start_date,
+                    end_date=end_date,
+                    frequency=Frequency.QUARTERLY,
+                    day_count=DayCountConvention.ACT_360,
+                    rate_index="USD-SOFR-3M",
+                )
+            ).evaluate(caplet_target_state),
+            quote_kind="price",
+            kind="cap",
+            label=f"cap_{float(strike):.4f}_{end_date.isoformat()}",
+        )
+        for strike in caplet_surface.strikes
+        for end_date in caplet_end_dates
+    )
+
     mock_snapshot = MockDataProvider().fetch_market_snapshot(settle)
     prior_parameters = dict(mock_snapshot.provenance.get("prior_parameters") or {})
     synthetic_generation_contract = dict(prior_parameters.get("synthetic_generation_contract") or {})
@@ -438,6 +497,53 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
     sabr_forward = float(mock_snapshot.forecast_curves[forecast_curve_name].zero_rate(sabr_expiry))
     sabr_beta = float(rate_vol_model.get("beta", 0.5))
     sabr_market_vols = [rate_surface.black_vol(sabr_expiry, strike) for strike in sabr_strikes]
+
+    swaption_cube_state = market_state()
+    swaption_cube_expiries = (date(2025, 11, 15), date(2026, 11, 15))
+    swaption_cube_tenors = (5, 10)
+    swaption_cube_strikes = (0.03, 0.04, 0.05)
+    swaption_cube_quotes: list[SwaptionCubeQuote] = []
+    cube_alpha = float(rate_vol_model.get("alpha", 0.03))
+    cube_rho = float(rate_vol_model.get("rho", -0.25))
+    cube_nu = float(rate_vol_model.get("nu", 0.35))
+    cube_beta = float(rate_vol_model.get("beta", 0.5))
+    for expiry_date in swaption_cube_expiries:
+        for tenor_years in swaption_cube_tenors:
+            tenor_scale = 1.0 + 0.08 * ((tenor_years - swaption_cube_tenors[0]) / 5.0)
+            swap_end = date(expiry_date.year + tenor_years, expiry_date.month, expiry_date.day)
+            atm_spec = SwaptionSpec(
+                notional=5_000_000.0,
+                strike=0.04,
+                expiry_date=expiry_date,
+                swap_start=expiry_date,
+                swap_end=swap_end,
+                swap_frequency=Frequency.SEMI_ANNUAL,
+                day_count=DayCountConvention.ACT_360,
+                rate_index="USD-SOFR-3M",
+                is_payer=True,
+            )
+            expiry_years, _annuity, forward_swap_rate, _payment_count = swaption_terms(atm_spec, swaption_cube_state)
+            sabr = SABRProcess(
+                alpha=cube_alpha * tenor_scale,
+                beta=cube_beta,
+                rho=cube_rho - 0.05 * ((tenor_years - swaption_cube_tenors[0]) / 5.0),
+                nu=cube_nu + 0.05 * ((tenor_years - swaption_cube_tenors[0]) / 5.0),
+            )
+            for strike in swaption_cube_strikes:
+                spec = replace(atm_spec, strike=float(strike))
+                market_vol = float(sabr.implied_vol(forward_swap_rate, float(strike), expiry_years))
+                swaption_cube_quotes.append(
+                    SwaptionCubeQuote(
+                        spec=spec,
+                        quote=price_swaption_black76(
+                            replace(swaption_cube_state, vol_surface=FlatVol(market_vol)),
+                            spec,
+                        ),
+                        quote_kind="price",
+                        label=f"{expiry_date.isoformat()}_{tenor_years}Y_{float(strike):.4f}",
+                    )
+                )
+    swaption_cube_quotes = tuple(swaption_cube_quotes)
 
     heston_surface_name = str(
         next(iter(volatility_quotes.get("implied_vol_surface_names") or ("spx_heston_implied_vol",)))
@@ -521,6 +627,22 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
             },
         ),
         CalibrationBenchmarkScenario(
+            workflow="caplet_strip",
+            label="price_bootstrap_surface",
+            cold_runner=lambda: calibrate_caplet_vol_strip_workflow(
+                caplet_quotes,
+                caplet_state,
+                surface_name="usd_caplet_strip",
+            ),
+            notes=("bootstrap", "caplet_surface", "price_quotes"),
+            metadata={
+                "quote_count": len(caplet_quotes),
+                "grid_shape": [len(caplet_surface.expiries), len(caplet_surface.strikes)],
+                "warm_start": False,
+                "surface_name": "usd_caplet_strip",
+            },
+        ),
+        CalibrationBenchmarkScenario(
             workflow="sabr",
             label="single_smile",
             cold_runner=lambda: calibrate_sabr_smile_workflow(
@@ -549,6 +671,23 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
                 "point_count": len(sabr_strikes),
                 "warm_start": True,
                 "surface_name": rate_surface_name,
+                "synthetic_generation_contract_version": str(synthetic_generation_contract.get("version", "")),
+            },
+        ),
+        CalibrationBenchmarkScenario(
+            workflow="swaption_cube",
+            label="price_normalized_cube",
+            cold_runner=lambda: calibrate_swaption_vol_cube_workflow(
+                swaption_cube_quotes,
+                swaption_cube_state,
+                surface_name="usd_swaption_cube",
+            ),
+            notes=("cube_assembly", "swaption_surface", "price_quotes", "synthetic_generation_contract_fixture"),
+            metadata={
+                "quote_count": len(swaption_cube_quotes),
+                "grid_shape": [len(swaption_cube_expiries), len(swaption_cube_tenors), len(swaption_cube_strikes)],
+                "warm_start": False,
+                "surface_name": "usd_swaption_cube",
                 "synthetic_generation_contract_version": str(synthetic_generation_contract.get("version", "")),
             },
         ),

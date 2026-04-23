@@ -564,10 +564,24 @@ cross-currency, smoothing, or exchange-grade futures plant.
 Rates Option Calibration
 ------------------------
 
-The current shipped rates-vol slice is still primarily quote-local. It
-normalizes individual cap/floor or swaption quotes and preserves the selected
-curve roles, but it does not yet claim a full caplet-strip or swaption-cube
-reconstruction plant.
+The current shipped rates-vol slice now has a first market-object layer in
+addition to the older quote-local helpers.
+
+Trellis still supports the flat-Black quote inversion helpers
+(``calibrate_cap_floor_black_vol(...)`` and ``calibrate_swaption_black_vol(...)``),
+but it now also exposes:
+
+- ``calibrate_caplet_vol_strip_workflow(...)`` for bounded caplet stripping
+  from sequential cap quotes into a reusable caplet-vol surface
+- ``calibrate_swaption_vol_cube_workflow(...)`` for bounded tenor-aware
+  swaption-cube assembly from normalized swaption quotes
+- ``compare_sabr_to_swaption_cube_workflow(...)`` for staged comparison between
+  that reconstructed market cube and per-slice SABR compression
+
+Those market objects materialize back onto ``MarketState`` through the existing
+black-vol-surface binding path, so downstream cap/floor and rate-style
+swaption pricing can consume the calibrated outputs directly instead of
+reconstructing helper-local vol assumptions.
 
 Cap/floor and European swaption quotes are often calibrated as implied Black
 volatilities under a multi-curve environment. Trellis keeps the calibration
@@ -635,6 +649,66 @@ artifacts:
   normalized provenance and the raw solve result so replay and review flows can
   inspect one deterministic solve path without reverse-engineering model-local
   payloads
+
+The newer rates-vol market-object workflows sit one layer above those
+single-quote helpers.
+
+Bounded caplet stripping
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+``calibrate_caplet_vol_strip_workflow(...)`` treats cap quotes as a sequential
+ladder where each maturity adds one new caplet period. Within that bounded
+support contract, the workflow:
+
+1. normalizes each cap quote onto price space,
+2. strips the incremental caplet PV from the maturity ladder,
+3. inverts the last caplet on each strike line back to Black vol, and
+4. assembles the stripped nodes into a reusable ``GridVolSurface``.
+
+This gives Trellis a first checked caplet-vol market object that downstream
+cap/floor pricing can consume through ``market_state.vol_surface``.
+
+The current support is intentionally bounded: it assumes a one-step cap ladder,
+Black-lognormal quotes, and no desk-style caplet bootstrap smoothing or
+normal/shifted-vol governance.
+
+Bounded swaption cube assembly
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``calibrate_swaption_vol_cube_workflow(...)`` widens the rates-vol layer from
+single quote inversion into a tenor-aware cube authority.
+
+For each swaption quote, the workflow:
+
+1. resolves expiry, forward swap rate, and underlier tenor from the selected
+   discount and forecast curves,
+2. normalizes price quotes back onto Black vol when necessary,
+3. assembles the normalized quotes onto an expiry-tenor-strike cube, and
+4. materializes a tenor-aware ``SwaptionVolCube`` back onto ``MarketState``.
+
+The rate-style swaption route detects that tenor-aware cube and resolves the
+Black vol through its ``swaption_black_vol(...)`` hook before falling back to
+the generic two-dimensional ``black_vol(...)`` surface protocol. That keeps
+the rates-vol authority inside the Trellis runtime abstraction instead of
+introducing a route-local side channel.
+
+The current support is still bounded to a rectangular absolute-strike cube.
+It does not yet claim the broader desk surface stack around relative-moneyness
+grids, bid/ask governance, arbitrage repair, or normal/shifted conventions.
+
+Staged SABR compression
+~~~~~~~~~~~~~~~~~~~~~~
+
+``compare_sabr_to_swaption_cube_workflow(...)`` then treats the reconstructed
+swaption cube as the market object and fits one SABR smile per expiry-tenor
+slice. The comparison result records the fitted slice pack together with the
+full cube residuals so the rates-vol layer can distinguish:
+
+- the reconstructed market cube itself, and
+- the reduced-form SABR compression built on top of it
+
+This is the same market-object-first staging that the hardened equity-vol slice
+now uses, but applied to a bounded rates-vol program.
 
 Hull-White Strip Calibration
 ----------------------------
@@ -763,6 +837,9 @@ Implementation
 .. autofunction:: trellis.models.calibration.rates.calibrate_cap_floor_black_vol
 .. autofunction:: trellis.models.calibration.rates.calibrate_swaption_black_vol
 .. autofunction:: trellis.models.calibration.rates.calibrate_hull_white
+.. autofunction:: trellis.models.calibration.rates_vol_surface.calibrate_caplet_vol_strip_workflow
+.. autofunction:: trellis.models.calibration.rates_vol_surface.calibrate_swaption_vol_cube_workflow
+.. autofunction:: trellis.models.calibration.rates_vol_surface.compare_sabr_to_swaption_cube_workflow
 .. autofunction:: trellis.models.calibration.credit.calibrate_single_name_credit_curve_workflow
 .. autoclass:: trellis.models.calibration.heston_fit.HestonSmileSurface
    :members:
@@ -803,6 +880,22 @@ Implementation
 .. autoclass:: trellis.models.calibration.sabr_fit.SABRSmileFitDiagnostics
    :members:
 .. autoclass:: trellis.models.calibration.sabr_fit.SABRSmileCalibrationResult
+   :members:
+.. autoclass:: trellis.models.calibration.rates_vol_surface.CapletStripQuote
+   :members:
+.. autoclass:: trellis.models.calibration.rates_vol_surface.CapletVolStripDiagnostics
+   :members:
+.. autoclass:: trellis.models.calibration.rates_vol_surface.CapletVolStripAuthorityResult
+   :members:
+.. autoclass:: trellis.models.calibration.rates_vol_surface.SwaptionCubeQuote
+   :members:
+.. autoclass:: trellis.models.calibration.rates_vol_surface.SwaptionVolCube
+   :members:
+.. autoclass:: trellis.models.calibration.rates_vol_surface.SwaptionVolCubeDiagnostics
+   :members:
+.. autoclass:: trellis.models.calibration.rates_vol_surface.SwaptionVolCubeAuthorityResult
+   :members:
+.. autoclass:: trellis.models.calibration.rates_vol_surface.SwaptionCubeStageComparisonResult
    :members:
 .. autoclass:: trellis.models.calibration.local_vol.LocalVolCalibrationResult
    :members:
